@@ -25,7 +25,7 @@ mod voice;
 
 pub use call::{CallEvent, DirectCallInfo};
 pub use channel::ChannelMessageEvent;
-pub use crypto::{CryptoEvent, PqBundleKind};
+pub use crypto::{CryptoEvent, PrekeyPublishKind};
 pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
 pub use membership::MembershipEvent;
@@ -221,9 +221,8 @@ impl SubscriptionEvent {
                 | CryptoEvent::MekTransferred { community, .. }
                 | CryptoEvent::AdminKeypairGranted { community }
                 | CryptoEvent::SlotKeypairGranted { community, .. } => Some(community),
-                // PqBundlePublished is a profile-level event (subkey 5 of
-                // the user's identity record), not community-scoped.
-                CryptoEvent::PqBundlePublished { .. } => None,
+                // Our prekey record is the identity's, not a community's.
+                CryptoEvent::PrekeyRecordPublished { .. } => None,
             },
             // `None` for a DM call and for device changes, both of
             // which belong to no community.

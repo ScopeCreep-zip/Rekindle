@@ -13,7 +13,7 @@ use rekindle_types::subscription_events::SubscriptionEvent;
 use zeroize::Zeroizing;
 
 use super::error::FriendError;
-use super::session_reset::OutgoingReset;
+use super::session_reset::{IncomingReset, OutgoingReset};
 use crate::broadcast::node::TransportNode;
 use crate::operations::direct::replay::ReplayGuard;
 use crate::session::Session;
@@ -33,12 +33,15 @@ pub enum BackendHold {
 pub struct FriendStores {
     /// Pre-session frames already accepted, so a replayed copy is dropped.
     pub replay: Mutex<ReplayGuard>,
-    /// The session resets we asked for: only an accept naming the keys we
-    /// offered answers one (plan C7.25).
+    /// The session resets we asked for: only a friend we asked may open a
+    /// session with `SessionResetAccept` (plan C7.25, B11).
     pub outgoing_resets: Mutex<HashMap<String, OutgoingReset>>,
-    /// The bundle of each friend's pending reset request, until the user
-    /// answers it (one per friend, the newest wins).
-    pub incoming_resets: Mutex<HashMap<String, Vec<u8>>>,
+    /// Each friend's pending reset request, until the user answers it (one
+    /// per friend, the newest wins).
+    pub incoming_resets: Mutex<HashMap<String, IncomingReset>>,
+    /// Our first contacts not yet answered under their session, by peer
+    /// (plan E2.4, B6).
+    pub first_contacts: Mutex<HashMap<String, crate::operations::prekeys::FirstContact>>,
     /// Who is typing to us, and when each start lapses (plan E2.3).
     pub typing_in: Mutex<TypingExpiry>,
     /// Our typing sessions, one per conversation (plan E2.3).
@@ -51,6 +54,7 @@ impl FriendStores {
         self.replay.lock().clear();
         self.outgoing_resets.lock().clear();
         self.incoming_resets.lock().clear();
+        self.first_contacts.lock().clear();
         self.typing_in.lock().clear();
         self.typing_out.lock().clear();
     }
@@ -112,6 +116,9 @@ pub trait FriendHost: Send + Sync {
     /// # Errors
     /// The gate refused it (too many held for this identity).
     async fn hold_backend_intent(&self, held: BackendHold) -> Result<(), FriendError>;
+    /// Our prekey record's writable lease, once the unlock's own-records
+    /// stage opened or created it (plan E2.4).
+    fn own_prekey_lease(&self) -> Option<rekindle_records::lease::LeaseId>;
     /// The unlock's scope: background sends run in it.
     fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope>;
     /// The Host's clock (C9.2).

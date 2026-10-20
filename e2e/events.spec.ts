@@ -37,7 +37,7 @@ const BUDDY_LIST_HANDLER = `
       return [{
         publicKey: "${BOB}", displayName: "Bob", nickname: null, status: "offline",
         statusMessage: null, gameInfo: null, group: null, unreadCount: 0,
-        lastSeenAt: null, friendshipState: "pendingOut", handshakeError: null,
+        lastSeenAt: null, friendshipState: "pendingOut", handshakeError: null, handshakeRetrying: false,
       }];
     case "get_community_details":
     case "get_pending_requests":

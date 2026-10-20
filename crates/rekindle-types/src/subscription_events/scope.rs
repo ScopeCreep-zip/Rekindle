@@ -111,7 +111,7 @@ impl SubscriptionEvent {
                 | CryptoEvent::SlotKeypairGranted { community, .. } => {
                     EventScope::Community(community.clone())
                 }
-                CryptoEvent::PqBundlePublished { .. } => EventScope::Device,
+                CryptoEvent::PrekeyRecordPublished { .. } => EventScope::Device,
             },
             // Device changes (`scope() == None`) are machine-wide.
             Self::Voice(e) => e.scope().map_or(EventScope::Device, EventScope::voice),
@@ -184,7 +184,9 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::NicknameChanged { peer_key, .. }
         | FriendEvent::GroupChanged { peer_key, .. }
         | FriendEvent::KeyChanged { peer_key, .. }
-        | FriendEvent::HandshakeFailed { peer_key, .. } => peer_key,
+        | FriendEvent::HandshakeFailed { peer_key, .. }
+        | FriendEvent::HandshakeRetrying { peer_key }
+        | FriendEvent::IdentityPinMismatch { peer_key, .. } => peer_key,
     }
 }
 

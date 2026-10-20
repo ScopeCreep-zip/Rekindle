@@ -14,7 +14,35 @@ use super::DaemonContext;
 ///
 /// Returns the complete `StatusSnapshot` — compact status, subscription system
 /// health, and full diagnostic checks. Renderers (CLI/TUI) decide display depth.
-pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) async fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    let prekeys = prekey_check(ctx).await;
+    status_response(ctx, state, prekeys)
+}
+
+/// `crypto.prekeys` (plan E2.4): the prekey maintenance keeps fresh slots
+/// and a head younger than 14 days; anything else means it is failing.
+/// `None` while no identity is unlocked.
+async fn prekey_check(ctx: &DaemonContext) -> Option<Check> {
+    use rekindle_transport::operations::prekeys;
+    ctx.db.current().ok()?;
+    let host = crate::host::adapters::friends::HostFriends::of(ctx);
+    Some(match prekeys::status(&host).await {
+        Ok(status) => match prekeys::prekey_problem(&status) {
+            None => Check::pass(
+                "crypto.prekeys",
+                "crypto",
+                format!("{}/100 fresh slots", status.fresh_slots),
+            ),
+            Some(problem) => Check::warn("crypto.prekeys", "crypto", problem)
+                .with_description("prekey maintenance is failing"),
+        },
+        Err(e) => {
+            Check::warn("crypto.prekeys", "crypto", "unreadable").with_description(e.to_string())
+        }
+    })
+}
+
+fn status_response(ctx: &DaemonContext, state: DaemonState, prekeys: Option<Check>) -> IpcResponse {
     use rekindle_types::display::{CircuitSummary, StatusSnapshot};
 
     let session_guard = ctx.session.read();
@@ -71,7 +99,8 @@ pub(crate) fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcRespo
     );
 
     // Diagnostic checks
-    let checks = build_checks(ctx, state, transport, session);
+    let mut checks = build_checks(ctx, state, transport, session);
+    checks.extend(prekeys);
 
     let snapshot = StatusSnapshot {
         state: state.as_str().to_string(),

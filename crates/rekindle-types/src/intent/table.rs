@@ -444,6 +444,7 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("Undo", None),
     ("Subscribe", None),
     ("Unsubscribe", None),
+    ("PrekeyStatus", None),
     ("MekList", None),
     ("MekRotate", Some(IntentKind::RotateMek)),
     ("MekRequest", None),

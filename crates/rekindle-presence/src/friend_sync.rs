@@ -10,7 +10,8 @@
 //! Architecture references:
 //! - §13.4 presence cadence (force-poll fallback when watches fail)
 //! - §26 W26 — friend profile record subkey layout (2=status,
-//!   4=game, 5=prekey bundle, 6=route blob)
+//!   4=game, 6=route blob; 5, the prekey device list, is read only by a
+//!   first contact, plan E2.4)
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -19,15 +20,8 @@ use crate::deps::{FriendPresenceDeps, FriendPresenceEvent};
 use crate::friend::{handle_value_change, STALE_PRESENCE_THRESHOLD_MS};
 
 /// Profile subkeys we force-poll each tick (mirror of
-/// [`crate::friend::FRIEND_WATCH_SUBKEYS`] plus subkey 5 for the
-/// prekey bundle — pre-port `sync_friend_prekey` reads but doesn't
-/// process the bytes).
+/// [`crate::friend::FRIEND_WATCH_SUBKEYS`]).
 const SYNC_POLL_SUBKEYS: &[u32] = &[2, 4, 6];
-/// Subkey 5 — prekey bundle. Read separately so the trace log
-/// references it explicitly; the bytes aren't processed (Signal
-/// sessions are established via the friend-accept flow, not from
-/// DHT prekey bundles during sync).
-const PREKEY_BUNDLE_SUBKEY: u32 = rekindle_types::dht_layout::profile::PREKEY_BUNDLE;
 
 /// Run a single friend-sync tick: iterate every friend with a DHT
 /// record, register the DHT key mapping, start a watch if one
@@ -80,7 +74,7 @@ pub async fn sync_friends<D, S>(
         }
 
         let force_refresh = first_tick || force_all || unwatched.contains(friend_key);
-        force_poll_subkeys(deps.as_ref(), friend_key, dht_key, force_refresh).await;
+        force_poll_subkeys(deps.as_ref(), dht_key, force_refresh).await;
     }
 
     check_stale_friend_presences(deps.as_ref());
@@ -91,12 +85,7 @@ pub async fn sync_friends<D, S>(
 /// funnel the bytes through `handle_value_change` so the status /
 /// game / route paths share the same state-update + emit code
 /// that the live DHT watch fires on.
-async fn force_poll_subkeys<D: FriendPresenceDeps>(
-    deps: &D,
-    friend_key: &str,
-    dht_key: &str,
-    force_refresh: bool,
-) {
+async fn force_poll_subkeys<D: FriendPresenceDeps>(deps: &D, dht_key: &str, force_refresh: bool) {
     for &subkey in SYNC_POLL_SUBKEYS {
         let Some(bytes) = deps
             .fetch_friend_dht_subkey(dht_key, subkey, force_refresh)
@@ -105,20 +94,6 @@ async fn force_poll_subkeys<D: FriendPresenceDeps>(
             continue;
         };
         handle_value_change(deps, dht_key, &[subkey], &bytes);
-    }
-
-    // Subkey 5 — prekey bundle. Read for the trace log (Signal
-    // sessions are established via the friend-accept flow, not
-    // from DHT prekey bundles during sync).
-    if let Some(bytes) = deps
-        .fetch_friend_dht_subkey(dht_key, PREKEY_BUNDLE_SUBKEY, force_refresh)
-        .await
-    {
-        tracing::trace!(
-            friend = %friend_key,
-            prekey_len = bytes.len(),
-            "read prekey bundle from DHT (session established via friend accept flow)",
-        );
     }
 }
 
@@ -337,9 +312,9 @@ mod tests {
         // The watch sits on the lease the host then keeps for the friend.
         assert_eq!(st.calls_watch_subkeys.first().map(|(l, _)| *l), Some(1));
         assert_eq!(st.calls_hold, vec![("alice".to_string(), 1)]);
-        // 4 subkeys polled: 2, 4, 6, 5 (prekey bundle last).
+        // 3 subkeys polled: status, game, route.
         let subkeys: Vec<u32> = st.calls_fetch_subkey.iter().map(|(_, sk, _)| *sk).collect();
-        assert_eq!(subkeys, vec![2, 4, 6, 5]);
+        assert_eq!(subkeys, vec![2, 4, 6]);
         // All polled with force_refresh=true (first_tick).
         for (_, _, force) in &st.calls_fetch_subkey {
             assert!(*force);

@@ -1,6 +1,6 @@
 //! The own-records stage (plan E1.1): the unlocked identity's mailbox,
-//! profile, friend list and account, on the record port, on
-//! both hosts. Opened when the identity has them, created when it does
+//! prekey record (plan E2.4, `super::own_prekeys`), profile, friend list
+//! and account, on the record port, on both hosts. Opened when the identity has them, created when it does
 //! not (a new identity), so create needs no transport of its own.
 //!
 //! A new owner keypair goes into the vault before its record key goes into
@@ -32,16 +32,22 @@ pub(crate) struct OwnRecords {
     pub vault: VaultHandle,
     pub session: Arc<RwLock<Option<Session>>>,
     pub shell: Option<Arc<dyn ShellHooks>>,
-    /// The Host's generator and clock (C9.2): our prekeys are minted with
-    /// them (`rekindle_db::prekeys`, plan E2.3).
+    /// The Host's generator (C9.2): this device's id is minted with it
+    /// (the prekeys are the prekey maintenance's, plan E2.4).
     pub rng: Arc<dyn rekindle_utils::RandomSource>,
-    pub clock: Arc<dyn rekindle_utils::Clock>,
     /// Our presence: its message goes into the profile, and its publisher
     /// writes our status once the profile exists.
     pub presence: super::own_presence::OwnPresence,
     /// Where the profile's session lease is kept, so a rotation (block)
     /// can release it (`DaemonContext.own_profile_lease`).
     pub profile_lease: Arc<parking_lot::Mutex<Option<LeaseId>>>,
+    /// Where our prekey record's session lease is kept
+    /// (`DaemonContext.own_prekey_lease`): the prekey maintenance and the
+    /// refills write through it.
+    pub prekey_lease: Arc<parking_lot::Mutex<Option<LeaseId>>>,
+    /// The friend operations' Host: the stage reconciles our prekey record
+    /// and publishes its first set through it before the profile names it.
+    pub friends: super::adapters::friends::HostFriends,
     pub public_key: String,
     pub display_name: String,
     pub secret: Zeroizing<[u8; 32]>,
@@ -49,14 +55,17 @@ pub(crate) struct OwnRecords {
 
 /// The records' keys as the identity row and the vault hold them.
 #[derive(Default)]
-struct Stored {
+pub(super) struct Stored {
     profile: Option<String>,
     friend_list: Option<String>,
     account: Option<String>,
     mailbox: Option<String>,
+    pub(super) prekeys: Option<String>,
+    pub(super) device_id: Option<String>,
     profile_owner: Option<String>,
     friend_list_owner: Option<String>,
     account_owner: Option<String>,
+    pub(super) prekeys_owner: Option<String>,
 }
 
 impl OwnRecords {
@@ -107,7 +116,15 @@ impl OwnRecords {
         if stop.is_cancelled() {
             return;
         }
-        if let Some((key, owner)) = self.profile(pool.as_ref(), &stored, &route_blob).await {
+        // The prekey record before the profile, whose subkey 5 names it.
+        let device_list = self.prekeys(pool.as_ref(), &stored).await;
+        if stop.is_cancelled() {
+            return;
+        }
+        if let Some((key, owner)) = self
+            .profile(pool.as_ref(), &stored, &route_blob, &device_list)
+            .await
+        {
             keys.profile = Some(key);
             owners.0 = Some(owner);
         }
@@ -153,14 +170,17 @@ impl OwnRecords {
             friend_list: columns.friend_list,
             account: columns.account,
             mailbox: columns.mailbox,
+            prekeys: columns.prekeys,
+            device_id: columns.device_id,
             profile_owner: owner(OwnerKey::Profile)?,
             friend_list_owner: owner(OwnerKey::FriendList)?,
             account_owner: owner(OwnerKey::Account)?,
+            prekeys_owner: owner(OwnerKey::Prekeys)?,
         })
     }
 
     /// Save a new owner keypair, then its record's key.
-    async fn persist(
+    pub(super) async fn persist(
         &self,
         owner: OwnerKey,
         keypair: &str,
@@ -229,38 +249,18 @@ impl OwnRecords {
         Some(key)
     }
 
-    /// Our long-lived bundle, in its wire form (`rekindle_db::prekeys`).
-    async fn current_bundle(&self) -> Result<Vec<u8>, String> {
-        let db = self.db.current().map_err(|e| e.to_string())?;
-        let local = rekindle_db::ratchet::LocalParty {
-            identity: Arc::new(rekindle_crypto::Identity::from_secret_bytes(&self.secret)),
-            rng: Arc::clone(&self.rng),
-            now_ms: self.clock.now_ms_i64(),
-        };
-        rekindle_db::prekeys::current_bundle(&db, &local)
-            .await
-            .map(|bundle| bundle.to_wire())
-            .map_err(|e| e.to_string())
-    }
-
     async fn profile(
         &self,
         pool: &dyn RecordPort,
         stored: &Stored,
         route_blob: &[u8],
+        device_list: &[u8],
     ) -> Option<(String, String)> {
-        let bundle = match self.current_bundle().await {
-            Ok(bundle) => bundle,
-            Err(e) => {
-                tracing::error!(error = %e, "own records: no prekey bundle");
-                return None;
-            }
-        };
         let status_message = self.presence.view().status_message;
         let fields = profile::ProfileFields {
             display_name: &self.display_name,
             status_message: &status_message,
-            prekey_bundle: &bundle,
+            prekey_records: device_list,
             route_blob,
         };
         // An existing profile is re-opened, never replaced: its key is
@@ -422,16 +422,7 @@ pub(crate) async fn rotate_profile(
             )
         })
         .ok_or("no identity is unlocked")?;
-    let host = super::adapters::friends::HostFriends::of(ctx);
-    let bundle = rekindle_transport::operations::friend::FriendHost::local_party(&host)
-        .map_err(|e| e.to_string())?;
-    let bundle = rekindle_db::prekeys::current_bundle(
-        &ctx.db.current().map_err(|e| e.to_string())?,
-        &bundle,
-    )
-    .await
-    .map_err(|e| format!("prekey bundle: {e}"))?
-    .to_wire();
+    let device_list = super::own_prekeys::device_list_of(ctx, &owner).await?;
     let route_blob = transport.personal_route_blob().unwrap_or_default();
     let status_message = ctx.own_presence.view().status_message;
     let (lease, key, keypair, outcome) = profile::create_profile(
@@ -439,7 +430,7 @@ pub(crate) async fn rotate_profile(
         profile::ProfileFields {
             display_name: &display_name,
             status_message: &status_message,
-            prekey_bundle: &bundle,
+            prekey_records: &device_list,
             route_blob: &route_blob,
         },
     )

@@ -79,7 +79,9 @@ export type FriendEvent =
   | { nicknameChanged: { peerKey: string; nickname: string | null } }
   | { groupChanged: { peerKey: string; group: string | null } }
   | { keyChanged: { peerKey: string; newKey: string } }
-  | { handshakeFailed: { peerKey: string; reason: string } };
+  | { handshakeFailed: { peerKey: string; reason: string } }
+  | { handshakeRetrying: { peerKey: string } }
+  | { identityPinMismatch: { peerKey: string; displayName: string } };
 
 /** Peer on the other end of a direct call; absent for a group call. */
 export interface DirectCallInfo {

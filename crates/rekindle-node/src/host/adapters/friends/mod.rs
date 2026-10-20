@@ -24,7 +24,9 @@ use zeroize::Zeroizing;
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::gate::IntentOwner;
 
-pub(crate) use maintenance::start as start_maintenance;
+pub(crate) use maintenance::{
+    start as start_maintenance, start_prekeys as start_prekey_maintenance,
+};
 
 /// Each watched friend's profile lease, and the friends whose watch failed
 /// (polled instead, Veilid GitLab #377).
@@ -79,7 +81,11 @@ impl FriendHost for HostFriends {
         let secret = self.identity_secret()?;
         Ok(rekindle_db::ratchet::LocalParty {
             identity: Arc::new(rekindle_crypto::Identity::from_secret_bytes(&secret)),
-            rng: Arc::clone(&self.ctx.rng),
+            // Its draws run on the database's thread: a fork, seeded here in
+            // this task's order, keeps a seeded Host's trace fixed.
+            rng: Arc::new(rekindle_utils::random::ForkedRandom::fork(
+                self.ctx.rng.as_ref(),
+            )),
             now_ms: self.ctx.clock.now_ms_i64(),
         })
     }
@@ -189,6 +195,10 @@ impl FriendHost for HostFriends {
         self.ctx
             .publish_event(SubscriptionEvent::IntentPending(review));
         Ok(())
+    }
+
+    fn own_prekey_lease(&self) -> Option<LeaseId> {
+        *self.ctx.own_prekey_lease.lock()
     }
 
     fn scope(&self) -> Arc<rekindle_lifecycle::SessionScope> {

@@ -26,14 +26,6 @@ async fn send_or_queue(host: &dyn FriendHost, to: &str, body: &DirectBody, what:
     }
 }
 
-/// Whether the request's bundle is under the sender's own identity
-/// (identity == address); one that is not names someone else's keys.
-fn bundle_is_senders(req: &IncomingFriendRequest<'_>) -> bool {
-    rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle)
-        .ok()
-        .is_some_and(|bundle| hex::encode(bundle.identity_key) == req.sender_hex)
-}
-
 /// Store the request; persisted before the event, so the row exists when a
 /// window acts on it (B5/P3.1).
 async fn persist_request(
@@ -47,7 +39,6 @@ async fn persist_request(
     let pdk = req.profile_dht_key.to_string();
     let rb = req.route_blob.to_vec();
     let mdk = req.mailbox_dht_key.to_string();
-    let pkb = req.prekey_bundle.to_vec();
     let iid = req.invite_id.map(str::to_string);
     let now = host.clock().now_ms_i64();
     state::db_call!(host, "store friend request", move |conn| {
@@ -62,7 +53,6 @@ async fn persist_request(
                 profile_dht_key: &pdk,
                 route_blob: &rb,
                 mailbox_dht_key: &mdk,
-                prekey_bundle: &pkb,
                 invite_id: iid.as_deref(),
             },
         )
@@ -105,10 +95,6 @@ async fn admit_invite(
 
 /// An incoming friend request.
 pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) {
-    if !bundle_is_senders(req) {
-        tracing::warn!(from = %req.sender_hex, "friend request without the sender's own bundle — dropping");
-        return;
-    }
     if !req.route_blob.is_empty() {
         if let Ok(node) = host.node() {
             dm::route::cache(&node, req.sender_hex, req.route_blob.to_vec());

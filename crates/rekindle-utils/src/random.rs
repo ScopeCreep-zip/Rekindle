@@ -59,6 +59,35 @@ impl RandomSource for OsRandom {
     }
 }
 
+/// A generator of its own, seeded from another's (ChaCha12, `StdRng`): what
+/// a unit of work draws from when it runs off the async task that made it
+/// (plan E2.4: a ratchet or prekey step inside a database transaction runs
+/// on the database's thread). The parent is drawn once, in the caller's
+/// order, so a seeded parent fixes every draw whatever the threads do.
+#[derive(Debug)]
+pub struct ForkedRandom(parking_lot::Mutex<rand::rngs::StdRng>);
+
+impl ForkedRandom {
+    /// A generator seeded with 32 bytes from `parent`.
+    #[must_use]
+    pub fn fork(parent: &dyn RandomSource) -> Self {
+        use rand::SeedableRng;
+        let mut seed = [0u8; 32];
+        parent.fill(&mut seed);
+        let rng = rand::rngs::StdRng::from_seed(seed);
+        seed.fill(0);
+        Self(parking_lot::Mutex::new(rng))
+    }
+}
+
+impl rand::CryptoRng for ForkedRandom {}
+
+impl RandomSource for ForkedRandom {
+    fn fill(&self, dest: &mut [u8]) {
+        self.0.lock().fill_bytes(dest);
+    }
+}
+
 /// 16 random bytes from `rng`, for identifiers an engine mints.
 #[must_use]
 pub fn id_bytes_16_from(rng: &dyn RandomSource) -> [u8; 16] {
@@ -85,6 +114,17 @@ pub fn bytes(len: usize) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::{OsRandom, RandomSource};
+
+    #[test]
+    fn a_fork_follows_its_parent_only() {
+        use super::ForkedRandom;
+        let fork = |parent: &dyn RandomSource| {
+            let child = ForkedRandom::fork(parent);
+            (child.next_u32(), child.next_u32())
+        };
+        let (a, b) = (OsRandom, OsRandom);
+        assert_ne!(fork(&a), fork(&b));
+    }
 
     #[test]
     fn below_stays_in_range() {

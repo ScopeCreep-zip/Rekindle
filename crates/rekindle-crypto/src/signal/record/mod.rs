@@ -95,6 +95,29 @@ impl SessionRecord {
         self.states().any(|(_, s)| s.base_key() == base_key)
     }
 
+    /// The base key of the active session while it is a PreKeyInit of ours
+    /// the peer has not answered (nothing decrypted under it yet): the one
+    /// a `PreKeyRejected` may discard (plan E2.4, B6).
+    pub fn pending_init(&self) -> Option<&[u8; 32]> {
+        self.active
+            .as_ref()
+            .filter(|s| !s.has_received())
+            .map(SessionState::base_key)
+    }
+
+    /// This record without the pending init `base_key` (the peer refused
+    /// its prekeys); `None` when it is not the pending init. The session
+    /// archived before it becomes active again.
+    #[must_use]
+    pub fn without_pending(&self, base_key: &[u8; 32]) -> Option<Self> {
+        if self.pending_init() != Some(base_key) {
+            return None;
+        }
+        let mut record = self.clone();
+        record.active = (!record.inactive.is_empty()).then(|| record.inactive.remove(0));
+        Some(record)
+    }
+
     /// Start a session from the peer's bundle and encrypt the first
     /// message under it (the initiator side). The new session is active;
     /// the old one, if any, is archived.

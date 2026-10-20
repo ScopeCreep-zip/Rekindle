@@ -238,5 +238,13 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"|");
             h.update(reason.as_bytes());
         }
+        FriendEvent::HandshakeRetrying { peer_key } => {
+            h.update(b"hs_retry|");
+            h.update(peer_key.as_bytes());
+        }
+        FriendEvent::IdentityPinMismatch { peer_key, .. } => {
+            h.update(b"pin_mismatch|");
+            h.update(peer_key.as_bytes());
+        }
     }
 }

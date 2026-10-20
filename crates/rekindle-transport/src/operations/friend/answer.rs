@@ -32,31 +32,26 @@ fn session_alert(host: &dyn FriendHost, body: String) {
     ));
 }
 
-/// Open the session with `public_key` from the bundle their request
-/// carried and send our accept as its first payload. A failure is told to
-/// the user; the friendship stands, and their side stays pending until a
-/// session reaches them.
-async fn open_session(host: &dyn FriendHost, public_key: &str, bundle_bytes: Option<&[u8]>) {
+/// Open the session with `public_key` from their prekey record (the
+/// profile their request named; plan E2.4, B2) and send our accept as its
+/// first payload. A failure is told to the user; the friendship stands,
+/// and their side stays pending until a session reaches them.
+async fn open_session(host: &dyn FriendHost, public_key: &str, profile_key: Option<&str>) {
     let peer_label = state::label(host, public_key);
-    let Some(bundle_bytes) = bundle_bytes else {
-        tracing::warn!(peer = %public_key, "no stored prekey bundle — no session to open");
+    let Some(profile_key) = profile_key else {
+        tracing::warn!(peer = %public_key, "the request named no profile — no session to open");
         session_alert(
             host,
-            format!("{peer_label}'s request carried no key bundle. Ask them to send it again."),
+            format!("{peer_label}'s request named no profile. Ask them to send it again."),
         );
         return;
     };
-    let bundle = match rekindle_crypto::signal::PreKeyBundle::from_wire(bundle_bytes) {
+    let bundle = match crate::operations::prekeys::pick_bundle(host, public_key, profile_key).await
+    {
         Ok(bundle) => bundle,
         Err(e) => {
-            tracing::error!(peer = %public_key, error = %e, "stored prekey bundle does not decode");
-            session_alert(
-                host,
-                format!(
-                    "The key bundle in {peer_label}'s request is unreadable. Ask them to \
-                     send the request again."
-                ),
-            );
+            tracing::warn!(peer = %public_key, error = %e, "no prekey bundle to open the session");
+            session_alert(host, e.to_string());
             return;
         }
     };
@@ -123,7 +118,7 @@ pub async fn accept(
     friend.mailbox_dht_key.clone_from(&answer.mailbox_dht_key);
     state::put(host, friend);
 
-    open_session(host, public_key, answer.prekey_bundle.as_deref()).await;
+    open_session(host, public_key, answer.profile_dht_key.as_deref()).await;
     if let Some(profile_key) = &answer.profile_dht_key {
         host.watch_friend(public_key, profile_key).await;
     }

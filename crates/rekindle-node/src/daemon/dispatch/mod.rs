@@ -229,6 +229,9 @@ pub struct DaemonContext {
     pub(crate) friend_watches: crate::host::adapters::friends::FriendWatches,
     /// Our profile record's session lease, so a rotation releases it.
     pub(crate) own_profile_lease: Arc<parking_lot::Mutex<Option<rekindle_records::lease::LeaseId>>>,
+    /// Our prekey record's session lease (plan E2.4), set by the own-records
+    /// stage; the maintenance and the refills write through it.
+    pub(crate) own_prekey_lease: Arc<parking_lot::Mutex<Option<rekindle_records::lease::LeaseId>>>,
     /// This context, for work that outlives a call (`HostFriends::owned`).
     pub(crate) this: std::sync::Weak<DaemonContext>,
 }

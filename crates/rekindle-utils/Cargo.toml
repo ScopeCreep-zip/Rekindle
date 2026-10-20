@@ -21,6 +21,8 @@ paths = [ "dep:dirs", "dep:thiserror" ]
 
 [dependencies]
 rand = { workspace = true }
+# `random::ForkedRandom`'s generator lock.
+parking_lot = { workspace = true }
 # blake3 is NOT optional, deliberately. `blake3_hex` is the single
 # spelling of the content hash that the channel track computes and the
 # sync track verifies; if reaching it required opting into a feature,

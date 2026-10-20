@@ -9,7 +9,9 @@
 //! quiet hours and the channel's notification level
 //! (`should_emit_message_notification`); the rest are filtered here.
 
-use rekindle_types::subscription_events::{NotificationEvent, SocialEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    FriendEvent, NotificationEvent, SocialEvent, SubscriptionEvent,
+};
 
 /// The user's state that decides whether to interrupt them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -52,6 +54,7 @@ pub fn is_candidate(event: &SubscriptionEvent) -> bool {
         event,
         SubscriptionEvent::Notification(_)
             | SubscriptionEvent::Social(SocialEvent::EventReminder { .. })
+            | SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch { .. })
     )
 }
 
@@ -103,6 +106,16 @@ pub fn os_notification_for(
                 format!("{title} starts in {minutes_until_start} min"),
             )
         }),
+        // Trust changed under a friend: always shown, like a system alert.
+        SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch { display_name, .. }) => {
+            Some(OsNotification::new(
+                "Identity key mismatch",
+                format!(
+                    "{display_name}'s keys are not signed by the identity you know. Nothing \
+                     was sent; verify their safety number."
+                ),
+            ))
+        }
         _ => None,
     }
 }
@@ -205,5 +218,22 @@ mod tests {
                 "Raid night starts in 15 min"
             ))
         );
+    }
+
+    #[test]
+    fn an_identity_pin_mismatch_always_notifies() {
+        let mismatch = SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
+            peer_key: "b".into(),
+            display_name: "Bob".into(),
+        });
+        assert!(is_candidate(&mismatch));
+        let quiet = NotifyInputs {
+            quiet_hours_active: true,
+            status_busy: true,
+            ..on()
+        };
+        let shown = os_notification_for(&mismatch, &quiet).expect("a notification");
+        assert_eq!(shown.title, "Identity key mismatch");
+        assert!(shown.body.starts_with("Bob's keys"));
     }
 }

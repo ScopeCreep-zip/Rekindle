@@ -105,7 +105,7 @@ export type CryptoEvent =
     }
   | { adminKeypairGranted: { community: string } }
   | { slotKeypairGranted: { community: string; slotIndex: number; segmentIndex: number } }
-  | { pqBundlePublished: { subkey: number; kind: string } };
+  | { prekeyRecordPublished: { kind: "signedRotated" | "oneTimeRefilled"; subkey: number } };
 
 // Community member presence is **not** in the union below: it is a
 // `PresenceEvent`, which the backend routes to `presence-event`. See

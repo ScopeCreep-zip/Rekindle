@@ -47,20 +47,10 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
         },
         KeyCmd::Prekeys(sub) => match sub {
             crate::cli::PrekeyCmd::Status => {
-                let value = helpers::send(client, IpcRequest::Status).await?;
-                // Extract crypto checks from the full status snapshot
-                if let Ok(snapshot) =
-                    serde_json::from_value::<rekindle_types::display::StatusSnapshot>(value.clone())
-                {
-                    let crypto_checks: Vec<_> = snapshot
-                        .checks
-                        .into_iter()
-                        .filter(|c| c.category == "crypto")
-                        .collect();
-                    format::print_doctor_checks(&crypto_checks, mode, false)
-                } else {
-                    format::print_structured(&value, mode)
-                }
+                // The prekey record and its upkeep (plan E2.4): the same
+                // `PrekeyStatus` the GUI's debug `pqxdh_bundle_info` shows.
+                let value = helpers::send(client, IpcRequest::PrekeyStatus).await?;
+                format::print_structured(&value, mode)
             }
         },
         KeyCmd::Inspect { community } => {

@@ -1,6 +1,7 @@
 //! The friend-handshake messages (plan E2.3): a request is sealed to the
-//! peer's identity and carries our handout bundle; an accept is the
-//! PreKeyInit that opens the session from theirs; a reject is sealed.
+//! peer's identity and names our profile, whose device list leads to our
+//! prekey record (plan E2.4); an accept is the PreKeyInit that opens the
+//! session from theirs; a reject is sealed.
 
 use std::time::Duration;
 
@@ -17,20 +18,8 @@ use crate::operations::friend::{state, FriendError, FriendHost};
 /// leaves the receiver no way to answer.
 const ROUTE_WAIT: Duration = Duration::from_secs(5);
 
-/// Our bundle with fresh one-time keys, for exactly one peer, in its wire
-/// form.
-///
-/// # Errors
-/// The identity is locked, or the keys could not be minted.
-pub async fn handout_bundle_bytes(host: &dyn FriendHost) -> Result<Vec<u8>, FriendError> {
-    let bundle = rekindle_db::prekeys::handout_bundle(&host.db()?, &host.local_party()?)
-        .await
-        .map_err(|e| FriendError::Failed(format!("prekey bundle: {e}")))?;
-    Ok(bundle.to_wire())
-}
-
-/// Send a friend request, sealed to `to` and carrying our handout bundle,
-/// so the receiver can open the session when they accept.
+/// Send a friend request, sealed to `to` and naming our profile, so the
+/// receiver can open the session from our prekey record when they accept.
 ///
 /// It goes by `app_call` when we hold a route to them: the call's return is
 /// the receipt, raising `RequestAcknowledged`. Otherwise it is sent like
@@ -56,7 +45,6 @@ pub async fn send_friend_request(
     let request = DirectBody::FriendRequest(FriendRequest {
         display_name: own.display_name,
         message: message.to_string(),
-        prekey_bundle: handout_bundle_bytes(host).await?,
         profile_dht_key: own.profile_dht_key,
         route_blob,
         mailbox_dht_key: own.mailbox_dht_key,
@@ -78,8 +66,8 @@ pub async fn send_friend_request(
     }
 }
 
-/// Accept `to`'s request: open the session from `bundle` (theirs, from the
-/// request), carrying our records as its first payload.
+/// Accept `to`'s request: open the session from `bundle` (picked from their
+/// prekey record), carrying our records as its first payload.
 ///
 /// # Errors
 /// The bundle is not `to`'s, the session could not be opened, or the send

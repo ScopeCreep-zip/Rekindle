@@ -102,6 +102,22 @@ struct SessionResetRequest {
   reason @1 :Text;
 }
 
+# 0x0005, sealed (D18 B5): the responder refused the prekeys a PreKeyInit
+# named (consumed, unknown, or past the archive), signed like every sealed
+# kind. The initiator retries once from another slot (B6).
+struct PreKeyRejected {
+  signedPrekeyId @0 :UInt32;
+  oneTimePrekey :union {
+    none @1 :Void;
+    id @2 :UInt32;
+  }
+  pqPrekey :union {
+    oneTime @3 :UInt32;
+    lastResort @4 :UInt32;
+  }
+  baseKeyHash @5 :Data;                 # H(the initiator's base key), 32 B
+}
+
 # 0x0009, sealed.
 struct SessionResetDecline {
   reason @0 :Text;

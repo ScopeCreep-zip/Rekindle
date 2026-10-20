@@ -212,6 +212,7 @@ pub(crate) async fn handle_rotate(
         &result.new_signing_key_bytes,
         passphrase,
         ctx.clock.now_ms(),
+        result.prekeys.take(),
     )
     .await;
     result.new_signing_key_bytes.zeroize();

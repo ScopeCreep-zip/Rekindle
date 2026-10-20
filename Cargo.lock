@@ -8044,6 +8044,7 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "dirs 7.0.0",
+ "parking_lot 0.12.5",
  "rand 0.8.5",
  "regex",
  "serde",

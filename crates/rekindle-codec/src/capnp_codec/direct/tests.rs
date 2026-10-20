@@ -48,6 +48,18 @@ fn samples() -> Vec<DirectBody> {
         }),
         DirectBody::SessionResetAccept,
         DirectBody::SessionResetDecline(SessionResetDecline { reason: s("no") }),
+        DirectBody::PreKeyRejected(PreKeyRejected {
+            signed_prekey_id: 7,
+            one_time_prekey_id: Some(9),
+            pq_prekey: PqPrekey::OneTime(11),
+            base_key_hash: [0xC4; 32],
+        }),
+        DirectBody::PreKeyRejected(PreKeyRejected {
+            signed_prekey_id: 7,
+            one_time_prekey_id: None,
+            pq_prekey: PqPrekey::LastResort(3),
+            base_key_hash: [0xC5; 32],
+        }),
         DirectBody::DmText(DmText {
             client_id: id,
             body: s("hello"),

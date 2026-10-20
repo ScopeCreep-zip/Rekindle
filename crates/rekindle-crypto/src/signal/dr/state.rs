@@ -116,6 +116,12 @@ impl SessionState {
         &self.base_key
     }
 
+    /// Whether anything has decrypted under this session: an initiator's
+    /// session has no receiving chain until the peer's first reply.
+    pub(crate) fn has_received(&self) -> bool {
+        !self.receivers.is_empty()
+    }
+
     /// `RatchetEncrypt`.
     pub(crate) fn encrypt(
         &mut self,

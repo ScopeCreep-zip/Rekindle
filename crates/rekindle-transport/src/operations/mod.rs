@@ -17,6 +17,7 @@ pub mod dm;
 pub mod friend;
 pub mod identity;
 pub mod mek;
+pub mod prekeys;
 pub mod relay;
 pub mod typing;
 pub mod voice;

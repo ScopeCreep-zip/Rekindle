@@ -19,7 +19,6 @@ pub(crate) struct IncomingFriendRequest<'a> {
     pub sender_hex: &'a str,
     pub display_name: &'a str,
     pub message: &'a str,
-    pub prekey_bundle: &'a [u8],
     pub profile_dht_key: &'a str,
     pub route_blob: &'a [u8],
     pub mailbox_dht_key: &'a str,

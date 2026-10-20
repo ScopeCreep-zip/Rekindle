@@ -3,6 +3,7 @@ pub mod community;
 pub mod friends;
 pub mod mailbox;
 pub mod pool;
+pub mod prekeys;
 pub mod profile;
 pub mod route_imports;
 

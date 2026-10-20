@@ -3,7 +3,6 @@
 // `rekindle-calls` crates; the adapters below bridge AppState ↔ crate.
 pub mod audit; // Plan D1 — the desktop over host::audit.
 #[cfg(debug_assertions)]
-pub mod auth_runtime; // The PQXDH bundle diagnostic (→ E2.4).
 pub mod call_runtime; // Phase 23.C — mid-call signaling orchestration lifted from commands/calls.rs.
 pub mod calls_adapter; // Phase 14 — CallSignalingDeps impl + calls free-fn facades.
 pub mod channel_adapter; // Phase 19.h-REDO — ChannelMessagingDeps impl for channel messaging ops.

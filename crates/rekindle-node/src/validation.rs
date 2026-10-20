@@ -318,6 +318,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::Status
         | IpcRequest::Shutdown
         | IpcRequest::IdentityShow
+        | IpcRequest::PrekeyStatus
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
         | IpcRequest::FriendInviteCreate

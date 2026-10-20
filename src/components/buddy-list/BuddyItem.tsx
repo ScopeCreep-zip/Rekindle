@@ -20,6 +20,7 @@ interface BuddyItemProps {
   voiceChannel: string | null;
   friendshipState?: string;
   handshakeError: string | null;
+  handshakeRetrying: boolean;
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
   onSelect: (publicKey: string) => void;
@@ -82,6 +83,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
         <Show when={lastSeenText()}>
           <div class="buddy-last-seen">{lastSeenText()}</div>
+        </Show>
+        <Show when={props.handshakeRetrying && !props.handshakeError}>
+          <div class="buddy-handshake-retrying">Retrying with a fresh key</div>
         </Show>
         <Show when={props.handshakeError}>
           <Tooltip text={props.handshakeError ?? ""}>

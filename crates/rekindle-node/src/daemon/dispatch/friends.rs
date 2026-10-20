@@ -23,7 +23,7 @@ fn failed(e: &FriendError) -> IpcResponse {
     IpcResponse::error(code, e.to_string())
 }
 
-fn answer<T: serde::Serialize>(result: Result<T, FriendError>) -> IpcResponse {
+pub(super) fn answer<T: serde::Serialize>(result: Result<T, FriendError>) -> IpcResponse {
     match result {
         Ok(value) => IpcResponse::ok(&value),
         Err(e) => failed(&e),

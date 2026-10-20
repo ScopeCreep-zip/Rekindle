@@ -110,7 +110,7 @@ pub fn mint_head(
     pq_lr_id: u32,
     issued_at_ms: i64,
 ) -> MintedHead {
-    let (spk, pq_lr) = (mint_curve(rng), mint_pq());
+    let (spk, pq_lr) = (mint_curve(rng), mint_pq(rng));
     let record = sign_head(
         identity,
         spk_id,
@@ -138,7 +138,7 @@ pub fn mint_slot(
     opk_id: u32,
     pq_opk_id: u32,
 ) -> MintedSlot {
-    let (opk, pq_opk) = (mint_curve(rng), mint_pq());
+    let (opk, pq_opk) = (mint_curve(rng), mint_pq(rng));
     let record = sign_slot(identity, opk_id, &opk.public, pq_opk_id, &pq_opk.public)
         .expect("minted keys are well-formed");
     MintedSlot {

@@ -101,16 +101,18 @@ fn we_initiate_crossing(host: &dyn FriendHost, peer: &str) -> bool {
     local.owner().as_slice() < theirs.as_slice()
 }
 
-/// Open the session of a crossing request from the peer's bundle, our
-/// accept as its first payload. A failure is told to the user; both sides
-/// are already `Accepted`, so a session reset recovers it.
+/// Open the session of a crossing request from the peer's prekey record
+/// (the profile their request named; plan E2.4), our accept as its first
+/// payload. A failure is told to the user; both sides are already
+/// `Accepted`, so a session reset recovers it.
 async fn open_crossing_session(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) {
-    let sent = match rekindle_crypto::signal::PreKeyBundle::from_wire(req.prekey_bundle) {
-        Ok(bundle) => dm::send_friend_accept(host, req.sender_hex, bundle).await,
-        Err(e) => Err(crate::operations::friend::FriendError::Invalid(format!(
-            "unreadable prekey bundle: {e}"
-        ))),
-    };
+    let sent =
+        match crate::operations::prekeys::pick_bundle(host, req.sender_hex, req.profile_dht_key)
+            .await
+        {
+            Ok(bundle) => dm::send_friend_accept(host, req.sender_hex, bundle).await,
+            Err(e) => Err(e),
+        };
     if let Err(e) = sent {
         tracing::error!(peer = %req.sender_hex, error = %e, "cross-request session not opened");
         let peer_label = state::label(host, req.sender_hex);

@@ -123,6 +123,7 @@ impl IpcRequest {
             Self::Subscribe { .. } => ("Subscribe", Query, Authenticated),
             Self::Unsubscribe { .. } => ("Unsubscribe", Query, Authenticated),
 
+            Self::PrekeyStatus => ("PrekeyStatus", Query, Authenticated),
             Self::MekList { .. } => ("MekList", Query, Authenticated),
             Self::MekRotate { .. } => ("MekRotate", Write, Authenticated),
             Self::MekRequest { .. } => ("MekRequest", Write, Authenticated),

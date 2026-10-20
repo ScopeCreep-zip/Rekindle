@@ -1,6 +1,6 @@
-//! `CryptoEvent` samples, covering both `PqBundleKind` variants.
+//! `CryptoEvent` samples, covering both `PrekeyPublishKind` variants.
 
-use rekindle_types::subscription_events::{CryptoEvent, PqBundleKind, SubscriptionEvent};
+use rekindle_types::subscription_events::{CryptoEvent, PrekeyPublishKind, SubscriptionEvent};
 
 use crate::{channel, community, pk, Sample};
 
@@ -10,10 +10,13 @@ pub const NAMES: &[&str] = &[
     "mekTransferred",
     "adminKeypairGranted",
     "slotKeypairGranted",
-    "pqBundlePublished",
+    "prekeyRecordPublished",
 ];
 
-pub const NESTED: &[&str] = &["PqBundleKind.lastResort", "PqBundleKind.oneTimeBatch"];
+pub const NESTED: &[&str] = &[
+    "PrekeyPublishKind.signedRotated",
+    "PrekeyPublishKind.oneTimeRefilled",
+];
 
 pub fn variant_name(e: &CryptoEvent) -> &'static str {
     match e {
@@ -22,20 +25,20 @@ pub fn variant_name(e: &CryptoEvent) -> &'static str {
         CryptoEvent::MekTransferred { .. } => "mekTransferred",
         CryptoEvent::AdminKeypairGranted { .. } => "adminKeypairGranted",
         CryptoEvent::SlotKeypairGranted { .. } => "slotKeypairGranted",
-        CryptoEvent::PqBundlePublished { .. } => "pqBundlePublished",
+        CryptoEvent::PrekeyRecordPublished { .. } => "prekeyRecordPublished",
     }
 }
 
-fn kind_name(kind: &PqBundleKind) -> &'static str {
+fn kind_name(kind: PrekeyPublishKind) -> &'static str {
     match kind {
-        PqBundleKind::LastResort => "PqBundleKind.lastResort",
-        PqBundleKind::OneTimeBatch => "PqBundleKind.oneTimeBatch",
+        PrekeyPublishKind::SignedRotated => "PrekeyPublishKind.signedRotated",
+        PrekeyPublishKind::OneTimeRefilled => "PrekeyPublishKind.oneTimeRefilled",
     }
 }
 
 pub fn nested_names(e: &CryptoEvent) -> Vec<&'static str> {
     match e {
-        CryptoEvent::PqBundlePublished { kind, .. } => vec![kind_name(kind)],
+        CryptoEvent::PrekeyRecordPublished { kind, .. } => vec![kind_name(*kind)],
         CryptoEvent::MekRotated { .. }
         | CryptoEvent::MekRequested { .. }
         | CryptoEvent::MekTransferred { .. }
@@ -92,17 +95,17 @@ pub fn samples() -> Vec<Sample> {
             },
         ),
         ev(
-            "pqBundlePublished.lastResort",
-            CryptoEvent::PqBundlePublished {
-                subkey: 5,
-                kind: PqBundleKind::LastResort,
+            "prekeyRecordPublished.signedRotated",
+            CryptoEvent::PrekeyRecordPublished {
+                kind: PrekeyPublishKind::SignedRotated,
+                subkey: 0,
             },
         ),
         ev(
-            "pqBundlePublished.oneTimeBatch",
-            CryptoEvent::PqBundlePublished {
-                subkey: 5,
-                kind: PqBundleKind::OneTimeBatch,
+            "prekeyRecordPublished.oneTimeRefilled",
+            CryptoEvent::PrekeyRecordPublished {
+                kind: PrekeyPublishKind::OneTimeRefilled,
+                subkey: 37,
             },
         ),
     ]

@@ -43,7 +43,6 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
                 sender_hex: sender,
                 display_name: &r.display_name,
                 message: &r.message,
-                prekey_bundle: &r.prekey_bundle,
                 profile_dht_key: &r.profile_dht_key,
                 route_blob: &r.route_blob,
                 mailbox_dht_key: &r.mailbox_dht_key,
@@ -70,9 +69,12 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
         DirectBody::Unfriended => inbound::on_unfriended(host, sender).await,
         DirectBody::UnfriendedAck => inbound::on_unfriended_ack(host, sender).await,
         DirectBody::SessionResetRequest(r) => {
-            session_reset::on_request(host, sender, &r.prekey_bundle).await;
+            session_reset::on_request(host, sender, &r.reason).await;
         }
         DirectBody::SessionResetAccept => session_reset::on_accept(host, sender),
+        DirectBody::PreKeyRejected(r) => {
+            crate::operations::prekeys::on_rejected(host, sender, r).await;
+        }
         DirectBody::SessionResetDecline(d) => session_reset::on_decline(host, sender, &d.reason),
         DirectBody::StatusResponse(r) => relay::on_status_response(host, r),
         DirectBody::RelayOfferAck(_) => {

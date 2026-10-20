@@ -33,11 +33,14 @@ pub fn mint_curve(rng: &dyn RandomSource) -> MintedPrekey {
     }
 }
 
-/// An ML-KEM-768 prekey (last-resort or one-time). Its randomness stays
-/// `OsRng` inside `rekindle-secrets` (plan E2.2, C9.2's scope).
+/// An ML-KEM-768 prekey (last-resort or one-time), its 64-byte key
+/// generation seed drawn from `rng` (plan E2.4: a seeded simulation mints
+/// the same record).
 #[must_use]
-pub fn mint_pq() -> MintedPrekey {
-    let (secret, public) = MlKemSecret::generate();
+pub fn mint_pq(rng: &dyn RandomSource) -> MintedPrekey {
+    let mut seed = Zeroizing::new([0u8; rekindle_secrets::pq_keys::ML_KEM_KEYGEN_SEED_BYTES]);
+    rng.fill(&mut *seed);
+    let (secret, public) = MlKemSecret::from_seed(&seed);
     MintedPrekey {
         secret: Zeroizing::new(secret.as_secret_bytes().to_vec()),
         public: public.as_bytes().to_vec(),
@@ -124,7 +127,10 @@ mod tests {
 
     #[test]
     fn short_secrets_are_refused() {
-        assert!(ResponderSecrets::from_bytes(&[1; 31], None, &mint_pq().secret).is_err());
+        assert!(
+            ResponderSecrets::from_bytes(&[1; 31], None, &mint_pq(&TestRandom::new(3)).secret)
+                .is_err()
+        );
         assert!(ResponderSecrets::from_bytes(&[1; 32], None, &[0; 10]).is_err());
     }
 }

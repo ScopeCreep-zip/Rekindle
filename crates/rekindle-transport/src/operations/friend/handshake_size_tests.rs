@@ -3,14 +3,17 @@
 //!
 //! FriendAccept was ~37 KB and FriendRequest ~33 KB against Veilid's
 //! 32,768-byte `app_message` limit while the prekey bundle travelled as
-//! JSON inside the JSON payload, so every invite failed. These seal each
-//! handshake frame at its worst case, from a real handout bundle minted by
-//! `rekindle_db::prekeys` over a temporary database, and wire it as every
-//! 1:1 send does (`operations::dm::wire`, the `'D'` tag included).
+//! JSON inside the JSON payload, so every invite failed. No frame carries a
+//! bundle since E2.4 (the initiator reads the prekey record). These seal
+//! each handshake frame at its worst case, the PreKeyInit from a bundle
+//! assembled from a real record minted by `rekindle_db::prekeys` over a
+//! temporary database (a one-time slot included), and wire it as every 1:1
+//! send does (`operations::dm::wire`, the `'D'` tag included).
 
 use rekindle_codec::capnp_codec::direct::{
-    DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, FriendRequest,
-    RegisterPushRelay, SessionResetDecline, SessionResetRequest, UnregisterPushRelay, WakeNotify,
+    DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, FriendRequest, PqPrekey,
+    PreKeyRejected, RegisterPushRelay, SessionResetDecline, SessionResetRequest,
+    UnregisterPushRelay, WakeNotify,
 };
 use rekindle_db::test_support::Party;
 use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
@@ -21,13 +24,6 @@ use crate::operations::dm::wire;
 /// 3.5× the largest 1-hop route blob measured (1,178 B), room for 3-hop
 /// inbound routes.
 const ROUTE_BLOB_LEN: usize = 4_096;
-
-async fn handout_wire(party: &Party) -> Vec<u8> {
-    rekindle_db::prekeys::handout_bundle(&party.db, &party.local)
-        .await
-        .unwrap()
-        .to_wire()
-}
 
 /// A display name and message at their bounds, every character 4 bytes.
 fn widest(chars: usize) -> String {
@@ -54,11 +50,12 @@ fn sealed_len(from: &Party, to: &Party, body: &DirectBody) -> usize {
 }
 
 /// The wire length of the PreKeyInit from `from` that opens a session with
-/// `to` from its handout bundle, carrying `first`.
+/// `to` from a one-time slot of its record, carrying `first`.
 async fn init_len(from: &Party, to: &Party, first: &DirectBody) -> usize {
-    let bundle = rekindle_db::prekeys::handout_bundle(&to.db, &to.local)
-        .await
-        .unwrap();
+    let bundle = to
+        .bundle(Some(rekindle_types::dht_layout::prekeys::FIRST_SLOT))
+        .await;
+    assert!(bundle.one_time_prekey.is_some() && bundle.pqpk_ot.is_some());
     let content = DmContent {
         content_hint: rekindle_codec::capnp_codec::direct::ContentHint::Default,
         sent_at_ms: u64::MAX,
@@ -96,7 +93,6 @@ async fn friend_request_fits() {
     let request = DirectBody::FriendRequest(FriendRequest {
         display_name: widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
         message: widest(rekindle_types::key_format::MAX_MESSAGE_LEN),
-        prekey_bundle: handout_wire(&alice).await,
         profile_dht_key: dht_key(),
         route_blob: vec![0xAB; ROUTE_BLOB_LEN],
         mailbox_dht_key: dht_key(),
@@ -126,7 +122,7 @@ async fn every_presession_frame_and_the_reset_accept_fit() {
     // The push-relay kinds are sealed too (§6): a token and 64 record keys.
     let (alice, bob) = (Party::new(1), Party::new(2));
     let request = DirectBody::SessionResetRequest(SessionResetRequest {
-        prekey_bundle: handout_wire(&alice).await,
+        reason: widest(rekindle_types::key_format::MAX_NOTE_LEN),
     });
     let decline = DirectBody::SessionResetDecline(SessionResetDecline {
         reason: widest(rekindle_types::key_format::MAX_NOTE_LEN),
@@ -140,6 +136,12 @@ async fn every_presession_frame_and_the_reset_accept_fit() {
         device_push_token: "a".repeat(4_096),
     });
     let wake = DirectBody::WakeNotify(WakeNotify { ts: u64::MAX });
+    let rejected = DirectBody::PreKeyRejected(PreKeyRejected {
+        signed_prekey_id: u32::MAX,
+        one_time_prekey_id: Some(u32::MAX),
+        pq_prekey: PqPrekey::OneTime(u32::MAX),
+        base_key_hash: [0xFF; 32],
+    });
     for body in [
         &request,
         &decline,
@@ -147,6 +149,7 @@ async fn every_presession_frame_and_the_reset_accept_fit() {
         &register,
         &unregister,
         &wake,
+        &rejected,
     ] {
         let len = sealed_len(&alice, &bob, body);
         assert!(len <= MAX_APP_MESSAGE_LEN, "{:?} {len} B", body.type_id());

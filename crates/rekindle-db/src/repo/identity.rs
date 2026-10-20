@@ -16,6 +16,8 @@ pub struct IdentityDhtColumns {
     pub mailbox: Option<String>,
     /// This device's prekey record (plan E2.4).
     pub prekeys: Option<String>,
+    /// This device's id (hex), which the prekey device list names.
+    pub device_id: Option<String>,
 }
 
 /// A DHT record the identity owns with a keypair of its own.
@@ -67,7 +69,7 @@ pub fn login_row(
 ) -> rusqlite::Result<Option<(String, IdentityDhtColumns)>> {
     conn.query_row(
         "SELECT display_name, dht_record_key, friend_list_dht_key, account_dht_key, \
-         mailbox_dht_key, prekey_record_key FROM identity WHERE public_key = ?1",
+         mailbox_dht_key, prekey_record_key, device_id FROM identity WHERE public_key = ?1",
         params![public_key],
         |row| {
             Ok((
@@ -78,11 +80,35 @@ pub fn login_row(
                     account: row.get(3)?,
                     mailbox: row.get(4)?,
                     prekeys: row.get(5)?,
+                    device_id: row.get::<_, Option<String>>(6)?.filter(|id| !id.is_empty()),
                 },
             ))
         },
     )
     .optional()
+}
+
+/// This device's id, set to `minted` (16 random bytes, hex) when the row
+/// has none: the prekey device list and the personal sync record both name
+/// it (plan E2.4).
+///
+/// # Errors
+/// The write failed.
+pub fn ensure_device_id(
+    conn: &Connection,
+    public_key: &str,
+    minted: &str,
+) -> rusqlite::Result<String> {
+    conn.execute(
+        "UPDATE identity SET device_id = ?2 \
+         WHERE public_key = ?1 AND (device_id IS NULL OR device_id = '')",
+        params![public_key, minted],
+    )?;
+    conn.query_row(
+        "SELECT device_id FROM identity WHERE public_key = ?1",
+        params![public_key],
+        |row| row.get(0),
+    )
 }
 
 /// Set the display name.
@@ -355,6 +381,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(spk, head);
+    }
+
+    #[test]
+    fn the_device_id_is_minted_once() {
+        let conn = fixture::conn();
+        assert_eq!(ensure_device_id(&conn, OWNER, "aa").unwrap(), "aa");
+        assert_eq!(ensure_device_id(&conn, OWNER, "bb").unwrap(), "aa");
+        let (_, cols) = login_row(&conn, OWNER).unwrap().unwrap();
+        assert_eq!(cols.device_id.as_deref(), Some("aa"));
     }
 
     #[test]

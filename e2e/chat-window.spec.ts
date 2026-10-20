@@ -32,7 +32,7 @@ const HANDLER = `
       return [{
         publicKey: "${BOB}", displayName: "Bob", nickname: null, status: "online",
         statusMessage: null, gameInfo: null, group: null, unreadCount: 0,
-        lastSeenAt: null, friendshipState: "accepted", handshakeError: null,
+        lastSeenAt: null, friendshipState: "accepted", handshakeError: null, handshakeRetrying: false,
       }];
     case "list_dms":
       return [{

@@ -23,6 +23,8 @@ pub struct Friend {
     pub friendship_state: FriendshipState,
     /// Why the secure session could not be set up, while it is failed.
     pub handshake_error: Option<String>,
+    /// Our first contact is being resent from a fresh key (plan E2.4).
+    pub handshake_retrying: bool,
 }
 
 impl Friend {
@@ -46,6 +48,7 @@ impl Friend {
             last_seen_at: friend.last_seen_at,
             friendship_state: friend.friendship_state,
             handshake_error: friend.handshake_error.clone(),
+            handshake_retrying: friend.handshake_retrying,
         }
     }
 }

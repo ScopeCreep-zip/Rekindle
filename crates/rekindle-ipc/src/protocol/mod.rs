@@ -289,6 +289,9 @@ pub enum IpcRequest {
     Unsubscribe { filters: Vec<SubscriptionFilter> },
 
     // ── Keys / MEK ───────────────────────────────────────────────
+    /// This device's prekey record and its upkeep (plan E2.4):
+    /// `dto::identity::PrekeyStatus`.
+    PrekeyStatus,
     /// List cached MEKs for a community.
     MekList { community: String },
     /// Rotate MEK for a channel.

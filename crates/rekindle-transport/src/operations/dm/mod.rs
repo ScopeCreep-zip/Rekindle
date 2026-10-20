@@ -12,9 +12,7 @@ mod typing;
 pub(crate) use chat::NewDmFields;
 pub use chat::{client_id_text, history, inbox, mark_read, parse_client_id, send_dm};
 pub use frame::wire;
-pub use outgoing::{
-    handout_bundle_bytes, send_friend_accept, send_friend_reject, send_friend_request,
-};
+pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};
 pub use send::{
     build_and_queue, hint_for, resend, send_frame, send_to_peer, send_to_peer_call, Queued, Resend,
 };

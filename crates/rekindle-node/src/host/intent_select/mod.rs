@@ -200,6 +200,7 @@ pub(crate) async fn select(
         | IpcRequest::Status
         | IpcRequest::IdentityList
         | IpcRequest::IdentityShow
+        | IpcRequest::PrekeyStatus
         | IpcRequest::PresenceGet
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::AuditVerify

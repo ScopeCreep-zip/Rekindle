@@ -97,9 +97,10 @@ pub(crate) async fn run(
             session: Arc::clone(&ctx.session),
             shell: ctx.shell.clone(),
             rng: Arc::clone(&ctx.rng),
-            clock: Arc::clone(&ctx.clock),
             presence: ctx.own_presence.clone(),
             profile_lease: Arc::clone(&ctx.own_profile_lease),
+            prekey_lease: Arc::clone(&ctx.own_prekey_lease),
+            friends: super::adapters::friends::HostFriends::of(ctx),
             public_key: installed.public_key.clone(),
             display_name: installed.display_name.clone(),
             secret: installed.secret.clone(),
@@ -131,14 +132,16 @@ pub(crate) async fn run(
         }
     }
     // 3c. Friends (plan E2.1): what was decrypted but never applied is
-    // applied first (D24, plan E2.3), then the maintenance task on both
-    // hosts; on the daemon, the friends' presence watches too (the GUI's
+    // applied first (D24, plan E2.3), then the friend and prekey (plan
+    // E2.4) maintenance tasks on both hosts; on the daemon, the friends' presence watches too (the GUI's
     // friend sync holds them until E2.5).
     rekindle_transport::operations::direct::replay_unprocessed(
         &super::adapters::friends::HostFriends::of(ctx),
     )
     .await;
-    if let Err(e) = super::adapters::friends::start_maintenance(ctx, &scope) {
+    if let Err(e) = super::adapters::friends::start_maintenance(ctx, &scope)
+        .and_then(|()| super::adapters::friends::start_prekey_maintenance(ctx, &scope))
+    {
         return fail(
             ctx,
             IpcResponse::error(500, format!("unlock interrupted: {e}")),

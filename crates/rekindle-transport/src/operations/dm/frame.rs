@@ -39,6 +39,7 @@ pub fn ad_extra(type_id: DmTypeId) -> [u8; 2] {
 pub fn sealed_info(type_id: DmTypeId) -> Option<&'static str> {
     Some(match type_id {
         DmTypeId::FriendRequest => domains::DM_FRIEND_REQUEST_HPKE,
+        DmTypeId::PreKeyRejected => domains::DM_PREKEY_REJECTED_HPKE,
         DmTypeId::FriendReject => domains::DM_FRIEND_REJECT_HPKE,
         DmTypeId::SessionResetRequest => domains::DM_SESSION_RESET_REQUEST_HPKE,
         DmTypeId::SessionResetDecline => domains::DM_SESSION_RESET_DECLINE_HPKE,
@@ -128,8 +129,8 @@ fn content(host: &dyn FriendHost, body: &DirectBody, hint: ContentHint) -> Vec<u
 /// `body` as a ratchet message under our session with `to`, recorded
 /// before it is returned. With no session at all with an accepted friend
 /// (they rotated their identity, or ours moved), the message opens one from
-/// the bundle their profile publishes (plan E2.3: "the next send to the new
-/// identity initiates from its published bundle"). This never re-initiates
+/// a slot of their prekey record (plan E2.3: "the next send to the new
+/// identity initiates from its published bundle"; E2.4: from its record). This never re-initiates
 /// a session that exists: a broken one is ruling Q1's prompt (E2.5).
 ///
 /// # Errors
@@ -169,31 +170,20 @@ pub async fn ratchet_frame(
     })
 }
 
-/// The bundle an accepted friend's profile publishes (subkey 5), read
-/// fresh: the one a session with their current identity opens from.
+/// The bundle a session with an accepted friend's current identity opens
+/// from: a slot of the prekey record their profile names (plan E2.4).
 ///
 /// # Errors
-/// They have no known profile, it cannot be read, or it holds no bundle.
+/// They have no known profile, or no bundle can be picked from it.
 async fn published_bundle(host: &dyn FriendHost, to: &str) -> Result<PreKeyBundle, FriendError> {
-    let no_session = |why: &str| {
-        FriendError::Conflict(format!(
-            "No secure session with {to}, and none can be opened: {why}"
-        ))
-    };
     let profile = crate::operations::friend::state::friend(host, to)
         .and_then(|f| f.dht_record_key)
-        .ok_or_else(|| no_session("their profile is not known"))?;
-    let records = host.node()?.require_records().map_err(FriendError::from)?;
-    let bytes = rekindle_protocol::dht::profile::read_profile_subkey(
-        records.as_ref(),
-        &profile,
-        rekindle_types::dht_layout::profile::PREKEY_BUNDLE,
-        true,
-    )
-    .await
-    .map_err(|e| no_session(&format!("their profile could not be read: {e}")))?
-    .ok_or_else(|| no_session("their profile publishes no bundle"))?;
-    PreKeyBundle::from_wire(&bytes).map_err(|e| no_session(&format!("their bundle: {e}")))
+        .ok_or_else(|| {
+            FriendError::Conflict(format!(
+                "No secure session with {to}, and none can be opened: their profile is not known"
+            ))
+        })?;
+    crate::operations::prekeys::pick_bundle(host, to, &profile).await
 }
 
 /// Open a session with `to` from its `bundle`, carrying `first` (an accept,
@@ -226,6 +216,7 @@ pub async fn initiate_frame(
     )
     .await
     .map_err(|e| ratchet_error(to, e))?;
+    crate::operations::prekeys::began_first_contact(host, to, first_type_id);
     Ok(DmFrame {
         type_id: DmTypeId::PreKeyInit,
         sender: local.owner(),

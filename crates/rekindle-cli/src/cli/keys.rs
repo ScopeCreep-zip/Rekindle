@@ -57,6 +57,7 @@ pub enum MekCmd {
 /// Prekey subcommands.
 #[derive(Subcommand)]
 pub enum PrekeyCmd {
-    /// Show prekey availability count. Prekey maintenance is automatic.
+    /// Show this device's prekey record: its signed prekeys' ids and ages
+    /// and its fresh one-time slots. Prekey maintenance is automatic.
     Status,
 }

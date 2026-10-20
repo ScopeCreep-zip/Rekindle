@@ -42,6 +42,14 @@ async fn holds_message(node: &SimNode, peer: &str, body: &str) -> bool {
     history.iter().any(|m| m.body == body && !m.is_own)
 }
 
+/// The unlocked identity's mailbox key, empty before the unlock made one.
+async fn mailbox(node: &SimNode) -> String {
+    node.ok(IpcRequest::IdentityShow).await["mailboxDhtKey"]
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+}
+
 async fn send(node: &SimNode, peer: &str, body: &str) {
     node.ok(IpcRequest::DmSend {
         peer_key: peer.to_string(),
@@ -82,9 +90,7 @@ async fn a_rotated_friend_is_messaged_both_ways() {
     send(&nodes[1], &ann, "bea to ann").await;
     assert!(eventually(&sim, LIMIT, || holds_message(&nodes[0], &bea, "bea to ann")).await);
 
-    let mailbox_before = nodes[0].ok(IpcRequest::IdentityShow).await["mailboxDhtKey"]
-        .as_str()
-        .map(str::to_string);
+    let mailbox_before = Some(mailbox(&nodes[0]).await);
     // Ann rotates: Bea hears it under the old key and moves her; Ann's
     // daemon is left locked and unlocks under the new key.
     let rotated = nodes[0]
@@ -107,12 +113,14 @@ async fn a_rotated_friend_is_messaged_both_ways() {
     assert!(!is_accepted_friend(&nodes[1], &ann).await);
     // The conversation moved with her, and her old mailbox did not.
     assert!(holds_message(&nodes[1], &new_ann, "ann to bea").await);
-    let shown = nodes[0].ok(IpcRequest::IdentityShow).await;
-    let mailbox = shown["mailboxDhtKey"]
-        .as_str()
-        .expect("a mailbox")
-        .to_string();
-    assert!(!mailbox.is_empty());
+    // The unlock's own-records stage creates the new mailbox.
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            !mailbox(&nodes[0]).await.is_empty()
+        })
+        .await
+    );
+    let mailbox = mailbox(&nodes[0]).await;
     assert_ne!(Some(mailbox), mailbox_before);
 
     send(&nodes[1], &new_ann, "bea to new ann").await;

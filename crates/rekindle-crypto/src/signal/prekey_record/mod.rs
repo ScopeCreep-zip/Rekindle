@@ -84,6 +84,18 @@ pub fn rejection_delay_ms(rng: &dyn RandomSource) -> u64 {
     2_000 + rng.below(8_001)
 }
 
+/// The hash of an initiator's base key that a `PreKeyRejected` names
+/// (B5): SHA-256 over the domain label and the key, so the rejection
+/// matches one pending init without carrying the key itself.
+#[must_use]
+pub fn base_key_hash(base_key: &[u8; 32]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(rekindle_types::domains::PREKEY_REJECTED_BASE_KEY.as_bytes());
+    hasher.update(base_key);
+    hasher.finalize().into()
+}
+
 /// Our current head, as stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LocalHead {

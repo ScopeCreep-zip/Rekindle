@@ -269,6 +269,38 @@ pub async fn accept_init(
     .await
 }
 
+/// B6: the peer refused the prekeys our init with `base_key_hash` named.
+/// Discard that session, but only while it is our unanswered init (nothing
+/// decrypted under it): then the archived session it replaced is active
+/// again, and `true`. Anything else changes nothing.
+///
+/// # Errors
+/// The database refused.
+pub async fn discard_pending_init(
+    db: &Db,
+    owner: &[u8; 32],
+    peer: &PeerAddress,
+    base_key_hash: [u8; 32],
+    now_ms: i64,
+) -> Result<bool, RatchetError> {
+    let (owner, peer) = (*owner, peer.clone());
+    in_transaction(db, move |conn| {
+        let record = load(conn, &owner, &peer)?;
+        let Some(base_key) = record.pending_init().copied() else {
+            return Ok(false);
+        };
+        if rekindle_crypto::signal::prekey_record::base_key_hash(&base_key) != base_key_hash {
+            return Ok(false);
+        }
+        let Some(next) = record.without_pending(&base_key) else {
+            return Ok(false);
+        };
+        store(conn, &owner, &peer, &next, now_ms)?;
+        Ok(true)
+    })
+    .await
+}
+
 /// End every session with `peer` (an unfriend, a block, a removal): the
 /// next message to them initiates from their prekey record. Unprocessed messages
 /// from them stay for their apply, which the friend gate then judges.

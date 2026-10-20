@@ -1,10 +1,10 @@
 //! Friendship and session bodies.
 
-use crate::capnp_codec::direct::{data, fixed, opt_text, text};
+use crate::capnp_codec::direct::{data, fixed, opt_text, text, PqPrekey};
 use crate::capnp_codec::CodecError;
 use crate::direct_capnp::{
-    friend_accept, friend_request, identity_rotated, profile_key_rotated, session_reset_decline,
-    session_reset_request,
+    friend_accept, friend_request, identity_rotated, pre_key_rejected, profile_key_rotated,
+    session_reset_decline, session_reset_request,
 };
 
 /// 0x0002 FriendRequest (sealed, by `app_call`). It carries no bundle:
@@ -86,6 +86,57 @@ impl SessionResetRequest {
     pub(super) fn read(r: session_reset_request::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             reason: text(r.get_reason())?,
+        })
+    }
+}
+
+/// 0x0005 PreKeyRejected (sealed): the prekeys a PreKeyInit named, which
+/// the responder no longer holds, and the hash of its base key.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PreKeyRejected {
+    pub signed_prekey_id: u32,
+    pub one_time_prekey_id: Option<u32>,
+    pub pq_prekey: PqPrekey,
+    pub base_key_hash: [u8; 32],
+}
+
+impl PreKeyRejected {
+    pub(super) fn write(&self, mut b: pre_key_rejected::Builder<'_>) {
+        b.set_signed_prekey_id(self.signed_prekey_id);
+        match self.one_time_prekey_id {
+            Some(id) => b.reborrow().init_one_time_prekey().set_id(id),
+            None => b.reborrow().init_one_time_prekey().set_none(()),
+        }
+        match self.pq_prekey {
+            PqPrekey::OneTime(id) => b.reborrow().init_pq_prekey().set_one_time(id),
+            PqPrekey::LastResort(id) => b.reborrow().init_pq_prekey().set_last_resort(id),
+        }
+        b.set_base_key_hash(&self.base_key_hash);
+    }
+
+    pub(super) fn read(r: pre_key_rejected::Reader<'_>) -> Result<Self, CodecError> {
+        use pre_key_rejected::{one_time_prekey, pq_prekey};
+        let one_time_prekey_id = match r
+            .get_one_time_prekey()
+            .which()
+            .map_err(|e| CodecError::Deserialization(format!("one-time prekey: {e}")))?
+        {
+            one_time_prekey::None(()) => None,
+            one_time_prekey::Id(id) => Some(id),
+        };
+        let pq_prekey = match r
+            .get_pq_prekey()
+            .which()
+            .map_err(|e| CodecError::Deserialization(format!("pq prekey: {e}")))?
+        {
+            pq_prekey::OneTime(id) => PqPrekey::OneTime(id),
+            pq_prekey::LastResort(id) => PqPrekey::LastResort(id),
+        };
+        Ok(Self {
+            signed_prekey_id: r.get_signed_prekey_id(),
+            one_time_prekey_id,
+            pq_prekey,
+            base_key_hash: fixed(r.get_base_key_hash(), "base key hash")?,
         })
     }
 }

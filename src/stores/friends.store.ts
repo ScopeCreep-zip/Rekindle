@@ -20,6 +20,8 @@ export interface Friend {
   friendshipState: FriendshipState;
   /** Why the secure session could not be set up, while it is failed (C7.25). */
   handshakeError: string | null;
+  /** Our first contact is being resent from a fresh key (plan E2.4, B6). */
+  handshakeRetrying: boolean;
 }
 
 export interface PendingRequest {

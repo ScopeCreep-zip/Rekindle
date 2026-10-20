@@ -17,6 +17,8 @@ pub const NAMES: &[&str] = &[
     "groupChanged",
     "keyChanged",
     "handshakeFailed",
+    "handshakeRetrying",
+    "identityPinMismatch",
 ];
 
 pub fn variant_name(e: &FriendEvent) -> &'static str {
@@ -33,6 +35,8 @@ pub fn variant_name(e: &FriendEvent) -> &'static str {
         FriendEvent::GroupChanged { .. } => "groupChanged",
         FriendEvent::KeyChanged { .. } => "keyChanged",
         FriendEvent::HandshakeFailed { .. } => "handshakeFailed",
+        FriendEvent::HandshakeRetrying { .. } => "handshakeRetrying",
+        FriendEvent::IdentityPinMismatch { .. } => "identityPinMismatch",
     }
 }
 
@@ -108,6 +112,17 @@ pub fn samples() -> Vec<Sample> {
             FriendEvent::HandshakeFailed {
                 peer_key: pk('b'),
                 reason: text("identity key mismatch"),
+            },
+        ),
+        ev(
+            "handshakeRetrying",
+            FriendEvent::HandshakeRetrying { peer_key: pk('b') },
+        ),
+        ev(
+            "identityPinMismatch",
+            FriendEvent::IdentityPinMismatch {
+                peer_key: pk('b'),
+                display_name: text("Bob"),
             },
         ),
     ]

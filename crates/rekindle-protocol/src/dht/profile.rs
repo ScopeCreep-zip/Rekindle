@@ -11,7 +11,7 @@ use crate::error::ProtocolError;
 // aliases so existing call sites keep reading naturally.
 pub use rekindle_types::dht_layout::profile::{
     AVATAR as SUBKEY_AVATAR, DISPLAY_NAME as SUBKEY_DISPLAY_NAME, GAME_INFO as SUBKEY_GAME_INFO,
-    METADATA as SUBKEY_METADATA, PREKEY_BUNDLE as SUBKEY_PREKEY_BUNDLE,
+    METADATA as SUBKEY_METADATA, PREKEY_RECORDS as SUBKEY_PREKEY_RECORDS,
     RELAY_POOL as SUBKEY_RELAY_POOL, ROUTE_BLOB as SUBKEY_ROUTE_BLOB, STATUS as SUBKEY_STATUS,
     STATUS_MESSAGE as SUBKEY_STATUS_MESSAGE, STATUS_ONLINE, SUBKEY_COUNT as PROFILE_SUBKEY_COUNT,
 };
@@ -21,7 +21,9 @@ pub use rekindle_types::dht_layout::profile::{
 pub struct ProfileFields<'a> {
     pub display_name: &'a str,
     pub status_message: &'a str,
-    pub prekey_bundle: &'a [u8],
+    /// Our device list (plan E2.4): the encoded `PrekeyRecordList`
+    /// naming each device's prekey record.
+    pub prekey_records: &'a [u8],
     pub route_blob: &'a [u8],
 }
 
@@ -139,7 +141,7 @@ pub fn status_payload(status: u8) -> Vec<u8> {
     payload
 }
 
-/// Write the login fields (display name, status message, prekey bundle,
+/// Write the login fields (display name, status message, prekey device list,
 /// route blob), all durable. Not the STATUS: the session's one STATUS
 /// publisher writes it once the profile is open, so login never writes a
 /// status over one the user already picked (plan C7.8c). Returns the first
@@ -156,20 +158,12 @@ async fn publish_fields(
             SUBKEY_STATUS_MESSAGE,
             fields.status_message.as_bytes().to_vec(),
         ),
-        (SUBKEY_PREKEY_BUNDLE, fields.prekey_bundle.to_vec()),
+        (SUBKEY_PREKEY_RECORDS, fields.prekey_records.to_vec()),
         (SUBKEY_ROUTE_BLOB, fields.route_blob.to_vec()),
     ];
     let mut first_miss = SetOutcome::Landed;
     for (subkey, value) in writes {
         let outcome = set_own_profile_subkey(pool, key, subkey, value).await?;
-        if subkey == SUBKEY_PREKEY_BUNDLE {
-            tracing::info!(
-                subkey,
-                bytes = fields.prekey_bundle.len(),
-                ?outcome,
-                "pqxdh_bundle_published kind=LastResort+OneTimeBatch ({context})",
-            );
-        }
         if outcome.missed() {
             if matches!(outcome, SetOutcome::Superseded(_)) {
                 // A newer write of ours (another device of this identity) won.
@@ -194,11 +188,7 @@ async fn publish_fields(
     Ok(first_miss)
 }
 
-// The five pull accessors that lived here — `read_subkey`,
-// `read_display_name`, `read_status`, `read_route_blob`,
-// `read_prekey_bundle` — are gone. Nothing pulled a peer's profile
-// subkey on demand: display name, status and route blob arrive through
-// the presence watch, and a peer's prekey bundle arrives in the friend
-// request or invite payload that needs it. Push won; the pull half was
-// never wired to anything. (`read_profile_subkey` above serves the daemon's
-// friend-request flow and its friend-list queries.)
+// A peer's profile is pushed to us through the presence watch (display
+// name, status, route). The one pull is the first contact's read of the
+// prekey device list (`super::prekeys::read_device_list`, plan E2.4), and
+// `read_profile_subkey` above serves the friend-list queries.

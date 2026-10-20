@@ -1,9 +1,19 @@
-//! Key management dispatch handlers: MekList, MekRotate, MekRequest.
+//! Key management dispatch handlers: PrekeyStatus, MekList, MekRotate,
+//! MekRequest.
 
 use crate::daemon::DaemonState;
 use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
+
+/// This device's prekey record and its upkeep (plan E2.4).
+pub(crate) async fn handle_prekey_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let host = crate::host::adapters::friends::HostFriends::of(ctx);
+    super::friends::answer(rekindle_transport::operations::prekeys::status(&host).await)
+}
 
 pub(crate) fn handle_mek_list(
     ctx: &DaemonContext,

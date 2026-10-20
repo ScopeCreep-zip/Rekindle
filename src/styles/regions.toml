@@ -101,6 +101,7 @@
 '.buddy-status-message' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-last-seen' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-handshake-error' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.buddy-handshake-retrying' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.buddy-group-pending .buddy-name' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-group-pending .buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
 '.status-dot-online' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-primary", "--color-xfire-bg-panel", "--color-xfire-accent 30% over --color-xfire-bg-dark"], graphic = true }

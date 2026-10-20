@@ -17,6 +17,7 @@ pub mod gate;
 pub mod identity;
 mod idle;
 mod intent_select;
+pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;
 pub(crate) mod own_profile;
 mod own_records;

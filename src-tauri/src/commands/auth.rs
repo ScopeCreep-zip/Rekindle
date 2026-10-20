@@ -89,19 +89,17 @@ pub async fn delete_identity(
     .await
 }
 
-/// Phase 3b debug diagnostic — inspect the local PQXDH PreKeyBundle.
-///
-/// Returns the byte lengths of each bundle component so the dev console
-/// can confirm ML-KEM-768 keys (1184 B public, 1088 B ciphertext) and
-/// classical X3DH keys (32 B X25519, 64 B Ed25519 sig) are wired through
-/// the full publish path. Debug-only — gated on `cfg(debug_assertions)`
-/// so release builds never surface key sizes.
+/// This device's prekey record and its upkeep (`IpcRequest::PrekeyStatus`,
+/// plan E2.4): the record key, the signed prekey's and last-resort key's
+/// ids and ages, the fresh and consumed slots, and the published head's
+/// component sizes, as the CLI's `keys prekeys status` shows them. Debug
+/// builds only, so release builds never surface key sizes.
 #[cfg(debug_assertions)]
 #[tauri::command]
 pub async fn pqxdh_bundle_info(
     state: State<'_, SharedState>,
-) -> Result<crate::services::auth_runtime::PqxdhBundleInfo, String> {
-    crate::services::auth_runtime::pqxdh_bundle_info_inner(state.inner()).await
+) -> Result<Done<rekindle_types::dto::identity::PrekeyStatus>, CommandError> {
+    host_call::call(&state, IpcRequest::PrekeyStatus).await
 }
 
 /// Verify the identity's tamper-evident audit log end to end

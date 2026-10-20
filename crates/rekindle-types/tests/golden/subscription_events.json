@@ -237,19 +237,19 @@
       }
     }
   },
-  "crypto.pqBundlePublished.lastResort": {
+  "crypto.prekeyRecordPublished.oneTimeRefilled": {
     "crypto": {
-      "pqBundlePublished": {
-        "kind": "lastResort",
-        "subkey": 5
+      "prekeyRecordPublished": {
+        "kind": "oneTimeRefilled",
+        "subkey": 37
       }
     }
   },
-  "crypto.pqBundlePublished.oneTimeBatch": {
+  "crypto.prekeyRecordPublished.signedRotated": {
     "crypto": {
-      "pqBundlePublished": {
-        "kind": "oneTimeBatch",
-        "subkey": 5
+      "prekeyRecordPublished": {
+        "kind": "signedRotated",
+        "subkey": 0
       }
     }
   },
@@ -292,6 +292,21 @@
       "handshakeFailed": {
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "reason": "identity key mismatch"
+      }
+    }
+  },
+  "friend.handshakeRetrying": {
+    "friend": {
+      "handshakeRetrying": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "friend.identityPinMismatch": {
+    "friend": {
+      "identityPinMismatch": {
+        "displayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }
   },

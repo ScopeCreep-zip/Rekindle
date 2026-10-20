@@ -179,6 +179,7 @@ impl IpcRequest {
             | Self::IntentCancel { .. }
             // An undo's inverse passes this check on its own at the gate.
             | Self::Undo { .. }
+            | Self::PrekeyStatus
             | Self::MekList { .. }
             | Self::MekRotate { .. }
             | Self::MekRequest { .. }

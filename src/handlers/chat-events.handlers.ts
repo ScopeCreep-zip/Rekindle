@@ -112,6 +112,7 @@ function applyFriendEvent(friend: FriendEvent): void {
           friendshipState: "accepted" as const,
           displayName: displayName || existing.displayName,
           handshakeError: null,
+          handshakeRetrying: false,
         }),
       );
     }
@@ -164,6 +165,14 @@ function applyFriendEvent(friend: FriendEvent): void {
     const { peerKey, reason } = friend.handshakeFailed;
     if (friendsState.friends[peerKey]) {
       setFriendsState("friends", peerKey, "handshakeError", reason);
+      setFriendsState("friends", peerKey, "handshakeRetrying", false);
+    }
+    return;
+  }
+  if ("handshakeRetrying" in friend) {
+    const { peerKey } = friend.handshakeRetrying;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "handshakeRetrying", true);
     }
     return;
   }

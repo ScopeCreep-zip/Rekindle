@@ -177,12 +177,12 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
     let next = rekindle_crypto::Identity::generate();
     let secret = *next.secret_key_bytes();
     assert!(matches!(
-        rotate(&f.root, &f.stores(), &old, &secret, "wrong", 2).await,
+        rotate(&f.root, &f.stores(), &old, &secret, "wrong", 2, None).await,
         Err(IdentityError::WrongPassphrase)
     ));
     assert!(!f.root.identity_vault(&next.public_key_hex()).exists());
 
-    let entry = rotate(&f.root, &f.stores(), &old, &secret, "pass", 3)
+    let entry = rotate(&f.root, &f.stores(), &old, &secret, "pass", 3, None)
         .await
         .unwrap();
     assert_eq!(entry.public_key, next.public_key_hex());

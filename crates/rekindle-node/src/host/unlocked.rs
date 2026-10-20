@@ -87,10 +87,11 @@ pub(crate) async fn release(ctx: &DaemonContext) {
     super::audit::close(&ctx.audit_chain);
     *ctx.session.write() = None;
     // The 1:1 receive state is the identity's, and so are the probes and
-    // the profile lease (its pool ends with the unlock).
+    // the profile and prekey leases (their pool ends with the unlock).
     *ctx.friend_store.write() = None;
     ctx.friend_stores.clear();
     *ctx.own_profile_lease.lock() = None;
+    *ctx.own_prekey_lease.lock() = None;
     if let Some(transport) = ctx.transport.read().as_ref() {
         transport.relay().clear_probes();
     }

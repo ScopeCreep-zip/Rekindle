@@ -247,6 +247,10 @@ async fn open_ratchet(
         type_id.as_u16(),
     )
     .await;
+    if inbound.is_ok() {
+        // They answered under the session: our first contact landed.
+        crate::operations::prekeys::acknowledged(host, &sender_hex);
+    }
     recorded(sender, sender_hex, type_id, inbound)
 }
 
@@ -257,15 +261,15 @@ async fn open_init(
     sender_hex: String,
     init: &PreKeyInitBody,
 ) -> Option<Opened> {
-    // A reset's init must answer our request before it may consume the
-    // prekeys it names (plan C7.25).
+    // A reset's init must answer a request of ours before it may consume
+    // the prekeys it names (plan C7.25, B11).
     if init.first_type_id == DmTypeId::SessionResetAccept
-        && !crate::operations::friend::session_reset::answers_reset(host, &sender_hex, init)
+        && !crate::operations::friend::session_reset::awaits_accept(host, &sender_hex)
     {
         return None;
     }
     let local = host.local_party().ok()?;
-    let inbound = ratchet::accept_init(
+    let accepted = ratchet::accept_init(
         &host.db().ok()?,
         &local,
         &peer_address(&sender_hex).ok()?,
@@ -274,6 +278,23 @@ async fn open_init(
         init.first_type_id.as_u16(),
     )
     .await;
+    let inbound = match accepted {
+        Ok(accepted) => {
+            crate::operations::prekeys::refilled(host, accepted.refills);
+            Ok(accepted.inbound)
+        }
+        Err(RatchetError::ReplayedLastResortInit) => {
+            // B9: a replayed last-resort init is dropped without a word.
+            tracing::debug!(from = %sender_hex, "dropping a replayed last-resort PreKeyInit");
+            return None;
+        }
+        Err(RatchetError::UnknownPrekey { kind, id }) => {
+            tracing::info!(from = %sender_hex, %kind, id, "PreKeyInit names prekeys we no longer hold");
+            crate::operations::prekeys::reject_init(host, sender, &sender_hex, init);
+            return None;
+        }
+        Err(e) => Err(e),
+    };
     if init.first_type_id == DmTypeId::FriendAccept {
         if let Err(e) = &inbound {
             if !matches!(e, RatchetError::Crypto(CryptoError::DuplicateMessage)) {
@@ -486,7 +507,7 @@ mod tests {
         );
         let body = DirectBody::SessionResetRequest(
             rekindle_codec::capnp_codec::direct::SessionResetRequest {
-                prekey_bundle: vec![1, 2, 3],
+                reason: String::new(),
             },
         );
         let frame = crate::operations::dm::frame::seal_presession(

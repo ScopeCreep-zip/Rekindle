@@ -34,6 +34,8 @@ pub const ML_KEM_SHARED_SECRET_BYTES: usize = 32;
 /// Byte length of an ML-KEM-768 private key (full FIPS-203 secret blob,
 /// includes implicit-rejection PRF state). Used for VaultStore persistence.
 pub const ML_KEM_SECRET_KEY_BYTES: usize = 2400;
+/// ML-KEM key generation's seed `d ‖ z` (FIPS 203 §7.1), 64 bytes.
+pub const ML_KEM_KEYGEN_SEED_BYTES: usize = libcrux_ml_kem::KEY_GENERATION_SEED_SIZE;
 
 /// ML-KEM-768 secret key, zeroized on drop.
 ///
@@ -63,9 +65,17 @@ impl MlKemSecret {
     /// `(d, z)` seed. Returns the secret + public halves.
     #[must_use]
     pub fn generate() -> (Self, MlKemPublic) {
-        let mut seed = [0u8; libcrux_ml_kem::KEY_GENERATION_SEED_SIZE];
-        rand::rngs::OsRng.fill_bytes(&mut seed);
-        let kp: MlKem768KeyPair = generate_key_pair(seed);
+        let mut seed = zeroize::Zeroizing::new([0u8; ML_KEM_KEYGEN_SEED_BYTES]);
+        rand::rngs::OsRng.fill_bytes(&mut *seed);
+        Self::from_seed(&seed)
+    }
+
+    /// The keypair FIPS 203's `ML-KEM.KeyGen_internal(d, z)` derives from a
+    /// 64-byte seed `d ‖ z`: the caller's generator supplies it (the
+    /// Host's, so a seeded simulation mints the same keys; plan E2.4).
+    #[must_use]
+    pub fn from_seed(seed: &[u8; ML_KEM_KEYGEN_SEED_BYTES]) -> (Self, MlKemPublic) {
+        let kp: MlKem768KeyPair = generate_key_pair(*seed);
         let (sk, pk) = kp.into_parts();
         (
             Self {

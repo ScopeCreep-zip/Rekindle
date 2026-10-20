@@ -103,6 +103,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
                 voiceChannel={friend.voiceChannel}
                 friendshipState={friend.friendshipState}
                 handshakeError={friend.handshakeError}
+                handshakeRetrying={friend.handshakeRetrying}
                 selected={props.selectedKey === friend.publicKey}
                 onDoubleClick={props.onDoubleClick}
                 onSelect={props.onSelect}

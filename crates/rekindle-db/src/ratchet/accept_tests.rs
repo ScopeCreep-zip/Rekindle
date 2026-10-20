@@ -202,3 +202,33 @@ async fn the_initiate_records_the_slot_it_used() {
     initiate_last_resort(&Party::new(3), &bob).await;
     assert_eq!(alice.count("prekey_slots_used").await, 1);
 }
+
+/// B6: a rejection naming our unanswered init discards it; one naming
+/// another base key, or an init the peer already answered, changes
+/// nothing.
+#[tokio::test]
+async fn a_rejection_discards_only_our_unanswered_init() {
+    use rekindle_crypto::signal::prekey_record::base_key_hash;
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let init = initiate(&alice, &bob, b"first").await;
+    let hash = base_key_hash(&init.base_key);
+    let now = alice.local.now_ms;
+    let owner = alice.local.owner();
+
+    assert!(
+        !discard_pending_init(&alice.db, &owner, &bob.address(), [7; 32], now)
+            .await
+            .unwrap()
+    );
+    assert!(
+        discard_pending_init(&alice.db, &owner, &bob.address(), hash, now)
+            .await
+            .unwrap()
+    );
+    // Nothing is pending any more, so a second rejection changes nothing.
+    assert!(
+        !discard_pending_init(&alice.db, &owner, &bob.address(), hash, now)
+            .await
+            .unwrap()
+    );
+}

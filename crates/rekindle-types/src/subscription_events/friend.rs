@@ -75,4 +75,18 @@ pub enum FriendEvent {
     /// with its own notice.
     /// Triggered by: a `FriendAccept` whose session init does not complete.
     HandshakeFailed { peer_key: String, reason: String },
+    /// The peer rejected the one-time key our first contact used (it was
+    /// already taken): the handshake is resent once from a fresh key
+    /// (plan E2.4, D18's B6). The friend row reads "Retrying with a fresh
+    /// key" until the session opens or [`Self::HandshakeFailed`].
+    /// Triggered by: their signed `PreKeyRejected`.
+    HandshakeRetrying { peer_key: String },
+    /// A friend's prekey record is not signed by the identity we hold for
+    /// them, so no session was opened and nothing was trusted; only the
+    /// user can resolve it (plan E2.4, B3).
+    /// Triggered by: a record read before a first contact or a send.
+    IdentityPinMismatch {
+        peer_key: String,
+        display_name: String,
+    },
 }

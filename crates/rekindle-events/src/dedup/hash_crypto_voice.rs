@@ -63,14 +63,18 @@ pub(super) fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
             h.update(b"|");
             h.update(&segment_index.to_le_bytes());
         }
-        CryptoEvent::PqBundlePublished { subkey, kind } => {
-            h.update(b"pq_bundle|");
-            h.update(&subkey.to_le_bytes());
-            h.update(b"|");
+        CryptoEvent::PrekeyRecordPublished { kind, subkey } => {
+            h.update(b"prekey_record|");
             h.update(match kind {
-                rekindle_types::subscription_events::PqBundleKind::LastResort => b"lr".as_slice(),
-                rekindle_types::subscription_events::PqBundleKind::OneTimeBatch => b"ot".as_slice(),
+                rekindle_types::subscription_events::PrekeyPublishKind::SignedRotated => {
+                    b"spk".as_slice()
+                }
+                rekindle_types::subscription_events::PrekeyPublishKind::OneTimeRefilled => {
+                    b"opk".as_slice()
+                }
             });
+            h.update(b"|");
+            h.update(&subkey.to_le_bytes());
         }
     }
 }

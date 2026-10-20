@@ -13,7 +13,7 @@
 //! │  Display Name  alice                                        │
 //! │  Status        online                                       │
 //! │  Route         allocated (39s)                              │
-//! │  Prekeys       47/50 available                              │
+//! │  Prekeys       97/100 fresh slots                           │
 //! │                                                             │
 //! │  ▸ DHT Records                                              │
 //! │  ▸ Security                                                 │
@@ -62,6 +62,9 @@ pub struct IdentitySettingsView {
     friend_list_dht_key: String,
     /// Security.
     signing_key_loaded: bool,
+    /// The `crypto.prekeys` check's reading (plan E2.4): the fresh slots,
+    /// or what the prekey maintenance is failing to keep.
+    prekeys: String,
     /// Which sections are expanded.
     expanded: [bool; 4],
     /// Whether data has been loaded.
@@ -87,6 +90,7 @@ impl IdentitySettingsView {
             mailbox_dht_key: String::new(),
             friend_list_dht_key: String::new(),
             signing_key_loaded: false,
+            prekeys: "unknown".into(),
             expanded: [false; 4],
             loaded: false,
             use_unicode,
@@ -106,11 +110,8 @@ impl IdentitySettingsView {
         self.signing_key_loaded = snapshot.checks.iter().any(|c| {
             c.id == "crypto.signing_key" && c.status == rekindle_types::display::CheckStatus::Pass
         });
-        // DHT keys come from identity checks
-        for check in &snapshot.checks {
-            if check.id == "identity.public_key" {
-                // Already have this from identity_public_key field
-            }
+        if let Some(check) = snapshot.checks.iter().find(|c| c.id == "crypto.prekeys") {
+            self.prekeys.clone_from(&check.value);
         }
         self.loaded = true;
     }
@@ -135,6 +136,7 @@ impl IdentitySettingsView {
         };
         items.push(Self::kv_item("  Route", &route_str));
         items.push(Self::kv_item("  Watches", &self.active_watches.to_string()));
+        items.push(Self::kv_item("  Prekeys", &self.prekeys));
         items.push(ListItem::new(Line::raw("")));
 
         // ── DHT Records section ──────────────────────────────

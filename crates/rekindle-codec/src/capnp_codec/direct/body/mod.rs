@@ -25,8 +25,8 @@ pub use calls::{
 };
 pub use content::{DmDelete, DmEdit, DmReaction, DmText, Typing};
 pub use friend::{
-    FriendAccept, FriendRequest, IdentityRotated, ProfileKeyRotated, SessionResetDecline,
-    SessionResetRequest,
+    FriendAccept, FriendRequest, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
+    SessionResetDecline, SessionResetRequest,
 };
 pub use group::{GroupDmInvite, GroupDmLeave};
 pub use relay::{
@@ -109,6 +109,7 @@ direct_bodies! {
     bodies {
         FriendRequest(FriendRequest) = friend_request,
         RelayEnvelope(RelayEnvelope) = relay_envelope,
+        PreKeyRejected(PreKeyRejected) = pre_key_rejected,
         SessionResetRequest(SessionResetRequest) = session_reset_request,
         SessionResetDecline(SessionResetDecline) = session_reset_decline,
         DmText(DmText) = dm_text,

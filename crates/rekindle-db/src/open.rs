@@ -119,7 +119,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// envelope-store family goes with the daemon's dead call orchestration
 /// (`pending_envelopes`, `seen_envelopes`, `outbound_seqs`,
 /// `active_call_states`).
-pub const SCHEMA_VERSION: i64 = 92;
+pub const SCHEMA_VERSION: i64 = 93;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

@@ -67,6 +67,7 @@ impl std::fmt::Debug for IpcRequest {
             Self::Status => write!(f, "Status"),
             Self::IdentityList => write!(f, "IdentityList"),
             Self::IdentityShow => write!(f, "IdentityShow"),
+            Self::PrekeyStatus => write!(f, "PrekeyStatus"),
             Self::IdentityDelete { identity } => f
                 .debug_struct("IdentityDelete")
                 .field("identity", identity)

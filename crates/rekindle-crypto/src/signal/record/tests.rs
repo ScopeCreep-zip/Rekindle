@@ -327,3 +327,30 @@ fn inactive_sessions_are_bounded_and_promoted_on_use() {
     let b = SessionRecord::from_bytes(&b.to_bytes()).unwrap();
     assert_eq!(b.inactive.len(), ARCHIVED_STATES_MAX_LENGTH);
 }
+
+/// B6: only our unanswered init is pending, and discarding it restores
+/// the session it replaced.
+#[test]
+fn only_an_unanswered_init_is_pending_and_it_can_be_discarded() {
+    let (alice, bob) = (Identity::generate(), BobKeys::new());
+    let (mut alice_record, mut bob_record, init) = establish(&alice, &bob, &bob.bundle(true));
+    assert_eq!(alice_record.pending_init(), Some(&init.base_key));
+    assert_eq!(bob_record.pending_init(), None);
+
+    // Bob answers: the init is no longer pending.
+    let pong = send(&mut bob_record, b"pong");
+    receive(&mut alice_record, &pong).unwrap();
+    assert_eq!(alice_record.pending_init(), None);
+    assert!(alice_record.without_pending(&init.base_key).is_none());
+
+    // A second init replaces the answered session; discarding it brings
+    // that session back.
+    let rng = TestRandom::new(9);
+    let (retry, second) = alice_record
+        .initiate(&alice, &bob.bundle(false), b"again", AD, &rng)
+        .unwrap();
+    assert!(retry.without_pending(&[0; 32]).is_none());
+    let mut restored = retry.without_pending(&second.base_key).unwrap();
+    assert_eq!(restored.pending_init(), None);
+    round_trip(&mut restored, &mut bob_record);
+}

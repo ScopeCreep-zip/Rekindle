@@ -46,6 +46,9 @@ pub struct FriendState {
     /// Why the first-contact handshake failed, while it stays failed
     /// (plan C7.25). Not stored; cleared when a session is established.
     pub handshake_error: Option<String>,
+    /// Our first contact is being resent from a fresh key after the peer
+    /// rejected the one it used (plan E2.4, B6). Not stored.
+    pub handshake_retrying: bool,
 }
 
 impl FriendState {
@@ -71,6 +74,7 @@ impl FriendState {
             last_heartbeat_at: None,
             friendship_state,
             handshake_error: None,
+            handshake_retrying: false,
         }
     }
 }

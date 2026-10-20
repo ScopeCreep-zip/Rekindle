@@ -41,7 +41,7 @@ async fn route(
 ) -> IpcResponse {
     match request {
         // ── Lifecycle (any state) ────────────────────────────────
-        IpcRequest::Status => status::handle_status(ctx, state),
+        IpcRequest::Status => status::handle_status(ctx, state).await,
         IpcRequest::Unlock {
             identity,
             passphrase,
@@ -268,6 +268,7 @@ async fn route(
         } => governance::handle_invite_revoke(ctx, state, &community, &invite_code).await,
 
         // ── Keys ─────────────────────────────────────────────────
+        IpcRequest::PrekeyStatus => keys::handle_prekey_status(ctx, state).await,
         IpcRequest::MekList { community } => keys::handle_mek_list(ctx, state, &community),
         IpcRequest::MekRotate { community, channel } => {
             keys::handle_mek_rotate(ctx, state, &community, &channel)

@@ -18,7 +18,9 @@ use super::{open_vault, remove_files, IdentityError, Stores};
 /// Rotate `public_key` to the identity whose secret is `new_secret`. The
 /// identity is locked (the caller locked it after telling its friends,
 /// which needs the old key); `passphrase` opens the copies, and a wrong
-/// one counts against the identity.
+/// one counts against the identity. `prekeys` is the new identity's set,
+/// already published to the same record (plan E2.4); its rows are stored
+/// under the new key in the re-key's transaction.
 ///
 /// # Errors
 /// Not found, wrong or locked out, the new key already here, or a store
@@ -30,6 +32,7 @@ pub async fn rotate(
     new_secret: &[u8; 32],
     passphrase: &str,
     now_ms: u64,
+    prekeys: Option<rekindle_crypto::signal::prekey_record::MintedSet>,
 ) -> Result<IdentityEntry, IdentityError> {
     let mut reg = registry::load(&root.registry())?;
     let old = reg
@@ -48,7 +51,7 @@ pub async fn rotate(
         now_ms,
     )?);
 
-    let copied = build_copy(root, public_key, &new_key, new_secret, passphrase).await;
+    let copied = build_copy(root, public_key, &new_key, new_secret, passphrase, prekeys).await;
     if let Err(e) = copied {
         let _ = remove_files(root, &new_key);
         return Err(e);
@@ -79,6 +82,7 @@ async fn build_copy(
     new: &str,
     new_secret: &[u8; 32],
     passphrase: &str,
+    prekeys: Option<rekindle_crypto::signal::prekey_record::MintedSet>,
 ) -> Result<(), IdentityError> {
     let old_vault = root.identity_vault(old);
     let vault_bytes = std::fs::read(&old_vault)?;
@@ -91,9 +95,11 @@ async fn build_copy(
     drop(vault);
     let db = rekindle_db::open(&root.identity_db(new), app_db_key.as_bytes())?;
     let (old_key, new_key) = (old.to_string(), new.to_string());
-    db.call(move |conn| rekindle_db::repo::identity::rekey(conn, &old_key, &new_key))
-        .await
-        .map_err(|e| IdentityError::Storage(e.to_string()))?;
+    db.call(move |conn| {
+        rekindle_db::repo::identity::rekey(conn, &old_key, &new_key, prekeys.as_ref())
+    })
+    .await
+    .map_err(|e| IdentityError::Storage(e.to_string()))?;
     if let Err(e) = db.close().await {
         tracing::warn!(error = %e, "closing the rotated database failed");
     }
