@@ -112,7 +112,7 @@ pub(crate) async fn on_identity_rotated(
         tracing::warn!(from = %sender, "dropping IdentityRotated: not signed by both identities");
         return true;
     }
-    if !state::is_accepted(host, sender) {
+    if !is_friend(host, sender).await {
         tracing::debug!(from = %sender, "dropping IdentityRotated from a non-friend");
         return true;
     }
@@ -136,6 +136,15 @@ pub(crate) async fn on_identity_rotated(
     }
     tracing::info!(from = %sender, to = %new_identity, "friend rotated their identity; held for review");
     true
+}
+
+/// Whether `peer` is an accepted friend, by the receive gate's authority
+/// (the identity's database).
+async fn is_friend(host: &dyn FriendHost, peer: &str) -> bool {
+    let (Ok(store), Ok(owner)) = (host.friend_store(), state::owner(host)) else {
+        return false;
+    };
+    store.is_active_friend(&owner, peer).await.unwrap_or(false)
 }
 
 /// The safety number with `peer` now and the one with their pending new
