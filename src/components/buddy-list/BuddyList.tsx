@@ -1,3 +1,4 @@
+import { addToast } from "../../stores/toast.store";
 import { Component, createMemo, createSignal, For, JSX, Show } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { friendsState } from "../../stores/friends.store";
@@ -226,7 +227,11 @@ const BuddyList: Component = () => {
             * the new session. */}
           <ContextMenu.Item
             class="context-menu-item"
-            onSelect={() => void handleResetSignalSession(key)}
+            onSelect={() =>
+              void handleResetSignalSession(key).then((err) => {
+                if (err) addToast(err, "error");
+              })
+            }
           >
             Reset Secure Session
           </ContextMenu.Item>

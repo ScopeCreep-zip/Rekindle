@@ -16,19 +16,16 @@ impl IpcRequest {
                 .field("public_key", public_key)
                 .field("message_len", &message.len())
                 .finish(),
-            Self::FriendAccept { public_key }
-            | Self::FriendBlock { public_key }
-            | Self::FriendReject { public_key } => f
-                .debug_struct(self.name())
-                .field("public_key", public_key)
-                .finish(),
             Self::FriendRemove { public_key } => f
                 .debug_struct("FriendRemove")
                 .field("public_key", public_key)
                 .finish(),
             Self::FriendList => write!(f, "FriendList"),
             Self::FriendRequests => write!(f, "FriendRequests"),
-            Self::FriendCancelRequest { public_key }
+            Self::FriendAccept { public_key }
+            | Self::FriendBlock { public_key }
+            | Self::FriendReject { public_key }
+            | Self::FriendCancelRequest { public_key }
             | Self::FriendRetryHandshake { public_key }
             | Self::FriendUnblock { public_key }
             | Self::SessionResetStart { public_key }

@@ -37,8 +37,6 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             public_key(key, "public key")?;
             text(message, MAX_NOTE_LEN, "message")
         }
-        IpcRequest::FriendAccept { public_key: key }
-        | IpcRequest::FriendBlock { public_key: key } => public_key(key, "public key"),
         IpcRequest::FriendSetNickname {
             public_key: key,
             nickname,
@@ -50,6 +48,8 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             public_key: key,
             group_id: _,
         }
+        | IpcRequest::FriendAccept { public_key: key }
+        | IpcRequest::FriendBlock { public_key: key }
         | IpcRequest::FriendReject { public_key: key }
         | IpcRequest::FriendRemove { public_key: key }
         | IpcRequest::FriendCancelRequest { public_key: key }

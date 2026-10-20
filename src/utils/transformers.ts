@@ -17,7 +17,7 @@ export function transformFriend(f: FriendInfo): Friend {
     gameInfo: f.gameInfo
       ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null, serverAddress: f.gameInfo.serverAddress ?? null }
       : null,
-    group: f.group ?? "Friends",
+    group: f.groupLabel,
     unreadCount: f.unreadCount,
     lastSeenAt: f.lastSeenAt ?? null,
     voiceChannel: null,

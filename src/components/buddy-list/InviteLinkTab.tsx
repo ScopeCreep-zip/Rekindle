@@ -50,7 +50,9 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
     setError(null);
     const err = await handleCancelInvite(inviteId);
     if (err) {
+      // The Host kept the invite: it stays listed and shown (audit U-9).
       setError(err);
+      return;
     }
     if (currentInviteId() === inviteId) {
       setGeneratedInvite("");

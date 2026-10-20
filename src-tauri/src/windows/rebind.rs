@@ -4,6 +4,7 @@
 //! their label, route and event audience name the key the Host now uses.
 
 use rekindle_types::key_format;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 use tauri::{AppHandle, Manager};
 
 use crate::state::SharedState;
@@ -11,7 +12,7 @@ use crate::window_labels as labels;
 
 /// Rebind `old`'s chat and profile windows to `new`. Off the event loop:
 /// a reopened window resolves its title from the database.
-pub fn peer_key_changed(app: &AppHandle, state: &SharedState, old: &str, new: &str) {
+fn peer_key_changed(app: &AppHandle, state: &SharedState, old: &str, new: &str) {
     let (Ok(old), Ok(new)) = (
         key_format::public_key_hex(old),
         key_format::public_key_hex(new),
@@ -33,8 +34,9 @@ pub fn peer_key_changed(app: &AppHandle, state: &SharedState, old: &str, new: &s
     if !chat && !profile {
         return;
     }
+    let scope = crate::state_helpers::login_scope_or_closed(state);
     let (app, state) = (app.clone(), state.clone());
-    tauri::async_runtime::spawn(async move {
+    scope.spawn_or_drop("rebind rotated key's windows", async move {
         let Ok(db) = state.db.current() else {
             return;
         };
@@ -51,4 +53,18 @@ pub fn peer_key_changed(app: &AppHandle, state: &SharedState, old: &str, new: &s
             }
         }
     });
+}
+
+/// The shell's own reactions to a Host event, before it reaches the
+/// windows: a review the backend began is answered on the buddy list, so
+/// it is brought forward (never recreated, which would drop the review);
+/// a friend's rotated identity rebinds their windows (plan audit R-5).
+pub fn follow_event(app: &AppHandle, state: &SharedState, event: &SubscriptionEvent) {
+    match event {
+        SubscriptionEvent::IntentPending(_) => super::surface_buddy_list(app),
+        SubscriptionEvent::Friend(FriendEvent::KeyChanged { peer_key, new_key }) => {
+            peer_key_changed(app, state, peer_key, new_key);
+        }
+        _ => {}
+    }
 }
