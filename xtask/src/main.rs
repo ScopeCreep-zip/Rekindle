@@ -68,6 +68,7 @@ mod literals;
 mod motion;
 mod no_emitter;
 mod no_managed_db;
+mod platform_floor;
 mod sec_styles;
 mod sec_surfaces;
 mod sqlite;
@@ -127,6 +128,10 @@ enum Command {
     CheckContrastPairs,
     /// Verify every transition reads a motion token and motion honours reduced motion.
     CheckMotion,
+    /// Verify the macOS, WebKitGTK and Vite floors agree with the plan's E7.10 floor.
+    CheckPlatformFloor,
+    /// Verify built CSS keeps the declared `@layer` order (given the built files or dir).
+    CheckBuiltCss { css: Vec<PathBuf> },
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,
     /// Verify no type name is declared in two crates.
@@ -224,6 +229,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 ),
                 ("motion", Box::new(|| motion::check_motion(&root))),
                 (
+                    "platform-floor",
+                    Box::new(|| platform_floor::check_platform_floor(&root)),
+                ),
+                (
                     "duplicate-bodies",
                     Box::new(|| check_duplicate_bodies(&root)),
                 ),
@@ -273,6 +282,8 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDeclaredGrounds => declared_grounds::check_declared_grounds(&root),
         Command::CheckContrastPairs => contrast_pairs::check_contrast_pairs(&root),
         Command::CheckMotion => motion::check_motion(&root),
+        Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
+        Command::CheckBuiltCss { css } => platform_floor::check_built_css(&root, css),
         Command::CheckDuplicateBodies => check_duplicate_bodies(&root),
         Command::CheckDuplicateTypes => duplication::check_duplicate_types(&root),
         Command::CheckFrontendDuplication => duplication::check_frontend_duplication(&root),
