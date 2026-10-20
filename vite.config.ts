@@ -68,7 +68,7 @@ export default defineConfig({
     // 2.40 on Linux, Chromium 111 on Windows: Tailwind 4 needs Safari 16.4
     // and Chrome 111 (`color-mix()` is Chromium 111), and neither esbuild nor
     // Lightning CSS lowers `@layer` or `@property`. Keep in sync with
-    // tauri.conf.json `minimumSystemVersion` and the `.deb` WebKitGTK depend
+    // tauri.conf.json `minimumSystemVersion` and the `.deb`/`.rpm` WebKitGTK depends
     // (docs/contributor/release-process.md, "Platform floor").
     target:
       process.env.TAURI_ENV_PLATFORM === "windows"
