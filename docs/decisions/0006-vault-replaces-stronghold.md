@@ -130,6 +130,24 @@ need to know about the underlying SQLCipher / GCM split (moved out of
   helpers (`rekindle_vault::typed`). Enforced by code review and grep
   gauntlet.
 
+**Amendment (plan D3, recorded 2026-10-20):** `rekindle-vault` holds
+the long-term identity secrets, record owner keypairs, MEKs, slot
+material and audit keys. Secret state whose writes must commit
+atomically with message state — the 1:1 ratchet sessions
+(`ratchet_sessions`), prekey secrets (`signal_prekeys`) and trusted
+identities — lives in the identity's SQLCipher database, keyed by
+`VAULT_APP_DB_KEY` from the same Argon2id master, so it has the same
+pre-unlock protection; a ratchet step, its `unprocessed` row and its
+prekey consumption are one transaction committed before anything is
+sent. No per-entry seal is added there: its key would come from the
+same unlocked master (nothing gained against device seizure or
+malware), and the production clients with page-encrypted databases
+(Signal Desktop and Android, Wire native) keep the same single layer.
+Neither store leaves the device except the vault inside an identity
+archive; the database is never exported. The "Signal stores" and
+"PQXDH secrets" categories in the context above moved to the database
+under D3.
+
 ## More information
 
 - [`../architecture/data-layer.md`](../architecture/data-layer.md) — vault layout.

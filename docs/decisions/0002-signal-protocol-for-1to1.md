@@ -74,6 +74,13 @@ identity key, so the bundle cannot be forged.
 **Amendment (plan E2.4):** Since plan E2.4 the bundle is a separate DFLT(101) prekey record per
 device, referenced from profile subkey 5; the initiator reads it from there.
 
+**Amendment (plan D3/E2.3, recorded 2026-10-20):** each friend device has a `SessionRecord` row in
+the identity's SQLCipher database (`ratchet_sessions`), written in the same transaction as the
+step's `unprocessed` row and prekey consumption, before anything is sent (not in the vault; see
+ADR 0006's amendment). Message encryption follows the Double Ratchet's own recommendation
+(rev. 4 §7.2: AES-256-CBC + HMAC-SHA256) for misuse resistance if ratchet state is ever rolled
+back.
+
 ## Consequences
 
 **Positive.**
