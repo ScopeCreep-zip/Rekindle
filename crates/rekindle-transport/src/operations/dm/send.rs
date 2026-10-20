@@ -119,6 +119,7 @@ async fn framed(
     to: &str,
     body: &DirectBody,
 ) -> Result<(DmFrame, Queued), FriendError> {
+    crate::operations::friend::verification::require_acknowledged(host, to).await?;
     let type_id = body.type_id();
     if type_id.carrier() == Carrier::Sealed {
         let mut nonce = Nonce::default();

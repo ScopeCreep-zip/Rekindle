@@ -17,8 +17,9 @@ use rekindle_codec::capnp_codec::direct::{DirectBody, Typing};
 use rekindle_events::typing::{Input, Lapse};
 use rekindle_types::subscription_events::TypingContext;
 
+use super::frame;
 use super::send::send_to_peer;
-use crate::operations::friend::{state, FriendError, FriendHost};
+use crate::operations::friend::{state, verification, FriendError, FriendHost};
 
 fn context(peer: &str) -> TypingContext {
     TypingContext::Dm {
@@ -27,9 +28,26 @@ fn context(peer: &str) -> TypingContext {
 }
 
 /// Send our typing state to `to` (dropped, never queued, when there is no
-/// route: `send_to_peer` treats typing as ephemeral).
+/// route: `send_to_peer` treats typing as ephemeral). It is simply not sent
+/// ([`may_type`]) with no established session, which typing never opens,
+/// or while their verified key change is unacknowledged (plan audit R-4).
 async fn send(host: &dyn FriendHost, to: &str, typing: bool) -> Result<(), FriendError> {
+    if !may_type(host, to).await? {
+        return Ok(());
+    }
     send_to_peer(host, to, &DirectBody::Typing(Typing { typing })).await
+}
+
+/// Whether our typing state may go to `to`: something decrypted under our
+/// session with them, and no unacknowledged change of their verified key.
+async fn may_type(host: &dyn FriendHost, to: &str) -> Result<bool, FriendError> {
+    if verification::key_change(host, to).await?.is_some() {
+        return Ok(false);
+    }
+    let owner = host.local_party()?.owner();
+    rekindle_db::ratchet::is_established(&host.db()?, &owner, &frame::peer_address(to)?)
+        .await
+        .map_err(|e| frame::ratchet_error(to, e))
 }
 
 /// The window's draft to `to` changed: `typing` is whether it holds text.

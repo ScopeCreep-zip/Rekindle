@@ -103,7 +103,8 @@ fn content(host: &dyn FriendHost, body: &DirectBody, hint: ContentHint) -> Vec<u
 /// (they rotated their identity, or ours moved), the message opens one from
 /// a slot of their prekey record (plan E2.3: "the next send to the new
 /// identity initiates from its published bundle"; E2.4: from its record). This never re-initiates
-/// a session that exists: a broken one is ruling Q1's prompt (E2.5).
+/// a session that exists: a broken one is ruling Q1's prompt (E2.5). Typing
+/// never opens one (plan audit R-4): with no session it is refused.
 ///
 /// # Errors
 /// No session with `to` and none can be opened (`Conflict`), or the step
@@ -128,7 +129,8 @@ pub async fn ratchet_frame(
     let message = match encrypted {
         Ok(message) => message,
         Err(RatchetError::Crypto(CryptoError::NoSession(_)))
-            if crate::operations::friend::state::is_accepted(host, to) =>
+            if type_id != DmTypeId::Typing
+                && crate::operations::friend::state::is_accepted(host, to) =>
         {
             let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
             return initiate_frame(host, to, bundle, body).await;

@@ -339,3 +339,74 @@ async fn a_resend_sends_the_stored_row_and_stores_none() {
     let answer = settle(&host, host.call(bus(1), unknown).await).await;
     assert!(code(&answer).is_some(), "{answer:?}");
 }
+
+/// The backend holds on `peer`'s reset request.
+fn reset_holds(host: &Host, peer: &str) -> usize {
+    let count = std::cell::Cell::new(0);
+    host.ctx.intents.retain_held(|held_by, action| {
+        if held_by.conn.is_none()
+            && matches!(action, IpcRequest::SessionResetAccept { public_key } if public_key == peer)
+        {
+            count.set(count.get() + 1);
+        }
+        true
+    });
+    count.get()
+}
+
+/// A direct decline answers the friend's reset request, so the backend
+/// hold on it goes too (plan audit D-4), even when the decline cannot
+/// reach them.
+#[tokio::test]
+async fn a_direct_decline_releases_the_backend_reset_hold() {
+    use rekindle_transport::operations::friend::{session_reset::IncomingReset, BackendHold, FriendHost};
+    let dir = tempfile::tempdir().unwrap();
+    let (host, peer) = ann_with_rotated_verified_friend(&dir).await;
+    let friends = crate::host::adapters::friends::HostFriends::of(&host.ctx);
+    friends.stores().incoming_resets.lock().insert(
+        peer.clone(),
+        IncomingReset {
+            reason: String::new(),
+            requested_at: 1,
+        },
+    );
+    friends
+        .hold_backend_intent(BackendHold::SessionReset { peer: peer.clone() })
+        .await
+        .unwrap();
+    assert_eq!(reset_holds(&host, &peer), 1);
+
+    let decline = IpcRequest::SessionResetDecline {
+        public_key: peer.clone(),
+    };
+    settle(&host, host.call(bus(1), decline).await).await;
+    assert_eq!(reset_holds(&host, &peer), 0);
+}
+
+/// Typing never opens a session, and nothing goes to a friend whose
+/// verified key change is unacknowledged (plan audit R-4): after their
+/// rotation there is no session with the new key, the draft report is
+/// answered and sends nothing, and the change stays unacknowledged.
+#[tokio::test]
+async fn typing_to_a_rotated_verified_friend_sends_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, peer) = ann_with_rotated_verified_friend(&dir).await;
+    let typing = IpcRequest::DmTyping {
+        peer_key: peer.clone(),
+        typing: true,
+    };
+    let answer = settle(&host, host.call(bus(1), typing).await).await;
+    assert!(code(&answer).is_none(), "{answer:?}");
+    assert!(safety_number(&host, &peer).await.changed);
+    let owner: [u8; 32] = hex::decode(host.ctx.require_owner().unwrap())
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let address = rekindle_db::ratchet::PeerAddress::sole_device(
+        hex::decode(&peer).unwrap().try_into().unwrap(),
+    );
+    let db = host.ctx.db.current().unwrap();
+    assert!(!rekindle_db::ratchet::is_established(&db, &owner, &address)
+        .await
+        .unwrap());
+}

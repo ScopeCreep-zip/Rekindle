@@ -160,6 +160,26 @@ pub async fn key_change(
     .await
 }
 
+/// Refuse any frame to `peer` while the key we verified for them changed
+/// and the change is unacknowledged (plan audit R-4): a send whose review
+/// was held on it acknowledges it before it is framed (`send_dm`,
+/// `resend_dm`), or carries it (`session_reset::accept`); nothing else goes,
+/// typing included.
+///
+/// # Errors
+/// `Conflict` while the change is unacknowledged, or it could not be read.
+pub(crate) async fn require_acknowledged(
+    host: &dyn FriendHost,
+    peer: &str,
+) -> Result<(), FriendError> {
+    if key_change(host, peer).await?.is_some() {
+        return Err(FriendError::Conflict(format!(
+            "the verified key of {peer} changed: acknowledge the change before sending to them"
+        )));
+    }
+    Ok(())
+}
+
 /// Acknowledge `peer`'s key change after an escalated action whose own
 /// write is not ours to join (a session-reset accept, whose ratchet record
 /// is `rekindle_db::ratchet`'s transaction). A crash before it leaves the

@@ -115,6 +115,9 @@ pub async fn accept(
                 .to_string(),
         ));
     }
+    if !acknowledges_key_change {
+        super::verification::require_acknowledged(host, peer).await?;
+    }
     let kind = DmTypeId::SessionResetAccept;
     if let Err(e) = crate::operations::prekeys::open_first_contact(host, peer, kind).await {
         // Not answered: a record that cannot be read, or is not theirs
