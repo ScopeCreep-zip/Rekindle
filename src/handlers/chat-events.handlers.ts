@@ -205,6 +205,14 @@ function applyFriendEvent(friend: FriendEvent): void {
       delete next[peerKey];
       setFriendsState("friends", reconcile(next));
     }
+    // Their conversation follows them; the shell reopens their windows
+    // on the new key (audit R-5).
+    const conversation = chatState.conversations[peerKey];
+    if (conversation) {
+      const next = { ...chatState.conversations, [newKey]: { ...conversation, peerId: newKey } };
+      delete next[peerKey];
+      setChatState("conversations", reconcile(next));
+    }
     return;
   }
   // verificationChanged is rendered by each window's `useSafetyNumber`;

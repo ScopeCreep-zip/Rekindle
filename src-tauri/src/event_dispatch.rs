@@ -25,7 +25,7 @@
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, EventScope, SubscriptionEvent, TypingContext, TypingEvent,
+    ChannelMessageEvent, EventScope, FriendEvent, SubscriptionEvent, TypingContext, TypingEvent,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -346,6 +346,15 @@ pub fn spawn_host_stream(
                         // which would drop the review).
                         if matches!(sequenced.event, SubscriptionEvent::IntentPending(_)) {
                             crate::windows::surface_buddy_list(&app);
+                        }
+                        // A friend's rotated identity: their windows follow
+                        // the new key (plan audit R-5).
+                        if let SubscriptionEvent::Friend(FriendEvent::KeyChanged {
+                            peer_key,
+                            new_key,
+                        }) = &sequenced.event
+                        {
+                            crate::windows::peer_key_changed(&app, &state, peer_key, new_key);
                         }
                         let event = WebviewEvent::Subscription(sequenced.event);
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {

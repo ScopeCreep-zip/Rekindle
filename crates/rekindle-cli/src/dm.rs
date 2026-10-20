@@ -114,6 +114,18 @@ async fn watch_dms(
              their safety number.",
             rekindle_utils::text::sanitize_for_display(display_name)
         )),
+        // Their identity rotated (plan audit R-5): name the new key, which
+        // is the one to watch from now on.
+        SubscriptionEvent::Friend(FriendEvent::KeyChanged { peer_key, new_key })
+            if friend.is_none_or(|f| f == peer_key) =>
+        {
+            Some(format!(
+                "! {} moved to a new identity key {}; verify their safety number. Watch the new \
+                 key to follow them.",
+                rekindle_client::fmt::abbreviate_key(peer_key),
+                rekindle_client::fmt::abbreviate_key(new_key)
+            ))
+        }
         _ => None,
     })
     .await

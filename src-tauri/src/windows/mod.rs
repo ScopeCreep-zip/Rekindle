@@ -7,7 +7,10 @@
 //! Nothing the webview passes in reaches a label, URL or title unchecked.
 
 mod navigation;
+mod rebind;
 mod titles;
+
+pub use rebind::peer_key_changed;
 
 use rekindle_types::key_format::{self, PublicKeyHex};
 use serde::{Deserialize, Serialize};
