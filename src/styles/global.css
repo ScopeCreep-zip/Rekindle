@@ -218,6 +218,11 @@
     --sec-secondary-fg: #e7e7e7;
     --sec-secondary-border: #767676;
     --sec-focus: #8cc4ff;
+    --sec-focus-ground: #0a0a0a;
+    --sec-disabled-bg: #2a2a2a;
+    --sec-disabled-fg: #9a9a9a;
+    --sec-disabled-border: #4a4a4a;
+    --sec-icon-font-family: "Symbols Nerd Font Mono";
     --sec-status-cutout: #0a0a0a;
     --sec-qr-backing: #f8fafc;
     /* The safety number's card (plan E2.3): dark digits and modules on the
@@ -246,6 +251,10 @@
     --sec-secondary-fg: #1a1a1a;
     --sec-secondary-border: #767676;
     --sec-focus: #0b5cad;
+    --sec-focus-ground: #ffffff;
+    --sec-disabled-bg: #e0e0e0;
+    --sec-disabled-fg: #5b5b5b;
+    --sec-disabled-border: #9a9a9a;
     --sec-status-cutout: #ffffff;
     --sec-review-bg: #f8fafc;
     --sec-review-fg: #1a1a1a;
@@ -267,6 +276,10 @@
       --sec-secondary-fg: #ffffff;
       --sec-secondary-border: #ffffff;
       --sec-focus: #ffffff;
+      --sec-focus-ground: #000000;
+      --sec-disabled-bg: #000000;
+      --sec-disabled-fg: #a0a0a0;
+      --sec-disabled-border: #a0a0a0;
       --sec-status-cutout: #000000;
       --sec-review-bg: #000000;
       --sec-review-fg: #ffffff;

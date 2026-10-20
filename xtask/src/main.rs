@@ -67,6 +67,7 @@ mod jsx;
 mod literals;
 mod no_emitter;
 mod no_managed_db;
+mod sec_styles;
 mod sec_surfaces;
 mod sqlite;
 mod theme_literals;

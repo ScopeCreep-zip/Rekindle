@@ -411,7 +411,7 @@
 '.channel-topic-label' = { on = ["--color-xfire-bg-panel"] }
 '.community-unread-badge' = { on = ["--color-xfire-accent"] }
 '.channel-header-badge' = { on = ["--color-xfire-bg-dark"] }
-'.header-btn-active' = { on = ["--color-xfire-bg-dark"] }
+'.action-bar-btn.header-btn-active' = { on = ["--color-xfire-bg-dark"] }
 '.profile-popup-empty-hint' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-pronouns' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-bio' = { on = ["--color-xfire-bg-primary"] }

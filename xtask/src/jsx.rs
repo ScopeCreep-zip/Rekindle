@@ -16,6 +16,11 @@ pub(crate) struct Element {
     pub children: Option<String>,
     /// The bytes of the whole element, opening tag to closing tag.
     pub span: std::ops::Range<usize>,
+    /// The bytes of the opening tag, `<` to `>`.
+    pub open: std::ops::Range<usize>,
+    /// Whether the opening tag spreads props (`{...rest}`), which can carry
+    /// any attribute, `class` included.
+    pub spread: bool,
 }
 
 /// Whether a `<` at `at` opens a JSX tag rather than a comparison or a
@@ -123,6 +128,8 @@ pub(crate) fn elements(src: &str) -> Vec<Element> {
             line: src[..at].matches('\n').count() + 1,
             attrs: parse_attrs(&inner[tag.len()..]),
             span: at..(end + 1 + close).min(src.len()),
+            open: at..end + 1,
+            spread: inner.contains("{..."),
             tag,
             children,
         });
@@ -192,33 +199,121 @@ impl Element {
     }
 
     /// The class names the element can carry: the words of a static
-    /// `class="…"`, or of every string literal in a `class={…}` expression
-    /// (`{warning() ? "a" : "b"}` → `a`, `b`).
+    /// `class="…"`, of every string literal in a `class={…}` or
+    /// `className={…}` expression (`{warning() ? "a" : "b"}` → `a`, `b`),
+    /// and the keys of a `classList={{ … }}` object (Solid adds each key
+    /// whose value is true).
     pub(crate) fn classes(&self) -> Vec<String> {
-        let Some(value) = self.attrs.get("class") else {
-            return Vec::new();
-        };
         let mut words = Vec::new();
-        let mut quote: Option<char> = None;
-        let mut literal = String::new();
-        for c in value.chars() {
-            match quote {
-                Some(q) if c == q => {
-                    words.extend(literal.split_whitespace().map(str::to_string));
-                    literal.clear();
-                    quote = None;
-                }
-                Some(_) => literal.push(c),
-                None if matches!(c, '"' | '\'' | '`') => quote = Some(c),
-                None => {}
+        for attr in ["class", "className"] {
+            if let Some(value) = self.attrs.get(attr) {
+                words.extend(literal_words(value));
             }
         }
-        words.retain(|w| {
-            w.chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-        });
+        if let Some(value) = self.attrs.get("classList") {
+            words.extend(class_list_keys(value));
+        }
         words
     }
+
+    /// Whether the element's `class` is a static string (`class="…"`), the
+    /// only form whose classes a reader can know.
+    pub(crate) fn class_is_static(&self) -> bool {
+        self.attrs
+            .get("class")
+            .is_none_or(|v| v.starts_with('"') || v.starts_with('\''))
+    }
+
+    /// Whether the element's `class` or `className` is built with a
+    /// template literal (`` class={`a ${b}`} ``), which can add any class.
+    pub(crate) fn class_has_template(&self) -> bool {
+        ["class", "className"]
+            .iter()
+            .filter_map(|a| self.attrs.get(*a))
+            .any(|v| v.contains('`'))
+    }
+}
+
+/// The words of every string literal in an attribute value.
+fn literal_words(value: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut quote: Option<char> = None;
+    let mut literal = String::new();
+    for c in value.chars() {
+        match quote {
+            Some(q) if c == q => {
+                words.extend(literal.split_whitespace().map(str::to_string));
+                literal.clear();
+                quote = None;
+            }
+            Some(_) => literal.push(c),
+            None if matches!(c, '"' | '\'' | '`') => quote = Some(c),
+            None => {}
+        }
+    }
+    words.retain(|w| is_class_word(w));
+    words
+}
+
+fn is_class_word(w: &str) -> bool {
+    !w.is_empty()
+        && w.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// The keys of a `classList={{ "a-b": x, c: y }}` object.
+fn class_list_keys(value: &str) -> Vec<String> {
+    let inner = value
+        .trim()
+        .trim_start_matches('{')
+        .trim_end_matches('}')
+        .trim();
+    crate::css::split_top_level(inner, ',')
+        .iter()
+        .filter_map(|entry| entry.split_once(':').map(|(k, _)| k.trim()))
+        .map(|k| k.trim_matches(|c| matches!(c, '"' | '\'' | '[' | ']')))
+        .filter(|k| is_class_word(k))
+        .map(str::to_string)
+        .collect()
+}
+
+/// Whether a `/` at `at` starts a comment rather than sitting in a value
+/// (`rekindle://pair`, `accept="image/*"`): a comment opens at the start of
+/// a line, after whitespace or after `{`, `}`, `(`, `)`, `;` or `,`.
+fn opens_comment(src: &str, at: usize) -> bool {
+    src[..at]
+        .chars()
+        .next_back()
+        .is_none_or(|c| c.is_whitespace() || matches!(c, '{' | '}' | '(' | ')' | ';' | ','))
+}
+
+/// A TS/TSX source with every `// …` and `/* … */` comment blanked to
+/// spaces (newlines kept, so byte offsets and lines stay).
+pub(crate) fn strip_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let mut i = 0;
+    while i < src.len() {
+        let rest = &src[i..];
+        let end = if rest.starts_with("/*") && opens_comment(src, i) {
+            rest.find("*/").map_or(src.len(), |e| i + e + 2)
+        } else if rest.starts_with("//") && opens_comment(src, i) {
+            rest.find('\n').map_or(src.len(), |e| i + e)
+        } else {
+            let c = rest.chars().next().unwrap_or(' ');
+            out.push(c);
+            i += c.len_utf8();
+            continue;
+        };
+        for c in src[i..end].chars() {
+            if c == '\n' {
+                out.push('\n');
+            } else {
+                out.extend(std::iter::repeat_n(' ', c.len_utf8()));
+            }
+        }
+        i = end;
+    }
+    out
 }
 
 #[cfg(test)]
@@ -243,6 +338,28 @@ mod tests {
         assert_eq!(els[0].classes(), vec!["sec-review-fact", "x"]);
         assert_eq!(els[1].classes(), vec!["sec-a", "sec-b"]);
         assert!(els[2].classes().is_empty());
+        assert!(els[0].class_is_static() && !els[1].class_is_static());
+        assert!(els[1].class_has_template() && !els[0].class_has_template());
+    }
+
+    #[test]
+    fn class_list_keys_and_spreads_are_read() {
+        let src = r#"<b classList={{ "sec-review": on(), active: x, [k]: y }} {...rest} />"#;
+        let el = &elements(src)[0];
+        assert_eq!(el.classes(), vec!["sec-review", "active", "k"]);
+        assert!(el.spread);
+        assert_eq!(el.open, 0..src.len());
+    }
+
+    #[test]
+    fn comments_are_blanked_but_urls_and_globs_are_kept() {
+        let src =
+            "a // \u{2192} sec-x\n/* sec-y */ \"rekindle://pair\" accept=\"image/*\" {/* z */}";
+        let out = strip_comments(src);
+        assert_eq!(out.len(), src.len());
+        assert!(!out.contains("sec-x") && !out.contains("sec-y") && !out.contains('z'));
+        assert!(out.contains("rekindle://pair") && out.contains("image/*"));
+        assert_eq!(out.lines().count(), 2);
     }
 
     #[test]

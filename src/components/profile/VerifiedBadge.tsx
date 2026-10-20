@@ -14,12 +14,12 @@ const VerifiedBadge: Component<{ view: SafetyNumberView | null }> = (props) => (
   <Switch>
     <Match when={props.view?.changed}>
       <span class="sec-key-changed-badge" role="status">
-        <span class="nf-icon" aria-hidden="true">{ICON_KEY}</span> Key changed
+        <span class="sec-badge-icon" aria-hidden="true">{ICON_KEY}</span> Key changed
       </span>
     </Match>
     <Match when={props.view?.verified}>
       <span class="sec-verified-badge" role="status">
-        <span class="nf-icon" aria-hidden="true">{ICON_CHECK}</span> Verified
+        <span class="sec-badge-icon" aria-hidden="true">{ICON_CHECK}</span> Verified
       </span>
     </Match>
   </Switch>

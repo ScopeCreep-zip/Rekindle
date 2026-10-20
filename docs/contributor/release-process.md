@@ -88,12 +88,12 @@ platform renders in:
 | Platform | Floor | Where it is set |
 |----------|-------|-----------------|
 | macOS | 14 Sonoma (system WebKit, Safari 16.4 or later) | `src-tauri/tauri.conf.json` `bundle.macOS.minimumSystemVersion` (`LSMinimumSystemVersion` in the bundle's `Info.plist`) |
-| Linux | WebKitGTK 4.1, version 2.40 or later | `src-tauri/tauri.conf.json` `bundle.linux.deb.depends` (`libwebkit2gtk-4.1-0 (>= 2.40)`) |
-| Windows | Evergreen WebView2 (Chromium 105 or later) | `vite.config.ts` `build.target` |
+| Linux | WebKitGTK 4.1, version 2.40 or later | `src-tauri/tauri.conf.json` `bundle.linux.deb.depends` (`libwebkit2gtk-4.1-0 (>= 2.40)`) and `bundle.linux.rpm.depends` (`webkit2gtk4.1 >= 2.40`) |
+| Windows | Evergreen WebView2 (Chromium 111 or later; the Evergreen runtime updates itself) | `vite.config.ts` `build.target` |
 
 The frontend build target follows the floor: `vite.config.ts` uses
-`safari16.4` for macOS and Linux and `chrome105` for Windows. Tailwind 4
-requires Safari 16.4, and the UI depends on `@layer` (Safari 15.4,
+`safari16.4` for macOS and Linux and `chrome111` for Windows. Tailwind 4
+requires Safari 16.4 and Chrome 111 (`color-mix()` is Chromium 111), and the UI depends on `@layer` (Safari 15.4,
 WebKitGTK 2.36, Chromium 99) and `@property` (Safari 16.4, WebKitGTK
 2.40, Chromium 85). Neither esbuild nor Lightning CSS lowers them, so
 on an older engine every layered rule is dropped and the app renders
@@ -117,7 +117,7 @@ a feature a newer WebKitGTK introduces.
 
 Check the floor as part of every release: the built `Info.plist`
 carries `LSMinimumSystemVersion` 14.0 (or the current floor),
-`dpkg-deb -I` on the `.deb` shows the WebKitGTK depend, and the built
+`dpkg-deb -I` on the `.deb` and `rpm -qpR` on the `.rpm` show the WebKitGTK depend, and the built
 CSS still contains its `@layer` statements.
 
 ## Signing

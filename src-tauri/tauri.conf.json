@@ -57,6 +57,14 @@
           "gstreamer1.0-pipewire"
         ]
       },
+      "rpm": {
+        "depends": [
+          "webkit2gtk4.1 >= 2.40",
+          "gstreamer1 >= 1.20",
+          "gstreamer1-plugins-base >= 1.20",
+          "gstreamer1-plugins-good"
+        ]
+      },
       "appimage": {
         "bundleMediaFramework": true
       }

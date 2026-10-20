@@ -30,6 +30,8 @@ pub(crate) struct Block {
     pub decls: Vec<Decl>,
     /// The preludes of the enclosing blocks, outermost first.
     pub ancestors: Vec<String>,
+    /// The line of the prelude.
+    pub line: usize,
 }
 
 impl Block {
@@ -192,6 +194,7 @@ pub(crate) fn blocks(src: &str) -> Vec<Block> {
                             prelude: frame.prelude,
                             decls: frame.decls,
                             ancestors,
+                            line: frame.line,
                         },
                     ));
                 }
@@ -257,5 +260,6 @@ mod tests {
         assert!(root.in_layer("components"));
         let step = b.iter().find(|b| b.prelude == "0%").unwrap();
         assert!(step.in_keyframes());
+        assert_eq!(rule.line, 3);
     }
 }

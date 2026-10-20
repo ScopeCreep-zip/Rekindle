@@ -228,8 +228,8 @@
   }
 
   /* ─── Active header button ─── */
-  .header-btn-active {
-    color: var(--color-xfire-accent-text) !important;
+  .action-bar-btn.header-btn-active {
+    color: var(--color-xfire-accent-text);
   }
 
   /* ─── Profile popup actions ─── */
