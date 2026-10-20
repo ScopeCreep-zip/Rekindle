@@ -7,7 +7,7 @@ use rekindle_transport::operations::{dm, friend, friend::FriendError};
 
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
-use crate::host::adapters::friends::HostFriends;
+use crate::host::adapters::friends::{release_reset_hold, HostFriends};
 use crate::host::gate::Acknowledged;
 
 /// The response for a failed friend operation.
@@ -123,10 +123,18 @@ pub(crate) async fn route(
             done(friend::session_reset::start(&host, &public_key).await)
         }
         IpcRequest::SessionResetAccept { public_key } => {
-            done(friend::session_reset::accept(&host, &public_key, acknowledged.key_change).await)
+            let accepted =
+                friend::session_reset::accept(&host, &public_key, acknowledged.key_change).await;
+            if accepted.is_ok() {
+                release_reset_hold(ctx, &public_key);
+            }
+            done(accepted)
         }
         IpcRequest::SessionResetDecline { public_key } => {
-            done(friend::session_reset::decline(&host, &public_key).await)
+            // The request is answered whether or not the decline reaches them.
+            let declined = friend::session_reset::decline(&host, &public_key).await;
+            release_reset_hold(ctx, &public_key);
+            done(declined)
         }
         IpcRequest::IdentityRotationAccept { public_key } => {
             done(friend::identity_rotation::accept(&host, &public_key).await)

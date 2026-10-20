@@ -502,3 +502,22 @@ fn retain_held_drops_what_it_rejects_without_its_cancel_action() {
     assert!(gate.held_action(old.intent_id, &ME).is_none());
     assert_eq!(gate.held_action(kept.intent_id, &ME), Some("act"));
 }
+
+/// A full gate has room only for a hold that replaces one of its own
+/// unexpired actions; an expired action takes no room (plan audit D-4).
+#[test]
+fn has_room_counts_unexpired_actions_less_the_replaced_ones() {
+    let gate = gate();
+    let s = selection(IntentKind::DeleteChannel, vec![]);
+    let names: Vec<&'static str> = (0..MAX_PENDING_PER_OWNER)
+        .map(|i| &*Box::leak(format!("act-{i}").into_boxed_str()))
+        .collect();
+    for (i, name) in names.iter().enumerate() {
+        assert!(gate.has_room(&ME, |_| false, 0), "room before hold {i}");
+        gate.hold(ME, s.clone(), name, None, 1_000, 0).unwrap();
+    }
+    assert!(!gate.has_room(&ME, |_| false, 0), "a full gate");
+    assert!(gate.has_room(&ME, |a| *a == names[0], 0), "replacing one");
+    assert!(gate.has_room(&who(9), |_| false, 0), "another owner's actions take none of ME's room");
+    assert!(gate.has_room(&ME, |_| false, 1_000), "expired actions take no room");
+}

@@ -268,3 +268,47 @@ async fn a_consumption_truncates_the_wal() {
     accept(&bob, &alice, init).await.unwrap();
     assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
 }
+
+/// A reset's init opens a session only when it answers our stored
+/// request, consumed in the accepting transaction (plan audit D-4); an
+/// unrequested one is refused before any prekey is looked up.
+#[tokio::test]
+async fn a_reset_init_needs_our_stored_request() {
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let reset = |init| {
+        accept_init(
+            &bob.db,
+            &bob.local,
+            &alice.address(),
+            init,
+            Reinitiation::Requested,
+            AD_EXTRA,
+            1,
+        )
+    };
+    let unrequested = reset(initiate(&alice, &bob, b"reset").await).await;
+    assert!(
+        matches!(unrequested, Err(RatchetError::UnrequestedReset)),
+        "{unrequested:?}"
+    );
+
+    let (owner, peer) = (
+        hex::encode(bob.local.owner()),
+        hex::encode(alice.address().identity),
+    );
+    let (o, p) = (owner.clone(), peer.clone());
+    bob.db
+        .call(move |conn| crate::repo::session_reset_requests::insert(conn, &o, &p, 1))
+        .await
+        .unwrap();
+    let accepted = reset(initiate(&alice, &bob, b"answered").await)
+        .await
+        .unwrap();
+    assert_eq!(accepted.inbound.plaintext, b"answered");
+    let left = bob
+        .db
+        .call(move |conn| crate::repo::session_reset_requests::take(conn, &owner, &peer))
+        .await
+        .unwrap();
+    assert!(!left, "the request is consumed with the accept");
+}

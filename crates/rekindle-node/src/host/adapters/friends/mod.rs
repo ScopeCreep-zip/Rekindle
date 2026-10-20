@@ -241,6 +241,23 @@ impl FriendHost for HostFriends {
     }
 }
 
+/// Drop the backend hold on `peer`'s reset request: a direct
+/// `SessionResetAccept` or `SessionResetDecline` answered it, so the held
+/// review would act on a request that is gone (plan audit D-4).
+pub(crate) fn release_reset_hold(ctx: &DaemonContext, peer: &str) {
+    let Ok(identity) = ctx.require_owner() else {
+        return;
+    };
+    let action = IpcRequest::SessionResetAccept {
+        public_key: peer.to_string(),
+    };
+    ctx.intents.retain_held(|held_by, held_action| {
+        !(held_by.conn.is_none()
+            && held_by.identity == identity
+            && same_hold(held_action, &action))
+    });
+}
+
 /// Whether `a` and `b` are the same backend hold: the same kind for the
 /// same friend.
 fn same_hold(a: &IpcRequest, b: &IpcRequest) -> bool {
