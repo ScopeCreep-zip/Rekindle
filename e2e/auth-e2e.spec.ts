@@ -360,7 +360,7 @@ test.describe("Multi-Account", () => {
     // the identity's passphrase, the one prompt (ADR 0019).
     const review = page.locator(".intent-dialog");
     await expect(review).toBeVisible();
-    await expect(review.locator(".intent-dialog-subject")).toContainText("DeleteMe");
+    await expect(review.locator(".sec-review-subject")).toContainText("DeleteMe");
 
     // Enter passphrase and commit the deletion
     await review.locator("input[type='password']").fill("delete-me-pass");

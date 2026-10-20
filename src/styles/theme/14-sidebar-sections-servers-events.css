@@ -62,7 +62,7 @@
   .emoji-picker-tab:hover,
   .emoji-picker-tab-active {
     opacity: 1;
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
   .emoji-picker-scroll {

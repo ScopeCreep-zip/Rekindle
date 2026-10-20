@@ -78,9 +78,13 @@ nostalgia goal.
 `src/styles/global.css` declares the Xfire palette as Tailwind theme
 tokens. Every colour used by the app is one of these tokens — there
 are **no inline hex codes** in components, and no colour literal in any
-rule under `src/styles/` (`cargo xtask check-theme-literals`). Component
-styles read the tokens with `var(--…)` in the ordered parts under
-`src/styles/theme/*.css`.
+rule under `src/styles/`: no hex, no colour function and no named colour
+such as `white` or `black` (`cargo xtask check-theme-literals`; the
+system colours of the `forced-colors` rules are the user's palette and
+stay). Literals live only in `global.css`'s token blocks: `@theme`, the
+light-base values in `@layer xfire-defaults` and the reserved `--sec-*`
+set in `@layer sec`. Component styles read the tokens with `var(--…)` in
+the ordered parts under `src/styles/theme/*.css`.
 
 ```css
 @theme {
@@ -118,22 +122,36 @@ styles read the tokens with `var(--…)` in the ordered parts under
   --color-xfire-online:         #53d769;
   --color-xfire-away:           #ffcc00;
   --color-xfire-ingame:         #4fc3f7;
+  --color-xfire-online-text:    #53d769;   /* the status colours as text */
+  --color-xfire-away-text:      #ffcc00;
+  --color-xfire-ingame-text:    #4fc3f7;
   --color-xfire-busy:           #ef4444;
   --color-xfire-offline:        #7d7d7d;
   --color-xfire-offline-text:   #909090;   /* the offline grey as text */
+
+  /* Overlays */
+  --color-xfire-overlay:        #ffffff;   /* hover and raise, toward the text */
+  --color-xfire-shade:          #000000;   /* recess, away from the text */
+  --color-xfire-fill-shade:     #000000;   /* hover step of a white-text fill */
 }
 ```
 
 The blue is the Xfire accent. As a fill (`accent`, selected items,
 buttons, badges) it carries white text at 4.54:1; as text on a ground it
 is `accent-text`, which reads ≥ 4.5:1 on every grey (plan E7.7.0; the
-original `#177cc1` failed both). Red and the offline grey split the same
-way: the status colours stay for the dots, and `danger-text` and
-`offline-text` carry them as text (plan E7.7.0a). Every pair the region
-map `src/styles/regions.toml` declares reads ≥ 4.5:1, the status dots
-≥ 3:1 (`cargo xtask check-contrast-pairs`). This block is an excerpt: the full set,
-with the per-base values and the reserved `--sec-*` tokens, is
-`src/styles/global.css`. The grey
+original `#177cc1` failed both). Red, the offline grey and the other
+status colours split the same way: the status colours stay for the dots,
+and `danger-text`, `offline-text`, `online-text`, `away-text` and
+`ingame-text` carry them as text (plan E7.7.0a). Hover and pressed
+states lay `overlay` over the ground at a few percent (white on the dark
+base, black on a light one), so one rule serves both bases. Every pair
+the region map `src/styles/regions.toml` declares reads ≥ 4.5:1, the
+status dots ≥ 3:1, on the dark base, and every pair whose text the light
+base revalues reads the same on the light base, measured on white and its
+tints until the skin registry (plan E7.7.1) gives the light base its own
+grounds (`cargo xtask check-contrast-pairs`). This block is an excerpt:
+the full set, with the per-base values and the reserved `--sec-*` tokens,
+is `src/styles/global.css`. The grey
 hierarchy (`#0a → #14 → #1a → #1e → #25 → #2a`) gives subtle elevation
 without breaking the dark-mode-first aesthetic.
 
@@ -182,17 +200,27 @@ addresses this with three patterns from the architecture's a11y audit:
   `clip-path`) wraps ARIA live regions for screen-reader-only
   announcements (incoming-message toasts, presence changes).
 
+The user's settings beat any skin: the `forced-colors` rules, the
+`prefers-contrast: more` overrides and the reduced-motion duration tokens
+are in `@layer a11y`, above `skin` and `components`. Only the security
+surfaces (`@layer sec`: the commit controls, the review card with the facts
+and key fingerprint, the safety number, the pairing QR and code) sit above
+them, and no skin can restyle those (`cargo xtask check-sec-surfaces`).
+
 ## Scrollbars and animations
 
 Two satellite stylesheets handle the rest of the chrome:
 
-- **`src/styles/scrollbar.css`** — narrow custom scrollbars that match
-  the panel background, with the track invisible until hover. Falls
-  back to native scrollbars on platforms that don't support the
-  webkit/scrollbar-* properties.
-- **`src/styles/animations.css`** — a small library of motion tokens
-  (`@keyframes fade-in`, `@keyframes pulse`, status-dot transitions,
-  modal slide-ins). Motion respects `prefers-reduced-motion: reduce`.
+- **`src/styles/scrollbar.css`** — narrow (8 px) custom WebKit
+  scrollbars in `@layer components`: the track is always painted in
+  `bg-dark`, the thumb is the offline grey at 40 % (60 % on hover, 80 %
+  while dragged). An engine without the `::-webkit-scrollbar`
+  pseudo-elements draws its native scrollbars.
+- **`src/styles/animations.css`** — the typing-dot bounce, the
+  new-message fade-in and the toast slide-in (`@keyframes typing-bounce`,
+  `fade-in`, `toast-slide-in`). Every animation is declared under
+  `prefers-reduced-motion: no-preference`, and the `--motion-duration-*`
+  tokens are 0 ms unless the user allows motion.
 
 ## Sound theme
 

@@ -223,33 +223,14 @@
     flex-shrink: 0;
   }
 
-  /* Consent prompts (deep-link consent, session reset): a question the
-   * user answers explicitly, with the key they should check. */
+  /* Consent prompts (deep-link consent): a question the user answers
+   * explicitly. Its statement and the key to check are the `.sec-review`
+   * card (`16-security-surfaces.css`); the error line is chrome. */
   .consent-dialog {
     display: flex;
     flex-direction: column;
     gap: 10px;
     padding: 8px 4px;
-  }
-
-  .consent-dialog-text {
-    margin: 0;
-    color: var(--color-xfire-text-primary);
-    font-size: 13px;
-    line-height: 1.4;
-  }
-
-  .consent-dialog-key {
-    margin: 0;
-    color: var(--color-xfire-text-secondary);
-    font-size: 12px;
-  }
-
-  .consent-dialog-key code {
-    color: var(--color-xfire-text-primary);
-    font-family: monospace;
-    font-size: 14px;
-    letter-spacing: 0.08em;
   }
 
   .consent-dialog-error {
@@ -376,14 +357,17 @@
     padding: 32px;
     text-align: center;
   }
+}
 
-  /* ─── Architecture §32 a11y — high-contrast / forced-colors support ───
-   * Windows High Contrast (forced-colors) and macOS "Increase Contrast"
-   * (prefers-contrast: more) take over color decisions. Map our chrome
-   * to the platform-supplied keywords (CanvasText, ButtonText, etc.) so
-   * focus rings + borders survive the override. APCA Lc target: ≥75 for
-   * essential UI text. */
-
+/* The user's accessibility settings beat any skin (wiring guide §14d): the
+ * `forced-colors` and `prefers-contrast: more` rules are in `@layer a11y`,
+ * beside `global.css`'s token overrides for contrast and reduced motion.
+ * Only `@layer sec` sits above them. */
+@layer a11y {
+  /* ─── Architecture §32 a11y — forced-colors support ───
+   * Windows High Contrast (forced-colors) takes over colour decisions. Map
+   * our chrome to the platform-supplied system colours (CanvasText,
+   * ButtonText, …) so focus rings and borders survive the override. */
   @media (forced-colors: active) {
     /* Restore borders on chrome elements that rely on background tinting
      * for separation — forced-colors strips backgrounds. */
@@ -433,11 +417,6 @@
     }
   }
 
-}
-
-/* `prefers-contrast: more` beats any skin: its token overrides are in
- * `global.css`'s `@layer a11y` block, these rules beside them. */
-@layer a11y {
   @media (prefers-contrast: more) {
     .form-btn-primary,
     .form-btn-secondary,

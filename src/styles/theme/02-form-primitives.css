@@ -73,7 +73,7 @@
   }
 
   .community-item:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
   .community-item-selected {
@@ -118,7 +118,7 @@
   }
 
   .channel-item:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
     color: var(--color-xfire-text);
   }
 
@@ -192,7 +192,7 @@
   }
 
   .member-item:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
   .member-name {
@@ -320,7 +320,7 @@
 
   .profile-popup-game-name {
     font-size: 12px;
-    color: var(--color-xfire-ingame);
+    color: var(--color-xfire-ingame-text);
   }
 
   .profile-popup-game-server {
@@ -346,7 +346,7 @@
 
   .member-game-info {
     font-size: 0.65rem;
-    color: var(--color-xfire-ingame);
+    color: var(--color-xfire-ingame-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -430,7 +430,7 @@
     cursor: pointer;
     font-size: 13px;
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     transition: background 0.15s;
   }
 }

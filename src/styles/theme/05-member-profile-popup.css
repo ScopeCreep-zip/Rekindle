@@ -1,6 +1,6 @@
 @layer components {
   .add-friend-copy-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, black);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, var(--color-xfire-fill-shade));
   }
 
   .add-friend-invite-actions,
@@ -96,7 +96,7 @@
   }
 
   .invite-copy-btn:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, black);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, var(--color-xfire-fill-shade));
   }
 
   .invite-cancel-btn {
@@ -173,7 +173,7 @@
 
   .notification-bell:hover {
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
   .notification-badge {
@@ -241,7 +241,7 @@
   }
 
   .notification-item:hover {
-    background: color-mix(in srgb, white 4%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
   }
 
   .notification-item:last-child {
@@ -285,7 +285,7 @@
   }
 
   .notification-mark-read:hover {
-    color: var(--color-xfire-online);
+    color: var(--color-xfire-online-text);
     background: color-mix(in srgb, var(--color-xfire-online) 15%, transparent);
   }
 
@@ -358,7 +358,7 @@
 
   /* Media route not available: voice cannot connect (plan C7.9c). */
   .network-voice-note {
-    color: var(--color-xfire-away);
+    color: var(--color-xfire-away-text);
   }
 
   /* Community join "dial-in" stepper — per-phase backend join gates */

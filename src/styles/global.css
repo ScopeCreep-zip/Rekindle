@@ -19,15 +19,18 @@
  * order within a layer, so these must stay sorted: parts `00`-`15`, `90`
  * and `91` each re-open `@layer components`, and CSS concatenates them in
  * source order. `16-security-surfaces.css` is `@layer sec`; `91` also
- * closes with the `@layer a11y` contrast rules.
+ * closes with the `@layer a11y` forced-colors and contrast rules.
  *
  * `00-primitives.css` comes first and holds the declaration sets that
  * were written two-to-four times across the other parts. Same layer,
  * earliest source position, so any later rule of equal specificity
  * still wins — which is what makes hoisting them safe.
  *
- * Every colour is a token. Hex and `rgb()` literals appear only in the
- * custom-property declarations of this file (`cargo xtask check-theme-literals`). */
+ * Every colour is a token. Hex, colour-function and named-colour literals
+ * (`white`, `black`, …) appear only in the custom-property declarations of
+ * this file's token blocks: `@theme`, and the `:root` rules of
+ * `@layer xfire-defaults` and `@layer sec` (`cargo xtask
+ * check-theme-literals`). The `@layer a11y` overrides below read tokens. */
 @import "./theme/00-primitives.css";
 @import "./theme/00-rules.css";
 @import "./theme/01-form-primitives.css";
@@ -99,6 +102,11 @@
   --color-xfire-online: #53d769;
   --color-xfire-away: #ffcc00;
   --color-xfire-ingame: #4fc3f7;
+  /* The status colours as text (as accent/accent-text): the same values on
+   * the dark base; the light base gives them 4.5:1 values of their own. */
+  --color-xfire-online-text: #53d769;
+  --color-xfire-away-text: #ffcc00;
+  --color-xfire-ingame-text: #4fc3f7;
   --color-xfire-busy: #ef4444;
   --color-xfire-offline: #7d7d7d;
   /* The offline grey as text. #7d7d7d read 4.05:1 on bg-panel and 3.51 on
@@ -120,6 +128,24 @@
   /* Mixed with `transparent` at the alpha each use needs. */
   --color-xfire-shadow: #000000;
   --color-xfire-scrim: #000000;
+  /* Red text on a scrim (the muted badge on a video tile). A scrim is dark
+   * on every base, so this is not `danger-text`, which the light base
+   * darkens. */
+  --color-xfire-scrim-danger-text: #ff5955;
+  /* The ground behind a video frame, black on every base, as in every
+   * player. */
+  --color-xfire-video-backing: #000000;
+  /* Hover, pressed and raised overlays over a ground, mixed with
+   * `transparent` (`color-mix(in srgb, var(--color-xfire-overlay) 5%,
+   * transparent)`): toward the text, so white on the dark base and black
+   * on the light one. */
+  --color-xfire-overlay: #ffffff;
+  /* A ground recessed away from the text: black on the dark base, white on
+   * the light one. */
+  --color-xfire-shade: #000000;
+  /* The step a fill carrying `accent-fg` (white) takes on hover. It
+   * follows the fill's own text, not the base, so it is black on both. */
+  --color-xfire-fill-shade: #000000;
   --color-xfire-thread-tag: #ffd479;
   /* Mention text, also mixed into its own tint. The old pairs read 2.2,
    * 2.04 and 1.66:1 (dark-on-dark); each is the minimal Oklab-lightness
@@ -134,29 +160,51 @@
 
 /* Values that differ on a light base (registry defaults, E7.7.1). A light
  * skin declares `base: light` and the apply step sets `data-skin-base` on
- * the root (E7.7.2). The status colours are the minimal Oklab-lightness
- * steps (gamut-mapped by chroma) to 3:1 on #ffffff: online #53d769 1.86 →
- * #13ac3e 3.00, away #ffcc00 1.51 → #b59000 3.02, in-game #4fc3f7 2.00 →
- * #1e9fd2 3.02; busy (3.76) and offline (4.12) already pass. The text
- * roles step down to 4.5:1 on #ffffff: danger-text #ef4444 3.76 → #df3337
- * 4.50, offline-text #7d7d7d 4.12 → #767676 4.54. */
+ * the root (E7.7.2). Until the registry gives the light base its own
+ * grounds, these are calibrated on white and on the tints the rules lay
+ * over it (`cargo xtask check-contrast-pairs`, light pass), the hardest
+ * being a selected row (accent 30% over white). Each is the minimal
+ * Oklab-lightness step down from the dark default, gamut-mapped by chroma:
+ * - status graphics, 3:1 on the selected row (4.49-4.54 on white): online
+ *   #008a2e, away #927300, in-game #0080ab, busy #df3337, offline #767676
+ *   (E7.7.0's #13ac3e / #b59000 / #1e9fd2 reached 3:1 on white only);
+ * - status text, 4.5:1 on every declared ground: online-text #00892e
+ *   (4.55 on white), away-text #6e5600 (4.51 on its own 34% tint),
+ *   ingame-text #006285 (4.55 on the selected row);
+ * - danger-text #b4001a (4.53 on the busy 30% tint) and offline-text
+ *   #5b5b5b (4.54 on the selected row), down from E7.7.0a's #df3337 and
+ *   #767676, which read 3.0 there;
+ * - the overlay turns black and the shade white (toward and away from the
+ *   text). */
 @layer xfire-defaults {
   :root[data-skin-base="light"] {
-    --color-xfire-online: #13ac3e;
-    --color-xfire-away: #b59000;
-    --color-xfire-ingame: #1e9fd2;
-    --color-xfire-danger-text: #df3337;
-    --color-xfire-offline-text: #767676;
+    --color-xfire-online: #008a2e;
+    --color-xfire-away: #927300;
+    --color-xfire-ingame: #0080ab;
+    --color-xfire-busy: #df3337;
+    --color-xfire-offline: #767676;
+    --color-xfire-online-text: #00892e;
+    --color-xfire-away-text: #6e5600;
+    --color-xfire-ingame-text: #006285;
+    --color-xfire-danger-text: #b4001a;
+    --color-xfire-offline-text: #5b5b5b;
+    --color-xfire-overlay: #000000;
+    --color-xfire-shade: #ffffff;
   }
 }
 
 /* Security surfaces (plan E7.7.0): reserved tokens, defined only here, in
  * `@layer sec`, valued per base and never themeable. The commit controls of
  * the intent review, the deep-link consent and device pairing use them, so a
- * skin cannot disguise a destructive commit; StatusDot's cutouts paint with
+ * skin cannot disguise a destructive commit; the review card (`--sec-review-*`)
+ * carries what those decisions rest on (facts, escalations, a key
+ * fingerprint), so a skin cannot hide it; StatusDot's cutouts paint with
  * `--sec-status-cutout`, so a skin cannot erase the shape cue; the safety
- * number and its key-trust badges use them, so a skin cannot hide or fake
- * what the user compares (plan E2.3). */
+ * number, the pairing QR and code and the key-trust badges use them, so a
+ * skin cannot hide or fake what the user compares (plan E2.3). Review card
+ * text, dark / light / high contrast: fg 15.15 / 16.63 / 21, muted 8.64 /
+ * 8.47 / 21, escalation 8.21 / 6.25 / 9.20 :1 on the card; its border 4.12 /
+ * 4.34 / 21. */
 @layer sec {
   :root {
     --sec-font-family: "Segoe UI", "Tahoma", sans-serif;
@@ -180,6 +228,11 @@
     --sec-verified-fg: #ffffff;
     --sec-changed-bg: #8a4b00;
     --sec-changed-fg: #ffffff;
+    --sec-review-bg: #121212;
+    --sec-review-fg: #e7e7e7;
+    --sec-review-muted-fg: #b0b0b0;
+    --sec-review-danger-fg: #ff8a80;
+    --sec-review-border: #767676;
   }
 
   :root[data-skin-base="light"] {
@@ -194,6 +247,11 @@
     --sec-secondary-border: #767676;
     --sec-focus: #0b5cad;
     --sec-status-cutout: #ffffff;
+    --sec-review-bg: #f8fafc;
+    --sec-review-fg: #1a1a1a;
+    --sec-review-muted-fg: #4a4a4a;
+    --sec-review-danger-fg: #b3261e;
+    --sec-review-border: #767676;
   }
 
   @media (prefers-contrast: more) {
@@ -210,37 +268,49 @@
       --sec-secondary-border: #ffffff;
       --sec-focus: #ffffff;
       --sec-status-cutout: #000000;
+      --sec-review-bg: #000000;
+      --sec-review-fg: #ffffff;
+      --sec-review-muted-fg: #ffffff;
+      --sec-review-danger-fg: #ff8a80;
+      --sec-review-border: #ffffff;
     }
   }
 }
 
-/* macOS "Increase Contrast" and the other `prefers-contrast: more` hosts.
- * In `@layer a11y`, so a skin cannot undo it. */
+/* The user's accessibility settings, in `@layer a11y`, so no skin can undo
+ * them (wiring guide §14d; `forced-colors` is at the end of
+ * `theme/91-top-level.css`).
+ *
+ * macOS "Increase Contrast" and the other `prefers-contrast: more` hosts:
+ * borders and the dim text roles move toward the text colour of the base,
+ * by mixing the per-base overlay (white on dark, black on light) at the old
+ * alphas, so one rule serves both bases.
+ *
+ * Architecture §32 — motion duration tokens. Default to 0ms so
+ * reduced-motion users get instant transitions; the `no-preference` media
+ * query opts motion-tolerant users in. Consumers use
+ * `var(--motion-duration-fast)` and `var(--motion-duration-base)` directly
+ * in transition/animation declarations; the @keyframes themselves stay
+ * defined so motion-tolerant users get the full effect. */
 @layer a11y {
   @media (prefers-contrast: more) {
     :root {
-      --color-xfire-border: rgba(255, 255, 255, 0.55);
-      --color-xfire-text-dim: rgba(255, 255, 255, 0.85);
-      --color-xfire-text-status: rgba(255, 255, 255, 0.85);
+      --color-xfire-border: color-mix(in srgb, var(--color-xfire-overlay) 55%, transparent);
+      --color-xfire-text-dim: color-mix(in srgb, var(--color-xfire-overlay) 85%, transparent);
+      --color-xfire-text-status: color-mix(in srgb, var(--color-xfire-overlay) 85%, transparent);
     }
   }
-}
 
-/* Architecture §32 a11y — motion duration tokens.
- * Default to 0ms so reduced-motion users get instant transitions; the
- * `no-preference` media query opts motion-tolerant users in. Consumers
- * use `var(--motion-duration-fast)` and `var(--motion-duration-base)`
- * directly in transition/animation declarations; the @keyframes themselves
- * stay defined so motion-tolerant users get the full effect. */
-:root {
-  --motion-duration-fast: 0ms;
-  --motion-duration-base: 0ms;
-}
-
-@media (prefers-reduced-motion: no-preference) {
   :root {
-    --motion-duration-fast: 120ms;
-    --motion-duration-base: 200ms;
+    --motion-duration-fast: 0ms;
+    --motion-duration-base: 0ms;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    :root {
+      --motion-duration-fast: 120ms;
+      --motion-duration-base: 200ms;
+    }
   }
 }
 

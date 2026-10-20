@@ -272,7 +272,7 @@
 
 
   .settings-option:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
   .settings-hint {
@@ -353,7 +353,7 @@
 
   .profile-game-name {
     font-size: 12px;
-    color: var(--color-xfire-ingame);
+    color: var(--color-xfire-ingame-text);
   }
 
 

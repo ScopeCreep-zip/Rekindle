@@ -4,14 +4,23 @@
 //! A skin replaces tokens (E7.7.1's closed registry), so a colour written
 //! as a literal in a rule is a colour no skin, no high-contrast mode and no
 //! validator can reach. This gate fails on a hex colour (`#rgb`, `#rgba`,
-//! `#rrggbb`, `#rrggbbaa`) or a colour function (`rgb(`, `rgba(`, `hsl(`,
-//! `hsla(`, `hwb(`, `lab(`, `lch(`, `oklab(`, `oklch(`, `color(`) in any
-//! declaration value of any stylesheet under `src/styles/`, and anywhere in
-//! a non-CSS file there. The one place literals live is the token block of
-//! `global.css`: its custom-property declarations (`--name: #…;`), which are
-//! the defaults, the per-base values and the reserved `--sec-*` set.
-//! Selectors are not scanned (`#root` is an id, not a colour); comments
-//! are blanked first.
+//! `#rrggbb`, `#rrggbbaa`), a colour function (`rgb(`, `rgba(`, `hsl(`,
+//! `hsla(`, `hwb(`, `lab(`, `lch(`, `oklab(`, `oklch(`, `color(`) or a CSS
+//! named colour (`white`, `black`, … the 148 of CSS Color 4 §6.1) in any
+//! declaration value of any stylesheet under `src/styles/`, and on a hex or
+//! colour function anywhere in a non-CSS file there. `transparent` and
+//! `currentColor` are not literals (no colour of their own), nor are the
+//! CSS-wide keywords; the system colours (`Canvas`, `CanvasText`,
+//! `Highlight`, …, §6.2) are the user's forced palette, which the
+//! `forced-colors` rules must name.
+//!
+//! The one place literals live is the token blocks of `global.css`: the
+//! custom-property declarations of `@theme` (the defaults) and of the
+//! `:root` rules in `@layer xfire-defaults` (the per-base values) and
+//! `@layer sec` (the reserved `--sec-*` set). Every other block of
+//! `global.css`, the `@layer a11y` overrides included, is scanned like any
+//! rule. Selectors are not scanned (`#root` is an id, not a colour);
+//! comments and quoted strings are blanked first.
 
 use std::path::Path;
 
@@ -24,6 +33,159 @@ const STYLES: &str = "src/styles";
 const TOKEN_FILE: &str = "src/styles/global.css";
 const COLOUR_FUNCTIONS: &[&str] = &[
     "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color",
+];
+/// The layers whose `:root` rules hold token values in [`TOKEN_FILE`].
+const TOKEN_LAYERS: &[&str] = &["xfire-defaults", "sec"];
+/// CSS Color 4 §6.1 `<named-color>`.
+const NAMED_COLOURS: &[&str] = &[
+    "aliceblue",
+    "antiquewhite",
+    "aqua",
+    "aquamarine",
+    "azure",
+    "beige",
+    "bisque",
+    "black",
+    "blanchedalmond",
+    "blue",
+    "blueviolet",
+    "brown",
+    "burlywood",
+    "cadetblue",
+    "chartreuse",
+    "chocolate",
+    "coral",
+    "cornflowerblue",
+    "cornsilk",
+    "crimson",
+    "cyan",
+    "darkblue",
+    "darkcyan",
+    "darkgoldenrod",
+    "darkgray",
+    "darkgreen",
+    "darkgrey",
+    "darkkhaki",
+    "darkmagenta",
+    "darkolivegreen",
+    "darkorange",
+    "darkorchid",
+    "darkred",
+    "darksalmon",
+    "darkseagreen",
+    "darkslateblue",
+    "darkslategray",
+    "darkslategrey",
+    "darkturquoise",
+    "darkviolet",
+    "deeppink",
+    "deepskyblue",
+    "dimgray",
+    "dimgrey",
+    "dodgerblue",
+    "firebrick",
+    "floralwhite",
+    "forestgreen",
+    "fuchsia",
+    "gainsboro",
+    "ghostwhite",
+    "gold",
+    "goldenrod",
+    "gray",
+    "green",
+    "greenyellow",
+    "grey",
+    "honeydew",
+    "hotpink",
+    "indianred",
+    "indigo",
+    "ivory",
+    "khaki",
+    "lavender",
+    "lavenderblush",
+    "lawngreen",
+    "lemonchiffon",
+    "lightblue",
+    "lightcoral",
+    "lightcyan",
+    "lightgoldenrodyellow",
+    "lightgray",
+    "lightgreen",
+    "lightgrey",
+    "lightpink",
+    "lightsalmon",
+    "lightseagreen",
+    "lightskyblue",
+    "lightslategray",
+    "lightslategrey",
+    "lightsteelblue",
+    "lightyellow",
+    "lime",
+    "limegreen",
+    "linen",
+    "magenta",
+    "maroon",
+    "mediumaquamarine",
+    "mediumblue",
+    "mediumorchid",
+    "mediumpurple",
+    "mediumseagreen",
+    "mediumslateblue",
+    "mediumspringgreen",
+    "mediumturquoise",
+    "mediumvioletred",
+    "midnightblue",
+    "mintcream",
+    "mistyrose",
+    "moccasin",
+    "navajowhite",
+    "navy",
+    "oldlace",
+    "olive",
+    "olivedrab",
+    "orange",
+    "orangered",
+    "orchid",
+    "palegoldenrod",
+    "palegreen",
+    "paleturquoise",
+    "palevioletred",
+    "papayawhip",
+    "peachpuff",
+    "peru",
+    "pink",
+    "plum",
+    "powderblue",
+    "purple",
+    "rebeccapurple",
+    "red",
+    "rosybrown",
+    "royalblue",
+    "saddlebrown",
+    "salmon",
+    "sandybrown",
+    "seagreen",
+    "seashell",
+    "sienna",
+    "silver",
+    "skyblue",
+    "slateblue",
+    "slategray",
+    "slategrey",
+    "snow",
+    "springgreen",
+    "steelblue",
+    "tan",
+    "teal",
+    "thistle",
+    "tomato",
+    "turquoise",
+    "violet",
+    "wheat",
+    "white",
+    "whitesmoke",
+    "yellow",
+    "yellowgreen",
 ];
 
 /// The colour literals in `text`, in order.
@@ -56,16 +218,56 @@ pub(crate) fn literals_in(text: &str) -> Vec<String> {
     found
 }
 
+/// The CSS named colours in a declaration value, in order. Identifiers are
+/// whole words (`--color-xfire-red` is one custom-property name, not
+/// `red`); quoted strings (font names, `content`) are skipped.
+fn named_in(value: &str) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut word = String::new();
+    let mut quote: Option<char> = None;
+    for c in value.chars().chain(std::iter::once(' ')) {
+        if let Some(q) = quote {
+            if c == q {
+                quote = None;
+            }
+            continue;
+        }
+        if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+            word.push(c);
+            continue;
+        }
+        if NAMED_COLOURS.contains(&word.to_ascii_lowercase().as_str()) {
+            found.push(std::mem::take(&mut word));
+        }
+        word.clear();
+        if c == '"' || c == '\'' {
+            quote = Some(c);
+        }
+    }
+    found
+}
+
+/// Whether `block` of [`TOKEN_FILE`] is a token block: `@theme`, or a
+/// `:root` rule in one of [`TOKEN_LAYERS`].
+fn is_token_block(block: &css::Block) -> bool {
+    block.prelude == "@theme"
+        || (block.selectors().iter().all(|s| s.starts_with(":root"))
+            && TOKEN_LAYERS.iter().any(|l| block.in_layer(l)))
+}
+
 /// Literals in one stylesheet, as `rel:line  literal  in prop`.
 fn scan_css(rel: &str, src: &str) -> Vec<String> {
-    let tokens_allowed = rel == TOKEN_FILE;
     let mut hits = Vec::new();
     for block in css::blocks(src) {
+        let tokens_allowed = rel == TOKEN_FILE && is_token_block(&block);
         for decl in &block.decls {
             if tokens_allowed && decl.prop.starts_with("--") {
                 continue;
             }
-            for lit in literals_in(&decl.value) {
+            for lit in literals_in(&decl.value)
+                .into_iter()
+                .chain(named_in(&decl.value))
+            {
                 hits.push(format!("{rel}:{}  {lit}  in `{}`", decl.line, decl.prop));
             }
         }
@@ -111,8 +313,10 @@ pub(crate) fn check_theme_literals(root: &Path) -> Result<()> {
     }
     Err(anyhow!(
         "{} colour literal(s) under {STYLES}/. Name the colour as a token in \
-         the `@theme` block of {TOKEN_FILE} and use `var(--…)`, mixed with \
-         `color-mix(in srgb, var(--…) N%, transparent)` for an alpha.",
+         the `@theme` block of {TOKEN_FILE} (a per-base value in its \
+         `@layer xfire-defaults` block) and use `var(--…)`, mixed with \
+         `color-mix(in srgb, var(--…) N%, transparent)` for an alpha; a \
+         white or black hover overlay is `--color-xfire-overlay`.",
         hits.len()
     ))
 }
@@ -152,13 +356,43 @@ mod tests {
     }
 
     #[test]
-    fn the_token_block_may_hold_literals_and_nothing_else_in_global_may() {
-        let css = "@theme {\n  --color-xfire-bg: #0a0a0a;\n}\n@layer sec { :root { --sec-x: #fff; } }\n@layer base {\n  body { color: #e7e7e7; }\n}\n/* #abc in a comment */";
+    fn finds_named_colours_as_whole_words_only() {
+        assert_eq!(
+            named_in("color-mix(in srgb, white 5%, transparent)"),
+            vec!["white"]
+        );
+        assert_eq!(named_in("1px solid Black"), vec!["Black"]);
+        assert_eq!(
+            named_in("color-mix(in srgb, var(--color-xfire-accent) 80%, black)"),
+            vec!["black"]
+        );
+        // Not colours: custom-property names, quoted font names, the
+        // keywords without a colour, and the system colours.
+        assert!(named_in("var(--color-xfire-red-tan) \"Tan Sans\", 'navy'").is_empty());
+        assert!(named_in("transparent currentColor inherit initial unset").is_empty());
+        assert!(named_in("1px solid CanvasText; background: Highlight").is_empty());
+    }
+
+    #[test]
+    fn the_token_blocks_may_hold_literals_and_nothing_else_in_global_may() {
+        let css = "@theme {\n  --color-xfire-bg: #0a0a0a;\n}\n@layer sec { :root { --sec-x: #fff; } }\n@layer base {\n  body { color: #e7e7e7; }\n}\n/* #abc in a comment */\n@layer xfire-defaults { :root[data-skin-base=\"light\"] { --color-xfire-overlay: #000000; } }\n@layer a11y {\n  @media (prefers-contrast: more) {\n    :root { --color-xfire-border: rgba(255, 255, 255, 0.55); --color-xfire-x: white; }\n  }\n}";
         let in_global = scan_css(TOKEN_FILE, css);
-        assert_eq!(in_global.len(), 1, "{in_global:?}");
+        assert_eq!(in_global.len(), 3, "{in_global:?}");
         assert!(in_global[0].contains(":6  #e7e7e7"), "{in_global:?}");
+        // The a11y overrides are not a token block.
+        assert!(in_global[1].contains(":12  rgba("), "{in_global:?}");
+        assert!(in_global[2].contains(":12  white"), "{in_global:?}");
         // The same token declarations anywhere else are literals.
-        assert_eq!(scan_css("src/styles/theme/00-x.css", css).len(), 3);
+        assert_eq!(scan_css("src/styles/theme/00-x.css", css).len(), 6);
+    }
+
+    #[test]
+    fn a_seeded_named_colour_in_a_theme_part_fails() {
+        let css = "@layer components {\n  .a:hover {\n    background: color-mix(in srgb, white 5%, transparent);\n  }\n  .b { background: black; border: 1px solid transparent; }\n}";
+        let hits = scan_css("src/styles/theme/99-x.css", css);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert!(hits[0].contains(":3  white  in `background`"), "{hits:?}");
+        assert!(hits[1].contains(":5  black"), "{hits:?}");
     }
 
     #[test]

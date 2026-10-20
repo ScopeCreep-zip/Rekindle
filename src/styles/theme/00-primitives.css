@@ -178,7 +178,7 @@
 
   .update-status-available,
   .voice-panel-status {
-    color: var(--color-xfire-online);
+    color: var(--color-xfire-online-text);
     font-size: 11px;
     font-weight: 600;
   }
@@ -361,7 +361,7 @@
 
   .mention-popover-tag,
   .search-panel-hit-scope {
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     border-radius: 3px;
     color: var(--color-xfire-text-dim);
     font-size: 9px;

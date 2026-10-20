@@ -107,7 +107,7 @@
     position: relative;
     aspect-ratio: 16 / 9;
     min-height: 0;
-    background: black;
+    background: var(--color-xfire-video-backing);
     border-radius: 8px;
     overflow: hidden;
     border: 2px solid transparent;
@@ -181,10 +181,11 @@
   }
 
   /* Red on the 60% scrim over a white frame reads 1.53:1; the muted
-   * badge carries its own darker scrim. */
+   * badge carries its own darker scrim. A scrim is dark on every base, so
+   * its red is the scrim's own, not the base's `danger-text`. */
   .call-stage-tile-badge-muted {
     background: color-mix(in srgb, var(--color-xfire-scrim) 83%, transparent);
-    color: var(--color-xfire-danger-text);
+    color: var(--color-xfire-scrim-danger-text);
   }
 
   /* Footer control bar, centred over the gallery (Element Call pattern). */
@@ -294,7 +295,7 @@
     gap: 10px;
     align-items: center;
     padding: 6px 0;
-    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
   }
 
   .analytics-channel-name {
@@ -456,7 +457,7 @@
 
   .search-panel-hit {
     padding: 8px 14px;
-    border-bottom: 1px solid color-mix(in srgb, white 4%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
   }
 
   .search-panel-hit-meta {

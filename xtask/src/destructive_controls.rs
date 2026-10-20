@@ -12,8 +12,13 @@
 //! - destructive styling (any `*-danger` class) only in a static
 //!   `class="…"` on an element marked `data-role="destructive"`, and that
 //!   mark only on such an element: never a class swapped by an expression;
-//! - a non-colour cue on it: visible content (the verb label) or an
-//!   `aria-label` (a reserved glyph's accessible name);
+//! - a non-colour cue on it: a visible verb label (text a sighted user
+//!   reads; an `aria-hidden` icon glyph and an `aria-label` do not count).
+//!   D0 also allows "the reserved app-owned glyph plus an accessible name"
+//!   for an icon-only control; no destructive control is icon-only today,
+//!   so no glyph is reserved yet and the label is required. The first
+//!   icon-only one reserves its glyph as an `src/icons.ts` id, and this
+//!   gate then accepts exactly that glyph with an `aria-label`;
 //! - never the default control (Apple HIG: "Don't assign the primary role
 //!   to a button that performs a destructive action"): no `type="submit"`,
 //!   no `autofocus`;
@@ -24,11 +29,11 @@
 //! in [`RENDERERS`] fails too, so a new intent-composed panel cannot skip
 //! the gate.
 
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 
+use crate::jsx::elements;
 use crate::walk_source_files;
 
 /// The components that render a Destructive or Protected intent review.
@@ -36,146 +41,6 @@ pub(crate) const RENDERERS: &[&str] = &["src/components/common/IntentDialog.tsx"
 
 /// What marks a component as rendering an intent review.
 const REVIEW_COMMIT: &str = "commitReview(";
-
-/// One JSX opening tag.
-#[derive(Debug)]
-struct Element {
-    tag: String,
-    line: usize,
-    /// Attribute name → raw value (`"…"` or `{…}`, or empty when bare).
-    attrs: BTreeMap<String, String>,
-    /// The text between the tag and its closing tag, `None` if self-closing.
-    children: Option<String>,
-}
-
-/// Whether a `<` at `at` opens a JSX tag rather than a comparison or a
-/// generic (`createSignal<Stage>(`): the previous non-blank character is
-/// not part of an expression operand.
-fn opens_tag(src: &str, at: usize) -> bool {
-    let next = src[at + 1..].chars().next();
-    if !next.is_some_and(|c| c.is_ascii_alphabetic()) {
-        return false;
-    }
-    let prev = src[..at].trim_end().chars().next_back();
-    !prev.is_some_and(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | ')' | ']' | '.'))
-}
-
-/// The end of an opening tag starting at `at` (index of its `>`).
-fn tag_end(src: &str, at: usize) -> Option<usize> {
-    let mut depth = 0i32;
-    let mut quote: Option<char> = None;
-    for (i, c) in src[at..].char_indices() {
-        match quote {
-            Some(q) if c == q => quote = None,
-            Some(_) => {}
-            None => match c {
-                '"' | '\'' | '`' => quote = Some(c),
-                '{' => depth += 1,
-                '}' => depth -= 1,
-                '>' if depth == 0 => return Some(at + i),
-                _ => {}
-            },
-        }
-    }
-    None
-}
-
-fn parse_attrs(inner: &str) -> BTreeMap<String, String> {
-    let mut attrs = BTreeMap::new();
-    let chars: Vec<char> = inner.chars().collect();
-    let mut i = 0;
-    while i < chars.len() {
-        if !(chars[i].is_ascii_alphabetic() || chars[i] == '-') {
-            i += 1;
-            continue;
-        }
-        let start = i;
-        while i < chars.len()
-            && (chars[i].is_ascii_alphanumeric() || matches!(chars[i], '-' | ':' | '_'))
-        {
-            i += 1;
-        }
-        let name: String = chars[start..i].iter().collect();
-        let mut value = String::new();
-        if chars.get(i) == Some(&'=') {
-            i += 1;
-            let open = chars.get(i).copied();
-            let (close, nests) = match open {
-                Some('"') => ('"', false),
-                Some('\'') => ('\'', false),
-                Some('{') => ('}', true),
-                _ => (' ', false),
-            };
-            let vstart = i;
-            let mut depth = 0i32;
-            while i < chars.len() {
-                let c = chars[i];
-                if nests && c == '{' {
-                    depth += 1;
-                } else if c == close && (!nests || depth == 1) && i > vstart {
-                    i += 1;
-                    break;
-                } else if nests && c == '}' {
-                    depth -= 1;
-                }
-                i += 1;
-            }
-            value = chars[vstart..i.min(chars.len())].iter().collect();
-        }
-        attrs.insert(name, value);
-    }
-    attrs
-}
-
-/// Every JSX element of a TSX source.
-fn elements(src: &str) -> Vec<Element> {
-    let mut out = Vec::new();
-    for (at, _) in src.match_indices('<') {
-        if !opens_tag(src, at) {
-            continue;
-        }
-        let Some(end) = tag_end(src, at) else {
-            continue;
-        };
-        let inner = &src[at + 1..end];
-        let tag: String = inner
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-'))
-            .collect();
-        let self_closing = inner.trim_end().ends_with('/');
-        let children = (!self_closing).then(|| closing_content(src, end + 1, &tag));
-        out.push(Element {
-            line: src[..at].matches('\n').count() + 1,
-            attrs: parse_attrs(&inner[tag.len()..]),
-            tag,
-            children,
-        });
-    }
-    out
-}
-
-/// The text from `from` to the matching `</tag>`.
-fn closing_content(src: &str, from: usize, tag: &str) -> String {
-    let open = format!("<{tag}");
-    let close = format!("</{tag}>");
-    let mut depth = 1;
-    let mut i = from;
-    while let Some(next_close) = src[i..].find(&close) {
-        let opens = src[i..i + next_close]
-            .match_indices(&open)
-            .filter(|(o, _)| {
-                src[i + o + open.len()..].starts_with(|c: char| c.is_whitespace() || c == '>')
-            })
-            .count();
-        depth += opens;
-        depth -= 1;
-        if depth == 0 {
-            return src[from..i + next_close].to_string();
-        }
-        i += next_close + close.len();
-    }
-    src[from..].to_string()
-}
 
 fn danger_class(value: &str) -> bool {
     value
@@ -219,11 +84,9 @@ fn scan(rel: &str, src: &str) -> Vec<String> {
                 "{at}  a destructive control takes focus by default"
             ));
         }
-        let labelled = el.attrs.contains_key("aria-label")
-            || el.children.as_deref().is_some_and(|c| !c.trim().is_empty());
-        if !labelled {
+        if el.visible_text().is_empty() {
             hits.push(format!(
-                "{at}  no non-colour cue: give it a verb label or an `aria-label`"
+                "{at}  no non-colour cue: give it a visible verb label (no glyph is reserved yet)"
             ));
         }
     }
@@ -263,8 +126,8 @@ pub(crate) fn check_destructive_controls(root: &Path) -> Result<()> {
         println!("  ✗ {h}");
     }
     Err(anyhow!(
-        "{} destructive-control violation(s) (rule D0: a verb label or \
-         reserved glyph, never the default, at most one per view).",
+        "{} destructive-control violation(s) (rule D0: a visible verb \
+         label, never the default, at most one per view).",
         hits.len()
     ))
 }
@@ -309,8 +172,12 @@ mod tests {
         assert!(scan("D.tsx", focused)[0].contains("focus"));
         let bare = r#"<button class="sec-btn-commit-danger" data-role="destructive" />"#;
         assert!(scan("D.tsx", bare)[0].contains("non-colour cue"));
-        let glyph = r#"<button class="sec-btn-commit-danger" data-role="destructive" aria-label="Delete channel" />"#;
-        assert!(scan("D.tsx", glyph).is_empty());
+        // An accessible name alone, or an icon a sighted user cannot read
+        // as a verb, is no cue while no glyph is reserved.
+        let named = r#"<button class="sec-btn-commit-danger" data-role="destructive" aria-label="Delete channel" />"#;
+        assert!(scan("D.tsx", named)[0].contains("visible verb label"));
+        let icon = r#"<button class="sec-btn-commit-danger" data-role="destructive" aria-label="Delete"><span class="nf-icon" aria-hidden="true">{ICON_TRASH}</span></button>"#;
+        assert!(scan("D.tsx", icon)[0].contains("visible verb label"));
         let two = format!("{default}{default}").replace("type=\"submit\" ", "");
         assert!(scan("D.tsx", &two)
             .iter()
@@ -323,14 +190,5 @@ mod tests {
         assert!(scan("D.tsx", unmarked)[0].contains("without `data-role"));
         let unstyled = r#"<button class="sec-btn-commit" data-role="destructive">Remove</button>"#;
         assert!(scan("D.tsx", unstyled)[0].contains("without its destructive class"));
-    }
-
-    #[test]
-    fn generics_and_comparisons_are_not_tags() {
-        let src = "const a = b < c; const [x] = createSignal<Stage>(\"intro\"); type T = Record<string, number>;";
-        assert!(elements(src).is_empty());
-        let nested = "<div class=\"a\"><div>inner</div>tail</div>";
-        let els = elements(nested);
-        assert_eq!(els[0].children.as_deref(), Some("<div>inner</div>tail"));
     }
 }

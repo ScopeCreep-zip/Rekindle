@@ -28,7 +28,7 @@
 //!                                      Every token-coloured text selector
 //!                                      declares its ground.
 //!     cargo xtask check-contrast-pairs Every declared pair reads 4.5:1
-//!                                      (graphics 3:1) on the defaults.
+//!                                      (graphics 3:1) on each base.
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
 //!                                      placeholders to existing allows
@@ -63,6 +63,7 @@ mod domain_literals;
 mod duplication;
 mod frontend_boundaries;
 mod intent_table;
+mod jsx;
 mod literals;
 mod no_emitter;
 mod no_managed_db;
@@ -112,15 +113,15 @@ enum Command {
     CheckBareSpawn,
     /// Verify every command and IPC request is classified in the intent table.
     CheckIntentTable,
-    /// Verify every colour under src/styles is a token (no hex or rgb() literal).
+    /// Verify every colour under src/styles is a token (no hex, colour-function or named literal).
     CheckThemeLiterals,
-    /// Verify security surfaces use only the reserved `--sec-*` tokens and classes.
+    /// Verify security-critical elements use only the reserved `.sec-*` classes and `--sec-*` tokens.
     CheckSecSurfaces,
-    /// Verify destructive controls have a non-colour cue, are never default, one per view.
+    /// Verify destructive controls have a visible verb label, are never default, one per view.
     CheckDestructiveControls,
     /// Verify every token-coloured text selector declares its ground in the region map.
     CheckDeclaredGrounds,
-    /// Verify every declared text-on-ground pair reads 4.5:1 (graphics 3:1).
+    /// Verify every declared text-on-ground pair reads 4.5:1 (graphics 3:1) on each base.
     CheckContrastPairs,
     /// Verify no function body is duplicated across crates.
     CheckDuplicateBodies,

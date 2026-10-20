@@ -14,7 +14,7 @@
   }
 
   .emoji-picker-item:hover {
-    background: color-mix(in srgb, white 10%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
   }
 
   /* ─── Pin panel ─── */
@@ -49,11 +49,11 @@
     padding: 8px;
     border-radius: 4px;
     margin-bottom: 4px;
-    background: color-mix(in srgb, white 3%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 3%, transparent);
   }
 
   .pin-panel-item:hover {
-    background: color-mix(in srgb, white 6%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 6%, transparent);
   }
 
   .pin-panel-item-sender {
@@ -145,7 +145,7 @@
 
   .thread-panel-archive-btn:hover {
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
   .thread-panel-messages {
@@ -380,7 +380,7 @@
   }
 
   .stage-panel-leave-btn {
-    background: color-mix(in srgb, var(--color-xfire-bg-tertiary) 85%, black);
+    background: color-mix(in srgb, var(--color-xfire-bg-tertiary) 85%, var(--color-xfire-shade));
     color: var(--color-xfire-text);
   }
 

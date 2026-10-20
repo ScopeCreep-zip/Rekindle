@@ -123,7 +123,7 @@
 
   .xfire-titlebar-btn:hover {
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 10%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
   }
 
   .xfire-titlebar-btn-close:hover {
@@ -196,7 +196,7 @@
   }
 
   .form-btn-primary:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, black);
+    background: color-mix(in srgb, var(--color-xfire-accent) 80%, var(--color-xfire-fill-shade));
   }
 
   .form-btn-primary:disabled {
@@ -206,7 +206,7 @@
 
   .form-btn-secondary {
     padding: 8px 16px;
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     color: var(--color-xfire-text);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 0.25rem;
@@ -218,7 +218,7 @@
   }
 
   .form-btn-secondary:hover {
-    background: color-mix(in srgb, white 12%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 12%, transparent);
   }
 
   .form-btn-secondary:disabled {
@@ -337,7 +337,7 @@
 
 
   .buddy-item:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
   .buddy-item-content {
@@ -356,7 +356,7 @@
 
   .buddy-game-info {
     font-size: 10px;
-    color: var(--color-xfire-ingame);
+    color: var(--color-xfire-ingame-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -399,7 +399,7 @@
   }
 
   .buddy-group-pending .buddy-group-header {
-    color: var(--color-xfire-away);
+    color: var(--color-xfire-away-text);
   }
 
   /* Status dots — architecture §32 a11y. The host span carries the

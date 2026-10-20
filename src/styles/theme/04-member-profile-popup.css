@@ -226,7 +226,7 @@
 
   .modal-close-btn:hover {
     color: var(--color-xfire-text);
-    background: color-mix(in srgb, white 10%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
   }
 
   .modal-body {

@@ -86,6 +86,21 @@ pub(crate) fn theme_colours(global: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
+/// The light-base selector of `@layer xfire-defaults` (E7.7.2's apply step
+/// sets the attribute).
+pub(crate) const LIGHT_BASE: &str = ":root[data-skin-base=\"light\"]";
+
+/// The `--color-*` values the light base declares over the defaults.
+pub(crate) fn light_base_colours(global: &str) -> BTreeMap<String, String> {
+    css::blocks(global)
+        .into_iter()
+        .filter(|b| b.prelude == LIGHT_BASE && b.in_layer("xfire-defaults"))
+        .flat_map(|b| b.decls)
+        .filter(|d| d.prop.starts_with("--color-"))
+        .map(|d| (d.prop, d.value))
+        .collect()
+}
+
 fn theme_tokens(global: &str) -> BTreeSet<String> {
     theme_colours(global).into_keys().collect()
 }

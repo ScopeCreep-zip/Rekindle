@@ -10,6 +10,12 @@ import { errorMessage } from "../../utils/error";
 /// key it names and sends back the user's decision. A friend invite link is
 /// the Host's review instead (the intent dialog's fingerprint card, plan
 /// E2.1).
+///
+/// A security surface (plan E7.7.0): the statement of what the link does
+/// and the key fingerprint sit on the reserved `.sec-review` card, and the
+/// buttons are the reserved `.sec-btn-*` controls, so no skin can hide the
+/// fingerprint or disguise the choice. The modal frame and the error line
+/// stay themeable.
 const DeepLinkConsentDialog: Component = () => {
   const [busy, setBusy] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
@@ -61,31 +67,33 @@ const DeepLinkConsentDialog: Component = () => {
   return (
     <Modal isOpen={pendingDeepLink() !== null} title={title()} onClose={dismiss} size="sm">
       <div class="consent-dialog">
-        <Switch>
-          <Match when={pendingDeepLink()?.kind === "pairingRefused"}>
-            <p class="consent-dialog-text">
-              A link tried to pair a new device with this account. Pairing links are only
-              accepted when pasted or scanned in Settings → Devices.
-            </p>
-          </Match>
-          <Match when={pendingDeepLink()}>
-            {(request) => (
-              <>
-                <p class="consent-dialog-text">
-                  {request().kind === "joinCommunity" &&
-                    "A link wants you to join a community you have not seen before. Joining shares your community pseudonym and presence with its members."}
-                </p>
-                <Show when={fingerprint()}>
-                  {(fp) => (
-                    <p class="consent-dialog-key">
-                      Key fingerprint <code>{fp()}</code>
-                    </p>
-                  )}
-                </Show>
-              </>
-            )}
-          </Match>
-        </Switch>
+        <div class="sec-review">
+          <Switch>
+            <Match when={pendingDeepLink()?.kind === "pairingRefused"}>
+              <p class="sec-review-fact">
+                A link tried to pair a new device with this account. Pairing links are only
+                accepted when pasted or scanned in Settings → Devices.
+              </p>
+            </Match>
+            <Match when={pendingDeepLink()}>
+              {(request) => (
+                <>
+                  <p class="sec-review-fact">
+                    {request().kind === "joinCommunity" &&
+                      "A link wants you to join a community you have not seen before. Joining shares your community pseudonym and presence with its members."}
+                  </p>
+                  <Show when={fingerprint()}>
+                    {(fp) => (
+                      <p class="sec-fingerprint">
+                        Key fingerprint <code class="sec-fingerprint-value">{fp()}</code>
+                      </p>
+                    )}
+                  </Show>
+                </>
+              )}
+            </Match>
+          </Switch>
+        </div>
         <Show when={error()}>
           <p class="consent-dialog-error" role="alert">{error()}</p>
         </Show>

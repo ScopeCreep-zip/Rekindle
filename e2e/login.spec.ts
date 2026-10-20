@@ -101,7 +101,7 @@ test.describe("Account Picker", () => {
     // is the reserved destructive control and never the form's default.
     const review = page.locator(".intent-dialog");
     await expect(review).toBeVisible();
-    await expect(review.locator(".intent-dialog-subject")).toHaveText("TestUser");
+    await expect(review.locator(".sec-review-subject")).toHaveText("TestUser");
     const commit = review.locator("[data-role='destructive']");
     await expect(commit).toHaveClass(/sec-btn-commit-danger/);
     await expect(commit).toHaveAttribute("type", "button");

@@ -26,6 +26,11 @@ type Stage = "intro" | "show-qr" | "scan-paste" | "complete";
  * and blocks user context, so it lives in a Modal (per Dossier 3 cognitive
  * design guidance) rather than a settings sub-tab.
  *
+ * A security surface (plan E7.7.0): the pairing QR and its code, which the
+ * new device must receive exactly, sit on the reserved `.sec-pairing-*`
+ * card, and the buttons are the reserved `.sec-btn-*` controls. The modal
+ * frame, the form fields and the explanatory text stay themeable.
+ *
  * **Privacy boundary** (verbatim from architecture §28.4):
  *  - 12-word code = ~40 bits + salt; HKDF(code, salt) is the symmetric
  *    handshake key. **Not a formal PAKE** — the 5-minute TTL on
@@ -306,14 +311,14 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
                   audited exception.
               */}
               <div
-                class="pairing-qr-display"
+                class="sec-pairing-qr"
                 // eslint-disable-next-line solid/no-innerhtml
                 // nosemgrep: rekindle-no-inner-html
                 innerHTML={svg()}
                 role="img"
                 aria-label="Pairing QR code"
               />
-              <div class="settings-hint-inline">
+              <div class="sec-pairing-code">
                 Code: <strong>{session.pairingCode}</strong>
               </div>
               <div class="settings-button-row">

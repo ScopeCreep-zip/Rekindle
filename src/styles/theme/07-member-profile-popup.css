@@ -7,7 +7,7 @@
   .settings-subsection {
     margin-bottom: 12px;
     padding-bottom: 8px;
-    border-bottom: 1px solid color-mix(in srgb, white 8%, transparent);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
   .settings-subsection-title {
@@ -36,7 +36,7 @@
   }
 
   .channel-create-category-btn:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
     color: var(--color-xfire-text);
   }
 
@@ -51,7 +51,7 @@
   }
 
   .settings-member-row:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
 
@@ -79,7 +79,7 @@
   }
 
   .settings-list-item:hover {
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
 

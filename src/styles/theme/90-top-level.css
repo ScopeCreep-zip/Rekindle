@@ -36,22 +36,6 @@
     }
 
 
-    /* Phase 7 W24 — cross-device pairing QR display + camera scanner. */
-    .pairing-qr-display {
-      display: inline-block;
-      padding: 12px;
-      background: var(--sec-qr-backing);
-      border: 1px solid var(--color-xfire-border);
-      border-radius: 6px;
-      line-height: 0;
-    }
-
-    .pairing-qr-display svg {
-      display: block;
-      width: 256px;
-      height: 256px;
-    }
-
     .settings-button-row {
       display: flex;
       gap: 8px;

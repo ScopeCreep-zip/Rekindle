@@ -9,15 +9,19 @@
 # `.reply-preview`'s tint), so it is authored here from the component tree,
 # never inferred from the CSS.
 #
-# Hover overlays of white or black (`color-mix(in srgb, white 5%,
+# Hover overlays (`color-mix(in srgb, var(--color-xfire-overlay) 5%,
 # transparent)`) are not grounds: they are a few percent over the ground named.
+# A ground that is itself an overlay or shade mix (the menu bar's 10% raise)
+# is declared as that tint.
 # A video tile's text sits on a 60% scrim over arbitrary frames; its worst
 # case, a white frame, is written `scrim 60% over text-on-fill`.
 #
 # `graphic = true` marks a selector whose colour paints a graphic rather
 # than text (the status-dot shapes): WCAG 1.4.11 asks 3:1 of it, where text
-# needs 4.5:1 (1.4.3). `cargo xtask check-contrast-pairs` measures every
-# declared pair on the default (`@theme`) palette (plan E7.7.0a).
+# needs 4.5:1 (1.4.3). The presence dot glyph (`●`, `aria-hidden`) is one.
+# `cargo xtask check-contrast-pairs` measures every declared pair on the
+# default (`@theme`) palette, and every pair whose text the light base
+# revalues on the light base (plan E7.7.0a).
 #
 # `cargo xtask check-declared-grounds` fails on a token-coloured text selector
 # without an entry, on an entry for any other selector, and on a malformed
@@ -143,7 +147,7 @@
 '.channel-item-selected' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark"] }
 '.channel-unread-badge' = { on = ["--color-xfire-accent"] }
 '.channel-presence-badge' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
-'.channel-presence-dot' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
+'.channel-presence-dot' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"], graphic = true }
 '.member-list-header' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.role-tag-default' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-accent 25% over --color-xfire-bg-panel", "--color-xfire-accent 25% over --color-xfire-bg-primary"] }
 '.profile-popup-status' = { on = ["--color-xfire-bg-primary"] }
@@ -297,10 +301,10 @@
 '.buddy-tab:hover' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-tab-active' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-search-input::placeholder' = { on = ["--color-xfire-bg-input"] }
-'.menu-bar-item' = { on = ["--color-xfire-bg-dark"] }
-'.menu-bar-item:hover' = { on = ["--color-xfire-bg-dark"] }
-'.menu-bar-item:focus-visible' = { on = ["--color-xfire-bg-dark"] }
-'.menu-bar-item[data-expanded]' = { on = ["--color-xfire-bg-dark"] }
+'.menu-bar-item' = { on = ["--color-xfire-overlay 10% over --color-xfire-bg-dark"] }
+'.menu-bar-item:hover' = { on = ["--color-xfire-overlay 10% over --color-xfire-bg-dark"] }
+'.menu-bar-item:focus-visible' = { on = ["--color-xfire-overlay 10% over --color-xfire-bg-dark"] }
+'.menu-bar-item[data-expanded]' = { on = ["--color-xfire-overlay 10% over --color-xfire-bg-dark"] }
 '.menu-dropdown-item' = { on = ["--color-xfire-bg-panel"] }
 '.menu-dropdown-item-disabled' = { on = ["--color-xfire-bg-panel"] }
 '.menu-dropdown-item-danger' = { on = ["--color-xfire-bg-panel"] }
@@ -338,7 +342,7 @@
 '.stage-panel-title' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-secondary", "--color-xfire-bg-secondary", "--color-xfire-online 10% over --color-xfire-bg-secondary"] }
 '.stage-panel-topic' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-secondary", "--color-xfire-bg-secondary", "--color-xfire-online 10% over --color-xfire-bg-secondary"] }
 '.stage-panel-join-btn' = { on = ["--color-xfire-online 18% over --color-xfire-bg-tertiary"] }
-'.stage-panel-leave-btn' = { on = ["--color-xfire-bg-tertiary"] }
+'.stage-panel-leave-btn' = { on = ["--color-xfire-shade 15% over --color-xfire-bg-tertiary"] }
 '.stage-panel-request-btn' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-tertiary"] }
 '.stage-panel-status' = { on = ["--color-xfire-bg-dark"] }
 '.stage-panel-section-title' = { on = ["--color-xfire-bg-secondary"] }
@@ -460,10 +464,6 @@
 '.expression-picker-soundboard-name' = { on = ["--color-xfire-bg-panel"] }
 '.event-timezone' = { on = ["--color-xfire-bg-secondary"] }
 '.settings-audit-collapsible summary:hover' = { on = ["--color-xfire-bg-panel"] }
-'.intent-dialog-subject' = { on = ["--color-xfire-bg-panel"] }
-'.intent-dialog-facts' = { on = ["--color-xfire-bg-panel"] }
-'.intent-dialog-escalation' = { on = ["--color-xfire-bg-panel"] }
-'.intent-dialog-meta' = { on = ["--color-xfire-bg-panel"] }
 '.automod-rule-name' = { on = ["--color-xfire-bg-panel"] }
 '.automod-rule-meta' = { on = ["--color-xfire-bg-panel"] }
 '.automod-enabled-toggle' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
@@ -501,9 +501,6 @@
 '.dm-invite-meta strong' = { on = ["--color-xfire-bg-secondary"] }
 '.dm-invite-kind' = { on = ["--color-xfire-bg-secondary"] }
 '.dm-invite-key' = { on = ["--color-xfire-bg-secondary"] }
-'.consent-dialog-text' = { on = ["--color-xfire-bg-panel"] }
-'.consent-dialog-key' = { on = ["--color-xfire-bg-panel"] }
-'.consent-dialog-key code' = { on = ["--color-xfire-bg-panel"] }
 '.consent-dialog-error' = { on = ["--color-xfire-bg-panel"] }
 '.relay-section-subtitle' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.relay-row-badge' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }

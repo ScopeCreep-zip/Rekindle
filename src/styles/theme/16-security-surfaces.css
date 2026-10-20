@@ -1,13 +1,24 @@
 /* Security surfaces (plan E7.7.0). `@layer sec` is last in the cascade, and
  * these rules read only the reserved `--sec-*` tokens (`global.css`), so no
- * skin can restyle them (`cargo xtask check-sec-surfaces`). The safety
- * number's card and its badges (plan E2.3) are here too.
+ * skin can restyle them (`cargo xtask check-sec-surfaces`).
  *
- * The commit controls of the components that ask for a deliberate decision:
- * the intent review, the deep-link consent and device pairing. A skin can
- * recolour the dialog around them, never the choice itself: the
- * destructive commit always looks destructive, the safe one never does.
- * Their metrics are the `.form-btn-*` ones they replace. */
+ * The security-critical parts of each surface, and nothing else, are drawn
+ * here; a skin can recolour the dialog around them (title, frame, overlay,
+ * proof fields, error line), never these:
+ * - the commit controls `.sec-btn-commit`, `.sec-btn-commit-danger`,
+ *   `.sec-btn-secondary` (intent review, deep-link consent, device
+ *   pairing, safety number): the destructive commit always looks
+ *   destructive, the safe one never does; their metrics are the
+ *   `.form-btn-*` ones they replace;
+ * - the review card `.sec-review` with what a decision rests on: the
+ *   subject, the escalations and facts, what undo and notification apply
+ *   and the acknowledgement that restates the fact (`IntentDialog`), the
+ *   statement of what a deep link does and the key fingerprint
+ *   (`DeepLinkConsentDialog`);
+ * - the pairing QR and its code (`AddDeviceModal`);
+ * - the safety number's card and the key-trust badges (plan E2.3).
+ * Each sets its own ground, text colour and font, so nothing is inherited
+ * from the themeable dialog it sits in. */
 @layer sec {
   .sec-btn-commit,
   .sec-btn-commit-danger,
@@ -76,6 +87,101 @@
     .sec-btn-secondary {
       border-width: 2px;
     }
+  }
+
+  /* The review card: a fixed ground and text, so a skin can neither paint
+   * the facts in the dialog's own colour nor restyle the warning. */
+  .sec-review {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--sec-review-bg);
+    color: var(--sec-review-fg);
+    border: 1px solid var(--sec-review-border);
+    border-radius: 4px;
+    font-family: var(--sec-font-family);
+    font-size: 12px;
+  }
+
+  .sec-review-subject {
+    font-weight: 600;
+    word-break: break-word;
+  }
+
+  .sec-review-facts {
+    margin: 0;
+    padding-left: 16px;
+  }
+
+  .sec-review-fact {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  /* An escalation (a verified key that changed, plan E2.3): the words carry
+   * it, the colour repeats them. */
+  .sec-review-escalation {
+    color: var(--sec-review-danger-fg);
+    font-weight: 600;
+  }
+
+  .sec-review-meta {
+    font-size: 11px;
+    color: var(--sec-review-muted-fg);
+  }
+
+  .sec-review-ack {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+  }
+
+  .sec-review-ack input {
+    accent-color: var(--sec-commit-bg);
+  }
+
+  .sec-fingerprint {
+    margin: 0;
+    color: var(--sec-review-muted-fg);
+  }
+
+  .sec-fingerprint-value {
+    color: var(--sec-review-fg);
+    font-family: var(--sec-mono-font-family);
+    font-size: 14px;
+    letter-spacing: 0.08em;
+  }
+
+  /* Device pairing: the QR on the scanner's light backing (the SVG is the
+   * Host's) and the code beside it, which the new device must receive
+   * exactly. */
+  .sec-pairing-qr {
+    display: inline-block;
+    padding: 12px;
+    background: var(--sec-qr-backing);
+    border: 1px solid var(--sec-secondary-border);
+    border-radius: 6px;
+    line-height: 0;
+  }
+
+  .sec-pairing-qr svg {
+    display: block;
+    width: 256px;
+    height: 256px;
+  }
+
+  .sec-pairing-code {
+    display: inline-block;
+    margin: 6px 0;
+    padding: 4px 8px;
+    background: var(--sec-qr-backing);
+    color: var(--sec-qr-ink);
+    border: 1px solid var(--sec-secondary-border);
+    border-radius: 4px;
+    font-family: var(--sec-mono-font-family);
+    font-size: 12px;
   }
 
   /* StatusDot's shape cutouts (WCAG 1.4.1): a fixed ground per base, so a

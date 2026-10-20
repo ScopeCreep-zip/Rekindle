@@ -165,7 +165,7 @@
     display: flex;
     height: 22px;
     align-items: stretch;
-    background: color-mix(in srgb, var(--color-xfire-bg-dark) 90%, white);
+    background: color-mix(in srgb, var(--color-xfire-bg-dark) 90%, var(--color-xfire-overlay));
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
     flex-shrink: 0;
   }
@@ -184,14 +184,14 @@
 
   .menu-bar-item:hover,
   .menu-bar-item:focus-visible {
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     color: var(--color-xfire-text);
     outline: none;
   }
 
   /* Kobalte sets data-expanded="" on the trigger while its menu is open. */
   .menu-bar-item[data-expanded] {
-    background: color-mix(in srgb, white 12%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 12%, transparent);
     color: var(--color-xfire-text);
   }
 
@@ -343,7 +343,7 @@
     gap: 6px;
     padding: 3px 8px;
     margin-bottom: 2px;
-    background: color-mix(in srgb, white 4%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 4%, transparent);
     border-left: 2px solid var(--color-xfire-accent);
     border-radius: 0 3px 3px 0;
     font-size: 10px;
@@ -352,7 +352,7 @@
   }
 
   .reply-snippet:hover {
-    background: color-mix(in srgb, white 8%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }
 
   .reply-snippet-sender {
@@ -375,14 +375,14 @@
     padding: 2px 6px;
     border-radius: 10px;
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
-    background: color-mix(in srgb, white 5%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
     cursor: pointer;
     font-size: 12px;
     transition: background 0.15s, border-color 0.15s;
   }
 
   .reaction-chip:hover {
-    background: color-mix(in srgb, white 10%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
   }
 
   .reaction-chip-active {

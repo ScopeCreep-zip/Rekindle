@@ -1,6 +1,6 @@
 @layer components {
   .voice-btn:hover {
-    background: color-mix(in srgb, white 15%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-overlay) 15%, transparent);
   }
 
   .voice-btn-active {
@@ -387,9 +387,9 @@
     color: var(--color-xfire-text-secondary);
     text-transform: capitalize;
   }
-  .active-call-status-online { color: var(--color-xfire-online); }
-  .active-call-status-away   { color: var(--color-xfire-away); }
-  .active-call-status-busy   { color: var(--color-xfire-busy); }
+  .active-call-status-online { color: var(--color-xfire-online-text); }
+  .active-call-status-away   { color: var(--color-xfire-away-text); }
+  .active-call-status-busy   { color: var(--color-xfire-danger-text); }
   .active-call-status-offline { color: var(--color-xfire-offline-text); }
   .active-call-timer {
     margin-left: auto;

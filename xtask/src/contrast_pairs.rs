@@ -1,21 +1,32 @@
 //! `check-contrast-pairs` (plan E7.7.0a): every text-on-ground pair the
-//! region map declares reads at least 4.5:1 (WCAG 1.4.3) on the default
-//! palette, and every graphic pair (`graphic = true`, the status dots) at
-//! least 3:1 (1.4.11).
+//! region map declares reads at least 4.5:1 (WCAG 1.4.3), and every graphic
+//! pair (`graphic = true`, the status dots) at least 3:1 (1.4.11), on each
+//! base.
 //!
 //! The text colour of each pair is the rule's own `color` (every rule that
 //! sets it, not only the first); the ground is the entry's `on` list in
-//! `src/styles/regions.toml`; both resolve against the `@theme` defaults in
-//! `src/styles/global.css`, the dark base. A tint is composited in
-//! gamma-encoded sRGB as `color-mix(in srgb, …)` does; a text colour of
+//! `src/styles/regions.toml`; both resolve against the tokens of
+//! `src/styles/global.css`. A tint is composited in gamma-encoded sRGB as
+//! `color-mix(in srgb, …)` does; a text colour of
 //! `color-mix(in srgb, <token> N%, transparent)` is composited over each
 //! ground. Luminance and ratio are WCAG 2.x relative luminance (sRGB
-//! transfer per CSS Color 4). A light base has no default grounds until the
-//! E7.7.1 registry, whose validator then measures these pairs on every
-//! skin and variant; this check is that measurement for the built-in one.
+//! transfer per CSS Color 4).
 //!
-//! A value the check cannot resolve fails it: a new colour form is taught
-//! here, never skipped.
+//! Two passes:
+//!
+//! - **dark** (the default): every declared pair on the `@theme` values;
+//! - **light**: the pairs whose text reads a token the light base revalues
+//!   (`:root[data-skin-base="light"]` in `@layer xfire-defaults`), on the
+//!   `@theme` values overlaid with the light ones. The light base has no
+//!   grounds of its own until E7.7.1's registry gives it light defaults,
+//!   so every `--color-xfire-bg*` ground it does not revalue reads
+//!   [`LIGHT_GROUND`], the white its values are calibrated on; a pair whose
+//!   text the light base does not revalue is left to that registry, and
+//!   counted.
+//!
+//! E7.7.1's validator then measures every pair on every skin and variant;
+//! this check is that measurement for the built-in one. A value the check
+//! cannot resolve fails it: a new colour form is taught here, never skipped.
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -26,6 +37,10 @@ use crate::css;
 use crate::declared_grounds::{self as grounds, Entry, TextRule, MAP};
 
 const TEXT_FLOOR: f64 = 4.5;
+/// The ground of the light base until E7.7.1's registry defines its own.
+const LIGHT_GROUND: &str = "#ffffff";
+/// The ground tokens [`LIGHT_GROUND`] stands in for.
+const GROUND_PREFIX: &str = "--color-xfire-bg";
 const GRAPHIC_FLOOR: f64 = 3.0;
 
 type Rgb = [f64; 3];
@@ -133,8 +148,8 @@ struct Report {
     problems: Vec<String>,
 }
 
-fn measure(
-    rules: &[TextRule],
+fn measure<'a>(
+    rules: impl Iterator<Item = &'a TextRule>,
     map: &BTreeMap<String, Entry>,
     tokens: &BTreeMap<String, String>,
 ) -> Report {
@@ -168,27 +183,71 @@ fn measure(
     report
 }
 
+/// The light base's tokens: the defaults, the light values over them, and
+/// [`LIGHT_GROUND`] for every ground token the light base leaves unset.
+fn light_tokens(
+    defaults: &BTreeMap<String, String>,
+    light: &BTreeMap<String, String>,
+) -> BTreeMap<String, String> {
+    let mut tokens = defaults.clone();
+    for (name, value) in &mut tokens {
+        if name.starts_with(GROUND_PREFIX) {
+            LIGHT_GROUND.clone_into(value);
+        }
+    }
+    tokens.extend(light.iter().map(|(k, v)| (k.clone(), v.clone())));
+    tokens
+}
+
+/// The rules whose text reads a token the light base revalues.
+fn light_rules<'a>(rules: &'a [TextRule], light: &BTreeMap<String, String>) -> Vec<&'a TextRule> {
+    rules
+        .iter()
+        .filter(|r| {
+            css::var_refs(&r.value)
+                .iter()
+                .any(|v| light.contains_key(v))
+        })
+        .collect()
+}
+
 pub(crate) fn check_contrast_pairs(root: &Path) -> Result<()> {
     let (sheets, global, map_text) = grounds::read_inputs(root)?;
-    let report = measure(
-        &grounds::text_rules(&sheets),
-        &grounds::read_map(&map_text)?,
-        &grounds::theme_colours(&global),
-    );
-    if report.problems.is_empty() {
-        println!("  {} declared pairs measured", report.measured);
+    let rules = grounds::text_rules(&sheets);
+    let map = grounds::read_map(&map_text)?;
+    let defaults = grounds::theme_colours(&global);
+    let light = grounds::light_base_colours(&global);
+    let dark = measure(rules.iter(), &map, &defaults);
+    let lit = light_rules(&rules, &light);
+    let light_report = measure(lit.iter().copied(), &map, &light_tokens(&defaults, &light));
+    let problems: Vec<String> = dark
+        .problems
+        .iter()
+        .map(|p| format!("dark   {p}"))
+        .chain(light_report.problems.iter().map(|p| format!("light  {p}")))
+        .collect();
+    let measured = dark.measured + light_report.measured;
+    if problems.is_empty() {
+        println!(
+            "  {} declared pairs measured on the dark base, {} on the light base \
+             ({} rules there have no light-base text value until E7.7.1)",
+            dark.measured,
+            light_report.measured,
+            rules.len() - lit.len()
+        );
         return Ok(());
     }
-    for p in &report.problems {
+    for p in &problems {
         println!("  ✗ {p}");
     }
     Err(anyhow!(
-        "{} of {} declared pair(s) in {MAP} fail. Text needs 4.5:1 on each \
-         declared ground and a `graphic = true` entry 3:1: change the text \
-         role or the tint by the minimal Oklab-lightness step and record the \
-         value in the `@theme` defaults.",
-        report.problems.len(),
-        report.measured
+        "{} of {measured} declared pair(s) in {MAP} fail. Text needs 4.5:1 on \
+         each declared ground and a `graphic = true` entry 3:1, on each base: \
+         change the text role or the tint by the minimal Oklab-lightness step \
+         and record the value in the `@theme` defaults (dark) or the \
+         `{}` block (light).",
+        problems.len(),
+        grounds::LIGHT_BASE
     ))
 }
 
@@ -291,7 +350,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let report = measure(&rules(css), &map, &tokens());
+        let report = measure(rules(css).iter(), &map, &tokens());
         assert_eq!(report.measured, 5);
         assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
         assert!(report.problems[0].contains("`.low`"));
@@ -304,9 +363,43 @@ mod tests {
         let map = [(".a".to_string(), entry(&["--color-bad"], false))]
             .into_iter()
             .collect();
-        let report = measure(&rules(css), &map, &tokens());
+        let report = measure(rules(css).iter(), &map, &tokens());
         assert!(
             report.problems[0].contains("not a hex colour"),
+            "{:?}",
+            report.problems
+        );
+    }
+
+    #[test]
+    fn the_light_pass_measures_revalued_text_on_the_light_ground() {
+        let global = "@theme {\n  --color-xfire-bg-panel: #1e1e1e;\n  --color-xfire-away: #ffcc00;\n  --color-xfire-away-text: #ffcc00;\n  --color-xfire-text: #e7e7e7;\n}\n@layer xfire-defaults {\n  :root[data-skin-base=\"light\"] {\n    --color-xfire-away: #b59000;\n    --color-xfire-away-text: #8a6d00;\n  }\n}";
+        let defaults = grounds::theme_colours(global);
+        let light = grounds::light_base_colours(global);
+        assert_eq!(light.len(), 2);
+        let tokens = light_tokens(&defaults, &light);
+        assert_eq!(tokens["--color-xfire-bg-panel"], LIGHT_GROUND);
+        assert_eq!(tokens["--color-xfire-away"], "#b59000");
+        let css = ".warn { color: var(--color-xfire-away-text); }\n.dot { color: var(--color-xfire-away); }\n.body { color: var(--color-xfire-text); }";
+        let all = rules(css);
+        let lit = light_rules(&all, &light);
+        assert_eq!(lit.len(), 2, "the body text has no light value");
+        let on = &[
+            "--color-xfire-bg-panel",
+            "--color-xfire-away 20% over --color-xfire-bg-panel",
+        ];
+        let map: BTreeMap<String, Entry> = [
+            (".warn".to_string(), entry(on, false)),
+            (".dot".to_string(), entry(&["--color-xfire-bg-panel"], true)),
+        ]
+        .into_iter()
+        .collect();
+        let report = measure(lit.into_iter(), &map, &tokens);
+        assert_eq!(report.measured, 3);
+        // #8a6d00 on white is 4.96:1, on the light away tint under 4.5:1.
+        assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
+        assert!(
+            report.problems[0].contains("20% over"),
             "{:?}",
             report.problems
         );

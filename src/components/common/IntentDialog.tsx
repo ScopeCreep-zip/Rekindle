@@ -15,12 +15,16 @@ import {
  * Destructive or Protected review carries the warning style. Kobalte's
  * Dialog traps focus and returns it to the opener; Esc cancels.
  *
- * A security surface (plan E7.7.0): its buttons are the reserved
- * `.sec-btn-*` controls, which no skin can restyle. The destructive commit
- * is its own button, never the form's default: Return in the proof field
- * does not press it (D0; Apple HIG "Don't assign the primary role to a
- * button that performs a destructive action"). Its verb-and-object label is
- * the non-colour cue.
+ * A security surface (plan E7.7.0): what the decision rests on (the
+ * subject, the escalations and facts, what undo and notification apply,
+ * and the acknowledgement that restates the fact) sits on the reserved
+ * `.sec-review` card, and its buttons are the reserved `.sec-btn-*`
+ * controls; no skin can restyle either. The dialog chrome (title, frame,
+ * proof fields, error line) stays themeable. The destructive commit is its
+ * own button, never the form's default: Return in the proof field does not
+ * press it (D0; Apple HIG "Don't assign the primary role to a button that
+ * performs a destructive action"). Its verb-and-object label is the
+ * non-colour cue.
  */
 const IntentDialog: Component = () => {
   const [acknowledged, setAcknowledged] = createSignal(false);
@@ -104,24 +108,24 @@ const IntentDialog: Component = () => {
                   <Dialog.Title class="modal-title">{kindPhrase(r().kind)}</Dialog.Title>
                 </div>
                 <form class="modal-body intent-dialog-body" onSubmit={submit}>
-                  <div class="intent-dialog-subject">{subjectLabel(r().subject)}</div>
-                  <Show when={r().facts.length > 0 || r().escalations.length > 0}>
-                    <ul class="intent-dialog-facts">
-                      <For each={r().escalations}>
-                        {(escalation) => (
-                          <li class="intent-dialog-escalation">{escalationText(escalation)}</li>
-                        )}
-                      </For>
-                      <For each={r().facts}>{(fact) => <li>{factText(fact)}</li>}</For>
-                    </ul>
-                  </Show>
-                  <div class="intent-dialog-meta">
-                    {reversibilityText(r().reversibility)}
-                    <Show when={notifiesText(r().notifies)}>{(text) => <> {text()}</>}</Show>
-                  </div>
-                  <Switch>
-                    <Match when={r().proof === "acknowledge"}>
-                      <label class="intent-dialog-acknowledge">
+                  <div class="sec-review">
+                    <div class="sec-review-subject">{subjectLabel(r().subject)}</div>
+                    <Show when={r().facts.length > 0 || r().escalations.length > 0}>
+                      <ul class="sec-review-facts">
+                        <For each={r().escalations}>
+                          {(escalation) => (
+                            <li class="sec-review-escalation">{escalationText(escalation)}</li>
+                          )}
+                        </For>
+                        <For each={r().facts}>{(fact) => <li>{factText(fact)}</li>}</For>
+                      </ul>
+                    </Show>
+                    <div class="sec-review-meta">
+                      {reversibilityText(r().reversibility)}
+                      <Show when={notifiesText(r().notifies)}>{(text) => <> {text()}</>}</Show>
+                    </div>
+                    <Show when={r().proof === "acknowledge"}>
+                      <label class="sec-review-ack">
                         <input
                           type="checkbox"
                           checked={acknowledged()}
@@ -129,7 +133,9 @@ const IntentDialog: Component = () => {
                         />
                         <span>{acknowledgement(r())}</span>
                       </label>
-                    </Match>
+                    </Show>
+                  </div>
+                  <Switch>
                     <Match when={r().proof === "typeSubject"}>
                       <label class="intent-dialog-field">
                         <span>Type {typedName(r().subject)} to confirm</span>
