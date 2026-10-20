@@ -94,7 +94,14 @@ pub async fn pick_bundle(
     };
 
     // Their record verifies under the identity we hold: the alert is over.
-    state::update(host, peer, |f| f.identity_pin_mismatch = false);
+    if state::friend(host, peer).is_some_and(|f| f.identity_pin_mismatch) {
+        state::update(host, peer, |f| f.identity_pin_mismatch = false);
+        host.publish(SubscriptionEvent::Friend(
+            FriendEvent::IdentityPinRestored {
+                peer_key: peer.to_string(),
+            },
+        ));
+    }
     let (db, owner) = (host.db()?, host.local_party()?.owner());
     let address = PeerAddress::sole_device(identity);
     let listed: Vec<u32> = view.listed_opk_ids().collect();

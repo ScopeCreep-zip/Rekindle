@@ -246,6 +246,10 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"pin_mismatch|");
             h.update(peer_key.as_bytes());
         }
+        FriendEvent::IdentityPinRestored { peer_key } => {
+            h.update(b"pin_restored|");
+            h.update(peer_key.as_bytes());
+        }
         FriendEvent::VerificationChanged { peer_key, verified } => {
             h.update(b"verified|");
             h.update(peer_key.as_bytes());

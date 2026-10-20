@@ -87,7 +87,8 @@ test("an incoming friend request lists under pending requests", async ({ page })
   await expect(page.getByText("Pending Requests (1)")).toBeVisible();
 });
 
-test("a direct message raises the friend's unread count", async ({ page }) => {
-  await deliver(page, "channelMessage.directMessageReceived", "chat-event");
-  await expect(page.locator(".buddy-unread-badge")).toHaveText("1");
+test("the friend's unread count follows the backend's UnreadChanged", async ({ page }) => {
+  // The backend counts unread (plan audit U-6); the window only renders it.
+  await deliver(page, "unreadChanged.unreadChanged.dm", "chat-event");
+  await expect(page.locator(".buddy-unread-badge")).toHaveText("7");
 });

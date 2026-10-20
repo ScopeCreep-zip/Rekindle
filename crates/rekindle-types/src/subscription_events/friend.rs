@@ -89,6 +89,10 @@ pub enum FriendEvent {
         peer_key: String,
         display_name: String,
     },
+    /// A friend whose record had failed the identity check verifies again:
+    /// the alert on their row ends and sends are allowed (plan E2.4, B3).
+    /// Triggered by: their record read after an `IdentityPinMismatch`.
+    IdentityPinRestored { peer_key: String },
     /// We marked a peer's identity key verified, or cleared it (plan E2.3):
     /// every window showing their badge or safety number re-renders.
     /// Triggered by: the `IdentityMarkVerified` / `IdentityClearVerification`

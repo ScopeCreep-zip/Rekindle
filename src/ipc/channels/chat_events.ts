@@ -93,6 +93,7 @@ export type FriendEvent =
   | { handshakeFailed: { peerKey: string; reason: string } }
   | { handshakeRetrying: { peerKey: string } }
   | { identityPinMismatch: { peerKey: string; displayName: string } }
+  | { identityPinRestored: { peerKey: string } }
   | { verificationChanged: { peerKey: string; verified: boolean } }
   | { blockChanged: { peerKey: string; blocked: boolean } };
 

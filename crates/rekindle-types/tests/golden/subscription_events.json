@@ -325,6 +325,13 @@
       }
     }
   },
+  "friend.identityPinRestored": {
+    "friend": {
+      "identityPinRestored": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
   "friend.keyChanged": {
     "friend": {
       "keyChanged": {

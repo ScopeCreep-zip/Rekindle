@@ -381,6 +381,7 @@ impl App {
             }
             SubscriptionEvent::Friend(
                 FriendEvent::HandshakeRetrying { .. }
+                | FriendEvent::IdentityPinRestored { .. }
                 | FriendEvent::BlockChanged { .. }
                 | FriendEvent::GroupChanged { .. }
                 | FriendEvent::NicknameChanged { .. }

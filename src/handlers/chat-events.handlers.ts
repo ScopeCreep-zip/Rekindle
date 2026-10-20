@@ -160,6 +160,13 @@ function applyFriendEvent(friend: FriendEvent): void {
     }
     return;
   }
+  if ("identityPinRestored" in friend) {
+    const { peerKey } = friend.identityPinRestored;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "identityPinMismatch", false);
+    }
+    return;
+  }
   if ("blockChanged" in friend) {
     // A block also removes the friend (`removed`); an unblock adds no row,
     // so the list is re-read from the Host.
@@ -252,6 +259,12 @@ export function subscribeDmChatEvents(
     if ("friend" in event && "identityPinMismatch" in event.friend) {
       if (event.friend.identityPinMismatch.peerKey === peerId && friendsState.friends[peerId]) {
         setFriendsState("friends", peerId, "identityPinMismatch", true);
+      }
+      return;
+    }
+    if ("friend" in event && "identityPinRestored" in event.friend) {
+      if (event.friend.identityPinRestored.peerKey === peerId && friendsState.friends[peerId]) {
+        setFriendsState("friends", peerId, "identityPinMismatch", false);
       }
       return;
     }
