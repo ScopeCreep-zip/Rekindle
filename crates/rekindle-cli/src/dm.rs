@@ -72,9 +72,11 @@ async fn watch_dms(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     use rekindle_types::subscription_events::{
-        ChannelMessageEvent, EventCategory, SubscriptionEvent, SubscriptionFilter,
+        ChannelMessageEvent, EventCategory, FriendEvent, SubscriptionEvent, SubscriptionFilter,
     };
-    let filter = SubscriptionFilter::categories(vec![EventCategory::ChannelMessage]);
+    // Friend events too: a pin mismatch (plan E2.4, B3) refuses every DM.
+    let filter =
+        SubscriptionFilter::categories(vec![EventCategory::ChannelMessage, EventCategory::Friend]);
     crate::watch::stream(client, vec![filter], mode, |event| match event {
         SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
             peer_key,
@@ -104,6 +106,14 @@ async fn watch_dms(
                 rekindle_client::fmt::format_time_short(*timestamp)
             ))
         }
+        SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
+            peer_key,
+            display_name,
+        }) if friend.is_none_or(|f| f == peer_key || f == display_name) => Some(format!(
+            "! {}'s keys are not signed by the identity you know. Nothing was sent; verify \
+             their safety number.",
+            rekindle_utils::text::sanitize_for_display(display_name)
+        )),
         _ => None,
     })
     .await
