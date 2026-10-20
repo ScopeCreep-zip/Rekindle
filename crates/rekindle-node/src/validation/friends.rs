@@ -108,6 +108,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             typing: _,
         }
         | IpcRequest::DmMarkRead { peer_key } => public_key(peer_key, "peer key"),
+        IpcRequest::DmResend { message_id } => client_id(message_id),
         IpcRequest::DmInbox { limit } => page(*limit),
         IpcRequest::DmHistory {
             peer_key,

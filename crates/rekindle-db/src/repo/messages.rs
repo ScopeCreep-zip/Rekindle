@@ -222,6 +222,42 @@ pub fn dm_history(
     Ok(rows)
 }
 
+/// One of our own direct messages, by its client id, with its parent's
+/// client id when it is a reply: what a resend frames again.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnDm {
+    pub row: DmRow,
+    pub reply_to: Option<String>,
+}
+
+/// Our direct message whose client id is `message_id`; `None` when we sent
+/// none with that id.
+///
+/// # Errors
+/// The query failed.
+pub fn own_dm(
+    conn: &Connection,
+    owner_key: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<OwnDm>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT m.id, m.conversation_id, m.sender_key, m.body, m.timestamp, m.is_read, \
+         m.send_state, m.message_id, p.message_id FROM messages m \
+         LEFT JOIN messages p ON p.id = m.reply_to_id \
+         WHERE m.owner_key = ?1 AND m.sender_key = ?1 AND m.message_id = ?2 \
+         AND m.conversation_type = 'dm'",
+        params![owner_key, message_id],
+        |row| {
+            Ok(OwnDm {
+                row: dm_row(row)?,
+                reply_to: row.get(8)?,
+            })
+        },
+    )
+    .optional()
+}
+
 /// Mark every message from `peer_key` read.
 ///
 /// # Errors

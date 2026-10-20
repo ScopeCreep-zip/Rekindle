@@ -34,6 +34,10 @@ export const accountCommands = {
    *  rejects, and its stored row reads `failed` in the history. */
   sendMessage: (to: string, body: string, replyTo: string | null = null) =>
     hostInvoke<DmMessage>("send_message", { to, body, replyTo }),
+  /** Sends our failed message again by its client id; the Host re-frames
+   *  the stored row, stores no new one, and publishes its new state. */
+  resendMessage: (messageId: string) =>
+    hostInvoke<DmMessage>("resend_message", { messageId }),
   sendTyping: (peerId: string, typing: boolean) =>
     hostInvoke<unknown>("send_typing", { peerId, typing }),
   getMessageHistory: (peerId: string, limit: number, before?: number) =>

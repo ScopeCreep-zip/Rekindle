@@ -258,6 +258,9 @@ pub enum IpcRequest {
     },
     /// Mark everything from `peer_key` read.
     DmMarkRead { peer_key: String },
+    /// Send our failed message again, by its client id (a UUID); the
+    /// stored row goes out under the same id, and no new row is stored.
+    DmResend { message_id: String },
 
     // ── Intents (plan D3.3, ADR 0019) ──────────────────────────────
     /// Commit a held action with the proof its review asked for.

@@ -144,6 +144,29 @@ pub async fn send_dm(
         fields.store(host).await?
     };
 
+    let send_state = deliver(host, &owner, to, client_id, body, reply_to).await?;
+    Ok(DmMessage {
+        id: stored.id,
+        message_id: Some(message_id),
+        sender_id: owner,
+        body: body.to_string(),
+        timestamp,
+        is_own: true,
+        send_state,
+    })
+}
+
+/// Frame our message `client_id` to `to` and send it, store its send state
+/// and tell the frontends (`DirectMessageStateChanged`); the state, or the
+/// send's error once the failure is recorded.
+async fn deliver(
+    host: &dyn FriendHost,
+    owner: &str,
+    to: &str,
+    client_id: ClientId,
+    body: &str,
+    reply_to: Option<ClientId>,
+) -> Result<rekindle_types::message::SendState, FriendError> {
     // Sending the message ends our typing to `to`.
     super::typing::message_sent(host, to);
     let message = DirectBody::DmText(DmText {
@@ -158,7 +181,8 @@ pub async fn send_dm(
     } else {
         rekindle_types::message::SendState::Failed
     };
-    let (ok, mid) = (owner.clone(), message_id.clone());
+    let message_id = client_id_text(&client_id);
+    let (ok, mid) = (owner.to_string(), message_id.clone());
     if let Err(e) = state::db_call!(host, "store the send state", move |conn| {
         rekindle_db::repo::messages::set_send_state(conn, &ok, &mid, send_state, None)
     })
@@ -168,7 +192,7 @@ pub async fn send_dm(
     }
     host.publish(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DirectMessageStateChanged {
-            message_id: message_id.clone(),
+            message_id,
             conversation_id: to.to_string(),
             send_state,
         },
@@ -177,12 +201,76 @@ pub async fn send_dm(
         tracing::warn!(error = %e, "DM send failed — message persisted locally");
         return Err(e);
     }
+    Ok(send_state)
+}
+
+/// The peer of our stored message `message_id` (a client id), for the
+/// resend's review; `None` when we sent none with that id.
+///
+/// # Errors
+/// The identity is locked or the read failed.
+pub async fn resend_peer(
+    host: &dyn FriendHost,
+    message_id: &str,
+) -> Result<Option<String>, FriendError> {
+    Ok(own_dm(host, message_id).await?.map(|dm| dm.row.peer_key))
+}
+
+async fn own_dm(
+    host: &dyn FriendHost,
+    message_id: &str,
+) -> Result<Option<rekindle_db::repo::messages::OwnDm>, FriendError> {
+    let owner = state::owner(host)?;
+    let mid = message_id.to_string();
+    state::db_call!(host, "read the message to resend", move |conn| {
+        rekindle_db::repo::messages::own_dm(conn, &owner, &mid)
+    })
+    .await
+}
+
+/// Send our failed message `message_id` (its client id) again: the stored
+/// row is framed under the same client id, so the peer keeps one copy, and
+/// no new row is stored. A resend whose review was held on the peer's
+/// verified key changing acknowledges the change (plan E2.3).
+///
+/// # Errors
+/// `NotFound` when we sent no message with that id, `Conflict` when it did
+/// not fail, or the send failed (it stays failed).
+pub async fn resend_dm(
+    host: &dyn FriendHost,
+    message_id: &str,
+    acknowledges_key_change: bool,
+) -> Result<DmMessage, FriendError> {
+    let client_id = parse_client_id(message_id)?;
+    let reply_to;
+    let row = {
+        let dm = own_dm(host, message_id)
+            .await?
+            .ok_or_else(|| FriendError::NotFound(format!("message {message_id}")))?;
+        reply_to = dm.reply_to.as_deref().map(parse_client_id).transpose()?;
+        dm.row
+    };
+    if row.send_state != rekindle_types::message::SendState::Failed {
+        return Err(FriendError::Conflict(format!(
+            "message {message_id} did not fail"
+        )));
+    }
+    let owner = state::owner(host)?;
+    if acknowledges_key_change {
+        let (ours, theirs) = crate::operations::friend::verification::keys(host, &row.peer_key)?;
+        state::db_call!(host, "acknowledge the key change", move |conn| {
+            rekindle_db::repo::signal_identities::acknowledging(conn, &ours, &theirs, |_| Ok(()))
+        })
+        .await?;
+    }
+    tracing::info!(to = %row.peer_key, len = row.body.len(), "resending message");
+    let send_state = deliver(host, &owner, &row.peer_key, client_id, &row.body, reply_to).await?;
     Ok(DmMessage {
-        id: stored.id,
-        message_id: Some(message_id),
+        id: row.id,
+        message_id: Some(message_id.to_string()),
         sender_id: owner,
-        body: body.to_string(),
-        timestamp,
+        body: row.body,
+        timestamp: row.timestamp,
         is_own: true,
         send_state,
     })

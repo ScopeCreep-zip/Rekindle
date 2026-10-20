@@ -5,6 +5,7 @@
 
 use rekindle_idempotency::intent_gate::Selection;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_transport::operations::dm;
 use rekindle_transport::operations::friend::verification;
 use rekindle_types::intent::{Fact, IntentKind, Notifies, Reversibility, Subject};
 
@@ -152,6 +153,21 @@ pub(super) async fn selection(
             s.subject = person(ctx, peer_key).await?;
             s.notifies = Notifies::Subject;
             s.escalations.extend(key_change(ctx, peer_key).await?);
+        }
+        IpcRequest::DmResend { message_id } => {
+            // The peer of the stored row; an unknown id fails on its own.
+            let peer = if ctx.require_owner().is_ok() {
+                dm::resend_peer(&HostFriends::of(ctx), message_id)
+                    .await
+                    .map_err(|e| unavailable("the message to resend", e))?
+            } else {
+                None
+            };
+            if let Some(peer) = peer {
+                s.subject = person(ctx, &peer).await?;
+                s.notifies = Notifies::Subject;
+                s.escalations.extend(key_change(ctx, &peer).await?);
+            }
         }
         _ => {}
     }

@@ -153,6 +153,16 @@ pub async fn send_message(
     .await
 }
 
+/// Send our failed message again by its client id (`IpcRequest::DmResend`);
+/// the stored row goes out under the same id, so no new row appears.
+#[tauri::command]
+pub async fn resend_message(
+    message_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<DmMessage>, CommandError> {
+    host_call::call(&state, IpcRequest::DmResend { message_id }).await
+}
+
 /// Report the draft to a peer (`IpcRequest::DmTyping`): `typing` is whether
 /// it holds text. The Host sends the start, its refresh and the idle stop
 /// (plan E2.3); typing is dropped, never queued, when there is no route.

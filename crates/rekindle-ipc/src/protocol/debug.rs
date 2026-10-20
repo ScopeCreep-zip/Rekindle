@@ -233,6 +233,10 @@ impl std::fmt::Debug for IpcRequest {
                 .debug_struct("DmMarkRead")
                 .field("peer_key", peer_key)
                 .finish(),
+            Self::DmResend { message_id } => f
+                .debug_struct("DmResend")
+                .field("message_id", message_id)
+                .finish(),
             Self::Subscribe { filters, from } => f
                 .debug_struct("Subscribe")
                 .field("filter_count", &filters.len())

@@ -266,3 +266,76 @@ async fn a_verified_key_change_holds_the_send_until_it_is_acknowledged() {
     assert!(code(&cleared).is_none(), "{cleared:?}");
     assert!(!safety_number(&host, &peer).await.verified);
 }
+
+/// Answer `answer`, committing its review when it is one.
+async fn settle(host: &Host, answer: IpcResponse) -> IpcResponse {
+    use rekindle_types::intent::{IntentProof, ProofRequired};
+    let IpcResponse::IntentRequired(held) = answer else {
+        return answer;
+    };
+    let proof = match held.proof {
+        ProofRequired::Acknowledge => IntentProof::Acknowledged,
+        _ => IntentProof::Commit,
+    };
+    host.call(
+        bus(1),
+        IpcRequest::IntentCommit {
+            intent_id: held.intent_id,
+            proof,
+        },
+    )
+    .await
+}
+
+async fn dm_rows(host: &Host, peer: &str) -> Vec<rekindle_types::dto::dm::DmMessage> {
+    let answer = host
+        .call(
+            bus(1),
+            IpcRequest::DmHistory {
+                peer_key: peer.into(),
+                limit: 50,
+                before: None,
+            },
+        )
+        .await;
+    match answer {
+        IpcResponse::Ok { data, .. } => serde_json::from_value(data).unwrap(),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A manual Retry re-sends the stored row by its client id (U-3): no new
+/// row is stored, and an id we never sent is not found.
+#[tokio::test]
+async fn a_resend_sends_the_stored_row_and_stores_none() {
+    use rekindle_types::message::SendState;
+    let dir = tempfile::tempdir().unwrap();
+    let (host, peer) = ann_with_rotated_verified_friend(&dir).await;
+    let send = IpcRequest::DmSend {
+        peer_key: peer.clone(),
+        body: "once".into(),
+        reply_to: None,
+    };
+    // Offline, the send fails and its row reads failed.
+    assert!(code(&settle(&host, host.call(bus(1), send).await).await).is_some());
+    let rows = dm_rows(&host, &peer).await;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].send_state, SendState::Failed);
+    let message_id = rows[0].message_id.clone().unwrap();
+
+    let resend = IpcRequest::DmResend {
+        message_id: message_id.clone(),
+    };
+    let answer = settle(&host, host.call(bus(1), resend).await).await;
+    assert!(code(&answer).is_some(), "{answer:?}");
+    let after = dm_rows(&host, &peer).await;
+    assert_eq!(after.len(), 1);
+    assert_eq!(after[0].message_id.as_deref(), Some(message_id.as_str()));
+    assert_eq!(after[0].send_state, SendState::Failed);
+
+    let unknown = IpcRequest::DmResend {
+        message_id: uuid::Uuid::nil().to_string(),
+    };
+    let answer = settle(&host, host.call(bus(1), unknown).await).await;
+    assert!(code(&answer).is_some(), "{answer:?}");
+}

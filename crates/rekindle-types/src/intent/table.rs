@@ -434,6 +434,7 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("ChannelSend", Some(IntentKind::SendChannelMessage)),
     ("ChannelHistory", None),
     ("DmSend", Some(IntentKind::SendDmMessage)),
+    ("DmResend", Some(IntentKind::SendDmMessage)),
     ("DmTyping", None),
     ("DmInbox", None),
     ("DmHistory", None),

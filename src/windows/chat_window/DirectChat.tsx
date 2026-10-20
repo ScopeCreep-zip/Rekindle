@@ -116,16 +116,6 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
     setChatState("activeConversation", peerId);
     await handleLoadHistory(peerId, 50);
     handleResetUnread(peerId);
-
-    // Retry any previously failed messages: the Host's send refreshes the
-    // peer's route inline when it has no fresh one (plan E2.1).
-    const convo = chatState.conversations[peerId];
-    if (convo) {
-      const failedMsgs = convo.messages.filter((m) => m.status === "failed");
-      for (const msg of failedMsgs) {
-        handleRetrySendMessage(peerId, msg.id);
-      }
-    }
   });
 
   onCleanup(() => {

@@ -9,7 +9,9 @@ pub mod route;
 mod send;
 mod typing;
 
-pub use chat::{client_id_text, history, inbox, mark_read, parse_client_id, send_dm};
+pub use chat::{
+    client_id_text, history, inbox, mark_read, parse_client_id, resend_dm, resend_peer, send_dm,
+};
 pub(crate) use chat::{count_unread, NewDmFields};
 pub use frame::wire;
 pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};

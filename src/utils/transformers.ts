@@ -1,4 +1,5 @@
 import type { FriendInfo, Message as IpcMessage } from "../ipc/commands";
+import type { DmMessage } from "../ipc/commands/dto";
 import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../ipc/commands/dto";
@@ -72,6 +73,12 @@ function ownStatus(state: IpcMessage["sendState"]): Message["status"] {
     case "read":
       return "sent";
   }
+}
+
+/** A direct message: its client id is the row's `serverMessageId`, which
+ *  `DirectMessageStateChanged` and a resend name it by. */
+export function transformDmMessage(m: DmMessage): Message {
+  return { ...transformMessage(m), serverMessageId: m.messageId ?? undefined };
 }
 
 /** Convenience: transform an array of messages. */

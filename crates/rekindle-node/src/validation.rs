@@ -373,7 +373,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::DmTyping { .. }
         | IpcRequest::DmInbox { .. }
         | IpcRequest::DmHistory { .. }
-        | IpcRequest::DmMarkRead { .. } => friends::check(request),
+        | IpcRequest::DmMarkRead { .. }
+        | IpcRequest::DmResend { .. } => friends::check(request),
         IpcRequest::AvatarGet { public_key: key }
         | IpcRequest::IdentitySafetyNumber { peer: key }
         | IpcRequest::IdentityMarkVerified { peer: key }

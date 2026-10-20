@@ -150,9 +150,10 @@ impl IpcRequest {
             Self::ChannelHistory { .. } => Some(C::ChannelsHistory),
             Self::ChannelSend { .. } => Some(C::ChatWrite),
             Self::DmInbox { .. } | Self::DmHistory { .. } => Some(C::ImHistory),
-            Self::DmSend { .. } | Self::DmTyping { .. } | Self::DmMarkRead { .. } => {
-                Some(C::ImWrite)
-            }
+            Self::DmSend { .. }
+            | Self::DmResend { .. }
+            | Self::DmTyping { .. }
+            | Self::DmMarkRead { .. } => Some(C::ImWrite),
             Self::PresenceSet { .. }
             | Self::PresenceSetMessage { .. }
             | Self::GamePresenceSet { .. }

@@ -92,7 +92,8 @@ pub(crate) async fn select(
         | IpcRequest::FriendRemove { .. }
         | IpcRequest::IdentityMarkVerified { .. }
         | IpcRequest::IdentityClearVerification { .. }
-        | IpcRequest::DmSend { .. } => friends::selection(ctx, request, &mut s).await?,
+        | IpcRequest::DmSend { .. }
+        | IpcRequest::DmResend { .. } => friends::selection(ctx, request, &mut s).await?,
         IpcRequest::CommunityCreate { name, .. } => {
             s.subject = Subject::Community {
                 id: String::new(),

@@ -3,7 +3,7 @@ import { setChatState, chatState } from "../stores/chat.store";
 import { authState } from "../stores/auth.store";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
-import { transformMessages } from "../utils/transformers";
+import { transformDmMessage } from "../utils/transformers";
 
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
@@ -23,24 +23,14 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
   handleIncomingMessage(to, message);
 
   try {
-    await commands.sendMessage(to, trimmed);
-    // Update status to sent
-    const convo = chatState.conversations[to];
-    if (convo) {
-      setChatState("conversations", to, {
-        ...convo,
-        messages: convo.messages.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m)),
-      });
-    }
+    const sent = transformDmMessage(await commands.sendMessage(to, trimmed));
+    setChatState("conversations", to, "messages", (msgs) =>
+      msgs.map((m) => (m.id === tempId ? sent : m)),
+    );
   } catch {
-    // Update status to failed
-    const convo = chatState.conversations[to];
-    if (convo) {
-      setChatState("conversations", to, {
-        ...convo,
-        messages: convo.messages.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
-      });
-    }
+    // The Host stored the row as failed: show it as the Host holds it, so
+    // its Retry names the stored message.
+    await handleLoadHistory(to, 50);
   }
 }
 
@@ -110,7 +100,7 @@ export async function handleLoadHistory(
 ): Promise<void> {
   try {
     const messages = await commands.getMessageHistory(peerId, limit);
-    const mapped = transformMessages(messages);
+    const mapped = messages.map(transformDmMessage);
     const existing = chatState.conversations[peerId];
     if (mapped.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
@@ -140,25 +130,21 @@ export function handleResetUnread(peerId: string): void {
   });
 }
 
+/// Retry our failed message: the Host re-sends the stored row by its
+/// client id (`DmResend`); nothing is re-sent as a new message.
 export async function handleRetrySendMessage(peerId: string, messageId: number): Promise<void> {
   const convo = chatState.conversations[peerId];
-  if (!convo) return;
-  const message = convo.messages.find((m) => m.id === messageId);
-  if (!message || message.status !== "failed") return;
-
-  // Set status back to sending
-  setChatState("conversations", peerId, "messages", (msgs) =>
-    msgs.map((m) => (m.id === messageId ? { ...m, status: "sending" as const } : m)),
-  );
-
+  const message = convo?.messages.find((m) => m.id === messageId);
+  const clientId = message?.serverMessageId;
+  if (!message || message.status !== "failed" || !clientId) return;
+  const setStatus = (status: Message["status"]) =>
+    setChatState("conversations", peerId, "messages", (msgs) =>
+      msgs.map((m) => (m.id === messageId ? { ...m, status } : m)),
+    );
+  setStatus("sending");
   try {
-    await commands.sendMessage(peerId, message.body);
-    setChatState("conversations", peerId, "messages", (msgs) =>
-      msgs.map((m) => (m.id === messageId ? { ...m, status: "sent" as const } : m)),
-    );
+    setStatus(transformDmMessage(await commands.resendMessage(clientId)).status);
   } catch {
-    setChatState("conversations", peerId, "messages", (msgs) =>
-      msgs.map((m) => (m.id === messageId ? { ...m, status: "failed" as const } : m)),
-    );
+    setStatus("failed");
   }
 }

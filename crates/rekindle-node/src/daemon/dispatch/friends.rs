@@ -158,6 +158,9 @@ pub(crate) async fn route(
             before,
         } => answer(dm::history(&host, &peer_key, limit, before).await),
         IpcRequest::DmMarkRead { peer_key } => done(dm::mark_read(&host, &peer_key).await),
+        IpcRequest::DmResend { message_id } => {
+            answer(dm::resend_dm(&host, &message_id, acknowledged.key_change).await)
+        }
         other => unreachable!("{} is not a friend or DM request", other.name()),
     }
 }
