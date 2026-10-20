@@ -23,6 +23,10 @@ paths = [ "dep:dirs", "dep:thiserror" ]
 rand = { workspace = true }
 # `random::ForkedRandom`'s generator lock.
 parking_lot = { workspace = true }
+# `random::ForkedRandom`'s generator: ChaCha20 with fast-key erasure, the
+# cipher state wiped on drop (`zeroize`), the key kept in `Zeroizing`.
+chacha20 = { version = "0.9", features = [ "zeroize" ] }
+zeroize = "1"
 # blake3 is NOT optional, deliberately. `blake3_hex` is the single
 # spelling of the content hash that the channel track computes and the
 # sync track verifies; if reaching it required opting into a feature,

@@ -8045,6 +8045,7 @@ name = "rekindle-utils"
 version = "0.1.0"
 dependencies = [
  "blake3",
+ "chacha20 0.9.1",
  "dirs 7.0.0",
  "parking_lot 0.12.5",
  "rand 0.8.5",
@@ -8058,6 +8059,7 @@ dependencies = [
  "toml 0.8.2",
  "tracing",
  "tracing-subscriber",
+ "zeroize",
 ]
 
 [[package]]
