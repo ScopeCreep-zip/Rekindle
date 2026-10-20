@@ -27,6 +27,9 @@ hex = "0.4"
 hpke = { version = "0.14", default-features = false, features = [ "alloc", "getrandom", "x25519", "hkdfsha2", "chacha" ] }
 libcrux-ml-kem = { workspace = true }
 parking_lot = { workspace = true }
+# `forked_random`: ChaCha20 with fast-key erasure, the cipher state wiped on
+# drop (audit C-1).
+chacha20 = { version = "0.9", features = [ "zeroize" ] }
 rand = { workspace = true }
 zeroize = { version = "1", features = [ "derive" ] }
 

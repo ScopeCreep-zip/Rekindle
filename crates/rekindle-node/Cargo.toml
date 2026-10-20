@@ -112,10 +112,12 @@ base64 = "0.22"
 hex = "0.4"
 
 
+# `forked_random::ForkedRandom`: each 1:1 step's generator (audit C-1); netsim
+# scenarios' outsiders also sign and wrap with it as a peer would.
+rekindle-secrets = { path = "../rekindle-secrets" }
+
 [dev-dependencies]
 # The network simulator the netsim scenarios run real Hosts on (plan C9.3).
 rekindle-netsim = { path = "../rekindle-netsim" }
-# A scenario's outsider and modified client sign and wrap as a peer would.
-rekindle-secrets = { path = "../rekindle-secrets" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

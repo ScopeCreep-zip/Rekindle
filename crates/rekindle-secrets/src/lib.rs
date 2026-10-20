@@ -15,6 +15,7 @@
 
 pub mod channel_body;
 pub mod derive;
+pub mod forked_random;
 pub mod hpke;
 pub mod invite;
 pub mod keys;

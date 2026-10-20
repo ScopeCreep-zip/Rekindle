@@ -325,10 +325,6 @@ const CRYPTO_ALLOWED: &[&str] = &[
     // The IPC bus is Noise IK end to end; `rekindle-ipc` owns the
     // handshake and transport state (plan C1). Tier 3.
     "rekindle-ipc",
-    // `random::ForkedRandom` is a ChaCha20 fast-key-erasure generator
-    // (audit C-1); the randomness seam (plan C9.2) lives here, below
-    // `rekindle-secrets`, so it names the stream cipher itself. Tier 1.
-    "rekindle-utils",
     // ── Pending sweep — see ai-assisted-contributions.md §5 ──
     "rekindle-crypto",
     "rekindle-dm",

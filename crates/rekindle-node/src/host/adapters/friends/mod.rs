@@ -83,7 +83,7 @@ impl FriendHost for HostFriends {
             identity: Arc::new(rekindle_crypto::Identity::from_secret_bytes(&secret)),
             // Its draws run on the database's thread: a fork, seeded here in
             // this task's order, keeps a seeded Host's trace fixed.
-            rng: Arc::new(rekindle_utils::random::ForkedRandom::fork(
+            rng: Arc::new(rekindle_secrets::forked_random::ForkedRandom::fork(
                 self.ctx.rng.as_ref(),
             )),
             now_ms: self.ctx.clock.now_ms_i64(),
