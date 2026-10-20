@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
 use crate::db_helpers::db_call;
-use crate::state::{AppState, FriendshipState};
+use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
 
@@ -41,12 +41,6 @@ pub async fn start_sync_loop(state: Arc<AppState>, pool: Db, stop: CancellationT
         // After the first 3 rapid ticks, switch to the normal 30s cadence
         if tick_count == 3 {
             interval = tokio::time::interval(std::time::Duration::from_secs(30));
-        }
-        if stop.is_cancelled() {
-            break;
-        }
-        if let Err(e) = sync_conversations(&state, &stop).await {
-            tracing::warn!(error = %e, "conversation sync failed");
         }
         if stop.is_cancelled() {
             break;
@@ -104,122 +98,6 @@ async fn sync_friends(
     )
     .await;
     Ok(())
-}
-
-/// Sync conversation records for friends that have remote conversation keys.
-///
-/// For each friend with a `remote_conversation_key`, derives the DH shared secret,
-/// reads the conversation record's header through the record pool, and caches the
-/// route blob when no fresher one is cached. The header's profile snapshot is
-/// not applied: friend state is the Host's, and their profile watch is newer.
-async fn sync_conversations(state: &Arc<AppState>, stop: &CancellationToken) -> Result<(), String> {
-    let Ok(record_pool) = state_helpers::record_pool(state) else {
-        return Ok(()); // Not logged in
-    };
-
-    let Some(secret_bytes) = *state.identity_secret.lock() else {
-        return Ok(()); // Not logged in
-    };
-
-    // Friends that have remote conversation keys, from the Host's
-    // projection (plan E2.1; E2.4 deletes this phase).
-    let friends_with_conversations: Vec<(String, String)> = state
-        .host
-        .current()
-        .map(|host| host.friends())
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|f| f.friendship_state != FriendshipState::Removing)
-        .filter_map(|f| f.remote_conversation_key.map(|k| (f.public_key, k)))
-        .collect();
-
-    for (friend_key, remote_conv_key) in &friends_with_conversations {
-        if stop.is_cancelled() {
-            return Ok(());
-        }
-        sync_single_conversation(
-            state,
-            record_pool.as_ref(),
-            &secret_bytes,
-            friend_key,
-            remote_conv_key,
-        )
-        .await;
-    }
-
-    if !friends_with_conversations.is_empty() {
-        tracing::debug!(
-            conversations = friends_with_conversations.len(),
-            "conversation sync complete"
-        );
-    }
-
-    Ok(())
-}
-
-/// Sync a single friend's conversation record from DHT.
-async fn sync_single_conversation(
-    state: &Arc<AppState>,
-    record_pool: &dyn rekindle_records::port::RecordPort,
-    my_secret_bytes: &[u8; 32],
-    friend_key: &str,
-    remote_conv_key: &str,
-) {
-    let my_identity = rekindle_crypto::Identity::from_secret_bytes(my_secret_bytes);
-    let my_x25519_secret = my_identity.to_x25519_secret();
-
-    // Derive the DH conversation encryption key
-    let Ok(friend_ed_bytes) = hex::decode(friend_key) else {
-        return;
-    };
-    let Ok(friend_ed_array): Result<[u8; 32], _> = friend_ed_bytes.try_into() else {
-        return;
-    };
-    let friend_identity = rekindle_crypto::Identity::from_secret_bytes(&friend_ed_array);
-    let friend_x25519_public = friend_identity.to_x25519_public();
-
-    let encryption_key = rekindle_crypto::DhtRecordKey::derive_conversation_key(
-        &my_x25519_secret,
-        &friend_x25519_public,
-    );
-
-    // Read header and cache route blob + profile
-    match rekindle_protocol::dht::conversation::read_conversation_header(
-        record_pool,
-        remote_conv_key,
-        &encryption_key,
-    )
-    .await
-    {
-        Ok(Some(header)) => {
-            // The header's route blob is a snapshot from conversation
-            // creation — the rotation path re-publishes profile
-            // subkey 6 + mailbox, never conversation headers — so it
-            // is a last-resort fallback only. It must not override
-            // fresher route knowledge from the subkey-6 watch
-            // (a cached route also heals an active call's voice roster,
-            // which a stale blob would poison every tick).
-            if let Some(node) = state.transport.read().clone() {
-                if !header.route_blob.is_empty()
-                    && rekindle_transport::operations::dm::route::cached(&node, friend_key)
-                        .is_none()
-                {
-                    rekindle_transport::operations::dm::route::cache(
-                        &node,
-                        friend_key,
-                        header.route_blob,
-                    );
-                }
-            }
-        }
-        Ok(None) => {}
-        Err(e) => {
-            tracing::trace!(
-                friend = %friend_key, key = %remote_conv_key,
-                error = %e, "failed to read remote conversation header"
-            );
-        }
-    }
 }
 
 pub(super) async fn request_channel_sync(

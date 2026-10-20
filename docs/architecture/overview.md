@@ -201,9 +201,8 @@ crates/                               (workspace members — see crates.md;
 schemas/                              Cap'n Proto schema definitions
 ├── account.capnp                     AccountHeader, ContactEntry, ChatEntry
 ├── community.capnp                   Community, Channel, Role, PermissionOverwrite
-├── conversation.capnp                ConversationHeader
 ├── friend.capnp                      FriendRequest, FriendList, FriendEntry
-├── identity.capnp                    UserProfile, PreKeyBundle
+├── identity.capnp                    PreKeyBundle
 ├── direct.capnp                      DmFrame, DmContent, SealedContent, 1:1 kind bodies
 ├── presence.capnp                    PresenceUpdate, GameStatus
 └── voice.capnp                       VoiceSignaling

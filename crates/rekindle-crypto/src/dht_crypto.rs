@@ -1,6 +1,5 @@
 use hkdf::Hkdf;
 use sha2::Sha256;
-use x25519_dalek::{PublicKey, StaticSecret};
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
@@ -11,9 +10,8 @@ const TAG_LEN: usize = 16;
 
 /// Symmetric key for encrypting DHT record contents.
 ///
-/// Two derivation modes:
-/// - **Account key**: HKDF from Ed25519 secret — only the owner can read.
-/// - **Conversation key**: DH shared secret — both parties can read/write.
+/// Derived by HKDF from the Ed25519 secret (the account key), so only the
+/// owner can read.
 ///
 /// Encryption uses XChaCha20-Poly1305 (24-byte nonce, 16-byte tag).
 #[derive(ZeroizeOnDrop)]
@@ -29,34 +27,6 @@ impl DhtRecordKey {
         let hk = Hkdf::<Sha256>::new(None, ed25519_secret);
         let mut key = [0u8; 32];
         hk.expand(domains::ACCOUNT_KEY.as_bytes(), &mut key)
-            .expect("32-byte output is valid for HKDF-SHA256");
-        Self { key }
-    }
-
-    /// Derive a conversation encryption key from a DH shared secret.
-    ///
-    /// Performs X25519 DH, then runs HKDF-SHA256 with info containing both
-    /// public keys sorted lexicographically (so both parties derive the same key).
-    pub fn derive_conversation_key(my_secret: &StaticSecret, their_public: &PublicKey) -> Self {
-        let shared = my_secret.diffie_hellman(their_public);
-        let my_public = PublicKey::from(my_secret);
-
-        // Sort public keys so both parties produce the same info string
-        let my_bytes = my_public.as_bytes();
-        let their_bytes = their_public.as_bytes();
-        let mut info = Vec::with_capacity(64 + domains::CONVERSATION_KEY.len());
-        if my_bytes < their_bytes {
-            info.extend_from_slice(my_bytes);
-            info.extend_from_slice(their_bytes);
-        } else {
-            info.extend_from_slice(their_bytes);
-            info.extend_from_slice(my_bytes);
-        }
-        info.extend_from_slice(domains::CONVERSATION_KEY.as_bytes());
-
-        let hk = Hkdf::<Sha256>::new(None, shared.as_bytes());
-        let mut key = [0u8; 32];
-        hk.expand(&info, &mut key)
             .expect("32-byte output is valid for HKDF-SHA256");
         Self { key }
     }
@@ -128,19 +98,6 @@ mod tests {
     }
 
     #[test]
-    fn dh_symmetry() {
-        let alice_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
-        let bob_secret = StaticSecret::random_from_rng(rand::rngs::OsRng);
-        let alice_public = PublicKey::from(&alice_secret);
-        let bob_public = PublicKey::from(&bob_secret);
-
-        let key_a = DhtRecordKey::derive_conversation_key(&alice_secret, &bob_public);
-        let key_b = DhtRecordKey::derive_conversation_key(&bob_secret, &alice_public);
-
-        assert_eq!(key_a.key, key_b.key);
-    }
-
-    #[test]
     fn encrypt_decrypt_round_trip() {
         let key = DhtRecordKey::derive_account_key(&[7u8; 32]);
         let plaintext = b"hello rekindle DHT";
@@ -165,30 +122,5 @@ mod tests {
     fn short_ciphertext_rejected() {
         let key = DhtRecordKey::derive_account_key(&[1u8; 32]);
         assert!(key.decrypt(&[0u8; 10]).is_err());
-    }
-
-    #[test]
-    fn conversation_key_from_identity() {
-        use crate::Identity;
-
-        let alice = Identity::generate();
-        let bob = Identity::generate();
-
-        let key_a = DhtRecordKey::derive_conversation_key(
-            &alice.to_x25519_secret(),
-            &bob.to_x25519_public(),
-        );
-        let key_b = DhtRecordKey::derive_conversation_key(
-            &bob.to_x25519_secret(),
-            &alice.to_x25519_public(),
-        );
-
-        assert_eq!(key_a.key, key_b.key);
-
-        // Round-trip encryption between parties
-        let msg = b"alice to bob";
-        let ct = key_a.encrypt(msg).unwrap();
-        let pt = key_b.decrypt(&ct).unwrap();
-        assert_eq!(pt, msg);
     }
 }

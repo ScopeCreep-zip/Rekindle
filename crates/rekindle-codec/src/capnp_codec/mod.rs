@@ -132,28 +132,6 @@ fn bytes_or_empty(has: bool, get: Result<&[u8], capnp::Error>) -> Result<Vec<u8>
     Ok(get.map_err(|e| capnp_err(&e))?.to_vec())
 }
 
-/// Convert a status byte to the capnp `UserProfile::Status` enum.
-fn status_to_capnp(status: u8) -> crate::identity_capnp::user_profile::Status {
-    match status {
-        0 => crate::identity_capnp::user_profile::Status::Online,
-        1 => crate::identity_capnp::user_profile::Status::Away,
-        2 => crate::identity_capnp::user_profile::Status::Busy,
-        _ => crate::identity_capnp::user_profile::Status::Offline,
-    }
-}
-
-/// Convert a capnp `UserProfile::Status` enum to a status byte.
-fn status_from_capnp(
-    status: Result<crate::identity_capnp::user_profile::Status, capnp::NotInSchema>,
-) -> Result<u8, CodecError> {
-    match status.map_err(not_in_schema)? {
-        crate::identity_capnp::user_profile::Status::Online => Ok(0),
-        crate::identity_capnp::user_profile::Status::Away => Ok(1),
-        crate::identity_capnp::user_profile::Status::Busy => Ok(2),
-        crate::identity_capnp::user_profile::Status::Offline => Ok(3),
-    }
-}
-
 /// Write a `GameInfo` into a capnp `GameStatus` builder.
 fn write_game_status(
     mut gs: crate::presence_capnp::game_status::Builder<'_>,
@@ -183,45 +161,7 @@ fn read_game_status(
     })
 }
 
-/// Write a `UserProfile` into a capnp `user_profile` builder.
-fn write_profile(
-    mut b: crate::identity_capnp::user_profile::Builder<'_>,
-    profile: &identity::UserProfile,
-) {
-    b.set_display_name(&profile.display_name);
-    b.set_status_message(&profile.status_message);
-    b.set_status(status_to_capnp(profile.status));
-    if !profile.avatar_hash.is_empty() {
-        b.set_avatar_hash(&profile.avatar_hash);
-    }
-    if let Some(ref g) = profile.game_status {
-        write_game_status(b.init_game_status(), g);
-    }
-}
-
-/// Read a capnp `user_profile` reader into a `UserProfile`.
-fn read_profile(
-    r: crate::identity_capnp::user_profile::Reader<'_>,
-) -> Result<identity::UserProfile, CodecError> {
-    let status = status_from_capnp(r.get_status())?;
-    let game_status = if r.has_game_status() {
-        Some(read_game_status(
-            r.get_game_status().map_err(|e| capnp_err(&e))?,
-        )?)
-    } else {
-        None
-    };
-    Ok(identity::UserProfile {
-        display_name: text_to_string(r.get_display_name().map_err(|e| capnp_err(&e))?)?,
-        status_message: text_or_default(r.has_status_message(), r.get_status_message())?,
-        status,
-        avatar_hash: bytes_or_empty(r.has_avatar_hash(), r.get_avatar_hash())?,
-        game_status,
-    })
-}
-
 pub mod account;
-pub mod conversation;
 pub mod direct;
 pub mod friend;
 pub mod identity;

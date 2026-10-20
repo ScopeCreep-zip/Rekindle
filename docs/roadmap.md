@@ -57,7 +57,6 @@ windows.
 - [ ] Offline message queue: `pending_messages` retries are not durable delivery; plan step E2.5
   (per-participant DM records and the outbox)
 - [x] Friend groups (create, rename, move friends)
-- [x] Conversation DHT records (per-friend pair)
 - [x] Block / unblock / cancel-request / outgoing-invite tracking
 - [x] Invisible status
 

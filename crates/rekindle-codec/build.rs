@@ -107,7 +107,6 @@ fn main() {
                 .file("../../schemas/voice_packet.capnp")
                 .file("../../schemas/media_feedback.capnp")
                 .file("../../schemas/account.capnp")
-                .file("../../schemas/conversation.capnp")
                 // Phase 2 of `.claude/plans/community-envelope-capnp-migration.md`:
                 // typed community envelope + governance + per-variant schemas.
                 .file("../../schemas/community_member.capnp")

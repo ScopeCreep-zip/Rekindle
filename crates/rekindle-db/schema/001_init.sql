@@ -39,8 +39,6 @@ CREATE TABLE IF NOT EXISTS friends (
     dht_record_key TEXT,
     last_seen_at INTEGER,
     avatar_webp BLOB,
-    local_conversation_key TEXT,
-    remote_conversation_key TEXT,
     mailbox_dht_key TEXT,
     -- `FriendshipState` (plan D2). `removing`: we removed them and the
     -- `Unfriended` notice is still queued; the row keeps their routing

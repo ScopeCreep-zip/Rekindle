@@ -34,8 +34,6 @@ labels! {
     // ── Identity and DHT records ────────────────────────────────
     /// HKDF info: account-record encryption key from the identity secret.
     ACCOUNT_KEY = "rekindle-account-v1";
-    /// HKDF info prefix: per-pair conversation-record key.
-    CONVERSATION_KEY = "rekindle-conversation-v1";
     /// HKDF info: the PQXDH key material (X25519, SHA-256, ML-KEM-768, with
     /// EncodeEC/EncodeKEM of the bound keys) → `SKec ‖ SKscka` (plan E2.2).
     PQXDH_SK = "rekindle-pqxdh-sk-v1";

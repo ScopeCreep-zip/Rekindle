@@ -17,7 +17,7 @@ use rekindle_crypto::DhtRecordKey;
 /// It used to own three child `DHTShortArray`s — contact list, chat
 /// list, invitation list — allocated here at creation and reopened at
 /// every login. Nothing ever wrote an entry to any of them: friends
-/// live in the friend-list record, conversations in `ConversationRecord`,
+/// live in the friend-list record, conversations travel as `'D'` frames,
 /// and friend requests in the friend inbox. Three empty DHT records per
 /// account, with their owner keypairs persisted in this header to keep
 /// them writable.

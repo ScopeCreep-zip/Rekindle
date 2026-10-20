@@ -15,8 +15,6 @@ pub struct FriendRow {
     pub group_name: Option<String>,
     pub dht_record_key: Option<String>,
     pub last_seen_at: Option<i64>,
-    pub local_conversation_key: Option<String>,
-    pub remote_conversation_key: Option<String>,
     pub mailbox_dht_key: Option<String>,
     pub friendship_state: FriendshipState,
 }
@@ -28,8 +26,7 @@ pub struct FriendRow {
 pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<FriendRow>> {
     let mut stmt = conn.prepare(
         "SELECT f.public_key, f.display_name, f.nickname, g.name, f.dht_record_key, \
-         f.last_seen_at, f.local_conversation_key, f.remote_conversation_key, \
-         f.mailbox_dht_key, f.friendship_state \
+         f.last_seen_at, f.mailbox_dht_key, f.friendship_state \
          FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
          WHERE f.owner_key = ?1",
     )?;
@@ -42,9 +39,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Frie
                 group_name: row.get(3)?,
                 dht_record_key: row.get(4)?,
                 last_seen_at: row.get(5)?,
-                local_conversation_key: row.get(6)?,
-                remote_conversation_key: row.get(7)?,
-                mailbox_dht_key: row.get(8)?,
+                mailbox_dht_key: row.get(6)?,
                 friendship_state: crate::row::get_enum(row, "friendship_state")?,
             })
         })?

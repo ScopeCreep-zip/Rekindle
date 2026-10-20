@@ -127,8 +127,6 @@ fn friend_state(row: repo::friends::FriendRow) -> FriendState {
     friend.group = row.group_name;
     friend.dht_record_key = row.dht_record_key;
     friend.last_seen_at = row.last_seen_at;
-    friend.local_conversation_key = row.local_conversation_key;
-    friend.remote_conversation_key = row.remote_conversation_key;
     friend.mailbox_dht_key = row.mailbox_dht_key;
     friend
 }

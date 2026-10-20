@@ -1,15 +1,5 @@
-use super::{bytes_or_empty, capnp_err, pack, read_profile, unpack, write_profile, CodecError};
+use super::{bytes_or_empty, capnp_err, pack, unpack, CodecError};
 use crate::identity_capnp;
-
-/// Domain struct for a user profile (used across account and conversation records).
-#[derive(Debug, Clone)]
-pub struct UserProfile {
-    pub display_name: String,
-    pub status_message: String,
-    pub status: u8, // 0=online, 1=away, 2=busy, 3=offline
-    pub avatar_hash: Vec<u8>,
-    pub game_status: Option<super::presence::GameInfo>,
-}
 
 /// Domain struct for a Signal Protocol pre-key bundle.
 ///
@@ -31,23 +21,6 @@ pub struct PreKeyBundle {
     pub pqpk_ot: Vec<u8>,
     pub pqpk_ot_sig: Vec<u8>,
     pub pqpk_ot_id: u32,
-}
-
-pub fn encode_profile(profile: &UserProfile) -> Vec<u8> {
-    let mut builder = capnp::message::Builder::new_default();
-    write_profile(
-        builder.init_root::<identity_capnp::user_profile::Builder<'_>>(),
-        profile,
-    );
-    pack(&builder)
-}
-
-pub fn decode_profile(data: &[u8]) -> Result<UserProfile, CodecError> {
-    let reader = unpack(data)?;
-    let root = reader
-        .get_root::<identity_capnp::user_profile::Reader<'_>>()
-        .map_err(|e| capnp_err(&e))?;
-    read_profile(root)
 }
 
 pub fn encode_prekey_bundle(bundle: &PreKeyBundle) -> Vec<u8> {

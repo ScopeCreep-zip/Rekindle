@@ -246,12 +246,11 @@ Full architecture: [`../architecture/communities.md`](../architecture/communitie
 | Schema File | Top-level structs |
 |-------------|-------------------|
 | `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
-| `identity.capnp` | `UserProfile`, `PreKeyBundle` |
+| `identity.capnp` | `PreKeyBundle` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
 | `community.capnp` | `Community`, `Channel`, `Role`, `PermissionOverwrite` |
 | `voice.capnp` | `VoiceSignaling` |
-| `conversation.capnp` | `ConversationHeader` |
 | `account.capnp` | `AccountHeader`, `ContactEntry`, `ChatEntry` |
 
 Generated Rust modules are included at the `rekindle-protocol` crate root via
@@ -297,13 +296,6 @@ When a watch fails to establish (Veilid GitLab #377), the friend is added to
 Each user publishes a mailbox DHT record created with their identity keypair
 (deterministic key). It contains only the user's current Veilid route blob,
 providing a fallback for peers when the profile record's subkey 6 is stale.
-
-### Conversation DHT Records (Per-Friend)
-
-Each friend pair maintains two DHT records — one owned by each side. Records
-are encrypted with `DhtRecordKey::derive_conversation_key()` using the X25519
-DH shared secret between the two parties. Each record contains a child
-`DHTLog` for append-only message history.
 
 ### Account Record (Cross-Device Recovery)
 

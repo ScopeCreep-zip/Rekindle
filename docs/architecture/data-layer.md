@@ -397,13 +397,6 @@ Lazy-created on first opt-in to multi-device. Subkeys hold the device
 list, read state per channel, sync preferences, paired device public
 keys, and sync manifest. Reconciled by the cross-device sync service.
 
-### Conversation Record (DFLT, encrypted, per-friend pair)
-
-Each friend pair maintains two DHT records — one owned by each
-side. Records are encrypted with
-`DhtRecordKey::derive_conversation_key()` from the X25519 DH shared
-secret. Each record contains a child `DHTLog` for message history.
-
 ### Community Records (SMPL `o_cnt:0`, 255 subkeys — universal v2.0 schema)
 
 All community records share the universal SMPL schema. The
@@ -472,12 +465,11 @@ paths resolve.
 | Schema | Top-level structs |
 |--------|-------------------|
 | `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
-| `identity.capnp` | `UserProfile`, `PreKeyBundle` |
+| `identity.capnp` | `PreKeyBundle` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
 | `community.capnp` | `Community`, `Channel`, `Role`, `PermissionOverwrite` |
 | `voice.capnp` | `VoiceSignaling` |
-| `conversation.capnp` | `ConversationHeader` |
 | `account.capnp` | `AccountHeader`, `ContactEntry`, `ChatEntry` |
 
 `postcard` / `bincode` is used for the v2.0 community gossip

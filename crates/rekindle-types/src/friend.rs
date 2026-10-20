@@ -37,10 +37,6 @@ pub struct FriendState {
     pub dht_record_key: Option<String>,
     /// When the friend was last seen online, ms since the epoch.
     pub last_seen_at: Option<i64>,
-    /// Our conversation record with them (until E2.4).
-    pub local_conversation_key: Option<String>,
-    /// Their conversation record with us (until E2.4).
-    pub remote_conversation_key: Option<String>,
     /// The friend's mailbox, where their route is published.
     pub mailbox_dht_key: Option<String>,
     /// The friend's last presence heartbeat, ms since the epoch: a
@@ -71,8 +67,6 @@ impl FriendState {
             unread_count: 0,
             dht_record_key: None,
             last_seen_at: None,
-            local_conversation_key: None,
-            remote_conversation_key: None,
             mailbox_dht_key: None,
             last_heartbeat_at: None,
             friendship_state,

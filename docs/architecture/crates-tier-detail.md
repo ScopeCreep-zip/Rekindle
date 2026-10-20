@@ -463,7 +463,7 @@ routing for the **desktop app**. The v1.0 `MessageEnvelope` /
 
 Top-level modules: `node` (`RekindleNode` lifecycle), `own_routes`
 (private route allocation), `ports`, `veilid_config`, `dht` (`profile`, `presence`, `friends`,
-`conversation`, `account`, `mailbox`, `channel`, `short_array`, `log`,
+`account`, `mailbox`, `channel`, `short_array`, `log`,
 `community/{envelope, manifest, member_registry, channel_record,
 audit_log, automod, onboarding, permissions_v2, types}`), `error`.
 
@@ -473,7 +473,7 @@ Cryptographic operations including Ed25519 identity, the Signal Protocol
 state machines (pure; persistence is `rekindle-db`'s), group MEK
 primitives, and HKDF-derived DHT record
 keys. Modules: `identity` (Ed25519 keypair, sign / verify, hex
-helpers), `dht_crypto` (`DhtRecordKey` — account/conversation key derivation +
+helpers), `dht_crypto` (`DhtRecordKey` — account key derivation +
 XChaCha20-Poly1305 encrypt / decrypt), `group/{media_key, pseudonym}`
 (`MediaEncryptionKey` with generation tracking; community pseudonym
 derivation), `signal/{dr, record, pqxdh, prekeys,

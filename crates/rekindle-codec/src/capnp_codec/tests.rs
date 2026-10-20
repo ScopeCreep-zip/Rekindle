@@ -1,4 +1,4 @@
-use super::{account, conversation, friend, identity, presence, voice};
+use super::{account, friend, identity, presence, voice};
 
 #[test]
 fn round_trip_presence_update() {
@@ -30,36 +30,6 @@ fn round_trip_presence_update() {
     let (status2, game2) = presence::decode_update(&encoded2).unwrap();
     assert_eq!(status2, 3);
     assert!(game2.is_none());
-}
-
-#[test]
-fn round_trip_user_profile() {
-    use super::presence::GameInfo;
-
-    let profile = identity::UserProfile {
-        display_name: "xXGamerXx".to_string(),
-        status_message: "Playing games".to_string(),
-        status: 0,
-        avatar_hash: vec![0xDE, 0xAD],
-        game_status: Some(GameInfo {
-            game_id: 1,
-            game_name: "Halo".to_string(),
-            server_info: None,
-            elapsed_seconds: 120,
-            server_address: None,
-        }),
-    };
-
-    let encoded = identity::encode_profile(&profile);
-    let decoded = identity::decode_profile(&encoded).unwrap();
-
-    assert_eq!(decoded.display_name, "xXGamerXx");
-    assert_eq!(decoded.status_message, "Playing games");
-    assert_eq!(decoded.status, 0);
-    assert_eq!(decoded.avatar_hash, vec![0xDE, 0xAD]);
-    let g = decoded.game_status.unwrap();
-    assert_eq!(g.game_name, "Halo");
-    assert_eq!(g.elapsed_seconds, 120);
 }
 
 #[test]
@@ -234,102 +204,4 @@ fn account_header_without_avatar() {
     assert_eq!(decoded.display_name, "no_avatar");
     assert!(decoded.status_message.is_empty());
     assert!(decoded.avatar_hash.is_empty());
-}
-
-#[test]
-fn round_trip_conversation_header() {
-    use super::presence::GameInfo;
-
-    let header = conversation::ConversationHeader {
-        identity_public_key: vec![0xCC; 32],
-        profile: identity::UserProfile {
-            display_name: "Alice".to_string(),
-            status_message: "In a meeting".to_string(),
-            status: 2, // busy
-            avatar_hash: vec![0x01, 0x02],
-            game_status: Some(GameInfo {
-                game_id: 42,
-                game_name: "Portal 2".to_string(),
-                server_info: None,
-                elapsed_seconds: 600,
-                server_address: None,
-            }),
-        },
-        message_log_key: "VLD0:msglog123".to_string(),
-        route_blob: vec![0xDD; 64],
-        prekey_bundle: identity::PreKeyBundle {
-            identity_key: vec![1u8; 32],
-            signed_pre_key: vec![2u8; 32],
-            signed_pre_key_sig: vec![3u8; 64],
-            one_time_pre_key: vec![4u8; 32],
-            one_time_pre_key_id: 3,
-            registration_id: 42,
-            pqpk_lr: vec![5u8; 1184],
-            pqpk_lr_sig: vec![6u8; 64],
-            pqpk_ot: vec![7u8; 1184],
-            pqpk_ot_sig: vec![8u8; 64],
-            pqpk_ot_id: 11,
-        },
-        created_at: 5000,
-        updated_at: 6000,
-    };
-
-    let encoded = conversation::encode_conversation_header(&header);
-    let decoded = conversation::decode_conversation_header(&encoded).unwrap();
-
-    assert_eq!(decoded.identity_public_key, vec![0xCC; 32]);
-    assert_eq!(decoded.profile.display_name, "Alice");
-    assert_eq!(decoded.profile.status_message, "In a meeting");
-    assert_eq!(decoded.profile.status, 2);
-    assert_eq!(decoded.profile.avatar_hash, vec![0x01, 0x02]);
-    let g = decoded.profile.game_status.unwrap();
-    assert_eq!(g.game_name, "Portal 2");
-    assert_eq!(g.elapsed_seconds, 600);
-    assert_eq!(decoded.message_log_key, "VLD0:msglog123");
-    assert_eq!(decoded.route_blob, vec![0xDD; 64]);
-    // Full-struct comparison, not spot fields — this is exactly the test
-    // shape that let the embedded `PreKeyBundle` silently drop its 6
-    // PQXDH fields on every encode (two spot-checked fields kept
-    // passing while the other nine, unchecked, round-tripped as zeroed
-    // defaults).
-    assert_eq!(
-        decoded.prekey_bundle.identity_key,
-        header.prekey_bundle.identity_key
-    );
-    assert_eq!(
-        decoded.prekey_bundle.signed_pre_key,
-        header.prekey_bundle.signed_pre_key
-    );
-    assert_eq!(
-        decoded.prekey_bundle.signed_pre_key_sig,
-        header.prekey_bundle.signed_pre_key_sig
-    );
-    assert_eq!(
-        decoded.prekey_bundle.one_time_pre_key,
-        header.prekey_bundle.one_time_pre_key
-    );
-    assert_eq!(
-        decoded.prekey_bundle.one_time_pre_key_id,
-        header.prekey_bundle.one_time_pre_key_id
-    );
-    assert_eq!(
-        decoded.prekey_bundle.registration_id,
-        header.prekey_bundle.registration_id
-    );
-    assert_eq!(decoded.prekey_bundle.pqpk_lr, header.prekey_bundle.pqpk_lr);
-    assert_eq!(
-        decoded.prekey_bundle.pqpk_lr_sig,
-        header.prekey_bundle.pqpk_lr_sig
-    );
-    assert_eq!(decoded.prekey_bundle.pqpk_ot, header.prekey_bundle.pqpk_ot);
-    assert_eq!(
-        decoded.prekey_bundle.pqpk_ot_sig,
-        header.prekey_bundle.pqpk_ot_sig
-    );
-    assert_eq!(
-        decoded.prekey_bundle.pqpk_ot_id,
-        header.prekey_bundle.pqpk_ot_id
-    );
-    assert_eq!(decoded.created_at, 5000);
-    assert_eq!(decoded.updated_at, 6000);
 }

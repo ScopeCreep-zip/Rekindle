@@ -25,7 +25,7 @@ pub use error::CodecError;
 // `crate::<schema>_capnp` paths resolve correctly. The generated code
 // is not hand-written; per the capnpc-rust guidance the lint exemption
 // belongs on the wrapping module. Expressed once in this macro instead
-// of being copy-pasted onto all 18 modules: the `include!` path derives
+// of being copy-pasted onto all 16 modules: the `include!` path derives
 // from the module name, so each invocation is a single line.
 macro_rules! capnp_module {
     ($module:ident) => {
@@ -49,7 +49,6 @@ capnp_module!(voice_capnp);
 capnp_module!(voice_packet_capnp);
 capnp_module!(media_feedback_capnp);
 capnp_module!(account_capnp);
-capnp_module!(conversation_capnp);
 
 // Typed community-envelope schemas.
 capnp_module!(community_member_capnp);
