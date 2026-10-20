@@ -12,6 +12,7 @@
     "allow-mark-read",
     "allow-send-dm-message",
     "allow-send-message",
+    "allow-resend-message",
     "allow-send-typing",
     "allow-start-dm-call",
     "allow-end-dm-call",
