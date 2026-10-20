@@ -51,6 +51,12 @@ pub async fn probe_friends_for_status(host: &dyn FriendHost, target: &str) {
         target_pubkey: target.to_string(),
     });
     for friend in probe_targets(host, target) {
+        node.relay().record_probe(
+            &friend,
+            target,
+            host.clock().now_secs(),
+            PROBE_COOLDOWN_SECS,
+        );
         if let Err(e) = dm::send_to_peer(host, &friend, &request).await {
             tracing::trace!(to = %friend, error = %e, "status probe not sent");
         }
@@ -67,11 +73,28 @@ fn parse_status(s: &str) -> Option<UserStatus> {
     }
 }
 
-/// A friend answered a probe (the 0x0141 body, §6): the snapshot refreshes
-/// our view of `target_pubkey` only when it is our accepted friend, so a
-/// relay's word about a stranger is never trusted.
-pub(crate) fn on_status_response(host: &dyn FriendHost, r: &StatusResponse) {
+/// `friend` answered a probe (the 0x0141 body, §6): the snapshot
+/// refreshes our view of `target_pubkey` only when we asked that friend
+/// about that target within the cooldown and the target is our accepted
+/// friend (plan audit G8), so no friend overwrites another's status
+/// unasked and a relay's word about a stranger is never trusted. The
+/// route it carries is not cached: a route for the target comes only from
+/// the target (their own messages or record), never from a third party.
+pub(crate) fn on_status_response(host: &dyn FriendHost, friend: &str, r: &StatusResponse) {
     let target = r.target_pubkey.as_str();
+    let Ok(node) = host.node() else {
+        return;
+    };
+    let asked = node.relay().take_probe_answer(
+        friend,
+        target,
+        host.clock().now_secs(),
+        PROBE_COOLDOWN_SECS,
+    );
+    if !asked {
+        tracing::debug!(from = %friend, target = %target, "dropping an unasked status response");
+        return;
+    }
     if r.status.is_empty() || !state::is_accepted(host, target) {
         return;
     }
@@ -91,9 +114,35 @@ pub(crate) fn on_status_response(host: &dyn FriendHost, r: &StatusResponse) {
             f.last_heartbeat_at = seen_ms;
         }
     });
-    if !r.route_blob.is_empty() {
-        if let Ok(node) = host.node() {
-            dm::route::cache(&node, target, r.route_blob.clone());
-        }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::broadcast::peer_registry::RelayState;
+
+    use super::PROBE_COOLDOWN_SECS;
+
+    #[test]
+    fn only_the_friend_asked_about_that_target_may_answer_once() {
+        let relay = RelayState::default();
+        relay.record_probe("bob", "carol", 100, PROBE_COOLDOWN_SECS);
+        // Another friend, or Bob about someone else: unasked.
+        assert!(!relay.take_probe_answer("mallory", "carol", 101, PROBE_COOLDOWN_SECS));
+        assert!(!relay.take_probe_answer("bob", "dave", 101, PROBE_COOLDOWN_SECS));
+        assert!(relay.take_probe_answer("bob", "carol", 101, PROBE_COOLDOWN_SECS));
+        // One probe takes one answer.
+        assert!(!relay.take_probe_answer("bob", "carol", 102, PROBE_COOLDOWN_SECS));
+    }
+
+    #[test]
+    fn a_late_answer_is_unasked() {
+        let relay = RelayState::default();
+        relay.record_probe("bob", "carol", 100, PROBE_COOLDOWN_SECS);
+        assert!(!relay.take_probe_answer(
+            "bob",
+            "carol",
+            100 + PROBE_COOLDOWN_SECS + 1,
+            PROBE_COOLDOWN_SECS
+        ));
     }
 }

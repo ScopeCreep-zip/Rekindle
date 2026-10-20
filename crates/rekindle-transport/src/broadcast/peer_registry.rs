@@ -260,6 +260,9 @@ impl PeerRegistry {
 #[derive(Default)]
 pub struct RelayState {
     probe_cooldown: parking_lot::Mutex<HashMap<String, u64>>,
+    /// The probes awaiting an answer: `(friend asked, target)` and when
+    /// (plan audit G8).
+    pending_probes: parking_lot::Mutex<HashMap<(String, String), u64>>,
 }
 
 impl RelayState {
@@ -279,10 +282,35 @@ impl RelayState {
         true
     }
 
-    /// Forget the probe cooldowns (lock): the next identity's probes are
-    /// its own.
+    /// Remember that `friend` was asked about `target` at `now_secs`.
+    /// Probes older than `ttl_secs` are dropped so the map stays small.
+    pub fn record_probe(&self, friend: &str, target: &str, now_secs: u64, ttl_secs: u64) {
+        let mut pending = self.pending_probes.lock();
+        pending.retain(|_, &mut t| now_secs.saturating_sub(t) <= ttl_secs);
+        pending.insert((friend.to_string(), target.to_string()), now_secs);
+    }
+
+    /// Whether `friend` answering about `target` at `now_secs` answers a
+    /// probe of ours sent within `ttl_secs`; the probe is used up, so one
+    /// probe takes one answer.
+    pub fn take_probe_answer(
+        &self,
+        friend: &str,
+        target: &str,
+        now_secs: u64,
+        ttl_secs: u64,
+    ) -> bool {
+        self.pending_probes
+            .lock()
+            .remove(&(friend.to_string(), target.to_string()))
+            .is_some_and(|asked| now_secs.saturating_sub(asked) <= ttl_secs)
+    }
+
+    /// Forget the probe cooldowns and pending probes (lock): the next
+    /// identity's probes are its own.
     pub fn clear_probes(&self) {
         self.probe_cooldown.lock().clear();
+        self.pending_probes.lock().clear();
     }
 }
 
