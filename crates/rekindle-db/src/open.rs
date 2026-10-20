@@ -130,7 +130,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// keys of `signal_identities` and `unprocessed.header_dh`, and the
 /// counters; `unprocessed.quarantined_at`; each vault owner entry holds its
 /// record key with the keypair.
-pub const SCHEMA_VERSION: i64 = 94;
+pub const SCHEMA_VERSION: i64 = 95;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

@@ -13,7 +13,7 @@ use rekindle_types::subscription_events::SubscriptionEvent;
 use zeroize::Zeroizing;
 
 use super::error::FriendError;
-use super::session_reset::{IncomingReset, OutgoingReset};
+use super::session_reset::IncomingReset;
 use crate::broadcast::node::TransportNode;
 use crate::operations::direct::replay::ReplayGuard;
 use crate::session::Session;
@@ -36,9 +36,6 @@ pub enum BackendHold {
 pub struct FriendStores {
     /// Pre-session frames already accepted, so a replayed copy is dropped.
     pub replay: Mutex<ReplayGuard>,
-    /// The session resets we asked for: only a friend we asked may open a
-    /// session with `SessionResetAccept` (plan C7.25, B11).
-    pub outgoing_resets: Mutex<HashMap<String, OutgoingReset>>,
     /// Each friend's pending reset request, until the user answers it (one
     /// per friend, the newest wins).
     pub incoming_resets: Mutex<HashMap<String, IncomingReset>>,
@@ -59,7 +56,6 @@ impl FriendStores {
     /// Forget everything (lock).
     pub fn clear(&self) {
         self.replay.lock().clear();
-        self.outgoing_resets.lock().clear();
         self.incoming_resets.lock().clear();
         self.first_contacts.lock().clear();
         self.pending_rotations.lock().clear();

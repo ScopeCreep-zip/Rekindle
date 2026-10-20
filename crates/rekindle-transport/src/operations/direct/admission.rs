@@ -7,7 +7,7 @@
 use rekindle_codec::capnp_codec::direct::DmTypeId;
 use rekindle_types::friend::FriendshipState;
 
-use crate::operations::friend::{is_blocked, session_reset, state, FriendHost};
+use crate::operations::friend::{is_blocked, state, FriendHost};
 
 /// A sender's stored friendship: `None` for a stranger, or when the row is
 /// unreadable (failing closed).
@@ -54,14 +54,11 @@ pub(crate) fn kind_admitted(sender_hex: &str, kind: DmTypeId, status: Status) ->
 /// Whether `sender`, with `status`, may open a session with a PreKeyInit
 /// whose first payload is `kind` ([`may_open_session`], with whether a
 /// reset of ours is outstanding); logged when it refuses.
-pub(crate) fn init_admitted(
-    host: &dyn FriendHost,
-    sender_hex: &str,
-    kind: DmTypeId,
-    status: Status,
-) -> bool {
-    let reset_outstanding =
-        kind == DmTypeId::SessionResetAccept && session_reset::awaits_accept(host, sender_hex);
+pub(crate) fn init_admitted(sender_hex: &str, kind: DmTypeId, status: Status) -> bool {
+    // Whether we asked for the reset is our stored request, checked and
+    // consumed in the transaction that accepts the init
+    // (`Reinitiation::Requested`, plan audit D-4).
+    let reset_outstanding = kind == DmTypeId::SessionResetAccept;
     let admitted = may_open_session(kind, status, reset_outstanding);
     if !admitted {
         tracing::info!(from = %sender_hex, ?status, ?kind,

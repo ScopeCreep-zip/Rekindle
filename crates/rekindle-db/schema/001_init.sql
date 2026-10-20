@@ -764,6 +764,16 @@ CREATE TABLE IF NOT EXISTS ratchet_sessions (
     PRIMARY KEY (owner_key, peer_identity, peer_device)
 );
 
+-- The session resets we asked friends for (plan audit D-4): consumed in the
+-- transaction that accepts the friend's SessionResetAccept init, deleted on
+-- their decline, expired at the backend-hold lifetime.
+CREATE TABLE IF NOT EXISTS session_reset_requests (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer TEXT NOT NULL,
+    requested_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, peer)
+);
+
 -- Our prekeys (plan E2.3, E2.4; `rekindle_db::prekeys`): the signed
 -- prekey (`spk`) and the ML-KEM last-resort key (`pq_lr`), published in
 -- the prekey record's head (subkey 0), and the one-time keys (`opk`,

@@ -127,6 +127,11 @@ async fn run(host: HostFriends, stop: CancellationToken) {
             if let Err(e) = friend::expire_stale_requests(&host).await {
                 tracing::warn!(error = %e, "expiring stale friend requests failed");
             }
+            // Reset requests either way live as long as the hold they wait on.
+            let ttl = rekindle_idempotency::intent_gate::BACKEND_HOLD_TTL_MS;
+            if let Err(e) = friend::expire_resets(&host, ttl).await {
+                tracing::warn!(error = %e, "expiring stale session resets failed");
+            }
             match friend::expire_stale_invites(&host).await {
                 Ok(0) => {}
                 Ok(expired) => tracing::info!(expired, "expired stale friend invites"),

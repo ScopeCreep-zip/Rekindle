@@ -11,7 +11,7 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use crate::operations::direct::admission::{may_open_session, Status};
 use crate::operations::dm;
-use crate::operations::friend::{session_reset, state, FriendHost};
+use crate::operations::friend::{state, FriendHost};
 
 /// A first contact of ours that opened a session, until the peer answers
 /// under it: the kind it carried, and whether it was resent once (B6).
@@ -82,8 +82,9 @@ pub(crate) fn reject_init(
     status: Status,
 ) {
     let kind = init.first_type_id;
-    let reset_outstanding =
-        kind == DmTypeId::SessionResetAccept && session_reset::awaits_accept(host, sender_hex);
+    // A reset's init reaches here (a prekey we no longer hold) only past
+    // `accept_init`'s check of our stored request (plan audit D-4).
+    let reset_outstanding = kind == DmTypeId::SessionResetAccept;
     if !may_open_session(kind, status, reset_outstanding) {
         tracing::debug!(from = %sender_hex, kind = ?init.first_type_id,
             "no rejection for this PreKeyInit");

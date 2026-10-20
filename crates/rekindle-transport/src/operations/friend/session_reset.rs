@@ -7,8 +7,10 @@
 //! plan E2.1), and the user accepts ([`accept`], the PreKeyInit that opens
 //! a new session from a slot of their record and carries
 //! `SessionResetAccept`) or declines ([`decline`], sealed). Only a friend
-//! we asked opens a session this way ([`awaits_accept`], B11): the ids its
-//! init names are ours, and the init's own consumption checks them (B8).
+//! we asked opens a session this way (B11): our request is stored
+//! (`session_reset_requests`) and consumed in the transaction that accepts
+//! their init (`ratchet::accept_init`, plan audit D-4); the ids its init
+//! names are ours, and the init's own consumption checks them (B8).
 
 use rekindle_codec::capnp_codec::direct::{
     DirectBody, DmTypeId, SessionResetDecline, SessionResetRequest,
@@ -20,19 +22,14 @@ use super::host::{BackendHold, FriendHost};
 use super::state;
 use crate::operations::dm;
 
-/// A session reset we requested from a peer, outstanding until their
-/// accept opens the new session or they decline.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OutgoingReset {
-    /// When we asked, ms since the epoch.
-    pub requested_at: i64,
-}
-
 /// A friend's reset request, held for the user's answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IncomingReset {
     /// Why they asked, as they put it (empty when they gave no reason).
     pub reason: String,
+    /// When it arrived, ms since the epoch: it expires with the backend
+    /// hold that waits on it ([`expire_resets`]).
+    pub requested_at: i64,
 }
 
 /// The safety number of the reset `peer` asked for, while it is pending.
@@ -67,18 +64,21 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
             "can only reset sessions with existing friends".to_string(),
         ));
     }
-    host.stores().outgoing_resets.lock().insert(
-        peer.to_string(),
-        OutgoingReset {
-            requested_at: host.clock().now_ms_i64(),
-        },
-    );
+    let owner = state::owner(host)?;
+    let (ok, pk, now) = (owner.clone(), peer.to_string(), host.clock().now_ms_i64());
+    state::db_call!(host, "store the reset request", move |conn| {
+        rekindle_db::repo::session_reset_requests::insert(conn, &ok, &pk, now)
+    })
+    .await?;
     tracing::info!(peer = %peer, "session reset by user; sending SessionResetRequest");
     let request = DirectBody::SessionResetRequest(SessionResetRequest {
         reason: String::new(),
     });
     if let Err(e) = dm::send_to_peer(host, peer, &request).await {
-        host.stores().outgoing_resets.lock().remove(peer);
+        let pk = peer.to_string();
+        state::db_fire!(host, "withdraw the reset request", move |conn| {
+            rekindle_db::repo::session_reset_requests::take(conn, &owner, &pk).map(|_| ())
+        });
         return Err(FriendError::Failed(format!(
             "send SessionResetRequest: {e}"
         )));
@@ -151,6 +151,7 @@ pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, reason: &str
         sender.to_string(),
         IncomingReset {
             reason: reason.to_string(),
+            requested_at: host.clock().now_ms_i64(),
         },
     );
     if let Err(e) = host
@@ -166,21 +167,9 @@ pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, reason: &str
     true
 }
 
-/// Whether `sender` may open a session with `SessionResetAccept`: a reset
-/// we asked them for is outstanding (B11). It is consumed when the accept
-/// is applied ([`on_accept`]).
-pub(crate) fn awaits_accept(host: &dyn FriendHost, sender: &str) -> bool {
-    let outstanding = host.stores().outgoing_resets.lock().contains_key(sender);
-    if !outstanding {
-        tracing::warn!(from = %sender, "dropping SessionResetAccept: we requested no session reset");
-    }
-    outstanding
-}
-
 /// The friend's new session is open (their PreKeyInit answered our
-/// request, which is done).
+/// request, consumed in the transaction that accepted it).
 pub(crate) fn on_accept(host: &dyn FriendHost, sender: &str) {
-    host.stores().outgoing_resets.lock().remove(sender);
     let display = state::label(host, sender);
     alert(
         host,
@@ -194,7 +183,12 @@ pub(crate) fn on_accept(host: &dyn FriendHost, sender: &str) {
 
 /// The friend declined our reset.
 pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str, reason: &str) {
-    host.stores().outgoing_resets.lock().remove(sender);
+    if let Ok(owner) = state::owner(host) {
+        let pk = sender.to_string();
+        state::db_fire!(host, "delete the declined reset request", move |conn| {
+            rekindle_db::repo::session_reset_requests::take(conn, &owner, &pk).map(|_| ())
+        });
+    }
     let display = state::label(host, sender);
     let body = if reason.is_empty() {
         format!("{display} declined your secure session reset request.")
@@ -202,4 +196,30 @@ pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str, reason: &str) {
         format!("{display} declined your secure session reset request: {reason}")
     };
     alert(host, "Session Reset Declined", body);
+}
+
+/// Expire the reset requests older than `ttl_ms` (the backend-hold
+/// lifetime, plan audit D-4): ours unanswered, and the friends' the user
+/// never answered (their hold expired with them).
+///
+/// # Errors
+/// Our stored requests could not be expired.
+pub async fn expire_resets(host: &dyn FriendHost, ttl_ms: u64) -> Result<(), FriendError> {
+    let owner = state::owner(host)?;
+    let cutoff = host
+        .clock()
+        .now_ms_i64()
+        .saturating_sub(i64::try_from(ttl_ms).unwrap_or(i64::MAX));
+    host.stores()
+        .incoming_resets
+        .lock()
+        .retain(|_, reset| reset.requested_at >= cutoff);
+    let expired = state::db_call!(host, "expire reset requests", move |conn| {
+        rekindle_db::repo::session_reset_requests::delete_before(conn, &owner, cutoff)
+    })
+    .await?;
+    if expired > 0 {
+        tracing::info!(expired, "expired unanswered session reset requests");
+    }
+    Ok(())
 }

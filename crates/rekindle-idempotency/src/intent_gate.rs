@@ -375,6 +375,20 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         Err(GateError::UnknownIntent)
     }
 
+    /// Whether `owner` may hold one more action once the ones `replaced`
+    /// answers `true` for go: checked before a newer backend hold drops
+    /// the older one, so a full gate keeps the older (plan audit D-4).
+    pub fn has_room(&self, owner: &O, replaced: impl Fn(&A) -> bool, now_ms: u64) -> bool {
+        self.pending
+            .lock()
+            .values()
+            .filter(|p| {
+                p.owner == *owner && p.review.expires_at_ms > now_ms && !replaced(&p.action)
+            })
+            .count()
+            < MAX_PENDING_PER_OWNER
+    }
+
     /// Keep only the held actions `keep` answers `true` for; the others go
     /// without their Cancel action (a newer backend hold replaces an older
     /// one of the same peer).

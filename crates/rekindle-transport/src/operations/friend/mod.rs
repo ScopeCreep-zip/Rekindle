@@ -18,6 +18,7 @@ mod list_record;
 mod remove;
 mod rotate;
 pub mod session_reset;
+pub use session_reset::expire_resets;
 pub(crate) mod state;
 pub mod verification;
 

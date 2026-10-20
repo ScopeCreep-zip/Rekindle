@@ -190,7 +190,18 @@ impl FriendHost for HostFriends {
             .await
             .map_err(|e| FriendError::Failed(format!("{e:?}")))?;
         // One hold per friend and kind: a newer one replaces the older,
-        // which goes without its cancel.
+        // which goes without its cancel, but only once the newer fits: a
+        // full gate refuses it and keeps the older (plan audit D-4).
+        let now = self.ctx.clock.now_ms();
+        if !self
+            .ctx
+            .intents
+            .has_room(&owner, |held_action| same_hold(held_action, &action), now)
+        {
+            return Err(FriendError::Conflict(
+                rekindle_idempotency::intent_gate::GateError::TooManyPending.to_string(),
+            ));
+        }
         self.ctx.intents.retain_held(|held_by, held_action| {
             !(held_by.conn.is_none()
                 && held_by.identity == owner.identity
@@ -205,7 +216,7 @@ impl FriendHost for HostFriends {
                 action,
                 Some(cancel),
                 rekindle_idempotency::intent_gate::BACKEND_HOLD_TTL_MS,
-                self.ctx.clock.now_ms(),
+                now,
             )
             .map_err(|e| FriendError::Conflict(e.to_string()))?;
         self.ctx

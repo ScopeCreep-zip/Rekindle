@@ -92,7 +92,7 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
     };
     let status = admission::unblocked(host, &sender_hex).await.or_refused()?;
     let admitted = match &frame.body {
-        FrameBody::PreKeyInit(_) => admission::init_admitted(host, &sender_hex, kind, status),
+        FrameBody::PreKeyInit(_) => admission::init_admitted(&sender_hex, kind, status),
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => {
             admission::kind_admitted(&sender_hex, kind, status)
         }

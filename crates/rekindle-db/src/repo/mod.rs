@@ -26,6 +26,7 @@ pub mod pending_messages;
 pub mod pending_requests;
 pub mod preferences;
 mod role_ids;
+pub mod session_reset_requests;
 pub mod signal_identities;
 pub mod unprocessed;
 

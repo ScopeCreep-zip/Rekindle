@@ -116,6 +116,10 @@ pub enum RatchetError {
     /// refused before any prekey is looked up (ruling Q1, plan audit G2).
     #[error("refused a re-initiation over an established session")]
     EstablishedSession,
+    /// A `SessionResetAccept` init from a peer we asked no reset of (B11;
+    /// plan audit D-4): refused before any prekey is looked up.
+    #[error("refused a session reset we did not request")]
+    UnrequestedReset,
     /// A maintenance action named a subkey that is not a one-time slot.
     #[error("subkey {subkey} is not a prekey slot")]
     InvalidSlot { subkey: u32 },
@@ -304,6 +308,17 @@ pub async fn accept_init(
         }
         if reinit == Reinitiation::Refused && record.is_established() {
             return Err(RatchetError::EstablishedSession);
+        }
+        // A reset's init answers our stored request, consumed in this
+        // transaction (plan audit D-4).
+        if reinit == Reinitiation::Requested
+            && !crate::repo::session_reset_requests::take(
+                conn,
+                &identity_text(&owner),
+                &identity_text(&peer.identity),
+            )?
+        {
+            return Err(RatchetError::UnrequestedReset);
         }
         if prekeys::is_last_resort_only(&init) && prekeys::lr_init_seen(conn, &owner, &init)? {
             return Err(RatchetError::ReplayedLastResortInit);
