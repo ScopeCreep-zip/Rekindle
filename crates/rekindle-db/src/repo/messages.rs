@@ -124,6 +124,9 @@ pub struct NewDm<'a> {
     pub message_id: &'a str,
     /// Resolved to the parent's row; `NULL` when the parent is not held.
     pub reply_to: Option<&'a str>,
+    /// Ours is `queued` until the send's outcome (`sent` or `failed`)
+    /// replaces it; a received one is `delivered` (plan audit D-3).
+    pub send_state: SendState,
 }
 
 /// A stored direct message: its row, and whether this call stored it.
@@ -147,10 +150,10 @@ pub struct StoredDm {
 pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm> {
     let inserted = conn.execute(
         "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
-         timestamp, is_read, message_id, reply_to_id) \
+         timestamp, is_read, message_id, reply_to_id, send_state) \
          VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6, ?7, \
                  (SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-                  AND message_id = ?8 ORDER BY id LIMIT 1)) \
+                  AND message_id = ?8 ORDER BY id LIMIT 1), ?9) \
          ON CONFLICT(owner_key, conversation_id, sender_key, message_id) \
          WHERE message_id IS NOT NULL DO NOTHING",
         params![
@@ -161,7 +164,8 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
             dm.timestamp,
             dm.is_read,
             dm.message_id,
-            dm.reply_to
+            dm.reply_to,
+            dm.send_state.as_str()
         ],
     )? > 0;
     let id = conn.query_row(
@@ -356,6 +360,11 @@ mod tests {
             is_read: sender == OWNER,
             message_id: id,
             reply_to,
+            send_state: if sender == OWNER {
+                SendState::Queued
+            } else {
+                SendState::Delivered
+            },
         }
     }
 

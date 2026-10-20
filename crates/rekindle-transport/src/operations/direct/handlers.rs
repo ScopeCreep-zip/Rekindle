@@ -163,6 +163,7 @@ async fn direct_message(
         is_read: false,
         message_id: message_id.clone(),
         reply_to: reply_to.clone(),
+        send_state: rekindle_types::message::SendState::Delivered,
     };
     match fields.store(host).await {
         Ok(stored) if stored.inserted => {}

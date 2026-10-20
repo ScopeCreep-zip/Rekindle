@@ -43,6 +43,9 @@ pub(crate) struct NewDmFields {
     pub is_read: bool,
     pub message_id: String,
     pub reply_to: Option<String>,
+    /// `Queued` for ours until the send's outcome is stored; `Delivered`
+    /// for a received one (plan audit D-3).
+    pub send_state: rekindle_types::message::SendState,
 }
 
 impl NewDmFields {
@@ -88,6 +91,7 @@ impl NewDmFields {
                 is_read: self.is_read,
                 message_id: &self.message_id,
                 reply_to: self.reply_to.as_deref(),
+                send_state: self.send_state,
             };
             match acknowledge {
                 Some((ours, theirs)) => rekindle_db::repo::signal_identities::acknowledging(
@@ -137,6 +141,8 @@ pub async fn send_dm(
         is_read: true,
         message_id: message_id.clone(),
         reply_to: reply_to.as_ref().map(client_id_text),
+        // Stored before the send: `queued` until its outcome is (`deliver`).
+        send_state: rekindle_types::message::SendState::Queued,
     };
     let stored = if acknowledges_key_change {
         fields.store_acknowledging(host).await?
