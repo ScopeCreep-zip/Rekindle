@@ -255,10 +255,16 @@ snapshot, a copied data root) reuses message keys, and with them the
 IV. Under an AEAD over a counter mode, such as the AES-256-GCM this
 replaced (`rekindle-dr-msg-v1`, retired), one reuse gives the XOR of
 the two plaintexts and the authentication key; under CBC+HMAC it shows
-only whether the two plaintexts share leading blocks. AES-256-GCM-SIV
-and ChaCha20-Poly1305 were considered and rejected; the reasons are in
-the audit register (`.claude/plans/standards-remediation/audit-2026-10-20.md`,
-R3). The threat model's rollback row lists the other mitigations.
+only whether the two plaintexts share leading blocks. MLS met the
+same problem with AES-GCM and had to add a per-message reuse guard
+(RFC 9420 §6.3.1). Considered and rejected: **AES-256-GCM-SIV** (it leaks
+only plaintext equality under reuse, but the RustCrypto `aes-gcm-siv`
+crate states it has never been audited, it is not the Double Ratchet
+spec's concrete recipe, and the spec gives a truncation analysis only for
+CBC+HMAC, §8.6) and **ChaCha20-Poly1305** (the same keystream-reuse failure
+as GCM). libsignal and Olm/vodozemac use this same construction, and its
+`aes` and `cbc` crates were already in the lock. The threat model's
+rollback row lists the other mitigations.
 
 **PQXDH `info`.** The PQXDH KDF's info is `rekindle-pqxdh-sk-v1`
 (`domains::PQXDH_SK`), not the `info_curve_hash_pqkem`-shaped string of
