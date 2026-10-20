@@ -184,8 +184,9 @@ pub(crate) fn on_accept(host: &dyn FriendHost, sender: &str) {
     );
 }
 
-/// The friend declined our reset.
-pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str, reason: &str) {
+/// The friend declined our reset. Their reason is peer text: it never goes
+/// into an alert, which the OS shows (plan audit F-4).
+pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str) {
     if let Ok(owner) = state::owner(host) {
         let pk = sender.to_string();
         state::db_fire!(host, "delete the declined reset request", move |conn| {
@@ -193,12 +194,11 @@ pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str, reason: &str) {
         });
     }
     let display = state::label(host, sender);
-    let body = if reason.is_empty() {
-        format!("{display} declined your secure session reset request.")
-    } else {
-        format!("{display} declined your secure session reset request: {reason}")
-    };
-    alert(host, "Session Reset Declined", body);
+    alert(
+        host,
+        "Session Reset Declined",
+        format!("{display} declined your secure session reset request."),
+    );
 }
 
 /// Expire the reset requests older than `ttl_ms` (the backend-hold

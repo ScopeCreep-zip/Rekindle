@@ -259,6 +259,9 @@ pub enum Fact {
     PendingMessagesDropped,
     /// Our secure session with the subject is deleted.
     SessionDeleted,
+    /// Our secure session with the subject stays until the new one their
+    /// answer opens replaces it (a reset we start).
+    SessionKeptUntilReplaced,
     /// The key fingerprint to compare out of band.
     #[serde(rename_all = "camelCase")]
     Fingerprint { fingerprint: String },

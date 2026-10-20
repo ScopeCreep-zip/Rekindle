@@ -27,8 +27,7 @@ pub(crate) async fn bundle_for_friend(
         .filter(|k| !k.is_empty())
         .ok_or_else(|| {
             FriendError::Conflict(format!(
-                "A secure session with {} cannot be opened: their profile is not known",
-                state::label(host, peer)
+                "A secure session with {peer} cannot be opened: their profile is not known"
             ))
         })?;
     super::pick_bundle(host, peer, &profile).await

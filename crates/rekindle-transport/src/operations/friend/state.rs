@@ -104,10 +104,14 @@ pub(crate) fn take(host: &dyn FriendHost, public_key: &str) -> Option<FriendStat
 
 /// A friend's name for a notice: their display name, or a short key.
 pub(crate) fn label(host: &dyn FriendHost, public_key: &str) -> String {
-    friend(host, public_key).map_or_else(
-        || format!("{}…", rekindle_utils::text::prefix(public_key, 16)),
-        |f| f.display_name,
-    )
+    friend(host, public_key)
+        .and_then(|f| f.nickname)
+        .unwrap_or_else(|| {
+            rekindle_types::key_format::public_key_hex(public_key).map_or_else(
+                |_| format!("{}…", rekindle_utils::text::prefix(public_key, 16)),
+                |key| rekindle_crypto::identity::key_fingerprint(&key.to_bytes()),
+            )
+        })
 }
 
 /// Run a repository call on the identity's database and wait for it: a

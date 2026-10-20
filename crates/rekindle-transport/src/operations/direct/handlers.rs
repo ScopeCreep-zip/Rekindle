@@ -93,7 +93,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::PreKeyRejected(r) => {
             crate::operations::prekeys::on_rejected(host, sender, r).await;
         }
-        DirectBody::SessionResetDecline(d) => session_reset::on_decline(host, sender, &d.reason),
+        DirectBody::SessionResetDecline(_) => session_reset::on_decline(host, sender),
         DirectBody::StatusResponse(r) => relay::on_status_response(host, sender, r),
         DirectBody::RelayOfferAck(_) => {
             tracing::trace!("received RelayOfferAck via app_message; ignoring");

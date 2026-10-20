@@ -227,6 +227,7 @@ export type Fact =
   | "subjectNotTold"
   | "pendingMessagesDropped"
   | "sessionDeleted"
+  | "sessionKeptUntilReplaced"
   | "presenceVisible"
   | "ipAddressLeaves"
   | "rejoinNeedsInvite"

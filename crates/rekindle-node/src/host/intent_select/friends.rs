@@ -103,7 +103,7 @@ pub(super) async fn selection(
         }
         IpcRequest::SessionResetStart { public_key } => {
             s.subject = person(ctx, public_key).await?;
-            s.facts.push(Fact::SessionDeleted);
+            s.facts.push(Fact::SessionKeptUntilReplaced);
             s.notifies = Notifies::Subject;
         }
         IpcRequest::SessionResetAccept { public_key }

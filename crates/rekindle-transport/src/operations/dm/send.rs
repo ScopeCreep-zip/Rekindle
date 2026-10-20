@@ -190,7 +190,7 @@ async fn deliver(
     let failure = match route::cached_target(&node, to) {
         Some(target) => match node.sender().send_direct(&target, datagram.clone()).await {
             Ok(()) => {
-                tracing::info!(to = %to, kind = ?frame.type_id, "frame sent via veilid");
+                tracing::debug!(to = %to, kind = ?frame.type_id, "frame sent via veilid");
                 return Ok(());
             }
             Err(e) => {
@@ -210,7 +210,7 @@ async fn deliver(
         return Ok(());
     }
     if refresh_and_send(host, to, &datagram).await {
-        tracing::info!(to = %to, "frame sent via veilid (after inline route refresh)");
+        tracing::debug!(to = %to, "frame sent via veilid (after inline route refresh)");
         return Ok(());
     }
     if failure.is_none() {

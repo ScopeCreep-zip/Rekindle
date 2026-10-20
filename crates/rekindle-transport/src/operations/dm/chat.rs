@@ -132,7 +132,7 @@ pub async fn send_dm(
     let timestamp = host.clock().now_ms_i64();
     let client_id = mint_client_id(host);
     let message_id = client_id_text(&client_id);
-    tracing::info!(to = %to, len = body.len(), "sending message");
+    tracing::debug!(to = %to, "sending message");
     let fields = NewDmFields {
         peer: to.to_string(),
         sender: owner.clone(),
@@ -269,7 +269,7 @@ pub async fn resend_dm(
         })
         .await?;
     }
-    tracing::info!(to = %row.peer_key, len = row.body.len(), "resending message");
+    tracing::debug!(to = %row.peer_key, "resending message");
     let send_state = deliver(host, &owner, &row.peer_key, client_id, &row.body, reply_to).await?;
     Ok(DmMessage {
         id: row.id,

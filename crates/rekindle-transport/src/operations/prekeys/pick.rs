@@ -35,8 +35,7 @@ pub async fn pick_bundle(
     let identity = crate::operations::dm::recipient_key(peer)?;
     let unusable = |why: String| {
         FriendError::Conflict(format!(
-            "A secure session with {} cannot be opened yet: {why}",
-            state::label(host, peer)
+            "A secure session with {peer} cannot be opened yet: {why}"
         ))
     };
     let pool = host.node()?.require_records()?;
@@ -87,8 +86,7 @@ pub async fn pick_bundle(
                 },
             ));
             return Err(FriendError::Invalid(format!(
-                "{}'s keys are not signed by the identity you know",
-                state::label(host, peer)
+                "{peer}'s keys are not signed by the identity you know"
             )));
         }
     };

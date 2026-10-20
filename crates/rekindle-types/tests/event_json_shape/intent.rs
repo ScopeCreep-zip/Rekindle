@@ -60,6 +60,7 @@ fn fact_name(f: &Fact) -> &'static str {
         Fact::SubjectNotTold => "subjectNotTold",
         Fact::PendingMessagesDropped => "pendingMessagesDropped",
         Fact::SessionDeleted => "sessionDeleted",
+        Fact::SessionKeptUntilReplaced => "sessionKeptUntilReplaced",
         Fact::Fingerprint { .. } => "fingerprint",
         Fact::SafetyNumber { .. } => "safetyNumber",
         Fact::SafetyNumberChanged { .. } => "safetyNumberChanged",
@@ -163,6 +164,7 @@ fn facts() -> Vec<Fact> {
         Fact::SubjectNotTold,
         Fact::PendingMessagesDropped,
         Fact::SessionDeleted,
+        Fact::SessionKeptUntilReplaced,
         Fact::Fingerprint {
             fingerprint: "abcd 0123".into(),
         },

@@ -275,11 +275,12 @@ async fn a_consumption_truncates_the_wal() {
 #[tokio::test]
 async fn a_reset_init_needs_our_stored_request() {
     let (alice, bob) = (Party::new(1), Party::new(2));
+    let alice_address = alice.address();
     let reset = |init| {
         accept_init(
             &bob.db,
             &bob.local,
-            &alice.address(),
+            &alice_address,
             init,
             Reinitiation::Requested,
             AD_EXTRA,
