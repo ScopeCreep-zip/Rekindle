@@ -265,6 +265,13 @@ pub enum Fact {
     /// The safety number to compare out of band.
     #[serde(rename_all = "camelCase")]
     SafetyNumber { safety_number: String },
+    /// The subject's identity key changes: the safety number now and the
+    /// one with their new key, to compare out of band (threat model S1).
+    #[serde(rename_all = "camelCase")]
+    SafetyNumberChanged {
+        old_safety_number: String,
+        new_safety_number: String,
+    },
     /// This many members are affected.
     #[serde(rename_all = "camelCase")]
     MembersAffected { count: u32 },

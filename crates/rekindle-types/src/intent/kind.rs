@@ -115,6 +115,7 @@ pub enum IntentKind {
     BlockUser,
     DeclineDmInvite,
     DeclineSessionReset,
+    DeclineIdentityRotation,
     DismissDeepLink,
     MuteCallerTemp,
     RejectRequest,
@@ -173,6 +174,7 @@ pub enum IntentKind {
     JoinCommunity,
     // TrustChanging: Key trust
     AcceptSessionReset,
+    AcceptIdentityRotation,
     ResetSignalSession,
     RotateMek,
     // TrustChanging: Exposure settings
@@ -336,6 +338,7 @@ impl IntentKind {
             Self::BlockUser
             | Self::DeclineDmInvite
             | Self::DeclineSessionReset
+            | Self::DeclineIdentityRotation
             | Self::DismissDeepLink
             | Self::MuteCallerTemp
             | Self::RejectRequest
@@ -384,6 +387,7 @@ impl IntentKind {
             | Self::CreateCommunity
             | Self::JoinCommunity
             | Self::AcceptSessionReset
+            | Self::AcceptIdentityRotation
             | Self::ResetSignalSession
             | Self::RotateMek
             | Self::RegisterWithPushRelay

@@ -594,6 +594,12 @@
       "safetyNumber": "1a2b3c4d"
     }
   },
+  "intent.fact.safetyNumberChanged": {
+    "safetyNumberChanged": {
+      "newSafetyNumber": "5e6f7a8b",
+      "oldSafetyNumber": "1a2b3c4d"
+    }
+  },
   "intent.fact.sessionDeleted": "sessionDeleted",
   "intent.fact.subjectNotTold": "subjectNotTold",
   "intent.intentClass.consequential": "consequential",

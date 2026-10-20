@@ -13,6 +13,7 @@ impl IntentKind {
             Self::BlockUser
             | Self::DeclineDmInvite
             | Self::DeclineSessionReset
+            | Self::DeclineIdentityRotation
             | Self::DismissDeepLink
             | Self::MuteCallerTemp
             | Self::RejectRequest
@@ -151,6 +152,7 @@ impl IntentKind {
             | Self::CreateCommunity
             | Self::JoinCommunity
             | Self::AcceptSessionReset
+            | Self::AcceptIdentityRotation
             | Self::ResetSignalSession
             | Self::RotateMek
             | Self::RegisterWithPushRelay
@@ -289,6 +291,7 @@ impl IntentKind {
             | Self::BlockUser
             | Self::DeclineDmInvite
             | Self::DeclineSessionReset
+            | Self::DeclineIdentityRotation
             | Self::DismissDeepLink
             | Self::MuteCallerTemp
             | Self::RejectRequest
@@ -335,6 +338,7 @@ impl IntentKind {
             | Self::CreateCommunity
             | Self::JoinCommunity
             | Self::AcceptSessionReset
+            | Self::AcceptIdentityRotation
             | Self::ResetSignalSession
             | Self::RotateMek
             | Self::RegisterWithPushRelay

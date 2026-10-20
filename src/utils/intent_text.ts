@@ -60,6 +60,11 @@ export function factText(fact: Fact): string {
   if ("safetyNumber" in fact) {
     return `Safety number: ${groupDigits(fact.safetyNumber.safetyNumber).join(" ")}`;
   }
+  if ("safetyNumberChanged" in fact) {
+    const { oldSafetyNumber, newSafetyNumber } = fact.safetyNumberChanged;
+    return `Their key changed. Safety number was ${groupDigits(oldSafetyNumber).join(" ")}; ` +
+      `it becomes ${groupDigits(newSafetyNumber).join(" ")}.`;
+  }
   if ("membersAffected" in fact) return `${fact.membersAffected.count} members are affected.`;
   return `${fact.messagesDeleted.count} messages are deleted for everyone.`;
 }

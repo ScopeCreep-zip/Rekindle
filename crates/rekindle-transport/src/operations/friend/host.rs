@@ -25,6 +25,9 @@ pub enum BackendHold {
     /// A friend asked to reset our secure session: commit accepts it,
     /// Cancel declines it.
     SessionReset { peer: String },
+    /// A friend rotated their identity to `new_identity` (hex): commit
+    /// moves them to it, Cancel drops the rotation (owner ruling R1).
+    IdentityRotation { peer: String, new_identity: String },
 }
 
 /// The 1:1 receive and handshake state the Host keeps for the unlocked
@@ -42,6 +45,10 @@ pub struct FriendStores {
     /// Our first contacts not yet answered under their session, by peer
     /// (plan E2.4, B6).
     pub first_contacts: Mutex<HashMap<String, crate::operations::prekeys::FirstContact>>,
+    /// Each friend's verified identity rotation awaiting the user's
+    /// review, by their current key: the new identity (owner ruling R1).
+    /// Memory only; the friend re-sends it on their next contact.
+    pub pending_rotations: Mutex<HashMap<String, [u8; 32]>>,
     /// Who is typing to us, and when each start lapses (plan E2.3).
     pub typing_in: Mutex<TypingExpiry>,
     /// Our typing sessions, one per conversation (plan E2.3).
@@ -55,6 +62,7 @@ impl FriendStores {
         self.outgoing_resets.lock().clear();
         self.incoming_resets.lock().clear();
         self.first_contacts.lock().clear();
+        self.pending_rotations.lock().clear();
         self.typing_in.lock().clear();
         self.typing_out.lock().clear();
     }

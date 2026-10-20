@@ -232,6 +232,7 @@ export type Fact =
   | "rejoinNeedsInvite"
   | { fingerprint: { fingerprint: string } }
   | { safetyNumber: { safetyNumber: string } }
+  | { safetyNumberChanged: { oldSafetyNumber: string; newSafetyNumber: string } }
   | { membersAffected: { count: number } }
   | { messagesDeleted: { count: number } };
 
