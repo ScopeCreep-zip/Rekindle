@@ -6,6 +6,10 @@
 //! record is bound to the identity its AD names), and so does their
 //! mailbox key: that record is owned by the old identity, which writes it
 //! no more (their route stays on the profile, whose owner carries over).
+//! What else is keyed by their identity moves too (audit 2026-10-20 R-3):
+//! missed calls and the strand relay we volunteered for them.
+//! `peer_reliability` is keyed by a community pseudonym, not the identity,
+//! so it stays.
 
 use rusqlite::{params, Connection};
 
@@ -50,6 +54,13 @@ pub fn rotate_peer(
             "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
             params![owner_key, old_key],
         )?;
+        for sql in [
+            "UPDATE missed_calls SET peer_key = ?3 WHERE owner_key = ?1 AND peer_key = ?2",
+            "UPDATE strand_relay_volunteered SET friend_public_key = ?3 \
+             WHERE owner_key = ?1 AND friend_public_key = ?2",
+        ] {
+            tx.execute(sql, params![owner_key, old_key, new_key])?;
+        }
         signal_identities::rotate(&tx, owner, old, new, now_ms)?;
     }
     tx.commit()?;
@@ -93,6 +104,18 @@ mod tests {
             params![owner, old],
         )
         .unwrap();
+        conn.execute(
+            "INSERT INTO missed_calls (call_id, owner_key, peer_key, kind, expired_at) \
+             VALUES ('c1', ?1, ?2, 0, 1)",
+            params![owner, old],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO strand_relay_volunteered (owner_key, friend_public_key, relay_route_id, \
+             relay_route_blob, created_at) VALUES (?1, ?2, 'r', x'00', 1)",
+            params![owner, old],
+        )
+        .unwrap();
         signal_identities::ensure(&conn, &OWNER, &OLD).unwrap();
         signal_identities::mark_verified(&conn, &OWNER, &OLD, 5).unwrap();
 
@@ -114,6 +137,16 @@ mod tests {
             0
         );
         assert_eq!(count("SELECT COUNT(*) FROM pending_messages"), 0);
+        assert_eq!(
+            count(&format!("SELECT COUNT(*) FROM missed_calls WHERE peer_key = '{new}'")),
+            1
+        );
+        assert_eq!(
+            count(&format!(
+                "SELECT COUNT(*) FROM strand_relay_volunteered WHERE friend_public_key = '{new}'"
+            )),
+            1
+        );
         assert_eq!(count("SELECT COUNT(*) FROM ratchet_sessions"), 0);
         // The verified key changed: the new row is unverified and records it.
         let row = signal_identities::get(&conn, &OWNER, &NEW)

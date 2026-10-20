@@ -217,6 +217,37 @@ pub fn rekey(
             params![old_key],
         )?;
     }
+    // What the old identity was addressed or signed as does not carry
+    // over (audit 2026-10-20 R-2, R-3): open invites carry the old key and
+    // are cancelled; requests out (`pending_out` rows) and in were
+    // addressed to or from it and go; frames queued under the deleted
+    // sessions (`Queued::Wire`) can never be read. Our own messages move
+    // to the new key, and a verification goes with the safety number it
+    // was made over, which the new key changes (Signal resets it).
+    tx.execute(
+        "UPDATE outgoing_invites SET status = 'cancelled' \
+         WHERE owner_key = ?1 AND status IN ('pending', 'responded')",
+        params![old_key],
+    )?;
+    tx.execute(
+        "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key IN \
+         (SELECT public_key FROM friends WHERE owner_key = ?1 AND friendship_state = 'pending_out')",
+        params![old_key],
+    )?;
+    for sql in [
+        "DELETE FROM friends WHERE owner_key = ?1 AND friendship_state = 'pending_out'",
+        "DELETE FROM pending_friend_requests WHERE owner_key = ?1",
+        "DELETE FROM pending_messages WHERE owner_key = ?1 AND json_extract(body, '$.kind') = 'wire'",
+        "UPDATE signal_identities SET verified = 0, verified_at = NULL WHERE owner_key = ?1",
+    ] {
+        tx.execute(sql, params![old_key])?;
+    }
+    for column in ["sender_key", "forwarded_from_author"] {
+        tx.execute(
+            &format!("UPDATE messages SET {column} = ?1 WHERE owner_key = ?2 AND {column} = ?2"),
+            params![new_key, old_key],
+        )?;
+    }
     let owned: Vec<String> = {
         let mut stmt = tx.prepare(
             "SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c \
@@ -349,6 +380,55 @@ mod tests {
             })
             .unwrap();
         assert_eq!(violations, 0);
+    }
+
+    /// Our own rotation (audit 2026-10-20 R-2, R-3): our messages move to
+    /// the new key, verifications are cleared, open invites are cancelled,
+    /// requests to or from the old key go, and so do frames queued under
+    /// the deleted sessions; sealed queued kinds stay.
+    #[test]
+    fn rekey_settles_what_the_old_key_was_addressed_as() {
+        let mut conn = fixture::conn();
+        crate::repo::friends::insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        conn.execute_batch(&format!(
+            "INSERT INTO friends (owner_key, public_key, added_at, friendship_state) \
+               VALUES ('{OWNER}', 'carol', 1, 'pending_out'); \
+             INSERT INTO pending_friend_requests (owner_key, public_key, display_name, received_at) \
+               VALUES ('{OWNER}', 'dave', 'Dave', 1); \
+             INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp) \
+               VALUES ('{OWNER}', 'bob', 'dm', '{OWNER}', 'mine', 1), \
+                      ('{OWNER}', 'bob', 'dm', 'bob', 'theirs', 2); \
+             INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) \
+               VALUES ('{OWNER}', 'bob', '{{\"kind\":\"wire\",\"datagram\":\"AA==\"}}', 1), \
+                      ('{OWNER}', 'bob', '{{\"kind\":\"sealed\"}}', 1), \
+                      ('{OWNER}', 'carol', '{{\"kind\":\"sealed\"}}', 1); \
+             INSERT INTO signal_identities (owner_key, peer_identity, identity_key, verified, verified_at) \
+               VALUES ('{OWNER}', 'bob', zeroblob(32), 1, 5);"
+        ))
+        .unwrap();
+        insert_invite(&conn, "i1");
+        rekey(&mut conn, OWNER, "new-pk", None).unwrap();
+        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        assert_eq!(
+            count("SELECT count(*) FROM messages WHERE sender_key = 'new-pk' AND body = 'mine'"),
+            1
+        );
+        assert_eq!(count("SELECT count(*) FROM messages WHERE sender_key = 'bob'"), 1);
+        assert_eq!(count("SELECT count(*) FROM signal_identities WHERE verified = 1"), 0);
+        assert_eq!(
+            count("SELECT count(*) FROM outgoing_invites WHERE status = 'cancelled'"),
+            1
+        );
+        assert_eq!(count("SELECT count(*) FROM pending_friend_requests"), 0);
+        assert_eq!(count("SELECT count(*) FROM friends"), 1);
+        assert_eq!(
+            count("SELECT count(*) FROM pending_messages WHERE owner_key = 'new-pk'"),
+            1
+        );
+    }
+
+    fn insert_invite(conn: &Connection, id: &str) {
+        crate::repo::outgoing_invites::insert(conn, OWNER, id, "u", 1).unwrap();
     }
 
     /// The rotation stores the new identity's minted set under the new
