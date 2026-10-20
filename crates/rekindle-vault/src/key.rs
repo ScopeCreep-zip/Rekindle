@@ -83,6 +83,12 @@ pub enum VaultKey {
     PersonalSyncOwnerKeypair,
     PrekeyRecordOwnerKeypair,
 
+    /// Our identity rotation in flight (audit 2026-10-20 R-2): the new
+    /// secret and its prekey set's mint seed, journalled before the first
+    /// `IdentityRotated` notice and gone with the old vault once the
+    /// registry names the new key — `("identity", "pending_rotation")`.
+    PendingRotation,
+
     /// A bus client's registered static public key (hex) and its clearance
     /// (plan D1) — `("clients", "client:<len>:<key>")`.
     ClientKey {
@@ -100,7 +106,8 @@ impl VaultKey {
             | Self::FriendListOwnerKeypair
             | Self::AccountOwnerKeypair
             | Self::PersonalSyncOwnerKeypair
-            | Self::PrekeyRecordOwnerKeypair => "identity",
+            | Self::PrekeyRecordOwnerKeypair
+            | Self::PendingRotation => "identity",
             Self::CommunityMek { .. }
             | Self::CommunityMekGeneration { .. }
             | Self::CommunityMekGenerationsIndex { .. }
@@ -126,6 +133,7 @@ impl VaultKey {
             Self::AccountOwnerKeypair => ("account_owner_keypair", vec![]),
             Self::PersonalSyncOwnerKeypair => ("personal_sync_owner_keypair", vec![]),
             Self::PrekeyRecordOwnerKeypair => ("prekey_record_owner_keypair", vec![]),
+            Self::PendingRotation => ("pending_rotation", vec![]),
             Self::CommunityMek { community } => ("community_mek", vec![s(community)]),
             Self::CommunityMekGeneration {
                 community,
@@ -190,6 +198,7 @@ impl VaultKey {
             ("account_owner_keypair", []) => Self::AccountOwnerKeypair,
             ("personal_sync_owner_keypair", []) => Self::PersonalSyncOwnerKeypair,
             ("prekey_record_owner_keypair", []) => Self::PrekeyRecordOwnerKeypair,
+            ("pending_rotation", []) => Self::PendingRotation,
             ("community_mek", [c]) => Self::CommunityMek {
                 community: c.clone(),
             },
@@ -265,6 +274,7 @@ mod tests {
             VaultKey::AccountOwnerKeypair,
             VaultKey::PersonalSyncOwnerKeypair,
             VaultKey::PrekeyRecordOwnerKeypair,
+            VaultKey::PendingRotation,
             VaultKey::CommunityMek { community: c() },
             VaultKey::CommunityMekGeneration {
                 community: c(),

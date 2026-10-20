@@ -8,19 +8,26 @@
 //! removed on failure; after it the old files are removed. The vault's
 //! header (salt and parameters) moves unchanged, so the passphrase and the
 //! database key stay the same.
+//!
+//! The rotation is journalled (`rekindle_vault::typed::pending_rotation`,
+//! audit 2026-10-20 R-2) in the old vault before any friend hears of it;
+//! the copy vault drops the journal, and the old vault goes with it after
+//! the registry save. [`super::unlock`] resumes a journalled rotation.
 
 use rekindle_db::paths::DataRoot;
 use rekindle_db::registry::{self, IdentityEntry};
+use rekindle_vault::typed::pending_rotation::{self, PendingRotation};
 use rekindle_vault::{VaultKey, VaultStore};
 
 use super::{open_vault, remove_files, IdentityError, Stores};
 
-/// Rotate `public_key` to the identity whose secret is `new_secret`. The
-/// identity is locked (the caller locked it after telling its friends,
-/// which needs the old key); `passphrase` opens the copies, and a wrong
-/// one counts against the identity. `prekeys` is the new identity's set,
-/// already published to the same record (plan E2.4); its rows are stored
-/// under the new key in the re-key's transaction.
+/// Rotate `public_key` to the journalled identity `pending`. The identity
+/// is locked (the caller locked it after telling its friends, which needs
+/// the old key, or the unlock found the journal); `passphrase` opens the
+/// copies, and a wrong one counts against the identity. The new
+/// identity's set, already published to the same record (plan E2.4), is
+/// re-minted from the journal and its rows are stored under the new key in
+/// the re-key's transaction.
 ///
 /// # Errors
 /// Not found, wrong or locked out, the new key already here, or a store
@@ -29,20 +36,31 @@ pub async fn rotate(
     root: &DataRoot,
     stores: &Stores<'_>,
     public_key: &str,
-    new_secret: &[u8; 32],
+    pending: &PendingRotation,
     passphrase: &str,
     now_ms: u64,
-    prekeys: Option<rekindle_crypto::signal::prekey_record::MintedSet>,
 ) -> Result<IdentityEntry, IdentityError> {
+    let new_secret = &*pending.secret;
     let mut reg = registry::load(&root.registry())?;
     let old = reg
         .get(public_key)
         .cloned()
         .ok_or(IdentityError::NotFound)?;
-    let new_key = rekindle_crypto::Identity::from_secret_bytes(new_secret).public_key_hex();
+    let new_identity = rekindle_crypto::Identity::from_secret_bytes(new_secret);
+    let new_key = new_identity.public_key_hex();
     if reg.get(&new_key).is_some() {
         return Err(IdentityError::Exists);
     }
+    // A resumed rotation finds the copies the interrupted one left: they
+    // are rebuilt from the old files.
+    if root.identity_vault(&new_key).exists() || root.identity_db(&new_key).exists() {
+        remove_files(root, &new_key)?;
+    }
+    let prekeys = rekindle_transport::operations::identity::mint_rotation_set(
+        &new_identity,
+        &pending.mint_seed,
+        pending.issued_at_ms,
+    );
     drop(open_vault(
         root,
         stores.attempts,
@@ -75,14 +93,14 @@ pub async fn rotate(
 }
 
 /// Copy `old`'s files under `new`, then put the new secret in the copy
-/// vault and re-key the copy database.
+/// vault (which drops the journal it copied) and re-key the copy database.
 async fn build_copy(
     root: &DataRoot,
     old: &str,
     new: &str,
     new_secret: &[u8; 32],
     passphrase: &str,
-    prekeys: Option<rekindle_crypto::signal::prekey_record::MintedSet>,
+    prekeys: rekindle_crypto::signal::prekey_record::MintedSet,
 ) -> Result<(), IdentityError> {
     let old_vault = root.identity_vault(old);
     let vault_bytes = std::fs::read(&old_vault)?;
@@ -92,11 +110,12 @@ async fn build_copy(
 
     let (vault, app_db_key) = VaultStore::open(&root.identity_vault(new), passphrase)?;
     vault.put(&VaultKey::IdentityEd25519, new_secret)?;
+    pending_rotation::clear(&vault)?;
     drop(vault);
     let db = rekindle_db::open(&root.identity_db(new), app_db_key.as_bytes())?;
     let (old_key, new_key) = (old.to_string(), new.to_string());
     db.call(move |conn| {
-        rekindle_db::repo::identity::rekey(conn, &old_key, &new_key, prekeys.as_ref())
+        rekindle_db::repo::identity::rekey(conn, &old_key, &new_key, Some(&prekeys))
     })
     .await
     .map_err(|e| IdentityError::Storage(e.to_string()))?;

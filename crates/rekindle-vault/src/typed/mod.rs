@@ -6,3 +6,4 @@ pub mod audit;
 pub mod community_keys;
 pub mod mek;
 pub mod owner_keys;
+pub mod pending_rotation;

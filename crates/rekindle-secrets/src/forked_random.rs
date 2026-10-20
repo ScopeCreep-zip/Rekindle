@@ -33,6 +33,14 @@ impl ForkedRandom {
         parent.fill(&mut *seed);
         Self(parking_lot::Mutex::new(seed))
     }
+
+    /// A generator seeded with `seed`: the same seed gives the same draws
+    /// (audit 2026-10-20 R-2: a journalled rotation re-mints the prekey
+    /// set it published).
+    #[must_use]
+    pub fn from_seed(seed: &[u8; 32]) -> Self {
+        Self(parking_lot::Mutex::new(Zeroizing::new(*seed)))
+    }
 }
 
 impl std::fmt::Debug for ForkedRandom {

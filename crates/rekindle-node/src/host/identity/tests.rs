@@ -176,13 +176,14 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
     std::fs::create_dir_all(f.root.identity_files(&old)).unwrap();
     let next = rekindle_crypto::Identity::generate();
     let secret = *next.secret_key_bytes();
+    let pending = journal(secret);
     assert!(matches!(
-        rotate(&f.root, &f.stores(), &old, &secret, "wrong", 2, None).await,
+        rotate(&f.root, &f.stores(), &old, &pending, "wrong", 2).await,
         Err(IdentityError::WrongPassphrase)
     ));
     assert!(!f.root.identity_vault(&next.public_key_hex()).exists());
 
-    let entry = rotate(&f.root, &f.stores(), &old, &secret, "pass", 3, None)
+    let entry = rotate(&f.root, &f.stores(), &old, &pending, "pass", 3)
         .await
         .unwrap();
     assert_eq!(entry.public_key, next.public_key_hex());
@@ -202,6 +203,62 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
         .unwrap();
     assert_eq!(unlocked.display_name, "Turner");
     assert_eq!(*unlocked.secret, secret);
+}
+
+fn journal(secret: [u8; 32]) -> rekindle_vault::typed::pending_rotation::PendingRotation {
+    rekindle_vault::typed::pending_rotation::PendingRotation {
+        secret: Zeroizing::new(secret),
+        mint_seed: Zeroizing::new([4; 32]),
+        issued_at_ms: 1,
+    }
+}
+
+/// A crash after the `IdentityRotated` notices (audit 2026-10-20 R-2):
+/// the journal is in the old vault, the registry still names the old key
+/// and an interrupted copy may be left. The next unlock of the old key
+/// completes the rotation and comes up under the new key, with the
+/// journalled set's rows; the journal is gone.
+#[tokio::test]
+async fn a_rotation_journalled_before_a_crash_completes_at_the_next_unlock() {
+    let f = Fixture::new();
+    let made = create(&f.root, &f.stores(), Some("Turner"), "pass", 1)
+        .await
+        .unwrap();
+    let old = made.public_key.clone();
+    drop(made);
+    let next = rekindle_crypto::Identity::generate();
+    let pending = journal(*next.secret_key_bytes());
+    journal_rotation(&f.stores(), &pending).unwrap();
+    // The notices went out here; the process stopped before the switch.
+    lock(&f.stores()).await;
+    std::fs::write(f.root.identity_db(&next.public_key_hex()), b"torn copy").unwrap();
+
+    let unlocked = unlock(&f.root, &f.stores(), &old, "pass", 2).await.unwrap();
+    assert_eq!(unlocked.public_key, next.public_key_hex());
+    assert_eq!(*unlocked.secret, *next.secret_key_bytes());
+    assert!(!f.root.identity_vault(&old).exists());
+    assert!(list(&f.root).unwrap().iter().all(|e| e.public_key != old));
+    {
+        let guard = f.vault.lock();
+        let vault = guard.as_ref().unwrap();
+        assert!(rekindle_vault::typed::pending_rotation::load(vault)
+            .unwrap()
+            .is_none());
+    }
+    // The rows stored are the set published: the journal re-mints it.
+    let mint = || {
+        rekindle_db::prekeys::set_values(
+            &rekindle_transport::operations::identity::mint_rotation_set(
+                &next,
+                &pending.mint_seed,
+                pending.issued_at_ms,
+            ),
+        )
+        .into_iter()
+        .map(|p| p.value)
+        .collect::<Vec<_>>()
+    };
+    assert_eq!(mint(), mint());
 }
 
 #[tokio::test]

@@ -288,6 +288,61 @@ pub async fn unlock(
     passphrase: &str,
     now_ms: u64,
 ) -> Result<Unlocked, IdentityError> {
+    if registry::load(&root.registry())?.get(public_key).is_none() {
+        return Err(IdentityError::NotFound);
+    }
+    let opened = open_vault(root, stores.attempts, public_key, passphrase, now_ms)?;
+    // A rotation journalled before its notices went out (audit 2026-10-20
+    // R-2): our friends may know only the new key, so the identity comes
+    // up under it, the rotation completed from the journal.
+    if let Some(pending) = rekindle_vault::typed::pending_rotation::load(&opened.vault)? {
+        drop(opened);
+        tracing::info!("completing the journalled identity rotation");
+        let entry = rotate(root, stores, public_key, &pending, passphrase, now_ms).await?;
+        let opened = open_vault(root, stores.attempts, &entry.public_key, passphrase, now_ms)?;
+        return unlock_opened(root, stores, &entry.public_key, opened).await;
+    }
+    unlock_opened(root, stores, public_key, opened).await
+}
+
+/// Journal our rotation (`pending`) in the unlocked identity's vault,
+/// before its prekey set is published and before any friend is told.
+///
+/// # Errors
+/// No identity is unlocked, or the vault write failed.
+pub fn journal_rotation(
+    stores: &Stores<'_>,
+    pending: &rekindle_vault::typed::pending_rotation::PendingRotation,
+) -> Result<(), IdentityError> {
+    let guard = stores.vault.lock();
+    let vault = guard
+        .as_ref()
+        .ok_or_else(|| IdentityError::Storage("no identity is unlocked".into()))?;
+    rekindle_vault::typed::pending_rotation::persist(vault, pending)?;
+    Ok(())
+}
+
+/// Drop the unlocked identity's rotation journal: the rotation stopped
+/// before any friend was told.
+///
+/// # Errors
+/// No identity is unlocked, or the vault write failed.
+pub fn abandon_rotation(stores: &Stores<'_>) -> Result<(), IdentityError> {
+    let guard = stores.vault.lock();
+    let vault = guard
+        .as_ref()
+        .ok_or_else(|| IdentityError::Storage("no identity is unlocked".into()))?;
+    rekindle_vault::typed::pending_rotation::clear(vault)?;
+    Ok(())
+}
+
+/// The rest of [`unlock`], over the opened vault of `public_key`.
+async fn unlock_opened(
+    root: &DataRoot,
+    stores: &Stores<'_>,
+    public_key: &str,
+    opened: Opened,
+) -> Result<Unlocked, IdentityError> {
     let entry = registry::load(&root.registry())?
         .get(public_key)
         .cloned()
@@ -296,7 +351,7 @@ pub async fn unlock(
         vault,
         app_db_key,
         cleared_failures,
-    } = open_vault(root, stores.attempts, public_key, passphrase, now_ms)?;
+    } = opened;
     let stored = vault
         .get(&VaultKey::IdentityEd25519)?
         .ok_or_else(|| IdentityError::Corrupt("no private key in the vault".into()))?;

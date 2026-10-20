@@ -3,7 +3,6 @@
 //! these handlers add the lifecycle (`host::unlock`).
 
 use base64::Engine as _;
-use zeroize::Zeroize;
 
 use rekindle_transport::operations::identity;
 
@@ -193,29 +192,54 @@ pub(crate) async fn handle_rotate(
         return identity_error(&e);
     }
 
-    let mut result = match identity::rotate_identity(
+    // The journal first (audit 2026-10-20 R-2): once a friend hears of the
+    // new key, losing it loses the friendship, so the new secret and its
+    // set's seed are in the vault before the set is published or anyone
+    // is told; an unlock that finds the journal completes the rotation.
+    let mut secret = zeroize::Zeroizing::new([0u8; 32]);
+    let mut mint_seed = zeroize::Zeroizing::new([0u8; 32]);
+    ctx.rng.fill(secret.as_mut());
+    ctx.rng.fill(mint_seed.as_mut());
+    let pending = rekindle_vault::typed::pending_rotation::PendingRotation {
+        secret,
+        mint_seed,
+        issued_at_ms: ctx.clock.now_ms_i64(),
+    };
+    if let Err(e) = host_identity::journal_rotation(&ctx.identity_stores(), &pending) {
+        return identity_error(&e);
+    }
+    let result = match identity::rotate_identity(
         &crate::host::adapters::friends::HostFriends::of(ctx),
+        &pending.secret,
+        &pending.mint_seed,
+        pending.issued_at_ms,
     )
     .await
     {
         Ok(r) => r,
-        Err(e) => return IpcResponse::error(500, format!("identity rotation failed: {e}")),
+        Err(e) => {
+            // The set was not published: no friend was told, so the
+            // rotation is abandoned whole.
+            if let Err(cleared) = host_identity::abandon_rotation(&ctx.identity_stores()) {
+                tracing::error!(error = %cleared, "the abandoned rotation's journal remains");
+            }
+            return IpcResponse::error(500, format!("identity rotation failed: {e}"));
+        }
     };
+    // From here the journal holds the rotation: a refused lock or a failed
+    // switch-over is completed by the next unlock.
     if let Err(refused) = release_unlock(ctx, EndReason::Logout).await {
-        result.new_signing_key_bytes.zeroize();
         return refused;
     }
     let rotated = host_identity::rotate(
         &ctx.root,
         &ctx.identity_stores(),
         &old_key,
-        &result.new_signing_key_bytes,
+        &pending,
         passphrase,
         ctx.clock.now_ms(),
-        result.prekeys.take(),
     )
     .await;
-    result.new_signing_key_bytes.zeroize();
     match rotated {
         Ok(entry) => IpcResponse::ok(&serde_json::json!({
             "status": "rotated",

@@ -413,8 +413,14 @@ mod tests {
             count("SELECT count(*) FROM messages WHERE sender_key = 'new-pk' AND body = 'mine'"),
             1
         );
-        assert_eq!(count("SELECT count(*) FROM messages WHERE sender_key = 'bob'"), 1);
-        assert_eq!(count("SELECT count(*) FROM signal_identities WHERE verified = 1"), 0);
+        assert_eq!(
+            count("SELECT count(*) FROM messages WHERE sender_key = 'bob'"),
+            1
+        );
+        assert_eq!(
+            count("SELECT count(*) FROM signal_identities WHERE verified = 1"),
+            0
+        );
         assert_eq!(
             count("SELECT count(*) FROM outgoing_invites WHERE status = 'cancelled'"),
             1

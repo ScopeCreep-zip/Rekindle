@@ -138,7 +138,9 @@ mod tests {
         );
         assert_eq!(count("SELECT COUNT(*) FROM pending_messages"), 0);
         assert_eq!(
-            count(&format!("SELECT COUNT(*) FROM missed_calls WHERE peer_key = '{new}'")),
+            count(&format!(
+                "SELECT COUNT(*) FROM missed_calls WHERE peer_key = '{new}'"
+            )),
             1
         );
         assert_eq!(
