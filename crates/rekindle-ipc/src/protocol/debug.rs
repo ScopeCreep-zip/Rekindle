@@ -104,6 +104,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::FriendGroupDelete { .. }
             | Self::SessionResetStart { .. }
             | Self::SessionResetAccept { .. }
+            | Self::IdentityRotationAccept { .. }
+            | Self::IdentityRotationDecline { .. }
             | Self::SessionResetDecline { .. }
             | Self::IdentitySafetyNumber { .. }
             | Self::IdentityMarkVerified { .. }

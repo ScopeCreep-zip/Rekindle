@@ -125,6 +125,12 @@ pub(crate) async fn route(
         IpcRequest::SessionResetDecline { public_key } => {
             done(friend::session_reset::decline(&host, &public_key).await)
         }
+        IpcRequest::IdentityRotationAccept { public_key } => {
+            done(friend::identity_rotation::accept(&host, &public_key).await)
+        }
+        IpcRequest::IdentityRotationDecline { public_key } => {
+            done(friend::identity_rotation::decline(&host, &public_key))
+        }
         IpcRequest::IdentitySafetyNumber { peer } => {
             answer(friend::verification::view(&host, &peer).await)
         }

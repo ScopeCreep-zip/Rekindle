@@ -161,24 +161,40 @@ impl FriendHost for HostFriends {
     }
 
     async fn hold_backend_intent(&self, held: BackendHold) -> Result<(), FriendError> {
-        let BackendHold::SessionReset { peer } = held;
+        let (action, cancel, kind) = match held {
+            BackendHold::SessionReset { peer } => (
+                IpcRequest::SessionResetAccept {
+                    public_key: peer.clone(),
+                },
+                IpcRequest::SessionResetDecline { public_key: peer },
+                IntentKind::AcceptSessionReset,
+            ),
+            // The review is on the friend as we know them; the new key is
+            // in the pending rotation it shows (owner ruling R1).
+            BackendHold::IdentityRotation { peer, new_identity } => {
+                tracing::debug!(peer = %peer, new_identity = %new_identity, "identity rotation held");
+                (
+                    IpcRequest::IdentityRotationAccept {
+                        public_key: peer.clone(),
+                    },
+                    IpcRequest::IdentityRotationDecline { public_key: peer },
+                    IntentKind::AcceptIdentityRotation,
+                )
+            }
+        };
         let owner = IntentOwner {
             conn: None,
             identity: self.ctx.require_owner().map_err(|_| FriendError::Locked)?,
         };
-        let action = IpcRequest::SessionResetAccept {
-            public_key: peer.clone(),
-        };
-        let selection =
-            crate::host::intent_select::select(&self.ctx, &action, IntentKind::AcceptSessionReset)
-                .await
-                .map_err(|e| FriendError::Failed(format!("{e:?}")))?;
-        // One hold per friend: a newer request replaces the older one,
-        // which goes without its decline.
+        let selection = crate::host::intent_select::select(&self.ctx, &action, kind)
+            .await
+            .map_err(|e| FriendError::Failed(format!("{e:?}")))?;
+        // One hold per friend and kind: a newer one replaces the older,
+        // which goes without its cancel.
         self.ctx.intents.retain_held(|held_by, held_action| {
             !(held_by.conn.is_none()
                 && held_by.identity == owner.identity
-                && matches!(held_action, IpcRequest::SessionResetAccept { public_key } if *public_key == peer))
+                && same_hold(held_action, &action))
         });
         let review = self
             .ctx
@@ -187,7 +203,7 @@ impl FriendHost for HostFriends {
                 owner,
                 selection,
                 action,
-                Some(IpcRequest::SessionResetDecline { public_key: peer }),
+                Some(cancel),
                 rekindle_idempotency::intent_gate::BACKEND_HOLD_TTL_MS,
                 self.ctx.clock.now_ms(),
             )
@@ -211,6 +227,22 @@ impl FriendHost for HostFriends {
 
     fn rng(&self) -> &dyn rekindle_utils::RandomSource {
         self.ctx.rng.as_ref()
+    }
+}
+
+/// Whether `a` and `b` are the same backend hold: the same kind for the
+/// same friend.
+fn same_hold(a: &IpcRequest, b: &IpcRequest) -> bool {
+    match (a, b) {
+        (
+            IpcRequest::SessionResetAccept { public_key: x },
+            IpcRequest::SessionResetAccept { public_key: y },
+        )
+        | (
+            IpcRequest::IdentityRotationAccept { public_key: x },
+            IpcRequest::IdentityRotationAccept { public_key: y },
+        ) => x == y,
+        _ => false,
     }
 }
 

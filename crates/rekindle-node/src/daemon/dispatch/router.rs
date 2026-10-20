@@ -150,6 +150,8 @@ async fn route(
         | IpcRequest::FriendGroupDelete { .. }
         | IpcRequest::SessionResetStart { .. }
         | IpcRequest::SessionResetAccept { .. }
+        | IpcRequest::IdentityRotationAccept { .. }
+        | IpcRequest::IdentityRotationDecline { .. }
         | IpcRequest::SessionResetDecline { .. }
         | IpcRequest::IdentitySafetyNumber { .. }
         | IpcRequest::IdentityMarkVerified { .. }

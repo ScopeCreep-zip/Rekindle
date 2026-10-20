@@ -120,6 +120,8 @@ impl IpcRequest {
             | Self::FriendGroupDelete { .. }
             | Self::SessionResetStart { .. }
             | Self::SessionResetAccept { .. }
+            | Self::IdentityRotationAccept { .. }
+            | Self::IdentityRotationDecline { .. }
             | Self::SessionResetDecline { .. } => Some(C::FriendsWrite),
             Self::CommunityList
             | Self::CommunityInfo { .. }

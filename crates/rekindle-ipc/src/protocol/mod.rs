@@ -154,6 +154,11 @@ pub enum IpcRequest {
     SessionResetAccept { public_key: String },
     /// Decline the session reset a friend asked for.
     SessionResetDecline { public_key: String },
+    /// Accept the identity rotation a friend (by their current key) sent:
+    /// they move to the new key (owner ruling R1).
+    IdentityRotationAccept { public_key: String },
+    /// Decline a friend's identity rotation: it is dropped, nothing moves.
+    IdentityRotationDecline { public_key: String },
 
     // ── Communities ───────────────────────────────────────────────
     /// Create a new community.

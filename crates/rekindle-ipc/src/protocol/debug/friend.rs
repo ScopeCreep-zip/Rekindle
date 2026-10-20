@@ -40,6 +40,8 @@ impl IpcRequest {
             | Self::FriendUnblock { public_key }
             | Self::SessionResetStart { public_key }
             | Self::SessionResetAccept { public_key }
+            | Self::IdentityRotationAccept { public_key }
+            | Self::IdentityRotationDecline { public_key }
             | Self::SessionResetDecline { public_key } => f
                 .debug_struct(self.name())
                 .field("public_key", public_key)

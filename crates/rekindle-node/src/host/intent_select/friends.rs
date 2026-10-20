@@ -118,6 +118,28 @@ pub(super) async fn selection(
                 s.escalations.extend(key_change(ctx, public_key).await?);
             }
         }
+        IpcRequest::IdentityRotationAccept { public_key }
+        | IpcRequest::IdentityRotationDecline { public_key } => {
+            s.subject = person(ctx, public_key).await?;
+            let (old_safety_number, new_safety_number) =
+                rekindle_transport::operations::friend::identity_rotation::pending_safety_numbers(
+                    &HostFriends::of(ctx),
+                    public_key,
+                )
+                .ok_or_else(|| {
+                    IpcResponse::error(404, "no identity rotation from this friend is pending")
+                })?;
+            s.facts.push(Fact::SafetyNumberChanged {
+                old_safety_number,
+                new_safety_number,
+            });
+            if matches!(request, IpcRequest::IdentityRotationAccept { .. }) {
+                // The old session and verification are dropped; reversing
+                // it needs the friend to rotate again.
+                s.facts.push(Fact::SessionDeleted);
+                s.reversibility = Reversibility::NeedsOthers;
+            }
+        }
         IpcRequest::IdentityMarkVerified { peer }
         | IpcRequest::IdentityClearVerification { peer } => {
             s.subject = person(ctx, peer).await?;

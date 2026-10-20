@@ -83,6 +83,8 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendUnblock { public_key: key }
         | IpcRequest::SessionResetStart { public_key: key }
         | IpcRequest::SessionResetAccept { public_key: key }
+        | IpcRequest::IdentityRotationAccept { public_key: key }
+        | IpcRequest::IdentityRotationDecline { public_key: key }
         | IpcRequest::SessionResetDecline { public_key: key } => public_key(key, "public key"),
         IpcRequest::FriendAddFromInvite { invite } => friend_invite(invite),
         IpcRequest::FriendInviteCancel { invite_id } => {
