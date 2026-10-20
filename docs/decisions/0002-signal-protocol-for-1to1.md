@@ -71,6 +71,9 @@ prekey bundle from the DHT, runs X3DH locally, and sends the first
 message. The recipient's published prekey bundle is signed by their
 identity key, so the bundle cannot be forged.
 
+**Amendment (plan E2.4):** Since plan E2.4 the bundle is a separate DFLT(101) prekey record per
+device, referenced from profile subkey 5; the initiator reads it from there.
+
 ## Consequences
 
 **Positive.**

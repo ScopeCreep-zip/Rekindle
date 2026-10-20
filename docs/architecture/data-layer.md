@@ -108,8 +108,9 @@ groups them by concern.
   conversation_type, sender_key, timestamp)`.
 - **`pending_messages`** — offline retry queue (max 20 retries).
 - **`pending_friend_requests`** — incoming friend requests awaiting
-  user action; carries the requester's PreKeyBundle, profile / route /
-  mailbox info, and optional `invite_id`.
+  user action; carries the requester's profile / route / mailbox info
+  and optional `invite_id` (no prekeys: the accepter reads the
+  requester's prekey record).
 - **`outgoing_invites`** — sent invites tracked by `invite_id` with
   status (`pending` / `responded` / `accepted` / `rejected` /
   `cancelled` / `expired`).
@@ -185,20 +186,36 @@ groups them by concern.
   the same transaction as whatever the message changed, before any send
   (`rekindle_db::ratchet`).
 - **`signal_prekeys`** — our prekeys by `kind` (`spk` signed, `pq_lr`
-  ML-KEM last resort, `opk` / `pq_opk` one-time), `rekindle_db::prekeys`.
+  ML-KEM last resort, `opk` / `pq_opk` one-time), each with the record
+  subkey publishing it (`published_subkey`), `consumed_at` and
+  `retired_at`; `rekindle_db::prekeys`.
+- **`prekey_slots_used`** — the slots of a peer device's prekey record we
+  initiated from (B2's pick skips them); swept once the record no longer
+  lists the id, or after 90 days.
+- **`prekey_rejections`** — the `PreKeyRejected` notices we sent (B5): one
+  per initiator base key, at most 10 per sender per 3 h; kept 30 days.
+- **`prekey_lr_inits`** — the `(lr_id, spk_id, base_key)` of every init
+  that opened a session on the last-resort key (B8's record of LR use,
+  B9's replay set); kept while that last-resort key is held.
 - **`unprocessed`** — decrypted inbound 1:1 messages not yet applied,
   written in the ratchet transaction, deleted by the apply and replayed at
   unlock (D24); keyed by ratchet header `(header_dh, header_n)`.
 
-Prekey lifecycle (PQXDH §3.2–§3.3): the signed prekey and the PQ
-last-resort key are minted once and reused (`current_bundle`, published
-at profile subkey 5 and carried in invites). Every bundle sent to one
-peer (friend request, friend accept, session reset) comes from
-`handout_bundle`, which adds a fresh X25519 and ML-KEM one-time key under
-random ids. A one-time key is consumed only after the first message under
-it decrypts: its secret is erased and the row stays so the id is never
-reused (PQXDH §4.13). Beyond 200 unclaimed keys per kind the oldest are
-deleted.
+Prekey lifecycle (plan E2.4, PQXDH §3.2–§3.3): the rows back this
+device's prekey record (see [Prekey Record](#prekey-record-dflt101)). Every
+id is a random non-zero u31, unique per kind. The "prekey maintenance"
+task (hourly, both hosts) refills a consumed slot, fills every empty slot
+once fewer than 10 are fresh, replaces a slot older than 90 days, and
+rotates the head (signed prekey + last-resort key) every 2 days; the
+`crypto.prekeys` status check warns when fewer than 10 slots are fresh or
+the head is older than 14 days. A replaced key is marked `retired_at` and
+still opens an init in flight; the archive sweep deletes retired and
+consumed rows 30 days on. A one-time key is consumed only after the first
+message under it decrypts (`rekindle_db::ratchet::accept_init`, B8): in one
+transaction its secret is erased, an LR use is recorded, the session is
+stored and the slot is refilled; the refilled slot is written to the
+record after the commit, and the unlock reconciliation re-publishes any
+row the record does not match.
 
 ### Notifications & Settings
 
@@ -367,9 +384,29 @@ for the migration rationale and the threat-model implications.
 | 2 | Status enum | UTF-8 (`online`, `away`, `busy`, `offline`, `invisible`) |
 | 3 | Avatar | WebP bytes |
 | 4 | Game info | Cap'n Proto `GameStatus` |
-| 5 | PreKeyBundle | Cap'n Proto `PreKeyBundle` |
+| 5 | Prekey records | Cap'n Proto `PrekeyRecordList` (each device's id and prekey record key; one entry until E5.3) |
 | 6 | Route blob | Raw bytes (Veilid private route) |
 | 7 | Metadata | Reserved (extensible header) |
+
+### Prekey Record (DFLT(101))
+
+One record per device, owned by a keypair of its own (vault
+`OwnerKey::Prekeys`, key in `identity.prekey_record_key`) and named from
+profile subkey 5. It is created or reopened by the unlock's own-records
+stage, reconciled and topped up before the profile names it, and survives
+an identity rotation: `rotate_identity` publishes the new identity's full
+set into the same record.
+
+| Subkey | Content | Format |
+|--------|---------|--------|
+| 0 | Head: signed prekey and ML-KEM-768 last-resort key, their ids, signatures and `issuedAt` | Cap'n Proto `PrekeyRecordHead` |
+| 1..=100 | One slot each: a one-time X25519 prekey and a one-time ML-KEM-768 key, ids and signatures | Cap'n Proto `OpkSlot` |
+
+Each subkey value is capped at 10,381 B (`min(32,768, 1,048,576 / 101)`,
+pinned by `dht_layout::prekeys::MAX_SUBKEY_VALUE_LEN`). Every signature is
+the identity's Ed25519 over `id ‖ key` under a domain tag: `0x01 ‖
+u32be(spk_id) ‖ EncodeEC(spk)`, `0x02 ‖ "LR"|"OT" ‖ u32be(id) ‖
+EncodeKEM(pqpk)`, `0x03 ‖ u32be(opk_id) ‖ EncodeEC(opk)`.
 
 ### Friend List Record
 
@@ -465,7 +502,7 @@ paths resolve.
 | Schema | Top-level structs |
 |--------|-------------------|
 | `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
-| `identity.capnp` | `PreKeyBundle` |
+| `identity.capnp` | `PrekeyRecordHead`, `OpkSlot`, `PrekeyRecordList` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
 | `community.capnp` | `Community`, `Channel`, `Role`, `PermissionOverwrite` |

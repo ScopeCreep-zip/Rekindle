@@ -77,11 +77,11 @@ private-route path.
 ```
 Alice initiates a session with Bob:
 
-1. Fetch Bob's PreKeyBundle (from his DHT profile, or sent to her with a
-   friend request)
+1. Read Bob's prekey record (named in his profile's subkey 5), check every
+   signature under the identity key she holds for him, and pick a slot
    ├── Bob's identity key (Ed25519, encoded as 0x06 ‖ key)
-   ├── Bob's signed prekey (X25519) and PQ last-resort key (ML-KEM-768)
-   └── Bob's one-time X25519 and ML-KEM prekeys (if available)
+   ├── the head: his signed prekey (X25519) and PQ last-resort key (ML-KEM-768)
+   └── one slot's one-time X25519 and ML-KEM prekeys (if one is unused)
 
 2. Perform PQXDH (rev. 3) key agreement:
    DH1..DH3 (identity, signed prekey, ephemeral), DH4 with the one-time
@@ -106,7 +106,8 @@ datagram is dropped. A frame travels one of three ways:
 - **PreKeyInit.** Opens a session (above) and carries its first payload
   (`FriendAccept`, `SessionResetAccept`).
 - **Sealed.** The pre-session kinds (`FriendRequest`, `FriendReject`,
-  `SessionResetRequest`/`Decline`, push-relay kinds) have no session yet.
+  `PreKeyRejected`, `SessionResetRequest`/`Decline`, push-relay kinds) have
+  no session yet.
   They are HPKE Base sealed to the recipient identity's X25519 key and
   Ed25519-signed over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖
   ciphertext`, with a receive-side replay guard on `(sender, nonce)`.
@@ -119,18 +120,56 @@ at unlock, so a crash never loses a message whose key was spent.
 
 ### Serverless PreKey Distribution
 
-Standard Signal relies on a central server to store PreKeyBundles. Rekindle
-publishes them to Veilid DHT subkey 5 instead:
+Standard Signal relies on a central server to hand out prekeys. Rekindle
+publishes them in a prekey record per device instead (plan E2.4):
 
-- Each user generates and publishes a PreKeyBundle to their DHT profile
-- One-time prekeys are consumed on first use
-- Signed prekeys are not rotated yet: rotation and one-time replenishment arrive with the prekey record (plan E2.4)
-- If no one-time prekeys remain, PQXDH proceeds without DH4 and the one-time
-  KEM key (the last-resort KEM key is used)
+- **The record.** A DFLT(101) Veilid DHT record with an owner keypair of its
+  own. Subkey 0 (the head) holds the signed prekey and the ML-KEM-768
+  last-resort key; subkeys 1..=100 each hold one slot, a one-time X25519 key
+  and a one-time ML-KEM-768 key. Each value is capped at 10,381 B. Profile
+  subkey 5 holds the device list (`PrekeyRecordList`: device id and record
+  key; one entry until E5.3).
+- **Ids and signatures.** Every id is a random non-zero u31, unique per kind.
+  Every signature is the identity's Ed25519 over `id ‖ key` under a domain
+  tag: `0x01 ‖ u32be(spk_id) ‖ EncodeEC(spk)`, `0x02 ‖ "LR"|"OT" ‖ u32be(id)
+  ‖ EncodeKEM(pqpk)`, `0x03 ‖ u32be(opk_id) ‖ EncodeEC(opk)`.
+- **Maintenance (B1), automatic.** The "prekey maintenance" task on both
+  hosts refills a consumed slot, fills every empty slot once fewer than 10
+  are fresh, replaces a slot older than 90 days, and rotates the head every
+  2 days, so no published head reaches 14 days while it runs. A replaced
+  key stays usable for 30 days, then the archive sweep deletes it. At
+  unlock, before the profile names the record, the own-records stage
+  re-publishes every value the record does not hold and runs a first pass.
+- **Pick (B2).** The initiator force-reads the device list and the record,
+  keeps only what verifies under the pinned identity, and picks uniformly
+  among the slots it has not used (`prekey_slots_used`). With none left,
+  PQXDH proceeds without DH4 and the one-time KEM key (the last-resort KEM
+  key is used).
+- **Pin mismatch (B3).** A record not signed by the identity we hold for
+  the peer opens nothing and changes no trust: it raises
+  `IdentityPinMismatch` for the user.
+- **Consumption (B8).** A one-time key is consumed only after the init's
+  first message decrypts, in one transaction that erases its secret,
+  records a last-resort use, stores the session and refills the slot; the
+  refilled slot is written to the record after the commit.
+- **Rejection and retry (B5–B7).** An init naming a consumed, unknown or
+  archived key gets a sealed `PreKeyRejected` (0x0005) naming the ids and a
+  hash of the initiator's base key, only to a sender the friend gate admits
+  for that init, after a random 2–10 s delay, at most one per base key and
+  ten per sender per 3 h. The initiator accepts it only if it names its
+  unanswered init, then resends the same first contact once from a fresh
+  slot (`HandshakeRetrying`); a second rejection fails visibly with Retry
+  (`HandshakeFailed`).
+- **Replay (B9).** A last-resort-only init whose `(lr_id, spk_id, base_key)`
+  already opened a session is dropped silently.
+- **Rotation.** An identity rotation mints the new identity's full set and
+  publishes it into the same record before the `IdentityRotated` notices go.
 
-PreKey rotation and one-time prekey replenishment is the remaining open
-work in Phase 2. Private prekey material lives in the `signal_prekeys`
-table (`rekindle-db::prekeys`).
+Private prekey material lives in the `signal_prekeys` table
+(`rekindle-db::prekeys`). `PrekeyStatus` (CLI `rekindle keys prekeys
+status`, the GUI's debug `pqxdh_bundle_info`) shows the record and its
+upkeep, and the status snapshot's `crypto.prekeys` check warns when fewer
+than 10 slots are fresh or the head is older than 14 days.
 
 ### Safety numbers and key continuity
 
@@ -283,13 +322,15 @@ Rekindle:     passphrase → unlock local vault → Ed25519 keypair = identity
 ```
 1. Alice obtains Bob's public key (paste, QR code, invite link, deep link)
 2. Alice sends FriendRequest via Veilid app_message to Bob's DHT route
-   - Request includes: display name, PreKeyBundle, profile DHT key,
-     route blob, mailbox key, optional invite_id
+   - Request includes: display name, profile DHT key, route blob,
+     mailbox key, optional invite_id (no prekeys)
 3. Bob receives request, sees Alice's display name and public key
 4. Bob accepts → both add each other to their DHT friend lists
-   - Accept includes: PreKeyBundle, profile/route/mailbox keys, X25519
-     ephemeral key, signed-prekey + one-time-prekey IDs
-5. Session established by a PreKeyInit carrying the accept (PQXDH)
+   - Bob reads Alice's prekey record from the profile key the request
+     named and picks a slot
+   - Accept (profile/route/mailbox keys) is the encrypted first payload
+     of Bob's PreKeyInit, which names the prekey ids used
+5. Session established by that PreKeyInit (PQXDH)
 6. Messaging begins
 ```
 
@@ -297,7 +338,7 @@ Rekindle:     passphrase → unlock local vault → Ed25519 keypair = identity
 
 Friend requests can also be initiated via Ed25519-signed `InviteBlob`s:
 - `create_invite_blob()` creates a signed blob with identity info, profile/
-  route/mailbox keys, PreKeyBundle, and an `invite_id` correlation token
+  route/mailbox keys, and an `invite_id` correlation token (no prekeys)
 - The blob is base64url-encoded into a `rekindle://invite/{blob}` deep link
 - The recipient verifies the Ed25519 signature before processing
 - The `outgoing_invites` SQLite table tracks each issued invite by status

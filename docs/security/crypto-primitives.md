@@ -182,10 +182,10 @@ rotation cadence.
 ## 5. Signal Protocol — 1:1 friend messaging
 
 **Where used.** Layer 4 for 1:1 friend messages. PQXDH (rev. 3) for session
-establishment over prekey bundles; Double Ratchet for
+establishment over each device's published prekey record; Double Ratchet for
 ongoing per-message forward and backward secrecy. Pre-session kinds
-(friend request and reject, session reset request and decline, push-relay
-kinds) use HPKE Base to the recipient's X25519 key plus an Ed25519
+(friend request and reject, `PreKeyRejected`, session reset request and
+decline, push-relay kinds) use HPKE Base to the recipient's X25519 key plus an Ed25519
 signature over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖ ciphertext`
 (`rekindle-secrets::hpke`). Safety numbers are libsignal's 60-digit and
 scannable format (`rekindle-crypto::fingerprint`).
@@ -201,17 +201,30 @@ scannable format (`rekindle-crypto::fingerprint`).
   messages.
 - Self-healing: a fresh DH on every send recovers from a compromised
   message key on the next round-trip.
-- No central server required. PQXDH operates against prekey bundles:
-  the long-lived bundle (signed prekey + PQ last-resort key, no
-  one-time keys) is published in the DHT under the user's profile
-  record; every bundle sent to a single peer carries a fresh one-time
-  X25519 and ML-KEM key that is used once (PQXDH §3.3).
+- No central server required. PQXDH operates against a prekey record
+  per device (plan E2.4): a DFLT(101) DHT record named from profile
+  subkey 5, whose subkey 0 holds the signed prekey and the ML-KEM
+  last-resort key and whose subkeys 1..=100 each hold one one-time
+  X25519 and ML-KEM key pair. The initiator picks an unused slot
+  uniformly, or the head alone when none is left (PQXDH §2.5, §3.3).
+  Every id is a random non-zero u31, and every signature is the
+  identity's Ed25519 over `id ‖ key` under a domain tag (`0x01` signed
+  prekey, `0x02 ‖ "LR"|"OT"` ML-KEM, `0x03` one-time curve key), so a
+  signature binds one key to one id in one role
+  (`rekindle-crypto::signal::pqxdh::verify`).
 
 **Implementation.** `crates/rekindle-crypto/src/signal/{dr,record,pqxdh}`
 hold the pure Double Ratchet, `SessionRecord` and PQXDH state machines; the
 sessions are stored per peer in `ratchet_sessions` and stepped in one DB
 transaction before any send (`crates/rekindle-db/src/ratchet/`), prekeys in
-`signal_prekeys`. The ratchet associated data binds both identities and the
+`signal_prekeys`. The record's maintenance and pick are the pure
+`rekindle-crypto::signal::prekey_record::{plan_maintenance, pick_slot}`:
+the head rotates every 2 days, a consumed slot is refilled, and replaced
+keys stay usable for 30 days. A one-time key is consumed only after the
+init's first message decrypts, in the same transaction that stores the
+session and refills the slot; an init naming a consumed, unknown or
+archived key gets a sealed `PreKeyRejected` and the initiator retries once
+from another slot; a replayed last-resort-only init is dropped. The ratchet associated data binds both identities and the
 frame typeId. Our types follow the
 [libsignal-protocol](https://github.com/signalapp/libsignal) data
 shapes.

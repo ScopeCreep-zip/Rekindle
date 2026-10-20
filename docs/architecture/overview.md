@@ -202,7 +202,7 @@ schemas/                              Cap'n Proto schema definitions
 ├── account.capnp                     AccountHeader, ContactEntry, ChatEntry
 ├── community.capnp                   Community, Channel, Role, PermissionOverwrite
 ├── friend.capnp                      FriendRequest, FriendList, FriendEntry
-├── identity.capnp                    PreKeyBundle
+├── identity.capnp                    PrekeyRecordHead, OpkSlot, PrekeyRecordList
 ├── direct.capnp                      DmFrame, DmContent, SealedContent, 1:1 kind bodies
 ├── presence.capnp                    PresenceUpdate, GameStatus
 └── voice.capnp                       VoiceSignaling

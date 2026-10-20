@@ -13,7 +13,7 @@ filename is `NNNN-short-title.md`.
 | ID | Title | Status |
 |----|-------|--------|
 | [0001](0001-veilid-as-transport.md) | Adopt Veilid as the sole transport substrate | Accepted; boundary sentence superseded by 0014 |
-| [0002](0002-signal-protocol-for-1to1.md) | Use the Signal Protocol for 1:1 friend messaging | Accepted |
+| [0002](0002-signal-protocol-for-1to1.md) | Use the Signal Protocol for 1:1 friend messaging | Accepted; amended by plan E2.4 (the bundle is a per-device DFLT(101) prekey record named by profile subkey 5) |
 | [0003](0003-flat-smpl-governance.md) | Flat SMPL governance replaces the v1.0 coordinator model | Accepted; write model superseded by 0011 |
 | [0004](0004-tauri-2-frontend.md) | Use Tauri 2 + SolidJS as the desktop frontend | Accepted |
 | [0005](0005-daemon-cli-track.md) | Add a daemon + CLI track alongside the Tauri desktop app | Accepted; "Future direction" superseded by 0010 |

@@ -86,7 +86,7 @@ The typeId names the kind and its carrier (`DmTypeId::carrier()`):
 |---------|------|-------|
 | Ratchet | `{header {dh, pn, n}, ciphertext}` of a `DmContent` | DMs, edits, reactions, typing, unfriend, rotations, group DM, call signaling, DM video, Strand Relay, status |
 | PreKeyInit | PQXDH init (base key, prekey ids, ML-KEM ciphertext) plus the first ratchet message | opens a session; the first payload is a `FriendAccept` or `SessionResetAccept` (or any ratchet kind) |
-| Sealed | `{enc, ciphertext, signature}` of a `SealedContent {nonce, sentAtMs, payload}` | pre-session kinds: `FriendRequest`, `FriendReject`, `SessionResetRequest`/`Decline`, `RegisterPushRelay`/`UnregisterPushRelay`/`WakeNotify` |
+| Sealed | `{enc, ciphertext, signature}` of a `SealedContent {nonce, sentAtMs, payload}` | pre-session kinds: `FriendRequest`, `FriendReject`, `PreKeyRejected`, `SessionResetRequest`/`Decline`, `RegisterPushRelay`/`UnregisterPushRelay`/`WakeNotify` |
 
 **Ratchet.** The spec Double Ratchet (`rekindle-crypto::signal::{dr,record}`,
 `SessionRecord`) with one record per peer in `ratchet_sessions`. The send
@@ -94,9 +94,17 @@ path steps it and commits in one DB transaction before the frame leaves.
 The associated data binds both identities and the typeId.
 
 **PreKeyInit.** Opens a session with PQXDH revision 3
-(`signal/pqxdh/agreement.rs`: X25519 plus ML-KEM-768, with the signed and
-one-time or last-resort prekeys in `signal_prekeys`) and carries its first
-payload encrypted under it.
+(`signal/pqxdh/agreement.rs`: X25519 plus ML-KEM-768) and carries its first
+payload encrypted under it. The initiator builds it from the responder's
+prekey record (see [Prekey Record](#prekey-record-dflt101)): a force-refreshed
+read of the device list and the record, every signature checked under the
+pinned identity, and a slot picked uniformly among those it has not used,
+or the head alone when none is left. The responder finds the named secrets
+in `signal_prekeys`; it consumes the one-time keys only after the first
+payload decrypts, in the transaction that stores the session and refills
+the slot. An init naming a consumed, unknown or archived prekey gets a
+`PreKeyRejected`, and a last-resort-only init whose `(lr_id, spk_id,
+base_key)` already opened a session is dropped silently.
 
 **Sealed.** HPKE Base (`rekindle-secrets::hpke`) to the recipient
 identity's X25519 key, plus the sender's Ed25519 signature over
@@ -128,6 +136,7 @@ and the framed DM kinds.
 | `IdentityRotated` (0x0108) | Identity moved to a new key; signed by both keys over `IDENTITY_ROTATED ‖ old ‖ new ‖ recipient`, sent over the old session (`operations::friend::identity_rotation`) |
 | `Unfriended` / `UnfriendedAck` (0x0103/0x0104) | Notify peer of unfriending and confirm receipt |
 | `SessionResetRequest` / `SessionResetAccept` / `SessionResetDecline` (0x0007-0x0009) | Start a new session; the accept is the first payload of the answering PreKeyInit |
+| `PreKeyRejected` (0x0005) | Sealed. The responder refused a PreKeyInit's prekeys (consumed, unknown or past the 30-day archive); names the ids and a hash of the initiator's base key. Sent only to a sender the friend gate admits for that init, after a random 2–10 s delay, at most one per base key and ten per sender per 3 h. The initiator accepts it only for its unanswered init, then resends the same first contact once from a fresh slot; a second rejection fails visibly |
 | `RetryRequest` (0x0006) | Allocated at E2.3; body and sends arrive with E2.5 |
 | `RelayOffer` / `RelayOfferAck` / `RelayWithdraw` (0x0130-0x0132), `RelayEnvelope` (0x0003) | Strand Relay (§13.2-13.3). The sender-side relay fallback was deleted at E2.3 and returns at E5.5 |
 | `GroupDmInvite` / `GroupDmAccept` / `GroupDmDecline` / `GroupDmLeave` (0x0120-0x0123) | Group DM lifecycle with per-recipient X25519-wrapped MEK (§27.2) |
@@ -147,8 +156,8 @@ pub struct InviteBlob {
     pub mailbox_dht_key: String,
     pub profile_dht_key: String,
     pub route_blob: Vec<u8>,
-    pub prekey_bundle: Vec<u8>,
     pub invite_id: Option<String>,  // Correlation token for outgoing-invite tracking
+    pub issued_at: u64,             // Mint time; recipients enforce a max age
     pub signature: Vec<u8>,
 }
 ```
@@ -246,7 +255,7 @@ Full architecture: [`../architecture/communities.md`](../architecture/communitie
 | Schema File | Top-level structs |
 |-------------|-------------------|
 | `direct.capnp` | `DmFrame`, `DmContent`, `SealedContent`, the 1:1 kind bodies |
-| `identity.capnp` | `PreKeyBundle` |
+| `identity.capnp` | `PrekeyRecordHead`, `OpkSlot`, `PrekeyRecordList` |
 | `presence.capnp` | `PresenceUpdate`, `GameStatus` |
 | `friend.capnp` | `FriendRequest`, `FriendList`, `FriendEntry` |
 | `community.capnp` | `Community`, `Channel`, `Role`, `PermissionOverwrite` |
@@ -280,7 +289,7 @@ paths resolve.
 | 2 | Status enum: `online`, `away`, `busy`, `offline`, `invisible` |
 | 3 | Avatar (WebP, raw bytes) |
 | 4 | Game info (Cap'n Proto `GameStatus`) |
-| 5 | PreKeyBundle for Signal session establishment |
+| 5 | Prekey records: Cap'n Proto `PrekeyRecordList` (each device's id and prekey record key; one entry until E5.3) |
 | 6 | Private route blob (for receiving `app_message`) |
 | 7 | Metadata (reserved) |
 
@@ -290,6 +299,20 @@ the `presence_service` processes into a `PresenceEvent`.
 
 When a watch fails to establish (Veilid GitLab #377), the friend is added to
 `AppState.unwatched_friends` and the sync service polls with `force_refresh=true`.
+
+### Prekey Record (DFLT(101))
+
+One per device, owned by a keypair of its own and named from profile
+subkey 5 (plan E2.4). Subkey 0 is the `PrekeyRecordHead` (signed prekey,
+ML-KEM-768 last-resort key, their ids and signatures, `issuedAt`); subkeys
+1..=100 are `OpkSlot`s, each a one-time X25519 and ML-KEM-768 key with ids
+and signatures. Each value is capped at 10,381 B. Ids are random non-zero
+u31; each signature is the identity's Ed25519 over `id ‖ key` under a
+domain tag (`0x01` signed prekey, `0x02 ‖ "LR"|"OT"` ML-KEM, `0x03`
+one-time curve key). The owner's "prekey maintenance" task refills consumed
+slots, tops up below 10 fresh slots, replaces slots older than 90 days and
+rotates the head every 2 days; an identity rotation publishes the new
+identity's full set into the same record.
 
 ### Mailbox DHT Record
 

@@ -39,10 +39,10 @@ establishment, end-to-end encrypted 1:1 messaging, separate chat
 windows.
 
 - [x] Friend request send / receive / accept / reject via Veilid
-- [x] PreKeyBundle generation and DHT publishing
-- [~] PreKey rotation and one-time prekey replenishment — one-time keys are
-  minted per handout (fresh pair in every per-peer bundle, capped at 200
-  unclaimed); signed-prekey rotation waits for the bundle to carry key ids
+- [x] Prekey publishing: a DFLT(101) prekey record per device, named from profile subkey 5 (plan E2.4)
+- [x] PreKey rotation and one-time prekey replenishment: automatic prekey maintenance on both
+  tracks (slot refill and top-up, head rotation every 2 days, 30-day archive), `PreKeyRejected`
+  with one retry, last-resort replay drop (plan E2.4)
 - [x] Signal Protocol session establishment: PQXDH rev. 3 and the spec Double Ratchet on both
   tracks, over the `'D'` `DmFrame` wire (plan E2.3)
 - [x] Message encrypt → `'D' ‖ DmFrame` → Veilid send

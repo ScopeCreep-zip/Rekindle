@@ -67,7 +67,7 @@ We **do not** defend against:
 | Z1 | Identity keypair (Ed25519) | Critical — root of all derived keys | Vault (`rekindle-vault`) on disk |
 | Z2 | Per-community pseudonym (Ed25519) | Critical for unlinkability | Derived per-session via HKDF; cached in memory |
 | Z3 | Signal Protocol session state | High | Vault (per-peer) |
-| Z4 | Pre-keys + signed prekey | Medium | Vault; published via DHT |
+| Z4 | Pre-keys + signed prekey | Medium | Secrets in the SQLCipher DB (`signal_prekeys`); public halves in the per-device DFLT(101) prekey record (DHT), whose owner keypair is in the vault (plan E2.4) |
 | Z5 | Channel MEK (per channel, current generation) | High | Memory cache; historical generations in the vault |
 | Z6 | DM MEK chain | High | Vault |
 | Z7 | Slot keypair (per community) | Low — derived deterministically; not sensitive | Derived from `slot_seed` on demand |

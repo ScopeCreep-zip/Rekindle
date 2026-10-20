@@ -41,7 +41,6 @@ populate a versioned heading below.
 
 ### Known gaps
 
-- PreKey rotation and one-time prekey replenishment.
 - Game time tracking (elapsed, persisted in SQLite).
 - Connection quality monitoring and display.
 - File sharing UI polish, auto-update wiring, screen-share, overlay.

@@ -110,7 +110,12 @@ The 1:1 ratchet's storage (plan E2.3): `ratchet::{initiate_and_record_outbound,
 encrypt_and_record_outbound, decrypt_and_record_inbound, accept_init}` run
 `rekindle_crypto::signal::SessionRecord` inside `Db::call`, one transaction per
 message before any send, so the single `Db` thread serializes every message for a
-peer; `prekeys::{current_bundle, handout_bundle}` over `signal_prekeys`;
+peer, `accept_init` consuming a one-time key and refilling its slot in the
+same transaction (B8) and `discard_pending_init` for a `PreKeyRejected`
+(B6); `prekeys` over `signal_prekeys` and the `prekey_slots_used`,
+`prekey_rejections` and `prekey_lr_inits` tables (plan E2.4: store a minted
+set, apply maintenance, the unlock reconciliation's `published_values`,
+`status`, the rejection limits and the archive sweep);
 `repo::signal_identities` (verification and `VerifiedKeyChanged`) and
 `repo::unprocessed` (the D24 receive pipeline's decrypted, unapplied messages).
 
@@ -462,7 +467,7 @@ routing for the **desktop app**. The v1.0 `MessageEnvelope` /
 (`operations::{dm, direct}`).
 
 Top-level modules: `node` (`RekindleNode` lifecycle), `own_routes`
-(private route allocation), `ports`, `veilid_config`, `dht` (`profile`, `presence`, `friends`,
+(private route allocation), `ports`, `veilid_config`, `dht` (`profile`, `prekeys`, `presence`, `friends`,
 `account`, `mailbox`, `channel`, `short_array`, `log`,
 `community/{envelope, manifest, member_registry, channel_record,
 audit_log, automod, onboarding, permissions_v2, types}`), `error`.
@@ -477,9 +482,11 @@ helpers), `dht_crypto` (`DhtRecordKey` — account key derivation +
 XChaCha20-Poly1305 encrypt / decrypt), `group/{media_key, pseudonym}`
 (`MediaEncryptionKey` with generation tracking; community pseudonym
 derivation), `signal/{dr, record, pqxdh, prekeys,
-prekey_material}` (the spec Double Ratchet, the pure `SessionRecord`,
-PQXDH rev. 3 with SKec/SKscka, and the prekey minting and bundle signing
-`rekindle-db`'s prekeys run; plans E2.2-E2.3. `SignalSessionManager`, the
+prekey_material, prekey_record}` (the spec Double Ratchet, the pure `SessionRecord`,
+PQXDH rev. 3 with SKec/SKscka, the in-memory `PreKeyBundle` assembled from
+a verified record, the prekey minting `rekindle-db`'s prekeys run, and the
+prekey record's ids, signing and pure decisions `plan_maintenance` (B1) and
+`pick_slot` (B2); plans E2.2-E2.4. `SignalSessionManager`, the
 non-spec ratchet and the vault-backed Signal stores are deleted), `fingerprint` (`SafetyNumber`: Signal's 5200×SHA-512 numeric
 fingerprint and its scannable form, E2.3) and `horizon` (`DELIVERY_HORIZON`,
 the one constant every delivery retention bound derives from, D24).
@@ -579,7 +586,10 @@ Public API re-exports include `TransportNode` (its routes via
 `PeerRegistry`, `DhtStore`, `InboundHandler`, `GossipMesh`,
 `Session`, `QueryEngine`, plus per-feature
 operation modules (`operations::{community, channel, dm, direct, friend,
-voice, mek, presence, relay, identity, …}`; `direct` opens inbound `DmFrame`s:
+prekeys, voice, mek, presence, relay, identity, …}`; `prekeys` keeps our
+prekey record (publish, the unlock reconciliation, B1 maintenance,
+`PrekeyStatus`), picks from a friend's (B2/B3), and sends and answers
+`PreKeyRejected` (B5–B7); `direct` opens inbound `DmFrame`s:
 `frame`, `handlers`, the sealed-frame `replay` guard).
 
 Dependencies: `rekindle-types`, `rekindle-utils`, `rekindle-events`,

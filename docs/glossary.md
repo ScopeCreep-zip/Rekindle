@@ -343,10 +343,17 @@ segment is its own join-semilattice; the community state is the
 product CRDT under coordinate-wise join. See
 [`architecture/communities.md` §7](architecture/communities.md).
 
-**PreKey bundle.** Signal Protocol public-key material published in
-advance to the user's DHT profile so peers can initiate sessions
-asynchronously. Includes identity key, signed prekey, and one-time
-prekeys.
+**PreKey bundle.** The Signal Protocol public-key material a session
+initiator runs PQXDH against: the identity key, the signed prekey, the
+ML-KEM last-resort key and, when one is left, a one-time X25519 and
+ML-KEM key. Rekindle assembles it in memory from a peer's **prekey
+record** after checking every signature; no bundle travels on the wire.
+
+**Prekey record.** A DFLT(101) DHT record per device, named from
+profile subkey 5 (plan E2.4): subkey 0 holds the signed prekey and the
+last-resort key, subkeys 1..=100 one one-time slot each. The owner's
+prekey maintenance refills and rotates it automatically; see
+[`security/overview.md`](security/overview.md#serverless-prekey-distribution).
 
 **Presence.** A member's published status: online / away / busy /
 offline plus optional custom message, voice channel, route blob,
