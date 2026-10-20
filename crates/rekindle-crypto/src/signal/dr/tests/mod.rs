@@ -2,7 +2,9 @@
 //! against the §3.5 reference model in `model`.
 
 mod differential;
+mod misuse;
 mod model;
+mod vectors;
 
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 use zeroize::Zeroizing;
@@ -198,7 +200,16 @@ fn a_low_order_ratchet_key_is_refused_and_changes_nothing() {
     for dh in low_order_points() {
         let mut message = alice.encrypt(b"x", b"").unwrap();
         message.header.dh = dh;
-        let err = receive(&mut bob, &message).unwrap_err();
+        // In place, not on a trial copy: the refusal itself must leave
+        // the state as it was.
+        let err = bob
+            .decrypt(
+                &message,
+                b"",
+                NOW,
+                &TestRandom::for_message(&message.ciphertext),
+            )
+            .unwrap_err();
         assert!(err.to_string().contains("non-contributory"), "{err}");
         assert_eq!(stored(&bob), before);
     }

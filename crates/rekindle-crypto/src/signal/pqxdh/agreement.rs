@@ -235,17 +235,30 @@ fn derive(
     ad[..ENCODED_EC_LEN].copy_from_slice(&encode_identity(ik_a));
     ad[ENCODED_EC_LEN..].copy_from_slice(&encode_identity(ik_b));
 
-    let kem = encode_kem(pq);
+    let dhs: Vec<&[u8; 32]> = dhs.iter().map(SharedSecret::as_bytes).collect();
+    Ok((kdf(&dhs, ss, &ad, &encode_kem(pq))?, ad))
+}
+
+/// `KDF(F ‖ DH1 ‖ … ‖ DHn ‖ SS ‖ AD ‖ EncodeKEM(PQPK))` (PQXDH rev. 3
+/// §2.2 with the AD's identities and the PQ prekey bound in, info
+/// `PQXDH_SK`) → `(SKec, SKscka)`. Bytes in, bytes out, so a known-answer
+/// vector pins the layout.
+pub(crate) fn kdf(
+    dhs: &[&[u8; 32]],
+    ss: &[u8; 32],
+    ad: &AssociatedData,
+    kem: &[u8],
+) -> Result<SessionKeys, PqxdhError> {
     let mut ikm = Zeroizing::new(Vec::with_capacity(
         32 * (dhs.len() + 2) + AD_LEN + kem.len(),
     ));
     ikm.extend_from_slice(&F_BYTES);
     for dh in dhs {
-        ikm.extend_from_slice(dh.as_bytes());
+        ikm.extend_from_slice(*dh);
     }
     ikm.extend_from_slice(ss);
-    ikm.extend_from_slice(&ad);
-    ikm.extend_from_slice(&kem);
+    ikm.extend_from_slice(ad);
+    ikm.extend_from_slice(kem);
 
     let mut okm = Zeroizing::new([0u8; 64]);
     Hkdf::<Sha256>::new(None, &ikm)
@@ -255,7 +268,7 @@ fn derive(
     let mut sk_scka = Zeroizing::new([0u8; 32]);
     sk_ec.copy_from_slice(&okm[..32]);
     sk_scka.copy_from_slice(&okm[32..]);
-    Ok((SessionKeys { sk_ec, sk_scka }, ad))
+    Ok(SessionKeys { sk_ec, sk_scka })
 }
 
 #[cfg(test)]
