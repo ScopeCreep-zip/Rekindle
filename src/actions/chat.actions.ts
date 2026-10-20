@@ -121,10 +121,9 @@ export function handleMarkRead(peerId: string): void {
   });
 }
 
+/// Mark the conversation read; the Host publishes the zero count
+/// (`UnreadChanged`), which every window renders.
 export function handleResetUnread(peerId: string): void {
-  if (friendsState.friends[peerId]) {
-    setFriendsState("friends", peerId, "unreadCount", 0);
-  }
   commands.markRead(peerId).catch((e) => {
     console.error("Failed to mark read:", e);
   });

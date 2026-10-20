@@ -5,6 +5,7 @@ import Tooltip from "../common/Tooltip";
 import type { UserStatus } from "../../stores/auth.store";
 import { ICON_VOLUME_HIGH } from "../../icons";
 import { formatRelativeTime } from "../../utils/time";
+import { identityPinMismatchText } from "../../utils/identity_pin";
 import { handleRetryHandshake } from "../../actions/buddy.actions";
 
 interface BuddyItemProps {
@@ -22,6 +23,7 @@ interface BuddyItemProps {
   friendshipState?: string;
   handshakeError: string | null;
   handshakeRetrying: boolean;
+  identityPinMismatch: boolean;
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
   onSelect: (publicKey: string) => void;
@@ -91,6 +93,11 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
         <Show when={lastSeenText()}>
           <div class="buddy-last-seen">{lastSeenText()}</div>
+        </Show>
+        <Show when={props.identityPinMismatch}>
+          <Tooltip text={identityPinMismatchText(props.displayName)}>
+            <div class="buddy-identity-mismatch" role="alert">Identity key mismatch</div>
+          </Tooltip>
         </Show>
         <Show when={props.handshakeRetrying && !props.handshakeError}>
           <div class="buddy-handshake-retrying">Retrying with a fresh key</div>

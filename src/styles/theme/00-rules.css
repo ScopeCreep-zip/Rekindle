@@ -390,8 +390,10 @@
     min-width: 0;
   }
 
-  /* First-contact handshake failed: the friendship stays pending (C7.25). */
-  .buddy-handshake-error {
+  /* First-contact handshake failed: the friendship stays pending (C7.25);
+     their keys are not signed by the identity we know (plan E2.4, B3). */
+  .buddy-handshake-error,
+  .buddy-identity-mismatch {
     font-size: 10px;
     color: var(--color-xfire-danger-text);
     overflow: hidden;

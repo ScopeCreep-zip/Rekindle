@@ -24,6 +24,7 @@ export function transformFriend(f: FriendInfo): Friend {
     friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
     handshakeError: f.handshakeError ?? null,
     handshakeRetrying: f.handshakeRetrying,
+    identityPinMismatch: f.identityPinMismatch,
   };
 }
 
@@ -206,6 +207,7 @@ export function transformNewFriend(publicKey: string, displayName: string, frien
     friendshipState: (friendshipState === "accepted" ? "accepted" : "pendingOut") as Friend["friendshipState"],
     handshakeError: null,
     handshakeRetrying: false,
+    identityPinMismatch: false,
   };
 }
 

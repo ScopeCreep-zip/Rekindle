@@ -28,26 +28,20 @@ function applyMessageState(state: DirectMessageStateChanged): void {
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
     // Legacy envelope: community channel messages only.
-    if (isLegacy(event)) {
-      batch(() => {
-        const senderId = event.data.from;
-        if (friendsState.friends[senderId]) {
-          setFriendsState("friends", senderId, "unreadCount", (c) => (c ?? 0) + 1);
-        }
-      });
+    if (isLegacy(event)) return;
+
+    // A DM's unread count is the Host's (`UnreadChanged`), rendered as is.
+    if ("unreadChanged" in event) {
+      const { context, count } = event.unreadChanged;
+      if (typeof context === "object" && "dm" in context && friendsState.friends[context.dm.peerKey]) {
+        setFriendsState("friends", context.dm.peerKey, "unreadCount", count);
+      }
       return;
     }
 
     if ("channelMessage" in event) {
       const msg = event.channelMessage;
-      if ("directMessageReceived" in msg) {
-        const senderId = msg.directMessageReceived.peerKey;
-        batch(() => {
-          if (friendsState.friends[senderId]) {
-            setFriendsState("friends", senderId, "unreadCount", (c) => (c ?? 0) + 1);
-          }
-        });
-      } else if ("directMessageStateChanged" in msg) {
+      if ("directMessageStateChanged" in msg) {
         applyMessageState(msg.directMessageStateChanged);
       }
       return;
@@ -159,6 +153,19 @@ function applyFriendEvent(friend: FriendEvent): void {
     }
     return;
   }
+  if ("identityPinMismatch" in friend) {
+    const { peerKey } = friend.identityPinMismatch;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "identityPinMismatch", true);
+    }
+    return;
+  }
+  if ("blockChanged" in friend) {
+    // A block also removes the friend (`removed`); an unblock adds no row,
+    // so the list is re-read from the Host.
+    if (!friend.blockChanged.blocked) handleRefreshFriends();
+    return;
+  }
   if ("handshakeRetrying" in friend) {
     const { peerKey } = friend.handshakeRetrying;
     if (friendsState.friends[peerKey]) {
@@ -193,6 +200,7 @@ function applyFriendEvent(friend: FriendEvent): void {
     }
     return;
   }
+  // verificationChanged is rendered by each window's `useSafetyNumber`;
   // requestAcknowledged / removeAcknowledged / profileKeyRotated need no
   // store change: delivery receipts and key rotation are handled by the
   // backend, and the list already reflects the outcome.
@@ -236,6 +244,15 @@ export function subscribeDmChatEvents(
     if ("channelMessage" in event && "directMessageStateChanged" in event.channelMessage) {
       const state = event.channelMessage.directMessageStateChanged;
       if (state.conversationId === peerId) applyMessageState(state);
+      return;
+    }
+
+    // Their keys are not signed by the identity we know: the input refuses
+    // to send (plan E2.4, B3).
+    if ("friend" in event && "identityPinMismatch" in event.friend) {
+      if (event.friend.identityPinMismatch.peerKey === peerId && friendsState.friends[peerId]) {
+        setFriendsState("friends", peerId, "identityPinMismatch", true);
+      }
       return;
     }
 

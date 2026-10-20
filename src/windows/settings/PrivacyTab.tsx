@@ -1,4 +1,5 @@
-import { Component, createSignal, onMount, For, Show } from "solid-js";
+import { Component, createSignal, onCleanup, onMount, For, Show } from "solid-js";
+import { subscribeChatEvents } from "../../ipc/channels";
 import FormField from "../../components/common/FormField";
 import RelaySettingsSection from "../../components/settings/RelaySettingsSection";
 import { authState } from "../../stores/auth.store";
@@ -9,11 +10,17 @@ const PrivacyTab: Component = () => {
   const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
   const [error, setError] = createSignal<string | null>(null);
 
-  onMount(() => {
+  const loadBlocked = (): void => {
     commands.getBlockedUsers().then(setBlockedUsers).catch((e) => {
       console.error("Failed to load blocked users:", e);
     });
+  };
+  // The Host's `blockChanged` (from any window or frontend) re-reads the list.
+  const unsubscribe = subscribeChatEvents((event) => {
+    if ("friend" in event && "blockChanged" in event.friend) loadBlocked();
   });
+  onMount(loadBlocked);
+  onCleanup(() => void unsubscribe.then((un) => un()));
 
   // Delegates to the shared action (`actions/buddy.actions.ts`) rather than
   // calling `commands.unblockUser` directly here a second time — this file
@@ -26,7 +33,6 @@ const PrivacyTab: Component = () => {
       setError(err);
       return;
     }
-    setBlockedUsers((prev) => prev.filter((u) => u.publicKey !== publicKey));
   }
 
   return (

@@ -104,6 +104,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
                 friendshipState={friend.friendshipState}
                 handshakeError={friend.handshakeError}
                 handshakeRetrying={friend.handshakeRetrying}
+                identityPinMismatch={friend.identityPinMismatch}
                 selected={props.selectedKey === friend.publicKey}
                 onDoubleClick={props.onDoubleClick}
                 onSelect={props.onSelect}

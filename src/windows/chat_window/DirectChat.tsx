@@ -20,6 +20,7 @@ import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP, ICON_SHIELD } from "../../icons";
 import SafetyNumberPanel from "../../components/profile/SafetyNumberPanel";
 import VerifiedBadge from "../../components/profile/VerifiedBadge";
 import { useSafetyNumber } from "../../hooks/useSafetyNumber";
+import { identityPinMismatchText } from "../../utils/identity_pin";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.
@@ -48,6 +49,10 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
   });
 
   const [messages, setMessages] = createSignal<Message[]>([]);
+
+  // Their keys are not signed by the identity we know (plan E2.4, B3): the
+  // Host refuses every send, so the input says why instead of offering one.
+  const pinMismatch = createMemo(() => friendsState.friends[peerId]?.identityPinMismatch === true);
 
   // The peer's key trust (plan E2.3): the header's badge, and the safety
   // number with its mark-verified flow behind the shield button.
@@ -191,7 +196,11 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
       {/* A connected call's controls (timer, mute, hangup, video) live in
        *  its own call window, which the backend opens on connect. */}
       <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
-      <MessageInput peerId={peerId} />
+      <MessageInput
+        peerId={peerId}
+        disabled={pinMismatch()}
+        disabledMessage={identityPinMismatchText(peerName())}
+      />
       </div>
     </>
   );

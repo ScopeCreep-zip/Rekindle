@@ -153,12 +153,25 @@ export type CallEvent =
   | { participantJoined: { callId: string; participantPubkey: string } }
   | { participantLeft: { callId: string; participantPubkey: string; reason: string } };
 
+/** What an unread count belongs to (`subscription_events::UnreadContext`). */
+export type UnreadContext =
+  | { channel: { community: string; channel: string } }
+  | { dm: { peerKey: string } }
+  | "friendRequests";
+
+/** The Host's unread count for one context, rendered as is. */
+export interface UnreadChanged {
+  context: UnreadContext;
+  count: number;
+}
+
 /** The daemon-vocabulary families delivered on this channel. */
 export type ChatSubscriptionEvent =
   | { channelMessage: ChannelMessageEvent }
   | { typing: TypingEvent }
   | { friend: FriendEvent }
-  | { call: CallEvent };
+  | { call: CallEvent }
+  | { unreadChanged: UnreadChanged };
 
 /** The desktop's remaining `{ type, data }` event. */
 export type LegacyChatEvent = {

@@ -10,7 +10,7 @@
  */
 
 import type { CommunityEvent } from "./community_events";
-import type { TypingContext } from "./chat_events";
+import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
 
 /** Membership events from the daemon vocabulary. */
@@ -310,7 +310,7 @@ export type CommunitySubscriptionEvent =
         | { started: { context: TypingContext; who: string } }
         | { stopped: { context: TypingContext; who: string } };
     }
-  | { unreadChanged: Record<string, unknown> };
+  | { unreadChanged: UnreadChanged };
 
 export type AnyCommunityEvent = CommunityEvent | CommunitySubscriptionEvent;
 
