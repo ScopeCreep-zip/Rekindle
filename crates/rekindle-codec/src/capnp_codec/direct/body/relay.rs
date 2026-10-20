@@ -2,7 +2,14 @@
 //! the pre-E2.3 1:1 payload (they stay with their `src-tauri`
 //! owners until E5.2 and E5.6).
 
-use crate::capnp_codec::direct::{data, list_len, opt_text, set_text_list, text, text_list};
+use rekindle_types::key_format::MAX_STATUS_LEN;
+
+use crate::capnp_codec::direct::{
+    bounded_text, data, list_len, opt_text, public_key, set_text_list, text, text_list,
+};
+
+/// The longest status word (`"online"`, `"away"`, `"busy"`, `"offline"`).
+const MAX_STATUS_WORD_LEN: usize = 16;
 use crate::capnp_codec::CodecError;
 use crate::direct_capnp::{
     register_push_relay, relay_envelope, relay_offer, relay_offer_ack, relay_withdraw,
@@ -24,7 +31,7 @@ impl RelayEnvelope {
 
     pub(super) fn read(r: relay_envelope::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            target_pubkey: text(r.get_target_pubkey())?,
+            target_pubkey: public_key(r.get_target_pubkey(), "relay target")?,
             inner_payload: data(r.get_inner_payload())?,
         })
     }
@@ -103,7 +110,7 @@ impl StatusRequest {
 
     pub(super) fn read(r: status_request::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            target_pubkey: text(r.get_target_pubkey())?,
+            target_pubkey: public_key(r.get_target_pubkey(), "status target")?,
         })
     }
 }
@@ -131,9 +138,9 @@ impl StatusResponse {
 
     pub(super) fn read(r: status_response::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            target_pubkey: text(r.get_target_pubkey())?,
-            status: text(r.get_status())?,
-            status_message: opt_text(r.get_status_message())?,
+            target_pubkey: public_key(r.get_target_pubkey(), "status target")?,
+            status: bounded_text(r.get_status(), MAX_STATUS_WORD_LEN, "status")?,
+            status_message: opt_text(r.get_status_message(), MAX_STATUS_LEN, "status message")?,
             last_seen: r.get_last_seen(),
             route_blob: data(r.get_route_blob())?,
         })

@@ -39,6 +39,18 @@ pub fn display_name(s: &str) -> Result<&str, KeyFormatError> {
     key_format::name(s, MAX_DISPLAY_NAME_LEN)
 }
 
+/// Validate a display name as another party supplies it — a peer's own
+/// name in their friend request, or the one a request names for them: at
+/// most [`MAX_DISPLAY_NAME_LEN`] characters of [`key_format::text`] (no
+/// control or hidden format characters; empty means none given). The IPC
+/// validation and the 1:1 decoder both apply it (plan audit G6).
+///
+/// # Errors
+/// The name is too long or holds a forbidden character.
+pub fn peer_display_name(s: &str) -> Result<&str, KeyFormatError> {
+    key_format::text(s, MAX_DISPLAY_NAME_LEN)
+}
+
 /// Validate the self-authored profile fields a presence row carries.
 ///
 /// # Errors

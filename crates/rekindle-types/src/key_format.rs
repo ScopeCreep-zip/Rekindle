@@ -151,6 +151,11 @@ pub const MAX_NOTE_LEN: usize = 512;
 /// Longest status message: Slack's custom status text (`status_text`, up
 /// to 100 characters).
 pub const MAX_STATUS_LEN: usize = 100;
+/// Longest friend-invite id: a hyphenated UUID is 36.
+pub const MAX_INVITE_ID_LEN: usize = 64;
+/// Longest reaction: one emoji, which a ZWJ sequence with skin tones and
+/// variation selectors spells in up to a dozen code points.
+pub const MAX_REACTION_LEN: usize = 32;
 
 fn is_b64url(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'-' || b == b'_'
@@ -232,8 +237,17 @@ pub fn hex16_id(s: &str) -> Result<Hex16Id, KeyFormatError> {
     Ok(Hex16Id(s.to_owned()))
 }
 
-/// Validate a human-entered name: trimmed, 1..=`max` chars, no control
-/// characters. Returns the trimmed text.
+/// Whether text may not carry `c`: a control character (`Cc`) or a hidden
+/// format character (`Cf` but the joiners: bidi controls, zero-width
+/// spaces, tags; [`crate::format_chars`]). The same rule holds for what a
+/// user types (the IPC validation) and for what a peer sends (the 1:1
+/// decoder, plan audit G6).
+fn forbidden(c: char) -> bool {
+    c.is_control() || crate::format_chars::is_hidden_format(c)
+}
+
+/// Validate a human-entered name: trimmed, 1..=`max` chars, no control or
+/// hidden format characters. Returns the trimmed text.
 pub fn name(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -243,7 +257,7 @@ pub fn name(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     if got > max {
         return Err(KeyFormatError::TooLong { max, got });
     }
-    match trimmed.chars().position(char::is_control) {
+    match trimmed.chars().position(forbidden) {
         Some(index) => Err(KeyFormatError::BadChar { index }),
         None => Ok(trimmed),
     }
@@ -251,7 +265,8 @@ pub fn name(s: &str, max: usize) -> Result<&str, KeyFormatError> {
 
 /// Validate free text a user typed — a topic, description, reason or
 /// note: at most `max` chars, no control characters except newline and
-/// tab. Empty text is allowed; callers that need content check for it.
+/// tab, and no hidden format characters. Empty text is allowed; callers
+/// that need content check for it.
 pub fn text(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     let got = s.chars().count();
     if got > max {
@@ -259,11 +274,20 @@ pub fn text(s: &str, max: usize) -> Result<&str, KeyFormatError> {
     }
     match s
         .chars()
-        .position(|c| c.is_control() && c != '\n' && c != '\t')
+        .position(|c| forbidden(c) && c != '\n' && c != '\t')
     {
         Some(index) => Err(KeyFormatError::BadChar { index }),
         None => Ok(s),
     }
+}
+
+/// Validate a message body: [`text`] within [`MAX_MESSAGE_LEN`], and not
+/// blank.
+pub fn message_body(s: &str) -> Result<&str, KeyFormatError> {
+    if s.trim().is_empty() {
+        return Err(KeyFormatError::Empty);
+    }
+    text(s, MAX_MESSAGE_LEN)
 }
 
 /// A channel named by its 32-hex id or by its name.
@@ -388,6 +412,33 @@ mod tests {
             Err(KeyFormatError::TooLong { max: 4, got: 5 })
         );
         assert_eq!(text("ab\x1b", 8), Err(KeyFormatError::BadChar { index: 2 }));
+    }
+
+    /// Bidi overrides and other hidden format characters are refused in
+    /// names and text alike; the emoji joiner is not.
+    #[test]
+    fn hidden_format_characters_are_refused() {
+        assert_eq!(
+            name("ann\u{202E}gpj.exe", 100),
+            Err(KeyFormatError::BadChar { index: 3 })
+        );
+        assert_eq!(
+            text("hi\u{2066}x", 100),
+            Err(KeyFormatError::BadChar { index: 2 })
+        );
+        assert!(text("a\u{200B}b", 100).is_err());
+        assert!(name("\u{FEFF}Bob", 100).is_err());
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}";
+        assert_eq!(text(family, 100), Ok(family));
+        assert_eq!(name(family, 100), Ok(family));
+    }
+
+    #[test]
+    fn a_message_body_is_bounded_text_and_not_blank() {
+        assert_eq!(message_body("hi"), Ok("hi"));
+        assert_eq!(message_body(" \n "), Err(KeyFormatError::Empty));
+        assert!(message_body(&"x".repeat(MAX_MESSAGE_LEN + 1)).is_err());
+        assert!(message_body("a\u{202E}b").is_err());
     }
 
     #[test]

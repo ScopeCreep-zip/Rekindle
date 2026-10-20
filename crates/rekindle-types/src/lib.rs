@@ -20,6 +20,7 @@ pub mod dto;
 pub mod error;
 pub mod event;
 pub mod expression;
+pub mod format_chars;
 pub mod friend;
 pub mod friend_store;
 pub mod game_server;

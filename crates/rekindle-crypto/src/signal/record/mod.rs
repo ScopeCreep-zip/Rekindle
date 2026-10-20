@@ -88,6 +88,14 @@ impl SessionRecord {
         self.active.is_some()
     }
 
+    /// Whether the active session is established: something decrypted
+    /// under it, so it has a receiving chain. A peer's re-initiation over
+    /// one is refused unless we asked for it (ruling Q1; plan audit G2).
+    /// Our own unanswered init ([`Self::pending_init`]) is not established.
+    pub fn is_established(&self) -> bool {
+        self.active.as_ref().is_some_and(SessionState::has_received)
+    }
+
     /// Whether a session in this record has `base_key`: a PreKeyInit
     /// with it is a duplicate, known before its prekeys are looked up
     /// (a consumed one-time key no longer exists to look up).

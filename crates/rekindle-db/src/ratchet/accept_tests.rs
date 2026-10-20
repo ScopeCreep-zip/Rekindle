@@ -14,7 +14,16 @@ use crate::prekeys::{self, apply_maintenance, local_prekeys, published_values, s
 use crate::test_support::Party;
 
 async fn accept(bob: &Party, alice: &Party, init: PreKeyInit) -> Result<Accepted, RatchetError> {
-    accept_init(&bob.db, &bob.local, &alice.address(), init, AD_EXTRA, 1).await
+    accept_init(
+        &bob.db,
+        &bob.local,
+        &alice.address(),
+        init,
+        Reinitiation::Refused,
+        AD_EXTRA,
+        1,
+    )
+    .await
 }
 
 /// Alice initiates to Bob on his head alone (no slot).
@@ -155,7 +164,16 @@ async fn a_retired_head_opens_until_the_archive_sweeps_it() {
         .await
         .unwrap();
     assert_eq!((swept.prekeys, swept.lr_inits), (2, 1));
-    let result = accept_init(&bob.db, &later, &carol.address(), in_flight, AD_EXTRA, 1).await;
+    let result = accept_init(
+        &bob.db,
+        &later,
+        &carol.address(),
+        in_flight,
+        Reinitiation::Refused,
+        AD_EXTRA,
+        1,
+    )
+    .await;
     assert!(
         matches!(
             result,

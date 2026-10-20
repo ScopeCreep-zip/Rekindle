@@ -1,6 +1,10 @@
 //! Friendship and session bodies.
 
-use crate::capnp_codec::direct::{data, fixed, opt_text, text, PqPrekey};
+use rekindle_types::key_format::{MAX_INVITE_ID_LEN, MAX_NOTE_LEN};
+
+use crate::capnp_codec::direct::{
+    bounded_text, data, display_name, fixed, opt_record_key, opt_text, record_key, PqPrekey,
+};
 use crate::capnp_codec::CodecError;
 use crate::direct_capnp::{
     friend_accept, friend_request, identity_rotated, pre_key_rejected, profile_key_rotated,
@@ -32,12 +36,14 @@ impl FriendRequest {
 
     pub(super) fn read(r: friend_request::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            display_name: text(r.get_display_name())?,
-            message: text(r.get_message())?,
-            profile_dht_key: text(r.get_profile_dht_key())?,
+            display_name: display_name(r.get_display_name())?,
+            message: bounded_text(r.get_message(), MAX_NOTE_LEN, "request message")?,
+            // A request names the profile the accepter opens the session
+            // from (plan E2.4); the sender never sends one without it.
+            profile_dht_key: record_key(r.get_profile_dht_key(), "profile key")?,
             route_blob: data(r.get_route_blob())?,
-            mailbox_dht_key: text(r.get_mailbox_dht_key())?,
-            invite_id: opt_text(r.get_invite_id())?,
+            mailbox_dht_key: opt_record_key(r.get_mailbox_dht_key(), "mailbox key")?,
+            invite_id: opt_text(r.get_invite_id(), MAX_INVITE_ID_LEN, "invite id")?,
         })
     }
 }
@@ -62,9 +68,9 @@ impl FriendAccept {
 
     pub(super) fn read(r: friend_accept::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            profile_dht_key: text(r.get_profile_dht_key())?,
+            profile_dht_key: opt_record_key(r.get_profile_dht_key(), "profile key")?,
             route_blob: data(r.get_route_blob())?,
-            mailbox_dht_key: text(r.get_mailbox_dht_key())?,
+            mailbox_dht_key: opt_record_key(r.get_mailbox_dht_key(), "mailbox key")?,
         })
     }
 }
@@ -85,7 +91,7 @@ impl SessionResetRequest {
 
     pub(super) fn read(r: session_reset_request::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            reason: text(r.get_reason())?,
+            reason: bounded_text(r.get_reason(), MAX_NOTE_LEN, "reason")?,
         })
     }
 }
@@ -154,7 +160,7 @@ impl SessionResetDecline {
 
     pub(super) fn read(r: session_reset_decline::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            reason: text(r.get_reason())?,
+            reason: bounded_text(r.get_reason(), MAX_NOTE_LEN, "reason")?,
         })
     }
 }
@@ -172,7 +178,7 @@ impl ProfileKeyRotated {
 
     pub(super) fn read(r: profile_key_rotated::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            new_profile_dht_key: text(r.get_new_profile_dht_key())?,
+            new_profile_dht_key: record_key(r.get_new_profile_dht_key(), "profile key")?,
         })
     }
 }

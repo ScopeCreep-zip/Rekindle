@@ -111,6 +111,11 @@ pub enum RatchetError {
     /// with no rejection (plan E2.4 B9).
     #[error("replayed last-resort PreKeyInit")]
     ReplayedLastResortInit,
+    /// A PreKeyInit from a peer we hold an established session with
+    /// (something decrypted under it): a re-initiation we did not ask for,
+    /// refused before any prekey is looked up (ruling Q1, plan audit G2).
+    #[error("refused a re-initiation over an established session")]
+    EstablishedSession,
     /// A maintenance action named a subkey that is not a one-time slot.
     #[error("subkey {subkey} is not a prekey slot")]
     InvalidSlot { subkey: u32 },
@@ -211,6 +216,43 @@ pub async fn decrypt_and_record_inbound(
     .await
 }
 
+/// Decrypt an ephemeral ratchet message from `peer` (typing, a call kind,
+/// DM video; plan audit G10): the ratchet advances in one transaction as
+/// for any message, but nothing goes to `unprocessed`, since a late one is
+/// worth nothing and is never replayed.
+///
+/// # Errors
+/// See [`RatchetError`]; a message already decrypted is
+/// [`CryptoError::DuplicateMessage`].
+pub async fn decrypt_ephemeral(
+    db: &Db,
+    local: &LocalParty,
+    peer: &PeerAddress,
+    message: RatchetMessage,
+    ad_extra: &[u8],
+) -> Result<Vec<u8>, RatchetError> {
+    let (local, peer, ad_extra) = (local.clone(), peer.clone(), ad_extra.to_vec());
+    in_transaction(db, move |conn| {
+        let owner = local.owner();
+        let (next, plaintext) =
+            load(conn, &owner, &peer)?.decrypt(&message, &ad_extra, local.rng.as_ref())?;
+        store(conn, &owner, &peer, &next, local.now_ms)?;
+        Ok(plaintext)
+    })
+    .await
+}
+
+/// Whether a PreKeyInit may replace an established session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reinitiation {
+    /// No: a first contact, or a content kind opening a session after a
+    /// rotation. Over an established session it is
+    /// [`RatchetError::EstablishedSession`].
+    Refused,
+    /// Yes: the init answers a session reset we asked for (B11).
+    Requested,
+}
+
 /// Accept `peer`'s PreKeyInit (plan E2.4 B8): build the session from the
 /// prekeys it names and decrypt its first message; only then, in the same
 /// transaction, consume the one-time keys it used, record a last-resort
@@ -223,17 +265,23 @@ pub async fn decrypt_and_record_inbound(
 /// See [`RatchetError`]:
 /// - an init whose base key is already a session's is
 ///   [`CryptoError::DuplicateMessage`] (B4), dropped silently;
+/// - an init under another identity than `peer`'s is
+///   [`CryptoError::IdentityAddressMismatch`];
+/// - an init over an established session, unless `reinit` is
+///   [`Reinitiation::Requested`], is [`RatchetError::EstablishedSession`]
+///   (ruling Q1: nothing re-initiates silently);
 /// - a last-resort-only init seen before is
 ///   [`RatchetError::ReplayedLastResortInit`] (B9), dropped silently;
 /// - a consumed, unknown or archived prekey is
-///   [`RatchetError::UnknownPrekey`] (B5);
-/// - an init under another identity than `peer`'s is
-///   [`CryptoError::IdentityAddressMismatch`].
+///   [`RatchetError::UnknownPrekey`] (B5).
+///
+/// Every refusal comes before a prekey is looked up.
 pub async fn accept_init(
     db: &Db,
     local: &LocalParty,
     peer: &PeerAddress,
     init: PreKeyInit,
+    reinit: Reinitiation,
     ad_extra: &[u8],
     type_id: u16,
 ) -> Result<Accepted, RatchetError> {
@@ -249,6 +297,9 @@ pub async fn accept_init(
                 address: hex::encode(peer.identity),
             }
             .into());
+        }
+        if reinit == Reinitiation::Refused && record.is_established() {
+            return Err(RatchetError::EstablishedSession);
         }
         if prekeys::is_last_resort_only(&init) && prekeys::lr_init_seen(conn, &owner, &init)? {
             return Err(RatchetError::ReplayedLastResortInit);

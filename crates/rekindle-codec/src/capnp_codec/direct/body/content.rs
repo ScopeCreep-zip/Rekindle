@@ -1,6 +1,8 @@
 //! Content bodies: text, its edits, deletes and reactions, and typing.
 
-use crate::capnp_codec::direct::{fixed, text, ClientId};
+use rekindle_types::key_format::{self, MAX_REACTION_LEN};
+
+use crate::capnp_codec::direct::{fixed, message_body, text, ClientId};
 use crate::capnp_codec::{capnp_err, CodecError};
 use crate::direct_capnp::{dm_delete, dm_edit, dm_reaction, dm_text, typing};
 
@@ -33,7 +35,7 @@ impl DmText {
         };
         Ok(Self {
             client_id: fixed(r.get_client_id(), "client id")?,
-            body: text(r.get_body())?,
+            body: message_body(r.get_body())?,
             reply_to,
             expire_seconds: r.get_expire_seconds(),
         })
@@ -59,7 +61,7 @@ impl DmEdit {
     pub(super) fn read(r: dm_edit::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
             target_client_id: fixed(r.get_target_client_id(), "edit target")?,
-            body: text(r.get_body())?,
+            body: message_body(r.get_body())?,
             edited_at: r.get_edited_at(),
         })
     }
@@ -100,9 +102,14 @@ impl DmReaction {
     }
 
     pub(super) fn read(r: dm_reaction::Reader<'_>) -> Result<Self, CodecError> {
+        let emoji = text(r.get_emoji())?;
+        // One emoji: a name's rule (not blank, no control or hidden
+        // format character) within a reaction's length.
+        key_format::name(&emoji, MAX_REACTION_LEN)
+            .map_err(|e| CodecError::Deserialization(format!("reaction: {e}")))?;
         Ok(Self {
             target_client_id: fixed(r.get_target_client_id(), "reaction target")?,
-            emoji: text(r.get_emoji())?,
+            emoji,
             add: r.get_add(),
         })
     }

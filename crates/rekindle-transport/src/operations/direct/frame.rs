@@ -274,6 +274,13 @@ async fn open_init(
         &local,
         &peer_address(&sender_hex).ok()?,
         init_from_body(sender, init),
+        // Only an accept of the reset we asked for may replace an
+        // established session (ruling Q1; plan audit G2).
+        if init.first_type_id == DmTypeId::SessionResetAccept {
+            ratchet::Reinitiation::Requested
+        } else {
+            ratchet::Reinitiation::Refused
+        },
         &ad_extra(init.first_type_id),
         init.first_type_id.as_u16(),
     )
@@ -286,6 +293,11 @@ async fn open_init(
         Err(RatchetError::ReplayedLastResortInit) => {
             // B9: a replayed last-resort init is dropped without a word.
             tracing::debug!(from = %sender_hex, "dropping a replayed last-resort PreKeyInit");
+            return None;
+        }
+        Err(RatchetError::EstablishedSession) => {
+            tracing::warn!(from = %sender_hex, kind = ?init.first_type_id,
+                "refusing a PreKeyInit over our established session with them");
             return None;
         }
         Err(RatchetError::UnknownPrekey { kind, id }) => {

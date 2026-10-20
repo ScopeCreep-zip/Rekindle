@@ -1,5 +1,7 @@
 //! `DmFrame` and its plaintexts (`DmContent`, `SealedContent`).
 
+use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
+
 use super::{data, decode_root, encode_root, fixed, Carrier, DmTypeId};
 use crate::capnp_codec::{capnp_err, not_in_schema, CodecError};
 use crate::direct_capnp::{
@@ -127,13 +129,21 @@ impl DmFrame {
         })
     }
 
-    /// Decode and shape-check packed bytes: an unallocated typeId is
+    /// Decode and shape-check packed bytes (the datagram after its `'D'`
+    /// tag): bytes that with the tag would be over Veilid's message cap are
+    /// refused before they are unpacked; an unallocated typeId is
     /// `UnknownVariant`, a body other than the typeId's carrier names is
     /// `Deserialization`.
     ///
     /// # Errors
     /// The bytes are not a well-formed `DmFrame`.
     pub fn decode(bytes: &[u8]) -> Result<Self, CodecError> {
+        if bytes.len() >= MAX_APP_MESSAGE_LEN {
+            return Err(CodecError::Deserialization(format!(
+                "a {}-byte frame is over the {MAX_APP_MESSAGE_LEN}-byte message cap",
+                bytes.len() + 1
+            )));
+        }
         let frame = decode_root::<dm_frame::Owned, _>(bytes, |root| {
             let type_id = kind(root.get_type_id())?;
             let body = match root.get_body().which().map_err(not_in_schema)? {
@@ -420,6 +430,36 @@ pub(super) mod tests {
             write_ratchet(root.init_body().init_ratchet(), &ratchet(8));
         });
         assert!(DmFrame::decode(&bytes).is_err());
+    }
+
+    /// G6: a frame over the message cap is refused unread, and a packed
+    /// zero run that would unpack past the word cap is refused.
+    #[test]
+    fn oversized_and_inflating_frames_are_refused() {
+        let over = vec![0u8; MAX_APP_MESSAGE_LEN];
+        assert!(matches!(
+            DmFrame::decode(&over),
+            Err(CodecError::Deserialization(_))
+        ));
+        // A one-segment header claiming far more words than the cap, the
+        // run of zero words packed (tag 0x00 + count) to a few bytes.
+        let words = u32::try_from(super::super::MAX_UNPACKED_WORDS + 1).unwrap();
+        let mut header = [0u8; 8];
+        header[4..8].copy_from_slice(&words.to_le_bytes());
+        // Packed: a tag naming the nonzero bytes, then those bytes.
+        let mut packed = vec![0u8];
+        for (i, b) in header.iter().enumerate() {
+            if *b != 0 {
+                packed[0] |= 1 << i;
+                packed.push(*b);
+            }
+        }
+        // Then 256 zero words, as many times as it takes, two bytes each.
+        for _ in 0..=(super::super::MAX_UNPACKED_WORDS / 256) {
+            packed.extend_from_slice(&[0x00, 0xFF]);
+        }
+        assert!(DmFrame::decode(&packed).is_err());
+        assert!(DmContent::decode(&packed).is_err());
     }
 
     #[test]

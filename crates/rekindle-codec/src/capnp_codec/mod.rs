@@ -101,6 +101,19 @@ pub(crate) fn unpack(
         .map_err(|e| capnp_err(&e))
 }
 
+/// [`unpack`] for bytes off the network, refusing a message of more than
+/// `max_words` words: packing collapses a run of zero words into two
+/// bytes, so a small datagram could otherwise unpack into megabytes (the
+/// traversal limit also bounds the segment sizes the header may claim).
+pub(crate) fn unpack_bounded(
+    data: &[u8],
+    max_words: usize,
+) -> Result<capnp::message::Reader<capnp::serialize::OwnedSegments>, CodecError> {
+    let mut options = capnp::message::ReaderOptions::new();
+    options.traversal_limit_in_words(Some(max_words));
+    capnp::serialize_packed::read_message(data, options).map_err(|e| capnp_err(&e))
+}
+
 /// Read an optional text field, returning `None` when absent or empty.
 fn text_or_none(
     has: bool,

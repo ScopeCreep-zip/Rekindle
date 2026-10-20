@@ -14,7 +14,10 @@ pub mod fingerprint;
 pub mod group;
 pub mod horizon;
 pub mod identity;
+pub mod identity_rotation;
 pub mod keypair_text;
+pub mod presession;
+pub mod replay;
 pub mod signal;
 
 pub use dht_crypto::DhtRecordKey;

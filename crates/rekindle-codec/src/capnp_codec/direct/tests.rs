@@ -250,7 +250,7 @@ fn every_body_round_trips_under_its_kind() {
 fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
     let text = DirectBody::DmText(DmText {
         client_id: [1; 16],
-        body: String::new(),
+        body: s("x"),
         reply_to: None,
         expire_seconds: 0,
     });
@@ -366,4 +366,104 @@ fn every_sealed_handshake_frame_fits() {
         let len = datagram_len(&frame);
         assert!(len <= MAX_APP_MESSAGE_LEN, "{:?} {len} B", frame.type_id);
     }
+}
+
+/// G6: what a peer writes is held to the IPC path's rules on receive —
+/// lengths, no control or hidden format characters (bidi overrides
+/// included), and keys in their shapes.
+#[test]
+fn bodies_a_peer_could_abuse_are_refused() {
+    let request = |display_name: String, message: String, profile: String| {
+        DirectBody::FriendRequest(FriendRequest {
+            display_name,
+            message,
+            profile_dht_key: profile,
+            route_blob: Vec::new(),
+            mailbox_dht_key: String::new(),
+            invite_id: None,
+        })
+    };
+    let max_name = rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN;
+    let max_note = rekindle_types::key_format::MAX_NOTE_LEN;
+    let refused = [
+        request("a".repeat(max_name + 1), s("hi"), dht_key()),
+        request(s("Ann\u{202E}gpj.exe"), s("hi"), dht_key()),
+        request(s("Ann"), "x".repeat(max_note + 1), dht_key()),
+        request(s("Ann"), s("hi\u{2066}"), dht_key()),
+        request(s("Ann"), s("hi\u{7}"), dht_key()),
+        request(s("Ann"), s("hi"), String::new()),
+        request(s("Ann"), s("hi"), s("not a key")),
+        DirectBody::DmText(DmText {
+            client_id: [1; 16],
+            body: s("  "),
+            reply_to: None,
+            expire_seconds: 0,
+        }),
+        DirectBody::DmText(DmText {
+            client_id: [1; 16],
+            body: "x".repeat(rekindle_types::key_format::MAX_MESSAGE_LEN + 1),
+            reply_to: None,
+            expire_seconds: 0,
+        }),
+        DirectBody::DmText(DmText {
+            client_id: [1; 16],
+            body: s("pay \u{202E}0001$"),
+            reply_to: None,
+            expire_seconds: 0,
+        }),
+        DirectBody::DmReaction(DmReaction {
+            target_client_id: [1; 16],
+            emoji: String::new(),
+            add: true,
+        }),
+        DirectBody::SessionResetRequest(SessionResetRequest {
+            reason: "x".repeat(max_note + 1),
+        }),
+        DirectBody::ProfileKeyRotated(ProfileKeyRotated {
+            new_profile_dht_key: s("VLD0:short"),
+        }),
+        DirectBody::StatusResponse(StatusResponse {
+            target_pubkey: s("Bob"),
+            status: s("away"),
+            status_message: None,
+            last_seen: 0,
+            route_blob: Vec::new(),
+        }),
+        DirectBody::StatusResponse(StatusResponse {
+            target_pubkey: "ef".repeat(32),
+            status: s("away"),
+            status_message: Some("x".repeat(rekindle_types::key_format::MAX_STATUS_LEN + 1)),
+            last_seen: 0,
+            route_blob: Vec::new(),
+        }),
+        DirectBody::RelayEnvelope(RelayEnvelope {
+            target_pubkey: "AB".repeat(32),
+            inner_payload: Vec::new(),
+        }),
+    ];
+    for body in refused {
+        assert!(
+            matches!(
+                DirectBody::decode(body.type_id(), &body.encode()),
+                Err(CodecError::Deserialization(_))
+            ),
+            "{body:?}"
+        );
+    }
+    // At the bounds, in 4-byte characters, with an emoji joiner: accepted.
+    let accepted = request(widest(max_name), widest(max_note), dht_key());
+    assert_eq!(
+        DirectBody::decode(accepted.type_id(), &accepted.encode()).as_ref(),
+        Ok(&accepted)
+    );
+    let family = DirectBody::DmText(DmText {
+        client_id: [1; 16],
+        body: s("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"),
+        reply_to: None,
+        expire_seconds: 0,
+    });
+    assert_eq!(
+        DirectBody::decode(DmTypeId::DmText, &family.encode()).as_ref(),
+        Ok(&family)
+    );
 }

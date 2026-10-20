@@ -148,12 +148,48 @@ impl DmTypeId {
         self as u16
     }
 
-    /// Whether a PreKeyInit may carry this kind as its first payload:
-    /// the accept kinds, and any ratchet kind when a session is
-    /// (re)initiated with it.
+    /// Whether a PreKeyInit may carry this kind as its first payload: the
+    /// two accepts, and the content kinds a message to a friend with no
+    /// session opens one with (plan E2.3, after an identity rotation).
+    /// An explicit allowlist (plan audit G1): a removal, its ack, a relay
+    /// envelope, an identity rotation, typing and the call kinds never
+    /// open a session.
     #[must_use]
     pub fn is_first_payload(self) -> bool {
-        matches!(self.carrier(), Carrier::FirstPayload | Carrier::Ratchet)
+        matches!(
+            self,
+            Self::FriendAccept
+                | Self::SessionResetAccept
+                | Self::DmText
+                | Self::DmEdit
+                | Self::DmDelete
+                | Self::DmReaction
+        )
+    }
+
+    /// Whether this kind is ephemeral: worth nothing once it is late, so it
+    /// is never recorded in `unprocessed`, replayed or queued for a retry
+    /// (plan audit G10). Typing, and the call and DM-video kinds, whose
+    /// state lives only as long as the call.
+    #[must_use]
+    pub fn is_ephemeral(self) -> bool {
+        matches!(
+            self,
+            Self::Typing
+                | Self::CallInvite
+                | Self::CallRinging
+                | Self::CallAccept
+                | Self::CallDecline
+                | Self::CallEnd
+                | Self::CallMediaState
+                | Self::CallReaction
+                | Self::GroupCallOffer
+                | Self::GroupCallAccept
+                | Self::GroupCallDecline
+                | Self::GroupCallParticipantJoined
+                | Self::GroupCallParticipantLeft
+                | Self::DmVideoFragment
+        )
     }
 }
 
@@ -199,9 +235,50 @@ mod tests {
             DmTypeId::SessionResetAccept.carrier(),
             Carrier::FirstPayload
         );
-        assert!(DmTypeId::FriendAccept.is_first_payload());
-        assert!(DmTypeId::DmText.is_first_payload());
-        assert!(!DmTypeId::PreKeyInit.is_first_payload());
-        assert!(!DmTypeId::FriendRequest.is_first_payload());
+    }
+
+    /// G1: only the accepts and the content kinds open a session.
+    #[test]
+    fn the_first_payloads_are_an_allowlist() {
+        let first: Vec<u16> = DmTypeId::ALL
+            .iter()
+            .filter(|k| k.is_first_payload())
+            .map(|k| k.as_u16())
+            .collect();
+        assert_eq!(first, [0x0008, 0x0100, 0x0101, 0x0110, 0x0111, 0x0112]);
+        for kind in [
+            DmTypeId::Unfriended,
+            DmTypeId::UnfriendedAck,
+            DmTypeId::RelayEnvelope,
+            DmTypeId::IdentityRotated,
+            DmTypeId::Typing,
+            DmTypeId::CallInvite,
+            DmTypeId::PreKeyInit,
+            DmTypeId::FriendRequest,
+        ] {
+            assert!(!kind.is_first_payload(), "{kind:?}");
+        }
+    }
+
+    /// G10: typing and the call and video kinds are ephemeral; no first
+    /// payload or sealed kind is.
+    #[test]
+    fn ephemeral_kinds_are_typing_calls_and_video() {
+        let ephemeral: Vec<u16> = DmTypeId::ALL
+            .iter()
+            .filter(|k| k.is_ephemeral())
+            .map(|k| k.as_u16())
+            .collect();
+        assert_eq!(
+            ephemeral,
+            [
+                0x0200, 0x0201, 0x0202, 0x0203, 0x0204, 0x0205, 0x0206, 0x0210, 0x0211, 0x0212,
+                0x0213, 0x0214, 0x0220, 0x0401
+            ]
+        );
+        assert!(DmTypeId::ALL
+            .iter()
+            .filter(|k| k.is_ephemeral())
+            .all(|k| !k.is_first_payload() && k.carrier() == Carrier::Ratchet));
     }
 }

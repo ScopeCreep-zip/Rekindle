@@ -361,3 +361,21 @@ fn only_an_unanswered_init_is_pending_and_it_can_be_discarded() {
     assert_eq!(restored.pending_init(), None);
     round_trip(&mut restored, &mut bob_record);
 }
+
+/// G2: a session is established once something decrypted under it; our
+/// own unanswered init is not, and a record with no session is not.
+#[test]
+fn a_session_is_established_once_it_has_received() {
+    let (alice, bob) = (Identity::generate(), BobKeys::new());
+    assert!(!SessionRecord::new(bob.identity.public_key_bytes()).is_established());
+    let (mut alice_record, bob_record, _) = establish(&alice, &bob, &bob.bundle(true));
+    assert!(!alice_record.is_established(), "our unanswered init");
+    assert!(
+        bob_record.is_established(),
+        "the responder decrypted the init"
+    );
+    let mut bob_record = bob_record;
+    let pong = send(&mut bob_record, b"pong");
+    receive(&mut alice_record, &pong).unwrap();
+    assert!(alice_record.is_established());
+}

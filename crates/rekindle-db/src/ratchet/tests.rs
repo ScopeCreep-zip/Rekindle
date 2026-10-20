@@ -77,6 +77,7 @@ async fn a_session_runs_both_ways_and_records_what_it_decrypts() {
         &bob.local,
         &alice.address(),
         init.clone(),
+        Reinitiation::Refused,
         AD_EXTRA,
         0x0001,
     )
@@ -118,6 +119,7 @@ async fn forgetting_a_peer_ends_the_session() {
         &bob.local,
         &alice.address(),
         init,
+        Reinitiation::Refused,
         AD_EXTRA,
         0x0001,
     )
@@ -168,9 +170,17 @@ async fn the_record_is_committed_before_any_send() {
         .unwrap();
     let bob = Party::new(2);
     let init = initiate(&alice, &bob, b"first").await;
-    accept_init(&bob.db, &bob.local, &alice.address(), init, AD_EXTRA, 1)
-        .await
-        .unwrap();
+    accept_init(
+        &bob.db,
+        &bob.local,
+        &alice.address(),
+        init,
+        Reinitiation::Refused,
+        AD_EXTRA,
+        1,
+    )
+    .await
+    .unwrap();
 
     let unsent = send(&alice, &bob, b"lost in the crash").await;
     alice.db.close().await.unwrap();
@@ -211,7 +221,9 @@ async fn concurrent_first_messages_one_session() {
             alice.address(),
             init.clone(),
         );
-        accepts.spawn(async move { accept_init(&db, &local, &peer, init, AD_EXTRA, 1).await });
+        accepts.spawn(async move {
+            accept_init(&db, &local, &peer, init, Reinitiation::Refused, AD_EXTRA, 1).await
+        });
     }
     let results = accepts.join_all().await;
     assert_eq!(results.iter().filter(|r| r.is_ok()).count(), 1);
@@ -273,6 +285,7 @@ async fn a_duplicate_is_dropped_and_changes_nothing() {
         &bob.local,
         &alice.address(),
         init.clone(),
+        Reinitiation::Refused,
         AD_EXTRA,
         1,
     )
@@ -284,7 +297,16 @@ async fn a_duplicate_is_dropped_and_changes_nothing() {
     let before = record_bytes(&bob, &alice).await;
     assert!(is_duplicate(&receive(&bob, &alice, message).await));
     assert!(is_duplicate(
-        &accept_init(&bob.db, &bob.local, &alice.address(), init, AD_EXTRA, 1).await
+        &accept_init(
+            &bob.db,
+            &bob.local,
+            &alice.address(),
+            init,
+            Reinitiation::Refused,
+            AD_EXTRA,
+            1
+        )
+        .await
     ));
     assert_eq!(record_bytes(&bob, &alice).await, before);
     assert_eq!(bob.count("unprocessed").await, 2);
@@ -301,6 +323,7 @@ async fn an_identity_that_is_not_the_address_is_refused() {
         &bob.local,
         &alice.address(),
         init.clone(),
+        Reinitiation::Refused,
         AD_EXTRA,
         1,
     )
@@ -337,9 +360,17 @@ async fn an_identity_that_is_not_the_address_is_refused() {
     assert_eq!(alice.count("ratchet_sessions").await, 0);
 
     // The genuine init still completes: nothing was consumed.
-    accept_init(&bob.db, &bob.local, &mallory.address(), init, AD_EXTRA, 1)
-        .await
-        .unwrap();
+    accept_init(
+        &bob.db,
+        &bob.local,
+        &mallory.address(),
+        init,
+        Reinitiation::Refused,
+        AD_EXTRA,
+        1,
+    )
+    .await
+    .unwrap();
 }
 
 /// A first message that fails consumes no one-time key; the genuine one
@@ -363,7 +394,16 @@ async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
 
     let mut tampered = init.clone();
     tampered.message.ciphertext[0] ^= 1;
-    let result = accept_init(&bob.db, &bob.local, &alice.address(), tampered, AD_EXTRA, 1).await;
+    let result = accept_init(
+        &bob.db,
+        &bob.local,
+        &alice.address(),
+        tampered,
+        Reinitiation::Refused,
+        AD_EXTRA,
+        1,
+    )
+    .await;
     assert!(matches!(result, Err(RatchetError::Crypto(_))), "{result:?}");
     assert_eq!(count(&bob, unconsumed).await, 202);
     assert_eq!(bob.count("ratchet_sessions").await, 0);
@@ -373,6 +413,7 @@ async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
         &bob.local,
         &alice.address(),
         init.clone(),
+        Reinitiation::Refused,
         AD_EXTRA,
         1,
     )
@@ -399,7 +440,16 @@ async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
         )
         .unwrap();
     reuse.one_time_prekey_id = init.one_time_prekey_id;
-    let result = accept_init(&bob.db, &bob.local, &carol.address(), reuse, AD_EXTRA, 1).await;
+    let result = accept_init(
+        &bob.db,
+        &bob.local,
+        &carol.address(),
+        reuse,
+        Reinitiation::Refused,
+        AD_EXTRA,
+        1,
+    )
+    .await;
     assert!(
         matches!(
             result,
