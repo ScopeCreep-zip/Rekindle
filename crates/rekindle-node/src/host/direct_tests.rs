@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
-use rekindle_codec::capnp_codec::direct::{ContentHint, DirectBody, DmContent, DmText, DmTypeId};
+use rekindle_codec::capnp_codec::direct::{
+    ContentHint, DirectBody, DmContent, DmText, DmTypeId, FriendAccept,
+};
 use rekindle_db::repo::unprocessed::UnprocessedKey;
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_ipc::{Caller, HostApi};
@@ -236,4 +238,43 @@ async fn a_signed_identity_rotation_moves_the_friend() {
     assert!(!row.verified);
     assert_eq!(row.changed_from_key, Some(old.public_key_bytes()));
     assert_eq!(DmTypeId::IdentityRotated.as_u16(), 0x0108);
+}
+
+/// D24, audit G5: a FriendAccept whose store fails is not processed; its
+/// row stays for the next replay, which applies it once the store works.
+#[tokio::test]
+async fn a_friend_accept_whose_store_fails_keeps_its_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let bob = rekindle_crypto::Identity::generate().public_key_bytes();
+    befriend(&host, owner, bob).await;
+    let accept = DirectBody::FriendAccept(FriendAccept {
+        profile_dht_key: String::new(),
+        route_blob: Vec::new(),
+        mailbox_dht_key: String::new(),
+    });
+    pending(&host, owner, bob, 0, &accept).await;
+    let db = host.ctx.db.current().unwrap();
+    // Every write to a friend's row fails on this connection.
+    db.call(|conn| {
+        conn.execute_batch(
+            "CREATE TEMP TRIGGER refuse_friend_writes BEFORE UPDATE ON main.friends \
+             BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+        )
+    })
+    .await
+    .unwrap();
+
+    replay_unprocessed(&HostFriends::of(&host.ctx)).await;
+    assert_eq!(unapplied(&host, owner).await, 1, "the row is kept");
+
+    db.call(|conn| conn.execute_batch("DROP TRIGGER temp.refuse_friend_writes;"))
+        .await
+        .unwrap();
+    replay_unprocessed(&HostFriends::of(&host.ctx)).await;
+    assert_eq!(
+        unapplied(&host, owner).await,
+        0,
+        "applied once the store works"
+    );
 }

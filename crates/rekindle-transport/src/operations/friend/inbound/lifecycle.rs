@@ -12,9 +12,14 @@ use crate::operations::dm;
 use crate::operations::friend::{list_record, state, FriendHost};
 
 /// A friend's profile moved to a new record: watch that one instead.
-pub(crate) async fn on_profile_key_rotated(host: &dyn FriendHost, sender: &str, new_key: &str) {
+/// Whether it is done (`false`: the store failed).
+pub(crate) async fn on_profile_key_rotated(
+    host: &dyn FriendHost,
+    sender: &str,
+    new_key: &str,
+) -> bool {
     if !state::is_accepted(host, sender) {
-        return;
+        return true;
     }
     if !state::write_set(
         host,
@@ -24,7 +29,7 @@ pub(crate) async fn on_profile_key_rotated(host: &dyn FriendHost, sender: &str, 
     )
     .await
     {
-        return;
+        return false;
     }
     state::update(host, sender, |f| {
         f.dht_record_key = Some(new_key.to_string());
@@ -36,22 +41,28 @@ pub(crate) async fn on_profile_key_rotated(host: &dyn FriendHost, sender: &str, 
         new_profile_dht_key: new_key.to_string(),
     }));
     tracing::info!(from = %sender, new_key = %new_key, "friend rotated their profile DHT key");
+    true
 }
 
 /// The peer confirms our `Unfriended`: nothing more is queued to them.
-pub(crate) async fn on_unfriended_ack(host: &dyn FriendHost, sender: &str) {
-    state::write_drop_queued(host, sender).await;
+/// Whether it is done (`false`: the queue was not cleared).
+pub(crate) async fn on_unfriended_ack(host: &dyn FriendHost, sender: &str) -> bool {
+    if !state::write_drop_queued(host, sender).await {
+        return false;
+    }
     host.publish(SubscriptionEvent::Friend(FriendEvent::RemoveAcknowledged {
         peer_key: sender.to_string(),
     }));
     tracing::info!(from = %sender, "received UnfriendedAck — cleared pending messages");
+    true
 }
 
-/// The peer rejected our request: a pending friend of ours goes.
-pub(crate) async fn on_friend_reject(host: &dyn FriendHost, sender: &str) {
-    if state::friendship(host, sender) == Some(FriendshipState::PendingOut)
-        && state::write_forget(host, sender).await
-    {
+/// The peer rejected our request: a pending friend of ours goes. Whether
+/// it is done (`false`: the pending friend was not forgotten).
+pub(crate) async fn on_friend_reject(host: &dyn FriendHost, sender: &str) -> bool {
+    let pending = state::friendship(host, sender) == Some(FriendshipState::PendingOut);
+    let forgotten = pending && state::write_forget(host, sender).await;
+    if forgotten {
         state::take(host, sender);
         host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: sender.to_string(),
@@ -60,23 +71,25 @@ pub(crate) async fn on_friend_reject(host: &dyn FriendHost, sender: &str) {
     host.publish(SubscriptionEvent::Friend(FriendEvent::Rejected {
         peer_key: sender.to_string(),
     }));
+    !pending || forgotten
 }
 
 /// The peer removed us: the friend, any request and anything queued to
 /// them go, they get our ack, the session ends with the friendship, their
-/// watch stops and our friend-list record follows.
-pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) {
+/// watch stops and our friend-list record follows. Whether it is done
+/// (`false`: the friend or their queue was not deleted).
+pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
     if !matches!(
         state::friendship(host, sender),
         Some(FriendshipState::PendingOut | FriendshipState::Accepted)
     ) {
         tracing::debug!(from = %sender, "ignoring Unfriended from non-friend");
-        return;
+        return true;
     }
     if !state::write_forget(host, sender).await {
-        return;
+        return false;
     }
-    state::write_drop_queued(host, sender).await;
+    let dropped = state::write_drop_queued(host, sender).await;
     if let Err(e) = dm::send_to_peer(host, sender, &DirectBody::UnfriendedAck).await {
         tracing::debug!(to = %sender, error = %e, "UnfriendedAck not sent");
     }
@@ -90,6 +103,7 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) {
         peer_key: sender.to_string(),
     }));
     tracing::info!(from = %sender, "removed by peer (Unfriended)");
+    dropped
 }
 
 /// Whether we open the session of a crossing request: exactly one side

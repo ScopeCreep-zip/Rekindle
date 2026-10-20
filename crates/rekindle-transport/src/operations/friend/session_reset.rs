@@ -146,8 +146,9 @@ pub async fn decline(host: &dyn FriendHost, peer: &str) -> Result<(), FriendErro
 }
 
 /// A friend asked to reset our session: the request is kept (the newest
-/// wins) and the backend holds the accept for the user's review.
-pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, reason: &str) {
+/// wins) and the backend holds the accept for the user's review; whether
+/// the hold landed.
+pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, reason: &str) -> bool {
     host.stores().incoming_resets.lock().insert(
         sender.to_string(),
         IncomingReset {
@@ -162,7 +163,9 @@ pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, reason: &str
     {
         host.stores().incoming_resets.lock().remove(sender);
         tracing::warn!(from = %sender, error = %e, "SessionResetRequest not held — dropped");
+        return false;
     }
+    true
 }
 
 /// Whether `sender` may open a session with `SessionResetAccept`: a reset

@@ -1,7 +1,8 @@
 //! What each opened 1:1 kind does (plan E2.3). An applied message's
-//! `unprocessed` row goes once it has run (a DM whose row could not be
-//! stored keeps it, so the next unlock's replay applies it, D24); an
-//! unported one's goes at its hand-off.
+//! `unprocessed` row goes once it has run; every kind that stores reports
+//! whether its store landed, and one whose store failed keeps its row, so
+//! the next unlock's replay applies it (D24; audit G5). An unported one's
+//! row goes at its hand-off.
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmText};
 use rekindle_events::typing::TYPING_TTL_MS;
@@ -57,19 +58,19 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
                 route_blob: a.route_blob.clone(),
                 mailbox_dht_key: &a.mailbox_dht_key,
             };
-            inbound::on_friend_accept(host, &accept).await;
+            applied = inbound::on_friend_accept(host, &accept).await;
         }
-        DirectBody::FriendReject => inbound::on_friend_reject(host, sender).await,
+        DirectBody::FriendReject => applied = inbound::on_friend_reject(host, sender).await,
         DirectBody::ProfileKeyRotated(p) => {
-            inbound::on_profile_key_rotated(host, sender, &p.new_profile_dht_key).await;
+            applied = inbound::on_profile_key_rotated(host, sender, &p.new_profile_dht_key).await;
         }
         DirectBody::IdentityRotated(r) => {
-            identity_rotation::on_identity_rotated(host, sender, r).await;
+            applied = identity_rotation::on_identity_rotated(host, sender, r).await;
         }
-        DirectBody::Unfriended => inbound::on_unfriended(host, sender).await,
-        DirectBody::UnfriendedAck => inbound::on_unfriended_ack(host, sender).await,
+        DirectBody::Unfriended => applied = inbound::on_unfriended(host, sender).await,
+        DirectBody::UnfriendedAck => applied = inbound::on_unfriended_ack(host, sender).await,
         DirectBody::SessionResetRequest(r) => {
-            session_reset::on_request(host, sender, &r.reason).await;
+            applied = session_reset::on_request(host, sender, &r.reason).await;
         }
         DirectBody::SessionResetAccept => session_reset::on_accept(host, sender),
         DirectBody::PreKeyRejected(r) => {

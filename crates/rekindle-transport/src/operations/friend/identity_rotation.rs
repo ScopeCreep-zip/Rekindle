@@ -81,17 +81,24 @@ pub async fn notify_identity_rotated(host: &dyn FriendHost, new: &Identity) -> u
 }
 
 /// A friend rotated their identity.
-pub(crate) async fn on_identity_rotated(host: &dyn FriendHost, sender: &str, r: &IdentityRotated) {
-    let (Ok(local), Ok(old)) = (
-        host.local_party(),
-        rekindle_types::key_format::public_key_hex(sender),
-    ) else {
-        return;
+///
+/// Whether it is done: `false` when the move could not be stored (or the
+/// identity is locked), so the message is kept for the replay.
+pub(crate) async fn on_identity_rotated(
+    host: &dyn FriendHost,
+    sender: &str,
+    r: &IdentityRotated,
+) -> bool {
+    let Ok(local) = host.local_party() else {
+        return false;
+    };
+    let Ok(old) = rekindle_types::key_format::public_key_hex(sender) else {
+        return true;
     };
     let old = old.to_bytes();
     if !verified(&old, &local.owner(), r) {
         tracing::warn!(from = %sender, "dropping IdentityRotated: not signed by both identities");
-        return;
+        return true;
     }
     let new_hex = hex::encode(r.new_identity);
     let (owner, new_key, now) = (local.owner(), r.new_identity, host.clock().now_ms_i64());
@@ -105,11 +112,11 @@ pub(crate) async fn on_identity_rotated(host: &dyn FriendHost, sender: &str, r: 
         Ok(true) => {}
         Ok(false) => {
             tracing::debug!(from = %sender, "IdentityRotated from a non-friend — nothing moved");
-            return;
+            return true;
         }
         Err(e) => {
             tracing::error!(from = %sender, error = %e, "rotated friend not moved");
-            return;
+            return false;
         }
     }
     host.unwatch_friend(sender).await;
@@ -127,6 +134,7 @@ pub(crate) async fn on_identity_rotated(host: &dyn FriendHost, sender: &str, r: 
         new_key: new_hex.clone(),
     }));
     tracing::info!(from = %sender, to = %new_hex, "friend rotated their identity");
+    true
 }
 
 #[cfg(test)]

@@ -145,11 +145,12 @@ pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFrien
 
 /// An incoming friend accept: the friend `Accepted` with the records it
 /// named and their profile watched. The session is already open (the
-/// PreKeyInit that carried it).
-pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAccept<'_>) {
+/// PreKeyInit that carried it). Whether it is done: `false` when the store
+/// failed, so the message is kept for the replay.
+pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAccept<'_>) -> bool {
     if state::friendship(host, a.sender_hex) == Some(FriendshipState::Removing) {
         tracing::info!(from = %a.sender_hex, "ignoring FriendAccept — friend is being removed");
-        return;
+        return true;
     }
     if !a.route_blob.is_empty() {
         if let Ok(node) = host.node() {
@@ -191,7 +192,7 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
     };
     if let Err(e) = stored {
         tracing::error!(from = %a.sender_hex, error = %e, "accepted friend not stored");
-        return;
+        return false;
     }
     state::update(host, a.sender_hex, |f| {
         f.handshake_error = None;
@@ -212,6 +213,7 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
         peer_key: a.sender_hex.to_string(),
         display_name: Some(display_name),
     }));
+    true
 }
 
 /// A friend's accept reached us but its session did not open: the row stays
