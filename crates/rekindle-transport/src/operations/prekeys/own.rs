@@ -38,11 +38,13 @@ pub fn device_list(record_key: &str, device_id: &str) -> Result<Vec<u8>, FriendE
 
 /// Write `values` to our record, each durable (a miss is re-pushed until it
 /// lands), and tell the frontends what was published: one event for the
-/// whole call, naming the head and the slots written.
+/// whole call, naming the head and the slots written. A subkey whose write
+/// fails does not stop the others (plan audit D-8); the next maintenance
+/// tick's [`reconcile`] writes it again.
 ///
 /// # Errors
-/// Our record is not open yet, or a write failed outright (the event names
-/// what was written before it).
+/// Our record is not open yet, or a write failed outright: the error names
+/// every subkey that failed (the event names what was written).
 pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), FriendError> {
     if values.is_empty() {
         return Ok(());
@@ -52,7 +54,7 @@ pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), 
         .ok_or_else(|| FriendError::NotReady("our prekey record is not open yet".to_string()))?;
     let pool = host.node()?.require_records()?;
     let mut written = Written::default();
-    let mut outcome = Ok(());
+    let mut failed = Vec::new();
     for Publish { subkey, value } in values {
         let result = if subkey == HEAD {
             record::publish_head(pool.as_ref(), lease, value).await
@@ -67,13 +69,17 @@ pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), 
                 written.add(subkey);
             }
             Err(e) => {
-                outcome = Err(stored("publish prekeys", e));
-                break;
+                tracing::warn!(subkey, error = %e, "prekey subkey not published; continuing");
+                failed.push(format!("subkey {subkey}: {e}"));
             }
         }
     }
     written.publish(host);
-    outcome
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(stored("publish prekeys", failed.join("; ")))
+    }
 }
 
 /// What one [`publish`] call wrote.
@@ -148,13 +154,23 @@ pub async fn reconcile(host: &dyn FriendHost) -> Result<usize, FriendError> {
 }
 
 /// One maintenance pass (B1): plan from our rows, mint and store what the
-/// plan names in one transaction, publish it, then sweep the archive.
+/// plan names in one transaction, publish it, sweep the archive, then
+/// [`reconcile`] the record with our rows, so a write that failed in this
+/// pass or an earlier one is retried each tick (plan audit D-8).
 ///
 /// # Errors
-/// The rows could not be read or written, or a publish failed.
+/// The rows could not be read or written, or the record could not be
+/// reconciled.
 pub async fn maintain(host: &dyn FriendHost) -> Result<(), FriendError> {
     let values = plan_and_store(host).await?;
-    publish(host, values).await
+    if let Err(e) = publish(host, values).await {
+        tracing::warn!(error = %e, "prekey publish incomplete; reconciling the record");
+    }
+    let rewritten = reconcile(host).await?;
+    if rewritten > 0 {
+        tracing::info!(rewritten, "prekey record reconciled with our rows");
+    }
+    Ok(())
 }
 
 /// [`maintain`] without the publish: what the pass minted and stored, the
