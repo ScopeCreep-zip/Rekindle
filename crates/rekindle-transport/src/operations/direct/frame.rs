@@ -54,28 +54,11 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Option<Opened> {
         }
     };
     let sender_hex = hex::encode(frame.sender);
-    match is_blocked(host, &sender_hex).await {
-        Ok(false) => {}
-        Ok(true) => {
-            tracing::debug!(from = %sender_hex, "dropping frame from a blocked user");
-            return None;
-        }
-        Err(e) => {
-            // Fail closed: a sender whose block state is unknown is not let in.
-            tracing::warn!(from = %sender_hex, error = %e, "block list unreadable; dropping frame");
-            return None;
-        }
-    }
-    // The gate reads the stored row (the Host's friend authority), so a
-    // frame dispatched before the projection loads is judged on it.
-    let status = friendship_authoritative(host, &sender_hex).await;
     let kind = match &frame.body {
         FrameBody::PreKeyInit(init) => init.first_type_id,
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => frame.type_id,
     };
-    if !sender_admitted(kind, status) {
-        tracing::info!(from = %sender_hex, ?status, ?kind,
-            "dropping frame: sender not admitted for this kind");
+    if !admitted(host, &sender_hex, kind).await {
         return None;
     }
     match frame.body {
@@ -87,6 +70,35 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Option<Opened> {
         }
         FrameBody::PreKeyInit(init) => open_init(host, frame.sender, sender_hex, &init).await,
     }
+}
+
+/// Whether `sender` may deliver a `kind` now: not blocked (failing closed
+/// when the block list is unreadable), and the friend gate for the kind
+/// ([`sender_admitted`]) over the stored friendship. The live open and the
+/// unlock replay both ask, so a message decrypted before a block or a
+/// removal is judged when it is applied.
+pub(crate) async fn admitted(host: &dyn FriendHost, sender_hex: &str, kind: DmTypeId) -> bool {
+    match is_blocked(host, sender_hex).await {
+        Ok(false) => {}
+        Ok(true) => {
+            tracing::debug!(from = %sender_hex, "dropping frame from a blocked user");
+            return false;
+        }
+        Err(e) => {
+            // Fail closed: a sender whose block state is unknown is not let in.
+            tracing::warn!(from = %sender_hex, error = %e, "block list unreadable; dropping frame");
+            return false;
+        }
+    }
+    // The gate reads the stored row (the Host's friend authority), so a
+    // frame dispatched before the projection loads is judged on it.
+    let status = friendship_authoritative(host, sender_hex).await;
+    if !sender_admitted(kind, status) {
+        tracing::info!(from = %sender_hex, ?status, ?kind,
+            "dropping frame: sender not admitted for this kind");
+        return false;
+    }
+    true
 }
 
 /// The sender's friendship as the identity's database holds it; `None`
@@ -460,6 +472,42 @@ mod tests {
         let (kind, sealed) = presession(&mallory, &bob, 1_000);
         assert_eq!(
             open_presession(&bob, &alice.public_key_bytes(), kind, &sealed, 1_000),
+            Err("bad signature")
+        );
+    }
+
+    #[test]
+    fn a_forged_session_reset_request_is_refused() {
+        // Mallory asks Bob to reset his session with Alice, in Alice's name.
+        let (alice, bob, mallory) = (
+            Identity::generate(),
+            Identity::generate(),
+            Identity::generate(),
+        );
+        let body = DirectBody::SessionResetRequest(
+            rekindle_codec::capnp_codec::direct::SessionResetRequest {
+                prekey_bundle: vec![1, 2, 3],
+            },
+        );
+        let frame = crate::operations::dm::frame::seal_presession(
+            &mallory,
+            &bob.public_key_bytes(),
+            &body,
+            [5; 16],
+            1_000,
+        )
+        .unwrap();
+        let FrameBody::Sealed(sealed) = frame.body else {
+            panic!("a sealed kind travels sealed");
+        };
+        assert_eq!(
+            open_presession(
+                &bob,
+                &alice.public_key_bytes(),
+                frame.type_id,
+                &sealed,
+                1_000
+            ),
             Err("bad signature")
         );
     }

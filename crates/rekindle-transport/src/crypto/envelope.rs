@@ -1,7 +1,7 @@
 //! Ed25519 signing and verification of the daemon's framed community
 //! RPCs (`app_call`). Every inbound framed call is verified here before
-//! dispatch. 1:1 messages are not framed; they carry their own signed
-//! envelope (`operations::direct`).
+//! dispatch. 1:1 messages are not framed: each is a `'D'` `DmFrame`, sealed
+//! by its carrier (`operations::direct`, plan E2.3).
 
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rekindle_types::domains::FRAME_SIG_V3;

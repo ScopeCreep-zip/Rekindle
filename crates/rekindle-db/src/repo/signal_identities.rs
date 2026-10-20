@@ -144,7 +144,9 @@ pub fn acknowledging<R>(
 /// A friend rotated from `old` to `new` (both signatures checked by the
 /// caller): the row moves to `new`, unverified. A verified row records the
 /// change; an unacknowledged earlier change keeps its first key, the one
-/// the user last verified.
+/// the user last verified. Runs in the caller's transaction
+/// (`repo::peer_rekey::rotate_peer`), so the friend row, the history and
+/// this row move together.
 ///
 /// # Errors
 /// The write failed.
@@ -155,18 +157,17 @@ pub fn rotate(
     new: &[u8; 32],
     now_ms: i64,
 ) -> rusqlite::Result<()> {
-    let tx = conn.unchecked_transaction()?;
-    let previous = get(&tx, owner, old)?;
+    let previous = get(conn, owner, old)?;
     let (changed_from, changed_at) = match &previous {
         Some(row) if row.changed_from_key.is_some() => (row.changed_from_key, row.changed_at),
         Some(row) if row.verified => (Some(*old), Some(now_ms)),
         _ => (None, None),
     };
-    tx.execute(
+    conn.execute(
         "DELETE FROM signal_identities WHERE owner_key = ?1 AND peer_identity = ?2",
         params![identity_text(owner), identity_text(old)],
     )?;
-    tx.execute(
+    conn.execute(
         "INSERT OR REPLACE INTO signal_identities (owner_key, peer_identity, identity_key, \
          verified, verified_at, changed_from_key, changed_at) VALUES (?1, ?2, ?3, 0, NULL, ?4, ?5)",
         params![
@@ -177,7 +178,7 @@ pub fn rotate(
             changed_at
         ],
     )?;
-    tx.commit()
+    Ok(())
 }
 
 /// `VerifiedKeyChanged` while `peer`'s verified key changed and the change

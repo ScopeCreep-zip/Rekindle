@@ -158,11 +158,6 @@ pub enum TransportError {
     #[error("signal protocol error: {reason}")]
     SignalProtocol { reason: String },
 
-    /// A handshake under an identity key other than the one trusted for
-    /// that peer; nothing was changed (plan C7.25).
-    #[error("identity key for {peer} does not match the trusted key")]
-    UntrustedIdentity { peer: String },
-
     // ── Serialization ────────────────────────────────────────────────
     /// Serialization of an outbound payload failed.
     #[error("serialization failed: {reason}")]
@@ -255,7 +250,6 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
             // two impls used to carry the same seven-arm mapping.
             C::Core(core) => core.into(),
             C::NoSession(peer) => Self::SignalSessionNotFound { peer },
-            C::UntrustedIdentity { address } => Self::UntrustedIdentity { peer: address },
             other @ (C::SessionError(_)
             | C::VaultLocked
             | C::WrongPassphrase
@@ -270,9 +264,9 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
 /// Converts `rekindle-protocol` failures into their transport
 /// counterparts.
 ///
-/// The two tracks share the low-level DHT primitives (`DHTShortArray`,
-/// `DHTLog`) rather than each carrying a copy, so this crate's `?`
-/// operator needs to lift `ProtocolError`. As with `CryptoError` above,
+/// The transport calls `rekindle-protocol`'s record and profile helpers
+/// (the record pool, profile reads), so this crate's `?` operator needs to
+/// lift `ProtocolError`. As with `CryptoError` above,
 /// each variant maps to its specific counterpart — `Internal` is
 /// reserved for genuine invariant violations, not used as a dumping
 /// ground.

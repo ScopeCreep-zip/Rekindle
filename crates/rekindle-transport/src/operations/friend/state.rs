@@ -156,31 +156,35 @@ pub(crate) fn require_public_key(public_key: &str) -> Result<(), FriendError> {
         })
 }
 
-/// Queue a write of one column of a friend's row.
-pub(crate) fn fire_set(
+/// Write one column of a friend's row and wait for it (D1: the store
+/// first, then the projection); whether it was stored (logged otherwise).
+pub(crate) async fn write_set(
     host: &dyn FriendHost,
     public_key: &str,
     column: rekindle_db::repo::friends::Column,
     value: Option<String>,
-) {
+) -> bool {
     let Ok(owner) = owner(host) else {
-        return;
+        return false;
     };
     let pk = public_key.to_string();
-    db_fire!(host, "update friend", move |conn| {
-        rekindle_db::repo::friends::set(conn, &owner, &pk, column, value)
-    });
+    stored(
+        db_call!(host, "update friend", move |conn| {
+            rekindle_db::repo::friends::set(conn, &owner, &pk, column, value)
+        })
+        .await,
+    )
 }
 
-/// Queue a write of a friend's friendship state.
-pub(crate) fn fire_state(host: &dyn FriendHost, public_key: &str, friendship: FriendshipState) {
-    let Ok(owner) = owner(host) else {
-        return;
-    };
-    let pk = public_key.to_string();
-    db_fire!(host, "update friendship state", move |conn| {
-        rekindle_db::repo::friends::set_state(conn, &owner, &pk, friendship)
-    });
+/// Whether an awaited write landed; a failure is logged.
+fn stored(result: Result<(), FriendError>) -> bool {
+    match result {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::warn!(error = %e, "friend write failed; the projection is left as stored");
+            false
+        }
+    }
 }
 
 /// End every ratchet session with `peer` (an unfriend, a block, a
@@ -198,36 +202,31 @@ pub(crate) async fn forget_session(host: &dyn FriendHost, peer: &str) {
     }
 }
 
-/// Queue the deletion of a friend's row and their pending request.
-pub(crate) fn fire_forget(host: &dyn FriendHost, public_key: &str) {
+/// Delete a friend's row and their pending request, and wait for it.
+pub(crate) async fn write_forget(host: &dyn FriendHost, public_key: &str) -> bool {
     let Ok(owner) = owner(host) else {
-        return;
+        return false;
     };
     let pk = public_key.to_string();
-    db_fire!(host, "forget friend", move |conn| {
-        rekindle_db::repo::friends::delete(conn, &owner, &pk)?;
-        rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)
-    });
+    stored(
+        db_call!(host, "forget friend", move |conn| {
+            rekindle_db::repo::friends::delete(conn, &owner, &pk)?;
+            rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)
+        })
+        .await,
+    )
 }
 
-/// Queue the deletion of the pending request from `public_key`.
-pub(crate) fn fire_drop_request(host: &dyn FriendHost, public_key: &str) {
+/// Delete everything queued to `public_key`, and wait for it.
+pub(crate) async fn write_drop_queued(host: &dyn FriendHost, public_key: &str) -> bool {
     let Ok(owner) = owner(host) else {
-        return;
+        return false;
     };
     let pk = public_key.to_string();
-    db_fire!(host, "delete pending request", move |conn| {
-        rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)
-    });
-}
-
-/// Queue the deletion of everything queued to `public_key`.
-pub(crate) fn fire_drop_queued(host: &dyn FriendHost, public_key: &str) {
-    let Ok(owner) = owner(host) else {
-        return;
-    };
-    let pk = public_key.to_string();
-    db_fire!(host, "delete pending messages", move |conn| {
-        rekindle_db::repo::pending_messages::delete_to(conn, &owner, &pk)
-    });
+    stored(
+        db_call!(host, "delete pending messages", move |conn| {
+            rekindle_db::repo::pending_messages::delete_to(conn, &owner, &pk)
+        })
+        .await,
+    )
 }

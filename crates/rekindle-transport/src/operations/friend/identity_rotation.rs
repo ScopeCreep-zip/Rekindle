@@ -103,29 +103,11 @@ pub(crate) async fn on_identity_rotated(host: &dyn FriendHost, sender: &str, r: 
         return;
     }
     let new_hex = hex::encode(r.new_identity);
-    let (Ok(owner), now) = (state::owner(host), host.clock().now_ms_i64()) else {
-        return;
-    };
-    let (owner_key, old_hex, new_key, owner_bytes, new_bytes) = (
-        owner,
-        sender.to_string(),
-        new_hex.clone(),
-        local.owner(),
-        r.new_identity,
-    );
+    let (owner, new_key, now) = (local.owner(), r.new_identity, host.clock().now_ms_i64());
+    // The friend row, the history, the verification row and the old
+    // session move in one transaction; their old mailbox key is dropped.
     let moved = state::db_call!(host, "move rotated friend", move |conn| {
-        let moved =
-            rekindle_db::repo::peer_rekey::rekey_peer(conn, &owner_key, &old_hex, &new_key)?;
-        if moved {
-            rekindle_db::repo::signal_identities::rotate(
-                conn,
-                &owner_bytes,
-                &old,
-                &new_bytes,
-                now,
-            )?;
-        }
-        Ok(moved)
+        rekindle_db::repo::peer_rekey::rotate_peer(conn, &owner, &old, &new_key, now)
     })
     .await;
     match moved {
@@ -139,10 +121,10 @@ pub(crate) async fn on_identity_rotated(host: &dyn FriendHost, sender: &str, r: 
             return;
         }
     }
-    state::forget_session(host, sender).await;
     host.unwatch_friend(sender).await;
     if let Some(mut friend) = state::take(host, sender) {
         friend.public_key.clone_from(&new_hex);
+        friend.mailbox_dht_key = None;
         let profile = friend.dht_record_key.clone();
         state::put(host, friend);
         if let Some(profile) = profile {

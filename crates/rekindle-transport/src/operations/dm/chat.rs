@@ -46,11 +46,14 @@ pub(crate) struct NewDmFields {
 }
 
 impl NewDmFields {
-    /// Store it; its row id (the held row's for a replay).
+    /// Store it; its row, and whether it was new (a replay finds it held).
     ///
     /// # Errors
     /// The identity is locked, or the write failed.
-    pub(crate) async fn store(self, host: &dyn FriendHost) -> Result<i64, FriendError> {
+    pub(crate) async fn store(
+        self,
+        host: &dyn FriendHost,
+    ) -> Result<rekindle_db::repo::messages::StoredDm, FriendError> {
         self.store_with(host, None).await
     }
 
@@ -61,7 +64,10 @@ impl NewDmFields {
     /// # Errors
     /// The identity is locked, a key is malformed, or the write failed
     /// (neither is kept).
-    async fn store_acknowledging(self, host: &dyn FriendHost) -> Result<i64, FriendError> {
+    async fn store_acknowledging(
+        self,
+        host: &dyn FriendHost,
+    ) -> Result<rekindle_db::repo::messages::StoredDm, FriendError> {
         let keys = crate::operations::friend::verification::keys(host, &self.peer)?;
         self.store_with(host, Some(keys)).await
     }
@@ -70,7 +76,7 @@ impl NewDmFields {
         self,
         host: &dyn FriendHost,
         acknowledge: Option<([u8; 32], [u8; 32])>,
-    ) -> Result<i64, FriendError> {
+    ) -> Result<rekindle_db::repo::messages::StoredDm, FriendError> {
         let owner = state::owner(host)?;
         state::db_call!(host, "store direct message", move |conn| {
             let dm = rekindle_db::repo::messages::NewDm {
@@ -132,7 +138,7 @@ pub async fn send_dm(
         message_id: message_id.clone(),
         reply_to: reply_to.as_ref().map(client_id_text),
     };
-    let id = if acknowledges_key_change {
+    let stored = if acknowledges_key_change {
         fields.store_acknowledging(host).await?
     } else {
         fields.store(host).await?
@@ -157,7 +163,7 @@ pub async fn send_dm(
         },
     ));
     Ok(DmMessage {
-        id,
+        id: stored.id,
         message_id: Some(message_id),
         sender_id: owner,
         body: body.to_string(),

@@ -82,12 +82,17 @@ async fn watch_dms(
             timestamp,
             body,
             decryption_failed,
+            is_own,
             ..
         }) if friend.is_none_or(|f| f == peer_key || sender_name.as_deref() == Some(f)) => {
-            let who = sender_name.as_deref().map_or_else(
-                || rekindle_client::fmt::abbreviate_key(peer_key),
-                rekindle_utils::text::sanitize_for_display,
-            );
+            let who = if *is_own {
+                "you".to_owned()
+            } else {
+                sender_name.as_deref().map_or_else(
+                    || rekindle_client::fmt::abbreviate_key(peer_key),
+                    rekindle_utils::text::sanitize_for_display,
+                )
+            };
             let text = if *decryption_failed {
                 "(could not decrypt)".to_owned()
             } else {

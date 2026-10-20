@@ -126,10 +126,15 @@ fn content(host: &dyn FriendHost, body: &DirectBody, hint: ContentHint) -> Vec<u
 }
 
 /// `body` as a ratchet message under our session with `to`, recorded
-/// before it is returned.
+/// before it is returned. With no session at all with an accepted friend
+/// (they rotated their identity, or ours moved), the message opens one from
+/// the bundle their profile publishes (plan E2.3: "the next send to the new
+/// identity initiates from its published bundle"). This never re-initiates
+/// a session that exists: a broken one is ruling Q1's prompt (E2.5).
 ///
 /// # Errors
-/// No session with `to` (`Conflict`), or the step failed.
+/// No session with `to` and none can be opened (`Conflict`), or the step
+/// failed.
 pub async fn ratchet_frame(
     host: &dyn FriendHost,
     to: &str,
@@ -139,20 +144,56 @@ pub async fn ratchet_frame(
     let type_id = body.type_id();
     let local = host.local_party()?;
     let peer = peer_address(to)?;
-    let message = ratchet::encrypt_and_record_outbound(
+    let encrypted = ratchet::encrypt_and_record_outbound(
         &host.db()?,
         &local,
         &peer,
         &content(host, body, hint),
         &ad_extra(type_id),
     )
-    .await
-    .map_err(|e| ratchet_error(to, e))?;
+    .await;
+    let message = match encrypted {
+        Ok(message) => message,
+        Err(RatchetError::Crypto(CryptoError::NoSession(_)))
+            if crate::operations::friend::state::is_accepted(host, to) =>
+        {
+            let bundle = published_bundle(host, to).await?;
+            return initiate_frame(host, to, bundle, body).await;
+        }
+        Err(e) => return Err(ratchet_error(to, e)),
+    };
     Ok(DmFrame {
         type_id,
         sender: local.owner(),
         body: FrameBody::Ratchet(ratchet_body(message)),
     })
+}
+
+/// The bundle an accepted friend's profile publishes (subkey 5), read
+/// fresh: the one a session with their current identity opens from.
+///
+/// # Errors
+/// They have no known profile, it cannot be read, or it holds no bundle.
+async fn published_bundle(host: &dyn FriendHost, to: &str) -> Result<PreKeyBundle, FriendError> {
+    let no_session = |why: &str| {
+        FriendError::Conflict(format!(
+            "No secure session with {to}, and none can be opened: {why}"
+        ))
+    };
+    let profile = crate::operations::friend::state::friend(host, to)
+        .and_then(|f| f.dht_record_key)
+        .ok_or_else(|| no_session("their profile is not known"))?;
+    let records = host.node()?.require_records().map_err(FriendError::from)?;
+    let bytes = rekindle_protocol::dht::profile::read_profile_subkey(
+        records.as_ref(),
+        &profile,
+        rekindle_types::dht_layout::profile::PREKEY_BUNDLE,
+        true,
+    )
+    .await
+    .map_err(|e| no_session(&format!("their profile could not be read: {e}")))?
+    .ok_or_else(|| no_session("their profile publishes no bundle"))?;
+    PreKeyBundle::from_wire(&bytes).map_err(|e| no_session(&format!("their bundle: {e}")))
 }
 
 /// Open a session with `to` from its `bundle`, carrying `first` (an accept,

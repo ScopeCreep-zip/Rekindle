@@ -16,16 +16,20 @@ pub(crate) async fn on_profile_key_rotated(host: &dyn FriendHost, sender: &str, 
     if !state::is_accepted(host, sender) {
         return;
     }
-    host.unwatch_friend(sender).await;
-    state::update(host, sender, |f| {
-        f.dht_record_key = Some(new_key.to_string());
-    });
-    state::fire_set(
+    if !state::write_set(
         host,
         sender,
         Column::DhtRecordKey,
         Some(new_key.to_string()),
-    );
+    )
+    .await
+    {
+        return;
+    }
+    state::update(host, sender, |f| {
+        f.dht_record_key = Some(new_key.to_string());
+    });
+    host.unwatch_friend(sender).await;
     host.watch_friend(sender, new_key).await;
     host.publish(SubscriptionEvent::Friend(FriendEvent::ProfileKeyRotated {
         peer_key: sender.to_string(),
@@ -35,8 +39,8 @@ pub(crate) async fn on_profile_key_rotated(host: &dyn FriendHost, sender: &str, 
 }
 
 /// The peer confirms our `Unfriended`: nothing more is queued to them.
-pub(crate) fn on_unfriended_ack(host: &dyn FriendHost, sender: &str) {
-    state::fire_drop_queued(host, sender);
+pub(crate) async fn on_unfriended_ack(host: &dyn FriendHost, sender: &str) {
+    state::write_drop_queued(host, sender).await;
     host.publish(SubscriptionEvent::Friend(FriendEvent::RemoveAcknowledged {
         peer_key: sender.to_string(),
     }));
@@ -44,9 +48,10 @@ pub(crate) fn on_unfriended_ack(host: &dyn FriendHost, sender: &str) {
 }
 
 /// The peer rejected our request: a pending friend of ours goes.
-pub(crate) fn on_friend_reject(host: &dyn FriendHost, sender: &str) {
-    if state::friendship(host, sender) == Some(FriendshipState::PendingOut) {
-        state::fire_forget(host, sender);
+pub(crate) async fn on_friend_reject(host: &dyn FriendHost, sender: &str) {
+    if state::friendship(host, sender) == Some(FriendshipState::PendingOut)
+        && state::write_forget(host, sender).await
+    {
         state::take(host, sender);
         host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: sender.to_string(),
@@ -68,8 +73,10 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) {
         tracing::debug!(from = %sender, "ignoring Unfriended from non-friend");
         return;
     }
-    state::fire_forget(host, sender);
-    state::fire_drop_queued(host, sender);
+    if !state::write_forget(host, sender).await {
+        return;
+    }
+    state::write_drop_queued(host, sender).await;
     if let Err(e) = dm::send_to_peer(host, sender, &DirectBody::UnfriendedAck).await {
         tracing::debug!(to = %sender, error = %e, "UnfriendedAck not sent");
     }
@@ -127,14 +134,39 @@ pub(super) async fn accept_crossing_request(
     host: &dyn FriendHost,
     req: &IncomingFriendRequest<'_>,
 ) {
-    state::fire_drop_request(host, req.sender_hex);
     // Stored before anything is sent, so the row that gates the peer's
-    // reply is on disk when the reply arrives (plan C7.25).
+    // reply is on disk when the reply arrives (plan C7.25), and before the
+    // projection (D1).
     let stored = match state::owner(host) {
         Ok(owner) => {
             let pk = req.sender_hex.to_string();
+            let name = req.display_name.to_string();
+            let profile = Some(req.profile_dht_key.to_string()).filter(|k| !k.is_empty());
+            let mailbox = Some(req.mailbox_dht_key.to_string()).filter(|k| !k.is_empty());
             state::db_call!(host, "store accepted state", move |conn| {
-                rekindle_db::repo::friends::set_state(conn, &owner, &pk, FriendshipState::Accepted)
+                let tx = conn.transaction()?;
+                rekindle_db::repo::friends::set_state(&tx, &owner, &pk, FriendshipState::Accepted)?;
+                rekindle_db::repo::friends::set(&tx, &owner, &pk, Column::DisplayName, Some(name))?;
+                if profile.is_some() {
+                    rekindle_db::repo::friends::set(
+                        &tx,
+                        &owner,
+                        &pk,
+                        Column::DhtRecordKey,
+                        profile,
+                    )?;
+                }
+                if mailbox.is_some() {
+                    rekindle_db::repo::friends::set(
+                        &tx,
+                        &owner,
+                        &pk,
+                        Column::MailboxDhtKey,
+                        mailbox,
+                    )?;
+                }
+                rekindle_db::repo::pending_requests::delete(&tx, &owner, &pk)?;
+                tx.commit()
             })
             .await
         }
@@ -155,28 +187,6 @@ pub(super) async fn accept_crossing_request(
             f.mailbox_dht_key = Some(req.mailbox_dht_key.to_string());
         }
     });
-    state::fire_set(
-        host,
-        req.sender_hex,
-        Column::DisplayName,
-        Some(req.display_name.to_string()),
-    );
-    if !req.profile_dht_key.is_empty() {
-        state::fire_set(
-            host,
-            req.sender_hex,
-            Column::DhtRecordKey,
-            Some(req.profile_dht_key.to_string()),
-        );
-    }
-    if !req.mailbox_dht_key.is_empty() {
-        state::fire_set(
-            host,
-            req.sender_hex,
-            Column::MailboxDhtKey,
-            Some(req.mailbox_dht_key.to_string()),
-        );
-    }
     // Exactly one side initiates: the lower identity opens the session with
     // its accept; the higher side's session opens when that arrives.
     if we_initiate_crossing(host, req.sender_hex) {

@@ -161,6 +161,17 @@ pub fn set_mailbox_key(conn: &Connection, public_key: &str, key: &str) -> rusqli
 pub fn rekey(conn: &mut Connection, old_key: &str, new_key: &str) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     tx.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
+    // Our sessions bind the old identity in every AD and our prekeys are
+    // signed by it: neither carries over (plan E2.3). Friends' next
+    // messages open sessions from the bundle the new identity publishes.
+    tx.execute(
+        "DELETE FROM ratchet_sessions WHERE owner_key = ?1",
+        params![old_key],
+    )?;
+    tx.execute(
+        "DELETE FROM signal_prekeys WHERE owner_key = ?1",
+        params![old_key],
+    )?;
     let owned: Vec<String> = {
         let mut stmt = tx.prepare(
             "SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c \
@@ -178,8 +189,10 @@ pub fn rekey(conn: &mut Connection, old_key: &str, new_key: &str) -> rusqlite::R
             params![new_key, old_key],
         )?;
     }
+    // The mailbox record is owned by the old identity keypair, which no
+    // longer signs: the next unlock creates one the new identity owns.
     tx.execute(
-        "UPDATE identity SET public_key = ?1 WHERE public_key = ?2",
+        "UPDATE identity SET public_key = ?1, mailbox_dht_key = NULL WHERE public_key = ?2",
         params![new_key, old_key],
     )?;
     tx.commit()
@@ -260,9 +273,12 @@ mod tests {
     fn rekey_moves_the_identity_and_everything_it_owns() {
         let mut conn = fixture::conn();
         crate::repo::friends::insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        set_mailbox_key(&conn, OWNER, "mb").unwrap();
         rekey(&mut conn, OWNER, "new-pk").unwrap();
         assert_eq!(login_row(&conn, OWNER).unwrap(), None);
-        assert!(login_row(&conn, "new-pk").unwrap().is_some());
+        // The old identity's mailbox does not carry over.
+        let (_, cols) = login_row(&conn, "new-pk").unwrap().unwrap();
+        assert_eq!(cols.mailbox, None);
         assert_eq!(
             crate::repo::friends::load_all(&conn, "new-pk")
                 .unwrap()

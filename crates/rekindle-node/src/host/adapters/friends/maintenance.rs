@@ -1,7 +1,10 @@
 //! The friend maintenance task (plan E2.1), one per unlock on both hosts:
 //! every 30 s the pending-message retry, then forgetting the removed
-//! friends nothing is queued to any more; every sixth tick (~3 min) the
-//! expiry of stale requests and invites.
+//! friends nothing is queued to any more and evicting the peer routes past
+//! their TTL (the route cache's half of the old route watchdog); every
+//! sixth tick (~3 min) the expiry of stale requests and invites. The ticks
+//! are tokio time (paused under netsim): C9.2's `Clock` reads the time, it
+//! does not wait.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -49,6 +52,12 @@ async fn run(host: HostFriends, stop: CancellationToken) {
         }
         if let Err(e) = friend::forget_removed(&host).await {
             tracing::warn!(error = %e, "forgetting removed friends failed");
+        }
+        if let Some(node) = host.ctx().transport.read().clone() {
+            let evicted = node.peers().write().evict_stale_routes();
+            if !evicted.is_empty() {
+                tracing::debug!(count = evicted.len(), "evicted stale peer routes");
+            }
         }
         if count.is_multiple_of(EXPIRY_EVERY) {
             if let Err(e) = friend::expire_stale_requests(&host).await {

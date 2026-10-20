@@ -36,12 +36,6 @@ pub enum CryptoError {
     #[error("signal session error: {0}")]
     SessionError(String),
 
-    /// The peer's identity key differs from the one we trust for that
-    /// address. Nothing was changed; accepting a new key is the user's
-    /// decision, never an automatic one (plan C7.25).
-    #[error("identity key for {address} does not match the trusted key")]
-    UntrustedIdentity { address: String },
-
     /// A bundle or PreKeyInit names an identity key other than the
     /// address it is for. Under identity == address a peer's key is its
     /// address, so this is never a key change to accept (plan E2.2).

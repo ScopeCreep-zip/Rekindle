@@ -50,7 +50,7 @@ pub struct Unprocessed {
 }
 
 /// Record a decrypted message (inside the ratchet's transaction).
-pub(crate) fn insert(
+pub fn insert(
     conn: &Connection,
     owner: &[u8; 32],
     key: &UnprocessedKey,

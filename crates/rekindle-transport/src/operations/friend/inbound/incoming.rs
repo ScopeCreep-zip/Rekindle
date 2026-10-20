@@ -130,8 +130,10 @@ pub(crate) async fn on_friend_request(host: &dyn FriendHost, req: &IncomingFrien
         Some(FriendshipState::Removing) => {
             // We removed them: the stale row goes, and the request is a
             // fresh contact.
+            if !state::write_forget(host, req.sender_hex).await {
+                return;
+            }
             state::take(host, req.sender_hex);
-            state::fire_forget(host, req.sender_hex);
             tracing::info!(from = %req.sender_hex,
                 "received friend request from Removing peer — treating as new request");
         }
@@ -168,22 +170,42 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
             dm::route::cache(&node, a.sender_hex, a.route_blob.clone());
         }
     }
-    state::fire_state(host, a.sender_hex, FriendshipState::Accepted);
-    if !a.profile_dht_key.is_empty() {
-        state::fire_set(
-            host,
-            a.sender_hex,
-            Column::DhtRecordKey,
-            Some(a.profile_dht_key.to_string()),
-        );
-    }
-    if !a.mailbox_dht_key.is_empty() {
-        state::fire_set(
-            host,
-            a.sender_hex,
-            Column::MailboxDhtKey,
-            Some(a.mailbox_dht_key.to_string()),
-        );
+    // The store first, then the projection (D1).
+    let stored = match state::owner(host) {
+        Ok(owner) => {
+            let pk = a.sender_hex.to_string();
+            let profile = Some(a.profile_dht_key.to_string()).filter(|k| !k.is_empty());
+            let mailbox = Some(a.mailbox_dht_key.to_string()).filter(|k| !k.is_empty());
+            state::db_call!(host, "store accepted friend", move |conn| {
+                let tx = conn.transaction()?;
+                rekindle_db::repo::friends::set_state(&tx, &owner, &pk, FriendshipState::Accepted)?;
+                if profile.is_some() {
+                    rekindle_db::repo::friends::set(
+                        &tx,
+                        &owner,
+                        &pk,
+                        Column::DhtRecordKey,
+                        profile,
+                    )?;
+                }
+                if mailbox.is_some() {
+                    rekindle_db::repo::friends::set(
+                        &tx,
+                        &owner,
+                        &pk,
+                        Column::MailboxDhtKey,
+                        mailbox,
+                    )?;
+                }
+                tx.commit()
+            })
+            .await
+        }
+        Err(e) => Err(e),
+    };
+    if let Err(e) = stored {
+        tracing::error!(from = %a.sender_hex, error = %e, "accepted friend not stored");
+        return;
     }
     state::update(host, a.sender_hex, |f| {
         f.handshake_error = None;

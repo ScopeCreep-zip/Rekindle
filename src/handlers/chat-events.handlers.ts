@@ -216,14 +216,15 @@ export function subscribeDmChatEvents(
       if (dm.peerKey === getOwnKey()) return;
       if (dm.conversationId !== peerId) return;
       batch(() => {
+        // `isOwn`: we sent it, from another of our devices (E5.3).
         handleIncomingMessage(peerId, {
           id: Date.now(),
-          senderId: dm.peerKey,
+          senderId: dm.isOwn ? getOwnKey() : dm.peerKey,
           body: dm.body ?? "",
           decryptionFailed: dm.decryptionFailed,
           automodBlurred: dm.automodBlurred,
           timestamp: dm.timestamp,
-          isOwn: false,
+          isOwn: dm.isOwn,
         });
         handleResetUnread(peerId);
       });

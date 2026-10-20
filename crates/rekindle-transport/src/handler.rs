@@ -71,7 +71,7 @@ pub trait InboundHandler: Send + Sync + 'static {
 
     /// A 1:1 `app_message` arrived: `datagram` starts with the `'D'` tag
     /// (`operations::dm::DIRECT_TAG`). The handler opens it with
-    /// `operations::direct::receive`, which verifies the envelope itself.
+    /// `operations::direct::receive`, which opens the frame by its carrier.
     fn on_direct(&self, datagram: &[u8]) -> impl Future<Output = ()> + Send;
 
     /// A 1:1 `app_call` arrived (tagged as for [`Self::on_direct`]): the

@@ -49,9 +49,11 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     handlers::handle(host, opened).await
 }
 
-/// Handle one inbound `app_call`: a friend request is applied and answered
-/// with its receipt; a relay offer is unported (the desktop replies with
-/// its ack). Anything else is applied as an `app_message` would be.
+/// Handle one inbound `app_call`. A relay offer is unported (the desktop
+/// replies with its ack). Anything else is answered as soon as it is open
+/// — the ratchet step and its `unprocessed` row are committed — with the
+/// empty reply that is its receipt, and applied after (D24: the ack
+/// follows the commit, the apply follows the ack).
 pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::debug!(len = datagram.len(), "dropping untagged 1:1 call");
@@ -60,23 +62,25 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     let Some(opened) = frame::open(host, bytes).await else {
         return Called::Answered(Vec::new());
     };
-    match handlers::handle(host, opened).await {
-        Routed::Handled => Called::Answered(Vec::new()),
-        Routed::Unported(opened) if matches!(opened.body, DirectBody::RelayOffer(_)) => {
-            Called::Unported(opened)
-        }
-        Routed::Unported(opened) => {
-            tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
-                "unported kind by app_call — no reply");
-            Called::Answered(Vec::new())
-        }
+    if matches!(opened.body, DirectBody::RelayOffer(_)) {
+        frame::processed(host, &opened);
+        return Called::Unported(Box::new(opened));
     }
+    let owned = host.owned();
+    host.scope().spawn_or_drop("apply 1:1 call", async move {
+        if let Routed::Unported(opened) = handlers::handle(owned.as_ref(), opened).await {
+            tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
+                "unported kind by app_call — dropped");
+        }
+    });
+    Called::Answered(Vec::new())
 }
 
 /// Replay what was decrypted but never applied (a crash between the
 /// ratchet commit and the apply, D24): a Host unlock stage on both hosts.
-/// An unported kind's replay is dropped: its owner's live state did not
-/// survive the restart either.
+/// Each row is judged by the gate again (a block or a removal since the
+/// decrypt refuses it, and the row goes). An unported kind's replay is
+/// dropped: its owner's live state did not survive the restart either.
 pub async fn replay_unprocessed(host: &dyn FriendHost) {
     let (Ok(local), Ok(db)) = (host.local_party(), host.db()) else {
         return;
@@ -97,6 +101,11 @@ pub async fn replay_unprocessed(host: &dyn FriendHost) {
         let Some(opened) = frame::replayed(&row) else {
             continue;
         };
+        // Judged again: the sender may have been blocked or removed since.
+        if !frame::admitted(host, &opened.sender_hex, opened.type_id).await {
+            frame::processed(host, &opened);
+            continue;
+        }
         if let Routed::Unported(opened) = handlers::handle(host, opened).await {
             tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
                 "dropping an unported kind on replay");

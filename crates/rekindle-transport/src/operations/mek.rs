@@ -66,9 +66,9 @@ pub fn unwrap_mek_transfer_payload(
 // went earlier in this migration.
 
 /// Publish a prekey bundle to our profile's prekey subkey. The bundle is
-/// the unlock's Signal manager's `current_bundle`: the profile is read by
-/// everyone, so it carries no one-time keys (PQXDH §3.3), and its private
-/// halves are already in the identity's vault.
+/// `rekindle_db::prekeys::current_bundle`: the profile is read by everyone,
+/// so it carries no one-time keys (PQXDH §3.3), and its private halves are
+/// in the identity's `signal_prekeys`.
 pub async fn publish_prekey_bundle(
     node: &TransportNode,
     profile_dht_key: &str,

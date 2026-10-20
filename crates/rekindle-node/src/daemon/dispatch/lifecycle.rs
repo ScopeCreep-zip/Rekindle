@@ -12,8 +12,8 @@ use crate::daemon::shutdown::ExitReason;
 
 use super::{transition, DaemonContext};
 
-/// Handle Unlock — open `identity` (`host::identity::unlock`: its vault,
-/// database and Signal manager), then the unlock pipeline
+/// Handle Unlock — open `identity` (`host::identity::unlock`: its vault and
+/// database), then the unlock pipeline
 /// (`host::unlock::run`): Locked → Resuming → Operational.
 pub(crate) async fn handle_unlock(
     ctx: &DaemonContext,

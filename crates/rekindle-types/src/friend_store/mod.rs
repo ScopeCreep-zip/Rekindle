@@ -39,10 +39,10 @@ pub enum FriendStoreError {
 /// Authorization rule applied at receive-dispatch:
 /// - `Accepted`: the sender is authorized for any envelope variant.
 /// - `PendingOut`: *we* sent a friend request and are awaiting their
-///   accept. The sender is authorized only for `FriendAccept` (W16.10e
-///   idempotent receive; enforced in the desktop's
-///   `dispatch::prepare::sender_admitted`, plan C7.25); other variants
-///   drop.
+///   accept. The sender is authorized only for `FriendAccept`, the first
+///   payload of the PreKeyInit that opens our session (enforced in
+///   `rekindle_transport::operations::direct::frame::sender_admitted`,
+///   plans C7.25, E2.3); other kinds drop.
 /// - `Removing`: we removed the friend and the `Unfriended` notice is still
 ///   queued to them. The row keeps their routing information for the
 ///   retries and is forgotten once nothing is queued; their envelopes drop.

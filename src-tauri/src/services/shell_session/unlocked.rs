@@ -58,8 +58,15 @@ pub(super) async fn run(
     }
     rewait_held_posts(state, &pool, owner).await;
 
-    // A friend invite link that arrived before the unlock is reviewed now,
-    // once the unlock is done (plan E2.1).
+    // The network stages need a window to report to and a node.
+    let staged = match app {
+        Some(app) if state.transport.read().is_some() => {
+            network_stages(state, app, &pool, scope).map_err(|e| e.to_string())
+        }
+        _ => Ok(()),
+    };
+    // The last stage: a friend invite link that arrived before the unlock
+    // is reviewed once the unlock is done (plan E2.1).
     let held_invite = state.held_friend_invite.lock().take();
     if let Some(invite) = held_invite {
         let task_state = Arc::clone(state);
@@ -67,15 +74,7 @@ pub(super) async fn run(
             crate::deep_links::review_friend_invite(&task_state, invite).await;
         });
     }
-
-    // The network stages need a window to report to and a node.
-    let Some(app) = app else {
-        return Ok(());
-    };
-    if state.transport.read().is_none() {
-        return Ok(());
-    }
-    network_stages(state, app, &pool, scope).map_err(|e| e.to_string())
+    staged
 }
 
 /// The posts that wait on writes the last lock left unsent wait on them

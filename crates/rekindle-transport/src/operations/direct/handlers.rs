@@ -1,6 +1,7 @@
 //! What each opened 1:1 kind does (plan E2.3). An applied message's
-//! `unprocessed` row goes once it has run; so does an unported one's, at
-//! its hand-off.
+//! `unprocessed` row goes once it has run (a DM whose row could not be
+//! stored keeps it, so the next unlock's replay applies it, D24); an
+//! unported one's goes at its hand-off.
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmText};
 use rekindle_events::typing::TYPING_TTL_MS;
@@ -23,9 +24,10 @@ fn dm_typing(sender: &str) -> TypingContext {
 /// Handle `opened`, or hand it back when its owner step has not come.
 pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
     let sender = opened.sender_hex.as_str();
+    let mut applied = true;
     match &opened.body {
         DirectBody::DmText(text) => {
-            direct_message(host, sender, text, opened.sent_at_ms).await;
+            applied = direct_message(host, sender, text, opened.sent_at_ms).await;
             // Their message ends their typing (plan E2.3).
             typing::stopped(host, &dm_typing(sender), sender);
         }
@@ -58,7 +60,7 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
             };
             inbound::on_friend_accept(host, &accept).await;
         }
-        DirectBody::FriendReject => inbound::on_friend_reject(host, sender),
+        DirectBody::FriendReject => inbound::on_friend_reject(host, sender).await,
         DirectBody::ProfileKeyRotated(p) => {
             inbound::on_profile_key_rotated(host, sender, &p.new_profile_dht_key).await;
         }
@@ -66,7 +68,7 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
             identity_rotation::on_identity_rotated(host, sender, r).await;
         }
         DirectBody::Unfriended => inbound::on_unfriended(host, sender).await,
-        DirectBody::UnfriendedAck => inbound::on_unfriended_ack(host, sender),
+        DirectBody::UnfriendedAck => inbound::on_unfriended_ack(host, sender).await,
         DirectBody::SessionResetRequest(r) => {
             session_reset::on_request(host, sender, &r.prekey_bundle).await;
         }
@@ -109,13 +111,22 @@ pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
             return Routed::Unported(Box::new(opened));
         }
     }
-    processed(host, &opened);
+    if applied {
+        processed(host, &opened);
+    } else {
+        tracing::warn!(from = %sender, kind = ?opened.type_id, "message not applied — kept for the replay");
+    }
     Routed::Handled
 }
 
 /// Store a friend's direct message (once: a replayed one is already held),
-/// count it unread, and publish it.
-async fn direct_message(host: &dyn FriendHost, sender: &str, text: &DmText, sent_at_ms: u64) {
+/// count it unread, and publish it; whether it was stored.
+async fn direct_message(
+    host: &dyn FriendHost,
+    sender: &str,
+    text: &DmText,
+    sent_at_ms: u64,
+) -> bool {
     let timestamp = i64::try_from(sent_at_ms).unwrap_or(i64::MAX);
     let message_id = client_id_text(&text.client_id);
     let reply_to = text.reply_to.as_ref().map(client_id_text);
@@ -128,9 +139,14 @@ async fn direct_message(host: &dyn FriendHost, sender: &str, text: &DmText, sent
         message_id: message_id.clone(),
         reply_to: reply_to.clone(),
     };
-    if let Err(e) = fields.store(host).await {
-        tracing::warn!(from = %sender, error = %e, "incoming message not stored");
-        return;
+    match fields.store(host).await {
+        Ok(stored) if stored.inserted => {}
+        // A replay of a message already applied: no second unread or event.
+        Ok(_) => return true,
+        Err(e) => {
+            tracing::warn!(from = %sender, error = %e, "incoming message not stored");
+            return false;
+        }
     }
     state::update(host, sender, |f| f.unread_count += 1);
     host.publish(SubscriptionEvent::ChannelMessage(
@@ -147,4 +163,5 @@ async fn direct_message(host: &dyn FriendHost, sender: &str, text: &DmText, sent
             is_own: false,
         },
     ));
+    true
 }

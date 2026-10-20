@@ -126,14 +126,22 @@ pub struct NewDm<'a> {
     pub reply_to: Option<&'a str>,
 }
 
-/// Store a direct message; its row id. A message whose client id is
-/// already held is not stored again (a replay of an applied message, D24):
-/// the held row's id is returned.
+/// A stored direct message: its row, and whether this call stored it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredDm {
+    pub id: i64,
+    /// `false` when its client id was already held (a replay of an
+    /// applied message, D24): nothing was written.
+    pub inserted: bool,
+}
+
+/// Store a direct message. A message whose client id is already held is
+/// not stored again: the held row is returned, not inserted.
 ///
 /// # Errors
 /// The write failed.
-pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<i64> {
-    conn.execute(
+pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm> {
+    let inserted = conn.execute(
         "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
          timestamp, is_read, message_id, reply_to_id) \
          VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6, ?7, \
@@ -151,12 +159,13 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<i64> {
             dm.message_id,
             dm.reply_to
         ],
-    )?;
-    conn.query_row(
+    )? > 0;
+    let id = conn.query_row(
         "SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 AND message_id = ?3",
         params![dm.owner_key, dm.peer_key, dm.message_id],
         |row| row.get(0),
-    )
+    )?;
+    Ok(StoredDm { id, inserted })
 }
 
 fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
@@ -312,9 +321,15 @@ mod tests {
     #[test]
     fn a_reply_points_at_its_parent_and_a_replayed_message_is_stored_once() {
         let conn = fixture::conn();
-        let parent = insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None)).unwrap();
-        let reply = insert_dm(&conn, &dm("bob", OWNER, 2, ("m2", "id2"), Some("id1"))).unwrap();
-        let orphan = insert_dm(&conn, &dm("bob", "bob", 3, ("m3", "id3"), Some("gone"))).unwrap();
+        let parent = insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None))
+            .unwrap()
+            .id;
+        let reply = insert_dm(&conn, &dm("bob", OWNER, 2, ("m2", "id2"), Some("id1")))
+            .unwrap()
+            .id;
+        let orphan = insert_dm(&conn, &dm("bob", "bob", 3, ("m3", "id3"), Some("gone")))
+            .unwrap()
+            .id;
         let reply_to = |id: i64| -> Option<i64> {
             conn.query_row(
                 "SELECT reply_to_id FROM messages WHERE id = ?1",
@@ -327,7 +342,10 @@ mod tests {
         assert_eq!(reply_to(orphan), None);
         assert_eq!(
             insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None)).unwrap(),
-            parent
+            StoredDm {
+                id: parent,
+                inserted: false
+            }
         );
         assert_eq!(dm_history(&conn, OWNER, "bob", 10, None).unwrap().len(), 3);
     }
