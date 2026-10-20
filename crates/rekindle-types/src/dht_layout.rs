@@ -46,7 +46,9 @@ pub mod profile {
     pub const STATUS: u32 = 2;
     pub const AVATAR: u32 = 3;
     pub const GAME_INFO: u32 = 4;
-    pub const PREKEY_BUNDLE: u32 = 5;
+    /// The device list naming each device's prekey record
+    /// ([`super::prekeys`]): Cap'n Proto `PrekeyRecordList` (plan E2.4).
+    pub const PREKEY_RECORDS: u32 = 5;
     pub const ROUTE_BLOB: u32 = 6;
     pub const METADATA: u32 = 7;
 
@@ -118,9 +120,67 @@ pub mod channel {
     pub const MEMBER_SUBKEY_COUNT: u16 = 1;
 }
 
+/// Subkey layout for a device's prekey record (plan E2.4): a DFLT(101)
+/// record with an owner keypair of its own, named from profile subkey
+/// [`profile::PREKEY_RECORDS`]. Subkey 0 is the `PrekeyRecordHead` (the
+/// signed prekey and the ML-KEM last-resort key); subkeys 1..=100 each
+/// hold one `OpkSlot` (a one-time curve key and a one-time ML-KEM key).
+pub mod prekeys {
+    /// The head: `PrekeyRecordHead`.
+    pub const HEAD: u32 = 0;
+    /// The first one-time slot: `OpkSlot`.
+    pub const FIRST_SLOT: u32 = 1;
+    /// One-time slots in the record.
+    pub const SLOT_COUNT: u32 = 100;
+    /// Total subkeys to allocate when creating the record.
+    pub const SUBKEY_COUNT: u16 = 101;
+
+    /// Largest value an owner subkey of the record accepts:
+    /// `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / o_cnt)` =
+    /// `min(32,768, 1,048,576 / 101)` = 10,381 bytes
+    /// (`veilid-core/src/storage_manager/schema.rs:61-64`, with the two
+    /// constants at `storage_manager/types/mod.rs:14-16`, fork 0cd847de).
+    /// Every head, slot and device list must fit.
+    pub const MAX_SUBKEY_VALUE_LEN: usize = 10_381;
+
+    /// The subkey holding one-time slot `index` (0-based).
+    #[must_use]
+    pub const fn slot_subkey(index: u32) -> u32 {
+        FIRST_SLOT + index
+    }
+
+    /// Whether `subkey` is a one-time slot.
+    #[must_use]
+    pub const fn is_slot(subkey: u32) -> bool {
+        subkey >= FIRST_SLOT && subkey < FIRST_SLOT + SLOT_COUNT
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{manifest, profile};
+    use super::{manifest, prekeys, profile};
+
+    /// Pins the prekey record: the head, then exactly `SLOT_COUNT` slots,
+    /// and the per-subkey cap Veilid derives for a DFLT(101) record.
+    #[test]
+    fn prekey_layout_is_pinned() {
+        assert_eq!(prekeys::HEAD, 0);
+        assert_eq!(prekeys::FIRST_SLOT, 1);
+        assert_eq!(prekeys::SLOT_COUNT, 100);
+        assert_eq!(
+            u32::from(prekeys::SUBKEY_COUNT),
+            prekeys::FIRST_SLOT + prekeys::SLOT_COUNT
+        );
+        // veilid-core: MAX_SUBKEY_SIZE = 32,768, MAX_RECORD_DATA_SIZE = 1 MiB.
+        let cap = usize::min(32_768, 1_048_576 / usize::from(prekeys::SUBKEY_COUNT));
+        assert_eq!(prekeys::MAX_SUBKEY_VALUE_LEN, cap);
+        assert!(!prekeys::is_slot(prekeys::HEAD));
+        assert!(prekeys::is_slot(prekeys::slot_subkey(0)));
+        assert!(prekeys::is_slot(prekeys::slot_subkey(
+            prekeys::SLOT_COUNT - 1
+        )));
+        assert!(!prekeys::is_slot(prekeys::slot_subkey(prekeys::SLOT_COUNT)));
+    }
 
     /// Every profile subkey must be distinct. The drift this module
     /// exists to prevent was exactly a collision — two meanings on
@@ -133,7 +193,7 @@ mod tests {
             ("STATUS", profile::STATUS),
             ("AVATAR", profile::AVATAR),
             ("GAME_INFO", profile::GAME_INFO),
-            ("PREKEY_BUNDLE", profile::PREKEY_BUNDLE),
+            ("PREKEY_RECORDS", profile::PREKEY_RECORDS),
             ("ROUTE_BLOB", profile::ROUTE_BLOB),
             ("METADATA", profile::METADATA),
             ("RELAY_POOL", profile::RELAY_POOL),
@@ -155,7 +215,7 @@ mod tests {
             profile::STATUS,
             profile::AVATAR,
             profile::GAME_INFO,
-            profile::PREKEY_BUNDLE,
+            profile::PREKEY_RECORDS,
             profile::ROUTE_BLOB,
             profile::METADATA,
             profile::RELAY_POOL,
@@ -181,7 +241,7 @@ mod tests {
         assert_eq!(profile::STATUS, 2);
         assert_eq!(profile::AVATAR, 3);
         assert_eq!(profile::GAME_INFO, 4);
-        assert_eq!(profile::PREKEY_BUNDLE, 5);
+        assert_eq!(profile::PREKEY_RECORDS, 5);
         assert_eq!(profile::ROUTE_BLOB, 6);
         assert_eq!(profile::METADATA, 7);
         assert_eq!(profile::RELAY_POOL, 8);

@@ -7,14 +7,12 @@ use crate::direct_capnp::{
     session_reset_request,
 };
 
-/// 0x0002 FriendRequest (sealed, by `app_call`).
+/// 0x0002 FriendRequest (sealed, by `app_call`). It carries no bundle:
+/// the accepter reads our prekey record (plan E2.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FriendRequest {
     pub display_name: String,
     pub message: String,
-    /// Our handout bundle's wire form (`PreKeyBundle::to_wire`); E2.4
-    /// renames the field obsolete.
-    pub prekey_bundle: Vec<u8>,
     pub profile_dht_key: String,
     pub route_blob: Vec<u8>,
     pub mailbox_dht_key: String,
@@ -26,7 +24,6 @@ impl FriendRequest {
     pub(super) fn write(&self, mut b: friend_request::Builder<'_>) {
         b.set_display_name(&self.display_name);
         b.set_message(&self.message);
-        b.set_prekey_bundle(&self.prekey_bundle);
         b.set_profile_dht_key(&self.profile_dht_key);
         b.set_route_blob(&self.route_blob);
         b.set_mailbox_dht_key(&self.mailbox_dht_key);
@@ -37,7 +34,6 @@ impl FriendRequest {
         Ok(Self {
             display_name: text(r.get_display_name())?,
             message: text(r.get_message())?,
-            prekey_bundle: data(r.get_prekey_bundle())?,
             profile_dht_key: text(r.get_profile_dht_key())?,
             route_blob: data(r.get_route_blob())?,
             mailbox_dht_key: text(r.get_mailbox_dht_key())?,
@@ -73,22 +69,23 @@ impl FriendAccept {
     }
 }
 
-/// 0x0007 SessionResetRequest (sealed; contents defined by E2.4).
+/// 0x0007 SessionResetRequest (sealed). The requester is the frame's
+/// sender (its pinned identity); the accepter initiates from the
+/// requester's prekey record (plan E2.4), so no bundle travels.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionResetRequest {
-    /// The requester's bundle's wire form, which the accepter initiates
-    /// from.
-    pub prekey_bundle: Vec<u8>,
+    /// Why the requester asks, shown in the accepter's review.
+    pub reason: String,
 }
 
 impl SessionResetRequest {
     pub(super) fn write(&self, mut b: session_reset_request::Builder<'_>) {
-        b.set_prekey_bundle(&self.prekey_bundle);
+        b.set_reason(&self.reason);
     }
 
     pub(super) fn read(r: session_reset_request::Reader<'_>) -> Result<Self, CodecError> {
         Ok(Self {
-            prekey_bundle: data(r.get_prekey_bundle())?,
+            reason: text(r.get_reason())?,
         })
     }
 }

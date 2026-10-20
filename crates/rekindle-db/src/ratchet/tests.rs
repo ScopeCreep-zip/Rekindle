@@ -1,24 +1,25 @@
 //! The ratchet's storage guarantees: committed before any send, one load
 //! per peer, duplicates dropped, identity == address, and one-time keys
-//! consumed only after the first decrypt.
+//! consumed only after the first decrypt (the B8/B9 cases are in
+//! `accept_tests`).
 
 use std::sync::Arc;
 
 use rekindle_crypto::signal::{PreKeyInit, RatchetMessage};
 use rekindle_crypto::{CryptoError, Identity};
+use rekindle_types::dht_layout::prekeys::FIRST_SLOT;
 use tokio::task::JoinSet;
 
 use super::*;
-use crate::prekeys::handout_bundle;
 use crate::repo::unprocessed::take_for_replay;
 use crate::test_support::{Party, Seeded};
 
-const AD_EXTRA: &[u8] = b"typeId";
+pub(super) const AD_EXTRA: &[u8] = b"typeId";
 const DM: u16 = 0x0100;
 
-/// Alice starts a session with Bob from a handed-out bundle.
-async fn initiate(alice: &Party, bob: &Party, first: &[u8]) -> PreKeyInit {
-    let bundle = handout_bundle(&bob.db, &bob.local).await.unwrap();
+/// Alice starts a session with Bob from his record's first slot.
+pub(super) async fn initiate(alice: &Party, bob: &Party, first: &[u8]) -> PreKeyInit {
+    let bundle = bob.bundle(Some(FIRST_SLOT)).await;
     initiate_and_record_outbound(
         &alice.db,
         &alice.local,
@@ -60,7 +61,7 @@ async fn record_bytes(party: &Party, peer: &Party) -> Vec<u8> {
         .unwrap()
 }
 
-fn is_duplicate(result: &Result<Inbound, RatchetError>) -> bool {
+pub(super) fn is_duplicate<T>(result: &Result<T, RatchetError>) -> bool {
     matches!(
         result,
         Err(RatchetError::Crypto(CryptoError::DuplicateMessage))
@@ -80,7 +81,8 @@ async fn a_session_runs_both_ways_and_records_what_it_decrypts() {
         0x0001,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .inbound;
     assert_eq!(first.plaintext, b"hello");
     assert_eq!(first.key.header_dh, init.message.header.dh);
 
@@ -316,7 +318,7 @@ async fn an_identity_that_is_not_the_address_is_refused() {
     assert_eq!(bob.count("unprocessed").await, 0);
     assert_eq!(bob.count("signal_identities").await, 0);
 
-    let bundle = handout_bundle(&bob.db, &bob.local).await.unwrap();
+    let bundle = bob.bundle(Some(FIRST_SLOT)).await;
     let result = initiate_and_record_outbound(
         &alice.db,
         &alice.local,
@@ -341,7 +343,8 @@ async fn an_identity_that_is_not_the_address_is_refused() {
 }
 
 /// A first message that fails consumes no one-time key; the genuine one
-/// consumes both, and the keys are gone for any later init.
+/// consumes both (their slot is refilled), and the keys are gone for any
+/// later init.
 #[tokio::test]
 async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
     let (alice, bob) = (Party::new(1), Party::new(2));
@@ -355,13 +358,14 @@ async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
                 .unwrap()
         }
     };
-    assert_eq!(count(&bob, unconsumed).await, 4);
+    // The head's two keys and a hundred slots of two.
+    assert_eq!(count(&bob, unconsumed).await, 202);
 
     let mut tampered = init.clone();
     tampered.message.ciphertext[0] ^= 1;
     let result = accept_init(&bob.db, &bob.local, &alice.address(), tampered, AD_EXTRA, 1).await;
     assert!(matches!(result, Err(RatchetError::Crypto(_))), "{result:?}");
-    assert_eq!(count(&bob, unconsumed).await, 4);
+    assert_eq!(count(&bob, unconsumed).await, 202);
     assert_eq!(bob.count("ratchet_sessions").await, 0);
 
     accept_init(
@@ -374,7 +378,11 @@ async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
     )
     .await
     .unwrap();
-    assert_eq!(count(&bob, unconsumed).await, 2, "the spk and pq_lr remain");
+    assert_eq!(
+        count(&bob, unconsumed).await,
+        202,
+        "two consumed, two minted into their slot"
+    );
     let erased =
         "SELECT count(*) FROM signal_prekeys WHERE consumed_at IS NOT NULL AND secret = x''";
     assert_eq!(count(&bob, erased).await, 2);
@@ -384,7 +392,7 @@ async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
     let (_, mut reuse) = rekindle_crypto::signal::SessionRecord::new(bob.local.owner())
         .initiate(
             &carol.local.identity,
-            &handout_bundle(&bob.db, &bob.local).await.unwrap(),
+            &bob.bundle(Some(FIRST_SLOT)).await,
             b"x",
             AD_EXTRA,
             carol.local.rng.as_ref(),

@@ -15,6 +15,9 @@
 //! - A failure changes nothing: the transaction is dropped, and the record,
 //!   the prekeys and `unprocessed` are as they were. A duplicate is
 //!   [`CryptoError::DuplicateMessage`], which the receiver drops silently.
+//! - A PreKeyInit's prekeys are consumed in the transaction that stores its
+//!   session, only after its first message decrypts, and the slot is
+//!   refilled there too (plan E2.4 B8, [`accept_init`]).
 
 use std::sync::Arc;
 
@@ -23,11 +26,13 @@ use rekindle_crypto::{CryptoError, Identity};
 use rekindle_utils::random::RandomSource;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::prekeys::{self, PrekeyKind};
+use crate::prekeys::{self, PrekeyKind, Publish};
 use crate::repo::unprocessed::{self, UnprocessedKey};
 use crate::repo::{identity_text, signal_identities};
 use crate::Db;
 
+#[cfg(test)]
+mod accept_tests;
 #[cfg(test)]
 mod tests;
 
@@ -76,6 +81,16 @@ pub struct Inbound {
     pub plaintext: Vec<u8>,
 }
 
+/// An accepted PreKeyInit: its first message, and the refilled slots of
+/// our prekey record. The caller writes each [`Publish`] to the record
+/// after the commit (a durable pool write); the unlock reconciliation
+/// re-publishes any a crash lost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Accepted {
+    pub inbound: Inbound,
+    pub refills: Vec<Publish>,
+}
+
 /// A ratchet step failed; nothing was stored.
 #[derive(Debug, thiserror::Error)]
 pub enum RatchetError {
@@ -86,9 +101,19 @@ pub enum RatchetError {
     /// an identity that is not the address.
     #[error(transparent)]
     Crypto(#[from] CryptoError),
-    /// A PreKeyInit names a prekey we do not hold (or already consumed).
+    /// A PreKeyInit names a prekey we do not hold: never ours, already
+    /// consumed, or past the archive. The init gets a `PreKeyRejected`
+    /// when the friend gate admits its sender (plan E2.4 B5).
     #[error("no {kind} prekey {id}")]
     UnknownPrekey { kind: PrekeyKind, id: u32 },
+    /// A PreKeyInit on the last-resort key alone whose `(lr_id, spk_id,
+    /// base_key)` already opened a session: a replay, dropped silently
+    /// with no rejection (plan E2.4 B9).
+    #[error("replayed last-resort PreKeyInit")]
+    ReplayedLastResortInit,
+    /// A maintenance action named a subkey that is not a one-time slot.
+    #[error("subkey {subkey} is not a prekey slot")]
+    InvalidSlot { subkey: u32 },
 }
 
 impl From<rusqlite::Error> for RatchetError {
@@ -97,8 +122,10 @@ impl From<rusqlite::Error> for RatchetError {
     }
 }
 
-/// Start a session with `peer` from its `bundle`, encrypting the first
-/// message; returns the PreKeyInit to send.
+/// Start a session with `peer` from its `bundle` (assembled from its
+/// prekey record, B2), encrypting the first message; returns the
+/// PreKeyInit to send. The slot the bundle came from is recorded as used
+/// against `peer` in the same transaction, so no later pick reuses it.
 ///
 /// # Errors
 /// See [`RatchetError`]; a bundle under another key than `peer`'s is
@@ -125,6 +152,9 @@ pub async fn initiate_and_record_outbound(
         )?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
         signal_identities::ensure(conn, &owner, &peer.identity)?;
+        if let Some(opk_id) = init.one_time_prekey_id {
+            prekeys::insert_slot_used(conn, &owner, &peer, opk_id, local.now_ms)?;
+        }
         Ok(init)
     })
     .await
@@ -177,14 +207,22 @@ pub async fn decrypt_and_record_inbound(
     .await
 }
 
-/// Accept `peer`'s PreKeyInit: build the session from the prekeys it names,
-/// decrypt its first message, consume the one-time keys it used, and record
-/// the plaintext in `unprocessed` as `type_id`.
+/// Accept `peer`'s PreKeyInit (plan E2.4 B8): build the session from the
+/// prekeys it names and decrypt its first message; only then, in the same
+/// transaction, consume the one-time keys it used, record a last-resort
+/// use, store the session, refill the consumed slot and record the
+/// plaintext in `unprocessed` as `type_id`. A failure stores nothing.
 ///
 /// # Errors
-/// See [`RatchetError`]; an init whose base key is already a session's is
-/// [`CryptoError::DuplicateMessage`], and one under another identity than
-/// `peer`'s is [`CryptoError::IdentityAddressMismatch`].
+/// See [`RatchetError`]:
+/// - an init whose base key is already a session's is
+///   [`CryptoError::DuplicateMessage`] (B4), dropped silently;
+/// - a last-resort-only init seen before is
+///   [`RatchetError::ReplayedLastResortInit`] (B9), dropped silently;
+/// - a consumed, unknown or archived prekey is
+///   [`RatchetError::UnknownPrekey`] (B5);
+/// - an init under another identity than `peer`'s is
+///   [`CryptoError::IdentityAddressMismatch`].
 pub async fn accept_init(
     db: &Db,
     local: &LocalParty,
@@ -192,7 +230,7 @@ pub async fn accept_init(
     init: PreKeyInit,
     ad_extra: &[u8],
     type_id: u16,
-) -> Result<Inbound, RatchetError> {
+) -> Result<Accepted, RatchetError> {
     let (local, peer, ad_extra) = (local.clone(), peer.clone(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
         let owner = local.owner();
@@ -206,6 +244,9 @@ pub async fn accept_init(
             }
             .into());
         }
+        if prekeys::is_last_resort_only(&init) && prekeys::lr_init_seen(conn, &owner, &init)? {
+            return Err(RatchetError::ReplayedLastResortInit);
+        }
         let secrets = prekeys::responder_secrets(conn, &owner, &init)?;
         let (next, plaintext) = record.insert_from_init(
             &init,
@@ -213,16 +254,23 @@ pub async fn accept_init(
             &ad_extra,
             local.rng.as_ref(),
         )?;
-        prekeys::consume_one_time(conn, &owner, &init, local.now_ms)?;
+        let consumed = prekeys::consume_one_time(conn, &owner, &init, local.now_ms)?;
+        prekeys::record_lr_init(conn, &owner, &init, local.now_ms)?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
         signal_identities::ensure(conn, &owner, &peer.identity)?;
-        record_inbound(conn, &local, &peer, &init.message, type_id, plaintext)
+        let owner_text = identity_text(&owner);
+        let refills = consumed
+            .into_iter()
+            .map(|subkey| prekeys::fill_slot(conn, &owner_text, &local, subkey))
+            .collect::<Result<_, _>>()?;
+        let inbound = record_inbound(conn, &local, &peer, &init.message, type_id, plaintext)?;
+        Ok(Accepted { inbound, refills })
     })
     .await
 }
 
 /// End every session with `peer` (an unfriend, a block, a removal): the
-/// next message to them initiates from their bundle. Unprocessed messages
+/// next message to them initiates from their prekey record. Unprocessed messages
 /// from them stay for their apply, which the friend gate then judges.
 ///
 /// # Errors

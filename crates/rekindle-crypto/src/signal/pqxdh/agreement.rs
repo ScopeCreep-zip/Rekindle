@@ -21,14 +21,13 @@ use zeroize::Zeroizing;
 
 use super::encode::{encode_identity, encode_kem, ENCODED_EC_LEN};
 use super::keys::{ml_kem_public_from_bytes, x25519_from_bytes, x25519_from_ed};
-use super::verify::{verify_pq, verify_spk};
+use super::verify::{verify_opk, verify_pq, verify_spk, PqRole};
 use super::PqxdhError;
 
 /// `F`: 32 `0xFF` bytes ahead of the key material (curve25519; PQXDH
 /// rev. 3 §2.2).
 const F_BYTES: [u8; 32] = [0xFF; 32];
 use crate::signal::prekeys::PreKeyBundle;
-use crate::signal::prekeys::PQ_LR_ID;
 use crate::Identity;
 
 /// Length of the AD: `EncodeEC(IK_A) ‖ EncodeEC(IK_B)`.
@@ -86,7 +85,7 @@ pub struct ResponderKeys<'a> {
 }
 
 /// The initiator side (§3.3): verify the bundle's signatures under
-/// `IK_B`, draw `EK_A` from `rng`, run DH1–DH4 and the encapsulation.
+/// `IK_B` (each over its key's id and encoding, plan E2.4), draw `EK_A` from `rng`, run DH1–DH4 and the encapsulation.
 pub fn initiate(
     our: &Identity,
     bundle: &PreKeyBundle,
@@ -94,12 +93,19 @@ pub fn initiate(
 ) -> Result<InitiatorAgreement, PqxdhError> {
     let their_ik = identity_key(&bundle.identity_key)?;
     let (pq_target, pq_prekey) = verified_pq_target(bundle, &their_ik)?;
-    let opk = match (&bundle.one_time_prekey, bundle.one_time_prekey_id) {
-        (Some(key), Some(id)) => Some((x25519_from_bytes(key)?, id)),
-        (None, None) => None,
+    let opk = match (
+        &bundle.one_time_prekey,
+        bundle.one_time_prekey_id,
+        &bundle.one_time_prekey_signature,
+    ) {
+        (Some(key), Some(id), Some(sig)) => {
+            verify_opk(&their_ik, id, key, sig)?;
+            Some((x25519_from_bytes(key)?, id))
+        }
+        (None, None, None) => None,
         _ => {
             return Err(PqxdhError::IncompleteBundle(
-                "one-time prekey without its id",
+                "one-time prekey without its id or signature",
             ))
         }
     };
@@ -180,22 +186,29 @@ fn verified_pq_target(
 ) -> Result<(MlKemPublic, PqPrekeyId), PqxdhError> {
     verify_spk(
         their_ik,
+        bundle.signed_prekey_id,
         &bundle.signed_prekey,
         &bundle.signed_prekey_signature,
     )?;
-    verify_pq(their_ik, b"LR", &bundle.pqpk_lr, &bundle.pqpk_lr_signature)?;
+    verify_pq(
+        their_ik,
+        PqRole::LastResort,
+        bundle.pq_lr_id,
+        &bundle.pqpk_lr,
+        &bundle.pqpk_lr_signature,
+    )?;
     match (
         &bundle.pqpk_ot,
         &bundle.pqpk_ot_signature,
         bundle.pqpk_ot_id,
     ) {
         (Some(key), Some(sig), Some(id)) => {
-            verify_pq(their_ik, b"OT", key, sig)?;
+            verify_pq(their_ik, PqRole::OneTime, id, key, sig)?;
             Ok((ml_kem_public_from_bytes(key)?, PqPrekeyId::OneTime(id)))
         }
         (None, None, None) => Ok((
             ml_kem_public_from_bytes(&bundle.pqpk_lr)?,
-            PqPrekeyId::LastResort(PQ_LR_ID),
+            PqPrekeyId::LastResort(bundle.pq_lr_id),
         )),
         _ => Err(PqxdhError::IncompleteBundle(
             "one-time PQ prekey without its signature or id",
@@ -303,12 +316,36 @@ mod tests {
     }
 
     #[test]
-    fn an_unsigned_one_time_pq_key_is_refused() {
+    fn an_unsigned_one_time_key_is_refused() {
         let bob = BobKeys::new();
         let mut bundle = bob.bundle(true);
         bundle.pqpk_ot_signature = None;
         let result = initiate(&Identity::generate(), &bundle, &TestRandom::new(3));
         assert!(matches!(result, Err(PqxdhError::IncompleteBundle(_))));
+        let mut bundle = bob.bundle(true);
+        bundle.one_time_prekey_signature = None;
+        let result = initiate(&Identity::generate(), &bundle, &TestRandom::new(3));
+        assert!(matches!(result, Err(PqxdhError::IncompleteBundle(_))));
+    }
+
+    /// A one-time curve key under a signature for another id is refused
+    /// before any DH runs.
+    #[test]
+    fn a_one_time_key_signed_for_another_id_is_refused() {
+        let bob = BobKeys::new();
+        let mut bundle = bob.bundle(true);
+        bundle.one_time_prekey_id = bundle.one_time_prekey_id.map(|id| id + 1);
+        let result = initiate(&Identity::generate(), &bundle, &TestRandom::new(5));
+        assert!(matches!(result, Err(PqxdhError::SignatureVerify(_))));
+    }
+
+    /// The init names the bundle's own ids, not fixed ones.
+    #[test]
+    fn the_agreement_names_the_bundle_ids() {
+        let bob = BobKeys::new();
+        let alice = Identity::generate();
+        let agreed = initiate(&alice, &bob.bundle(false), &TestRandom::new(6)).unwrap();
+        assert_eq!(agreed.pq_prekey, PqPrekeyId::LastResort(bob.pq_lr_id));
     }
 
     #[test]

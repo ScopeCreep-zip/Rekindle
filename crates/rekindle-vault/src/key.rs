@@ -75,11 +75,13 @@ pub enum VaultKey {
     AuditTail,
 
     /// The identity's DHT records' owner keypairs (plan D1, moved from the
-    /// `identity` table): profile, friend list, account, personal sync.
+    /// `identity` table): profile, friend list, account, personal sync,
+    /// and the prekey record (plan E2.4).
     ProfileOwnerKeypair,
     FriendListOwnerKeypair,
     AccountOwnerKeypair,
     PersonalSyncOwnerKeypair,
+    PrekeyRecordOwnerKeypair,
 
     /// A bus client's registered static public key (hex) and its clearance
     /// (plan D1) — `("clients", "client:<len>:<key>")`.
@@ -97,7 +99,8 @@ impl VaultKey {
             | Self::ProfileOwnerKeypair
             | Self::FriendListOwnerKeypair
             | Self::AccountOwnerKeypair
-            | Self::PersonalSyncOwnerKeypair => "identity",
+            | Self::PersonalSyncOwnerKeypair
+            | Self::PrekeyRecordOwnerKeypair => "identity",
             Self::CommunityMek { .. }
             | Self::CommunityMekGeneration { .. }
             | Self::CommunityMekGenerationsIndex { .. }
@@ -122,6 +125,7 @@ impl VaultKey {
             Self::FriendListOwnerKeypair => ("friend_list_owner_keypair", vec![]),
             Self::AccountOwnerKeypair => ("account_owner_keypair", vec![]),
             Self::PersonalSyncOwnerKeypair => ("personal_sync_owner_keypair", vec![]),
+            Self::PrekeyRecordOwnerKeypair => ("prekey_record_owner_keypair", vec![]),
             Self::CommunityMek { community } => ("community_mek", vec![s(community)]),
             Self::CommunityMekGeneration {
                 community,
@@ -185,6 +189,7 @@ impl VaultKey {
             ("friend_list_owner_keypair", []) => Self::FriendListOwnerKeypair,
             ("account_owner_keypair", []) => Self::AccountOwnerKeypair,
             ("personal_sync_owner_keypair", []) => Self::PersonalSyncOwnerKeypair,
+            ("prekey_record_owner_keypair", []) => Self::PrekeyRecordOwnerKeypair,
             ("community_mek", [c]) => Self::CommunityMek {
                 community: c.clone(),
             },
@@ -259,6 +264,7 @@ mod tests {
             VaultKey::FriendListOwnerKeypair,
             VaultKey::AccountOwnerKeypair,
             VaultKey::PersonalSyncOwnerKeypair,
+            VaultKey::PrekeyRecordOwnerKeypair,
             VaultKey::CommunityMek { community: c() },
             VaultKey::CommunityMekGeneration {
                 community: c(),

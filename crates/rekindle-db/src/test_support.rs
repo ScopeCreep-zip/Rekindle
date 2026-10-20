@@ -1,16 +1,21 @@
-//! Fixtures for the ratchet and prekey tests: a seeded generator and a
-//! party with its own database.
+//! Fixtures for the ratchet and prekey tests: a seeded generator, a party
+//! with its own database, and a bundle assembled from a party's published
+//! prekey record the way an initiator assembles it (plan E2.4).
 
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 use rand::rngs::StdRng;
 use rand::{RngCore, SeedableRng};
+use rekindle_codec::capnp_codec::identity::{decode_opk_slot, decode_prekey_head};
+use rekindle_crypto::signal::prekey_record::mint_set;
+use rekindle_crypto::signal::PreKeyBundle;
 use rekindle_crypto::Identity;
 use rekindle_utils::random::RandomSource;
 
 use rusqlite::Connection;
 
+use crate::prekeys::{self, Publish};
 use crate::ratchet::{LocalParty, PeerAddress};
 use crate::Db;
 
@@ -57,6 +62,38 @@ impl Party {
         PeerAddress::sole_device(self.local.owner())
     }
 
+    /// This party's prekey record as published now, minting and storing
+    /// a whole one first when it has none.
+    pub async fn record(&self) -> Vec<Publish> {
+        let owner = self.local.owner();
+        let local = prekeys::local_prekeys(&self.db, &owner).await.unwrap();
+        if local.head.is_none() {
+            let set = mint_set(
+                &self.local.identity,
+                self.local.rng.as_ref(),
+                self.local.now_ms,
+            );
+            prekeys::store_set(&self.db, &owner, set).await.unwrap();
+        }
+        prekeys::published_values(&self.db, &self.local)
+            .await
+            .unwrap()
+    }
+
+    /// A bundle for this party from its record now: the head and the slot
+    /// at `subkey`, or the head alone.
+    pub async fn bundle(&self, subkey: Option<u32>) -> PreKeyBundle {
+        bundle_from(&self.local.owner(), &self.record().await, subkey)
+    }
+
+    /// One integer `sql` reads from this party's database.
+    pub async fn scalar(&self, sql: &'static str) -> i64 {
+        self.db
+            .call(move |c| c.query_row(sql, [], |r| r.get(0)))
+            .await
+            .unwrap()
+    }
+
     /// The number of rows in `table` for this party.
     pub async fn count(&self, table: &'static str) -> i64 {
         self.db
@@ -82,4 +119,23 @@ pub fn schema_conn(public_key: &str) -> Connection {
     )
     .unwrap();
     conn
+}
+
+/// The bundle an initiator assembles for `owner` from its published
+/// `values`: the head and the slot at `subkey`, or the head alone.
+///
+/// # Panics
+/// The values hold no head, no slot at `subkey`, or do not verify.
+#[must_use]
+pub fn bundle_from(owner: &[u8; 32], values: &[Publish], subkey: Option<u32>) -> PreKeyBundle {
+    let value = |at: u32| {
+        &values
+            .iter()
+            .find(|p| p.subkey == at)
+            .unwrap_or_else(|| panic!("no value at subkey {at}"))
+            .value
+    };
+    let head = decode_prekey_head(value(rekindle_types::dht_layout::prekeys::HEAD)).unwrap();
+    let slot = subkey.map(|at| decode_opk_slot(value(at)).unwrap());
+    PreKeyBundle::from_record(owner, &head, slot.as_ref()).unwrap()
 }

@@ -75,11 +75,12 @@ struct SealedContent {
 
 # --- Friendship and session (0x00xx, 0x01xx) ---
 
-# 0x0002, sealed. The bundle field is renamed `obsoletePrekeyBundle` at E2.4.
+# 0x0002, sealed. It carries no bundle: the accepter reads the requester's
+# prekey record (plan E2.4).
 struct FriendRequest {
   displayName @0 :Text;
   message @1 :Text;
-  prekeyBundle @2 :Data;                # PreKeyBundle (identity.capnp), packed
+  obsoletePrekeyBundle @2 :Data;        # never written since E2.4 (§5: ordinals are not reused)
   profileDhtKey @3 :Text;
   routeBlob @4 :Data;
   mailboxDhtKey @5 :Text;
@@ -94,10 +95,11 @@ struct FriendAccept {
   mailboxDhtKey @2 :Text;
 }
 
-# 0x0007, sealed. Contents defined by E2.4 (the bundle field is renamed
-# `obsoletePrekeyBundle` there).
+# 0x0007, sealed. It carries no bundle: the requester is the frame's
+# sender, and the accepter reads its prekey record (plan E2.4).
 struct SessionResetRequest {
-  prekeyBundle @0 :Data;
+  obsoletePrekeyBundle @0 :Data;        # never written since E2.4 (§5: ordinals are not reused)
+  reason @1 :Text;
 }
 
 # 0x0009, sealed.

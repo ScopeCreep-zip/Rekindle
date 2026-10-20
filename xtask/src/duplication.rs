@@ -205,21 +205,6 @@ const DUPLICATE_TYPE_EXCEPTIONS: &[(&[&str], &str)] = &[
     // ── Codec boundaries: domain type vs its wire DTO ─────────────
     (
         &[
-            "rekindle-codec::PreKeyBundle",
-            "rekindle-crypto::PreKeyBundle",
-        ],
-        "crypto's is the domain type; protocol's is its Cap'n Proto DTO. \
-         NOTE, from the X3DH specification: the bundle omits the \
-         one-time prekey when the server has none left, and the DH count \
-         differs (four operations with it, three without). crypto's \
-         models that with `Option`; the capnp DTO collapses an absent \
-         key to an empty field and id 0. Since plan C7.25 the DTO is the \
-         bundle's only wire form (`PreKeyBundle::to_wire`/`from_wire`), \
-         which reads id 0 back as `None`: real one-time ids are random \
-         and never 0 (`session::bundles::fresh_id`).",
-    ),
-    (
-        &[
             "rekindle-codec::MekTransferPayload",
             "rekindle-transport::MekTransferPayload",
         ],

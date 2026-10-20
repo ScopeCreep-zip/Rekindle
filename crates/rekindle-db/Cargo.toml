@@ -16,6 +16,8 @@ rekindle-audit = { path = "../rekindle-audit" }
 # The 1:1 ratchet runs `SessionRecord` inside `Db::call`, one transaction
 # per message (plan E2.3); rekindle-crypto is cross-cutting.
 rekindle-crypto = { path = "../rekindle-crypto" }
+# The prekey record's values are packed here after each change (plan E2.4).
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
 serde = { workspace = true }

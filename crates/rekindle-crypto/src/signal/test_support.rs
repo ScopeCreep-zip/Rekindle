@@ -9,7 +9,9 @@ use rekindle_utils::random::RandomSource;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 
 use crate::signal::pqxdh::agreement::{InitiatorAgreement, PqPrekeyId, ResponderKeys};
-use crate::signal::pqxdh::verify::{pq_signing_payload, spk_signing_payload};
+use crate::signal::pqxdh::verify::{
+    opk_signing_payload, pq_signing_payload, spk_signing_payload, PqRole,
+};
 use crate::signal::prekeys::PreKeyBundle;
 use crate::Identity;
 
@@ -50,7 +52,9 @@ pub struct OneTime {
 /// A responder's identity and prekeys.
 pub struct BobKeys {
     pub identity: Identity,
+    pub spk_id: u32,
     pub spk: StaticSecret,
+    pub pq_lr_id: u32,
     pub pq_last_resort: MlKemSecret,
     pub one_time: Vec<OneTime>,
 }
@@ -66,7 +70,9 @@ impl BobKeys {
     pub fn with_one_time(count: u32) -> Self {
         Self {
             identity: Identity::generate(),
+            spk_id: 31,
             spk: StaticSecret::random_from_rng(rand::rngs::OsRng),
+            pq_lr_id: 32,
             pq_last_resort: MlKemSecret::generate().0,
             one_time: (0..count)
                 .map(|i| OneTime {
@@ -134,13 +140,19 @@ impl BobKeys {
         let lr = self.pq_last_resort.public();
         PreKeyBundle {
             identity_key: self.identity.public_key_bytes().to_vec(),
+            signed_prekey_id: self.spk_id,
             signed_prekey: spk.as_bytes().to_vec(),
-            signed_prekey_signature: self.sign(&spk_signing_payload(spk.as_bytes())),
+            signed_prekey_signature: self.sign(&spk_signing_payload(self.spk_id, &spk)),
             one_time_prekey: None,
             one_time_prekey_id: None,
-            registration_id: 1,
+            one_time_prekey_signature: None,
+            pq_lr_id: self.pq_lr_id,
             pqpk_lr: lr.as_bytes().to_vec(),
-            pqpk_lr_signature: self.sign(&pq_signing_payload(b"LR", lr.as_bytes())),
+            pqpk_lr_signature: self.sign(&pq_signing_payload(
+                PqRole::LastResort,
+                self.pq_lr_id,
+                &lr,
+            )),
             pqpk_ot: None,
             pqpk_ot_signature: None,
             pqpk_ot_id: None,
@@ -150,9 +162,12 @@ impl BobKeys {
     fn add_one_time(&self, bundle: &mut PreKeyBundle, index: usize) {
         let set = &self.one_time[index];
         let pq = set.pq.public();
-        bundle.one_time_prekey = Some(X25519Public::from(&set.opk).as_bytes().to_vec());
+        let opk = X25519Public::from(&set.opk);
+        bundle.one_time_prekey = Some(opk.as_bytes().to_vec());
         bundle.one_time_prekey_id = Some(set.opk_id);
-        bundle.pqpk_ot_signature = Some(self.sign(&pq_signing_payload(b"OT", pq.as_bytes())));
+        bundle.one_time_prekey_signature = Some(self.sign(&opk_signing_payload(set.opk_id, &opk)));
+        bundle.pqpk_ot_signature =
+            Some(self.sign(&pq_signing_payload(PqRole::OneTime, set.pq_id, &pq)));
         bundle.pqpk_ot = Some(pq.as_bytes().to_vec());
         bundle.pqpk_ot_id = Some(set.pq_id);
     }

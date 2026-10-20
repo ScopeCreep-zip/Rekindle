@@ -3,6 +3,7 @@
 //! identities a root holds are listed by the registry
 //! (`crate::registry`), not by this table.
 
+use rekindle_crypto::signal::prekey_record::MintedSet;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// The keys of the DHT records an identity owns. Their owner keypairs are
@@ -13,6 +14,8 @@ pub struct IdentityDhtColumns {
     pub friend_list: Option<String>,
     pub account: Option<String>,
     pub mailbox: Option<String>,
+    /// This device's prekey record (plan E2.4).
+    pub prekeys: Option<String>,
 }
 
 /// A DHT record the identity owns with a keypair of its own.
@@ -21,6 +24,8 @@ pub enum OwnedRecord {
     Profile,
     FriendList,
     Account,
+    /// This device's prekey record (plan E2.4).
+    Prekeys,
 }
 
 impl OwnedRecord {
@@ -29,6 +34,7 @@ impl OwnedRecord {
             Self::Profile => "dht_record_key",
             Self::FriendList => "friend_list_dht_key",
             Self::Account => "account_dht_key",
+            Self::Prekeys => "prekey_record_key",
         }
     }
 }
@@ -61,7 +67,7 @@ pub fn login_row(
 ) -> rusqlite::Result<Option<(String, IdentityDhtColumns)>> {
     conn.query_row(
         "SELECT display_name, dht_record_key, friend_list_dht_key, account_dht_key, \
-         mailbox_dht_key FROM identity WHERE public_key = ?1",
+         mailbox_dht_key, prekey_record_key FROM identity WHERE public_key = ?1",
         params![public_key],
         |row| {
             Ok((
@@ -71,6 +77,7 @@ pub fn login_row(
                     friend_list: row.get(2)?,
                     account: row.get(3)?,
                     mailbox: row.get(4)?,
+                    prekeys: row.get(5)?,
                 },
             ))
         },
@@ -156,22 +163,35 @@ pub fn set_mailbox_key(conn: &Connection, public_key: &str, key: &str) -> rusqli
 /// row owned by it (each table's `owner_key`). Foreign keys are checked
 /// at commit, so the identity row and its dependants move together.
 ///
+/// `prekeys` is the new identity's minted set (plan E2.4: head and every
+/// slot, signed by the new key and already published to the same
+/// record); it is stored under `new_key` in the same transaction.
+///
 /// # Errors
 /// A write failed; the transaction rolls back.
-pub fn rekey(conn: &mut Connection, old_key: &str, new_key: &str) -> rusqlite::Result<()> {
+pub fn rekey(
+    conn: &mut Connection,
+    old_key: &str,
+    new_key: &str,
+    prekeys: Option<&MintedSet>,
+) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     tx.execute_batch("PRAGMA defer_foreign_keys = ON;")?;
     // Our sessions bind the old identity in every AD and our prekeys are
-    // signed by it: neither carries over (plan E2.3). Friends' next
-    // messages open sessions from the bundle the new identity publishes.
-    tx.execute(
-        "DELETE FROM ratchet_sessions WHERE owner_key = ?1",
-        params![old_key],
-    )?;
-    tx.execute(
-        "DELETE FROM signal_prekeys WHERE owner_key = ?1",
-        params![old_key],
-    )?;
+    // signed by it: neither carries over (plan E2.3), nor does the
+    // bookkeeping of inits to those prekeys (E2.4). Friends' next
+    // messages open sessions from the record the new identity publishes.
+    for table in [
+        "ratchet_sessions",
+        "signal_prekeys",
+        "prekey_lr_inits",
+        "prekey_rejections",
+    ] {
+        tx.execute(
+            &format!("DELETE FROM {table} WHERE owner_key = ?1"),
+            params![old_key],
+        )?;
+    }
     let owned: Vec<String> = {
         let mut stmt = tx.prepare(
             "SELECT m.name FROM sqlite_master m, pragma_table_info(m.name) c \
@@ -195,6 +215,9 @@ pub fn rekey(conn: &mut Connection, old_key: &str, new_key: &str) -> rusqlite::R
         "UPDATE identity SET public_key = ?1, mailbox_dht_key = NULL WHERE public_key = ?2",
         params![new_key, old_key],
     )?;
+    if let Some(set) = prekeys {
+        crate::prekeys::store_set_rows(&tx, new_key, set)?;
+    }
     tx.commit()
 }
 
@@ -253,10 +276,12 @@ mod tests {
         set_owned_record(&conn, OWNER, OwnedRecord::Profile, "k1").unwrap();
         set_owned_record(&conn, OWNER, OwnedRecord::Profile, "k2").unwrap();
         set_mailbox_key(&conn, OWNER, "mb").unwrap();
+        set_owned_record(&conn, OWNER, OwnedRecord::Prekeys, "pk").unwrap();
         let (name, cols) = login_row(&conn, OWNER).unwrap().unwrap();
         assert_eq!(name, "me");
         assert_eq!(cols.profile.as_deref(), Some("k2"));
         assert_eq!(cols.mailbox.as_deref(), Some("mb"));
+        assert_eq!(cols.prekeys.as_deref(), Some("pk"));
         assert_eq!(cols.account, None);
         assert_eq!(login_row(&conn, "ghost").unwrap(), None);
     }
@@ -274,7 +299,7 @@ mod tests {
         let mut conn = fixture::conn();
         crate::repo::friends::insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
         set_mailbox_key(&conn, OWNER, "mb").unwrap();
-        rekey(&mut conn, OWNER, "new-pk").unwrap();
+        rekey(&mut conn, OWNER, "new-pk", None).unwrap();
         assert_eq!(login_row(&conn, OWNER).unwrap(), None);
         // The old identity's mailbox does not carry over.
         let (_, cols) = login_row(&conn, "new-pk").unwrap().unwrap();
@@ -294,6 +319,42 @@ mod tests {
             })
             .unwrap();
         assert_eq!(violations, 0);
+    }
+
+    /// The rotation stores the new identity's minted set under the new
+    /// key, after the old identity's prekeys and their bookkeeping go, in
+    /// the same transaction.
+    #[test]
+    fn rekey_replaces_the_prekeys_with_the_new_set() {
+        use rekindle_crypto::signal::prekey_record::mint_set;
+        let mut conn = fixture::conn();
+        let old = rekindle_crypto::Identity::generate();
+        let rng = rekindle_utils::random::OsRandom;
+        crate::prekeys::store_set_rows(&conn, OWNER, &mint_set(&old, &rng, 1)).unwrap();
+        conn.execute(
+            "INSERT INTO prekey_lr_inits VALUES (?1, 1, 1, zeroblob(32), 0)",
+            params![OWNER],
+        )
+        .unwrap();
+        let new = rekindle_crypto::Identity::generate();
+        let set = mint_set(&new, &rng, 2);
+        let head = set.head.spk_id;
+        rekey(&mut conn, OWNER, "new-pk", Some(&set)).unwrap();
+        let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
+        assert_eq!(
+            count("SELECT count(*) FROM signal_prekeys WHERE owner_key = 'new-pk'"),
+            202
+        );
+        assert_eq!(count("SELECT count(*) FROM signal_prekeys"), 202);
+        assert_eq!(count("SELECT count(*) FROM prekey_lr_inits"), 0);
+        let spk: u32 = conn
+            .query_row(
+                "SELECT id FROM signal_prekeys WHERE kind = 'spk' AND owner_key = 'new-pk'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(spk, head);
     }
 
     #[test]

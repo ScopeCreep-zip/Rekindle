@@ -33,38 +33,6 @@ fn round_trip_presence_update() {
 }
 
 #[test]
-fn round_trip_prekey_bundle() {
-    let bundle = identity::PreKeyBundle {
-        identity_key: vec![1u8; 32],
-        signed_pre_key: vec![2u8; 32],
-        signed_pre_key_sig: vec![3u8; 64],
-        one_time_pre_key: vec![4u8; 32],
-        one_time_pre_key_id: 7,
-        registration_id: 12345,
-        pqpk_lr: vec![5u8; 1184],
-        pqpk_lr_sig: vec![6u8; 64],
-        pqpk_ot: vec![8u8; 1184],
-        pqpk_ot_sig: vec![9u8; 64],
-        pqpk_ot_id: 99,
-    };
-
-    let encoded = identity::encode_prekey_bundle(&bundle);
-    let decoded = identity::decode_prekey_bundle(&encoded).unwrap();
-
-    assert_eq!(decoded.identity_key, bundle.identity_key);
-    assert_eq!(decoded.signed_pre_key, bundle.signed_pre_key);
-    assert_eq!(decoded.signed_pre_key_sig, bundle.signed_pre_key_sig);
-    assert_eq!(decoded.one_time_pre_key, bundle.one_time_pre_key);
-    assert_eq!(decoded.one_time_pre_key_id, 7);
-    assert_eq!(decoded.registration_id, 12345);
-    assert_eq!(decoded.pqpk_lr, bundle.pqpk_lr);
-    assert_eq!(decoded.pqpk_lr_sig, bundle.pqpk_lr_sig);
-    assert_eq!(decoded.pqpk_ot, bundle.pqpk_ot);
-    assert_eq!(decoded.pqpk_ot_sig, bundle.pqpk_ot_sig);
-    assert_eq!(decoded.pqpk_ot_id, 99);
-}
-
-#[test]
 fn round_trip_friend_request() {
     let req = friend::FriendRequest {
         sender_key: vec![0xAA; 32],
@@ -204,4 +172,89 @@ fn account_header_without_avatar() {
     assert_eq!(decoded.display_name, "no_avatar");
     assert!(decoded.status_message.is_empty());
     assert!(decoded.avatar_hash.is_empty());
+}
+
+/// A head at its worst case: maximal ids, a full ML-KEM-768 key.
+fn full_head() -> identity::PrekeyRecordHead {
+    identity::PrekeyRecordHead {
+        spk_id: 0x7FFF_FFFF,
+        spk: [1; 32],
+        spk_sig: [2; 64],
+        pq_lr_id: 0x7FFF_FFFF,
+        pq_lr: vec![3; 1_184],
+        pq_lr_sig: [4; 64],
+        issued_at: i64::MAX,
+    }
+}
+
+/// A slot at its worst case.
+fn full_slot() -> identity::OpkSlot {
+    identity::OpkSlot {
+        opk_id: 0x7FFF_FFFF,
+        opk: [5; 32],
+        opk_sig: [6; 64],
+        pq_opk_id: 0x7FFF_FFFF,
+        pq_opk: vec![7; 1_184],
+        pq_opk_sig: [8; 64],
+    }
+}
+
+#[test]
+fn the_prekey_record_round_trips() {
+    let head = full_head();
+    assert_eq!(
+        identity::decode_prekey_head(&identity::encode_prekey_head(&head)).unwrap(),
+        head
+    );
+    let slot = full_slot();
+    assert_eq!(
+        identity::decode_opk_slot(&identity::encode_opk_slot(&slot)).unwrap(),
+        slot
+    );
+    let list = identity::PrekeyRecordList {
+        devices: vec![identity::PrekeyDevice {
+            device_id: [9; 16],
+            record_key: format!("VLD0:{}", "A".repeat(43)),
+        }],
+    };
+    assert_eq!(
+        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&list)).unwrap(),
+        list
+    );
+    let empty = identity::PrekeyRecordList::default();
+    assert_eq!(
+        identity::decode_prekey_record_list(&identity::encode_prekey_record_list(&empty)).unwrap(),
+        empty
+    );
+}
+
+/// Each subkey value fits the DFLT(101) record's per-subkey cap.
+#[test]
+fn every_prekey_record_value_fits_its_subkey() {
+    use rekindle_types::dht_layout::prekeys::MAX_SUBKEY_VALUE_LEN;
+    let head = identity::encode_prekey_head(&full_head()).len();
+    let slot = identity::encode_opk_slot(&full_slot()).len();
+    let list = identity::encode_prekey_record_list(&identity::PrekeyRecordList {
+        devices: vec![identity::PrekeyDevice {
+            device_id: [0xFF; 16],
+            record_key: format!("VLD0:{}", "A".repeat(43)),
+        }],
+    })
+    .len();
+    for (what, len) in [("head", head), ("slot", slot), ("device list", list)] {
+        assert!(len <= MAX_SUBKEY_VALUE_LEN, "{what} {len} B");
+    }
+}
+
+#[test]
+fn a_short_prekey_or_signature_is_refused() {
+    let mut builder = capnp::message::Builder::new_default();
+    {
+        let mut root = builder.init_root::<crate::identity_capnp::opk_slot::Builder<'_>>();
+        root.set_opk(&[1; 31]);
+        root.set_opk_sig(&[2; 64]);
+        root.set_pq_opk_sig(&[3; 64]);
+    }
+    assert!(identity::decode_opk_slot(&super::pack(&builder)).is_err());
+    assert!(identity::decode_prekey_head(b"not a head").is_err());
 }

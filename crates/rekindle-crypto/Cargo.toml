@@ -20,7 +20,8 @@ hkdf = "0.12"
 # chain key, DR rev. 1 §5.2.
 hmac = "0.12"
 rand = "0.8"
-# The prekey bundle's wire form is the Cap'n Proto DTO (plan C7.25).
+# The prekey record values (`PrekeyRecordHead`, `OpkSlot`) are the codec's
+# Cap'n Proto DTOs (plan E2.4).
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }

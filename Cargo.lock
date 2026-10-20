@@ -7347,6 +7347,7 @@ dependencies = [
  "rand 0.8.5",
  "rekindle-asql",
  "rekindle-audit",
+ "rekindle-codec",
  "rekindle-crypto",
  "rekindle-types",
  "rekindle-utils",

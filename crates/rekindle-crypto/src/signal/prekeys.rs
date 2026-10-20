@@ -1,161 +1,186 @@
-//! `PreKey` bundle wire type for Signal Protocol session establishment.
+//! The initiator's PQXDH input (PQXDH rev. 3 §3.2): a peer's prekeys as
+//! [`crate::signal::SessionRecord::initiate`] takes them.
 //!
-//! Bundles are built over the identity's `signal_prekeys` by
-//! `rekindle_db::prekeys` (plan E2.3):
-//! - `current_bundle` — the long-lived signed prekey and PQ last-resort
-//!   key, with no one-time keys; published to DHT profile subkey 5 and
-//!   carried in invites.
-//! - `handout_bundle` — the current bundle plus a fresh one-time X25519
-//!   and ML-KEM-768 key, for a bundle sent to exactly one peer.
-//!
-//! Phase 3b of the decomposed-harvest plan augmented this struct with
-//! PQXDH ML-KEM-768 fields. Wire format breaks for any peer expecting
-//! the classical-only shape — pre-ship hard break per invariant #5.
+//! Since plan E2.4 nothing carries a bundle on the wire: the initiator
+//! reads the peer's prekey record (`PrekeyRecordHead` and one `OpkSlot`,
+//! `schemas/identity.capnp`) and assembles the bundle with
+//! [`PreKeyBundle::from_record`], which checks every signature under the
+//! peer's **pinned** identity first. [`crate::signal::pqxdh::agreement`]
+//! checks them again before any DH runs, so a bundle built any other way
+//! is held to the same rules.
 
-use serde::{Deserialize, Serialize};
+use ed25519_dalek::VerifyingKey;
+use rekindle_codec::capnp_codec::identity::{OpkSlot, PrekeyRecordHead};
 
 use crate::error::CryptoError;
+use crate::signal::pqxdh::verify::{verify_opk, verify_pq, verify_spk, PqRole};
+use crate::signal::pqxdh::PqxdhError;
+use crate::signal::prekey_record::is_prekey_id;
 
-/// A bundle of public keys published to DHT for session establishment.
-/// Fixed identifier for the per-identity ML-KEM-768 last-resort key.
-/// Singleton — one per identity at a time; rotates rarely.
-pub const PQ_LR_ID: u32 = 0;
-
-/// Identifier of the signed prekey. Fixed until the bundle carries the
-/// signed prekey's id (PQXDH §3.2), which signed-prekey rotation needs
-/// (E2.4).
-pub const SPK_ID: u32 = 1;
-
-/// Unclaimed one-time keys kept per kind; beyond this the oldest go.
-pub const MAX_UNCLAIMED_ONE_TIME: usize = 200;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A peer device's public prekeys: the signed prekey and the ML-KEM
+/// last-resort key, and optionally one slot's one-time keys.
+#[derive(Debug, Clone)]
 pub struct PreKeyBundle {
     // ── Classical X3DH layer ────────────────────────────────────
     /// Ed25519 identity public key.
     pub identity_key: Vec<u8>,
+    /// The signed prekey's id, which the PreKeyInit names.
+    pub signed_prekey_id: u32,
     /// X25519 signed prekey (public).
     pub signed_prekey: Vec<u8>,
-    /// Ed25519 signature over `0x01 || signed_prekey`.
+    /// Ed25519 over `0x01 ‖ u32be(id) ‖ EncodeEC(signed_prekey)`.
     pub signed_prekey_signature: Vec<u8>,
     /// Optional X25519 one-time prekey (consumed on first use).
     pub one_time_prekey: Option<Vec<u8>>,
     /// Identifier for the one-time X25519 prekey (matched on use).
     pub one_time_prekey_id: Option<u32>,
-    /// Registration ID for Signal Protocol.
-    pub registration_id: u32,
+    /// Ed25519 over `0x03 ‖ u32be(id) ‖ EncodeEC(one_time_prekey)`.
+    pub one_time_prekey_signature: Option<Vec<u8>>,
 
     // ── PQXDH layer ─────────────────────────────────────────────
+    /// The last-resort key's id, which the PreKeyInit names when `CT` is
+    /// for it.
+    pub pq_lr_id: u32,
     /// ML-KEM-768 last-resort public key (1184 bytes).
     pub pqpk_lr: Vec<u8>,
-    /// Ed25519 signature over `0x02 || "LR" || pqpk_lr`.
+    /// Ed25519 over `0x02 ‖ "LR" ‖ u32be(id) ‖ EncodeKEM(pqpk_lr)`.
     pub pqpk_lr_signature: Vec<u8>,
     /// Optional one-time ML-KEM-768 public key (1184 bytes).
     pub pqpk_ot: Option<Vec<u8>>,
-    /// Ed25519 signature over `0x02 || "OT" || pqpk_ot`.
+    /// Ed25519 over `0x02 ‖ "OT" ‖ u32be(id) ‖ EncodeKEM(pqpk_ot)`.
     pub pqpk_ot_signature: Option<Vec<u8>>,
     /// Identifier for the one-time PQ prekey (matched on use).
     pub pqpk_ot_id: Option<u32>,
 }
 
 impl PreKeyBundle {
-    /// The bundle's one wire form, on both tracks and everywhere it
-    /// travels (profile subkey 5, FriendRequest, FriendAccept, session
-    /// reset): the packed Cap'n Proto `PreKeyBundle` of
-    /// `schemas/identity.capnp`. It was JSON on the desktop and postcard
-    /// on the daemon, so neither track read the other's, and the JSON form
-    /// nested in a JSON payload put the friend handshake over Veilid's
-    /// 32,768-byte message cap (plan C7.25).
+    /// The bundle from a peer's prekey record: its head and, unless the
+    /// pick found none (PQXDH §2.5, §3.3), one slot. Every id must be a
+    /// non-zero u31 and every signature must verify under
+    /// `identity_key`, the identity we pinned for the peer, not one the
+    /// record claims.
     ///
-    /// An absent one-time key is an empty field with id 0. Real one-time
-    /// ids are never 0 (`session::bundles::fresh_id`), so `from_wire`
-    /// reads 0 back as `None`.
-    #[must_use]
-    pub fn to_wire(&self) -> Vec<u8> {
-        rekindle_codec::capnp_codec::identity::encode_prekey_bundle(
-            &rekindle_codec::capnp_codec::identity::PreKeyBundle {
-                identity_key: self.identity_key.clone(),
-                signed_pre_key: self.signed_prekey.clone(),
-                signed_pre_key_sig: self.signed_prekey_signature.clone(),
-                one_time_pre_key: self.one_time_prekey.clone().unwrap_or_default(),
-                one_time_pre_key_id: self.one_time_prekey_id.unwrap_or(0),
-                registration_id: self.registration_id,
-                pqpk_lr: self.pqpk_lr.clone(),
-                pqpk_lr_sig: self.pqpk_lr_signature.clone(),
-                pqpk_ot: self.pqpk_ot.clone().unwrap_or_default(),
-                pqpk_ot_sig: self.pqpk_ot_signature.clone().unwrap_or_default(),
-                pqpk_ot_id: self.pqpk_ot_id.unwrap_or(0),
-            },
-        )
-    }
-
-    /// Parse [`Self::to_wire`]'s form.
-    pub fn from_wire(data: &[u8]) -> Result<Self, CryptoError> {
-        let dto = rekindle_codec::capnp_codec::identity::decode_prekey_bundle(data)
-            .map_err(|e| CryptoError::invalid_key(format!("prekey bundle: {e}")))?;
-        let present = |bytes: Vec<u8>| (!bytes.is_empty()).then_some(bytes);
-        let id = |id: u32| (id != 0).then_some(id);
+    /// # Errors
+    /// An id out of range, a key of the wrong shape, or a signature that
+    /// does not verify.
+    pub fn from_record(
+        identity_key: &[u8; 32],
+        head: &PrekeyRecordHead,
+        slot: Option<&OpkSlot>,
+    ) -> Result<Self, CryptoError> {
+        let ik = VerifyingKey::from_bytes(identity_key)
+            .map_err(|e| CryptoError::invalid_key(format!("pinned identity: {e}")))?;
+        let mut ids = vec![head.spk_id, head.pq_lr_id];
+        if let Some(slot) = slot {
+            ids.extend([slot.opk_id, slot.pq_opk_id]);
+        }
+        if let Some(id) = ids.into_iter().find(|id| !is_prekey_id(*id)) {
+            return Err(CryptoError::invalid_key(format!(
+                "prekey id {id} is not a non-zero u31"
+            )));
+        }
+        verify_record(&ik, head, slot)
+            .map_err(|e| CryptoError::invalid_key(format!("prekey record: {e}")))?;
         Ok(Self {
-            identity_key: dto.identity_key,
-            signed_prekey: dto.signed_pre_key,
-            signed_prekey_signature: dto.signed_pre_key_sig,
-            one_time_prekey: present(dto.one_time_pre_key),
-            one_time_prekey_id: id(dto.one_time_pre_key_id),
-            registration_id: dto.registration_id,
-            pqpk_lr: dto.pqpk_lr,
-            pqpk_lr_signature: dto.pqpk_lr_sig,
-            pqpk_ot: present(dto.pqpk_ot),
-            pqpk_ot_signature: present(dto.pqpk_ot_sig),
-            pqpk_ot_id: id(dto.pqpk_ot_id),
+            identity_key: identity_key.to_vec(),
+            signed_prekey_id: head.spk_id,
+            signed_prekey: head.spk.to_vec(),
+            signed_prekey_signature: head.spk_sig.to_vec(),
+            one_time_prekey: slot.map(|s| s.opk.to_vec()),
+            one_time_prekey_id: slot.map(|s| s.opk_id),
+            one_time_prekey_signature: slot.map(|s| s.opk_sig.to_vec()),
+            pq_lr_id: head.pq_lr_id,
+            pqpk_lr: head.pq_lr.clone(),
+            pqpk_lr_signature: head.pq_lr_sig.to_vec(),
+            pqpk_ot: slot.map(|s| s.pq_opk.clone()),
+            pqpk_ot_signature: slot.map(|s| s.pq_opk_sig.to_vec()),
+            pqpk_ot_id: slot.map(|s| s.pq_opk_id),
         })
     }
 }
 
+/// Every signature of `head` and `slot` under `ik`.
+fn verify_record(
+    ik: &VerifyingKey,
+    head: &PrekeyRecordHead,
+    slot: Option<&OpkSlot>,
+) -> Result<(), PqxdhError> {
+    verify_spk(ik, head.spk_id, &head.spk, &head.spk_sig)?;
+    verify_pq(
+        ik,
+        PqRole::LastResort,
+        head.pq_lr_id,
+        &head.pq_lr,
+        &head.pq_lr_sig,
+    )?;
+    if let Some(slot) = slot {
+        verify_opk(ik, slot.opk_id, &slot.opk, &slot.opk_sig)?;
+        verify_pq(
+            ik,
+            PqRole::OneTime,
+            slot.pq_opk_id,
+            &slot.pq_opk,
+            &slot.pq_opk_sig,
+        )?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::PreKeyBundle;
+    use super::*;
+    use crate::signal::prekey_record::{mint_head, mint_slot};
+    use crate::signal::test_support::TestRandom;
+    use crate::Identity;
 
-    fn bundle(one_time: bool) -> PreKeyBundle {
-        PreKeyBundle {
-            identity_key: vec![1; 32],
-            signed_prekey: vec![2; 32],
-            signed_prekey_signature: vec![3; 64],
-            one_time_prekey: one_time.then(|| vec![4; 32]),
-            one_time_prekey_id: one_time.then_some(7),
-            registration_id: 9,
-            pqpk_lr: vec![5; 1184],
-            pqpk_lr_signature: vec![6; 64],
-            pqpk_ot: one_time.then(|| vec![8; 1184]),
-            pqpk_ot_signature: one_time.then(|| vec![10; 64]),
-            pqpk_ot_id: one_time.then_some(11),
+    #[test]
+    fn a_record_assembles_a_bundle_with_and_without_a_slot() {
+        let bob = Identity::generate();
+        let rng = TestRandom::new(1);
+        let head = mint_head(&bob, &rng, 11, 12, 1_000);
+        let slot = mint_slot(&bob, &rng, 1, 21, 22);
+        let bundle =
+            PreKeyBundle::from_record(&bob.public_key_bytes(), &head.record, Some(&slot.record))
+                .unwrap();
+        assert_eq!((bundle.signed_prekey_id, bundle.pq_lr_id), (11, 12));
+        assert_eq!(
+            (bundle.one_time_prekey_id, bundle.pqpk_ot_id),
+            (Some(21), Some(22))
+        );
+        let bare = PreKeyBundle::from_record(&bob.public_key_bytes(), &head.record, None).unwrap();
+        assert!(bare.one_time_prekey.is_none() && bare.pqpk_ot.is_none());
+    }
+
+    /// The signatures are checked under the pinned identity: a record
+    /// signed by anyone else is refused, as is a key moved to another id.
+    #[test]
+    fn a_record_under_another_identity_or_other_ids_is_refused() {
+        let (bob, mallory) = (Identity::generate(), Identity::generate());
+        let rng = TestRandom::new(2);
+        let head = mint_head(&mallory, &rng, 11, 12, 1_000);
+        assert!(PreKeyBundle::from_record(&bob.public_key_bytes(), &head.record, None).is_err());
+
+        let head = mint_head(&bob, &rng, 11, 12, 1_000);
+        let mut slot = mint_slot(&bob, &rng, 1, 21, 22).record;
+        slot.opk_id = 23;
+        assert!(
+            PreKeyBundle::from_record(&bob.public_key_bytes(), &head.record, Some(&slot)).is_err()
+        );
+        let mut moved = head.record.clone();
+        moved.spk_id = 13;
+        assert!(PreKeyBundle::from_record(&bob.public_key_bytes(), &moved, None).is_err());
+    }
+
+    #[test]
+    fn an_id_outside_u31_is_refused() {
+        let bob = Identity::generate();
+        let rng = TestRandom::new(3);
+        for id in [0, 0x8000_0000] {
+            let head = mint_head(&bob, &rng, id, 12, 1_000);
+            assert!(
+                PreKeyBundle::from_record(&bob.public_key_bytes(), &head.record, None).is_err(),
+                "id {id}"
+            );
         }
-    }
-
-    #[test]
-    fn the_wire_form_round_trips_with_and_without_one_time_keys() {
-        for one_time in [true, false] {
-            let original = bundle(one_time);
-            let decoded = PreKeyBundle::from_wire(&original.to_wire()).unwrap();
-            assert_eq!(decoded.one_time_prekey, original.one_time_prekey);
-            assert_eq!(decoded.one_time_prekey_id, original.one_time_prekey_id);
-            assert_eq!(decoded.pqpk_ot, original.pqpk_ot);
-            assert_eq!(decoded.pqpk_ot_signature, original.pqpk_ot_signature);
-            assert_eq!(decoded.pqpk_ot_id, original.pqpk_ot_id);
-            assert_eq!(decoded.pqpk_lr, original.pqpk_lr);
-            assert_eq!(decoded.identity_key, original.identity_key);
-            assert_eq!(decoded.registration_id, original.registration_id);
-        }
-    }
-
-    #[test]
-    fn a_handout_bundle_is_binary_sized() {
-        // Two ML-KEM-768 keys dominate: the wire form stays near the raw
-        // key bytes, where the JSON form was ~3.6× them.
-        assert!(bundle(true).to_wire().len() < 2_800);
-    }
-
-    #[test]
-    fn garbage_is_an_error_not_a_panic() {
-        assert!(PreKeyBundle::from_wire(b"not a bundle").is_err());
     }
 }

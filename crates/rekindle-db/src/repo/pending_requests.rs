@@ -15,13 +15,13 @@ pub struct PendingFriendRequest {
 }
 
 /// What answering a request needs: where the requester lives and the
-/// keys and invite it arrived with.
+/// invite it arrived with (no bundle: the accepter reads the requester's
+/// prekey record, plan E2.4).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Answer {
     pub profile_dht_key: Option<String>,
     pub mailbox_dht_key: Option<String>,
     pub route_blob: Option<Vec<u8>>,
-    pub prekey_bundle: Option<Vec<u8>>,
     pub invite_id: Option<String>,
 }
 
@@ -35,7 +35,6 @@ pub struct Incoming<'a> {
     pub profile_dht_key: &'a str,
     pub route_blob: &'a [u8],
     pub mailbox_dht_key: &'a str,
-    pub prekey_bundle: &'a [u8],
     pub invite_id: Option<&'a str>,
 }
 
@@ -47,8 +46,8 @@ pub fn upsert(conn: &Connection, owner_key: &str, request: &Incoming<'_>) -> rus
     conn.execute(
         "INSERT OR REPLACE INTO pending_friend_requests \
          (owner_key, public_key, display_name, message, received_at, profile_dht_key, \
-          route_blob, mailbox_dht_key, prekey_bundle, invite_id) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+          route_blob, mailbox_dht_key, invite_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             owner_key,
             request.public_key,
@@ -58,7 +57,6 @@ pub fn upsert(conn: &Connection, owner_key: &str, request: &Incoming<'_>) -> rus
             request.profile_dht_key,
             request.route_blob,
             request.mailbox_dht_key,
-            request.prekey_bundle,
             request.invite_id,
         ],
     )?;
@@ -95,7 +93,7 @@ pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<PendingF
 pub fn answer(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<Answer> {
     Ok(conn
         .query_row(
-            "SELECT profile_dht_key, mailbox_dht_key, route_blob, prekey_bundle, invite_id \
+            "SELECT profile_dht_key, mailbox_dht_key, route_blob, invite_id \
              FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             params![owner_key, public_key],
             |row| {
@@ -103,8 +101,7 @@ pub fn answer(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
                     profile_dht_key: row.get(0)?,
                     mailbox_dht_key: row.get(1)?,
                     route_blob: row.get(2)?,
-                    prekey_bundle: row.get(3)?,
-                    invite_id: row.get(4)?,
+                    invite_id: row.get(3)?,
                 })
             },
         )
@@ -153,7 +150,6 @@ mod tests {
             profile_dht_key: "profile",
             route_blob: &[1, 2],
             mailbox_dht_key: "mailbox",
-            prekey_bundle: &[3],
             invite_id: Some("invite"),
         }
     }

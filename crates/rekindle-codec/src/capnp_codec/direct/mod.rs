@@ -53,7 +53,7 @@ fn decode_root<O: capnp::traits::Owned, R>(
 }
 
 /// A `Data` field of exactly `N` bytes.
-fn fixed<const N: usize>(
+pub(super) fn fixed<const N: usize>(
     field: Result<&[u8], capnp::Error>,
     what: &str,
 ) -> Result<[u8; N], CodecError> {
@@ -64,7 +64,7 @@ fn fixed<const N: usize>(
 }
 
 /// A `Data` field, owned.
-fn data(field: Result<&[u8], capnp::Error>) -> Result<Vec<u8>, CodecError> {
+pub(super) fn data(field: Result<&[u8], capnp::Error>) -> Result<Vec<u8>, CodecError> {
     Ok(field.map_err(|e| capnp_err(&e))?.to_vec())
 }
 

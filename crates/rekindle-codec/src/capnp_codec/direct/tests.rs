@@ -1,11 +1,11 @@
 //! Every body round-trips, and the handshake frames fit Veilid's message
 //! cap with the `'D'` tag at their worst case (plan C7.25's sizes: a
 //! 4 KiB route blob, display name and message at their bounds in 4-byte
-//! characters, a full PQXDH init and a handout bundle).
+//! characters and a full PQXDH init). No frame carries a bundle since
+//! plan E2.4.
 
 use super::frame::tests::init;
 use super::*;
-use crate::capnp_codec::identity::{encode_prekey_bundle, PreKeyBundle};
 use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
 
 /// ML-KEM-768 ciphertext.
@@ -27,23 +27,6 @@ fn dht_key() -> String {
     format!("VLD0:{}", "A".repeat(43))
 }
 
-/// A handout bundle at full size (one-time curve and ML-KEM keys).
-fn bundle() -> Vec<u8> {
-    encode_prekey_bundle(&PreKeyBundle {
-        identity_key: vec![1; 32],
-        signed_pre_key: vec![2; 32],
-        signed_pre_key_sig: vec![3; 64],
-        one_time_pre_key: vec![4; 32],
-        one_time_pre_key_id: u32::MAX,
-        registration_id: u32::MAX,
-        pqpk_lr: vec![5; 1_184],
-        pqpk_lr_sig: vec![6; 64],
-        pqpk_ot: vec![7; 1_184],
-        pqpk_ot_sig: vec![8; 64],
-        pqpk_ot_id: u32::MAX,
-    })
-}
-
 /// One body of every kind that has one.
 fn samples() -> Vec<DirectBody> {
     let id = [0xA1; 16];
@@ -51,7 +34,6 @@ fn samples() -> Vec<DirectBody> {
         DirectBody::FriendRequest(FriendRequest {
             display_name: s("Alice"),
             message: s("hi"),
-            prekey_bundle: bundle(),
             profile_dht_key: dht_key(),
             route_blob: vec![9; 64],
             mailbox_dht_key: dht_key(),
@@ -62,7 +44,7 @@ fn samples() -> Vec<DirectBody> {
             inner_payload: vec![1, 2, 3],
         }),
         DirectBody::SessionResetRequest(SessionResetRequest {
-            prekey_bundle: bundle(),
+            reason: s("decrypt failures"),
         }),
         DirectBody::SessionResetAccept,
         DirectBody::SessionResetDecline(SessionResetDecline { reason: s("no") }),
@@ -267,7 +249,6 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
     let request = DirectBody::FriendRequest(FriendRequest {
         display_name: s("A"),
         message: String::new(),
-        prekey_bundle: Vec::new(),
         profile_dht_key: dht_key(),
         route_blob: Vec::new(),
         mailbox_dht_key: dht_key(),
@@ -355,14 +336,13 @@ fn every_sealed_handshake_frame_fits() {
         sealed(&DirectBody::FriendRequest(FriendRequest {
             display_name: widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
             message: widest(rekindle_types::key_format::MAX_MESSAGE_LEN),
-            prekey_bundle: bundle(),
             profile_dht_key: dht_key(),
             route_blob: vec![0xAB; ROUTE_BLOB_LEN],
             mailbox_dht_key: dht_key(),
             invite_id: Some("0f".repeat(18)),
         })),
         sealed(&DirectBody::SessionResetRequest(SessionResetRequest {
-            prekey_bundle: bundle(),
+            reason: widest(256),
         })),
         sealed(&DirectBody::SessionResetDecline(SessionResetDecline {
             reason: widest(256),

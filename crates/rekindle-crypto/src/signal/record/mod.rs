@@ -31,7 +31,6 @@ use crate::signal::dr::{RatchetMessage, SessionState};
 use crate::signal::pqxdh::agreement::{self, PqPrekeyId, ResponderKeys};
 use crate::signal::pqxdh::PqxdhError;
 use crate::signal::prekeys::PreKeyBundle;
-use crate::signal::prekeys::SPK_ID;
 use crate::Identity;
 
 /// Inactive sessions kept per record (libsignal
@@ -120,7 +119,7 @@ impl SessionRecord {
         let init = PreKeyInit {
             identity_key: our.public_key_bytes(),
             base_key: agreed.base_key,
-            signed_prekey_id: SPK_ID,
+            signed_prekey_id: bundle.signed_prekey_id,
             one_time_prekey_id: agreed.one_time_prekey_id,
             pq_prekey: agreed.pq_prekey,
             kem_ciphertext: agreed.kem_ciphertext,

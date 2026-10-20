@@ -1,6 +1,6 @@
 //! The owner keypairs of the DHT records an identity owns: its profile,
 //! friend list, account and personal-sync records (plan D1: they were
-//! `identity` columns before). Each is stored as the keypair's string form.
+//! `identity` columns before) and its prekey record (plan E2.4). Each is stored as the keypair's string form.
 //!
 //! A failed write is an error, never best-effort: a record whose owner
 //! keypair is lost can no longer be written.
@@ -14,6 +14,7 @@ pub enum OwnerKey {
     FriendList,
     Account,
     PersonalSync,
+    Prekeys,
 }
 
 impl OwnerKey {
@@ -23,6 +24,7 @@ impl OwnerKey {
             Self::FriendList => VaultKey::FriendListOwnerKeypair,
             Self::Account => VaultKey::AccountOwnerKeypair,
             Self::PersonalSync => VaultKey::PersonalSyncOwnerKeypair,
+            Self::Prekeys => VaultKey::PrekeyRecordOwnerKeypair,
         }
     }
 }

@@ -64,6 +64,15 @@ pub fn mailbox() -> RecordSchema {
     }
 }
 
+/// A device's prekey record (plan E2.4): the head and the one-time slots,
+/// owned by a keypair of its own.
+#[must_use]
+pub fn prekeys() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::prekeys::SUBKEY_COUNT,
+    }
+}
+
 /// A single-subkey record: our friend list, the account header.
 #[must_use]
 pub fn single() -> RecordSchema {
@@ -95,6 +104,7 @@ mod tests {
     fn layouts_size_their_records() {
         assert_eq!(profile().subkey_count(), 9);
         assert_eq!(mailbox().subkey_count(), 1);
+        assert_eq!(prekeys().subkey_count(), 101);
         let keys = [[1u8; 32], [2u8; 32]];
         assert_eq!(community_smpl(&keys).subkey_count(), 2);
         assert_eq!(channel(&keys).subkey_count(), 2);

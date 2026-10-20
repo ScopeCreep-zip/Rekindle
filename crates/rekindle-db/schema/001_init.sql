@@ -18,7 +18,10 @@ CREATE TABLE IF NOT EXISTS identity (
     personal_sync_record_key TEXT,
     -- Stable per-device id (random 16-byte UUID hex). Identifies *this*
     -- physical device in the DeviceList without exposing more PII.
-    device_id TEXT
+    device_id TEXT,
+    -- This device's prekey record (plan E2.4, DFLT(101)); its owner
+    -- keypair is in the vault (`OwnerKey::Prekeys`).
+    prekey_record_key TEXT
 );
 
 CREATE TABLE IF NOT EXISTS friend_groups (
@@ -256,7 +259,6 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     profile_dht_key TEXT,
     route_blob BLOB,
     mailbox_dht_key TEXT,
-    prekey_bundle BLOB,
     invite_id TEXT,
     PRIMARY KEY (owner_key, public_key)
 );
@@ -755,22 +757,61 @@ CREATE TABLE IF NOT EXISTS ratchet_sessions (
     PRIMARY KEY (owner_key, peer_identity, peer_device)
 );
 
--- Our prekeys (plan E2.3; `rekindle_db::prekeys`): the signed prekey
--- (`spk`), the ML-KEM last-resort key (`pq_lr`) and the one-time keys
--- (`opk`, `pq_opk`). A one-time key is consumed only after the first
--- message under it decrypts: `consumed_at` is set and its secret erased,
--- and the row keeps its id taken (PQXDH §4.13). `published_subkey` is the
--- prekey record slot holding it (E2.4); NULL for a bundle handed out.
+-- Our prekeys (plan E2.3, E2.4; `rekindle_db::prekeys`): the signed
+-- prekey (`spk`) and the ML-KEM last-resort key (`pq_lr`), published in
+-- the prekey record's head (subkey 0), and the one-time keys (`opk`,
+-- `pq_opk`), a pair per slot (subkeys 1..100). `published_subkey` is the
+-- record subkey holding the key. Ids are random non-zero u31 (PQXDH
+-- §4.13). A one-time key is consumed only after the first message under
+-- it decrypts: `consumed_at` is set and its secret erased. A replaced key
+-- gets `retired_at` and stays usable; the archive sweep deletes a retired
+-- or consumed row 30 days on.
 CREATE TABLE IF NOT EXISTS signal_prekeys (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    id INTEGER NOT NULL CHECK(id BETWEEN 0 AND 4294967295),
+    id INTEGER NOT NULL CHECK(id BETWEEN 1 AND 2147483647),
     kind TEXT NOT NULL CHECK(kind IN ('opk', 'spk', 'pq_opk', 'pq_lr')),
     secret BLOB NOT NULL,
     public BLOB NOT NULL,
     created_at INTEGER NOT NULL,
-    published_subkey INTEGER,
+    published_subkey INTEGER NOT NULL CHECK(published_subkey BETWEEN 0 AND 100),
     consumed_at INTEGER,
+    retired_at INTEGER,
     PRIMARY KEY (owner_key, kind, id)
+);
+
+-- The one-time slots we initiated from, per peer device (plan E2.4 B2):
+-- the pick skips them. A row is swept once the peer's record no longer
+-- lists the id, or by the archive sweep.
+CREATE TABLE IF NOT EXISTS prekey_slots_used (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    opk_id INTEGER NOT NULL CHECK(opk_id BETWEEN 1 AND 2147483647),
+    used_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, peer, device_id, opk_id)
+);
+
+-- The `PreKeyRejected` notices we sent (plan E2.4 B5): one per initiator
+-- base key (`base_key_hash` = BLAKE3 of it), at most 10 per sender per
+-- 3 h. Kept for the 30-day archive horizon.
+CREATE TABLE IF NOT EXISTS prekey_rejections (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    sender TEXT NOT NULL,
+    base_key_hash BLOB NOT NULL CHECK(length(base_key_hash) = 32),
+    sent_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, base_key_hash)
+);
+
+-- The PreKeyInits that opened a session on the last-resort key (plan
+-- E2.4 B8, B9): an LR-only init seen again is a replay and is dropped.
+-- Kept while the last-resort key is held.
+CREATE TABLE IF NOT EXISTS prekey_lr_inits (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    lr_id INTEGER NOT NULL CHECK(lr_id BETWEEN 1 AND 2147483647),
+    spk_id INTEGER NOT NULL CHECK(spk_id BETWEEN 1 AND 2147483647),
+    base_key BLOB NOT NULL CHECK(length(base_key) = 32),
+    seen_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, lr_id, spk_id, base_key)
 );
 
 -- Peers' identity keys and their verification (plan E2.3;

@@ -1,13 +1,9 @@
-//! Prekey material for the stored prekeys (plan E2.3): minting the keys
-//! `rekindle_db::prekeys` keeps in `signal_prekeys`, signing the bundle
-//! built from them, and turning the stored secrets a PreKeyInit names back
-//! into [`ResponderKeys`]. The database holds bytes; every key operation
-//! stays in this crate.
-//!
-//! The bundle is the one `session::bundles` built (PQXDH §3.2–§3.3): the
-//! signed prekey and the PQ last-resort key, each signed by the identity,
-//! plus, in a bundle handed to one peer, a one-time curve prekey and a
-//! signed one-time ML-KEM key.
+//! Prekey material (plan E2.3, E2.4): minting the keys
+//! `rekindle_db::prekeys` keeps in `signal_prekeys`, and turning the
+//! stored secrets a PreKeyInit names back into [`ResponderKeys`]. The
+//! database holds bytes; every key operation stays in this crate. The
+//! record values these keys are published in are signed in
+//! `super::prekey_record`.
 
 use rekindle_secrets::pq_keys::MlKemSecret;
 use rekindle_utils::random::RandomSource;
@@ -17,8 +13,6 @@ use zeroize::Zeroizing;
 use crate::bytes::to_32;
 use crate::error::CryptoError;
 use crate::signal::pqxdh::agreement::ResponderKeys;
-use crate::signal::pqxdh::verify::{pq_signing_payload, spk_signing_payload};
-use crate::signal::prekeys::PreKeyBundle;
 use crate::Identity;
 
 /// A freshly minted prekey: its secret, as stored, and its public half.
@@ -48,53 +42,6 @@ pub fn mint_pq() -> MintedPrekey {
         secret: Zeroizing::new(secret.as_secret_bytes().to_vec()),
         public: public.as_bytes().to_vec(),
     }
-}
-
-/// The one-time keys of a bundle handed to one peer.
-pub struct OneTimePublics<'a> {
-    pub opk_id: u32,
-    pub opk: &'a [u8],
-    pub pq_id: u32,
-    pub pq: &'a [u8],
-}
-
-/// The bundle `identity` publishes over these public keys, each signed
-/// under its domain tag.
-#[must_use]
-pub fn signed_bundle(
-    identity: &Identity,
-    spk: &[u8],
-    pq_last_resort: &[u8],
-    one_time: Option<&OneTimePublics<'_>>,
-) -> PreKeyBundle {
-    let public = identity.public_key_bytes();
-    let sign = |payload: &[u8]| identity.sign(payload).to_bytes().to_vec();
-    PreKeyBundle {
-        identity_key: public.to_vec(),
-        signed_prekey: spk.to_vec(),
-        signed_prekey_signature: sign(&spk_signing_payload(spk)),
-        one_time_prekey: one_time.map(|o| o.opk.to_vec()),
-        one_time_prekey_id: one_time.map(|o| o.opk_id),
-        registration_id: registration_id(&public),
-        pqpk_lr: pq_last_resort.to_vec(),
-        pqpk_lr_signature: sign(&pq_signing_payload(b"LR", pq_last_resort)),
-        pqpk_ot: one_time.map(|o| o.pq.to_vec()),
-        pqpk_ot_signature: one_time.map(|o| sign(&pq_signing_payload(b"OT", o.pq))),
-        pqpk_ot_id: one_time.map(|o| o.pq_id),
-    }
-}
-
-/// The bundle's registration id, derived from the identity so it is
-/// stable: the first four key bytes, little-endian (the hosts' derivation
-/// since D1). No PQXDH step reads it; E2.4 drops it from the bundle.
-#[must_use]
-pub fn registration_id(identity_public: &[u8; 32]) -> u32 {
-    u32::from_le_bytes([
-        identity_public[0],
-        identity_public[1],
-        identity_public[2],
-        identity_public[3],
-    ])
 }
 
 /// The stored secrets one PreKeyInit names, parsed.
@@ -141,35 +88,34 @@ impl ResponderSecrets {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal::prekey_record::{mint_head, mint_slot};
     use crate::signal::test_support::TestRandom;
-    use crate::signal::SessionRecord;
+    use crate::signal::{PreKeyBundle, SessionRecord};
 
-    /// A bundle signed here runs a session whose responder keys come back
-    /// from the stored bytes.
+    /// A record minted here runs a session whose responder keys come
+    /// back from the stored bytes.
     #[test]
-    fn a_signed_bundle_runs_a_session_from_stored_secrets() {
+    fn a_minted_record_runs_a_session_from_stored_secrets() {
         let bob = Identity::generate();
         let alice = Identity::generate();
         let rng = TestRandom::new(1);
-        let (spk, lr, opk, pq) = (mint_curve(&rng), mint_pq(), mint_curve(&rng), mint_pq());
-        let one_time = OneTimePublics {
-            opk_id: 7,
-            opk: &opk.public,
-            pq_id: 9,
-            pq: &pq.public,
-        };
-        let bundle = signed_bundle(&bob, &spk.public, &lr.public, Some(&one_time));
-        assert_eq!(
-            bundle.registration_id,
-            registration_id(&bob.public_key_bytes())
-        );
+        let head = mint_head(&bob, &rng, 5, 6, 1_000);
+        let slot = mint_slot(&bob, &rng, 1, 7, 9);
+        let bundle =
+            PreKeyBundle::from_record(&bob.public_key_bytes(), &head.record, Some(&slot.record))
+                .unwrap();
         let (_, init) = SessionRecord::new(bob.public_key_bytes())
             .initiate(&alice, &bundle, b"hi", b"", &rng)
             .unwrap();
         assert_eq!(init.one_time_prekey_id, Some(7));
+        assert_eq!(init.signed_prekey_id, 5);
 
-        let secrets =
-            ResponderSecrets::from_bytes(&spk.secret, Some(&opk.secret), &pq.secret).unwrap();
+        let secrets = ResponderSecrets::from_bytes(
+            &head.spk.secret,
+            Some(&slot.opk.secret),
+            &slot.pq_opk.secret,
+        )
+        .unwrap();
         let (_, first) = SessionRecord::new(alice.public_key_bytes())
             .insert_from_init(&init, &secrets.keys(&bob), b"", &rng)
             .unwrap();
@@ -177,11 +123,7 @@ mod tests {
     }
 
     #[test]
-    fn a_long_lived_bundle_has_no_one_time_keys_and_short_secrets_are_refused() {
-        let bob = Identity::generate();
-        let rng = TestRandom::new(2);
-        let bundle = signed_bundle(&bob, &mint_curve(&rng).public, &mint_pq().public, None);
-        assert!(bundle.one_time_prekey.is_none() && bundle.pqpk_ot.is_none());
+    fn short_secrets_are_refused() {
         assert!(ResponderSecrets::from_bytes(&[1; 31], None, &mint_pq().secret).is_err());
         assert!(ResponderSecrets::from_bytes(&[1; 32], None, &[0; 10]).is_err());
     }
