@@ -85,14 +85,32 @@ fn probe_in_background(host: &dyn FriendHost, to: &str) {
 /// The queue could not be written.
 async fn queue(host: &dyn FriendHost, to: &str, queued: &Queued) -> Result<(), FriendError> {
     let owner = state::owner(host)?;
-    let body = serde_json::to_string(queued)
-        .map_err(|e| FriendError::Failed(format!("serialize queued frame: {e}")))?;
+    let body = queued_json(queued)?;
     let recipient = to.to_string();
     let now = host.clock().now_ms_i64();
     state::db_call!(host, "queue pending message", move |conn| {
         rekindle_db::repo::pending_messages::insert(conn, &owner, &recipient, &body, now)
     })
     .await
+}
+
+fn queued_json(queued: &Queued) -> Result<String, FriendError> {
+    serde_json::to_string(queued)
+        .map_err(|e| FriendError::Failed(format!("serialize queued frame: {e}")))
+}
+
+/// `body` to `to` as the pending-message queue stores it, for a caller
+/// that queues it in a transaction of its own (a removal, plan audit D-1).
+///
+/// # Errors
+/// The frame could not be built.
+pub async fn queued_form(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<String, FriendError> {
+    let (_, queued) = framed(host, to, body).await?;
+    queued_json(&queued)
 }
 
 /// The frame to `to` for `body`, and how the queue keeps it.

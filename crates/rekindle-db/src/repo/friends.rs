@@ -6,6 +6,12 @@
 use rekindle_types::friend_store::{FriendRecord, FriendshipState};
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension as _};
 
+mod changes;
+pub use changes::{
+    accept_request, accept_with_records, block, forget, forget_removed, mark_removing,
+    replace_with_invited, unfriended, RecordKeys,
+};
+
 /// A friend as the buddy list loads it, with its group's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FriendRow {
@@ -112,12 +118,8 @@ pub fn insert_accepted(
     Ok(())
 }
 
-/// Replace any row for the friend with a `pending_out` row carrying the
-/// record keys an invite named.
-///
-/// # Errors
-/// The write failed.
-pub fn replace_with_invited(
+/// [`replace_with_invited`]'s rows, without its transaction.
+fn replace_with_invited_rows(
     conn: &Connection,
     owner_key: &str,
     public_key: &str,
@@ -274,28 +276,6 @@ pub fn set_state(
         params![state.as_str(), owner_key, public_key],
     )?;
     Ok(())
-}
-
-/// Forget the friends we removed once nothing is queued to them any more
-/// (their `Unfriended` notice was acknowledged or ran out of retries);
-/// their keys.
-///
-/// # Errors
-/// The query or a delete failed.
-pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
-    let done = conn
-        .prepare(
-            "SELECT public_key FROM friends f \
-             WHERE owner_key = ?1 AND friendship_state = 'removing' \
-               AND NOT EXISTS (SELECT 1 FROM pending_messages p \
-                               WHERE p.owner_key = f.owner_key AND p.recipient_key = f.public_key)",
-        )?
-        .query_map(params![owner_key], |row| row.get(0))?
-        .collect::<rusqlite::Result<Vec<String>>>()?;
-    for public_key in &done {
-        delete(conn, owner_key, public_key)?;
-    }
-    Ok(done)
 }
 
 /// Set the profile and/or mailbox record keys; `None` keeps the stored one.

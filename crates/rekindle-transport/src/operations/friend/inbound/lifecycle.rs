@@ -75,9 +75,9 @@ pub(crate) async fn on_friend_reject(host: &dyn FriendHost, sender: &str) -> boo
 }
 
 /// The peer removed us: the friend, any request and anything queued to
-/// them go, they get our ack, the session ends with the friendship, their
+/// them go with the session (one transaction), they get our ack, their
 /// watch stops and our friend-list record follows. Whether it is done
-/// (`false`: the friend or their queue was not deleted).
+/// (`false`: nothing was deleted).
 pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
     if !matches!(
         state::friendship(host, sender),
@@ -86,15 +86,13 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
         tracing::debug!(from = %sender, "ignoring Unfriended from non-friend");
         return true;
     }
-    if !state::write_forget(host, sender).await {
+    if !state::write_unfriended(host, sender).await {
         return false;
     }
-    let dropped = state::write_drop_queued(host, sender).await;
     if let Err(e) = dm::send_to_peer(host, sender, &DirectBody::UnfriendedAck).await {
         tracing::debug!(to = %sender, error = %e, "UnfriendedAck not sent");
     }
     state::take(host, sender);
-    state::forget_session(host, sender).await;
     host.unwatch_friend(sender).await;
     if let Err(e) = list_record::push(host).await {
         tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
@@ -103,7 +101,7 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
         peer_key: sender.to_string(),
     }));
     tracing::info!(from = %sender, "removed by peer (Unfriended)");
-    dropped
+    true
 }
 
 /// Whether we open the session of a crossing request: exactly one side
@@ -132,29 +130,17 @@ pub(super) async fn accept_crossing_request(
             let profile = Some(req.profile_dht_key.to_string()).filter(|k| !k.is_empty());
             let mailbox = Some(req.mailbox_dht_key.to_string()).filter(|k| !k.is_empty());
             state::db_call!(host, "store accepted state", move |conn| {
-                let tx = conn.transaction()?;
-                rekindle_db::repo::friends::set_state(&tx, &owner, &pk, FriendshipState::Accepted)?;
-                rekindle_db::repo::friends::set(&tx, &owner, &pk, Column::DisplayName, Some(name))?;
-                if profile.is_some() {
-                    rekindle_db::repo::friends::set(
-                        &tx,
-                        &owner,
-                        &pk,
-                        Column::DhtRecordKey,
-                        profile,
-                    )?;
-                }
-                if mailbox.is_some() {
-                    rekindle_db::repo::friends::set(
-                        &tx,
-                        &owner,
-                        &pk,
-                        Column::MailboxDhtKey,
-                        mailbox,
-                    )?;
-                }
-                rekindle_db::repo::pending_requests::delete(&tx, &owner, &pk)?;
-                tx.commit()
+                let keys = rekindle_db::repo::friends::RecordKeys {
+                    profile: profile.as_deref(),
+                    mailbox: mailbox.as_deref(),
+                };
+                rekindle_db::repo::friends::accept_with_records(
+                    conn,
+                    &owner,
+                    &pk,
+                    Some(&name),
+                    keys,
+                )
             })
             .await
         }

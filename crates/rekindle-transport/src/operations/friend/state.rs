@@ -202,7 +202,8 @@ pub(crate) async fn forget_session(host: &dyn FriendHost, peer: &str) {
     }
 }
 
-/// Delete a friend's row and their pending request, and wait for it.
+/// Delete a friend's row and their pending request in one transaction,
+/// and wait for it.
 pub(crate) async fn write_forget(host: &dyn FriendHost, public_key: &str) -> bool {
     let Ok(owner) = owner(host) else {
         return false;
@@ -210,8 +211,22 @@ pub(crate) async fn write_forget(host: &dyn FriendHost, public_key: &str) -> boo
     let pk = public_key.to_string();
     stored(
         db_call!(host, "forget friend", move |conn| {
-            rekindle_db::repo::friends::delete(conn, &owner, &pk)?;
-            rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)
+            rekindle_db::repo::friends::forget(conn, &owner, &pk)
+        })
+        .await,
+    )
+}
+
+/// `public_key` removed us: their row, their request, their queue and the
+/// sessions with them, in one transaction; whether it was stored.
+pub(crate) async fn write_unfriended(host: &dyn FriendHost, public_key: &str) -> bool {
+    let Ok(owner) = owner(host) else {
+        return false;
+    };
+    let pk = public_key.to_string();
+    stored(
+        db_call!(host, "forget the friend who removed us", move |conn| {
+            rekindle_db::repo::friends::unfriended(conn, &owner, &pk)
         })
         .await,
     )

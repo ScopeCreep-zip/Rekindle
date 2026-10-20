@@ -5,7 +5,6 @@
 //! session with the sender (plan E2.3).
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
-use rekindle_db::repo::friends::Column;
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
@@ -207,27 +206,11 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
             let profile = Some(a.profile_dht_key.to_string()).filter(|k| !k.is_empty());
             let mailbox = Some(a.mailbox_dht_key.to_string()).filter(|k| !k.is_empty());
             state::db_call!(host, "store accepted friend", move |conn| {
-                let tx = conn.transaction()?;
-                rekindle_db::repo::friends::set_state(&tx, &owner, &pk, FriendshipState::Accepted)?;
-                if profile.is_some() {
-                    rekindle_db::repo::friends::set(
-                        &tx,
-                        &owner,
-                        &pk,
-                        Column::DhtRecordKey,
-                        profile,
-                    )?;
-                }
-                if mailbox.is_some() {
-                    rekindle_db::repo::friends::set(
-                        &tx,
-                        &owner,
-                        &pk,
-                        Column::MailboxDhtKey,
-                        mailbox,
-                    )?;
-                }
-                tx.commit()
+                let keys = rekindle_db::repo::friends::RecordKeys {
+                    profile: profile.as_deref(),
+                    mailbox: mailbox.as_deref(),
+                };
+                rekindle_db::repo::friends::accept_with_records(conn, &owner, &pk, None, keys)
             })
             .await
         }

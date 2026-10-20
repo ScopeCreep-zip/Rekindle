@@ -50,15 +50,11 @@ pub async fn accept(
         named(&answer.mailbox_dht_key),
     );
     state::db_call!(host, "store accepted friend", move |conn| {
-        rekindle_db::repo::friends::insert_accepted(conn, &ok, &pk, &dn, now)?;
-        rekindle_db::repo::pending_requests::delete(conn, &ok, &pk)?;
-        rekindle_db::repo::friends::set_record_keys(
-            conn,
-            &ok,
-            &pk,
-            profile_key.as_deref(),
-            mailbox_key.as_deref(),
-        )
+        let keys = rekindle_db::repo::friends::RecordKeys {
+            profile: profile_key.as_deref(),
+            mailbox: mailbox_key.as_deref(),
+        };
+        rekindle_db::repo::friends::accept_request(conn, &ok, &pk, &dn, now, keys)
     })
     .await?;
 

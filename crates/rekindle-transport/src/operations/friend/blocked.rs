@@ -42,11 +42,10 @@ pub async fn block(
         .or_else(|| display_name.map(str::to_string))
         .unwrap_or_else(|| format!("{}...", rekindle_utils::text::prefix(public_key, 12)));
     let pk = public_key.to_string();
+    // The friend, their request, their queue, the sessions and the block:
+    // one transaction (plan audit D-1).
     state::db_call!(host, "block user", move |conn| {
-        rekindle_db::repo::friends::delete(conn, &owner, &pk)?;
-        rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)?;
-        rekindle_db::repo::pending_messages::delete_to(conn, &owner, &pk)?;
-        rekindle_db::repo::blocked::insert(conn, &owner, &pk, &name, now)
+        rekindle_db::repo::friends::block(conn, &owner, &pk, &name, now)
     })
     .await?;
 
@@ -57,7 +56,6 @@ pub async fn block(
     // Watching the presence of someone the user cut off is the worse half
     // of not blocking at all.
     host.unwatch_friend(public_key).await;
-    state::forget_session(host, public_key).await;
     rotate::rotate_profile_key(host).await?;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),

@@ -18,16 +18,15 @@ use crate::operations::dm;
 pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
     let owner = state::owner(host)?;
     // Always queued: an app message has no delivery guarantee, and the
-    // queue entry is what keeps the row until the peer's ack.
-    if let Err(e) = dm::build_and_queue(host, public_key, &DirectBody::Unfriended).await {
-        tracing::warn!(to = %public_key, error = %e, "Unfriended notice not queued");
-    }
-    // The row stays `removing` while the notice is queued (its retries need
-    // the friend's routing information, across a restart too).
+    // queue entry is what keeps the row until the peer's ack. The row
+    // stays `removing` while the notice is queued (its retries need the
+    // friend's routing information, across a restart too): the state and
+    // the queued notice are one transaction (plan audit D-1).
+    let queued = dm::queued_form(host, public_key, &DirectBody::Unfriended).await?;
     let (ok, pk) = (owner, public_key.to_string());
+    let now = host.clock().now_ms_i64();
     state::db_call!(host, "mark friend removing", move |conn| {
-        rekindle_db::repo::friends::set_state(conn, &ok, &pk, FriendshipState::Removing)?;
-        rekindle_db::repo::pending_requests::delete(conn, &ok, &pk)
+        rekindle_db::repo::friends::mark_removing(conn, &ok, &pk, &queued, now)
     })
     .await?;
     host.audit(
@@ -64,8 +63,8 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
 
 /// Forget the friends we removed once nothing is queued to them (their
 /// `Unfriended` notice was acknowledged or ran out of retries): their rows,
-/// their projection entries and their sessions. A removal that spans
-/// a restart still ends.
+/// their projection entries and their sessions, in one transaction. A
+/// removal that spans a restart still ends.
 ///
 /// # Errors
 /// The removed rows could not be read or deleted.
@@ -77,7 +76,6 @@ pub async fn forget_removed(host: &dyn FriendHost) -> Result<(), FriendError> {
     .await?;
     for public_key in forgotten {
         state::take(host, &public_key);
-        state::forget_session(host, &public_key).await;
         tracing::debug!(public_key = %public_key, "forgot removed friend");
     }
     Ok(())
