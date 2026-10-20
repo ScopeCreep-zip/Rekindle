@@ -1,5 +1,6 @@
 //! 1:1 over real Hosts (plan E2.3): two identities befriend each other and
-//! message both ways; then one rotates its identity, and both message
+//! message both ways; then one rotates its identity, the other accepts the
+//! rotation's review, and both message
 //! again. Neither holds a session for the new identity after the move, so
 //! the first message each way opens one from the other's published bundle
 //! (`dm/frame.rs`, `published_bundle`).
@@ -38,7 +39,8 @@ async fn a_rotated_friend_is_messaged_both_ways() {
     assert!(eventually(&sim, LIMIT, || holds_message(&nodes[0], &bea, "bea to ann")).await);
 
     let mailbox_before = Some(mailbox(&nodes[0]).await);
-    // Ann rotates: Bea hears it under the old key and moves her; Ann's
+    // Ann rotates: Bea hears it under the old key and, once she accepts
+    // its review, moves her; Ann's
     // daemon is left locked and unlocks under the new key.
     let rotated = nodes[0]
         .ok(IpcRequest::IdentityRotate {
@@ -56,7 +58,22 @@ async fn a_rotated_friend_is_messaged_both_ways() {
             passphrase: PASSPHRASE.into(),
         })
         .await;
-    assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[1], &new_ann)).await);
+    // Bea's Host holds the rotation for her review (owner ruling R1):
+    // nothing moves until she accepts it.
+    assert!(is_accepted_friend(&nodes[1], &ann).await);
+    assert!(!is_accepted_friend(&nodes[1], &new_ann).await);
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            nodes[1]
+                .call(IpcRequest::IdentityRotationAccept {
+                    public_key: ann.clone(),
+                })
+                .await
+                .is_ok()
+        })
+        .await
+    );
+    assert!(is_accepted_friend(&nodes[1], &new_ann).await);
     assert!(!is_accepted_friend(&nodes[1], &ann).await);
     // The conversation moved with her, and her old mailbox did not.
     assert!(holds_message(&nodes[1], &new_ann, "ann to bea").await);

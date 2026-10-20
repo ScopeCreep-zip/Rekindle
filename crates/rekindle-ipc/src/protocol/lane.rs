@@ -92,7 +92,9 @@ impl IpcRequest {
             Self::SessionResetAccept { .. } => ("SessionResetAccept", Write, Authenticated),
             Self::SessionResetDecline { .. } => ("SessionResetDecline", Write, Authenticated),
             Self::IdentityRotationAccept { .. } => ("IdentityRotationAccept", Write, Authenticated),
-            Self::IdentityRotationDecline { .. } => ("IdentityRotationDecline", Write, Authenticated),
+            Self::IdentityRotationDecline { .. } => {
+                ("IdentityRotationDecline", Write, Authenticated)
+            }
 
             Self::CommunityCreate { .. } => ("CommunityCreate", Write, Authenticated),
             Self::CommunityJoin { .. } => ("CommunityJoin", Write, Authenticated),

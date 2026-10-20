@@ -10,10 +10,10 @@ use rekindle_codec::capnp_codec::direct::{
 };
 use rekindle_db::repo::unprocessed::UnprocessedKey;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
-use rekindle_transport::operations::friend::FriendHost;
-use rekindle_types::intent::{Fact, IntentProof, ProofRequired};
 use rekindle_ipc::{Caller, HostApi};
 use rekindle_transport::operations::direct::replay_unprocessed;
+use rekindle_transport::operations::friend::FriendHost;
+use rekindle_types::intent::{Fact, IntentProof, ProofRequired};
 
 use crate::host::adapters::friends::HostFriends;
 use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource};
@@ -191,10 +191,20 @@ async fn a_signed_identity_rotation_moves_the_friend_only_when_accepted() {
         );
         rotated_to(&host, owner, &old, &new).await;
         // Held: the friend, their history and their verification stay.
-        assert_eq!(friend_keys(&host, owner).await, [hex::encode(old.public_key_bytes())]);
+        assert_eq!(
+            friend_keys(&host, owner).await,
+            [hex::encode(old.public_key_bytes())]
+        );
         assert_eq!(history(&host, owner, old.public_key_bytes()).await, 1);
-        assert!(identity_row(&host, owner, old.public_key_bytes()).await.unwrap().verified);
-        assert!(identity_row(&host, owner, new.public_key_bytes()).await.is_none());
+        assert!(
+            identity_row(&host, owner, old.public_key_bytes())
+                .await
+                .unwrap()
+                .verified
+        );
+        assert!(identity_row(&host, owner, new.public_key_bytes())
+            .await
+            .is_none());
 
         let request = if accept {
             IpcRequest::IdentityRotationAccept {
@@ -214,7 +224,10 @@ async fn a_signed_identity_rotation_moves_the_friend_only_when_accepted() {
                 if old_safety_number != new_safety_number
         )));
         if accept {
-            assert_eq!(review.class, rekindle_types::intent::IntentClass::TrustChanging);
+            assert_eq!(
+                review.class,
+                rekindle_types::intent::IntentClass::TrustChanging
+            );
         }
         let committed = host
             .call(
@@ -232,17 +245,28 @@ async fn a_signed_identity_rotation_moves_the_friend_only_when_accepted() {
         assert!(matches!(committed, IpcResponse::Ok { .. }), "{committed:?}");
 
         let (kept, gone) = if accept { (&new, &old) } else { (&old, &new) };
-        assert_eq!(friend_keys(&host, owner).await, [hex::encode(kept.public_key_bytes())]);
+        assert_eq!(
+            friend_keys(&host, owner).await,
+            [hex::encode(kept.public_key_bytes())]
+        );
         assert_eq!(history(&host, owner, kept.public_key_bytes()).await, 1);
-        assert!(identity_row(&host, owner, gone.public_key_bytes()).await.is_none());
-        let row = identity_row(&host, owner, kept.public_key_bytes()).await.unwrap();
+        assert!(identity_row(&host, owner, gone.public_key_bytes())
+            .await
+            .is_none());
+        let row = identity_row(&host, owner, kept.public_key_bytes())
+            .await
+            .unwrap();
         if accept {
             assert!(!row.verified);
             assert_eq!(row.changed_from_key, Some(old.public_key_bytes()));
         } else {
             assert!(row.verified);
         }
-        assert!(HostFriends::of(&host.ctx).stores().pending_rotations.lock().is_empty());
+        assert!(HostFriends::of(&host.ctx)
+            .stores()
+            .pending_rotations
+            .lock()
+            .is_empty());
     }
     assert_eq!(DmTypeId::IdentityRotated.as_u16(), 0x0108);
 }

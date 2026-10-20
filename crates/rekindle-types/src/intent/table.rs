@@ -416,8 +416,14 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("SessionResetStart", Some(IntentKind::ResetSignalSession)),
     ("SessionResetAccept", Some(IntentKind::AcceptSessionReset)),
     ("SessionResetDecline", Some(IntentKind::DeclineSessionReset)),
-    ("IdentityRotationAccept", Some(IntentKind::AcceptIdentityRotation)),
-    ("IdentityRotationDecline", Some(IntentKind::DeclineIdentityRotation)),
+    (
+        "IdentityRotationAccept",
+        Some(IntentKind::AcceptIdentityRotation),
+    ),
+    (
+        "IdentityRotationDecline",
+        Some(IntentKind::DeclineIdentityRotation),
+    ),
     ("CommunityCreate", Some(IntentKind::CreateCommunity)),
     ("CommunityJoin", Some(IntentKind::JoinCommunity)),
     ("CommunityLeave", Some(IntentKind::LeaveCommunity)),
