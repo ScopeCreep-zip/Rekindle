@@ -89,7 +89,8 @@ async fn friendship_authoritative(host: &dyn FriendHost, sender: &str) -> Status
 /// - A friend request, a reject, and a removal and its ack come from
 ///   anyone not blocked (blocking is checked before this), and so does a
 ///   relay envelope: the relay forwards for a friend of the target, not of
-///   ours.
+///   ours. A `WakeNotify` is not among them: only a friend we registered
+///   as our push relay wakes us (plan audit G10).
 /// - `FriendAccept` (a PreKeyInit's first payload) comes from a sender we
 ///   sent a request to (`PendingOut`) or one already `Accepted`: the higher
 ///   side of a crossing request is `Accepted` with no session when the
@@ -102,8 +103,7 @@ pub(crate) fn sender_admitted(kind: DmTypeId, status: Status) -> bool {
         | DmTypeId::FriendReject
         | DmTypeId::Unfriended
         | DmTypeId::UnfriendedAck
-        | DmTypeId::RelayEnvelope
-        | DmTypeId::WakeNotify => true,
+        | DmTypeId::RelayEnvelope => true,
         DmTypeId::FriendAccept => matches!(
             status,
             Some(FriendshipState::PendingOut | FriendshipState::Accepted)

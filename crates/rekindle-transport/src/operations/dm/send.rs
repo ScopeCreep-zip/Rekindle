@@ -123,8 +123,9 @@ async fn framed(
 /// Send `body` to `to` as its kind travels.
 ///
 /// With no usable route the frame is refreshed inline, and otherwise
-/// queued for the retry. Typing is never queued: a stale typing
-/// indicator minutes later is worse than none.
+/// queued for the retry. An ephemeral kind (typing, a call signal, DM
+/// video: `DmTypeId::is_ephemeral`) is never queued: minutes late it is
+/// worse than none.
 ///
 /// # Errors
 /// The frame could not be sealed (no session for a ratchet kind), or it is
@@ -136,14 +137,7 @@ pub async fn send_to_peer(
     body: &DirectBody,
 ) -> Result<(), FriendError> {
     let (frame, queued) = framed(host, to, body).await?;
-    deliver(
-        host,
-        to,
-        &frame,
-        &queued,
-        body.type_id() == DmTypeId::Typing,
-    )
-    .await
+    deliver(host, to, &frame, &queued).await
 }
 
 /// Send a frame built elsewhere (a PreKeyInit opened from a bundle) to
@@ -160,17 +154,18 @@ pub async fn send_frame(
     let queued = Queued::Wire {
         datagram: frame::wire(frame)?,
     };
-    deliver(host, to, frame, &queued, false).await
+    deliver(host, to, frame, &queued).await
 }
 
-/// One send of `frame` down the fallbacks, queued last unless ephemeral.
+/// One send of `frame` down the fallbacks, queued last unless its kind is
+/// ephemeral.
 async fn deliver(
     host: &dyn FriendHost,
     to: &str,
     frame: &DmFrame,
     queued: &Queued,
-    ephemeral: bool,
 ) -> Result<(), FriendError> {
+    let ephemeral = frame.type_id.is_ephemeral();
     let datagram = frame::wire(frame)?;
     let node = host.node()?;
     let failure = match route::cached_target(&node, to) {
@@ -180,8 +175,12 @@ async fn deliver(
                 return Ok(());
             }
             Err(e) => {
-                // The stale blob goes, so the retry fetches a fresh one.
-                route::invalidate(&node, to);
+                // Only an unusable route goes (plan audit G10), so the
+                // retry fetches a fresh one; a send that failed for any
+                // other reason keeps it.
+                if matches!(e, crate::error::TransportError::RouteUnusable { .. }) {
+                    route::invalidate(&node, to);
+                }
                 Some(e.to_string())
             }
         },
@@ -261,7 +260,7 @@ pub async fn call_or_send(
         Err(e) => {
             tracing::debug!(to = %to, kind = ?frame.type_id, error = %e,
                 "not receipted by app_call — sending");
-            deliver(host, to, &frame, &queued, false).await?;
+            deliver(host, to, &frame, &queued).await?;
             Ok(Delivery::Sent)
         }
     }
@@ -346,6 +345,9 @@ pub async fn resend(host: &dyn FriendHost, to: &str, queued: &Queued) -> Resend 
             Resend::Delivered
         }
         Err(error) => {
+            if matches!(error, crate::error::TransportError::RouteUnusable { .. }) {
+                route::invalidate(&node, to);
+            }
             tracing::debug!(to = %to, %error, "queued frame retry failed");
             Resend::Failed
         }

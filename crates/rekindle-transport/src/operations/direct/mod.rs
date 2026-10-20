@@ -121,6 +121,7 @@ pub async fn replay_unprocessed(host: &dyn FriendHost) {
     };
     for row in rows {
         let Some(opened) = frame::replayed(&row) else {
+            frame::delete_unprocessed(host, row.key);
             continue;
         };
         // Judged again: the sender may have been blocked or removed since.

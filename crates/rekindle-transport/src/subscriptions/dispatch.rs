@@ -143,7 +143,15 @@ async fn dispatch_app_call<H: InboundHandler>(
     call_id: AppCallId,
     raw: &[u8],
 ) {
-    if let Ingress::Direct(_) = rekindle_codec::ingress::classify(raw) {
+    let ingress = rekindle_codec::ingress::classify(raw);
+    if let Ingress::Gossip(_) = ingress {
+        // Gossip travels by `app_message`; a `'G'` call is refused before
+        // any frame decode (plan audit G10).
+        warn!("dropping app_call: gossip is not called");
+        reply_nak(messages, call_id).await;
+        return;
+    }
+    if let Ingress::Direct(_) = ingress {
         let reply = match tokio::time::timeout(
             APP_CALL_HANDLER_DEADLINE,
             handler.on_direct_call(raw),
