@@ -41,7 +41,7 @@ pub enum FriendStoreError {
 /// - `PendingOut`: *we* sent a friend request and are awaiting their
 ///   accept. The sender is authorized only for `FriendAccept`, the first
 ///   payload of the PreKeyInit that opens our session (enforced in
-///   `rekindle_transport::operations::direct::frame::sender_admitted`,
+///   `rekindle_transport::operations::direct::admission::sender_admitted`,
 ///   plans C7.25, E2.3); other kinds drop.
 /// - `Removing`: we removed the friend and the `Unfriended` notice is still
 ///   queued to them. The row keeps their routing information for the

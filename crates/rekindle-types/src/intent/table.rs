@@ -27,6 +27,7 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("dev_disable_watch", None),
     ("subscribe_events", None),
     ("send_message", Some(IntentKind::SendMessage)),
+    ("resend_message", Some(IntentKind::SendMessage)),
     ("send_typing", None),
     ("get_message_history", None),
     ("mark_read", None),
