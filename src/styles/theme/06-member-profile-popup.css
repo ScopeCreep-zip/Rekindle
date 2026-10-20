@@ -222,10 +222,16 @@
     background: color-mix(in srgb, var(--color-xfire-text-dim) 15%, transparent);
   }
 
+  /* Bounded with its own scroll so the message list keeps the window's
+   * `flex: 1` and the footer stays down (audit U-8). */
   .chat-safety-number {
     flex-shrink: 0;
     display: flex;
     justify-content: center;
+    align-items: flex-start;
+    min-height: 0;
+    max-height: 45%;
+    overflow-y: auto;
     padding: 8px 12px;
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
   }

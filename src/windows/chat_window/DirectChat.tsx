@@ -52,6 +52,8 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
 
   // Their keys are not signed by the identity we know (plan E2.4, B3): the
   // Host refuses every send, so the input says why instead of offering one.
+  // Only a friend has a safety number to compare (audit U-9).
+  const isFriend = createMemo(() => friendsState.friends[peerId] !== undefined);
   const pinMismatch = createMemo(() => friendsState.friends[peerId]?.identityPinMismatch === true);
 
   // The peer's key trust (plan E2.3): the header's badge, and the safety
@@ -136,16 +138,18 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         <StatusDot status={peerStatus()} />
         <span class="chat-peer-status-label">{peerStatus()}</span>
         <VerifiedBadge view={safety.view()} />
-        <button
-          class="chat-safety-btn"
-          onClick={() => setShowSafety(!showSafety())}
-          title="Safety number"
-          aria-label={`Safety number with ${peerName()}`}
-          aria-expanded={showSafety()}
-          aria-controls="chat-safety-number"
-        >
-          <span class="nf-icon" aria-hidden="true">{ICON_SHIELD}</span>
-        </button>
+        <Show when={isFriend()}>
+          <button
+            class="chat-safety-btn"
+            onClick={() => setShowSafety(!showSafety())}
+            title="Safety number"
+            aria-label={`Safety number with ${peerName()}`}
+            aria-expanded={showSafety()}
+            aria-controls={showSafety() ? "chat-safety-number" : undefined}
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_SHIELD}</span>
+          </button>
+        </Show>
         {/* W13-fix.1 — voice + video buttons matching the buddy-list
          *  right-click menu. Both go through the start_dm_call →
          *  CallInvite handshake. When a call is active with this peer,
@@ -181,7 +185,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           </button>
         </Show>
       </div>
-      <Show when={showSafety()}>
+      <Show when={showSafety() && isFriend()}>
         <div id="chat-safety-number" class="chat-safety-number">
           <SafetyNumberPanel peerKey={peerId} view={safety.view()} onChanged={safety.reload} />
         </div>

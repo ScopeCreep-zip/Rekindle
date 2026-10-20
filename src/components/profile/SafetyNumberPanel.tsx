@@ -62,7 +62,11 @@ const SafetyNumberPanel: Component<{
               verified again.
             </p>
           </Show>
-          <div class="sec-safety-number-digits" aria-label={`Safety number ${groups().join(" ")}`}>
+          <div
+            class="sec-safety-number-digits"
+            role="group"
+            aria-label={`Safety number ${groups().join(" ")}`}
+          >
             <For each={groups()}>{(group) => <span aria-hidden="true">{group}</span>}</For>
           </div>
           <svg
@@ -76,7 +80,7 @@ const SafetyNumberPanel: Component<{
             <path class="sec-safety-number-qr-modules" d={qrPath(view().qrRows)} />
           </svg>
           <p class="sec-safety-number-hint">
-            Compare these numbers with them in person or on a call you trust, or scan their code.
+            Compare these numbers with them in person or on a call you trust.
           </p>
           <button
             type="button"
