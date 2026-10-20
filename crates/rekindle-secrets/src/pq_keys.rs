@@ -19,7 +19,7 @@
 //! Phase 3b plugs these into `rekindle-crypto::signal::pqxdh::handshake`.
 
 use libcrux_ml_kem::mlkem768::{
-    portable::{decapsulate, encapsulate, generate_key_pair},
+    portable::{decapsulate, encapsulate, generate_key_pair, validate_public_key},
     MlKem768Ciphertext, MlKem768KeyPair, MlKem768PrivateKey, MlKem768PublicKey,
 };
 use rand::RngCore;
@@ -112,17 +112,18 @@ impl MlKemSecret {
 
     /// Parse a private key from its 2400-byte representation. Returns
     /// `None` if the length is wrong. Caller is responsible for the
-    /// bytes coming from a trusted source (VaultStore-encrypted at rest).
+    /// bytes coming from a trusted source (the identity database).
+    ///
+    /// The staging copy is `Zeroizing`, and the key is written into a
+    /// box allocated first, so no unwiped copy of the secret is left on
+    /// this frame or in a freed allocation.
     #[must_use]
     pub fn from_secret_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != ML_KEM_SECRET_KEY_BYTES {
-            return None;
-        }
-        let mut value = [0u8; ML_KEM_SECRET_KEY_BYTES];
-        value.copy_from_slice(bytes);
-        Some(Self {
-            inner: Box::new(MlKem768PrivateKey::from(value)),
-        })
+        let value: Zeroizing<[u8; ML_KEM_SECRET_KEY_BYTES]> =
+            Zeroizing::new(bytes.try_into().ok()?);
+        let mut inner = Box::<MlKem768PrivateKey>::default();
+        *inner = MlKem768PrivateKey::from(&*value);
+        Some(Self { inner })
     }
 
     /// Extract the corresponding public key from the FIPS-203 secret-key
@@ -183,9 +184,11 @@ impl MlKemPublic {
     /// via [`MlKemSecret::decapsulate`].
     #[must_use]
     pub fn encapsulate(&self) -> EncapsulationOutput {
-        let mut rnd = [0u8; libcrux_ml_kem::ENCAPS_SEED_SIZE];
-        rand::rngs::OsRng.fill_bytes(&mut rnd);
-        let (ct, ss) = encapsulate(&self.inner, rnd);
+        // The encapsulation seed `m` determines the shared secret (FIPS
+        // 203 §6.2), so it is wiped like one.
+        let mut rnd = Zeroizing::new([0u8; libcrux_ml_kem::ENCAPS_SEED_SIZE]);
+        rand::rngs::OsRng.fill_bytes(&mut *rnd);
+        let (ct, ss) = encapsulate(&self.inner, *rnd);
         EncapsulationOutput {
             ciphertext: ct.as_ref().to_vec(),
             shared_secret: Zeroizing::new(ss),
@@ -201,23 +204,16 @@ impl MlKemPublic {
     }
 
     /// Parse a public key from its 1184-byte wire representation.
-    /// Returns `None` if the length is wrong. Validity (lattice-point
-    /// well-formedness) is NOT checked here — the caller is expected to
-    /// follow up with `libcrux_ml_kem::mlkem768::portable::validate_public_key`
-    /// if defending against adversarial input.
+    /// Returns `None` if the length is wrong or the key fails FIPS 203
+    /// §7.2's encapsulation-key check (every coefficient of `t` reduced
+    /// mod q: `ByteEncode12(ByteDecode12(ek)) == ek`), via libcrux's
+    /// `validate_public_key`. Every key from a peer comes through here,
+    /// so none is encapsulated to unchecked.
     #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        if bytes.len() != ML_KEM_PUBLIC_KEY_BYTES {
-            return None;
-        }
-        let mut value = [0u8; ML_KEM_PUBLIC_KEY_BYTES];
-        value.copy_from_slice(bytes);
-        // `MlKem768PublicKey` is a tuple-struct-like with `pub(crate) value`.
-        // We can't construct it directly here. The crate exposes `From<&[u8; N]>`
-        // via `impl_generic_struct!` — check by trying both.
-        Some(Self {
-            inner: Box::new(MlKem768PublicKey::from(value)),
-        })
+        let value: &[u8; ML_KEM_PUBLIC_KEY_BYTES] = bytes.try_into().ok()?;
+        let inner = Box::new(MlKem768PublicKey::from(value));
+        validate_public_key(&inner).then_some(Self { inner })
     }
 }
 
@@ -277,6 +273,29 @@ mod tests {
         assert!(MlKemPublic::from_bytes(&[0u8; 1185]).is_none());
         assert!(ml_kem_ciphertext_from_bytes(&[0u8; 1087]).is_none());
         assert!(ml_kem_ciphertext_from_bytes(&[0u8; 1089]).is_none());
+    }
+
+    /// FIPS 203 §7.2: an encapsulation key whose `t` holds a coefficient
+    /// of q (3329) or more is refused; an all-zero `t` (every coefficient
+    /// reduced) passes the check.
+    #[test]
+    fn from_bytes_refuses_an_unreduced_encapsulation_key() {
+        let mut key = [0u8; ML_KEM_PUBLIC_KEY_BYTES];
+        assert!(MlKemPublic::from_bytes(&key).is_some());
+        // The first 12-bit coefficient = 0xFFF = 4095 ≥ q.
+        key[0] = 0xFF;
+        key[1] = 0x0F;
+        assert!(MlKemPublic::from_bytes(&key).is_none());
+        // 3329 = 0xD01, exactly q: not reduced.
+        key[0] = 0x01;
+        key[1] = 0x0D;
+        assert!(MlKemPublic::from_bytes(&key).is_none());
+        // 3328 = q − 1: reduced.
+        key[0] = 0x00;
+        assert!(MlKemPublic::from_bytes(&key).is_some());
+        // A generated key passes.
+        let (_, pk) = MlKemSecret::generate();
+        assert!(MlKemPublic::from_bytes(pk.as_bytes()).is_some());
     }
 
     #[test]

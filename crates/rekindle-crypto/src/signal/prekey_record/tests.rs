@@ -176,6 +176,7 @@ fn a_minted_set_is_a_whole_verified_record() {
         &bob.public_key_bytes(),
         set.head.record.clone(),
         set.slots.iter().map(|s| (s.subkey, s.record.clone())),
+        NOW,
     )
     .unwrap();
     assert_eq!(view.slots().len(), set.slots.len());
@@ -201,6 +202,7 @@ fn view_of(bob: &Identity, set: &MintedSet) -> RecordView {
         &bob.public_key_bytes(),
         set.head.record.clone(),
         set.slots.iter().map(|s| (s.subkey, s.record.clone())),
+        NOW,
     )
     .unwrap()
 }
@@ -254,7 +256,7 @@ fn with_no_unused_slot_the_pick_is_the_head_alone() {
     );
     assert_eq!(init.signed_prekey_id, set.head.spk_id);
 
-    let empty = RecordView::new(&bob.public_key_bytes(), set.head.record.clone(), []).unwrap();
+    let empty = RecordView::new(&bob.public_key_bytes(), set.head.record.clone(), [], NOW).unwrap();
     assert_eq!(
         pick_slot(&empty, &UsedIds::new(), &rng),
         Pick::LastResortOnly
@@ -269,7 +271,13 @@ fn the_view_keeps_only_what_the_pinned_identity_signed() {
     let (bob, mallory) = (Identity::generate(), Identity::generate());
     let rng = TestRandom::new(17);
     let set = mint_set(&bob, &rng, NOW);
-    assert!(RecordView::new(&mallory.public_key_bytes(), set.head.record.clone(), []).is_err());
+    assert!(RecordView::new(
+        &mallory.public_key_bytes(),
+        set.head.record.clone(),
+        [],
+        NOW
+    )
+    .is_err());
 
     let forged = mint_slot(&mallory, &rng, FIRST_SLOT, 77, 78);
     let view = RecordView::new(
@@ -280,6 +288,7 @@ fn the_view_keeps_only_what_the_pinned_identity_signed() {
             (0, set.slots[1].record.clone()),
             (FIRST_SLOT + 2, set.slots[2].record.clone()),
         ],
+        NOW,
     )
     .unwrap();
     assert_eq!(

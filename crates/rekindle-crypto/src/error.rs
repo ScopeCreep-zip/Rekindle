@@ -49,6 +49,13 @@ pub enum CryptoError {
     #[error("duplicate message")]
     DuplicateMessage,
 
+    /// A peer's prekey head is dated outside `SIGNED_MAX_AGE_MS` of now:
+    /// its signed prekey and last-resort key are not used (plan E2.4 B1,
+    /// audit 2026-10-20 C-7). The head's time is signed, so only its
+    /// owner could have written it.
+    #[error("prekey head issued at {issued_at_ms} is outside the age bound at {now_ms}")]
+    StalePrekeys { issued_at_ms: i64, now_ms: i64 },
+
     /// No session exists for the requested peer, in the in-memory cache
     /// or in persistent storage.
     #[error("no session for peer {0}")]

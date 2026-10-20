@@ -109,7 +109,7 @@ impl Model {
             n: self.ns,
         };
         self.ns += 1;
-        let ciphertext = seal(&mk, plaintext, &self.concat(ad_extra, &header)).ok()?;
+        let ciphertext = seal(&mk, plaintext, &self.concat(ad_extra, &header));
         Some(RatchetMessage { header, ciphertext })
     }
 

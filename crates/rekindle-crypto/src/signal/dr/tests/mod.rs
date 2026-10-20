@@ -15,6 +15,8 @@ use crate::signal::test_support::TestRandom;
 const SK: [u8; 32] = [7; 32];
 const AD: [u8; AD_LEN] = [3; AD_LEN];
 const BOB_SPK: [u8; 32] = [2; 32];
+/// The receiver's clock in these tests.
+const NOW: i64 = 1_000;
 
 fn keys() -> SessionKeys {
     SessionKeys {
@@ -47,7 +49,12 @@ fn receive(
     message: &super::RatchetMessage,
 ) -> Result<Vec<u8>, CryptoError> {
     let mut trial = state.clone();
-    let plaintext = trial.decrypt(message, b"", &TestRandom::for_message(&message.ciphertext))?;
+    let plaintext = trial.decrypt(
+        message,
+        b"",
+        NOW,
+        &TestRandom::for_message(&message.ciphertext),
+    )?;
     *state = trial;
     Ok(plaintext)
 }
@@ -114,7 +121,7 @@ fn a_tampered_message_or_other_ad_fails_and_changes_nothing() {
     assert!(receive(&mut bob, &tampered).is_err());
     let mut trial = bob.clone();
     assert!(trial
-        .decrypt(&message, b"other", &TestRandom::new(1))
+        .decrypt(&message, b"other", NOW, &TestRandom::new(1))
         .is_err());
     let mut header = message.clone();
     header.header.pn += 1;
@@ -122,7 +129,7 @@ fn a_tampered_message_or_other_ad_fails_and_changes_nothing() {
     let mut trial = bob.clone();
     assert_eq!(
         trial
-            .decrypt(&message, b"type", &TestRandom::new(1))
+            .decrypt(&message, b"type", NOW, &TestRandom::new(1))
             .unwrap(),
         b"payload"
     );
@@ -174,7 +181,9 @@ fn a_new_chain_past_the_bound_is_refused_before_the_ratchet_runs() {
         for (pn, n) in [(0, MAX_FORWARD_JUMPS + 1), (MAX_FORWARD_JUMPS + 2, 0)] {
             let mut message = alice.encrypt(b"x", b"").unwrap();
             message.header = Header { dh, pn, n };
-            let err = bob.decrypt(&message, b"", &TestRandom::new(1)).unwrap_err();
+            let err = bob
+                .decrypt(&message, b"", NOW, &TestRandom::new(1))
+                .unwrap_err();
             assert!(err.to_string().contains("ahead"), "{err}");
             assert_eq!(stored(&bob), before);
         }

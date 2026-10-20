@@ -199,8 +199,12 @@ pub async fn decrypt_and_record_inbound(
     let (local, peer, ad_extra) = (local.clone(), peer.clone(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
         let owner = local.owner();
-        let (next, plaintext) =
-            load(conn, &owner, &peer)?.decrypt(&message, &ad_extra, local.rng.as_ref())?;
+        let (next, plaintext) = load(conn, &owner, &peer)?.decrypt(
+            &message,
+            &ad_extra,
+            local.now_ms,
+            local.rng.as_ref(),
+        )?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
         record_inbound(conn, &local, &peer, &message, type_id, plaintext)
     })
@@ -252,6 +256,7 @@ pub async fn accept_init(
             &init,
             &secrets.keys(&local.identity),
             &ad_extra,
+            local.now_ms,
             local.rng.as_ref(),
         )?;
         let consumed = prekeys::consume_one_time(conn, &owner, &init, local.now_ms)?;

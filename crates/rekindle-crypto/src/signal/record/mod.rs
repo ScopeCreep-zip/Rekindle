@@ -160,6 +160,7 @@ impl SessionRecord {
         init: &PreKeyInit,
         keys: &ResponderKeys<'_>,
         ad_extra: &[u8],
+        now_ms: i64,
         rng: &dyn RandomSource,
     ) -> Result<(Self, Vec<u8>), CryptoError> {
         self.check_address(keys.identity, &init.identity_key)?;
@@ -178,7 +179,7 @@ impl SessionRecord {
                 .map_err(|e| pqxdh_error(&e))?;
         let mut state =
             SessionState::responder(&session_keys, ad, init.base_key, keys.signed_prekey);
-        let plaintext = state.decrypt(&init.message, ad_extra, rng)?;
+        let plaintext = state.decrypt(&init.message, ad_extra, now_ms, rng)?;
         Ok((self.with_active(state), plaintext))
     }
 
@@ -200,17 +201,18 @@ impl SessionRecord {
     /// Decrypt with the active session, else the inactive ones newest
     /// first, each on a clone; the session that decrypts is the active one
     /// in the returned record. A message already decrypted is
-    /// [`CryptoError::DuplicateMessage`].
+    /// [`CryptoError::DuplicateMessage`]. `now_ms` ages out skipped keys.
     pub fn decrypt(
         &self,
         message: &RatchetMessage,
         ad_extra: &[u8],
+        now_ms: i64,
         rng: &dyn RandomSource,
     ) -> Result<(Self, Vec<u8>), CryptoError> {
         let mut failure = None;
         for (slot, state) in self.states() {
             let mut trial = state.clone();
-            match trial.decrypt(message, ad_extra, rng) {
+            match trial.decrypt(message, ad_extra, now_ms, rng) {
                 Ok(plaintext) => return Ok((self.promoted(slot, trial), plaintext)),
                 Err(CryptoError::DuplicateMessage) => return Err(CryptoError::DuplicateMessage),
                 Err(e) => failure = Some(e),

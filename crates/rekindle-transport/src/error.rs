@@ -254,6 +254,7 @@ impl From<rekindle_crypto::error::CryptoError> for TransportError {
             | C::VaultLocked
             | C::WrongPassphrase
             | C::IdentityAddressMismatch { .. }
+            | C::StalePrekeys { .. }
             | C::DuplicateMessage) => Self::SignalProtocol {
                 reason: other.to_string(),
             },

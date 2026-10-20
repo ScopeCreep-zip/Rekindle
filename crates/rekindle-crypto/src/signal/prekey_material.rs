@@ -104,9 +104,13 @@ mod tests {
         let rng = TestRandom::new(1);
         let head = mint_head(&bob, &rng, 5, 6, 1_000);
         let slot = mint_slot(&bob, &rng, 1, 7, 9);
-        let bundle =
-            PreKeyBundle::from_record(&bob.public_key_bytes(), &head.record, Some(&slot.record))
-                .unwrap();
+        let bundle = PreKeyBundle::from_record(
+            &bob.public_key_bytes(),
+            &head.record,
+            Some(&slot.record),
+            1_000,
+        )
+        .unwrap();
         let (_, init) = SessionRecord::new(bob.public_key_bytes())
             .initiate(&alice, &bundle, b"hi", b"", &rng)
             .unwrap();
@@ -120,7 +124,7 @@ mod tests {
         )
         .unwrap();
         let (_, first) = SessionRecord::new(alice.public_key_bytes())
-            .insert_from_init(&init, &secrets.keys(&bob), b"", &rng)
+            .insert_from_init(&init, &secrets.keys(&bob), b"", 1_000, &rng)
             .unwrap();
         assert_eq!(first, b"hi");
     }

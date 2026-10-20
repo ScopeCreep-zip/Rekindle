@@ -3,7 +3,8 @@
 //!
 //! Pseudonyms: HKDF-SHA256(master_secret, community_id) → Ed25519 keypair.
 //! Slot keypairs: HKDF-SHA256(slot_seed, "rekindle-slot-{index}") → Ed25519 keypair.
-//! File-cache names: HKDF-SHA256(master_secret) → 32-byte BLAKE3 key.
+//! File-cache names: HKDF-SHA256(salt none, master_secret, info
+//! `FILE_CACHE_NAMES`) → 32-byte BLAKE3 key.
 
 use ed25519_dalek::SigningKey;
 use hkdf::Hkdf;
@@ -56,11 +57,14 @@ pub fn derive_governance_overflow_keypair(
 /// every directory under `state/{pk}.files/` is a keyed BLAKE3 hash under
 /// it, so the names are stable across restarts and say nothing about the
 /// communities, conversations or attachments they hold to anyone without
-/// the identity secret. Domain-separated by its own HKDF salt.
+/// the identity secret. Domain-separated by its label in HKDF `info`
+/// (RFC 5869 §3.2: `info` binds the output to its context; the salt is
+/// for extraction and is omitted for an input that is already a uniform
+/// key, §3.1).
 pub fn derive_file_cache_name_key(master_secret: &[u8; 32]) -> Zeroizing<[u8; 32]> {
-    let hkdf = Hkdf::<Sha256>::new(Some(domains::FILE_CACHE_NAMES.as_bytes()), master_secret);
+    let hkdf = Hkdf::<Sha256>::new(None, master_secret);
     let mut key = Zeroizing::new([0u8; 32]);
-    hkdf.expand(&[], key.as_mut())
+    hkdf.expand(domains::FILE_CACHE_NAMES.as_bytes(), key.as_mut())
         .expect("32-byte output is a valid HKDF-SHA256 length");
     key
 }
@@ -170,8 +174,20 @@ mod tests {
         let a = derive_file_cache_name_key(&[5u8; 32]);
         assert_eq!(*a, *derive_file_cache_name_key(&[5u8; 32]));
         assert_ne!(*a, *derive_file_cache_name_key(&[6u8; 32]));
-        // Not the pseudonym of any community: its own salt.
+        // Not the pseudonym of any community: its own label.
         assert_ne!(*a, derive_community_pseudonym(&[5u8; 32], "").to_bytes());
+    }
+
+    /// The label is HKDF `info` under no salt: the derivation is exactly
+    /// HKDF-SHA256(salt = none, ikm = secret, info = FILE_CACHE_NAMES).
+    #[test]
+    fn file_cache_name_key_puts_its_label_in_info() {
+        let secret = [5u8; 32];
+        let mut expected = [0u8; 32];
+        Hkdf::<Sha256>::new(None, &secret)
+            .expand(domains::FILE_CACHE_NAMES.as_bytes(), &mut expected)
+            .unwrap();
+        assert_eq!(*derive_file_cache_name_key(&secret), expected);
     }
 
     #[test]

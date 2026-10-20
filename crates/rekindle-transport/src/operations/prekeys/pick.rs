@@ -8,6 +8,7 @@ use rekindle_codec::capnp_codec::identity::{
 };
 use rekindle_crypto::signal::prekey_record::{pick_slot, Pick, RecordView};
 use rekindle_crypto::signal::PreKeyBundle;
+use rekindle_crypto::CryptoError;
 use rekindle_db::ratchet::PeerAddress;
 use rekindle_protocol::dht::prekeys as record;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
@@ -64,8 +65,17 @@ pub async fn pick_bundle(
         .slots
         .iter()
         .filter_map(|(subkey, bytes)| decode_opk_slot(bytes).ok().map(|slot| (*subkey, slot)));
-    let view = match RecordView::new(&identity, head, slots) {
+    let view = match RecordView::new(&identity, head, slots, host.clock().now_ms_i64()) {
         Ok(view) => view,
+        Err(CryptoError::StalePrekeys {
+            issued_at_ms,
+            now_ms,
+        }) => {
+            let days = now_ms.saturating_sub(issued_at_ms).unsigned_abs() / 86_400_000;
+            return Err(unusable(format!(
+                "their signed prekey is {days} days out of date; their app has not refreshed it"
+            )));
+        }
         Err(e) => {
             tracing::warn!(peer = %peer, error = %e, "prekey record not signed by the pinned identity");
             host.publish(SubscriptionEvent::Friend(

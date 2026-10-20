@@ -47,7 +47,8 @@ pub struct MintedSet {
     pub slots: Vec<MintedSlot>,
 }
 
-/// The signed head over these public keys.
+/// The signed head over these public keys, its time `issued_at_ms`
+/// covered by both signatures.
 ///
 /// # Errors
 /// A key has the wrong shape.
@@ -64,12 +65,15 @@ pub fn sign_head(
     Ok(PrekeyRecordHead {
         spk_id,
         spk: spk_key.to_bytes(),
-        spk_sig: sign(identity, &spk_signing_payload(spk_id, &spk_key)),
+        spk_sig: sign(
+            identity,
+            &spk_signing_payload(spk_id, issued_at_ms, &spk_key),
+        ),
         pq_lr_id,
         pq_lr: pq_lr.to_vec(),
         pq_lr_sig: sign(
             identity,
-            &pq_signing_payload(PqRole::LastResort, pq_lr_id, &lr_key),
+            &pq_signing_payload(PqRole::LastResort { issued_at_ms }, pq_lr_id, &lr_key),
         ),
         issued_at: issued_at_ms,
     })

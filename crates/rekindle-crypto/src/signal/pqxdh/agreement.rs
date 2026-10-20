@@ -187,12 +187,15 @@ fn verified_pq_target(
     verify_spk(
         their_ik,
         bundle.signed_prekey_id,
+        bundle.issued_at_ms,
         &bundle.signed_prekey,
         &bundle.signed_prekey_signature,
     )?;
     verify_pq(
         their_ik,
-        PqRole::LastResort,
+        PqRole::LastResort {
+            issued_at_ms: bundle.issued_at_ms,
+        },
         bundle.pq_lr_id,
         &bundle.pqpk_lr,
         &bundle.pqpk_lr_signature,

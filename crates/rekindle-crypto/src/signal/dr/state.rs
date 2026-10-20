@@ -1,15 +1,22 @@
-//! One session's Double Ratchet state and its §3.5 steps.
+//! One session's Double Ratchet state and its steps (DR rev. 4 §3.3
+//! initialization, §3.4 encrypt, §3.5 decrypt).
 //!
 //! Every mutating step runs on a value the caller owns; the session
 //! record clones before decrypting and keeps the clone only on success,
-//! which is §3.5's rule that a failed decryption changes nothing.
+//! which is §3.5's rule that "changes to the state object are discarded"
+//! on an exception. The steps themselves also refuse before they mutate
+//! wherever a refusal can be known first: the forward-jump bounds, the
+//! message number, and the DH ratchet's agreements.
 
 use rekindle_utils::random::RandomSource;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
 
 use super::kdf::{kdf_ck, kdf_rk, open, seal};
-use super::{Header, RatchetMessage, MAX_FORWARD_JUMPS, MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS};
+use super::{
+    Header, RatchetMessage, MAX_FORWARD_JUMPS, MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS,
+    SKIPPED_KEY_MAX_AGE_MS,
+};
 use crate::error::CryptoError;
 use crate::signal::pqxdh::agreement::{AssociatedData, SessionKeys};
 
@@ -21,11 +28,24 @@ pub(super) struct Chain {
     pub(super) n: u32,
 }
 
-/// A message key kept for a message not yet received (`MKSKIPPED`).
+/// A message key kept for a message not yet received (`MKSKIPPED`), and
+/// when it was stored (DR rev. 4 §8.4: delete skipped keys after an
+/// interval).
 #[derive(Clone, Zeroize, ZeroizeOnDrop)]
 pub(super) struct SkippedKey {
     pub(super) n: u32,
+    pub(super) stored_at_ms: i64,
     pub(super) key: [u8; 32],
+}
+
+/// A DH ratchet step computed but not yet applied: both agreements ran,
+/// so applying it cannot fail.
+struct RatchetStep {
+    their: [u8; 32],
+    receive_key: Zeroizing<[u8; 32]>,
+    root_key: Zeroizing<[u8; 32]>,
+    send_key: Zeroizing<[u8; 32]>,
+    dh_self: Zeroizing<[u8; 32]>,
 }
 
 /// A receiving chain: the sender's ratchet key it answers, its chain and
@@ -144,20 +164,30 @@ impl SessionState {
             .n
             .checked_add(1)
             .ok_or_else(|| CryptoError::SessionError("sending chain exhausted".into()))?;
-        let ciphertext = seal(&message_key, plaintext, &self.message_ad(ad_extra, &header))?;
+        let ciphertext = seal(&message_key, plaintext, &self.message_ad(ad_extra, &header));
         Ok(RatchetMessage { header, ciphertext })
     }
 
-    /// `RatchetDecrypt`, with libsignal's duplicate detection: a message
-    /// whose key was already used is [`CryptoError::DuplicateMessage`].
+    /// `RatchetDecrypt` at `now_ms`, with libsignal's duplicate
+    /// detection: a message whose key was already used is
+    /// [`CryptoError::DuplicateMessage`]. Skipped keys older than
+    /// [`SKIPPED_KEY_MAX_AGE_MS`] are deleted first.
     pub(crate) fn decrypt(
         &mut self,
         message: &RatchetMessage,
         ad_extra: &[u8],
+        now_ms: i64,
         rng: &dyn RandomSource,
     ) -> Result<Vec<u8>, CryptoError> {
         let header = &message.header;
+        // Message u32::MAX would leave its chain's next number at 2^32.
+        if header.n == u32::MAX {
+            return Err(CryptoError::decryption(
+                "message number past the chain's end".into(),
+            ));
+        }
         let ad = self.message_ad(ad_extra, header);
+        self.expire_skipped(now_ms);
         if let Some(key) = self.take_skipped(header) {
             return open(&key, &message.ciphertext, &ad);
         }
@@ -175,19 +205,25 @@ impl SessionState {
             }
             // A new chain starts at 0. Both bounds hold before any key
             // (or the ratchet's agreement) is derived.
+            // Then the ratchet's agreements, so a low-order key is refused
+            // before anything is stored.
             check_forward_jump(header.pn, self.current().map_or(0, |c| c.chain.n))?;
             check_forward_jump(header.n, 0)?;
-            self.skip_message_keys(header.pn)?;
-            self.dh_ratchet(header.dh, rng)?;
+            let step = self.ratchet_step(header.dh, rng)?;
+            self.skip_message_keys(header.pn, now_ms)?;
+            self.apply_ratchet(&step);
         }
-        self.skip_message_keys(header.n)?;
+        self.skip_message_keys(header.n, now_ms)?;
         let chain = &mut self
             .current_mut()
             .ok_or_else(|| CryptoError::decryption("no receiving chain".into()))?
             .chain;
         let (message_key, next) = kdf_ck(&chain.key);
         chain.key = *next;
-        chain.n += 1;
+        chain.n = chain
+            .n
+            .checked_add(1)
+            .ok_or_else(|| CryptoError::decryption("receiving chain exhausted".into()))?;
         open(&message_key, &message.ciphertext, &ad)
     }
 
@@ -199,6 +235,18 @@ impl SessionState {
         ad.extend_from_slice(ad_extra);
         ad.extend_from_slice(&header);
         ad
+    }
+
+    /// Delete every skipped key stored more than
+    /// [`SKIPPED_KEY_MAX_AGE_MS`] before `now_ms` (DR rev. 4 §8.4). A key
+    /// "stored" in the future (the clock went back) is kept.
+    fn expire_skipped(&mut self, now_ms: i64) {
+        for receiver in &mut self.receivers {
+            receiver.skipped.retain(|k| {
+                u64::try_from(now_ms.saturating_sub(k.stored_at_ms))
+                    .map_or(true, |age| age <= SKIPPED_KEY_MAX_AGE_MS)
+            });
+        }
     }
 
     /// `TrySkippedMessageKeys`: remove and return the key for `(dh, n)`.
@@ -223,9 +271,9 @@ impl SessionState {
     }
 
     /// `SkipMessageKeys(until)`: keep the keys up to `until` on the
-    /// current receiving chain, refusing a jump past
+    /// current receiving chain, stamped `now_ms`, refusing a jump past
     /// [`MAX_FORWARD_JUMPS`] and keeping the newest [`MAX_MESSAGE_KEYS`].
-    fn skip_message_keys(&mut self, until: u32) -> Result<(), CryptoError> {
+    fn skip_message_keys(&mut self, until: u32, now_ms: i64) -> Result<(), CryptoError> {
         check_forward_jump(until, self.current().map_or(0, |c| c.chain.n))?;
         let Some(current) = self.current_mut() else {
             return Ok(());
@@ -234,9 +282,11 @@ impl SessionState {
             let (message_key, next) = kdf_ck(&current.chain.key);
             current.skipped.push(SkippedKey {
                 n: current.chain.n,
+                stored_at_ms: now_ms,
                 key: *message_key,
             });
             current.chain.key = *next;
+            // `n < until`, so this never passes u32::MAX.
             current.chain.n += 1;
         }
         let excess = current.skipped.len().saturating_sub(MAX_MESSAGE_KEYS);
@@ -244,35 +294,50 @@ impl SessionState {
         Ok(())
     }
 
-    /// `DHRatchet`: a receiving chain for the sender's new key, then a
-    /// fresh `DHs` from `rng` and a sending chain. Beyond
-    /// [`MAX_RECEIVER_CHAINS`] the oldest receiving chain goes.
-    fn dh_ratchet(&mut self, their: [u8; 32], rng: &dyn RandomSource) -> Result<(), CryptoError> {
-        self.pn = self.sender.as_ref().map_or(0, |s| s.n);
-        self.remote = Some(their);
+    /// `DHRatchet`'s derivations for the sender's new key `their`: the
+    /// receiving chain, a fresh `DHs` from `rng`, the sending chain and
+    /// the new root. Nothing is changed, so a non-contributory agreement
+    /// (a low-order key) refuses the message with the state untouched.
+    fn ratchet_step(
+        &self,
+        their: [u8; 32],
+        rng: &dyn RandomSource,
+    ) -> Result<RatchetStep, CryptoError> {
         let receive_dh = agree(&self.dh_self, &their)?;
         let (root_key, receive_key) = kdf_rk(&self.root_key, &receive_dh);
-        self.receivers.push(ReceiverChain {
+        let dh_self = generate_dh(rng);
+        let send_dh = agree(&dh_self, &their)?;
+        let (root_key, send_key) = kdf_rk(&root_key, &send_dh);
+        Ok(RatchetStep {
             their,
+            receive_key,
+            root_key,
+            send_key,
+            dh_self,
+        })
+    }
+
+    /// `DHRatchet`'s state changes from a computed step. Beyond
+    /// [`MAX_RECEIVER_CHAINS`] the oldest receiving chain goes.
+    fn apply_ratchet(&mut self, step: &RatchetStep) {
+        self.pn = self.sender.as_ref().map_or(0, |s| s.n);
+        self.remote = Some(step.their);
+        self.receivers.push(ReceiverChain {
+            their: step.their,
             chain: Chain {
-                key: *receive_key,
+                key: *step.receive_key,
                 n: 0,
             },
             skipped: Vec::new(),
         });
         let excess = self.receivers.len().saturating_sub(MAX_RECEIVER_CHAINS);
         self.receivers.drain(..excess);
-
-        let dh_self = generate_dh(rng);
-        let send_dh = agree(&dh_self, &their)?;
-        let (root_key, send_key) = kdf_rk(&root_key, &send_dh);
-        self.root_key = *root_key;
-        self.dh_self = *dh_self;
+        self.root_key = *step.root_key;
+        self.dh_self = *step.dh_self;
         self.sender = Some(Chain {
-            key: *send_key,
+            key: *step.send_key,
             n: 0,
         });
-        Ok(())
     }
 }
 

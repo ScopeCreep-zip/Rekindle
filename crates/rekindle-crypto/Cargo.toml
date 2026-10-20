@@ -10,14 +10,17 @@ workspace = true
 [dependencies]
 # Tier 1 owns the primitive crypto error taxonomy; this crate wraps it
 # rather than restating it (see src/error.rs).
-aes-gcm = "0.10"
+# The Double Ratchet's ENCRYPT (`signal::dr::kdf`): AES-256-CBC with
+# PKCS#7, DR rev. 4 §7.2's recipe; `zeroize` wipes the key schedules.
+aes = { version = "0.8", features = [ "zeroize" ] }
+cbc = { version = "0.1", features = [ "alloc", "zeroize" ] }
 chacha20poly1305 = "0.10"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
 hex = "0.4"
 base64 = "0.22"
 hkdf = "0.12"
-# KDF_CK of the spec Double Ratchet (`signal::dr`): HMAC-SHA256 over the
-# chain key, DR rev. 1 §5.2.
+# KDF_CK and ENCRYPT's tag of the spec Double Ratchet (`signal::dr`):
+# HMAC-SHA256, DR rev. 4 §7.2.
 hmac = "0.12"
 rand = "0.8"
 # The prekey record values (`PrekeyRecordHead`, `OpkSlot`) are the codec's

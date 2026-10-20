@@ -23,15 +23,13 @@ use super::Host;
 /// Bob's bundle from his record's head and first slot, as Ann's pick
 /// assembles it.
 fn bundle_of(bob: &Identity) -> PreKeyBundle {
-    let set = mint_set(
-        bob,
-        &rekindle_utils::OsRandom,
-        rekindle_utils::timestamp_ms_i64(),
-    );
+    let now = rekindle_utils::timestamp_ms_i64();
+    let set = mint_set(bob, &rekindle_utils::OsRandom, now);
     PreKeyBundle::from_record(
         &bob.public_key_bytes(),
         &set.head.record,
         Some(&set.slots[0].record),
+        now,
     )
     .unwrap()
 }

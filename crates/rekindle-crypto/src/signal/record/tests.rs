@@ -12,6 +12,8 @@ use crate::signal::RatchetMessage;
 use crate::Identity;
 
 const AD: &[u8] = b"typeId";
+/// The receiver's clock in these tests.
+const NOW: i64 = 1_000;
 
 fn seed(base: u64, index: usize) -> u64 {
     base + u64::try_from(index).expect("a test index fits u64")
@@ -42,6 +44,7 @@ fn accept(
         init,
         &bob.keys_for(init.one_time_prekey_id, init.pq_prekey),
         AD,
+        NOW,
         &TestRandom::for_message(&init.message.ciphertext),
     )
 }
@@ -53,8 +56,12 @@ fn send(record: &mut SessionRecord, plaintext: &[u8]) -> RatchetMessage {
 }
 
 fn receive(record: &mut SessionRecord, message: &RatchetMessage) -> Result<Vec<u8>, CryptoError> {
-    let (next, plaintext) =
-        record.decrypt(message, AD, &TestRandom::for_message(&message.ciphertext))?;
+    let (next, plaintext) = record.decrypt(
+        message,
+        AD,
+        NOW,
+        &TestRandom::for_message(&message.ciphertext),
+    )?;
     *record = next;
     Ok(plaintext)
 }
@@ -278,7 +285,7 @@ fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
 
     let no_opk = bob.keys_for(None, init.pq_prekey);
     assert!(empty
-        .insert_from_init(&init, &no_opk, AD, &TestRandom::new(2))
+        .insert_from_init(&init, &no_opk, AD, NOW, &TestRandom::new(2))
         .is_err());
 
     let (b, first) = accept(&empty, &bob, &init).unwrap();

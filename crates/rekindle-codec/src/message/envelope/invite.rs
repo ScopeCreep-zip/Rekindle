@@ -29,7 +29,8 @@ pub struct InviteBlob {
     /// as stale by [`check_invite_recency`] — no legacy fallback.
     #[serde(default)]
     pub issued_at: u64,
-    /// Ed25519 signature over the JSON of all fields above.
+    /// Ed25519 signature over `FRIEND_INVITE_SIG ‖` the JSON of all fields
+    /// above.
     #[serde(with = "rekindle_types::base64_bytes")]
     pub signature: Vec<u8>,
 }
@@ -76,8 +77,11 @@ pub fn create_invite_blob(
     }
 }
 
-/// The bytes an invite's signature covers: every field but the signature,
-/// as JSON, with the route blob base64 as the blob itself carries it.
+/// The bytes an invite's signature covers: the registered domain
+/// `FRIEND_INVITE_SIG`, then every field but the signature as JSON, with
+/// the route blob base64 as the blob itself carries it. The domain keeps
+/// an identity-key signature over invite JSON from ever verifying as any
+/// other identity-key signature, and the reverse.
 /// The invite carries no prekey bundle: B1's accepter starts the
 /// handshake from the FriendRequest's own bundle, and nothing read the
 /// invite's copy, which was ~75 % of the URL (plan C7.25).
@@ -99,7 +103,12 @@ fn signable_bytes(
         "invite_id": invite_id,
         "issued_at": issued_at_ms,
     });
-    serde_json::to_vec(&signable).unwrap_or_default()
+    let json = serde_json::to_vec(&signable).unwrap_or_default();
+    let domain = rekindle_types::domains::FRIEND_INVITE_SIG.as_bytes();
+    let mut bytes = Vec::with_capacity(domain.len() + json.len());
+    bytes.extend_from_slice(domain);
+    bytes.extend_from_slice(&json);
+    bytes
 }
 
 /// Verify the Ed25519 signature on an invite blob.
@@ -244,6 +253,22 @@ mod invite_blob_tests {
         );
         verify_invite_blob(&blob).expect("freshly-minted blob must verify on the same build");
         assert_eq!(blob.issued_at, 1_715_000_000_000);
+    }
+
+    /// The signature covers the registered domain then the JSON: the bare
+    /// JSON signed alone (the pre-domain form) does not verify.
+    #[test]
+    fn the_signature_is_domain_separated() {
+        use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+        let secret = make_secret();
+        let pk = pubkey_hex(&secret);
+        let mut blob = create_invite_blob(&secret, &pk, "Alice", "mb", "pr", &[], None, 7);
+        let signed = signable_bytes(&pk, "Alice", "mb", "pr", &[], None, 7);
+        let domain = rekindle_types::domains::FRIEND_INVITE_SIG.as_bytes();
+        assert_eq!(&signed[..domain.len()], domain);
+        let bare = SigningKey::from_bytes(&secret).sign(&signed[domain.len()..]);
+        blob.signature = bare.to_bytes().to_vec();
+        assert!(verify_invite_blob(&blob).is_err());
     }
 
     #[test]

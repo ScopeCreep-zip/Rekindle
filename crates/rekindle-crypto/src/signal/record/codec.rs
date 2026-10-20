@@ -9,14 +9,29 @@ use super::{SessionRecord, ARCHIVED_STATES_MAX_LENGTH};
 use crate::error::CryptoError;
 use crate::signal::dr::{corrupt, Reader, SessionState};
 
-/// The stored form's version.
-const FORMAT: u8 = 1;
+/// The stored form's version: 2 stores each skipped key's time (audit
+/// 2026-10-20 C-7).
+const FORMAT: u8 = 2;
 
 impl SessionRecord {
     /// The record's stored form.
     #[must_use]
+    ///
+    /// The buffer is sized once from every state's stored length, so it
+    /// never reallocates (a reallocation would free an unwiped copy).
     pub fn to_bytes(&self) -> Zeroizing<Vec<u8>> {
-        let mut out = Zeroizing::new(vec![FORMAT]);
+        let len = 1
+            + 32
+            + 1
+            + self.active.as_ref().map_or(0, SessionState::stored_len)
+            + 1
+            + self
+                .inactive
+                .iter()
+                .map(SessionState::stored_len)
+                .sum::<usize>();
+        let mut out = Zeroizing::new(Vec::with_capacity(len));
+        out.push(FORMAT);
         out.extend_from_slice(&self.peer);
         match &self.active {
             Some(state) => {
@@ -29,6 +44,7 @@ impl SessionRecord {
         for state in &self.inactive {
             state.write(&mut out);
         }
+        debug_assert_eq!(out.len(), len, "the stored length is exact");
         out
     }
 

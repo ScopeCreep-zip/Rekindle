@@ -15,6 +15,8 @@ use crate::signal::test_support::{BobKeys, TestRandom};
 use crate::signal::RatchetMessage;
 
 const AD: &[u8] = b"ad";
+/// The receiver's clock in these tests.
+const NOW: i64 = 1_000;
 
 /// Steps a message may stay in flight.
 const MAX_AGE: usize = 4;
@@ -53,7 +55,12 @@ impl Side {
         let (_, message, plaintext) = self.inbox.pending.remove(index);
         let (record, decrypted) = self
             .record
-            .decrypt(&message, AD, &TestRandom::for_message(&message.ciphertext))
+            .decrypt(
+                &message,
+                AD,
+                NOW,
+                &TestRandom::for_message(&message.ciphertext),
+            )
             .expect("a delivered message decrypts");
         assert_eq!(decrypted, plaintext);
         self.record = record;
@@ -108,7 +115,7 @@ fn run(mut alice: Side, mut bob: Side, start: usize, ops: &[Op]) {
                 if let Op::Replay(..) = op {
                     if let Some(message) = pick_from(&side.inbox.delivered, pick) {
                         let before = side.record.to_bytes();
-                        let replayed = side.record.decrypt(message, AD, &TestRandom::new(1));
+                        let replayed = side.record.decrypt(message, AD, NOW, &TestRandom::new(1));
                         assert!(replayed.is_err(), "a replay decrypted");
                         assert_eq!(*before, *side.record.to_bytes());
                     }
@@ -171,6 +178,7 @@ proptest! {
                 &init,
                 &b_keys.keys_for(init.one_time_prekey_id, init.pq_prekey),
                 AD,
+                NOW,
                 &TestRandom::for_message(&init.message.ciphertext),
             )
             .unwrap();
@@ -217,6 +225,7 @@ fn accept(side: &mut Side, keys: &BobKeys, init: &super::PreKeyInit) -> Vec<u8> 
             init,
             &keys.keys_for(init.one_time_prekey_id, init.pq_prekey),
             AD,
+            NOW,
             &TestRandom::for_message(&init.message.ciphertext),
         )
         .unwrap();

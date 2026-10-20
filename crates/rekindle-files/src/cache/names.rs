@@ -8,18 +8,17 @@
 //! identity secret: stable across restarts, unlinkable without the secret,
 //! and different for every identity.
 //!
-//! Labels are a fixed prefix ending in `:` and the value; no prefix is a
-//! prefix of another, so two labels of different kinds never meet.
+//! Each label is a registered `rekindle_types::domains` prefix, `:` and the
+//! value. The registry's tests keep every prefix distinct and none a prefix
+//! of another, and none contains `:`, so two labels of different kinds
+//! never meet.
 
 use std::path::{Path, PathBuf};
 
+use rekindle_types::domains;
+
 /// Hex characters in every keyed name (128 bits).
 pub const NAME_HEX_LEN: usize = 32;
-
-const COMMUNITY_LABEL: &[u8] = b"community:";
-const DM_LABEL: &[u8] = b"dm:";
-const AVATARS_LABEL: &[u8] = b"avatars:";
-const ATTACHMENT_LABEL: &[u8] = b"attachment:";
 
 /// What one cache directory under `state/{pk}.files/` holds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,11 +34,11 @@ pub enum CacheScope<'a> {
 impl CacheScope<'_> {
     fn label(self) -> Vec<u8> {
         let (prefix, id) = match self {
-            Self::Community(id) => (COMMUNITY_LABEL, id),
-            Self::Dm(id) => (DM_LABEL, id),
-            Self::CommunityAvatars(id) => (AVATARS_LABEL, id),
+            Self::Community(id) => (domains::FILE_CACHE_COMMUNITY, id),
+            Self::Dm(id) => (domains::FILE_CACHE_DM, id),
+            Self::CommunityAvatars(id) => (domains::FILE_CACHE_AVATARS, id),
         };
-        [prefix, id.as_bytes()].concat()
+        [prefix.as_bytes(), b":", id.as_bytes()].concat()
     }
 }
 
@@ -55,7 +54,14 @@ impl AttachmentName {
     /// as the same directory name in both.
     #[must_use]
     pub fn derive(key: &[u8; 32], scope_dir: &[u8], attachment_id: &[u8; 16]) -> Self {
-        let label = [ATTACHMENT_LABEL, scope_dir, b":", attachment_id].concat();
+        let label = [
+            domains::FILE_CACHE_ATTACHMENT.as_bytes(),
+            b":",
+            scope_dir,
+            b":",
+            attachment_id,
+        ]
+        .concat();
         Self(truncated(key, &label))
     }
 

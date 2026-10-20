@@ -44,7 +44,8 @@ pub const PREKEY_ID_MAX: u32 = 0x7FFF_FFFF;
 /// The head rotates this long after it was minted.
 pub const SIGNED_ROTATE_AFTER_MS: i64 = 2 * DAY_MS;
 /// No head older than this is published; past it maintenance is failing
-/// (the status check warns).
+/// (the status check warns), and a reader refuses a head dated further
+/// than this from its clock, either way ([`head_is_current`]).
 pub const SIGNED_MAX_AGE_MS: i64 = 14 * DAY_MS;
 /// A replaced or consumed key's row is kept this long, so an init in
 /// flight still opens; then the storage deletes it.
@@ -58,6 +59,16 @@ pub const LOW_SLOT_WATERMARK: usize = 10;
 pub const REJECTIONS_PER_WINDOW: u32 = 10;
 /// B5's rate window.
 pub const REJECTION_WINDOW_MS: i64 = 3 * 3_600_000;
+
+/// Whether a head minted at `issued_at_ms` may be used at `now_ms`: dated
+/// within [`SIGNED_MAX_AGE_MS`] of now. The bound is B1's 14 days, now
+/// enforced by the reader because the head's signatures cover its time;
+/// a head dated as far ahead (a wrong owner clock) is refused too, so no
+/// head outlives the bound by being future-dated.
+#[must_use]
+pub fn head_is_current(issued_at_ms: i64, now_ms: i64) -> bool {
+    now_ms.saturating_sub(issued_at_ms).unsigned_abs() <= SIGNED_MAX_AGE_MS.unsigned_abs()
+}
 
 /// Whether `id` is a prekey id: non-zero and within u31.
 #[must_use]
@@ -177,31 +188,37 @@ pub type UsedIds = BTreeSet<u32>;
 #[derive(Debug, Clone)]
 pub struct RecordView {
     identity_key: [u8; 32],
+    /// The reader's clock when the record was checked.
+    now_ms: i64,
     head: PrekeyRecordHead,
     slots: Vec<(u32, OpkSlot)>,
 }
 
 impl RecordView {
-    /// Check `head` and `slots` (subkey, slot) under `identity_key`.
+    /// Check `head` and `slots` (subkey, slot) under `identity_key` at
+    /// `now_ms`.
     ///
     /// # Errors
     /// The head does not verify under `identity_key`: the record is not
-    /// the pinned identity's, and nothing in it is usable.
+    /// the pinned identity's, and nothing in it is usable; or
+    /// [`CryptoError::StalePrekeys`]: it is theirs but out of date.
     pub fn new(
         identity_key: &[u8; 32],
         head: PrekeyRecordHead,
         slots: impl IntoIterator<Item = (u32, OpkSlot)>,
+        now_ms: i64,
     ) -> Result<Self, CryptoError> {
-        PreKeyBundle::from_record(identity_key, &head, None)?;
+        PreKeyBundle::from_record(identity_key, &head, None, now_ms)?;
         let slots = slots
             .into_iter()
             .filter(|(subkey, slot)| {
                 is_slot(*subkey)
-                    && PreKeyBundle::from_record(identity_key, &head, Some(slot)).is_ok()
+                    && PreKeyBundle::from_record(identity_key, &head, Some(slot), now_ms).is_ok()
             })
             .collect();
         Ok(Self {
             identity_key: *identity_key,
+            now_ms,
             head,
             slots,
         })
@@ -240,7 +257,7 @@ impl RecordView {
                     })?,
             ),
         };
-        PreKeyBundle::from_record(&self.identity_key, &self.head, slot)
+        PreKeyBundle::from_record(&self.identity_key, &self.head, slot, self.now_ms)
     }
 }
 

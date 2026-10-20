@@ -7,7 +7,7 @@
 use proptest::prelude::*;
 
 use super::model::Model;
-use super::{bob_spk_public, pair, AD, BOB_SPK, SK};
+use super::{bob_spk_public, pair, AD, BOB_SPK, NOW, SK};
 use crate::signal::dr::{RatchetMessage, SessionState};
 use crate::signal::test_support::TestRandom;
 
@@ -51,7 +51,9 @@ impl Party {
 
     fn receive(&mut self, message: &RatchetMessage, seed: u64) -> Option<Vec<u8>> {
         let mut trial = self.real.clone();
-        let real = trial.decrypt(message, b"ad", &TestRandom::new(seed)).ok();
+        let real = trial
+            .decrypt(message, b"ad", NOW, &TestRandom::new(seed))
+            .ok();
         if real.is_some() {
             self.real = trial;
         }

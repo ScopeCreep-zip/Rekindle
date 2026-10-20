@@ -5,14 +5,40 @@
 //! `ad(66) ‖ base_key(32) ‖ sk_scka(32) ‖ root(32) ‖ dh_self(32) ‖
 //! opt(remote(32)) ‖ opt(sender_key(32) ‖ u32 n) ‖ u32 pn ‖ u8 count ‖
 //! count × (their(32) ‖ key(32) ‖ u32 n ‖ u16 skipped ‖ skipped × (u32 n ‖
-//! key(32)))`, where `opt(x)` is a `0`/`1` byte then `x` when `1`.
+//! i64 stored_at_ms ‖ key(32)))`, where `opt(x)` is a `0`/`1` byte then
+//! `x` when `1`.
 
 use super::state::{Chain, ReceiverChain, SessionState, SkippedKey};
 use super::{MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS};
 use crate::error::CryptoError;
 use crate::signal::pqxdh::agreement::AD_LEN;
 
+/// Bytes of a stored chain: key and `u32 n`.
+const CHAIN_LEN: usize = 32 + 4;
+/// Bytes of a stored skipped key: `u32 n`, `i64 stored_at`, key.
+const SKIPPED_LEN: usize = 4 + 8 + 32;
+
 impl SessionState {
+    /// The exact length [`Self::write`] appends, so a caller can size a
+    /// `Zeroizing` buffer once: a buffer grown by reallocation frees the
+    /// old allocation unwiped.
+    pub(crate) fn stored_len(&self) -> usize {
+        let receivers: usize = self
+            .receivers
+            .iter()
+            .map(|r| 32 + CHAIN_LEN + 2 + r.skipped.len() * SKIPPED_LEN)
+            .sum();
+        AD_LEN
+            + 4 * 32
+            + 1
+            + self.remote.map_or(0, |_| 32)
+            + 1
+            + self.sender.as_ref().map_or(0, |_| CHAIN_LEN)
+            + 4
+            + 1
+            + receivers
+    }
+
     /// Append the stored form to `out`.
     pub(crate) fn write(&self, out: &mut Vec<u8>) {
         out.extend_from_slice(&self.ad);
@@ -43,6 +69,7 @@ impl SessionState {
             out.extend_from_slice(&skipped.to_be_bytes());
             for key in &receiver.skipped {
                 out.extend_from_slice(&key.n.to_be_bytes());
+                out.extend_from_slice(&key.stored_at_ms.to_be_bytes());
                 out.extend_from_slice(&key.key);
             }
         }
@@ -74,6 +101,7 @@ impl SessionState {
                 .map(|_| {
                     Ok(SkippedKey {
                         n: reader.u32()?,
+                        stored_at_ms: i64::from_be_bytes(reader.array()?),
                         key: reader.array()?,
                     })
                 })

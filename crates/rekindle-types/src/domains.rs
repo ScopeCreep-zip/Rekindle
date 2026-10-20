@@ -65,6 +65,23 @@ labels! {
     /// the new identity over `old ‖ new ‖ recipient` (0x0108).
     IDENTITY_ROTATED = "rekindle-identity-rotated-v1";
 
+    // ── Prekey record and invites (plan E2.4; audit 2026-10-20 C-2) ──
+    /// Ed25519 signature prefix: the signed prekey, by the identity, over
+    /// `u32be(spk_id) ‖ i64be(issued_at) ‖ EncodeEC(spk)`.
+    PREKEY_SPK_SIG = "rekindle-prekey-spk-sig-v1";
+    /// Ed25519 signature prefix: the ML-KEM last-resort prekey, by the
+    /// identity, over `u32be(id) ‖ i64be(issued_at) ‖ EncodeKEM(pqpk)`.
+    PREKEY_PQ_LR_SIG = "rekindle-prekey-pq-lr-sig-v1";
+    /// Ed25519 signature prefix: a one-time ML-KEM prekey, by the identity,
+    /// over `u32be(id) ‖ EncodeKEM(pqpk)`.
+    PREKEY_PQ_OT_SIG = "rekindle-prekey-pq-ot-sig-v1";
+    /// Ed25519 signature prefix: a one-time curve prekey, by the identity,
+    /// over `u32be(opk_id) ‖ EncodeEC(opk)`.
+    PREKEY_OPK_SIG = "rekindle-prekey-opk-sig-v1";
+    /// Ed25519 signature prefix: a friend invite blob, by the identity,
+    /// over the JSON of every field but the signature.
+    FRIEND_INVITE_SIG = "rekindle-friend-invite-sig-v1";
+
     // ── Communities ──────────────────────────────────────────────────
     /// HKDF salt: per-community pseudonym from the identity secret.
     COMMUNITY_PSEUDONYM = "rekindle-community-pseudonym-v1";
@@ -89,11 +106,12 @@ labels! {
     // ── 1:1 and group DMs ────────────────────────────────────────────
     /// HKDF info: group-DM MEK forward ratchet step.
     DM_MEK_RATCHET = "rekindle-dm-ratchet-v1";
-    /// HKDF info: the spec Double Ratchet's `KDF_RK` (DR rev. 1 §5.2).
+    /// HKDF info: the spec Double Ratchet's `KDF_RK` (DR rev. 4 §7.2).
     DR_ROOT = "rekindle-dr-root-v1";
-    /// HKDF info: a Double Ratchet message key → AES-256-GCM key and nonce
-    /// (DR rev. 1 §5.2 `ENCRYPT`).
-    DR_MSG = "rekindle-dr-msg-v1";
+    /// HKDF info: a Double Ratchet message key → the 80 bytes of DR rev. 4
+    /// §7.2's `ENCRYPT`: AES-256-CBC key, HMAC-SHA256 key and IV. v1 (an
+    /// AES-256-GCM key and nonce) is retired.
+    DR_MSG = "rekindle-dr-msg-v2";
 
     // ── Calls and voice ──────────────────────────────────────────────
     /// HKDF info: 1:1 call media key. Distinct from the friend/DM
@@ -149,10 +167,22 @@ labels! {
     /// BLAKE3 `derive_key` context: the identity database's SQLCipher key,
     /// derived from the vault passphrase (plan D1).
     VAULT_APP_DB_KEY = "rekindle-vault-app-db-v1";
-    /// HKDF salt: the key that names an identity's file-cache directories
-    /// (keyed BLAKE3 of each scope and attachment), from the identity
-    /// secret (plan E3.0a).
+    /// HKDF info (salt none): the key that names an identity's file-cache
+    /// directories (keyed BLAKE3 of each scope and attachment), from the
+    /// identity secret (plan E3.0a).
     FILE_CACHE_NAMES = "rekindle-file-cache-names-v1";
+    /// Keyed-BLAKE3 input prefix, then `:` and the id: a community's
+    /// attachment cache directory name.
+    FILE_CACHE_COMMUNITY = "rekindle-file-cache-community-v1";
+    /// Keyed-BLAKE3 input prefix, then `:` and the id: a conversation's
+    /// attachment cache directory name.
+    FILE_CACHE_DM = "rekindle-file-cache-dm-v1";
+    /// Keyed-BLAKE3 input prefix, then `:` and the id: a community's avatar
+    /// and banner cache directory name.
+    FILE_CACHE_AVATARS = "rekindle-file-cache-avatars-v1";
+    /// Keyed-BLAKE3 input prefix, then `:`, the scope's directory name, `:`
+    /// and the attachment id: an attachment's directory name.
+    FILE_CACHE_ATTACHMENT = "rekindle-file-cache-attachment-v1";
     // ── PRE_FORMAT: predate the naming rule; bytes kept until removal ──
     /// HKDF info prefix + decimal slot index: SMPL member-slot keypair.
     /// Renamed to the `-v<N>` form in step 22 (governance op DAG).
@@ -164,6 +194,20 @@ labels! {
     /// `veilid-hpke/1`. Renamed by E3.5's signed v2 wrap.
     HPKE_MEK_INFO = "rekindle-mek/1";
 }
+
+/// Every prefix an identity key (Ed25519) signs under. One key signs all
+/// of them, so none may be a prefix of another: a signature for one
+/// purpose then never verifies for another.
+pub const IDENTITY_KEY_SIGNATURES: &[&str] = &[
+    DM_PRESESSION_SIG,
+    IDENTITY_ROTATED,
+    FRAME_SIG_V3,
+    PREKEY_SPK_SIG,
+    PREKEY_PQ_LR_SIG,
+    PREKEY_PQ_OT_SIG,
+    PREKEY_OPK_SIG,
+    FRIEND_INVITE_SIG,
+];
 
 /// Labels exempt from the `rekindle-<purpose>-v<N>` rule, each scheduled
 /// for removal or renaming (see the constant's doc).
@@ -191,7 +235,22 @@ pub fn is_well_formed(label: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{is_well_formed, ALL, PRE_FORMAT};
+    use super::{is_well_formed, ALL, IDENTITY_KEY_SIGNATURES, PRE_FORMAT};
+
+    /// The identity key signs under each of these and nothing else; every
+    /// one is distinct, none is a prefix of another, and each is in the
+    /// registry.
+    #[test]
+    fn identity_key_signing_domains_are_distinct_and_prefix_free() {
+        for (i, a) in IDENTITY_KEY_SIGNATURES.iter().enumerate() {
+            assert!(ALL.iter().any(|(_, l)| l == a), "`{a}` is not registered");
+            for (j, b) in IDENTITY_KEY_SIGNATURES.iter().enumerate() {
+                if i != j {
+                    assert!(!b.starts_with(a), "`{a}` is a prefix of `{b}`");
+                }
+            }
+        }
+    }
 
     #[test]
     fn every_label_is_unique() {

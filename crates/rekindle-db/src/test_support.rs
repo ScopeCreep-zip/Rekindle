@@ -137,5 +137,6 @@ pub fn bundle_from(owner: &[u8; 32], values: &[Publish], subkey: Option<u32>) ->
     };
     let head = decode_prekey_head(value(rekindle_types::dht_layout::prekeys::HEAD)).unwrap();
     let slot = subkey.map(|at| decode_opk_slot(value(at)).unwrap());
-    PreKeyBundle::from_record(owner, &head, slot.as_ref()).unwrap()
+    // Read at the head's own time: the age bound always holds.
+    PreKeyBundle::from_record(owner, &head, slot.as_ref(), head.issued_at).unwrap()
 }

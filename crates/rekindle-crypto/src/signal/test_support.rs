@@ -41,6 +41,9 @@ impl RandomSource for TestRandom {
     }
 }
 
+/// When the fixture's head was minted.
+pub const ISSUED_AT: i64 = 1_000;
+
 /// One handed-out set of one-time keys: a curve prekey and an ML-KEM key.
 pub struct OneTime {
     pub opk_id: u32,
@@ -142,14 +145,17 @@ impl BobKeys {
             identity_key: self.identity.public_key_bytes().to_vec(),
             signed_prekey_id: self.spk_id,
             signed_prekey: spk.as_bytes().to_vec(),
-            signed_prekey_signature: self.sign(&spk_signing_payload(self.spk_id, &spk)),
+            signed_prekey_signature: self.sign(&spk_signing_payload(self.spk_id, ISSUED_AT, &spk)),
+            issued_at_ms: ISSUED_AT,
             one_time_prekey: None,
             one_time_prekey_id: None,
             one_time_prekey_signature: None,
             pq_lr_id: self.pq_lr_id,
             pqpk_lr: lr.as_bytes().to_vec(),
             pqpk_lr_signature: self.sign(&pq_signing_payload(
-                PqRole::LastResort,
+                PqRole::LastResort {
+                    issued_at_ms: ISSUED_AT,
+                },
                 self.pq_lr_id,
                 &lr,
             )),
