@@ -66,6 +66,10 @@ pub(crate) async fn run(
         display_name: installed.display_name.clone(),
     };
 
+    // The own-records stage tells the prekey maintenance (3c) when our
+    // prekey record is filled; with no transport it is dropped unsent.
+    let (prekeys_ready, prekeys_filled) = tokio::sync::oneshot::channel();
+
     // 2. The session's one record pool, with what the last lock left unsent.
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {
@@ -100,6 +104,7 @@ pub(crate) async fn run(
             presence: ctx.own_presence.clone(),
             profile_lease: Arc::clone(&ctx.own_profile_lease),
             prekey_lease: Arc::clone(&ctx.own_prekey_lease),
+            prekeys_ready: Some(prekeys_ready),
             friends: super::adapters::friends::HostFriends::of(ctx),
             public_key: installed.public_key.clone(),
             display_name: installed.display_name.clone(),
@@ -133,15 +138,16 @@ pub(crate) async fn run(
     }
     // 3c. Friends (plan E2.1): what was decrypted but never applied is
     // applied first (D24, plan E2.3), then the friend and prekey (plan
-    // E2.4) maintenance tasks on both hosts; on the daemon, the friends' presence watches too (the GUI's
+    // E2.4) maintenance tasks on both hosts (the prekey one waits for the
+    // own-records stage to fill our record); on the daemon, the friends' presence watches too (the GUI's
     // friend sync holds them until E2.5).
     rekindle_transport::operations::direct::replay_unprocessed(
         &super::adapters::friends::HostFriends::of(ctx),
     )
     .await;
-    if let Err(e) = super::adapters::friends::start_maintenance(ctx, &scope)
-        .and_then(|()| super::adapters::friends::start_prekey_maintenance(ctx, &scope))
-    {
+    if let Err(e) = super::adapters::friends::start_maintenance(ctx, &scope).and_then(|()| {
+        super::adapters::friends::start_prekey_maintenance(ctx, &scope, prekeys_filled)
+    }) {
         return fail(
             ctx,
             IpcResponse::error(500, format!("unlock interrupted: {e}")),

@@ -16,7 +16,7 @@ use rekindle_db::Db;
 use rekindle_transport::session::{CommunityMembership, Session, SessionIdentity};
 use rekindle_types::friend::FriendState;
 use rekindle_vault::typed::community_keys::load_slot_seed;
-use rekindle_vault::typed::owner_keys::{load_owner_keypair, OwnerKey};
+use rekindle_vault::typed::owner_keys::{load_owner, OwnerKey};
 use rekindle_vault::VaultHandle;
 
 /// Loading the projection failed.
@@ -81,16 +81,29 @@ pub async fn load(db: &Db, vault: &VaultHandle, owner: &str) -> Result<Session, 
     let vault = guard
         .as_ref()
         .ok_or_else(|| SessionError::Vault("locked".into()))?;
-    let keypair =
-        |record| load_owner_keypair(vault, record).map_err(|e| SessionError::Vault(e.to_string()));
+    // A keypair only for the record the row names: an entry naming another
+    // (an interrupted write) is the own-records stage's to repair, and it
+    // projects the keys it holds.
+    let keypair = |record, row_key: Option<&str>| {
+        load_owner(vault, record)
+            .map(|entry| {
+                entry
+                    .filter(|entry| Some(entry.record_key.as_str()) == row_key)
+                    .map(|entry| entry.keypair)
+            })
+            .map_err(|e| SessionError::Vault(e.to_string()))
+    };
     let identity = SessionIdentity {
         public_key_hex: owner.to_string(),
         display_name: rows.display_name,
+        profile_owner_keypair: keypair(OwnerKey::Profile, rows.records.profile.as_deref())?,
+        friend_list_owner_keypair: keypair(
+            OwnerKey::FriendList,
+            rows.records.friend_list.as_deref(),
+        )?,
         profile_dht_key: rows.records.profile.unwrap_or_default(),
         mailbox_dht_key: rows.records.mailbox.unwrap_or_default(),
         friend_list_dht_key: rows.records.friend_list.unwrap_or_default(),
-        profile_owner_keypair: keypair(OwnerKey::Profile)?,
-        friend_list_owner_keypair: keypair(OwnerKey::FriendList)?,
     };
 
     let mut session = Session::new(identity);

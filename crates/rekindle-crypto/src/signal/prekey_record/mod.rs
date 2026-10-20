@@ -30,6 +30,7 @@ use rekindle_types::dht_layout::prekeys::{is_slot, slot_subkey, SLOT_COUNT};
 use rekindle_utils::random::RandomSource;
 
 use crate::error::CryptoError;
+use crate::horizon::DELIVERY_HORIZON;
 use crate::signal::prekeys::PreKeyBundle;
 
 pub use mint::{
@@ -48,8 +49,11 @@ pub const SIGNED_ROTATE_AFTER_MS: i64 = 2 * DAY_MS;
 /// than this from its clock, either way ([`head_is_current`]).
 pub const SIGNED_MAX_AGE_MS: i64 = 14 * DAY_MS;
 /// A replaced or consumed key's row is kept this long, so an init in
-/// flight still opens; then the storage deletes it.
-pub const RETIRED_ARCHIVE_MS: i64 = 30 * DAY_MS;
+/// flight still opens; then the storage deletes it. It is the prekey grace
+/// of D24 and derives from [`DELIVERY_HORIZON`] (ruling Q2b): a message
+/// sent just before the head rotated may take the whole horizon to
+/// arrive, and must still find its key (R3-X-1: grace ≥ inbox retention).
+pub const RETIRED_ARCHIVE_MS: i64 = (DELIVERY_HORIZON.as_secs() * 1000).cast_signed();
 /// A published one-time slot no peer claimed is replaced after this.
 pub const OPK_STALE_MS: i64 = 90 * DAY_MS;
 /// Below this many fresh slots every empty slot is filled.

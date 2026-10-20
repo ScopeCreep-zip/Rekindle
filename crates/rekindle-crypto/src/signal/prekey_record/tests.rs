@@ -129,6 +129,20 @@ fn empty_slots_are_topped_up_below_the_watermark() {
     );
 }
 
+/// D24 / R3-X-1: the prekey grace is the delivery horizon (30 days), and
+/// it outlasts the head's rotation and its warning age, so a head is never
+/// deleted while it could still be the one a peer read.
+#[test]
+fn the_prekey_grace_derives_from_the_delivery_horizon() {
+    let horizon_ms = i64::try_from(DELIVERY_HORIZON.as_millis()).unwrap();
+    assert_eq!(RETIRED_ARCHIVE_MS, horizon_ms);
+    assert_eq!(RETIRED_ARCHIVE_MS, 30 * DAY_MS);
+    const {
+        assert!(RETIRED_ARCHIVE_MS > SIGNED_MAX_AGE_MS);
+        assert!(SIGNED_MAX_AGE_MS > SIGNED_ROTATE_AFTER_MS);
+    }
+}
+
 #[test]
 fn ids_are_non_zero_u31() {
     let rng = TestRandom::new(9);

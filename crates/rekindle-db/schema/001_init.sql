@@ -16,9 +16,11 @@ CREATE TABLE IF NOT EXISTS identity (
     -- Architecture §28.4: personal DFLT record key for cross-device sync.
     -- Created lazily on first launch when the user opts into multi-device.
     personal_sync_record_key TEXT,
-    -- Stable per-device id (random 16-byte UUID hex). Identifies *this*
-    -- physical device in the DeviceList without exposing more PII.
-    device_id TEXT,
+    -- This device's id: 16 random bytes, lowercase hex, minted once by the
+    -- own-records stage (`repo::identity::ensure_device_id`); the prekey
+    -- device list and the personal sync record name it, neither replaces it.
+    device_id TEXT CHECK(device_id IS NULL
+        OR (length(device_id) = 32 AND device_id NOT GLOB '*[^0-9a-f]*')),
     -- This device's prekey record (plan E2.4, DFLT(101)); its owner
     -- keypair is in the vault (`OwnerKey::Prekeys`).
     prekey_record_key TEXT
@@ -85,10 +87,15 @@ CREATE TABLE IF NOT EXISTS messages (
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(owner_key, conversation_id, is_read) WHERE is_read = 0;
+-- A row with no client id (a channel message from a path that carries
+-- none) is deduplicated by its sender and time; a row with one by its
+-- author's client id, so two messages in one millisecond stay two, and a
+-- peer cannot reuse our id to suppress or overwrite our row.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup
-  ON messages(owner_key, conversation_id, conversation_type, sender_key, timestamp);
+  ON messages(owner_key, conversation_id, conversation_type, sender_key, timestamp)
+  WHERE message_id IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_id
-  ON messages(owner_key, conversation_id, message_id) WHERE message_id IS NOT NULL;
+  ON messages(owner_key, conversation_id, sender_key, message_id) WHERE message_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS communities (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
@@ -823,11 +830,13 @@ CREATE TABLE IF NOT EXISTS prekey_lr_inits (
 CREATE TABLE IF NOT EXISTS signal_identities (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     peer_identity TEXT NOT NULL,
-    identity_key BLOB NOT NULL,
+    identity_key BLOB NOT NULL
+        CHECK(typeof(identity_key) = 'blob' AND length(identity_key) = 32),
     verified INTEGER NOT NULL DEFAULT 0 CHECK(verified IN (0, 1)),
-    verified_at INTEGER,
-    changed_from_key BLOB,
-    changed_at INTEGER,
+    verified_at INTEGER CHECK(verified_at IS NULL OR verified_at >= 0),
+    changed_from_key BLOB CHECK(changed_from_key IS NULL
+        OR (typeof(changed_from_key) = 'blob' AND length(changed_from_key) = 32)),
+    changed_at INTEGER CHECK(changed_at IS NULL OR changed_at >= 0),
     PRIMARY KEY (owner_key, peer_identity)
 );
 
@@ -835,16 +844,19 @@ CREATE TABLE IF NOT EXISTS signal_identities (
 -- the ratchet's transaction, deleted by the apply, replayed at startup.
 -- Keyed by the ratchet header, unique per message per session. Rows older
 -- than `UNPROCESSED_MAX_AGE` (from `DELIVERY_HORIZON`) or tried
--- `MAX_UNPROCESSED_ATTEMPTS` times are dropped at replay.
+-- `MAX_UNPROCESSED_ATTEMPTS` times are dropped at replay. A row that does
+-- not read back is quarantined (`quarantined_at`): skipped by every later
+-- replay, so it never blocks the others, and swept by the same age bound.
 CREATE TABLE IF NOT EXISTS unprocessed (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     peer_identity TEXT NOT NULL,
-    header_dh BLOB NOT NULL,
-    header_n INTEGER NOT NULL,
+    header_dh BLOB NOT NULL CHECK(typeof(header_dh) = 'blob' AND length(header_dh) = 32),
+    header_n INTEGER NOT NULL CHECK(header_n BETWEEN 0 AND 4294967295),
     type_id INTEGER NOT NULL CHECK(type_id BETWEEN 0 AND 65535),
     plaintext BLOB NOT NULL,
-    attempts INTEGER NOT NULL DEFAULT 0,
-    received_at INTEGER NOT NULL,
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+    received_at INTEGER NOT NULL CHECK(received_at >= 0),
+    quarantined_at INTEGER CHECK(quarantined_at IS NULL OR quarantined_at >= 0),
     PRIMARY KEY (owner_key, peer_identity, header_dh, header_n)
 );
 

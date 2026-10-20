@@ -3,11 +3,14 @@
 //! and account, on the record port, on both hosts. Opened when the identity has them, created when it does
 //! not (a new identity), so create needs no transport of its own.
 //!
-//! A new owner keypair goes into the vault before its record key goes into
-//! the database, so a stored key always has its keypair. The keys land in
-//! the session projection, and the current general route is published to
-//! the profile and the mailbox; a route that lands later is the transport's
-//! route publisher's.
+//! Every record with an owner keypair of its own is held by one rule
+//! (`super::owned_record`): saved vault entry first, compared with the
+//! identity row at unlock and repaired from the vault after an interrupted
+//! write. The keys land in the session projection, and the current general
+//! route is published to the profile and the mailbox; a route that lands
+//! later is the transport's route publisher's. Our prekey record is
+//! reconciled and filled before the profile names it, and only then is the
+//! prekey maintenance told it may start (`prekeys_ready`).
 
 use std::sync::Arc;
 
@@ -18,11 +21,11 @@ use rekindle_protocol::dht::{account, friends, mailbox, profile};
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{RecordPort, RouteClass};
 use rekindle_transport::{Session, TransportNode};
-use rekindle_vault::typed::owner_keys::{load_owner_keypair, persist_owner_keypair, OwnerKey};
 use rekindle_vault::VaultHandle;
 use tokio_util::sync::CancellationToken;
 use zeroize::Zeroizing;
 
+use super::owned_record::{Owner, StoredRecord};
 use super::shell_hooks::{OwnRecordKeys, ShellHooks};
 
 /// What the stage needs, owned so it runs in the unlock scope.
@@ -45,6 +48,10 @@ pub(crate) struct OwnRecords {
     /// (`DaemonContext.own_prekey_lease`): the prekey maintenance and the
     /// refills write through it.
     pub prekey_lease: Arc<parking_lot::Mutex<Option<LeaseId>>>,
+    /// Sent once our prekey record is held, reconciled and filled: the
+    /// prekey maintenance waits for it (audit D-7), so it never mints
+    /// beside the stage. Dropped unsent when the record is not held.
+    pub prekeys_ready: Option<tokio::sync::oneshot::Sender<()>>,
     /// The friend operations' Host: the stage reconciles our prekey record
     /// and publishes its first set through it before the profile names it.
     pub friends: super::adapters::friends::HostFriends,
@@ -54,23 +61,18 @@ pub(crate) struct OwnRecords {
 }
 
 /// The records' keys as the identity row and the vault hold them.
-#[derive(Default)]
 pub(super) struct Stored {
-    profile: Option<String>,
-    friend_list: Option<String>,
-    account: Option<String>,
+    profile: StoredRecord,
+    friend_list: StoredRecord,
+    account: StoredRecord,
     mailbox: Option<String>,
-    pub(super) prekeys: Option<String>,
+    pub(super) prekeys: StoredRecord,
     pub(super) device_id: Option<String>,
-    profile_owner: Option<String>,
-    friend_list_owner: Option<String>,
-    account_owner: Option<String>,
-    pub(super) prekeys_owner: Option<String>,
 }
 
 impl OwnRecords {
     /// Run the stage until it is done or `stop` (the unlock ends).
-    pub(crate) async fn run(self, stop: CancellationToken) {
+    pub(crate) async fn run(mut self, stop: CancellationToken) {
         // Readiness is the record port's own gate; the general route is
         // wanted from node-ready (C7.9b), so it is usually here already.
         let routes = self.transport.routes();
@@ -98,8 +100,11 @@ impl OwnRecords {
         );
         let mut keys = OwnRecordKeys::default();
         let mut owners = (
-            stored.profile_owner.clone(),
-            stored.friend_list_owner.clone(),
+            stored.profile.matching_keypair().map(ToString::to_string),
+            stored
+                .friend_list
+                .matching_keypair()
+                .map(ToString::to_string),
         );
 
         if stop.is_cancelled() {
@@ -120,6 +125,13 @@ impl OwnRecords {
         let device_list = self.prekeys(pool.as_ref(), &stored).await;
         if stop.is_cancelled() {
             return;
+        }
+        // Held, reconciled and filled (or not held, and the sender goes
+        // unsent): the prekey maintenance may start.
+        if let Some(ready) = self.prekeys_ready.take() {
+            if self.prekey_lease.lock().is_some() {
+                let _ = ready.send(());
+            }
         }
         if let Some((key, owner)) = self
             .profile(pool.as_ref(), &stored, &route_blob, &device_list)
@@ -164,48 +176,23 @@ impl OwnRecords {
         let columns = columns.ok_or("the identity database has no identity row")?;
         let guard = self.vault.lock();
         let vault = guard.as_ref().ok_or("the vault is locked")?;
-        let owner = |record| load_owner_keypair(vault, record).map_err(|e| e.to_string());
         Ok(Stored {
-            profile: columns.profile,
-            friend_list: columns.friend_list,
-            account: columns.account,
+            profile: StoredRecord::load(vault, OwnedRecord::Profile, columns.profile)?,
+            friend_list: StoredRecord::load(vault, OwnedRecord::FriendList, columns.friend_list)?,
+            account: StoredRecord::load(vault, OwnedRecord::Account, columns.account)?,
             mailbox: columns.mailbox,
-            prekeys: columns.prekeys,
+            prekeys: StoredRecord::load(vault, OwnedRecord::Prekeys, columns.prekeys)?,
             device_id: columns.device_id,
-            profile_owner: owner(OwnerKey::Profile)?,
-            friend_list_owner: owner(OwnerKey::FriendList)?,
-            account_owner: owner(OwnerKey::Account)?,
-            prekeys_owner: owner(OwnerKey::Prekeys)?,
         })
     }
 
-    /// Save a new owner keypair, then its record's key.
-    pub(super) async fn persist(
-        &self,
-        owner: OwnerKey,
-        keypair: &str,
-        record: OwnedRecord,
-        key: &str,
-    ) -> bool {
-        {
-            let guard = self.vault.lock();
-            let Some(vault) = guard.as_ref() else {
-                tracing::warn!("own records: the vault closed before a keypair was saved");
-                return false;
-            };
-            if let Err(e) = persist_owner_keypair(vault, owner, keypair) {
-                tracing::error!(error = %e, "own records: owner keypair not saved");
-                return false;
-            }
+    /// The owned-record rule's view of this identity.
+    pub(super) fn owner(&self) -> Owner<'_> {
+        Owner {
+            vault: &self.vault,
+            db: &self.db,
+            public_key: &self.public_key,
         }
-        let Ok(db) = self.db.current() else {
-            return false;
-        };
-        let (pk, key) = (self.public_key.clone(), key.to_string());
-        db.call(move |conn| rekindle_db::repo::identity::set_owned_record(conn, &pk, record, &key))
-            .await
-            .map_err(|e| tracing::error!(error = %e, "own records: record key not saved"))
-            .is_ok()
     }
 
     async fn mailbox(
@@ -265,42 +252,37 @@ impl OwnRecords {
         };
         // An existing profile is re-opened, never replaced: its key is
         // random per create (V4) and peers hold it.
-        match (&stored.profile, &stored.profile_owner) {
-            (Some(key), Some(owner)) => {
-                match profile::open_profile(pool, key, owner).await {
-                    Ok(lease) => *self.profile_lease.lock() = Some(lease),
-                    Err(e) => {
-                        tracing::warn!(error = %e, "own records: profile not reopened");
-                        return None;
+        let held = self
+            .owner()
+            .hold(
+                pool,
+                OwnedRecord::Profile,
+                &stored.profile,
+                |key, owner| async move { profile::open_profile(pool, &key, &owner).await },
+                || async move {
+                    let (lease, key, owner, outcome) =
+                        profile::create_profile(pool, fields).await?;
+                    if outcome.missed() {
+                        tracing::warn!(
+                            ?outcome,
+                            "own records: new profile not stored at consensus"
+                        );
                     }
+                    Ok((lease, key, owner))
+                },
+            )
+            .await?;
+        *self.profile_lease.lock() = Some(held.lease);
+        if !held.created {
+            match profile::publish_profile_fields(pool, &held.key, fields).await {
+                Ok(outcome) if outcome.missed() => {
+                    tracing::warn!(?outcome, "own records: profile fields not all stored");
                 }
-                match profile::publish_profile_fields(pool, key, fields).await {
-                    Ok(outcome) if outcome.missed() => {
-                        tracing::warn!(?outcome, "own records: profile fields not all stored");
-                    }
-                    Ok(_) => {}
-                    Err(e) => tracing::warn!(error = %e, "own records: profile fields not written"),
-                }
-                Some((key.clone(), owner.clone()))
-            }
-            (Some(key), None) => {
-                tracing::error!(key, "own records: the profile has no stored owner keypair");
-                None
-            }
-            (None, _) => {
-                let (lease, key, owner, outcome) = profile::create_profile(pool, fields)
-                    .await
-                    .map_err(|e| tracing::warn!(error = %e, "own records: profile not created"))
-                    .ok()?;
-                *self.profile_lease.lock() = Some(lease);
-                if outcome.missed() {
-                    tracing::warn!(?outcome, "own records: new profile not stored at consensus");
-                }
-                self.persist(OwnerKey::Profile, &owner, OwnedRecord::Profile, &key)
-                    .await
-                    .then_some((key, owner))
+                Ok(_) => {}
+                Err(e) => tracing::warn!(error = %e, "own records: profile fields not written"),
             }
         }
+        Some((held.key, held.keypair))
     }
 
     async fn friend_list(
@@ -308,65 +290,53 @@ impl OwnRecords {
         pool: &dyn RecordPort,
         stored: &Stored,
     ) -> Option<(String, String)> {
-        match (&stored.friend_list, &stored.friend_list_owner) {
-            (Some(key), Some(owner)) => {
-                if let Err(e) = friends::open_friend_list(pool, key, owner).await {
-                    tracing::warn!(error = %e, "own records: friend list not reopened");
-                    return None;
-                }
-                Some((key.clone(), owner.clone()))
-            }
-            (Some(key), None) => {
-                tracing::error!(
-                    key,
-                    "own records: the friend list has no stored owner keypair"
-                );
-                None
-            }
-            (None, _) => {
-                let (_, key, owner, outcome) = friends::create_friend_list(pool)
-                    .await
-                    .map_err(|e| tracing::warn!(error = %e, "own records: friend list not created"))
-                    .ok()?;
-                if outcome.missed() {
-                    tracing::warn!(?outcome, "own records: empty friend list not stored");
-                }
-                self.persist(OwnerKey::FriendList, &owner, OwnedRecord::FriendList, &key)
-                    .await
-                    .then_some((key, owner))
-            }
-        }
+        let held = self
+            .owner()
+            .hold(
+                pool,
+                OwnedRecord::FriendList,
+                &stored.friend_list,
+                |key, owner| async move { friends::open_friend_list(pool, &key, &owner).await },
+                || async move {
+                    let (lease, key, owner, outcome) = friends::create_friend_list(pool).await?;
+                    if outcome.missed() {
+                        tracing::warn!(?outcome, "own records: empty friend list not stored");
+                    }
+                    Ok((lease, key, owner))
+                },
+            )
+            .await?;
+        Some((held.key, held.keypair))
     }
 
     async fn account(&self, pool: &dyn RecordPort, stored: &Stored) -> Option<String> {
-        let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(&self.secret);
-        match (&stored.account, &stored.account_owner) {
-            (Some(key), Some(owner)) => {
-                account::AccountRecord::open(pool, key, owner, encryption_key)
-                    .await
-                    .map(|record| record.record_key())
-                    .map_err(|e| tracing::warn!(error = %e, "own records: account not reopened"))
-                    .ok()
-            }
-            (Some(key), None) => {
-                tracing::error!(key, "own records: the account has no stored owner keypair");
-                None
-            }
-            (None, _) => {
-                let (record, owner, outcome) =
-                    account::AccountRecord::create(pool, encryption_key, &self.display_name, "")
+        let secret = &self.secret;
+        let display_name = self.display_name.as_str();
+        let held = self
+            .owner()
+            .hold(
+                pool,
+                OwnedRecord::Account,
+                &stored.account,
+                |key, owner| async move {
+                    let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(secret);
+                    account::AccountRecord::open(pool, &key, &owner, encryption_key)
                         .await
-                        .map_err(|e| tracing::warn!(error = %e, "own records: account not created"))
-                        .ok()?;
-                if outcome.missed() {
-                    tracing::warn!(?outcome, "own records: account header not stored");
-                }
-                let key = record.record_key();
-                self.persist(OwnerKey::Account, &owner, OwnedRecord::Account, &key)
-                    .await
-                    .then_some(key)
-            }
-        }
+                        .map(|record| record.lease())
+                },
+                || async move {
+                    let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(secret);
+                    let (record, owner, outcome) =
+                        account::AccountRecord::create(pool, encryption_key, display_name, "")
+                            .await?;
+                    if outcome.missed() {
+                        tracing::warn!(?outcome, "own records: account header not stored");
+                    }
+                    Ok((record.lease(), record.record_key(), owner))
+                },
+            )
+            .await?;
+        Some(held.key)
     }
 
     /// Write the keys into the session projection.
@@ -395,13 +365,16 @@ impl OwnRecords {
 }
 
 /// Move our profile to a new record under a fresh owner key (a block, so
-/// the blocked user's copy of the old key finds nothing), written as the
-/// stage writes one: the new keypair into the vault, then its key into the
-/// database, then the projection; the old record is released and our
-/// status is written to the new one. The new record's key.
+/// the blocked user's copy of the old key finds nothing), saved by the
+/// owned-record rule (`super::owned_record`): the new vault entry, then
+/// its key in the database (a crash between the two is repaired at the
+/// next unlock, which follows the vault), then the projection; the old
+/// record is released and our status is written to the new one. The new
+/// record's key.
 ///
 /// # Errors
-/// No unlocked identity, or the record could not be created or stored.
+/// No unlocked identity, or the record could not be created or saved
+/// (the new record is released and nothing changes).
 pub(crate) async fn rotate_profile(
     ctx: &crate::daemon::dispatch::DaemonContext,
 ) -> Result<String, String> {
@@ -439,18 +412,17 @@ pub(crate) async fn rotate_profile(
     if outcome.missed() {
         tracing::warn!(?outcome, "rotated profile not stored at consensus");
     }
-    {
-        let guard = ctx.vault.lock();
-        let vault = guard.as_ref().ok_or("the vault is locked")?;
-        persist_owner_keypair(vault, OwnerKey::Profile, &keypair).map_err(|e| e.to_string())?;
+    let saved = Owner {
+        vault: &ctx.vault,
+        db: &ctx.db,
+        public_key: &owner,
     }
-    let db = ctx.db.current().map_err(|e| e.to_string())?;
-    let (pk, k) = (owner, key.clone());
-    db.call(move |conn| {
-        rekindle_db::repo::identity::set_owned_record(conn, &pk, OwnedRecord::Profile, &k)
-    })
-    .await
-    .map_err(|e| e.to_string())?;
+    .save(OwnedRecord::Profile, &key, &keypair)
+    .await;
+    if let Err(e) = saved {
+        pool.release(lease).await;
+        return Err(e);
+    }
     if let Some(session) = ctx.session.write().as_mut() {
         session.identity.profile_dht_key.clone_from(&key);
         session.identity.profile_owner_keypair = Some(keypair);

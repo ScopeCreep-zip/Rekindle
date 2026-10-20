@@ -53,7 +53,12 @@ through one implementation, `rekindle_node::host::identity`
   parameters and salt): the identity's secrets, sealed by its passphrase
   (`rekindle-vault`).
 - `{pk}.db`: its SQLCipher database, keyed by the vault-derived
-  `AppDbKey`; it opens only after an unlock.
+  `AppDbKey`; it opens only after an unlock. Every connection runs WAL
+  with `foreign_keys`, `secure_delete`, `synchronous=FULL`, `fullfsync`
+  and `checkpoint_fullfsync` on (`rekindle_db::open`): on macOS a plain
+  `fsync` does not reach the disk platter, and a ratchet step committed
+  before its message is sent must survive a power loss (SQLite applies
+  the two full-fsync flags on macOS only).
 - `identities.json`: the registry the login picker and `IdentityList` read
   while locked (public key, display name, creation time; no secret).
 
@@ -85,8 +90,13 @@ groups them by concern.
   (multi-account). Includes Ed25519 public key, display name, DHT
   record keys for profile / friend list / account / mailbox /
   personal sync, optional avatar BLOB, and a stable per-device
-  `device_id` (random 16-byte UUID hex) used for the cross-device
-  DeviceList without exposing more PII.
+  `device_id` (16 random bytes, 32 lowercase hex characters, `CHECK`ed),
+  minted once by the own-records stage; the prekey device list and the
+  cross-device DeviceList name it and nothing replaces it. The owned
+  records' owner keypairs are in the vault, each entry holding the
+  record key with its keypair (`rekindle_vault::typed::owner_keys`): the
+  entry is written first, and the unlock repairs the column from an entry
+  that names another record (a crash between the two writes).
 - **`signal_identities`** — peers' identity keys (TOFU) with the
   `verified` flag and `verified_at` for out-of-band safety-number
   confirmation; `changed_from_key` / `changed_at` hold an unacknowledged
@@ -104,8 +114,10 @@ groups them by concern.
   channels. Indexed by `(owner_key, conversation_id, timestamp)`.
   Carries `message_id` (channel messages), `mek_generation`,
   `lamport_ts`, `automod_blurred` flag, `forwarded_from_author`, and a
-  `flags` bitmask. Dedup constraint on `(owner_key, conversation_id,
-  conversation_type, sender_key, timestamp)`.
+  `flags` bitmask. A row with a client id (`message_id`, every DM) is
+  deduplicated by `(sender_key, message_id)`, so two messages in one
+  millisecond are both kept; a row without one by `(conversation_type,
+  sender_key, timestamp)`.
 - **`pending_messages`** — offline retry queue (max 20 retries).
 - **`pending_friend_requests`** — incoming friend requests awaiting
   user action; carries the requester's profile / route / mailbox info
@@ -199,7 +211,10 @@ groups them by concern.
   B9's replay set); kept while that last-resort key is held.
 - **`unprocessed`** — decrypted inbound 1:1 messages not yet applied,
   written in the ratchet transaction, deleted by the apply and replayed at
-  unlock (D24); keyed by ratchet header `(header_dh, header_n)`.
+  unlock (D24); keyed by ratchet header `(header_dh, header_n)`. Kept at
+  most `UNPROCESSED_MAX_AGE` (1.5 × `DELIVERY_HORIZON`) or 10 attempts; a
+  row that does not read back is quarantined (`quarantined_at`, skipped
+  by every replay) rather than failing the replay of the others.
 
 Prekey lifecycle (plan E2.4, PQXDH §3.2–§3.3): the rows back this
 device's prekey record (see [Prekey Record](#prekey-record-dflt101)). Every
@@ -260,8 +275,8 @@ in lock-step.
 - `idx_friends_group_id` on `friends(owner_key, group_id)`
 - `idx_messages_conversation` on `messages(owner_key, conversation_id, timestamp)`
 - `idx_messages_unread` on `messages(owner_key, conversation_id, is_read)` where `is_read = 0`
-- `idx_messages_dedup` UNIQUE on `messages(owner_key, conversation_id, conversation_type, sender_key, timestamp)`
-- `idx_messages_message_id` UNIQUE on `messages(owner_key, conversation_id, message_id)` where `message_id IS NOT NULL`
+- `idx_messages_dedup` UNIQUE on `messages(owner_key, conversation_id, conversation_type, sender_key, timestamp)` where `message_id IS NULL`
+- `idx_messages_message_id` UNIQUE on `messages(owner_key, conversation_id, sender_key, message_id)` where `message_id IS NOT NULL`
 - `idx_channels_community_id` on `channels(owner_key, community_id)`
 - `idx_community_members_community` on `community_members(owner_key, community_id, pseudonym_key)`
 - `idx_pending_recipient` on `pending_messages(owner_key, recipient_key)`
@@ -282,7 +297,7 @@ Because SQLite, the vault, and Veilid DHT store interrelated state
 (friend keys, DHT record keypairs), a schema reset
 also triggers:
 
-1. Removal of the vault store and its salt sidecar.
+1. Removal of the vault store and its `.hdr` header.
 2. Removal of the `veilid/` local storage directory.
 3. Removal of the Lost Cargo file cache root.
 
@@ -329,18 +344,35 @@ crates the plan's E phase empties.
 
 The vault is **double-encrypted**:
 
-1. **SQLCipher** (AES-256-CBC, page-level) encrypts the entire
-   database file. The key is
-   `BLAKE3-keyed("rekindle v1 vault-sqlcipher", master)` where
-   `master = Argon2id(passphrase, salt)`.
-2. **Per-entry AES-256-GCM** seals every `entries.ciphertext` row
-   independently with a key derived from
-   `BLAKE3-keyed("rekindle v1 vault-entry-gcm", master)`.
+`master = Argon2id(passphrase, salt)` (64 bytes), and three keys are
+`blake3::derive_key` of it under registered labels
+(`rekindle_types::domains`):
 
-The 32-byte salt lives in a sidecar file `{vault_path}.salt` —
-plaintext, since salts only need to be unique per install, not
-secret. The vault DB itself is at `{config}/{pubkey}.vault`
-(per-identity, so multi-account works without snapshot collisions).
+1. **SQLCipher** (AES-256-CBC, page-level) encrypts the entire
+   vault file, keyed under `rekindle-vault-sqlcipher-v1`.
+2. **Per-entry AES-256-GCM** seals every `entries.ciphertext` row
+   independently (AAD `namespace ‖ 0x00 ‖ key`), keyed under
+   `rekindle-vault-entry-v1`.
+3. The **app-db key** (`AppDbKey`, `rekindle-vault-app-db-v1`) keys the
+   identity's own SQLCipher database (`state/{pk}.db`), so one passphrase
+   unlocks both.
+
+The Argon2id parameters and the 32-byte salt live in the 64-byte header
+`state/{pk}.vault.hdr`, plaintext (neither is secret) and readable
+before decryption; `VaultStore::create` writes it and `open` never
+creates one. The vault itself is `state/{pk}.vault` (per identity, so
+multi-account works without collisions).
+
+The identity database, not the vault, holds the 1:1 ratchet sessions and
+the prekey secrets (plan D3: single-layer under SQLCipher, ruling R2).
+It is never exported: an identity export carries the registry entry, the
+vault and its header only, and the import creates a fresh database
+(sessions are re-established, prekeys re-minted). Secrets erased from it
+are not left in its WAL: `secure_delete` zeroes freed pages,
+`journal_size_limit=0` truncates the WAL at each reset, and a prekey
+consumption (`ratchet::accept_init`) and the archive sweep
+(`prekeys::sweep_archive`) run `wal_checkpoint(TRUNCATE)` after they
+commit (DR §8.1).
 
 The on-disk schema is a single table:
 

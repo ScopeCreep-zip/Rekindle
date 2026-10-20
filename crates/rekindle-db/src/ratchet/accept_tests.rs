@@ -232,3 +232,21 @@ async fn a_rejection_discards_only_our_unanswered_init() {
             .unwrap()
     );
 }
+
+/// R2 / DR §8.1: a consumption's commit truncates the WAL, so the erased
+/// one-time secrets and the replaced session are in no `-wal` frame (a
+/// plain write leaves its frames there).
+#[tokio::test]
+async fn a_consumption_truncates_the_wal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bob.db");
+    let wal = dir.path().join("bob.db-wal");
+    let (alice, bob) = (Party::new(1), Party::on_disk(2, &path).await);
+    let init = initiate(&alice, &bob, b"first").await;
+    assert!(
+        std::fs::metadata(&wal).unwrap().len() > 0,
+        "storing the record wrote WAL frames"
+    );
+    accept(&bob, &alice, init).await.unwrap();
+    assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
+}

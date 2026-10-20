@@ -21,6 +21,7 @@ pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;
 pub(crate) mod own_profile;
 mod own_records;
+mod owned_record;
 pub mod policy;
 #[cfg(test)]
 mod prekey_tests;

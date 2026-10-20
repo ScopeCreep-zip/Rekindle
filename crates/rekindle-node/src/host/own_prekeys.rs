@@ -1,15 +1,15 @@
-//! Our prekey record in the own-records stage (plan E2.4): reopened with
-//! its stored owner keypair, or created (the keypair into the vault, then
-//! its key into the database, D1's order), its session lease kept for the
-//! prekey maintenance and the refills; reconciled with our rows and topped
-//! up before the profile's subkey 5 names it, so a friend never reads an
-//! empty record; and this device's id, minted once.
+//! Our prekey record in the own-records stage (plan E2.4): held by the
+//! owned-record rule (`super::owned_record`: reopened with its vault
+//! entry, repaired after an interrupted write, or created), its session
+//! lease kept for the prekey maintenance and the refills; reconciled with
+//! our rows and topped up before the profile's subkey 5 names it, so a
+//! friend never reads an empty record (the stage then lets the
+//! maintenance start); and this device's id, minted once.
 
 use rekindle_db::repo::identity::OwnedRecord;
 use rekindle_protocol::dht::prekeys as record;
 use rekindle_records::port::RecordPort;
 use rekindle_transport::operations::prekeys::device_list;
-use rekindle_vault::typed::owner_keys::OwnerKey;
 
 use super::own_records::{OwnRecords, Stored};
 
@@ -21,41 +21,21 @@ impl OwnRecords {
         let Some(device_id) = self.device_id(stored).await else {
             return Vec::new();
         };
-        let key = match (&stored.prekeys, &stored.prekeys_owner) {
-            (Some(key), Some(owner)) => match record::open_prekey_record(pool, key, owner).await {
-                Ok(lease) => {
-                    *self.prekey_lease.lock() = Some(lease);
-                    key.clone()
-                }
-                Err(e) => {
-                    tracing::warn!(error = %e, "own records: prekey record not reopened");
-                    return Vec::new();
-                }
-            },
-            (Some(key), None) => {
-                tracing::error!(
-                    key,
-                    "own records: the prekey record has no stored owner keypair"
-                );
-                return Vec::new();
-            }
-            (None, _) => {
-                let Ok((lease, key, owner)) = record::create_prekey_record(pool).await.map_err(
-                    |e| tracing::warn!(error = %e, "own records: prekey record not created"),
-                ) else {
-                    return Vec::new();
-                };
-                if !self
-                    .persist(OwnerKey::Prekeys, &owner, OwnedRecord::Prekeys, &key)
-                    .await
-                {
-                    pool.release(lease).await;
-                    return Vec::new();
-                }
-                *self.prekey_lease.lock() = Some(lease);
-                key
-            }
+        let held = self
+            .owner()
+            .hold(
+                pool,
+                OwnedRecord::Prekeys,
+                &stored.prekeys,
+                |key, owner| async move { record::open_prekey_record(pool, &key, &owner).await },
+                || async move { record::create_prekey_record(pool).await },
+            )
+            .await;
+        let Some(held) = held else {
+            return Vec::new();
         };
+        *self.prekey_lease.lock() = Some(held.lease);
+        let key = held.key;
         self.fill_record().await;
         device_list(&key, &device_id)
             .map_err(|e| tracing::error!(error = %e, "own records: no device list"))

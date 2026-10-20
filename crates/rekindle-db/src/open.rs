@@ -119,7 +119,18 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// envelope-store family goes with the daemon's dead call orchestration
 /// (`pending_envelopes`, `seen_envelopes`, `outbound_seqs`,
 /// `active_call_states`).
-pub const SCHEMA_VERSION: i64 = 93;
+///
+/// 93 (plan E2.4): the prekey record's `identity.prekey_record_key`,
+/// `signal_prekeys.retired_at`, `prekey_lr_inits`, `prekey_rejections`
+/// and `prekey_slots_used`.
+///
+/// 94 (audit 2026-10-20, F3): `idx_messages_dedup` covers only rows with
+/// no client id (two DMs in one millisecond were one), the client-id index
+/// names the sender; CHECKs on `identity.device_id` (32 hex), the 32-byte
+/// keys of `signal_identities` and `unprocessed.header_dh`, and the
+/// counters; `unprocessed.quarantined_at`; each vault owner entry holds its
+/// record key with the keypair.
+pub const SCHEMA_VERSION: i64 = 94;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
@@ -147,7 +158,11 @@ fn sqlite(context: &'static str) -> impl FnOnce(rusqlite::Error) -> DbError {
 
 /// Open an identity's encrypted database (plan D1): keyed with the
 /// vault-derived `key` (SQLCipher), verified, WAL, foreign keys and
-/// `secure_delete` on. A new database gets the schema; a database at
+/// `secure_delete` on, `synchronous=FULL` with `fullfsync` and
+/// `checkpoint_fullfsync` (macOS: `F_FULLFSYNC`, so a committed ratchet
+/// step survives a power loss before the message it keys goes out), and
+/// `journal_size_limit=0`, so a WAL reset truncates the file instead of
+/// keeping old frames (old ratchet records, erased prekey secrets) in it. A new database gets the schema; a database at
 /// another schema version is an error, never a silent reset — the layout
 /// check (`crate::reset::check_layout`) already cleared a root laid out for
 /// another version.
@@ -170,8 +185,12 @@ pub fn open(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
                 source: e,
             },
         })?;
-    conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;")
-        .map_err(sqlite("set pragmas"))?;
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; \
+         PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA checkpoint_fullfsync=ON; \
+         PRAGMA journal_size_limit=0;",
+    )
+    .map_err(sqlite("set pragmas"))?;
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |row| row.get(0))
         .map_err(sqlite("read schema version"))?;
@@ -223,6 +242,29 @@ mod tests {
             !plain.starts_with(b"SQLite format 3"),
             "the file is encrypted"
         );
+    }
+
+    /// The durability settings (R3: the ratchet commits before the send):
+    /// `synchronous=FULL` (2), and both full-fsync flags, which SQLite
+    /// honours on macOS only but reports everywhere; and the WAL is cut to
+    /// nothing at each reset (`journal_size_limit=0`).
+    #[tokio::test]
+    async fn a_new_database_syncs_fully() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open(&dir.path().join("pk.db"), &[7; 32]).unwrap();
+        let pragmas: (i64, i64, i64, i64) = db
+            .call(|c| {
+                let get = |name: &str| c.pragma_query_value(None, name, |r| r.get::<_, i64>(0));
+                Ok((
+                    get("synchronous")?,
+                    get("fullfsync")?,
+                    get("checkpoint_fullfsync")?,
+                    get("journal_size_limit")?,
+                ))
+            })
+            .await
+            .unwrap();
+        assert_eq!(pragmas, (2, 1, 1, 0));
     }
 
     #[test]

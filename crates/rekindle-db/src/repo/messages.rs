@@ -135,8 +135,12 @@ pub struct StoredDm {
     pub inserted: bool,
 }
 
-/// Store a direct message. A message whose client id is already held is
-/// not stored again: the held row is returned, not inserted.
+/// Store a direct message. A message whose client id is already held from
+/// the same sender is not stored again: the held row is returned, not
+/// inserted. Messages are told apart by `(sender, client id)`, never by
+/// time, so two in one millisecond are both stored, and a peer reusing
+/// our client id stores a row of its own. A reply points at the first
+/// held row with the parent's client id.
 ///
 /// # Errors
 /// The write failed.
@@ -146,9 +150,9 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
          timestamp, is_read, message_id, reply_to_id) \
          VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6, ?7, \
                  (SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-                  AND message_id = ?8)) \
-         ON CONFLICT(owner_key, conversation_id, message_id) WHERE message_id IS NOT NULL \
-         DO NOTHING",
+                  AND message_id = ?8 ORDER BY id LIMIT 1)) \
+         ON CONFLICT(owner_key, conversation_id, sender_key, message_id) \
+         WHERE message_id IS NOT NULL DO NOTHING",
         params![
             dm.owner_key,
             dm.peer_key,
@@ -161,8 +165,9 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
         ],
     )? > 0;
     let id = conn.query_row(
-        "SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 AND message_id = ?3",
-        params![dm.owner_key, dm.peer_key, dm.message_id],
+        "SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+         AND sender_key = ?3 AND message_id = ?4",
+        params![dm.owner_key, dm.peer_key, dm.sender_key, dm.message_id],
         |row| row.get(0),
     )?;
     Ok(StoredDm { id, inserted })
@@ -348,6 +353,37 @@ mod tests {
             }
         );
         assert_eq!(dm_history(&conn, OWNER, "bob", 10, None).unwrap().len(), 3);
+    }
+
+    /// Audit D-2: messages are not deduplicated by time. Two inbound and
+    /// two outbound DMs in the same millisecond are four rows, and a peer's
+    /// message reusing our client id is a row of its own.
+    #[test]
+    fn messages_in_one_millisecond_are_all_stored() {
+        let conn = fixture::conn();
+        for (sender, id) in [
+            ("bob", "in1"),
+            ("bob", "in2"),
+            (OWNER, "out1"),
+            (OWNER, "out2"),
+        ] {
+            assert!(
+                insert_dm(&conn, &dm("bob", sender, 7, ("same ms", id), None))
+                    .unwrap()
+                    .inserted
+            );
+        }
+        let ours = insert_dm(&conn, &dm("bob", OWNER, 8, ("mine", "dup"), None)).unwrap();
+        let theirs = insert_dm(&conn, &dm("bob", "bob", 8, ("theirs", "dup"), None)).unwrap();
+        assert!(theirs.inserted);
+        assert_ne!(ours.id, theirs.id);
+        let history = dm_history(&conn, OWNER, "bob", 10, None).unwrap();
+        assert_eq!(history.len(), 6);
+        assert_eq!(history.iter().filter(|m| m.timestamp == 7).count(), 4);
+        assert_eq!(
+            history.iter().find(|m| m.id == ours.id).unwrap().body,
+            "mine"
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@
 use rekindle_crypto::signal::prekey_record::{OPK_STALE_MS, RETIRED_ARCHIVE_MS};
 use rusqlite::params;
 
-use crate::ratchet::{in_transaction, RatchetError};
+use crate::ratchet::{in_transaction_erasing, RatchetError};
 use crate::repo::identity_text;
 use crate::Db;
 
@@ -32,6 +32,9 @@ pub struct ArchiveSweep {
 /// - a `prekey_slots_used` row goes after [`OPK_STALE_MS`], by which time
 ///   the peer has replaced that slot.
 ///
+/// The commit truncates the WAL, so the deleted secrets do not linger in
+/// its frames.
+///
 /// # Errors
 /// The database failed.
 pub async fn sweep_archive(
@@ -41,7 +44,7 @@ pub async fn sweep_archive(
 ) -> Result<ArchiveSweep, RatchetError> {
     let owner = identity_text(owner);
     let horizon = now_ms - RETIRED_ARCHIVE_MS;
-    in_transaction(db, move |conn| {
+    in_transaction_erasing(db, move |conn| {
         let prekeys = conn.execute(
             "DELETE FROM signal_prekeys WHERE owner_key = ?1 \
              AND (retired_at <= ?2 OR consumed_at <= ?2)",

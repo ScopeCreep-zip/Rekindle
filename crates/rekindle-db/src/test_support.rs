@@ -57,6 +57,25 @@ impl Party {
         }
     }
 
+    /// A fresh identity whose database is the file `path`, opened the way
+    /// a host opens it (`crate::open`: WAL and its settings).
+    pub async fn on_disk(seed: u64, path: &std::path::Path) -> Self {
+        let identity = Arc::new(Identity::generate());
+        let db = crate::open(path, &[7; 32]).unwrap();
+        let owner = crate::repo::identity_text(&identity.public_key_bytes());
+        db.call(move |c| crate::repo::identity::insert(c, &owner, "me", 0))
+            .await
+            .unwrap();
+        Self {
+            db,
+            local: LocalParty {
+                identity,
+                rng: Arc::new(Seeded::new(seed)),
+                now_ms: 1_000,
+            },
+        }
+    }
+
     /// The address others reach this party at.
     pub fn address(&self) -> PeerAddress {
         PeerAddress::sole_device(self.local.owner())

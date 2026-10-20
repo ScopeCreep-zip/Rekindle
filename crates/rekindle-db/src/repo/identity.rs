@@ -80,7 +80,7 @@ pub fn login_row(
                     account: row.get(3)?,
                     mailbox: row.get(4)?,
                     prekeys: row.get(5)?,
-                    device_id: row.get::<_, Option<String>>(6)?.filter(|id| !id.is_empty()),
+                    device_id: row.get(6)?,
                 },
             ))
         },
@@ -88,20 +88,19 @@ pub fn login_row(
     .optional()
 }
 
-/// This device's id, set to `minted` (16 random bytes, hex) when the row
-/// has none: the prekey device list and the personal sync record both name
-/// it (plan E2.4).
+/// This device's id, set to `minted` (16 random bytes, lowercase hex)
+/// when the row has none: the prekey device list and the personal sync
+/// record both name it (plan E2.4), and nothing replaces it once set.
 ///
 /// # Errors
-/// The write failed.
+/// The write failed (`minted` is not 32 lowercase hex characters).
 pub fn ensure_device_id(
     conn: &Connection,
     public_key: &str,
     minted: &str,
 ) -> rusqlite::Result<String> {
     conn.execute(
-        "UPDATE identity SET device_id = ?2 \
-         WHERE public_key = ?1 AND (device_id IS NULL OR device_id = '')",
+        "UPDATE identity SET device_id = ?2 WHERE public_key = ?1 AND device_id IS NULL",
         params![public_key, minted],
     )?;
     conn.query_row(
@@ -274,7 +273,9 @@ pub fn personal_sync(
     })
 }
 
-/// Set the personal sync record (its keypair is stored in the vault first).
+/// Set the personal sync record's key (its keypair is stored in the vault
+/// first) and answer this device's id: the one held, or `minted` when the
+/// row has none ([`ensure_device_id`]; the record never replaces it).
 ///
 /// # Errors
 /// The write failed.
@@ -282,13 +283,16 @@ pub fn set_personal_sync(
     conn: &Connection,
     public_key: &str,
     record_key: &str,
-    device_id: &str,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE identity SET personal_sync_record_key = ?1, device_id = ?2 WHERE public_key = ?3",
-        params![record_key, device_id, public_key],
+    minted_device_id: &str,
+) -> rusqlite::Result<String> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute(
+        "UPDATE identity SET personal_sync_record_key = ?1 WHERE public_key = ?2",
+        params![record_key, public_key],
     )?;
-    Ok(())
+    let device_id = ensure_device_id(&tx, public_key, minted_device_id)?;
+    tx.commit()?;
+    Ok(device_id)
 }
 
 #[cfg(test)]
@@ -383,25 +387,52 @@ mod tests {
         assert_eq!(spk, head);
     }
 
+    const DEV_A: &str = "0123456789abcdef0123456789abcdef";
+    const DEV_B: &str = "fedcba9876543210fedcba9876543210";
+
     #[test]
     fn the_device_id_is_minted_once() {
         let conn = fixture::conn();
-        assert_eq!(ensure_device_id(&conn, OWNER, "aa").unwrap(), "aa");
-        assert_eq!(ensure_device_id(&conn, OWNER, "bb").unwrap(), "aa");
+        assert_eq!(ensure_device_id(&conn, OWNER, DEV_A).unwrap(), DEV_A);
+        assert_eq!(ensure_device_id(&conn, OWNER, DEV_B).unwrap(), DEV_A);
         let (_, cols) = login_row(&conn, OWNER).unwrap().unwrap();
-        assert_eq!(cols.device_id.as_deref(), Some("aa"));
+        assert_eq!(cols.device_id.as_deref(), Some(DEV_A));
+    }
+
+    /// Audit D-9: a device id is 32 lowercase hex characters.
+    #[test]
+    fn a_malformed_device_id_is_refused() {
+        let conn = fixture::conn();
+        for bad in [
+            "",
+            "aa",
+            "0123456789ABCDEF0123456789ABCDEF",
+            "g123456789abcdef0123456789abcdef",
+        ] {
+            assert!(ensure_device_id(&conn, OWNER, bad).is_err(), "{bad:?}");
+        }
+    }
+
+    /// Audit D-6: the personal sync record names the device id the
+    /// own-records stage minted; it never replaces it.
+    #[test]
+    fn personal_sync_keeps_the_device_id() {
+        let conn = fixture::conn();
+        assert_eq!(personal_sync(&conn, OWNER).unwrap(), None);
+        ensure_device_id(&conn, OWNER, DEV_A).unwrap();
+        assert_eq!(set_personal_sync(&conn, OWNER, "rk", DEV_B).unwrap(), DEV_A);
+        assert_eq!(
+            personal_sync(&conn, OWNER).unwrap(),
+            Some(("rk".into(), DEV_A.into()))
+        );
+        let (_, cols) = login_row(&conn, OWNER).unwrap().unwrap();
+        assert_eq!(cols.device_id.as_deref(), Some(DEV_A));
     }
 
     #[test]
-    fn personal_sync_needs_both_fields() {
+    fn personal_sync_mints_the_device_id_when_none_is_held() {
         let conn = fixture::conn();
-        assert_eq!(personal_sync(&conn, OWNER).unwrap(), None);
-        set_personal_sync(&conn, OWNER, "rk", "dev").unwrap();
-        assert_eq!(
-            personal_sync(&conn, OWNER).unwrap(),
-            Some(("rk".into(), "dev".into()))
-        );
-        set_personal_sync(&conn, OWNER, "rk", "").unwrap();
-        assert_eq!(personal_sync(&conn, OWNER).unwrap(), None);
+        assert_eq!(set_personal_sync(&conn, OWNER, "rk", DEV_B).unwrap(), DEV_B);
+        assert_eq!(ensure_device_id(&conn, OWNER, DEV_A).unwrap(), DEV_B);
     }
 }

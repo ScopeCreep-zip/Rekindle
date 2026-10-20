@@ -9,7 +9,13 @@ use crate::test_support::open_seeded_db;
 #[test]
 fn identity_table_has_personal_sync_columns() {
     let conn = open_seeded_db();
-    rekindle_db::repo::identity::set_personal_sync(&conn, "owner_pk", "rk", "d1").expect("update");
+    rekindle_db::repo::identity::set_personal_sync(
+        &conn,
+        "owner_pk",
+        "rk",
+        "0123456789abcdef0123456789abcdef",
+    )
+    .expect("update");
     let (record_key, _) = rekindle_db::repo::identity::personal_sync(&conn, "owner_pk")
         .unwrap()
         .unwrap();

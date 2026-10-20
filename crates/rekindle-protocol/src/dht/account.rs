@@ -112,6 +112,11 @@ impl AccountRecord {
         Ok(pool.set_durable(self.lease, 0, ciphertext, None).await?)
     }
 
+    /// The session lease that holds it writable.
+    pub fn lease(&self) -> LeaseId {
+        self.lease
+    }
+
     /// The record key as a string.
     pub fn record_key(&self) -> String {
         self.record_key.clone()

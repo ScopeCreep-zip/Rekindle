@@ -60,7 +60,7 @@ pub use node::{
     safe_api_and_routing_context, safe_routing_context, spawn_in_login, spawn_in_login_with_token,
     veilid_api,
 };
-pub use owner_keys::{load_owner_keypair, persist_owner_keypair};
+pub use owner_keys::{load_owner, persist_owner};
 pub use routes::{
     call_route_blob, friend_host, import_route_blob, message_route_blob, on_dead_remote_routes,
     peer_route, route_imports, route_send_failed,

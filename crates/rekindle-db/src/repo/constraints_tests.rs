@@ -52,9 +52,9 @@ fn seeded() -> Connection {
         "INSERT INTO prekey_lr_inits (owner_key, lr_id, spk_id, base_key, seen_at) \
          VALUES (?1, 1, 1, zeroblob(32), 0)",
         "INSERT INTO signal_identities (owner_key, peer_identity, identity_key) \
-         VALUES (?1, 'p', x'00')",
+         VALUES (?1, 'p', zeroblob(32))",
         "INSERT INTO unprocessed (owner_key, peer_identity, header_dh, header_n, type_id, \
-         plaintext, received_at) VALUES (?1, 'p', x'00', 0, 256, x'00', 0)",
+         plaintext, received_at) VALUES (?1, 'p', zeroblob(32), 0, 256, x'00', 0)",
     ] {
         conn.execute(sql, params![OWNER]).unwrap_or_else(|e| panic!("{sql}: {e}"));
     }
@@ -97,7 +97,27 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("prekey_lr_inits", "spk_id", "0"),
     ("prekey_lr_inits", "base_key", "x'00'"),
     ("signal_identities", "verified", "2"),
+    ("signal_identities", "identity_key", "x'00'"),
+    (
+        "signal_identities",
+        "identity_key",
+        "'0123456789abcdef0123456789abcdef'",
+    ),
+    ("signal_identities", "changed_from_key", "zeroblob(31)"),
+    ("signal_identities", "verified_at", "-1"),
+    ("signal_identities", "changed_at", "-1"),
     ("unprocessed", "type_id", "65536"),
+    ("unprocessed", "header_dh", "x'00'"),
+    ("unprocessed", "header_n", "-1"),
+    ("unprocessed", "attempts", "-1"),
+    ("unprocessed", "quarantined_at", "-1"),
+    ("identity", "device_id", "''"),
+    (
+        "identity",
+        "device_id",
+        "'0123456789ABCDEF0123456789ABCDEF'",
+    ),
+    ("identity", "device_id", "'0123456789abcdef'"),
 ];
 
 #[test]
