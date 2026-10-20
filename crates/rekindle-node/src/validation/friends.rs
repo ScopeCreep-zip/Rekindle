@@ -2,17 +2,8 @@
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::key_format::{MAX_INVITE_ID_LEN, MAX_NOTE_LEN};
-use rekindle_types::presence::limits;
 
-use super::{message_body, name, opt, page, public_key, reject, text, Checked};
-
-/// A peer's display name as a request carries it (theirs, or what the user
-/// typed for them): the shared rule a received one meets too.
-fn peer_name(s: &str) -> Checked {
-    limits::peer_display_name(s)
-        .map(drop)
-        .map_err(|e| reject("display name", &e))
-}
+use super::{message_body, name, opt, page, public_key, text, Checked};
 
 /// A friend invite link, bounded before anything decodes it (its signature
 /// and recency are checked where it is reviewed).
@@ -41,27 +32,13 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
         IpcRequest::FriendAdd {
             public_key: key,
-            display_name,
             message,
         } => {
             public_key(key, "public key")?;
-            peer_name(display_name)?;
             text(message, MAX_NOTE_LEN, "message")
         }
-        IpcRequest::FriendAccept {
-            public_key: key,
-            display_name,
-        } => {
-            public_key(key, "public key")?;
-            peer_name(display_name)
-        }
-        IpcRequest::FriendBlock {
-            public_key: key,
-            display_name,
-        } => {
-            public_key(key, "public key")?;
-            opt(display_name.as_deref(), peer_name)
-        }
+        IpcRequest::FriendAccept { public_key: key }
+        | IpcRequest::FriendBlock { public_key: key } => public_key(key, "public key"),
         IpcRequest::FriendSetNickname {
             public_key: key,
             nickname,

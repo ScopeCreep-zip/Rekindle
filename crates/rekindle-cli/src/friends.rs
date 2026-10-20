@@ -20,11 +20,9 @@ pub async fn dispatch(
     let request = match cmd {
         FriendCmd::Add { target, message } => IpcRequest::FriendAdd {
             public_key: target.clone(),
-            display_name: rekindle_client::fmt::abbreviate_key(target),
             message: message.clone().unwrap_or_default(),
         },
         FriendCmd::Accept { request_id } => IpcRequest::FriendAccept {
-            display_name: requester_name(client, request_id).await?,
             public_key: request_id.clone(),
         },
         FriendCmd::Reject { request_id } => IpcRequest::FriendReject {
@@ -40,7 +38,6 @@ pub async fn dispatch(
         FriendCmd::Requests => IpcRequest::FriendRequests,
         FriendCmd::Block { friend } => IpcRequest::FriendBlock {
             public_key: friend.clone(),
-            display_name: None,
         },
         FriendCmd::Unblock { friend } => IpcRequest::FriendUnblock {
             public_key: friend.clone(),
@@ -95,19 +92,6 @@ fn group_request(cmd: &GroupCmd) -> IpcRequest {
             group_id: *group_id,
         },
     }
-}
-
-/// The name a pending request arrived with, for accepting it; its key,
-/// abbreviated, when no request names it.
-async fn requester_name(client: &DaemonClient, public_key: &str) -> anyhow::Result<String> {
-    let requests = helpers::send(client, IpcRequest::FriendRequests).await?;
-    let name = requests.as_array().and_then(|list| {
-        list.iter()
-            .find(|r| r.get("publicKey").and_then(|v| v.as_str()) == Some(public_key))
-            .and_then(|r| r.get("displayName").and_then(|v| v.as_str()))
-            .map(str::to_string)
-    });
-    Ok(name.unwrap_or_else(|| rekindle_client::fmt::abbreviate_key(public_key)))
 }
 
 /// `friend list`: the buddy list, filtered by status.

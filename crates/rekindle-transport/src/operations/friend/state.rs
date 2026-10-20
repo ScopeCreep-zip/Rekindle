@@ -114,6 +114,30 @@ pub(crate) fn label(host: &dyn FriendHost, public_key: &str) -> String {
         })
 }
 
+/// The name the Host itself holds for `public_key` (plan audit U-7: a
+/// frontend never supplies it): their friend row's, else the name their
+/// pending request carried, else a short key until their profile is read.
+///
+/// # Errors
+/// The pending request could not be read.
+pub(crate) async fn known_name(
+    host: &dyn FriendHost,
+    owner: &str,
+    public_key: &str,
+) -> Result<String, FriendError> {
+    if let Some(f) = friend(host, public_key) {
+        return Ok(f.display_name);
+    }
+    let (ok, pk) = (owner.to_string(), public_key.to_string());
+    let answer = db_call!(host, "read pending request", move |conn| {
+        rekindle_db::repo::pending_requests::answer(conn, &ok, &pk)
+    })
+    .await?;
+    Ok(answer
+        .display_name
+        .unwrap_or_else(|| label(host, public_key)))
+}
+
 /// Run a repository call on the identity's database and wait for it: a
 /// future of `Result<R, FriendError>`, `Locked` while no identity is
 /// unlocked and `Failed` when the call fails. A macro so the closure's

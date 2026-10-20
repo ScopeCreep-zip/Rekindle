@@ -45,7 +45,7 @@ async fn a_failed_accept_opens_on_retry() {
         .expect("an owner write");
 
     let ann_events = nodes[1].events().await;
-    accept(&nodes[1], &nodes[0], "Rae").await;
+    accept(&nodes[1], &nodes[0]).await;
     assert!(
         eventually(&sim, LIMIT, || async {
             ann_events.count(&rae, failed) == 1

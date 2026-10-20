@@ -30,13 +30,15 @@ async fn pending_request(
 ///
 /// # Errors
 /// The request could not be read, or the friend not stored.
-pub async fn accept(
-    host: &dyn FriendHost,
-    public_key: &str,
-    display_name: &str,
-) -> Result<(), FriendError> {
+pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
     let owner = state::owner(host)?;
     let answer = pending_request(host, public_key).await?;
+    // The name their request carried (plan audit U-7).
+    let display_name = answer
+        .display_name
+        .clone()
+        .unwrap_or_else(|| state::label(host, public_key));
+    let display_name = display_name.as_str();
     let now = host.clock().now_ms_i64();
     let (ok, pk, dn) = (
         owner.clone(),

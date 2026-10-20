@@ -111,7 +111,7 @@ const BuddyList: Component = () => {
             </ContextMenu.Item>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
-              onSelect={() => handleBlockUser(key, friend.displayName)}
+              onSelect={() => handleBlockUser(key)}
             >
               Block
             </ContextMenu.Item>
@@ -241,7 +241,7 @@ const BuddyList: Component = () => {
           </ContextMenu.Item>
           <ContextMenu.Item
             class="context-menu-item context-menu-item-danger"
-            onSelect={() => handleBlockUser(key, name)}
+            onSelect={() => handleBlockUser(key)}
           >
             Block
           </ContextMenu.Item>

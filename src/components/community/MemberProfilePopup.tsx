@@ -8,6 +8,7 @@ import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
+import { handleAddFriend as addFriendAction } from "../../actions/buddy.actions";
 import {
   handleSelfAssignRole,
   handleSelfUnassignRole,
@@ -166,7 +167,9 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   }
 
   function handleAddFriend(): void {
-    commands.addFriend(props.member.pseudonymKey, props.member.displayName, "");
+    void addFriendAction(props.member.pseudonymKey, "").then((err) => {
+      if (err) addToast(err, "error");
+    });
     props.onClose();
   }
 

@@ -218,7 +218,7 @@ async fn a_refill_lost_in_a_crash_is_published_at_the_next_unlock() {
         node: 0,
         offline: true,
     });
-    accept(&nodes[1], &nodes[0], "Rae").await;
+    accept(&nodes[1], &nodes[0]).await;
     // The commit consumed the slot; its refill's write is held.
     assert!(
         eventually(&sim, LIMIT, || async {

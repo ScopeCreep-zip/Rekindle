@@ -29,7 +29,7 @@ async fn a_rotated_friend_is_messaged_both_ways() {
     // Bea's invite carries her route and records; she accepts the request
     // that answers it.
     request(&sim, &nodes[0], &nodes[1]).await;
-    accept(&nodes[1], &nodes[0], "Ann").await;
+    accept(&nodes[1], &nodes[0]).await;
     assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &bea)).await);
     assert!(is_accepted_friend(&nodes[1], &ann).await);
 

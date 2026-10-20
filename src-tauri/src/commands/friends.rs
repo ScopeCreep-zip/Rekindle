@@ -28,7 +28,6 @@ pub async fn get_pending_requests(
 #[tauri::command]
 pub async fn add_friend(
     public_key: String,
-    display_name: String,
     message: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
@@ -36,7 +35,6 @@ pub async fn add_friend(
         &state,
         IpcRequest::FriendAdd {
             public_key,
-            display_name,
             message,
         },
     )
@@ -56,17 +54,9 @@ pub async fn remove_friend(
 #[tauri::command]
 pub async fn accept_request(
     public_key: String,
-    display_name: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::FriendAccept {
-            public_key,
-            display_name,
-        },
-    )
-    .await
+    host_call::call(&state, IpcRequest::FriendAccept { public_key }).await
 }
 
 /// The buddy list (`IpcRequest::FriendList`).
@@ -257,17 +247,9 @@ pub async fn add_friend_from_invite(
 #[tauri::command]
 pub async fn block_user(
     public_key: String,
-    display_name: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::FriendBlock {
-            public_key,
-            display_name,
-        },
-    )
-    .await
+    host_call::call(&state, IpcRequest::FriendBlock { public_key }).await
 }
 
 /// Unblock a user (`IpcRequest::FriendUnblock`); they are not re-added.

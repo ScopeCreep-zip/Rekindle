@@ -10,24 +10,16 @@ impl IpcRequest {
         match self {
             Self::FriendAdd {
                 public_key,
-                display_name,
                 message,
             } => f
                 .debug_struct("FriendAdd")
                 .field("public_key", public_key)
-                .field("display_name", display_name)
                 .field("message_len", &message.len())
                 .finish(),
-            Self::FriendAccept {
-                public_key,
-                display_name,
-            } => f
-                .debug_struct("FriendAccept")
-                .field("public_key", public_key)
-                .field("display_name", display_name)
-                .finish(),
-            Self::FriendReject { public_key } => f
-                .debug_struct("FriendReject")
+            Self::FriendAccept { public_key }
+            | Self::FriendBlock { public_key }
+            | Self::FriendReject { public_key } => f
+                .debug_struct(self.name())
                 .field("public_key", public_key)
                 .finish(),
             Self::FriendRemove { public_key } => f
@@ -62,14 +54,6 @@ impl IpcRequest {
             Self::FriendInviteCancel { invite_id } => f
                 .debug_struct("FriendInviteCancel")
                 .field("invite_id", invite_id)
-                .finish(),
-            Self::FriendBlock {
-                public_key,
-                display_name,
-            } => f
-                .debug_struct("FriendBlock")
-                .field("public_key", public_key)
-                .field("display_name", display_name)
                 .finish(),
             Self::FriendBlockedList => write!(f, "FriendBlockedList"),
             Self::FriendSetNickname {

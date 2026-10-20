@@ -29,18 +29,11 @@ pub async fn is_blocked(host: &dyn FriendHost, public_key: &str) -> Result<bool,
 ///
 /// # Errors
 /// The block could not be stored, or the profile not moved.
-pub async fn block(
-    host: &dyn FriendHost,
-    public_key: &str,
-    display_name: Option<&str>,
-) -> Result<(), FriendError> {
+pub async fn block(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
     state::require_public_key(public_key)?;
     let owner = state::owner(host)?;
     let now = host.clock().now_ms_i64();
-    let name = state::friend(host, public_key)
-        .map(|f| f.display_name)
-        .or_else(|| display_name.map(str::to_string))
-        .unwrap_or_else(|| format!("{}...", rekindle_utils::text::prefix(public_key, 12)));
+    let name = state::known_name(host, &owner, public_key).await?;
     let pk = public_key.to_string();
     // The friend, their request, their queue, the sessions and the block:
     // one transaction (plan audit D-1).

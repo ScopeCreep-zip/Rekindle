@@ -94,16 +94,10 @@ pub enum IpcRequest {
 
     // ── Friends (plan E2.1) ───────────────────────────────────────
     /// Send a friend request to `public_key` (they become a pending friend).
-    FriendAdd {
-        public_key: String,
-        display_name: String,
-        message: String,
-    },
-    /// Accept the pending request from `public_key`.
-    FriendAccept {
-        public_key: String,
-        display_name: String,
-    },
+    /// Their name is the Host's (plan audit U-7), never the caller's.
+    FriendAdd { public_key: String, message: String },
+    /// Accept the pending request from `public_key` (named by the request).
+    FriendAccept { public_key: String },
     /// Reject the pending request from `public_key`.
     FriendReject { public_key: String },
     /// Remove a friend.
@@ -128,10 +122,7 @@ pub enum IpcRequest {
     /// Cancel an open invite.
     FriendInviteCancel { invite_id: String },
     /// Block `public_key` (our profile moves to a new key).
-    FriendBlock {
-        public_key: String,
-        display_name: Option<String>,
-    },
+    FriendBlock { public_key: String },
     /// Unblock `public_key`.
     FriendUnblock { public_key: String },
     /// Everyone we blocked.

@@ -75,11 +75,10 @@ pub async fn request(sim: &Netsim, requester: &SimNode, target: &SimNode) {
 }
 
 /// `accepter` accepts `requester`'s request (its review committed).
-pub async fn accept(accepter: &SimNode, requester: &SimNode, name: &str) {
+pub async fn accept(accepter: &SimNode, requester: &SimNode) {
     accepter
         .ok(IpcRequest::FriendAccept {
             public_key: key(requester),
-            display_name: name.into(),
         })
         .await;
 }
@@ -87,7 +86,7 @@ pub async fn accept(accepter: &SimNode, requester: &SimNode, name: &str) {
 /// `requester` asks and `accepter` accepts; both hold the friendship.
 pub async fn befriend(sim: &Netsim, requester: &SimNode, accepter: &SimNode) {
     request(sim, requester, accepter).await;
-    accept(accepter, requester, "friend").await;
+    accept(accepter, requester).await;
     let theirs = key(accepter);
     assert!(eventually(sim, LIMIT, || is_accepted_friend(requester, &theirs)).await);
     assert!(is_accepted_friend(accepter, &key(requester)).await);

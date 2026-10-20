@@ -178,23 +178,13 @@ impl App {
             }
 
             // Friend operations
-            Action::AcceptFriendRequest {
-                public_key,
-                display_name,
-            } => self.spawn_accept_friend(public_key, display_name),
+            Action::AcceptFriendRequest { public_key } => self.spawn_accept_friend(public_key),
             Action::RejectFriendRequest(id) => self.spawn_reject_friend(id),
             // The host's gate asks for any confirmation (plan D3.4).
             Action::RemoveFriend { peer_key } => self.spawn_remove_friend(peer_key),
-            Action::BlockUser {
-                public_key,
-                display_name,
-            } => self.spawn_friend_request(
-                IpcRequest::FriendBlock {
-                    public_key,
-                    display_name: Some(display_name),
-                },
-                "block",
-            ),
+            Action::BlockUser { public_key } => {
+                self.spawn_friend_request(IpcRequest::FriendBlock { public_key }, "block");
+            }
             Action::UnblockUser { public_key } => {
                 self.spawn_friend_request(IpcRequest::FriendUnblock { public_key }, "unblock");
             }

@@ -44,11 +44,10 @@ export const accountCommands = {
     hostInvoke<DmMessage[]>("get_message_history", { peerId, limit, before: before ?? null }),
   markRead: (peerId: string) => hostInvoke<unknown>("mark_read", { peerId }),
 
-  addFriend: (publicKey: string, displayName: string, message: string) =>
-    hostInvoke<unknown>("add_friend", { publicKey, displayName, message }),
+  addFriend: (publicKey: string, message: string) =>
+    hostInvoke<unknown>("add_friend", { publicKey, message }),
   removeFriend: (publicKey: string) => hostInvoke<unknown>("remove_friend", { publicKey }),
-  acceptRequest: (publicKey: string, displayName: string) =>
-    hostInvoke<unknown>("accept_request", { publicKey, displayName }),
+  acceptRequest: (publicKey: string) => hostInvoke<unknown>("accept_request", { publicKey }),
   rejectRequest: (publicKey: string) => hostInvoke<unknown>("reject_request", { publicKey }),
   getFriends: () => hostInvoke<FriendInfo[]>("get_friends"),
   getPendingRequests: () => hostInvoke<PendingRequest[]>("get_pending_requests"),
@@ -72,8 +71,7 @@ export const accountCommands = {
     hostInvoke<unknown>("add_friend_from_invite", { inviteString }),
   cancelInvite: (inviteId: string) => hostInvoke<unknown>("cancel_invite", { inviteId }),
   getOutgoingInvites: () => hostInvoke<OutgoingInvite[]>("get_outgoing_invites"),
-  blockUser: (publicKey: string, displayName?: string) =>
-    hostInvoke<unknown>("block_user", { publicKey, displayName: displayName ?? null }),
+  blockUser: (publicKey: string) => hostInvoke<unknown>("block_user", { publicKey }),
   unblockUser: (publicKey: string) => hostInvoke<unknown>("unblock_user", { publicKey }),
   getBlockedUsers: () => hostInvoke<BlockedUser[]>("get_blocked_users"),
   cancelRequest: (publicKey: string) => hostInvoke<unknown>("cancel_request", { publicKey }),

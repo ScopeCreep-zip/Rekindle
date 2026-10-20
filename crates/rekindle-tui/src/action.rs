@@ -84,10 +84,9 @@ pub enum Action {
     ToggleDeafen,
 
     // ─── Friend operations ──────────────────────────────────────
-    /// Accept a pending request (the name it arrived with).
+    /// Accept a pending request (the Host names them from it).
     AcceptFriendRequest {
         public_key: String,
-        display_name: String,
     },
     RejectFriendRequest(String),
     /// Remove a friend — destructive, requires confirmation.
@@ -97,7 +96,6 @@ pub enum Action {
     /// Block a friend or requester (the host asks to confirm).
     BlockUser {
         public_key: String,
-        display_name: String,
     },
     UnblockUser {
         public_key: String,

@@ -120,7 +120,7 @@ async fn adding_a_friend_waits_for_our_published_profile() {
     let friends = HostFriends::of(&host.ctx);
     let bob = hex::encode(Identity::generate().public_key_bytes());
 
-    let added = rekindle_transport::operations::friend::add(&friends, &bob, "Bob", "hi").await;
+    let added = rekindle_transport::operations::friend::add(&friends, &bob, "hi").await;
     assert!(
         matches!(
             added,

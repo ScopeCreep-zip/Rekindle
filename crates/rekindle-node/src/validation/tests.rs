@@ -41,7 +41,6 @@ fn short_and_multibyte_keys_are_400_not_a_panic() {
 fn friend_add_needs_a_public_key_and_a_bounded_note() {
     let add = |key: String, message: String| IpcRequest::FriendAdd {
         public_key: key,
-        display_name: "Bob".into(),
         message,
     };
     assert!(!rejected(&add("ab".repeat(32), "hi\nthere".into())));

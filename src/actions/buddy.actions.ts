@@ -38,10 +38,9 @@ export async function handleAddFriend(
   message: string,
 ): Promise<string | null> {
   try {
-    const displayName = publicKey.slice(0, 12) + "...";
-    // Not time-bounded here: the Host's review may be on screen, and the
+    // The Host names them from its own rows (audit U-7). Not time-bounded here: the Host's review may be on screen, and the
     // Host bounds its own wait for our route (plan E2.1).
-    await commands.addFriend(publicKey, displayName, message);
+    await commands.addFriend(publicKey, message);
     return null;
   } catch (e) {
     return errorMessage(e);
@@ -61,10 +60,8 @@ export async function handleRetryHandshake(publicKey: string): Promise<void> {
 
 export async function handleAcceptRequest(publicKey: string): Promise<string | null> {
   try {
-    // Look up the display name from the pending request
-    const pending = friendsState.pendingRequests.find((r) => r.publicKey === publicKey);
-    const displayName = pending?.displayName ?? publicKey.slice(0, 12) + "...";
-    await commands.acceptRequest(publicKey, displayName);
+    // The Host names them from their request (audit U-7).
+    await commands.acceptRequest(publicKey);
     setFriendsState("pendingRequests", (reqs) =>
       reqs.filter((r) => r.publicKey !== publicKey),
     );
@@ -144,9 +141,9 @@ export async function handleMoveFriendToGroup(
   }
 }
 
-export async function handleBlockUser(publicKey: string, displayName?: string): Promise<string | null> {
+export async function handleBlockUser(publicKey: string): Promise<string | null> {
   try {
-    await commands.blockUser(publicKey, displayName);
+    await commands.blockUser(publicKey);
     // Remove from friends store
     const next = { ...friendsState.friends };
     delete next[publicKey];

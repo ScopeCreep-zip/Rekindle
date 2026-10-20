@@ -93,13 +93,10 @@ impl App {
         });
     }
 
-    pub(crate) fn spawn_accept_friend(&self, public_key: String, display_name: String) {
+    pub(crate) fn spawn_accept_friend(&self, public_key: String) {
         let label = format!("Accepted {}", crate::helpers::abbreviate_key(&public_key));
         self.spawn_toasting(
-            IpcRequest::FriendAccept {
-                public_key,
-                display_name,
-            },
+            IpcRequest::FriendAccept { public_key },
             "accept friend",
             label,
             ToastLevel::Success,

@@ -40,13 +40,14 @@ async fn check_addable(
 pub async fn add(
     host: &dyn FriendHost,
     public_key: &str,
-    display_name: &str,
     message: &str,
 ) -> Result<(), FriendError> {
     state::require_public_key(public_key)?;
     let owner = state::owner(host)?;
     check_addable(host, &owner, public_key).await?;
     invites::published_identity(host).await?;
+    let display_name = state::known_name(host, &owner, public_key).await?;
+    let display_name = display_name.as_str();
 
     let now = host.clock().now_ms_i64();
     let (ok, pk, dn) = (

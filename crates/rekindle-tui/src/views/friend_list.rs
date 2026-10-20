@@ -415,7 +415,6 @@ impl View for FriendListView {
             KeyCode::Char('a') => match self.selected()? {
                 Selected::Request(r) => Some(Action::AcceptFriendRequest {
                     public_key: r.public_key.clone(),
-                    display_name: r.display_name.clone(),
                 }),
                 _ => None,
             },
@@ -433,11 +432,9 @@ impl View for FriendListView {
             KeyCode::Char('b') => match self.selected()? {
                 Selected::Friend(f) => Some(Action::BlockUser {
                     public_key: f.public_key.clone(),
-                    display_name: f.display_name.clone(),
                 }),
                 Selected::Request(r) => Some(Action::BlockUser {
                     public_key: r.public_key.clone(),
-                    display_name: r.display_name.clone(),
                 }),
                 _ => None,
             },

@@ -69,13 +69,9 @@ pub(crate) async fn route(
     match request {
         IpcRequest::FriendAdd {
             public_key,
-            display_name,
             message,
-        } => done(friend::add(&host, &public_key, &display_name, &message).await),
-        IpcRequest::FriendAccept {
-            public_key,
-            display_name,
-        } => done(friend::accept(&host, &public_key, &display_name).await),
+        } => done(friend::add(&host, &public_key, &message).await),
+        IpcRequest::FriendAccept { public_key } => done(friend::accept(&host, &public_key).await),
         IpcRequest::FriendReject { public_key } => done(friend::reject(&host, &public_key).await),
         IpcRequest::FriendRemove { public_key } => done(friend::remove(&host, &public_key).await),
         IpcRequest::FriendCancelRequest { public_key } => {
@@ -94,10 +90,7 @@ pub(crate) async fn route(
         IpcRequest::FriendInviteCancel { invite_id } => {
             done(friend::cancel_invite(&host, &invite_id).await)
         }
-        IpcRequest::FriendBlock {
-            public_key,
-            display_name,
-        } => done(friend::block(&host, &public_key, display_name.as_deref()).await),
+        IpcRequest::FriendBlock { public_key } => done(friend::block(&host, &public_key).await),
         IpcRequest::FriendUnblock { public_key } => done(friend::unblock(&host, &public_key).await),
         IpcRequest::FriendBlockedList => answer(friend::blocked(&host).await),
         IpcRequest::FriendSetNickname {

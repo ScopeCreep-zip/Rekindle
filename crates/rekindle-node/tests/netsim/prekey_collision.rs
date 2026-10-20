@@ -73,8 +73,8 @@ async fn two_first_contacts_on_one_slot_open_after_one_retry() {
     });
 
     let (ann_events, bea_events) = (nodes[1].events().await, nodes[2].events().await);
-    accept(&nodes[1], &nodes[0], "Rae").await;
-    accept(&nodes[2], &nodes[0], "Rae").await;
+    accept(&nodes[1], &nodes[0]).await;
+    accept(&nodes[2], &nodes[0]).await;
     let (ann, bea) = (key(&nodes[1]), key(&nodes[2]));
     assert!(
         eventually(&sim, LIMIT, || async {

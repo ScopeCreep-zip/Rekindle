@@ -19,6 +19,9 @@ pub struct PendingFriendRequest {
 /// prekey record, plan E2.4).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Answer {
+    /// The name the request carried: the Host's own record of who asked
+    /// (plan audit U-7), `None` when there is no request.
+    pub display_name: Option<String>,
     pub profile_dht_key: Option<String>,
     pub mailbox_dht_key: Option<String>,
     pub route_blob: Option<Vec<u8>>,
@@ -122,15 +125,16 @@ pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<PendingF
 pub fn answer(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<Answer> {
     Ok(conn
         .query_row(
-            "SELECT profile_dht_key, mailbox_dht_key, route_blob, invite_id \
+            "SELECT display_name, profile_dht_key, mailbox_dht_key, route_blob, invite_id \
              FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
             params![owner_key, public_key],
             |row| {
                 Ok(Answer {
-                    profile_dht_key: row.get(0)?,
-                    mailbox_dht_key: row.get(1)?,
-                    route_blob: row.get(2)?,
-                    invite_id: row.get(3)?,
+                    display_name: Some(row.get(0)?),
+                    profile_dht_key: row.get(1)?,
+                    mailbox_dht_key: row.get(2)?,
+                    route_blob: row.get(3)?,
+                    invite_id: row.get(4)?,
                 })
             },
         )

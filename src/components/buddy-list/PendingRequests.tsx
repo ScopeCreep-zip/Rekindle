@@ -21,9 +21,9 @@ const PendingRequests: Component = () => {
     if (err) setError(err);
   }
 
-  async function onBlock(publicKey: string, displayName: string): Promise<void> {
+  async function onBlock(publicKey: string): Promise<void> {
     setError(null);
-    const err = await handleBlockUser(publicKey, displayName);
+    const err = await handleBlockUser(publicKey);
     if (err) setError(err);
   }
 
@@ -61,7 +61,7 @@ const PendingRequests: Component = () => {
               </button>
               <button
                 class="pending-btn-block"
-                onClick={() => onBlock(request.publicKey, request.displayName)}
+                onClick={() => onBlock(request.publicKey)}
               >
                 Block
               </button>
