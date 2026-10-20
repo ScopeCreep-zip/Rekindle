@@ -359,7 +359,9 @@ fn reset_holds(host: &Host, peer: &str) -> usize {
 /// reach them.
 #[tokio::test]
 async fn a_direct_decline_releases_the_backend_reset_hold() {
-    use rekindle_transport::operations::friend::{session_reset::IncomingReset, BackendHold, FriendHost};
+    use rekindle_transport::operations::friend::{
+        session_reset::IncomingReset, BackendHold, FriendHost,
+    };
     let dir = tempfile::tempdir().unwrap();
     let (host, peer) = ann_with_rotated_verified_friend(&dir).await;
     let friends = crate::host::adapters::friends::HostFriends::of(&host.ctx);

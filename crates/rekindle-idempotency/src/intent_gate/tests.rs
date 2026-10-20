@@ -518,6 +518,12 @@ fn has_room_counts_unexpired_actions_less_the_replaced_ones() {
     }
     assert!(!gate.has_room(&ME, |_| false, 0), "a full gate");
     assert!(gate.has_room(&ME, |a| *a == names[0], 0), "replacing one");
-    assert!(gate.has_room(&who(9), |_| false, 0), "another owner's actions take none of ME's room");
-    assert!(gate.has_room(&ME, |_| false, 1_000), "expired actions take no room");
+    assert!(
+        gate.has_room(&who(9), |_| false, 0),
+        "another owner's actions take none of ME's room"
+    );
+    assert!(
+        gate.has_room(&ME, |_| false, 1_000),
+        "expired actions take no room"
+    );
 }

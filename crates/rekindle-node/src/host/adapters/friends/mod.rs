@@ -252,9 +252,7 @@ pub(crate) fn release_reset_hold(ctx: &DaemonContext, peer: &str) {
         public_key: peer.to_string(),
     };
     ctx.intents.retain_held(|held_by, held_action| {
-        !(held_by.conn.is_none()
-            && held_by.identity == identity
-            && same_hold(held_action, &action))
+        !(held_by.conn.is_none() && held_by.identity == identity && same_hold(held_action, &action))
     });
 }
 
