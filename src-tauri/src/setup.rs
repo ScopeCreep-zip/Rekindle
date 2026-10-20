@@ -40,6 +40,15 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
         }
     };
 
+    // An install from before plan E3.0a keeps its chunk directories, named
+    // by community id, in `data/file_cache/`: remove them before the
+    // directory is recreated for the community avatars below.
+    if let Err(e) = rekindle_db::reset::prune_file_cache(&root) {
+        tracing::error!(error = %e, "old file cache prune failed");
+        show_startup_error(app, &e.to_string());
+        return Ok(());
+    }
+
     #[cfg(debug_assertions)]
     add_dev_capabilities(app)?;
     // The first window. It is built here rather than declared in
@@ -85,9 +94,9 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // Register global keyboard shortcuts (plugin registered here for state access)
     shortcuts::register(app, state)?;
 
-    // Resolve the Lost Cargo cache root (per-community sub-dirs are
-    // created on first use). Stays None if the platform doesn't expose
-    // an app data dir — file uploads will fail clearly in that case.
+    // The old cache root, now only for the community avatars (until plan
+    // E3.1; the chunk caches live under `state/{pk}.files/`). Stays None
+    // if it cannot be created — avatar uploads fail clearly then.
     let cache_root = root.file_cache();
     if let Err(e) = std::fs::create_dir_all(&cache_root) {
         tracing::warn!(error = %e, path = %cache_root.display(), "failed to create file_cache dir");

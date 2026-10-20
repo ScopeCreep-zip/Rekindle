@@ -13,9 +13,6 @@
 //! chain (oldest dropped first), at most [`MAX_RECEIVER_CHAINS`] receiving
 //! chains (oldest dropped first), and a forward jump of at most
 //! [`MAX_FORWARD_JUMPS`] within a chain.
-//!
-//! `RatchetState` in [`super::ratchet`] is the non-spec ratchet the
-//! session manager still runs; plan E2.3 deletes it.
 
 mod codec;
 mod kdf;

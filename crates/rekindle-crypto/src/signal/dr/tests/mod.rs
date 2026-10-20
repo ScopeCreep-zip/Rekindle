@@ -7,7 +7,7 @@ mod model;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 use zeroize::Zeroizing;
 
-use super::{SessionState, MAX_FORWARD_JUMPS, MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS};
+use super::{Header, SessionState, MAX_FORWARD_JUMPS, MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS};
 use crate::error::CryptoError;
 use crate::signal::pqxdh::agreement::{SessionKeys, AD_LEN};
 use crate::signal::test_support::TestRandom;
@@ -138,6 +138,63 @@ fn a_forward_jump_past_the_bound_is_refused_before_any_key_is_derived() {
     message.header.n = MAX_FORWARD_JUMPS;
     let err = receive(&mut bob, &message).unwrap_err();
     assert!(err.to_string().contains("authenticate"), "{err}");
+}
+
+/// The stored form, to show a refusal changed nothing.
+fn stored(state: &SessionState) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    state.write(&mut bytes);
+    bytes
+}
+
+/// Low-order X25519 points: `0`, `1` and the order-8 point (RFC 7748 §6.1
+/// requires refusing the all-zero shared secret they give).
+fn low_order_points() -> [[u8; 32]; 3] {
+    let mut one = [0u8; 32];
+    one[0] = 1;
+    let order8: [u8; 32] =
+        hex::decode("e0eb7a7c3b41b8ae1656e3faf19fc46ada098deb9c32b1fd866205165f49b800")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    [[0; 32], one, order8]
+}
+
+/// A message under a new ratchet key with `n` (or `pn`) past the bound is
+/// refused before the DH ratchet runs: the state, decrypted in place, is
+/// byte-identical, and a low-order key is refused for the jump, not the
+/// agreement (which never ran).
+#[test]
+fn a_new_chain_past_the_bound_is_refused_before_the_ratchet_runs() {
+    let (mut alice, mut bob) = pair(10);
+    receive(&mut bob, &alice.encrypt(b"first", b"").unwrap()).unwrap();
+    let before = stored(&bob);
+    let fresh = X25519Public::from(&StaticSecret::from([9; 32])).to_bytes();
+    for dh in [fresh, low_order_points()[0]] {
+        for (pn, n) in [(0, MAX_FORWARD_JUMPS + 1), (MAX_FORWARD_JUMPS + 2, 0)] {
+            let mut message = alice.encrypt(b"x", b"").unwrap();
+            message.header = Header { dh, pn, n };
+            let err = bob.decrypt(&message, b"", &TestRandom::new(1)).unwrap_err();
+            assert!(err.to_string().contains("ahead"), "{err}");
+            assert_eq!(stored(&bob), before);
+        }
+    }
+}
+
+#[test]
+fn a_low_order_ratchet_key_is_refused_and_changes_nothing() {
+    let (mut alice, mut bob) = pair(11);
+    receive(&mut bob, &alice.encrypt(b"first", b"").unwrap()).unwrap();
+    let before = stored(&bob);
+    for dh in low_order_points() {
+        let mut message = alice.encrypt(b"x", b"").unwrap();
+        message.header.dh = dh;
+        let err = receive(&mut bob, &message).unwrap_err();
+        assert!(err.to_string().contains("non-contributory"), "{err}");
+        assert_eq!(stored(&bob), before);
+    }
+    let next = alice.encrypt(b"still", b"").unwrap();
+    assert_eq!(receive(&mut bob, &next).unwrap(), b"still");
 }
 
 #[test]

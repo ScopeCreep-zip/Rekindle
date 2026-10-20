@@ -136,28 +136,43 @@ pnpm tauri build         # produces NSIS .exe installer
 
 ## What gets installed where
 
-Rekindle stores user data under each platform's standard app-data
-directory:
+Rekindle keeps its files in three per-user folders, named after the app
+identifier `com.rekindle.app` (the same folders on every Rekindle program:
+the desktop app, `rekindled` and the CLI).
 
-| OS | Path |
-|----|------|
-| Windows | `%APPDATA%\com.rekindle.app\` |
-| macOS | `~/Library/Application Support/com.rekindle.app/` |
-| Linux | `~/.local/share/com.rekindle.app/` |
+| OS | Data folder | Config folder | Logs |
+|----|-------------|---------------|------|
+| Windows | `%APPDATA%\com.rekindle.app\` | `%APPDATA%\com.rekindle.app\` | `%LOCALAPPDATA%\com.rekindle.app\logs\` |
+| macOS | `~/Library/Application Support/com.rekindle.app/` | the data folder | `~/Library/Logs/com.rekindle.app/` |
+| Linux | `~/.local/share/com.rekindle.app/` | `~/.config/com.rekindle.app/` | `~/.local/share/com.rekindle.app/logs/` |
 
-Within that directory you'll find:
+In the data folder:
 
-- `db.sqlite3` — local message and friend cache.
-- `<identity_pubkey>.vault` + `<identity_pubkey>.vault.salt` — your
-  encrypted vault file (SQLCipher double-encrypted) and its salt
-  sidecar. Each identity has its own pair of files.
-- `state/<identity_pubkey>.files/` — Lost Cargo file chunks for that
-  identity, in directories with hashed names.
-- `veilid/` — Veilid node storage.
+- `state/identities.json` — the list of identities on this device (public
+  key, display name, creation time), shown on the login screen.
+- `state/<identity_pubkey>.db` — that identity's encrypted database
+  (SQLCipher): messages, friends, communities and settings.
+- `state/<identity_pubkey>.vault` + `state/<identity_pubkey>.vault.hdr` —
+  that identity's encrypted vault (its keys) and the header that holds
+  the passphrase-derivation parameters.
+- `state/<identity_pubkey>.files/` — that identity's Lost Cargo file
+  chunks, in directories with hashed names.
+- `state/veilid/` — Veilid node storage.
+- `state/layout-version` — the storage version this folder was laid out
+  for; when it differs from the app's, everything under `state/` is
+  reset.
+- `node.lock` — held while a Rekindle node runs on this folder, so only
+  one runs at a time.
+- `file_cache/community_avatars/` — cached community avatars (they move
+  into each identity's `.files/` folder in a later release).
+
+In the config folder: `config.toml` (your settings) and `agent-keys/`
+(the keys the CLI and TUI use to connect to the background service).
 
 If you want to **wipe and start over** (forget all identities, all
-communities, all messages), close the app and delete the entire
-`com.rekindle.app/` directory. There is no central account to also
+communities, all messages), close the app and delete the
+`com.rekindle.app` data, config and log folders above. There is no
+central account to also
 delete — your identity exists only in your local vault.
 
 ## URL-scheme registration

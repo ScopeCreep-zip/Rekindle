@@ -6,7 +6,7 @@
 use rand::seq::SliceRandom;
 
 use super::{PreKeyInit, SessionRecord, ARCHIVED_STATES_MAX_LENGTH};
-use crate::error::CryptoError;
+use crate::error::{CoreCryptoError, CryptoError};
 use crate::signal::test_support::{BobKeys, TestRandom};
 use crate::signal::RatchetMessage;
 use crate::Identity;
@@ -227,19 +227,36 @@ fn a_changed_identity_is_refused_on_both_sides() {
     round_trip(&mut a, &mut b);
 }
 
+fn is_own_identity(err: &CryptoError) -> bool {
+    matches!(err, CryptoError::Core(CoreCryptoError::InvalidKey(msg)) if msg.contains("our own identity"))
+}
+
+/// A bundle or an init that names our own identity is refused on both
+/// sides with the own-identity error, before any agreement.
 #[test]
 fn a_session_with_ourselves_is_refused() {
     let bob = BobKeys::new();
     let ours = SessionRecord::new(bob.identity.public_key_bytes());
-    assert!(ours
-        .initiate(
-            &bob.identity,
-            &bob.bundle(false),
-            b"x",
-            AD,
-            &TestRandom::new(8)
-        )
-        .is_err());
+    let Err(err) = ours.initiate(
+        &bob.identity,
+        &bob.bundle(false),
+        b"x",
+        AD,
+        &TestRandom::new(8),
+    ) else {
+        panic!("a bundle under our own key must be refused");
+    };
+    assert!(is_own_identity(&err), "{err}");
+
+    let alice = Identity::generate();
+    let (_, mut init) = SessionRecord::new(bob.identity.public_key_bytes())
+        .initiate(&alice, &bob.bundle(false), b"x", AD, &TestRandom::new(9))
+        .unwrap();
+    init.identity_key = bob.identity.public_key_bytes();
+    let Err(err) = accept(&ours, &bob, &init) else {
+        panic!("an init under our own key must be refused");
+    };
+    assert!(is_own_identity(&err), "{err}");
 }
 
 /// The caller consumes the one-time keys only on `Ok`: an init whose first

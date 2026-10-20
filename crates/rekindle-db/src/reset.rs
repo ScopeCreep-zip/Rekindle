@@ -21,7 +21,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::paths::DataRoot;
+use crate::paths::{DataRoot, COMMUNITY_AVATARS};
 use crate::SCHEMA_VERSION;
 
 /// What the root's layout needs.
@@ -82,6 +82,22 @@ fn old_layout(root: &DataRoot) -> Vec<PathBuf> {
 /// caller; a trigger would reset every identity at each launch.
 fn retired(root: &DataRoot) -> Vec<PathBuf> {
     vec![root.data.join("file_cache")]
+}
+
+/// Remove every child of the retired `data/file_cache/` except
+/// [`COMMUNITY_AVATARS`]: an install from before plan E3.0a keeps its chunk
+/// directories, named by community id, there until a reset otherwise, and
+/// their names are readable before unlock (threat model, A7). The desktop
+/// calls it at start under the root's claim, before it recreates the
+/// directory for the avatars; it goes with that directory at E3.3.
+///
+/// # Errors
+/// The first entry that cannot be read or removed.
+pub fn prune_file_cache(root: &DataRoot) -> Result<(), ResetError> {
+    run(&[ResetDir {
+        path: root.file_cache(),
+        keep: &[COMMUNITY_AVATARS],
+    }])
 }
 
 fn is_empty_dir(path: &Path) -> Result<bool, ResetError> {
@@ -279,6 +295,34 @@ mod tests {
         assert_eq!(apply(&root).unwrap(), LayoutCheck::Mismatch);
         assert!(!root.data.join("file_cache").exists());
         assert!(!root.identity_files("pk").exists());
+    }
+
+    #[test]
+    fn the_file_cache_is_pruned_to_the_community_avatars() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = root(dir.path());
+        prune_file_cache(&root).unwrap();
+        assert!(!root.file_cache().exists(), "a missing cache is no error");
+
+        let avatar = root
+            .file_cache()
+            .join(COMMUNITY_AVATARS)
+            .join("community-id")
+            .join("hash.webp");
+        std::fs::create_dir_all(avatar.parent().unwrap()).unwrap();
+        std::fs::write(&avatar, b"webp").unwrap();
+        let old_chunks = root.file_cache().join("community-id").join("attachment");
+        std::fs::create_dir_all(&old_chunks).unwrap();
+        std::fs::write(old_chunks.join("0.bin"), b"chunk").unwrap();
+        std::fs::write(root.file_cache().join("stray"), b"").unwrap();
+
+        prune_file_cache(&root).unwrap();
+        assert!(avatar.exists(), "the avatars stay until E3.1");
+        let left: Vec<_> = std::fs::read_dir(root.file_cache())
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
+        assert_eq!(left, [COMMUNITY_AVATARS]);
     }
 
     #[test]

@@ -4,7 +4,9 @@
 //!
 //! A message is never held longer than [`MAX_AGE`] steps (it is delivered
 //! then), which keeps every schedule inside the receiving-chain bound;
-//! the bound itself is tested in `dr::tests`.
+//! the bound itself is tested in `dr::tests`. After the schedule, what is
+//! still in flight is delivered and a round trip settles both records on
+//! one session.
 
 use proptest::prelude::*;
 
@@ -58,6 +60,20 @@ impl Side {
         self.inbox.delivered.push(message);
     }
 
+    /// Send `plaintext` to `to` at `step`.
+    fn send(&mut self, to: &mut Self, step: usize, plaintext: &[u8]) {
+        let (record, message) = self.record.encrypt(plaintext, AD).unwrap();
+        self.record = record;
+        to.inbox.pending.push((step, message, plaintext.to_vec()));
+    }
+
+    /// Deliver everything still in flight, oldest first.
+    fn flush(&mut self) {
+        while !self.inbox.pending.is_empty() {
+            self.deliver(0);
+        }
+    }
+
     /// Deliver, oldest first, whatever has been in flight too long.
     fn deliver_overdue(&mut self, step: usize) {
         while let Some(index) = self
@@ -71,9 +87,10 @@ impl Side {
     }
 }
 
-fn run(mut alice: Side, mut bob: Side, ops: &[Op]) {
+/// Run `ops` from `start`, then flush and check the records converge.
+fn run(mut alice: Side, mut bob: Side, start: usize, ops: &[Op]) {
     let mut counter = 0u32;
-    for (step, op) in ops.iter().enumerate() {
+    for (step, op) in (start..).zip(ops) {
         alice.deliver_overdue(step);
         bob.deliver_overdue(step);
         match *op {
@@ -84,10 +101,7 @@ fn run(mut alice: Side, mut bob: Side, ops: &[Op]) {
                     (&mut bob, &mut alice)
                 };
                 counter += 1;
-                let plaintext = counter.to_be_bytes().to_vec();
-                let (record, message) = from.record.encrypt(&plaintext, AD).unwrap();
-                from.record = record;
-                to.inbox.pending.push((step, message, plaintext));
+                from.send(to, step, &counter.to_be_bytes());
             }
             Op::Deliver(to_bob, pick) | Op::Drop(to_bob, pick) | Op::Replay(to_bob, pick) => {
                 let side = if to_bob { &mut bob } else { &mut alice };
@@ -112,6 +126,22 @@ fn run(mut alice: Side, mut bob: Side, ops: &[Op]) {
             }
         }
     }
+    converge(&mut alice, &mut bob);
+}
+
+/// Flush both inboxes, then a round trip: both records end on the same
+/// active session.
+fn converge(alice: &mut Side, bob: &mut Side) {
+    alice.flush();
+    bob.flush();
+    alice.send(bob, 0, b"ping");
+    bob.flush();
+    bob.send(alice, 0, b"pong");
+    alice.flush();
+    assert_eq!(
+        alice.record.active.as_ref().unwrap().base_key(),
+        bob.record.active.as_ref().unwrap().base_key()
+    );
 }
 
 fn pick_from<T>(items: &[T], pick: usize) -> Option<&T> {
@@ -145,41 +175,51 @@ proptest! {
             )
             .unwrap();
         prop_assert_eq!(first, b"init".to_vec());
-        run(side(alice), side(bob), &ops);
+        run(side(alice), side(bob), 0, &ops);
     }
 
-    /// Both sides initiate at once, the inits arrive in either order, then
-    /// the same random schedule.
+    /// Both sides initiate at once and the inits cross: the side that
+    /// hears first (`a_first`) accepts and replies on the peer's session;
+    /// the other sends once more on its own session, and only then accepts
+    /// the first side's init. Those two messages stay in flight into the
+    /// random schedule, so each lands on a record whose active session has
+    /// moved on.
     #[test]
     fn crossing(a_first in any::<bool>(), ops in prop::collection::vec(op(), 1..60)) {
         let a_keys = BobKeys::new();
         let b_keys = BobKeys::new();
-        let a_record = SessionRecord::new(b_keys.identity.public_key_bytes());
-        let b_record = SessionRecord::new(a_keys.identity.public_key_bytes());
-        let (a_record, a_init) = a_record
+        let (a_record, a_init) = SessionRecord::new(b_keys.identity.public_key_bytes())
             .initiate(&a_keys.identity, &b_keys.bundle(true), b"a", AD, &TestRandom::new(3))
             .unwrap();
-        let (b_record, b_init) = b_record
+        let (b_record, b_init) = SessionRecord::new(a_keys.identity.public_key_bytes())
             .initiate(&b_keys.identity, &a_keys.bundle(true), b"b", AD, &TestRandom::new(4))
             .unwrap();
-        let accept = |record: &SessionRecord, keys: &BobKeys, init: &super::PreKeyInit| {
-            record
-                .insert_from_init(
-                    init,
-                    &keys.keys_for(init.one_time_prekey_id, init.pq_prekey),
-                    AD,
-                    &TestRandom::for_message(&init.message.ciphertext),
-                )
-                .unwrap()
-                .0
-        };
-        let (a_record, b_record) = if a_first {
-            let b_record = accept(&b_record, &b_keys, &a_init);
-            (accept(&a_record, &a_keys, &b_init), b_record)
-        } else {
-            let a_record = accept(&a_record, &a_keys, &b_init);
-            (a_record, accept(&b_record, &b_keys, &a_init))
-        };
-        run(side(a_record), side(b_record), &ops);
+        let mut a = (side(a_record), &a_keys, a_init);
+        let mut b = (side(b_record), &b_keys, b_init);
+        let (first, second) = if a_first { (&mut a, &mut b) } else { (&mut b, &mut a) };
+
+        let from_second = accept(&mut first.0, first.1, &second.2);
+        prop_assert_eq!(from_second, if a_first { b"b".to_vec() } else { b"a".to_vec() });
+        first.0.send(&mut second.0, 0, b"reply on the peer's session");
+        second.0.send(&mut first.0, 0, b"again on our own session");
+        let from_first = accept(&mut second.0, second.1, &first.2);
+        prop_assert_eq!(from_first, if a_first { b"a".to_vec() } else { b"b".to_vec() });
+
+        run(a.0, b.0, 1, &ops);
     }
+}
+
+/// Accept `init` into `side`'s record, returning the first plaintext.
+fn accept(side: &mut Side, keys: &BobKeys, init: &super::PreKeyInit) -> Vec<u8> {
+    let (record, first) = side
+        .record
+        .insert_from_init(
+            init,
+            &keys.keys_for(init.one_time_prekey_id, init.pq_prekey),
+            AD,
+            &TestRandom::for_message(&init.message.ciphertext),
+        )
+        .unwrap();
+    side.record = record;
+    first
 }

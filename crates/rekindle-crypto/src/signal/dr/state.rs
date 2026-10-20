@@ -167,6 +167,10 @@ impl SessionState {
                     CryptoError::decryption("message on a retired chain".into())
                 });
             }
+            // A new chain starts at 0. Both bounds hold before any key
+            // (or the ratchet's agreement) is derived.
+            check_forward_jump(header.pn, self.current().map_or(0, |c| c.chain.n))?;
+            check_forward_jump(header.n, 0)?;
             self.skip_message_keys(header.pn)?;
             self.dh_ratchet(header.dh, rng)?;
         }
@@ -216,12 +220,7 @@ impl SessionState {
     /// current receiving chain, refusing a jump past
     /// [`MAX_FORWARD_JUMPS`] and keeping the newest [`MAX_MESSAGE_KEYS`].
     fn skip_message_keys(&mut self, until: u32) -> Result<(), CryptoError> {
-        let next = self.current().map_or(0, |c| c.chain.n);
-        if until.saturating_sub(next) > MAX_FORWARD_JUMPS {
-            return Err(CryptoError::decryption(format!(
-                "message {until} is more than {MAX_FORWARD_JUMPS} ahead of its chain"
-            )));
-        }
+        check_forward_jump(until, self.current().map_or(0, |c| c.chain.n))?;
         let Some(current) = self.current_mut() else {
             return Ok(());
         };
@@ -269,6 +268,17 @@ impl SessionState {
         });
         Ok(())
     }
+}
+
+/// Refuse message `until` when it runs more than [`MAX_FORWARD_JUMPS`]
+/// ahead of a chain whose next message is `next`.
+fn check_forward_jump(until: u32, next: u32) -> Result<(), CryptoError> {
+    if until.saturating_sub(next) > MAX_FORWARD_JUMPS {
+        return Err(CryptoError::decryption(format!(
+            "message {until} is more than {MAX_FORWARD_JUMPS} ahead of its chain"
+        )));
+    }
+    Ok(())
 }
 
 /// `GENERATE_DH`: a new X25519 secret from `rng`.

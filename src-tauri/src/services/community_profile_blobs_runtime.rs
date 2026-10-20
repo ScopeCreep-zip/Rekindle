@@ -23,7 +23,9 @@ fn cache_dir(state: &SharedState, community_id: &str) -> Result<PathBuf, String>
         .read()
         .clone()
         .ok_or_else(|| "file cache root not initialized".to_string())?;
-    let dir = root.join("community_avatars").join(community_id);
+    let dir = root
+        .join(rekindle_db::paths::COMMUNITY_AVATARS)
+        .join(community_id);
     std::fs::create_dir_all(&dir).map_err(|e| format!("create cache dir: {e}"))?;
     Ok(dir)
 }

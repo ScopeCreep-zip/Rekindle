@@ -209,3 +209,42 @@ fn a_png_and_a_jpeg_decode_by_their_declared_kind() {
         })
     ));
 }
+
+/// A camera-like photo: smooth light falling across the frame plus sensor
+/// noise (a fixed LCG), so the JPEG has real high-frequency content.
+fn photo(width: u32, height: u32) -> image::RgbImage {
+    let mut state = 0x2545_f491_u32;
+    image::RgbImage::from_fn(width, height, |x, y| {
+        state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        let noise = (state >> 24) % 24;
+        let channel = |base: u32| u8::try_from((base + noise).min(255)).unwrap_or(255);
+        image::Rgb([
+            channel(x * 200 / width),
+            channel(y * 180 / height + 20),
+            channel((x + y) * 120 / (width + height) + 60),
+        ])
+    })
+}
+
+/// The avatar path for a photo (plan E7.11 Verify: "a normal photo still
+/// becomes a ≤ `AVATAR_MAX_DIM` WebP"): a 3 Mpx 4:3 JPEG at quality 85,
+/// declared as a JPEG, decodes under the limits and becomes a 128 px WebP
+/// that decodes.
+#[test]
+fn a_jpeg_photo_becomes_a_small_webp() {
+    const AVATAR_MAX_DIM: u32 = 128;
+    let mut jpeg = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 85)
+        .encode_image(&photo(2016, 1512))
+        .unwrap();
+    assert_eq!(&jpeg[..3], [0xff, 0xd8, 0xff]);
+
+    let still = decode_limited(&jpeg, ImageKind::Jpeg, &LIMITS)
+        .unwrap()
+        .into_first();
+    assert_eq!((still.width(), still.height()), (2016, 1512));
+    let webp = encode_webp(&fit_within(still, AVATAR_MAX_DIM)).unwrap();
+    let back = image::load_from_memory_with_format(&webp, image::ImageFormat::WebP).unwrap();
+    assert!(back.width() <= AVATAR_MAX_DIM && back.height() <= AVATAR_MAX_DIM);
+    assert_eq!((back.width(), back.height()), (128, 96));
+}
