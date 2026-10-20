@@ -60,8 +60,6 @@ serde_json = { workspace = true }
 aes-gcm = "0.10"
 blake3 = "1"
 ed25519-dalek = { version = "2", features = [ "rand_core", "zeroize" ] }
-# The pre-session replay guard keys `(sender, nonce)` (plan E2.3).
-blake2 = "0.10"
 hkdf = "0.12"
 rand = { workspace = true }
 sha2 = "0.10"

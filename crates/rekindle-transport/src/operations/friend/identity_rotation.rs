@@ -25,39 +25,28 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 use super::{state, verification, BackendHold, FriendError, FriendHost};
 use crate::operations::dm;
 
-/// What both identities sign for `recipient` (`rekindle_crypto`'s, which
-/// owns the construction).
-pub use rekindle_crypto::identity_rotation::signing_bytes;
-
-/// The rotation frame from `old` to `new` for `recipient`.
+/// The rotation frame from `old` to `new` for `recipient`
+/// (`rekindle_crypto::identity_rotation` owns the construction).
 #[must_use]
 pub fn rotation(old: &Identity, new: &Identity, recipient: &[u8; 32]) -> IdentityRotated {
-    let bytes = signing_bytes(&old.public_key_bytes(), &new.public_key_bytes(), recipient);
+    let (sig_old, sig_new) = rekindle_crypto::identity_rotation::sign(old, new, recipient);
     IdentityRotated {
         new_identity: new.public_key_bytes(),
-        sig_old: old.sign(&bytes).to_bytes(),
-        sig_new: new.sign(&bytes).to_bytes(),
+        sig_old,
+        sig_new,
     }
 }
 
 /// Whether `r`, from `old` to `recipient`, is signed by both identities.
 #[must_use]
 pub fn verified(old: &[u8; 32], recipient: &[u8; 32], r: &IdentityRotated) -> bool {
-    if *old == r.new_identity {
-        return false;
-    }
-    let bytes = signing_bytes(old, &r.new_identity, recipient);
-    let signed_by = |key: &[u8; 32], signature: &[u8; 64]| {
-        ed25519_dalek::VerifyingKey::from_bytes(key).is_ok_and(|key| {
-            Identity::verify(
-                &key,
-                &bytes,
-                &ed25519_dalek::Signature::from_bytes(signature),
-            )
-            .is_ok()
-        })
-    };
-    signed_by(old, &r.sig_old) && signed_by(&r.new_identity, &r.sig_new)
+    rekindle_crypto::identity_rotation::verify(
+        old,
+        &r.new_identity,
+        recipient,
+        &r.sig_old,
+        &r.sig_new,
+    )
 }
 
 /// Tell every friend not being removed that we are `new` now, before the

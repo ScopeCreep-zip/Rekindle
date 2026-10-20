@@ -17,7 +17,7 @@ use rekindle_codec::capnp_codec::direct::{
     PreKeyInitBody, RatchetBody, RatchetHeader, SealedBody, SealedContent,
 };
 use rekindle_crypto::signal::{Header, PqPrekeyId, PreKeyBundle, PreKeyInit, RatchetMessage};
-use rekindle_crypto::{CryptoError, Identity};
+use rekindle_crypto::{presession, CryptoError, Identity};
 use rekindle_db::ratchet::{self, PeerAddress, RatchetError};
 use rekindle_types::domains;
 
@@ -48,34 +48,6 @@ pub fn sealed_info(type_id: DmTypeId) -> Option<&'static str> {
         DmTypeId::WakeNotify => domains::DM_PUSH_WAKE_HPKE,
         _ => return None,
     })
-}
-
-/// The HPKE AAD of a sealed frame: its sender and typeId, so the
-/// ciphertext opens only under the frame it was sealed into.
-#[must_use]
-pub fn sealed_aad(sender: &[u8; 32], type_id: DmTypeId) -> Vec<u8> {
-    let mut aad = Vec::with_capacity(34);
-    aad.extend_from_slice(sender);
-    aad.extend_from_slice(&type_id.as_u16().to_be_bytes());
-    aad
-}
-
-/// What a sealed frame's sender signs.
-#[must_use]
-pub fn presession_signing_bytes(
-    recipient: &[u8; 32],
-    type_id: DmTypeId,
-    enc: &[u8; 32],
-    ciphertext: &[u8],
-) -> Vec<u8> {
-    let label = domains::DM_PRESESSION_SIG.as_bytes();
-    let mut bytes = Vec::with_capacity(label.len() + 66 + ciphertext.len());
-    bytes.extend_from_slice(label);
-    bytes.extend_from_slice(recipient);
-    bytes.extend_from_slice(&type_id.as_u16().to_be_bytes());
-    bytes.extend_from_slice(enc);
-    bytes.extend_from_slice(ciphertext);
-    bytes
 }
 
 /// The datagram for `frame`: [`DIRECT_TAG`] then its encoding. Every 1:1
@@ -240,37 +212,21 @@ pub fn seal_presession(
     let type_id = body.type_id();
     let info = sealed_info(type_id)
         .ok_or_else(|| FriendError::Invalid(format!("{type_id:?} is not a sealed kind")))?;
-    let sender = identity.public_key_bytes();
-    let recipient_x25519 = Identity::peer_ed25519_to_x25519(recipient)
-        .map_err(|e| FriendError::Invalid(format!("recipient key: {e}")))?;
     let plaintext = SealedContent {
         nonce,
         sent_at_ms: now_ms,
         payload: body.encode(),
     }
     .encode();
-    let sealed = rekindle_secrets::hpke::seal_base(
-        recipient_x25519.as_bytes(),
-        info,
-        &sealed_aad(&sender, type_id),
-        &plaintext,
-    )
-    .map_err(|e| FriendError::Failed(format!("seal {type_id:?}: {e}")))?;
-    let signature = identity
-        .sign(&presession_signing_bytes(
-            recipient,
-            type_id,
-            &sealed.enc,
-            &sealed.ciphertext,
-        ))
-        .to_bytes();
+    let sealed = presession::seal(identity, recipient, type_id.as_u16(), info, &plaintext)
+        .map_err(|e| FriendError::Invalid(format!("seal {type_id:?}: {e}")))?;
     Ok(DmFrame {
         type_id,
-        sender,
+        sender: identity.public_key_bytes(),
         body: FrameBody::Sealed(SealedBody {
             enc: sealed.enc,
             ciphertext: sealed.ciphertext,
-            signature,
+            signature: sealed.signature,
         }),
     })
 }

@@ -14,7 +14,7 @@ use rekindle_codec::capnp_codec::direct::{
     DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, PreKeyInitBody, RatchetBody, SealedBody,
     SealedContent,
 };
-use rekindle_crypto::{CryptoError, Identity};
+use rekindle_crypto::{presession, CryptoError, Identity};
 use rekindle_db::ratchet::{self, RatchetError};
 use rekindle_db::repo::unprocessed::UnprocessedKey;
 use rekindle_types::message::{ENVELOPE_FRESHNESS_WINDOW_MS, ENVELOPE_MAX_FUTURE_SKEW_MS};
@@ -22,8 +22,7 @@ use rekindle_types::message::{ENVELOPE_FRESHNESS_WINDOW_MS, ENVELOPE_MAX_FUTURE_
 use super::admission;
 use super::replay::Sighting;
 use crate::operations::dm::frame::{
-    ad_extra, init_from_body, peer_address, presession_signing_bytes, ratchet_message, sealed_aad,
-    sealed_info, Nonce,
+    ad_extra, init_from_body, peer_address, ratchet_message, sealed_info, Nonce,
 };
 use crate::operations::friend::{state, FriendHost};
 
@@ -125,13 +124,18 @@ fn open_sealed(
 ) -> Result<Opened, Dropped> {
     let identity = host.local_party().or_refused()?.identity;
     let now = host.clock().now_ms();
-    let content = match open_presession(&identity, &sender, type_id, sealed, now) {
-        Ok(content) => content,
-        Err(why) => {
-            tracing::warn!(from = %sender_hex, ?type_id, why, "dropping sealed frame");
-            return Err(Dropped::Refused);
-        }
+    let refused = |why: &str| {
+        tracing::warn!(from = %sender_hex, ?type_id, why, "dropping sealed frame");
+        Dropped::Refused
     };
+    verify_presession(&identity, &sender, type_id, sealed).map_err(refused)?;
+    // A cheap per-sender bucket before the HPKE open (plan audit G7): the
+    // signature names a real sender, so one spending opens fast is the
+    // only one slowed.
+    if !host.stores().replay.lock().may_open(&sender, now) {
+        return Err(refused("sender over its open rate"));
+    }
+    let content = open_verified(&identity, &sender, type_id, sealed, now).map_err(refused)?;
     match host
         .stores()
         .replay
@@ -144,7 +148,7 @@ fn open_sealed(
             return Err(Dropped::Duplicate);
         }
         Sighting::Full => {
-            tracing::warn!(from = %sender_hex, "replay guard full — dropping sealed frame");
+            tracing::warn!(from = %sender_hex, "sender over its replay quota — dropping sealed frame");
             return Err(Dropped::Refused);
         }
     }
@@ -182,21 +186,53 @@ pub fn open_presession(
     sealed: &SealedBody,
     now_ms: u64,
 ) -> Result<SealedContent, &'static str> {
-    let info = sealed_info(type_id).ok_or("not a sealed kind")?;
-    let me = identity.public_key_bytes();
-    let signing = presession_signing_bytes(&me, type_id, &sealed.enc, &sealed.ciphertext);
-    let signature = ed25519_dalek::Signature::from_bytes(&sealed.signature);
-    let key = ed25519_dalek::VerifyingKey::from_bytes(sender).map_err(|_| "sender is not a key")?;
-    Identity::verify(&key, &signing, &signature).map_err(|_| "bad signature")?;
-    let secret = zeroize::Zeroizing::new(identity.to_x25519_secret().to_bytes());
-    let plaintext = rekindle_secrets::hpke::open_base(
-        &secret,
-        info,
-        &sealed_aad(sender, type_id),
-        &sealed.enc,
-        &sealed.ciphertext,
+    verify_presession(identity, sender, type_id, sealed)?;
+    open_verified(identity, sender, type_id, sealed, now_ms)
+}
+
+fn signed_seal(sealed: &SealedBody) -> presession::SignedSeal {
+    presession::SignedSeal {
+        enc: sealed.enc,
+        ciphertext: sealed.ciphertext.clone(),
+        signature: sealed.signature,
+    }
+}
+
+/// Whether a sealed frame of a sealed kind is signed by `sender` for us
+/// (`rekindle_crypto::presession`, before anything is decrypted).
+fn verify_presession(
+    identity: &Identity,
+    sender: &[u8; 32],
+    type_id: DmTypeId,
+    sealed: &SealedBody,
+) -> Result<(), &'static str> {
+    sealed_info(type_id).ok_or("not a sealed kind")?;
+    presession::verify(
+        &identity.public_key_bytes(),
+        sender,
+        type_id.as_u16(),
+        &signed_seal(sealed),
     )
-    .map_err(|_| "does not open")?;
+    .map_err(presession::Refused::as_str)
+}
+
+/// The fresh content of a sealed frame whose signature verified.
+fn open_verified(
+    identity: &Identity,
+    sender: &[u8; 32],
+    type_id: DmTypeId,
+    sealed: &SealedBody,
+    now_ms: u64,
+) -> Result<SealedContent, &'static str> {
+    let info = sealed_info(type_id).ok_or("not a sealed kind")?;
+    let plaintext = presession::open(
+        identity,
+        sender,
+        type_id.as_u16(),
+        info,
+        &signed_seal(sealed),
+    )
+    .map_err(presession::Refused::as_str)?;
     let content = SealedContent::decode(&plaintext).map_err(|_| "content does not decode")?;
     if !fresh(content.sent_at_ms, now_ms) {
         return Err("stale");
