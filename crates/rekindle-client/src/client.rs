@@ -230,6 +230,7 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::CommunityJoin { .. }
         | IpcRequest::FriendAdd { .. }
         | IpcRequest::FriendAccept { .. }
+        | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::Unlock { .. }
         | IpcRequest::ChannelSend { .. }
         | IpcRequest::DmSend { .. }

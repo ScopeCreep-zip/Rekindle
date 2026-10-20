@@ -382,6 +382,14 @@
     white-space: nowrap;
   }
 
+  /* A first contact that failed, with its Retry (plan E2.4, B7). */
+  .buddy-handshake-failed {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
   /* First-contact handshake failed: the friendship stays pending (C7.25). */
   .buddy-handshake-error {
     font-size: 10px;

@@ -136,6 +136,7 @@ async fn route(
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
         | IpcRequest::FriendCancelRequest { .. }
+        | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::FriendAddFromInvite { .. }
         | IpcRequest::FriendInviteCreate
         | IpcRequest::FriendInviteList

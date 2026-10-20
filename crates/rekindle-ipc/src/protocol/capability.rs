@@ -108,6 +108,7 @@ impl IpcRequest {
             | Self::FriendReject { .. }
             | Self::FriendRemove { .. }
             | Self::FriendCancelRequest { .. }
+            | Self::FriendRetryHandshake { .. }
             | Self::FriendAddFromInvite { .. }
             | Self::FriendInviteCreate
             | Self::FriendInviteCancel { .. }

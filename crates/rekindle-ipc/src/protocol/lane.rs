@@ -76,6 +76,7 @@ impl IpcRequest {
             Self::FriendList => ("FriendList", Query, Authenticated),
             Self::FriendRequests => ("FriendRequests", Query, Authenticated),
             Self::FriendCancelRequest { .. } => ("FriendCancelRequest", Write, Authenticated),
+            Self::FriendRetryHandshake { .. } => ("FriendRetryHandshake", Write, Authenticated),
             Self::FriendAddFromInvite { .. } => ("FriendAddFromInvite", Write, Authenticated),
             Self::FriendInviteCreate => ("FriendInviteCreate", Write, Authenticated),
             Self::FriendInviteList => ("FriendInviteList", Query, Authenticated),

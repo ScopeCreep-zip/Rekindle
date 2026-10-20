@@ -52,6 +52,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::friends::unblock_user,
         commands::friends::get_blocked_users,
         commands::friends::cancel_request,
+        commands::friends::retry_handshake,
         commands::friends::cancel_invite,
         commands::friends::get_outgoing_invites,
         commands::friends::reset_signal_session,

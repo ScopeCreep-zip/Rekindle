@@ -5,6 +5,7 @@ import Tooltip from "../common/Tooltip";
 import type { UserStatus } from "../../stores/auth.store";
 import { ICON_VOLUME_HIGH } from "../../icons";
 import { formatRelativeTime } from "../../utils/time";
+import { handleRetryHandshake } from "../../actions/buddy.actions";
 
 interface BuddyItemProps {
   publicKey: string;
@@ -33,6 +34,13 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
 
   function handleClick(): void {
     props.onSelect(props.publicKey);
+  }
+
+  // B7: the secure session did not open; Retry asks the Host to send the
+  // first contact again (its review and the row's state come from there).
+  function handleRetry(e: MouseEvent): void {
+    e.stopPropagation();
+    void handleRetryHandshake(props.publicKey);
   }
 
   const isOffline = () => props.status === "offline";
@@ -88,9 +96,14 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
           <div class="buddy-handshake-retrying">Retrying with a fresh key</div>
         </Show>
         <Show when={props.handshakeError}>
-          <Tooltip text={props.handshakeError ?? ""}>
-            <div class="buddy-handshake-error">Secure session not set up</div>
-          </Tooltip>
+          <div class="buddy-handshake-failed">
+            <Tooltip text={props.handshakeError ?? ""}>
+              <div class="buddy-handshake-error">Secure session not set up</div>
+            </Tooltip>
+            <button type="button" class="pending-btn-accept" onClick={handleRetry}>
+              Retry
+            </button>
+          </div>
         </Show>
       </div>
       <Show when={props.voiceChannel}>

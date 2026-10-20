@@ -80,6 +80,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendReject { public_key: key }
         | IpcRequest::FriendRemove { public_key: key }
         | IpcRequest::FriendCancelRequest { public_key: key }
+        | IpcRequest::FriendRetryHandshake { public_key: key }
         | IpcRequest::FriendUnblock { public_key: key }
         | IpcRequest::SessionResetStart { public_key: key }
         | IpcRequest::SessionResetAccept { public_key: key }

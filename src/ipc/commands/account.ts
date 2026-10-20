@@ -77,6 +77,7 @@ export const accountCommands = {
   unblockUser: (publicKey: string) => hostInvoke<unknown>("unblock_user", { publicKey }),
   getBlockedUsers: () => hostInvoke<BlockedUser[]>("get_blocked_users"),
   cancelRequest: (publicKey: string) => hostInvoke<unknown>("cancel_request", { publicKey }),
+  retryHandshake: (publicKey: string) => hostInvoke<unknown>("retry_handshake", { publicKey }),
   /** TrustChanging: the review shows whose session it is; the friend
    *  compares safety numbers before accepting. */
   resetSignalSession: (peerPublicKey: string) =>

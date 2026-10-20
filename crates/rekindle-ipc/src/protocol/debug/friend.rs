@@ -37,6 +37,7 @@ impl IpcRequest {
             Self::FriendList => write!(f, "FriendList"),
             Self::FriendRequests => write!(f, "FriendRequests"),
             Self::FriendCancelRequest { public_key }
+            | Self::FriendRetryHandshake { public_key }
             | Self::FriendUnblock { public_key }
             | Self::SessionResetStart { public_key }
             | Self::SessionResetAccept { public_key }

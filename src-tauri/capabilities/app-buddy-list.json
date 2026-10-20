@@ -14,6 +14,7 @@
     "allow-block-user",
     "allow-cancel-invite",
     "allow-cancel-request",
+    "allow-retry-handshake",
     "allow-create-community",
     "allow-create-friend-group",
     "allow-decline-dm-invite",

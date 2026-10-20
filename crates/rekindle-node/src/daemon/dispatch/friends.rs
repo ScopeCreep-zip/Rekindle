@@ -81,6 +81,9 @@ pub(crate) async fn route(
         IpcRequest::FriendCancelRequest { public_key } => {
             done(friend::cancel(&host, &public_key).await)
         }
+        IpcRequest::FriendRetryHandshake { public_key } => done(
+            rekindle_transport::operations::prekeys::retry_first_contact(&host, &public_key).await,
+        ),
         IpcRequest::FriendList => IpcResponse::ok(&friend::friends(&host)),
         IpcRequest::FriendRequests => answer(friend::pending(&host).await),
         IpcRequest::FriendAddFromInvite { invite } => {

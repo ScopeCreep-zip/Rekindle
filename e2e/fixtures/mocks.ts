@@ -12,7 +12,7 @@ const HOST_CALLS = [
   "set_nickname", "set_avatar", "get_avatar", "get_game_status", "open_external_url",
   // Friends and the 1:1 paths (plan E2.1).
   "send_message", "send_typing", "get_message_history", "mark_read", "add_friend",
-  "remove_friend", "accept_request", "reject_request", "cancel_request", "get_friends",
+  "remove_friend", "accept_request", "reject_request", "cancel_request", "retry_handshake", "get_friends",
   "get_pending_requests", "create_friend_group", "rename_friend_group",
   "delete_friend_group", "move_friend_to_group", "set_friend_nickname", "generate_invite",
   "add_friend_from_invite", "cancel_invite", "get_outgoing_invites", "block_user",

@@ -52,6 +52,11 @@ pub(super) async fn selection(
             s.subject = person(ctx, public_key).await?;
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::AddFriend);
         }
+        IpcRequest::FriendRetryHandshake { public_key } => {
+            // Our accept goes to them again: they are told.
+            s.subject = person(ctx, public_key).await?;
+            s.notifies = Notifies::Subject;
+        }
         IpcRequest::FriendInviteCreate => {
             s.subject = Subject::Named {
                 name: "a friend invite link".into(),

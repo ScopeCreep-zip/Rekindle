@@ -114,6 +114,10 @@ pub enum IpcRequest {
     FriendRequests,
     /// Cancel the request we sent `public_key`.
     FriendCancelRequest { public_key: String },
+    /// Retry the first contact with `public_key` that failed (plan E2.4,
+    /// B7): our accept, or our reset accept when that was the one pending,
+    /// from a fresh slot of their prekey record.
+    FriendRetryHandshake { public_key: String },
     /// Add the friend an invite link names (reviewed with their key's
     /// fingerprint).
     FriendAddFromInvite { invite: String },

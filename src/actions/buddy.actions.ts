@@ -48,6 +48,17 @@ export async function handleAddFriend(
   }
 }
 
+/// B7 — retry the first contact whose secure session did not open. The
+/// Host re-sends it and publishes HandshakeRetrying, then HandshakeFailed
+/// again if it cannot; the row follows those events.
+export async function handleRetryHandshake(publicKey: string): Promise<void> {
+  try {
+    await commands.retryHandshake(publicKey);
+  } catch (e) {
+    console.error("Retry of the secure session failed:", errorMessage(e));
+  }
+}
+
 export async function handleAcceptRequest(publicKey: string): Promise<string | null> {
   try {
     // Look up the display name from the pending request

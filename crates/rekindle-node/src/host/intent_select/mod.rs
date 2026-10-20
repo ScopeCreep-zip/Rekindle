@@ -75,6 +75,7 @@ pub(crate) async fn select(
         IpcRequest::FriendAdd { .. }
         | IpcRequest::FriendAddFromInvite { .. }
         | IpcRequest::FriendCancelRequest { .. }
+        | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::FriendInviteCreate
         | IpcRequest::FriendInviteCancel { .. }
         | IpcRequest::FriendBlock { .. }

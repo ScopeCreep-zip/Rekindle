@@ -93,6 +93,16 @@ pub async fn cancel_request(
     host_call::call(&state, IpcRequest::FriendCancelRequest { public_key }).await
 }
 
+/// Retry the secure session that did not open with a friend
+/// (`IpcRequest::FriendRetryHandshake`, plan E2.4 B7).
+#[tauri::command]
+pub async fn retry_handshake(
+    public_key: String,
+    state: State<'_, SharedState>,
+) -> Result<Ran, CommandError> {
+    host_call::call(&state, IpcRequest::FriendRetryHandshake { public_key }).await
+}
+
 /// Reset our secure session with a friend (`IpcRequest::SessionResetStart`,
 /// TrustChanging): the review shows whose session it is; the friend
 /// compares safety numbers before accepting.

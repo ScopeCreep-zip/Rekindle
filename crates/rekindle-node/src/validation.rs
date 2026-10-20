@@ -361,6 +361,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendReject { .. }
         | IpcRequest::FriendRemove { .. }
         | IpcRequest::FriendCancelRequest { .. }
+        | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::FriendUnblock { .. }
         | IpcRequest::SessionResetStart { .. }
         | IpcRequest::SessionResetAccept { .. }

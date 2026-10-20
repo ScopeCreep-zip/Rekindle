@@ -52,6 +52,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("accept_request", HostCall::Request("FriendAccept")),
     ("reject_request", HostCall::Request("FriendReject")),
     ("cancel_request", HostCall::Request("FriendCancelRequest")),
+    ("retry_handshake", HostCall::Request("FriendRetryHandshake")),
     ("get_friends", HostCall::Request("FriendList")),
     ("get_pending_requests", HostCall::Request("FriendRequests")),
     (

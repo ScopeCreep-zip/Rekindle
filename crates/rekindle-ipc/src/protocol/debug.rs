@@ -90,6 +90,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::FriendList
             | Self::FriendRequests
             | Self::FriendCancelRequest { .. }
+            | Self::FriendRetryHandshake { .. }
             | Self::FriendAddFromInvite { .. }
             | Self::FriendInviteCreate
             | Self::FriendInviteList
