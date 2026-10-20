@@ -138,8 +138,10 @@ Verification:
   trivial.
 
 The cache is namespaced per scope (a community's directory is
-`state/{pk}.files/<scope name>`) so that leaving a community cleanly
-removes all its cached cargo. Identity delete removes `state/{pk}.files/`.
+`state/{pk}.files/<scope name>`). Leaving a community does not remove
+its scope directory today: its cached chunks stay until eviction or
+identity delete, and no plan step owns the removal yet. Identity delete
+removes `state/{pk}.files/`.
 The old `data/file_cache/` layout is removed by a schema/layout reset, and
 the desktop prunes it at every start to its one live child
 (`rekindle_db::reset::prune_file_cache`): community avatars still sit in

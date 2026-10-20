@@ -437,9 +437,13 @@ set into the same record.
 
 Each subkey value is capped at 10,381 B (`min(32,768, 1,048,576 / 101)`,
 pinned by `dht_layout::prekeys::MAX_SUBKEY_VALUE_LEN`). Every signature is
-the identity's Ed25519 over `id ‖ key` under a domain tag: `0x01 ‖
-u32be(spk_id) ‖ EncodeEC(spk)`, `0x02 ‖ "LR"|"OT" ‖ u32be(id) ‖
-EncodeKEM(pqpk)`, `0x03 ‖ u32be(opk_id) ‖ EncodeEC(opk)`.
+the identity's Ed25519 over a domain label, the id, the key and, for the
+head's two keys, the head's `issued_at`:
+`PREKEY_SPK_SIG ‖ u32be(spk_id) ‖ i64be(issued_at) ‖ EncodeEC(spk)`,
+`PREKEY_PQ_LR_SIG ‖ u32be(id) ‖ i64be(issued_at) ‖ EncodeKEM(pqpk)`,
+`PREKEY_PQ_OT_SIG ‖ u32be(id) ‖ EncodeKEM(pqpk)` and
+`PREKEY_OPK_SIG ‖ u32be(opk_id) ‖ EncodeEC(opk)` (labels in
+`rekindle-types/src/domains.rs`; `rekindle-crypto::signal::pqxdh::verify`).
 
 ### Friend List Record
 

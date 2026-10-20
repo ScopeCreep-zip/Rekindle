@@ -104,8 +104,8 @@ Commands are registered in `src-tauri/src/invoke.rs` via
 | Module | Approx commands | Highlights |
 |--------|---------|-----------|
 | `auth.rs` | 6 | `create_identity`, `login`, `logout`, `list_identities`, `delete_identity`, `get_identity` |
-| `chat.rs` | 5 | `prepare_chat_session`, `send_message`, `send_typing`, `get_message_history`, `mark_read` |
-| `friends.rs` | 17 | Add / remove / accept / reject, groups, invites, block / unblock, presence emit |
+| `chat.rs` | 5 | `send_message`, `resend_message`, `send_typing`, `get_message_history`, `mark_read` |
+| `friends.rs` | 23 | Add / remove / accept / reject, groups, invites, block / unblock |
 | `dm.rs` | 5 | `list_dms`, `accept_dm_invite`, `decline_dm_invite`, `send_dm_message`, `get_dm_messages` (the group path, until E2.6) |
 | `calls.rs` | 12 | `start_dm_call`, `accept_dm_call`, `decline_dm_call`, `end_dm_call`, `send_call_media_state`, `send_call_reaction`, `mute_caller_temp`, `start_group_call`, `accept_group_call`, `decline_group_call`, `end_group_call`, `get_missed_calls` |
 | `voice.rs` | 12 | Join / leave channel, mute, deafen, devices, mode, server-mute, stage hand-raise |

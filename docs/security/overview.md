@@ -130,9 +130,14 @@ publishes them in a prekey record per device instead (plan E2.4):
   subkey 5 holds the device list (`PrekeyRecordList`: device id and record
   key; one entry until E5.3).
 - **Ids and signatures.** Every id is a random non-zero u31, unique per kind.
-  Every signature is the identity's Ed25519 over `id ‖ key` under a domain
-  tag: `0x01 ‖ u32be(spk_id) ‖ EncodeEC(spk)`, `0x02 ‖ "LR"|"OT" ‖ u32be(id)
-  ‖ EncodeKEM(pqpk)`, `0x03 ‖ u32be(opk_id) ‖ EncodeEC(opk)`.
+  Every signature is the identity's Ed25519 over domain ‖ id ‖ key, with
+  the head's `issued_at` signed too:
+  `PREKEY_SPK_SIG ‖ u32be(spk_id) ‖ i64be(issued_at) ‖ EncodeEC(spk)`,
+  `PREKEY_PQ_LR_SIG ‖ u32be(id) ‖ i64be(issued_at) ‖ EncodeKEM(pqpk)`,
+  `PREKEY_PQ_OT_SIG ‖ u32be(id) ‖ EncodeKEM(pqpk)`,
+  `PREKEY_OPK_SIG ‖ u32be(opk_id) ‖ EncodeEC(opk)`. A reader refuses a head
+  dated more than 14 days from now either way (`SIGNED_MAX_AGE_MS`,
+  `CryptoError::StalePrekeys`).
 - **Maintenance (B1), automatic.** The "prekey maintenance" task on both
   hosts refills a consumed slot, fills every empty slot once fewer than 10
   are fresh, replaces a slot older than 90 days, and rotates the head every
@@ -248,8 +253,8 @@ elected rotator.
 
 **Algorithms:** SQLCipher AES-256-CBC at the page level **and** per-entry
 AES-256-GCM (double encryption)
-**KDF:** Argon2id (memory-hard, GPU-resistant) → BLAKE3-keyed master
-derivation
+**KDF:** Argon2id (memory-hard, GPU-resistant) → BLAKE3 `derive_key` of
+the master
 **Managed by:** `rekindle-vault` (replaces the previous `iota_stronghold`
 dependency — see [`../decisions/0006-vault-replaces-stronghold.md`](../decisions/0006-vault-replaces-stronghold.md))
 
@@ -266,14 +271,26 @@ dependency — see [`../decisions/0006-vault-replaces-stronghold.md`](../decisio
 
 ### Protection
 
-- Vault file (`{pubkey}.vault`) encrypted with key derived from user's
-  local passphrase via Argon2id, then split into a SQLCipher page key and a
-  per-entry GCM key via BLAKE3-keyed derivation.
-- Salt lives in a `{pubkey}.vault.salt` sidecar (plaintext — salts only
-  need to be unique per install).
+- Vault file (`{pubkey}.vault`) encrypted with a key derived from the
+  user's local passphrase via Argon2id (64-byte master), then split with
+  `blake3::derive_key` under three labels: `rekindle-vault-sqlcipher-v1`
+  (the vault's SQLCipher page key), `rekindle-vault-entry-v1` (the
+  per-entry AES-256-GCM key) and `rekindle-vault-app-db-v1` (the identity
+  database's SQLCipher key) (`rekindle-vault/src/store.rs`).
+- The Argon2id parameters and the 32-byte salt live in the 64-byte
+  `{pubkey}.vault.hdr` header (plaintext — neither is secret, only unique
+  per vault; `rekindle-vault/src/header.rs`).
 - Keys zeroised from memory when the vault handle is dropped.
 - Vault file never leaves the device.
 - Login is the act of providing the passphrase to unlock the vault.
+
+Ratchet sessions and prekey secrets are not vault entries: they live in
+the identity database `state/{pk}.db` (`ratchet_sessions`,
+`signal_prekeys`), SQLCipher under the `rekindle-vault-app-db-v1` key, so
+they open only after unlock. An identity export carries the registry
+entry, the vault and its header, never that database
+(`rekindle-node/src/host/identity/transfer.rs`), so sessions and prekeys
+never leave the device.
 
 Each identity has its own vault file. Multiple identities can coexist on
 one device, each with a separate passphrase.

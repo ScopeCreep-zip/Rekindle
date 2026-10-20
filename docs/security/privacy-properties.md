@@ -139,7 +139,9 @@ Every byte of user content is encrypted by Rekindle before it touches
 the DHT or `app_message` transport:
 
 - 1:1 friend messages → Signal Protocol per-message keys
-- DM / group DM messages → ECDH-derived MEK + ratchet
+- Group DM messages → a random group MEK wrapped per recipient in the
+  `GroupDmInvite` and stepped forward by HKDF (plan E2.6 replaces it
+  with sender-owned keys)
 - Community channel messages → per-channel MEK
 - File chunks → per-file FEK (wrapped under channel MEK)
 - Voice and video frames → sender-owned SFrame keys (RFC 9605 §5.1,
@@ -152,10 +154,13 @@ Layer 4 in the stack — see [`overview.md`](overview.md).
 
 ### 2.3 Forward secrecy
 
-- **1:1 messaging:** Signal's Double Ratchet — every message is
-  encrypted with a unique key derived from the ratchet state. A
-  long-term key compromise does not retrospectively decrypt prior
-  messages.
+- **1:1 messaging:** the spec Double Ratchet (DR rev. 4), seeded by a
+  PQXDH handshake (X25519 + ML-KEM-768). Every message gets its own
+  key from the sending chain, and each reply starts a new X25519 DH
+  step, so a compromised key heals on the next round trip. Message
+  keys are erased once used; keys skipped by out-of-order delivery
+  are kept for at most the 30-day delivery horizon. A long-term key
+  compromise does not retrospectively decrypt prior messages.
 - **Communities:** MEK rotation on every member departure. A departed
   member cannot decrypt content sent after their departure.
 - **Voice channels and calls (ADR 0016, plan C7.29):** there is no voice
@@ -170,7 +175,6 @@ Layer 4 in the stack — see [`overview.md`](overview.md).
   - *A device seized later does not open recorded calls:* media keys
     are sealed (HPKE Base) to a per-session X25519 key, erased when the
     session ends, never to the long-lived community pseudonym.
-- **DM:** ratchet step every 100 messages or 24 hours.
 
 ### 2.4 Reader-validates governance
 

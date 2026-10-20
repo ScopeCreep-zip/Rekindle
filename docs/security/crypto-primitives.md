@@ -18,15 +18,18 @@ which primitives address which threats.
 |---------|-----------|---------|
 | Identity / signing | **Ed25519** | `ed25519-dalek` |
 | Key agreement | **X25519** | `x25519-dalek` (with `static_secrets`) |
+| Post-quantum KEM (PQXDH hybrid) | **ML-KEM-768** (FIPS 203) | `libcrux-ml-kem` (in `rekindle-secrets`) |
 | Channel content AEAD | **AES-256-GCM** | `aes-gcm` |
 | Real-time voice frames | **SFrame** (RFC 9605, suite 0x0005 `AES_256_GCM_SHA512_128`, HKDF-SHA512) | `aes-gcm`, `hkdf`, `sha2` (in `rekindle-secrets::sframe`) |
 | At-rest / transport AEAD (Veilid layer; chunk FEK) | **XChaCha20-Poly1305** | `chacha20poly1305` (via Veilid + Rekindle file FEK) |
 | At-rest vault (entry seal) | **AES-256-GCM** + page-level **AES-256-CBC** via SQLCipher | `aes-gcm`, SQLCipher (via `rekindle-vault`) |
 | Tamper-evident audit MAC | **BLAKE3-keyed** | `blake3` (via `rekindle-audit`) |
-| 1:1 messaging | **Signal Protocol** (PQXDH rev. 3 + Double Ratchet) | spec implementation in `rekindle-crypto` (`signal/`) |
+| 1:1 messaging | **Signal Protocol** (PQXDH rev. 3 with X25519 + ML-KEM-768, + Double Ratchet) | spec implementation in `rekindle-crypto` (`signal/`) |
+| 1:1 message cipher (Double Ratchet `ENCRYPT`) | **AES-256-CBC + HMAC-SHA256** (DR rev. 4 §7.2, 128-bit tag) | `aes`, `cbc`, `hmac` (in `rekindle-crypto::signal::dr`) |
+| Safety numbers | **SHA-512**, 5200 iterations per side (libsignal's format) | `sha2` (in `rekindle-crypto::fingerprint`) |
 | Pre-session 1:1 frames | **HPKE Base** (RFC 9180) + Ed25519 signature | `rekindle-secrets::hpke` |
 | Hash / KDF / dedup | **SHA-256** | `sha2` |
-| Hash (rotator selection, content addressing) | **BLAKE3** | `blake3` |
+| Hash (rotator selection, content addressing, replay ids, base-key hash, file-cache names, vault key split) | **BLAKE3** | `blake3` |
 | Key derivation | **HKDF-SHA256** | `hkdf` |
 | Passphrase KDF | **Argon2id** | `argon2` (via `rekindle-vault`) |
 | IPC bus handshake | **Noise IK** (`Noise_IK_25519_ChaChaPoly_BLAKE2s`) | `snow` |
@@ -37,6 +40,9 @@ which primitives address which threats.
 **Where used.** Every long-term identity. Every per-community pseudonym.
 Every gossip envelope signature. Every governance entry signature.
 Every sealed pre-session 1:1 frame signature (`DM_PRESESSION_SIG`) and `IdentityRotated` signature.
+Every prekey signature (`PREKEY_SPK_SIG`, `PREKEY_PQ_LR_SIG`, `PREKEY_PQ_OT_SIG`,
+`PREKEY_OPK_SIG`; the head's two keys sign its `issued_at` too) and every friend
+invite blob (`FRIEND_INVITE_SIG ‖` the JSON of every field but the signature).
 
 **Why.**
 
@@ -72,8 +78,9 @@ Every sealed pre-session 1:1 frame signature (`DM_PRESESSION_SIG`) and `Identity
 - Wrapping channel MEK per recipient during distribution (rotator
   encrypts new MEK to each remaining member with X25519 ECDH +
   XChaCha20-Poly1305).
-- Deriving the DM MEK directly from `X25519(alice_private,
-  bob_public)` — no separate key-exchange round-trip.
+- PQXDH session establishment, hybrid with ML-KEM-768 (§5), and every
+  Double Ratchet DH step.
+- HPKE Base sealing of pre-session 1:1 frames to the recipient's key.
 - Deriving the per-call `call_key` for direct calls
   (`rekindle-calls`).
 - Daemon ↔ client IPC bus key agreement (within Noise IK).
@@ -98,11 +105,12 @@ secrets need to survive multiple operations within a session.
 
 - **NIST P-256 ECDH.** Same arguments as for ECDSA — parameter baggage
   and weaker constant-time guarantees in default toolchains.
-- **Post-quantum hybrid (X25519+Kyber768 or similar).** Considered but
-  not yet adopted. The TLS ecosystem is still settling on which hybrid
-  to standardise. We will revisit once IETF and Signal take a
-  definitive position; jumping early would lock us into a hybrid that
-  may be deprecated. **Open work.**
+- **X25519 alone for 1:1 session establishment.** Not used: sessions
+  are established with PQXDH rev. 3, which adds ML-KEM-768 (FIPS 203)
+  to the X25519 agreements, so a recorded handshake stays confidential
+  against a later quantum adversary unless both X25519 and ML-KEM-768
+  are broken (§5). The KEM is `libcrux-ml-kem`, a formally verified
+  implementation, behind `rekindle-secrets`.
 
 ## 3. AES-256-GCM — channel content encryption
 
@@ -188,7 +196,8 @@ ongoing per-message forward and backward secrecy. Pre-session kinds
 decline, push-relay kinds) use HPKE Base to the recipient's X25519 key plus an Ed25519
 signature over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖ ciphertext`
 (`rekindle-secrets::hpke`). Safety numbers are libsignal's 60-digit and
-scannable format (`rekindle-crypto::fingerprint`).
+scannable format: 5200 iterations of SHA-512 per side
+(`rekindle-crypto::fingerprint`).
 
 **Why.**
 
@@ -208,10 +217,13 @@ scannable format (`rekindle-crypto::fingerprint`).
   X25519 and ML-KEM key pair. The initiator picks an unused slot
   uniformly, or the head alone when none is left (PQXDH §2.5, §3.3).
   Every id is a random non-zero u31, and every signature is the
-  identity's Ed25519 over `id ‖ key` under a domain tag (`0x01` signed
-  prekey, `0x02 ‖ "LR"|"OT"` ML-KEM, `0x03` one-time curve key), so a
-  signature binds one key to one id in one role
-  (`rekindle-crypto::signal::pqxdh::verify`).
+  identity's Ed25519 over domain ‖ id ‖ key: `PREKEY_SPK_SIG` (signed
+  prekey), `PREKEY_PQ_LR_SIG` and `PREKEY_PQ_OT_SIG` (ML-KEM last-resort
+  and one-time), `PREKEY_OPK_SIG` (one-time curve key), so a signature
+  binds one key to one id in one role. The head's two signatures also
+  cover its `issued_at`, and a reader refuses a head dated more than
+  14 days from now either way (`SIGNED_MAX_AGE_MS`,
+  `CryptoError::StalePrekeys`) (`rekindle-crypto::signal::pqxdh::verify`).
 
 **Implementation.** `crates/rekindle-crypto/src/signal/{dr,record,pqxdh}`
 hold the pure Double Ratchet, `SessionRecord` and PQXDH state machines; the
@@ -225,9 +237,35 @@ init's first message decrypts, in the same transaction that stores the
 session and refills the slot; an init naming a consumed, unknown or
 archived key gets a sealed `PreKeyRejected` and the initiator retries once
 from another slot; a replayed last-resort-only init is dropped. The ratchet associated data binds both identities and the
-frame typeId. Our types follow the
+frame typeId. Skipped message keys age out at the 30-day
+`DELIVERY_HORIZON`. Our types follow the
 [libsignal-protocol](https://github.com/signalapp/libsignal) data
 shapes.
+
+**Message encryption.** `ENCRYPT` is DR rev. 4 §7.2's recommended
+construction (`rekindle-crypto::signal::dr::kdf`): HKDF-SHA256 of the
+message key (zero salt, info `rekindle-dr-msg-v2`) gives 80 bytes — an
+AES-256 key, an HMAC-SHA256 key and a 16-byte IV; the plaintext is
+AES-256-CBC with PKCS#7 padding, and the tag is HMAC-SHA256 over
+`AD ‖ ciphertext`, truncated to 128 bits (§8.6). The tag is checked in
+constant time before any decryption, and every failure (length, tag,
+padding) is the same error. The reason is misuse resistance under state
+rollback: a restored or cloned ratchet state (power loss, a backup, a VM
+snapshot, a copied data root) reuses message keys, and with them the
+IV. Under an AEAD over a counter mode, such as the AES-256-GCM this
+replaced (`rekindle-dr-msg-v1`, retired), one reuse gives the XOR of
+the two plaintexts and the authentication key; under CBC+HMAC it shows
+only whether the two plaintexts share leading blocks. AES-256-GCM-SIV
+and ChaCha20-Poly1305 were considered and rejected; the reasons are in
+the audit register (`.claude/plans/standards-remediation/audit-2026-10-20.md`,
+R3). The threat model's rollback row lists the other mitigations.
+
+**PQXDH `info`.** The PQXDH KDF's info is `rekindle-pqxdh-sk-v1`
+(`domains::PQXDH_SK`), not the `info_curve_hash_pqkem`-shaped string of
+PQXDH rev. 3 §2.2. Every label follows the registry's
+`rekindle-<purpose>-v<N>` naming rule, and the suite that string would
+name is fixed and recorded here: curve X25519, hash SHA-256, KEM
+ML-KEM-768. A different suite takes a new label.
 
 **Alternatives considered and rejected.**
 
@@ -264,6 +302,17 @@ SHA256(concatenated)` will move to a true binary Merkle tree
 
 - **Deterministic rotator selection.** `rotator =
   argmin_member(BLAKE3(departed_pseudonym ‖ own_pseudonym))`.
+- **Replay ids** of pre-session frames: `blake3::derive_key("rekindle-dm-replay-id-v1",
+  sender ‖ nonce)` (`rekindle-crypto::replay`).
+- **Base-key hash** a `PreKeyRejected` names: `derive_key` under
+  `rekindle-prekey-rejected-base-key-v1`.
+- **File-cache names**: every directory under `state/{pk}.files/` is a
+  keyed BLAKE3 hash (`FILE_CACHE_COMMUNITY`, `FILE_CACHE_DM`,
+  `FILE_CACHE_ATTACHMENT` prefixes) under a key
+  HKDF-derived from the identity secret (`FILE_CACHE_NAMES`), so names
+  are never ids and are unlinkable across identities (plan E3.0a).
+- **Vault key split**: `derive_key` of the Argon2id master under
+  `rekindle-vault-{sqlcipher,entry,app-db}-v1` (§9).
 - **Content addressing** in places where we want speed and a wider
   output range (32-byte BLAKE3 vs 32-byte SHA-256, but BLAKE3 is
   variable-length-output friendly without the truncation patterns
@@ -331,9 +380,11 @@ literals anywhere else ([architecture rule B18](../contributor/architecture-rule
 ## 9. Argon2id — passphrase KDF
 
 **Where used.** `rekindle-vault` master-key derivation from the
-user's passphrase. The Argon2id output is then split into a
-SQLCipher page key and a per-entry GCM key via BLAKE3-keyed
-derivation.
+user's passphrase. The Argon2id output is then split with
+`blake3::derive_key` into the vault's SQLCipher page key
+(`rekindle-vault-sqlcipher-v1`), its per-entry GCM key
+(`rekindle-vault-entry-v1`) and the identity database's SQLCipher key
+(`rekindle-vault-app-db-v1`).
 
 **Why.**
 
