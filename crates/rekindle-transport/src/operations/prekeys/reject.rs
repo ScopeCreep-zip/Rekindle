@@ -7,9 +7,9 @@
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, PreKeyInitBody, PreKeyRejected};
 use rekindle_crypto::signal::prekey_record::{base_key_hash, rejection_delay_ms};
 use rekindle_db::prekeys::{Publish, RejectionVerdict};
-use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
+use crate::operations::direct::admission::{may_open_session, Status};
 use crate::operations::dm;
 use crate::operations::friend::{session_reset, state, FriendHost};
 
@@ -58,25 +58,21 @@ pub(crate) fn refilled(host: &dyn FriendHost, refills: Vec<Publish>) {
         });
 }
 
-/// B5: `sender`'s init named prekeys we no longer hold. A sender the gate
-/// admits for that init (`PendingOut` for a `FriendAccept`, an outstanding
-/// reset of ours for a `SessionResetAccept`) gets a signed rejection after
-/// a random 2–10 s delay, at most one per base key and ten per sender per
-/// 3 h.
+/// B5: `sender`'s init named prekeys we no longer hold. A sender with
+/// `status` whom the gate's own predicate admits for that init
+/// ([`may_open_session`], audit G9) gets a signed rejection after a random
+/// 2–10 s delay, at most one per base key and ten per sender per 3 h.
 pub(crate) fn reject_init(
     host: &dyn FriendHost,
     sender: [u8; 32],
     sender_hex: &str,
     init: &PreKeyInitBody,
+    status: Status,
 ) {
-    let admitted = match init.first_type_id {
-        DmTypeId::FriendAccept => {
-            state::friendship(host, sender_hex) == Some(FriendshipState::PendingOut)
-        }
-        DmTypeId::SessionResetAccept => session_reset::awaits_accept(host, sender_hex),
-        _ => false,
-    };
-    if !admitted {
+    let kind = init.first_type_id;
+    let reset_outstanding =
+        kind == DmTypeId::SessionResetAccept && session_reset::awaits_accept(host, sender_hex);
+    if !may_open_session(kind, status, reset_outstanding) {
         tracing::debug!(from = %sender_hex, kind = ?init.first_type_id,
             "no rejection for this PreKeyInit");
         return;

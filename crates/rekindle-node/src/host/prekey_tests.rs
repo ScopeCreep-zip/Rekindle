@@ -15,9 +15,10 @@ use rekindle_crypto::Identity;
 use rekindle_db::ratchet::{discard_pending_init, PeerAddress};
 use rekindle_transport::operations::direct::receive;
 use rekindle_transport::operations::dm::{frame, wire};
+use rekindle_transport::operations::friend::FriendHost;
 
 use super::adapters::friends::HostFriends;
-use super::direct_tests::{ann, befriend};
+use super::direct_tests::{ann, befriend, history, text, unapplied};
 use super::Host;
 
 /// Bob's bundle from his record's head and first slot, as Ann's pick
@@ -137,4 +138,78 @@ async fn adding_a_friend_waits_for_our_published_profile() {
         .await
         .unwrap();
     assert!(stored.is_empty(), "no friend stored");
+}
+
+/// Ann's prekeys, minted and stored as her own-records stage does (an
+/// offline host never runs it), as the bundle a peer's pick assembles.
+async fn own_bundle(host: &Host, owner: [u8; 32]) -> PreKeyBundle {
+    let local = HostFriends::of(&host.ctx).local_party().unwrap();
+    let now = rekindle_utils::timestamp_ms_i64();
+    let set = mint_set(&local.identity, &rekindle_utils::OsRandom, now);
+    let (head, slot) = (set.head.record.clone(), set.slots[0].record.clone());
+    let db = host.ctx.db.current().unwrap();
+    rekindle_db::prekeys::store_set(&db, &owner, set)
+        .await
+        .unwrap();
+    PreKeyBundle::from_record(&owner, &head, Some(&slot), now).unwrap()
+}
+
+/// Ann's fresh and consumed one-time prekeys.
+async fn prekey_counts(host: &Host, owner: [u8; 32]) -> (u32, u32) {
+    let db = host.ctx.db.current().unwrap();
+    let row = rekindle_db::prekeys::status(&db, &owner, rekindle_utils::timestamp_ms_i64())
+        .await
+        .unwrap()
+        .unwrap();
+    (row.fresh_slots, row.consumed_slots)
+}
+
+/// Audit G1: a PreKeyInit from a stranger is refused by its own rule
+/// before any prekey is looked up, whatever allowed first payload it
+/// carries: no prekey is consumed, no session opened, nothing recorded,
+/// and their identity is not pinned.
+#[tokio::test]
+async fn a_strangers_prekey_init_consumes_nothing() {
+    let (dir, theirs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (host, owner) = ann(&dir).await;
+    let (stranger, mallory) = ann(&theirs).await;
+    let (friends, sender) = (HostFriends::of(&host.ctx), HostFriends::of(&stranger.ctx));
+    let bundle = own_bundle(&host, owner).await;
+    let before = prekey_counts(&host, owner).await;
+    assert!(before.0 > 0, "Ann has slots to consume");
+
+    let accept = DirectBody::FriendAccept(FriendAccept {
+        profile_dht_key: String::new(),
+        route_blob: Vec::new(),
+        mailbox_dht_key: String::new(),
+    });
+    for first in [accept, text(9)] {
+        let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle.clone(), &first)
+            .await
+            .unwrap();
+        receive(&friends, &wire(&sent).unwrap()).await;
+    }
+
+    assert_eq!(prekey_counts(&host, owner).await, before);
+    assert_eq!(unapplied(&host, owner).await, 0);
+    assert_eq!(history(&host, owner, mallory).await, 0);
+    let pinned = host
+        .ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::signal_identities::get(conn, &owner, &mallory))
+        .await
+        .unwrap();
+    assert!(pinned.is_none(), "the stranger's identity is not pinned");
+
+    // The same init from a friend does open the session and consume the
+    // slot, so the stranger's was refused for who sent it.
+    befriend(&host, owner, mallory).await;
+    let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle, &text(10))
+        .await
+        .unwrap();
+    receive(&friends, &wire(&sent).unwrap()).await;
+    assert_ne!(prekey_counts(&host, owner).await, before);
+    assert_eq!(history(&host, owner, mallory).await, 1);
 }

@@ -17,15 +17,15 @@ use rekindle_codec::capnp_codec::direct::{
 use rekindle_crypto::{CryptoError, Identity};
 use rekindle_db::ratchet::{self, RatchetError};
 use rekindle_db::repo::unprocessed::UnprocessedKey;
-use rekindle_types::friend::FriendshipState;
 use rekindle_types::message::{ENVELOPE_FRESHNESS_WINDOW_MS, ENVELOPE_MAX_FUTURE_SKEW_MS};
 
+use super::admission;
 use super::replay::Sighting;
 use crate::operations::dm::frame::{
     ad_extra, init_from_body, peer_address, presession_signing_bytes, ratchet_message, sealed_aad,
     sealed_info,
 };
-use crate::operations::friend::{is_blocked, state, FriendHost};
+use crate::operations::friend::{state, FriendHost};
 
 /// An opened inbound 1:1 message.
 #[derive(Debug, Clone)]
@@ -58,7 +58,14 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Option<Opened> {
         FrameBody::PreKeyInit(init) => init.first_type_id,
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => frame.type_id,
     };
-    if !admitted(host, &sender_hex, kind).await {
+    let status = admission::unblocked(host, &sender_hex).await?;
+    let admitted = match &frame.body {
+        FrameBody::PreKeyInit(_) => admission::init_admitted(host, &sender_hex, kind, status),
+        FrameBody::Ratchet(_) | FrameBody::Sealed(_) => {
+            admission::kind_admitted(&sender_hex, kind, status)
+        }
+    };
+    if !admitted {
         return None;
     }
     match frame.body {
@@ -68,78 +75,9 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Option<Opened> {
         FrameBody::Ratchet(body) => {
             open_ratchet(host, frame.sender, sender_hex, frame.type_id, &body).await
         }
-        FrameBody::PreKeyInit(init) => open_init(host, frame.sender, sender_hex, &init).await,
-    }
-}
-
-/// Whether `sender` may deliver a `kind` now: not blocked (failing closed
-/// when the block list is unreadable), and the friend gate for the kind
-/// ([`sender_admitted`]) over the stored friendship. The live open and the
-/// unlock replay both ask, so a message decrypted before a block or a
-/// removal is judged when it is applied.
-pub(crate) async fn admitted(host: &dyn FriendHost, sender_hex: &str, kind: DmTypeId) -> bool {
-    match is_blocked(host, sender_hex).await {
-        Ok(false) => {}
-        Ok(true) => {
-            tracing::debug!(from = %sender_hex, "dropping frame from a blocked user");
-            return false;
+        FrameBody::PreKeyInit(init) => {
+            open_init(host, frame.sender, sender_hex, &init, status).await
         }
-        Err(e) => {
-            // Fail closed: a sender whose block state is unknown is not let in.
-            tracing::warn!(from = %sender_hex, error = %e, "block list unreadable; dropping frame");
-            return false;
-        }
-    }
-    // The gate reads the stored row (the Host's friend authority), so a
-    // frame dispatched before the projection loads is judged on it.
-    let status = friendship_authoritative(host, sender_hex).await;
-    if !sender_admitted(kind, status) {
-        tracing::info!(from = %sender_hex, ?status, ?kind,
-            "dropping frame: sender not admitted for this kind");
-        return false;
-    }
-    true
-}
-
-/// The sender's friendship as the identity's database holds it; `None`
-/// (fail closed) when it cannot be read.
-async fn friendship_authoritative(host: &dyn FriendHost, sender: &str) -> Option<FriendshipState> {
-    let store = host.friend_store().ok()?;
-    let owner = state::owner(host).ok()?;
-    match store.status_of(&owner, sender).await {
-        Ok(status) => status,
-        Err(e) => {
-            tracing::warn!(error = %e, from = %sender, "friend status unreadable; failing closed");
-            None
-        }
-    }
-}
-
-/// Whether a sender with friendship `status` may deliver a `kind`.
-///
-/// - A friend request, a reject, and a removal and its ack come from
-///   anyone not blocked (blocking is checked before this), and so does a
-///   relay envelope: the relay forwards for a friend of the target, not of
-///   ours.
-/// - `FriendAccept` (a PreKeyInit's first payload) comes from a sender we
-///   sent a request to (`PendingOut`) or one already `Accepted`: the higher
-///   side of a crossing request is `Accepted` with no session when the
-///   lower side's accept arrives. Never from a stranger or a `Removing` row
-///   (plan C7.25).
-/// - Everything else needs `Accepted`.
-pub(crate) fn sender_admitted(kind: DmTypeId, status: Option<FriendshipState>) -> bool {
-    match kind {
-        DmTypeId::FriendRequest
-        | DmTypeId::FriendReject
-        | DmTypeId::Unfriended
-        | DmTypeId::UnfriendedAck
-        | DmTypeId::RelayEnvelope
-        | DmTypeId::WakeNotify => true,
-        DmTypeId::FriendAccept => matches!(
-            status,
-            Some(FriendshipState::PendingOut | FriendshipState::Accepted)
-        ),
-        _ => status == Some(FriendshipState::Accepted),
     }
 }
 
@@ -254,20 +192,16 @@ async fn open_ratchet(
     recorded(sender, sender_hex, type_id, inbound)
 }
 
-/// A PreKeyInit: the session it opens, and its first payload.
+/// A PreKeyInit the gate let open a session ([`admission::init_admitted`]:
+/// a reset's init answers a request of ours, B11): the session it opens,
+/// and its first payload.
 async fn open_init(
     host: &dyn FriendHost,
     sender: [u8; 32],
     sender_hex: String,
     init: &PreKeyInitBody,
+    status: admission::Status,
 ) -> Option<Opened> {
-    // A reset's init must answer a request of ours before it may consume
-    // the prekeys it names (plan C7.25, B11).
-    if init.first_type_id == DmTypeId::SessionResetAccept
-        && !crate::operations::friend::session_reset::awaits_accept(host, &sender_hex)
-    {
-        return None;
-    }
     let local = host.local_party().ok()?;
     let accepted = ratchet::accept_init(
         &host.db().ok()?,
@@ -302,7 +236,7 @@ async fn open_init(
         }
         Err(RatchetError::UnknownPrekey { kind, id }) => {
             tracing::info!(from = %sender_hex, %kind, id, "PreKeyInit names prekeys we no longer hold");
-            crate::operations::prekeys::reject_init(host, sender, &sender_hex, init);
+            crate::operations::prekeys::reject_init(host, sender, &sender_hex, init, status);
             return None;
         }
         Err(e) => Err(e),
@@ -411,57 +345,6 @@ pub fn processed(host: &dyn FriendHost, opened: &Opened) {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn friend_accept_reaches_the_requester() {
-        assert!(sender_admitted(
-            DmTypeId::FriendAccept,
-            Some(FriendshipState::PendingOut)
-        ));
-        // The higher side of a crossing request is already Accepted.
-        assert!(sender_admitted(
-            DmTypeId::FriendAccept,
-            Some(FriendshipState::Accepted)
-        ));
-    }
-
-    #[test]
-    fn friend_accept_from_a_stranger_or_a_removed_row_drops() {
-        assert!(!sender_admitted(DmTypeId::FriendAccept, None));
-        assert!(!sender_admitted(
-            DmTypeId::FriendAccept,
-            Some(FriendshipState::Removing)
-        ));
-    }
-
-    #[test]
-    fn a_pending_sender_may_send_nothing_but_the_accept() {
-        for status in [
-            None,
-            Some(FriendshipState::PendingOut),
-            Some(FriendshipState::Removing),
-        ] {
-            assert!(!sender_admitted(DmTypeId::DmText, status));
-            assert!(!sender_admitted(DmTypeId::SessionResetRequest, status));
-        }
-        assert!(sender_admitted(
-            DmTypeId::DmText,
-            Some(FriendshipState::Accepted)
-        ));
-    }
-
-    #[test]
-    fn a_request_and_a_removal_come_from_anyone_not_blocked() {
-        for kind in [
-            DmTypeId::FriendRequest,
-            DmTypeId::FriendReject,
-            DmTypeId::Unfriended,
-            DmTypeId::UnfriendedAck,
-        ] {
-            assert!(sender_admitted(kind, None));
-            assert!(sender_admitted(kind, Some(FriendshipState::Removing)));
-        }
-    }
 
     fn presession(
         from: &Identity,

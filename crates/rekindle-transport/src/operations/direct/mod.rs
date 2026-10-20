@@ -4,6 +4,7 @@
 //! owns it has not come. The desktop handles those with its existing arms;
 //! the daemon, which has none of those features, drops them.
 
+pub(crate) mod admission;
 pub mod frame;
 mod handlers;
 pub mod replay;
@@ -102,7 +103,7 @@ pub async fn replay_unprocessed(host: &dyn FriendHost) {
             continue;
         };
         // Judged again: the sender may have been blocked or removed since.
-        if !frame::admitted(host, &opened.sender_hex, opened.type_id).await {
+        if !admission::admitted(host, &opened.sender_hex, opened.type_id).await {
             frame::processed(host, &opened);
             continue;
         }

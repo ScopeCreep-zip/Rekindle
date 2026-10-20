@@ -96,7 +96,7 @@ async fn pending(host: &Host, owner: [u8; 32], from: [u8; 32], n: u32, body: &Di
 }
 
 /// How many messages our conversation with `peer` holds.
-async fn history(host: &Host, owner: [u8; 32], peer: [u8; 32]) -> usize {
+pub(super) async fn history(host: &Host, owner: [u8; 32], peer: [u8; 32]) -> usize {
     let (o, p) = (hex::encode(owner), hex::encode(peer));
     host.ctx
         .db
@@ -109,7 +109,7 @@ async fn history(host: &Host, owner: [u8; 32], peer: [u8; 32]) -> usize {
 }
 
 /// How many decrypted messages wait for their apply.
-async fn unapplied(host: &Host, owner: [u8; 32]) -> usize {
+pub(super) async fn unapplied(host: &Host, owner: [u8; 32]) -> usize {
     let now = rekindle_utils::timestamp_ms_i64();
     host.ctx
         .db
@@ -121,7 +121,7 @@ async fn unapplied(host: &Host, owner: [u8; 32]) -> usize {
         .len()
 }
 
-fn text(n: u8) -> DirectBody {
+pub(super) fn text(n: u8) -> DirectBody {
     DirectBody::DmText(DmText {
         client_id: [n; 16],
         body: format!("hello {n}"),
