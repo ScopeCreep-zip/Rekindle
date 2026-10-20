@@ -277,7 +277,6 @@ async fn route(
             channel,
             generation,
         } => keys::handle_mek_request(ctx, state, &community, &channel, generation),
-        IpcRequest::PrekeyReplenish => keys::handle_prekey_replenish(ctx, state).await,
 
         // ── Our presence, profile, game, audit log, links ────────
         request @ (IpcRequest::PresenceSet { .. }

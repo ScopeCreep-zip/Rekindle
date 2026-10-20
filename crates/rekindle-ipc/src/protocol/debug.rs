@@ -274,8 +274,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::AuditVerify
             | Self::AuditExport { .. }
             | Self::LinkOpen { .. } => self.fmt_own(f),
-            Self::PrekeyReplenish
-            | Self::PresenceSet { .. }
+            Self::PresenceSet { .. }
             | Self::GamePresenceSet { .. }
             | Self::GamePresenceClear
             | Self::RoleList { .. }
@@ -345,7 +344,6 @@ impl IpcRequest {
     /// by `fmt` are routed there and never reach the `unreachable!` arm below.
     fn fmt_rest(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::PrekeyReplenish => write!(f, "PrekeyReplenish"),
             Self::PresenceSet { status } => f
                 .debug_struct("PresenceSet")
                 .field("status", status)

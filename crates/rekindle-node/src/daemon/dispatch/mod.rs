@@ -14,7 +14,7 @@
 //! - `channel.rs`   — ChannelList, Create, Delete, Update, Send, History
 //! - `friends.rs`   — Friend*, Dm*, SessionReset* (over `operations::friend`/`dm`)
 //! - `governance.rs` — Role*, moderation (Kick/Ban/Unban/Timeout), invites
-//! - `keys.rs`      — Mek*, PrekeyReplenish
+//! - `keys.rs`      — Mek*
 //! - `own.rs`       — our presence, profile, game, audit log, links
 //! - `voice.rs`     — VoiceJoin, VoiceLeave
 //! - `admin.rs`     — Agent*, Policy, Subscribe, Unsubscribe, Network*

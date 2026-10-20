@@ -1,4 +1,4 @@
-//! Key management dispatch handlers: MekList, MekRotate, MekRequest, PrekeyReplenish.
+//! Key management dispatch handlers: MekList, MekRotate, MekRequest.
 
 use crate::daemon::DaemonState;
 use rekindle_ipc::protocol::IpcResponse;
@@ -103,52 +103,4 @@ pub(crate) fn handle_mek_request(
         "channel": channel,
         "generation": generation,
     }))
-}
-
-pub(crate) async fn handle_prekey_replenish(
-    ctx: &DaemonContext,
-    state: DaemonState,
-) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
-    let host = crate::host::adapters::friends::HostFriends::of(ctx);
-    let (Ok(local), Ok(db)) = (
-        rekindle_transport::operations::friend::FriendHost::local_party(&host),
-        ctx.require_db(),
-    ) else {
-        return IpcResponse::error(423, "no identity is unlocked");
-    };
-    let profile_key = match ctx.require_session(|s| s.identity.profile_dht_key.clone()) {
-        Ok(k) => k,
-        Err(e) => return e,
-    };
-
-    // The long-lived bundle (its private halves are in `signal_prekeys`);
-    // one-time keys go to single peers in handout bundles.
-    let bundle = match rekindle_db::prekeys::current_bundle(&db, &local).await {
-        Ok(b) => b,
-        Err(e) => return IpcResponse::error(500, format!("prekey replenish: {e}")),
-    };
-    if let Err(e) = rekindle_transport::operations::mek::publish_prekey_bundle(
-        &transport,
-        &profile_key,
-        &bundle,
-    )
-    .await
-    {
-        return IpcResponse::error(500, format!("prekey replenish: {e}"));
-    }
-    match rekindle_db::prekeys::unclaimed_one_time(&db, &local.owner()).await {
-        Ok((one_time, pq_one_time)) => IpcResponse::ok(&serde_json::json!({
-            "replenished": true,
-            "one_time_prekeys": one_time,
-            "pq_one_time_prekeys": pq_one_time,
-        })),
-        Err(e) => IpcResponse::error(500, format!("prekey replenish: {e}")),
-    }
 }

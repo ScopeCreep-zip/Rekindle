@@ -1,4 +1,4 @@
-//! Key management commands: MEK list/rotate/request, prekey status/replenish, inspect.
+//! Key management commands: MEK list/rotate/request, prekey status, inspect.
 
 use rekindle_ipc::protocol::IpcRequest;
 
@@ -61,10 +61,6 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
                 } else {
                     format::print_structured(&value, mode)
                 }
-            }
-            crate::cli::PrekeyCmd::Replenish => {
-                let value = helpers::send(client, IpcRequest::PrekeyReplenish).await?;
-                format::print_structured(&value, mode)
             }
         },
         KeyCmd::Inspect { community } => {

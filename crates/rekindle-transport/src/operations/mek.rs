@@ -1,4 +1,4 @@
-//! MEK lifecycle operations — request, wrap/unwrap, replenish prekeys.
+//! MEK lifecycle operations — unwrap a key a rotator delivered.
 //!
 //! **Rotation is not here.** `rotate_mek` wrapped a fresh key for every
 //! member and published the copies into the registry's MEK vault
@@ -7,13 +7,9 @@
 //! Rotation now goes through `rekindle-mek-rotation`, which delivers
 //! wrapped keys peer-to-peer by `app_call`: the deterministic rotator on
 //! departure, and `daemon::mek_rotation` for an operator request.
-//!
-//! Typed reads/writes via `dht/profile.rs`. Raw DHT I/O via
-//! `broadcast::dht_writes` for profile subkey writes.
 
 use tracing::info;
 
-use crate::broadcast::node::TransportNode;
 use crate::crypto::mek::Mek;
 use crate::error::{Result, TransportError};
 
@@ -64,29 +60,3 @@ pub fn unwrap_mek_transfer_payload(
 // is peer-to-peer (`rekindle-mek-rotation`), so there is no privileged
 // peer to do the wrapping — the same reason `node/daemon/mek_wrap.rs`
 // went earlier in this migration.
-
-/// Publish a prekey bundle to our profile's prekey subkey. The bundle is
-/// `rekindle_db::prekeys::current_bundle`: the profile is read by everyone,
-/// so it carries no one-time keys (PQXDH §3.3), and its private halves are
-/// in the identity's `signal_prekeys`.
-pub async fn publish_prekey_bundle(
-    node: &TransportNode,
-    profile_dht_key: &str,
-    bundle: &crate::crypto::prekeys::PreKeyBundle,
-) -> Result<()> {
-    let bundle_bytes = bundle.to_wire();
-    let byte_count = bundle_bytes.len();
-    crate::broadcast::dht_writes::set_own_profile_subkey(
-        node,
-        profile_dht_key,
-        crate::payload::dht_types::PROFILE_SUBKEY_PREKEY_BUNDLE,
-        bundle_bytes,
-    )
-    .await?;
-    info!(
-        bytes = byte_count,
-        subkey = crate::payload::dht_types::PROFILE_SUBKEY_PREKEY_BUNDLE,
-        "pqxdh_bundle_published kind=LastResort (replenish)",
-    );
-    Ok(())
-}

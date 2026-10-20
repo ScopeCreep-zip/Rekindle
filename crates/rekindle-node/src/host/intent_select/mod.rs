@@ -224,7 +224,6 @@ pub(crate) async fn select(
         | IpcRequest::Unsubscribe { .. }
         | IpcRequest::MekList { .. }
         | IpcRequest::MekRequest { .. }
-        | IpcRequest::PrekeyReplenish
         | IpcRequest::RoleList { .. }
         | IpcRequest::BanList { .. }
         | IpcRequest::InviteList { .. }

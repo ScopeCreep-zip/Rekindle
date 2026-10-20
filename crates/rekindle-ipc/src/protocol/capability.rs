@@ -182,7 +182,6 @@ impl IpcRequest {
             | Self::MekList { .. }
             | Self::MekRotate { .. }
             | Self::MekRequest { .. }
-            | Self::PrekeyReplenish
             // Our name, our picture, the audit log and the system browser
             // are the user's own, never an agent's.
             | Self::ProfileSetNickname { .. }
@@ -215,7 +214,14 @@ mod tests {
 
     #[test]
     fn key_material_is_never_delegated() {
-        assert_eq!(IpcRequest::PrekeyReplenish.agent_capability(), None);
+        assert_eq!(
+            IpcRequest::MekRotate {
+                community: String::new(),
+                channel: String::new()
+            }
+            .agent_capability(),
+            None
+        );
         assert_eq!(
             IpcRequest::IdentityExport {
                 passphrase: String::new()

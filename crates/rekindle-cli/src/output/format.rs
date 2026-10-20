@@ -287,11 +287,11 @@ mod tests {
                 description: String::new(),
             },
             rekindle_types::display::Check {
-                id: "crypto.prekeys.low".into(),
+                id: "crypto.prekeys".into(),
                 category: "crypto".into(),
                 status: rekindle_types::display::CheckStatus::Warn,
-                value: "3 remaining".into(),
-                description: "replenish prekeys".into(),
+                value: "3/100 fresh slots".into(),
+                description: "prekey maintenance is failing".into(),
             },
         ];
 

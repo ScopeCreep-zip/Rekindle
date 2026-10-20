@@ -126,7 +126,6 @@ impl IpcRequest {
             Self::MekList { .. } => ("MekList", Query, Authenticated),
             Self::MekRotate { .. } => ("MekRotate", Write, Authenticated),
             Self::MekRequest { .. } => ("MekRequest", Write, Authenticated),
-            Self::PrekeyReplenish => ("PrekeyReplenish", Write, Authenticated),
 
             Self::PresenceSet { .. } => ("PresenceSet", Write, Authenticated),
             Self::PresenceSetMessage { .. } => ("PresenceSetMessage", Write, Authenticated),

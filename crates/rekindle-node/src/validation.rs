@@ -325,7 +325,6 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendBlockedList
         | IpcRequest::FriendGroupDelete { group_id: _ }
         | IpcRequest::CommunityList
-        | IpcRequest::PrekeyReplenish
         | IpcRequest::PresenceGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify

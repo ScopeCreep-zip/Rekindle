@@ -299,8 +299,6 @@ pub enum IpcRequest {
         channel: String,
         generation: u64,
     },
-    /// Replenish prekeys and publish to profile DHT.
-    PrekeyReplenish,
 
     // ── Presence and profile (plan E1.1) ──────────────────────────
     /// Set our status. `Offline` is refused: only the host's teardown

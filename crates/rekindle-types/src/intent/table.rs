@@ -447,7 +447,6 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("MekList", None),
     ("MekRotate", Some(IntentKind::RotateMek)),
     ("MekRequest", None),
-    ("PrekeyReplenish", None),
     ("PresenceSet", Some(IntentKind::SetStatus)),
     ("GamePresenceSet", Some(IntentKind::SetGamePresence)),
     ("GamePresenceClear", Some(IntentKind::ClearGamePresence)),
