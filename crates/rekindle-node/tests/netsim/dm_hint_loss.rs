@@ -145,16 +145,22 @@ async fn a_lost_stream_record_is_resent_until_acknowledged() {
     );
 }
 
-/// The records Ida's changes reached Jon on that carry no retire mark yet:
+/// The records whose watched changes reached Jon that carry no retire mark yet:
 /// her participant record among them (a record's `RETIRE_THROUGH` subkey
 /// is empty until its first retire).
 fn unretired(sim: &Netsim) -> Vec<String> {
     let mut keys: Vec<String> = sim
         .trace()
         .of(1)
-        .filter_map(|e| e.strip_prefix("1<-0 ValueChange ").map(str::to_string))
+        // A change comes from the replica that held the watch (Veilid's
+        // ValueChanged is the replica's RPC), not from Ida's node.
+        .filter_map(|e| {
+            let (_, key) = e.strip_prefix("1<-")?.split_once(" ValueChange ")?;
+            Some(key.to_string())
+        })
         .filter(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_none())
         .collect();
+    keys.sort();
     keys.dedup();
     keys
 }
