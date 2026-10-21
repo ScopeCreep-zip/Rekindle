@@ -2,8 +2,10 @@
 //! sealing by carrier (`frame`), sends over the ports with their fallbacks,
 //! the friend-handshake messages, our direct messages and our typing.
 
+pub mod ack;
 mod chat;
 pub mod frame;
+pub mod outbox;
 mod outgoing;
 pub mod route;
 mod send;

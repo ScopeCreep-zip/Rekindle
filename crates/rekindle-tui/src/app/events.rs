@@ -85,6 +85,39 @@ impl App {
         }
     }
 
+    /// Our DM changed delivery state (plan E2.5): a failure is a toast;
+    /// the state goes to the active view.
+    fn dm_send_status(&mut self, event: SubscriptionEvent) -> Action {
+        if let SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmSendStatus {
+            ref conversation_id,
+            state: rekindle_types::message::SendState::Failed,
+            ..
+        }) = event
+        {
+            let short = crate::helpers::abbreviate_key(conversation_id);
+            self.notifications
+                .push(format!("A message to {short} failed"), ToastLevel::Error);
+        }
+        let _ = self
+            .action_tx
+            .send(Action::SubscriptionEvent(Box::new(event)));
+        Action::Render
+    }
+
+    /// A DM arrived: a toast, the DMs tab's unread, and the active view.
+    fn dm_received(&mut self, peer_key: &str, event: SubscriptionEvent) -> Action {
+        let short = crate::helpers::abbreviate_key(peer_key);
+        self.notifications
+            .push(format!("New DM from {short}"), ToastLevel::Info);
+        if self.nav.tab_bar.selected_id() != Some("dms") {
+            self.nav.tab_bar.increment_unread("dms");
+        }
+        let _ = self
+            .action_tx
+            .send(Action::SubscriptionEvent(Box::new(event)));
+        Action::Render
+    }
+
     /// Convert a daemon subscription event into a TUI action.
     ///
     /// Every `SubscriptionEvent` variant is explicitly matched — no wildcard.
@@ -118,16 +151,11 @@ impl App {
                 ref peer_key,
                 ..
             }) => {
-                let short = crate::helpers::abbreviate_key(peer_key);
-                self.notifications
-                    .push(format!("New DM from {short}"), ToastLevel::Info);
-                if self.nav.tab_bar.selected_id() != Some("dms") {
-                    self.nav.tab_bar.increment_unread("dms");
-                }
-                let _ = self
-                    .action_tx
-                    .send(Action::SubscriptionEvent(Box::new(event)));
-                Some(Action::Render)
+                let peer_key = peer_key.clone();
+                Some(self.dm_received(&peer_key, event))
+            }
+            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmSendStatus { .. }) => {
+                Some(self.dm_send_status(event))
             }
             SubscriptionEvent::ChannelMessage(
                 ChannelMessageEvent::Edited { .. } | ChannelMessageEvent::Deleted { .. },

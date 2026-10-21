@@ -101,8 +101,14 @@ pub(crate) fn ratchet_error(to: &str, e: RatchetError) -> FriendError {
 }
 
 /// The plaintext of a ratchet or PreKeyInit message carrying `body`.
-fn content(host: &dyn FriendHost, body: &DirectBody, hint: ContentHint) -> Vec<u8> {
+fn content(
+    host: &dyn FriendHost,
+    body: &DirectBody,
+    hint: ContentHint,
+    stream_seq: u64,
+) -> Vec<u8> {
     DmContent {
+        stream_seq,
         content_hint: hint,
         sent_at_ms: host.clock().now_ms(),
         payload: body.encode(),
@@ -127,10 +133,25 @@ pub async fn ratchet_frame(
     body: &DirectBody,
     hint: ContentHint,
 ) -> Result<DmFrame, FriendError> {
+    ratchet_frame_at(host, to, body, hint, 0).await
+}
+
+/// [`ratchet_frame`] for entry `stream_seq` of our outbox stream to `to`
+/// (plan E2.5): the seq rides in the encrypted content.
+///
+/// # Errors
+/// As [`ratchet_frame`].
+pub async fn ratchet_frame_at(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    hint: ContentHint,
+    stream_seq: u64,
+) -> Result<DmFrame, FriendError> {
     let type_id = body.type_id();
     let local = host.local_party()?;
     let peer = peer_address(to)?;
-    let (db, plaintext) = (host.db()?, content(host, body, hint));
+    let (db, plaintext) = (host.db()?, content(host, body, hint, stream_seq));
     let encrypted = if is_logged(type_id) {
         ratchet::encrypt_record_and_log_outbound(
             &db,
@@ -188,7 +209,7 @@ pub async fn initiate_frame(
         &local,
         &peer,
         bundle,
-        &content(host, first, ContentHint::Default),
+        &content(host, first, ContentHint::Default, 0),
         &ad_extra(first_type_id),
     )
     .await

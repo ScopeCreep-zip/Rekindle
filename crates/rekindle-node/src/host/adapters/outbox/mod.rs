@@ -4,6 +4,7 @@
 //! Host's clock and randomness, and each state change on a broadcast the
 //! Host's event mapping subscribes to.
 
+mod dm;
 mod senders;
 #[cfg(test)]
 mod tests;
@@ -22,6 +23,7 @@ use rekindle_types::message::SendState;
 use rekindle_utils::{Clock, RandomSource};
 use tokio::sync::broadcast;
 
+pub use dm::OutboxSlot;
 pub use senders::{Senders, StreamSender};
 
 /// How many state changes a slow subscriber may fall behind by.

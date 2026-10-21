@@ -48,9 +48,21 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
     match &opened.body {
         DirectBody::DmText(text) => {
             applied = direct_message(host, sender, text, opened.sent_at_ms).await;
+            if applied {
+                // Committed: acknowledge it (a resend of one held again too,
+                // its first ack may be lost).
+                crate::operations::dm::ack::committed(
+                    host,
+                    sender,
+                    &opened.body,
+                    opened.stream_seq,
+                )
+                .await;
+            }
             // Their message ends their typing (plan E2.3).
             typing::stopped(host, &dm_typing(sender), sender);
         }
+        DirectBody::DmAck(a) => crate::operations::dm::ack::on_ack(host, sender, a).await,
         DirectBody::Typing(t) => {
             if t.typing {
                 typing::started(host, dm_typing(sender), sender, TYPING_TTL_MS);

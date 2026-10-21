@@ -95,6 +95,9 @@ pub struct DmContent {
     pub sent_at_ms: u64,
     /// The kind's body.
     pub payload: Vec<u8>,
+    /// The entry's seq on the sender's outbox stream to us (plan E2.5,
+    /// D22), which our `DmAck` names; 0 for a frame on no stream.
+    pub stream_seq: u64,
 }
 
 /// The plaintext of a sealed frame.
@@ -272,6 +275,7 @@ impl DmContent {
             });
             root.set_sent_at_ms(self.sent_at_ms);
             root.set_payload(&self.payload);
+            root.set_stream_seq(self.stream_seq);
         })
     }
 
@@ -289,6 +293,7 @@ impl DmContent {
                 },
                 sent_at_ms: root.get_sent_at_ms(),
                 payload: data(root.get_payload())?,
+                stream_seq: root.get_stream_seq(),
             })
         })
     }
@@ -416,7 +421,7 @@ pub(super) mod tests {
     #[test]
     fn an_unallocated_type_id_or_a_short_key_is_refused() {
         let bytes = encode_root::<dm_frame::Owned>(|mut root| {
-            root.set_type_id(0x0004);
+            root.set_type_id(0x0107);
             root.set_sender(&[1; 32]);
             write_ratchet(root.init_body().init_ratchet(), &ratchet(8));
         });
@@ -470,6 +475,7 @@ pub(super) mod tests {
             ContentHint::Implicit,
         ] {
             let content = DmContent {
+                stream_seq: 0,
                 content_hint,
                 sent_at_ms: u64::MAX,
                 payload: vec![1, 2, 3],

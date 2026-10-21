@@ -224,6 +224,8 @@ pub struct DaemonContext {
     /// The 1:1 replay guard and session-reset state of the unlocked
     /// identity (plan E2.1), cleared at lock.
     pub friend_stores: rekindle_transport::operations::friend::FriendStores,
+    /// The unlocked identity's outbox (plan E2.5, D22).
+    pub(crate) outbox: crate::host::adapters::outbox::OutboxSlot,
     /// Each watched friend's profile lease (it carries the watch), and the
     /// friends whose watch failed, polled instead (plan E2.1).
     pub(crate) friend_watches: crate::host::adapters::friends::FriendWatches,

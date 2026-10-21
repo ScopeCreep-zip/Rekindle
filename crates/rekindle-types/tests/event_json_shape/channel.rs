@@ -9,7 +9,7 @@ pub const NAMES: &[&str] = &[
     "edited",
     "deleted",
     "directMessageReceived",
-    "directMessageStateChanged",
+    "dmSendStatus",
     "directConversationInvited",
     "conversationFocusRequested",
 ];
@@ -20,7 +20,7 @@ pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
         ChannelMessageEvent::Edited { .. } => "edited",
         ChannelMessageEvent::Deleted { .. } => "deleted",
         ChannelMessageEvent::DirectMessageReceived { .. } => "directMessageReceived",
-        ChannelMessageEvent::DirectMessageStateChanged { .. } => "directMessageStateChanged",
+        ChannelMessageEvent::DmSendStatus { .. } => "dmSendStatus",
         ChannelMessageEvent::DirectConversationInvited { .. } => "directConversationInvited",
         ChannelMessageEvent::ConversationFocusRequested { .. } => "conversationFocusRequested",
     }
@@ -82,11 +82,11 @@ pub fn samples() -> Vec<Sample> {
             },
         ),
         ev(
-            "directMessageStateChanged",
-            ChannelMessageEvent::DirectMessageStateChanged {
-                message_id: text("01900000-0000-7000-8000-000000000002"),
+            "dmSendStatus",
+            ChannelMessageEvent::DmSendStatus {
+                client_id: text("01900000-0000-7000-8000-000000000002"),
                 conversation_id: pk('b'),
-                send_state: rekindle_types::message::SendState::Failed,
+                state: rekindle_types::message::SendState::Failed,
             },
         ),
         ev(

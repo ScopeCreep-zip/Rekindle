@@ -81,18 +81,20 @@ pub enum ChannelMessageEvent {
         is_own: bool,
     },
 
-    /// A direct message we sent changed delivery state (D22's
-    /// vocabulary): it went out or was queued (`Sent`), or its send failed
-    /// (`Failed`, with Retry). Every window renders the state it names;
-    /// none infers it.
-    /// Triggered by: a send or a resend of our stored message.
-    DirectMessageStateChanged {
-        /// The message's client id, as `DmMessage.messageId` and
-        /// `server_message_id` name it.
-        message_id: String,
+    /// A direct message we sent changed delivery state, the one send-state
+    /// event (D22's vocabulary, plan E2.5): `queued` once committed to the
+    /// outbox, `sent` when a frame left this device, `delivered` from the
+    /// peer's `DmAck`, `read` from its `ReadUpTo`, `failed` past its
+    /// deadline or wedged (with Retry and Discard). Every window renders
+    /// the state it names; none infers it.
+    /// Triggered by: every state change of the message's outbox row.
+    DmSendStatus {
         /// The conversation it belongs to (the peer's identity key).
         conversation_id: String,
-        send_state: crate::message::SendState,
+        /// The message's client id, as `DmMessage.messageId` and
+        /// `server_message_id` name it.
+        client_id: String,
+        state: crate::message::SendState,
     },
 
     /// We were invited into a direct conversation — a per-peer DM log,

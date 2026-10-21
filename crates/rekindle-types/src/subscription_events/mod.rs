@@ -175,7 +175,7 @@ impl SubscriptionEvent {
                 // Direct-conversation events belong to a peer, not a
                 // community.
                 ChannelMessageEvent::DirectMessageReceived { .. }
-                | ChannelMessageEvent::DirectMessageStateChanged { .. }
+                | ChannelMessageEvent::DmSendStatus { .. }
                 | ChannelMessageEvent::DirectConversationInvited { .. }
                 | ChannelMessageEvent::ConversationFocusRequested { .. } => None,
             },

@@ -33,18 +33,18 @@ export interface DirectMessageReceived {
   isOwn: boolean;
 }
 
-/** A direct message we sent changed delivery state: `sent` when it went
- *  out or was queued, `failed` when its send failed. `messageId` is its
+/** A direct message we sent changed delivery state (the outbox's one
+ *  vocabulary: queued, sent, delivered, read, failed). `clientId` is its
  *  client id (`DmMessage.messageId`, `serverMessageId` of a received one). */
-export interface DirectMessageStateChanged {
-  messageId: string;
+export interface DmSendStatus {
   conversationId: string;
-  sendState: SendState;
+  clientId: string;
+  state: SendState;
 }
 
 export type ChannelMessageEvent =
   | { directMessageReceived: DirectMessageReceived }
-  | { directMessageStateChanged: DirectMessageStateChanged }
+  | { dmSendStatus: DmSendStatus }
   | {
       directConversationInvited: {
         from: string;

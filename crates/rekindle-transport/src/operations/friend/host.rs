@@ -50,6 +50,9 @@ pub struct FriendStores {
     pub typing_in: Mutex<TypingExpiry>,
     /// Our typing sessions, one per conversation (plan E2.3).
     pub typing_out: Mutex<TypingSessions>,
+    /// Delivery receipts waiting for their coalescing delay, or held while
+    /// we are Invisible (plan E2.5).
+    pub acks: Mutex<crate::operations::dm::ack::PendingAcks>,
 }
 
 impl FriendStores {
@@ -61,6 +64,7 @@ impl FriendStores {
         self.pending_rotations.lock().clear();
         self.typing_in.lock().clear();
         self.typing_out.lock().clear();
+        self.acks.lock().clear();
     }
 }
 
@@ -101,6 +105,13 @@ pub trait FriendHost: Send + Sync {
     fn friend_store(&self) -> Result<Arc<dyn FriendStore>, FriendError>;
     /// The 1:1 receive and handshake state.
     fn stores(&self) -> &FriendStores;
+    /// The unlocked identity's outbox (plan E2.5, D22).
+    ///
+    /// # Errors
+    /// `Locked` while no identity is unlocked.
+    fn outbox(&self) -> Result<Arc<dyn crate::operations::dm::outbox::DmOutbox>, FriendError>;
+    /// Whether our own status is Invisible (receipts are held meanwhile).
+    fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).
     fn publish(&self, event: SubscriptionEvent);
     /// Append to the identity's audit chain.

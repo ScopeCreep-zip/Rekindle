@@ -55,17 +55,17 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             // Bucketize to 1-second granularity to tolerate clock skew across pathways
             h.update(&(timestamp / 1000).to_le_bytes());
         }
-        ChannelMessageEvent::DirectMessageStateChanged {
-            message_id,
+        ChannelMessageEvent::DmSendStatus {
+            client_id,
             conversation_id,
-            send_state,
+            state,
         } => {
             h.update(b"dm_state|");
             h.update(conversation_id.as_bytes());
             h.update(b"|");
-            h.update(message_id.as_bytes());
+            h.update(client_id.as_bytes());
             h.update(b"|");
-            h.update(send_state.as_str().as_bytes());
+            h.update(state.as_str().as_bytes());
         }
         ChannelMessageEvent::DirectConversationInvited {
             from, record_key, ..

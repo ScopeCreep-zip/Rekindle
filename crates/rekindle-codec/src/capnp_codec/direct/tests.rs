@@ -66,6 +66,9 @@ fn samples() -> Vec<DirectBody> {
             reply_to: Some([0xB2; 16]),
             expire_seconds: 86_400,
         }),
+        DirectBody::DmAck(super::DmAck {
+            stream_seqs: vec![1, 7, u64::MAX],
+        }),
         DirectBody::FriendAccept(FriendAccept {
             profile_dht_key: dht_key(),
             route_blob: vec![8; 32],
@@ -297,6 +300,7 @@ fn datagram_len(frame: &DmFrame) -> usize {
 /// A PreKeyInit whose first payload is `body`, at full PQXDH size.
 fn pre_key_init(body: &DirectBody) -> DmFrame {
     let content = DmContent {
+        stream_seq: 0,
         content_hint: ContentHint::Resendable,
         sent_at_ms: u64::MAX,
         payload: body.encode(),

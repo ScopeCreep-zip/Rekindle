@@ -95,7 +95,7 @@ export interface AutoModRuleInfo {
 }
 
 export interface SendChannelMessageResult {
-  status: Extract<SendState, "sent" | "queued" | "failed">;
+  status: SendState;
   messageId: string;
 }
 

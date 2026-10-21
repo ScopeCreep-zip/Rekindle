@@ -106,6 +106,16 @@ async fn watch_dms(
                 rekindle_client::fmt::format_time_short(*timestamp)
             ))
         }
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmSendStatus {
+            conversation_id,
+            client_id,
+            state,
+        }) if friend.is_none_or(|f| f == conversation_id) => Some(format!(
+            "message {} to {}: {}",
+            rekindle_client::fmt::abbreviate_key(client_id),
+            rekindle_client::fmt::abbreviate_key(conversation_id),
+            format!("{state:?}").to_lowercase()
+        )),
         SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
             peer_key,
             display_name,

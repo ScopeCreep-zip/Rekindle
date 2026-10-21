@@ -488,10 +488,10 @@ mod tests {
     #[test]
     fn a_direct_message_reaches_its_chat_window_only() {
         let a = sub(SubscriptionEvent::ChannelMessage(
-            ChannelMessageEvent::DirectMessageStateChanged {
-                message_id: "01900000-0000-7000-8000-000000000002".into(),
+            ChannelMessageEvent::DmSendStatus {
+                client_id: "01900000-0000-7000-8000-000000000002".into(),
                 conversation_id: PK.into(),
-                send_state: rekindle_types::message::SendState::Sent,
+                state: rekindle_types::message::SendState::Sent,
             },
         ));
         assert!(a.includes("buddy-list"));

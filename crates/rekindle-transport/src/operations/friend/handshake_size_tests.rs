@@ -57,6 +57,7 @@ async fn init_len(from: &Party, to: &Party, first: &DirectBody) -> usize {
         .await;
     assert!(bundle.one_time_prekey.is_some() && bundle.pqpk_ot.is_some());
     let content = DmContent {
+        stream_seq: 0,
         content_hint: rekindle_codec::capnp_codec::direct::ContentHint::Default,
         sent_at_ms: u64::MAX,
         payload: first.encode(),

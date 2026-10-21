@@ -62,7 +62,12 @@ struct SealedBody {
   signature @2 :Data;                   # sender identity Ed25519 signature (64)
 }
 
-struct DmContent { contentHint @0 :ContentHint; sentAtMs @1 :UInt64; payload @2 :Data; }  # the plaintext
+struct DmContent {  # the plaintext
+  contentHint @0 :ContentHint;
+  sentAtMs @1 :UInt64;
+  payload @2 :Data;
+  streamSeq @3 :UInt64;                 # the entry's seq on our outbox stream to the peer (E2.5, D22); 0 = none
+}
 enum ContentHint { default @0; resendable @1; implicit @2; }
 
 # The plaintext of a sealed frame: the replay guard keeps (sender, nonce)
@@ -155,6 +160,12 @@ struct IdentityRotated {
 }
 
 # --- Content (0x01xx, 0x04xx) ---
+
+# 0x0004. The receiver holds these entries of the sender's DM stream
+# (E2.5, D22): sent only to accepted friends, after the commit.
+struct DmAck {
+  streamSeqs @0 :List(UInt64);
+}
 
 # 0x0100.
 struct DmText {

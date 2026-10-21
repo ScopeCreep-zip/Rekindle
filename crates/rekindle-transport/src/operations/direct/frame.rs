@@ -43,6 +43,9 @@ pub struct Opened {
     /// A sealed frame's nonce, as the replay guard remembers it; `None`
     /// for a ratchet message.
     pub nonce: Option<Nonce>,
+    /// The entry's seq on the sender's outbox stream (plan E2.5); 0 for a
+    /// sealed frame or a frame on no stream.
+    pub stream_seq: u64,
 }
 
 /// Why an inbound frame did not open.
@@ -160,6 +163,7 @@ fn open_sealed(
         sender_hex,
         type_id,
         sent_at_ms: content.sent_at_ms,
+        stream_seq: 0,
         body,
         unprocessed: None,
         nonce: Some(content.nonce),
@@ -318,6 +322,7 @@ async fn open_ephemeral(
         sender_hex,
         type_id,
         sent_at_ms: content.sent_at_ms,
+        stream_seq: content.stream_seq,
         body,
         unprocessed: None,
         nonce: None,
@@ -425,6 +430,7 @@ fn recorded(
         sender_hex,
         type_id,
         sent_at_ms: content.sent_at_ms,
+        stream_seq: content.stream_seq,
         body,
         unprocessed: Some(inbound.key),
         nonce: None,
@@ -463,6 +469,7 @@ pub(crate) fn replayed(row: &rekindle_db::repo::unprocessed::Unprocessed) -> Opt
         sender_hex,
         type_id,
         sent_at_ms: content.sent_at_ms,
+        stream_seq: content.stream_seq,
         body,
         unprocessed: Some(row.key),
         nonce: None,

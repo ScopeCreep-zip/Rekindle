@@ -3,7 +3,7 @@ import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
 import { isLegacy } from "../ipc/channels/chat_events";
-import type { DirectMessageStateChanged, FriendEvent } from "../ipc/channels/chat_events";
+import type { DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { chatState, setChatState } from "../stores/chat.store";
@@ -12,16 +12,15 @@ import { handleRefreshFriends } from "../actions/buddy.actions";
 import type { Message } from "../stores/chat.store";
 import { transformNewFriend } from "../utils/transformers";
 
-// A DM we sent changed delivery state (`directMessageStateChanged`): the
+// A DM we sent changed delivery state (`dmSendStatus`): the
 // message whose client id (`serverMessageId`) it names takes the state the
 // backend names. No matching or inference happens here.
-function applyMessageState(state: DirectMessageStateChanged): void {
+function applyMessageState(state: DmSendStatus): void {
   const convo = chatState.conversations[state.conversationId];
   if (!convo) return;
-  const idx = convo.messages.findIndex((m) => m.serverMessageId === state.messageId);
+  const idx = convo.messages.findIndex((m) => m.serverMessageId === state.clientId);
   if (idx < 0) return;
-  const status = state.sendState === "failed" || state.sendState === "queued" ? state.sendState : "sent";
-  setChatState("conversations", state.conversationId, "messages", idx, "status", status);
+  setChatState("conversations", state.conversationId, "messages", idx, "status", state.state);
 }
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
@@ -40,8 +39,8 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
 
     if ("channelMessage" in event) {
       const msg = event.channelMessage;
-      if ("directMessageStateChanged" in msg) {
-        applyMessageState(msg.directMessageStateChanged);
+      if ("dmSendStatus" in msg) {
+        applyMessageState(msg.dmSendStatus);
       }
       return;
     }
@@ -245,8 +244,8 @@ export function subscribeDmChatEvents(
 
     // Our own message changed delivery state: render the state the
     // backend names in this window too (the buddy list's arm does the same).
-    if ("channelMessage" in event && "directMessageStateChanged" in event.channelMessage) {
-      const state = event.channelMessage.directMessageStateChanged;
+    if ("channelMessage" in event && "dmSendStatus" in event.channelMessage) {
+      const state = event.channelMessage.dmSendStatus;
       if (state.conversationId === peerId) applyMessageState(state);
       return;
     }

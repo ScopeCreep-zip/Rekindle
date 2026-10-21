@@ -22,7 +22,7 @@ pub use calls::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DmVideoFragment,
     GroupCallMember, GroupCallOffer, GroupCallParticipantLeft,
 };
-pub use content::{DmDelete, DmEdit, DmReaction, DmText, Typing};
+pub use content::{DmAck, DmDelete, DmEdit, DmReaction, DmText, Typing, MAX_DM_ACK_SEQS};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     RetryRequest, SessionResetDecline, SessionResetRequest,
@@ -112,6 +112,7 @@ direct_bodies! {
         RetryRequest(RetryRequest) = retry_request,
         SessionResetRequest(SessionResetRequest) = session_reset_request,
         SessionResetDecline(SessionResetDecline) = session_reset_decline,
+        DmAck(DmAck) = dm_ack,
         DmText(DmText) = dm_text,
         FriendAccept(FriendAccept) = friend_accept,
         ProfileKeyRotated(ProfileKeyRotated) = profile_key_rotated,

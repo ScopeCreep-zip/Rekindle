@@ -60,7 +60,16 @@ fn handle_status(ctx: &DaemonContext, state: DaemonState, status: SessionStatus)
     if !state.can_write() {
         return state_error(state, "write");
     }
+    let was_invisible = ctx.own_presence.status() == SessionStatus::Invisible;
     ctx.own_presence.set_status(status);
+    if was_invisible && status != SessionStatus::Invisible {
+        // The receipts held while Invisible go now (plan E2.5).
+        let host = crate::host::adapters::friends::HostFriends::of(ctx);
+        ctx.unlock_scope_or_closed()
+            .spawn_or_drop("held dm acks", async move {
+                rekindle_transport::operations::dm::ack::flush_held(&host).await;
+            });
+    }
     IpcResponse::ok(&ctx.own_presence.view())
 }
 

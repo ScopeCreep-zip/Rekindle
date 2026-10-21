@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store";
 
 import type { Message as IpcMessage } from "../ipc/commands/types";
 
-export type MessageStatus = "sending" | "sent" | "queued" | "failed";
+export type MessageStatus = "sending" | "queued" | "sent" | "delivered" | "read" | "failed";
 
 export interface ReactionGroup {
   emoji: string;

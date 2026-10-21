@@ -304,10 +304,12 @@ async fn dm_rows(host: &Host, peer: &str) -> Vec<rekindle_types::dto::dm::DmMess
     }
 }
 
-/// A manual Retry re-sends the stored row by its client id (U-3): no new
-/// row is stored, and an id we never sent is not found.
+/// A send commits its row to the outbox and answers at once, offline too
+/// (plan E2.5, D22): one row, `queued`. A manual Retry is only for a failed
+/// row (U-3): a queued one is refused and no new row is stored, and an id
+/// we never sent is not found.
 #[tokio::test]
-async fn a_resend_sends_the_stored_row_and_stores_none() {
+async fn a_send_commits_queued_and_a_resend_stores_none() {
     use rekindle_types::message::SendState;
     let dir = tempfile::tempdir().unwrap();
     let (host, peer) = ann_with_rotated_verified_friend(&dir).await;
@@ -316,11 +318,11 @@ async fn a_resend_sends_the_stored_row_and_stores_none() {
         body: "once".into(),
         reply_to: None,
     };
-    // Offline, the send fails and its row reads failed.
-    assert!(code(&settle(&host, host.call(bus(1), send).await).await).is_some());
+    let answer = settle(&host, host.call(bus(1), send).await).await;
+    assert!(code(&answer).is_none(), "{answer:?}");
     let rows = dm_rows(&host, &peer).await;
     assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].send_state, SendState::Failed);
+    assert_eq!(rows[0].send_state, SendState::Queued);
     let message_id = rows[0].message_id.clone().unwrap();
 
     let resend = IpcRequest::DmResend {
@@ -331,7 +333,7 @@ async fn a_resend_sends_the_stored_row_and_stores_none() {
     let after = dm_rows(&host, &peer).await;
     assert_eq!(after.len(), 1);
     assert_eq!(after[0].message_id.as_deref(), Some(message_id.as_str()));
-    assert_eq!(after[0].send_state, SendState::Failed);
+    assert_eq!(after[0].send_state, SendState::Queued);
 
     let unknown = IpcRequest::DmResend {
         message_id: uuid::Uuid::nil().to_string(),

@@ -160,7 +160,7 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
             conversation_id,
             ..
         } => EventScope::direct(peer_key, conversation_id),
-        ChannelMessageEvent::DirectMessageStateChanged {
+        ChannelMessageEvent::DmSendStatus {
             conversation_id, ..
         } => EventScope::Peer(conversation_id.clone()),
         // An invitation names a conversation we do not show yet; it is
@@ -246,12 +246,11 @@ mod tests {
             is_own: false,
         });
         assert_eq!(group.scope(), EventScope::Conversation("VLD0:rec".into()));
-        let ack =
-            SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageStateChanged {
-                message_id: "m".into(),
-                conversation_id: "pk".into(),
-                send_state: crate::message::SendState::Sent,
-            });
+        let ack = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmSendStatus {
+            client_id: "m".into(),
+            conversation_id: "pk".into(),
+            state: crate::message::SendState::Sent,
+        });
         assert_eq!(ack.scope(), EventScope::Peer("pk".into()));
     }
 

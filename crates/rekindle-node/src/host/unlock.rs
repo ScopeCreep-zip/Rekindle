@@ -58,6 +58,10 @@ pub(crate) async fn run(
         }
     }
     let scope = begin_scope(ctx);
+    // The outbox (plan E2.5, D22) before any stage that sends.
+    if let Err(e) = ctx.outbox.start(ctx, &scope, &installed.public_key) {
+        return fail(ctx, IpcResponse::error(500, format!("outbox: {e}"))).await;
+    }
     // Our presence starts Online with the unlock (its publisher runs only
     // with a network).
     ctx.own_presence.start(&scope);
@@ -291,6 +295,7 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
             tracing::warn!(%stuck, "unlock scope did not stop in time");
         }
     }
+    ctx.outbox.stop();
     if ctx.mode == HostMode::Daemon {
         crate::daemon::dispatch::daemon_teardown(ctx).await;
     }

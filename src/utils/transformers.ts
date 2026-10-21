@@ -78,7 +78,7 @@ function ownStatus(state: IpcMessage["sendState"]): Message["status"] {
 }
 
 /** A direct message: its client id is the row's `serverMessageId`, which
- *  `DirectMessageStateChanged` and a resend name it by. */
+ *  `DmSendStatus` and a resend name it by. */
 export function transformDmMessage(m: DmMessage): Message {
   return { ...transformMessage(m), serverMessageId: m.messageId ?? undefined };
 }

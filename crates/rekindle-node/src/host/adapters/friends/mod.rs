@@ -116,6 +116,16 @@ impl FriendHost for HostFriends {
         &self.ctx.friend_stores
     }
 
+    fn outbox(
+        &self,
+    ) -> Result<Arc<dyn rekindle_transport::operations::dm::outbox::DmOutbox>, FriendError> {
+        self.ctx.outbox.dm().ok_or(FriendError::Locked)
+    }
+
+    fn invisible(&self) -> bool {
+        self.ctx.own_presence.status() == rekindle_types::presence::SessionStatus::Invisible
+    }
+
     fn publish(&self, event: SubscriptionEvent) {
         self.ctx.publish_event(event);
     }

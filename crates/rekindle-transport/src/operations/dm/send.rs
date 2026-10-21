@@ -192,27 +192,30 @@ pub async fn send_frame(
     deliver(host, to, frame, &queued).await
 }
 
-/// One send of `frame` down the fallbacks, queued last unless its kind is
-/// ephemeral.
-async fn deliver(
+/// One send of `frame`: the cached route, then (with `refresh`; never for
+/// an ephemeral kind) a route refreshed from the peer's profile, with a
+/// status probe when none was cached. Whether it left this device.
+///
+/// # Errors
+/// The frame is over Veilid's message cap, or the node is not up.
+pub(crate) async fn route_send(
     host: &dyn FriendHost,
     to: &str,
     frame: &DmFrame,
-    queued: &Queued,
-) -> Result<(), FriendError> {
-    let ephemeral = frame.type_id.is_ephemeral();
+    refresh: bool,
+) -> Result<bool, FriendError> {
     let datagram = frame::wire(frame)?;
     let node = host.node()?;
     let failure = match route::cached_target(&node, to) {
         Some(target) => match node.sender().send_direct(&target, datagram.clone()).await {
             Ok(()) => {
                 tracing::debug!(to = %to, kind = ?frame.type_id, "frame sent via veilid");
-                return Ok(());
+                return Ok(true);
             }
             Err(e) => {
                 // Only an unusable route goes (plan audit G10), so the
-                // retry fetches a fresh one; a send that failed for any
-                // other reason keeps it.
+                // next attempt fetches a fresh one; a send that failed for
+                // any other reason keeps it.
                 if matches!(e, crate::error::TransportError::RouteUnusable { .. }) {
                     route::invalidate(&node, to);
                 }
@@ -221,18 +224,72 @@ async fn deliver(
         },
         None => None,
     };
-    if ephemeral {
+    if !refresh {
         tracing::debug!(to = %to, error = ?failure, "no route for peer — dropping ephemeral frame");
-        return Ok(());
+        return Ok(false);
     }
     if refresh_and_send(host, to, &datagram).await {
         tracing::debug!(to = %to, "frame sent via veilid (after inline route refresh)");
-        return Ok(());
+        return Ok(true);
     }
     if failure.is_none() {
         probe_in_background(host, to);
     }
-    tracing::debug!(to = %to, error = ?failure, "no usable route for peer — queuing frame for retry");
+    tracing::debug!(to = %to, error = ?failure, "no usable route for peer");
+    Ok(false)
+}
+
+/// `body` framed as entry `stream_seq` of our outbox stream to `to` (plan
+/// E2.5): a ratchet message carrying the seq the peer's `DmAck` names,
+/// behind the verification gate like any send of its kind.
+///
+/// # Errors
+/// The kind does not travel on the ratchet, the gate holds it, or there is
+/// no session.
+pub(crate) async fn stream_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+    stream_seq: u64,
+) -> Result<DmFrame, FriendError> {
+    let type_id = body.type_id();
+    if type_id.carrier() != Carrier::Ratchet {
+        return Err(FriendError::Invalid(format!(
+            "{type_id:?} does not travel on the DM stream"
+        )));
+    }
+    if !crate::operations::friend::verification::is_protective(type_id) {
+        crate::operations::friend::verification::require_acknowledged(host, to).await?;
+    }
+    frame::ratchet_frame_at(host, to, body, hint_for(type_id), stream_seq).await
+}
+
+/// Send `body` to `to` once and never queue it: a receipt the peer's resend
+/// asks for again (`DmAck`, plan E2.5). Whether it left this device.
+///
+/// # Errors
+/// The frame could not be built or is over the cap.
+pub(crate) async fn send_once(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<bool, FriendError> {
+    let (frame, _) = framed(host, to, body).await?;
+    route_send(host, to, &frame, true).await
+}
+
+/// One send of `frame`, queued last unless its kind is ephemeral.
+async fn deliver(
+    host: &dyn FriendHost,
+    to: &str,
+    frame: &DmFrame,
+    queued: &Queued,
+) -> Result<(), FriendError> {
+    let ephemeral = frame.type_id.is_ephemeral();
+    if route_send(host, to, frame, !ephemeral).await? || ephemeral {
+        return Ok(());
+    }
+    tracing::debug!(to = %to, "queuing frame for retry");
     queue(host, to, queued).await
 }
 

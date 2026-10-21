@@ -151,6 +151,7 @@ async fn ratcheted(other: &Host, owner: [u8; 32], content: &[u8]) -> Vec<u8> {
 /// A text's content whose body is not a text.
 fn undecodable_body() -> Vec<u8> {
     DmContent {
+        stream_seq: 0,
         content_hint: ContentHint::Default,
         sent_at_ms: 1_700_000_000_000,
         payload: vec![0xFF; 3],

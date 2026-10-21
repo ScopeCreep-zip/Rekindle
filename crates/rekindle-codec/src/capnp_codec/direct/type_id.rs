@@ -57,6 +57,9 @@ type_ids! {
     FriendRequest = 0x0002 => Sealed,
     /// A Strand relay forward (§6 "Relay"), ratchet to the relay friend.
     RelayEnvelope = 0x0003 => Ratchet,
+    /// The receipt of entries of the peer's DM stream (plan E2.5, D22):
+    /// `delivered` comes only from it.
+    DmAck = 0x0004 => Ratchet,
     /// The responder refused a PreKeyInit's prekeys (D18 B5), signed.
     PreKeyRejected = 0x0005 => Sealed,
     /// Allocated E2.3; its body and sends are E2.5's (D24).
@@ -213,7 +216,7 @@ mod tests {
     #[test]
     fn unallocated_ids_are_not_kinds() {
         for id in [
-            0x0000, 0x0004, 0x0107, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0400, 0xFFFF,
+            0x0000, 0x0107, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0400, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }
