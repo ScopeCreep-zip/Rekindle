@@ -21,6 +21,29 @@ fn saw(events: &Events, peer: &str, status: &str) -> bool {
     })
 }
 
+/// Whether `node`'s own message `body` to `peer` is on its chain: sent or
+/// further (a row counts as sent once its append lands).
+async fn on_chain(node: &crate::harness::SimNode, peer: &str, body: &str) -> bool {
+    use rekindle_types::message::SendState;
+    let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+        node.ok(IpcRequest::DmHistory {
+            peer_key: peer.to_string(),
+            limit: 50,
+            before: None,
+        })
+        .await,
+    )
+    .expect("the history");
+    history.iter().any(|m| {
+        m.is_own
+            && m.body == body
+            && matches!(
+                m.send_state,
+                SendState::Sent | SendState::Delivered | SendState::Read
+            )
+    })
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_status_change_arrives_by_watch_and_survives_a_watch_death() {
     let (sim, mut nodes) = start(2, 83).await;
@@ -120,11 +143,12 @@ async fn a_participant_record_received_mid_session_is_watched() {
     );
 }
 
-/// Plan E2.6: Lev unlocks while his DHT is off, so every watch his unlock
-/// opens fails, and so does the diff of Kim's next hint. With the two then
-/// cut off from each other's messages (no hint or resend reaches him) and his DHT back, no network
-/// change re-opens them. The maintenance tick's retry does, and the diff it
-/// runs reads the message he missed.
+/// Plan E2.6: Lev unlocks while his DHT is off, and the diff of Kim's next
+/// hint reads nothing from the network. His records open from their local
+/// copies and his watches are Veilid's desired state, placed once he is
+/// online (a failed open is retried on the maintenance tick). With the two
+/// then cut off from each other's messages (no hint or resend reaches him)
+/// and his DHT back, his watch's catch-up reads the message he missed.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_watch_whose_open_failed_opens_on_a_later_tick_and_reads_what_it_missed() {
     // Every app message is dropped (no hint or resend reaches him).
@@ -135,7 +159,6 @@ async fn a_watch_whose_open_failed_opens_on_a_later_tick_and_reads_what_it_misse
 /// finding F6): it also splits the DHT's replicas, each side reaching five
 /// of ten (S4), and the replicas on Lev's side hold the message.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E2.B finding F6: under a Partition Lev never reads the missed message (watch catch-up modeled, S6); host/adapters/friends/watch.rs retry_failed_watches never logs `a failed watch opened on retry`: suspect participant_records/the wanted check settling the retry, or watch_participant staying pending"]
 async fn a_watch_whose_open_failed_reads_what_it_missed_across_a_partition() {
     missed_while_shut(Fault::Partition {
         a: vec![0],
@@ -173,6 +196,14 @@ async fn missed_while_shut(cut: Fault) {
         ))
         .await,
         "nothing Lev reads reaches the network"
+    );
+    // The message must be on Kim's chain before the cut (finding F6): her
+    // append is a set in flight for up to a set's latency, and one that
+    // lands after a `Partition` reaches only the five replicas on her side
+    // (consensus there alone), so Lev's side would never hold it.
+    assert!(
+        eventually(&sim, LIMIT, || on_chain(&nodes[0], &lev, missed)).await,
+        "Kim's message is on her chain"
     );
     sim.fault(cut);
     sim.fault(Fault::DhtOffline {
