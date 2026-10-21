@@ -4,7 +4,9 @@
 //! peer is framed once, committed as a row of `friend_handshake:<peer>`,
 //! and sent by the outbox until it settles. These are control frames no
 //! `DmAck` answers: a row settles `sent` when its frame leaves, a request
-//! `delivered` on its `app_call` receipt, and the `Unfriended` row waits
+//! only on its `app_call` receipt (`delivered`: an app message has no
+//! delivery guarantee, and a request lost on the way would leave the row
+//! settled and the peer never asked), and the `Unfriended` row waits
 //! for the peer's `UnfriendedAck` (or fails at its deadline), which ends
 //! the removal.
 
@@ -98,7 +100,9 @@ async fn commit(
 }
 
 /// One attempt of a handshake row to `to`: a request goes by `app_call`
-/// first (its empty return is the receipt), then like any frame.
+/// only, over the cached route or one refreshed from their profile, and is
+/// attempted again until its empty return (the receipt) comes back; any
+/// other frame is sent once over the route.
 pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt {
     let framed: Framed = match serde_json::from_slice(payload) {
         Ok(framed) => framed,
@@ -119,8 +123,11 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
                 ));
                 return Attempt::Receipted;
             }
-            Err(e) => tracing::debug!(to = %to, error = %e,
-                "friend request not receipted by app_call — sending"),
+            Err(e) => {
+                tracing::debug!(to = %to, error = %e,
+                    "friend request not receipted by app_call — attempted again");
+                return Attempt::Deferred;
+            }
         }
     }
     match send::route_send_datagram(host, to, &datagram, kind, true).await {

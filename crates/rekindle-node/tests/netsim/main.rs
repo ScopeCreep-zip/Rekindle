@@ -4,6 +4,7 @@
 mod first_contact_retry;
 mod friends;
 mod harness;
+mod outbox_handshake;
 mod pair;
 mod prekey_collision;
 mod prekeys;
