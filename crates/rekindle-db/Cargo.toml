@@ -16,8 +16,6 @@ rekindle-audit = { path = "../rekindle-audit" }
 # The 1:1 ratchet runs `SessionRecord` inside `Db::call`, one transaction
 # per message (plan E2.3); rekindle-crypto is cross-cutting.
 rekindle-crypto = { path = "../rekindle-crypto" }
-# The prekey record's values are packed here after each change (plan E2.4).
-rekindle-codec = { path = "../rekindle-codec" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "paths" ] }
 serde = { workspace = true }
@@ -36,11 +34,15 @@ rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl"
 # The ratchet fixtures (a party with its own database, a seeded
 # generator), for the crates that test frames over it (plan E2.3).
 rand = { workspace = true, optional = true }
+# The fixtures read the packed prekey values back; the storage itself
+# packs nothing (`rekindle_crypto::signal::prekey_record::Publish` does).
+rekindle-codec = { path = "../rekindle-codec", optional = true }
 
 [features]
-test-support = [ "dep:rand" ]
+test-support = [ "dep:rand", "dep:rekindle-codec" ]
 
 [dev-dependencies]
+rekindle-codec = { path = "../rekindle-codec" }
 rand = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = [ "macros", "rt", "rt-multi-thread" ] }

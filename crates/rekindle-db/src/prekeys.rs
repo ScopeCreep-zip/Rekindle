@@ -7,7 +7,7 @@
 //! publishing it (`published_subkey`). The decisions are
 //! `rekindle_crypto::signal::prekey_record`'s; this module stores and
 //! applies them, each call one transaction on the `Db` thread, and hands
-//! back the [`Publish`] values the caller writes to the record **after**
+//! back the `Publish` values (packed by `prekey_record`) the caller writes to the record **after**
 //! the commit (a DHT write cannot join the transaction; the unlock
 //! reconciliation, [`published_values`], closes a crash in between):
 //!
@@ -32,11 +32,10 @@ mod responder;
 #[cfg(test)]
 mod tests;
 
-use rekindle_codec::capnp_codec::identity::{encode_opk_slot, encode_prekey_head};
 use rekindle_crypto::signal::prekey_material::MintedPrekey;
 use rekindle_crypto::signal::prekey_record::{
-    mint_head, mint_slot, random_id, sign_head, sign_slot, LocalHead, LocalPrekeys, MintedSet,
-    MintedSlot, PrekeyAction, SlotState, OPK_STALE_MS,
+    mint_head, mint_slot, random_id, set_values, sign_head, sign_slot, LocalHead, LocalPrekeys,
+    MintedSet, MintedSlot, PrekeyAction, Publish, SlotState, OPK_STALE_MS,
 };
 use rekindle_types::dht_layout::prekeys::{is_slot, HEAD};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -80,25 +79,6 @@ impl std::fmt::Display for PrekeyKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(self.as_str())
     }
-}
-
-/// One value to write to our prekey record: the packed `PrekeyRecordHead`
-/// at [`HEAD`] or an `OpkSlot` at a slot subkey.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Publish {
-    pub subkey: u32,
-    pub value: Vec<u8>,
-}
-
-/// The values a minted set publishes: the head, then every slot.
-#[must_use]
-pub fn set_values(set: &MintedSet) -> Vec<Publish> {
-    std::iter::once(Publish {
-        subkey: HEAD,
-        value: encode_prekey_head(&set.head.record),
-    })
-    .chain(set.slots.iter().map(slot_value))
-    .collect()
 }
 
 /// Our prekeys at a glance (the `PrekeyStatus` read): the current head's
@@ -223,17 +203,11 @@ pub async fn published_values(db: &Db, local: &LocalParty) -> Result<Vec<Publish
                 &lr.public,
                 spk.created_at,
             );
-            values.push(head.map(|head| Publish {
-                subkey: HEAD,
-                value: encode_prekey_head(&head),
-            }));
+            values.push(head.map(|head| Publish::head(&head)));
         }
         for (subkey, opk, pq) in live_pairs(conn, &owner)? {
             let slot = sign_slot(&local.identity, opk.id, &opk.public, pq.id, &pq.public);
-            values.push(slot.map(|slot| Publish {
-                subkey,
-                value: encode_opk_slot(&slot),
-            }));
+            values.push(slot.map(|slot| Publish::signed_slot(subkey, &slot)));
         }
         Ok(values.into_iter().collect::<Result<Vec<_>, _>>())
     })
@@ -308,7 +282,7 @@ pub(crate) fn fill_slot(
         pq_opk_id,
     );
     insert_slot(conn, owner, &slot, local.now_ms)?;
-    Ok(slot_value(&slot))
+    Ok(Publish::slot(&slot))
 }
 
 fn rotate_head(
@@ -341,17 +315,7 @@ fn rotate_head(
         at,
         HEAD,
     )?;
-    Ok(Publish {
-        subkey: HEAD,
-        value: encode_prekey_head(&head.record),
-    })
-}
-
-fn slot_value(slot: &MintedSlot) -> Publish {
-    Publish {
-        subkey: slot.subkey,
-        value: encode_opk_slot(&slot.record),
-    }
+    Ok(Publish::head(&head.record))
 }
 
 /// A stored public key.

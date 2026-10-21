@@ -15,9 +15,10 @@ use rekindle_utils::random::RandomSource;
 
 use rusqlite::Connection;
 
-use crate::prekeys::{self, Publish};
+use crate::prekeys;
 use crate::ratchet::{LocalParty, PeerAddress};
 use crate::Db;
+use rekindle_crypto::signal::prekey_record::Publish;
 
 /// A seeded generator, so a seed fixes every key a step draws.
 pub struct Seeded(Mutex<StdRng>);

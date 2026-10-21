@@ -5,8 +5,9 @@
 //! refilled on the record after the commit (B8).
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, PreKeyInitBody, PreKeyRejected};
+use rekindle_crypto::signal::prekey_record::Publish;
 use rekindle_crypto::signal::prekey_record::{base_key_hash, rejection_delay_ms};
-use rekindle_db::prekeys::{Publish, RejectionVerdict};
+use rekindle_db::prekeys::RejectionVerdict;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use crate::operations::direct::admission::{may_open_session, Status};

@@ -44,12 +44,11 @@ impl OwnRecords {
 
     /// The unlock's reconciliation (what our rows say the record holds and
     /// it does not), then a maintenance pass (a new identity's first set).
-    /// The pass's head and its first [`LOW_SLOT_WATERMARK`] slots are
-    /// written before the profile names the record, so a friend's first
-    /// contact finds keys; the rest follow in the unlock scope, so a new
-    /// identity's 101 writes do not hold its profile back.
+    /// The pass's first-contact part (`split_first_contact`) is written
+    /// before the profile names the record; the rest follows in the unlock
+    /// scope.
     async fn fill_record(&self) {
-        use rekindle_crypto::signal::prekey_record::LOW_SLOT_WATERMARK;
+        use rekindle_crypto::signal::prekey_record::split_first_contact;
         use rekindle_transport::operations::friend::FriendHost as _;
         use rekindle_transport::operations::prekeys;
         match prekeys::reconcile(&self.friends).await {
@@ -57,14 +56,14 @@ impl OwnRecords {
             Ok(republished) => tracing::info!(republished, "prekey record reconciled"),
             Err(e) => tracing::warn!(error = %e, "own records: prekey record not reconciled"),
         }
-        let mut values = match prekeys::plan_and_store(&self.friends).await {
+        let values = match prekeys::plan_and_store(&self.friends).await {
             Ok(values) => values,
             Err(e) => {
                 tracing::warn!(error = %e, "own records: prekey maintenance failed");
                 return;
             }
         };
-        let later = values.split_off(values.len().min(1 + LOW_SLOT_WATERMARK));
+        let (values, later) = split_first_contact(values);
         if let Err(e) = prekeys::publish(&self.friends, values).await {
             tracing::warn!(error = %e, "own records: prekeys not published");
         }

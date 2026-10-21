@@ -48,8 +48,11 @@ pub async fn rotate_identity(
     // Every write must land before any friend is told (plan E2.4): a
     // friend who accepts reads the set at once, and a record still holding
     // the old head would show them a false pin mismatch.
-    crate::operations::prekeys::publish_landed(host, rekindle_db::prekeys::set_values(&set))
-        .await?;
+    crate::operations::prekeys::publish_landed(
+        host,
+        rekindle_crypto::signal::prekey_record::set_values(&set),
+    )
+    .await?;
 
     // Every friend learns the new identity, signed by both, over the old
     // session, before the identity moves (plan E2.3).

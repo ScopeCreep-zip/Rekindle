@@ -27,11 +27,15 @@ async fn prekey_check(ctx: &DaemonContext) -> Option<Check> {
     ctx.db.current().ok()?;
     let host = crate::host::adapters::friends::HostFriends::of(ctx);
     Some(match prekeys::status(&host).await {
-        Ok(status) => match prekeys::prekey_problem(&status) {
+        Ok(status) => match rekindle_crypto::signal::prekey_record::prekey_problem(&status) {
             None => Check::pass(
                 "crypto.prekeys",
                 "crypto",
-                format!("{}/100 fresh slots", status.fresh_slots),
+                format!(
+                    "{}/{} fresh slots",
+                    status.fresh_slots,
+                    rekindle_types::dht_layout::prekeys::SLOT_COUNT
+                ),
             ),
             Some(problem) => Check::warn("crypto.prekeys", "crypto", problem)
                 .with_description("prekey maintenance is failing"),

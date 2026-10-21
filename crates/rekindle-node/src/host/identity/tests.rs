@@ -247,7 +247,7 @@ async fn a_rotation_journalled_before_a_crash_completes_at_the_next_unlock() {
     }
     // The rows stored are the set published: the journal re-mints it.
     let mint = || {
-        rekindle_db::prekeys::set_values(
+        rekindle_crypto::signal::prekey_record::set_values(
             &rekindle_transport::operations::identity::mint_rotation_set(
                 &next,
                 &pending.mint_seed,

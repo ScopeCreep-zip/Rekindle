@@ -6,10 +6,7 @@
 use rekindle_codec::capnp_codec::identity::{
     decode_prekey_head, encode_prekey_record_list, PrekeyDevice, PrekeyRecordList,
 };
-use rekindle_crypto::signal::prekey_record::{
-    plan_maintenance, LOW_SLOT_WATERMARK, SIGNED_MAX_AGE_MS,
-};
-use rekindle_db::prekeys::Publish;
+use rekindle_crypto::signal::prekey_record::{plan_maintenance, Publish};
 use rekindle_protocol::dht::prekeys as record;
 use rekindle_types::dht_layout::prekeys::HEAD;
 use rekindle_types::dto::identity::{PrekeyComponentLens, PrekeyStatus};
@@ -285,58 +282,9 @@ pub async fn status(host: &dyn FriendHost) -> Result<PrekeyStatus, FriendError> 
     })
 }
 
-/// Why the maintenance looks broken, if it does: no head yet, fewer fresh
-/// slots than the watermark, or a head past the 14-day limit.
-#[must_use]
-pub fn prekey_problem(status: &PrekeyStatus) -> Option<String> {
-    let (Some(spk), Some(lr)) = (status.spk_age_secs, status.lr_age_secs) else {
-        return Some("no prekeys published yet".to_string());
-    };
-    if usize::try_from(status.fresh_slots).unwrap_or(usize::MAX) < LOW_SLOT_WATERMARK {
-        return Some(format!("{}/100 fresh slots", status.fresh_slots));
-    }
-    let oldest = spk.max(lr);
-    let limit = u64::try_from(SIGNED_MAX_AGE_MS / 1000).unwrap_or(u64::MAX);
-    (oldest > limit).then(|| format!("signed prekeys {} days old", oldest / 86_400))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn healthy() -> PrekeyStatus {
-        PrekeyStatus {
-            device_id: None,
-            record_key: None,
-            spk_id: Some(1),
-            spk_age_secs: Some(3_600),
-            pq_lr_id: Some(2),
-            lr_age_secs: Some(3_600),
-            fresh_slots: 100,
-            consumed_slots: 0,
-            component_lens: None,
-        }
-    }
-
-    #[test]
-    fn the_problem_names_what_maintenance_failed_to_keep() {
-        assert_eq!(prekey_problem(&healthy()), None);
-        let low = PrekeyStatus {
-            fresh_slots: 3,
-            ..healthy()
-        };
-        assert_eq!(prekey_problem(&low).as_deref(), Some("3/100 fresh slots"));
-        let stale = PrekeyStatus {
-            spk_age_secs: Some(15 * 86_400),
-            ..healthy()
-        };
-        assert!(prekey_problem(&stale).unwrap().contains("15 days"));
-        let none = PrekeyStatus {
-            spk_age_secs: None,
-            ..healthy()
-        };
-        assert!(prekey_problem(&none).is_some());
-    }
 
     #[test]
     fn one_publish_names_the_head_and_its_slots() {

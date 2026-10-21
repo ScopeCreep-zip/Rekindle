@@ -15,11 +15,15 @@
 //! - [`pick_slot`] (B2): which slot of a peer's record to initiate from,
 //!   uniformly among the slots it lists that we have not used, else the
 //!   head alone (PQXDH §2.5, §3.3).
+//! - [`Publish`] (`publish`): the packed value of each subkey we write,
+//!   the unlock's [`split_first_contact`] and the status read's
+//!   [`prekey_problem`].
 //!
 //! Every id is a random non-zero u31 (PQXDH §4.13, [`random_id`]); the
 //! storage keeps them unique per kind.
 
 mod mint;
+mod publish;
 #[cfg(test)]
 mod tests;
 
@@ -36,6 +40,7 @@ use crate::signal::prekeys::PreKeyBundle;
 pub use mint::{
     mint_head, mint_set, mint_slot, sign_head, sign_slot, MintedHead, MintedSet, MintedSlot,
 };
+pub use publish::{prekey_problem, set_values, split_first_contact, Publish};
 
 const DAY_MS: i64 = 86_400_000;
 

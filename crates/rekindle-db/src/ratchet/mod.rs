@@ -26,10 +26,11 @@ use rekindle_crypto::{CryptoError, Identity};
 use rekindle_utils::random::RandomSource;
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::prekeys::{self, PrekeyKind, Publish};
+use crate::prekeys::{self, PrekeyKind};
 use crate::repo::unprocessed::{self, UnprocessedKey};
 use crate::repo::{identity_text, signal_identities};
 use crate::Db;
+use rekindle_crypto::signal::prekey_record::Publish;
 
 #[cfg(test)]
 mod accept_tests;
