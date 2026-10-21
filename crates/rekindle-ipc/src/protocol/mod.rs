@@ -292,6 +292,13 @@ pub enum IpcRequest {
     GroupDmDecline { group_id: String },
     /// Leave `group_id`; every other member rotates its key.
     GroupDmLeave { group_id: String },
+    /// Send `body` to `group_id`; the answer is the message's client id
+    /// once its row and local echo are committed (`queued`, then
+    /// `GroupDmEvent::SendStatus`).
+    GroupDmSend { group_id: String, body: String },
+    /// The draft to `group_id` changed: `typing` is whether it holds text.
+    /// The Host decides what goes out, as for `DmTyping`.
+    GroupDmTyping { group_id: String, typing: bool },
     /// Every group we are in and every invite we have not answered.
     GroupDmList,
     /// The newest `limit` messages of `group_id` before `before` (ms).

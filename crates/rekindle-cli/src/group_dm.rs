@@ -1,5 +1,5 @@
-//! Group DM commands (plan E2.6): create, accept, decline, leave, list and
-//! messages, each one Host request.
+//! Group DM commands (plan E2.6): create, accept, decline, leave, send,
+//! list and messages, each one Host request.
 
 use rekindle_client::DaemonClient;
 use rekindle_ipc::protocol::IpcRequest;
@@ -23,6 +23,10 @@ fn request(cmd: &GroupDmCmd) -> IpcRequest {
         },
         GroupDmCmd::Leave { group_id } => IpcRequest::GroupDmLeave {
             group_id: group_id.clone(),
+        },
+        GroupDmCmd::Send { group_id, text } => IpcRequest::GroupDmSend {
+            group_id: group_id.clone(),
+            body: text.clone(),
         },
         GroupDmCmd::List => IpcRequest::GroupDmList,
         GroupDmCmd::Messages {

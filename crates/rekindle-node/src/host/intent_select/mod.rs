@@ -104,7 +104,8 @@ pub(crate) async fn select(
         IpcRequest::GroupDmCreate { .. }
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmDecline { .. }
-        | IpcRequest::GroupDmLeave { .. } => {
+        | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::GroupDmSend { .. } => {
             group_dm::selection(ctx, request, &mut s).await?;
         }
         IpcRequest::CommunityCreate { name, .. } => {
@@ -239,6 +240,7 @@ pub(crate) async fn select(
         | IpcRequest::ChannelList { .. }
         | IpcRequest::ChannelHistory { .. }
         | IpcRequest::DmTyping { .. }
+        | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::DmInbox { .. }
         | IpcRequest::IntentCommit { .. }
         | IpcRequest::IntentCancel { .. }

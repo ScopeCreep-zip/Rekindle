@@ -54,6 +54,8 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("group_dm_accept", HostCall::Request("GroupDmAccept")),
     ("group_dm_decline", HostCall::Request("GroupDmDecline")),
     ("group_dm_leave", HostCall::Request("GroupDmLeave")),
+    ("group_dm_send", HostCall::Request("GroupDmSend")),
+    ("group_dm_typing", HostCall::Request("GroupDmTyping")),
     ("group_dm_list", HostCall::Request("GroupDmList")),
     ("group_dm_messages", HostCall::Request("GroupDmMessages")),
     ("send_typing", HostCall::Request("DmTyping")),

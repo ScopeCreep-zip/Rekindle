@@ -72,6 +72,25 @@ impl App {
 
     /// A group action (accept, decline, leave); the list reloads once it
     /// ran.
+    /// Send `text` to `group_id`; once committed, its messages reload with
+    /// the queued echo (the send status then streams).
+    pub(crate) fn spawn_send_group_dm(&self, group_id: String, text: String) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            let request = IpcRequest::GroupDmSend {
+                group_id: group_id.clone(),
+                body: text,
+            };
+            match client.request_ok(request).await {
+                Ok(_) => {
+                    let _ = tx.send(Action::ShowGroupMessages { group_id });
+                }
+                Err(e) => report_failure(&tx, "send to group", e),
+            }
+        });
+    }
+
     pub(crate) fn spawn_group_request(&self, request: IpcRequest, context: &'static str) {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);

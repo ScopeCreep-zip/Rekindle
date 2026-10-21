@@ -235,6 +235,7 @@ impl App {
             Action::SendDm { peer_key, text } => {
                 self.spawn_send_dm(peer_key, text);
             }
+            Action::SendGroupDm { group_id, text } => self.spawn_send_group_dm(group_id, text),
 
             Action::SubscriptionEvent(ref event) => {
                 // A group's invite, member or key changed: the list reloads.

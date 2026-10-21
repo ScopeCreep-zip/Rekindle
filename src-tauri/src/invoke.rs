@@ -33,6 +33,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::group_dm::group_dm_accept,
         commands::group_dm::group_dm_decline,
         commands::group_dm::group_dm_leave,
+        commands::group_dm::group_dm_send,
+        commands::group_dm::group_dm_typing,
         commands::group_dm::group_dm_list,
         commands::group_dm::group_dm_messages,
         commands::chat::send_typing,

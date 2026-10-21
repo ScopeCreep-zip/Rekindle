@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-chat",
-  "description": "App-command grants for `chat-*` windows: 1:1 friend chat, with start and hang-up of a call to this peer and the peer's safety number with its mark-verified flow (the header's badge), and the group mode (plan E2.6): the group list, a group's stored messages and Leave. No plugin grants.",
+  "description": "App-command grants for `chat-*` windows: 1:1 friend chat, with start and hang-up of a call to this peer and the peer's safety number with its mark-verified flow (the header's badge), and the group mode (plan E2.6): the group list, a group's stored messages, its send and typing, and Leave. No plugin grants.",
   "windows": [
     "chat-*"
   ],
@@ -14,6 +14,8 @@
     "allow-group-dm-list",
     "allow-group-dm-messages",
     "allow-group-dm-leave",
+    "allow-group-dm-send",
+    "allow-group-dm-typing",
     "allow-send-typing",
     "allow-start-dm-call",
     "allow-end-dm-call",

@@ -142,6 +142,8 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("group_dm_accept", Some(IntentKind::AcceptDmInvite)),
     ("group_dm_decline", Some(IntentKind::DeclineDmInvite)),
     ("group_dm_leave", Some(IntentKind::LeaveGroupDm)),
+    ("group_dm_send", Some(IntentKind::SendDmMessage)),
+    ("group_dm_typing", None),
     ("group_dm_list", None),
     ("group_dm_messages", None),
     ("delete_channel", Some(IntentKind::DeleteChannel)),
@@ -464,6 +466,8 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("GroupDmAccept", Some(IntentKind::AcceptDmInvite)),
     ("GroupDmDecline", Some(IntentKind::DeclineDmInvite)),
     ("GroupDmLeave", Some(IntentKind::LeaveGroupDm)),
+    ("GroupDmSend", Some(IntentKind::SendDmMessage)),
+    ("GroupDmTyping", None),
     ("GroupDmList", None),
     ("GroupDmMessages", None),
     // The gate answers these itself (plan D3.3).

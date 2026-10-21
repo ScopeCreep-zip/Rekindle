@@ -166,6 +166,8 @@ impl IpcRequest {
             | Self::GroupDmAccept { .. }
             | Self::GroupDmDecline { .. }
             | Self::GroupDmLeave { .. }
+            | Self::GroupDmSend { .. }
+            | Self::GroupDmTyping { .. }
             | Self::DmTyping { .. }
             | Self::DmMarkRead { .. } => Some(C::ImWrite),
             Self::PresenceSet { .. }

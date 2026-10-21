@@ -1,12 +1,13 @@
 //! Group DMs (plan E2.6): the creator's name and roster bounds, and the
-//! 16-byte group id, checked before any operation runs.
+//! 16-byte group id, and a message body under the direct send's caps,
+//! checked before any operation runs.
 
 use std::collections::HashSet;
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::group_dm::{MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
 
-use super::{page, public_key, Checked};
+use super::{message_body, page, public_key, Checked};
 
 /// A group id: the creator's 16 random bytes, 32 lowercase hex.
 fn group_id(id: &str) -> Checked {
@@ -62,7 +63,14 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         IpcRequest::GroupDmCreate { name, members } => create(name, members),
         IpcRequest::GroupDmAccept { group_id: id }
         | IpcRequest::GroupDmDecline { group_id: id }
-        | IpcRequest::GroupDmLeave { group_id: id } => group_id(id),
+        | IpcRequest::GroupDmLeave { group_id: id }
+        | IpcRequest::GroupDmTyping {
+            group_id: id,
+            typing: _,
+        } => group_id(id),
+        IpcRequest::GroupDmSend { group_id: id, body } => {
+            group_id(id).and_then(|()| message_body(body))
+        }
         IpcRequest::GroupDmList => Ok(()),
         IpcRequest::GroupDmMessages {
             group_id: id,

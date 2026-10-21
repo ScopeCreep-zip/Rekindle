@@ -13,6 +13,7 @@ pub mod content;
 mod inbound;
 mod pairwise;
 pub mod receive;
+mod review;
 mod view;
 
 pub use admission::admitted;
@@ -21,6 +22,7 @@ pub use inbound::apply;
 pub(crate) use inbound::on_stream_record;
 pub use pairwise::GroupFirstContact;
 pub(crate) use pairwise::{member_bundle, opens_member_session};
+pub use review::{key_changes, send_reviewed};
 pub use view::{find, list, messages};
 pub(crate) mod first_contact {
     //! The group first contact, as the prekey rejection flow sees it.

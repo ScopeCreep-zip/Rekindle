@@ -121,6 +121,10 @@ pub enum Action {
     LeaveGroup {
         group_id: String,
     },
+    SendGroupDm {
+        group_id: String,
+        text: String,
+    },
 
     // ─── Clipboard ───────────────────────────────────────────────
     /// Copy focused message body to clipboard with 30s auto-clear.

@@ -6,9 +6,9 @@
 //! accepts and `x` declines a pending invite, `L` leaves a group. The
 //! host reviews each of those (its intent gate); this view only asks.
 //!
-//! The messages pane is read-only: sending in a group needs
-//! `IpcRequest::GroupDmSend` (plan E2.6's send slice), which this view
-//! wires once that request exists.
+//! Under the open group's messages, the input box sends
+//! (`IpcRequest::GroupDmSend`); a group message, ours or a member's,
+//! reloads the open group's messages.
 
 use anyhow::Result;
 use ratatui::layout::{Constraint, Layout, Rect};
@@ -19,10 +19,13 @@ use ratatui::Frame;
 
 use rekindle_types::dto::dm::DmMessage;
 use rekindle_types::dto::group_dm::GroupDmView;
-use rekindle_types::subscription_events::SubscriptionEvent;
+use rekindle_types::message::SendState;
+use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent};
 
 use super::View;
 use crate::action::{Action, CommandResult};
+use crate::components::input_box::InputBox;
+use crate::components::Component;
 use crate::focus::{FocusId, FocusRing};
 use crate::helpers;
 use crate::theme::ThemeManager;
@@ -34,6 +37,7 @@ pub struct GroupDmListView {
     list_state: ListState,
     /// The group whose messages are shown, and those messages.
     open: Option<(String, Vec<DmMessage>)>,
+    input_box: InputBox,
 }
 
 impl Default for GroupDmListView {
@@ -45,10 +49,15 @@ impl Default for GroupDmListView {
 impl GroupDmListView {
     pub fn new() -> Self {
         Self {
-            focus: FocusRing::new(vec![FocusId::DmList, FocusId::MessageList]),
+            focus: FocusRing::new(vec![
+                FocusId::DmList,
+                FocusId::MessageList,
+                FocusId::InputBox,
+            ]),
             groups: Vec::new(),
             list_state: ListState::default(),
             open: None,
+            input_box: InputBox::new(),
         }
     }
 
@@ -127,8 +136,13 @@ impl GroupDmListView {
                     helpers::sanitize_for_display(&self.label(group_id, &m.sender_id))
                 };
                 let time = helpers::format_time_short(m.timestamp.cast_unsigned());
+                let state = match (m.is_own, m.send_state) {
+                    (true, SendState::Queued) => " (sending)",
+                    (true, SendState::Failed) => " (failed)",
+                    _ => "",
+                };
                 Line::raw(format!(
-                    "[{time}] {who}: {}",
+                    "[{time}] {who}: {}{state}",
                     helpers::sanitize_for_display(&m.body)
                 ))
             })
@@ -164,11 +178,35 @@ impl View for GroupDmListView {
                 .title(title)
                 .border_style(self.border(FocusId::MessageList)),
         );
-        frame.render_widget(messages, right);
+        let [messages_area, input_area] =
+            Layout::vertical([Constraint::Min(3), Constraint::Length(3)]).areas(right);
+        frame.render_widget(messages, messages_area);
+        self.input_box
+            .set_focused(self.focus.is_focused(FocusId::InputBox));
+        self.input_box.draw(frame, input_area)?;
         Ok(())
     }
 
-    fn update(&mut self, _action: Action) -> Result<Option<Action>> {
+    fn update(&mut self, action: Action) -> Result<Option<Action>> {
+        match action {
+            Action::InputSubmit => {
+                let text = self.input_box.content();
+                let Some((group_id, _)) = &self.open else {
+                    return Ok(None);
+                };
+                if !text.trim().is_empty() && !self.input_box.is_over_limit() {
+                    let send = Action::SendGroupDm {
+                        group_id: group_id.clone(),
+                        text,
+                    };
+                    self.input_box.clear();
+                    return Ok(Some(send));
+                }
+            }
+            Action::EnterInputMode => self.focus.set(FocusId::InputBox),
+            Action::ExitInputMode => self.focus.set(FocusId::DmList),
+            _ => {}
+        }
         Ok(None)
     }
 
@@ -183,12 +221,62 @@ impl View for GroupDmListView {
         Ok(())
     }
 
-    fn on_subscription_event(&mut self, _event: &SubscriptionEvent) -> Result<()> {
+    /// The open group's messages follow its stream: a member's message is
+    /// appended once, and our echo's row takes its send status.
+    fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
+        let SubscriptionEvent::GroupDm(event) = event else {
+            return Ok(());
+        };
+        let Some((open, messages)) = &mut self.open else {
+            return Ok(());
+        };
+        match event {
+            GroupDmEvent::Message {
+                group_id,
+                message_id,
+                sender,
+                body,
+                timestamp,
+                ..
+            } if group_id == open => {
+                let held = messages
+                    .iter()
+                    .any(|m| m.message_id.as_deref() == Some(message_id.as_str()));
+                if !held {
+                    messages.push(DmMessage {
+                        id: 0,
+                        message_id: Some(message_id.clone()),
+                        sender_id: sender.public_key.clone(),
+                        body: body.clone(),
+                        timestamp: *timestamp,
+                        is_own: false,
+                        send_state: SendState::Delivered,
+                        history_gap_through: None,
+                    });
+                }
+            }
+            GroupDmEvent::SendStatus {
+                group_id,
+                client_id,
+                state,
+            } if group_id == open => {
+                for m in messages
+                    .iter_mut()
+                    .filter(|m| m.message_id.as_deref() == Some(client_id.as_str()))
+                {
+                    m.send_state = *state;
+                }
+            }
+            _ => {}
+        }
         Ok(())
     }
 
     fn handle_focused_key(&mut self, key: crossterm::event::KeyEvent) -> Option<Action> {
         use crossterm::event::KeyCode;
+        if self.focus.is_focused(FocusId::InputBox) {
+            return self.input_box.handle_key(key);
+        }
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 self.step(true);
@@ -222,7 +310,6 @@ mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
     use rekindle_types::dto::group_dm::GroupDmViewMember;
-    use rekindle_types::message::SendState;
 
     fn group(id: char, pending: bool) -> GroupDmView {
         GroupDmView {

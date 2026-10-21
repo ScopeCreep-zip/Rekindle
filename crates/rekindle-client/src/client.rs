@@ -237,6 +237,7 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::GroupDmCreate { .. }
         | IpcRequest::GroupDmAccept { .. }
+        | IpcRequest::GroupDmSend { .. }
         | IpcRequest::DmInbox { .. }
         | IpcRequest::ChannelHistory { .. } => LONG_TIMEOUT,
         _ => DEFAULT_TIMEOUT,

@@ -1,5 +1,6 @@
 //! The selection of a group-DM request (plan E2.6): the group by its
-//! creator's name, and the members each step tells.
+//! creator's name, the members each step tells, and a send's escalation
+//! on a friend member's key change.
 
 use rekindle_idempotency::intent_gate::Selection;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
@@ -32,7 +33,8 @@ pub(super) async fn selection(
         }
         IpcRequest::GroupDmAccept { group_id }
         | IpcRequest::GroupDmDecline { group_id }
-        | IpcRequest::GroupDmLeave { group_id } => group_id,
+        | IpcRequest::GroupDmLeave { group_id }
+        | IpcRequest::GroupDmSend { group_id, .. } => group_id,
         other => unreachable!("{} is not a group-DM write", other.name()),
     };
     if ctx.require_owner().is_err() {
@@ -52,6 +54,16 @@ pub(super) async fn selection(
         IpcRequest::GroupDmDecline { .. } => {
             s.notifies = count(1);
             s.reversibility = Reversibility::NeedsOthers;
+        }
+        IpcRequest::GroupDmSend { .. } => {
+            // Reviewed as a direct send: escalated on each friend
+            // member's unacknowledged verified key change (R-4).
+            s.notifies = count(others);
+            s.escalations.extend(
+                group_dm::key_changes(&HostFriends::of(ctx), group_id)
+                    .await
+                    .map_err(|e| unavailable("the members' key verification", e))?,
+            );
         }
         _ => {
             s.notifies = count(others);

@@ -48,6 +48,29 @@ pub async fn group_dm_leave(
     host_call::call(&state, IpcRequest::GroupDmLeave { group_id }).await
 }
 
+/// Send `body` to a group (`IpcRequest::GroupDmSend`); the answer is the
+/// message's client id once its row and echo are committed (`queued`,
+/// then `GroupDmEvent::SendStatus`).
+#[tauri::command]
+pub async fn group_dm_send(
+    group_id: String,
+    body: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<String>, CommandError> {
+    host_call::call(&state, IpcRequest::GroupDmSend { group_id, body }).await
+}
+
+/// Report the draft to a group (`IpcRequest::GroupDmTyping`): `typing` is
+/// whether it holds text; the Host decides what goes out, as for a peer.
+#[tauri::command]
+pub async fn group_dm_typing(
+    group_id: String,
+    typing: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::GroupDmTyping { group_id, typing }).await
+}
+
 /// Every group we are in and every unanswered invite
 /// (`IpcRequest::GroupDmList`).
 #[tauri::command]

@@ -89,6 +89,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::GroupDmAccept { .. }
             | Self::GroupDmDecline { .. }
             | Self::GroupDmLeave { .. }
+            | Self::GroupDmSend { .. }
+            | Self::GroupDmTyping { .. }
             | Self::GroupDmList
             | Self::GroupDmMessages { .. } => self.fmt_group_dm(f),
             Self::FriendAddFromCode { .. }

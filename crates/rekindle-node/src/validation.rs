@@ -327,6 +327,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmDecline { .. }
         | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::GroupDmSend { .. }
+        | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. } => group_dm::check(request),
         IpcRequest::AvatarGet { public_key: key }

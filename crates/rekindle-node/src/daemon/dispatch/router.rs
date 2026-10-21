@@ -171,6 +171,8 @@ async fn route(
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmDecline { .. }
         | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::GroupDmSend { .. }
+        | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. }) => {
             friends::route(ctx, state, request, acknowledged).await

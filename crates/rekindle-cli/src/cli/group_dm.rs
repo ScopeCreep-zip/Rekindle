@@ -29,6 +29,13 @@ pub enum GroupDmCmd {
         /// The group id (32 hex).
         group_id: String,
     },
+    /// Send a message to a group.
+    Send {
+        /// The group id (32 hex).
+        group_id: String,
+        /// The message text.
+        text: String,
+    },
     /// Your groups and pending invites.
     List,
     /// A group's stored messages, oldest first.

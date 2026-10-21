@@ -1,5 +1,6 @@
 //! The group-DM requests' `Debug` (plan E2.6): a group's name shows its
-//! length only; ids and member keys are not secret.
+//! length only, as a message body does; ids and member keys are not
+//! secret.
 
 use super::super::IpcRequest;
 
@@ -23,6 +24,16 @@ impl IpcRequest {
             Self::GroupDmLeave { group_id } => f
                 .debug_struct("GroupDmLeave")
                 .field("group_id", group_id)
+                .finish(),
+            Self::GroupDmSend { group_id, body } => f
+                .debug_struct("GroupDmSend")
+                .field("group_id", group_id)
+                .field("body_len", &body.len())
+                .finish(),
+            Self::GroupDmTyping { group_id, typing } => f
+                .debug_struct("GroupDmTyping")
+                .field("group_id", group_id)
+                .field("typing", typing)
                 .finish(),
             Self::GroupDmList => f.write_str("GroupDmList"),
             Self::GroupDmMessages {
