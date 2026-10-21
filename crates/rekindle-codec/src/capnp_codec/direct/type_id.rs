@@ -142,6 +142,9 @@ type_ids! {
     UnregisterPushRelay = 0x0311 => Sealed,
     /// A push relay's wake signal.
     WakeNotify = 0x0312 => Sealed,
+    /// The newest of the peer's messages we have read (plan E2.5, r10):
+    /// sent only when both sides opted in, never while Invisible.
+    ReadUpTo = 0x0400 => Ratchet,
     /// Typing start or stop (expiry in the backend).
     Typing = 0x0401 => Ratchet,
 }
@@ -216,7 +219,7 @@ mod tests {
     #[test]
     fn unallocated_ids_are_not_kinds() {
         for id in [
-            0x0000, 0x0107, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0400, 0xFFFF,
+            0x0000, 0x0107, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }

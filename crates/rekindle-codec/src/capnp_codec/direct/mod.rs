@@ -27,7 +27,7 @@ pub use body::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DirectBody,
     DmAck, DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
     FriendsKey, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, GroupDmInvite,
-    GroupDmLeave, IdentityRotated, PreKeyRejected, ProfileKeyRotated, RegisterPushRelay,
+    GroupDmLeave, IdentityRotated, PreKeyRejected, ProfileKeyRotated, ReadUpTo, RegisterPushRelay,
     RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RequestAuth, RetryRequest,
     SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse, Typing,
     UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS,

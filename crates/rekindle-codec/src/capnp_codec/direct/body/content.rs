@@ -1,10 +1,11 @@
-//! Content bodies: text, its edits, deletes and reactions, and typing.
+//! Content bodies: text, its edits, deletes and reactions, read receipts
+//! and typing.
 
 use rekindle_types::key_format::{self, MAX_REACTION_LEN};
 
 use crate::capnp_codec::direct::{fixed, message_body, text, ClientId};
 use crate::capnp_codec::{capnp_err, CodecError};
-use crate::direct_capnp::{dm_ack, dm_delete, dm_edit, dm_reaction, dm_text, typing};
+use crate::direct_capnp::{dm_ack, dm_delete, dm_edit, dm_reaction, dm_text, read_up_to, typing};
 
 /// The most entries one `DmAck` names: one coalescing window's worth.
 pub const MAX_DM_ACK_SEQS: usize = 256;
@@ -144,6 +145,25 @@ impl DmReaction {
             emoji,
             add: r.get_add(),
         })
+    }
+}
+
+/// 0x0400 ReadUpTo: we have read the peer's messages through `stream_seq`
+/// on our DM stream with them (plan E2.5, r10). It carries no timestamp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ReadUpTo {
+    pub stream_seq: u64,
+}
+
+impl ReadUpTo {
+    pub(super) fn write(&self, mut b: read_up_to::Builder<'_>) {
+        b.set_stream_seq(self.stream_seq);
+    }
+
+    pub(super) fn read(r: read_up_to::Reader<'_>) -> Self {
+        Self {
+            stream_seq: r.get_stream_seq(),
+        }
     }
 }
 

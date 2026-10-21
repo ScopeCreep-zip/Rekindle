@@ -127,7 +127,11 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::DmEdit(_) | DirectBody::DmDelete(_) | DirectBody::DmReaction(_) => {
             tracing::debug!(from = %sender, kind = ?opened.type_id, "DM edit/delete/reaction not applied before E6.4");
         }
-        DirectBody::RelayEnvelope(_)
+        // A read receipt is the outbox's (plan E2.5, the receipts policy):
+        // ignored, never stored, while our own setting is off. Until that
+        // slice it is handed back like the other unported kinds.
+        DirectBody::ReadUpTo(_)
+        | DirectBody::RelayEnvelope(_)
         | DirectBody::GroupDmInvite(_)
         | DirectBody::GroupDmLeave(_)
         | DirectBody::RelayOffer(_)

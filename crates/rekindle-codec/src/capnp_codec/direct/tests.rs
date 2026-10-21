@@ -215,6 +215,7 @@ fn samples() -> Vec<DirectBody> {
             device_push_token: s("tok"),
         }),
         DirectBody::WakeNotify(WakeNotify { ts: 1_700_000_000 }),
+        DirectBody::ReadUpTo(ReadUpTo { stream_seq: 42 }),
         DirectBody::Typing(Typing { typing: true }),
         DirectBody::RetryRequest(RetryRequest {
             msg_id: [4; 32],

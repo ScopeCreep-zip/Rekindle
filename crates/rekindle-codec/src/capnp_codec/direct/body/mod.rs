@@ -22,7 +22,7 @@ pub use calls::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DmVideoFragment,
     GroupCallMember, GroupCallOffer, GroupCallParticipantLeft,
 };
-pub use content::{DmAck, DmDelete, DmEdit, DmReaction, DmText, Typing, MAX_DM_ACK_SEQS};
+pub use content::{DmAck, DmDelete, DmEdit, DmReaction, DmText, ReadUpTo, Typing, MAX_DM_ACK_SEQS};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest,
@@ -146,6 +146,7 @@ direct_bodies! {
     }
     scalar {
         WakeNotify(WakeNotify) = wake_notify,
+        ReadUpTo(ReadUpTo) = read_up_to,
         Typing(Typing) = typing,
     }
     empty {

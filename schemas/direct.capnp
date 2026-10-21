@@ -195,6 +195,13 @@ struct DmReaction {
   add @2 :Bool;
 }
 
+# 0x0400: the newest message of the peer's we have read, by its position
+# on our DM stream (plan E2.5, r10). No timestamp: the sender's delay
+# (uniform 2-10 s) is the only timing it reveals.
+struct ReadUpTo {
+  streamSeq @0 :UInt64;
+}
+
 # 0x0401.
 struct Typing {
   typing @0 :Bool;
