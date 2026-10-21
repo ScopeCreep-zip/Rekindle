@@ -28,10 +28,6 @@ const OWNERS: &[&str] = &[
 /// named. The list only shrinks.
 const SHRINKING: &[(&str, &str)] = &[
     (
-        "crates/rekindle-dm",
-        "E2.6 deletes the rekindle-dm SMPL store",
-    ),
-    (
         "crates/rekindle-analytics",
         "E5 moves its aggregate queries into rekindle-db",
     ),

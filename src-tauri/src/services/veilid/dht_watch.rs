@@ -63,14 +63,6 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
         return;
     }
 
-    // DM SMPL records: try the DM dispatcher first. Returns true when the
-    // key matches a row in `dms`. (Architecture §27 — DMs reuse the SMPL
-    // schema universally; the watch goes through the same plumbing as
-    // community records.)
-    if try_handle_dm_change(state, &pool, &key, &subkeys, record_pool.as_deref()).await {
-        return;
-    }
-
     // An invite's inbox, a friend's participant record or a friend's
     // profile: the Host reads every changed subkey (plan E2.5).
     if let Some(host) = state.host.current() {
@@ -109,64 +101,6 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
         // via `get_dht_value` (no ciphertext crosses gossip).
         relay_watch_change(state, &key, subkey, &value);
     }
-}
-
-async fn try_handle_dm_change(
-    state: &Arc<AppState>,
-    pool: &rekindle_db::Db,
-    record_key: &str,
-    subkeys: &[u32],
-    record_pool: Option<&dyn rekindle_records::port::RecordPort>,
-) -> bool {
-    use crate::db_helpers::db_call;
-    use crate::state_helpers;
-    use rusqlite::OptionalExtension;
-
-    let owner_key = state_helpers::owner_key_or_default(state);
-    if owner_key.is_empty() {
-        return false;
-    }
-    let owner = owner_key;
-    let record = record_key.to_string();
-    let exists = db_call(pool, move |conn| {
-        Ok(conn
-            .query_row(
-                "SELECT 1 FROM dms WHERE owner_key = ?1 AND record_key = ?2 LIMIT 1",
-                rusqlite::params![owner, record],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some())
-    })
-    .await;
-    match exists {
-        Ok(true) => {}
-        Ok(false) => return false,
-        Err(e) => {
-            tracing::warn!(record_key, error = %e, "dm lookup for a record change failed");
-            return false;
-        }
-    }
-
-    let Some(record_pool) = record_pool else {
-        return true;
-    };
-    for &subkey in subkeys {
-        if let Ok(Some(value)) = record_pool.read_once(record_key, subkey, true).await {
-            if let Err(e) = crate::services::dm::handle_dm_subkey_change(
-                state,
-                pool,
-                record_key,
-                subkey,
-                &value.data,
-            )
-            .await
-            {
-                tracing::debug!(record_key, subkey, error = %e, "dm subkey handler dropped");
-            }
-        }
-    }
-    true
 }
 
 fn relay_watch_change(state: &Arc<AppState>, record_key: &str, subkey: u32, value: &[u8]) {

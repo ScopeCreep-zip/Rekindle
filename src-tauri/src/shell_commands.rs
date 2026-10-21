@@ -134,11 +134,6 @@ pub const SHELL_LOCAL: &[&str] = &[
 pub const PENDING_PORT: &[(&str, &str)] = &[
     // E2.6 — the SMPL group-DM path (E2.3 deleted its 1:1 half) is replaced
     // by the group DM requests.
-    ("accept_dm_invite", "E2.6"),
-    ("decline_dm_invite", "E2.6"),
-    ("list_dms", "E2.6"),
-    ("get_dm_messages", "E2.6"),
-    ("send_dm_message", "E2.6"),
     // E3.1 — communities.
     ("add_game_server", "E3.1"),
     ("remove_game_server", "E3.1"),

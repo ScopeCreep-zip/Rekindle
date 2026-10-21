@@ -2,35 +2,21 @@
 name = "rekindle-dm"
 version = "0.1.0"
 edition = "2021"
-description = "Direct messages and group DMs — SMPL records with ECDH or wrapped MEK (architecture §27)"
+description = "Group DMs — signed rosters, sender-owned keys, admission of roster members (plan E2.6)"
 license = "MIT"
 
 [lints]
 workspace = true
 
 [dependencies]
-hex = { workspace = true }
-hkdf = "0.12"
-rekindle-crypto = { path = "../rekindle-crypto" }                 # Phase 13 — MediaEncryptionKey for envelope crypto.
-rekindle-codec = { path = "../rekindle-codec" }
-rekindle-records = { path = "../rekindle-records" }               # Phase 13 — record leases.
-rekindle-secrets = { path = "../rekindle-secrets" }               # Phase 13 — slot keypair derivation.
-rekindle-types = { path = "../rekindle-types" }
-rekindle-utils = { path = "../rekindle-utils" }                   # Phase 13 — timestamp_ms.
-serde = { workspace = true }
-serde_json = { workspace = true }
-sha2 = "0.10"
-thiserror = { workspace = true }
-zeroize = { version = "1", features = [ "derive" ] }
-# Phase 13 additions: async runtime + storage + tracing + trait abstractions.
 async-trait = "0.1"
-tokio = { workspace = true, features = [ "sync", "macros", "rt" ] }
-# The shared database handle (plan C5).
-rekindle-db = { path = "../rekindle-db" }
-rusqlite = { version = "0.39", features = [ "bundled" ] }
-tracing = { workspace = true }
+hex = { workspace = true }
 parking_lot = { workspace = true }
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-secrets = { path = "../rekindle-secrets" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+thiserror = { workspace = true }
 
 [dev-dependencies]
-rekindle-asql = { path = "../rekindle-asql" }
-tokio = { workspace = true, features = [ "sync", "macros", "time", "rt", "rt-multi-thread", "test-util" ] }
+tokio = { workspace = true, features = [ "macros", "rt" ] }

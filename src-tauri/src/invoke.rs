@@ -256,11 +256,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::relay::list_received_relay_offers,
         commands::relay::list_volunteered_relay_friends,
         // direct messages
-        commands::dm::list_dms,
-        commands::dm::accept_dm_invite,
-        commands::dm::decline_dm_invite,
-        commands::dm::send_dm_message,
-        commands::dm::get_dm_messages,
         commands::dm::send_dm_video_frame,
         commands::dm::register_dm_video_channel,
         commands::dm::unregister_dm_video_channel,

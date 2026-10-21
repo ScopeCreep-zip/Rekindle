@@ -55,7 +55,7 @@ pub(super) async fn handle(app: &AppHandle, state: &Arc<AppState>, pool: &Db, op
             }
         }
         body @ DirectBody::DmVideoFragment(_) => {
-            handle_dm_payload(app, state, pool, sender, body).await;
+            handle_dm_payload(state, sender, body);
         }
         body @ (DirectBody::CallInvite(_)
         | DirectBody::CallAccept(_)

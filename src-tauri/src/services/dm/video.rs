@@ -17,7 +17,7 @@ use rekindle_codec::capnp_codec::direct::{DirectBody, DmVideoFragment};
 use crate::state::AppState;
 
 // Re-export the moved primitives so existing import paths still work.
-pub use rekindle_dm::{DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
+pub use rekindle_dm::{AssembledFrame, DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};
 
 /// One outbound DM video frame, decoded from the Tauri command's
 /// request shape. Bundled so the send fn stays under the argument
@@ -85,4 +85,30 @@ pub async fn send_dm_video_frame(
         .map_err(|e| e.to_string())?;
     }
     Ok(u32::from(fragment_count))
+}
+
+/// Deliver `sender`'s reassembled frame to the DM video panel's per-peer
+/// `ipc::Channel` (a no-op when no panel is open), after noting it in the
+/// call's quality stats. DM video carries no parity: a completed frame is
+/// never FEC-recovered (plan E4.3 Q0 post-FEC loss).
+pub fn deliver_assembled_frame(state: &AppState, sender: &str, frame: AssembledFrame) {
+    use base64::Engine as _;
+    let stream_id_hex = hex::encode(frame.stream_id);
+    if let Some(media) = crate::state_helpers::voice_media(state) {
+        media
+            .quality()
+            .note_frame_completed(&stream_id_hex, sender, frame.frame_seq, false);
+    }
+    state.video_channels.send_dm(
+        sender,
+        crate::video_channels::DmVideoFrameMsg {
+            peer_pubkey: sender.to_owned(),
+            stream_id_hex,
+            frame_seq: frame.frame_seq,
+            keyframe: frame.keyframe,
+            codec: frame.codec,
+            timestamp: frame.timestamp,
+            encoded_payload_b64: base64::engine::general_purpose::STANDARD.encode(&frame.data),
+        },
+    );
 }

@@ -1,27 +1,10 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "../invoke";
 import type {
-  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmConversation, DmMessageRecord, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
+  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
 } from "./types_sync";
 
 export const syncCommands = {
-  // Group DMs over SMPL records (architecture §27.2), rendered by the chat
-  // window's group mode until E2.6 replaces them.
-  listDms: () => invoke<DmConversation[]>("list_dms"),
-  acceptDmInvite: (recordKey: string) =>
-    invoke<void>("accept_dm_invite", { recordKey }),
-  declineDmInvite: (recordKey: string) =>
-    invoke<void>("decline_dm_invite", { recordKey }),
-  sendDmMessage: (recordKey: string, body: string, idempotencyKey?: string) =>
-    invoke<void>("send_dm_message", {
-      recordKey,
-      body,
-      // Phase 8 — idempotency key dedupes click-spam.
-      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
-    }),
-  getDmMessages: (recordKey: string, limit: number) =>
-    invoke<DmMessageRecord[]>("get_dm_messages", { recordKey, limit }),
-
   // Strand Relay Network (architecture §13)
   volunteerRelay: (friendPublicKey: string) =>
     invoke<void>("volunteer_relay", { friendPublicKey }),

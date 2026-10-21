@@ -12,15 +12,8 @@ use std::sync::Arc;
 use rekindle_codec::capnp_codec::direct::DirectBody;
 
 use crate::state::AppState;
-use rekindle_db::Db;
 
-pub(crate) async fn handle_dm_payload(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    pool: &Db,
-    sender_hex: &str,
-    body: DirectBody,
-) {
+pub(crate) fn handle_dm_payload(state: &Arc<AppState>, sender_hex: &str, body: DirectBody) {
     match body {
         DirectBody::DmVideoFragment(fragment) => {
             // W11.4 — accumulate fragments and emit a `videoFrame`
@@ -43,16 +36,7 @@ pub(crate) async fn handle_dm_payload(
                 .dm_video_reassembly
                 .record_fragment(sender_hex, fragment)
             {
-                // Phase 13 — assembled-frame event now flows through
-                // DmDeps::emit_event(DmEvent::VideoFrameAssembled); the
-                // adapter handles the base64 + json layout for the
-                // `dm-video-frame` Tauri emit.
-                let adapter = crate::services::dm_adapter::DmAdapter::new(
-                    Arc::clone(state),
-                    app_handle.clone(),
-                    pool.clone(),
-                );
-                rekindle_dm::video::dispatch_assembled_frame(&*adapter, sender_hex, frame);
+                crate::services::dm::video::deliver_assembled_frame(state, sender_hex, frame);
             }
         }
         _ => {

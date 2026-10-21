@@ -38,7 +38,6 @@ pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchest
 pub mod community_views_runtime; // Phase 23.C — community list/detail DTO mappers lifted from commands/community/crud.rs.
 pub mod cross_device_sync;
 pub mod dm;
-pub mod dm_adapter; // Phase 13 — DmDeps + DmMekCache impls.
 pub mod dm_runtime; // Phase 23.C — DM video-frame command orchestration lifted from commands/dm.rs.
 pub mod files_adapter; // Phase 15 — FilesDeps impl + Tier-9 facades.
 pub mod gossip_adapter; // Phase 20.e-REDO — GossipDeps impl for mesh broadcast.

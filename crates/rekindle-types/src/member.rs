@@ -89,21 +89,3 @@ mod tests {
         assert!(!json.contains("badges"));
     }
 }
-
-/// One participant in a group DM.
-///
-/// Tier 1 because `rekindle-dm` (which mints the invite) and the wire
-/// that carried it each had a field-identical copy — `pseudonym`,
-/// `subkey`, `public_key` — so the wire form and the domain form could
-/// drift with nothing to catch it. `camelCase` because `rekindle-dm`
-/// serialises it that way. (The transport's postcard copy went with its
-/// `GroupDmInviteRequest` frame, plan E2.3.)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GroupDmParticipant {
-    pub pseudonym: String,
-    /// Slot index this participant writes to in the group's SMPL record.
-    pub subkey: u32,
-    /// Hex-encoded Ed25519 identity public key, for signature checks.
-    pub public_key: String,
-}

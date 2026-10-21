@@ -12,7 +12,6 @@ import CommunityListCompact from "../components/buddy-list/CommunityListCompact"
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
 import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
-import DmInviteModal from "../components/buddy-list/DmInviteModal";
 import DeepLinkConsentDialog from "../components/buddy-list/DeepLinkConsentDialog";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
@@ -32,7 +31,6 @@ import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handl
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import CallController from "../components/voice/CallController";
 import { startEventStream } from "../ipc/channels";
-import { subscribeDmInvites } from "../handlers/dm.handlers";
 import { handleHydrateRelayState } from "../actions/relay.actions";
 import { hydrateState } from "../stores/hydrate";
 import {
@@ -85,7 +83,6 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeDeepLinkHandler());
     // Reviews of actions the backend began, in the router root's dialog.
     unlisteners.push(subscribeBackendIntents());
-    unlisteners.push(subscribeDmInvites());
     void startEventStream(() => void hydrateState());
     void refreshMissedCalls();
 
@@ -157,7 +154,6 @@ const BuddyListWindow: Component = () => {
         onClose={() => setBuddyListUI("showJoinCommunity", false)}
       />
       <CallController />
-      <DmInviteModal />
       <DeepLinkConsentDialog />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}

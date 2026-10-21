@@ -36,7 +36,6 @@ const CRYPTO_ALLOWED: &[&str] = &[
     "rekindle-ipc",
     // ── Pending sweep — see ai-assisted-contributions.md §5 ──
     "rekindle-crypto",
-    "rekindle-dm",
     "rekindle-calls",
     "rekindle-voice",
     "rekindle-node",

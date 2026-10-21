@@ -34,17 +34,6 @@ const HANDLER = `
         statusMessage: null, gameInfo: null, group: null, unreadCount: 0,
         lastSeenAt: null, friendshipState: "accepted", handshakeError: null, handshakeRetrying: false,
       }];
-    case "list_dms":
-      return [{
-        recordKey: "${GROUP}", isGroup: true, initiatorPublicKey: "${BOB}",
-        initiatorPseudonym: "Carol", mySubkey: 1, participants: [], mekGeneration: 0,
-        createdAt: 1, lastMessageAt: null,
-      }];
-    case "get_dm_messages":
-      return [{
-        id: 1, senderPseudonym: "Carol", body: "hello group", timestamp: 1,
-        sequence: 1, mekGeneration: 0,
-      }];
     case "get_message_history":
     case "get_community_details":
     case "get_pending_requests":
@@ -111,10 +100,11 @@ test("the 1:1 mode reports its draft and keeps no typing timer", async ({ page }
   expect(await typingReports(page)).toEqual([true, true, false]);
 });
 
-test("the group mode renders the group's rows and no call controls", async ({ page }) => {
+// The group mode is empty until E2.6 slice G3 wires the group requests.
+test("the group mode renders an empty group and no call controls", async ({ page }) => {
   await preloadMocks(page, "chat-VLD0GGGGGGGGGGGGGGGG", HANDLER);
   await page.goto(`/chat?group=${encodeURIComponent(GROUP)}`);
-  await expect(page.getByText("hello group")).toBeVisible();
-  await expect(page.getByText("Chat — Carol (group)")).toBeVisible();
+  await expect(page.getByText("Group chats are not available yet.")).toBeVisible();
+  await expect(page.getByText("Chat — Group DM")).toBeVisible();
   await expect(page.locator(".chat-call-btn")).toHaveCount(0);
 });

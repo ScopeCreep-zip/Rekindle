@@ -177,26 +177,6 @@ pub struct AssembledFrame {
     pub data: Vec<u8>,
 }
 
-/// Dispatch a completed `AssembledFrame` to the frontend via
-/// `DmEvent::VideoFrameAssembled`. Centralizes the event-emit shape
-/// so the message_service dispatcher doesn't need to know the wire
-/// format (base64 + JSON layout is the adapter's concern).
-pub fn dispatch_assembled_frame<D: crate::deps::DmDeps + ?Sized>(
-    deps: &D,
-    sender_public_key_hex: &str,
-    frame: AssembledFrame,
-) {
-    deps.emit_event(crate::deps::DmEvent::VideoFrameAssembled {
-        sender_public_key_hex: sender_public_key_hex.to_string(),
-        stream_id: frame.stream_id,
-        frame_seq: frame.frame_seq,
-        keyframe: frame.keyframe,
-        codec: frame.codec,
-        timestamp: frame.timestamp,
-        data: frame.data,
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

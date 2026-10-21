@@ -1,73 +1,9 @@
-//! Tauri commands for group DMs over SMPL records (architecture §27.2),
-//! which ChatWindow's group mode renders until E2.6 replaces them, and the
-//! DM video frame commands (E4.1, E4.3.8).
-//!
-//! The orchestration lives in `services/dm/`. These commands are thin
-//! adapters for the frontend.
+//! The DM video frame commands (E4.1, E4.3.8). The group-DM commands are
+//! E2.6 slice G3's, over `rekindle-dm`.
 
 use tauri::State;
 
-use crate::services::dm;
 use crate::state::SharedState;
-
-#[tauri::command]
-pub async fn list_dms(
-    state: State<'_, SharedState>,
-) -> Result<Vec<dm::store::DmConversation>, String> {
-    let pool = state.db.current()?;
-    Ok(dm::list_dm_conversations(state.inner(), &pool).await)
-}
-
-#[tauri::command]
-pub async fn accept_dm_invite(
-    record_key: String,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    dm::accept_dm_invite(state.inner(), &pool, &record_key).await
-}
-
-#[tauri::command]
-pub async fn decline_dm_invite(
-    record_key: String,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    dm::decline_dm_invite(state.inner(), &pool, &record_key).await
-}
-
-#[tauri::command]
-pub async fn send_dm_message(
-    record_key: String,
-    body: String,
-    idempotency_key: uuid::Uuid,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    // Phase 5 — gate writes on lifecycle.
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    // Phase 8 — idempotency dedupes click-spam.
-    let state_for_cache = state.inner().clone();
-    let pool_for_cache = pool.clone();
-    state
-        .idempotency
-        .wrap(idempotency_key, || async move {
-            dm::send_dm_message(&state_for_cache, &pool_for_cache, &record_key, &body).await
-        })
-        .await
-}
-
-#[tauri::command]
-pub async fn get_dm_messages(
-    record_key: String,
-    limit: Option<i64>,
-    state: State<'_, SharedState>,
-) -> Result<Vec<dm::store::DmMessageRecord>, String> {
-    let pool = state.db.current()?;
-    let limit = limit.unwrap_or(200);
-    Ok(dm::load_dm_messages(state.inner(), &pool, &record_key, limit).await)
-}
 
 /// W11.4 (P6.2) — send one encoded video frame to a 1:1 DM peer.
 ///

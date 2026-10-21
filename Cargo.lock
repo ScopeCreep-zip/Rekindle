@@ -7453,24 +7453,13 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "hex",
- "hkdf 0.12.4",
  "parking_lot 0.12.5",
- "rekindle-asql",
  "rekindle-codec",
- "rekindle-crypto",
- "rekindle-db",
- "rekindle-records",
  "rekindle-secrets",
  "rekindle-types",
  "rekindle-utils",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.10.9",
  "thiserror 2.0.18",
  "tokio",
- "tracing",
- "zeroize",
 ]
 
 [[package]]

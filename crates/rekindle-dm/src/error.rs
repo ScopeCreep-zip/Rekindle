@@ -1,63 +1,56 @@
 use thiserror::Error;
 
+/// Why a group-DM operation was refused or failed.
 #[derive(Debug, Error)]
 pub enum DmError {
-    // --- Key derivation (MEK + slot keys) ---
-    #[error("invalid public key length: expected 32 bytes, got {0}")]
-    InvalidPublicKey(usize),
-    #[error("invalid secret key length: expected 32 bytes, got {0}")]
-    InvalidSecretKey(usize),
-    #[error("hkdf expand failed: {0}")]
-    Hkdf(String),
-
-    // --- Storage (SqliteDmStore) ---
+    /// A roster outside 3-8 members, a repeated member, or a member that is
+    /// not an identity key with two record keys.
+    #[error("invalid roster: {0}")]
+    InvalidRoster(String),
+    /// An empty group name or one past its bound.
+    #[error("invalid group name: {0}")]
+    InvalidName(String),
+    /// The invite's signature is not its creator's over its roster.
+    #[error("group invite signature does not verify")]
+    BadSignature,
+    /// The sender (or we) is not on the group's roster.
+    #[error("{0} is not on the group's roster")]
+    NotOnRoster(String),
+    /// We hold no such group (or no such pending invite).
+    #[error("unknown group {0}")]
+    UnknownGroup(String),
+    /// We already hold this group.
+    #[error("group {0} is already held")]
+    AlreadyMember(String),
+    /// A frame or key at an older epoch than the sender's current key.
+    #[error("epoch {got} is older than the sender's current {current}")]
+    StaleEpoch { got: u32, current: u32 },
+    /// A different key for an epoch we already hold.
+    #[error("a second key for epoch {0}")]
+    ConflictingKey(u32),
+    /// A frame at an epoch whose key we do not hold yet.
+    #[error("no key of {member} for epoch {epoch}")]
+    KeyMissing { member: String, epoch: u32 },
+    /// Our key's epochs are exhausted.
+    #[error("sending key epochs exhausted")]
+    EpochExhausted,
+    /// The cipher failed or a ciphertext did not open.
+    #[error("crypto: {0}")]
+    Crypto(String),
+    /// The host's storage failed.
     #[error("storage: {0}")]
     Storage(String),
-    #[error("sqlite: {0}")]
-    Sqlite(String),
-    #[error("serialize: {0}")]
-    Serialize(String),
-
-    // --- Session lifecycle ---
-    #[error("session not found for peer {0}")]
-    SessionNotFound(String),
-    #[error("invalid session state: {0}")]
-    InvalidSessionState(String),
-    #[error("identity not loaded")]
-    IdentityNotLoaded,
-    #[error("MEK chain unavailable for record {0}")]
-    MekChainUnavailable(String),
-
-    // --- Encryption / decryption ---
-    #[error("encrypt failed: {0}")]
-    EncryptFailed(String),
-    #[error("decrypt failed: {0}")]
-    DecryptFailed(String),
-    #[error("envelope decode failed: {0}")]
-    EnvelopeDecode(String),
-
-    // --- Transport (via DmTransportDeps) ---
-    #[error("transport: {0}")]
-    Transport(String),
-    #[error("routing context unavailable")]
-    RoutingContextUnavailable,
-    #[error("peer route blob unavailable for {0}")]
-    PeerRouteUnavailable(String),
-
-    // --- Validation ---
-    #[error("invalid input: {0}")]
-    InvalidInput(String),
 }
 
 impl DmError {
-    /// Convenience constructor for storage-layer errors that arrive as
-    /// strings from the rusqlite/tokio-rusqlite boundary.
+    /// A storage failure from the host.
     pub fn storage<S: Into<String>>(s: S) -> Self {
         DmError::Storage(s.into())
     }
+}
 
-    /// Convenience constructor for transport-layer errors.
-    pub fn transport<S: Into<String>>(s: S) -> Self {
-        DmError::Transport(s.into())
+impl From<rekindle_types::error::CryptoError> for DmError {
+    fn from(e: rekindle_types::error::CryptoError) -> Self {
+        DmError::Crypto(e.to_string())
     }
 }

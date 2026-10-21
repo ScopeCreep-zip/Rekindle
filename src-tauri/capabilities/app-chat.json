@@ -6,11 +6,8 @@
     "chat-*"
   ],
   "permissions": [
-    "allow-get-dm-messages",
     "allow-get-message-history",
-    "allow-list-dms",
     "allow-mark-read",
-    "allow-send-dm-message",
     "allow-send-message",
     "allow-outbox-retry",
     "allow-outbox-discard",

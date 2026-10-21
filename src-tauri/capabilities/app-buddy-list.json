@@ -7,7 +7,6 @@
   ],
   "permissions": [
     "allow-open-external-url",
-    "allow-accept-dm-invite",
     "allow-accept-request",
     "allow-add-friend-from-code",
     "allow-get-friend-code",
@@ -19,7 +18,6 @@
     "allow-retry-handshake",
     "allow-create-community",
     "allow-create-friend-group",
-    "allow-decline-dm-invite",
     "allow-generate-invite",
     "allow-get-communities",
     "allow-get-game-status",
@@ -32,7 +30,6 @@
     "allow-confirm-deep-link",
     "allow-dismiss-deep-link",
     "allow-launch-game-to-server",
-    "allow-list-dms",
     "allow-list-received-relay-offers",
     "allow-list-volunteered-relay-friends",
     "allow-logout",

@@ -117,8 +117,6 @@ labels! {
     FRAME_SIG_V3 = "rekindle-frame-sig-v3";
 
     // ── 1:1 and group DMs ────────────────────────────────────────────
-    /// HKDF info: group-DM MEK forward ratchet step.
-    DM_MEK_RATCHET = "rekindle-dm-ratchet-v1";
     /// AEAD associated-data label: a group-DM `GroupContent`, sealed under
     /// its sender's group sending key (plan E2.6).
     GROUP_DM_CONTENT = "rekindle-group-dm-content-v1";

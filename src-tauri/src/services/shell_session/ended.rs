@@ -83,15 +83,12 @@ fn clear(state: &AppState) {
         nh.friend_list_dht_key = None;
         nh.mailbox_dht_key = None;
     }
-    // The pool closed these records with the session.
-    state.dm_leases.lock().clear();
     *state.personal_sync_lease.lock() = None;
     state.communities.write().clear();
     // Each cache is the identity's own keyed tree (plan E3.0a).
     state.file_caches.write().clear();
     state.pinned_attachments.write().clear();
     crate::state_helpers::clear_meks(state);
-    state.dm_mek_cache.lock().clear();
     state.dedup_cache.lock().clear();
     state.voice_sender_keys.clear();
     tracing::info!("session state cleared — node still running");
