@@ -36,6 +36,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::chat::mark_read,
         // friends
         commands::friends::add_friend_from_code,
+        commands::friends::get_friend_code,
+        commands::friends::rotate_friend_token,
         commands::friends::remove_friend,
         commands::friends::accept_request,
         commands::friends::get_friends,

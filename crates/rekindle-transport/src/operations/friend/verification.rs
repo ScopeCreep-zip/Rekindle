@@ -38,26 +38,6 @@ pub fn safety_number(host: &dyn FriendHost, peer: &str) -> Option<String> {
     Some(SafetyNumber::new(&owner, &theirs).digits())
 }
 
-/// `scannable` as a QR code: one string per row, `1` a dark module.
-///
-/// # Errors
-/// `Failed` when the bytes do not fit a QR code (they always do: the form
-/// is 74 bytes).
-fn qr_rows(scannable: &[u8]) -> Result<Vec<String>, FriendError> {
-    let code = qrcode::QrCode::new(scannable)
-        .map_err(|e| FriendError::Failed(format!("safety number QR: {e}")))?;
-    let width = code.width();
-    Ok(code
-        .to_colors()
-        .chunks(width)
-        .map(|row| {
-            row.iter()
-                .map(|c| if *c == qrcode::Color::Dark { '1' } else { '0' })
-                .collect()
-        })
-        .collect())
-}
-
 /// Our safety number with `peer`, its QR, and whether we verified them.
 ///
 /// # Errors
@@ -74,7 +54,8 @@ pub async fn view(host: &dyn FriendHost, peer: &str) -> Result<SafetyNumberView,
     Ok(SafetyNumberView {
         peer_key: peer.to_string(),
         digits: number.digits(),
-        qr_rows: qr_rows(&scannable)?,
+        // The form is 74 bytes, which always fits a QR code.
+        qr_rows: super::qr::rows(&scannable, "safety number")?,
         scannable,
         verified: row.as_ref().is_some_and(|r| r.verified),
         verified_at: row.as_ref().and_then(|r| r.verified_at),
@@ -212,21 +193,6 @@ pub(crate) async fn acknowledge_key_change(
 
 #[cfg(test)]
 mod tests {
-    use super::qr_rows;
-
-    #[test]
-    fn the_scannable_form_fits_a_square_qr() {
-        let number = rekindle_crypto::SafetyNumber::new(&[1; 32], &[2; 32]);
-        let rows = qr_rows(&number.scannable()).unwrap();
-        assert!(rows.len() >= 21, "a QR code is at least 21 modules wide");
-        assert!(rows.iter().all(|row| row.len() == rows.len()));
-        assert!(rows
-            .iter()
-            .all(|row| row.chars().all(|c| c == '0' || c == '1')));
-        // The finder pattern's corner module is dark.
-        assert!(rows[0].starts_with('1'));
-    }
-
     /// Withdrawing and refusing go through an unacknowledged key change;
     /// content, typing and session openers do not.
     #[test]

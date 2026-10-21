@@ -139,6 +139,8 @@ async fn route(
         | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::FriendAddFromInvite { .. }
         | IpcRequest::FriendInviteCreate
+        | IpcRequest::FriendCode
+        | IpcRequest::FriendTokenRotate
         | IpcRequest::FriendInviteList
         | IpcRequest::FriendInviteCancel { .. }
         | IpcRequest::FriendBlock { .. }

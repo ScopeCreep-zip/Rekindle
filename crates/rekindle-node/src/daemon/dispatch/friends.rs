@@ -75,6 +75,8 @@ pub(crate) async fn route(
             done(friend::from_invite(&host, &invite).await)
         }
         IpcRequest::FriendInviteCreate => answer(friend::create_invite(&host).await),
+        IpcRequest::FriendCode => answer(friend::code::own(&host).await),
+        IpcRequest::FriendTokenRotate => answer(friend::code::rotate_token(&host).await),
         IpcRequest::FriendInviteList => answer(friend::invites(&host).await),
         IpcRequest::FriendInviteCancel { invite_id } => {
             done(friend::cancel_invite(&host, &invite_id).await)

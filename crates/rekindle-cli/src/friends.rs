@@ -4,9 +4,9 @@
 //! (`helpers::send`).
 
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_types::dto::friends::SafetyNumberView;
+use rekindle_types::dto::friends::{FriendCodeView, SafetyNumberView};
 
-use crate::cli::{FriendCmd, FriendInviteCmd, GroupCmd};
+use crate::cli::{FriendCmd, FriendCodeCmd, FriendInviteCmd, GroupCmd};
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
@@ -47,6 +47,7 @@ pub async fn dispatch(
             public_key: friend.clone(),
             nickname: name.clone(),
         },
+        FriendCmd::Code { action } => return friend_code(client, action.as_ref(), mode).await,
         FriendCmd::Invite(invite) => invite_request(invite),
         FriendCmd::Group(group) => group_request(group),
         FriendCmd::ResetSession { friend } => IpcRequest::SessionResetStart {
@@ -127,6 +128,27 @@ async fn list(client: &DaemonClient, status: Option<&str>, mode: OutputMode) -> 
         })
         .unwrap_or_default();
     table::print_table(&["Name", "Status", "Key", "Friendship"], &rows, mode)
+}
+
+/// `friend code [rotate]`: our friend code (a new one after a rotation,
+/// which the host reviews) and its QR.
+async fn friend_code(
+    client: &DaemonClient,
+    action: Option<&FriendCodeCmd>,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match action {
+        None => IpcRequest::FriendCode,
+        Some(FriendCodeCmd::Rotate) => IpcRequest::FriendTokenRotate,
+    };
+    let value = helpers::send(client, request).await?;
+    if mode.is_structured() {
+        return format::print_structured(&value, mode);
+    }
+    let view: FriendCodeView = serde_json::from_value(value)?;
+    format::print_text(&view.url)?;
+    format::print_text("")?;
+    format::print_text(&qr_text(&view.qr_rows))
 }
 
 /// `friend safety-number`: the 60 digits in twelve groups of five (four to

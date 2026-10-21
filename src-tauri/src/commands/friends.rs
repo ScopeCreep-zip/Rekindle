@@ -5,7 +5,8 @@
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::friends::{
-    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest, SafetyNumberView,
+    BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
+    SafetyNumberView,
 };
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -33,6 +34,23 @@ pub async fn add_friend_from_code(
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
     host_call::call(&state, IpcRequest::FriendAddFromCode { code, message }).await
+}
+
+/// Our friend code and its QR (`IpcRequest::FriendCode`).
+#[tauri::command]
+pub async fn get_friend_code(
+    state: State<'_, SharedState>,
+) -> Result<Done<FriendCodeView>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendCode).await
+}
+
+/// Mint a new friend-request token; codes already shared stop working
+/// (`IpcRequest::FriendTokenRotate`).
+#[tauri::command]
+pub async fn rotate_friend_token(
+    state: State<'_, SharedState>,
+) -> Result<Done<FriendCodeView>, CommandError> {
+    host_call::call(&state, IpcRequest::FriendTokenRotate).await
 }
 
 /// Remove a friend (`IpcRequest::FriendRemove`).

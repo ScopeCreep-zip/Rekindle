@@ -87,6 +87,13 @@ pub enum FriendCmd {
         name: Option<String>,
     },
 
+    /// Our friend code and its QR; `rotate` mints a new one, and codes
+    /// already shared stop working.
+    Code {
+        #[command(subcommand)]
+        action: Option<FriendCodeCmd>,
+    },
+
     /// Friend invite links.
     #[command(subcommand)]
     Invite(FriendInviteCmd),
@@ -125,6 +132,14 @@ pub enum FriendCmd {
         #[arg(long, short = 'f')]
         friend: String,
     },
+}
+
+/// Friend code subcommands.
+#[derive(Subcommand)]
+pub enum FriendCodeCmd {
+    /// Mint a new request token: codes already shared stop working,
+    /// friends are untouched.
+    Rotate,
 }
 
 /// Friend invite link subcommands.

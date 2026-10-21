@@ -7,6 +7,7 @@
 mod add;
 mod answer;
 mod blocked;
+pub mod code;
 mod edit;
 mod error;
 mod host;
@@ -16,6 +17,7 @@ mod invites;
 mod list;
 mod list_record;
 pub(crate) mod presence_key;
+mod qr;
 mod remove;
 mod rotate;
 pub mod session_reset;

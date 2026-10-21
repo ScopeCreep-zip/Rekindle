@@ -65,6 +65,13 @@ pub(super) async fn selection(
             };
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::CancelInvite);
         }
+        IpcRequest::FriendTokenRotate => {
+            // Every code already shared stops working; friends are untouched.
+            s.subject = Subject::Named {
+                name: "your friend code".into(),
+            };
+            s.reversibility = Reversibility::Never;
+        }
         IpcRequest::FriendInviteCancel { invite_id } => {
             s.subject = Subject::Named {
                 name: invite_id.clone(),

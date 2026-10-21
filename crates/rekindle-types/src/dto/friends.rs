@@ -115,6 +115,22 @@ pub struct InviteCreated {
     pub expires_at: i64,
 }
 
+/// Our friend code (plan E2.5, D17): what `FriendCode` and
+/// `FriendTokenRotate` answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FriendCodeView {
+    /// `rekindle://add/<public key>/<profile key>/<token>`.
+    pub url: String,
+    pub public_key: String,
+    pub profile_key: String,
+    /// The friend-request token the code carries.
+    pub token: String,
+    /// The code as a QR code: one string per row, `1` a dark module,
+    /// without the quiet zone.
+    pub qr_rows: Vec<String>,
+}
+
 /// Our safety number with a peer and whether we verified it (plan E2.3):
 /// what `IdentitySafetyNumber` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

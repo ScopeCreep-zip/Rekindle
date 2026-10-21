@@ -123,6 +123,12 @@ pub enum IpcRequest {
     FriendInviteList,
     /// Cancel an open invite.
     FriendInviteCancel { invite_id: String },
+    /// Our friend code, its parts and its QR (`dto::friends::FriendCodeView`,
+    /// plan E2.5 D17).
+    FriendCode,
+    /// Mint a new friend-request token: codes carrying the old one stop
+    /// working and friends are untouched (`dto::friends::FriendCodeView`).
+    FriendTokenRotate,
     /// Block `public_key` (our profile moves to a new key).
     FriendBlock { public_key: String },
     /// Unblock `public_key`.

@@ -10,6 +10,8 @@
     "allow-accept-dm-invite",
     "allow-accept-request",
     "allow-add-friend-from-code",
+    "allow-get-friend-code",
+    "allow-rotate-friend-token",
     "allow-add-friend-from-invite",
     "allow-block-user",
     "allow-cancel-invite",

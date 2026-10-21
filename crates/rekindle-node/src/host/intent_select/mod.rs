@@ -77,6 +77,7 @@ pub(crate) async fn select(
         | IpcRequest::FriendCancelRequest { .. }
         | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::FriendInviteCreate
+        | IpcRequest::FriendTokenRotate
         | IpcRequest::FriendInviteCancel { .. }
         | IpcRequest::FriendBlock { .. }
         | IpcRequest::FriendUnblock { .. }
@@ -205,6 +206,7 @@ pub(crate) async fn select(
         | IpcRequest::IdentityList
         | IpcRequest::IdentityShow
         | IpcRequest::PrekeyStatus
+        | IpcRequest::FriendCode
         | IpcRequest::PresenceGet
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::AuditVerify

@@ -121,6 +121,8 @@ pub enum IntentKind {
     RejectRequest,
     // Consequential: Relationships (others notified)
     RemoveFriend,
+    // Consequential: Withdrawing reach you gave out
+    RotateFriendToken,
     // Consequential: Membership
     LeaveCommunity,
     // Consequential: Moderation (reversible)
@@ -343,6 +345,7 @@ impl IntentKind {
             | Self::MuteCallerTemp
             | Self::RejectRequest
             | Self::RemoveFriend
+            | Self::RotateFriendToken
             | Self::LeaveCommunity
             | Self::RemoveTimeout
             | Self::TimeoutMember

@@ -102,6 +102,7 @@ impl IpcRequest {
             | Self::FriendRequests
             | Self::FriendInviteList
             | Self::FriendBlockedList
+            | Self::FriendCode
             | Self::IdentitySafetyNumber { .. } => Some(C::FriendsRead),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
@@ -111,6 +112,7 @@ impl IpcRequest {
             | Self::FriendRetryHandshake { .. }
             | Self::FriendAddFromInvite { .. }
             | Self::FriendInviteCreate
+            | Self::FriendTokenRotate
             | Self::FriendInviteCancel { .. }
             | Self::FriendBlock { .. }
             | Self::FriendUnblock { .. }

@@ -113,6 +113,7 @@ impl IntentKind {
             | Self::CancelRequest
             | Self::Logout
             | Self::RemoveFriend
+            | Self::RotateFriendToken
             | Self::LeaveCommunity
             | Self::RemoveTimeout
             | Self::TimeoutMember
@@ -296,6 +297,7 @@ impl IntentKind {
             | Self::MuteCallerTemp
             | Self::RejectRequest
             | Self::RemoveFriend
+            | Self::RotateFriendToken
             | Self::LeaveCommunity
             | Self::RemoveTimeout
             | Self::TimeoutMember

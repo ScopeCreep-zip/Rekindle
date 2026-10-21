@@ -12,7 +12,8 @@ use std::path::PathBuf;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
-    BlockedUser, Friend, InviteCreated, OutgoingInvite, PendingRequest, SafetyNumberView,
+    BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
+    SafetyNumberView,
 };
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
 use rekindle_types::dto::presence::{OwnGame, OwnPresenceView};
@@ -239,6 +240,19 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             invite_id: "3f2a7c1e-0000-4000-8000-000000000001".into(),
             created_at: 1_700_000_000_000,
             expires_at: 1_700_604_800_000,
+        }),
+    );
+    add(
+        "friends.friendCode",
+        to(FriendCodeView {
+            url: format!(
+                "rekindle://add/{}/VLD0:abc/abcdefghijklmnopqrstuvwx2q",
+                pk('a')
+            ),
+            public_key: pk('a'),
+            profile_key: "VLD0:abc".into(),
+            token: "abcdefghijklmnopqrstuvwx2q".into(),
+            qr_rows: vec!["101".into(), "010".into(), "101".into()],
         }),
     );
     add(

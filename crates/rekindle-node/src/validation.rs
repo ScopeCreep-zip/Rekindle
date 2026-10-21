@@ -323,6 +323,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests
         | IpcRequest::FriendInviteCreate
+        | IpcRequest::FriendCode
+        | IpcRequest::FriendTokenRotate
         | IpcRequest::FriendInviteList
         | IpcRequest::FriendBlockedList
         | IpcRequest::FriendGroupDelete { group_id: _ }

@@ -44,6 +44,8 @@ impl IpcRequest {
                 .field("invite_len", &invite.len())
                 .finish(),
             Self::FriendInviteCreate => write!(f, "FriendInviteCreate"),
+            Self::FriendCode => write!(f, "FriendCode"),
+            Self::FriendTokenRotate => write!(f, "FriendTokenRotate"),
             Self::FriendInviteList => write!(f, "FriendInviteList"),
             Self::FriendInviteCancel { invite_id } => f
                 .debug_struct("FriendInviteCancel")

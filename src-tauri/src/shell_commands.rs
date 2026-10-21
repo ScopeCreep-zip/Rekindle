@@ -51,6 +51,11 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "add_friend_from_code",
         HostCall::Request("FriendAddFromCode"),
     ),
+    ("get_friend_code", HostCall::Request("FriendCode")),
+    (
+        "rotate_friend_token",
+        HostCall::Request("FriendTokenRotate"),
+    ),
     ("remove_friend", HostCall::Request("FriendRemove")),
     ("accept_request", HostCall::Request("FriendAccept")),
     ("reject_request", HostCall::Request("FriendReject")),

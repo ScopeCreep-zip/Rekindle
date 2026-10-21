@@ -127,6 +127,17 @@
     "statusMessage": null,
     "unreadCount": 0
   },
+  "friends.friendCode": {
+    "profileKey": "VLD0:abc",
+    "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "qrRows": [
+      "101",
+      "010",
+      "101"
+    ],
+    "token": "abcdefghijklmnopqrstuvwx2q",
+    "url": "rekindle://add/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/VLD0:abc/abcdefghijklmnopqrstuvwx2q"
+  },
   "friends.inviteCreated": {
     "createdAt": 1700000000000,
     "expiresAt": 1700604800000,
