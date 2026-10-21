@@ -22,6 +22,7 @@ pub mod event;
 pub mod expression;
 pub mod format_chars;
 pub mod friend;
+pub mod friend_code;
 pub mod friend_store;
 pub mod game_server;
 pub mod governance;

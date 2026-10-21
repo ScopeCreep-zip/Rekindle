@@ -93,6 +93,11 @@ validated!(
     CallId
 );
 validated!(
+    /// A friend-request token: 16 random bytes as 26 characters of
+    /// unpadded lowercase RFC 4648 base32 (plan E2.5, D17).
+    FriendRequestToken
+);
+validated!(
     /// A 16-byte random id as 32 lowercase hex: channel ids, attachment ids,
     /// invite codes.
     Hex16Id
@@ -235,6 +240,38 @@ pub fn call_id(s: &str) -> Result<CallId, KeyFormatError> {
 pub fn hex16_id(s: &str) -> Result<Hex16Id, KeyFormatError> {
     check_lower_hex(s, 32)?;
     Ok(Hex16Id(s.to_owned()))
+}
+
+/// Unpadded base32 length of 16 bytes.
+pub const FRIEND_REQUEST_TOKEN_LEN: usize = 26;
+
+/// Validate a friend-request token (26 of `a-z`, `2-7`). The last
+/// character carries 2 padding bits, which must be zero, so every token
+/// has exactly one spelling.
+pub fn friend_request_token(s: &str) -> Result<FriendRequestToken, KeyFormatError> {
+    if s.is_empty() {
+        return Err(KeyFormatError::Empty);
+    }
+    if s.len() != FRIEND_REQUEST_TOKEN_LEN {
+        return Err(KeyFormatError::BadLength {
+            expected: FRIEND_REQUEST_TOKEN_LEN,
+            got: s.len(),
+        });
+    }
+    let value = |b: u8| match b {
+        b'a'..=b'z' => Some(b - b'a'),
+        b'2'..=b'7' => Some(b - b'2' + 26),
+        _ => None,
+    };
+    for (index, b) in s.bytes().enumerate() {
+        let Some(v) = value(b) else {
+            return Err(KeyFormatError::BadChar { index });
+        };
+        if index == FRIEND_REQUEST_TOKEN_LEN - 1 && v & 0b11 != 0 {
+            return Err(KeyFormatError::BadChar { index });
+        }
+    }
+    Ok(FriendRequestToken(s.to_owned()))
 }
 
 /// Whether text may not carry `c`: a control character (`Cc`) or a hidden

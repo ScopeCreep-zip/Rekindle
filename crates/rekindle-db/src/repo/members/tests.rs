@@ -8,7 +8,7 @@ const OTHER: &str = "other-identity";
 fn conn_with_community() -> Connection {
     let conn = fixture::conn();
     conn.execute(
-        "INSERT INTO identity (public_key, created_at) VALUES (?1, 0)",
+        "INSERT INTO identity (public_key, created_at, friend_request_token) VALUES (?1, 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaa')",
         [OTHER],
     )
     .unwrap();

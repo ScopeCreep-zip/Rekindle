@@ -18,7 +18,7 @@ pub fn open_seeded_db() -> Connection {
     conn.execute_batch(rekindle_db::SCHEMA)
         .expect("apply schema");
     conn.execute(
-        "INSERT INTO identity (id, public_key, created_at) VALUES (1, 'owner_pk', 0)",
+        "INSERT INTO identity (id, public_key, created_at, friend_request_token) VALUES (1, 'owner_pk', 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaa')",
         [],
     )
     .expect("seed identity");

@@ -64,9 +64,11 @@ impl Party {
         let identity = Arc::new(Identity::generate());
         let db = crate::open(path, &[7; 32]).unwrap();
         let owner = crate::repo::identity_text(&identity.public_key_bytes());
-        db.call(move |c| crate::repo::identity::insert(c, &owner, "me", 0))
-            .await
-            .unwrap();
+        db.call(move |c| {
+            crate::repo::identity::insert(c, &owner, "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa")
+        })
+        .await
+        .unwrap();
         Self {
             db,
             local: LocalParty {
@@ -134,7 +136,7 @@ pub fn schema_conn(public_key: &str) -> Connection {
     conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
     conn.execute_batch(crate::SCHEMA).unwrap();
     conn.execute(
-        "INSERT INTO identity (public_key, display_name, created_at) VALUES (?1, 'me', 0)",
+        "INSERT INTO identity (public_key, display_name, created_at, friend_request_token) VALUES (?1, 'me', 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaa')",
         [public_key],
     )
     .unwrap();

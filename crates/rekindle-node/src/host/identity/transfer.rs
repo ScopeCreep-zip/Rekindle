@@ -109,7 +109,10 @@ async fn install_imported(
         entry.display_name.clone(),
         entry.created_at,
     );
-    db.call(move |conn| rekindle_db::repo::identity::insert(conn, &pk, &dn, at))
+    // A fresh token: the archive does not carry one, and a moved identity
+    // starts with a new friend code.
+    let token = rekindle_secrets::friend_token::mint().into_string();
+    db.call(move |conn| rekindle_db::repo::identity::insert(conn, &pk, &dn, at, &token))
         .await
         .map_err(|e| IdentityError::Storage(e.to_string()))?;
     if let Err(e) = db.close().await {

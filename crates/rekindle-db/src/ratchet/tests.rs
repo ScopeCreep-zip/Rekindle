@@ -162,7 +162,7 @@ async fn the_record_is_committed_before_any_send() {
         .db
         .call(move |c| {
             c.execute(
-                "INSERT INTO identity (public_key, created_at) VALUES (?1, 0)",
+                "INSERT INTO identity (public_key, created_at, friend_request_token) VALUES (?1, 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaa')",
                 [owner],
             )
         })

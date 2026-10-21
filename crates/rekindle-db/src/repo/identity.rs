@@ -41,19 +41,57 @@ impl OwnedRecord {
     }
 }
 
-/// Create the identity's row.
+/// Create the identity's row with its first friend-request token
+/// (`rekindle_secrets::friend_token::mint`, plan E2.5).
 ///
 /// # Errors
-/// The write failed (an identity with this key already exists).
+/// The write failed (an identity with this key already exists, or the
+/// token is not 26 base32 characters).
 pub fn insert(
     conn: &Connection,
     public_key: &str,
     display_name: &str,
     created_at: i64,
+    friend_request_token: &str,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO identity (public_key, display_name, created_at) VALUES (?1, ?2, ?3)",
-        params![public_key, display_name, created_at],
+        "INSERT INTO identity (public_key, display_name, created_at, friend_request_token) \
+         VALUES (?1, ?2, ?3, ?4)",
+        params![public_key, display_name, created_at, friend_request_token],
+    )?;
+    Ok(())
+}
+
+/// The friend-request token our friend code carries; `None` when there is
+/// no such identity.
+///
+/// # Errors
+/// The query failed.
+pub fn friend_request_token(
+    conn: &Connection,
+    public_key: &str,
+) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT friend_request_token FROM identity WHERE public_key = ?1",
+        params![public_key],
+        |row| row.get(0),
+    )
+    .optional()
+}
+
+/// Replace the friend-request token (a rotation): requests carrying the
+/// old one are dropped from now on.
+///
+/// # Errors
+/// The write failed (the token is not 26 base32 characters).
+pub fn set_friend_request_token(
+    conn: &Connection,
+    public_key: &str,
+    token: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE identity SET friend_request_token = ?2 WHERE public_key = ?1",
+        params![public_key, token],
     )?;
     Ok(())
 }

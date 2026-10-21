@@ -23,7 +23,13 @@ CREATE TABLE IF NOT EXISTS identity (
         OR (length(device_id) = 32 AND device_id NOT GLOB '*[^0-9a-f]*')),
     -- This device's prekey record (plan E2.4, DFLT(101)); its owner
     -- keypair is in the vault (`OwnerKey::Prekeys`).
-    prekey_record_key TEXT
+    prekey_record_key TEXT,
+    -- The friend-request token our friend code carries (plan E2.5, D17):
+    -- 16 random bytes, unpadded lowercase base32, minted with the identity
+    -- (`rekindle_secrets::friend_token::mint`); rotating it refuses requests
+    -- sent with the old code.
+    friend_request_token TEXT NOT NULL CHECK(length(friend_request_token) = 26
+        AND friend_request_token NOT GLOB '*[^a-z2-7]*')
 );
 
 CREATE TABLE IF NOT EXISTS friend_groups (

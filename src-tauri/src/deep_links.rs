@@ -147,6 +147,10 @@ pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
             return;
         }
         Ok(DeepLink::Pairing) => PendingAction::PairingRefused,
+        Ok(DeepLink::Add(_)) => {
+            tracing::warn!("deep link: friend code not yet submitted (E2.5 S3 part 3)");
+            return;
+        }
         Err(e) => {
             tracing::warn!(error = %e, "deep link rejected");
             return;

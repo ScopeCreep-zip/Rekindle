@@ -278,9 +278,11 @@ mod tests {
         let (vault, key) = VaultStore::create(&dir.join("pk.vault"), "pass").unwrap();
         *fixture.vault.lock() = Some(vault);
         let db = rekindle_db::open(&dir.join("pk.db"), key.as_bytes()).unwrap();
-        db.call(|c| rekindle_db::repo::identity::insert(c, "pk", "me", 0))
-            .await
-            .unwrap();
+        db.call(|c| {
+            rekindle_db::repo::identity::insert(c, "pk", "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa")
+        })
+        .await
+        .unwrap();
         fixture.db.set(db);
         (fixture, "pk".to_string())
     }

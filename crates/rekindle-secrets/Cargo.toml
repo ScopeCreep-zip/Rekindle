@@ -31,6 +31,10 @@ parking_lot = { workspace = true }
 # drop (audit C-1).
 chacha20 = { version = "0.9", features = [ "zeroize" ] }
 rand = { workspace = true }
+# `friend_token`: the request token's base32 spelling and its
+# constant-time comparison (plan E2.5, D17).
+data-encoding = "2"
+subtle = "2"
 zeroize = { version = "1", features = [ "derive" ] }
 
 [dev-dependencies]

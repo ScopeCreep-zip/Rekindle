@@ -238,7 +238,7 @@ mod tests {
     fn each_owner_has_its_own_chain() {
         let conn = fixture::conn();
         conn.execute(
-            "INSERT INTO identity (public_key, created_at) VALUES ('other', 0)",
+            "INSERT INTO identity (public_key, created_at, friend_request_token) VALUES ('other', 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaa')",
             [],
         )
         .unwrap();

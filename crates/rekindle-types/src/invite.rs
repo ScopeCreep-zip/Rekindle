@@ -173,6 +173,11 @@ const SCHEME_PREFIX: &str = "rekindle://";
 /// `the_worst_case_invite_url_fits_the_deep_link_cap` builds it).
 pub const MAX_FRIEND_INVITE_URL_LEN: usize = 12 * 1024;
 
+/// How long a friend invite is honoured after it is minted: 7 days, the
+/// one expiry every host and the UI use (plan E2.5, D17). It bounds the
+/// harvest window of a leaked invite (B11).
+pub const FRIEND_INVITE_TTL_SECS: u64 = 7 * 24 * 60 * 60;
+
 /// What an OS deep link asks for, before any network access.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DeepLink {
@@ -182,6 +187,8 @@ pub enum DeepLink {
     /// its signature and recency checked by the Host's review
     /// (`rekindle_transport::operations::friend::open_invite`).
     FriendInvite(String),
+    /// `rekindle://add/...`: a friend code, fully validated.
+    Add(crate::friend_code::FriendCode),
     /// `rekindle://pair?...`: link a new device. Never accepted from an OS
     /// deep link, because an attacker-supplied pairing URI would steer this
     /// device into pairing with the attacker; pairing codes are pasted or
@@ -198,6 +205,11 @@ pub enum DeepLinkError {
     TooLong { max: usize, got: usize },
     #[error(transparent)]
     CommunityInvite(#[from] InviteLinkError),
+    #[error(transparent)]
+    FriendCode(#[from] crate::friend_code::FriendCodeError),
+    /// `rekindle://` followed by anything but one base64url blob.
+    #[error("not a rekindle:// link this app opens")]
+    Unknown,
 }
 
 impl DeepLink {
@@ -211,14 +223,21 @@ impl DeepLink {
         if url.starts_with(PAIRING_PREFIX) {
             return Ok(Self::Pairing);
         }
-        if !url.starts_with(SCHEME_PREFIX) {
-            return Err(DeepLinkError::NotRekindle);
+        if url.starts_with(crate::friend_code::FRIEND_CODE_PREFIX) {
+            return Ok(Self::Add(crate::friend_code::FriendCode::parse(url)?));
         }
+        let Some(blob) = url.strip_prefix(SCHEME_PREFIX) else {
+            return Err(DeepLinkError::NotRekindle);
+        };
         if url.len() > MAX_FRIEND_INVITE_URL_LEN {
             return Err(DeepLinkError::TooLong {
                 max: MAX_FRIEND_INVITE_URL_LEN,
                 got: url.len(),
             });
+        }
+        let is_b64url = |b: u8| b.is_ascii_alphanumeric() || b == b'-' || b == b'_';
+        if blob.is_empty() || !blob.bytes().all(is_b64url) {
+            return Err(DeepLinkError::Unknown);
         }
         Ok(Self::FriendInvite(url.to_owned()))
     }
@@ -329,6 +348,30 @@ mod invite_link_tests {
             DeepLink::parse("https://x"),
             Err(DeepLinkError::NotRekindle)
         );
+        for other in [
+            "rekindle://",
+            "rekindle://settings/x",
+            "rekindle://a?b",
+            "rekindle://a.b",
+        ] {
+            assert_eq!(
+                DeepLink::parse(other),
+                Err(DeepLinkError::Unknown),
+                "{other}"
+            );
+        }
+        let code = format!(
+            "rekindle://add/{}/VLD0:{B64}/abcdefghijklmnopqrstuvwx2q",
+            "ab".repeat(32)
+        );
+        match DeepLink::parse(&code) {
+            Ok(DeepLink::Add(parsed)) => assert_eq!(parsed.to_url(), code),
+            other => panic!("{other:?}"),
+        }
+        assert!(matches!(
+            DeepLink::parse("rekindle://add/x"),
+            Err(DeepLinkError::FriendCode(_))
+        ));
         let at_cap = format!("rekindle://{}", "A".repeat(MAX_FRIEND_INVITE_URL_LEN - 11));
         assert_eq!(at_cap.len(), MAX_FRIEND_INVITE_URL_LEN);
         assert!(matches!(

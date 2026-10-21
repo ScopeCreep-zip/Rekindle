@@ -138,7 +138,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 98 (plan E2.5, D24): the send log `message_send_log` and the retry
 /// requests `retry_requests`/`retry_request_sends`.
-pub const SCHEMA_VERSION: i64 = 98;
+///
+/// 99 (plan E2.5, D17): `identity.friend_request_token`, the friend code's
+/// request token.
+pub const SCHEMA_VERSION: i64 = 99;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
