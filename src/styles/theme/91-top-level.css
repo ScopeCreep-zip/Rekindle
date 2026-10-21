@@ -173,56 +173,6 @@
     font-size: 12px;
   }
 
-  .dm-invite-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    padding: 12px 4px;
-  }
-
-  .dm-invite-empty {
-    color: var(--color-xfire-text-secondary);
-    font-size: 13px;
-    margin: 0;
-  }
-
-  .dm-invite-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 12px;
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 15%, transparent);
-    border-radius: 4px;
-    background: var(--color-xfire-bg-secondary);
-  }
-
-
-  .dm-invite-meta strong {
-    color: var(--color-xfire-text-primary);
-    font-size: 13px;
-  }
-
-  .dm-invite-kind {
-    color: var(--color-xfire-text-secondary);
-    font-size: 12px;
-  }
-
-  .dm-invite-key {
-    color: var(--color-xfire-text-secondary);
-    font-size: 11px;
-    font-family: monospace;
-    text-overflow: ellipsis;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-
-  .dm-invite-actions {
-    display: flex;
-    gap: 8px;
-    flex-shrink: 0;
-  }
-
   /* Consent prompts (deep-link consent): a question the user answers
    * explicitly. Its statement and the key to check are the `.sec-review`
    * card (`16-security-surfaces.css`); the error line is chrome. */

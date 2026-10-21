@@ -54,14 +54,6 @@ export type ChannelMessageEvent =
   | { dmSendStatus: DmSendStatus }
   | { dmHistoryGap: DmHistoryGap }
   | {
-      directConversationInvited: {
-        from: string;
-        recordKey: string;
-        initiatorPseudonym: string;
-        isGroup: boolean;
-      };
-    }
-  | {
       conversationFocusRequested: {
         peerKey: string;
         displayName: string;

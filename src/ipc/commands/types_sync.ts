@@ -286,27 +286,6 @@ export interface SearchResult {
   queryMs: number;
 }
 
-export interface DmConversation {
-  recordKey: string;
-  isGroup: boolean;
-  initiatorPublicKey: string;
-  initiatorPseudonym: string;
-  mySubkey: number;
-  participants: { pseudonym: string; subkey: number; publicKey: string }[];
-  mekGeneration: number;
-  createdAt: number;
-  lastMessageAt: number | null;
-}
-
-export interface DmMessageRecord {
-  id: number;
-  senderPseudonym: string;
-  body: string;
-  timestamp: number;
-  sequence: number;
-  mekGeneration: number;
-}
-
 /**
  * Phase 11 Tier 1 — payload pushed through the per-peer DM video
  * `Channel` (replaces the `dm-video-frame` event). Mirrors the Rust

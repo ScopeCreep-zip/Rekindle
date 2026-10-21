@@ -409,7 +409,6 @@
     padding: 6px 10px;
   }
 
-  .dm-invite-meta,
   .push-relay-meta {
     display: flex;
     flex-direction: column;

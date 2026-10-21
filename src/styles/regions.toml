@@ -502,10 +502,6 @@
 '.poll-card-answer' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
 '.poll-card-answer-count' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }
 '.poll-create-checkbox' = { on = ["--color-xfire-bg-panel"] }
-'.dm-invite-empty' = { on = ["--color-xfire-bg-panel"] }
-'.dm-invite-meta strong' = { on = ["--color-xfire-bg-secondary"] }
-'.dm-invite-kind' = { on = ["--color-xfire-bg-secondary"] }
-'.dm-invite-key' = { on = ["--color-xfire-bg-secondary"] }
 '.consent-dialog-error' = { on = ["--color-xfire-bg-panel"] }
 '.relay-section-subtitle' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.relay-row-badge' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
