@@ -55,7 +55,7 @@ pub async fn send_friend_accept(
         route_blob,
         mailbox_dht_key: own.mailbox_dht_key,
     });
-    let frame = super::frame::initiate_frame(host, to, bundle, &accept).await?;
+    let frame = super::frame::initiate_frame(host, to, bundle, &accept, 0).await?;
     handshake::enqueue_frame(host, to, &frame).await.map(drop)
 }
 

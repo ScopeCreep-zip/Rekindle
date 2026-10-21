@@ -173,7 +173,7 @@ pub async fn ratchet_frame_at(
                 && crate::operations::friend::state::is_accepted(host, to) =>
         {
             let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
-            return initiate_frame(host, to, bundle, body).await;
+            return initiate_frame(host, to, bundle, body, stream_seq).await;
         }
         Err(e) => return Err(ratchet_error(to, e)),
     };
@@ -185,7 +185,11 @@ pub async fn ratchet_frame_at(
 }
 
 /// Open a session with `to` from its `bundle`, carrying `first` (an accept,
-/// or any ratchet kind) as the init's encrypted first payload.
+/// or any ratchet kind) as the init's encrypted first payload, as entry
+/// `stream_seq` of our outbox stream to `to` (0: no stream entry). The seq
+/// rides in the content as in [`ratchet_frame_at`]: the peer acknowledges
+/// a stream entry by it, so a first message that dropped it would wait for
+/// a resend under the session it opened.
 ///
 /// # Errors
 /// `first` may not open a session, the bundle is not `to`'s, or the step
@@ -195,6 +199,7 @@ pub async fn initiate_frame(
     to: &str,
     bundle: PreKeyBundle,
     first: &DirectBody,
+    stream_seq: u64,
 ) -> Result<DmFrame, FriendError> {
     let first_type_id = first.type_id();
     if !first_type_id.is_first_payload() {
@@ -209,7 +214,7 @@ pub async fn initiate_frame(
         &local,
         &peer,
         bundle,
-        &content(host, first, ContentHint::Default, 0),
+        &content(host, first, ContentHint::Default, stream_seq),
         &ad_extra(first_type_id),
     )
     .await

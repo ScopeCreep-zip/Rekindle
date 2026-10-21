@@ -88,6 +88,7 @@ async fn session_pair(
         &hex::encode(owner),
         bundle,
         &text(1),
+        0,
     )
     .await
     .unwrap();
@@ -254,6 +255,7 @@ async fn a_rejection_with_no_first_contact_fails_visibly() {
         &hex::encode(bob.public_key_bytes()),
         bundle_of(&bob),
         &accept,
+        0,
     )
     .await
     .unwrap();

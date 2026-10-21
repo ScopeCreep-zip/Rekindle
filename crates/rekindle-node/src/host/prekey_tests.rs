@@ -82,7 +82,7 @@ async fn a_forged_prekey_rejection_leaves_the_pending_init() {
             route_blob: Vec::new(),
             mailbox_dht_key: String::new(),
         });
-        let sent = frame::initiate_frame(&friends, &bob_hex, bundle_of(&bob), &accept)
+        let sent = frame::initiate_frame(&friends, &bob_hex, bundle_of(&bob), &accept, 0)
             .await
             .unwrap();
         let FrameBody::PreKeyInit(init) = sent.body else {
@@ -195,7 +195,7 @@ async fn a_strangers_prekey_init_consumes_nothing() {
         mailbox_dht_key: String::new(),
     });
     for first in [accept, text(9)] {
-        let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle.clone(), &first)
+        let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle.clone(), &first, 0)
             .await
             .unwrap();
         receive(&friends, &wire(&sent).unwrap()).await;
@@ -217,10 +217,40 @@ async fn a_strangers_prekey_init_consumes_nothing() {
     // The same init from a friend does open the session and consume the
     // slot, so the stranger's was refused for who sent it.
     befriend(&host, owner, mallory).await;
-    let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle, &text(10))
+    let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle, &text(10), 0)
         .await
         .unwrap();
     receive(&friends, &wire(&sent).unwrap()).await;
     assert_ne!(prekey_counts(&host, owner).await, before);
     assert_eq!(history(&host, owner, mallory).await, 1);
+}
+
+/// Plan E2.5: a stream entry that opens a session (the first message after
+/// a rotation, or any send with no session) carries its seq in the init's
+/// content, so the friend acknowledges that copy; with seq 0 it was never
+/// acknowledged and its row waited for a resend, holding its stream.
+#[tokio::test]
+async fn a_first_message_keeps_its_stream_seq() {
+    let (dir, theirs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (host, owner) = ann(&dir).await;
+    let (other, bob) = ann(&theirs).await;
+    let (friends, sender) = (HostFriends::of(&host.ctx), HostFriends::of(&other.ctx));
+    befriend(&host, owner, bob).await;
+    let bundle = own_bundle(&host, owner).await;
+    let first = text(11);
+    let id = rekindle_transport::operations::dm::ack::acknowledged_id(&first).unwrap();
+    let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle, &first, 4)
+        .await
+        .unwrap();
+    receive(&friends, &wire(&sent).unwrap()).await;
+    let (o, b) = (hex::encode(owner), hex::encode(bob));
+    let seq = host
+        .ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::messages::received_stream_seq(conn, &o, &b, &id))
+        .await
+        .unwrap();
+    assert_eq!(seq, Some(4));
 }
