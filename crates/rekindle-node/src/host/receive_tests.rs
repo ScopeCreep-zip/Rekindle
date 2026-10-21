@@ -47,14 +47,16 @@ fn mentions(events: &[String], needle: &str) -> usize {
 }
 
 /// The rows `owner`'s retry queue holds.
-async fn queued(host: &Host) -> i64 {
+async fn queued(host: &Host, owner: [u8; 32]) -> usize {
+    let owner = hex::encode(owner);
     host.ctx
         .db
         .current()
         .unwrap()
-        .call(|conn| conn.query_row("SELECT COUNT(*) FROM pending_messages", [], |r| r.get(0)))
+        .call(move |conn| rekindle_db::repo::pending_messages::list(conn, &owner))
         .await
         .unwrap()
+        .len()
 }
 
 /// Ann and Bob, each the other's accepted friend, with the session Bob
@@ -91,7 +93,7 @@ async fn session_pair(
 #[tokio::test]
 async fn an_ephemeral_kind_leaves_no_unprocessed_row() {
     let (dir, theirs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
-    let (host, _owner, other, bob) = session_pair(&dir, &theirs).await;
+    let (host, owner, other, bob) = session_pair(&dir, &theirs).await;
     let mut events = other.ctx.journal.subscribe(None);
 
     let typing = DirectBody::Typing(Typing { typing: true });
@@ -111,7 +113,10 @@ async fn an_ephemeral_kind_leaves_no_unprocessed_row() {
         "it decrypted"
     );
     assert_eq!(unapplied(&other, bob).await, 0);
-    assert_eq!((queued(&host).await, queued(&other).await), (0, 0));
+    assert_eq!(
+        (queued(&host, owner).await, queued(&other, bob).await),
+        (0, 0)
+    );
 }
 
 /// Bob's ratchet message to Ann whose content is `content` (any bytes).
