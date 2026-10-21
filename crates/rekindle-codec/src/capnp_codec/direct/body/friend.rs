@@ -7,8 +7,8 @@ use crate::capnp_codec::direct::{
 };
 use crate::capnp_codec::CodecError;
 use crate::direct_capnp::{
-    friend_accept, friend_request, identity_rotated, pre_key_rejected, profile_key_rotated,
-    session_reset_decline, session_reset_request,
+    friend_accept, friend_request, friends_key, identity_rotated, pre_key_rejected,
+    profile_key_rotated, session_reset_decline, session_reset_request,
 };
 
 /// 0x0002 FriendRequest (sealed, by `app_call`). It carries no bundle:
@@ -206,6 +206,37 @@ impl IdentityRotated {
             new_identity: fixed(r.get_new_identity(), "new identity")?,
             sig_old: fixed(r.get_sig_old(), "old identity signature")?,
             sig_new: fixed(r.get_sig_new(), "new identity signature")?,
+        })
+    }
+}
+
+/// 0x0106 FriendsKey, inside the ratchet: the key our profile's STATUS and
+/// GAME_INFO subkeys are sealed under (plan E2.5).
+#[derive(Clone, PartialEq, Eq)]
+pub struct FriendsKey {
+    pub epoch: u32,
+    pub key: [u8; 32],
+}
+
+/// The key is never printed.
+impl std::fmt::Debug for FriendsKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FriendsKey")
+            .field("epoch", &self.epoch)
+            .finish_non_exhaustive()
+    }
+}
+
+impl FriendsKey {
+    pub(super) fn write(&self, mut b: friends_key::Builder<'_>) {
+        b.set_epoch(self.epoch);
+        b.set_key(&self.key);
+    }
+
+    pub(super) fn read(r: friends_key::Reader<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            epoch: r.get_epoch(),
+            key: fixed(r.get_key(), "friends key")?,
         })
     }
 }

@@ -88,12 +88,40 @@ pub fn handle_value_change<D: FriendPresenceDeps>(
     };
     for &subkey in subkeys {
         match subkey {
-            2 => handle_status_change(deps, &friend_key, value),
-            4 => handle_game_change(deps, &friend_key, value),
+            2 => {
+                if let Some(value) = opened(deps, &friend_key, subkey, value) {
+                    handle_status_change(deps, &friend_key, &value);
+                }
+            }
+            4 => {
+                if let Some(value) = opened(deps, &friend_key, subkey, value) {
+                    handle_game_change(deps, &friend_key, &value);
+                }
+            }
             6 => handle_route_change(deps, &friend_key, value),
             other => tracing::trace!(subkey = other, "unhandled presence subkey change"),
         }
     }
+}
+
+/// A friend's STATUS or GAME_INFO, opened under their friend-presence key
+/// (plan E2.5). One that does not open (no key yet, an old epoch, a forged
+/// or plaintext value) is dropped, never shown.
+fn opened<D: FriendPresenceDeps>(
+    deps: &D,
+    friend_key: &str,
+    subkey: u32,
+    value: &[u8],
+) -> Option<Vec<u8>> {
+    let Some(key) = deps.friend_presence_key(friend_key) else {
+        tracing::debug!(friend = %friend_key, subkey, "no presence key for friend; value dropped");
+        return None;
+    };
+    rekindle_secrets::friend_presence::open(&key, friend_key, subkey, value)
+        .map_err(|e| {
+            tracing::debug!(friend = %friend_key, subkey, error = %e, "presence value dropped");
+        })
+        .ok()
 }
 
 fn handle_status_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: &[u8]) {
@@ -250,8 +278,9 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     Ok(())
 }
 
-/// Publish our own status to profile subkey 2. Encodes the 9-byte
-/// `[status_byte, timestamp_be]` payload + writes via the adapter.
+/// Publish our own status to profile subkey 2: the 9-byte
+/// `[status_byte, timestamp_be]` payload, sealed under our friend-presence
+/// key (plan E2.5), written via the adapter.
 pub async fn publish_status<D: StatusPublisherDeps + ?Sized>(
     deps: Arc<D>,
     status: UserStatusKind,
@@ -271,7 +300,11 @@ pub async fn publish_status<D: StatusPublisherDeps + ?Sized>(
     payload.push(status_to_wire_byte(status));
     payload.extend_from_slice(&timestamp.to_be_bytes());
 
-    deps.write_profile_status_subkey(&profile_key, payload)
+    let (owner, key) = deps.presence_key().ok_or(PresenceError::NoPresenceKey)?;
+    let sealed =
+        rekindle_secrets::friend_presence::seal(&key, &owner, PROFILE_STATUS_SUBKEY, &payload)
+            .map_err(|e| PresenceError::Seal(e.to_string()))?;
+    deps.write_profile_status_subkey(&profile_key, sealed)
         .await?;
     tracing::info!(?status, "published status to DHT");
     Ok(())

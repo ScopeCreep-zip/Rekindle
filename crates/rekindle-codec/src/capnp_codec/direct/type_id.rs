@@ -79,6 +79,8 @@ type_ids! {
     UnfriendedAck = 0x0104 => Ratchet,
     /// Our profile record key changed.
     ProfileKeyRotated = 0x0105 => Ratchet,
+    /// Our friend-presence key (plan E2.5), rotated on unfriend or block.
+    FriendsKey = 0x0106 => Ratchet,
     /// Our identity moved to a new key, over the old session.
     IdentityRotated = 0x0108 => Ratchet,
     /// Edit one of our messages.
@@ -211,7 +213,7 @@ mod tests {
     #[test]
     fn unallocated_ids_are_not_kinds() {
         for id in [
-            0x0000, 0x0004, 0x0106, 0x0107, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0400, 0xFFFF,
+            0x0000, 0x0004, 0x0107, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0400, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }

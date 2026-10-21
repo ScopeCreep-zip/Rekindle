@@ -77,6 +77,10 @@ fn samples() -> Vec<DirectBody> {
         DirectBody::ProfileKeyRotated(ProfileKeyRotated {
             new_profile_dht_key: dht_key(),
         }),
+        DirectBody::FriendsKey(FriendsKey {
+            epoch: 7,
+            key: [0x5A; 32],
+        }),
         DirectBody::IdentityRotated(IdentityRotated {
             new_identity: [3; 32],
             sig_old: [4; 64],

@@ -24,10 +24,19 @@ use super::Host;
 async fn accepted(host: &Host, owner: [u8; 32], peer: [u8; 32]) {
     befriend(host, owner, peer).await;
     let db = host.ctx.db.current().unwrap();
-    let loaded = super::session::load(&db, &host.ctx.vault, &hex::encode(owner))
-        .await
-        .unwrap();
-    host.ctx.session.write().as_mut().unwrap().friends = loaded.friends;
+    let loaded = super::session::load(
+        &db,
+        &host.ctx.vault,
+        &hex::encode(owner),
+        host.ctx.rng.as_ref(),
+        0,
+    )
+    .await
+    .unwrap();
+    let mut session = host.ctx.session.write();
+    let session = session.as_mut().unwrap();
+    session.friends = loaded.friends;
+    session.presence_key = loaded.presence_key;
 }
 
 /// The events already in `stream`, as text.
@@ -269,4 +278,79 @@ async fn a_rejection_with_no_first_contact_fails_visibly() {
         "{events:?}"
     );
     assert_eq!(mentions(&events, "HandshakeRetrying"), 0);
+}
+
+/// Plan E2.5: an accepted friend's `FriendsKey` is stored and opens their
+/// sealed STATUS; removing them rotates our key to epoch 2 and forgets
+/// theirs, in the projection and the store.
+#[tokio::test]
+async fn a_friends_key_is_stored_and_a_removal_rotates_ours() {
+    use rekindle_codec::capnp_codec::direct::FriendsKey;
+    use rekindle_secrets::friend_presence::{open, seal};
+    let (dir, theirs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (host, owner, other, bob) = session_pair(&dir, &theirs).await;
+    let bob_hex = hex::encode(bob);
+    let bob_key = other
+        .ctx
+        .session
+        .read()
+        .as_ref()
+        .unwrap()
+        .presence_key
+        .clone()
+        .unwrap();
+    let body = DirectBody::FriendsKey(FriendsKey {
+        epoch: bob_key.epoch(),
+        key: *bob_key.as_bytes(),
+    });
+    let sent = frame::ratchet_frame(
+        &HostFriends::of(&other.ctx),
+        &hex::encode(owner),
+        &body,
+        ContentHint::Default,
+    )
+    .await
+    .unwrap();
+    receive(&HostFriends::of(&host.ctx), &wire(&sent).unwrap()).await;
+    let stored = host
+        .ctx
+        .session
+        .read()
+        .as_ref()
+        .unwrap()
+        .friend_presence_keys
+        .get(&bob_hex)
+        .cloned()
+        .expect("stored");
+    let status = seal(&bob_key, &bob_hex, 2, &[0]).unwrap();
+    assert_eq!(open(&stored, &bob_hex, 2, &status).unwrap(), [0]);
+
+    rekindle_transport::operations::friend::remove(&HostFriends::of(&host.ctx), &bob_hex)
+        .await
+        .unwrap();
+    {
+        let session = host.ctx.session.read();
+        let session = session.as_ref().unwrap();
+        assert_eq!(session.presence_key.as_ref().unwrap().epoch(), 2);
+        assert!(!session.friend_presence_keys.contains_key(&bob_hex));
+    }
+    let o = hex::encode(owner);
+    let (current, theirs_kept) = host
+        .ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            Ok((
+                rekindle_db::repo::presence_keys::current(conn, &o)?,
+                rekindle_db::repo::friends::presence_keys(conn, &o)?,
+            ))
+        })
+        .await
+        .unwrap();
+    assert_eq!(current.map(|(epoch, _)| epoch), Some(2));
+    assert!(
+        theirs_kept.is_empty(),
+        "the removed friend's key is cleared"
+    );
 }

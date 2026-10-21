@@ -125,6 +125,7 @@ pub fn mark_removing(
 ) -> rusqlite::Result<()> {
     atomically(conn, |conn| {
         set_state(conn, owner_key, public_key, FriendshipState::Removing)?;
+        super::clear_presence_key(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         pending_messages::insert(conn, owner_key, public_key, queued, queued_at)
     })

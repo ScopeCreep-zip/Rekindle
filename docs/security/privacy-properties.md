@@ -214,6 +214,15 @@ Game detection uses a JSON database that ships with the binary — no
 remote service is queried. Output goes only to friends with explicit
 presence visibility. The user's process list never leaves the device.
 
+Friend presence itself is not public (plan E2.5): the profile's STATUS
+and GAME_INFO subkeys are AES-256-GCM-sealed under a 32-byte friends key
+(`rekindle_secrets::friend_presence`, AAD `rekindle-friend-presence-v1 ‖
+epoch ‖ subkey ‖ owner`) that each accepted friend receives inside the
+Double Ratchet as `FriendsKey` (0x0106), because the profile record is
+readable by anyone who learns its key. A new epoch is minted and sent to
+the remaining friends on every unfriend or block, so a removed peer reads
+nothing written after; a value that does not open is dropped, never shown.
+
 ### 2.8 Opt-in, content-free push relay
 
 Mobile push relay sends only `{type: "wake", ts}` — no content, no

@@ -33,7 +33,11 @@ async fn writes_come_back_in_the_next_projection() {
     let owner = made.public_key.clone();
     drop(made);
     let db = f.db.current().unwrap();
-    let session = RwLock::new(Some(load(&db, &f.vault, &owner).await.unwrap()));
+    let session = RwLock::new(Some(
+        load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+            .await
+            .unwrap(),
+    ));
     assert_eq!(
         session.read().as_ref().unwrap().identity.display_name,
         "Ann"
@@ -68,7 +72,9 @@ async fn writes_come_back_in_the_next_projection() {
     .await
     .unwrap();
 
-    let reloaded: Session = load(&db, &f.vault, &owner).await.unwrap();
+    let reloaded: Session = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+        .await
+        .unwrap();
     let m = reloaded.community("gov-key").unwrap();
     assert_eq!(m.slot_seed, Some([9; 32]));
     assert_eq!(m.slot_index, 3);
@@ -84,9 +90,16 @@ async fn writes_come_back_in_the_next_projection() {
         rekindle_types::friend::FriendshipState::PendingOut
     );
 
+    // Plan E2.5: the first unlock minted our presence key; a reload keeps it.
+    let minted = reloaded.presence_key.clone().unwrap();
+    assert_eq!(minted.epoch(), 1);
+
     forget_membership(&session, &f.db, &f.vault, "gov-key")
         .await
         .unwrap();
-    let after = load(&db, &f.vault, &owner).await.unwrap();
+    let after = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+        .await
+        .unwrap();
     assert!(after.communities.is_empty());
+    assert_eq!(after.presence_key, Some(minted));
 }

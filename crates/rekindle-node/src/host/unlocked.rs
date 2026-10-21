@@ -40,9 +40,15 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
 
     // The session is projected from the identity's stores (plan D1).
     let loaded = match ctx.db.current() {
-        Ok(db) => super::session::load(&db, &ctx.vault, &public_key)
-            .await
-            .map_err(|e| format!("session: {e}")),
+        Ok(db) => super::session::load(
+            &db,
+            &ctx.vault,
+            &public_key,
+            ctx.rng.as_ref(),
+            ctx.clock.now_ms_i64(),
+        )
+        .await
+        .map_err(|e| format!("session: {e}")),
         Err(e) => Err(format!("session: {e}")),
     };
     let session = match loaded {

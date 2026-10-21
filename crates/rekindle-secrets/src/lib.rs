@@ -16,6 +16,7 @@
 pub mod channel_body;
 pub mod derive;
 pub mod forked_random;
+pub mod friend_presence;
 pub mod hpke;
 pub mod invite;
 pub mod keys;

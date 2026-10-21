@@ -136,13 +136,29 @@ impl OwnPresence {
     }
 
     /// The game we play, or none: written to profile subkey 4 as the
-    /// schema's packed `GameStatus`, empty for none (plan E1.1).
+    /// schema's packed `GameStatus`, empty for none (plan E1.1), sealed
+    /// under our friend-presence key (plan E2.5).
     ///
     /// # Errors
     /// The profile write failed (the game is kept and shown).
     pub(crate) async fn set_game(&self, game: Option<Game>) -> Result<(), String> {
         self.state.write().game.clone_from(&game);
         self.changed();
+        self.write_game(game).await
+    }
+
+    /// Our presence key moved to a new epoch: STATUS and GAME_INFO are
+    /// written again under it, so the friends who hold only the new key
+    /// read them.
+    pub(crate) async fn reseal(&self) {
+        self.republish();
+        let game = self.state.read().game.clone();
+        if let Err(e) = self.write_game(game).await {
+            tracing::warn!(error = %e, "game info not resealed");
+        }
+    }
+
+    async fn write_game(&self, game: Option<Game>) -> Result<(), String> {
         let bytes = game.map_or_else(Vec::new, |game| {
             rekindle_codec::capnp_codec::presence::encode_game_status(
                 &rekindle_codec::capnp_codec::presence::GameInfo {
@@ -154,7 +170,13 @@ impl OwnPresence {
                 },
             )
         });
-        self.write_profile(subkeys::GAME_INFO, bytes).await
+        let (owner, key) = self
+            .presence_key()
+            .ok_or("no friend-presence key yet: the game is not written in the clear")?;
+        let sealed =
+            rekindle_secrets::friend_presence::seal(&key, &owner, subkeys::GAME_INFO, &bytes)
+                .map_err(|e| format!("seal game info: {e}"))?;
+        self.write_profile(subkeys::GAME_INFO, sealed).await
     }
 
     /// The idle stage's reading: auto-away sets Away over Online, keeping
@@ -345,6 +367,13 @@ impl StatusPublisherDeps for OwnPresence {
             )));
         }
         Ok(())
+    }
+
+    fn presence_key(&self) -> Option<(String, rekindle_secrets::friend_presence::PresenceKey)> {
+        self.session
+            .read()
+            .as_ref()
+            .and_then(|s| Some((s.identity.public_key_hex.clone(), s.presence_key.clone()?)))
     }
 
     fn current_identity_status(&self) -> Option<SessionStatus> {

@@ -31,4 +31,10 @@ pub enum PresenceError {
     InvalidDhtKey(String),
     #[error("DHT operation failed: {0}")]
     Dht(String),
+    /// Our friend-presence key is not minted yet (plan E2.5): nothing is
+    /// written in the clear.
+    #[error("no friend-presence key yet")]
+    NoPresenceKey,
+    #[error("presence seal failed: {0}")]
+    Seal(String),
 }

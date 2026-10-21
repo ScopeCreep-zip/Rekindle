@@ -25,7 +25,7 @@ pub use calls::{
 };
 pub use content::{DmDelete, DmEdit, DmReaction, DmText, Typing};
 pub use friend::{
-    FriendAccept, FriendRequest, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
+    FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     SessionResetDecline, SessionResetRequest,
 };
 pub use group::{GroupDmInvite, GroupDmLeave};
@@ -115,6 +115,7 @@ direct_bodies! {
         DmText(DmText) = dm_text,
         FriendAccept(FriendAccept) = friend_accept,
         ProfileKeyRotated(ProfileKeyRotated) = profile_key_rotated,
+        FriendsKey(FriendsKey) = friends_key,
         IdentityRotated(IdentityRotated) = identity_rotated,
         DmEdit(DmEdit) = dm_edit,
         DmDelete(DmDelete) = dm_delete,

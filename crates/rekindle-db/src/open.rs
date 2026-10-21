@@ -131,8 +131,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// counters; `unprocessed.quarantined_at`; each vault owner entry holds its
 /// record key with the keypair.
 ///
-/// 96 (plan E2.5, D22): the outbox's `outbox` and `received` tables.
-pub const SCHEMA_VERSION: i64 = 96;
+/// 96 (plan E2.5, D22): the outbox's `outbox`, `outbox_streams` and `received` tables.
+///
+/// 97 (plan E2.5): `presence_keys` and `friends.presence_epoch`/`presence_key`
+/// (the friends key of profile STATUS and GAME_INFO).
+pub const SCHEMA_VERSION: i64 = 97;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

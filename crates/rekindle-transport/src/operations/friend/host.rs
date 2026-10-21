@@ -115,6 +115,9 @@ pub trait FriendHost: Send + Sync {
     /// # Errors
     /// The new record could not be created or stored.
     async fn rotate_own_profile(&self) -> Result<String, FriendError>;
+    /// Rewrite our STATUS and GAME_INFO under the session's current
+    /// friend-presence key (after a rotation, plan E2.5).
+    async fn reseal_own_presence(&self);
     /// Hold `held` for the user's review.
     ///
     /// # Errors

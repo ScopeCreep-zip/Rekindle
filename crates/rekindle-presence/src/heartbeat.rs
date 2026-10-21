@@ -113,8 +113,19 @@ mod tests {
                 payload: Vec<u8>,
             ) -> Result<(), PresenceError> {
                 tokio::task::yield_now().await;
-                self.written.lock().push(payload[0]);
+                let (owner, key) = self.presence_key().unwrap();
+                let opened =
+                    rekindle_secrets::friend_presence::open(&key, &owner, 2, &payload).unwrap();
+                self.written.lock().push(opened[0]);
                 Ok(())
+            }
+            fn presence_key(
+                &self,
+            ) -> Option<(String, rekindle_secrets::friend_presence::PresenceKey)> {
+                Some((
+                    "aa".into(),
+                    rekindle_secrets::friend_presence::PresenceKey::new(1, [9; 32]),
+                ))
             }
             fn current_identity_status(&self) -> Option<UserStatusKind> {
                 Some(if self.status.load(Ordering::SeqCst) == 0 {

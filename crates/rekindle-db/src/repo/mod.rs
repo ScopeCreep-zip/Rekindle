@@ -26,6 +26,7 @@ pub mod peer_rekey;
 pub mod pending_messages;
 pub mod pending_requests;
 pub mod preferences;
+pub mod presence_keys;
 mod role_ids;
 pub mod session_reset_requests;
 pub mod signal_identities;

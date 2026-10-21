@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 use rekindle_db::repo;
 use rekindle_db::Db;
+use rekindle_secrets::friend_presence::PresenceKey;
 use rekindle_transport::session::{CommunityMembership, Session, SessionIdentity};
 use rekindle_types::friend::FriendState;
 use rekindle_vault::typed::community_keys::load_slot_seed;
@@ -40,6 +41,8 @@ struct Rows {
         Vec<(String, String)>,
     )>,
     friends: Vec<repo::friends::FriendRow>,
+    presence_key: (u32, Vec<u8>),
+    friend_presence_keys: Vec<(String, u32, Vec<u8>)>,
 }
 
 /// A slot seed as stored (hex), or `None` when it does not decode.
@@ -47,12 +50,20 @@ fn slot_seed(hex_seed: &str) -> Option<[u8; 32]> {
     hex::decode(hex_seed).ok()?.try_into().ok()
 }
 
-/// Build the session of the unlocked identity `owner`.
+/// Build the session of the unlocked identity `owner`. Its first unlock
+/// mints our friend-presence key (plan E2.5) from `rng`.
 ///
 /// # Errors
 /// The identity row is missing, or a store cannot be read.
-pub async fn load(db: &Db, vault: &VaultHandle, owner: &str) -> Result<Session, SessionError> {
+pub async fn load(
+    db: &Db,
+    vault: &VaultHandle,
+    owner: &str,
+    rng: &dyn rekindle_utils::RandomSource,
+    now_ms: i64,
+) -> Result<Session, SessionError> {
     let o = owner.to_string();
+    let first_key = PresenceKey::mint(1, rng);
     let rows = db
         .call(move |conn| {
             let Some((display_name, records)) = repo::identity::login_row(conn, &o)? else {
@@ -66,11 +77,21 @@ pub async fn load(db: &Db, vault: &VaultHandle, owner: &str) -> Result<Session, 
                 communities.push((row, role_ids, channels));
             }
             let friends = repo::friends::load_all(conn, &o)?;
+            let presence_key = if let Some(key) = repo::presence_keys::current(conn, &o)? {
+                key
+            } else {
+                let (epoch, key) = (first_key.epoch(), first_key.as_bytes().to_vec());
+                repo::presence_keys::replace(conn, &o, epoch, &key, now_ms)?;
+                (epoch, key)
+            };
+            let friend_presence_keys = repo::friends::presence_keys(conn, &o)?;
             Ok(Some(Rows {
                 display_name,
                 records,
                 communities,
                 friends,
+                presence_key,
+                friend_presence_keys,
             }))
         })
         .await
@@ -128,6 +149,13 @@ pub async fn load(db: &Db, vault: &VaultHandle, owner: &str) -> Result<Session, 
         .friends
         .into_iter()
         .map(|row| (row.public_key.clone(), friend_state(row)))
+        .collect();
+    let (epoch, key) = rows.presence_key;
+    session.presence_key = PresenceKey::from_stored(epoch, &key);
+    session.friend_presence_keys = rows
+        .friend_presence_keys
+        .into_iter()
+        .filter_map(|(peer, epoch, key)| Some((peer, PresenceKey::from_stored(epoch, &key)?)))
         .collect();
     Ok(session)
 }

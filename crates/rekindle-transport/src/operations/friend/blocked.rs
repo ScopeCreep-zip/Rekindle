@@ -7,7 +7,7 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::error::FriendError;
 use super::host::FriendHost;
-use super::{rotate, state};
+use super::{presence_key, rotate, state};
 use crate::operations::dm;
 
 /// Whether `public_key` is blocked.
@@ -50,6 +50,7 @@ pub async fn block(host: &dyn FriendHost, public_key: &str) -> Result<(), Friend
     // of not blocking at all.
     host.unwatch_friend(public_key).await;
     rotate::rotate_profile_key(host).await?;
+    presence_key::rotate(host, public_key).await?;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));

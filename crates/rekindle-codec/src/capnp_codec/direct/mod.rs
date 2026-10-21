@@ -25,7 +25,7 @@ mod type_id;
 
 pub use body::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DirectBody,
-    DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
+    DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest, FriendsKey,
     GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, GroupDmInvite, GroupDmLeave,
     IdentityRotated, PreKeyRejected, ProfileKeyRotated, RegisterPushRelay, RelayEnvelope,
     RelayOffer, RelayOfferAck, RelayWithdraw, SessionResetDecline, SessionResetRequest,

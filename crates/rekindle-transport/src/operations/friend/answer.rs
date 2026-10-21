@@ -80,6 +80,7 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     // Retry (B7); the friendship stands, and their side stays pending
     // until a session reaches them.
     crate::operations::prekeys::open_or_fail(host, public_key, DmTypeId::FriendAccept).await;
+    super::presence_key::send(host, public_key).await;
     if let Some(profile_key) = &profile_key {
         host.watch_friend(public_key, profile_key).await;
     }

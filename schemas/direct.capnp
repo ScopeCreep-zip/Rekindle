@@ -128,6 +128,14 @@ struct ProfileKeyRotated {
   newProfileDhtKey @0 :Text;
 }
 
+# 0x0106 (E2.5), inside the ratchet: our friend-presence key. Profile
+# subkeys 2 (STATUS) and 4 (GAME_INFO) are sealed under it; a new epoch on
+# every unfriend or block.
+struct FriendsKey {
+  epoch @0 :UInt32;
+  key @1 :Data;                         # 32 B
+}
+
 # 0x0108, over the old session; both signatures over
 # `IDENTITY_ROTATED || old || new || recipient`.
 struct IdentityRotated {

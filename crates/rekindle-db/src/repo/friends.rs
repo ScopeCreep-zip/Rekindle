@@ -7,10 +7,12 @@ use rekindle_types::friend_store::{FriendRecord, FriendshipState};
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension as _};
 
 mod changes;
+mod presence;
 pub use changes::{
     accept_request, accept_with_records, block, forget, forget_removed, mark_removing,
     replace_with_invited, unfriended, RecordKeys,
 };
+pub use presence::{clear_presence_key, presence_keys, set_presence_key};
 
 /// A friend as the buddy list loads it, with its group's name.
 #[derive(Debug, Clone, PartialEq, Eq)]

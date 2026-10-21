@@ -70,6 +70,9 @@ pub trait StatusPublisherDeps: Send + Sync + 'static {
         profile_key: &str,
         payload: Vec<u8>,
     ) -> Result<(), PresenceError>;
+    /// Our public key and our current friend-presence key (plan E2.5),
+    /// which the STATUS payload is sealed under; `None` before it is minted.
+    fn presence_key(&self) -> Option<(String, rekindle_secrets::friend_presence::PresenceKey)>;
     /// Current authenticated user's status (if logged in).
     fn current_identity_status(&self) -> Option<UserStatusKind>;
     /// Wall-clock now in milliseconds since the unix epoch. Hoisted
@@ -86,6 +89,12 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
     // === Friend lookup ===
     fn friend_for_dht_key(&self, dht_key: &str) -> Option<String>;
     fn is_friend_accepted(&self, friend_key: &str) -> bool;
+    /// The friend's current friend-presence key (their `FriendsKey`, plan
+    /// E2.5): their STATUS and GAME_INFO open under it, or are dropped.
+    fn friend_presence_key(
+        &self,
+        friend_key: &str,
+    ) -> Option<rekindle_secrets::friend_presence::PresenceKey>;
 
     // === Friend state mutations ===
     /// Apply a status update and return whether the prior status was

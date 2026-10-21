@@ -99,6 +99,17 @@ impl FriendPresenceDeps for HostFriends {
         })
     }
 
+    fn friend_presence_key(
+        &self,
+        friend_key: &str,
+    ) -> Option<rekindle_secrets::friend_presence::PresenceKey> {
+        self.ctx()
+            .session
+            .read()
+            .as_ref()
+            .and_then(|s| s.friend_presence_keys.get(friend_key).cloned())
+    }
+
     fn set_friend_status(
         &self,
         friend_key: &str,

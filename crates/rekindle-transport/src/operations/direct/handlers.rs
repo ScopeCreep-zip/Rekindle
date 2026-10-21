@@ -12,7 +12,9 @@ use super::frame::{processed, Opened};
 use super::Routed;
 use crate::operations::dm::{client_id_text, NewDmFields};
 use crate::operations::friend::inbound::{self, IncomingFriendAccept, IncomingFriendRequest};
-use crate::operations::friend::{identity_rotation, session_reset, state, FriendHost};
+use crate::operations::friend::{
+    identity_rotation, presence_key, session_reset, state, FriendHost,
+};
 use crate::operations::{relay, typing};
 
 /// Where a friend's typing to us shows: their DM.
@@ -80,6 +82,9 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::FriendReject => applied = inbound::on_friend_reject(host, sender).await,
         DirectBody::ProfileKeyRotated(p) => {
             applied = inbound::on_profile_key_rotated(host, sender, &p.new_profile_dht_key).await;
+        }
+        DirectBody::FriendsKey(k) => {
+            applied = presence_key::on_friends_key(host, sender, k).await;
         }
         DirectBody::IdentityRotated(r) => {
             applied = identity_rotation::on_identity_rotated(host, sender, r).await;

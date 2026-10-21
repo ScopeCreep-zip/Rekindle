@@ -130,6 +130,7 @@ mod tests {
         unwatched: HashSet<String>,
         subkey_bytes: HashMap<(String, u32), Vec<u8>>,
         stale_friends: Vec<String>,
+        presence_keys: HashMap<String, rekindle_secrets::friend_presence::PresenceKey>,
         // Recorders
         calls_friends_with_dht: u32,
         calls_unwatched: u32,
@@ -178,6 +179,12 @@ mod tests {
                 .calls_is_accepted
                 .push(friend_key.to_string());
             self.accepted.contains(friend_key)
+        }
+        fn friend_presence_key(
+            &self,
+            friend_key: &str,
+        ) -> Option<rekindle_secrets::friend_presence::PresenceKey> {
+            self.state.lock().presence_keys.get(friend_key).cloned()
         }
         fn set_friend_status(&self, _: &str, _: UserStatusKind) -> SetFriendStatusOutcome {
             SetFriendStatusOutcome {
@@ -269,6 +276,33 @@ mod tests {
             st.calls_find_stale.push(threshold_ms);
             st.stale_friends.clone()
         }
+    }
+
+    /// Plan E2.5: a friend's STATUS opens under their current key only; a
+    /// plaintext value, another key, an old epoch or a GAME_INFO value
+    /// replayed as STATUS is dropped.
+    #[test]
+    fn a_status_opens_under_the_friends_key_only() {
+        use rekindle_secrets::friend_presence::{seal, PresenceKey};
+        let key = PresenceKey::new(2, [4; 32]);
+        let deps = MockDeps {
+            state: Mutex::new(MockState {
+                friends_with_dht: vec![("alice".into(), "dht1".into())],
+                presence_keys: HashMap::from([("alice".to_string(), key.clone())]),
+                ..Default::default()
+            }),
+            accepted: HashSet::from(["alice".to_string()]),
+        };
+        let offline = [3u8];
+        let change = |value: &[u8]| crate::friend::handle_value_change(&deps, "dht1", &[2], value);
+        change(&offline);
+        change(&seal(&PresenceKey::new(2, [5; 32]), "alice", 2, &offline).unwrap());
+        change(&seal(&PresenceKey::new(1, [4; 32]), "alice", 2, &offline).unwrap());
+        change(&seal(&key, "alice", 4, &offline).unwrap());
+        change(&seal(&key, "bob", 2, &offline).unwrap());
+        assert!(deps.state.lock().calls_set_offline.is_empty());
+        change(&seal(&key, "alice", 2, &offline).unwrap());
+        assert_eq!(deps.state.lock().calls_set_offline.len(), 1);
     }
 
     #[tokio::test]

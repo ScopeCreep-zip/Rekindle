@@ -85,6 +85,12 @@ labels! {
     /// over the JSON of every field but the signature.
     FRIEND_INVITE_SIG = "rekindle-friend-invite-sig-v1";
 
+    // ── Friend presence (plan E2.5) ──────────────────────────────────
+    /// AEAD associated-data prefix: profile subkeys 2 (STATUS) and 4
+    /// (GAME_INFO) sealed under our friends key, then `u32be(epoch) ‖
+    /// u32be(subkey) ‖ owner`.
+    FRIEND_PRESENCE = "rekindle-friend-presence-v1";
+
     // ── Communities ──────────────────────────────────────────────────
     /// HKDF salt: per-community pseudonym from the identity secret.
     COMMUNITY_PSEUDONYM = "rekindle-community-pseudonym-v1";

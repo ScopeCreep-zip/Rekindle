@@ -9,7 +9,7 @@ use rekindle_types::subscription_events::{FriendEvent, NotificationEvent, Subscr
 
 use super::IncomingFriendRequest;
 use crate::operations::dm;
-use crate::operations::friend::{list_record, state, FriendHost};
+use crate::operations::friend::{list_record, presence_key, state, FriendHost};
 
 /// A friend's profile moved to a new record: watch that one instead.
 /// Whether it is done (`false`: the store failed).
@@ -105,6 +105,9 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
     }
     state::take(host, sender);
     host.unwatch_friend(sender).await;
+    if let Err(e) = presence_key::rotate(host, sender).await {
+        tracing::warn!(error = %e, "presence key not rotated after peer unfriended us");
+    }
     if let Err(e) = list_record::push(host).await {
         tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
     }

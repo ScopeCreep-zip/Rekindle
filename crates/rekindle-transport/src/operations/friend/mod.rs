@@ -15,6 +15,7 @@ pub(crate) mod inbound;
 mod invites;
 mod list;
 mod list_record;
+pub(crate) mod presence_key;
 mod remove;
 mod rotate;
 pub mod session_reset;

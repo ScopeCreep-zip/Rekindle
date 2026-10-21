@@ -9,6 +9,7 @@
 
 use std::collections::HashMap;
 
+use rekindle_secrets::friend_presence::PresenceKey;
 use rekindle_types::friend::FriendState;
 
 // ── Session ─────────────────────────────────────────────────────────────
@@ -25,6 +26,14 @@ pub struct Session {
     /// Our friends by public key, every friendship state (plan E2.1): loaded
     /// from `friends` at unlock and written after each repository write.
     pub friends: HashMap<String, FriendState>,
+
+    /// Our friend-presence key (plan E2.5), the newest epoch: profile
+    /// subkeys 2 and 4 are sealed under it. Minted at the first unlock.
+    pub presence_key: Option<PresenceKey>,
+
+    /// Each friend's current friend-presence key, which opens their STATUS
+    /// and GAME_INFO (from `friends.presence_*`).
+    pub friend_presence_keys: HashMap<String, PresenceKey>,
 }
 
 impl Session {
@@ -34,6 +43,8 @@ impl Session {
             identity,
             communities: HashMap::new(),
             friends: HashMap::new(),
+            presence_key: None,
+            friend_presence_keys: HashMap::new(),
         }
     }
 

@@ -54,7 +54,25 @@ CREATE TABLE IF NOT EXISTS friends (
     -- (hex Ed25519 device pubkey). NULL until they advertise via the
     -- DeviceList owner subkey on their per-pair inbox.
     current_device_id TEXT,
+    -- Plan E2.5: the friend's current friend-presence key (their
+    -- `FriendsKey`), which opens their profile's STATUS and GAME_INFO.
+    -- Cleared when we remove them; the row goes when they or we block.
+    presence_epoch INTEGER CHECK(presence_epoch > 0),
+    presence_key BLOB CHECK(length(presence_key) = 32),
+    CHECK((presence_epoch IS NULL) = (presence_key IS NULL)),
     PRIMARY KEY (owner_key, public_key)
+);
+
+-- Plan E2.5: our friend-presence key, the newest epoch only (an older one
+-- seals nothing more). Profile subkeys 2 and 4 are sealed under it and it
+-- is sent to each accepted friend as a ratcheted `FriendsKey`; a new epoch
+-- is minted on every unfriend or block.
+CREATE TABLE IF NOT EXISTS presence_keys (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    epoch INTEGER NOT NULL CHECK(epoch > 0),
+    key BLOB NOT NULL CHECK(length(key) = 32),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, epoch)
 );
 
 CREATE TABLE IF NOT EXISTS messages (

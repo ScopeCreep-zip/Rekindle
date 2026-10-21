@@ -8,7 +8,7 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::error::FriendError;
 use super::host::FriendHost;
-use super::{list_record, state};
+use super::{list_record, presence_key, state};
 use crate::operations::dm;
 
 /// Remove `public_key` as a friend.
@@ -58,7 +58,8 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
                 tracing::warn!(error = %e, "failed to update DHT friend list after removal");
             }
         });
-    Ok(())
+    // Their copy of our presence key opens nothing written from here on.
+    presence_key::rotate(host, public_key).await
 }
 
 /// Forget the friends we removed once nothing is queued to them (their

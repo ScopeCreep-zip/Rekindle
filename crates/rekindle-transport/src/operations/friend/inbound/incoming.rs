@@ -233,6 +233,7 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
     if !a.profile_dht_key.is_empty() {
         host.watch_friend(a.sender_hex, a.profile_dht_key).await;
     }
+    crate::operations::friend::presence_key::send(host, a.sender_hex).await;
     let display_name = state::friend(host, a.sender_hex)
         .map_or_else(|| a.sender_hex.to_string(), |f| f.display_name);
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
