@@ -217,7 +217,7 @@ pub struct AppState {
     pub media_ready: Mutex<rekindle_voice::media_ready::MediaReadyTracker>,
     /// Video frames rejected by the media-ready gate (observability).
     pub video_pre_ready_drops: std::sync::atomic::AtomicU64,
-    /// Inbound gossip/legacy envelope queue — the app_message callback
+    /// Inbound `'D'` and `'G'` datagram queue — the app_message callback
     /// pushes and returns so video processing can never stall voice
     /// packet delivery; one worker (spawned by the dispatch loop)
     /// drains it in FIFO order.

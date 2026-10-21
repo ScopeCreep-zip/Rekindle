@@ -149,16 +149,14 @@ fn network_stages(
     })?;
 
     // The login-time friend sync, once the network is up (→ E2.5).
-    let (sync_state, sync_app) = (Arc::clone(state), app.clone());
+    let sync_state = Arc::clone(state);
     scope.spawn_with_token("login friend sync", |stop| async move {
         match stop
             .run_until_cancelled(wait_for_network_ready(&sync_state))
             .await
         {
             Some(true) => {
-                if let Err(e) =
-                    services::sync_service::sync_friends_now(&sync_state, &sync_app).await
-                {
+                if let Err(e) = services::sync_service::sync_friends_now(&sync_state).await {
                     tracing::warn!(error = %e, "login-time friend sync failed");
                 }
             }
@@ -166,7 +164,7 @@ fn network_stages(
             None => {}
         }
     })?;
-    services::friendship::spawn_coordinator(state, app.clone(), scope)?;
+    services::friendship::spawn_coordinator(state, scope)?;
 
     // The desktop's reaction to our routes (→ E3.1/E3.4/E4.1).
     let (route_app, route_state) = (app.clone(), Arc::clone(state));
@@ -246,7 +244,7 @@ async fn wait_for_network_ready(state: &SharedState) -> bool {
 }
 
 /// The Host's own records are up: the keys into the `NodeHandle` projection
-/// its readers use (→ E2.1), the community keys we are behind on (→ E3.1),
+/// its readers use, the community keys we are behind on (→ E3.1),
 /// and a friend sync now that the friend list is open (→ E2.5).
 pub(super) fn own_records(
     state: &SharedState,
@@ -264,9 +262,9 @@ pub(super) fn own_records(
     if state_helpers::our_route_blob(state).is_some() {
         services::community::mek_rotation::recover_behind_meks(app, state);
     }
-    let (sync_state, sync_app) = (Arc::clone(state), app.clone());
+    let sync_state = Arc::clone(state);
     state_helpers::spawn_in_login(state, "own records friend sync", async move {
-        if let Err(e) = services::sync_service::sync_friends_now(&sync_state, &sync_app).await {
+        if let Err(e) = services::sync_service::sync_friends_now(&sync_state).await {
             tracing::warn!(error = %e, "friend sync after own records failed");
         }
     });

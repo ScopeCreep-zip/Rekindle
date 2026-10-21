@@ -13,13 +13,10 @@ use rekindle_codec::community::envelope::{
 };
 use rekindle_codec::ingress::{classify, gossip_datagram, Ingress};
 
-// `_app_handle` kept for dispatch-callback signature symmetry — the
-// gossip/legacy processing that used it now runs in the ingress worker
-// (`process_ingress_item`).
-// Now fully synchronous: the voice fast path is a `try_send` and
+// Fully synchronous: the voice fast path is a `try_send` and
 // everything else is a queue push — the dispatch loop never blocks on
 // an app_message again.
-pub fn handle(_app_handle: &AppHandle, state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
+pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     let message = msg.message().to_vec();
     // Trace, not info: this runs for every media packet (50+/s per peer)
     // on the serial dispatch loop the audio fast path shares (plan C7.23).

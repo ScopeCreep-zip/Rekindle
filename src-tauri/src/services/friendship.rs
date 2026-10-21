@@ -89,7 +89,6 @@ impl FriendshipHandle {
 /// [`ScopeClosed`] when the session ended before the coordinator started.
 pub fn spawn_coordinator(
     state: &Arc<AppState>,
-    app_handle: tauri::AppHandle,
     scope: &Arc<SessionScope>,
 ) -> Result<(), ScopeClosed> {
     let handle = Arc::clone(&state.friendship_handle);
@@ -103,7 +102,6 @@ pub fn spawn_coordinator(
 
     let deps = Arc::new(ScannerDeps {
         state: Arc::clone(state),
-        app_handle,
     });
     let scanner = Arc::new(VeilidInboxScanner::new(deps));
     let coord = InboxScanCoordinator::new(scanner, direct_rx, watch_rx);

@@ -467,10 +467,9 @@ routing for the **desktop app**. The v1.0 `MessageEnvelope` /
 (`operations::{dm, direct}`).
 
 Top-level modules: `node` (`RekindleNode` lifecycle), `own_routes`
-(private route allocation), `ports`, `veilid_config`, `dht` (`profile`, `prekeys`, `presence`, `friends`,
-`account`, `mailbox`, `channel`, `short_array`, `log`,
-`community/{envelope, manifest, member_registry, channel_record,
-audit_log, automod, onboarding, permissions_v2, types}`), `error`.
+(private route allocation), `ports`, `veilid_config`, `dht` (`profile`, `prekeys`, `friends`,
+`account`, `mailbox`, `pool`, `route_imports`,
+`community/{member_registry, channel_record}`), `error`.
 
 ### rekindle-crypto
 
@@ -606,9 +605,9 @@ binary (`src/bin/rekindled.rs`). Modules: `host/` (composition root:
 `lock` — one daemon per data root, `policy` — the fail-closed admin-policy
 loader, `bus_key`, `watchdog`, `identity` — the identity store both hosts
 use, `session` — the daemon's session projected from it, `adapters` — the
-Signal and MEK stores over the vault), `validation` (request validation),
-`daemon/` (`handler`, `community_rpc`, `governance_rpc`, `friend_inbox`,
-`dispatch/`), `state/` (the audit log, the unlocked signing key).
+friend and 1:1 operations' Host and the MEK store over the vault), `validation` (request validation),
+`daemon/` (`handler`, `community_rpc`, `governance_adapter`, `gossip_adapter`,
+`presence_adapter`, `mek_rotation`, `dispatch/`), `state/` (the audit log, the unlocked signing key).
 
 `rekindle-node` depends on `rekindle-ipc`, `rekindle-transport`,
 `rekindle-types`, `rekindle-lifecycle`, `snow` (the bus keypair),

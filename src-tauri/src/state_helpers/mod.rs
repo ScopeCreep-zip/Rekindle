@@ -2,17 +2,15 @@
 //! from [`AppState`].
 //!
 //! Read helpers acquire a read lock, clone out the needed value(s), and drop
-//! the guard immediately — safe to call before `.await` points. Write helpers
-//! (`store_dht_record`, `cache_peer_route`, etc.) acquire
+//! the guard immediately — safe to call before `.await` points. Write helpers acquire
 //! write locks with the same acquire-then-drop discipline.
 //!
 //! Helpers are grouped by domain into submodules and re-exported flat so all
 //! call sites keep using `crate::state_helpers::<fn>`:
-//! - [`dht_records`] — DHT record-key storage/tracking on the node handles.
 //! - [`identity`] — current identity accessors.
 //! - [`node`] — node / network / routing-context accessors.
 //! - [`friends`] — friend-state accessors.
-//! - [`routes`] — DHT manager + peer route cache.
+//! - [`routes`] — peer routes through the Host, route imports and deaths.
 //! - [`circuit_breaker`] — per-community RPC circuit breaker.
 //! - [`communities`] — community channel-list write helpers.
 //! - [`governance`] — v2.0 CRDT governance state read/write.

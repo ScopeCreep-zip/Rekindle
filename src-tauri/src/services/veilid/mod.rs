@@ -31,7 +31,7 @@ pub async fn handle_veilid_update(
     update: VeilidUpdate,
 ) {
     match update {
-        VeilidUpdate::AppMessage(msg) => app_message::handle(app_handle, state, &msg),
+        VeilidUpdate::AppMessage(msg) => app_message::handle(state, &msg),
         VeilidUpdate::AppCall(call) => network::handle_app_call(app_handle, state, *call).await,
         VeilidUpdate::ValueChange(change) => {
             dht_watch::handle_value_change(state, *change).await;

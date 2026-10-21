@@ -64,10 +64,7 @@ pub async fn start_sync_loop(state: Arc<AppState>, pool: Db, stop: CancellationT
 /// + watch + force-poll subkeys + check stale) lives in
 /// `rekindle_presence::sync_friends`. This facade builds the
 /// adapter and delegates.
-pub async fn sync_friends_now(
-    state: &Arc<AppState>,
-    _app_handle: &tauri::AppHandle,
-) -> Result<(), String> {
+pub async fn sync_friends_now(state: &Arc<AppState>) -> Result<(), String> {
     let mut watched_keys = std::collections::HashSet::new();
     let stop = state_helpers::login_scope_or_closed(state).token();
     sync_friends(state, &mut watched_keys, true, true, &stop).await

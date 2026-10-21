@@ -319,7 +319,6 @@ pub fn handle_attachment(
         );
         invalidate_all_watches(state);
         let state = state.clone();
-        let app_handle = app_handle.clone();
         crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
             "attachment heal",
             async move {
@@ -327,7 +326,7 @@ pub fn handle_attachment(
                 // being reallocated by its owner (plan C7.9b).
                 crate::services::governance_adapter::open_community_dht_records(&state).await;
                 crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
-                let _ = sync_service::sync_friends_now(&state, &app_handle).await;
+                let _ = sync_service::sync_friends_now(&state).await;
             },
         );
     }

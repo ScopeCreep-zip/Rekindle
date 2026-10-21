@@ -92,7 +92,8 @@ pub(crate) fn lr_init_seen(
         return Ok(false);
     };
     conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM prekey_lr_inits          WHERE owner_key = ?1 AND lr_id = ?2 AND spk_id = ?3 AND base_key = ?4)",
+        "SELECT EXISTS(SELECT 1 FROM prekey_lr_inits \
+         WHERE owner_key = ?1 AND lr_id = ?2 AND spk_id = ?3 AND base_key = ?4)",
         params![
             identity_text(owner),
             lr_id,

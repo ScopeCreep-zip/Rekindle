@@ -63,7 +63,7 @@ impl PresenceAdapter {
 }
 
 /// Build a one-shot adapter from the live AppState. The facades in
-/// `services/presence_service.rs` + `services/community/presence/*`
+/// `services/sync_service.rs` + `services/community/presence/*`
 /// construct one per call (cheap — just clones three Arcs) and hand
 /// it to the crate's orchestrators.
 pub fn build_adapter(state: &Arc<AppState>) -> Option<PresenceAdapter> {
