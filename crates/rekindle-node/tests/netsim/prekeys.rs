@@ -27,10 +27,7 @@ async fn record_key(node: &SimNode) -> String {
 /// Every slot of `record` as the network holds it, in subkey order.
 fn slots(sim: &Netsim, record: &str) -> Vec<Option<Vec<u8>>> {
     (0..SLOT_COUNT)
-        .map(|index| {
-            sim.network_value(record, slot_subkey(index))
-                .map(|v| v.data)
-        })
+        .map(|index| sim.network_get(record, slot_subkey(index)).map(|v| v.data))
         .collect()
 }
 
@@ -87,12 +84,12 @@ async fn the_prekey_status_reads_the_record_the_profile_names() {
         (32, 64, 1184, 64)
     );
 
-    assert!(sim.network_value(&record, HEAD).is_some());
+    assert!(sim.network_get(&record, HEAD).is_some());
     assert!(slots(&sim, &record).iter().all(Option::is_some));
     let shown: rekindle_types::dto::identity::IdentityShown =
         serde_json::from_value(nodes[0].ok(IpcRequest::IdentityShow).await).expect("the identity");
     let list = sim
-        .network_value(&shown.profile_dht_key, PREKEY_RECORDS)
+        .network_get(&shown.profile_dht_key, PREKEY_RECORDS)
         .expect("the profile's device list");
     let list = decode_prekey_record_list(&list.data).expect("a device list");
     assert_eq!(list.devices.len(), 1);

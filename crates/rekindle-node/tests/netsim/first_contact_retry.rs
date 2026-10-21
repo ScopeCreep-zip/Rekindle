@@ -36,7 +36,7 @@ async fn a_failed_accept_opens_on_retry() {
         .record_key
         .expect("Rae's prekey record");
     let owner = sim.owner_keypair(&record).expect("its owner keypair");
-    let head = sim.network_value(&record, HEAD).expect("her head").data;
+    let head = sim.network_get(&record, HEAD).expect("her head").data;
     sim.fault(Fault::DhtOffline {
         node: 0,
         offline: true,

@@ -153,10 +153,7 @@ fn unretired(sim: &Netsim) -> Vec<String> {
         .trace()
         .of(1)
         .filter_map(|e| e.strip_prefix("1<-0 ValueChange ").map(str::to_string))
-        .filter(|k| {
-            sim.network_value(k, dm_participant::RETIRE_THROUGH)
-                .is_none()
-        })
+        .filter(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_none())
         .collect();
     keys.dedup();
     keys
@@ -164,10 +161,8 @@ fn unretired(sim: &Netsim) -> Vec<String> {
 
 /// Whether one of `keys` now carries a retire mark: Ida's chain is retired.
 fn retired(sim: &Netsim, keys: &[String]) -> bool {
-    keys.iter().any(|k| {
-        sim.network_value(k, dm_participant::RETIRE_THROUGH)
-            .is_some()
-    })
+    keys.iter()
+        .any(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_some())
 }
 
 /// Ida retires her chain past entries Jon acknowledged (by their hints)

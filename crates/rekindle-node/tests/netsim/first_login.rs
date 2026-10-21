@@ -21,9 +21,9 @@ fn published(sim: &Netsim, prekeys: &str, profile: &str, friends: &str) -> bool 
     let first = (0..FIRST_CONTACT_SLOTS).map(slot_subkey);
     std::iter::once(HEAD)
         .chain(first)
-        .all(|subkey| sim.network_value(prekeys, subkey).is_some())
-        && sim.network_value(profile, 0).is_some()
-        && sim.network_value(friends, 0).is_some()
+        .all(|subkey| sim.network_get(prekeys, subkey).is_some())
+        && sim.network_get(profile, 0).is_some()
+        && sim.network_get(friends, 0).is_some()
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

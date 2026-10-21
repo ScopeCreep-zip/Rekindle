@@ -28,6 +28,8 @@ mod routes;
 mod trace;
 
 #[cfg(test)]
+mod replica_tests;
+#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
@@ -51,10 +53,10 @@ pub enum Fault {
     TryAgain { node: usize, calls: u32 },
     /// Every DHT call of the node fails (or stops failing): no connection.
     DhtOffline { node: usize, offline: bool },
-    /// The node's reads see only its local copy: a get answers it and an
-    /// inspect reports no network seq.
-    StaleReads { node: usize, stale: bool },
-    /// The two groups cannot exchange app messages or calls.
+    /// The two groups cannot exchange app messages or calls, and neither
+    /// reaches the record replicas placed beside the other's nodes (a
+    /// stale read or a set below consensus follows from which replicas a
+    /// side reaches; `records` notes the placement).
     Partition { a: Vec<usize>, b: Vec<usize> },
     /// Every partition and offline DHT ends, and every attached node is
     /// ready again; the record pools' own timers re-push their held writes.
@@ -227,9 +229,6 @@ impl Netsim {
             Fault::DhtOffline { node, offline } => {
                 toggle(&mut self.net.inner.lock().faults.dht_offline, node, offline);
             }
-            Fault::StaleReads { node, stale } => {
-                toggle(&mut self.net.inner.lock().faults.stale_reads, node, stale);
-            }
             Fault::Partition { a, b } => {
                 let mut inner = self.net.inner.lock();
                 for x in &a {
@@ -378,7 +377,8 @@ impl Netsim {
     }
 
     /// A modified client's write: any writer the schema admits, bypassing
-    /// the app (plan C9.3). Lands at the network's seq + 1.
+    /// the app (plan C9.3). It reaches every replica and lands on each at
+    /// the newest seq any of them holds + 1.
     ///
     /// # Errors
     /// The record or subkey is unknown, or the schema does not admit the
@@ -393,14 +393,15 @@ impl Netsim {
         self.write_outside(key, subkey, data, writer, true)
     }
 
-    /// A same-seq conflict (plan C9.3): another value at the seq the
-    /// network already holds, as two writers racing to one seq leave the
-    /// DHT's replicas. A node holding the first value at that seq keeps it:
-    /// only a higher seq replaces a local copy.
+    /// A same-seq conflict (plan C9.3): a racing writer's value at the
+    /// newest seq the replicas hold, stored on every replica that holds
+    /// nothing at that seq yet (the replicas the first writer's fanout did
+    /// not reach). A replica keeps the first value it got at a seq
+    /// (`set_value.rs:709-719`), and so does a node's local copy.
     ///
     /// # Errors
     /// As [`forge_write`](Self::forge_write); also when the subkey holds
-    /// nothing yet.
+    /// nothing yet, or every replica already holds that seq.
     pub fn conflict_write(
         &self,
         key: &str,
@@ -421,7 +422,7 @@ impl Netsim {
     ) -> Result<(), rekindle_records::port::PortError> {
         use rekindle_records::port::PortError;
         let public = records::writer_public(writer)?;
-        let value = {
+        let (value, homes) = {
             let mut inner = self.net.inner.lock();
             let record = inner
                 .records
@@ -430,15 +431,19 @@ impl Netsim {
             if !records::admits(record, subkey, &public) {
                 return Err(PortError::NotWritable(key.into()));
             }
-            let held = record
-                .values
-                .get(subkey as usize)
-                .ok_or_else(|| PortError::Dht(format!("subkey {subkey} out of range")))?
-                .clone();
-            let seq = match (held, bump) {
-                (Some(v), true) => v.seq.saturating_add(1),
+            let at = subkey as usize;
+            if at >= record.replicas.first().map_or(0, |r| r.values.len()) {
+                return Err(PortError::Dht(format!("subkey {subkey} out of range")));
+            }
+            let newest = record
+                .replicas
+                .iter()
+                .filter_map(|r| r.values[at].as_ref().map(|v| v.seq))
+                .max();
+            let seq = match (newest, bump) {
+                (Some(seq), true) => seq.saturating_add(1),
                 (None, true) => 0,
-                (Some(v), false) => v.seq,
+                (Some(seq), false) => seq,
                 (None, false) => {
                     return Err(PortError::Dht("no value to conflict with".into()));
                 }
@@ -448,11 +453,20 @@ impl Netsim {
                 data,
                 writer: records::public_text(&public),
             };
-            record.values[subkey as usize] = Some(value.clone());
-            record.published = true;
-            value
+            let mut homes = Vec::new();
+            for replica in &mut record.replicas {
+                if replica.values[at].as_ref().is_none_or(|v| v.seq < seq) {
+                    replica.values[at] = Some(value.clone());
+                    homes.push(replica.home);
+                }
+            }
+            if homes.is_empty() {
+                return Err(PortError::Dht("every replica holds that seq".into()));
+            }
+            (value, homes)
         };
-        self.net.notify_watchers(usize::MAX, key, subkey, &value);
+        self.net
+            .notify_watchers(usize::MAX, key, subkey, &value, &homes);
         Ok(())
     }
 
@@ -491,30 +505,49 @@ impl Netsim {
         ids.into_iter().map(|id| routes::blob_of(id)).collect()
     }
 
-    /// The value the network holds at `key`/`subkey`.
+    /// What a get from a node reaching every replica, with no local copy,
+    /// answers at `key`/`subkey`: the newest value, stopping at
+    /// `get_value_count` matching replicas (`records` cites Veilid).
     #[must_use]
-    pub fn network_value(&self, key: &str, subkey: u32) -> Option<RecordValue> {
-        self.net
-            .inner
-            .lock()
-            .records
-            .get(key)?
-            .values
-            .get(subkey as usize)
-            .cloned()
-            .flatten()
+    pub fn network_get(&self, key: &str, subkey: u32) -> Option<RecordValue> {
+        let inner = self.net.inner.lock();
+        let replicas = &inner.records.get(key)?.replicas;
+        let all: Vec<usize> = (0..replicas.len()).collect();
+        records::get_from(replicas, &all, subkey)
+    }
+
+    /// Each replica's value at `key`/`subkey`, in placement order.
+    #[must_use]
+    pub fn replica_values(&self, key: &str, subkey: u32) -> Vec<Option<RecordValue>> {
+        let inner = self.net.inner.lock();
+        inner.records.get(key).map_or_else(Vec::new, |r| {
+            r.replicas
+                .iter()
+                .map(|x| x.values.get(subkey as usize).cloned().flatten())
+                .collect()
+        })
     }
 
     /// The single-subkey records the network holds (sealed pages, among
-    /// others): `(key, value bytes)`, sorted by key.
+    /// others): `(key, value bytes)` as [`network_get`](Self::network_get)
+    /// answers, sorted by key.
     #[must_use]
     pub fn single_subkey_values(&self) -> Vec<(String, Vec<u8>)> {
-        let inner = self.net.inner.lock();
-        let mut values: Vec<(String, Vec<u8>)> = inner
+        let keys: Vec<String> = self
+            .net
+            .inner
+            .lock()
             .records
             .iter()
-            .filter(|(_, r)| r.values.len() == 1)
-            .filter_map(|(k, r)| Some((k.clone(), r.values[0].as_ref()?.data.clone())))
+            .filter(|(_, r)| r.replicas.first().is_some_and(|x| x.values.len() == 1))
+            .map(|(k, _)| k.clone())
+            .collect();
+        let mut values: Vec<(String, Vec<u8>)> = keys
+            .into_iter()
+            .filter_map(|k| {
+                let data = self.network_get(&k, 0)?.data;
+                Some((k, data))
+            })
             .collect();
         values.sort();
         values

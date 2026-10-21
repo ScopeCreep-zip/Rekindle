@@ -64,7 +64,7 @@ async fn two_first_contacts_on_one_slot_open_after_one_retry() {
             .expect("an owner write");
     }
     let listed = sim
-        .network_value(&record, FIRST_SLOT)
+        .network_get(&record, FIRST_SLOT)
         .expect("the listed slot")
         .data;
     sim.fault(Fault::DhtOffline {
@@ -100,7 +100,7 @@ async fn two_first_contacts_on_one_slot_open_after_one_retry() {
     let status = nodes[0].prekey_status().await;
     assert_eq!((status.consumed_slots, status.fresh_slots), (1, 100));
     assert_eq!(
-        sim.network_value(&record, FIRST_SLOT).map(|v| v.data),
+        sim.network_get(&record, FIRST_SLOT).map(|v| v.data),
         Some(listed.clone()),
         "the refill waits while Rae's writes fail"
     );
@@ -110,7 +110,7 @@ async fn two_first_contacts_on_one_slot_open_after_one_retry() {
     sim.fault(Fault::Heal);
     assert!(
         eventually(&sim, LIMIT, || async {
-            sim.network_value(&record, FIRST_SLOT).map(|v| v.data) != Some(listed.clone())
+            sim.network_get(&record, FIRST_SLOT).map(|v| v.data) != Some(listed.clone())
         })
         .await,
         "the refill lands once her writes do"

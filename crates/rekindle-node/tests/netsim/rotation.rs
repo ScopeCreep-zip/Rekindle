@@ -52,7 +52,7 @@ async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
         .await
         .record_key
         .expect("a prekey record");
-    let head = sim.network_value(&record, HEAD).map(|v| v.data);
+    let head = sim.network_get(&record, HEAD).map(|v| v.data);
     assert!(head.is_some());
 
     sim.fault(Fault::DhtOffline {
@@ -75,7 +75,7 @@ async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
     );
     assert!(nodes[1].call(accept_rotation(&ann)).await.is_err());
     assert!(is_accepted_friend(&nodes[1], &ann).await);
-    assert_eq!(sim.network_value(&record, HEAD).map(|v| v.data), head);
+    assert_eq!(sim.network_get(&record, HEAD).map(|v| v.data), head);
 
     // The journal was cleared: the identity unlocks under its old key.
     sim.fault(Fault::DhtOffline {
@@ -90,7 +90,7 @@ async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
         })
         .await;
     assert_eq!(shown_key(&nodes[0]).await, ann);
-    assert_eq!(sim.network_value(&record, HEAD).map(|v| v.data), head);
+    assert_eq!(sim.network_get(&record, HEAD).map(|v| v.data), head);
 
     // With the DHT back the rotation lands, and Bea accepts it.
     let deadline = tokio::time::Instant::now() + LIMIT;
@@ -110,7 +110,7 @@ async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
         .expect("the new key")
         .to_string();
     assert_ne!(new_ann, ann);
-    assert_ne!(sim.network_value(&record, HEAD).map(|v| v.data), head);
+    assert_ne!(sim.network_get(&record, HEAD).map(|v| v.data), head);
     assert!(
         eventually(&sim, LIMIT, || async {
             nodes[1].call(accept_rotation(&ann)).await.is_ok()

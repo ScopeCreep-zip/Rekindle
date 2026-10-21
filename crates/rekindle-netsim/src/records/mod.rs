@@ -4,17 +4,21 @@
 //!
 //! The model follows Veilid where the app depends on it ([`dht`] cites the
 //! storage manager call by call):
-//! - a created record is local to its creator until its first write lands
-//!   (publish on first write);
+//! - a created record is local to its creator until a write reaches one of
+//!   its replicas (publish on first write);
+//! - each record lives on seeded replicas; a partition splits which of
+//!   them a node reaches, a replica keeps the first value at a seq, a set
+//!   needs consensus and a get takes the newest ([`replicas`] cites Veilid);
 //! - a write is signed by a writer the schema admits (the owner for owner
 //!   subkeys, the member for a member's), checked through
 //!   `parse_keypair_text`, and the open's writer is sticky per record per
 //!   node;
-//! - a write lands at the node's local seq + 1, and a network value at that
-//!   seq or newer supersedes it (and becomes the local copy);
+//! - a write goes out at the node's local seq + 1 (the same seq for the
+//!   same data and writer); below consensus the local copy stays, and a
+//!   newer value a replica holds supersedes it (and becomes the local copy);
 //! - each node keeps local copies across its sessions; reads refresh them
-//!   from the network unless the stale-read fault holds; a watched value
-//!   that arrives is stored locally;
+//!   from the replicas it reaches; a watched value that arrives is stored
+//!   locally;
 //! - watches are per node, the union of the session's borrowers, and end
 //!   with the record's close;
 //! - every call that reaches the network costs Veilid's latency
@@ -27,13 +31,21 @@ use std::sync::Arc;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
 use rekindle_record_pool::{as_port, RecordCloser, RecordPool};
-use rekindle_records::port::{PortError, RecordPort, RecordSchema, RecordStore};
+use rekindle_records::port::{PortError, RecordPort, RecordSchema, RecordStore, RecordValue};
 use rekindle_utils::RandomSource;
 
 use crate::clock::SimRandom;
 use crate::network::{NetRecord, Network};
 
 mod dht;
+mod replicas;
+
+pub(crate) use replicas::{reachable, reaches, Replica};
+
+/// A get's answer over the `reach` replicas with no local copy.
+pub(crate) fn get_from(replicas: &[Replica], reach: &[usize], subkey: u32) -> Option<RecordValue> {
+    replicas::get(replicas, reach, subkey as usize, None)
+}
 
 /// The record store of one simulated node.
 pub struct FakeRecords {

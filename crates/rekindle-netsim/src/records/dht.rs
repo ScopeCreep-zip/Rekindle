@@ -1,7 +1,7 @@
 //! `SimDht`: the netsim's [`DhtBackend`] (plan E2.B slice S3), one per
 //! session pool, over the node's side of the simulated storage manager.
 //!
-//! Today's model keeps one network value per subkey (replicas come in S4).
+//! The network side is the record's replicas (S4, [`super::replicas`]).
 //! Each call follows the pinned veilid-core (`~/veilid/veilid-core/src/
 //! storage_manager`) where the pool depends on it:
 //!
@@ -21,10 +21,19 @@
 //!   data and writer keep the seq (`:212-218`), anything else is local seq
 //!   + 1; offline with `allow_offline` false is `TryAgain` and stores
 //!   nothing (`set_value.rs:109-115`,
-//!   `local_record_store_interface.rs:61-62`); a newer network value is
-//!   returned and stored locally (`set_value.rs:620-645`);
+//!   `local_record_store_interface.rs:61-62`); a fanout below consensus is
+//!   `Ok(None)` with the local copy untouched while the replicas that took
+//!   the value keep it (`set_value.rs:170-171,596-623`,
+//!   `local_record_store_interface.rs:61-62`); at consensus the fanout's
+//!   value becomes the local copy and is returned when it is not the one
+//!   asked for (a newer value a replica held, `set_value.rs:620-645`), an
+//!   identical re-push included;
+//! - a get over the network takes the newest value the reached replicas
+//!   hold and stores it locally when its seq moved
+//!   (`get_value.rs:538-567`);
 //! - an inspect in the local scope never leaves the node; any other is
-//!   `TryAgain` offline (`inspect_record.rs:205-206`); with
+//!   `TryAgain` offline (`inspect_record.rs:205-206`) and reports the
+//!   newest seq of the replicas the node reaches; with
 //!   `allow_offline` false no write is ever queued, so `offline_subkeys`
 //!   is empty;
 //! - a watch records the wanted state on the node and answers `true`
@@ -46,7 +55,7 @@ use rekindle_records::port::{
 };
 use rekindle_utils::RandomSource;
 
-use super::{admits, new_key_text, public_text, subkey_count, writer_public};
+use super::{admits, new_key_text, public_text, reachable, replicas, subkey_count, writer_public};
 use crate::clock::SimRandom;
 use crate::latency::{self, Slot, Span};
 use crate::network::{NetRecord, Network};
@@ -112,18 +121,21 @@ impl SimDht {
         Ok(slot)
     }
 
-    /// A read's latency: [`latency::GET`] when the network holds a value at
-    /// any of `subkeys` (all when `None`), else the fanout's
+    /// Whether a replica the node reaches holds a value at any of
+    /// `subkeys` (all when `None`).
+    fn held(&self, key: &str, subkeys: Option<&[u32]>) -> bool {
+        let inner = self.net.inner.lock();
+        inner.records.get(key).is_some_and(|r| {
+            let reach = reachable(&r.replicas, &inner.faults.partitions, self.node);
+            replicas::holds(&r.replicas, &reach, subkeys)
+        })
+    }
+
+    /// A read's latency: [`latency::GET`] when a reached replica holds a
+    /// value at any of `subkeys` (all when `None`), else the fanout's
     /// [`latency::DEADLINE`].
     fn read_span(&self, key: &str, subkeys: Option<&[u32]>) -> Span {
-        let inner = self.net.inner.lock();
-        let held = inner.records.get(key).is_some_and(|r| match subkeys {
-            Some(s) => s
-                .iter()
-                .any(|s| r.values.get(*s as usize).is_some_and(Option::is_some)),
-            None => r.values.iter().any(Option::is_some),
-        });
-        if held {
+        if self.held(key, subkeys) {
             latency::GET
         } else {
             latency::DEADLINE
@@ -160,23 +172,26 @@ impl SimDht {
         })
     }
 
-    /// Refresh the local copy of `subkey` from the network when the network
-    /// is newer; the local copy after.
+    /// A get over the network: the newest value the reached replicas hold,
+    /// stored locally when its seq moved; the local copy after.
     fn refresh(&self, key: &str, subkey: u32) -> Option<RecordValue> {
         let mut inner = self.net.inner.lock();
-        let network = inner
-            .records
-            .get(key)
-            .and_then(|r| r.values.get(subkey as usize).cloned().flatten());
-        let slot = &mut inner.nodes[self.node];
-        let local = slot.local.get(&(key.to_string(), subkey)).cloned();
-        match (network, local) {
-            (Some(n), l) if l.as_ref().is_none_or(|l| n.seq > l.seq) => {
-                slot.local.insert((key.to_string(), subkey), n.clone());
-                Some(n)
+        let local = inner.nodes[self.node]
+            .local
+            .get(&(key.to_string(), subkey))
+            .cloned();
+        let found = inner.records.get(key).and_then(|r| {
+            let reach = reachable(&r.replicas, &inner.faults.partitions, self.node);
+            replicas::get(&r.replicas, &reach, subkey as usize, local.as_ref())
+        });
+        if let Some(found) = &found {
+            if local.as_ref().is_none_or(|l| l.seq != found.seq) {
+                inner.nodes[self.node]
+                    .local
+                    .insert((key.to_string(), subkey), found.clone());
             }
-            (_, local) => local,
         }
+        found
     }
 
     /// Check a write against the record's schema (`set_value.rs:236-242`).
@@ -195,8 +210,8 @@ impl SimDht {
         Ok(())
     }
 
-    /// The write's effect once its fanout ran: `Some` is a newer network
-    /// value, now the local copy.
+    /// The write's fanout over the reached replicas: `Some` is the value
+    /// the fanout ended on when it is not ours, now the local copy.
     fn land(
         &self,
         key: &str,
@@ -205,15 +220,15 @@ impl SimDht {
         public: &[u8; 32],
     ) -> Option<RecordValue> {
         let writer = public_text(public);
-        let mut inner = self.net.inner.lock();
-        let network = inner
-            .records
-            .get(key)
-            .and_then(|r| r.values.get(subkey as usize).cloned().flatten());
-        let slot = &mut inner.nodes[self.node];
-        let local = slot.local.get(&(key.to_string(), subkey)).cloned();
-        let value = match local {
-            // Same data and writer: the seq stays and the copy is re-pushed.
+        let mut guard = self.net.inner.lock();
+        let inner = &mut *guard;
+        let local = inner.nodes[self.node]
+            .local
+            .get(&(key.to_string(), subkey))
+            .cloned();
+        let ours = match local {
+            // Same data and writer: the seq stays and the copy is re-pushed
+            // (`set_value.rs:205-222`).
             Some(l) if l.data == data && l.writer == writer => l,
             local => RecordValue {
                 seq: local.map_or(0, |l| l.seq.saturating_add(1)),
@@ -221,26 +236,32 @@ impl SimDht {
                 writer,
             },
         };
-        if let Some(newer) = network
-            .as_ref()
-            .filter(|n| n.seq > value.seq || (n.seq == value.seq && n.data != value.data))
-        {
-            slot.local.insert((key.to_string(), subkey), newer.clone());
-            return Some(newer.clone());
-        }
-        slot.local.insert((key.to_string(), subkey), value.clone());
-        let behind = network.is_none_or(|n| n.seq < value.seq);
-        if let Some(r) = inner.records.get_mut(key) {
-            r.published = true;
-            if behind {
-                r.values[subkey as usize] = Some(value.clone());
+        let record = inner.records.get_mut(key)?;
+        let reach = reachable(&record.replicas, &inner.faults.partitions, self.node);
+        let fanout = replicas::set(&mut record.replicas, &reach, subkey as usize, &ours);
+        let mut landed: Vec<(RecordValue, Vec<usize>)> = Vec::new();
+        for r in &fanout.stored {
+            let replica = &record.replicas[*r];
+            let Some(value) = replica.values[subkey as usize].clone() else {
+                continue;
+            };
+            match landed.iter_mut().find(|(v, _)| *v == value) {
+                Some((_, homes)) => homes.push(replica.home),
+                None => landed.push((value, vec![replica.home])),
             }
         }
-        drop(inner);
-        if behind {
-            self.net.notify_watchers(self.node, key, subkey, &value);
+        let answer = fanout.consensus.then(|| {
+            inner.nodes[self.node]
+                .local
+                .insert((key.to_string(), subkey), fanout.value.clone());
+            fanout.value.clone()
+        });
+        drop(guard);
+        for (value, homes) in landed {
+            self.net
+                .notify_watchers(self.node, key, subkey, &value, &homes);
         }
-        None
+        answer.filter(|value| *value != ours)
     }
 }
 
@@ -297,14 +318,14 @@ impl DhtBackend for SimDht {
         let key = new_key_text(self.rng.as_ref());
         {
             let mut inner = self.net.inner.lock();
+            let nodes = inner.nodes.len();
             inner.records.insert(
                 key.clone(),
                 NetRecord {
                     schema: schema.clone(),
                     owner: public,
                     creator: self.node,
-                    published: false,
-                    values: vec![None; count],
+                    replicas: replicas::place(&key, nodes, count),
                 },
             );
             inner.owners.insert(key.clone(), owner.clone());
@@ -326,14 +347,7 @@ impl DhtBackend for SimDht {
             // Inspect subkey 0 on the network for the descriptor.
             let span = self.read_span(key, Some(&[0]));
             let _slot = self.network(span, key, &[]).await?;
-            let published = self
-                .net
-                .inner
-                .lock()
-                .records
-                .get(key)
-                .is_some_and(|r| r.published);
-            if !published {
+            if !self.held(key, None) {
                 return Err(error(DhtErrorKind::KeyNotFound, key.to_string()));
             }
         }
@@ -372,16 +386,6 @@ impl DhtBackend for SimDht {
         }
         let span = self.read_span(key, Some(&[subkey]));
         let _slot = self.network(span, key, &[subkey]).await?;
-        if self
-            .net
-            .inner
-            .lock()
-            .faults
-            .stale_reads
-            .contains(&self.node)
-        {
-            return Ok(local);
-        }
         Ok(self.refresh(key, subkey))
     }
 
@@ -430,15 +434,14 @@ impl DhtBackend for SimDht {
             .iter()
             .map(|s| local.get(&(key.to_string(), *s)).map(|v| v.seq))
             .collect();
-        let network = scope != ReportScope::Local && !inner.faults.stale_reads.contains(&self.node);
+        let reach = if scope == ReportScope::Local {
+            Vec::new()
+        } else {
+            reachable(&record.replicas, &inner.faults.partitions, self.node)
+        };
         let network_seqs = subkeys
             .iter()
-            .map(|s| {
-                network
-                    .then(|| record.values.get(*s as usize).cloned().flatten())
-                    .flatten()
-                    .map(|v| v.seq)
-            })
+            .map(|s| replicas::newest_seq(&record.replicas, &reach, *s as usize))
             .collect();
         Ok(RecordReport {
             subkeys,

@@ -47,7 +47,7 @@ async fn a_record_is_local_until_its_first_write_lands() {
     let theirs = b.acquire(&key, None).await.unwrap();
     let value = b.get(theirs, 0, true).await.unwrap().unwrap();
     assert_eq!((value.seq, value.data.as_slice()), (0, &b"v"[..]));
-    assert_eq!(sim.network_value(&key, 0), Some(value));
+    assert_eq!(sim.network_get(&key, 0), Some(value));
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -296,7 +296,7 @@ async fn an_offline_durable_write_is_held_and_the_pool_re_pushes_it() {
         .unwrap();
     assert!(landed.landed);
     assert!(pool.held_writes().is_empty());
-    assert_eq!(sim.network_value(&key, 0).unwrap().data, b"held");
+    assert_eq!(sim.network_get(&key, 0).unwrap().data, b"held");
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -413,8 +413,17 @@ async fn outside_writes_check_the_writer_and_a_conflict_keeps_its_seq() {
 
     sim.conflict_write(&key, 0, b"rival".to_vec(), &owner)
         .unwrap();
-    let rival = sim.network_value(&key, 0).unwrap();
-    assert_eq!((rival.seq, rival.data.as_slice()), (0, &b"rival"[..]));
+    // The replicas the first fanout reached keep "first"; the rest took
+    // the rival at the same seq.
+    let held: Vec<(u32, Vec<u8>)> = sim
+        .replica_values(&key, 0)
+        .into_iter()
+        .flatten()
+        .map(|v| (v.seq, v.data))
+        .collect();
+    assert_eq!(held.len(), 10);
+    assert!(held.contains(&(0, b"rival".to_vec())));
+    assert!(held.contains(&(0, b"first".to_vec())));
     // Both nodes keep the value they hold at that seq.
     assert_eq!(
         b.get(theirs, 0, true).await.unwrap().unwrap().data,
@@ -440,7 +449,7 @@ async fn the_creator_s_owner_key_rewrites_and_a_crash_loses_held_writes() {
     pool.set(lease, 0, b"honest".to_vec(), None).await.unwrap();
     sim.forge_write(&key, 0, b"rewritten".to_vec(), &owner)
         .unwrap();
-    assert_eq!(sim.network_value(&key, 0).unwrap().data, b"rewritten");
+    assert_eq!(sim.network_get(&key, 0).unwrap().data, b"rewritten");
 
     sim.fault(Fault::DhtOffline {
         node: 0,
@@ -455,7 +464,7 @@ async fn the_creator_s_owner_key_rewrites_and_a_crash_loses_held_writes() {
     sim.lose_held(0);
     assert!(pool.held_writes().is_empty());
     sim.fault(Fault::Heal);
-    assert_eq!(sim.network_value(&key, 1), None);
+    assert_eq!(sim.network_get(&key, 1), None);
 }
 
 /// A friend invite's request inbox (plan E2.5, D17): once the inviter's
@@ -542,7 +551,7 @@ async fn a_set_waits_for_consensus_and_an_offline_set_fails_at_once() {
         took >= latency::SET.min && took <= latency::SET.max,
         "two subkeys' sets overlap: {took:?}"
     );
-    assert_eq!(sim.network_value(&key, 1).unwrap().data, b"b");
+    assert_eq!(sim.network_get(&key, 1).unwrap().data, b"b");
     sim.fault(Fault::DhtOffline {
         node: 0,
         offline: true,

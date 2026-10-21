@@ -21,7 +21,7 @@ fn slot_seed_from_invite(community: &Community) -> [u8; 32] {
     let link = rekindle_types::invite::InviteLink::parse(&community.link).expect("an invite link");
     let stored = community
         .sim
-        .network_value(link.secrets_record_key.as_str(), 0)
+        .network_get(link.secrets_record_key.as_str(), 0)
         .expect("the invite secrets are published");
     let encrypted = base64::engine::general_purpose::STANDARD
         .decode(String::from_utf8(stored.data).expect("base64 text"))

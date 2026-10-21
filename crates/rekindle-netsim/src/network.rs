@@ -19,6 +19,7 @@ use rekindle_records::port::{PortEvent, RecordSchema, RecordValue, ValueChange};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::latency::Latency;
+pub(crate) use crate::records::Replica;
 use crate::trace::Trace;
 
 /// The per-node event queue's bound, as the Veilid one (`UPDATE_QUEUE`).
@@ -33,8 +34,9 @@ pub(crate) struct NetRecord {
     /// The creating node: only it sees the record until its first write
     /// lands (Veilid's create is local; the first write publishes).
     pub creator: usize,
-    pub published: bool,
-    pub values: Vec<Option<RecordValue>>,
+    /// The record's replicas (plan E2.B S4; [`crate::records`]'s
+    /// `replicas` module places them and cites Veilid).
+    pub replicas: Vec<Replica>,
 }
 
 /// A live private route: the node that owns it.
@@ -65,10 +67,8 @@ pub(crate) struct Faults {
     pub dht_offline: HashSet<usize>,
     /// Detached nodes: no watch change reaches them.
     pub detached: HashSet<usize>,
-    /// Nodes whose reads return their local copy without asking the
-    /// network (a stale value).
-    pub stale_reads: HashSet<usize>,
-    /// Unordered node pairs that cannot reach each other.
+    /// Unordered node pairs that cannot reach each other: no app message
+    /// or call passes, and neither reaches the replicas beside the other.
     pub partitions: HashSet<(usize, usize)>,
     /// Per mille of app messages and calls dropped.
     pub drop_per_mille: u32,
@@ -225,15 +225,17 @@ impl Network {
         self.inner.lock().pending.iter().map(|p| p.due).min()
     }
 
-    /// Notify every node but `writer` that watches `subkey` of `key`. Each
-    /// watcher's storage manager stores the value it is sent when it is
-    /// newer than its local copy (the inbound `ValueChanged`).
+    /// Notify every node but `writer` that watches `subkey` of `key` and
+    /// reaches one of the replicas beside `homes` (the replicas that took
+    /// `value`). Each watcher's storage manager stores the value it is sent
+    /// when it is newer than its local copy (the inbound `ValueChanged`).
     pub(crate) fn notify_watchers(
         &self,
         writer: usize,
         key: &str,
         subkey: u32,
         value: &RecordValue,
+        homes: &[usize],
     ) {
         let watchers: Vec<usize> = {
             let mut inner = self.inner.lock();
@@ -244,6 +246,9 @@ impl Network {
                 .filter(|(i, node)| {
                     *i != writer
                         && !inner.faults.detached.contains(i)
+                        && homes
+                            .iter()
+                            .any(|h| crate::records::reaches(&inner.faults.partitions, *i, *h))
                         && node
                             .watches
                             .get(key)
