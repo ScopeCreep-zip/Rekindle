@@ -1,14 +1,13 @@
 //! Architecture §23 — local FTS5 search across all locally-stored
-//! decrypted messages. The schema is defined in `001_init.sql` (three
-//! external-content FTS5 virtual tables: `messages_fts`,
-//! `thread_messages_fts`, `dm_messages_fts`).
+//! decrypted messages. The schema is defined in `001_init.sql` (two
+//! external-content FTS5 virtual tables: `messages_fts` and
+//! `thread_messages_fts`).
 //!
 //! This module owns the orchestration: clamp the limit, sanitize the
 //! query into a MATCH expression, route across scopes, merge + rank,
 //! attach ±1 context.
 
 mod context;
-mod dm;
 mod messages;
 mod query;
 mod threads;
@@ -46,7 +45,7 @@ pub async fn search_messages(
     let hits = db_call(pool, move |conn| {
         let mut combined: Vec<SearchHit> = Vec::new();
         // `in_thread` filter routes only to thread search; otherwise we
-        // search messages + dm + threads and merge.
+        // search messages + threads and merge.
         if req_clone.filters.in_thread.is_some() {
             let h = threads::search_thread_messages_table(
                 conn,
@@ -59,8 +58,6 @@ pub async fn search_messages(
             let m =
                 messages::search_messages_table(conn, &owner_key_owned, &match_owned, &req_clone)?;
             combined.extend(m);
-            let d = dm::search_dm_messages_table(conn, &owner_key_owned, &match_owned, &req_clone)?;
-            combined.extend(d);
             let t = threads::search_thread_messages_table(
                 conn,
                 &owner_key_owned,

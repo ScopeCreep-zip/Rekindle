@@ -636,52 +636,6 @@ CREATE TABLE IF NOT EXISTS strand_relay_volunteered (
     PRIMARY KEY (owner_key, friend_public_key)
 );
 
--- Direct messages and group DMs (architecture §27). Each row is one DM
--- conversation backed by a 2-or-N-member SMPL record (o_cnt:0). For
--- 2-party DMs `mek_generation` indexes the ratchet; for group DMs it
--- mirrors the broadcast generation. `participants_json` is a JSON
--- array of {pseudonym, subkey, public_key} for group DMs; for 2-party
--- DMs it has exactly two entries.
-CREATE TABLE IF NOT EXISTS dms (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    record_key TEXT NOT NULL,
-    is_group INTEGER NOT NULL DEFAULT 0,
-    initiator_public_key TEXT NOT NULL,
-    initiator_pseudonym TEXT NOT NULL,
-    my_subkey INTEGER NOT NULL,
-    participants_json TEXT NOT NULL CHECK(json_valid(participants_json)),
-    -- 32-byte slot seed (hex) used to derive the SMPL slot keypairs for
-    -- both peers. Persisted so writes survive a restart without re-
-    -- exchanging the seed.
-    slot_seed_hex TEXT NOT NULL DEFAULT '',
-    -- Group DMs only (architecture §27.2): the wrapped MEK envelope
-    -- (X25519+AES-256-GCM) addressed to *us*. Stashed at receive time
-    -- so the user can defer accept; unwrapped on accept and dropped
-    -- after the plaintext MEK lands in `dm_mek_cache`. For 2-party DMs
-    -- this column is empty (MEK is re-derived from identity on demand).
-    wrapped_mek_blob BLOB,
-    mek_generation INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    last_message_at INTEGER,
-    PRIMARY KEY (owner_key, record_key)
-);
-
--- Local message log for DMs. Mirrors `messages` but per-DM (not per-friend)
--- since a single friend can have multiple DM conversations across pseudonym
--- contexts (architecture §27.1 unlinkability).
-CREATE TABLE IF NOT EXISTS dm_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    record_key TEXT NOT NULL,
-    sender_pseudonym TEXT NOT NULL,
-    body TEXT NOT NULL,
-    timestamp INTEGER NOT NULL,
-    sequence INTEGER NOT NULL DEFAULT 0,
-    mek_generation INTEGER NOT NULL DEFAULT 0
-);
-CREATE INDEX IF NOT EXISTS idx_dm_messages_record_ts
-    ON dm_messages(owner_key, record_key, timestamp);
-
 -- Mutual Aid topology metrics (architecture §14.5). Per-community
 -- per-peer success/failure counters used to weight gossip fan-out
 -- selection so high-reliability "ziplines" emerge organically. Pure
@@ -1082,22 +1036,4 @@ END;
 CREATE TRIGGER IF NOT EXISTS thread_messages_fts_au AFTER UPDATE ON thread_messages BEGIN
     INSERT INTO thread_messages_fts(thread_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
     INSERT INTO thread_messages_fts(rowid, body) VALUES (new.id, new.body);
-END;
-
-CREATE VIRTUAL TABLE IF NOT EXISTS dm_messages_fts USING fts5(
-    body,
-    content='dm_messages',
-    content_rowid='id',
-    tokenize='unicode61 remove_diacritics 2'
-);
-
-CREATE TRIGGER IF NOT EXISTS dm_messages_fts_ai AFTER INSERT ON dm_messages BEGIN
-    INSERT INTO dm_messages_fts(rowid, body) VALUES (new.id, new.body);
-END;
-CREATE TRIGGER IF NOT EXISTS dm_messages_fts_ad AFTER DELETE ON dm_messages BEGIN
-    INSERT INTO dm_messages_fts(dm_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
-END;
-CREATE TRIGGER IF NOT EXISTS dm_messages_fts_au AFTER UPDATE ON dm_messages BEGIN
-    INSERT INTO dm_messages_fts(dm_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
-    INSERT INTO dm_messages_fts(rowid, body) VALUES (new.id, new.body);
 END;

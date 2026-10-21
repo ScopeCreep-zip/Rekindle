@@ -129,16 +129,6 @@ groups them by concern.
 - **`message_delivery`** — per-message per-recipient delivery
   tracking for community channel messages.
 
-### Direct Messages (Architecture §27)
-
-- **`dms`** — DM and group-DM conversations backed by SMPL records
-  (`o_cnt:0`). Holds SMPL `record_key`, `is_group`, initiator
-  identity, our `my_subkey` index, JSON-encoded participant list,
-  `slot_seed_hex`, `wrapped_mek_blob` (group DMs only), and
-  `mek_generation`.
-- **`dm_messages`** — local message log per DM (one friend can have
-  multiple unlinkable DM contexts).
-
 ### Communities
 
 - **`communities`** — joined communities. Tracks DHT record keys
@@ -260,12 +250,11 @@ row the record does not match.
 
 ### Full-Text Search (Architecture §23)
 
-Three FTS5 virtual tables with `unicode61 remove_diacritics 2`
+Two FTS5 virtual tables with `unicode61 remove_diacritics 2`
 tokenizer (no `porter` stemming — Rekindle is multilingual):
 
 - `messages_fts` — content table `messages`, content_rowid `id`
 - `thread_messages_fts` — content table `thread_messages`, content_rowid `id`
-- `dm_messages_fts` — content table `dm_messages`, content_rowid `id`
 
 Each has `AFTER INSERT/UPDATE/DELETE` triggers keeping the index
 in lock-step.
@@ -281,7 +270,6 @@ in lock-step.
 - `idx_community_members_community` on `community_members(owner_key, community_id, pseudonym_key)`
 - `idx_pending_recipient` on `pending_messages(owner_key, recipient_key)`
 - `idx_thread_messages_thread` on `thread_messages(owner_key, community_id, thread_id, timestamp)`
-- `idx_dm_messages_record_ts` on `dm_messages(owner_key, record_key, timestamp)`
 - `idx_member_leaves_recent` on `community_member_leaves(owner_key, community_id, left_at)`
 - `idx_voice_session_events_channel` on `voice_session_events(owner_key, community_id, channel_id, occurred_at)`
 

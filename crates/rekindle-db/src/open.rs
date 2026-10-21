@@ -170,7 +170,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 107 (plan E2.5, D23/D24): `chain_entries`, which chain seq each `dm` row
 /// went to (for `retire_through`), and `messages.history_gap_through`, the
 /// stored `HistoryGap` marker.
-pub const SCHEMA_VERSION: i64 = 108;
+///
+/// 110 (plan E2.6, G4): the SMPL group DM tables `dms`, `dm_messages` and
+/// `dm_messages_fts` are gone; a group DM is `group_dms`.
+pub const SCHEMA_VERSION: i64 = 110;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

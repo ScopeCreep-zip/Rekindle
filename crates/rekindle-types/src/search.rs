@@ -79,8 +79,7 @@ fn default_limit() -> u32 {
 pub const MAX_SEARCH_LIMIT: u32 = 100;
 
 /// Where the hit was found — `messages` covers channel + DM bridge,
-/// `thread_messages` covers thread replies, `dm_messages` covers the
-/// per-DM ratchet log.
+/// `thread_messages` covers thread replies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SearchScope {

@@ -106,14 +106,14 @@ Commands are registered in `src-tauri/src/invoke.rs` via
 | `auth.rs` | 6 | `create_identity`, `login`, `logout`, `list_identities`, `delete_identity`, `get_identity` |
 | `chat.rs` | 5 | `send_message`, `resend_message`, `send_typing`, `get_message_history`, `mark_read` |
 | `friends.rs` | 23 | Add / remove / accept / reject, groups, invites, block / unblock |
-| `dm.rs` | 5 | `list_dms`, `accept_dm_invite`, `decline_dm_invite`, `send_dm_message`, `get_dm_messages` (the group path, until E2.6) |
+| `dm.rs` | 3 | `send_dm_video_frame`, `register_dm_video_channel`, `unregister_dm_video_channel` |
 | `calls.rs` | 12 | `start_dm_call`, `accept_dm_call`, `decline_dm_call`, `end_dm_call`, `send_call_media_state`, `send_call_reaction`, `mute_caller_temp`, `start_group_call`, `accept_group_call`, `decline_group_call`, `end_group_call`, `get_missed_calls` |
 | `voice.rs` | 12 | Join / leave channel, mute, deafen, devices, mode, server-mute, stage hand-raise |
 | `community/` | ~127 across 32 submodules | CRUD, channels, channel_admin, messaging, roles, moderation, mek, invites, notifications, reactions_pins, audit, analytics, automod, polls, expressions, files, link_previews, threads, events, game_servers, unread, presence, onboarding, segments, video, background_sync, diagnostics, profile_blobs, policy |
 | `status.rs` | 5 | Set status / nickname / avatar / status message / get avatar |
 | `game.rs` | 3 | `get_game_status`, `get_game_name`, `launch_game_to_server` |
 | `relay.rs` | 4 | Strand Relay volunteer / revoke / list (received / volunteered) |
-| `search.rs` | 1 | `search_messages` — FTS5 over `messages_fts` / `thread_messages_fts` / `dm_messages_fts` |
+| `search.rs` | 1 | `search_messages` — FTS5 over `messages_fts` / `thread_messages_fts` |
 | `sync.rs` | 10 | Personal sync record, pairing, read / write manifest / read_state / preferences / paired_devices |
 | `push_relay.rs` | 3 | Register / unregister / list push relay |
 | `settings.rs` | 3 | Get / set preferences, `check_for_updates` (stub — auto-updater not yet wired) |
