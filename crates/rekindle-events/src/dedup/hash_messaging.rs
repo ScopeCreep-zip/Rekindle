@@ -121,6 +121,10 @@ fn hash_typing_context(h: &mut blake3::Hasher, ctx: &TypingContext) {
             h.update(b"dm:");
             h.update(peer_key.as_bytes());
         }
+        TypingContext::GroupDm { group_id } => {
+            h.update(b"gdm:");
+            h.update(group_id.as_bytes());
+        }
     }
 }
 
@@ -215,6 +219,13 @@ pub(super) fn hash_group_dm(
             h.update(b"send|");
             h.update(client_id.as_bytes());
             h.update(state.as_str().as_bytes());
+        }
+        GroupDmEvent::Message {
+            sender, message_id, ..
+        } => {
+            h.update(b"msg|");
+            h.update(sender.public_key.as_bytes());
+            h.update(message_id.as_bytes());
         }
     }
 }

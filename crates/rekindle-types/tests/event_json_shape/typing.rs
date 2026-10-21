@@ -6,7 +6,11 @@ use crate::{channel, community, pk, Sample};
 
 pub const NAMES: &[&str] = &["started", "stopped"];
 
-pub const NESTED: &[&str] = &["TypingContext.channel", "TypingContext.dm"];
+pub const NESTED: &[&str] = &[
+    "TypingContext.channel",
+    "TypingContext.dm",
+    "TypingContext.groupDm",
+];
 
 pub fn variant_name(e: &TypingEvent) -> &'static str {
     match e {
@@ -19,6 +23,7 @@ fn context_name(context: &TypingContext) -> &'static str {
     match context {
         TypingContext::Channel { .. } => "TypingContext.channel",
         TypingContext::Dm { .. } => "TypingContext.dm",
+        TypingContext::GroupDm { .. } => "TypingContext.groupDm",
     }
 }
 
@@ -47,6 +52,15 @@ fn in_dm() -> TypingContext {
 
 pub fn samples() -> Vec<Sample> {
     vec![
+        ev(
+            "started.groupDm",
+            TypingEvent::Started {
+                context: TypingContext::GroupDm {
+                    group_id: "6d".repeat(16),
+                },
+                who: pk('c'),
+            },
+        ),
         ev(
             "started.channel",
             TypingEvent::Started {

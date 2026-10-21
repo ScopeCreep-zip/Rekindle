@@ -179,9 +179,10 @@ impl DmFrame {
     /// first payload is a kind it may carry.
     fn check_shape(&self) -> Result<(), CodecError> {
         let fits = match (&self.body, self.type_id.carrier()) {
-            (FrameBody::Ratchet(_), Carrier::Ratchet) | (FrameBody::Sealed(_), Carrier::Sealed) => {
-                true
-            }
+            // A group entry rides a member's pairwise ratchet only as its
+            // hint (or as typing, which is never on a chain).
+            (FrameBody::Ratchet(_), Carrier::Ratchet | Carrier::GroupChain)
+            | (FrameBody::Sealed(_), Carrier::Sealed) => true,
             (FrameBody::PreKeyInit(init), Carrier::PreKeyInit) => {
                 init.first_type_id.is_first_payload()
             }

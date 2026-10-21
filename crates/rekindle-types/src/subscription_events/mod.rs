@@ -190,7 +190,7 @@ impl SubscriptionEvent {
                 TypingEvent::Started { context, .. } | TypingEvent::Stopped { context, .. } => {
                     match context {
                         TypingContext::Channel { community, .. } => Some(community),
-                        TypingContext::Dm { .. } => None,
+                        TypingContext::Dm { .. } | TypingContext::GroupDm { .. } => None,
                     }
                 }
             },

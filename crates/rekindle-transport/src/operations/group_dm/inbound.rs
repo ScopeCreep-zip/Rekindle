@@ -18,7 +18,11 @@ pub(crate) async fn on_stream_record(
         return false;
     };
     match rekindle_dm::on_member_chain(deps.as_ref(), sender, &group_id, &record.record_key).await {
-        Ok(()) => true,
+        Ok(()) => {
+            super::receive::watch_member(host, &group_id, sender, &record.record_key).await;
+            super::receive::spawn_diff(host, &group_id, sender);
+            true
+        }
         Err(e) => {
             tracing::info!(from = %sender, error = %friend_error(&e), "group chain refused");
             false
@@ -26,10 +30,14 @@ pub(crate) async fn on_stream_record(
     }
 }
 
-/// Apply an opened group control frame from `sender`; whether it applied.
-/// `GroupContent` never travels pairwise (it is a group chain entry), so
-/// one that does is refused.
+/// Apply an opened group frame from `sender`; whether it applied. A
+/// `GroupContent` pairwise is a member's hint (or typing,
+/// [`super::receive::on_hint`]); a member's key, once held, watches and
+/// diffs their chain (an entry at that epoch may be waiting for it).
 pub async fn apply(host: &dyn FriendHost, sender: &str, body: &DirectBody) -> bool {
+    if let DirectBody::GroupContent(content) = body {
+        return super::receive::on_hint(host, sender, content).await;
+    }
     let Ok(deps) = host.group_dm() else {
         return false;
     };
@@ -52,8 +60,12 @@ pub async fn apply(host: &dyn FriendHost, sender: &str, body: &DirectBody) -> bo
         super::pairwise::drop_sessions(host, &[sender.to_string()]).await;
     }
     match reply {
-        Ok(None) => true,
+        Ok(None) => {
+            member_key_held(host, sender, body).await;
+            true
+        }
         Ok(Some(out)) => {
+            member_key_held(host, sender, body).await;
             if let Err(e) = send_pairwise(host, out, DirectBody::GroupDmAccept).await {
                 tracing::warn!(error = %e, "group key reply not committed");
             }
@@ -64,5 +76,13 @@ pub async fn apply(host: &dyn FriendHost, sender: &str, body: &DirectBody) -> bo
                 "group frame refused");
             false
         }
+    }
+}
+
+/// After a member's key applied: watch the chain it names and diff it.
+async fn member_key_held(host: &dyn FriendHost, sender: &str, body: &DirectBody) {
+    if let DirectBody::GroupDmAccept(key) = body {
+        super::receive::watch_member(host, &key.group_id, sender, &key.chain_record_key).await;
+        super::receive::spawn_diff(host, &key.group_id, sender);
     }
 }

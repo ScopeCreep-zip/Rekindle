@@ -159,6 +159,8 @@ pub(crate) async fn run(
     let streams = super::adapters::friends::HostFriends::of(ctx);
     scope.spawn_or_drop("dm stream catch-up", async move {
         rekindle_transport::operations::dm::stream::catch_up_all(&streams).await;
+        // The members' group chains likewise (plan E2.6).
+        rekindle_transport::operations::group_dm::receive::catch_up_all(&streams).await;
     });
     // 3d. The audit check.
     audit(

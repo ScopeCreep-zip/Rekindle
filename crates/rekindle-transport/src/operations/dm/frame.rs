@@ -312,7 +312,8 @@ pub async fn frame(
     hint: ContentHint,
 ) -> Result<DmFrame, FriendError> {
     match body.type_id().carrier() {
-        Carrier::Ratchet => ratchet_frame(host, to, body, hint).await,
+        // A group entry goes pairwise only as a member's hint (plan E2.6).
+        Carrier::Ratchet | Carrier::GroupChain => ratchet_frame(host, to, body, hint).await,
         Carrier::Sealed => {
             let mut nonce = Nonce::default();
             host.rng().fill(&mut nonce);
@@ -320,10 +321,6 @@ pub async fn frame(
         }
         Carrier::PreKeyInit | Carrier::FirstPayload => Err(FriendError::Invalid(format!(
             "{:?} opens a session: initiate it from a bundle",
-            body.type_id()
-        ))),
-        Carrier::GroupChain => Err(FriendError::Invalid(format!(
-            "{:?} is a group chain entry, never a pairwise frame",
             body.type_id()
         ))),
     }

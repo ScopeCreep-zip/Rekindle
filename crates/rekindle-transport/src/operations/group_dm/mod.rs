@@ -9,10 +9,13 @@
 //! printed.
 
 mod admission;
+pub mod content;
 mod inbound;
 mod pairwise;
+pub mod receive;
 
 pub use admission::admitted;
+pub use content::{report_draft, send};
 pub use inbound::apply;
 pub(crate) use inbound::on_stream_record;
 pub use pairwise::GroupFirstContact;

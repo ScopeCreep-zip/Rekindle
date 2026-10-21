@@ -5,7 +5,14 @@ use rekindle_types::subscription_events::{GroupDmEvent, GroupDmMember, Subscript
 
 use crate::{pk, text, Sample};
 
-pub const NAMES: &[&str] = &["invited", "joined", "left", "keyRotated", "sendStatus"];
+pub const NAMES: &[&str] = &[
+    "invited",
+    "joined",
+    "left",
+    "keyRotated",
+    "sendStatus",
+    "message",
+];
 
 pub fn variant_name(e: &GroupDmEvent) -> &'static str {
     match e {
@@ -14,6 +21,7 @@ pub fn variant_name(e: &GroupDmEvent) -> &'static str {
         GroupDmEvent::Left { .. } => "left",
         GroupDmEvent::KeyRotated { .. } => "keyRotated",
         GroupDmEvent::SendStatus { .. } => "sendStatus",
+        GroupDmEvent::Message { .. } => "message",
     }
 }
 
@@ -75,6 +83,17 @@ pub fn samples() -> Vec<Sample> {
                 group_id: group(),
                 client_id: text("0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5a"),
                 state: SendState::Sent,
+            },
+        ),
+        ev(
+            "message",
+            GroupDmEvent::Message {
+                group_id: group(),
+                message_id: text("0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5b"),
+                sender: member('b', "Bob"),
+                body: text("hello group"),
+                timestamp: 1_700_000_000_000,
+                reply_to: None,
             },
         ),
     ]

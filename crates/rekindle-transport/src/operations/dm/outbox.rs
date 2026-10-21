@@ -35,6 +35,13 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed; nothing was committed.
     async fn enqueue(&self, to: &str, dm: OutgoingDm) -> Result<i64, FriendError>;
+    /// Commit `dm` with its echo (a `group_dm` message under the group's
+    /// id) at the end of our stream to `group_id` (plan E2.6), in one
+    /// transaction; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_group(&self, group_id: &str, dm: OutgoingDm) -> Result<i64, FriendError>;
     /// Commit a `friend_handshake` frame (`payload`, [`super::Framed`]) at
     /// the end of our handshake stream to `to`; its stream seq.
     ///
@@ -123,6 +130,14 @@ pub fn payload(body: &DirectBody) -> Result<Vec<u8>, FriendError> {
         body: body.encode(),
     })
     .map_err(|e| FriendError::Failed(format!("serialize the outbox payload: {e}")))
+}
+
+/// A `dm` or `group_dm` row's payload read back.
+///
+/// # Errors
+/// It is not a stored payload of an allocated kind.
+pub(crate) fn decode_payload(payload: &[u8]) -> Result<DirectBody, String> {
+    decode(payload)
 }
 
 fn decode(payload: &[u8]) -> Result<DirectBody, String> {

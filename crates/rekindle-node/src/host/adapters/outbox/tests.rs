@@ -54,6 +54,7 @@ async fn a_row_waits_for_its_sender_and_projects_onto_its_echo() {
     };
     let echo = DmEcho {
         peer_key: "bob".into(),
+        conversation_type: rekindle_types::message::ConversationType::Dm,
         sender_key: OWNER.into(),
         body: "hi".into(),
         timestamp: 1,

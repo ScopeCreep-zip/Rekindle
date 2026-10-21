@@ -20,8 +20,10 @@ pub enum Carrier {
     /// which every member holds. The chain is read by every member, so a
     /// pairwise ratchet or HPKE seal (one reader) cannot carry it, and
     /// sealing it again per member would write one entry per reader; the
-    /// members' hints only name the entry. A frame of this typeId is
-    /// refused at decode.
+    /// members' hints carry the same entry over each pairwise ratchet,
+    /// only to make the member diff the chain (typing, which is never on a
+    /// chain, travels only so). As a frame it takes a `ratchet` body, never
+    /// a sealed or PreKeyInit one.
     GroupChain,
 }
 

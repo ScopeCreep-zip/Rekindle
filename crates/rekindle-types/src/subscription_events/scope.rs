@@ -68,6 +68,7 @@ impl SubscriptionEvent {
                     EventScope::Community(community.clone())
                 }
                 TypingContext::Dm { peer_key } => EventScope::Peer(peer_key.clone()),
+                TypingContext::GroupDm { group_id } => EventScope::Conversation(group_id.clone()),
             },
             Self::Presence(e) => match e {
                 PresenceEvent::CommunityMemberChanged { community, .. } => {

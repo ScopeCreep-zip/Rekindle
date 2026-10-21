@@ -11,8 +11,8 @@ use std::sync::Arc;
 
 use rekindle_presence::FriendPresenceDeps;
 use rekindle_records::lease::LeaseId;
-use rekindle_transport::operations::dm;
 use rekindle_transport::operations::friend::FriendHost;
+use rekindle_transport::operations::{dm, group_dm};
 use rekindle_types::friend::FriendshipState;
 
 use super::{inbox_watch, HostFriends};
@@ -68,6 +68,7 @@ impl HostFriends {
             }
         }
         dm::stream::catch_up_all(self).await;
+        group_dm::receive::catch_up_all(self).await;
     }
 
     /// A watched record changed: an invite's inbox, a friend's participant
@@ -83,6 +84,10 @@ impl HostFriends {
             return true;
         }
         if let Some(peer) = participant_peer(self, record) {
+            if group_dm::receive::parse_watch_key(&peer).is_some() {
+                group_dm::receive::on_watch_change(self, &peer, record).await;
+                return true;
+            }
             dm::stream::on_watch_change(self, &peer, record).await;
             return true;
         }
@@ -123,6 +128,7 @@ impl HostFriends {
         for (peer, record) in participant_records(self).await {
             watch_participant(self, &peer, &record).await;
         }
+        group_dm::receive::watch_all(self).await;
     }
 }
 

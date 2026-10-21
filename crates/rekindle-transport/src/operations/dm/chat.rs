@@ -65,6 +65,7 @@ impl NewDmFields {
             let dm = rekindle_db::repo::messages::NewDm {
                 owner_key: &owner,
                 peer_key: &self.peer,
+                conversation_type: rekindle_types::message::ConversationType::Dm,
                 sender_key: &self.sender,
                 body: &self.body,
                 timestamp: self.timestamp,

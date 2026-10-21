@@ -596,6 +596,21 @@
       }
     }
   },
+  "groupDm.message": {
+    "groupDm": {
+      "message": {
+        "body": "hello group",
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "messageId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5b",
+        "replyTo": null,
+        "sender": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "timestamp": 1700000000000
+      }
+    }
+  },
   "groupDm.sendStatus": {
     "groupDm": {
       "sendStatus": {
@@ -1645,6 +1660,18 @@
           }
         },
         "who": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
+  "typing.started.groupDm": {
+    "typing": {
+      "started": {
+        "context": {
+          "groupDm": {
+            "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d"
+          }
+        },
+        "who": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
       }
     }
   },

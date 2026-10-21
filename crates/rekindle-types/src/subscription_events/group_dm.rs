@@ -55,6 +55,18 @@ pub enum GroupDmEvent {
         client_id: String,
         state: SendState,
     },
+    /// A member's message, stored under the group's conversation.
+    /// Triggered by: an entry of the member's group chain that opened.
+    Message {
+        group_id: String,
+        /// Its client id (`messages.message_id`), minted by its author.
+        message_id: String,
+        sender: GroupDmMember,
+        body: String,
+        /// The author's clock, milliseconds.
+        timestamp: i64,
+        reply_to: Option<String>,
+    },
 }
 
 impl GroupDmEvent {
@@ -66,7 +78,8 @@ impl GroupDmEvent {
             | Self::Joined { group_id, .. }
             | Self::Left { group_id, .. }
             | Self::KeyRotated { group_id, .. }
-            | Self::SendStatus { group_id, .. } => group_id,
+            | Self::SendStatus { group_id, .. }
+            | Self::Message { group_id, .. } => group_id,
         }
     }
 }

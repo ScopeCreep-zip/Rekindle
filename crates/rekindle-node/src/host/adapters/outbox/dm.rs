@@ -60,6 +60,10 @@ impl OutboxSlot {
             StreamKind::FriendHandshake,
             Arc::new(HandshakeSender(HostFriends::of(ctx))),
         );
+        self.senders.install(
+            StreamKind::GroupDm,
+            Arc::new(GroupSender(HostFriends::of(ctx))),
+        );
         *self.current.write() = Some(Arc::clone(&outbox));
         let friends = HostFriends::of(ctx);
         scope
@@ -76,6 +80,7 @@ impl OutboxSlot {
     pub(crate) fn stop(&self) {
         self.senders.remove(StreamKind::Dm);
         self.senders.remove(StreamKind::FriendHandshake);
+        self.senders.remove(StreamKind::GroupDm);
         self.senders.remove(StreamKind::DhtWrite);
         self.senders.remove(StreamKind::MediaKey);
         self.senders.remove(StreamKind::ChannelPost);
@@ -176,6 +181,28 @@ impl StreamSender for DmSender {
     }
 }
 
+/// The `group_dm` stream's sender: `group_dm::content::attempt` (plan
+/// E2.6): the row settles `sent` once its entry is on our group chain.
+struct GroupSender(HostFriends);
+
+#[async_trait]
+impl StreamSender for GroupSender {
+    async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
+        let Some(group) = row.stream.strip_prefix("group_dm:") else {
+            return AttemptOutcome::Wedged(format!("not a group stream: {}", row.stream));
+        };
+        outcome(
+            rekindle_transport::operations::group_dm::content::attempt(
+                &self.0,
+                group,
+                row.stream_seq,
+                &row.payload,
+            )
+            .await,
+        )
+    }
+}
+
 /// The `friend_handshake` stream's sender: `dm::handshake::attempt`.
 struct HandshakeSender(HostFriends);
 
@@ -228,6 +255,27 @@ impl DmOutbox for DmStream {
         };
         let echo = DmEcho {
             peer_key: to.to_owned(),
+            conversation_type: rekindle_types::message::ConversationType::Dm,
+            sender_key: dm.sender,
+            body: dm.body,
+            timestamp: dm.timestamp,
+            reply_to: dm.reply_to,
+        };
+        let enqueued = self.0.enqueue(entry, Some(echo)).await;
+        enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
+    }
+
+    async fn enqueue_group(&self, group_id: &str, dm: OutgoingDm) -> Result<i64, FriendError> {
+        let entry = Entry {
+            kind: StreamKind::GroupDm,
+            scope: group_id.to_owned(),
+            client_id: dm.client_id,
+            payload: dm.payload,
+            deadline: Deadline::Horizon,
+        };
+        let echo = DmEcho {
+            peer_key: group_id.to_owned(),
+            conversation_type: rekindle_types::message::ConversationType::GroupDm,
             sender_key: dm.sender,
             body: dm.body,
             timestamp: dm.timestamp,

@@ -39,7 +39,9 @@ const CHANGES: usize = 256;
 /// the row's and it starts `queued`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DmEcho {
+    /// The conversation: the peer, or the group's id (plan E2.6).
     pub peer_key: String,
+    pub conversation_type: rekindle_types::message::ConversationType,
     pub sender_key: String,
     pub body: String,
     pub timestamp: i64,
@@ -168,6 +170,7 @@ impl OutboxDeps for HostOutbox {
             let dm = echo.as_ref().map(|e| NewDm {
                 owner_key: &owner,
                 peer_key: &e.peer_key,
+                conversation_type: e.conversation_type,
                 sender_key: &e.sender_key,
                 body: &e.body,
                 timestamp: e.timestamp,

@@ -55,7 +55,10 @@ pub struct DmRow {
 #[derive(Debug, Clone, Copy)]
 pub struct NewDm<'a> {
     pub owner_key: &'a str,
+    /// The conversation: the peer, or a group's id (32 hex, plan E2.6).
     pub peer_key: &'a str,
+    /// `Dm`, or `GroupDm` for a group's message.
+    pub conversation_type: rekindle_types::message::ConversationType,
     pub sender_key: &'a str,
     pub body: &'a str,
     pub timestamp: i64,
@@ -94,7 +97,7 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
     let inserted = conn.execute(
         "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
          timestamp, is_read, message_id, reply_to_id, send_state, stream_seq) \
-         VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6, ?7, \
+         VALUES (?1, ?2, ?11, ?3, ?4, ?5, ?6, ?7, \
                  (SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
                   AND message_id = ?8 ORDER BY id LIMIT 1), ?9, ?10) \
          ON CONFLICT(owner_key, conversation_id, sender_key, message_id) \
@@ -109,7 +112,8 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
             dm.message_id,
             dm.reply_to,
             dm.send_state.as_str(),
-            dm.stream_seq
+            dm.stream_seq,
+            dm.conversation_type.as_str()
         ],
     )? > 0;
     let id = conn.query_row(
@@ -392,6 +396,7 @@ mod tests {
         NewDm {
             owner_key: OWNER,
             peer_key: peer,
+            conversation_type: rekindle_types::message::ConversationType::Dm,
             sender_key: sender,
             body,
             timestamp: ts,

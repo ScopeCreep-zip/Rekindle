@@ -28,4 +28,7 @@ pub enum TypingContext {
     Channel { community: String, channel: String },
     /// Typing in a DM conversation.
     Dm { peer_key: String },
+    /// Typing in a group DM (plan E2.6): 0x0401 inside a member's
+    /// `GroupContent` hint, never on its chain.
+    GroupDm { group_id: String },
 }

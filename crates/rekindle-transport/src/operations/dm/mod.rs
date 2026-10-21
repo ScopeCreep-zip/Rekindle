@@ -18,7 +18,7 @@ pub use chat::{
     client_id_text, discard_send, history, inbox, mark_read, parse_client_id, retry_peer,
     retry_send, send_dm,
 };
-pub(crate) use chat::{count_unread, NewDmFields};
+pub(crate) use chat::{count_unread, mint_client_id, NewDmFields};
 pub use frame::wire;
 pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};
 pub use send::{hint_for, reply_frame, send_frame, send_to_peer, send_to_peer_call, Framed};
