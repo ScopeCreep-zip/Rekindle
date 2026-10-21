@@ -577,12 +577,8 @@ fn group_bodies_hold_their_shapes() {
     };
     assert!(!format!("{accept:?}").contains("171"));
     let mut rechained = invite.clone();
-    rechained.creator_chain_key = s("VLD0:other");
-    assert_ne!(
-        invite.signing_bytes(),
-        rechained.signing_bytes(),
-        "the creator's chain is signed"
-    );
+    rechained.creator_chain_key.push('x');
+    assert_ne!(invite.signing_bytes(), rechained.signing_bytes());
     let empty = DirectBody::GroupContent(GroupContent {
         group_id: [1; 16],
         epoch: 0,
