@@ -36,8 +36,34 @@ pub(crate) async fn unblocked(host: &dyn FriendHost, sender_hex: &str) -> Option
 /// decrypted before a block or a removal is judged when it is applied.
 pub(crate) async fn admitted(host: &dyn FriendHost, sender_hex: &str, kind: DmTypeId) -> bool {
     match unblocked(host, sender_hex).await {
-        Some(status) => kind_admitted(sender_hex, kind, status),
+        Some(status) => frame_admitted(host, sender_hex, kind, status, false).await,
         None => false,
+    }
+}
+
+/// Whether a sender who is not blocked, with `status`, may deliver `kind`
+/// alone or as a PreKeyInit's first payload (`init`): the friend gate,
+/// else the group admission (plan E2.6: a member of a group we hold, for
+/// the group kinds only); logged when both refuse.
+pub(crate) async fn frame_admitted(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+    status: Status,
+    init: bool,
+) -> bool {
+    let friend = if init {
+        may_open_session(kind, status, kind == DmTypeId::SessionResetAccept)
+    } else {
+        sender_admitted(kind, status)
+    };
+    if friend || crate::operations::group_dm::admitted(host, sender_hex, kind, init).await {
+        return true;
+    }
+    if init {
+        init_admitted(sender_hex, kind, status)
+    } else {
+        kind_admitted(sender_hex, kind, status)
     }
 }
 

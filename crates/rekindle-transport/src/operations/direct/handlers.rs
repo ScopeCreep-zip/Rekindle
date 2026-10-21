@@ -154,7 +154,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         | DirectBody::GroupDmDecline(_)
         | DirectBody::GroupDmLeave(_)
         | DirectBody::GroupContent(_) => {
-            tracing::debug!(from = %sender, kind = ?opened.type_id, "group DM kind not applied before E2.6 G2");
+            applied = crate::operations::group_dm::apply(host, sender, &opened.body).await;
         }
         DirectBody::RelayEnvelope(_)
         | DirectBody::RelayOffer(_)

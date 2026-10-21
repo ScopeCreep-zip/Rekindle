@@ -58,6 +58,10 @@ pub async fn block(host: &dyn FriendHost, public_key: &str) -> Result<(), Friend
         peer_key: public_key.to_string(),
         blocked: true,
     }));
+    // Every group we share drops them and our key rotates (plan E2.6).
+    if let Err(e) = crate::operations::group_dm::on_blocked(host, public_key).await {
+        tracing::warn!(public_key = %public_key, error = %e, "group key rotation after a block incomplete");
+    }
     tracing::info!(public_key = %public_key, "user blocked and profile key rotated");
     Ok(())
 }

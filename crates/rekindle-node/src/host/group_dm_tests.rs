@@ -68,3 +68,58 @@ async fn a_group_its_keys_and_a_held_invite_are_the_identitys() {
     assert!(seen.iter().any(|f| f.contains("Joined")), "{seen:?}");
     assert!(seen.iter().any(|f| f.contains("KeyRotated")), "{seen:?}");
 }
+
+#[tokio::test]
+async fn a_member_who_is_not_a_friend_is_admitted_for_the_group_kinds_only() {
+    use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, GroupDmLeave};
+    use rekindle_transport::operations::group_dm::admitted;
+
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    let deps = HostGroupDm::open(&friends).unwrap();
+    let (b, c, stranger) = ("b".repeat(64), "c".repeat(64), "d".repeat(64));
+    let others = vec![member(b.clone(), 'b'), member(c.clone(), 'c')];
+    let created = rekindle_dm::create(&deps, "raid night", member(hex::encode(owner), 'a'), others)
+        .await
+        .unwrap();
+    let gid = created.group.group_id;
+
+    for kind in [
+        DmTypeId::GroupDmAccept,
+        DmTypeId::GroupContent,
+        DmTypeId::GroupDmLeave,
+    ] {
+        assert!(admitted(&friends, &b, kind, false).await, "{kind:?}");
+        assert!(
+            admitted(&friends, &b, kind, true).await,
+            "{kind:?} opens the pair's session"
+        );
+        assert!(
+            !admitted(&friends, &stranger, kind, false).await,
+            "{kind:?}"
+        );
+    }
+    for kind in [
+        DmTypeId::DmText,
+        DmTypeId::FriendAccept,
+        DmTypeId::FriendsKey,
+        DmTypeId::StreamRecord,
+    ] {
+        assert!(!admitted(&friends, &b, kind, false).await, "{kind:?}");
+        assert!(!admitted(&friends, &b, kind, true).await, "{kind:?}");
+    }
+
+    // b leaves: off our roster, its admission ends, and our key rotates.
+    let leave = DirectBody::GroupDmLeave(GroupDmLeave {
+        group_id: gid,
+        epoch: 0,
+    });
+    assert!(rekindle_transport::operations::group_dm::apply(&friends, &b, &leave).await);
+    let held = deps.group(&gid).await.unwrap().unwrap();
+    assert!(!held.roster.contains(&b));
+    assert_eq!(held.epoch, created.group.epoch + 1);
+    assert!(deps.latest_sender_key(&gid, &b).await.unwrap().is_none());
+    assert!(!admitted(&friends, &b, DmTypeId::GroupContent, false).await);
+    assert!(admitted(&friends, &c, DmTypeId::GroupContent, false).await);
+}

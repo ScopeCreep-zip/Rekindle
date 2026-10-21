@@ -15,6 +15,7 @@ pub mod community;
 pub mod direct;
 pub mod dm;
 pub mod friend;
+pub mod group_dm;
 pub mod identity;
 pub mod mek;
 pub mod prekeys;
