@@ -299,15 +299,14 @@ pub(super) async fn call_datagram(
     datagram: Vec<u8>,
 ) -> Result<Option<Opened>, FriendError> {
     let node = host.node()?;
-    let target = match route::cached_target(&node, to) {
-        Some(target) => target,
-        None => {
-            let blob = route::fetch_from_profile(host, to)
-                .await
-                .ok_or_else(|| FriendError::NotReady(format!("no route for peer {to}")))?;
-            route::import(&node, to, &blob)
-                .ok_or_else(|| FriendError::NotReady(format!("unusable route for peer {to}")))?
-        }
+    let target = if let Some(target) = route::cached_target(&node, to) {
+        target
+    } else {
+        let blob = route::fetch_from_profile(host, to)
+            .await
+            .ok_or_else(|| FriendError::NotReady(format!("no route for peer {to}")))?;
+        route::import(&node, to, &blob)
+            .ok_or_else(|| FriendError::NotReady(format!("unusable route for peer {to}")))?
     };
     let reply = node
         .caller()
