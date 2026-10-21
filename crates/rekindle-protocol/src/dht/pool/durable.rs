@@ -42,8 +42,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::WriterKey;
 use tokio::time::Instant;
-use veilid_core::{KeyPair, RecordKey};
 
 use super::RecordPool;
 use crate::ProtocolError;
@@ -56,11 +56,10 @@ const REPUSH_MAX: Duration = Duration::from_secs(60);
 /// A durable write that has not landed yet.
 #[derive(Debug)]
 pub(super) struct HeldWrite {
-    key: RecordKey,
     data: Vec<u8>,
     /// The write's own writer, when not the record's sticky one. In memory
     /// only.
-    writer: Option<KeyPair>,
+    writer: Option<WriterKey>,
     attempts: u32,
     due: Instant,
 }
@@ -68,9 +67,8 @@ pub(super) struct HeldWrite {
 /// One due re-push, copied out of the held map.
 struct DuePush {
     slot: (String, u32),
-    key: RecordKey,
     data: Vec<u8>,
-    writer: Option<KeyPair>,
+    writer: Option<WriterKey>,
 }
 
 use rekindle_records::port::{Settled, UnsentWrite};
@@ -114,23 +112,23 @@ impl RecordPool {
         id: LeaseId,
         subkey: u32,
         data: Vec<u8>,
-        writer: Option<KeyPair>,
+        writer: Option<WriterKey>,
     ) -> Result<SetOutcome, ProtocolError> {
         let (key, _) = self.lookup(id)?;
-        let slot = (key.to_string(), subkey);
+        let slot = (key, subkey);
         let outcome = match self.set(id, subkey, data.clone(), writer.clone()).await {
             Ok(outcome) => outcome,
             // Logout released the wait: the write may or may not land, so
             // it is held like a miss (and persisted at logout, C7.6h).
             Err(ProtocolError::PoolClosed) => {
-                self.hold(slot, key, data, writer);
+                self.hold(slot, data, writer);
                 return Err(ProtocolError::PoolClosed);
             }
             Err(e) => return Err(e),
         };
         match outcome {
             SetOutcome::BelowConsensus | SetOutcome::Offline => {
-                self.hold(slot, key, data, writer);
+                self.hold(slot, data, writer);
             }
             // Returned to the caller, whose next write settles the slot
             // (a merging writer's compare-and-swap); published only from a
@@ -164,11 +162,10 @@ impl RecordPool {
 
     /// Hold a write as the latest wanted value for its slot, and wake the
     /// re-push task (started on first use; never after drain).
-    fn hold(&self, slot: (String, u32), key: RecordKey, data: Vec<u8>, writer: Option<KeyPair>) {
+    fn hold(&self, slot: (String, u32), data: Vec<u8>, writer: Option<WriterKey>) {
         self.held.lock().insert(
             slot,
             HeldWrite {
-                key,
                 data,
                 writer,
                 attempts: 0,
@@ -207,11 +204,11 @@ impl RecordPool {
     /// not parse is logged and dropped.
     pub fn restore_held(&self, writes: Vec<UnsentWrite>) {
         for write in writes {
-            let Ok(key) = write.record_key.parse::<RecordKey>() else {
+            if self.backend.check_key(&write.record_key).is_err() {
                 tracing::warn!(record = %write.record_key, "dropping an unsent write with a bad key");
                 continue;
-            };
-            self.hold((write.record_key, write.subkey), key, write.data, None);
+            }
+            self.hold((write.record_key, write.subkey), write.data, None);
         }
     }
 
@@ -307,18 +304,11 @@ impl RecordPool {
             .filter(|(_, w)| w.due <= now)
             .map(|(slot, w)| DuePush {
                 slot: slot.clone(),
-                key: w.key.clone(),
                 data: w.data.clone(),
                 writer: w.writer.clone(),
             })
             .collect();
-        for DuePush {
-            slot,
-            key,
-            data,
-            writer,
-        } in due
-        {
+        for DuePush { slot, data, writer } in due {
             // Drain stops the re-push before its next write; what is left
             // stays held.
             if self.repush_stop.is_cancelled() {
@@ -329,7 +319,7 @@ impl RecordPool {
             if writer.is_none() && !self.writable(&slot.0) {
                 continue;
             }
-            let pushed = match self.acquire(&key, None).await {
+            let pushed = match self.acquire(&slot.0, None).await {
                 Ok(lease) => {
                     let outcome = self.set(lease, slot.1, data.clone(), writer).await;
                     self.release(lease).await;

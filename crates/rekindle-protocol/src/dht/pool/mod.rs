@@ -8,9 +8,10 @@
 //! ([`rekindle_records::lease::LeaseTable`]), and it owns the Veilid
 //! semantics that are easy to misread (`evidence/c7-pool-research.md` §2–§3):
 //!
-//! - **Anonymity.** Its routing context is built here, Safe with
-//!   `hop_count ≥ ANONYMITY_HOP_FLOOR`, and every record goes through it, so
-//!   no record is ever re-opened at Veilid's 1-hop default (V19).
+//! - **Anonymity.** Its backend's routing context is Safe with
+//!   `hop_count ≥ ANONYMITY_HOP_FLOOR` (`dht::backend::VeilidDht`), and
+//!   every record goes through it, so no record is ever re-opened at
+//!   Veilid's 1-hop default (V19).
 //! - **Honest writes.** `set` passes `allow_offline: false` and reports a
 //!   [`SetOutcome`]. veilid returns `Ok(None)` both for a write that landed
 //!   and for one below consensus that stored nothing (`set_value.rs:170`);
@@ -45,7 +46,6 @@ mod io;
 pub mod keepalive;
 mod port;
 mod read;
-mod safety;
 mod watch;
 
 /// Bound on compare-and-swap rounds for a read-merge-write whose write keeps
@@ -54,10 +54,13 @@ mod watch;
 /// (`set_value.rs:620-645`), so every round writes above what it lost to.
 pub const CAS_ROUNDS: usize = 3;
 
+pub use crate::dht::backend::{
+    dht_schema, parse_keypair, record_report, safety_selection, value_change,
+};
 pub use closer::RecordCloser;
-pub use port::{as_port, dht_schema, parse_keypair, record_report};
-pub use safety::safety_selection;
-pub use watch::value_change;
+#[cfg(test)]
+pub(crate) use io::set_failed;
+pub use port::as_port;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -70,12 +73,10 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::lease::{
     max_subkey_bytes, LeaseId, LeaseTable, OpenPlan, ReleasePlan, SchemaShape, SubkeySet,
 };
-use rekindle_types::config::SafetyProfile;
-use tokio_util::sync::CancellationToken;
-use veilid_core::{
-    DHTRecordDescriptor, DHTSchema, KeyPair, RecordKey, RoutingContext, ValueSubkeyRangeSet,
-    VeilidAPIError, CRYPTO_KIND_VLD0,
+use rekindle_records::port::{
+    DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, RecordSchema, WriterKey,
 };
+use tokio_util::sync::CancellationToken;
 
 use crate::ProtocolError;
 
@@ -104,14 +105,17 @@ enum Admit {
 }
 
 /// What a call's task does with a result its caller no longer waits for.
-type Unclaimed<T> = call::Unclaimed<RoutingContext, T>;
+type Unclaimed<T> = call::Unclaimed<Arc<dyn DhtBackend>, T>;
 
 /// An open or create nobody claimed: close it, so the record does not stay
 /// open in Veilid (writer key, watches) without a lease.
-fn close_unclaimed(rc: RoutingContext, descriptor: DHTRecordDescriptor) -> BoxFuture<'static, ()> {
+fn close_unclaimed(
+    backend: Arc<dyn DhtBackend>,
+    descriptor: RecordDescriptor,
+) -> BoxFuture<'static, ()> {
     Box::pin(async move {
-        let key = descriptor.key();
-        if let Err(e) = rc.close_dht_record(key.clone()).await {
+        let key = descriptor.key;
+        if let Err(e) = backend.close(&key).await {
             tracing::debug!(record = %key, error = %e, "closing an unclaimed record failed");
         }
     })
@@ -119,11 +123,11 @@ fn close_unclaimed(rc: RoutingContext, descriptor: DHTRecordDescriptor) -> BoxFu
 
 /// The session's DHT records.
 pub struct RecordPool {
-    rc: RoutingContext,
+    backend: Arc<dyn DhtBackend>,
     scope: Arc<SessionScope>,
     ready: tokio::sync::watch::Receiver<bool>,
-    table: Mutex<LeaseTable<KeyPair>>,
-    records: Mutex<HashMap<String, (RecordKey, OpenRecord)>>,
+    table: Mutex<LeaseTable<WriterKey>>,
+    records: Mutex<HashMap<String, OpenRecord>>,
     key_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     rearm: Mutex<HashMap<String, watch::Rearm>>,
     /// Durable writes that missed, held for re-push (`durable.rs`).
@@ -152,17 +156,15 @@ impl std::fmt::Debug for RecordPool {
     }
 }
 
-pub(super) fn transient(e: &VeilidAPIError) -> bool {
+pub(super) fn transient(e: &DhtCallError) -> bool {
     matches!(
-        e,
-        VeilidAPIError::TryAgain { .. }
-            | VeilidAPIError::KeyNotFound { .. }
-            | VeilidAPIError::TransactionNotFound { .. }
+        e.kind,
+        DhtErrorKind::TryAgain | DhtErrorKind::KeyNotFound | DhtErrorKind::TransactionNotFound
     )
 }
 
-pub(super) fn to_protocol(e: &VeilidAPIError) -> ProtocolError {
-    if matches!(e, VeilidAPIError::Shutdown) {
+pub(crate) fn to_protocol(e: &DhtCallError) -> ProtocolError {
+    if e.kind == DhtErrorKind::Shutdown {
         ProtocolError::PoolClosed
     } else if transient(e) {
         ProtocolError::DhtRecordUnreachable(e.to_string())
@@ -171,41 +173,24 @@ pub(super) fn to_protocol(e: &VeilidAPIError) -> ProtocolError {
     }
 }
 
-/// A Veilid value as the port carries it.
-pub(crate) fn record_value(value: &veilid_core::ValueData) -> rekindle_records::port::RecordValue {
-    rekindle_records::port::RecordValue {
-        seq: u32::from(value.seq()),
-        data: value.data().to_vec(),
-        writer: value.writer().to_string(),
-    }
-}
-
-pub(super) fn range(subkeys: &SubkeySet) -> ValueSubkeyRangeSet {
+pub(super) fn range(subkeys: &SubkeySet) -> Vec<u32> {
     subkeys.iter().copied().collect()
 }
 
 impl RecordPool {
-    /// A pool over `rc`'s Veilid API, with the safety selection pinned from
-    /// `profile`. `scope` runs the pool's calls (ended by [`end`](Self::end),
-    /// never aborted); `ready` follows `public_internet_ready`; `closer` is
-    /// the node's.
-    ///
-    /// # Errors
-    /// The routing context cannot take the safety selection.
+    /// A pool over `backend`. `scope` runs the pool's calls (ended by
+    /// [`end`](Self::end), never aborted); `ready` follows
+    /// `public_internet_ready`; `closer` is the node's.
+    #[must_use]
     pub fn new(
-        rc: &RoutingContext,
-        profile: &SafetyProfile,
+        backend: Arc<dyn DhtBackend>,
         scope: Arc<SessionScope>,
         ready: tokio::sync::watch::Receiver<bool>,
         closer: Arc<RecordCloser>,
-    ) -> Result<Arc<Self>, ProtocolError> {
-        let rc = rc
-            .clone()
-            .with_safety(safety_selection(profile))
-            .map_err(|e| ProtocolError::RoutingError(format!("pool safety selection: {e}")))?;
-        Ok(Arc::new_cyclic(|this| Self {
+    ) -> Arc<Self> {
+        Arc::new_cyclic(|this| Self {
             this: this.clone(),
-            rc,
+            backend,
             scope,
             ready,
             table: Mutex::new(LeaseTable::default()),
@@ -220,17 +205,12 @@ impl RecordPool {
             waits: Mutex::new(CancellationToken::new()),
             repush_stop: CancellationToken::new(),
             closer,
-        }))
+        })
     }
 
     /// The scope the pool's Veilid calls run on.
     pub fn scope(&self) -> &Arc<SessionScope> {
         &self.scope
-    }
-
-    /// The routing context every record goes through.
-    pub fn routing_context(&self) -> &RoutingContext {
-        &self.rc
     }
 
     /// Begin logout (plan C7.6g): every caller waiting on a call returns
@@ -259,11 +239,11 @@ impl RecordPool {
         &self,
         name: &'static str,
         call: F,
-    ) -> Result<T, VeilidAPIError>
+    ) -> Result<T, DhtCallError>
     where
         T: Send + 'static,
-        F: FnOnce(RoutingContext) -> Fut,
-        Fut: Future<Output = Result<T, VeilidAPIError>> + Send + 'static,
+        F: FnOnce(Arc<dyn DhtBackend>) -> Fut,
+        Fut: Future<Output = Result<T, DhtCallError>> + Send + 'static,
     {
         self.run_with(name, call, None).await
     }
@@ -275,26 +255,26 @@ impl RecordPool {
         name: &'static str,
         call: F,
         unclaimed: Option<Unclaimed<T>>,
-    ) -> Result<T, VeilidAPIError>
+    ) -> Result<T, DhtCallError>
     where
         T: Send + 'static,
-        F: FnOnce(RoutingContext) -> Fut,
-        Fut: Future<Output = Result<T, VeilidAPIError>> + Send + 'static,
+        F: FnOnce(Arc<dyn DhtBackend>) -> Fut,
+        Fut: Future<Output = Result<T, DhtCallError>> + Send + 'static,
     {
         if *self.admit.lock() == Admit::Draining {
-            return Err(VeilidAPIError::Shutdown);
+            return Err(DhtCallError::shutdown());
         }
         let waits = self.waits.lock().clone();
-        let rc = self.rc.clone();
-        let fut = call(rc.clone());
+        let backend = Arc::clone(&self.backend);
+        let fut = call(Arc::clone(&backend));
         call::handover(
             &self.scope,
             name,
-            rc,
+            backend,
             fut,
             unclaimed,
             &waits,
-            VeilidAPIError::Shutdown,
+            DhtCallError::shutdown(),
         )
         .await
     }
@@ -306,11 +286,11 @@ impl RecordPool {
         &self,
         name: &'static str,
         call: F,
-    ) -> Result<T, VeilidAPIError>
+    ) -> Result<T, DhtCallError>
     where
         T: Send + 'static,
-        F: Fn(RoutingContext) -> Fut,
-        Fut: Future<Output = Result<T, VeilidAPIError>> + Send + 'static,
+        F: Fn(Arc<dyn DhtBackend>) -> Fut,
+        Fut: Future<Output = Result<T, DhtCallError>> + Send + 'static,
     {
         self.run_retrying_with(name, call, None).await
     }
@@ -322,11 +302,11 @@ impl RecordPool {
         name: &'static str,
         call: F,
         unclaimed: Option<Unclaimed<T>>,
-    ) -> Result<T, VeilidAPIError>
+    ) -> Result<T, DhtCallError>
     where
         T: Send + 'static,
-        F: Fn(RoutingContext) -> Fut,
-        Fut: Future<Output = Result<T, VeilidAPIError>> + Send + 'static,
+        F: Fn(Arc<dyn DhtBackend>) -> Fut,
+        Fut: Future<Output = Result<T, DhtCallError>> + Send + 'static,
     {
         let deadline = tokio::time::Instant::now() + RETRY_BUDGET;
         let mut ready = self.ready.clone();
@@ -347,7 +327,7 @@ impl RecordPool {
                         _ = tokio::time::timeout_at(deadline, wait) => false,
                     };
                     if stopped {
-                        return Err(VeilidAPIError::Shutdown);
+                        return Err(DhtCallError::shutdown());
                     }
                 }
                 other => return other,
@@ -363,28 +343,26 @@ impl RecordPool {
             .clone()
     }
 
-    pub(super) fn lookup(&self, id: LeaseId) -> Result<(RecordKey, OpenRecord), ProtocolError> {
+    pub(super) fn lookup(&self, id: LeaseId) -> Result<(String, OpenRecord), ProtocolError> {
         let table = self.table.lock();
         let key = table.key(id).ok_or(ProtocolError::LeaseNotHeld(id.0))?;
-        self.records
+        let opened = self
+            .records
             .lock()
             .get(key)
-            .cloned()
-            .ok_or(ProtocolError::LeaseNotHeld(id.0))
+            .copied()
+            .ok_or(ProtocolError::LeaseNotHeld(id.0))?;
+        Ok((key.to_string(), opened))
     }
 
-    fn remember(&self, key: &RecordKey, schema: &DHTSchema) {
-        let subkey_count = u32::try_from(schema.subkey_count()).unwrap_or(u32::MAX);
+    fn remember(&self, key: &str, subkey_count: u32) {
         let cap = max_subkey_bytes(SchemaShape { subkey_count });
         self.records.lock().insert(
             key.to_string(),
-            (
-                key.clone(),
-                OpenRecord {
-                    key_cap: cap,
-                    subkey_count,
-                },
-            ),
+            OpenRecord {
+                key_cap: cap,
+                subkey_count,
+            },
         );
     }
 
@@ -395,8 +373,8 @@ impl RecordPool {
     /// The record cannot be opened within the retry budget.
     pub async fn acquire(
         &self,
-        key: &RecordKey,
-        writer: Option<KeyPair>,
+        key: &str,
+        writer: Option<WriterKey>,
     ) -> Result<LeaseId, ProtocolError> {
         let name = key.to_string();
         let lock = self.key_lock(&name);
@@ -410,24 +388,24 @@ impl RecordPool {
         // An ended session may still be closing this record: opening it now
         // would be undone by that close.
         self.closer.wait_closed(&name).await;
-        let k = key.clone();
+        let k = key.to_string();
         // A first open whose caller left closes itself; an upgrade re-opens
         // a record the table still holds, which shutdown closes.
-        let unclaimed: Option<Unclaimed<DHTRecordDescriptor>> =
+        let unclaimed: Option<Unclaimed<RecordDescriptor>> =
             matches!(plan, OpenPlan::Open { .. }).then_some(close_unclaimed);
         match self
             .run_retrying_with(
                 "dht open",
-                move |rc| {
+                move |backend| {
                     let (k, w) = (k.clone(), open_with.clone());
-                    async move { rc.open_dht_record(k, w).await }
+                    async move { backend.open(&k, w.as_ref()).await }
                 },
                 unclaimed,
             )
             .await
         {
             Ok(descriptor) => {
-                self.remember(key, &descriptor.schema());
+                self.remember(key, descriptor.subkey_count);
                 if self.table.lock().writer(&name).is_some() {
                     self.wake_held(&name);
                 }
@@ -447,27 +425,24 @@ impl RecordPool {
     /// Veilid refused the create, or returned no owner secret.
     pub async fn create(
         &self,
-        schema: DHTSchema,
-        owner: Option<KeyPair>,
-    ) -> Result<(LeaseId, RecordKey, KeyPair), ProtocolError> {
+        schema: RecordSchema,
+        owner: Option<WriterKey>,
+    ) -> Result<(LeaseId, String, WriterKey), ProtocolError> {
         let descriptor = self
             .run_with(
                 "dht create",
-                move |rc| async move { rc.create_dht_record(CRYPTO_KIND_VLD0, schema, owner).await },
+                move |backend| async move { backend.create(&schema, owner.as_ref()).await },
                 Some(close_unclaimed),
             )
             .await
             .map_err(|e| to_protocol(&e))?;
-        let key = descriptor.key();
-        let secret = descriptor
-            .owner_secret()
+        let keypair = descriptor
+            .owner
+            .clone()
             .ok_or_else(|| ProtocolError::DhtError("created record has no owner secret".into()))?;
-        let keypair = KeyPair::new_from_parts(descriptor.owner(), secret.value());
-        let (id, _) = self
-            .table
-            .lock()
-            .acquire(&key.to_string(), Some(keypair.clone()));
-        self.remember(&key, &descriptor.schema());
+        let key = descriptor.key;
+        let (id, _) = self.table.lock().acquire(&key, Some(keypair.clone()));
+        self.remember(&key, descriptor.subkey_count);
         Ok((id, key, keypair))
     }
 
@@ -490,9 +465,9 @@ impl RecordPool {
             ReleasePlan::Closed(closed) => self.close(&closed).await,
             // The released borrow watched subkeys nobody else does.
             ReleasePlan::Rewatch(record, watch) => {
-                let key = self.records.lock().get(&record).map(|(key, _)| key.clone());
-                if let Some(key) = key {
-                    if let Err(e) = self.apply_watch(&key, watch).await {
+                let open = self.records.lock().contains_key(&record);
+                if open {
+                    if let Err(e) = self.apply_watch(&record, watch).await {
                         tracing::debug!(record, error = %e, "shrinking the watch failed");
                     }
                 }
@@ -501,13 +476,14 @@ impl RecordPool {
     }
 
     async fn close(&self, name: &str) {
-        let Some((key, _)) = self.records.lock().remove(name) else {
+        if self.records.lock().remove(name).is_none() {
             return;
-        };
+        }
         self.rearm.lock().remove(name);
+        let key = name.to_string();
         if let Err(e) = self
-            .run("dht close", move |rc| async move {
-                rc.close_dht_record(key).await
+            .run("dht close", move |backend| async move {
+                backend.close(&key).await
             })
             .await
         {
@@ -532,15 +508,10 @@ impl RecordPool {
         self.repush_stop.cancel();
         self.table.lock().clear();
         self.rearm.lock().clear();
-        let keys: Vec<RecordKey> = self
-            .records
-            .lock()
-            .drain()
-            .map(|(_, (key, _))| key)
-            .collect();
+        let keys: Vec<String> = self.records.lock().drain().map(|(key, _)| key).collect();
         let count = keys.len();
         self.closer
-            .close_after(Arc::clone(&self.scope), self.rc.clone(), keys);
+            .close_after(Arc::clone(&self.scope), Arc::clone(&self.backend), keys);
         count
     }
 }

@@ -1,93 +1,33 @@
 //! [`RecordPool`] as the Veilid-free [`RecordPort`] (plan C9.1): keys and
-//! keypairs as their text, values as [`RecordValue`], schemas as
-//! [`RecordSchema`].
+//! keypairs as their text (checked by the pool's backend), values as
+//! [`RecordValue`], schemas as [`RecordSchema`].
 
 use std::sync::Arc;
 
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{
     PortError, RecordPort, RecordReport, RecordSchema, RecordValue, ReportScope, SetOutcome,
-    Settled, UnsentWrite, ValueChange, ValueChangeReport,
-};
-use veilid_core::{
-    BareMemberId, DHTRecordReport, DHTReportScope, DHTSchema, DHTSchemaSMPLMember, KeyPair,
-    ValueSeqNum,
+    Settled, UnsentWrite, ValueChange, ValueChangeReport, WriterKey,
 };
 
 use super::RecordPool;
-use crate::dht::parse_record_key;
 
-/// A keypair from its text.
-///
-/// # Errors
-/// The text is not a keypair.
-pub fn parse_keypair(text: &str) -> Result<KeyPair, PortError> {
-    text.parse::<KeyPair>()
-        .map_err(|e| PortError::KeyText(format!("keypair: {e}")))
-}
-
-fn writer(text: Option<&str>) -> Result<Option<KeyPair>, PortError> {
-    text.map(parse_keypair).transpose()
-}
-
-/// The Veilid schema for `schema`.
-///
-/// # Errors
-/// Veilid refuses it (no subkeys, or too many).
-pub fn dht_schema(schema: &RecordSchema) -> Result<DHTSchema, PortError> {
-    let built = match schema {
-        RecordSchema::Dflt { owner_subkeys } => DHTSchema::dflt(*owner_subkeys),
-        RecordSchema::Smpl {
-            owner_subkeys,
-            members,
-        } => DHTSchema::smpl(
-            *owner_subkeys,
-            members
-                .iter()
-                .map(|m| DHTSchemaSMPLMember {
-                    m_key: BareMemberId::new(&m.key),
-                    m_cnt: m.subkeys,
-                })
-                .collect(),
-        ),
-    };
-    built.map_err(|e| PortError::Dht(format!("schema: {e}")))
-}
-
-fn scope(scope: ReportScope) -> DHTReportScope {
-    match scope {
-        ReportScope::Local => DHTReportScope::Local,
-        ReportScope::SyncGet => DHTReportScope::SyncGet,
-        ReportScope::UpdateGet => DHTReportScope::UpdateGet,
-        ReportScope::SyncSet => DHTReportScope::SyncSet,
-        ReportScope::UpdateSet => DHTReportScope::UpdateSet,
-    }
-}
-
-/// A Veilid inspect report as the port carries it.
-#[must_use]
-pub fn record_report(report: &DHTRecordReport) -> RecordReport {
-    RecordReport {
-        subkeys: report.subkeys().iter().collect(),
-        local_seqs: report
-            .local_seqs()
-            .iter()
-            .map(ValueSeqNum::to_option)
-            .collect(),
-        network_seqs: report
-            .network_seqs()
-            .iter()
-            .map(ValueSeqNum::to_option)
-            .collect(),
-        offline_subkeys: report.offline_subkeys().iter().collect(),
+impl RecordPool {
+    fn writer(&self, text: Option<&str>) -> Result<Option<WriterKey>, PortError> {
+        text.map(|t| self.backend.parse_writer(t))
+            .transpose()
+            .map_err(|e| PortError::KeyText(e.message))
     }
 }
 
 #[async_trait::async_trait]
 impl RecordPort for RecordPool {
     async fn acquire(&self, key: &str, writer_text: Option<&str>) -> Result<LeaseId, PortError> {
-        let key = parse_record_key(key).map_err(|e| PortError::KeyText(e.to_string()))?;
-        Ok(RecordPool::acquire(self, &key, writer(writer_text)?).await?)
+        let key = self
+            .backend
+            .check_key(key)
+            .map_err(|e| PortError::KeyText(e.message))?;
+        Ok(RecordPool::acquire(self, &key, self.writer(writer_text)?).await?)
     }
 
     async fn create(
@@ -96,8 +36,8 @@ impl RecordPort for RecordPool {
         owner: Option<&str>,
     ) -> Result<(LeaseId, String, String), PortError> {
         let (lease, key, keypair) =
-            RecordPool::create(self, dht_schema(schema)?, writer(owner)?).await?;
-        Ok((lease, key.to_string(), keypair.to_string()))
+            RecordPool::create(self, schema.clone(), self.writer(owner)?).await?;
+        Ok((lease, key, keypair.keypair))
     }
 
     fn key_of(&self, lease: LeaseId) -> Option<String> {
@@ -114,10 +54,7 @@ impl RecordPort for RecordPool {
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<RecordValue>, PortError> {
-        Ok(RecordPool::get(self, lease, subkey, force_refresh)
-            .await?
-            .as_ref()
-            .map(super::record_value))
+        Ok(RecordPool::get(self, lease, subkey, force_refresh).await?)
     }
 
     async fn set(
@@ -127,7 +64,7 @@ impl RecordPort for RecordPool {
         data: Vec<u8>,
         writer_text: Option<&str>,
     ) -> Result<SetOutcome, PortError> {
-        Ok(RecordPool::set(self, lease, subkey, data, writer(writer_text)?).await?)
+        Ok(RecordPool::set(self, lease, subkey, data, self.writer(writer_text)?).await?)
     }
 
     async fn set_durable(
@@ -137,7 +74,8 @@ impl RecordPort for RecordPool {
         data: Vec<u8>,
         writer_text: Option<&str>,
     ) -> Result<SetOutcome, PortError> {
-        Ok(RecordPool::set_durable_as(self, lease, subkey, data, writer(writer_text)?).await?)
+        let writer = self.writer(writer_text)?;
+        Ok(RecordPool::set_durable_as(self, lease, subkey, data, writer).await?)
     }
 
     async fn inspect(
@@ -147,8 +85,7 @@ impl RecordPort for RecordPool {
         report_scope: ReportScope,
     ) -> Result<RecordReport, PortError> {
         let set = subkeys.map(|s| s.iter().copied().collect());
-        let report = RecordPool::inspect(self, lease, set, scope(report_scope)).await?;
-        Ok(record_report(&report))
+        Ok(RecordPool::inspect(self, lease, set, report_scope).await?)
     }
 
     async fn read_changed(
@@ -156,11 +93,7 @@ impl RecordPort for RecordPool {
         lease: LeaseId,
         subkeys: &[u32],
     ) -> Result<Vec<(u32, RecordValue)>, PortError> {
-        Ok(RecordPool::read_changed(self, lease, subkeys)
-            .await?
-            .iter()
-            .map(|(subkey, value)| (*subkey, super::record_value(value)))
-            .collect())
+        Ok(RecordPool::read_changed(self, lease, subkeys).await?)
     }
 
     async fn rehydrate(&self, lease: LeaseId) -> Result<(), PortError> {
@@ -233,75 +166,4 @@ impl RecordPort for RecordPool {
 #[must_use]
 pub fn as_port(pool: Arc<RecordPool>) -> Arc<dyn RecordPort> {
     pool
-}
-
-#[cfg(test)]
-mod tests {
-    use rekindle_records::port::{RecordSchema, SchemaMember};
-    use veilid_core::{
-        BarePublicKey, BareSecretKey, KeyPair, PublicKey, ValueSeqNum, CRYPTO_KIND_VLD0,
-    };
-
-    use super::{dht_schema, parse_keypair};
-
-    /// The Veilid-free keypair text (`rekindle_crypto::keypair_text`, plan
-    /// C9.1b) is exactly what Veilid prints and parses.
-    #[test]
-    fn keypair_text_is_veilids() {
-        let signing = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
-        let public = signing.verifying_key().to_bytes();
-        let secret = signing.to_bytes();
-        let veilid = KeyPair::new_from_parts(
-            PublicKey::new(CRYPTO_KIND_VLD0, BarePublicKey::new(&public)),
-            BareSecretKey::new(&secret),
-        );
-        let text = rekindle_crypto::keypair_text::keypair_text(&public, &secret);
-        assert_eq!(veilid.to_string(), text);
-        assert_eq!(parse_keypair(&text).unwrap(), veilid);
-        assert_eq!(
-            rekindle_crypto::keypair_text::keypair_text_from_signing(&signing),
-            text
-        );
-    }
-
-    /// The fact every occupancy check rests on: Veilid's first write to a
-    /// subkey lands at seq 0, so `Some(0)` is occupied, not empty
-    /// (`record_report` maps through `to_option`). Two readers once
-    /// flattened `None` to 0 and tested `!= 0`, classifying every write-once
-    /// member as absent.
-    #[test]
-    fn seq_zero_is_written_not_empty() {
-        let seqs = [
-            ValueSeqNum::NONE,
-            ValueSeqNum::from(0),
-            ValueSeqNum::from(1),
-            ValueSeqNum::NONE,
-        ];
-        let mapped: Vec<Option<u32>> = seqs.iter().map(ValueSeqNum::to_option).collect();
-        assert_eq!(mapped, vec![None, Some(0), Some(1), None]);
-    }
-
-    /// The port's schema and Veilid's agree on every subkey count.
-    #[test]
-    fn schemas_keep_their_subkey_counts() {
-        let dflt = RecordSchema::Dflt { owner_subkeys: 9 };
-        assert_eq!(
-            dht_schema(&dflt).unwrap().max_subkey() as usize + 1,
-            dflt.subkey_count()
-        );
-        let smpl = RecordSchema::Smpl {
-            owner_subkeys: 0,
-            members: (1u8..=3)
-                .map(|b| SchemaMember {
-                    key: [b; 32],
-                    subkeys: 1,
-                })
-                .collect(),
-        };
-        assert_eq!(
-            dht_schema(&smpl).unwrap().max_subkey() as usize + 1,
-            smpl.subkey_count()
-        );
-        assert!(dht_schema(&RecordSchema::Dflt { owner_subkeys: 0 }).is_err());
-    }
 }

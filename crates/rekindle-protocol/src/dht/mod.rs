@@ -1,4 +1,5 @@
 pub mod account;
+pub mod backend;
 pub mod community;
 pub mod friends;
 pub mod mailbox;

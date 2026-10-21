@@ -1,15 +1,22 @@
 //! Reads, writes and inspects on leased records.
 
 use rekindle_records::lease::{LeaseId, SubkeySet};
-use veilid_core::{
-    AllowOffline, DHTRecordReport, DHTReportScope, KeyPair, RecordKey, SetDHTValueOptions,
-    ValueData, ValueSubkeyRangeSet, VeilidAPIError,
+use rekindle_records::port::{
+    DhtCallError, DhtErrorKind, RecordReport, RecordValue, ReportScope, SetOutcome, WriterKey,
 };
 
 use super::{range, to_protocol, RecordPool};
 use crate::ProtocolError;
 
-use rekindle_records::port::SetOutcome;
+/// A set that failed: `TryAgain` is the node being offline (nothing stored
+/// or queued), anything else is the error.
+pub(crate) fn set_failed(e: &DhtCallError) -> Result<SetOutcome, ProtocolError> {
+    if e.kind == DhtErrorKind::TryAgain {
+        Ok(SetOutcome::Offline)
+    } else {
+        Err(to_protocol(e))
+    }
+}
 
 impl RecordPool {
     /// Read a subkey; `force_refresh` asks the network rather than the local
@@ -22,11 +29,11 @@ impl RecordPool {
         id: LeaseId,
         subkey: u32,
         force_refresh: bool,
-    ) -> Result<Option<ValueData>, ProtocolError> {
+    ) -> Result<Option<RecordValue>, ProtocolError> {
         let (key, _) = self.lookup(id)?;
-        self.run_retrying("dht get", move |rc| {
+        self.run_retrying("dht get", move |backend| {
             let k = key.clone();
-            async move { rc.get_dht_value(k, subkey, force_refresh).await }
+            async move { backend.get(&k, subkey, force_refresh).await }
         })
         .await
         .map_err(|e| to_protocol(&e))
@@ -40,33 +47,27 @@ impl RecordPool {
         &self,
         id: LeaseId,
         subkeys: Option<SubkeySet>,
-        scope: DHTReportScope,
-    ) -> Result<DHTRecordReport, ProtocolError> {
+        scope: ReportScope,
+    ) -> Result<RecordReport, ProtocolError> {
         let (key, _) = self.lookup(id)?;
-        self.run_retrying("dht inspect", move |rc| {
+        self.run_retrying("dht inspect", move |backend| {
             let (k, s) = (key.clone(), subkeys.as_ref().map(range));
-            async move { rc.inspect_dht_record(k, s, scope).await }
+            async move { backend.inspect(&k, s.as_deref(), scope).await }
         })
         .await
         .map_err(|e| to_protocol(&e))
     }
 
-    async fn local_seq(&self, key: &RecordKey, subkey: u32) -> Result<Option<u32>, VeilidAPIError> {
-        let k = key.clone();
+    async fn local_seq(&self, key: &str, subkey: u32) -> Result<Option<u32>, DhtCallError> {
+        let k = key.to_string();
         let report = self
-            .run("dht local seq", move |rc| async move {
-                rc.inspect_dht_record(
-                    k,
-                    Some(ValueSubkeyRangeSet::single(subkey)),
-                    DHTReportScope::Local,
-                )
-                .await
+            .run("dht local seq", move |backend| async move {
+                backend
+                    .inspect(&k, Some(&[subkey]), ReportScope::Local)
+                    .await
             })
             .await?;
-        Ok(report
-            .local_seqs()
-            .first()
-            .and_then(veilid_core::ValueSeqNum::to_option))
+        Ok(report.local_seqs.first().copied().flatten())
     }
 
     /// Whether the local copy of `subkey` already holds `data` from the
@@ -74,25 +75,25 @@ impl RecordPool {
     /// lease's). Veilid does not advance the seq for such a write.
     async fn is_local_copy(
         &self,
-        key: &RecordKey,
+        key: &str,
         subkey: u32,
         data: &[u8],
-        writer: Option<&KeyPair>,
-    ) -> Result<bool, VeilidAPIError> {
+        writer: Option<&WriterKey>,
+    ) -> Result<bool, DhtCallError> {
         let writer = match writer {
-            Some(w) => Some(w.key()),
-            None => self.table.lock().writer(&key.to_string()).map(KeyPair::key),
+            Some(w) => Some(w.public.clone()),
+            None => self.table.lock().writer(key).map(|w| w.public.clone()),
         };
         let Some(writer) = writer else {
             return Ok(false);
         };
-        let k = key.clone();
+        let k = key.to_string();
         let local = self
-            .run("dht local get", move |rc| async move {
-                rc.get_dht_value(k, subkey, false).await
+            .run("dht local get", move |backend| async move {
+                backend.get(&k, subkey, false).await
             })
             .await?;
-        Ok(local.is_some_and(|v| v.data() == data && v.writer() == writer))
+        Ok(local.is_some_and(|v| v.data == data && v.writer == writer))
     }
 
     /// Write a subkey, with `writer` when it differs from the lease's.
@@ -106,11 +107,11 @@ impl RecordPool {
         id: LeaseId,
         subkey: u32,
         data: Vec<u8>,
-        writer: Option<KeyPair>,
+        writer: Option<WriterKey>,
     ) -> Result<SetOutcome, ProtocolError> {
         let (key, opened) = self.lookup(id)?;
-        if writer.is_none() && self.table.lock().writer(&key.to_string()).is_none() {
-            return Err(ProtocolError::NotWritable(key.to_string()));
+        if writer.is_none() && self.table.lock().writer(&key).is_none() {
+            return Err(ProtocolError::NotWritable(key));
         }
         if data.len() > opened.key_cap {
             return Err(ProtocolError::SubkeyTooLarge {
@@ -129,21 +130,12 @@ impl RecordPool {
             .map_err(|e| to_protocol(&e))?;
         let k = key.clone();
         let result = self
-            .run("dht set", move |rc| async move {
-                rc.set_dht_value(
-                    k,
-                    subkey,
-                    data,
-                    Some(SetDHTValueOptions {
-                        writer,
-                        allow_offline: Some(AllowOffline(false)),
-                    }),
-                )
-                .await
+            .run("dht set", move |backend| async move {
+                backend.set(&k, subkey, data, writer.as_ref()).await
             })
             .await;
         match result {
-            Ok(Some(newer)) => Ok(SetOutcome::Superseded(super::record_value(&newer))),
+            Ok(Some(newer)) => Ok(SetOutcome::Superseded(newer)),
             Ok(None) => {
                 let after = self
                     .local_seq(&key, subkey)
@@ -160,8 +152,7 @@ impl RecordPool {
                     SetOutcome::BelowConsensus
                 })
             }
-            Err(VeilidAPIError::TryAgain { .. }) => Ok(SetOutcome::Offline),
-            Err(e) => Err(to_protocol(&e)),
+            Err(e) => set_failed(&e),
         }
     }
 
@@ -175,13 +166,12 @@ impl RecordPool {
     /// The lease is not held, or the open failed within the retry budget.
     pub(super) async fn reopen_with_writer(&self, id: LeaseId) -> Result<(), ProtocolError> {
         let (key, _) = self.lookup(id)?;
-        let name = key.to_string();
-        let writer = self.table.lock().writer(&name).cloned();
-        let lock = self.key_lock(&name);
+        let writer = self.table.lock().writer(&key).cloned();
+        let lock = self.key_lock(&key);
         let _serial = lock.lock().await;
-        self.run_retrying("dht rehydrate open", move |rc| {
+        self.run_retrying("dht rehydrate open", move |backend| {
             let (k, w) = (key.clone(), writer.clone());
-            async move { rc.open_dht_record(k, w).await }
+            async move { backend.open(&k, w.as_ref()).await }
         })
         .await
         .map(drop)

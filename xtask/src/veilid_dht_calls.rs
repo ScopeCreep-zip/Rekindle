@@ -2,9 +2,11 @@
 //! one owner (plan C7.11).
 //!
 //! - DHT record calls (`open_dht_record`, `get_dht_value`, …) run only in
-//!   the record pool, `rekindle-protocol/src/dht/pool/`: it holds each
-//!   record's lease, writer and watch, serializes per subkey, and never
-//!   aborts a call mid-commit (plans C7.3–C7.6).
+//!   the record pool's Veilid backend, `rekindle-protocol/src/dht/backend.rs`
+//!   (plan E2.B): the pool calls it through `rekindle_records::port::
+//!   DhtBackend`, and holds each record's lease, writer and watch,
+//!   serializes per subkey, and never aborts a call mid-commit (plans
+//!   C7.3–C7.6).
 //! - `import_remote_private_route` runs only in the process's one importer,
 //!   `dht/route_imports.rs` (plan C7.2): a second importer's release drops
 //!   the shared import for every sender.
@@ -53,8 +55,8 @@ const RULES: &[Rule] = &[
             "cancel_dht_watch",
             "transact_dht_records",
         ],
-        owners: &["crates/rekindle-protocol/src/dht/pool/"],
-        why: "DHT calls go through the record pool (rekindle_protocol::dht::pool)",
+        owners: &["crates/rekindle-protocol/src/dht/backend.rs"],
+        why: "DHT calls go through the record pool's backend (rekindle_protocol::dht::backend)",
     },
     Rule {
         methods: &["import_remote_private_route"],
@@ -263,7 +265,12 @@ mod tests {
     #[test]
     fn allows_each_owner_its_own_calls() {
         let pool = "fn f() { rc.set_dht_value(k, 0, v, None); }";
-        assert!(scan("crates/rekindle-protocol/src/dht/pool/io.rs", pool).is_empty());
+        assert!(scan("crates/rekindle-protocol/src/dht/backend.rs", pool).is_empty());
+        assert_eq!(
+            scan("crates/rekindle-protocol/src/dht/pool/io.rs", pool).len(),
+            1,
+            "the pool calls its backend, never Veilid"
+        );
         let imports = "fn f() { api.import_remote_private_route(b); }";
         assert!(scan("crates/rekindle-protocol/src/dht/route_imports.rs", imports).is_empty());
         let own = "fn f() { api.release_private_route(id); }";

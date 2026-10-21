@@ -20,8 +20,8 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use rekindle_lifecycle::SessionScope;
+use rekindle_records::port::DhtBackend;
 use tokio::sync::watch;
-use veilid_core::{RecordKey, RoutingContext};
 
 /// Records being closed, each with the receiver its close completes.
 type Closing = Arc<Mutex<HashMap<String, watch::Receiver<bool>>>>;
@@ -64,15 +64,15 @@ impl RecordCloser {
     pub(super) fn close_after(
         &self,
         calls: Arc<SessionScope>,
-        rc: RoutingContext,
-        keys: Vec<RecordKey>,
+        backend: Arc<dyn DhtBackend>,
+        keys: Vec<String>,
     ) {
         let mut done = Vec::with_capacity(keys.len());
         {
             let mut closing = self.closing.lock();
             for key in &keys {
                 let (tx, rx) = watch::channel(false);
-                closing.insert(key.to_string(), rx);
+                closing.insert(key.clone(), rx);
                 done.push(tx);
             }
         }
@@ -83,10 +83,10 @@ impl RecordCloser {
             let calls_done = started.elapsed();
             let count = keys.len();
             for (key, tx) in keys.into_iter().zip(done) {
-                if let Err(e) = rc.close_dht_record(key.clone()).await {
+                if let Err(e) = backend.close(&key).await {
                     tracing::debug!(record = %key, error = %e, "closing record failed");
                 }
-                closing.lock().remove(&key.to_string());
+                closing.lock().remove(&key);
                 let _ = tx.send(true);
             }
             tracing::info!(

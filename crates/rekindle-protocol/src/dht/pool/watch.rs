@@ -4,7 +4,6 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use rekindle_records::lease::{LeaseId, SubkeySet, WatchPlan};
-use veilid_core::{RecordKey, VeilidValueChange};
 
 use super::{range, to_protocol, RecordPool};
 use crate::ProtocolError;
@@ -22,17 +21,6 @@ pub(super) struct Rearm {
 }
 
 use rekindle_records::port::{ValueChange, ValueChangeReport};
-
-/// A Veilid value change as the port carries it.
-#[must_use]
-pub fn value_change(change: &VeilidValueChange) -> ValueChange {
-    ValueChange {
-        key: change.key.to_string(),
-        subkeys: change.subkeys.iter().collect(),
-        count: change.count,
-        value: change.value.as_ref().map(super::record_value),
-    }
-}
 
 impl RecordPool {
     /// Set the subkeys this borrower watches (empty stops its watch).
@@ -56,10 +44,10 @@ impl RecordPool {
 
     pub(super) async fn apply_watch(
         &self,
-        key: &RecordKey,
+        key: &str,
         plan: WatchPlan,
     ) -> Result<(), ProtocolError> {
-        let k = key.clone();
+        let k = key.to_string();
         match plan {
             WatchPlan::Unchanged => Ok(()),
             WatchPlan::Watch(subkeys) => {
@@ -67,16 +55,16 @@ impl RecordPool {
                 // The bool records only that the desired watch state was
                 // accepted locally, never that a node granted it (V20), so it
                 // is not read: a refused watch shows up as a dead-watch update.
-                self.run("dht watch", move |rc| async move {
-                    rc.watch_dht_values(k, Some(set), None, None).await
+                self.run("dht watch", move |backend| async move {
+                    backend.watch(&k, Some(&set), None, None).await
                 })
                 .await
                 .map(drop)
                 .map_err(|e| to_protocol(&e))
             }
             WatchPlan::Cancel => self
-                .run("dht cancel watch", move |rc| async move {
-                    rc.cancel_dht_watch(k, None).await
+                .run("dht cancel watch", move |backend| async move {
+                    backend.cancel_watch(&k, None).await
                 })
                 .await
                 .map(drop)
@@ -101,9 +89,9 @@ impl RecordPool {
         if !report.held || !report.watch_died || watched.is_empty() {
             return report;
         }
-        // Parsed before the re-arm is counted or logged; the key came from
-        // `RecordKey::to_string`, so this holds.
-        let Ok(key) = crate::dht::parse_record_key(&change.key) else {
+        // Checked before the re-arm is counted or logged; the key came from
+        // the backend's own text, so this holds.
+        let Ok(key) = self.backend.check_key(&change.key) else {
             return report;
         };
         let delay = {
@@ -134,7 +122,7 @@ impl RecordPool {
                     return;
                 }
                 // Still wanted? The lease may have gone during the backoff.
-                let subkeys = pool.table.lock().watched(&key.to_string());
+                let subkeys = pool.table.lock().watched(&key);
                 if subkeys.is_empty() {
                     return;
                 }

@@ -5,10 +5,12 @@
 //! `rekindle-netsim` implements them in memory, so the real host and its
 //! engines run in a seeded, deterministic simulation.
 
+mod dht;
 mod message;
 mod record;
 mod route;
 
+pub use dht::{DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, WriterKey};
 pub use message::{check_message_len, AppCallId, AppMessagePort};
 pub use record::{
     RecordPort, RecordReport, RecordSchema, RecordStore, RecordValue, ReportScope, SchemaMember,

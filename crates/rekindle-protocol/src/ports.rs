@@ -1,5 +1,5 @@
 //! The Veilid side of the Veilid-free ports (plan C9.1): records over a
-//! per-session [`RecordPool`], routes over [`RouteImports`] and
+//! per-session [`RecordPool`] on a [`VeilidDht`] backend, routes over [`RouteImports`] and
 //! [`OwnRoutes`], app messages over a [`RoutingContext`] per safety profile,
 //! and the node's own lifecycle.
 
@@ -17,6 +17,7 @@ use veilid_core::{
     OperationId, RouteId, RoutingContext, Target, VeilidAPI, VeilidAPIError, VeilidUpdate,
 };
 
+use crate::dht::backend::VeilidDht;
 use crate::dht::pool::{safety_selection, value_change, RecordCloser, RecordPool};
 use crate::dht::route_imports::RouteImports;
 use crate::error::ProtocolError;
@@ -62,14 +63,13 @@ impl RecordStore for VeilidRecords {
             "record pool",
             Arc::new(|task| tracing::error!(task, "record pool task panicked")),
         );
-        let pool = RecordPool::new(
-            &rc,
-            &self.profile,
+        let backend = VeilidDht::new(&rc, &self.profile)?;
+        Ok(RecordPool::new(
+            Arc::new(backend),
             scope,
             self.ready.clone(),
             Arc::clone(&self.closer),
-        )?;
-        Ok(pool)
+        ))
     }
 }
 

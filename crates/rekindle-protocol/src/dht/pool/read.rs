@@ -24,7 +24,7 @@
 
 use futures::stream::{FuturesUnordered, StreamExt};
 use rekindle_records::lease::{LeaseId, SubkeySet};
-use veilid_core::{DHTReportScope, ValueData, ValueSeqNum};
+use rekindle_records::port::{RecordValue, ReportScope};
 
 use super::RecordPool;
 use crate::ProtocolError;
@@ -58,25 +58,17 @@ impl RecordPool {
         &self,
         id: LeaseId,
         subkeys: &[u32],
-    ) -> Result<Vec<(u32, ValueData)>, ProtocolError> {
+    ) -> Result<Vec<(u32, RecordValue)>, ProtocolError> {
         if subkeys.is_empty() {
             return Ok(Vec::new());
         }
         let set: SubkeySet = subkeys.iter().copied().collect();
-        let report = self
-            .inspect(id, Some(set), DHTReportScope::UpdateGet)
-            .await?;
+        let report = self.inspect(id, Some(set), ReportScope::UpdateGet).await?;
         let seqs: Vec<(u32, Option<u32>, Option<u32>)> = report
-            .subkeys()
+            .subkeys
             .iter()
-            .zip(report.local_seqs().iter().zip(report.network_seqs()))
-            .map(|(subkey, (local, network))| {
-                (
-                    subkey,
-                    ValueSeqNum::to_option(local),
-                    ValueSeqNum::to_option(network),
-                )
-            })
+            .zip(report.local_seqs.iter().zip(&report.network_seqs))
+            .map(|(subkey, (local, network))| (*subkey, *local, *network))
             .collect();
         tracing::debug!(
             key = self.key_of(id).as_deref().unwrap_or("?"),
