@@ -546,6 +546,75 @@
       }
     }
   },
+  "groupDm.invited": {
+    "groupDm": {
+      "invited": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "inviter": {
+          "displayName": "Alice",
+          "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "members": [
+          {
+            "displayName": "Alice",
+            "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "displayName": "Bob",
+            "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "displayName": "cccc-cccc",
+            "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
+        ],
+        "name": "raid night"
+      }
+    }
+  },
+  "groupDm.joined": {
+    "groupDm": {
+      "joined": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    }
+  },
+  "groupDm.keyRotated": {
+    "groupDm": {
+      "keyRotated": {
+        "epoch": 2,
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      }
+    }
+  },
+  "groupDm.left": {
+    "groupDm": {
+      "left": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "cccc-cccc",
+          "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        }
+      }
+    }
+  },
+  "groupDm.sendStatus": {
+    "groupDm": {
+      "sendStatus": {
+        "clientId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5a",
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "state": "sent"
+      }
+    }
+  },
   "intent.escalation.attachment": {
     "attachment": {
       "fileName": "photo.jpg",

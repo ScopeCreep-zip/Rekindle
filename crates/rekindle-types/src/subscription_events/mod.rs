@@ -12,6 +12,7 @@ mod channel;
 mod crypto;
 mod friend;
 mod governance;
+mod group_dm;
 mod membership;
 mod network;
 mod notification;
@@ -28,6 +29,7 @@ pub use channel::ChannelMessageEvent;
 pub use crypto::CryptoEvent;
 pub use friend::FriendEvent;
 pub use governance::GovernanceEvent;
+pub use group_dm::{GroupDmEvent, GroupDmMember};
 pub use membership::MembershipEvent;
 pub use network::{NetworkEvent, RouteAvailability};
 pub use notification::NotificationEvent;
@@ -62,6 +64,8 @@ pub enum SubscriptionEvent {
     Membership(MembershipEvent),
     /// Friend lifecycle (request, accept, reject, remove).
     Friend(FriendEvent),
+    /// Group-DM lifecycle (invite, join, leave, key rotation, send state).
+    GroupDm(GroupDmEvent),
     /// Cryptographic key events (MEK rotation, MEK request, MEK transfer).
     Crypto(CryptoEvent),
     /// Voice channel activity (join, leave, mute, roster).
@@ -109,6 +113,7 @@ pub enum EventCategory {
     Presence,
     Membership,
     Friend,
+    GroupDm,
     Crypto,
     Voice,
     Governance,
@@ -123,12 +128,13 @@ pub enum EventCategory {
 
 impl EventCategory {
     /// Every category, for subscribers that want all of them.
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 16] = [
         Self::ChannelMessage,
         Self::Typing,
         Self::Presence,
         Self::Membership,
         Self::Friend,
+        Self::GroupDm,
         Self::Crypto,
         Self::Voice,
         Self::Governance,
@@ -151,6 +157,7 @@ impl SubscriptionEvent {
             Self::Presence(_) => EventCategory::Presence,
             Self::Membership(_) => EventCategory::Membership,
             Self::Friend(_) => EventCategory::Friend,
+            Self::GroupDm(_) => EventCategory::GroupDm,
             Self::Crypto(_) => EventCategory::Crypto,
             Self::Voice(_) => EventCategory::Voice,
             Self::Governance(_) => EventCategory::Governance,
@@ -272,7 +279,8 @@ impl SubscriptionEvent {
             | Self::Notification(_)
             | Self::UnreadChanged { .. }
             | Self::IntentPending(_)
-            | Self::Friend(_) => None,
+            | Self::Friend(_)
+            | Self::GroupDm(_) => None,
         }
     }
 }

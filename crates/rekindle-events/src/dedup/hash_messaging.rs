@@ -189,3 +189,40 @@ pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
     h.update(b"|");
     h.update(&now_bucket.to_le_bytes());
 }
+
+/// A group-DM event: its group, its kind and what tells two apart (the
+/// member, the epoch, the send and its state).
+pub(super) fn hash_group_dm(
+    h: &mut blake3::Hasher,
+    e: &rekindle_types::subscription_events::GroupDmEvent,
+) {
+    use rekindle_types::subscription_events::GroupDmEvent;
+    h.update(e.group_id().as_bytes());
+    h.update(b"|");
+    match e {
+        GroupDmEvent::Invited { inviter, .. } => {
+            h.update(b"inv|");
+            h.update(inviter.public_key.as_bytes());
+        }
+        GroupDmEvent::Joined { member, .. } => {
+            h.update(b"join|");
+            h.update(member.public_key.as_bytes());
+        }
+        GroupDmEvent::Left { member, .. } => {
+            h.update(b"left|");
+            h.update(member.public_key.as_bytes());
+        }
+        GroupDmEvent::KeyRotated { member, epoch, .. } => {
+            h.update(b"rot|");
+            h.update(member.public_key.as_bytes());
+            h.update(&epoch.to_be_bytes());
+        }
+        GroupDmEvent::SendStatus {
+            client_id, state, ..
+        } => {
+            h.update(b"send|");
+            h.update(client_id.as_bytes());
+            h.update(state.as_str().as_bytes());
+        }
+    }
+}

@@ -439,6 +439,7 @@ impl App {
             | SubscriptionEvent::Governance(_)
             | SubscriptionEvent::Social(_)
             | SubscriptionEvent::Call(_)
+            | SubscriptionEvent::GroupDm(_)
             | SubscriptionEvent::Notification(_)
             | SubscriptionEvent::Network(_)
             | SubscriptionEvent::System(_) => Some(Action::Render),

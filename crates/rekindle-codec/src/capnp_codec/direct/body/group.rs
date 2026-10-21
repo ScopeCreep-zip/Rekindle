@@ -5,7 +5,7 @@
 //! sender's key and written to the sender's group chain. Signing, sealing
 //! and verifying are `rekindle-dm`'s (slice G2); these are the bytes.
 
-use rekindle_types::group_dm::{RosterMember, MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
+use rekindle_types::group_dm::{GroupDmRosterMember, MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
 
 use crate::capnp_codec::direct::{bounded_text, data, fixed, list_len, public_key, record_key};
 use crate::capnp_codec::{capnp_err, CodecError};
@@ -23,7 +23,7 @@ pub struct GroupDmInvite {
     pub group_id: GroupId,
     pub name: String,
     /// Every member, the creator included.
-    pub roster: Vec<RosterMember>,
+    pub roster: Vec<GroupDmRosterMember>,
     pub creator_sender_key: [u8; 32],
     /// The creator's key epoch.
     pub epoch: u32,
@@ -103,7 +103,7 @@ impl GroupDmInvite {
         let roster = list
             .iter()
             .map(|m| {
-                Ok(RosterMember {
+                Ok(GroupDmRosterMember {
                     identity: public_key(m.get_identity(), "roster identity")?,
                     profile_record_key: record_key(
                         m.get_profile_record_key(),

@@ -15,7 +15,7 @@ pub const MAX_NAME_CHARS: usize = 64;
 /// stored in `group_dms.roster`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct RosterMember {
+pub struct GroupDmRosterMember {
     /// The member's identity key, 64 lowercase hex.
     pub identity: String,
     /// The member's profile record, where its prekey record is found

@@ -223,7 +223,8 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         | SubscriptionEvent::ChannelMessage(_)
         | SubscriptionEvent::Typing(_)
         | SubscriptionEvent::Call(_)
-        | SubscriptionEvent::Friend(_) => "chat-event",
+        | SubscriptionEvent::Friend(_)
+        | SubscriptionEvent::GroupDm(_) => "chat-event",
         SubscriptionEvent::Notification(_) => "notification-event",
         SubscriptionEvent::IntentPending(_) => "intent-event",
         SubscriptionEvent::Network(_) => "network-status",

@@ -103,6 +103,12 @@ impl SubscriptionEvent {
                 }
             },
             Self::Friend(e) => EventScope::Peer(friend_peer(e).to_owned()),
+            // An invite is into a conversation no view holds yet; the rest
+            // belong to the group's conversation.
+            Self::GroupDm(crate::subscription_events::GroupDmEvent::Invited { .. }) => {
+                EventScope::Device
+            }
+            Self::GroupDm(e) => EventScope::Conversation(e.group_id().to_owned()),
             Self::Crypto(e) => match e {
                 CryptoEvent::MekRotated { community, .. }
                 | CryptoEvent::MekRequested { community, .. }

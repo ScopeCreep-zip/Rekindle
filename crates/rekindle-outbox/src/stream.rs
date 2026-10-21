@@ -1,6 +1,6 @@
 //! Stream kinds (plan E2.5): each send belongs to one ordered stream
-//! `<kind>:<scope>`, and each kind has its retry policy. `group_dm` comes
-//! at E2.6 and `signaling` at E4.1.
+//! `<kind>:<scope>`, and each kind has its retry policy. `signaling` comes
+//! at E4.1.
 
 use std::time::Duration;
 
@@ -21,11 +21,15 @@ pub enum StreamKind {
     /// (C7.22): the session's end discards the session's rows, so the
     /// horizon is only an upper bound.
     MediaKey,
+    /// Our group-DM content to one group (plan E2.6): a row settles `sent`
+    /// when its entry lands on our group chain; no member acknowledges it.
+    GroupDm,
 }
 
 impl StreamKind {
-    const ALL: [Self; 5] = [
+    const ALL: [Self; 6] = [
         Self::Dm,
+        Self::GroupDm,
         Self::FriendHandshake,
         Self::DhtWrite,
         Self::ChannelPost,
@@ -41,6 +45,7 @@ impl StreamKind {
             Self::DhtWrite => "dht_write",
             Self::ChannelPost => "channel_post",
             Self::MediaKey => "media_key",
+            Self::GroupDm => "group_dm",
         }
     }
 
@@ -81,7 +86,8 @@ impl StreamKind {
         let (base, cap) = match self {
             // The record pool's write of the slot is the send (plan E2.5).
             Self::ChannelPost => return OutboxRetry::SettledExternally,
-            Self::Dm => (1, 300),
+            // A group send is a chain write, retried like a DM.
+            Self::Dm | Self::GroupDm => (1, 300),
             Self::FriendHandshake => (2, 900),
             Self::DhtWrite => (1, 60),
             // C7.22's 1/2/4/8/15 s: a call key is useless late.
@@ -124,5 +130,21 @@ impl OutboxRetry {
                 Some(Duration::from_millis(half + rng.below(step_ms - half + 1)))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod group_dm_tests {
+    use super::{OutboxRetry, StreamKind};
+
+    /// A group send settles on its chain write: no ack, retryable, backed off.
+    #[test]
+    fn a_group_dm_row_awaits_no_ack_and_may_be_retried() {
+        let kind = StreamKind::GroupDm;
+        assert_eq!(StreamKind::parse(kind.as_str()), Some(kind));
+        assert_eq!(kind.stream("ab"), "group_dm:ab");
+        assert!(!kind.awaits_ack());
+        assert!(kind.user_retryable());
+        assert!(matches!(kind.policy(), OutboxRetry::Backoff { .. }));
     }
 }

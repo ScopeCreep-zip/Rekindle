@@ -18,7 +18,7 @@ use rekindle_transport::operations::dm::outbox::{
     self as dm_outbox, Attempt, DmOutbox, OutgoingDm,
 };
 use rekindle_transport::operations::friend::{self, FriendError, FriendHost};
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{ChannelMessageEvent, GroupDmEvent, SubscriptionEvent};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
@@ -134,9 +134,17 @@ async fn forget_removed(friends: &HostFriends) {
     }
 }
 
-/// The `DmSendStatus` of a `dm` row's change, or of our friend request's
+/// The `GroupDmEvent::SendStatus` of a `group_dm` row's change, the
+/// `DmSendStatus` of a `dm` row's change, or of our friend request's
 /// (its `FriendRequest:` client id names it on the peer's pending row).
 fn send_status(change: &StateChange) -> Option<SubscriptionEvent> {
+    if change.kind == StreamKind::GroupDm {
+        return Some(SubscriptionEvent::GroupDm(GroupDmEvent::SendStatus {
+            group_id: change.stream.strip_prefix("group_dm:")?.to_owned(),
+            client_id: change.client_id.clone(),
+            state: change.state,
+        }));
+    }
     let peer = match change.kind {
         // A control row (`StreamRecord`) has no message to show a state on.
         StreamKind::Dm if change.client_id.starts_with("StreamRecord:") => return None,

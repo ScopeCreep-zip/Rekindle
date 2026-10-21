@@ -2,7 +2,7 @@
 //! in, their signed rosters and our sending epoch, and each member's group
 //! sending key by epoch. The owner of their behaviour is `rekindle-dm`.
 
-use rekindle_types::group_dm::RosterMember;
+use rekindle_types::group_dm::GroupDmRosterMember;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// A group DM we are in.
@@ -11,13 +11,13 @@ pub struct GroupDmRow {
     /// The creator's 16 random bytes, in hex.
     pub group_id: String,
     pub name: String,
-    pub roster: Vec<RosterMember>,
+    pub roster: Vec<GroupDmRosterMember>,
     /// Our own sending key's current epoch.
     pub epoch: u32,
     pub created_at: i64,
 }
 
-fn roster_json(roster: &[RosterMember]) -> rusqlite::Result<String> {
+fn roster_json(roster: &[GroupDmRosterMember]) -> rusqlite::Result<String> {
     serde_json::to_string(roster).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))
 }
 
@@ -91,7 +91,7 @@ pub fn update_roster_epoch(
     conn: &Connection,
     owner_key: &str,
     group_id: &str,
-    roster: &[RosterMember],
+    roster: &[GroupDmRosterMember],
     epoch: u32,
 ) -> rusqlite::Result<bool> {
     let changed = conn.execute(
@@ -208,8 +208,8 @@ mod tests {
 
     const G: &str = "0123456789abcdef0123456789abcdef";
 
-    fn member(n: char) -> RosterMember {
-        RosterMember {
+    fn member(n: char) -> GroupDmRosterMember {
+        GroupDmRosterMember {
             identity: n.to_string().repeat(64),
             profile_record_key: format!("VLD0:{}", "P".repeat(43)),
             participant_record_key: format!(

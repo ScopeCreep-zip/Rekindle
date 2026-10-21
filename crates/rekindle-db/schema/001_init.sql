@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS presence_keys (
 
 -- Plan E2.6: a group DM (3-8 members, no governance). `group_id` is the
 -- 16 random bytes the creator minted, in hex; `roster` is the signed
--- invite's member list (JSON array of `rekindle_types::group_dm::RosterMember`)
+-- invite's member list (JSON array of `rekindle_types::group_dm::GroupDmRosterMember`)
 -- and `epoch` our own sending key's current epoch.
 CREATE TABLE IF NOT EXISTS group_dms (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,

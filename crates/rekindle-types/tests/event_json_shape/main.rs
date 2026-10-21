@@ -23,6 +23,7 @@ mod channel;
 mod crypto;
 mod friend;
 mod governance;
+mod group_dm;
 mod intent;
 mod membership;
 mod network;
@@ -96,6 +97,11 @@ const FAMILIES: &[Family] = &[
     Family {
         tag: "channelMessage",
         names: channel::NAMES,
+        nested: &[],
+    },
+    Family {
+        tag: "groupDm",
+        names: group_dm::NAMES,
         nested: &[],
     },
     Family {
@@ -193,6 +199,7 @@ fn classify(event: &SubscriptionEvent) -> Classified {
         SubscriptionEvent::ChannelMessage(e) => {
             ("channelMessage", channel::variant_name(e), vec![])
         }
+        SubscriptionEvent::GroupDm(e) => ("groupDm", group_dm::variant_name(e), vec![]),
         SubscriptionEvent::Typing(e) => {
             ("typing", typing::variant_name(e), typing::nested_names(e))
         }
@@ -259,6 +266,7 @@ fn unread_samples() -> Vec<Sample> {
 fn all_samples() -> Vec<Sample> {
     let mut all = Vec::new();
     all.extend(channel::samples());
+    all.extend(group_dm::samples());
     all.extend(typing::samples());
     all.extend(presence::samples());
     all.extend(membership::samples());
