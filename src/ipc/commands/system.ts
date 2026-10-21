@@ -7,14 +7,25 @@ import type {
   AuditEntryView, AuditVerified, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
 } from "./dto";
 
+/// The picture formats the Host accepts (`rekindle_types::ImageKind`,
+/// serialized as its MIME type).
+export type ImageKind = "image/png" | "image/jpeg" | "image/gif";
+
+const IMAGE_KINDS: readonly ImageKind[] = ["image/png", "image/jpeg", "image/gif"];
+
+/// `mime` as an [`ImageKind`], or `null` when the Host would refuse it.
+export function asImageKind(mime: string): ImageKind | null {
+  return IMAGE_KINDS.find((k) => k === mime) ?? null;
+}
+
 export const systemCommands = {
   // Our presence and profile: Host calls (plan E1.1). "Appear Offline" is
   // `invisible`; offline is set only by logging out.
   setStatus: (status: SessionStatus) => hostInvoke<OwnPresenceView>("set_status", { status }),
   setNickname: (nickname: string) => hostInvoke<string>("set_nickname", { nickname }),
-  /// `kind` is the file picker's MIME type, as the browser reports it; the
-  /// Host decodes the picture as that kind only (`ImageKind`).
-  setAvatar: (avatarData: number[], kind: string) =>
+  /// `kind` declares the picture's format; the Host decodes it as that
+  /// kind only (`ImageKind`).
+  setAvatar: (avatarData: number[], kind: ImageKind) =>
     hostInvoke<unknown>("set_avatar", { avatarData, kind }),
   getAvatar: (publicKey: string) => hostInvoke<number[] | null>("get_avatar", { publicKey }),
   setStatusMessage: (message: string) =>

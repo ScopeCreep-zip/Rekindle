@@ -2,6 +2,8 @@ import { commands } from "../ipc/commands";
 import type { NetworkStatus } from "../ipc/commands";
 import { setSettingsState } from "../stores/settings.store";
 import type { SettingsState } from "../stores/settings.store";
+import { addToast } from "../stores/toast.store";
+import { asImageKind } from "../ipc/commands/system";
 
 export async function handleLoadSettings(): Promise<void> {
   try {
@@ -69,11 +71,20 @@ export async function handleSaveSettings(
   }
 }
 
-export async function handleSetAvatar(avatarData: number[], kind: string): Promise<void> {
+/// Set our avatar from a picked file's bytes and MIME type. A format the
+/// Host does not accept, or a refused upload, is shown; `true` on success.
+export async function handleSetAvatar(avatarData: number[], mime: string): Promise<boolean> {
+  const kind = asImageKind(mime);
+  if (!kind) {
+    addToast("That picture can't be used: choose a PNG, JPEG, or GIF.", "error");
+    return false;
+  }
   try {
     await commands.setAvatar(avatarData, kind);
+    return true;
   } catch (e) {
-    console.error("Failed to set avatar:", e);
+    addToast(`Avatar not changed: ${String(e)}`, "error");
+    return false;
   }
 }
 

@@ -45,10 +45,10 @@ const ProfileTab: Component = () => {
       const arrayBuffer = await file.arrayBuffer();
       const bytes = Array.from(new Uint8Array(arrayBuffer));
       // The picker's MIME type declares the kind; the Host decodes it as
-      // that kind only.
-      await handleSetAvatar(bytes, file.type);
+      // that kind only. An unsupported file is shown, not uploaded.
+      const set = await handleSetAvatar(bytes, file.type);
       // Refresh avatar in store after upload
-      if (authState.publicKey) {
+      if (set && authState.publicKey) {
         const avatarUrl = await fetchAvatarUrl(authState.publicKey);
         setAuthState("avatarUrl", avatarUrl);
       }
