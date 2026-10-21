@@ -19,6 +19,7 @@
 //! number's source (the pinned Veilid constant or the live log) and how to
 //! recalibrate it from a live log.
 
+mod busy;
 mod clock;
 pub mod latency;
 mod messages;
@@ -100,12 +101,15 @@ pub struct Netsim {
 }
 
 impl Netsim {
-    /// An empty network for run `seed`. Call on the paused runtime: the
-    /// nodes' clocks start now.
+    /// An empty network for run `seed`. Call on the paused runtime's
+    /// thread: the nodes' clocks start now, and the database calls queued
+    /// from this thread count as the run's work ([`busy`]).
     #[must_use]
     pub fn new(seed: u64) -> Self {
+        let net = Network::new(seed);
+        busy::install(&net.busy);
         Self {
-            net: Network::new(seed),
+            net,
             seed,
             start: tokio::time::Instant::now(),
             clocks: parking_lot::Mutex::new(Vec::new()),
@@ -176,13 +180,17 @@ impl Netsim {
         let net = Arc::clone(&self.net);
         tokio::spawn(async move {
             loop {
-                settle().await;
+                settle(&net).await;
                 if net.deliver() == 0 {
-                    // The tick bounds each jump of the paused clock: a Host
-                    // waiting on its database thread looks idle to tokio,
-                    // which would otherwise jump to the next timer (a call
-                    // timeout, a latency) while the thread works.
-                    tokio::time::sleep(PUMP_TICK).await;
+                    // Nothing in flight is due: wait for a send, the next
+                    // arrival or the storage tick. Time moves only while
+                    // every task waits, database calls included
+                    // ([`busy`]), so each jump lands where the seed puts it.
+                    let woken = net.wake.notified();
+                    match net.next_wake() {
+                        Some(due) => drop(tokio::time::timeout_at(due, woken).await),
+                        None => woken.await,
+                    }
                 }
             }
         })
@@ -216,9 +224,9 @@ impl Netsim {
     /// still on its way. For a scenario's explicit steps.
     pub async fn quiesce(&self) {
         loop {
-            settle().await;
+            settle(&self.net).await;
             if self.net.deliver() == 0 {
-                settle().await;
+                settle(&self.net).await;
                 if self.net.deliver() == 0 {
                     match self.net.next_due() {
                         Some(due) => tokio::time::sleep_until(due).await,
@@ -564,12 +572,17 @@ fn toggle(set: &mut std::collections::HashSet<usize>, node: usize, on: bool) {
     }
 }
 
-/// The pump's idle tick.
-const PUMP_TICK: std::time::Duration = std::time::Duration::from_millis(10);
-
-/// Let every runnable task run until it waits.
-async fn settle() {
-    for _ in 0..64 {
-        tokio::task::yield_now().await;
+/// Let every runnable task run until it waits, its database calls
+/// included: again while a settle began a call.
+async fn settle(net: &Network) {
+    loop {
+        net.busy.drained().await;
+        let begun = net.busy.begun();
+        for _ in 0..64 {
+            tokio::task::yield_now().await;
+        }
+        if net.busy.begun() == begun {
+            return;
+        }
     }
 }

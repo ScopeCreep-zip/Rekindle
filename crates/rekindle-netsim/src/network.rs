@@ -17,7 +17,9 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rekindle_record_pool::RecordPool;
 use rekindle_records::port::{PortEvent, RecordSchema, RecordValue};
-use tokio::sync::{mpsc, oneshot, watch};
+use tokio::sync::{mpsc, oneshot, watch, Notify};
+
+use crate::busy::Busy;
 
 use crate::latency::Latency;
 pub(crate) use crate::records::Replica;
@@ -143,6 +145,10 @@ pub struct Network {
     pub(crate) latency: Latency,
     /// Simulated time zero (Veilid timestamps are counted from it).
     pub(crate) epoch: tokio::time::Instant,
+    /// The Hosts' database calls in flight ([`crate::busy`]).
+    pub(crate) busy: Arc<Busy>,
+    /// Wakes the pump when an event is queued.
+    pub(crate) wake: Notify,
 }
 
 impl Network {
@@ -152,6 +158,8 @@ impl Network {
             order: Mutex::new(StdRng::seed_from_u64(seed ^ 0x6e65_7473_696d)),
             latency: Latency::new(seed),
             epoch: tokio::time::Instant::now(),
+            busy: Arc::default(),
+            wake: Notify::new(),
         })
     }
 
@@ -202,6 +210,8 @@ impl Network {
             event,
             due: tokio::time::Instant::now() + delay,
         });
+        drop(inner);
+        self.wake.notify_one();
         true
     }
 
@@ -266,6 +276,18 @@ impl Network {
         let inner = self.inner.lock();
         let tick = inner.next_tick.filter(|_| Self::watch_work(&inner));
         inner.pending.iter().map(|p| p.due).chain(tick).min()
+    }
+
+    /// When the pump next has work without being woken: the next event in
+    /// flight or the next storage tick, whichever is first.
+    pub(crate) fn next_wake(&self) -> Option<tokio::time::Instant> {
+        let inner = self.inner.lock();
+        inner
+            .pending
+            .iter()
+            .map(|p| p.due)
+            .chain(inner.next_tick)
+            .min()
     }
 
     /// The node's live record sessions.
