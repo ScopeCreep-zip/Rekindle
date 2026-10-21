@@ -6,17 +6,19 @@ import type { Page } from "@playwright/test";
  * build from a handler's plain value.
  */
 const HOST_CALLS = [
-  "create_identity", "login", "get_identity", "logout", "list_identities",
+  "create_identity", "login", "get_identity", "pqxdh_bundle_info", "logout", "list_identities",
   "delete_identity", "audit_verify", "audit_export", "lifecycle_current",
   "intent_commit", "intent_cancel", "undo", "set_status", "set_status_message",
   "set_nickname", "set_avatar", "get_avatar", "get_game_status", "open_external_url",
   // Friends and the 1:1 paths (plan E2.1).
-  "send_message", "send_typing", "get_message_history", "mark_read", "add_friend",
+  "send_message", "resend_message", "send_typing", "get_message_history", "mark_read", "add_friend",
   "remove_friend", "accept_request", "reject_request", "cancel_request", "retry_handshake", "get_friends",
   "get_pending_requests", "create_friend_group", "rename_friend_group",
   "delete_friend_group", "move_friend_to_group", "set_friend_nickname", "generate_invite",
   "add_friend_from_invite", "cancel_invite", "get_outgoing_invites", "block_user",
   "unblock_user", "get_blocked_users", "reset_signal_session",
+  // Safety numbers and verification (plan E2.3).
+  "get_safety_number", "mark_identity_verified", "clear_identity_verification",
 ];
 
 /**
