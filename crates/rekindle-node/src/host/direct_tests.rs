@@ -377,12 +377,12 @@ async fn a_friend_accept_whose_store_fails_keeps_its_row() {
 }
 
 /// Now, on the host's clock (the system's).
-fn now_ms() -> u64 {
+pub(super) fn now_ms() -> u64 {
     rekindle_utils::time::Clock::now_ms(&rekindle_utils::SystemClock)
 }
 
 /// A friend request from `from` to `to`, sealed under `nonce` at `sent_at`.
-fn sealed_request(
+pub(super) fn sealed_request(
     from: &rekindle_crypto::Identity,
     to: [u8; 32],
     nonce: [u8; 16],
@@ -401,7 +401,10 @@ fn sealed_request(
 }
 
 /// `frame` by `app_call` to `host`; its reply.
-async fn call(host: &Host, frame: &rekindle_codec::capnp_codec::direct::DmFrame) -> Vec<u8> {
+pub(super) async fn call(
+    host: &Host,
+    frame: &rekindle_codec::capnp_codec::direct::DmFrame,
+) -> Vec<u8> {
     let datagram = rekindle_transport::operations::dm::wire(frame).unwrap();
     reply(host, &datagram).await
 }

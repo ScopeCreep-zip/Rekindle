@@ -23,7 +23,7 @@ use super::Host;
 
 /// Bob's bundle from his record's head and first slot, as Ann's pick
 /// assembles it.
-fn bundle_of(bob: &Identity) -> PreKeyBundle {
+pub(super) fn bundle_of(bob: &Identity) -> PreKeyBundle {
     let now = rekindle_utils::timestamp_ms_i64();
     let set = mint_set(bob, &rekindle_utils::OsRandom, now);
     PreKeyBundle::from_record(
@@ -37,7 +37,12 @@ fn bundle_of(bob: &Identity) -> PreKeyBundle {
 
 /// `from`'s sealed rejection of `init`, naming `hash` as its base key's,
 /// as the datagram that reaches Ann.
-fn rejection(from: &Identity, ann: [u8; 32], init: &PreKeyInitBody, hash: [u8; 32]) -> Vec<u8> {
+pub(super) fn rejection(
+    from: &Identity,
+    ann: [u8; 32],
+    init: &PreKeyInitBody,
+    hash: [u8; 32],
+) -> Vec<u8> {
     let body = DirectBody::PreKeyRejected(PreKeyRejected {
         signed_prekey_id: init.signed_prekey_id,
         one_time_prekey_id: init.one_time_prekey_id,
@@ -142,7 +147,7 @@ async fn adding_a_friend_waits_for_our_published_profile() {
 
 /// Ann's prekeys, minted and stored as her own-records stage does (an
 /// offline host never runs it), as the bundle a peer's pick assembles.
-async fn own_bundle(host: &Host, owner: [u8; 32]) -> PreKeyBundle {
+pub(super) async fn own_bundle(host: &Host, owner: [u8; 32]) -> PreKeyBundle {
     let local = HostFriends::of(&host.ctx).local_party().unwrap();
     let now = rekindle_utils::timestamp_ms_i64();
     let set = mint_set(&local.identity, &rekindle_utils::OsRandom, now);

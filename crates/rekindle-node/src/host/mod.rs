@@ -25,6 +25,8 @@ mod owned_record;
 pub mod policy;
 #[cfg(test)]
 mod prekey_tests;
+#[cfg(test)]
+mod receive_tests;
 pub mod runtime;
 mod serve;
 pub mod session;
