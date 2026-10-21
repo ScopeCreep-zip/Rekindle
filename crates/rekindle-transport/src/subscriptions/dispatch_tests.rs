@@ -192,3 +192,22 @@ async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
     assert_eq!(handler.seen(), [Seen::DirectCall(datagram.to_vec())]);
     assert_eq!(*replies.0.lock(), [b"reply".to_vec(), b"NAK".to_vec()]);
 }
+
+/// Audit G10: a `'G'` call is refused by its tag, whatever follows it: one
+/// whose body is no envelope, and one carrying a transport frame (what an
+/// untagged call would decode), are NAKed and reach no handler.
+#[tokio::test]
+async fn a_gossip_call_is_refused_before_any_decode() {
+    let handler = Arc::new(Recorder::default());
+    let replies = Replies::default();
+    let mut framed = vec![rekindle_codec::ingress::GOSSIP_TAG];
+    framed.extend(crate::frame::encode(crate::frame::TypeId::SyncRequest, b"x").unwrap());
+    for (n, datagram) in [vec![rekindle_codec::ingress::GOSSIP_TAG, 0xFF], framed]
+        .into_iter()
+        .enumerate()
+    {
+        dispatch_app_call(&handler, &replies, AppCallId(n as u64), &datagram).await;
+    }
+    assert_eq!(handler.seen(), []);
+    assert_eq!(*replies.0.lock(), [b"NAK".to_vec(), b"NAK".to_vec()]);
+}
