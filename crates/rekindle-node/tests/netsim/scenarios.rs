@@ -266,7 +266,7 @@ async fn an_outsider_cannot_inject_a_community_key() {
 /// The trace is the seed's (C9.3): one seed, one trace; another seed,
 /// another trace.
 #[test]
-#[ignore = "E2.B finding F5: watch changes now go out on Veilid's 1 s send tick (S5), so a set landing a pump-tick (10 ms) earlier or later, as the Hosts' database threads shift the paused clock, crosses a tick and changes the batching; the same seed gave two traces in 1 of 2 runs"]
+#[ignore = "E2.B finding F7 (fixed with F4 in S8): watch changes now go out on Veilid's 1 s send tick (S5), so a set landing a pump-tick (10 ms) earlier or later, as the Hosts' database threads shift the paused clock, crosses a tick and changes the batching; the same seed gave two traces in 1 of 2 runs"]
 fn one_seed_one_trace() {
     fn run(seed: u64) -> [u8; 32] {
         let runtime = tokio::runtime::Builder::new_current_thread()
