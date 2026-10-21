@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection};
 
-use super::messages::{dm_row, DmRow, DM_COLS};
+use super::messages::{dm_row, DmRow, DM_COLS, HISTORY_ORDER};
 
 /// The newest `limit` messages of group `group_id` before `before` (a
 /// timestamp, ms; all when `None`), oldest first (plan E2.6).
@@ -20,7 +20,7 @@ pub fn group_dm_history(
     let mut stmt = conn.prepare(&format!(
         "SELECT {DM_COLS} FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
          AND conversation_type = 'group_dm' AND timestamp < ?3 \
-         ORDER BY timestamp DESC, id DESC LIMIT ?4"
+         ORDER BY {HISTORY_ORDER} LIMIT ?4"
     ))?;
     let mut rows = stmt
         .query_map(

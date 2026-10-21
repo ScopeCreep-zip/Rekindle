@@ -35,6 +35,11 @@ pub struct Row {
     pub next_at: i64,
     pub deadline: i64,
     pub wedge_reason: Option<String>,
+    /// When the message was written: its local echo's timestamp, which
+    /// every attempt's frame carries as its send time, so the peer orders
+    /// it by when it was written, not by the attempt that reached them
+    /// (E2.B F3); `None` for a send with no echo.
+    pub sent_at: Option<i64>,
 }
 
 /// A row's new scheduling and state, as the engine settled one attempt.
@@ -84,6 +89,7 @@ pub fn append(
                 message_id: row.client_id,
                 send_state: SendState::Queued,
                 stream_seq: Some(seq),
+                timestamp: written_at(conn, row.owner_key, dm)?,
                 ..*dm
             };
             Some(insert_dm(conn, &dm)?.id)
@@ -92,6 +98,20 @@ pub fn append(
     };
     insert_row(conn, row, seq, echo_id)?;
     Ok(seq)
+}
+
+/// The time our echo `dm` is written at: its own, or our newest message in
+/// its conversation's when the clock went back, so our messages' times
+/// never run against their stream order (the history orders by time,
+/// E2.B F3).
+fn written_at(conn: &Connection, owner_key: &str, dm: &NewDm<'_>) -> rusqlite::Result<i64> {
+    let newest: Option<i64> = conn.query_row(
+        "SELECT MAX(timestamp) FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+         AND conversation_type = ?3 AND sender_key = ?1",
+        params![owner_key, dm.peer_key, dm.conversation_type.as_str()],
+        |r| r.get(0),
+    )?;
+    Ok(newest.map_or(dm.timestamp, |t| t.max(dm.timestamp)))
 }
 
 /// Store `row` at the end of its stream with our channel post
@@ -226,7 +246,8 @@ pub fn delete_to_peer(conn: &Connection, owner_key: &str, peer: &str) -> rusqlit
 }
 
 const COLS: &str = "o.stream, o.stream_seq, o.client_id, o.kind, o.payload, o.state, o.attempts, \
-                    o.next_at, o.deadline, o.wedge_reason";
+                    o.next_at, o.deadline, o.wedge_reason, \
+                    (SELECT e.timestamp FROM messages e WHERE e.id = o.echo_id)";
 
 /// A row whose stream has no earlier row still to send (`queued`) or
 /// wedged (`failed`): the stream head and the rows already past it.
@@ -254,6 +275,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
         next_at: row.get(7)?,
         deadline: row.get(8)?,
         wedge_reason: row.get(9)?,
+        sent_at: row.get(10)?,
     })
 }
 

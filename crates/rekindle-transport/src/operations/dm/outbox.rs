@@ -167,14 +167,26 @@ pub enum Attempt {
 /// Frame entry `stream_seq` of our stream to `to`, append it to our chain
 /// to them (plan E2.5, D23: the chain is authoritative), then send it once
 /// as the hint that makes the peer diff. Once on the chain it counts as
-/// sent whether or not the hint left.
-pub async fn attempt(host: &dyn FriendHost, to: &str, stream_seq: i64, payload: &[u8]) -> Attempt {
+/// sent whether or not the hint left. Every attempt's frame carries
+/// `sent_at`, when the entry was written (its echo's time; now for a row
+/// with none), so the peer orders it by that and not by the attempt that
+/// reached them (E2.B F3).
+pub async fn attempt(
+    host: &dyn FriendHost,
+    to: &str,
+    stream_seq: i64,
+    sent_at: Option<i64>,
+    payload: &[u8],
+) -> Attempt {
     let body = match decode(payload) {
         Ok(body) => body,
         Err(e) => return Attempt::Wedged(format!("payload: {e}")),
     };
     let seq = u64::try_from(stream_seq).unwrap_or(0);
-    let frame = match send::stream_frame(host, to, &body, seq).await {
+    let sent_at_ms = sent_at
+        .and_then(|t| u64::try_from(t).ok())
+        .unwrap_or_else(|| host.clock().now_ms());
+    let frame = match send::stream_frame(host, to, &body, seq, sent_at_ms).await {
         Ok(frame) => frame,
         Err(FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_)) => {
             return Attempt::Deferred;

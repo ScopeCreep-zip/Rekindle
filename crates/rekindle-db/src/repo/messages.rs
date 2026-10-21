@@ -161,8 +161,15 @@ pub(crate) const DM_COLS: &str =
     "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
                        message_id, history_gap_through";
 
+/// The order of a conversation's history, newest first: by the time each
+/// message was written (the sender's, which its frames carry), then by
+/// sender key and the sender's stream seq, so one sender's messages keep
+/// their stream order whatever order they arrived in, and both sides list
+/// the conversation alike (E2.B F3, D23).
+pub(crate) const HISTORY_ORDER: &str = "timestamp DESC, sender_key DESC, stream_seq DESC, id DESC";
+
 /// The newest `limit` messages with `peer_key` before `before` (a
-/// timestamp, ms; all when `None`), oldest first.
+/// timestamp, ms; all when `None`), oldest first, in [`HISTORY_ORDER`].
 ///
 /// # Errors
 /// The query failed.
@@ -175,7 +182,7 @@ pub fn dm_history(
 ) -> rusqlite::Result<Vec<DmRow>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT {DM_COLS} FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-         AND conversation_type = 'dm' AND timestamp < ?3 ORDER BY timestamp DESC, id DESC LIMIT ?4"
+         AND conversation_type = 'dm' AND timestamp < ?3 ORDER BY {HISTORY_ORDER} LIMIT ?4"
     ))?;
     let mut rows = stmt
         .query_map(
@@ -269,7 +276,9 @@ pub fn dm_inbox(conn: &Connection, owner_key: &str, limit: u32) -> rusqlite::Res
         "SELECT {DM_COLS} FROM messages m WHERE owner_key = ?1 AND conversation_type = 'dm' \
          AND id = (SELECT id FROM messages n WHERE n.owner_key = m.owner_key \
                    AND n.conversation_id = m.conversation_id AND n.conversation_type = 'dm' \
-                   AND n.history_gap_through IS NULL ORDER BY n.timestamp DESC, n.id DESC LIMIT 1) \
+                   AND n.history_gap_through IS NULL \
+                   ORDER BY n.timestamp DESC, n.sender_key DESC, n.stream_seq DESC, n.id DESC \
+                   LIMIT 1) \
          ORDER BY timestamp DESC LIMIT ?2"
     ))?;
     let rows = stmt.query_map(params![owner_key, limit], dm_row)?.collect();

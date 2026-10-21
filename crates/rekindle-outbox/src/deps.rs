@@ -45,6 +45,9 @@ pub struct OutboxRow {
     pub next_at: i64,
     pub deadline: i64,
     pub wedge_reason: Option<String>,
+    /// When the message was written (its local echo's time), which each
+    /// attempt's frame carries; `None` for a send with no echo.
+    pub sent_at: Option<i64>,
 }
 
 /// A row's state and schedule after the engine decided.

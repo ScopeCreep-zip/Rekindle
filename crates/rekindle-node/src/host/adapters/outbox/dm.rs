@@ -177,7 +177,7 @@ impl StreamSender for DmSender {
         let Some(peer) = row.stream.strip_prefix("dm:") else {
             return AttemptOutcome::Wedged(format!("not a dm stream: {}", row.stream));
         };
-        outcome(dm_outbox::attempt(&self.0, peer, row.stream_seq, &row.payload).await)
+        outcome(dm_outbox::attempt(&self.0, peer, row.stream_seq, row.sent_at, &row.payload).await)
     }
 }
 
@@ -196,6 +196,7 @@ impl StreamSender for GroupSender {
                 &self.0,
                 group,
                 row.stream_seq,
+                row.sent_at,
                 &row.payload,
             )
             .await,

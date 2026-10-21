@@ -106,11 +106,14 @@ pub async fn send(
 }
 
 /// One attempt of row `stream_seq` of our stream to `group_id`: sealed
-/// under our current key, on our chain, then hinted to each member.
+/// under our current key, on our chain, then hinted to each member. Each
+/// attempt carries `sent_at`, when the message was written (its echo's
+/// time; now for a row with none), so members order it by that (E2.B F3).
 pub async fn attempt(
     host: &dyn FriendHost,
     group_id: &str,
     stream_seq: i64,
+    sent_at: Option<i64>,
     payload: &[u8],
 ) -> Attempt {
     let body = match dm_outbox::decode_payload(payload) {
@@ -121,7 +124,10 @@ pub async fn attempt(
         Ok(id) => id,
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
-    match append(host, &id, group_id, &body, stream_seq).await {
+    let sent_at_ms = sent_at
+        .and_then(|t| u64::try_from(t).ok())
+        .unwrap_or_else(|| host.clock().now_ms());
+    match append(host, &id, group_id, &body, stream_seq, sent_at_ms).await {
         Ok(content) => {
             spawn_hints(host, &id, content);
             Attempt::Sent
@@ -141,14 +147,11 @@ async fn append(
     group_id: &str,
     body: &DirectBody,
     stream_seq: i64,
+    sent_at_ms: u64,
 ) -> Result<GroupContent, FriendError> {
     let group = held(host, id).await?;
     let deps = host.group_dm()?;
-    let plain = inner(
-        body,
-        host.clock().now_ms(),
-        u64::try_from(stream_seq).unwrap_or(0),
-    );
+    let plain = inner(body, sent_at_ms, u64::try_from(stream_seq).unwrap_or(0));
     let content = rekindle_dm::seal_for_send(deps.as_ref(), id, &plain)
         .await
         .map_err(|e| friend_error(&e))?;

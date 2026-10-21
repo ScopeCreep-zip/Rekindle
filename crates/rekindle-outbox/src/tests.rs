@@ -89,6 +89,7 @@ impl OutboxDeps for Fake {
             next_at: row.next_at,
             deadline: row.deadline,
             wedge_reason: None,
+            sent_at: None,
         });
         Ok(stream_seq)
     }

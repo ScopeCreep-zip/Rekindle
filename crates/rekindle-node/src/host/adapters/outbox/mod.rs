@@ -136,6 +136,7 @@ fn row_of(row: repo::Row) -> Result<OutboxRow, OutboxError> {
         next_at: row.next_at,
         deadline: row.deadline,
         wedge_reason: row.wedge_reason,
+        sent_at: row.sent_at,
     })
 }
 

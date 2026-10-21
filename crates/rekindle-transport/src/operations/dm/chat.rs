@@ -139,16 +139,17 @@ pub async fn send_dm(
         .await?;
     // Sending the message ends our typing to `to`.
     super::typing::message_sent(host, to);
-    let id = own_dm(host, &message_id)
+    // Its stored time: never behind our earlier messages to `to`.
+    let row = own_dm(host, &message_id)
         .await?
-        .map(|dm| dm.row.id)
+        .map(|dm| dm.row)
         .ok_or_else(|| FriendError::Failed(format!("message {message_id} not committed")))?;
     Ok(DmMessage {
-        id,
+        id: row.id,
         message_id: Some(message_id),
         sender_id: owner,
         body: body.to_string(),
-        timestamp,
+        timestamp: row.timestamp,
         is_own: true,
         send_state: SendState::Queued,
         history_gap_through: None,

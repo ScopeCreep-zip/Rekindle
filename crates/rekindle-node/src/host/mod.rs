@@ -22,6 +22,8 @@ mod group_content_tests;
 #[cfg(test)]
 mod group_dm_tests;
 #[cfg(test)]
+mod history_order_tests;
+#[cfg(test)]
 mod horizon_tests;
 pub mod identity;
 mod idle;

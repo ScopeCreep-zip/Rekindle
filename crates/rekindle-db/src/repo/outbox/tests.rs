@@ -203,3 +203,26 @@ fn prefix_rows_are_one_sessions_streams_only() {
         .collect();
     assert_eq!(ids, ["a", "b"]);
 }
+
+/// E2.B F3: a row carries its echo's time, which each attempt's frame
+/// sends, and an echo is never written before our earlier messages in its
+/// conversation (a clock that went back), so our history keeps stream order.
+#[test]
+fn a_row_carries_when_its_echo_was_written_and_times_follow_the_stream() {
+    let conn = fixture::conn();
+    let at = |timestamp| NewDm {
+        timestamp,
+        ..echo()
+    };
+    enqueue_with_echo(&conn, &row("dm:bob", "a", 0), Some(&at(500))).unwrap();
+    enqueue_with_echo(&conn, &row("dm:bob", "b", 0), Some(&at(300))).unwrap();
+    enqueue_with_echo(&conn, &row("dm:bob", "c", 0), None).unwrap();
+    let sent_at = |id| get(&conn, OWNER, id).unwrap().unwrap().sent_at;
+    assert_eq!(sent_at("a"), Some(500));
+    assert_eq!(sent_at("b"), Some(500), "never behind the earlier echo");
+    assert_eq!(sent_at("c"), None);
+    assert_eq!(
+        own_dm(&conn, OWNER, "b").unwrap().unwrap().row.timestamp,
+        500
+    );
+}

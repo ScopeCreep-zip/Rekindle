@@ -103,7 +103,14 @@ async fn a_send_commits_its_row_and_echo_and_waits_for_its_chain_entry() {
         .unwrap();
     assert_eq!(echo, Some((gid.clone(), ConversationType::GroupDm)));
     // Offline: no chain entry lands, so the row is not sent.
-    let tried = content::attempt(&friends, &gid, rows[0].stream_seq, &rows[0].payload).await;
+    let tried = content::attempt(
+        &friends,
+        &gid,
+        rows[0].stream_seq,
+        rows[0].sent_at,
+        &rows[0].payload,
+    )
+    .await;
     assert_eq!(tried, Attempt::Deferred);
     assert!(
         content::send(&friends, &"0".repeat(32), "x").await.is_err(),
