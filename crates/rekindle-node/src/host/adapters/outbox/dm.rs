@@ -29,8 +29,8 @@ use crate::host::adapters::friends::HostFriends;
 /// The outbox of the unlocked identity, while one is.
 #[derive(Default)]
 pub struct OutboxSlot {
-    current: RwLock<Option<Arc<Outbox<HostOutbox>>>>,
-    senders: Arc<Senders>,
+    pub(super) current: RwLock<Option<Arc<Outbox<HostOutbox>>>>,
+    pub(super) senders: Arc<Senders>,
 }
 
 impl OutboxSlot {
@@ -76,6 +76,7 @@ impl OutboxSlot {
     pub(crate) fn stop(&self) {
         self.senders.remove(StreamKind::Dm);
         self.senders.remove(StreamKind::FriendHandshake);
+        self.senders.remove(StreamKind::DhtWrite);
         self.current.write().take();
     }
 

@@ -17,8 +17,8 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// Veilid storage included, so stale records written under the old layout
 /// cannot be read back with the new indices. The app is not live yet.
 ///
-/// 83: `dht_outbox`, the durable record writes a logout left unsent
-/// (plan C7.6h); the next login of the same identity re-pushes them.
+/// 83: the durable record writes a logout left unsent (plan C7.6h); the
+/// next login of the same identity re-pushes them (outbox rows since 103).
 ///
 /// 81: the friend-list DHT record. `FriendEntry` gained `dm_log_key`
 /// and `profileDhtKey`/`dmLogKey` joined `schemas/friend.capnp`, which
@@ -152,7 +152,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 103 (plan E2.5, D22): `pending_messages` is gone; the friend handshake,
 /// removal and lifecycle frames are `friend_handshake` outbox rows.
-pub const SCHEMA_VERSION: i64 = 103;
+///
+/// 104 (plan E2.5, D22): the outbox's `dht_write` stream absorbs C7.6h's
+/// unsent-write table.
+pub const SCHEMA_VERSION: i64 = 104;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

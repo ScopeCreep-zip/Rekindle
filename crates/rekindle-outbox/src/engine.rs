@@ -190,6 +190,24 @@ impl<D: OutboxDeps> Outbox<D> {
         self.deps.next_wake().await
     }
 
+    /// Attempt every unsettled row of `kind` that no stream head blocks
+    /// now, whatever its `next_at`: a host hands a stream to its new
+    /// sender at once (the `dht_write` rows at unlock, before the session
+    /// writes); how many were attempted.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn flush(&self, kind: StreamKind) -> Result<usize, OutboxError> {
+        let mut attempted = 0;
+        for row in self.deps.due(i64::MAX).await? {
+            if row.kind == kind {
+                self.attempt(&row).await?;
+                attempted += 1;
+            }
+        }
+        Ok(attempted)
+    }
+
     /// The peer acknowledged `stream_seq` of `stream`. Returns whether a
     /// row was waiting for it.
     ///

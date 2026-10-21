@@ -8,7 +8,6 @@ pub mod api;
 pub mod audit;
 pub(crate) mod audit_alert;
 pub mod bus_key;
-pub mod dht_outbox;
 #[cfg(test)]
 mod direct_tests;
 #[cfg(test)]

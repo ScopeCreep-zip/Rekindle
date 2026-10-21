@@ -78,12 +78,7 @@ pub(crate) async fn run(
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {
         match transport.start_records() {
-            Ok(pool) => {
-                if let Ok(db) = ctx.db.current() {
-                    super::dht_outbox::restore_unsent(&db, &installed.public_key, pool.as_ref())
-                        .await;
-                }
-            }
+            Ok(pool) => ctx.outbox.restore_unsent(pool).await,
             Err(e) => {
                 tracing::warn!(error = %e, "record pool not started — staying locked");
                 return fail(
@@ -329,11 +324,11 @@ async fn save_unsent(ctx: &DaemonContext, unsent: Vec<rekindle_records::port::Un
         .read()
         .as_ref()
         .map(|s| s.identity.public_key_hex.clone());
-    let (Ok(db), Some(owner)) = (ctx.db.current(), owner) else {
+    let Some(owner) = owner else {
         tracing::warn!(count = unsent.len(), "unsent DHT writes lost: no identity");
         return;
     };
-    let saved = super::dht_outbox::persist_unsent(&db, &owner, unsent).await;
+    let saved = super::adapters::outbox::save_unsent(ctx, &owner, unsent).await;
     if saved > 0 {
         tracing::info!(saved, "unsent DHT writes kept for the next unlock");
         ctx.publish_event(SubscriptionEvent::Notification(

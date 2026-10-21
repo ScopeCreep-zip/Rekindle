@@ -4,6 +4,7 @@
 //! Host's clock and randomness, and each state change on a broadcast the
 //! Host's event mapping subscribes to.
 
+mod dht_write;
 mod dm;
 mod senders;
 #[cfg(test)]
@@ -23,6 +24,7 @@ use rekindle_types::message::SendState;
 use rekindle_utils::{Clock, RandomSource};
 use tokio::sync::broadcast;
 
+pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
 pub use senders::{Senders, StreamSender};
 

@@ -12,7 +12,6 @@ pub mod audit;
 pub mod blocked;
 pub mod channels;
 pub mod communities;
-pub mod dht_outbox;
 pub mod friend_groups;
 pub mod friends;
 pub mod governance_cache;

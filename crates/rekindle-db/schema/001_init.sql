@@ -761,20 +761,6 @@ CREATE TABLE IF NOT EXISTS governance_entries_cache (
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
--- Durable DHT writes a logout left unsent (plan C7.6h): the record pool's
--- held writes (own records that missed consensus, or whose wait the logout
--- released), re-pushed by the next login of the same identity. Signal's
--- DB-backed job queue, matrix-rust-sdk's persisted send queue. No writer
--- key is stored: every durable write targets a record the session holds
--- writable through its own lease.
-CREATE TABLE IF NOT EXISTS dht_outbox (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    record_key TEXT NOT NULL,
-    subkey INTEGER NOT NULL,
-    data BLOB NOT NULL,
-    PRIMARY KEY (owner_key, record_key, subkey)
-);
-
 -- The outbox (plan E2.5, D22; `rekindle_outbox`, `rekindle_db::repo::
 -- outbox`): one row per send intent not yet settled. `stream` names an
 -- ordered stream (`<kind>:<scope>`), `stream_seq` the row's place in it;

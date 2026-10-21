@@ -42,20 +42,15 @@ pub fn community_members(
     )
 }
 
-/// Sends the outbox has not settled (plan E2.5), and record writes a
-/// logout left for the next login: what a logout or lock leaves
-/// undelivered.
+/// Sends the outbox has not settled (plan E2.5, D22; the record writes a
+/// lock left unsent are its `dht_write` rows): what a logout or lock
+/// leaves undelivered.
 ///
 /// # Errors
 /// The query failed.
 pub fn unsent(conn: &Connection, owner_key: &str) -> rusqlite::Result<u32> {
-    let writes = count(
-        conn,
-        "SELECT COUNT(*) FROM dht_outbox WHERE owner_key = ?1",
-        params![owner_key],
-    )?;
     let sends = super::outbox::unsettled_count(conn, owner_key)?;
-    Ok(writes.saturating_add(u32::try_from(sends).unwrap_or(u32::MAX)))
+    Ok(u32::try_from(sends).unwrap_or(u32::MAX))
 }
 
 #[cfg(test)]
@@ -90,14 +85,18 @@ mod tests {
 
         assert_eq!(unsent(&conn, OWNER).unwrap(), 0);
         crate::repo::outbox::queue_for_test(&conn, OWNER, "dm:r", "m1", b"{}");
-        crate::repo::dht_outbox::save(
+        crate::repo::outbox::enqueue_with_echo(
             &conn,
-            OWNER,
-            &[crate::repo::dht_outbox::OutboxWrite {
-                record_key: "k".into(),
-                subkey: 0,
-                data: vec![1],
-            }],
+            &crate::repo::outbox::NewRow {
+                owner_key: OWNER,
+                stream: "dht_write:k/0",
+                client_id: "k/0@1",
+                kind: "dht_write",
+                payload: &[1],
+                next_at: 0,
+                deadline: 1,
+            },
+            None,
         )
         .unwrap();
         assert_eq!(unsent(&conn, OWNER).unwrap(), 2);
