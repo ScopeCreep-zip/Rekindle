@@ -27,7 +27,7 @@ impl RecordPort for RecordPool {
             .backend
             .check_key(key)
             .map_err(|e| PortError::KeyText(e.message))?;
-        Ok(RecordPool::acquire(self, &key, self.writer(writer_text)?).await?)
+        RecordPool::acquire(self, &key, self.writer(writer_text)?).await
     }
 
     async fn create(
@@ -54,7 +54,7 @@ impl RecordPort for RecordPool {
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<RecordValue>, PortError> {
-        Ok(RecordPool::get(self, lease, subkey, force_refresh).await?)
+        RecordPool::get(self, lease, subkey, force_refresh).await
     }
 
     async fn set(
@@ -64,7 +64,7 @@ impl RecordPort for RecordPool {
         data: Vec<u8>,
         writer_text: Option<&str>,
     ) -> Result<SetOutcome, PortError> {
-        Ok(RecordPool::set(self, lease, subkey, data, self.writer(writer_text)?).await?)
+        RecordPool::set(self, lease, subkey, data, self.writer(writer_text)?).await
     }
 
     async fn set_durable(
@@ -75,7 +75,7 @@ impl RecordPort for RecordPool {
         writer_text: Option<&str>,
     ) -> Result<SetOutcome, PortError> {
         let writer = self.writer(writer_text)?;
-        Ok(RecordPool::set_durable_as(self, lease, subkey, data, writer).await?)
+        RecordPool::set_durable_as(self, lease, subkey, data, writer).await
     }
 
     async fn inspect(
@@ -85,7 +85,7 @@ impl RecordPort for RecordPool {
         report_scope: ReportScope,
     ) -> Result<RecordReport, PortError> {
         let set = subkeys.map(|s| s.iter().copied().collect());
-        Ok(RecordPool::inspect(self, lease, set, report_scope).await?)
+        RecordPool::inspect(self, lease, set, report_scope).await
     }
 
     async fn read_changed(
@@ -93,7 +93,7 @@ impl RecordPort for RecordPool {
         lease: LeaseId,
         subkeys: &[u32],
     ) -> Result<Vec<(u32, RecordValue)>, PortError> {
-        Ok(RecordPool::read_changed(self, lease, subkeys).await?)
+        RecordPool::read_changed(self, lease, subkeys).await
     }
 
     async fn rehydrate(&self, lease: LeaseId) -> Result<(), PortError> {
@@ -105,15 +105,15 @@ impl RecordPort for RecordPool {
     }
 
     async fn watch(&self, lease: LeaseId, subkeys: &[u32]) -> Result<(), PortError> {
-        Ok(RecordPool::watch(self, lease, subkeys.iter().copied().collect()).await?)
+        RecordPool::watch(self, lease, subkeys.iter().copied().collect()).await
     }
 
     async fn watch_all(&self, lease: LeaseId) -> Result<(), PortError> {
-        Ok(RecordPool::watch_all(self, lease).await?)
+        RecordPool::watch_all(self, lease).await
     }
 
     fn subkey_cap(&self, lease: LeaseId) -> Result<usize, PortError> {
-        Ok(RecordPool::subkey_cap(self, lease)?)
+        RecordPool::subkey_cap(self, lease)
     }
 
     fn on_value_change(&self, change: &ValueChange) -> ValueChangeReport {

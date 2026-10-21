@@ -1,0 +1,22 @@
+[package]
+name = "rekindle-record-pool"
+version = "0.1.0"
+edition = "2021"
+description = "The session's DHT record pool over the Veilid-free DhtBackend port (ADR 0021)"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+futures = { workspace = true }
+parking_lot = { workspace = true }
+rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-records = { path = "../rekindle-records" }
+rekindle-utils = { path = "../rekindle-utils" }
+tokio = { workspace = true }
+tokio-util = "0.7"
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "test-util" ] }

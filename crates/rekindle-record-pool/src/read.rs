@@ -27,7 +27,7 @@ use rekindle_records::lease::{LeaseId, SubkeySet};
 use rekindle_records::port::{RecordValue, ReportScope};
 
 use super::RecordPool;
-use crate::ProtocolError;
+use rekindle_records::port::PortError;
 
 /// Concurrent gets one [`RecordPool::read_changed`] runs.
 const READ_PARALLELISM: usize = 10;
@@ -58,7 +58,7 @@ impl RecordPool {
         &self,
         id: LeaseId,
         subkeys: &[u32],
-    ) -> Result<Vec<(u32, RecordValue)>, ProtocolError> {
+    ) -> Result<Vec<(u32, RecordValue)>, PortError> {
         if subkeys.is_empty() {
             return Ok(Vec::new());
         }

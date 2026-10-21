@@ -32,6 +32,7 @@ filename is `NNNN-short-title.md`.
 | [0018](0018-mek-rotation-ballots.md) | MEK rotation after a removal is agreed by write-once ballots and majority confirmation | Accepted (amends the 0012 rotator clause; ruling O5) |
 | [0019](0019-intentional-actions.md) | Intentional actions: one backend gate classifies every user action | Accepted (ruling O6) |
 | [0020](0020-domain-logic-in-host-and-tier-crates.md) | Domain logic lives in tier crates and the Host; `src-tauri` is a frontend | Accepted (supersedes 0008) |
+| [0021](0021-record-pool-crate.md) | The record pool is its own Veilid-free crate; `rekindle-protocol` keeps its Veilid backend | Accepted (amends 0014) |
 
 ## How to write a new ADR
 

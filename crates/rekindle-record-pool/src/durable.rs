@@ -46,7 +46,7 @@ use rekindle_records::port::WriterKey;
 use tokio::time::Instant;
 
 use super::RecordPool;
-use crate::ProtocolError;
+use rekindle_records::port::PortError;
 use rekindle_records::port::SetOutcome;
 
 /// First and longest wait before re-pushing a held write.
@@ -96,7 +96,7 @@ impl RecordPool {
         id: LeaseId,
         subkey: u32,
         data: Vec<u8>,
-    ) -> Result<SetOutcome, ProtocolError> {
+    ) -> Result<SetOutcome, PortError> {
         self.set_durable_as(id, subkey, data, None).await
     }
 
@@ -113,16 +113,16 @@ impl RecordPool {
         subkey: u32,
         data: Vec<u8>,
         writer: Option<WriterKey>,
-    ) -> Result<SetOutcome, ProtocolError> {
+    ) -> Result<SetOutcome, PortError> {
         let (key, _) = self.lookup(id)?;
         let slot = (key, subkey);
         let outcome = match self.set(id, subkey, data.clone(), writer.clone()).await {
             Ok(outcome) => outcome,
             // Logout released the wait: the write may or may not land, so
             // it is held like a miss (and persisted at logout, C7.6h).
-            Err(ProtocolError::PoolClosed) => {
+            Err(PortError::Closed) => {
                 self.hold(slot, data, writer);
-                return Err(ProtocolError::PoolClosed);
+                return Err(PortError::Closed);
             }
             Err(e) => return Err(e),
         };
@@ -339,7 +339,7 @@ impl RecordPool {
             match pushed {
                 // A miss, an unreachable record or a logout: try again later.
                 Ok(SetOutcome::BelowConsensus | SetOutcome::Offline)
-                | Err(ProtocolError::DhtRecordUnreachable(_) | ProtocolError::PoolClosed) => {
+                | Err(PortError::Unreachable(_) | PortError::Closed) => {
                     entry.attempts = entry.attempts.saturating_add(1);
                     entry.due = Instant::now() + backoff(entry.attempts);
                 }

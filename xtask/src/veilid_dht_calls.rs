@@ -161,7 +161,11 @@ fn veilid_linked_sources(root: &Path) -> Result<Vec<PathBuf>> {
 
 /// The crates that run on the ports and must name no Veilid type (plan
 /// C9.1).
-const VEILID_FREE: &[&str] = &["rekindle-transport", "rekindle-records"];
+const VEILID_FREE: &[&str] = &[
+    "rekindle-transport",
+    "rekindle-records",
+    "rekindle-record-pool",
+];
 
 /// Every mention of `veilid_core` (or a `veilid-core` dependency) in a
 /// [`VEILID_FREE`] crate.

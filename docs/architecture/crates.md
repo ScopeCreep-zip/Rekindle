@@ -46,6 +46,7 @@ crates/
 # ── Tier 4 — Routing ──────────────────────────────────────────────────
 ├── rekindle-route/                  (6) private-route lifecycle, peer cache
 ├── rekindle-lifecycle/              (4) 9-state app FSM + TransportGuard [NEW]
+├── rekindle-record-pool/            (4) the session's DHT record pool over the DhtBackend port; no Veilid (ADR 0021) [NEW]
 ├── rekindle-outbox/                 (6) the one durable outbox: send streams, delivery states, retry (D22) [NEW]
 
 # ── Tier 5 — Gossip mesh + presence ───────────────────────────────────
@@ -118,7 +119,9 @@ The Veilid boundary is **transitive linkage**
 ([ADR 0014](../decisions/0014-veilid-boundary-is-transitive.md)). Only these may
 link `veilid-core`:
 
-- `rekindle-protocol` — every Veilid call: the record pool (`dht::pool`),
+- `rekindle-protocol` — every Veilid call: the record pool's Veilid backend
+  (`dht::backend::VeilidDht`; the pool itself is `rekindle-record-pool`,
+  ADR 0021, re-exported as `dht::pool`),
   `RouteImports`, the own-route allocator (`VeilidRouteAllocator`), node
   startup, and the ports' Veilid implementation (`ports`). Rule B22
   (`cargo xtask check-veilid-dht-calls`) keeps each call in its owner.
@@ -172,7 +175,7 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
               │         video, link-preview              │
               │ Tier 6  governance + governance-runtime  │
               │ Tier 5  gossip, presence                 │
-              │ Tier 4  route, lifecycle                 │
+              │ Tier 4  route, lifecycle, record-pool    │
               │ Tier 3  codec, records, events, db,      │
               │         idempotency, mek-rotation,       │
               │         analytics, image                 │

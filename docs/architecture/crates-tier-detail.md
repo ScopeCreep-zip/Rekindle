@@ -291,6 +291,30 @@ See [`lifecycle-fsm.md`](lifecycle-fsm.md).
 Dependencies: `tokio`, `tokio-util` (`rt`), `futures-util` (`catch_unwind`),
 `parking_lot`.
 
+### rekindle-record-pool
+
+The session's DHT record pool (plan C7.2, D4; ADR 0021): `RecordPool`, the
+only code that opens, closes, watches, reads or writes a DHT record. It runs
+on an `Arc<dyn rekindle_records::port::DhtBackend>` and is the
+`RecordPort` the transport node uses. Modules: the crate root (leases over
+`rekindle_records::lease::LeaseTable`, the one retry layer within
+`RETRY_BUDGET`, admit/drain/teardown/end), `call` (every backend call a task
+on the pool's `SessionScope`; a caller that leaves drops only its wait),
+`io` (get, inspect, honest `set`), `read` (which subkeys need a network
+read), `durable` (held writes and their re-push, `Settled`), `watch` (watch
+plans and the one watch-death owner: re-arm with backoff and forgiveness on
+`tokio::time`), `closer` (`RecordCloser`: an ended session's records closed
+after its calls finish), `keepalive` (record warming cadence) and `port`
+(the `RecordPort` impl). The Veilid backend is
+`rekindle_protocol::dht::backend::VeilidDht`; `rekindle_protocol::dht::pool`
+re-exports this crate. Its unit tests run on an in-crate test backend on
+tokio's paused clock.
+
+Dependencies: `rekindle-records`, `rekindle-lifecycle` (`SessionScope`),
+`rekindle-utils` (`RandomSource`), `async-trait`, `futures`, `parking_lot`,
+`tokio`, `tokio-util`, `tracing`. **No `veilid-core`** — listed in
+`VEILID_FREE` (`cargo xtask check-veilid-dht-calls`).
+
 ### rekindle-outbox
 
 The one owner of every send intent (plan E2.5, D22). A send is a row in an

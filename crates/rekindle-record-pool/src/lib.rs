@@ -1,4 +1,4 @@
-//! `RecordPool`: the only code that opens, closes, watches, reads or writes
+//! The record pool (ADR 0021): `RecordPool`, the only code that opens, closes, watches, reads or writes
 //! a DHT record (plan C7.2, D4). One per logged-in session.
 //!
 //! veilid-core keeps one open entry per record per node: a re-open replaces
@@ -9,7 +9,7 @@
 //! semantics that are easy to misread (`evidence/c7-pool-research.md` §2–§3):
 //!
 //! - **Anonymity.** Its backend's routing context is Safe with
-//!   `hop_count ≥ ANONYMITY_HOP_FLOOR` (`dht::backend::VeilidDht`), and
+//!   `hop_count ≥ ANONYMITY_HOP_FLOOR` (`rekindle_protocol::dht::backend::VeilidDht`), and
 //!   every record goes through it, so no record is ever re-opened at
 //!   Veilid's 1-hop default (V19).
 //! - **Honest writes.** `set` passes `allow_offline: false` and reports a
@@ -31,7 +31,7 @@
 //!   in-flight Veilid future (no cancellation, veilid #516; plan C4.L1).
 //! - **The pool owns logout's waits** (plan C7.6g). [`RecordPool::drain`]
 //!   releases every caller waiting on a call with
-//!   [`ProtocolError::PoolClosed`] and refuses new calls; the calls run on.
+//!   [`PortError::Closed`] and refuses new calls; the calls run on.
 //!   An open or create whose caller already left closes its own record, so
 //!   no record stays open in Veilid without a lease. After the session's
 //!   tasks stop, [`RecordPool::admit_teardown`] admits the teardown's own
@@ -46,6 +46,8 @@ mod io;
 pub mod keepalive;
 mod port;
 mod read;
+#[cfg(test)]
+mod tests;
 mod watch;
 
 /// Bound on compare-and-swap rounds for a read-merge-write whose write keeps
@@ -54,12 +56,8 @@ mod watch;
 /// (`set_value.rs:620-645`), so every round writes above what it lost to.
 pub const CAS_ROUNDS: usize = 3;
 
-pub use crate::dht::backend::{
-    dht_schema, parse_keypair, record_report, safety_selection, value_change,
-};
 pub use closer::RecordCloser;
-#[cfg(test)]
-pub(crate) use io::set_failed;
+pub use io::set_failed;
 pub use port::as_port;
 
 use std::collections::HashMap;
@@ -73,12 +71,11 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::lease::{
     max_subkey_bytes, LeaseId, LeaseTable, OpenPlan, ReleasePlan, SchemaShape, SubkeySet,
 };
+use rekindle_records::port::PortError;
 use rekindle_records::port::{
     DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, RecordSchema, WriterKey,
 };
 use tokio_util::sync::CancellationToken;
-
-use crate::ProtocolError;
 
 /// How long a read, open or inspect keeps retrying before it reports the
 /// last transient error (VeilidChat `kDefaultDHTRetryTimeout`).
@@ -86,11 +83,11 @@ pub const RETRY_BUDGET: Duration = Duration::from_secs(30);
 /// Wait between retries while the node already reports readiness.
 const RETRY_DELAY: Duration = Duration::from_secs(1);
 #[derive(Debug, Clone, Copy)]
-pub(super) struct OpenRecord {
-    pub(super) key_cap: usize,
+pub(crate) struct OpenRecord {
+    pub(crate) key_cap: usize,
     /// The record's subkey count (from its schema), for a whole-record
     /// watch.
-    pub(super) subkey_count: u32,
+    pub(crate) subkey_count: u32,
 }
 
 /// Which calls the pool admits (plan C7.6g).
@@ -156,24 +153,28 @@ impl std::fmt::Debug for RecordPool {
     }
 }
 
-pub(super) fn transient(e: &DhtCallError) -> bool {
+pub(crate) fn transient(e: &DhtCallError) -> bool {
     matches!(
         e.kind,
         DhtErrorKind::TryAgain | DhtErrorKind::KeyNotFound | DhtErrorKind::TransactionNotFound
     )
 }
 
-pub(crate) fn to_protocol(e: &DhtCallError) -> ProtocolError {
+/// How the pool reports a backend error to its callers: `Shutdown` is
+/// [`PortError::Closed`], a transient kind is [`PortError::Unreachable`],
+/// anything else [`PortError::Dht`].
+#[must_use]
+pub fn to_port(e: &DhtCallError) -> PortError {
     if e.kind == DhtErrorKind::Shutdown {
-        ProtocolError::PoolClosed
+        PortError::Closed
     } else if transient(e) {
-        ProtocolError::DhtRecordUnreachable(e.to_string())
+        PortError::Unreachable(e.to_string())
     } else {
-        ProtocolError::DhtError(e.to_string())
+        PortError::Dht(e.to_string())
     }
 }
 
-pub(super) fn range(subkeys: &SubkeySet) -> Vec<u32> {
+pub(crate) fn range(subkeys: &SubkeySet) -> Vec<u32> {
     subkeys.iter().copied().collect()
 }
 
@@ -214,7 +215,7 @@ impl RecordPool {
     }
 
     /// Begin logout (plan C7.6g): every caller waiting on a call returns
-    /// [`ProtocolError::PoolClosed`] now, new calls are refused, and the
+    /// [`PortError::Closed`] now, new calls are refused, and the
     /// re-push task stops. The calls in flight run on to completion on the
     /// pool's scope. Held writes stay held ([`held_writes`](Self::held_writes)).
     pub fn drain(&self) {
@@ -235,7 +236,7 @@ impl RecordPool {
 
     /// Run one Veilid call as a task on the pool's scope and wait for it.
     /// Giving up on the wait never drops the call.
-    pub(super) async fn run<T, F, Fut>(
+    pub(crate) async fn run<T, F, Fut>(
         &self,
         name: &'static str,
         call: F,
@@ -282,7 +283,7 @@ impl RecordPool {
     /// [`run`](Self::run) inside the one retry layer: transient errors
     /// retry after readiness (or a 1 s pause when already ready), until
     /// [`RETRY_BUDGET`].
-    pub(super) async fn run_retrying<T, F, Fut>(
+    pub(crate) async fn run_retrying<T, F, Fut>(
         &self,
         name: &'static str,
         call: F,
@@ -335,7 +336,7 @@ impl RecordPool {
         }
     }
 
-    pub(super) fn key_lock(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
+    pub(crate) fn key_lock(&self, key: &str) -> Arc<tokio::sync::Mutex<()>> {
         self.key_locks
             .lock()
             .entry(key.to_string())
@@ -343,15 +344,15 @@ impl RecordPool {
             .clone()
     }
 
-    pub(super) fn lookup(&self, id: LeaseId) -> Result<(String, OpenRecord), ProtocolError> {
+    pub(crate) fn lookup(&self, id: LeaseId) -> Result<(String, OpenRecord), PortError> {
         let table = self.table.lock();
-        let key = table.key(id).ok_or(ProtocolError::LeaseNotHeld(id.0))?;
+        let key = table.key(id).ok_or(PortError::LeaseNotHeld(id.0))?;
         let opened = self
             .records
             .lock()
             .get(key)
             .copied()
-            .ok_or(ProtocolError::LeaseNotHeld(id.0))?;
+            .ok_or(PortError::LeaseNotHeld(id.0))?;
         Ok((key.to_string(), opened))
     }
 
@@ -375,7 +376,7 @@ impl RecordPool {
         &self,
         key: &str,
         writer: Option<WriterKey>,
-    ) -> Result<LeaseId, ProtocolError> {
+    ) -> Result<LeaseId, PortError> {
         let name = key.to_string();
         let lock = self.key_lock(&name);
         let _serial = lock.lock().await;
@@ -413,7 +414,7 @@ impl RecordPool {
             }
             Err(e) => {
                 self.table.lock().abort(id, &plan);
-                Err(to_protocol(&e))
+                Err(to_port(&e))
             }
         }
     }
@@ -427,7 +428,7 @@ impl RecordPool {
         &self,
         schema: RecordSchema,
         owner: Option<WriterKey>,
-    ) -> Result<(LeaseId, String, WriterKey), ProtocolError> {
+    ) -> Result<(LeaseId, String, WriterKey), PortError> {
         let descriptor = self
             .run_with(
                 "dht create",
@@ -435,11 +436,11 @@ impl RecordPool {
                 Some(close_unclaimed),
             )
             .await
-            .map_err(|e| to_protocol(&e))?;
+            .map_err(|e| to_port(&e))?;
         let keypair = descriptor
             .owner
             .clone()
-            .ok_or_else(|| ProtocolError::DhtError("created record has no owner secret".into()))?;
+            .ok_or_else(|| PortError::Dht("created record has no owner secret".into()))?;
         let key = descriptor.key;
         let (id, _) = self.table.lock().acquire(&key, Some(keypair.clone()));
         self.remember(&key, descriptor.subkey_count);
@@ -495,7 +496,7 @@ impl RecordPool {
     ///
     /// # Errors
     /// The lease is not held.
-    pub fn subkey_cap(&self, id: LeaseId) -> Result<usize, ProtocolError> {
+    pub fn subkey_cap(&self, id: LeaseId) -> Result<usize, PortError> {
         Ok(self.lookup(id)?.1.key_cap)
     }
 

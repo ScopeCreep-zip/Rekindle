@@ -8,7 +8,7 @@ use veilid_core::{
 };
 
 use super::{dht_error, dht_schema, parse_keypair, safety_selection};
-use crate::dht::pool::{set_failed, to_protocol};
+use crate::dht::pool::{set_failed, to_port};
 use crate::ProtocolError;
 
 /// The Veilid-free keypair text (`rekindle_crypto::keypair_text`, plan
@@ -166,14 +166,10 @@ fn every_error_kind_classifies_as_before() {
         let through = dht_error(&e);
         assert_eq!(through.to_string(), e.to_string(), "{e:?}");
         assert_eq!(
-            PortError::from(to_protocol(&through)),
+            to_port(&through),
             PortError::from(classified_before(&e)),
             "{e:?}"
         );
-        assert_eq!(
-            set_failed(&through).map_err(PortError::from),
-            set_before(&e),
-            "{e:?}"
-        );
+        assert_eq!(set_failed(&through), set_before(&e), "{e:?}");
     }
 }

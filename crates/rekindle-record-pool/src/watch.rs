@@ -1,12 +1,13 @@
 //! Watches, and the one owner of watch death.
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rekindle_records::lease::{LeaseId, SubkeySet, WatchPlan};
+use tokio::time::Instant;
 
-use super::{range, to_protocol, RecordPool};
-use crate::ProtocolError;
+use super::{range, to_port, RecordPool};
+use rekindle_records::port::PortError;
 
 /// First and longest delay before re-arming a dead watch.
 const REARM_MIN: Duration = Duration::from_secs(1);
@@ -27,7 +28,7 @@ impl RecordPool {
     ///
     /// # Errors
     /// The lease is not held, or Veilid refused the watch request.
-    pub async fn watch(&self, id: LeaseId, subkeys: SubkeySet) -> Result<(), ProtocolError> {
+    pub async fn watch(&self, id: LeaseId, subkeys: SubkeySet) -> Result<(), PortError> {
         let (key, _) = self.lookup(id)?;
         let plan = self.table.lock().set_watch(id, subkeys);
         self.apply_watch(&key, plan).await
@@ -37,16 +38,12 @@ impl RecordPool {
     ///
     /// # Errors
     /// As [`watch`](Self::watch).
-    pub async fn watch_all(&self, id: LeaseId) -> Result<(), ProtocolError> {
+    pub async fn watch_all(&self, id: LeaseId) -> Result<(), PortError> {
         let (_, opened) = self.lookup(id)?;
         self.watch(id, (0..opened.subkey_count).collect()).await
     }
 
-    pub(super) async fn apply_watch(
-        &self,
-        key: &str,
-        plan: WatchPlan,
-    ) -> Result<(), ProtocolError> {
+    pub(super) async fn apply_watch(&self, key: &str, plan: WatchPlan) -> Result<(), PortError> {
         let k = key.to_string();
         match plan {
             WatchPlan::Unchanged => Ok(()),
@@ -60,7 +57,7 @@ impl RecordPool {
                 })
                 .await
                 .map(drop)
-                .map_err(|e| to_protocol(&e))
+                .map_err(|e| to_port(&e))
             }
             WatchPlan::Cancel => self
                 .run("dht cancel watch", move |backend| async move {
@@ -68,7 +65,7 @@ impl RecordPool {
                 })
                 .await
                 .map(drop)
-                .map_err(|e| to_protocol(&e)),
+                .map_err(|e| to_port(&e)),
         }
     }
 

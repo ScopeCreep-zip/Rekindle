@@ -5,16 +5,19 @@ use rekindle_records::port::{
     DhtCallError, DhtErrorKind, RecordReport, RecordValue, ReportScope, SetOutcome, WriterKey,
 };
 
-use super::{range, to_protocol, RecordPool};
-use crate::ProtocolError;
+use super::{range, to_port, RecordPool};
+use rekindle_records::port::PortError;
 
-/// A set that failed: `TryAgain` is the node being offline (nothing stored
+/// How the pool reports a set that failed: `TryAgain` is the node being offline (nothing stored
 /// or queued), anything else is the error.
-pub(crate) fn set_failed(e: &DhtCallError) -> Result<SetOutcome, ProtocolError> {
+///
+/// # Errors
+/// Every kind but `TryAgain`, as [`to_port`](crate::to_port).
+pub fn set_failed(e: &DhtCallError) -> Result<SetOutcome, PortError> {
     if e.kind == DhtErrorKind::TryAgain {
         Ok(SetOutcome::Offline)
     } else {
-        Err(to_protocol(e))
+        Err(to_port(e))
     }
 }
 
@@ -29,14 +32,14 @@ impl RecordPool {
         id: LeaseId,
         subkey: u32,
         force_refresh: bool,
-    ) -> Result<Option<RecordValue>, ProtocolError> {
+    ) -> Result<Option<RecordValue>, PortError> {
         let (key, _) = self.lookup(id)?;
         self.run_retrying("dht get", move |backend| {
             let k = key.clone();
             async move { backend.get(&k, subkey, force_refresh).await }
         })
         .await
-        .map_err(|e| to_protocol(&e))
+        .map_err(|e| to_port(&e))
     }
 
     /// Inspect the leased record.
@@ -48,14 +51,14 @@ impl RecordPool {
         id: LeaseId,
         subkeys: Option<SubkeySet>,
         scope: ReportScope,
-    ) -> Result<RecordReport, ProtocolError> {
+    ) -> Result<RecordReport, PortError> {
         let (key, _) = self.lookup(id)?;
         self.run_retrying("dht inspect", move |backend| {
             let (k, s) = (key.clone(), subkeys.as_ref().map(range));
             async move { backend.inspect(&k, s.as_deref(), scope).await }
         })
         .await
-        .map_err(|e| to_protocol(&e))
+        .map_err(|e| to_port(&e))
     }
 
     async fn local_seq(&self, key: &str, subkey: u32) -> Result<Option<u32>, DhtCallError> {
@@ -108,13 +111,13 @@ impl RecordPool {
         subkey: u32,
         data: Vec<u8>,
         writer: Option<WriterKey>,
-    ) -> Result<SetOutcome, ProtocolError> {
+    ) -> Result<SetOutcome, PortError> {
         let (key, opened) = self.lookup(id)?;
         if writer.is_none() && self.table.lock().writer(&key).is_none() {
-            return Err(ProtocolError::NotWritable(key));
+            return Err(PortError::NotWritable(key));
         }
         if data.len() > opened.key_cap {
-            return Err(ProtocolError::SubkeyTooLarge {
+            return Err(PortError::SubkeyTooLarge {
                 subkey,
                 len: data.len(),
                 cap: opened.key_cap,
@@ -123,11 +126,11 @@ impl RecordPool {
         let before = self
             .local_seq(&key, subkey)
             .await
-            .map_err(|e| to_protocol(&e))?;
+            .map_err(|e| to_port(&e))?;
         let identical = self
             .is_local_copy(&key, subkey, &data, writer.as_ref())
             .await
-            .map_err(|e| to_protocol(&e))?;
+            .map_err(|e| to_port(&e))?;
         let k = key.clone();
         let result = self
             .run("dht set", move |backend| async move {
@@ -140,7 +143,7 @@ impl RecordPool {
                 let after = self
                     .local_seq(&key, subkey)
                     .await
-                    .map_err(|e| to_protocol(&e))?;
+                    .map_err(|e| to_port(&e))?;
                 Ok(if identical {
                     // Same data and writer: Veilid kept the seq and re-pushed
                     // the copy (`set_value.rs:212-218`); `Ok(None)` is the
@@ -164,7 +167,7 @@ impl RecordPool {
     ///
     /// # Errors
     /// The lease is not held, or the open failed within the retry budget.
-    pub(super) async fn reopen_with_writer(&self, id: LeaseId) -> Result<(), ProtocolError> {
+    pub(super) async fn reopen_with_writer(&self, id: LeaseId) -> Result<(), PortError> {
         let (key, _) = self.lookup(id)?;
         let writer = self.table.lock().writer(&key).cloned();
         let lock = self.key_lock(&key);
@@ -175,6 +178,6 @@ impl RecordPool {
         })
         .await
         .map(drop)
-        .map_err(|e| to_protocol(&e))
+        .map_err(|e| to_port(&e))
     }
 }

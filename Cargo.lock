@@ -7863,6 +7863,7 @@ dependencies = [
  "rekindle-codec",
  "rekindle-crypto",
  "rekindle-lifecycle",
+ "rekindle-record-pool",
  "rekindle-records",
  "rekindle-route",
  "rekindle-secrets",
@@ -7876,6 +7877,21 @@ dependencies = [
  "tokio-util",
  "tracing",
  "veilid-core",
+]
+
+[[package]]
+name = "rekindle-record-pool"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "parking_lot 0.12.5",
+ "rekindle-lifecycle",
+ "rekindle-records",
+ "rekindle-utils",
+ "tokio",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
