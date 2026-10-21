@@ -104,7 +104,7 @@ pub(crate) fn member_of(record: &NetRecord, writer: Option<&str>) -> Option<[u8;
     is_member(record, &public).then_some(public)
 }
 
-fn online(inner: &Inner, node: usize) -> bool {
+pub(super) fn online(inner: &Inner, node: usize) -> bool {
     !inner.faults.detached.contains(&node) && !inner.faults.dht_offline.contains(&node)
 }
 
@@ -120,7 +120,14 @@ pub(crate) fn desire(
     let watches = &mut inner.nodes[node].watches;
     match desired {
         Some(d) => {
+            // A change of parameters is inspected (`watch_value.rs:1166-1171`).
+            let changed = watches.get(key).and_then(Option::as_ref).is_none_or(|old| {
+                (&old.subkeys, old.expiration, old.member) != (&d.subkeys, d.expiration, d.member)
+            });
             watches.insert(key.to_string(), Some(d));
+            if changed {
+                super::catchup::enqueue(inner, node, key, now);
+            }
             place(inner, node, key, now);
         }
         None => {
@@ -150,7 +157,7 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
-    let mut held = 0;
+    let (mut held, mut added) = (0, false);
     for r in reachable(&record.replicas, &inner.faults.partitions, node) {
         let watches = &mut record.replicas[r].watches;
         if let Some(w) = watches.iter_mut().find(|w| w.node == node) {
@@ -183,7 +190,12 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
                 changed: BTreeSet::new(),
             });
             held += 1;
+            added = true;
         }
+    }
+    // A replica newly holding the watch is inspected (`watch_value.rs:1166-1171`).
+    if added {
+        super::catchup::enqueue(inner, node, key, now);
     }
 }
 
@@ -305,10 +317,11 @@ impl Network {
 
     /// Whether a tick has work: a change to send, a watch to end or expire.
     pub(crate) fn watch_work(inner: &Inner) -> bool {
-        inner.nodes.iter().any(|n| {
-            n.watches
-                .values()
-                .any(|d| d.as_ref().is_none_or(|d| d.expiration.is_some()))
+        inner.nodes.iter().enumerate().any(|(i, n)| {
+            super::catchup::pending(inner, i)
+                || n.watches
+                    .values()
+                    .any(|d| d.as_ref().is_none_or(|d| d.expiration.is_some()))
         }) || inner.records.values().any(|r| {
             r.replicas
                 .iter()
@@ -320,10 +333,12 @@ impl Network {
     pub(crate) fn tick_watches(&self) {
         let now = self.now_us();
         let mut out: Vec<Out> = Vec::new();
+        let mut inspected = Vec::new();
         {
             let mut guard = self.inner.lock();
             let inner = &mut *guard;
             for node in 0..inner.nodes.len() {
+                super::catchup::readiness(inner, node, now);
                 let mut keys: Vec<String> = inner.nodes[node].watches.keys().cloned().collect();
                 keys.sort();
                 for key in keys {
@@ -340,6 +355,9 @@ impl Network {
                     } else {
                         place(inner, node, &key, now);
                     }
+                }
+                for (change, delay) in super::catchup::run(inner, &self.latency, node, now) {
+                    inspected.push((node, change, delay));
                 }
             }
             let mut keys: Vec<String> = inner.records.keys().cloned().collect();
@@ -380,5 +398,6 @@ impl Network {
         for (from, to, label, event) in out {
             self.send(from, to, label, event, false);
         }
+        self.send_inspected(inspected);
     }
 }

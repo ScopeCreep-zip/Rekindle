@@ -93,6 +93,13 @@ pub(crate) struct NodeSlot {
     /// The node's desired watches, by record key; `None` is cancelled and
     /// dies at the next watch tick ([`crate::records::watches`]).
     pub watches: HashMap<String, Option<crate::records::watches::Desired>>,
+    /// The node's queued change inspections: record key → not before (µs)
+    /// (Veilid's `needs_change_inspection`, [`crate::records`]' catch-up).
+    pub inspects: HashMap<String, u64>,
+    /// Whether the node's DHT was online at the last watch tick.
+    pub was_online: bool,
+    /// When a tick lag last inspected every watch (µs).
+    pub last_lag_inspect: Option<u64>,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// Route ids this node imported.

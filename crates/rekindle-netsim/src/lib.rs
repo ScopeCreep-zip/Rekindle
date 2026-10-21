@@ -76,6 +76,10 @@ pub enum Fault {
     /// change reaches it, its readiness follows, and it hears an
     /// attachment change.
     Detach { node: usize, detached: bool },
+    /// The node's storage-manager tick ran `ms` late (a suspended
+    /// process): past 2 s, an online node inspects every watch, at most
+    /// once per 30 s (`tasks/mod.rs:132-145`).
+    TickLag { node: usize, ms: u64 },
 }
 
 /// A simulated node's side: what a Host on it needs.
@@ -130,6 +134,9 @@ impl Netsim {
                 known: std::collections::HashSet::new(),
                 opened: std::collections::HashMap::new(),
                 watches: std::collections::HashMap::new(),
+                inspects: std::collections::HashMap::new(),
+                was_online: true,
+                last_lag_inspect: None,
                 pools: Vec::new(),
                 imported: std::collections::HashSet::new(),
             });
@@ -256,6 +263,9 @@ impl Netsim {
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
             Fault::Detach { node, detached } => self.detach(node, detached),
+            Fault::TickLag { node, ms } => self
+                .net
+                .tick_lag(node, std::time::Duration::from_millis(ms)),
         }
     }
 

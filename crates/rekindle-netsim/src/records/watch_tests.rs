@@ -17,7 +17,8 @@ fn dht(sim: &Netsim, node: &Node) -> SimDht {
     SimDht::new(node.index, Arc::clone(&sim.net), Arc::clone(&node.rng))
 }
 
-/// A record node 0 created and seeded at subkeys 0..4, open on node 1, and
+/// A record node 0 created and seeded at subkeys 0..4, open and read on
+/// node 1 (so a watch's establishing inspection finds nothing newer), and
 /// both nodes' backends.
 async fn seeded(sim: &Netsim, nodes: &[Node]) -> (String, SimDht, SimDht) {
     let (a, b) = (dht(sim, &nodes[0]), dht(sim, &nodes[1]));
@@ -30,6 +31,9 @@ async fn seeded(sim: &Netsim, nodes: &[Node]) -> (String, SimDht, SimDht) {
         a.set(&key, subkey, vec![0], None).await.unwrap();
     }
     b.open(&key, None).await.unwrap();
+    for subkey in 0..4 {
+        b.get(&key, subkey, true).await.unwrap();
+    }
     (key, a, b)
 }
 
@@ -53,6 +57,9 @@ async fn one_changed_subkey_carries_its_value_stored_before_the_report() {
     let (sim, mut nodes) = Netsim::nodes(2, 11);
     let (key, a, b) = seeded(&sim, &nodes).await;
     assert!(b.watch(&key, None, None, None).await.unwrap());
+    // The establishing inspection runs at the watch's first tick (it finds
+    // nothing newer), before the writes land.
+    assert!(tick(&sim, &mut nodes, 1).is_empty());
     a.set(&key, 2, b"news".to_vec(), None).await.unwrap();
     let heard = tick(&sim, &mut nodes, 1);
     let first = heard.first().expect("a change");
@@ -73,6 +80,9 @@ async fn several_changed_subkeys_are_a_range_with_no_value() {
     let (sim, mut nodes) = Netsim::nodes(2, 12);
     let (key, a, b) = seeded(&sim, &nodes).await;
     b.watch(&key, None, None, None).await.unwrap();
+    // The establishing inspection runs at the watch's first tick (it finds
+    // nothing newer), before the writes land.
+    assert!(tick(&sim, &mut nodes, 1).is_empty());
     a.set(&key, 1, b"x".to_vec(), None).await.unwrap();
     a.set(&key, 3, b"y".to_vec(), None).await.unwrap();
     let heard = tick(&sim, &mut nodes, 1);
@@ -88,7 +98,7 @@ async fn several_changed_subkeys_are_a_range_with_no_value() {
             .local
             .get(&(key, 1))
             .map(|v| v.seq),
-        None,
+        Some(0),
         "a range stores nothing"
     );
 }

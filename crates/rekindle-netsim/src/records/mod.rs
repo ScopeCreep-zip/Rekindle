@@ -22,6 +22,10 @@
 //! - watches are per node, the union of the session's borrowers, held by
 //!   the replicas the node reaches within Veilid's limits, and end with the
 //!   death shape on cancel, close or expiry ([`watches`] cites Veilid);
+//! - a node inspects its watches when its DHT comes back online, after a
+//!   tick lag, and when a watch is established or newly held, reporting
+//!   what the network holds newer than its local copy ([`catchup`] cites
+//!   Veilid);
 //! - every call that reaches the network costs Veilid's latency
 //!   ([`crate::latency`]) before its effect lands, under the per-subkey
 //!   locks and the node's DHT cap.
@@ -37,6 +41,9 @@ use rekindle_utils::RandomSource;
 use crate::clock::SimRandom;
 use crate::network::{NetRecord, Network};
 
+mod catchup;
+#[cfg(test)]
+mod catchup_tests;
 mod dht;
 mod replicas;
 #[cfg(test)]
