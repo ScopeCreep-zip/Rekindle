@@ -64,24 +64,38 @@ async fn own_key<D: GroupDmDeps + ?Sized>(
         })
 }
 
-fn key_frame(group_id: GroupId, key: &GroupSenderKey) -> GroupDmAccept {
+async fn own_chain<D: GroupDmDeps + ?Sized>(
+    deps: &D,
+    group_id: &GroupId,
+) -> Result<String, DmError> {
+    deps.chain(group_id, &deps.own_identity())
+        .await?
+        .ok_or_else(|| DmError::ChainMissing(group_id_hex(group_id)))
+}
+
+fn key_frame(group_id: GroupId, key: &GroupSenderKey, chain: &str) -> GroupDmAccept {
     GroupDmAccept {
         group_id,
         epoch: key.epoch(),
         sender_key: *key.as_bytes(),
+        chain_record_key: chain.to_owned(),
     }
 }
 
 /// Create a group named `name` of `own` (us, the creator, first on the
-/// roster) and `others`, with our first sending key.
+/// roster) and `others`, with our first sending key and our group chain
+/// `own_chain` (carried in the signed invite). `group_id` is fresh
+/// ([`group::new_group_id`]): the host made our chain for it first.
 ///
 /// # Errors
 /// An invalid name or roster, `own` not our identity, or storage.
 pub async fn create<D: GroupDmDeps + ?Sized>(
     deps: &D,
+    group_id: GroupId,
     name: &str,
     own: GroupDmRosterMember,
     others: Vec<GroupDmRosterMember>,
+    own_chain: &str,
 ) -> Result<Created, DmError> {
     group::check_name(name)?;
     let me = deps.own_identity();
@@ -89,9 +103,10 @@ pub async fn create<D: GroupDmDeps + ?Sized>(
         return Err(DmError::InvalidRoster("the creator is not us".into()));
     }
     let roster = Roster::new(std::iter::once(own).chain(others).collect())?;
-    let group_id = group::new_group_id(deps.rng());
     let key = sender_key::mint_first(deps.rng());
-    let invite = group::build_invite(group_id, name, &roster, &key, |m| deps.sign_identity(m));
+    let invite = group::build_invite(group_id, name, &roster, &key, own_chain, |m| {
+        deps.sign_identity(m)
+    });
     let state = GroupState {
         group_id,
         name: name.to_owned(),
@@ -101,6 +116,7 @@ pub async fn create<D: GroupDmDeps + ?Sized>(
     };
     deps.insert_group(&state).await?;
     deps.put_sender_key(&group_id, &me, &key).await?;
+    deps.put_chain(&group_id, &me, own_chain).await?;
     deps.publish(GroupDmEvent::Joined {
         group_id: group_id_hex(&group_id),
         member: member(deps, &me).await,
@@ -151,13 +167,15 @@ pub async fn on_invite<D: GroupDmDeps + ?Sized>(
 }
 
 /// Accept the pending invite to `group_id`: the group is ours, the
-/// creator's key is held, and our first key goes to every other member.
+/// creator's key and chain are held, and our first key with our group
+/// chain `own_chain` goes to every other member.
 ///
 /// # Errors
 /// No such invite, or storage.
 pub async fn accept<D: GroupDmDeps + ?Sized>(
     deps: &D,
     group_id: &GroupId,
+    own_chain: &str,
 ) -> Result<Outbound<GroupDmAccept>, DmError> {
     let pending = deps
         .take_invite(group_id)
@@ -178,12 +196,15 @@ pub async fn accept<D: GroupDmDeps + ?Sized>(
     deps.put_sender_key(group_id, &pending.from, &creator_key)
         .await?;
     deps.put_sender_key(group_id, &me, &key).await?;
+    deps.put_chain(group_id, &pending.from, &pending.invite.creator_chain_key)
+        .await?;
+    deps.put_chain(group_id, &me, own_chain).await?;
     deps.publish(GroupDmEvent::Joined {
         group_id: group_id_hex(group_id),
         member: member(deps, &me).await,
     });
     Ok(Outbound {
-        frame: key_frame(*group_id, &key),
+        frame: key_frame(*group_id, &key, own_chain),
         to: state.roster.others(&me),
     })
 }
@@ -253,6 +274,7 @@ async fn rotate_in<D: GroupDmDeps + ?Sized>(
 ) -> Result<Outbound<GroupDmAccept>, DmError> {
     let me = deps.own_identity();
     let next = sender_key::rotate(&own_key(deps, group).await?, deps.rng())?;
+    let chain = own_chain(deps, &group.group_id).await?;
     deps.put_sender_key(&group.group_id, &me, &next).await?;
     deps.update_group(&group.group_id, roster, next.epoch())
         .await?;
@@ -262,7 +284,7 @@ async fn rotate_in<D: GroupDmDeps + ?Sized>(
         epoch: next.epoch(),
     });
     Ok(Outbound {
-        frame: key_frame(group.group_id, &next),
+        frame: key_frame(group.group_id, &next, &chain),
         to: roster.others(&me),
     })
 }
@@ -336,6 +358,9 @@ pub async fn on_member_key<D: GroupDmDeps + ?Sized>(
     }
     let incoming = GroupSenderKey::new(frame.epoch, frame.sender_key);
     let held = deps.latest_sender_key(&frame.group_id, from).await?;
+    group::key_update(held.as_ref(), &incoming)?;
+    deps.put_chain(&frame.group_id, from, &frame.chain_record_key)
+        .await?;
     if group::key_update(held.as_ref(), &incoming)? == KeyUpdate::Duplicate {
         return Ok(None);
     }
@@ -355,10 +380,30 @@ pub async fn on_member_key<D: GroupDmDeps + ?Sized>(
         member: member(deps, from).await,
     });
     let ours = own_key(deps, &group).await?;
+    let chain = own_chain(deps, &frame.group_id).await?;
     Ok(Some(Outbound {
-        frame: key_frame(frame.group_id, &ours),
+        frame: key_frame(frame.group_id, &ours, &chain),
         to: vec![from.to_owned()],
     }))
+}
+
+/// A member's `StreamRecord{group_id}` over `from`'s session: the record
+/// it announces replaces `from`'s own group chain (never another
+/// member's).
+///
+/// # Errors
+/// No such group, `from` not on it (or us), or storage.
+pub async fn on_member_chain<D: GroupDmDeps + ?Sized>(
+    deps: &D,
+    from: &str,
+    group_id: &GroupId,
+    record_key: &str,
+) -> Result<(), DmError> {
+    let group = held_group(deps, group_id).await?;
+    if !group.roster.contains(from) || from == deps.own_identity() {
+        return Err(DmError::NotOnRoster(from.to_owned()));
+    }
+    deps.put_chain(group_id, from, record_key).await
 }
 
 /// Seal `plaintext` (a content kind or typing) as our entry in

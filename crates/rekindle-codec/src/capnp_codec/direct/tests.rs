@@ -34,7 +34,6 @@ fn roster() -> Vec<rekindle_types::group_dm::GroupDmRosterMember> {
         .map(|n| rekindle_types::group_dm::GroupDmRosterMember {
             identity: n.to_string().repeat(64),
             profile_record_key: dht_key(),
-            participant_record_key: dht_key(),
         })
         .collect()
 }
@@ -129,11 +128,13 @@ fn samples() -> Vec<DirectBody> {
             creator_sender_key: [0x5E; 32],
             epoch: 0,
             signature: [0x51; 64],
+            creator_chain_key: dht_key(),
         }),
         DirectBody::GroupDmAccept(GroupDmAccept {
             group_id: [0x6D; 16],
             epoch: 2,
             sender_key: [0x5F; 32],
+            chain_record_key: dht_key(),
         }),
         DirectBody::GroupDmDecline(GroupDmDecline {
             group_id: [0x6D; 16],
@@ -540,6 +541,7 @@ fn group_bodies_hold_their_shapes() {
         creator_sender_key: [0xAB; 32],
         epoch: 0,
         signature: [2; 64],
+        creator_chain_key: dht_key(),
     };
     for roster in [
         roster()[..2].to_vec(),
@@ -571,8 +573,16 @@ fn group_bodies_hold_their_shapes() {
         group_id: [1; 16],
         epoch: 0,
         sender_key: [0xAB; 32],
+        chain_record_key: dht_key(),
     };
     assert!(!format!("{accept:?}").contains("171"));
+    let mut rechained = invite.clone();
+    rechained.creator_chain_key = s("VLD0:other");
+    assert_ne!(
+        invite.signing_bytes(),
+        rechained.signing_bytes(),
+        "the creator's chain is signed"
+    );
     let empty = DirectBody::GroupContent(GroupContent {
         group_id: [1; 16],
         epoch: 0,

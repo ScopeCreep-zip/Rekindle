@@ -18,7 +18,8 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// cannot be read back with the new indices. The app is not live yet.
 ///
 /// 110: `group_dm_invites`, the verified group invites we have not
-/// answered, held for `DELIVERY_HORIZON` (plan E2.6 G2b).
+/// answered, held for `DELIVERY_HORIZON`, and `group_dm_chains`, each
+/// member's announced group chain (plan E2.6 G2b).
 ///
 /// 108: group DMs (plan E2.6 G1): the `group_dms` and
 /// `group_dm_sender_keys` tables, `'group_dm'` in

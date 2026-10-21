@@ -41,6 +41,19 @@ pub(crate) async fn admitted(host: &dyn FriendHost, sender_hex: &str, kind: DmTy
     }
 }
 
+/// Whether `sender` may deliver `kind` by the friend gate alone (not
+/// blocked, and its friendship admits the kind), never the group one.
+pub(crate) async fn friend_admitted(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+) -> bool {
+    match unblocked(host, sender_hex).await {
+        Some(status) => kind_admitted(sender_hex, kind, status),
+        None => false,
+    }
+}
+
 /// Whether a sender who is not blocked, with `status`, may deliver `kind`
 /// alone or as a PreKeyInit's first payload (`init`): the friend gate,
 /// else the group admission (plan E2.6: a member of a group we hold, for

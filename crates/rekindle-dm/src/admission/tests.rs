@@ -62,25 +62,17 @@ fn admission_table() {
     }
 
     let own_chain = GroupFrame::StreamRecord {
-        record_key: &bea.participant_record_key,
         group_id: Some(&gid),
     };
     assert_eq!(
         admit(&bea.identity, false, &own_chain, &groups),
         Admission::Admit
     );
-    let anothers_chain = GroupFrame::StreamRecord {
-        record_key: &roster.members()[2].participant_record_key,
-        group_id: Some(&gid),
-    };
     assert_eq!(
-        admit(&bea.identity, false, &anothers_chain, &groups),
+        admit(&"f".repeat(64), false, &own_chain, &groups),
         Admission::NotOnRoster
     );
-    let dm_chain = GroupFrame::StreamRecord {
-        record_key: &bea.participant_record_key,
-        group_id: None,
-    };
+    let dm_chain = GroupFrame::StreamRecord { group_id: None };
     assert_eq!(
         admit(&bea.identity, false, &dm_chain, &groups),
         Admission::KindRefused

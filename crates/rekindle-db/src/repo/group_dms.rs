@@ -201,6 +201,64 @@ pub fn delete_member_keys(
     )
 }
 
+/// Store `record_key` as `member`'s group chain (replacing the held one).
+///
+/// # Errors
+/// The write failed (no such group, or a column is refused).
+pub fn put_chain(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+    member: &str,
+    record_key: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO group_dm_chains (owner_key, group_id, member, record_key) \
+         VALUES (?1, ?2, ?3, ?4) \
+         ON CONFLICT(owner_key, group_id, member) DO UPDATE SET record_key = excluded.record_key",
+        params![owner_key, group_id, member, record_key],
+    )?;
+    Ok(())
+}
+
+/// Every member's group chain in the group, `(member, record_key)`.
+///
+/// # Errors
+/// The query failed.
+pub fn chains(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+) -> rusqlite::Result<Vec<(String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT member, record_key FROM group_dm_chains \
+         WHERE owner_key = ?1 AND group_id = ?2 ORDER BY member",
+    )?;
+    let rows = stmt.query_map(params![owner_key, group_id], |r| {
+        Ok((
+            crate::row::get(r, "member")?,
+            crate::row::get(r, "record_key")?,
+        ))
+    })?;
+    rows.collect()
+}
+
+/// Forget `member`'s group chain (it left, or we blocked it).
+///
+/// # Errors
+/// The write failed.
+pub fn delete_chain(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+    member: &str,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM group_dm_chains WHERE owner_key = ?1 AND group_id = ?2 AND member = ?3",
+        params![owner_key, group_id, member],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -212,10 +270,6 @@ mod tests {
         GroupDmRosterMember {
             identity: n.to_string().repeat(64),
             profile_record_key: format!("VLD0:{}", "P".repeat(43)),
-            participant_record_key: format!(
-                "VLD0:{}",
-                n.to_ascii_uppercase().to_string().repeat(43)
-            ),
         }
     }
 
@@ -256,6 +310,27 @@ mod tests {
         conn.execute("UPDATE group_dms SET roster = '[1]'", [])
             .unwrap();
         assert!(get(&conn, OWNER, G).is_err(), "a roster entry is a member");
+    }
+
+    #[test]
+    fn chains_are_kept_by_member_and_go_with_the_group() {
+        let conn = fixture::conn();
+        let (a, b) = ("a".repeat(64), "b".repeat(64));
+        assert!(
+            put_chain(&conn, OWNER, G, &a, "VLD0:x").is_err(),
+            "no such group"
+        );
+        insert(&conn, OWNER, &group()).unwrap();
+        put_chain(&conn, OWNER, G, &a, "VLD0:x").unwrap();
+        put_chain(&conn, OWNER, G, &a, "VLD0:y").unwrap();
+        put_chain(&conn, OWNER, G, &b, "VLD0:z").unwrap();
+        assert_eq!(
+            chains(&conn, OWNER, G).unwrap(),
+            vec![(a.clone(), "VLD0:y".into()), (b.clone(), "VLD0:z".into())]
+        );
+        assert_eq!(delete_chain(&conn, OWNER, G, &a).unwrap(), 1);
+        delete(&conn, OWNER, G).unwrap();
+        assert!(chains(&conn, OWNER, G).unwrap().is_empty(), "cascade");
     }
 
     #[test]

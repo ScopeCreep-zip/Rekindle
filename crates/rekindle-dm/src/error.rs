@@ -31,6 +31,9 @@ pub enum DmError {
     /// A frame at an epoch whose key we do not hold yet.
     #[error("no key of {member} for epoch {epoch}")]
     KeyMissing { member: String, epoch: u32 },
+    /// We announced no group chain of ours for this group.
+    #[error("no group chain of ours in group {0}")]
+    ChainMissing(String),
     /// Our key's epochs are exhausted.
     #[error("sending key epochs exhausted")]
     EpochExhausted,

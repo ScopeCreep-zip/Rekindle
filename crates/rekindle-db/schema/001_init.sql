@@ -114,6 +114,19 @@ CREATE TABLE IF NOT EXISTS group_dm_sender_keys (
     FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
 );
 
+-- Plan E2.6 (decided 2026-10-21): each member's group chain (a
+-- `dm_participant` record), as that member announced it over its pairwise
+-- session (`GroupDmAccept`, `StreamRecord{group_id}`; the creator's is in
+-- its signed invite); ours is the row whose `member` is our identity.
+CREATE TABLE IF NOT EXISTS group_dm_chains (
+    owner_key TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    member TEXT NOT NULL CHECK(length(member) = 64),
+    record_key TEXT NOT NULL CHECK(length(record_key) > 0),
+    PRIMARY KEY (owner_key, group_id, member),
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+);
+
 -- Plan E2.6: a creator's verified invite we have not answered yet, held
 -- for at most `DELIVERY_HORIZON` (D24, Q2b: 30 days) from `received_at`
 -- (milliseconds); `invite` is the encoded `GroupDmInvite` (0x0120) body.

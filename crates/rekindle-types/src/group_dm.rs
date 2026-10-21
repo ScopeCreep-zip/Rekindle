@@ -12,7 +12,9 @@ pub const MIN_MEMBERS: usize = 3;
 pub const MAX_NAME_CHARS: usize = 64;
 
 /// One member on a group's signed roster (the creator's `GroupDmInvite`),
-/// stored in `group_dms.roster`.
+/// stored in `group_dms.roster`. Its group chain is not here: each member
+/// announces its own over the pairwise session (`GroupDmAccept`,
+/// `StreamRecord{group_id}`; plan E2.6, decided 2026-10-21).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupDmRosterMember {
@@ -21,7 +23,4 @@ pub struct GroupDmRosterMember {
     /// The member's profile record, where its prekey record is found
     /// (plan E2.4's B2 pick) by the first sender of a pair.
     pub profile_record_key: String,
-    /// The member's `dm_participant` record for this group: its group
-    /// chain (plan E2.5's layout). Never E3.2's `MemberRecord`.
-    pub participant_record_key: String,
 }

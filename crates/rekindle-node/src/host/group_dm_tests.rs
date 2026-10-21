@@ -13,7 +13,6 @@ fn member(identity: String, n: char) -> GroupDmRosterMember {
     GroupDmRosterMember {
         identity,
         profile_record_key: format!("VLD0:{}", n.to_string().repeat(43)),
-        participant_record_key: format!("VLD0:{}", n.to_ascii_uppercase().to_string().repeat(43)),
     }
 }
 
@@ -27,9 +26,16 @@ async fn a_group_its_keys_and_a_held_invite_are_the_identitys() {
 
     let own = member(hex::encode(owner), 'a');
     let others = vec![member("b".repeat(64), 'b'), member("c".repeat(64), 'c')];
-    let created = rekindle_dm::create(&deps, "raid night", own, others)
-        .await
-        .unwrap();
+    let created = rekindle_dm::create(
+        &deps,
+        [7; 16],
+        "raid night",
+        own,
+        others,
+        &format!("VLD0:{}", "Q".repeat(43)),
+    )
+    .await
+    .unwrap();
     let gid = created.group.group_id;
     assert_eq!(deps.group(&gid).await.unwrap(), Some(created.group.clone()));
     assert_eq!(deps.groups().await.unwrap().len(), 1);
@@ -80,9 +86,16 @@ async fn a_member_who_is_not_a_friend_is_admitted_for_the_group_kinds_only() {
     let deps = HostGroupDm::open(&friends).unwrap();
     let (b, c, stranger) = ("b".repeat(64), "c".repeat(64), "d".repeat(64));
     let others = vec![member(b.clone(), 'b'), member(c.clone(), 'c')];
-    let created = rekindle_dm::create(&deps, "raid night", member(hex::encode(owner), 'a'), others)
-        .await
-        .unwrap();
+    let created = rekindle_dm::create(
+        &deps,
+        [7; 16],
+        "raid night",
+        member(hex::encode(owner), 'a'),
+        others,
+        &format!("VLD0:{}", "Q".repeat(43)),
+    )
+    .await
+    .unwrap();
     let gid = created.group.group_id;
 
     for kind in [
@@ -104,11 +117,14 @@ async fn a_member_who_is_not_a_friend_is_admitted_for_the_group_kinds_only() {
         DmTypeId::DmText,
         DmTypeId::FriendAccept,
         DmTypeId::FriendsKey,
-        DmTypeId::StreamRecord,
     ] {
         assert!(!admitted(&friends, &b, kind, false).await, "{kind:?}");
         assert!(!admitted(&friends, &b, kind, true).await, "{kind:?}");
     }
+
+    // A group's StreamRecord: admitted before it opens, routed to the group path.
+    assert!(admitted(&friends, &b, DmTypeId::StreamRecord, false).await);
+    assert!(!admitted(&friends, &stranger, DmTypeId::StreamRecord, false).await);
 
     // b leaves: off our roster, its admission ends, and our key rotates.
     let leave = DirectBody::GroupDmLeave(GroupDmLeave {

@@ -16,6 +16,7 @@ struct Host {
     groups: Mutex<HashMap<GroupId, GroupState>>,
     keys: Mutex<HashMap<(GroupId, String), GroupSenderKey>>,
     invites: Mutex<HashMap<GroupId, PendingInvite>>,
+    chains: Mutex<HashMap<(GroupId, String), String>>,
     events: Mutex<Vec<GroupDmEvent>>,
 }
 
@@ -26,11 +27,15 @@ impl Host {
             groups: Mutex::default(),
             keys: Mutex::default(),
             invites: Mutex::default(),
+            chains: Mutex::default(),
             events: Mutex::default(),
         }
     }
     fn id(&self) -> String {
         member_of(&self.key).identity
+    }
+    fn chain(&self) -> String {
+        format!("VLD0:chain-{}", &self.id()[..8])
     }
 }
 
@@ -91,8 +96,26 @@ impl GroupDmDeps for Host {
     ) -> Result<Option<GroupSenderKey>, DmError> {
         Ok(self.keys.lock().get(&(*id, m.to_owned())).cloned())
     }
+    async fn put_chain(&self, id: &GroupId, m: &str, key: &str) -> Result<(), DmError> {
+        self.chains
+            .lock()
+            .insert((*id, m.to_owned()), key.to_owned());
+        Ok(())
+    }
+    async fn chain(&self, id: &GroupId, m: &str) -> Result<Option<String>, DmError> {
+        Ok(self.chains.lock().get(&(*id, m.to_owned())).cloned())
+    }
+    async fn chains(&self, id: &GroupId) -> Result<Vec<(String, String)>, DmError> {
+        let held = self.chains.lock();
+        Ok(held
+            .iter()
+            .filter(|((g, _), _)| g == id)
+            .map(|((_, m), k)| (m.clone(), k.clone()))
+            .collect())
+    }
     async fn delete_member_keys(&self, id: &GroupId, m: &str) -> Result<(), DmError> {
         self.keys.lock().remove(&(*id, m.to_owned()));
+        self.chains.lock().remove(&(*id, m.to_owned()));
         Ok(())
     }
     async fn stash_invite(&self, invite: &PendingInvite) -> Result<(), DmError> {
@@ -137,9 +160,11 @@ async fn three() -> (Host, Host, Host, GroupId) {
     let (ann, bea, cy) = (Host::new(1), Host::new(2), Host::new(3));
     let created = create(
         &ann,
+        group::new_group_id(&OsRandom),
         "squad",
         member_of(&ann.key),
         vec![member_of(&bea.key), member_of(&cy.key)],
+        &ann.chain(),
     )
     .await
     .expect("create");
@@ -152,7 +177,7 @@ async fn three() -> (Host, Host, Host, GroupId) {
     }
     // Cy accepts first, Bea second: both still hold each other's key.
     for h in [&cy, &bea] {
-        let out = accept(h, &gid).await.expect("accept");
+        let out = accept(h, &gid, &h.chain()).await.expect("accept");
         deliver_keys(&[&ann, &bea, &cy], h, out).await;
     }
     (ann, bea, cy, gid)
@@ -254,9 +279,11 @@ async fn invites_are_refused_when_forged_or_not_ours_and_decline_rotates() {
     let cy = Host::new(3);
     let created = create(
         &ann,
+        group::new_group_id(&OsRandom),
         "squad",
         member_of(&ann.key),
         vec![member_of(&bea.key), member_of(&cy.key)],
+        &ann.chain(),
     )
     .await
     .expect("create");
@@ -274,10 +301,49 @@ async fn invites_are_refused_when_forged_or_not_ours_and_decline_rotates() {
         .expect("invite");
     let declined = decline(&bea, &gid).await.expect("decline");
     assert_eq!(declined.to, vec![ann.id()]);
-    assert!(accept(&bea, &gid).await.is_err());
+    assert!(accept(&bea, &gid, &bea.chain()).await.is_err());
     let out = on_decline(&ann, &bea.id(), &declined.frame)
         .await
         .expect("decline");
     assert_eq!((out.frame.epoch, out.to), (1, vec![cy.id()]));
-    assert!(create(&ann, "", member_of(&ann.key), vec![]).await.is_err());
+    assert!(
+        create(&ann, [1; 16], "", member_of(&ann.key), vec![], &ann.chain())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn each_member_holds_every_chain_as_its_member_announced_it() {
+    let (ann, bea, cy, gid) = three().await;
+    for h in [&ann, &bea, &cy] {
+        let mut held = h.chains(&gid).await.expect("chains");
+        held.sort();
+        let mut want: Vec<_> = [&ann, &bea, &cy]
+            .iter()
+            .map(|m| (m.id(), m.chain()))
+            .collect();
+        want.sort();
+        assert_eq!(held, want);
+    }
+    // Bea replaces her chain; a non-member's or our own announcement is refused.
+    on_member_chain(&ann, &bea.id(), &gid, "VLD0:chain-new")
+        .await
+        .expect("chain");
+    assert_eq!(
+        GroupDmDeps::chain(&ann, &gid, &bea.id())
+            .await
+            .unwrap()
+            .as_deref(),
+        Some("VLD0:chain-new")
+    );
+    assert!(on_member_chain(&ann, &Host::new(9).id(), &gid, "VLD0:x")
+        .await
+        .is_err());
+    assert!(on_member_chain(&ann, &ann.id(), &gid, "VLD0:x")
+        .await
+        .is_err());
+    // A rotation carries our chain.
+    let out = rotate_own_key(&bea, &gid).await.expect("rotate");
+    assert_eq!(out.frame.chain_record_key, bea.chain());
 }

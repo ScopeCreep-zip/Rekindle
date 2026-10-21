@@ -13,7 +13,6 @@ pub(crate) fn member_of(key: &SigningKey) -> GroupDmRosterMember {
     let identity = hex::encode(key.verifying_key().to_bytes());
     GroupDmRosterMember {
         profile_record_key: format!("VLD0:profile-{}", &identity[..8]),
-        participant_record_key: format!("VLD0:chain-{}", &identity[..8]),
         identity,
     }
 }
@@ -35,9 +34,6 @@ fn roster_bounds() {
     let mut repeated = members(3);
     repeated.push(repeated[0].clone());
     assert!(Roster::new(repeated).is_err());
-    let mut shared_chain = members(3);
-    shared_chain[2].participant_record_key = shared_chain[1].participant_record_key.clone();
-    assert!(Roster::new(shared_chain).is_err());
     let mut not_identity = members(3);
     not_identity[1].identity = "ABC".into();
     assert!(Roster::new(not_identity).is_err());
@@ -61,7 +57,7 @@ fn signed(creator: &SigningKey) -> GroupDmInvite {
     list.extend(members(3).into_iter().skip(1));
     let roster = Roster::new(list).expect("roster");
     let key = sender_key::mint_first(&OsRandom);
-    build_invite([9; 16], "squad", &roster, &key, |m| {
+    build_invite([9; 16], "squad", &roster, &key, "VLD0:chain-creator", |m| {
         creator.sign(m).to_bytes()
     })
 }
@@ -105,6 +101,7 @@ fn invite_signature_verifies_and_tampering_fails() {
         "squad",
         &Roster::new(invite.roster.clone()).expect("r"),
         &sender_key::mint_first(&OsRandom),
+        "VLD0:chain-forged",
         |m| signer(2).sign(m).to_bytes(),
     );
     assert!(matches!(

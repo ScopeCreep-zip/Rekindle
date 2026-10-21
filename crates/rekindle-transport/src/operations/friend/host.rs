@@ -151,6 +151,13 @@ pub trait FriendHost: Send + Sync {
     /// # Errors
     /// `Locked` while no identity is unlocked.
     fn group_dm(&self) -> Result<Arc<dyn rekindle_dm::GroupDmDeps>, FriendError>;
+    /// Our group chain for `group_id` (32 hex) and its owner keypair
+    /// (plan E2.6), made single-flight when none is saved; the keypair is
+    /// in the vault before the key is returned.
+    async fn group_chain_writer(
+        &self,
+        group_id: &str,
+    ) -> Result<crate::operations::dm::stream::ParticipantWriter, FriendError>;
     /// Whether our own status is Invisible (receipts are held meanwhile).
     fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).

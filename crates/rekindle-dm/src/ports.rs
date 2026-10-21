@@ -83,7 +83,22 @@ pub trait GroupDmDeps: Send + Sync {
         member: &str,
     ) -> Result<Option<GroupSenderKey>, DmError>;
 
-    /// Delete every key of `member` in the group.
+    /// Store `record_key` as `member`'s group chain (its own announcement,
+    /// over its pairwise session), replacing the one held.
+    async fn put_chain(
+        &self,
+        group_id: &GroupId,
+        member: &str,
+        record_key: &str,
+    ) -> Result<(), DmError>;
+
+    /// `member`'s group chain, if announced.
+    async fn chain(&self, group_id: &GroupId, member: &str) -> Result<Option<String>, DmError>;
+
+    /// Every member's announced group chain, `(member, record_key)`.
+    async fn chains(&self, group_id: &GroupId) -> Result<Vec<(String, String)>, DmError>;
+
+    /// Delete every key and the chain of `member` in the group.
     async fn delete_member_keys(&self, group_id: &GroupId, member: &str) -> Result<(), DmError>;
 
     /// Hold a verified invite until we answer it.

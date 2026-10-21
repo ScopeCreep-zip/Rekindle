@@ -3,8 +3,8 @@
 //! roster of a group we accepted, and only for:
 //!
 //! - the group kinds 0x0120-0x0124, naming that group;
-//! - 0x0107 `StreamRecord` naming that group and the sender's own
-//!   participant record on its roster;
+//! - 0x0107 `StreamRecord` naming that group (the record it announces is
+//!   stored as the sender's own chain there, never another member's);
 //! - the `PreKeyInit` that opens the pair's session, when its first
 //!   payload is itself admitted.
 //!
@@ -33,10 +33,7 @@ pub enum GroupFrame<'a> {
     },
     /// A `StreamRecord` announcing `record_key`, for `group_id` when it is
     /// a group chain.
-    StreamRecord {
-        record_key: &'a str,
-        group_id: Option<&'a GroupId>,
-    },
+    StreamRecord { group_id: Option<&'a GroupId> },
     /// A `PreKeyInit` whose first payload is `first`.
     PreKeyInit { first: &'a GroupFrame<'a> },
 }
@@ -96,17 +93,11 @@ pub fn admit(
                 Admission::NotOnRoster
             }
         }
-        GroupFrame::StreamRecord {
-            record_key,
-            group_id,
-        } => {
+        GroupFrame::StreamRecord { group_id } => {
             let Some(id) = group_id else {
                 return Admission::KindRefused;
             };
-            let names_own_record = group_of(groups, id)
-                .and_then(|g| g.roster.member(sender))
-                .is_some_and(|m| m.participant_record_key == *record_key);
-            if names_own_record {
+            if group_of(groups, id).is_some_and(|g| g.roster.contains(sender)) {
                 Admission::Admit
             } else {
                 Admission::NotOnRoster

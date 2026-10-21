@@ -7,6 +7,25 @@ use rekindle_codec::capnp_codec::direct::DirectBody;
 use super::{friend_error, send_pairwise};
 use crate::operations::friend::FriendHost;
 
+/// A member's `StreamRecord{group_id}`: the record replaces that member's
+/// own group chain; whether it applied. Never the 1:1 path.
+pub(crate) async fn on_stream_record(
+    host: &dyn FriendHost,
+    sender: &str,
+    record: &rekindle_codec::capnp_codec::direct::StreamRecord,
+) -> bool {
+    let (Some(group_id), Ok(deps)) = (record.group_id, host.group_dm()) else {
+        return false;
+    };
+    match rekindle_dm::on_member_chain(deps.as_ref(), sender, &group_id, &record.record_key).await {
+        Ok(()) => true,
+        Err(e) => {
+            tracing::info!(from = %sender, error = %friend_error(&e), "group chain refused");
+            false
+        }
+    }
+}
+
 /// Apply an opened group control frame from `sender`; whether it applied.
 /// `GroupContent` never travels pairwise (it is a group chain entry), so
 /// one that does is refused.

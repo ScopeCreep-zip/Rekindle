@@ -4,6 +4,8 @@
 //! Host's clock and RNG ports and the event journal, used by both hosts
 //! through `FriendHost::group_dm`.
 
+pub(crate) mod chain;
+
 use std::sync::Arc;
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, GroupDmInvite, GroupId};
@@ -193,10 +195,45 @@ impl GroupDmDeps for HostGroupDm {
         Ok(held.map(|(epoch, key)| GroupSenderKey::new(epoch, key)))
     }
 
+    async fn put_chain(
+        &self,
+        group_id: &GroupId,
+        member: &str,
+        record_key: &str,
+    ) -> Result<(), DmError> {
+        let (id, member, key) = (
+            group_id_hex(group_id),
+            member.to_owned(),
+            record_key.to_owned(),
+        );
+        db!(self, "store group chain", |c, o| {
+            group_dms::put_chain(c, o, &id, &member, &key)
+        })
+        .await
+    }
+
+    async fn chain(&self, group_id: &GroupId, member: &str) -> Result<Option<String>, DmError> {
+        Ok(self
+            .chains(group_id)
+            .await?
+            .into_iter()
+            .find(|(m, _)| m == member)
+            .map(|(_, key)| key))
+    }
+
+    async fn chains(&self, group_id: &GroupId) -> Result<Vec<(String, String)>, DmError> {
+        let id = group_id_hex(group_id);
+        db!(self, "read group chains", |c, o| group_dms::chains(
+            c, o, &id
+        ))
+        .await
+    }
+
     async fn delete_member_keys(&self, group_id: &GroupId, member: &str) -> Result<(), DmError> {
         let (id, member) = (group_id_hex(group_id), member.to_owned());
         db!(self, "delete sender keys", |c, o| {
-            group_dms::delete_member_keys(c, o, &id, &member)
+            group_dms::delete_member_keys(c, o, &id, &member)?;
+            group_dms::delete_chain(c, o, &id, &member)
         })
         .await
         .map(|_| ())

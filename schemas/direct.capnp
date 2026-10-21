@@ -223,7 +223,6 @@ struct Typing {
 struct GroupDmRosterMember {
   identity @0 :Text;                    # 64 lowercase hex
   profileRecordKey @1 :Text;            # where its prekey record is found
-  participantRecordKey @2 :Text;        # its group chain (dm_participant)
 }
 
 # 0x0120: the creator's invite, signed by its identity over
@@ -235,6 +234,7 @@ struct GroupDmInvite {
   creatorSenderKey @3 :Data;            # 32
   epoch @4 :UInt32;
   signature @5 :Data;                   # 64
+  creatorChainKey @6 :Text;             # the creator's group chain (dm_participant)
 }
 
 # 0x0121: we joined; our sending key, to each member.
@@ -242,6 +242,7 @@ struct GroupDmAccept {
   groupId @0 :Data;                     # 16
   epoch @1 :UInt32;
   senderKey @2 :Data;                   # 32
+  chainRecordKey @3 :Text;              # our group chain (dm_participant)
 }
 
 # 0x0122.

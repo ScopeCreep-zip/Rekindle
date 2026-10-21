@@ -4,7 +4,7 @@
 //! the next unlock's replay applies it (D24; audit G5). An unported one's
 //! row goes at its hand-off.
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, DmText};
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmText, DmTypeId};
 use rekindle_events::typing::TYPING_TTL_MS;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, TypingContext};
 
@@ -103,7 +103,15 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::FriendsKey(k) => {
             applied = presence_key::on_friends_key(host, sender, k).await;
         }
+        DirectBody::StreamRecord(r) if r.group_id.is_some() => {
+            applied = crate::operations::group_dm::on_stream_record(host, sender, r).await;
+        }
         DirectBody::StreamRecord(r) => {
+            // A group member who is not a friend passed the gate for a
+            // group's record only: a 1:1 one needs the friend gate.
+            if !super::admission::friend_admitted(host, sender, DmTypeId::StreamRecord).await {
+                return Applied::Done(false);
+            }
             applied = crate::operations::dm::stream::on_stream_record(host, sender, r).await;
             if applied {
                 // Stored (or refused from a non-friend, which `committed`

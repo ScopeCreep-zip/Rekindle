@@ -29,6 +29,8 @@ pub struct GroupDmInvite {
     pub epoch: u32,
     /// The creator's identity signature over [`Self::signing_bytes`].
     pub signature: [u8; 64],
+    /// The creator's group chain (a `dm_participant` record).
+    pub creator_chain_key: String,
 }
 
 /// The key is never printed.
@@ -39,6 +41,7 @@ impl std::fmt::Debug for GroupDmInvite {
             .field("name", &self.name)
             .field("roster", &self.roster)
             .field("epoch", &self.epoch)
+            .field("creator_chain_key", &self.creator_chain_key)
             .finish_non_exhaustive()
     }
 }
@@ -52,7 +55,7 @@ fn put_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
 
 impl GroupDmInvite {
     /// The bytes the creator signs: `GROUP_DM_INVITE ‖ group_id ‖ name ‖
-    /// roster ‖ epoch`, every variable field length-prefixed, the roster in
+    /// roster ‖ creator_chain_key ‖ epoch`, every variable field length-prefixed, the roster in
     /// its order. The sending key is not signed: the pairwise session
     /// already authenticates it to its one recipient, and a signature over
     /// it would make the key a transferable artifact. What admission reads
@@ -66,8 +69,8 @@ impl GroupDmInvite {
         for member in &self.roster {
             put_len_prefixed(&mut out, member.identity.as_bytes());
             put_len_prefixed(&mut out, member.profile_record_key.as_bytes());
-            put_len_prefixed(&mut out, member.participant_record_key.as_bytes());
         }
+        put_len_prefixed(&mut out, self.creator_chain_key.as_bytes());
         out.extend_from_slice(&self.epoch.to_be_bytes());
         out
     }
@@ -82,15 +85,15 @@ impl GroupDmInvite {
                 .get(u32::try_from(i).expect("a roster index fits a u32"));
             m.set_identity(&member.identity);
             m.set_profile_record_key(&member.profile_record_key);
-            m.set_participant_record_key(&member.participant_record_key);
         }
         b.set_creator_sender_key(&self.creator_sender_key);
         b.set_epoch(self.epoch);
         b.set_signature(&self.signature);
+        b.set_creator_chain_key(&self.creator_chain_key);
     }
 
     /// A roster outside 3-8 members, a member that is not an identity key
-    /// with two record keys, or an empty name or one past its bound is
+    /// with a profile record key, or an empty name or one past its bound is
     /// malformed.
     pub(super) fn read(r: group_dm_invite::Reader<'_>) -> Result<Self, CodecError> {
         let list = r.get_roster().map_err(|e| capnp_err(&e))?;
@@ -109,10 +112,6 @@ impl GroupDmInvite {
                         m.get_profile_record_key(),
                         "roster profile record key",
                     )?,
-                    participant_record_key: record_key(
-                        m.get_participant_record_key(),
-                        "roster participant record key",
-                    )?,
                 })
             })
             .collect::<Result<Vec<_>, CodecError>>()?;
@@ -127,17 +126,21 @@ impl GroupDmInvite {
             creator_sender_key: fixed(r.get_creator_sender_key(), "creator sender key")?,
             epoch: r.get_epoch(),
             signature: fixed(r.get_signature(), "group invite signature")?,
+            creator_chain_key: record_key(r.get_creator_chain_key(), "creator chain key")?,
         })
     }
 }
 
 /// 0x0121 GroupDmAccept, inside the ratchet to each member: we joined, and
-/// our sending key of `epoch`.
+/// our sending key of `epoch` and our group chain. A rotation resends it.
 #[derive(Clone, PartialEq, Eq)]
 pub struct GroupDmAccept {
     pub group_id: GroupId,
     pub epoch: u32,
     pub sender_key: [u8; 32],
+    /// Our group chain (a `dm_participant` record), authenticated by the
+    /// pairwise session it travels on.
+    pub chain_record_key: String,
 }
 
 /// The key is never printed.
@@ -146,6 +149,7 @@ impl std::fmt::Debug for GroupDmAccept {
         f.debug_struct("GroupDmAccept")
             .field("group_id", &hex::encode(self.group_id))
             .field("epoch", &self.epoch)
+            .field("chain_record_key", &self.chain_record_key)
             .finish_non_exhaustive()
     }
 }
@@ -155,6 +159,7 @@ impl GroupDmAccept {
         b.set_group_id(&self.group_id);
         b.set_epoch(self.epoch);
         b.set_sender_key(&self.sender_key);
+        b.set_chain_record_key(&self.chain_record_key);
     }
 
     pub(super) fn read(r: group_dm_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -162,6 +167,7 @@ impl GroupDmAccept {
             group_id: fixed(r.get_group_id(), "group id")?,
             epoch: r.get_epoch(),
             sender_key: fixed(r.get_sender_key(), "group sender key")?,
+            chain_record_key: record_key(r.get_chain_record_key(), "group chain key")?,
         })
     }
 }

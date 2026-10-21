@@ -14,7 +14,7 @@ use rekindle_utils::RandomSource;
 use crate::error::DmError;
 
 /// A group's members, us included: unique identity keys, each with its
-/// profile and participant records.
+/// profile record.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Roster {
     members: Vec<GroupDmRosterMember>,
@@ -39,14 +39,12 @@ fn check_members(members: &[GroupDmRosterMember]) -> Result<(), DmError> {
                 "member {i} is not an identity key"
             )));
         }
-        if m.profile_record_key.is_empty() || m.participant_record_key.is_empty() {
+        if m.profile_record_key.is_empty() {
             return Err(DmError::InvalidRoster(format!(
-                "member {i} lacks a record key"
+                "member {i} lacks a profile record key"
             )));
         }
-        let repeated = members[..i].iter().any(|o| {
-            o.identity == m.identity || o.participant_record_key == m.participant_record_key
-        });
+        let repeated = members[..i].iter().any(|o| o.identity == m.identity);
         if repeated {
             return Err(DmError::InvalidRoster(format!("member {i} is repeated")));
         }
@@ -174,6 +172,7 @@ pub fn build_invite(
     name: &str,
     roster: &Roster,
     creator_key: &GroupSenderKey,
+    creator_chain_key: &str,
     sign: impl FnOnce(&[u8]) -> [u8; 64],
 ) -> GroupDmInvite {
     let mut invite = GroupDmInvite {
@@ -183,6 +182,7 @@ pub fn build_invite(
         creator_sender_key: *creator_key.as_bytes(),
         epoch: creator_key.epoch(),
         signature: [0; 64],
+        creator_chain_key: creator_chain_key.to_owned(),
     };
     invite.signature = sign(&invite.signing_bytes());
     invite

@@ -13,12 +13,15 @@ mod inbound;
 
 pub use admission::admitted;
 pub use inbound::apply;
+pub(crate) use inbound::on_stream_record;
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, GroupId};
 use rekindle_dm::{DmError, Outbound};
 
 use crate::operations::dm::handshake;
-use crate::operations::friend::{FriendError, FriendHost};
+use rekindle_types::group_dm::GroupDmRosterMember;
+
+use crate::operations::friend::{state, FriendError, FriendHost};
 
 /// A lifecycle error, as the operations report it.
 pub(crate) fn friend_error(e: &DmError) -> FriendError {
@@ -35,6 +38,7 @@ pub(crate) fn friend_error(e: &DmError) -> FriendError {
         | DmError::BadSignature
         | DmError::NotOnRoster(_)
         | DmError::KeyMissing { .. } => FriendError::Invalid(e.to_string()),
+        DmError::ChainMissing(_) => FriendError::NotReady(e.to_string()),
     }
 }
 
@@ -73,14 +77,57 @@ pub(crate) async fn send_pairwise<F>(
     first_error.map_or(Ok(()), Err)
 }
 
-/// Accept the pending invite to `group_id`; our first key goes to every
-/// other member.
+/// Create a group named `name` of us and `members` (our friends, 2-7 of
+/// them): our chain first, then the signed invite to each member. The new
+/// group's id.
 ///
 /// # Errors
-/// No such invite, storage, or a member's row.
-pub async fn accept(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendError> {
+/// A member who is not a friend (we need their profile record), an
+/// invalid name or roster, the chain record, storage, or a member's row.
+pub async fn create(
+    host: &dyn FriendHost,
+    name: &str,
+    members: &[String],
+) -> Result<String, FriendError> {
+    rekindle_dm::group::check_name(name).map_err(|e| friend_error(&e))?;
+    let own = state::own_identity(host)?;
+    let mut others = Vec::with_capacity(members.len());
+    for key in members {
+        let profile = state::friend(host, key)
+            .and_then(|f| f.dht_record_key)
+            .ok_or_else(|| {
+                FriendError::Invalid(format!("{} is not a friend", state::short_key(key)))
+            })?;
+        others.push(GroupDmRosterMember {
+            identity: key.clone(),
+            profile_record_key: profile,
+        });
+    }
+    let me = GroupDmRosterMember {
+        identity: own.public_key,
+        profile_record_key: own.profile_dht_key,
+    };
+    let group_id = rekindle_dm::group::new_group_id(host.rng());
+    let gid = rekindle_dm::group::group_id_hex(&group_id);
+    let chain = host.group_chain_writer(&gid).await?;
     let deps = host.group_dm()?;
-    let out = rekindle_dm::accept(deps.as_ref(), &parse_group_id(group_id)?)
+    let created = rekindle_dm::create(deps.as_ref(), group_id, name, me, others, &chain.record_key)
+        .await
+        .map_err(|e| friend_error(&e))?;
+    send_pairwise(host, created.invite, DirectBody::GroupDmInvite).await?;
+    Ok(gid)
+}
+
+/// Accept the pending invite to `group_id`: our chain first, then our
+/// first key and chain go to every other member.
+///
+/// # Errors
+/// No such invite, the chain record, storage, or a member's row.
+pub async fn accept(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendError> {
+    let id = parse_group_id(group_id)?;
+    let chain = host.group_chain_writer(group_id).await?;
+    let deps = host.group_dm()?;
+    let out = rekindle_dm::accept(deps.as_ref(), &id, &chain.record_key)
         .await
         .map_err(|e| friend_error(&e))?;
     send_pairwise(host, out, DirectBody::GroupDmAccept).await
