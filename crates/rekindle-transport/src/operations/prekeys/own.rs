@@ -12,7 +12,25 @@ use rekindle_types::dht_layout::prekeys::HEAD;
 use rekindle_types::dto::identity::{PrekeyComponentLens, PrekeyStatus};
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
+use futures::stream::{self, StreamExt};
+
 use crate::operations::friend::{state, FriendError, FriendHost};
+
+/// The DHT operations kept free for the rest of the node while our
+/// prekey writes run: Veilid admits `max_concurrent_dht_operations` network
+/// operations at once (`dht.max_concurrent_operations`, 16 by default), and
+/// the 90 later slots must leave room for our status write, our watches and
+/// a friend's record reads. Twelve concurrent prekey writes still put the
+/// head and the ten first-contact slots (`split_first_contact`) on the
+/// network in one set latency.
+const DHT_HEADROOM: u32 = 4;
+
+/// How many of our prekey writes run at once: the node's DHT operation cap
+/// less [`DHT_HEADROOM`], and at least one.
+fn write_concurrency() -> usize {
+    let cap = rekindle_types::config::VeilidStartupOptions::default().max_concurrent_dht_operations;
+    usize::try_from(cap.saturating_sub(DHT_HEADROOM).max(1)).unwrap_or(1)
+}
 
 /// The profile's subkey 5: this device's entry naming `record_key` (one
 /// entry until E5.3 binds devices).
@@ -49,14 +67,22 @@ pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), 
         .own_prekey_lease()
         .ok_or_else(|| FriendError::NotReady("our prekey record is not open yet".to_string()))?;
     let pool = host.node()?.require_records()?;
+    let pool = pool.as_ref();
+    let outcomes: Vec<_> = stream::iter(values)
+        .map(|Publish { subkey, value }| async move {
+            let result = if subkey == HEAD {
+                record::publish_head(pool, lease, value).await
+            } else {
+                record::publish_slot(pool, lease, subkey, value).await
+            };
+            (subkey, result)
+        })
+        .buffer_unordered(write_concurrency())
+        .collect()
+        .await;
     let mut written = Written::default();
     let mut failed = Vec::new();
-    for Publish { subkey, value } in values {
-        let result = if subkey == HEAD {
-            record::publish_head(pool.as_ref(), lease, value).await
-        } else {
-            record::publish_slot(pool.as_ref(), lease, subkey, value).await
-        };
+    for (subkey, result) in outcomes {
         match result {
             Ok(held) => {
                 if held.missed() {
@@ -66,10 +92,12 @@ pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), 
             }
             Err(e) => {
                 tracing::warn!(subkey, error = %e, "prekey subkey not published; continuing");
-                failed.push(format!("subkey {subkey}: {e}"));
+                failed.push((subkey, format!("subkey {subkey}: {e}")));
             }
         }
     }
+    failed.sort_unstable();
+    let failed: Vec<String> = failed.into_iter().map(|(_, named)| named).collect();
     written.publish(host);
     if failed.is_empty() {
         Ok(())
@@ -98,15 +126,27 @@ pub async fn publish_landed(
         .own_prekey_lease()
         .ok_or_else(|| FriendError::NotReady("our prekey record is not open yet".to_string()))?;
     let pool = host.node()?.require_records()?;
+    let pool = pool.as_ref();
+    let outcomes: Vec<_> = stream::iter(values)
+        .map(|Publish { subkey, value }| async move {
+            (subkey, record::write_once(pool, lease, subkey, value).await)
+        })
+        .buffer_unordered(write_concurrency())
+        .collect()
+        .await;
     let mut written = Written::default();
     let mut missed = Vec::new();
-    for Publish { subkey, value } in values {
-        match record::write_once(pool.as_ref(), lease, subkey, value).await {
-            Ok(outcome) if outcome.missed() => missed.push(format!("subkey {subkey}: {outcome:?}")),
+    for (subkey, result) in outcomes {
+        match result {
+            Ok(outcome) if outcome.missed() => {
+                missed.push((subkey, format!("subkey {subkey}: {outcome:?}")));
+            }
             Ok(_) => written.add(subkey),
-            Err(e) => missed.push(format!("subkey {subkey}: {e}")),
+            Err(e) => missed.push((subkey, format!("subkey {subkey}: {e}"))),
         }
     }
+    missed.sort_unstable();
+    let missed: Vec<String> = missed.into_iter().map(|(_, named)| named).collect();
     if missed.is_empty() {
         written.publish(host);
         return Ok(());
@@ -174,6 +214,11 @@ pub async fn reconcile(host: &dyn FriendHost) -> Result<usize, FriendError> {
     let ours = rekindle_db::prekeys::published_values(&host.db()?, &host.local_party()?)
         .await
         .map_err(|e| FriendError::store("read our prekeys", e))?;
+    if ours.is_empty() {
+        // Nothing of ours is published yet (a new identity): there is
+        // nothing to compare, so the record is not read.
+        return Ok(0);
+    }
     let held = record::read_record(pool.as_ref(), &key)
         .await
         .map_err(|e| FriendError::store("read our prekey record", e))?;
