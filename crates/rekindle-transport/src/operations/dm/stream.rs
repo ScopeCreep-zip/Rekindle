@@ -75,11 +75,33 @@ async fn append_runs(
         send_record(host, to, &ours.record_key).await?;
     }
     let port = records(host)?;
+    append_noted(host, port.as_ref(), &ours, to, frames, landed).await?;
+    retire(host, to, &ours, port.as_ref()).await;
+    Ok(())
+}
+
+/// Append `frames` (wired entries, each with its `stream_seq`, in order)
+/// to the chain `ours` as few pages as hold them ([`chain::page_runs`]),
+/// noting each entry's chain seq under `stream` (its `chain_entries` name:
+/// the peer of a dm chain, `group_dm:<id>` of a group chain). `landed`
+/// counts the frames, from the first, that are on the chain.
+///
+/// # Errors
+/// A page did not land or an entry was not noted: the frames from
+/// `landed` on are not on the chain.
+pub(crate) async fn append_noted(
+    host: &dyn FriendHost,
+    port: &dyn RecordPort,
+    ours: &ParticipantWriter,
+    stream: &str,
+    frames: &[(Vec<u8>, i64)],
+    landed: &mut usize,
+) -> Result<(), FriendError> {
     let datagrams: Vec<Vec<u8>> = frames.iter().map(|(d, _)| d.clone()).collect();
     let runs = chain::page_runs(&datagrams)
         .map_err(|e| FriendError::Failed(format!("chain append: {e}")))?;
     for run in runs {
-        let page = chain::append(port.as_ref(), &ours.record_key, &ours.writer, run)
+        let page = chain::append(port, &ours.record_key, &ours.writer, run)
             .await
             .map_err(|e| FriendError::NotReady(format!("chain append: {e}")))?;
         let noted: Vec<(u64, i64)> = (page.first_seq..)
@@ -87,22 +109,21 @@ async fn append_runs(
             .map(|(chain_seq, (_, stream_seq))| (chain_seq, *stream_seq))
             .collect();
         *landed += run.len();
-        let (owner, peer, now) = (
+        let (owner, stream, now) = (
             state::owner(host)?,
-            to.to_string(),
+            stream.to_string(),
             host.clock().now_ms_i64(),
         );
         state::db_call!(host, "note chain entries", move |conn| {
             for (chain_seq, stream_seq) in noted {
                 rekindle_db::repo::chain_entries::record(
-                    conn, &owner, &peer, chain_seq, stream_seq, now,
+                    conn, &owner, &stream, chain_seq, stream_seq, now,
                 )?;
             }
             Ok(())
         })
         .await?;
     }
-    retire(host, to, &ours, port.as_ref()).await;
     Ok(())
 }
 

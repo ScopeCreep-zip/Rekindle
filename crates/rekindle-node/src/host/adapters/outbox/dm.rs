@@ -186,15 +186,7 @@ impl StreamSender for DmSender {
                 .map(|r| AttemptOutcome::Wedged(format!("not a dm stream: {}", r.stream)))
                 .collect();
         };
-        let attempts: Vec<dm_outbox::RowAttempt<'_>> = rows
-            .iter()
-            .map(|r| dm_outbox::RowAttempt {
-                stream_seq: r.stream_seq,
-                sent_at: r.sent_at,
-                payload: &r.payload,
-            })
-            .collect();
-        dm_outbox::attempt(&self.0, peer, &attempts)
+        dm_outbox::attempt(&self.0, peer, &row_attempts(rows))
             .await
             .into_iter()
             .map(outcome)
@@ -203,26 +195,48 @@ impl StreamSender for DmSender {
 }
 
 /// The `group_dm` stream's sender: `group_dm::content::attempt` (plan
-/// E2.6): the row settles `sent` once its entry is on our group chain.
+/// E2.6): a row settles `sent` once its entry is on our group chain, and
+/// the stream's due rows go on it together (plan E2.B F2).
 struct GroupSender(HostFriends);
 
 #[async_trait]
 impl StreamSender for GroupSender {
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
-        let Some(group) = row.stream.strip_prefix("group_dm:") else {
-            return AttemptOutcome::Wedged(format!("not a group stream: {}", row.stream));
-        };
-        outcome(
-            rekindle_transport::operations::group_dm::content::attempt(
-                &self.0,
-                group,
-                row.stream_seq,
-                row.sent_at,
-                &row.payload,
-            )
-            .await,
-        )
+        let mut outcomes = self.send_stream(std::slice::from_ref(row)).await;
+        outcomes.pop().unwrap_or(AttemptOutcome::Deferred)
     }
+
+    async fn send_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        let Some(group) = rows
+            .first()
+            .and_then(|r| r.stream.strip_prefix("group_dm:"))
+        else {
+            return rows
+                .iter()
+                .map(|r| AttemptOutcome::Wedged(format!("not a group stream: {}", r.stream)))
+                .collect();
+        };
+        rekindle_transport::operations::group_dm::content::attempt(
+            &self.0,
+            group,
+            &row_attempts(rows),
+        )
+        .await
+        .into_iter()
+        .map(outcome)
+        .collect()
+    }
+}
+
+/// `rows` as the chain senders take them.
+fn row_attempts(rows: &[OutboxRow]) -> Vec<dm_outbox::RowAttempt<'_>> {
+    rows.iter()
+        .map(|r| dm_outbox::RowAttempt {
+            stream_seq: r.stream_seq,
+            sent_at: r.sent_at,
+            payload: &r.payload,
+        })
+        .collect()
 }
 
 /// The `friend_handshake` stream's sender: `dm::handshake::attempt`.

@@ -289,3 +289,52 @@ async fn a_retired_group_stretch_is_a_stored_history_gap() {
             if member.public_key == ann
     )));
 }
+
+/// Ann is detached while she writes a backlog; once she is back, the
+/// outbox hands the stream's due run over at once and it lands on her
+/// group chain in as few pages as hold it (plan E2.B F2: an append per
+/// page, not per message), and every member reads each message in order.
+/// The first message sent while detached is the attempt in flight (it waits
+/// for readiness with only itself due), so the backlog is the rows behind
+/// it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_group_backlog_lands_in_as_few_pages_as_hold_it() {
+    let (sim, mut nodes) = start(3, 97).await;
+    let gid = three_members(&sim, &mut nodes).await;
+    sim.fault(Fault::Detach {
+        node: 0,
+        detached: true,
+    });
+    // Every chain page is a sealed single-subkey record.
+    let pages_before = sim.single_subkey_values().len();
+    send(&nodes[0], &gid, "in flight").await;
+    let backlog: Vec<String> = (0..8).map(|i| format!("backlog {i}")).collect();
+    for body in &backlog {
+        send(&nodes[0], &gid, body).await;
+    }
+    sim.fault(Fault::Detach {
+        node: 0,
+        detached: false,
+    });
+    let mut expected = vec!["in flight".to_string()];
+    expected.extend(backlog.iter().cloned());
+    for reader in &nodes[1..] {
+        for body in &expected {
+            assert!(
+                eventually(&sim, LIMIT * 2, || reads(reader, &gid, body)).await,
+                "node {} reads {body:?}",
+                reader.index
+            );
+        }
+        assert_eq!(
+            bodies(reader, &gid).await[3..],
+            expected[..],
+            "node {} reads them in order",
+            reader.index
+        );
+    }
+    // The append in flight, then the backlog: eight short entries fit one
+    // page, ceil(8 / capacity) = 1.
+    let appended = sim.single_subkey_values().len() - pages_before;
+    assert_eq!(appended, 1 + 1, "{appended} page appends");
+}

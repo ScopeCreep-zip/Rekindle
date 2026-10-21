@@ -15,11 +15,11 @@ use rekindle_codec::capnp_codec::direct::{
 };
 use rekindle_dm::{GroupState, Outbound};
 use rekindle_events::typing::{Input, Lapse};
-use rekindle_records::chain;
 use rekindle_types::subscription_events::TypingContext;
 
 use super::{friend_error, parse_group_id, send_pairwise};
 use crate::operations::dm::outbox::{self as dm_outbox, Attempt, OutgoingDm};
+use crate::operations::dm::stream as dm_stream;
 use crate::operations::dm::{client_id_text, hint_for, mint_client_id, send_to_peer};
 use crate::operations::friend::inbox::records;
 use crate::operations::friend::{state, FriendError, FriendHost};
@@ -105,77 +105,115 @@ pub async fn send(
     Ok(message_id)
 }
 
-/// One attempt of row `stream_seq` of our stream to `group_id`: sealed
-/// under our current key, on our chain, then hinted to each member. Each
-/// attempt carries `sent_at`, when the message was written (its echo's
-/// time; now for a row with none), so members order it by that (E2.B F3).
+/// One attempt of `rows`, the due run of our stream to `group_id` in
+/// `stream_seq` order: each sealed under our current key, the run on our
+/// chain at once in as few pages as hold it (plan E2.B F2, shared with the
+/// dm stream: `dm::stream::append_noted`), then each hinted to every
+/// member. Each attempt carries `sent_at`, when the message was written
+/// (its echo's time; now for a row with none), so members order it by that
+/// (E2.B F3). The outcomes of a prefix of `rows`, in order: the rows after
+/// the first that stays behind (`rekindle_outbox::holds_back`) are not
+/// attempted.
 pub async fn attempt(
     host: &dyn FriendHost,
     group_id: &str,
-    stream_seq: i64,
-    sent_at: Option<i64>,
-    payload: &[u8],
-) -> Attempt {
-    let body = match dm_outbox::decode_payload(payload) {
-        Ok(body) => body,
-        Err(e) => return Attempt::Wedged(format!("payload: {e}")),
-    };
+    rows: &[dm_outbox::RowAttempt<'_>],
+) -> Vec<Attempt> {
     let id = match parse_group_id(group_id) {
         Ok(id) => id,
-        Err(e) => return Attempt::Wedged(e.to_string()),
+        Err(e) => {
+            return rows
+                .iter()
+                .take(1)
+                .map(|_| Attempt::Wedged(e.to_string()))
+                .collect()
+        }
     };
-    let sent_at_ms = sent_at
-        .and_then(|t| u64::try_from(t).ok())
-        .unwrap_or_else(|| host.clock().now_ms());
-    match append(host, &id, group_id, &body, stream_seq, sent_at_ms).await {
-        Ok(content) => {
-            spawn_hints(host, &id, content);
-            Attempt::Sent
+    let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
+    let (mut slots, mut frames, mut sealed) = (Vec::new(), Vec::new(), Vec::new());
+    for row in rows {
+        match seal_row(host, &id, row).await {
+            Ok(content) => {
+                slots.push(outcomes.len());
+                outcomes.push(None);
+                frames.push((
+                    DirectBody::GroupContent(content.clone()).encode(),
+                    row.stream_seq,
+                ));
+                sealed.push(content);
+            }
+            Err(outcome) => {
+                if dm_outbox::push_stops(&mut outcomes, outcome) {
+                    break;
+                }
+            }
         }
-        Err(FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_)) => {
-            Attempt::Deferred
-        }
-        Err(e) => Attempt::Wedged(e.to_string()),
     }
+    if !frames.is_empty() {
+        let (landed, appended) = append(host, &id, group_id, &frames).await;
+        sealed.truncate(landed);
+        spawn_hints(host, &id, sealed);
+        dm_outbox::settle_chained(&mut outcomes, &slots, landed, appended);
+    }
+    dm_outbox::finish(outcomes)
 }
 
-/// Seal `body` and append it to our group chain, noting the entry; the
-/// entry.
+/// Seal `row` under our current sending key for this attempt.
+async fn seal_row(
+    host: &dyn FriendHost,
+    id: &GroupId,
+    row: &dm_outbox::RowAttempt<'_>,
+) -> Result<GroupContent, Attempt> {
+    let body = dm_outbox::decode_payload(row.payload)
+        .map_err(|e| Attempt::Wedged(format!("payload: {e}")))?;
+    let sent_at_ms = row
+        .sent_at
+        .and_then(|t| u64::try_from(t).ok())
+        .unwrap_or_else(|| host.clock().now_ms());
+    let plain = inner(
+        &body,
+        sent_at_ms,
+        u64::try_from(row.stream_seq).unwrap_or(0),
+    );
+    let deps = host.group_dm().map_err(dm_outbox::attempt_of)?;
+    let content = rekindle_dm::seal_for_send(deps.as_ref(), id, &plain)
+        .await
+        .map_err(|e| dm_outbox::attempt_of(friend_error(&e)))?;
+    dm_outbox::fits_page(&DirectBody::GroupContent(content.clone()).encode())?;
+    Ok(content)
+}
+
+/// Append `frames` (sealed entries, each with its `stream_seq`) to our
+/// group chain, noting each entry, and retire what may go. How many frames,
+/// from the first, are on the chain, and the error that stopped the rest.
 async fn append(
     host: &dyn FriendHost,
     id: &GroupId,
     group_id: &str,
-    body: &DirectBody,
-    stream_seq: i64,
-    sent_at_ms: u64,
-) -> Result<GroupContent, FriendError> {
+    frames: &[(Vec<u8>, i64)],
+) -> (usize, Result<(), FriendError>) {
+    let mut landed = 0;
+    let result = append_runs(host, id, group_id, frames, &mut landed).await;
+    (landed, result)
+}
+
+async fn append_runs(
+    host: &dyn FriendHost,
+    id: &GroupId,
+    group_id: &str,
+    frames: &[(Vec<u8>, i64)],
+    landed: &mut usize,
+) -> Result<(), FriendError> {
     let group = held(host, id).await?;
-    let deps = host.group_dm()?;
-    let plain = inner(body, sent_at_ms, u64::try_from(stream_seq).unwrap_or(0));
-    let content = rekindle_dm::seal_for_send(deps.as_ref(), id, &plain)
-        .await
-        .map_err(|e| friend_error(&e))?;
     let ours = host.group_chain_writer(group_id).await?;
     if ours.created {
         announce(host, &group, &ours.record_key).await?;
     }
     let port = records(host)?;
-    let entry = DirectBody::GroupContent(content.clone()).encode();
-    let page = chain::append(port.as_ref(), &ours.record_key, &ours.writer, &[entry])
-        .await
-        .map_err(|e| FriendError::NotReady(format!("group chain append: {e}")))?;
-    let (owner, stream, now) = (
-        state::owner(host)?,
-        stream_name(group_id),
-        host.clock().now_ms_i64(),
-    );
-    let chain_seq = page.last_seq;
-    state::db_call!(host, "note group chain entry", move |conn| {
-        rekindle_db::repo::chain_entries::record(conn, &owner, &stream, chain_seq, stream_seq, now)
-    })
-    .await?;
+    let stream = stream_name(group_id);
+    dm_stream::append_noted(host, port.as_ref(), &ours, &stream, frames, landed).await?;
     super::retire::retire(host, group_id, &ours, port.as_ref()).await;
-    Ok(content)
+    Ok(())
 }
 
 /// Our group chain was made again (its owner keypair was not held): it is
@@ -201,9 +239,13 @@ async fn announce(
     send_pairwise(host, out, DirectBody::StreamRecord).await
 }
 
-/// Send `content` to every other member once, in the background: only a
-/// hint that makes them diff our chain (or, for typing, the whole of it).
-fn spawn_hints(host: &dyn FriendHost, id: &GroupId, content: GroupContent) {
+/// Send each of `contents` (in order) to every other member once, in one
+/// background task: only a hint that makes them diff our chain (or, for
+/// typing, the whole of it).
+fn spawn_hints(host: &dyn FriendHost, id: &GroupId, contents: Vec<GroupContent>) {
+    if contents.is_empty() {
+        return;
+    }
     let (owned, id) = (host.owned(), *id);
     host.scope().spawn_or_drop("group hints", async move {
         let Ok(group) = held(owned.as_ref(), &id).await else {
@@ -212,10 +254,13 @@ fn spawn_hints(host: &dyn FriendHost, id: &GroupId, content: GroupContent) {
         let Ok(deps) = owned.group_dm() else {
             return;
         };
-        let body = DirectBody::GroupContent(content);
-        for to in group.roster.others(&deps.own_identity()) {
-            if let Err(e) = send_to_peer(owned.as_ref(), &to, &body).await {
-                tracing::debug!(to = %to, error = %e, "group hint not sent");
+        let others = group.roster.others(&deps.own_identity());
+        for content in contents {
+            let body = DirectBody::GroupContent(content);
+            for to in &others {
+                if let Err(e) = send_to_peer(owned.as_ref(), to, &body).await {
+                    tracing::debug!(to = %to, error = %e, "group hint not sent");
+                }
             }
         }
     });
@@ -244,7 +289,7 @@ async fn send_typing(
     let content = rekindle_dm::seal_for_send(deps.as_ref(), &id, &plain)
         .await
         .map_err(|e| friend_error(&e))?;
-    spawn_hints(host, &id, content);
+    spawn_hints(host, &id, vec![content]);
     Ok(())
 }
 
