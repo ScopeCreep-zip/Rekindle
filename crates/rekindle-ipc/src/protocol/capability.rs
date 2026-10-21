@@ -155,10 +155,17 @@ impl IpcRequest {
             | Self::Timeout { .. } => Some(C::ModerationWrite),
             Self::ChannelHistory { .. } => Some(C::ChannelsHistory),
             Self::ChannelSend { .. } => Some(C::ChatWrite),
-            Self::DmInbox { .. } | Self::DmHistory { .. } => Some(C::ImHistory),
+            Self::DmInbox { .. }
+            | Self::DmHistory { .. }
+            | Self::GroupDmList
+            | Self::GroupDmMessages { .. } => Some(C::ImHistory),
             Self::DmSend { .. }
             | Self::OutboxRetry { .. }
             | Self::OutboxDiscard { .. }
+            | Self::GroupDmCreate { .. }
+            | Self::GroupDmAccept { .. }
+            | Self::GroupDmDecline { .. }
+            | Self::GroupDmLeave { .. }
             | Self::DmTyping { .. }
             | Self::DmMarkRead { .. } => Some(C::ImWrite),
             Self::PresenceSet { .. }

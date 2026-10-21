@@ -3,6 +3,7 @@
 use super::IpcRequest;
 
 mod friend;
+mod group_dm;
 
 const REDACTED: &str = "***REDACTED***";
 
@@ -83,6 +84,12 @@ impl std::fmt::Debug for IpcRequest {
                 .debug_struct("IntentCancel")
                 .field("intent_id", intent_id)
                 .finish(),
+            Self::GroupDmCreate { .. }
+            | Self::GroupDmAccept { .. }
+            | Self::GroupDmDecline { .. }
+            | Self::GroupDmLeave { .. }
+            | Self::GroupDmList
+            | Self::GroupDmMessages { .. } => self.fmt_group_dm(f),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
             | Self::FriendReject { .. }

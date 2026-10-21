@@ -124,6 +124,9 @@ impl GroupDmDeps for Host {
             .insert(invite.invite.group_id, invite.clone());
         Ok(())
     }
+    async fn invites(&self) -> Result<Vec<PendingInvite>, DmError> {
+        Ok(self.invites.lock().values().cloned().collect())
+    }
     async fn take_invite(&self, id: &GroupId) -> Result<Option<PendingInvite>, DmError> {
         Ok(self.invites.lock().remove(id))
     }

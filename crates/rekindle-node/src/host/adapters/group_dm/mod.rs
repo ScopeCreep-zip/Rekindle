@@ -252,6 +252,22 @@ impl GroupDmDeps for HostGroupDm {
         .await
     }
 
+    async fn invites(&self) -> Result<Vec<PendingInvite>, DmError> {
+        let now = self.host.ctx().clock.now_ms_i64();
+        db!(self, "list invites", |c, o| group_dm_invites::list(
+            c, o, now
+        ))
+        .await?
+        .into_iter()
+        .map(|row| {
+            Ok(PendingInvite {
+                from: row.from_key,
+                invite: invite_of(&row.invite)?,
+            })
+        })
+        .collect()
+    }
+
     async fn take_invite(&self, group_id: &GroupId) -> Result<Option<PendingInvite>, DmError> {
         let (id, now) = (group_id_hex(group_id), self.host.ctx().clock.now_ms_i64());
         let Some(row) = db!(self, "take invite", |c, o| {

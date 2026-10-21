@@ -23,6 +23,7 @@ mod community;
 mod dm;
 mod friends;
 mod governance;
+mod group_dm;
 mod identity;
 mod keys;
 mod network;
@@ -180,6 +181,7 @@ async fn dispatch_command(
         Command::Network(cmd) => network::dispatch(&cmd, client, mode).await,
         Command::Friend(cmd) => friends::dispatch(&cmd, client, mode).await,
         Command::Dm(cmd) => dm::dispatch(&cmd, client, mode).await,
+        Command::Group(cmd) => group_dm::dispatch(&cmd, client, mode).await,
         Command::Community(cmd) => community::dispatch(&cmd, client, mode).await,
         Command::Role(cmd) => governance::dispatch_role(&cmd, client, mode).await,
         Command::Moderate(cmd) => governance::dispatch_moderate(&cmd, client, mode).await,

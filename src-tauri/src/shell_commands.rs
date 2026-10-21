@@ -49,6 +49,13 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("send_message", HostCall::Request("DmSend")),
     ("outbox_retry", HostCall::Request("OutboxRetry")),
     ("outbox_discard", HostCall::Request("OutboxDiscard")),
+    // Group DMs (plan E2.6).
+    ("group_dm_create", HostCall::Request("GroupDmCreate")),
+    ("group_dm_accept", HostCall::Request("GroupDmAccept")),
+    ("group_dm_decline", HostCall::Request("GroupDmDecline")),
+    ("group_dm_leave", HostCall::Request("GroupDmLeave")),
+    ("group_dm_list", HostCall::Request("GroupDmList")),
+    ("group_dm_messages", HostCall::Request("GroupDmMessages")),
     ("send_typing", HostCall::Request("DmTyping")),
     ("get_message_history", HostCall::Request("DmHistory")),
     ("mark_read", HostCall::Request("DmMarkRead")),

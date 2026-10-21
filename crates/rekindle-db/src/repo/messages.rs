@@ -125,7 +125,7 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
     Ok(StoredDm { id, inserted })
 }
 
-fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
+pub(crate) fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
     let stored: String = row.get(6)?;
     Ok(DmRow {
         id: row.get(0)?,
@@ -157,7 +157,8 @@ fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
     })
 }
 
-const DM_COLS: &str = "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
+pub(crate) const DM_COLS: &str =
+    "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
                        message_id, history_gap_through";
 
 /// Store the local marker of a DM history gap (plan E2.5, D23): `peer`'s

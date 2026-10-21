@@ -14,6 +14,7 @@ use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibili
 use crate::daemon::dispatch::DaemonContext;
 
 mod friends;
+mod group_dm;
 
 /// The selection for `request`, an intent of `kind`.
 ///
@@ -100,6 +101,12 @@ pub(crate) async fn select(
         | IpcRequest::DmSend { .. }
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::OutboxDiscard { .. } => friends::selection(ctx, request, &mut s).await?,
+        IpcRequest::GroupDmCreate { .. }
+        | IpcRequest::GroupDmAccept { .. }
+        | IpcRequest::GroupDmDecline { .. }
+        | IpcRequest::GroupDmLeave { .. } => {
+            group_dm::selection(ctx, request, &mut s).await?;
+        }
         IpcRequest::CommunityCreate { name, .. } => {
             s.subject = Subject::Community {
                 id: String::new(),
@@ -224,6 +231,8 @@ pub(crate) async fn select(
         | IpcRequest::IdentitySafetyNumber { .. }
         | IpcRequest::DmHistory { .. }
         | IpcRequest::DmMarkRead { .. }
+        | IpcRequest::GroupDmList
+        | IpcRequest::GroupDmMessages { .. }
         | IpcRequest::CommunityList
         | IpcRequest::CommunityInfo { .. }
         | IpcRequest::CommunityPendingMembers { .. }

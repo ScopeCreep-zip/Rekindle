@@ -323,6 +323,12 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::DmMarkRead { .. }
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::OutboxDiscard { .. } => friends::check(request),
+        IpcRequest::GroupDmCreate { .. }
+        | IpcRequest::GroupDmAccept { .. }
+        | IpcRequest::GroupDmDecline { .. }
+        | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::GroupDmList
+        | IpcRequest::GroupDmMessages { .. } => group_dm::check(request),
         IpcRequest::AvatarGet { public_key: key }
         | IpcRequest::IdentitySafetyNumber { peer: key }
         | IpcRequest::IdentityMarkVerified { peer: key }
@@ -540,5 +546,6 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
 
 mod channels;
 mod friends;
+mod group_dm;
 #[cfg(test)]
 mod tests;

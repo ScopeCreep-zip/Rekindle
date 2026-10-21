@@ -7,6 +7,7 @@
 mod channel;
 mod community;
 mod config;
+mod group_dm;
 mod identity;
 mod keys;
 mod network;
@@ -17,6 +18,7 @@ mod social;
 pub use channel::{ChannelCmd, VoiceCmd};
 pub use community::{CommunityCmd, InviteCmd, ModerateCmd, RoleCmd};
 pub use config::{ConfigCmd, ExportCmd, ImportCmd};
+pub use group_dm::GroupDmCmd;
 pub use identity::{IdentityCmd, InitArgs, StatusArgs, UnlockArgs};
 pub use keys::{KeyCmd, MekCmd, PrekeyCmd};
 pub use network::{NetworkCmd, NodeCmd};
@@ -127,6 +129,10 @@ pub enum Command {
     /// Direct messaging.
     #[command(subcommand)]
     Dm(DmCmd),
+
+    /// Group DMs (3-8 members).
+    #[command(subcommand)]
+    Group(GroupDmCmd),
 
     /// Community lifecycle.
     #[command(subcommand)]

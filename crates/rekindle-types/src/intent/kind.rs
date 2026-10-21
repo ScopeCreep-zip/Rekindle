@@ -127,6 +127,10 @@ pub enum IntentKind {
     RotateFriendToken,
     // Consequential: Membership
     LeaveCommunity,
+    /// Create a group DM: an invite goes to every member (plan E2.6).
+    CreateGroupDm,
+    /// Leave a group DM: every other member rotates its key.
+    LeaveGroupDm,
     // Consequential: Moderation (reversible)
     RemoveTimeout,
     TimeoutMember,
@@ -354,6 +358,8 @@ impl IntentKind {
             | Self::RemoveFriend
             | Self::RotateFriendToken
             | Self::LeaveCommunity
+            | Self::CreateGroupDm
+            | Self::LeaveGroupDm
             | Self::RemoveTimeout
             | Self::TimeoutMember
             | Self::AssignRole

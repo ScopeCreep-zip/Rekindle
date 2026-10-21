@@ -128,6 +128,12 @@ impl IpcRequest {
             Self::DmMarkRead { .. } => ("DmMarkRead", Write, Authenticated),
             Self::OutboxRetry { .. } => ("OutboxRetry", Write, Authenticated),
             Self::OutboxDiscard { .. } => ("OutboxDiscard", Write, Authenticated),
+            Self::GroupDmCreate { .. } => ("GroupDmCreate", Write, Authenticated),
+            Self::GroupDmAccept { .. } => ("GroupDmAccept", Write, Authenticated),
+            Self::GroupDmDecline { .. } => ("GroupDmDecline", Write, Authenticated),
+            Self::GroupDmLeave { .. } => ("GroupDmLeave", Write, Authenticated),
+            Self::GroupDmList => ("GroupDmList", Query, Authenticated),
+            Self::GroupDmMessages { .. } => ("GroupDmMessages", Query, Authenticated),
 
             Self::Undo { .. } => ("Undo", Write, Authenticated),
             Self::Subscribe { .. } => ("Subscribe", Query, Authenticated),

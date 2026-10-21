@@ -17,6 +17,7 @@ pub mod friend_groups;
 pub mod friends;
 pub mod governance_cache;
 pub mod group_dm_invites;
+pub mod group_dm_messages;
 pub mod group_dms;
 pub mod identity;
 pub mod intent_facts;

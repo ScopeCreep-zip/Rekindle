@@ -182,6 +182,26 @@
     "verified": false,
     "verifiedAt": null
   },
+  "groupDm.view.pending": {
+    "epoch": 0,
+    "groupId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+    "members": [
+      {
+        "key": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "label": "bob"
+      },
+      {
+        "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "label": "aaaa aaaa"
+      },
+      {
+        "key": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "label": "carol"
+      }
+    ],
+    "name": "raid night",
+    "pending": true
+  },
   "identity.shown": {
     "communities": 2,
     "displayName": "Ann",

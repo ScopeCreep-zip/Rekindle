@@ -282,6 +282,25 @@ pub enum IpcRequest {
     /// stream.
     OutboxDiscard { client_id: String },
 
+    // ── Group DMs (plan E2.6) ──────────────────────────────────────
+    /// Create a group named `name` of us and `members` (2-7 friends'
+    /// keys); the answer is its id.
+    GroupDmCreate { name: String, members: Vec<String> },
+    /// Accept the pending invite to `group_id` (32 hex).
+    GroupDmAccept { group_id: String },
+    /// Decline the pending invite to `group_id`.
+    GroupDmDecline { group_id: String },
+    /// Leave `group_id`; every other member rotates its key.
+    GroupDmLeave { group_id: String },
+    /// Every group we are in and every invite we have not answered.
+    GroupDmList,
+    /// The newest `limit` messages of `group_id` before `before` (ms).
+    GroupDmMessages {
+        group_id: String,
+        limit: u32,
+        before: Option<i64>,
+    },
+
     // ── Intents (plan D3.3, ADR 0019) ──────────────────────────────
     /// Commit a held action with the proof its review asked for.
     IntentCommit {

@@ -15,6 +15,7 @@ use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
     SafetyNumberView,
 };
+use rekindle_types::dto::group_dm::{GroupDmView, GroupDmViewMember};
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
 use rekindle_types::dto::presence::{OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
@@ -310,6 +311,24 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             body: "gg".into(),
             timestamp: 1_700_000_000_000,
             is_read: false,
+        }),
+    );
+    let member = |digit, label: &str| GroupDmViewMember {
+        key: pk(digit),
+        label: label.into(),
+    };
+    add(
+        "groupDm.view.pending",
+        to(GroupDmView {
+            group_id: "0f".repeat(16),
+            name: "raid night".into(),
+            members: vec![
+                member('b', "bob"),
+                member('a', "aaaa aaaa"),
+                member('c', "carol"),
+            ],
+            epoch: 0,
+            pending: true,
         }),
     );
 }

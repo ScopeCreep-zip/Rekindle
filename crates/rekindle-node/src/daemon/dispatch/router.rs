@@ -166,7 +166,13 @@ async fn route(
         | IpcRequest::DmHistory { .. }
         | IpcRequest::DmMarkRead { .. }
         | IpcRequest::OutboxRetry { .. }
-        | IpcRequest::OutboxDiscard { .. }) => {
+        | IpcRequest::OutboxDiscard { .. }
+        | IpcRequest::GroupDmCreate { .. }
+        | IpcRequest::GroupDmAccept { .. }
+        | IpcRequest::GroupDmDecline { .. }
+        | IpcRequest::GroupDmLeave { .. }
+        | IpcRequest::GroupDmList
+        | IpcRequest::GroupDmMessages { .. }) => {
             friends::route(ctx, state, request, acknowledged).await
         }
 

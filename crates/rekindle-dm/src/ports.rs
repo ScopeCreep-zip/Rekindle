@@ -104,6 +104,9 @@ pub trait GroupDmDeps: Send + Sync {
     /// Hold a verified invite until we answer it.
     async fn stash_invite(&self, invite: &PendingInvite) -> Result<(), DmError>;
 
+    /// Every invite we hold and have not answered, unexpired.
+    async fn invites(&self) -> Result<Vec<PendingInvite>, DmError>;
+
     /// Take (and forget) the pending invite to `group_id`.
     async fn take_invite(&self, group_id: &GroupId) -> Result<Option<PendingInvite>, DmError>;
 

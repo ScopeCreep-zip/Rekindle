@@ -73,6 +73,30 @@ pub fn take(
     Ok(row.filter(|r| now_ms.saturating_sub(r.received_at) <= max_age_ms()))
 }
 
+/// Every invite received within [`INVITE_MAX_AGE`] of `now_ms`, newest
+/// first.
+///
+/// # Errors
+/// The query failed or a row is corrupt.
+pub fn list(conn: &Connection, owner_key: &str, now_ms: i64) -> rusqlite::Result<Vec<InviteRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT group_id, from_key, invite, received_at FROM group_dm_invites \
+         WHERE owner_key = ?1 AND received_at >= ?2 ORDER BY received_at DESC",
+    )?;
+    let rows = stmt.query_map(
+        params![owner_key, now_ms.saturating_sub(max_age_ms())],
+        |r| {
+            Ok(InviteRow {
+                group_id: crate::row::get(r, "group_id")?,
+                from_key: crate::row::get(r, "from_key")?,
+                invite: crate::row::get(r, "invite")?,
+                received_at: crate::row::get(r, "received_at")?,
+            })
+        },
+    )?;
+    rows.collect()
+}
+
 /// Delete every invite older than [`INVITE_MAX_AGE`] at `now_ms`.
 ///
 /// # Errors

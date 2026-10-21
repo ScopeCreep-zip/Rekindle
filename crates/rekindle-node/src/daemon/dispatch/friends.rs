@@ -3,7 +3,7 @@
 //! (`operations::{friend, dm}`) over the Host (`HostFriends`).
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse, Lane};
-use rekindle_transport::operations::{dm, friend, friend::FriendError};
+use rekindle_transport::operations::{dm, friend, friend::FriendError, group_dm};
 
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -169,6 +169,18 @@ pub(crate) async fn route(
             done(dm::retry_send(&host, &client_id, acknowledged.key_change).await)
         }
         IpcRequest::OutboxDiscard { client_id } => done(dm::discard_send(&host, &client_id).await),
+        IpcRequest::GroupDmCreate { name, members } => {
+            answer(group_dm::create(&host, &name, &members).await)
+        }
+        IpcRequest::GroupDmAccept { group_id } => done(group_dm::accept(&host, &group_id).await),
+        IpcRequest::GroupDmDecline { group_id } => done(group_dm::decline(&host, &group_id).await),
+        IpcRequest::GroupDmLeave { group_id } => done(group_dm::leave(&host, &group_id).await),
+        IpcRequest::GroupDmList => answer(group_dm::list(&host).await),
+        IpcRequest::GroupDmMessages {
+            group_id,
+            limit,
+            before,
+        } => answer(group_dm::messages(&host, &group_id, limit, before).await),
         other => unreachable!("{} is not a friend or DM request", other.name()),
     }
 }

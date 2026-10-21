@@ -106,6 +106,8 @@ impl IntentKind {
         Self::RemoveFriend,
         Self::RotateFriendToken,
         Self::LeaveCommunity,
+        Self::CreateGroupDm,
+        Self::LeaveGroupDm,
         Self::RemoveTimeout,
         Self::TimeoutMember,
         Self::AssignRole,

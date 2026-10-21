@@ -7,6 +7,7 @@ pub mod dm;
 pub mod event;
 pub mod friends;
 pub mod game;
+pub mod group_dm;
 pub mod intent;
 pub mod push_relay;
 pub mod relay;

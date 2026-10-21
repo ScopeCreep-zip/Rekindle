@@ -5,6 +5,7 @@ pub mod audit;
 pub mod command;
 pub mod dm;
 pub mod friends;
+pub mod group_dm;
 pub mod identity;
 pub mod presence;
 
