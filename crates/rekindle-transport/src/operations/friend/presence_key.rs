@@ -7,7 +7,7 @@
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, FriendsKey};
 use rekindle_secrets::friend_presence::PresenceKey;
-use rekindle_types::friend::FriendshipState;
+use rekindle_types::friend::{FriendState, FriendshipState};
 
 use super::error::FriendError;
 use super::host::FriendHost;
@@ -60,17 +60,23 @@ pub(crate) async fn rotate(host: &dyn FriendHost, removed: &str) -> Result<(), F
     if let Some(session) = host.session().write().as_mut() {
         session.presence_key = Some(next);
     }
-    let friends: Vec<String> = state::friends(host)
-        .into_iter()
-        .filter(|f| f.friendship_state == FriendshipState::Accepted && f.public_key != removed)
-        .map(|f| f.public_key)
-        .collect();
+    let friends = recipients(state::friends(host), removed);
     for friend in &friends {
         send(host, friend).await;
     }
     host.reseal_own_presence().await;
     tracing::info!(epoch, sent = friends.len(), "presence key rotated");
     Ok(())
+}
+
+/// Who a rotation's new key goes to: every accepted friend but `removed`,
+/// whatever state the removal left their row in.
+fn recipients(friends: Vec<FriendState>, removed: &str) -> Vec<String> {
+    friends
+        .into_iter()
+        .filter(|f| f.friendship_state == FriendshipState::Accepted && f.public_key != removed)
+        .map(|f| f.public_key)
+        .collect()
 }
 
 /// Forget `peer`'s key (they are no friend now).
@@ -112,6 +118,33 @@ pub(crate) async fn on_friends_key(host: &dyn FriendHost, sender: &str, body: &F
         Err(e) => {
             tracing::warn!(from = %sender, error = %e, "friend presence key not stored");
             false
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rekindle_types::friend::{FriendState, FriendshipState};
+
+    use super::recipients;
+
+    fn friend(key: &str, state: FriendshipState) -> FriendState {
+        FriendState::new(key.into(), key.into(), state)
+    }
+
+    /// Plan E2.5: with two accepted friends, removing one sends the new
+    /// epoch to the other only, whether the removed row is still
+    /// `Accepted` (a block, an unfriend received) or already `Removing`;
+    /// a pending friend gets nothing.
+    #[test]
+    fn the_rotated_key_never_reaches_the_removed_friend() {
+        for removed_state in [FriendshipState::Accepted, FriendshipState::Removing] {
+            let friends = vec![
+                friend("alice", FriendshipState::Accepted),
+                friend("bob", removed_state),
+                friend("carol", FriendshipState::PendingOut),
+            ];
+            assert_eq!(recipients(friends, "bob"), ["alice"]);
         }
     }
 }
