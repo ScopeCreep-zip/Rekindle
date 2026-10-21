@@ -14,11 +14,8 @@
 //! (`outgoing_invites::admits_request`), and the inbox is dropped once the
 //! invite leaves `pending`.
 
-use std::time::Duration;
-
-use rekindle_codec::capnp_codec::direct::{DirectBody, FriendRequest, RequestAuth};
+use rekindle_codec::capnp_codec::direct::RequestAuth;
 use rekindle_codec::message::envelope::{InboxCapability, InviteBlob};
-use rekindle_records::port::RouteClass;
 use rekindle_types::dht_layout::request_inbox;
 use zeroize::Zeroizing;
 
@@ -26,10 +23,6 @@ use super::error::FriendError;
 use super::host::FriendHost;
 use super::state;
 use crate::operations::dm;
-
-/// How long a redemption waits for our route, which the request names so
-/// the inviter can answer (as a friend request does).
-const ROUTE_WAIT: Duration = Duration::from_secs(5);
 
 fn records(
     host: &dyn FriendHost,
@@ -73,28 +66,7 @@ pub(crate) async fn redeem(
     invite_id: String,
     message: &str,
 ) -> Result<(), FriendError> {
-    let own = state::own_identity(host)?;
-    if own.profile_dht_key.is_empty() {
-        return Err(FriendError::NotReady(
-            "our profile is not published yet — try again in a moment".to_string(),
-        ));
-    }
-    let routes = host.node()?.routes();
-    let route_blob = tokio::time::timeout(ROUTE_WAIT, routes.available_own(RouteClass::General))
-        .await
-        .map_err(|_| {
-            FriendError::NotReady(
-                "Veilid private route not allocated yet — try again in a moment".to_string(),
-            )
-        })?;
-    let request = DirectBody::FriendRequest(FriendRequest {
-        display_name: own.display_name,
-        message: message.to_string(),
-        profile_dht_key: own.profile_dht_key,
-        route_blob,
-        mailbox_dht_key: own.mailbox_dht_key,
-        auth: RequestAuth::Invite(invite_id),
-    });
+    let request = super::request::build(host, message, RequestAuth::Invite(invite_id)).await?;
     let frame = dm::reply_frame(host, &blob.public_key, &request).await?;
     if frame.len() > request_inbox::MAX_SUBKEY_VALUE_LEN {
         return Err(FriendError::Failed(format!(

@@ -13,7 +13,8 @@
 //! A `FriendRequest` goes by `app_call`, whose cap is the same 32,768 B
 //! (`~/veilid/veilid-core/src/rpc_processor/coders/operations/operation_app_call.rs:3-4`):
 //! it is measured HPKE-sealed with each admission it can carry, the friend
-//! code's token or an invite (plan E2.5, D17).
+//! code's token or an invite (plan E2.5, D17); a redeemed invite's request
+//! is written into the invite's inbox, under the SMPL subkey cap.
 
 use rekindle_codec::capnp_codec::direct::{
     DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, FriendRequest, PqPrekey,
@@ -33,6 +34,16 @@ const ROUTE_BLOB_LEN: usize = 4_096;
 /// A display name and message at their bounds, every character 4 bytes.
 fn widest(chars: usize) -> String {
     "😀".repeat(chars)
+}
+
+/// The longest inbox capability: a record key with its encryption half
+/// and the writer's keypair text, each half 43 base64url characters.
+fn worst_inbox() -> rekindle_codec::message::envelope::InboxCapability {
+    let half = "A".repeat(43);
+    rekindle_codec::message::envelope::InboxCapability {
+        record_key: format!("VLD0:{half}:{half}"),
+        writer: format!("VLD0:{half}:{half}"),
+    }
 }
 
 fn dht_key() -> String {
@@ -112,6 +123,27 @@ async fn friend_request_fits_by_app_call_with_either_admission() {
     }
 }
 
+/// A redeemed invite's request is the same sealed frame written into the
+/// invite's inbox: it fits the writer's subkey, `min(MAX_SUBKEY_SIZE,
+/// MAX_RECORD_DATA_SIZE / 2)` = 32,768 B
+/// (`~/veilid/veilid-core/src/storage_manager/schema.rs` SMPL
+/// `max_value_len`, `storage_manager/types/mod.rs:14-16`).
+#[test]
+fn an_inbox_write_fits_the_smpl_subkey_cap() {
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let request = DirectBody::FriendRequest(FriendRequest {
+        display_name: widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
+        message: widest(rekindle_types::key_format::MAX_MESSAGE_LEN),
+        profile_dht_key: dht_key(),
+        route_blob: vec![0xAB; ROUTE_BLOB_LEN],
+        mailbox_dht_key: dht_key(),
+        auth: RequestAuth::Invite(uuid::Uuid::new_v4().to_string()),
+    });
+    let len = sealed_len(&alice, &bob, &request);
+    let cap = rekindle_types::dht_layout::request_inbox::MAX_SUBKEY_VALUE_LEN;
+    assert!(len <= cap, "inbox write {len} B over {cap} B");
+}
+
 /// The friend code and the invite URL each come back out of the OS
 /// deep-link parser as what was printed.
 #[test]
@@ -144,7 +176,7 @@ fn the_friend_code_and_the_invite_url_round_trip_through_deep_link_parse() {
         &widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
         &dht_key(),
         &dht_key(),
-        &[0xAB; ROUTE_BLOB_LEN],
+        &worst_inbox(),
         Some(&uuid::Uuid::new_v4().to_string()),
         1_715_000_000_000,
     );
@@ -160,7 +192,7 @@ fn the_friend_code_and_the_invite_url_round_trip_through_deep_link_parse() {
     let decoded = rekindle_codec::message::decode_invite_url(&parsed).unwrap();
     rekindle_codec::message::verify_invite_blob(&decoded).unwrap();
     assert_eq!(decoded.invite_id, blob.invite_id);
-    assert_eq!(decoded.route_blob, blob.route_blob);
+    assert_eq!(decoded.inbox, blob.inbox);
 }
 
 #[tokio::test]

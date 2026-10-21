@@ -26,8 +26,8 @@ fn seeded() -> Connection {
         "INSERT INTO missed_calls (call_id, owner_key, peer_key, kind, expired_at) \
          VALUES ('call', ?1, 'peer', 0, 0)",
         "INSERT INTO notification_preferences (owner_key, community_id) VALUES (?1, 'c')",
-        "INSERT INTO outgoing_invites (owner_key, invite_id, created_at, expires_at) \
-         VALUES (?1, 'i', 0, 0)",
+        "INSERT INTO outgoing_invites (owner_key, invite_id, inbox_key, created_at, expires_at) \
+         VALUES (?1, 'i', 'k', 0, 0)",
         "INSERT INTO community_events (owner_key, community_id, id, title, creator_pseudonym, \
          start_time, created_at, recurrence_json, location_json) \
          VALUES (?1, 'c', 'e', 't', 'p', 0, 0, '{}', '{}')",

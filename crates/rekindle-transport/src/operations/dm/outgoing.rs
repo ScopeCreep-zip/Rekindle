@@ -3,20 +3,12 @@
 //! prekey record (plan E2.4); an accept is the PreKeyInit that opens the
 //! session from theirs; a reject is sealed.
 
-use std::time::Duration;
-
-use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, FriendRequest, RequestAuth};
+use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, RequestAuth};
 use rekindle_crypto::signal::PreKeyBundle;
-use rekindle_records::port::RouteClass;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::send::{call_or_send, send_frame, send_to_peer, Delivery};
 use crate::operations::friend::{state, FriendError, FriendHost};
-
-/// How long a friend request waits for our route to be published, when it
-/// is sent within seconds of unlock (B4/P3.2): a request with no route
-/// leaves the receiver no way to answer.
-const ROUTE_WAIT: Duration = Duration::from_secs(5);
 
 /// Send a friend request, sealed to `to` and naming our profile, so the
 /// receiver can open the session from our prekey record when they accept.
@@ -37,30 +29,7 @@ pub async fn send_friend_request(
     message: &str,
     auth: RequestAuth,
 ) -> Result<(), FriendError> {
-    let own = state::own_identity(host)?;
-    if own.profile_dht_key.is_empty() {
-        // A request naming no profile leaves the receiver no prekey
-        // record to open the session from (plan E2.4).
-        return Err(FriendError::NotReady(
-            "our profile is not published yet — try again in a moment".to_string(),
-        ));
-    }
-    let routes = host.node()?.routes();
-    let route_blob = tokio::time::timeout(ROUTE_WAIT, routes.available_own(RouteClass::General))
-        .await
-        .map_err(|_| {
-            FriendError::NotReady(
-                "Veilid private route not allocated yet — try again in a moment".to_string(),
-            )
-        })?;
-    let request = DirectBody::FriendRequest(FriendRequest {
-        display_name: own.display_name,
-        message: message.to_string(),
-        profile_dht_key: own.profile_dht_key,
-        route_blob,
-        mailbox_dht_key: own.mailbox_dht_key,
-        auth,
-    });
+    let request = crate::operations::friend::request::build(host, message, auth).await?;
     if let Delivery::Receipted = call_or_send(host, to, &request).await? {
         host.publish(SubscriptionEvent::Friend(
             FriendEvent::RequestAcknowledged {

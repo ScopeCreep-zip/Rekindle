@@ -20,6 +20,7 @@ mod list_record;
 pub(crate) mod presence_key;
 mod qr;
 mod remove;
+pub(crate) mod request;
 mod rotate;
 pub mod session_reset;
 pub use session_reset::expire_resets;
