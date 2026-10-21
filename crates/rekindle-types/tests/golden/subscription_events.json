@@ -608,6 +608,7 @@
     }
   },
   "intent.fact.sessionDeleted": "sessionDeleted",
+  "intent.fact.sessionKeptUntilReplaced": "sessionKeptUntilReplaced",
   "intent.fact.subjectNotTold": "subjectNotTold",
   "intent.intentClass.consequential": "consequential",
   "intent.intentClass.destructive": "destructive",
