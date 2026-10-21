@@ -171,9 +171,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// went to (for `retire_through`), and `messages.history_gap_through`, the
 /// stored `HistoryGap` marker.
 ///
-/// 110 (plan E2.6, G4): the SMPL group DM tables `dms`, `dm_messages` and
+/// 109 (plan E2.6, G4): the SMPL group DM tables `dms`, `dm_messages` and
 /// `dm_messages_fts` are gone; a group DM is `group_dms`.
-pub const SCHEMA_VERSION: i64 = 110;
+pub const SCHEMA_VERSION: i64 = 109;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
