@@ -114,21 +114,17 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
     if kind == DmTypeId::FriendRequest {
-        match send::call_datagram(host, to, datagram.clone()).await {
-            Ok(_) => {
-                host.publish(SubscriptionEvent::Friend(
-                    FriendEvent::RequestAcknowledged {
-                        peer_key: to.to_string(),
-                    },
-                ));
-                return Attempt::Receipted;
-            }
-            Err(e) => {
-                tracing::debug!(to = %to, error = %e,
-                    "friend request not receipted by app_call — attempted again");
-                return Attempt::Deferred;
-            }
+        if let Err(e) = send::call_datagram(host, to, datagram).await {
+            tracing::debug!(to = %to, error = %e,
+                "friend request not receipted by app_call — attempted again");
+            return Attempt::Deferred;
         }
+        host.publish(SubscriptionEvent::Friend(
+            FriendEvent::RequestAcknowledged {
+                peer_key: to.to_string(),
+            },
+        ));
+        return Attempt::Receipted;
     }
     match send::route_send_datagram(host, to, &datagram, kind, true).await {
         Ok(true) if kind == DmTypeId::Unfriended => Attempt::Awaiting,
