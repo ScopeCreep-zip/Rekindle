@@ -15,6 +15,10 @@ use crate::stream::StreamKind;
 pub enum OutboxError {
     #[error("outbox storage: {0}")]
     Storage(String),
+    /// The row's kind is the engine's to settle, never the user's to retry
+    /// (a call media key, whose deadline is its session's end).
+    #[error("a {} row is not retried by the user", .0.as_str())]
+    NotRetryable(StreamKind),
 }
 
 /// A send intent to store at the end of its stream.
@@ -72,6 +76,11 @@ pub enum AttemptOutcome {
     /// It can never be sent as it stands (`prekey_rejected`): the row
     /// fails and wedges its stream until Retry or Discard.
     Wedged(String),
+    /// It is no longer worth sending (a call media key a later rotation
+    /// replaced, or whose recipient left): the row settles `failed` with
+    /// the reason, unsent, and leaves its stream, so the rows behind it go
+    /// on.
+    Superseded(String),
 }
 
 /// A row's state as the user sees it, published on every change.
@@ -114,6 +123,10 @@ pub trait OutboxDeps: Send + Sync {
     async fn due(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError>;
     /// The unsettled rows of `stream`, in `stream_seq` order.
     async fn stream_rows(&self, stream: &str) -> Result<Vec<OutboxRow>, OutboxError>;
+    /// The unsettled rows of every stream whose name starts with `prefix`
+    /// (one call session's `media_key` streams), in stream and
+    /// `stream_seq` order.
+    async fn prefix_rows(&self, prefix: &str) -> Result<Vec<OutboxRow>, OutboxError>;
     /// The unsettled rows whose deadline is at or before `now`.
     async fn expired(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError>;
     /// The earliest due time or deadline of an unsettled row.

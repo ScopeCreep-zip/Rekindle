@@ -170,6 +170,12 @@ impl<D: OutboxDeps> Outbox<D> {
                 }
             }
             AttemptOutcome::Wedged(reason) => self.fail(row, reason).await?,
+            AttemptOutcome::Superseded(reason) => {
+                self.deps.settle(&row.client_id, SendState::Failed).await?;
+                self.deps
+                    .publish(StateChange::of(row, SendState::Failed, Some(reason)));
+                self.wake.notify_one();
+            }
         }
         Ok(())
     }
@@ -318,11 +324,15 @@ impl<D: OutboxDeps> Outbox<D> {
     /// This is the one move down the lattice, and only the user makes it.
     ///
     /// # Errors
-    /// The storage failed.
+    /// The storage failed, or the row's kind is not the user's to retry
+    /// ([`OutboxError::NotRetryable`]; nothing changed).
     pub async fn retry(&self, client_id: &str) -> Result<bool, OutboxError> {
         let Some(row) = self.deps.row(client_id).await? else {
             return Ok(false);
         };
+        if !row.kind.user_retryable() {
+            return Err(OutboxError::NotRetryable(row.kind));
+        }
         if !matches!(row.state, SendState::Failed | SendState::Queued) {
             return Ok(false);
         }
@@ -363,6 +373,31 @@ impl<D: OutboxDeps> Outbox<D> {
         ));
         self.wake.notify_one();
         Ok(true)
+    }
+
+    /// Discard every unsettled row of the `kind` streams whose scope starts
+    /// with `scope_prefix` (a call session ended: its `media_key` rows go,
+    /// whoever they were for); each settles `failed` with `reason`.
+    /// Returns how many were discarded.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn discard_streams(
+        &self,
+        kind: StreamKind,
+        scope_prefix: &str,
+        reason: &str,
+    ) -> Result<usize, OutboxError> {
+        let rows = self.deps.prefix_rows(&kind.stream(scope_prefix)).await?;
+        for row in &rows {
+            self.deps.settle(&row.client_id, SendState::Failed).await?;
+            self.deps.publish(StateChange::of(
+                row,
+                SendState::Failed,
+                Some(reason.to_owned()),
+            ));
+        }
+        Ok(rows.len())
     }
 
     /// A frame `client_id` arrived on the peer's `stream`: `true` the

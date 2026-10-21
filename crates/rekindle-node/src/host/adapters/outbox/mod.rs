@@ -7,6 +7,7 @@
 mod channel_post;
 mod dht_write;
 mod dm;
+mod media_key;
 mod senders;
 #[cfg(test)]
 mod tests;
@@ -28,6 +29,7 @@ use tokio::sync::broadcast;
 pub use channel_post::{ChannelPosts, SUPERSEDED};
 pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
+pub use media_key::{MediaKeyCarrier, MediaKeyDelivery, MediaKeys, SESSION_ENDED};
 pub use senders::{Senders, StreamSender};
 
 /// How many state changes a slow subscriber may fall behind by.
@@ -192,6 +194,15 @@ impl OutboxDeps for HostOutbox {
         let stream = stream.to_owned();
         let rows = db
             .call(move |c| repo::stream_rows(c, &owner, &stream))
+            .await;
+        rows_of(rows.map_err(|e| storage(&e))?)
+    }
+
+    async fn prefix_rows(&self, prefix: &str) -> Result<Vec<OutboxRow>, OutboxError> {
+        let (db, owner) = self.db()?;
+        let prefix = prefix.to_owned();
+        let rows = db
+            .call(move |c| repo::prefix_rows(c, &owner, &prefix))
             .await;
         rows_of(rows.map_err(|e| storage(&e))?)
     }

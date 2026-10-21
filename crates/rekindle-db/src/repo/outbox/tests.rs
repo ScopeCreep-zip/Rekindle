@@ -184,3 +184,21 @@ fn a_received_message_keeps_the_senders_stream_seq() {
     assert_eq!(seq("m1"), Some(7));
     assert_eq!(seq("unknown"), None);
 }
+
+#[test]
+fn prefix_rows_are_one_sessions_streams_only() {
+    let conn = fixture::conn();
+    for (stream, id) in [
+        ("media_key:c/ch/bob", "a"),
+        ("media_key:c/ch/carol", "b"),
+        ("media_key:c/ch2/bob", "c"),
+        ("dm:bob", "d"),
+    ] {
+        enqueue_with_echo(&conn, &row(stream, id, 0), None).unwrap();
+    }
+    let ids: Vec<String> = (prefix_rows(&conn, OWNER, "media_key:c/ch/").unwrap())
+        .into_iter()
+        .map(|r| r.client_id)
+        .collect();
+    assert_eq!(ids, ["a", "b"]);
+}

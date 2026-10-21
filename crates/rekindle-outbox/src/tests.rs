@@ -102,6 +102,15 @@ impl OutboxDeps for Fake {
         });
         Ok(due)
     }
+    async fn prefix_rows(&self, prefix: &str) -> Result<Vec<OutboxRow>, OutboxError> {
+        let s = self.store.lock();
+        let mut rows: Vec<OutboxRow> = (s.rows.iter())
+            .filter(|r| unsettled(r) && r.stream.starts_with(prefix))
+            .cloned()
+            .collect();
+        rows.sort_by(|a, b| (&a.stream, a.stream_seq).cmp(&(&b.stream, b.stream_seq)));
+        Ok(rows)
+    }
     async fn stream_rows(&self, stream: &str) -> Result<Vec<OutboxRow>, OutboxError> {
         let s = self.store.lock();
         let mut rows: Vec<OutboxRow> = (s.rows.iter())
@@ -527,3 +536,5 @@ async fn a_channel_post_stream_settles_from_its_write_settle() {
         ]
     );
 }
+
+mod media_key;

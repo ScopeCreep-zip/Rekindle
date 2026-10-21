@@ -284,6 +284,21 @@ pub fn due(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result<Vec
     )
 }
 
+/// The unsettled rows of every stream whose name starts with `prefix` (a
+/// call session's `media_key` streams, one per recipient), in stream and
+/// `stream_seq` order: the session's end discards them together.
+///
+/// # Errors
+/// The query failed.
+pub fn prefix_rows(conn: &Connection, owner_key: &str, prefix: &str) -> rusqlite::Result<Vec<Row>> {
+    query_rows(
+        conn,
+        "o.owner_key = ?1 AND substr(o.stream, 1, length(?2)) = ?2 \
+         AND o.state IN ('queued', 'sent') ORDER BY o.stream, o.stream_seq",
+        params![owner_key, prefix],
+    )
+}
+
 /// The unsettled rows (`queued`, or `sent` and waiting) of `stream`, in
 /// `stream_seq` order: a stream whose send is a write the record pool
 /// reports settled (`channel_post`) settles them together.

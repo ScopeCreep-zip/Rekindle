@@ -17,8 +17,9 @@ pub enum StreamKind {
     DhtWrite,
     /// A community channel post (C7.14).
     ChannelPost,
-    /// A call media key to one recipient (C7.22); its deadline is the
-    /// session's end.
+    /// A call media key, sealed, to one recipient of one channel session
+    /// (C7.22): the session's end discards the session's rows, so the
+    /// horizon is only an upper bound.
     MediaKey,
 }
 
@@ -64,6 +65,14 @@ impl StreamKind {
     #[must_use]
     pub fn awaits_ack(self) -> bool {
         matches!(self, Self::Dm | Self::MediaKey)
+    }
+
+    /// Whether the user may Retry a failed row of this kind. A call media
+    /// key may not: the session's end discards it, and a key is never
+    /// given a fresh deadline past the call it keys.
+    #[must_use]
+    pub fn user_retryable(self) -> bool {
+        !matches!(self, Self::MediaKey)
     }
 
     /// This kind's default retry policy.
