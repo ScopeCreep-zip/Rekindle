@@ -111,6 +111,16 @@ impl StateChange {
 }
 
 /// The engine's host.
+/// Whether a row with `outcome` stays ahead of its stream's later rows
+/// (`queued` or wedged): they must not be attempted past it.
+#[must_use]
+pub fn holds_back(outcome: &AttemptOutcome) -> bool {
+    matches!(
+        outcome,
+        AttemptOutcome::Deferred | AttemptOutcome::Wedged(_)
+    )
+}
+
 #[async_trait]
 pub trait OutboxDeps: Send + Sync {
     /// The local echo written with a row (a direct message's `messages`
@@ -156,6 +166,23 @@ pub trait OutboxDeps: Send + Sync {
 
     /// Send `row` once.
     async fn attempt(&self, row: &OutboxRow) -> AttemptOutcome;
+    /// Send `rows`, the due rows of one stream in `stream_seq` order, once
+    /// each, stopping after the first that stays behind ([`holds_back`]):
+    /// the outcomes of the rows attempted, a prefix of `rows`; the rest
+    /// were not attempted. A host whose send carries several rows at once
+    /// (the `dm` chain's page, plan E2.B F2) overrides it.
+    async fn attempt_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        let mut outcomes = Vec::with_capacity(rows.len());
+        for row in rows {
+            let outcome = self.attempt(row).await;
+            let stop = holds_back(&outcome);
+            outcomes.push(outcome);
+            if stop {
+                break;
+            }
+        }
+        outcomes
+    }
     /// Make again the external write that carries `row`, a row of a kind
     /// the engine never attempts (the user's Retry of a failed channel
     /// post, under its client id); the write's settle settles the row.

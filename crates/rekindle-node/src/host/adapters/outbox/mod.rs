@@ -302,6 +302,10 @@ impl OutboxDeps for HostOutbox {
         self.senders.send(row).await
     }
 
+    async fn attempt_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        self.senders.send_stream(rows).await
+    }
+
     async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
         self.senders.reissue(row).await
     }

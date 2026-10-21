@@ -4,12 +4,13 @@
 //! arrives exactly once and in order, through the diff of the chain that a
 //! later hint (or a resend's) triggers; and no chain page holds plaintext.
 
+use std::time::Duration;
+
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_netsim::{Fault, Netsim};
-use rekindle_types::dht_layout::dm_participant;
+use rekindle_netsim::Fault;
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
-use crate::pair::{befriend, key, send, talk, LIMIT};
+use crate::pair::{befriend, key, retired, send, talk, unretired, LIMIT};
 
 async fn received(node: &SimNode, peer: &str) -> Vec<String> {
     let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
@@ -28,8 +29,21 @@ async fn received(node: &SimNode, peer: &str) -> Vec<String> {
         .collect()
 }
 
+/// How long after the last send every message is on Jon's side (E2.B
+/// F2), from the calibrated latencies: the append in flight and the one
+/// that carries the queued run (the outbox hands a stream's due rows over
+/// together; each append is a `HEAD` read and two sets, page then `HEAD`),
+/// the hint, then a running diff's re-read and a full diff, each reading
+/// `HEAD` and the retire mark at once (the empty mark runs to the fanout
+/// deadline), one get per page and one ack per entry.
+fn recovery_bound(entries: u32, pages: u32) -> Duration {
+    use rekindle_netsim::latency::{DEADLINE, GET, MESSAGE, SET};
+    let append = GET.max + SET.max * 2;
+    let diff = DEADLINE.max + GET.max * pages + MESSAGE.max * entries;
+    append * 2 + MESSAGE.max + diff * 2
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E2.B finding F2: chain recovery takes ~707 s under latency, past LIMIT * 4 in the parallel suite; triage the chain read path"]
 async fn lost_hints_are_recovered_from_the_chain_exactly_once_in_order() {
     let (sim, mut nodes) = start(2, 71).await;
     for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
@@ -48,17 +62,20 @@ async fn lost_hints_are_recovered_from_the_chain_exactly_once_in_order() {
     sim.fault(Fault::DropMessages { per_mille: 0 });
     let last = "chain message 21".to_string();
     send(&nodes[0], &jon, &last).await;
+    let sent = tokio::time::Instant::now();
 
     let mut expected: Vec<String> = vec!["hello: 0 to 1".into()];
     expected.extend(bodies.iter().cloned());
     expected.push(last.clone());
     assert!(
-        eventually(&sim, LIMIT * 4, || async {
+        eventually(&sim, recovery_bound(21, 3), || async {
             let got = received(&nodes[1], &ida).await;
             expected.iter().all(|b| got.contains(b))
         })
         .await,
-        "every message reached Jon"
+        "every message reached Jon within {:?} of the last send (after {:?})",
+        recovery_bound(21, 3),
+        sent.elapsed()
     );
     let mut got = received(&nodes[1], &ida).await;
     for body in &expected {
@@ -145,32 +162,6 @@ async fn a_lost_stream_record_is_resent_until_acknowledged() {
     );
 }
 
-/// The records whose watched changes reached Jon that carry no retire mark yet:
-/// her participant record among them (a record's `RETIRE_THROUGH` subkey
-/// is empty until its first retire).
-fn unretired(sim: &Netsim) -> Vec<String> {
-    let mut keys: Vec<String> = sim
-        .trace()
-        .of(1)
-        // A change comes from the replica that held the watch (Veilid's
-        // ValueChanged is the replica's RPC), not from Ida's node.
-        .filter_map(|e| {
-            let (_, key) = e.strip_prefix("1<-")?.split_once(" ValueChange ")?;
-            Some(key.to_string())
-        })
-        .filter(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_none())
-        .collect();
-    keys.sort();
-    keys.dedup();
-    keys
-}
-
-/// Whether one of `keys` now carries a retire mark: Ida's chain is retired.
-fn retired(sim: &Netsim, keys: &[String]) -> bool {
-    keys.iter()
-        .any(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_some())
-}
-
 /// Ida retires her chain past entries Jon acknowledged (by their hints)
 /// but never diffed (his DHT was off); 31 days on, his diff stores a
 /// `HistoryGap` marker in his history.
@@ -201,7 +192,7 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,
     });
-    let keys = unretired(&sim);
+    let keys = unretired(&sim, 1);
     send(&nodes[0], &jon, "after the horizon").await;
     // The send is committed, not yet appended: the append retires the
     // stretch, and Jon must not be back (his watch and catch-up read the
@@ -270,7 +261,7 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
         .await,
         "Jon acknowledged it from its hint"
     );
-    let keys = unretired(&sim);
+    let keys = unretired(&sim, 1);
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,

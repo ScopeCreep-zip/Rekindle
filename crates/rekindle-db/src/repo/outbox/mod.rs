@@ -249,8 +249,19 @@ const COLS: &str = "o.stream, o.stream_seq, o.client_id, o.kind, o.payload, o.st
                     o.next_at, o.deadline, o.wedge_reason, \
                     (SELECT e.timestamp FROM messages e WHERE e.id = o.echo_id)";
 
+/// A row whose stream has no earlier row wedged (`failed`) or still to
+/// send (`queued`) and not due at `?2`: the stream's run of due rows from
+/// its head, which the engine attempts together in `stream_seq` order and
+/// stops at the first that stays behind (so a batch, the `dm` chain's
+/// page, carries them at once, plan E2.B F2), and the rows already past
+/// it.
+const DUE_UNBLOCKED: &str = "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
+                         AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
+                         AND (h.state = 'failed' OR (h.state = 'queued' AND h.next_at > ?2)))";
+
 /// A row whose stream has no earlier row still to send (`queued`) or
-/// wedged (`failed`): the stream head and the rows already past it.
+/// wedged (`failed`): the stream head and the rows already past it, whose
+/// `next_at` is when the engine next has work.
 const UNBLOCKED: &str = "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
                          AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
                          AND h.state IN ('queued', 'failed'))";
@@ -300,7 +311,7 @@ pub fn due(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result<Vec
         conn,
         &format!(
             "o.owner_key = ?1 AND o.state IN ('queued', 'sent') AND o.next_at <= ?2 \
-             AND {UNBLOCKED} ORDER BY o.next_at, o.stream, o.stream_seq"
+             AND {DUE_UNBLOCKED} ORDER BY o.next_at, o.stream, o.stream_seq"
         ),
         params![owner_key, now],
     )

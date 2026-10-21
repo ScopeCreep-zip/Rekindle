@@ -143,6 +143,17 @@ pub async fn append(
     Ok(newest)
 }
 
+/// `entries` cut, in order, into the fewest runs that each fit one page
+/// whatever page it follows: a writer's queued entries go on the chain one
+/// [`append`] per run, so a batch costs a `HEAD` read and two sets per page
+/// rather than per entry (plan E2.B, F2).
+///
+/// # Errors
+/// An entry that no page holds alone.
+pub fn page_runs(entries: &[Vec<u8>]) -> Result<Vec<&[Vec<u8>]>, ChainError> {
+    page::runs(entries)
+}
+
 /// Create a DFLT(1) page, write its one subkey, and drop its owner keypair.
 async fn write_sealed_page(port: &dyn RecordPort, bytes: Vec<u8>) -> Result<String, ChainError> {
     let (lease, page_key, owner) = port.create(&schema::single(), None).await?;
@@ -165,8 +176,10 @@ pub async fn read_after(
     participant: &str,
     cursor: u64,
 ) -> Result<ChainRead, ChainError> {
-    let newest = head(port, participant).await?;
-    let retired = retired_through(port, participant).await?;
+    // Two subkeys, two fanouts: read at once (the mark, empty until the
+    // first retire, costs a whole fanout deadline).
+    let (newest, retired) =
+        tokio::try_join!(head(port, participant), retired_through(port, participant))?;
     let last_seq = newest.as_ref().map_or(0, |p| p.last_seq);
     if retired > last_seq {
         return Err(ChainError::Malformed {

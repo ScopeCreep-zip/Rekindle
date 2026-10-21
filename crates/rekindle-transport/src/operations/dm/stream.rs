@@ -44,45 +44,66 @@ impl std::fmt::Debug for ParticipantWriter {
     }
 }
 
-/// Append `datagram` (the wired frame of our `dm` row `stream_seq` to
-/// `to`) to our chain to them, note the entry, and retire what may go
+/// Append `frames` (the wired frames of our `dm` rows to `to`, each with
+/// its `stream_seq`, in order) to our chain to them, as few pages as hold
+/// them ([`chain::page_runs`]: a batch costs two sets per page, not per
+/// frame, plan E2.B F2), note each entry, and retire what may go
 /// ([`retire`]). A record created for it has its key committed to `to`
-/// first.
+/// first. How many frames, from the first, are on the chain, and the error
+/// that stopped the rest.
 ///
-/// # Errors
-/// The record could not be made or the page did not land: the frame is
-/// not on the chain and must not be counted as sent.
+/// A frame not counted is not on the chain and must not be counted as
+/// sent: the record could not be made or its page did not land.
 pub async fn append(
     host: &dyn FriendHost,
     to: &str,
-    datagram: &[u8],
-    stream_seq: i64,
-) -> Result<u64, FriendError> {
+    frames: &[(Vec<u8>, i64)],
+) -> (usize, Result<(), FriendError>) {
+    let mut landed = 0;
+    let result = append_runs(host, to, frames, &mut landed).await;
+    (landed, result)
+}
+
+async fn append_runs(
+    host: &dyn FriendHost,
+    to: &str,
+    frames: &[(Vec<u8>, i64)],
+    landed: &mut usize,
+) -> Result<(), FriendError> {
     let ours = host.participant_writer(to).await?;
     if ours.created {
         send_record(host, to, &ours.record_key).await?;
     }
     let port = records(host)?;
-    let page = chain::append(
-        port.as_ref(),
-        &ours.record_key,
-        &ours.writer,
-        &[datagram.to_vec()],
-    )
-    .await
-    .map_err(|e| FriendError::NotReady(format!("chain append: {e}")))?;
-    let (owner, peer, now) = (
-        state::owner(host)?,
-        to.to_string(),
-        host.clock().now_ms_i64(),
-    );
-    let chain_seq = page.last_seq;
-    state::db_call!(host, "note chain entry", move |conn| {
-        rekindle_db::repo::chain_entries::record(conn, &owner, &peer, chain_seq, stream_seq, now)
-    })
-    .await?;
+    let datagrams: Vec<Vec<u8>> = frames.iter().map(|(d, _)| d.clone()).collect();
+    let runs = chain::page_runs(&datagrams)
+        .map_err(|e| FriendError::Failed(format!("chain append: {e}")))?;
+    for run in runs {
+        let page = chain::append(port.as_ref(), &ours.record_key, &ours.writer, run)
+            .await
+            .map_err(|e| FriendError::NotReady(format!("chain append: {e}")))?;
+        let noted: Vec<(u64, i64)> = (page.first_seq..)
+            .zip(&frames[*landed..*landed + run.len()])
+            .map(|(chain_seq, (_, stream_seq))| (chain_seq, *stream_seq))
+            .collect();
+        *landed += run.len();
+        let (owner, peer, now) = (
+            state::owner(host)?,
+            to.to_string(),
+            host.clock().now_ms_i64(),
+        );
+        state::db_call!(host, "note chain entries", move |conn| {
+            for (chain_seq, stream_seq) in noted {
+                rekindle_db::repo::chain_entries::record(
+                    conn, &owner, &peer, chain_seq, stream_seq, now,
+                )?;
+            }
+            Ok(())
+        })
+        .await?;
+    }
     retire(host, to, &ours, port.as_ref()).await;
-    Ok(chain_seq)
+    Ok(())
 }
 
 /// Retire our chain to `to` through the newest entry the peer has

@@ -164,59 +164,113 @@ pub enum Attempt {
     Wedged(String),
 }
 
-/// Frame entry `stream_seq` of our stream to `to`, append it to our chain
-/// to them (plan E2.5, D23: the chain is authoritative), then send it once
-/// as the hint that makes the peer diff. Once on the chain it counts as
-/// sent whether or not the hint left. Every attempt's frame carries
-/// `sent_at`, when the entry was written (its echo's time; now for a row
-/// with none), so the peer orders it by that and not by the attempt that
-/// reached them (E2.B F3).
-pub async fn attempt(
+/// One `dm` row of our stream to a peer, as [`attempt`] takes it.
+#[derive(Debug, Clone, Copy)]
+pub struct RowAttempt<'a> {
+    pub stream_seq: i64,
+    /// When the entry was written (its echo's time; now for a row with
+    /// none).
+    pub sent_at: Option<i64>,
+    pub payload: &'a [u8],
+}
+
+/// A row framed for the wire, or how its attempt already ended.
+enum Framed {
+    /// A `StreamRecord`: it names the chain and is not on it.
+    Record(Vec<u8>, DmTypeId),
+    /// A frame for the chain.
+    Entry(Vec<u8>, DmTypeId),
+}
+
+/// Frame `rows` (the due run of our stream to `to`, in `stream_seq`
+/// order), append the frames to our chain to them at once (plan E2.5,
+/// D23: the chain is authoritative; the run fills as few pages as hold it,
+/// E2.B F2), then send each once as the hint that makes the peer diff.
+/// Once on the chain a row counts as sent whether or not its hint left.
+/// Every attempt's frame carries `sent_at`, so the peer orders it by that
+/// and not by the attempt that reached them (E2.B F3). The outcomes of a
+/// prefix of `rows`, in order: the rows after the first that stays behind
+/// (`rekindle_outbox::holds_back`) are not attempted.
+pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -> Vec<Attempt> {
+    let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
+    let mut chained: Vec<(usize, Vec<u8>, DmTypeId)> = Vec::new();
+    for row in rows {
+        let outcome = match frame_row(host, to, row).await {
+            Err(outcome) => outcome,
+            // A `StreamRecord` waits for the peer's `DmAck` (resent until
+            // then) like any `dm` row.
+            Ok(Framed::Record(datagram, type_id)) => {
+                match send::route_send_datagram(host, to, &datagram, type_id, true).await {
+                    Ok(true) => Attempt::Sent,
+                    Ok(false) | Err(FriendError::NotReady(_)) => Attempt::Deferred,
+                    Err(e) => Attempt::Wedged(e.to_string()),
+                }
+            }
+            Ok(Framed::Entry(datagram, type_id)) => {
+                chained.push((outcomes.len(), datagram, type_id));
+                outcomes.push(None);
+                continue;
+            }
+        };
+        let stop = matches!(outcome, Attempt::Deferred | Attempt::Wedged(_));
+        outcomes.push(Some(outcome));
+        if stop {
+            break;
+        }
+    }
+    if !chained.is_empty() {
+        let frames: Vec<(Vec<u8>, i64)> = chained
+            .iter()
+            .map(|(i, datagram, _)| (datagram.clone(), rows[*i].stream_seq))
+            .collect();
+        let (landed, appended) = super::stream::append(host, to, &frames).await;
+        for (i, datagram, type_id) in chained.iter().take(landed) {
+            if let Err(e) = send::route_send_datagram(host, to, datagram, *type_id, true).await {
+                tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
+            }
+            outcomes[*i] = Some(Attempt::Sent);
+        }
+        if let (Err(e), Some((i, _, _))) = (appended, chained.get(landed)) {
+            outcomes[*i] = Some(match e {
+                FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_) => {
+                    Attempt::Deferred
+                }
+                e => Attempt::Wedged(e.to_string()),
+            });
+            outcomes.truncate(*i + 1);
+        }
+    }
+    outcomes.into_iter().map_while(|o| o).collect()
+}
+
+/// Frame `row` afresh for this attempt.
+async fn frame_row(
     host: &dyn FriendHost,
     to: &str,
-    stream_seq: i64,
-    sent_at: Option<i64>,
-    payload: &[u8],
-) -> Attempt {
-    let body = match decode(payload) {
-        Ok(body) => body,
-        Err(e) => return Attempt::Wedged(format!("payload: {e}")),
-    };
-    let seq = u64::try_from(stream_seq).unwrap_or(0);
-    let sent_at_ms = sent_at
+    row: &RowAttempt<'_>,
+) -> Result<Framed, Attempt> {
+    let body = decode(row.payload).map_err(|e| Attempt::Wedged(format!("payload: {e}")))?;
+    let seq = u64::try_from(row.stream_seq).unwrap_or(0);
+    let sent_at_ms = row
+        .sent_at
         .and_then(|t| u64::try_from(t).ok())
         .unwrap_or_else(|| host.clock().now_ms());
     let frame = match send::stream_frame(host, to, &body, seq, sent_at_ms).await {
         Ok(frame) => frame,
         Err(FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_)) => {
-            return Attempt::Deferred;
+            return Err(Attempt::Deferred);
         }
-        Err(e) => return Attempt::Wedged(e.to_string()),
+        Err(e) => return Err(Attempt::Wedged(e.to_string())),
     };
-    let datagram = match super::frame::wire(&frame) {
-        Ok(datagram) => datagram,
-        Err(e) => return Attempt::Wedged(e.to_string()),
-    };
-    // A `StreamRecord` names the chain; it is not on it, and it waits for
-    // the peer's `DmAck` (resent until then) like any `dm` row.
+    let datagram = super::frame::wire(&frame).map_err(|e| Attempt::Wedged(e.to_string()))?;
     if matches!(body, DirectBody::StreamRecord(_)) {
-        return match send::route_send_datagram(host, to, &datagram, frame.type_id, true).await {
-            Ok(true) => Attempt::Sent,
-            Ok(false) | Err(FriendError::NotReady(_)) => Attempt::Deferred,
-            Err(e) => Attempt::Wedged(e.to_string()),
-        };
+        return Ok(Framed::Record(datagram, frame.type_id));
     }
-    match super::stream::append(host, to, &datagram, stream_seq).await {
-        Ok(_) => {}
-        Err(FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_)) => {
-            return Attempt::Deferred;
-        }
-        Err(e) => return Attempt::Wedged(e.to_string()),
-    }
-    if let Err(e) = send::route_send_datagram(host, to, &datagram, frame.type_id, true).await {
-        tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
-    }
-    Attempt::Sent
+    // A frame no chain page holds can never be sent; the others of the
+    // batch are not held back by it.
+    rekindle_records::chain::page_runs(std::slice::from_ref(&datagram))
+        .map_err(|e| Attempt::Wedged(format!("chain append: {e}")))?;
+    Ok(Framed::Entry(datagram, frame.type_id))
 }
 
 #[cfg(test)]

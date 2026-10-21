@@ -152,12 +152,39 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(())
     }
 
-    async fn attempt(&self, row: &OutboxRow) -> Result<(), OutboxError> {
-        if row.kind.policy() == OutboxRetry::SettledExternally {
-            return Ok(());
+    /// Attempt `rows`, due rows in `due` order: each stream's run of due
+    /// rows goes to the host together, in `stream_seq` order, so a send that carries
+    /// several (the `dm` chain's page) makes one write for them (E2.B F2).
+    async fn attempt_all(&self, rows: Vec<OutboxRow>) -> Result<(), OutboxError> {
+        let mut streams: Vec<Vec<OutboxRow>> = Vec::new();
+        for row in rows {
+            if row.kind.policy() == OutboxRetry::SettledExternally {
+                continue;
+            }
+            match streams.iter_mut().find(|s| s[0].stream == row.stream) {
+                Some(stream) => stream.push(row),
+                None => streams.push(vec![row]),
+            }
         }
+        for mut stream in streams {
+            stream.sort_by_key(|row| row.stream_seq);
+            // A prefix: the rows past the first that stayed behind were not
+            // attempted and keep their schedule.
+            let outcomes = self.deps.attempt_stream(&stream).await;
+            for (row, outcome) in stream.iter().zip(outcomes) {
+                self.settle_attempt(row, outcome).await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn settle_attempt(
+        &self,
+        row: &OutboxRow,
+        outcome: AttemptOutcome,
+    ) -> Result<(), OutboxError> {
         let attempts = row.attempts.saturating_add(1);
-        match self.deps.attempt(row).await {
+        match outcome {
             AttemptOutcome::Sent if !row.kind.awaits_ack() => {
                 self.deps.settle(&row.client_id, SendState::Sent).await?;
                 self.deps
@@ -205,9 +232,7 @@ impl<D: OutboxDeps> Outbox<D> {
         for row in self.deps.expired(now).await? {
             self.fail(&row, DEADLINE_REASON.to_owned()).await?;
         }
-        for row in self.deps.due(now).await? {
-            self.attempt(&row).await?;
-        }
+        self.attempt_all(self.deps.due(now).await?).await?;
         self.deps.next_wake().await
     }
 
@@ -219,16 +244,13 @@ impl<D: OutboxDeps> Outbox<D> {
     /// # Errors
     /// The storage failed.
     pub async fn flush(&self, kind: StreamKind) -> Result<usize, OutboxError> {
-        let mut attempted = 0;
         if kind.policy() == OutboxRetry::SettledExternally {
             return Ok(0);
         }
-        for row in self.deps.due(i64::MAX).await? {
-            if row.kind == kind {
-                self.attempt(&row).await?;
-                attempted += 1;
-            }
-        }
+        let mut rows = self.deps.due(i64::MAX).await?;
+        rows.retain(|row| row.kind == kind);
+        let attempted = rows.len();
+        self.attempt_all(rows).await?;
         Ok(attempted)
     }
 

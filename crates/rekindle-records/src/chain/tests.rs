@@ -344,3 +344,26 @@ async fn malformed_pages_are_refused() {
         Err(ChainError::Malformed { .. })
     ));
 }
+
+#[test]
+fn page_runs_fill_each_page_in_order() {
+    let small: Vec<Vec<u8>> = (1..=20u8).map(|i| vec![i; 300]).collect();
+    let runs = super::page_runs(&small).unwrap();
+    assert_eq!(runs.len(), 1, "twenty small entries share one page");
+    assert_eq!(runs[0], &small[..]);
+
+    let large: Vec<Vec<u8>> = (1..=5u8)
+        .map(|i| vec![i; super::page::PAGE_CAP / 3])
+        .collect();
+    let runs = super::page_runs(&large).unwrap();
+    assert!(runs.len() > 1, "large entries span pages");
+    assert_eq!(runs.concat(), large, "in order, each entry once");
+    for run in &runs {
+        assert!(!run.is_empty());
+    }
+
+    assert!(matches!(
+        super::page_runs(&[vec![0xa5; super::page::PAGE_CAP]]),
+        Err(ChainError::TooLarge { .. })
+    ));
+}

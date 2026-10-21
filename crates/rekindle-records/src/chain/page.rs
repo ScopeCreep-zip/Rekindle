@@ -41,6 +41,38 @@ pub(super) fn encode_page(page: &ChainPage) -> Result<Vec<u8>, ChainError> {
     fits("chain page", wire::encode_chain_page(page), PAGE_CAP)
 }
 
+/// The longest page key a `HEAD` may name, for sizing a page before the
+/// page it follows is known (a typed record key is far shorter).
+const PREV_KEY_BOUND: usize = 256;
+
+/// `entries` cut, in order, into the fewest runs that each fit one page
+/// whatever page it follows.
+pub(super) fn runs(entries: &[Vec<u8>]) -> Result<Vec<&[Vec<u8>]>, ChainError> {
+    let prev = PagePointer {
+        page_key: "k".repeat(PREV_KEY_BOUND),
+        first_seq: u64::MAX,
+        last_seq: u64::MAX,
+    };
+    let page_of = |run: &[Vec<u8>]| ChainPage {
+        prev: Some(prev.clone()),
+        first_seq: u64::MAX,
+        entries: run.to_vec(),
+    };
+    let mut out = Vec::new();
+    let mut start = 0;
+    while start < entries.len() {
+        // An entry no page holds alone is refused, as its append would be.
+        encode_page(&page_of(&entries[start..=start]))?;
+        let mut end = start + 1;
+        while end < entries.len() && encode_page(&page_of(&entries[start..=end])).is_ok() {
+            end += 1;
+        }
+        out.push(&entries[start..end]);
+        start = end;
+    }
+    Ok(out)
+}
+
 /// The `HEAD` value naming `newest`.
 pub(super) fn encode_head(newest: &PagePointer) -> Result<Vec<u8>, ChainError> {
     fits(

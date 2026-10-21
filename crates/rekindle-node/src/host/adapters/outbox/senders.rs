@@ -15,6 +15,23 @@ use rekindle_outbox::{AttemptOutcome, OutboxRow, StreamKind};
 pub trait StreamSender: Send + Sync {
     /// Send `row` once.
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome;
+
+    /// Send `rows`, the due rows of one stream in `stream_seq` order, once
+    /// each, stopping after the first that stays behind
+    /// (`rekindle_outbox::holds_back`): the outcomes of a prefix. A kind whose send can carry
+    /// several rows at once (the `dm` chain, plan E2.B F2) overrides it.
+    async fn send_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        let mut outcomes = Vec::with_capacity(rows.len());
+        for row in rows {
+            let outcome = self.send(row).await;
+            let stop = rekindle_outbox::holds_back(&outcome);
+            outcomes.push(outcome);
+            if stop {
+                break;
+            }
+        }
+        outcomes
+    }
 }
 
 /// Makes again the external write of a row the engine never attempts
@@ -58,6 +75,27 @@ impl Senders {
             Some(reissuer) => reissuer.reissue(row).await,
             None => Err(format!("no {} writer is running", row.kind.as_str())),
         }
+    }
+
+    /// Send `rows` (one stream's, in `stream_seq` order) through their
+    /// kind's sender; each `Deferred` when none is installed.
+    pub(super) async fn send_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        let sender = rows
+            .first()
+            .and_then(|row| self.by_kind.read().get(&row.kind).cloned());
+        if let Some(sender) = sender {
+            return sender.send_stream(rows).await;
+        }
+        let mut outcomes = Vec::with_capacity(rows.len());
+        for row in rows {
+            let outcome = self.send(row).await;
+            let stop = rekindle_outbox::holds_back(&outcome);
+            outcomes.push(outcome);
+            if stop {
+                break;
+            }
+        }
+        outcomes
     }
 
     /// Send `row` through its kind's sender; `Deferred` when none is

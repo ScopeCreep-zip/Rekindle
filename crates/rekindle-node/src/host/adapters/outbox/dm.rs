@@ -174,10 +174,31 @@ struct DmSender(HostFriends);
 #[async_trait]
 impl StreamSender for DmSender {
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
-        let Some(peer) = row.stream.strip_prefix("dm:") else {
-            return AttemptOutcome::Wedged(format!("not a dm stream: {}", row.stream));
+        let mut outcomes = self.send_stream(std::slice::from_ref(row)).await;
+        outcomes.pop().unwrap_or(AttemptOutcome::Deferred)
+    }
+
+    /// The stream's due rows go on the chain together (plan E2.B F2).
+    async fn send_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+        let Some(peer) = rows.first().and_then(|r| r.stream.strip_prefix("dm:")) else {
+            return rows
+                .iter()
+                .map(|r| AttemptOutcome::Wedged(format!("not a dm stream: {}", r.stream)))
+                .collect();
         };
-        outcome(dm_outbox::attempt(&self.0, peer, row.stream_seq, row.sent_at, &row.payload).await)
+        let attempts: Vec<dm_outbox::RowAttempt<'_>> = rows
+            .iter()
+            .map(|r| dm_outbox::RowAttempt {
+                stream_seq: r.stream_seq,
+                sent_at: r.sent_at,
+                payload: &r.payload,
+            })
+            .collect();
+        dm_outbox::attempt(&self.0, peer, &attempts)
+            .await
+            .into_iter()
+            .map(outcome)
+            .collect()
     }
 }
 
