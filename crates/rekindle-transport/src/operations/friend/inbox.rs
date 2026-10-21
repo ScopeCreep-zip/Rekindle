@@ -32,7 +32,8 @@ fn records(
         .map_err(|e| FriendError::NotReady(format!("records: {e}")))
 }
 
-/// Create an invite's inbox with a fresh one-time writer, held and watched
+/// Create an invite's inbox with a fresh one-time writer, opened on the
+/// network by the owner subkey's write, held and watched
 /// by the Host with its owner keypair in the vault; the capability the
 /// invite carries.
 ///
@@ -44,11 +45,28 @@ pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, Fri
     let signing = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&secret);
     let writer = rekindle_crypto::keypair_text::keypair_text_from_signing(&signing);
     let schema = rekindle_records::schema::request_inbox(&signing.verifying_key().to_bytes());
-    let (lease, record_key, owner) = records(host)?
+    let pool = records(host)?;
+    let (lease, record_key, owner) = pool
         .create(&schema, None)
         .await
         .map_err(|e| FriendError::Failed(format!("request inbox not created: {e}")))?;
     let owner = Zeroizing::new(owner);
+    // The owner subkey's one write puts the record on the network.
+    let opened = pool
+        .set(
+            lease,
+            request_inbox::OWNER,
+            request_inbox::OPENED.to_vec(),
+            None,
+        )
+        .await
+        .and_then(|outcome| outcome.require_stored(request_inbox::OWNER));
+    if let Err(e) = opened {
+        pool.release(lease).await;
+        return Err(FriendError::Failed(format!(
+            "request inbox not opened: {e}"
+        )));
+    }
     host.keep_request_inbox(&record_key, &owner, lease).await?;
     Ok(InboxCapability { record_key, writer })
 }

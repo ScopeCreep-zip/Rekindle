@@ -174,12 +174,15 @@ pub mod dm_participant {
 /// carries the one-time writer's keypair, so exactly one requester can
 /// write [`request_inbox::REQUEST`]; Veilid refuses any other writer
 /// (`veilid-core/src/storage_manager/schema.rs` `check_subkey_value_data`,
-/// "wrong writer", fork 0cd847de). The owner subkey is the inviter's and
-/// holds nothing: Veilid's SMPL owner range is what lets the inviter own
-/// (and so hold and drop) the record it created.
+/// "wrong writer", fork 0cd847de). The owner subkey is the inviter's: it
+/// writes [`request_inbox::OPENED`] there once at creation, which puts the
+/// record on the network, so the requester's write finds its descriptor.
 pub mod request_inbox {
-    /// The inviter's owner subkey (never written).
+    /// The inviter's owner subkey, written once with [`OPENED`].
     pub const OWNER: u32 = 0;
+    /// What the inviter writes to [`OWNER`] at creation: the layout's
+    /// version.
+    pub const OPENED: &[u8] = &[1];
     /// Owner subkeys in the schema.
     pub const OWNER_SUBKEY_COUNT: u16 = 1;
     /// The one-time writer's subkey: the requester's sealed `FriendRequest`
