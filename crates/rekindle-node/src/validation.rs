@@ -237,6 +237,7 @@ fn own(request: &IpcRequest) -> Checked {
         // The kind is a closed set; that the bytes are of it is
         // `rekindle-image`'s check, on decode.
         IpcRequest::ProfileSetAvatar { image, kind: _ } => avatar(image),
+        IpcRequest::SetReadReceiptsEnabled { .. } => Ok(()),
         IpcRequest::LinkOpen { url } => rekindle_link_preview::https_url(url)
             .map(drop)
             .map_err(|e| IpcResponse::error(400, format!("invalid link: {e}"))),
@@ -468,6 +469,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::LinkOpen { .. } => own(request),
         IpcRequest::GamePresenceSet {

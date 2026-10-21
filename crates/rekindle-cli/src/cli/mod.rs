@@ -20,7 +20,7 @@ pub use config::{ConfigCmd, ExportCmd, ImportCmd};
 pub use identity::{IdentityCmd, InitArgs, StatusArgs, UnlockArgs};
 pub use keys::{KeyCmd, MekCmd, PrekeyCmd};
 pub use network::{NetworkCmd, NodeCmd};
-pub use own::{AuditCmd, GameCmd, ProfileCmd};
+pub use own::{AuditCmd, GameCmd, ProfileCmd, SettingsCmd, Switch};
 pub use social::{
     DmCmd, FriendCmd, FriendCodeCmd, FriendInviteCmd, GroupCmd, PresenceCmd, PresenceStatus,
 };
@@ -159,6 +159,10 @@ pub enum Command {
     /// Our profile: name and avatar.
     #[command(subcommand)]
     Profile(ProfileCmd),
+
+    /// The identity's settings: read receipts.
+    #[command(subcommand)]
+    Settings(SettingsCmd),
 
     /// The game we show.
     #[command(subcommand)]

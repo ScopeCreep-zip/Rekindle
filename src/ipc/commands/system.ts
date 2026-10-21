@@ -43,6 +43,9 @@ export const systemCommands = {
 
   // Settings
   getPreferences: () => invoke<Preferences>("get_preferences"),
+  // A trust-changing intent the Host reviews; the preferences come back.
+  setReadReceiptsEnabled: (enabled: boolean) =>
+    hostInvoke<Preferences>("set_read_receipts_enabled", { enabled }),
   setPreferences: (prefs: Preferences) =>
     invoke<void>("set_preferences", { prefs }),
   checkForUpdates: () => invoke<boolean>("check_for_updates"),

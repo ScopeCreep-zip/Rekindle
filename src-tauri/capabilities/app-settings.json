@@ -39,6 +39,7 @@
     "allow-set-link-previews-enabled",
     "allow-set-nickname",
     "allow-set-preferences",
+    "allow-set-read-receipts-enabled",
     "allow-set-quiet-hours",
     "allow-set-status-message",
     "allow-set-video-device",

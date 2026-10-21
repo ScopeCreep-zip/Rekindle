@@ -140,6 +140,7 @@ impl IpcRequest {
             Self::PresenceSetMessage { .. } => ("PresenceSetMessage", Write, Authenticated),
             Self::PresenceGet => ("PresenceGet", Query, Authenticated),
             Self::ProfileSetNickname { .. } => ("ProfileSetNickname", Write, Authenticated),
+            Self::SetReadReceiptsEnabled { .. } => ("SetReadReceiptsEnabled", Write, Authenticated),
             Self::ProfileSetAvatar { .. } => ("ProfileSetAvatar", Write, Authenticated),
             Self::AvatarGet { .. } => ("AvatarGet", Query, Authenticated),
             Self::GamePresenceSet { .. } => ("GamePresenceSet", Write, Authenticated),

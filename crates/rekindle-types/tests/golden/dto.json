@@ -189,6 +189,28 @@
     "displayName": "Ann",
     "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
+  "preferences": {
+    "autoAwayMinutes": 10,
+    "autoVolunteerRelayForNewFriends": false,
+    "echoCancellation": true,
+    "gameDetectionEnabled": true,
+    "gameScanIntervalSecs": 15,
+    "inCallDndAutoEnable": true,
+    "inputChannels": {},
+    "inputDevice": null,
+    "inputVolume": 1.0,
+    "noiseSuppression": true,
+    "notificationSound": true,
+    "notificationsEnabled": true,
+    "outputDevice": null,
+    "outputVolume": 1.0,
+    "readReceiptsEnabled": true,
+    "ringtoneEnabled": true,
+    "ringtoneVolume": 0.4000000059604645,
+    "startMinimized": false,
+    "videoDeviceId": null,
+    "videoDeviceLabel": null
+  },
   "presence.view.autoAway": {
     "game": null,
     "idle": "autoAway",

@@ -279,6 +279,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::PresenceSetMessage { .. }
             | Self::PresenceGet
             | Self::ProfileSetNickname { .. }
+            | Self::SetReadReceiptsEnabled { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AvatarGet { .. }
             | Self::AuditVerify
@@ -327,6 +328,10 @@ impl IpcRequest {
             Self::ProfileSetNickname { display_name } => f
                 .debug_struct("ProfileSetNickname")
                 .field("display_name_len", &display_name.len())
+                .finish(),
+            Self::SetReadReceiptsEnabled { enabled } => f
+                .debug_struct("SetReadReceiptsEnabled")
+                .field("enabled", enabled)
                 .finish(),
             Self::ProfileSetAvatar { image, kind } => f
                 .debug_struct("ProfileSetAvatar")

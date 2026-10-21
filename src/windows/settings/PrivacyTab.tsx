@@ -9,6 +9,25 @@ import { handleUnblockUser } from "../../actions/buddy.actions";
 const PrivacyTab: Component = () => {
   const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
   const [error, setError] = createSignal<string | null>(null);
+  const [readReceipts, setReadReceipts] = createSignal(false);
+
+  onMount(() => {
+    commands.getPreferences().then((p) => setReadReceipts(p.readReceiptsEnabled)).catch((e) => {
+      console.error("Failed to load the read-receipt setting:", e);
+    });
+  });
+
+  // The Host reviews the change (a trust-changing intent); the switch shows
+  // what it stored, or stays as it was when the change is refused.
+  async function handleToggleReadReceipts(): Promise<void> {
+    setError(null);
+    try {
+      const prefs = await commands.setReadReceiptsEnabled(!readReceipts());
+      setReadReceipts(prefs.readReceiptsEnabled);
+    } catch (e) {
+      setError(`Read receipts not changed: ${String(e)}`);
+    }
+  }
 
   const loadBlocked = (): void => {
     commands.getBlockedUsers().then(setBlockedUsers).catch((e) => {
@@ -41,6 +60,19 @@ const PrivacyTab: Component = () => {
       <FormField label="Public Key">
         <div class="profile-key-display">{authState.publicKey ?? "Not logged in"}</div>
       </FormField>
+      <div class="settings-section-title">Read Receipts</div>
+      <label class="settings-option">
+        <input
+          type="checkbox"
+          checked={readReceipts()}
+          onChange={() => void handleToggleReadReceipts()}
+        />
+        <span class="buddy-name">Read receipts</span>
+      </label>
+      <div class="settings-hint">
+        Friends see that you read their messages only when both of you turn
+        read receipts on. They are never sent while you appear Invisible.
+      </div>
       <div class="settings-section-title">Identity</div>
       <div class="form-field-row">
         <button class="form-btn-secondary" disabled>Export Identity</button>

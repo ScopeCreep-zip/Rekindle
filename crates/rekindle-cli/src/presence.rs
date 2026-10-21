@@ -1,11 +1,11 @@
-//! Our own presence, profile, game and audit log: one request each to the
+//! Our own presence, profile, game, settings and audit log: one request each to the
 //! host, which owns them (plan E1.1).
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::image_kind::ImageKind;
 use rekindle_types::presence::SessionStatus;
 
-use crate::cli::{AuditCmd, GameCmd, PresenceCmd, PresenceStatus, ProfileCmd};
+use crate::cli::{AuditCmd, GameCmd, PresenceCmd, PresenceStatus, ProfileCmd, SettingsCmd, Switch};
 use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
@@ -69,6 +69,20 @@ pub async fn dispatch_profile(
                 kind,
             }
         }
+    };
+    let value = helpers::send(client, request).await?;
+    format::print_structured(&value, mode)
+}
+
+pub async fn dispatch_settings(
+    cmd: &SettingsCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let request = match cmd {
+        SettingsCmd::ReadReceipts { state } => IpcRequest::SetReadReceiptsEnabled {
+            enabled: matches!(state, Switch::On),
+        },
     };
     let value = helpers::send(client, request).await?;
     format::print_structured(&value, mode)

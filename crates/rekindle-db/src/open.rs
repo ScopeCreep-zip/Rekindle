@@ -141,7 +141,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 99 (plan E2.5, D17): `identity.friend_request_token`, the friend code's
 /// request token.
-pub const SCHEMA_VERSION: i64 = 99;
+///
+/// 100 (plan E2.5, r10): `app_settings.read_receipts_enabled`, off by default.
+pub const SCHEMA_VERSION: i64 = 100;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

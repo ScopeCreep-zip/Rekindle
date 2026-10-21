@@ -176,6 +176,9 @@ export interface Preferences {
   ringtoneEnabled?: boolean;
   ringtoneVolume?: number;
   inCallDndAutoEnable?: boolean;
+  /** DM read receipts (plan E2.5): reciprocal, off by default. Changed only
+   *  by `setReadReceiptsEnabled`, never by `setPreferences`. */
+  readReceiptsEnabled: boolean;
 }
 
 export type ExclusionGroupEdit =

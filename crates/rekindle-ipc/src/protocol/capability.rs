@@ -192,6 +192,8 @@ impl IpcRequest {
             // Our name, our picture, the audit log and the system browser
             // are the user's own, never an agent's.
             | Self::ProfileSetNickname { .. }
+            // Whether we tell friends what we read is the user's own.
+            | Self::SetReadReceiptsEnabled { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AuditVerify
             | Self::AuditExport { .. }

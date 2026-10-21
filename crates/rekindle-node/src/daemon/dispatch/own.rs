@@ -1,6 +1,6 @@
-//! Our own presence, profile, game, audit log and links (plan E1.1): one
-//! implementation on both hosts, over `host::{own_presence, own_profile,
-//! audit_alert}`.
+//! Our own presence, profile, game, audit log, links and read-receipt
+//! setting (plan E1.1, E2.5): one implementation on both hosts, over
+//! `host::{own_presence, own_profile, audit_alert}`.
 
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
@@ -26,6 +26,9 @@ pub(crate) async fn route(
         IpcRequest::PresenceGet => handle_get(ctx, state),
         IpcRequest::ProfileSetNickname { display_name } => {
             handle_nickname(ctx, state, &display_name).await
+        }
+        IpcRequest::SetReadReceiptsEnabled { enabled } => {
+            handle_read_receipts(ctx, state, enabled).await
         }
         IpcRequest::ProfileSetAvatar { image, kind } => {
             handle_avatar(ctx, state, image, kind).await
@@ -152,6 +155,33 @@ async fn handle_nickname(
     match crate::host::own_profile::set_nickname(ctx, name).await {
         Ok(()) => IpcResponse::ok(&name),
         Err(e) => IpcResponse::error(500, e),
+    }
+}
+
+/// `SetReadReceiptsEnabled`, once its review was committed: the
+/// identity's preferences as they now are. The receipt policy (the outbox)
+/// reads the setting from the database.
+async fn handle_read_receipts(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    enabled: bool,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let (db, owner) = match (ctx.require_db(), ctx.require_owner()) {
+        (Ok(db), Ok(owner)) => (db, owner),
+        (Err(e), _) | (_, Err(e)) => return e,
+    };
+    let saved = db
+        .call(move |conn| {
+            rekindle_db::repo::preferences::set_read_receipts_enabled(conn, &owner, enabled)?;
+            rekindle_db::repo::preferences::load(conn, &owner)
+        })
+        .await;
+    match saved {
+        Ok(prefs) => IpcResponse::ok(&prefs),
+        Err(e) => IpcResponse::error(500, format!("read receipts not saved: {e}")),
     }
 }
 

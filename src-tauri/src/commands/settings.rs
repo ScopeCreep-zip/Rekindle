@@ -1,8 +1,11 @@
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::preferences::Preferences;
 use serde::{Deserialize, Serialize};
 use tauri::State;
 use tauri_plugin_autostart::ManagerExt as _;
 
+use crate::host_call;
 use crate::state::SharedState;
 
 /// The preferences as the settings window edits them: the identity's
@@ -16,13 +19,17 @@ pub struct PreferencesDto {
     pub auto_start: bool,
 }
 
-/// The unlocked identity's preferences and the OS login item's state.
+/// The unlocked identity's preferences and the OS login item's state. The
+/// session's copy is read again from the database first: the Host writes
+/// the read-receipt setting (`SetReadReceiptsEnabled`) there.
 #[tauri::command]
 pub async fn get_preferences(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<PreferencesDto, String> {
-    state.db.current()?;
+    let pool = state.db.current()?;
+    let owner = crate::state_helpers::current_owner_key(state.inner())?;
+    crate::services::preferences::load(state.inner(), &pool, &owner).await?;
     Ok(PreferencesDto {
         prefs: crate::services::preferences::current(state.inner()),
         auto_start: app.autolaunch().is_enabled().map_err(|e| e.to_string())?,
@@ -40,6 +47,16 @@ pub async fn set_preferences(
 ) -> Result<(), String> {
     apply_auto_start(&app, prefs.auto_start)?;
     crate::services::preferences::update(state.inner(), |stored| *stored = prefs.prefs).await
+}
+
+/// Turn DM read receipts on or off (`IpcRequest::SetReadReceiptsEnabled`, a
+/// trust-changing intent the Host reviews): the preferences come back.
+#[tauri::command]
+pub async fn set_read_receipts_enabled(
+    enabled: bool,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetReadReceiptsEnabled { enabled }).await
 }
 
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {

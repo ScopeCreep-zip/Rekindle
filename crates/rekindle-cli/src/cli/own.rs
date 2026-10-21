@@ -1,8 +1,8 @@
-//! Our own profile, game and audit log.
+//! Our own profile, game, settings and audit log.
 
 use std::path::PathBuf;
 
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 
 /// Our profile.
 #[derive(Subcommand)]
@@ -17,6 +17,24 @@ pub enum ProfileCmd {
         /// The image file; its extension (.png, .jpg, .jpeg, .gif) declares
         /// its kind.
         file: PathBuf,
+    },
+}
+
+/// On or off.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum Switch {
+    On,
+    Off,
+}
+
+/// The identity's settings.
+#[derive(Subcommand)]
+pub enum SettingsCmd {
+    /// DM read receipts: friends see what we read only when both sides turn
+    /// them on, and never while we are Invisible (off by default).
+    ReadReceipts {
+        /// `on` or `off`.
+        state: Switch,
     },
 }
 

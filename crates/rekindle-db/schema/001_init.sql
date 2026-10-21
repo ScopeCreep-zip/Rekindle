@@ -387,6 +387,11 @@ CREATE TABLE IF NOT EXISTS app_settings (
     ringtone_enabled INTEGER NOT NULL DEFAULT 1 CHECK(ringtone_enabled IN (0, 1)),
     ringtone_volume REAL NOT NULL DEFAULT 0.4 CHECK(ringtone_volume BETWEEN 0.0 AND 1.0),
     in_call_dnd_auto_enable INTEGER NOT NULL DEFAULT 1 CHECK(in_call_dnd_auto_enable IN (0, 1)),
+    -- DM read receipts (plan E2.5, r10): opt-in, reciprocal, off by default.
+    -- Set only by the trust-changing `SetReadReceiptsEnabled`, never by the
+    -- bulk preference save; it never goes on the wire.
+    read_receipts_enabled INTEGER NOT NULL DEFAULT 0
+        CHECK(read_receipts_enabled IN (0, 1)),
     PRIMARY KEY (owner_key)
 );
 

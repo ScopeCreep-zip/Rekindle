@@ -168,6 +168,7 @@ export const LOGIN_SUCCESS_HANDLER = `
         autoStart: false,
         gameDetectionEnabled: true,
         gameScanIntervalSecs: 30,
+        readReceiptsEnabled: false,
       };
     default:
       return null;

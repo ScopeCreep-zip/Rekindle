@@ -49,6 +49,10 @@ pub struct Preferences {
     pub ringtone_volume: f32,
     /// Silence OS notifications and message sounds during a call.
     pub in_call_dnd_auto_enable: bool,
+    /// Send and honor DM read receipts (plan E2.5, r10): reciprocal, off
+    /// by default, never sent while Invisible. Changed only by the
+    /// trust-changing `SetReadReceiptsEnabled`.
+    pub read_receipts_enabled: bool,
 }
 
 impl Default for Preferences {
@@ -73,6 +77,7 @@ impl Default for Preferences {
             ringtone_enabled: true,
             ringtone_volume: 0.4,
             in_call_dnd_auto_enable: true,
+            read_receipts_enabled: false,
         }
     }
 }

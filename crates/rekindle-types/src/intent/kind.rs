@@ -182,6 +182,7 @@ pub enum IntentKind {
     // TrustChanging: Exposure settings
     RegisterWithPushRelay,
     SetLinkPreviewsEnabled,
+    SetReadReceiptsEnabled,
     SetPresencePolicy,
     VolunteerRelay,
     // TrustChanging: Outbound files and links
@@ -395,6 +396,7 @@ impl IntentKind {
             | Self::RotateMek
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
+            | Self::SetReadReceiptsEnabled
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl

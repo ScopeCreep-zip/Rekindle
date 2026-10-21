@@ -288,6 +288,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // settings
         commands::settings::get_preferences,
         commands::settings::set_preferences,
+        commands::settings::set_read_receipts_enabled,
         commands::settings::check_for_updates,
         // notifications
         // windows

@@ -290,6 +290,7 @@ async fn route(
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::PresenceGet
         | IpcRequest::ProfileSetNickname { .. }
+        | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::GamePresenceSet { .. }

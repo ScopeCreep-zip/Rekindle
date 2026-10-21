@@ -180,6 +180,10 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
         "set_link_previews_enabled",
         Some(IntentKind::SetLinkPreviewsEnabled),
     ),
+    (
+        "set_read_receipts_enabled",
+        Some(IntentKind::SetReadReceiptsEnabled),
+    ),
     ("run_background_sync", None),
     ("list_automod_rules", None),
     ("set_automod_rule", Some(IntentKind::SetAutomodRule)),
@@ -471,6 +475,10 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("PresenceGet", None),
     ("ProfileSetNickname", Some(IntentKind::SetNickname)),
     ("ProfileSetAvatar", Some(IntentKind::SetAvatar)),
+    (
+        "SetReadReceiptsEnabled",
+        Some(IntentKind::SetReadReceiptsEnabled),
+    ),
     ("AvatarGet", None),
     ("AuditVerify", None),
     ("AuditExport", Some(IntentKind::AuditExport)),

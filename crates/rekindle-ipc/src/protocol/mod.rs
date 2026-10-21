@@ -329,6 +329,9 @@ pub enum IpcRequest {
     /// Change the name we show: the identity's database, the registry and
     /// profile subkey 0.
     ProfileSetNickname { display_name: String },
+    /// Turn DM read receipts on or off (plan E2.5, r10): the identity's
+    /// `Preferences.read_receipts_enabled`; the preferences come back.
+    SetReadReceiptsEnabled { enabled: bool },
     /// Change our avatar: the image, of the kind its sender declares (the
     /// file picker's MIME type, the file's extension), is decoded by
     /// `rekindle-image` as that kind only, made a 128 px WebP, saved and

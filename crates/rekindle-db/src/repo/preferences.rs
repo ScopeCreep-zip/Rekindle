@@ -18,7 +18,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
              video_device_id, video_device_label, input_volume, output_volume, \
              noise_suppression, echo_cancellation, auto_away_minutes, \
              auto_volunteer_relay_for_new_friends, ringtone_enabled, ringtone_volume, \
-             in_call_dnd_auto_enable \
+             in_call_dnd_auto_enable, read_receipts_enabled \
              FROM app_settings WHERE owner_key = ?1",
             params![owner_key],
             |row| {
@@ -41,6 +41,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
                     ringtone_enabled: row.get(15)?,
                     ringtone_volume: row.get(16)?,
                     in_call_dnd_auto_enable: row.get(17)?,
+                    read_receipts_enabled: row.get(18)?,
                     input_channels: BTreeMap::new(),
                 })
             },
@@ -67,6 +68,8 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
 
 /// Save the identity's preferences: the preference columns (the row's
 /// other settings stay) and the input channels, in one transaction.
+/// `read_receipts_enabled` is not saved here: it changes only through
+/// [`set_read_receipts_enabled`], the trust-changing intent's write.
 ///
 /// # Errors
 /// A write failed, or a value is out of its column's range.
@@ -137,6 +140,24 @@ pub fn save(conn: &mut Connection, owner_key: &str, prefs: &Preferences) -> rusq
     tx.commit()
 }
 
+/// Turn DM read receipts on or off (`SetReadReceiptsEnabled`, plan E2.5);
+/// the row's other settings stay.
+///
+/// # Errors
+/// The write failed.
+pub fn set_read_receipts_enabled(
+    conn: &Connection,
+    owner_key: &str,
+    enabled: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (owner_key, read_receipts_enabled) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET read_receipts_enabled = excluded.read_receipts_enabled",
+        params![owner_key, enabled],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +192,23 @@ mod tests {
         prefs.input_channels.clear();
         save(&mut conn, OWNER, &prefs).unwrap();
         assert!(load(&conn, OWNER).unwrap().input_channels.is_empty());
+    }
+
+    #[test]
+    fn read_receipts_change_only_through_their_setter() {
+        let mut conn = fixture::conn();
+        assert!(!load(&conn, OWNER).unwrap().read_receipts_enabled);
+        set_read_receipts_enabled(&conn, OWNER, true).unwrap();
+        let mut prefs = load(&conn, OWNER).unwrap();
+        assert!(prefs.read_receipts_enabled);
+        prefs.read_receipts_enabled = false;
+        prefs.auto_away_minutes = 5;
+        save(&mut conn, OWNER, &prefs).unwrap();
+        let stored = load(&conn, OWNER).unwrap();
+        assert_eq!(stored.auto_away_minutes, 5);
+        assert!(stored.read_receipts_enabled, "the bulk save leaves it");
+        set_read_receipts_enabled(&conn, OWNER, false).unwrap();
+        assert!(!load(&conn, OWNER).unwrap().read_receipts_enabled);
     }
 
     #[test]

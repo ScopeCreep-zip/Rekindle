@@ -24,6 +24,7 @@ use rekindle_types::intent::{
     Subject, UndoOffer,
 };
 use rekindle_types::message::SendState;
+use rekindle_types::preferences::Preferences;
 use rekindle_types::presence::{IdleState, SessionStatus};
 use serde_json::{json, Map, Value};
 
@@ -179,6 +180,14 @@ fn samples() -> Map<String, Value> {
         to(CommandError::IntentRequired(review())),
     );
     add("command.error.cancelled", to(CommandError::Cancelled));
+    // `SetReadReceiptsEnabled` answers the identity's preferences (plan E2.5).
+    add(
+        "preferences",
+        to(Preferences {
+            read_receipts_enabled: true,
+            ..Preferences::default()
+        }),
+    );
     friend_samples(&mut add);
     out
 }

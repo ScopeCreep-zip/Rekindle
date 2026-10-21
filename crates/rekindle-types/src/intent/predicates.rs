@@ -158,6 +158,7 @@ impl IntentKind {
             | Self::RotateMek
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
+            | Self::SetReadReceiptsEnabled
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl
@@ -345,6 +346,7 @@ impl IntentKind {
             | Self::RotateMek
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
+            | Self::SetReadReceiptsEnabled
             | Self::SetPresencePolicy
             | Self::VolunteerRelay
             | Self::OpenExternalUrl

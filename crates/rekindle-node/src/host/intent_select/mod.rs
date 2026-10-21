@@ -164,6 +164,11 @@ pub(crate) async fn select(
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::Undoable;
         }
+        IpcRequest::SetReadReceiptsEnabled { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility =
+                Reversibility::ReversibleByInverse(IntentKind::SetReadReceiptsEnabled);
+        }
         IpcRequest::ProfileSetAvatar { .. } => {
             s.subject = unlocked_identity(ctx);
             // The old picture is not kept: another one replaces it.
