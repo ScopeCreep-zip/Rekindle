@@ -148,8 +148,8 @@ async fn attempt_inbox(
 /// writer (Veilid's "wrong writer" is an `InvalidArgument`
 /// (`storage_manager/schema.rs` `check_subkey_value_data`), which the pool
 /// reports as `Dht` because it is not transient (`dht/pool/mod.rs`
-/// `transient`); the netsim's `admits` refusal is `NotWritable`), or a
-/// value that can never be written. The network's misses, a closed pool
+/// `transient`; the netsim's `SimDht` refuses the same way, plan E2.B S3),
+/// or a value that can never be written. The network's misses, a closed pool
 /// and the node not being ready are attempted again.
 fn refuses(e: &rekindle_records::port::PortError) -> bool {
     use rekindle_records::port::PortError;
