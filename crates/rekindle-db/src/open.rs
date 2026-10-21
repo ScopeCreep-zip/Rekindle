@@ -17,6 +17,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// Veilid storage included, so stale records written under the old layout
 /// cannot be read back with the new indices. The app is not live yet.
 ///
+/// 110: `group_dm_invites`, the verified group invites we have not
+/// answered, held for `DELIVERY_HORIZON` (plan E2.6 G2b).
+///
 /// 108: group DMs (plan E2.6 G1): the `group_dms` and
 /// `group_dm_sender_keys` tables, `'group_dm'` in
 /// `messages.conversation_type` and in `outbox.kind`.
@@ -173,7 +176,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 109 (plan E2.6, G4): the SMPL group DM tables `dms`, `dm_messages` and
 /// `dm_messages_fts` are gone; a group DM is `group_dms`.
-pub const SCHEMA_VERSION: i64 = 109;
+pub const SCHEMA_VERSION: i64 = 110;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

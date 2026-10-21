@@ -114,6 +114,18 @@ CREATE TABLE IF NOT EXISTS group_dm_sender_keys (
     FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
 );
 
+-- Plan E2.6: a creator's verified invite we have not answered yet, held
+-- for at most `DELIVERY_HORIZON` (D24, Q2b: 30 days) from `received_at`
+-- (milliseconds); `invite` is the encoded `GroupDmInvite` (0x0120) body.
+CREATE TABLE IF NOT EXISTS group_dm_invites (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    group_id TEXT NOT NULL CHECK(length(group_id) = 32),
+    from_key TEXT NOT NULL CHECK(length(from_key) = 64),
+    invite BLOB NOT NULL CHECK(length(invite) > 0),
+    received_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, group_id)
+);
+
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
