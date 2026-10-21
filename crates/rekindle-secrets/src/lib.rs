@@ -18,6 +18,7 @@ pub mod derive;
 pub mod forked_random;
 pub mod friend_presence;
 pub mod friend_token;
+pub mod group_dm;
 pub mod hpke;
 pub mod invite;
 pub mod keys;
