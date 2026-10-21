@@ -136,6 +136,10 @@ impl FriendHost for HostFriends {
         participant::held(self, peer).await
     }
 
+    fn group_dm(&self) -> Result<Arc<dyn rekindle_dm::GroupDmDeps>, FriendError> {
+        super::group_dm::open(self)
+    }
+
     fn invisible(&self) -> bool {
         self.ctx.own_presence.status() == rekindle_types::presence::SessionStatus::Invisible
     }

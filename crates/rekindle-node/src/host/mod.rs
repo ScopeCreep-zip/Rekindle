@@ -16,6 +16,8 @@ mod friends;
 mod game;
 pub mod gate;
 #[cfg(test)]
+mod group_dm_tests;
+#[cfg(test)]
 mod horizon_tests;
 pub mod identity;
 mod idle;

@@ -12,6 +12,7 @@ workspace = true
 # Workspace
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-dm = { path = "../rekindle-dm" }
 rekindle-events = { path = "../rekindle-events" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-route = { path = "../rekindle-route" }

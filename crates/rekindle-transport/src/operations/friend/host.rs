@@ -144,6 +144,13 @@ pub trait FriendHost: Send + Sync {
         &self,
         peer: &str,
     ) -> Result<Option<crate::operations::dm::stream::ParticipantWriter>, FriendError>;
+    /// The group-DM owner's Host side over the unlocked identity (plan
+    /// E2.6): its groups, keys and held invites, identity signature and
+    /// event journal.
+    ///
+    /// # Errors
+    /// `Locked` while no identity is unlocked.
+    fn group_dm(&self) -> Result<Arc<dyn rekindle_dm::GroupDmDeps>, FriendError>;
     /// Whether our own status is Invisible (receipts are held meanwhile).
     fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).

@@ -55,6 +55,7 @@ rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
 rekindle-outbox = { path = "../rekindle-outbox" }
 # MediaEncryptionKey — the key type `MekDistributeDeps` exchanges.
 rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-dm = { path = "../rekindle-dm" }
 rekindle-vault = { path = "../rekindle-vault" }
 rekindle-idempotency = { path = "../rekindle-idempotency" }
 # Our own presence's stages (plan E1.1): OS idle time for auto-away, the
