@@ -1,6 +1,7 @@
 //! App messages and calls on the simulated network (plan C9.3). A message
-//! or call queues for the pump; a call's reply returns directly to the
-//! caller, who gives up after Veilid's reply timeout.
+//! or call queues for the pump, arriving after its latency
+//! ([`crate::latency::MESSAGE`]); a call's reply returns directly to the
+//! caller one more latency later, who gives up after Veilid's reply timeout.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,6 +12,7 @@ use rekindle_records::port::{
 use rekindle_types::config::SafetyProfile;
 use tokio::sync::oneshot;
 
+use crate::latency;
 use crate::network::Network;
 
 /// Veilid's reply timeout at our 3–4-hop safety routes
@@ -51,12 +53,14 @@ impl AppMessagePort for FakeMessages {
         check_message_len(&message)?;
         let to = self.route_owner(target)?;
         // Fire and forget: a dropped message still "sent".
-        self.net.send(
+        let delay = self.net.latency.draw(self.node, latency::MESSAGE);
+        self.net.send_after(
             self.node,
             to,
             "AppMessage",
             PortEvent::AppMessage { message },
             true,
+            delay,
         );
         Ok(())
     }
@@ -79,7 +83,9 @@ impl AppMessagePort for FakeMessages {
             }
             id
         };
-        self.net.send(
+        let there = self.net.latency.draw(self.node, latency::MESSAGE);
+        let back = self.net.latency.draw(self.node, latency::MESSAGE);
+        self.net.send_after(
             self.node,
             to,
             "AppCall",
@@ -88,8 +94,16 @@ impl AppMessagePort for FakeMessages {
                 message,
             },
             true,
+            there,
         );
-        if let Ok(Ok(reply)) = tokio::time::timeout(CALL_TIMEOUT, rx).await {
+        // The reply travels back over the caller's route: `back` after the
+        // callee answers, all within Veilid's reply timeout.
+        let answered = tokio::time::timeout(CALL_TIMEOUT, async {
+            let reply = rx.await;
+            tokio::time::sleep(back).await;
+            reply
+        });
+        if let Ok(Ok(reply)) = answered.await {
             Ok(reply)
         } else {
             self.net.inner.lock().calls.remove(&call_id);

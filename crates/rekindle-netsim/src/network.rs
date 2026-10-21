@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Weak};
+use std::time::Duration;
 
 use parking_lot::Mutex;
 use rand::rngs::StdRng;
@@ -16,6 +17,7 @@ use rand::{Rng, SeedableRng};
 use rekindle_records::port::{PortEvent, RecordSchema, RecordValue, ValueChange};
 use tokio::sync::{mpsc, oneshot, watch};
 
+use crate::latency::Latency;
 use crate::records::FakePool;
 use crate::trace::Trace;
 
@@ -50,6 +52,8 @@ struct Pending {
     rank: u64,
     label: &'static str,
     event: PortEvent,
+    /// When it arrives (simulated time; an app message's latency).
+    due: tokio::time::Instant,
 }
 
 /// Faults in force (plan C9.3).
@@ -108,6 +112,8 @@ pub struct Network {
     pub(crate) inner: Mutex<Inner>,
     /// The pump's generator: delivery order and dropped messages.
     order: Mutex<StdRng>,
+    /// What each call costs (plan E2.B), always on.
+    pub(crate) latency: Latency,
 }
 
 impl Network {
@@ -115,6 +121,7 @@ impl Network {
         Arc::new(Self {
             inner: Mutex::new(Inner::default()),
             order: Mutex::new(StdRng::seed_from_u64(seed ^ 0x6e65_7473_696d)),
+            latency: Latency::new(seed),
         })
     }
 
@@ -128,6 +135,19 @@ impl Network {
         label: &'static str,
         event: PortEvent,
         droppable: bool,
+    ) -> bool {
+        self.send_after(from, to, label, event, droppable, Duration::ZERO)
+    }
+
+    /// As [`send`](Self::send), arriving `delay` from now.
+    pub(crate) fn send_after(
+        &self,
+        from: usize,
+        to: usize,
+        label: &'static str,
+        event: PortEvent,
+        droppable: bool,
+        delay: Duration,
     ) -> bool {
         let mut inner = self.inner.lock();
         if droppable && from != to {
@@ -150,6 +170,7 @@ impl Network {
             rank,
             label,
             event,
+            due: tokio::time::Instant::now() + delay,
         });
         true
     }
@@ -161,7 +182,11 @@ impl Network {
     pub(crate) fn deliver(&self) -> usize {
         let (batch, senders) = {
             let mut inner = self.inner.lock();
-            let mut batch = std::mem::take(&mut inner.pending);
+            let now = tokio::time::Instant::now();
+            let (mut batch, later): (Vec<_>, Vec<_>) = std::mem::take(&mut inner.pending)
+                .into_iter()
+                .partition(|p| p.due <= now);
+            inner.pending = later;
             batch.sort_by_key(|p| (p.from, p.to, p.rank));
             batch.shuffle(&mut *self.order.lock());
             for p in &batch {
@@ -187,6 +212,11 @@ impl Network {
             }
         }
         count
+    }
+
+    /// When the next event in flight arrives, if any is.
+    pub(crate) fn next_due(&self) -> Option<tokio::time::Instant> {
+        self.inner.lock().pending.iter().map(|p| p.due).min()
     }
 
     /// Notify every node but `writer` that watches `subkey` of `key`.

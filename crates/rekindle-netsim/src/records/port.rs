@@ -9,6 +9,7 @@ use rekindle_records::port::{
 use rekindle_utils::RandomSource;
 
 use super::{new_key_text, subkey_count, writer_public, FakePool, Held, Phase};
+use crate::latency;
 use crate::network::NetRecord;
 
 #[async_trait::async_trait]
@@ -28,6 +29,8 @@ impl RecordPort for FakePool {
                 return Err(PortError::Unreachable(key.to_string()));
             }
         }
+        // Veilid's open inspects the record on the network (`open_record.rs:60`).
+        let _slot = self.latency(self.read_span(key, None), key, &[]).await;
         self.reach(key)?;
         let (lease, _) = self
             .state
@@ -43,6 +46,7 @@ impl RecordPort for FakePool {
         owner: Option<&str>,
     ) -> Result<(LeaseId, String, String), PortError> {
         self.check_open(true)?;
+        let _slot = self.latency(latency::CREATE, "", &[]).await;
         let count = schema.subkey_count();
         if count == 0 || count > 1024 {
             return Err(PortError::Dht(format!("schema: {count} subkeys")));
@@ -102,6 +106,8 @@ impl RecordPort for FakePool {
         if !force_refresh && local.is_some() {
             return Ok(local);
         }
+        let span = self.read_span(&key, Some(&[subkey]));
+        let _slot = self.latency(span, &key, &[subkey]).await;
         self.reach(&key)?;
         if self
             .net
@@ -125,6 +131,7 @@ impl RecordPort for FakePool {
     ) -> Result<SetOutcome, PortError> {
         self.check_open(true)?;
         let key = self.key(lease)?;
+        let _slot = self.latency(latency::SET, &key, &[subkey]).await;
         self.write(&key, subkey, data, writer)
     }
 
@@ -137,6 +144,7 @@ impl RecordPort for FakePool {
     ) -> Result<SetOutcome, PortError> {
         self.check_open(true)?;
         let key = self.key(lease)?;
+        let _slot = self.latency(latency::SET, &key, &[subkey]).await;
         let outcome = self.write(&key, subkey, data.clone(), writer)?;
         if matches!(outcome, SetOutcome::Offline | SetOutcome::BelowConsensus) {
             let mut state = self.state.lock();
@@ -159,9 +167,13 @@ impl RecordPort for FakePool {
     ) -> Result<RecordReport, PortError> {
         self.check_open(true)?;
         let key = self.key(lease)?;
-        if scope != ReportScope::Local {
+        let _slot = if scope == ReportScope::Local {
+            None
+        } else {
+            let slot = self.latency(self.read_span(&key, subkeys), &key, &[]).await;
             self.reach(&key)?;
-        }
+            slot
+        };
         let inner = self.net.inner.lock();
         let record = inner
             .records
@@ -216,6 +228,14 @@ impl RecordPort for FakePool {
     ) -> Result<Vec<(u32, RecordValue)>, PortError> {
         self.check_open(true)?;
         let key = self.key(lease)?;
+        // An inspect, then the gets of what changed.
+        let span = self.read_span(&key, Some(subkeys));
+        drop(self.latency(span, &key, &[]).await);
+        let _slot = if span == latency::GET {
+            self.latency(latency::GET, &key, subkeys).await
+        } else {
+            None
+        };
         self.reach(&key)?;
         let stale = self
             .net
@@ -240,6 +260,7 @@ impl RecordPort for FakePool {
     async fn watch(&self, lease: LeaseId, subkeys: &[u32]) -> Result<(), PortError> {
         self.check_open(true)?;
         let key = self.key(lease)?;
+        let _slot = self.latency(latency::WATCH, &key, &[]).await;
         let plan = self
             .state
             .lock()
@@ -279,7 +300,9 @@ impl RecordPort for FakePool {
         self.check_open(true)?;
         let key = self.key(lease)?;
         self.reach(&key)?;
-        for subkey in self.inspect_present(lease).await? {
+        let present = self.inspect_present(lease).await?;
+        let _slot = self.latency(latency::GET, &key, &present).await;
+        for subkey in present {
             self.refresh(&key, subkey);
         }
         Ok(())

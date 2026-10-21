@@ -12,7 +12,10 @@
 //! - each node keeps local copies across its sessions; reads refresh them
 //!   from the network unless the stale-read fault holds;
 //! - watches are per node, the union of the session's borrowers, and end
-//!   with the session.
+//!   with the session;
+//! - every call that reaches the network costs Veilid's latency
+//!   ([`crate::latency`]) before its effect lands, under the per-subkey
+//!   locks and the node's DHT cap.
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -27,6 +30,7 @@ use rekindle_records::port::{
 use rekindle_utils::RandomSource;
 
 use crate::clock::SimRandom;
+use crate::latency::{self, Slot, Span};
 use crate::network::{NetRecord, Network};
 
 mod port;
@@ -167,6 +171,41 @@ impl FakePool {
             .key(lease)
             .map(ToString::to_string)
             .ok_or(PortError::LeaseNotHeld(lease.0))
+    }
+
+    /// The call's latency ([`crate::latency`]): `None` at once when the
+    /// node's DHT is offline (Veilid checks `dht_is_online()` before any
+    /// fanout), else the slot the caller holds while it applies its effect.
+    async fn latency(&self, span: Span, key: &str, subkeys: &[u32]) -> Option<Slot> {
+        if self
+            .net
+            .inner
+            .lock()
+            .faults
+            .dht_offline
+            .contains(&self.node)
+        {
+            return None;
+        }
+        Some(self.net.latency.dht(self.node, span, key, subkeys).await)
+    }
+
+    /// A read's latency: [`latency::GET`] when the network holds a value at
+    /// any of `subkeys` (all when `None`), else the fanout's
+    /// [`latency::DEADLINE`].
+    fn read_span(&self, key: &str, subkeys: Option<&[u32]>) -> Span {
+        let inner = self.net.inner.lock();
+        let held = inner.records.get(key).is_some_and(|r| match subkeys {
+            Some(s) => s
+                .iter()
+                .any(|s| r.values.get(*s as usize).is_some_and(Option::is_some)),
+            None => r.values.iter().any(Option::is_some),
+        });
+        if held {
+            latency::GET
+        } else {
+            latency::DEADLINE
+        }
     }
 
     /// The DHT reach faults: `Err` when this node cannot reach the network

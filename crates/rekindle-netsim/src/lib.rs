@@ -11,8 +11,16 @@
 //! delivers the events in flight in an order drawn from the seed, and
 //! records each delivery in the [`Trace`]. Wire bytes never enter the trace:
 //! they carry AEAD nonces from `OsRng` (plan C9.2).
+//!
+//! Veilid's latency is part of the model, always (plan E2.B, [`latency`]):
+//! every DHT call and app message costs simulated time from a calibrated,
+//! seeded distribution, with Veilid's per-subkey serialization and DHT
+//! concurrency cap. The calibration table in [`latency`] names each
+//! number's source (the pinned Veilid constant or the live log) and how to
+//! recalibrate it from a live log.
 
 mod clock;
+pub mod latency;
 mod messages;
 mod network;
 mod records;
@@ -23,7 +31,6 @@ mod trace;
 mod tests;
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use rekindle_records::port::{PortEvent, PortSet, RecordValue};
 use tokio::sync::{mpsc, watch};
@@ -155,7 +162,11 @@ impl Netsim {
             loop {
                 settle().await;
                 if net.deliver() == 0 {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    // The tick bounds each jump of the paused clock: a Host
+                    // waiting on its database thread looks idle to tokio,
+                    // which would otherwise jump to the next timer (a call
+                    // timeout, a latency) while the thread works.
+                    tokio::time::sleep(PUMP_TICK).await;
                 }
             }
         })
@@ -185,14 +196,18 @@ impl Netsim {
     }
 
     /// Let every task run until it waits, then deliver what is in flight;
-    /// again until nothing is. For a scenario's explicit steps.
+    /// again until nothing is, waiting (in simulated time) for what is
+    /// still on its way. For a scenario's explicit steps.
     pub async fn quiesce(&self) {
         loop {
             settle().await;
             if self.net.deliver() == 0 {
                 settle().await;
                 if self.net.deliver() == 0 {
-                    return;
+                    match self.net.next_due() {
+                        Some(due) => tokio::time::sleep_until(due).await,
+                        None => return,
+                    }
                 }
             }
         }
@@ -518,6 +533,9 @@ fn toggle(set: &mut std::collections::HashSet<usize>, node: usize, on: bool) {
         set.remove(&node);
     }
 }
+
+/// The pump's idle tick.
+const PUMP_TICK: std::time::Duration = std::time::Duration::from_millis(10);
 
 /// Let every runnable task run until it waits.
 async fn settle() {

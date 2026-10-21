@@ -519,3 +519,36 @@ async fn only_the_one_time_writer_writes_a_request_inbox() {
         .unwrap();
     assert_eq!(value.data, b"request");
 }
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_set_waits_for_consensus_and_an_offline_set_fails_at_once() {
+    let (sim, nodes) = Netsim::nodes(1, 11);
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, key, _) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 2 }, None)
+        .await
+        .unwrap();
+    let start = tokio::time::Instant::now();
+    let (first, second) = tokio::join!(
+        pool.set(lease, 0, b"a".to_vec(), None),
+        pool.set(lease, 1, b"b".to_vec(), None),
+    );
+    assert_eq!(first.unwrap(), SetOutcome::Landed);
+    assert_eq!(second.unwrap(), SetOutcome::Landed);
+    let took = start.elapsed();
+    assert!(
+        took >= latency::SET.min && took <= latency::SET.max,
+        "two subkeys' sets overlap: {took:?}"
+    );
+    assert_eq!(sim.network_value(&key, 1).unwrap().data, b"b");
+    sim.fault(Fault::DhtOffline {
+        node: 0,
+        offline: true,
+    });
+    let start = tokio::time::Instant::now();
+    assert_eq!(
+        pool.set(lease, 0, b"c".to_vec(), None).await.unwrap(),
+        SetOutcome::Offline
+    );
+    assert_eq!(start.elapsed(), Duration::ZERO);
+}

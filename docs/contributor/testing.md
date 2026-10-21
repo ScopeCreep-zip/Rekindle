@@ -76,6 +76,22 @@ per-node watches), a seeded delivery order, a `SimClock` and a
 partitions and heal, dropped messages, unanswered calls, clock skew,
 watch and route death, a modified client's write, a same-seq conflict).
 
+The netsim models Veilid's latency by default, and nothing turns it off
+(plan E2.B): every DHT call (create, open, get, set, inspect, watch) and
+every app message or call costs simulated time drawn from a seeded,
+per-node generator. A set waits for consensus (~13.5 s, measured live), a
+read that finds no value runs to the fanout's 10 s deadline, a read of a
+held value takes 1–3 s, a message 0.2–0.8 s one way. Calls on one
+`(record, subkey)` serialize, calls on different subkeys overlap, and a
+node runs at most `VeilidStartupOptions::max_concurrent_dht_operations`
+DHT calls at once. An offline DHT fails at once, as Veilid's
+`dht_is_online()` check does. Scenarios run on paused tokio time, so the
+waits cost no wall time; a scenario's `eventually` limit is simulated
+time and must allow what a real network needs. The calibration table,
+each number's source (a pinned `~/veilid` constant with its file and line,
+or a live log's timestamps) and how to recalibrate from a live log are in
+the module documentation of `crates/rekindle-netsim/src/latency.rs`.
+
 Scenarios live in `crates/rekindle-node/tests/netsim/`: each node is a
 real `Host::start` with `TransportSource::Ports` on a temp data root, and
 requests go through `HostApi::call` (a held request is proved as the CLI
