@@ -414,3 +414,35 @@ async fn typing_to_a_rotated_verified_friend_sends_nothing() {
         .await
         .unwrap());
 }
+
+/// A logout with a message still in the outbox names the pending work
+/// (plan E2.5: `intent_facts::unsent` counts the outbox's unsettled rows).
+#[tokio::test]
+async fn a_logout_with_a_queued_message_reviews_its_pending_work() {
+    use rekindle_types::intent::{Escalation, IntentKind};
+    let dir = tempfile::tempdir().unwrap();
+    let (host, peer) = ann_with_rotated_verified_friend(&dir).await;
+    let none =
+        crate::host::intent_select::select(&host.ctx, &IpcRequest::Logout, IntentKind::Logout)
+            .await
+            .unwrap();
+    assert!(none.escalations.is_empty(), "{:?}", none.escalations);
+    let send = IpcRequest::DmSend {
+        peer_key: peer,
+        body: "later".into(),
+        reply_to: None,
+    };
+    let answer = settle(&host, host.call(bus(1), send).await).await;
+    assert!(code(&answer).is_none(), "{answer:?}");
+    let held =
+        crate::host::intent_select::select(&host.ctx, &IpcRequest::Logout, IntentKind::Logout)
+            .await
+            .unwrap();
+    assert!(
+        held.escalations
+            .iter()
+            .any(|e| matches!(e, Escalation::PendingWork { unsent: 1, .. })),
+        "{:?}",
+        held.escalations
+    );
+}

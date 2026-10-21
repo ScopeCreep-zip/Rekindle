@@ -131,12 +131,16 @@ async fn forget_removed(friends: &HostFriends) {
     }
 }
 
-/// The `DmSendStatus` of a `dm` row's change.
+/// The `DmSendStatus` of a `dm` row's change, or of our friend request's
+/// (its `FriendRequest:` client id names it on the peer's pending row).
 fn send_status(change: &StateChange) -> Option<SubscriptionEvent> {
-    if change.kind != StreamKind::Dm {
-        return None;
-    }
-    let peer = change.stream.strip_prefix("dm:")?;
+    let peer = match change.kind {
+        StreamKind::Dm => change.stream.strip_prefix("dm:")?,
+        StreamKind::FriendHandshake if change.client_id.starts_with("FriendRequest:") => {
+            change.stream.strip_prefix("friend_handshake:")?
+        }
+        _ => return None,
+    };
     Some(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DmSendStatus {
             conversation_id: peer.to_owned(),

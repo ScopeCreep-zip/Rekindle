@@ -16,6 +16,12 @@ import { transformNewFriend } from "../utils/transformers";
 // message whose client id (`serverMessageId`) it names takes the state the
 // backend names. No matching or inference happens here.
 function applyMessageState(state: DmSendStatus): void {
+  if (state.clientId.startsWith("FriendRequest:")) {
+    if (friendsState.friends[state.conversationId]) {
+      setFriendsState("friends", state.conversationId, "requestSendState", state.state);
+    }
+    return;
+  }
   const convo = chatState.conversations[state.conversationId];
   if (!convo) return;
   const idx = convo.messages.findIndex((m) => m.serverMessageId === state.clientId);

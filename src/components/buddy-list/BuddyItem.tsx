@@ -21,6 +21,7 @@ interface BuddyItemProps {
   unreadCount: number;
   voiceChannel: string | null;
   friendshipState?: string;
+  requestSendState?: string;
   handshakeError: string | null;
   handshakeRetrying: boolean;
   identityPinMismatch: boolean;
@@ -87,6 +88,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Tooltip>
         <Show when={gameDisplay()}>
           <div class="buddy-game-info">{gameDisplay()}</div>
+        </Show>
+        <Show when={props.friendshipState === "pendingOut" && props.requestSendState}>
+          {(state) => <div class="buddy-request-state">Request {state()}</div>}
         </Show>
         <Show when={!gameDisplay() && props.statusMessage}>
           <div class="buddy-status-message">{props.statusMessage}</div>
