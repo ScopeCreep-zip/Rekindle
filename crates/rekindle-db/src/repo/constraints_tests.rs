@@ -28,6 +28,8 @@ fn seeded() -> Connection {
         "INSERT INTO notification_preferences (owner_key, community_id) VALUES (?1, 'c')",
         "INSERT INTO outgoing_invites (owner_key, invite_id, inbox_key, created_at, expires_at) \
          VALUES (?1, 'i', 'k', 0, 0)",
+        "INSERT INTO group_dms (owner_key, group_id, name, roster, epoch, created_at) \
+         VALUES (?1, '00000000000000000000000000000000', 'g', '[]', 0, 0)",
         "INSERT INTO community_events (owner_key, community_id, id, title, creator_pseudonym, \
          start_time, created_at, recurrence_json, location_json) \
          VALUES (?1, 'c', 'e', 't', 'p', 0, 0, '{}', '{}')",
@@ -83,6 +85,7 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("event_rsvps", "status", "'none'"),
     ("message_delivery", "status", "'queued'"),
     ("dms", "participants_json", "'a,b'"),
+    ("group_dms", "roster", "'{}'"),
     ("push_relay_registrations", "platform", "'sms'"),
     ("push_relay_registrations", "record_keys_json", "'k'"),
     ("voice_session_events", "event_type", "'mute'"),

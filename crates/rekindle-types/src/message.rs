@@ -230,3 +230,53 @@ impl SendState {
         .find(|s| s.as_str() == stored)
     }
 }
+
+/// The conversation a `messages` row belongs to (`messages.conversation_type`,
+/// plan E2.6): a 1:1 DM, a group DM, or a community channel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConversationType {
+    Dm,
+    GroupDm,
+    Channel,
+}
+
+impl ConversationType {
+    /// The stored form.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dm => "dm",
+            Self::GroupDm => "group_dm",
+            Self::Channel => "channel",
+        }
+    }
+}
+
+impl std::str::FromStr for ConversationType {
+    type Err = String;
+
+    fn from_str(stored: &str) -> Result<Self, Self::Err> {
+        [Self::Dm, Self::GroupDm, Self::Channel]
+            .into_iter()
+            .find(|t| t.as_str() == stored)
+            .ok_or_else(|| format!("unknown conversation type {stored:?}"))
+    }
+}
+
+#[cfg(test)]
+mod conversation_type_tests {
+    use super::ConversationType;
+
+    #[test]
+    fn every_type_round_trips_and_others_are_refused() {
+        for t in [
+            ConversationType::Dm,
+            ConversationType::GroupDm,
+            ConversationType::Channel,
+        ] {
+            assert_eq!(t.as_str().parse::<ConversationType>(), Ok(t));
+        }
+        assert!("group".parse::<ConversationType>().is_err());
+    }
+}

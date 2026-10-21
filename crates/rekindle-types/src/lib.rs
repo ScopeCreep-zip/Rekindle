@@ -26,6 +26,7 @@ pub mod friend_code;
 pub mod friend_store;
 pub mod game_server;
 pub mod governance;
+pub mod group_dm;
 pub mod id;
 pub mod image_kind;
 pub mod intent;

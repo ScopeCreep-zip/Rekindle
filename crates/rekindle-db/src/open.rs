@@ -17,6 +17,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// Veilid storage included, so stale records written under the old layout
 /// cannot be read back with the new indices. The app is not live yet.
 ///
+/// 108: group DMs (plan E2.6 G1): the `group_dms` and
+/// `group_dm_sender_keys` tables, `'group_dm'` in
+/// `messages.conversation_type` and in `outbox.kind`.
+///
 /// 83: the durable record writes a logout left unsent (plan C7.6h); the
 /// next login of the same identity re-pushes them (outbox rows since 103).
 ///
@@ -166,7 +170,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 107 (plan E2.5, D23/D24): `chain_entries`, which chain seq each `dm` row
 /// went to (for `retire_through`), and `messages.history_gap_through`, the
 /// stored `HistoryGap` marker.
-pub const SCHEMA_VERSION: i64 = 107;
+pub const SCHEMA_VERSION: i64 = 108;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

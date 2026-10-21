@@ -305,6 +305,31 @@ pub fn dm_inbox(conn: &Connection, owner_key: &str, limit: u32) -> rusqlite::Res
     rows
 }
 
+/// The conversation a message of ours or a peer's belongs to, named by its
+/// client id: `(conversation id, type)` of the first row holding it.
+///
+/// # Errors
+/// The query failed or the stored type is not in the vocabulary.
+pub fn conversation_of(
+    conn: &Connection,
+    owner_key: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<(String, rekindle_types::message::ConversationType)>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT conversation_id, conversation_type FROM messages \
+         WHERE owner_key = ?1 AND message_id = ?2 ORDER BY id LIMIT 1",
+        params![owner_key, message_id],
+        |row| {
+            Ok((
+                crate::row::get(row, "conversation_id")?,
+                crate::row::get_enum(row, "conversation_type")?,
+            ))
+        },
+    )
+    .optional()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -539,5 +564,27 @@ mod tests {
                 [],
             )
             .is_err());
+    }
+
+    #[test]
+    fn a_message_names_its_conversation_and_type() {
+        use rekindle_types::message::ConversationType;
+        let conn = fixture::conn();
+        insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None)).unwrap();
+        assert_eq!(
+            super::conversation_of(&conn, OWNER, "id1").unwrap(),
+            Some(("bob".to_string(), ConversationType::Dm))
+        );
+        conn.execute(
+            "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, \
+             body, timestamp, message_id) VALUES (?1, 'g', 'group_dm', 's', 'b', 0, 'id2')",
+            [OWNER],
+        )
+        .unwrap();
+        assert_eq!(
+            super::conversation_of(&conn, OWNER, "id2").unwrap(),
+            Some(("g".to_string(), ConversationType::GroupDm))
+        );
+        assert_eq!(super::conversation_of(&conn, OWNER, "none").unwrap(), None);
     }
 }

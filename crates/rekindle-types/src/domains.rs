@@ -119,6 +119,12 @@ labels! {
     // ── 1:1 and group DMs ────────────────────────────────────────────
     /// HKDF info: group-DM MEK forward ratchet step.
     DM_MEK_RATCHET = "rekindle-dm-ratchet-v1";
+    /// AEAD associated-data label: a group-DM `GroupContent`, sealed under
+    /// its sender's group sending key (plan E2.6).
+    GROUP_DM_CONTENT = "rekindle-group-dm-content-v1";
+    /// Ed25519 signature prefix: a `GroupDmInvite`, signed by the group's
+    /// creator over its canonical bytes (plan E2.6).
+    GROUP_DM_INVITE = "rekindle-group-dm-invite-v1";
     /// HKDF info: the spec Double Ratchet's `KDF_RK` (DR rev. 4 §7.2).
     DR_ROOT = "rekindle-dr-root-v1";
     /// HKDF info: a Double Ratchet message key → the 80 bytes of DR rev. 4

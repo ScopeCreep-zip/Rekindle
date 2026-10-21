@@ -87,11 +87,38 @@ CREATE TABLE IF NOT EXISTS presence_keys (
     PRIMARY KEY (owner_key, epoch)
 );
 
+-- Plan E2.6: a group DM (3-8 members, no governance). `group_id` is the
+-- 16 random bytes the creator minted, in hex; `roster` is the signed
+-- invite's member list (JSON array of `rekindle_types::group_dm::RosterMember`)
+-- and `epoch` our own sending key's current epoch.
+CREATE TABLE IF NOT EXISTS group_dms (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    group_id TEXT NOT NULL CHECK(length(group_id) = 32),
+    name TEXT NOT NULL CHECK(length(name) > 0),
+    roster TEXT NOT NULL CHECK(json_valid(roster) AND json_type(roster) = 'array'),
+    epoch INTEGER NOT NULL CHECK(epoch >= 0),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, group_id)
+);
+
+-- Plan E2.6: each member's group sending key (sender-owned, per member),
+-- by epoch; ours is the row whose `member` is our identity. At rest under
+-- SQLCipher (D1/D3).
+CREATE TABLE IF NOT EXISTS group_dm_sender_keys (
+    owner_key TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    member TEXT NOT NULL CHECK(length(member) = 64),
+    epoch INTEGER NOT NULL CHECK(epoch >= 0),
+    key BLOB NOT NULL CHECK(length(key) = 32),
+    PRIMARY KEY (owner_key, group_id, member, epoch),
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     conversation_id TEXT NOT NULL,
-    conversation_type TEXT NOT NULL CHECK(conversation_type IN ('dm', 'channel')),
+    conversation_type TEXT NOT NULL CHECK(conversation_type IN ('dm', 'group_dm', 'channel')),
     sender_key TEXT NOT NULL,
     body TEXT NOT NULL,
     automod_blurred INTEGER NOT NULL DEFAULT 0,
@@ -784,7 +811,7 @@ CREATE TABLE IF NOT EXISTS outbox (
     stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
     client_id TEXT NOT NULL CHECK(length(client_id) > 0),
     kind TEXT NOT NULL
-        CHECK(kind IN ('dm', 'friend_handshake', 'dht_write', 'channel_post', 'media_key')),
+        CHECK(kind IN ('dm', 'group_dm', 'friend_handshake', 'dht_write', 'channel_post', 'media_key')),
     payload BLOB NOT NULL,
     state TEXT NOT NULL CHECK(state IN ('queued', 'sent', 'delivered', 'read', 'failed')),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
