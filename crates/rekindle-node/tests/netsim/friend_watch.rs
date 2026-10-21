@@ -122,7 +122,7 @@ async fn a_participant_record_received_mid_session_is_watched() {
 
 /// Plan E2.6: Lev unlocks while his DHT is off, so every watch his unlock
 /// opens fails, and so does the diff of Kim's next hint. With the two then
-/// partitioned (no hint or resend reaches him) and his DHT back, no network
+/// cut off from each other's messages (no hint or resend reaches him) and his DHT back, no network
 /// change re-opens them. The maintenance tick's retry does, and the diff it
 /// runs reads the message he missed.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -154,10 +154,10 @@ async fn a_watch_whose_open_failed_opens_on_a_later_tick_and_reads_what_it_misse
         .await,
         "nothing Lev reads reaches the network"
     );
-    sim.fault(Fault::Partition {
-        a: vec![0],
-        b: vec![1],
-    });
+    // Every app message is dropped (no hint or resend reaches him); a
+    // partition would also split the DHT's replicas (plan E2.B S4), which
+    // this scenario is not about.
+    sim.fault(Fault::DropMessages { per_mille: 1000 });
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: false,
