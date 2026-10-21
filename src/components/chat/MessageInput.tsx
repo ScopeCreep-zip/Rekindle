@@ -210,6 +210,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
             onInput={onInput}
             onKeyDown={onKeyDown}
             rows={2}
+            aria-label={props.label}
             role="combobox"
             aria-autocomplete="list"
             aria-expanded={mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0}

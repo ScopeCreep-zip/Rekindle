@@ -13,6 +13,8 @@ export interface EditMode {
 }
 
 export interface MessageInputProps {
+  /** The input's accessible name: which conversation it writes to. */
+  label: string;
   communityId?: string;
   peerId: string;
   replyTo?: { senderName: string; body: string; messageId?: string } | null;

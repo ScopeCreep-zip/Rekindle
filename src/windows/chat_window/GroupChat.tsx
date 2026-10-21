@@ -93,6 +93,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
         />
         <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
         <MessageInput
+          label={`Message ${name()}`}
           peerId={groupId}
           onSend={(_, body) => void send(body)}
           onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}

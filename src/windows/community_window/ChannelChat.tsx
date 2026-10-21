@@ -83,6 +83,7 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         </div>
       </Show>
       <MessageInput
+        label={`Message #${vm.activeChannel()?.name ?? "channel"}`}
         communityId={vm.selectedCommunityId()}
         peerId={vm.selectedChannelId()}
         replyTo={vm.replyTo()}

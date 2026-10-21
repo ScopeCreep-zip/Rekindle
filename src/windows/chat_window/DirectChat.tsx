@@ -211,6 +211,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
        *  its own call window, which the backend opens on connect. */}
       <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
       <MessageInput
+        label={`Message ${peerName()}`}
         peerId={peerId}
         disabled={pinMismatch()}
         disabledMessage={identityPinMismatchText(peerName())}
