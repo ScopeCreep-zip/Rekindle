@@ -937,6 +937,51 @@ CREATE TABLE IF NOT EXISTS unprocessed (
     PRIMARY KEY (owner_key, peer_identity, header_dh, header_n)
 );
 
+-- The send log (plan E2.5, D24 send half): every user-content ratchet
+-- message we sent, written in the ratchet's transaction, so a peer that
+-- could not open it can ask for it again (`RetryRequest`). `msg_id` is the
+-- message's header id (`rekindle_crypto::replay::ratchet_message_id`),
+-- `ratchet_key` the header's sending ratchet key. `plaintext_sealed` is
+-- the frame plaintext, sealed at rest by this database's SQLCipher key
+-- (D1/D3). A request whose observed key matches resends it under the
+-- current session and archives the row (`archived_at`); rows older than
+-- `DELIVERY_HORIZON` are pruned.
+CREATE TABLE IF NOT EXISTS message_send_log (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer TEXT NOT NULL,
+    msg_id BLOB NOT NULL CHECK(typeof(msg_id) = 'blob' AND length(msg_id) = 32),
+    type_id INTEGER NOT NULL CHECK(type_id BETWEEN 0 AND 65535),
+    ratchet_key BLOB NOT NULL CHECK(typeof(ratchet_key) = 'blob' AND length(ratchet_key) = 32),
+    plaintext_sealed BLOB NOT NULL,
+    sent_at INTEGER NOT NULL CHECK(sent_at >= 0),
+    archived_at INTEGER CHECK(archived_at IS NULL OR archived_at >= 0),
+    PRIMARY KEY (owner_key, peer, msg_id)
+);
+
+-- Our retry requests (plan E2.5, D24): a ratchet message from `peer` we
+-- could not open, held (`pending`) until the source's CaughtUp, then sent
+-- at most `MAX_PER_MESSAGE` times per message (`sent_count`) and
+-- `MAX_PER_PEER` times per peer per `PEER_WINDOW` (`retry_request_sends`).
+CREATE TABLE IF NOT EXISTS retry_requests (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer TEXT NOT NULL,
+    msg_id BLOB NOT NULL CHECK(typeof(msg_id) = 'blob' AND length(msg_id) = 32),
+    observed_ratchet_key BLOB NOT NULL CHECK(typeof(observed_ratchet_key) = 'blob' AND length(observed_ratchet_key) = 32),
+    pending INTEGER NOT NULL CHECK(pending IN (0, 1)),
+    sent_count INTEGER NOT NULL DEFAULT 0 CHECK(sent_count >= 0),
+    failed_at INTEGER NOT NULL CHECK(failed_at >= 0),
+    PRIMARY KEY (owner_key, peer, msg_id)
+);
+
+-- Each retry request sent, for the per-peer window (plan E2.5).
+CREATE TABLE IF NOT EXISTS retry_request_sends (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer TEXT NOT NULL,
+    sent_at INTEGER NOT NULL CHECK(sent_at >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_retry_request_sends_peer
+    ON retry_request_sends(owner_key, peer, sent_at);
+
 -- FTS5 indexes for local search (architecture §23). External-content tables
 -- per https://sqlite.org/fts5.html#external_content_tables — index lives in
 -- a parallel virtual table, content stays in the canonical row table, and

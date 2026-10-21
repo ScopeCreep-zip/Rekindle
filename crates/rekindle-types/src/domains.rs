@@ -64,6 +64,10 @@ labels! {
     /// BLAKE3 derive-key context: the replay id of a pre-session frame,
     /// over `sender ‖ nonce` (`rekindle_crypto::replay`).
     DM_REPLAY_ID = "rekindle-dm-replay-id-v1";
+    /// BLAKE3 derive-key context: the id of a ratchet message, over its
+    /// header `dh ‖ n` (`rekindle_crypto::replay::ratchet_message_id`): the
+    /// send log's key and a `RetryRequest`'s `msg_id` (plan E2.5, D24).
+    DM_RATCHET_MESSAGE_ID = "rekindle-dm-ratchet-message-id-v1";
     /// Ed25519 signature prefix: an identity rotation, signed by the old and
     /// the new identity over `old ‖ new ‖ recipient` (0x0108).
     IDENTITY_ROTATED = "rekindle-identity-rotated-v1";

@@ -473,3 +473,72 @@ async fn sending_without_a_session_fails_and_stores_nothing() {
     ));
     assert_eq!(alice.count("ratchet_sessions").await, 0);
 }
+
+/// D24 send half (plan E2.5): a logged message is resent under the current
+/// session on a request naming its key, and opens with its content; a
+/// request naming another key resends nothing and moves no session.
+#[tokio::test]
+async fn a_logged_message_is_resent_only_on_its_ratchet_key() {
+    use crate::repo::send_log;
+    use rekindle_crypto::replay::ratchet_message_id;
+
+    let (alice, bob) = (Party::new(1), Party::new(2));
+    let init = initiate(&alice, &bob, b"hello").await;
+    accept_init(
+        &bob.db,
+        &bob.local,
+        &alice.address(),
+        init,
+        Reinitiation::Refused,
+        AD_EXTRA,
+        0x0001,
+    )
+    .await
+    .unwrap();
+    let lost = encrypt_record_and_log_outbound(
+        &alice.db,
+        &alice.local,
+        &bob.address(),
+        b"the original",
+        AD_EXTRA,
+        DM,
+    )
+    .await
+    .unwrap();
+    let msg_id = ratchet_message_id(&lost.header.dh, lost.header.n);
+    let (owner, peer) = (alice.local.owner(), bob.local.owner());
+
+    let before = record_bytes(&alice, &bob).await;
+    let forged = alice
+        .db
+        .call(move |c| send_log::take_for_resend(c, &owner, &peer, &msg_id, &[0xEE; 32], 5))
+        .await
+        .unwrap();
+    assert_eq!(forged, None);
+    assert_eq!(record_bytes(&alice, &bob).await, before);
+
+    let observed = lost.header.dh;
+    let logged = alice
+        .db
+        .call(move |c| send_log::take_for_resend(c, &owner, &peer, &msg_id, &observed, 5))
+        .await
+        .unwrap()
+        .expect("the genuine request finds the row");
+    assert_eq!((logged.type_id, logged.ratchet_key), (DM, observed));
+    let resent = encrypt_record_and_log_outbound(
+        &alice.db,
+        &alice.local,
+        &bob.address(),
+        &logged.plaintext,
+        AD_EXTRA,
+        logged.type_id,
+    )
+    .await
+    .unwrap();
+    assert_ne!(
+        (resent.header.dh, resent.header.n),
+        (lost.header.dh, lost.header.n)
+    );
+    let got = receive(&bob, &alice, resent).await.unwrap();
+    assert_eq!(got.plaintext, b"the original");
+}

@@ -192,6 +192,44 @@ pub async fn encrypt_and_record_outbound(
     .await
 }
 
+/// [`encrypt_and_record_outbound`] for a user-content message of kind
+/// `type_id`, logged in `message_send_log` in the same transaction under
+/// its header id and sending ratchet key (plan E2.5, D24), so a
+/// `RetryRequest` can have it resent.
+///
+/// # Errors
+/// See [`RatchetError`].
+pub async fn encrypt_record_and_log_outbound(
+    db: &Db,
+    local: &LocalParty,
+    peer: &PeerAddress,
+    plaintext: &[u8],
+    ad_extra: &[u8],
+    type_id: u16,
+) -> Result<RatchetMessage, RatchetError> {
+    let (local, peer) = (local.clone(), peer.clone());
+    let (plaintext, ad_extra) = (plaintext.to_vec(), ad_extra.to_vec());
+    in_transaction(db, move |conn| {
+        let owner = local.owner();
+        let (next, message) = load(conn, &owner, &peer)?.encrypt(&plaintext, &ad_extra)?;
+        store(conn, &owner, &peer, &next, local.now_ms)?;
+        let sent = crate::repo::send_log::LoggedSend {
+            peer: peer.identity,
+            msg_id: rekindle_crypto::replay::ratchet_message_id(
+                &message.header.dh,
+                message.header.n,
+            ),
+            type_id,
+            ratchet_key: message.header.dh,
+            plaintext,
+            sent_at: local.now_ms,
+        };
+        crate::repo::send_log::insert(conn, &owner, &sent)?;
+        Ok(message)
+    })
+    .await
+}
+
 /// Decrypt a ratchet message from `peer` and record its plaintext in
 /// `unprocessed` as `type_id`.
 ///

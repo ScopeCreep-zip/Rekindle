@@ -135,7 +135,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 97 (plan E2.5): `presence_keys` and `friends.presence_epoch`/`presence_key`
 /// (the friends key of profile STATUS and GAME_INFO).
-pub const SCHEMA_VERSION: i64 = 97;
+///
+/// 98 (plan E2.5, D24): the send log `message_send_log` and the retry
+/// requests `retry_requests`/`retry_request_sends`.
+pub const SCHEMA_VERSION: i64 = 98;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
