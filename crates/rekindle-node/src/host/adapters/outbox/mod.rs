@@ -4,6 +4,7 @@
 //! Host's clock and randomness, and each state change on a broadcast the
 //! Host's event mapping subscribes to.
 
+mod channel_post;
 mod dht_write;
 mod dm;
 mod senders;
@@ -24,6 +25,7 @@ use rekindle_types::message::SendState;
 use rekindle_utils::{Clock, RandomSource};
 use tokio::sync::broadcast;
 
+pub use channel_post::{ChannelPosts, SUPERSEDED};
 pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
 pub use senders::{Senders, StreamSender};
@@ -182,6 +184,15 @@ impl OutboxDeps for HostOutbox {
     async fn due(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError> {
         let (db, owner) = self.db()?;
         let rows = db.call(move |c| repo::due(c, &owner, now)).await;
+        rows_of(rows.map_err(|e| storage(&e))?)
+    }
+
+    async fn stream_rows(&self, stream: &str) -> Result<Vec<OutboxRow>, OutboxError> {
+        let (db, owner) = self.db()?;
+        let stream = stream.to_owned();
+        let rows = db
+            .call(move |c| repo::stream_rows(c, &owner, &stream))
+            .await;
         rows_of(rows.map_err(|e| storage(&e))?)
     }
 

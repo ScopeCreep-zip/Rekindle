@@ -105,7 +105,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// the daemon's friend-inbox protocol until E2.1.
 ///
 /// 86: `messages.send_state` (D22's delivery vocabulary) and the held
-/// write's slot (`held_record_key`, `held_subkey`), plan D1 / C7.14.
+/// write's record slot a queued post waited on, plan D1 / C7.14.
 ///
 /// 87: the preferences move from the plugin store into `app_settings`
 /// columns and `app_input_channels` (plan D1).
@@ -155,7 +155,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 104 (plan E2.5, D22): the outbox's `dht_write` stream absorbs C7.6h's
 /// unsent-write table.
-pub const SCHEMA_VERSION: i64 = 104;
+///
+/// 105 (plan E2.5, D22): a channel post waits on its `channel_post` outbox
+/// row; the held record slot columns of `messages` are gone.
+pub const SCHEMA_VERSION: i64 = 105;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

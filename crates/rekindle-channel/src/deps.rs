@@ -25,7 +25,6 @@ use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::message::SendState;
 
 use crate::error::ChannelError;
 use crate::event::ChannelEvent;
@@ -175,14 +174,8 @@ pub enum DhtWrite {
     Held,
 }
 
-/// A sent message whose write is held: it is delivered (or not) when its
-/// record slot settles.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PendingDelivery {
-    pub community: String,
-    pub channel: String,
-    pub message: String,
-}
+/// A sent post and its record slot; its outbox row settles with the slot.
+pub use rekindle_types::message::ChannelPost;
 
 /// Sent-message echo for the local "you said this" UI event.
 #[derive(Debug, Clone)]
@@ -367,19 +360,18 @@ pub trait ChannelMessagingDeps: Send + Sync {
         channel_id: &str,
     ) -> Result<String, ChannelError>;
 
-    // ---------- Held writes (plan C7.13) ----------
+    // ---------- The outbox's channel_post stream (plan E2.5) ----------
 
-    /// Remember a sent message whose write to `record_key`/`subkey` is
-    /// held, until that slot settles.
-    fn track_pending_delivery(&self, record_key: &str, subkey: u32, pending: PendingDelivery);
+    /// Store `post`'s outbox row (the post is persisted `queued`); from
+    /// then on only the outbox moves the post's delivery state.
+    async fn queue_post(&self, post: &ChannelPost) -> Result<(), ChannelError>;
 
-    /// Forget and return the messages waiting on `record_key`/`subkey`.
-    fn take_pending_deliveries(&self, record_key: &str, subkey: u32) -> Vec<PendingDelivery>;
+    /// The write of `record_key`/`subkey` settled: every post waiting on it
+    /// settles `sent` when it `landed`, else `failed`. Returns them.
+    async fn settle_posts(&self, record_key: &str, subkey: u32, landed: bool) -> Vec<ChannelPost>;
 
-    /// Record a sent message's delivery state on its row (queued in order
-    /// on the database; a failure is logged). `held` is the record slot a
-    /// `Queued` message waits on (plan D1, C7.14).
-    fn record_send_state(&self, message_id: &str, state: SendState, held: Option<(&str, u32)>);
+    /// `message`'s write could not be made: its row settles `failed`.
+    async fn fail_post(&self, message: &str);
 
     // ---------- DB (channel messages) ----------
 

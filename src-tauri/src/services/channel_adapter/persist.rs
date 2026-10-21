@@ -13,7 +13,7 @@ use crate::state_helpers;
 use super::ChannelAdapter;
 
 /// Our own post's row, written `Queued` before its record write: the
-/// write's result moves it (`ChannelMessagingDeps::record_send_state`).
+/// its outbox `channel_post` row moves it from then on (plan E2.5).
 async fn persist_own_post(
     adapter: &ChannelAdapter,
     channel_id: &str,

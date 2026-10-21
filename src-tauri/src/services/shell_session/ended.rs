@@ -86,9 +86,6 @@ fn clear(state: &AppState) {
     // The pool closed these records with the session.
     state.dm_leases.lock().clear();
     *state.personal_sync_lease.lock() = None;
-    // Pending deliveries belong to the session; its held writes went to the
-    // outbox (C7.6h) and land with no status shown (C7.14).
-    state.channel_pending_deliveries.lock().clear();
     state.communities.write().clear();
     // Each cache is the identity's own keyed tree (plan E3.0a).
     state.file_caches.write().clear();

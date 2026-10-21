@@ -49,6 +49,19 @@ pub struct SyncedMessage {
     pub lamport_ts: Option<i64>,
 }
 
+/// Our community channel post and the record slot its write targets (plan
+/// E2.5, C7.14): the payload of its outbox `channel_post` row, which
+/// settles when that slot's write does.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChannelPost {
+    pub community: String,
+    pub channel: String,
+    /// The post's client id, its row's.
+    pub message: String,
+    pub record_key: String,
+    pub subkey: u32,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -14,7 +14,7 @@ use rekindle_types::permissions::{BYPASS_SLOWMODE, SEND_MESSAGES};
 use rekindle_types::message::SendState;
 
 use crate::deps::{
-    ChannelMessagingDeps, ChannelSendOutcome, DhtWrite, PendingDelivery, SentChannelMessageEcho,
+    ChannelMessagingDeps, ChannelPost, ChannelSendOutcome, DhtWrite, SentChannelMessageEcho,
 };
 use crate::error::ChannelError;
 use crate::mentions::resolve_outbound_mentions;
@@ -220,14 +220,15 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
     let status = resolve_write(
         deps,
         status,
-        PendingDelivery {
+        ChannelPost {
             community: community_id.to_string(),
             channel: channel_id.to_string(),
             message: message_id.clone(),
+            record_key: context.channel_key.clone(),
+            subkey: channel_message_subkey(context.slot_index),
         },
-        &context.channel_key,
-        context.slot_index,
-    );
+    )
+    .await;
 
     let timestamp_u64 = u64::try_from(timestamp_ms).unwrap_or_default();
     let echo = SentChannelMessageEcho {
@@ -374,14 +375,15 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
     let status = resolve_write(
         deps,
         status,
-        PendingDelivery {
+        ChannelPost {
             community: dest_community_id.to_string(),
             channel: dest_channel_id.to_string(),
             message: new_message_id.clone(),
+            record_key: dest_context.channel_key.clone(),
+            subkey: channel_message_subkey(dest_context.slot_index),
         },
-        &dest_context.channel_key,
-        dest_context.slot_index,
-    );
+    )
+    .await;
 
     let timestamp_u64 = u64::try_from(timestamp_ms).unwrap_or_default();
     deps.emit_chat_event_local(&SentChannelMessageEcho {
@@ -402,53 +404,68 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
     })
 }
 
-/// Resolve a sent message's write (`None`: it could not be made) into its
-/// delivery state, recorded on its row (it was persisted `Queued`), and
-/// return the state's name for the caller. A held write is tracked by its
-/// record slot until it settles (plan C7.13, D1).
-fn resolve_write<D: ChannelMessagingDeps>(
+/// Resolve a sent post's write (`None`: it could not be made) through its
+/// outbox `channel_post` row (plan E2.5, D22), queued first: a stored write
+/// settles the slot's rows `sent` (our page carries every post waiting on
+/// it), a held one leaves them to the pool's settle
+/// ([`on_write_settled`]), and one that could not be made fails the post.
+/// Returns the post's state name for the caller.
+async fn resolve_write<D: ChannelMessagingDeps>(
     deps: &D,
     written: Option<DhtWrite>,
-    pending: PendingDelivery,
-    record_key: &str,
-    slot_index: u32,
+    post: ChannelPost,
 ) -> String {
-    let subkey = channel_message_subkey(slot_index);
-    let state = match written {
-        Some(DhtWrite::Stored) => SendState::Sent,
-        Some(DhtWrite::Held) => SendState::Queued,
-        None => SendState::Failed,
-    };
-    let held = (state == SendState::Queued).then_some((record_key, subkey));
-    deps.record_send_state(&pending.message, state, held);
-    if held.is_some() {
-        deps.track_pending_delivery(record_key, subkey, pending);
+    if let Err(error) = deps.queue_post(&post).await {
+        tracing::warn!(%error, message = %post.message, "queueing the channel post failed");
+        return SendState::Failed.as_str().to_string();
     }
+    let state = match written {
+        Some(DhtWrite::Stored) => {
+            let settled = deps.settle_posts(&post.record_key, post.subkey, true).await;
+            emit_settled(deps, &settled, true, Some(&post.message));
+            SendState::Sent
+        }
+        Some(DhtWrite::Held) => SendState::Queued,
+        None => {
+            deps.fail_post(&post.message).await;
+            SendState::Failed
+        }
+    };
     state.as_str().to_string()
 }
 
-/// A held channel write settled (`RecordPool::settled`, plan C7.13): every
-/// message waiting on that slot is sent when it landed. When the
-/// network superseded it, our page was replaced by one we did not write and
-/// those messages did not land: they fail visibly, and a resend merges.
-pub fn on_write_settled<D: ChannelMessagingDeps>(
+/// Tell the windows how the settled posts went, but `except` (the post
+/// whose own send reports its state).
+fn emit_settled<D: ChannelMessagingDeps>(
+    deps: &D,
+    settled: &[ChannelPost],
+    landed: bool,
+    except: Option<&str>,
+) {
+    for post in settled
+        .iter()
+        .filter(|p| Some(p.message.as_str()) != except)
+    {
+        tracing::info!(message = %post.message, landed, "channel post settled");
+        if landed {
+            deps.emit_delivery_succeeded(&post.community, &post.channel, &post.message);
+        } else {
+            deps.emit_delivery_failed(&post.community, &post.channel, &post.message);
+        }
+    }
+}
+
+/// A held channel write settled (`RecordPool::settled`, plan C7.13): the
+/// outbox settles every post waiting on that slot, `sent` when it landed.
+/// When the network superseded it, our page was replaced by one we did not
+/// write and those posts did not land: they fail visibly, and a resend
+/// merges.
+pub async fn on_write_settled<D: ChannelMessagingDeps>(
     deps: &D,
     record_key: &str,
     subkey: u32,
     landed: bool,
 ) {
-    for pending in deps.take_pending_deliveries(record_key, subkey) {
-        tracing::info!(
-            message = %pending.message,
-            landed,
-            "held channel write settled: message delivery resolved"
-        );
-        if landed {
-            deps.record_send_state(&pending.message, SendState::Sent, None);
-            deps.emit_delivery_succeeded(&pending.community, &pending.channel, &pending.message);
-        } else {
-            deps.record_send_state(&pending.message, SendState::Failed, None);
-            deps.emit_delivery_failed(&pending.community, &pending.channel, &pending.message);
-        }
-    }
+    let settled = deps.settle_posts(record_key, subkey, landed).await;
+    emit_settled(deps, &settled, landed, None);
 }

@@ -8,10 +8,9 @@ use std::collections::HashMap;
 
 use async_trait::async_trait;
 use rekindle_channel::deps::{
-    ChannelEntryItem, ChannelInfoSnapshot, ChannelMessageRow, ChannelMessagingDeps,
-    ChannelSendOutcome, ChannelWriteContext, DhtWrite, MemberMentionView, PendingDelivery,
-    PseudonymCredentials, RoleSnapshot, SentChannelMessageEcho, ThreadInfoSnapshot,
-    ThreadStateSnapshot,
+    ChannelEntryItem, ChannelInfoSnapshot, ChannelMessageRow, ChannelMessagingDeps, ChannelPost,
+    ChannelSendOutcome, ChannelWriteContext, DhtWrite, MemberMentionView, PseudonymCredentials,
+    RoleSnapshot, SentChannelMessageEcho, ThreadInfoSnapshot, ThreadStateSnapshot,
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::event::ChannelEvent;
@@ -294,46 +293,18 @@ impl ChannelMessagingDeps for ChannelAdapter {
         .map_err(ChannelError::Adapter)
     }
 
-    // ---------- Held writes (plan C7.13) ----------
+    // ---------- The outbox's channel_post stream (plan E2.5) ----------
 
-    fn track_pending_delivery(&self, record_key: &str, subkey: u32, pending: PendingDelivery) {
-        self.state
-            .channel_pending_deliveries
-            .lock()
-            .entry((record_key.to_string(), subkey))
-            .or_default()
-            .push(pending);
+    async fn queue_post(&self, post: &ChannelPost) -> Result<(), ChannelError> {
+        self.queue_post_impl(post).await
     }
 
-    fn take_pending_deliveries(&self, record_key: &str, subkey: u32) -> Vec<PendingDelivery> {
-        self.state
-            .channel_pending_deliveries
-            .lock()
-            .remove(&(record_key.to_string(), subkey))
-            .unwrap_or_default()
+    async fn settle_posts(&self, record_key: &str, subkey: u32, landed: bool) -> Vec<ChannelPost> {
+        self.settle_posts_impl(record_key, subkey, landed).await
     }
 
-    fn record_send_state(
-        &self,
-        message_id: &str,
-        state: rekindle_types::message::SendState,
-        held: Option<(&str, u32)>,
-    ) {
-        let Ok(owner) = state_helpers::current_owner_key(&self.state) else {
-            return;
-        };
-        let message_id = message_id.to_string();
-        let held = held.map(|(record, subkey)| (record.to_string(), subkey));
-        crate::db_helpers::db_fire(&self.pool, "message send state", move |conn| {
-            rekindle_db::repo::messages::set_send_state(
-                conn,
-                &owner,
-                &message_id,
-                state,
-                held.as_ref()
-                    .map(|(record, subkey)| (record.as_str(), *subkey)),
-            )
-        });
+    async fn fail_post(&self, message: &str) {
+        self.fail_post_impl(message).await;
     }
 
     // ---------- DB (channel messages) ----------

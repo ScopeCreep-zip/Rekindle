@@ -1,73 +1,10 @@
 //! `messages`: direct messages (plan E2.1) and the delivery state of our
-//! own sent messages (plan D1, C7.14). The channel inserts are still the
+//! own sent messages (plan D1, C7.14), which the outbox's rows project
+//! (`repo::outbox`, plan E2.5). The channel inserts are still the
 //! desktop's (`message_repo`, until E3.1).
 
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection};
-
-/// A queued message waiting on a held write's record slot.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HeldMessage {
-    pub record_key: String,
-    pub subkey: u32,
-    pub community_id: String,
-    pub channel_id: String,
-    pub message_id: String,
-}
-
-/// Set a message's delivery state. `held` is the record slot a `Queued`
-/// message waits on; any other state clears it.
-///
-/// # Errors
-/// The write failed.
-pub fn set_send_state(
-    conn: &Connection,
-    owner_key: &str,
-    message_id: &str,
-    state: SendState,
-    held: Option<(&str, u32)>,
-) -> rusqlite::Result<()> {
-    let (record, subkey) = match (state, held) {
-        (SendState::Queued, Some((record, subkey))) => (Some(record), Some(subkey)),
-        _ => (None, None),
-    };
-    conn.execute(
-        "UPDATE messages SET send_state = ?1, held_record_key = ?2, held_subkey = ?3 \
-         WHERE owner_key = ?4 AND message_id = ?5",
-        params![state.as_str(), record, subkey, owner_key, message_id],
-    )?;
-    Ok(())
-}
-
-/// Every queued channel message waiting on a held write, with its
-/// community (the next login re-registers them).
-///
-/// # Errors
-/// The query failed.
-pub fn held_channel_messages(
-    conn: &Connection,
-    owner_key: &str,
-) -> rusqlite::Result<Vec<HeldMessage>> {
-    let mut stmt = conn.prepare(
-        "SELECT m.held_record_key, m.held_subkey, c.community_id, m.conversation_id, m.message_id \
-         FROM messages m JOIN channels c ON c.owner_key = m.owner_key AND c.id = m.conversation_id \
-         WHERE m.owner_key = ?1 AND m.conversation_type = 'channel' AND m.send_state = 'queued' \
-         AND m.held_record_key IS NOT NULL AND m.held_subkey IS NOT NULL \
-         AND m.message_id IS NOT NULL",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok(HeldMessage {
-                record_key: row.get(0)?,
-                subkey: row.get(1)?,
-                community_id: row.get(2)?,
-                channel_id: row.get(3)?,
-                message_id: row.get(4)?,
-            })
-        })?
-        .collect();
-    rows
-}
 
 /// A message's delivery state, if it exists.
 ///
@@ -497,23 +434,27 @@ mod tests {
     }
 
     #[test]
-    fn a_held_post_is_listed_until_it_settles() {
+    fn a_channel_post_row_projects_its_settle_onto_the_post() {
         let conn = fixture::conn();
         seed(&conn);
-        set_send_state(&conn, OWNER, "m1", SendState::Queued, Some(("rk", 4))).unwrap();
-        let held = held_channel_messages(&conn, OWNER).unwrap();
-        assert_eq!(
-            held,
-            vec![HeldMessage {
-                record_key: "rk".into(),
-                subkey: 4,
-                community_id: "c1".into(),
-                channel_id: "ch1".into(),
-                message_id: "m1".into(),
-            }]
+        let row = super::super::outbox::NewRow {
+            owner_key: OWNER,
+            stream: "channel_post:rk:4",
+            client_id: "m1",
+            kind: "channel_post",
+            payload: b"{}",
+            next_at: 0,
+            deadline: i64::MAX,
+        };
+        super::super::outbox::enqueue_for_message(&conn, &row, "m1").unwrap();
+        let rows = super::super::outbox::stream_rows(&conn, OWNER, "channel_post:rk:4").unwrap();
+        assert_eq!(rows.len(), 1);
+        super::super::outbox::settle(&conn, OWNER, "m1", SendState::Sent).unwrap();
+        assert!(
+            super::super::outbox::stream_rows(&conn, OWNER, "channel_post:rk:4")
+                .unwrap()
+                .is_empty()
         );
-        set_send_state(&conn, OWNER, "m1", SendState::Sent, Some(("rk", 4))).unwrap();
-        assert!(held_channel_messages(&conn, OWNER).unwrap().is_empty());
         assert_eq!(
             send_state(&conn, OWNER, "m1").unwrap(),
             Some(SendState::Sent)

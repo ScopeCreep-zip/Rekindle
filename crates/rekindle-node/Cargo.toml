@@ -118,6 +118,7 @@ hex = "0.4"
 rekindle-secrets = { path = "../rekindle-secrets" }
 
 [dev-dependencies]
+rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 # The network simulator the netsim scenarios run real Hosts on (plan C9.3).
 rekindle-netsim = { path = "../rekindle-netsim" }
 tempfile = "3"

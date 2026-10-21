@@ -102,6 +102,15 @@ impl OutboxDeps for Fake {
         });
         Ok(due)
     }
+    async fn stream_rows(&self, stream: &str) -> Result<Vec<OutboxRow>, OutboxError> {
+        let s = self.store.lock();
+        let mut rows: Vec<OutboxRow> = (s.rows.iter())
+            .filter(|r| unsettled(r) && r.stream == stream)
+            .cloned()
+            .collect();
+        rows.sort_by_key(|r| r.stream_seq);
+        Ok(rows)
+    }
     async fn expired(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError> {
         let s = self.store.lock();
         Ok(s.rows
@@ -481,4 +490,40 @@ async fn an_awaiting_row_waits_for_its_ack_by_client_id() {
         .acknowledge_client("unfriended:bob", PeerAck::Delivered)
         .await
         .unwrap());
+}
+
+#[tokio::test]
+async fn a_channel_post_stream_settles_from_its_write_settle() {
+    let o = outbox();
+    o.enqueue(entry(StreamKind::ChannelPost, "rk:4", "p1"), ())
+        .await
+        .unwrap();
+    o.enqueue(entry(StreamKind::ChannelPost, "rk:4", "p2"), ())
+        .await
+        .unwrap();
+    o.enqueue(entry(StreamKind::ChannelPost, "rk:5", "p3"), ())
+        .await
+        .unwrap();
+    let settled = (o
+        .settle_stream(StreamKind::ChannelPost, "rk:4", Ok(()))
+        .await)
+        .unwrap();
+    let ids: Vec<_> = settled.iter().map(|r| r.client_id.as_str()).collect();
+    assert_eq!(ids, ["p1", "p2"]);
+    assert_eq!(state_of(&o, "p3"), Some(SendState::Queued));
+    let failed = (o.settle_stream(StreamKind::ChannelPost, "rk:5", Err("superseded".into())))
+        .await
+        .unwrap();
+    assert_eq!(failed.len(), 1);
+    let s = o.deps().store.lock();
+    assert!(s.rows.is_empty());
+    let states: Vec<_> = s.settled.iter().map(|e| (e.2.as_str(), e.3)).collect();
+    assert_eq!(
+        states,
+        [
+            ("p1", SendState::Sent),
+            ("p2", SendState::Sent),
+            ("p3", SendState::Failed)
+        ]
+    );
 }

@@ -76,13 +76,7 @@ pub fn append(
     row: &NewRow<'_>,
     echo: Option<&NewDm<'_>>,
 ) -> rusqlite::Result<i64> {
-    let seq: i64 = conn.query_row(
-        "INSERT INTO outbox_streams (owner_key, stream, last_seq) VALUES (?1, ?2, 1) \
-         ON CONFLICT(owner_key, stream) DO UPDATE SET last_seq = last_seq + 1 \
-         RETURNING last_seq",
-        params![row.owner_key, row.stream],
-        |r| r.get(0),
-    )?;
+    let seq = next_seq(conn, row)?;
     let echo_id = match echo {
         Some(dm) => {
             let dm = NewDm {
@@ -96,6 +90,51 @@ pub fn append(
         }
         None => None,
     };
+    insert_row(conn, row, seq, echo_id)?;
+    Ok(seq)
+}
+
+/// Store `row` at the end of its stream with our channel post
+/// `message_id`, already written `queued`, as its echo (a post's
+/// `messages.send_state` only this row moves from then on). Returns the
+/// row's `stream_seq`.
+///
+/// # Errors
+/// The write failed, or no queued post is `message_id`; nothing is stored.
+pub fn enqueue_for_message(
+    conn: &Connection,
+    row: &NewRow<'_>,
+    message_id: &str,
+) -> rusqlite::Result<i64> {
+    let tx = conn.unchecked_transaction()?;
+    let echo_id: i64 = tx.query_row(
+        "SELECT id FROM messages WHERE owner_key = ?1 AND message_id = ?2 \
+         AND conversation_type = 'channel' AND send_state = 'queued'",
+        params![row.owner_key, message_id],
+        |r| r.get(0),
+    )?;
+    let seq = next_seq(&tx, row)?;
+    insert_row(&tx, row, seq, Some(echo_id))?;
+    tx.commit()?;
+    Ok(seq)
+}
+
+fn next_seq(conn: &Connection, row: &NewRow<'_>) -> rusqlite::Result<i64> {
+    conn.query_row(
+        "INSERT INTO outbox_streams (owner_key, stream, last_seq) VALUES (?1, ?2, 1) \
+         ON CONFLICT(owner_key, stream) DO UPDATE SET last_seq = last_seq + 1 \
+         RETURNING last_seq",
+        params![row.owner_key, row.stream],
+        |r| r.get(0),
+    )
+}
+
+fn insert_row(
+    conn: &Connection,
+    row: &NewRow<'_>,
+    seq: i64,
+    echo_id: Option<i64>,
+) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO outbox (owner_key, stream, stream_seq, client_id, kind, payload, state, \
          attempts, next_at, deadline, wedge_reason, echo_id) \
@@ -112,7 +151,7 @@ pub fn append(
             echo_id
         ],
     )?;
-    Ok(seq)
+    Ok(())
 }
 
 /// The peer read our stream to `peer_key` (`stream`) through `up_to`: every
@@ -242,6 +281,21 @@ pub fn due(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result<Vec
              AND {UNBLOCKED} ORDER BY o.next_at, o.stream, o.stream_seq"
         ),
         params![owner_key, now],
+    )
+}
+
+/// The unsettled rows (`queued`, or `sent` and waiting) of `stream`, in
+/// `stream_seq` order: a stream whose send is a write the record pool
+/// reports settled (`channel_post`) settles them together.
+///
+/// # Errors
+/// The query failed.
+pub fn stream_rows(conn: &Connection, owner_key: &str, stream: &str) -> rusqlite::Result<Vec<Row>> {
+    query_rows(
+        conn,
+        "o.owner_key = ?1 AND o.stream = ?2 AND o.state IN ('queued', 'sent') \
+         ORDER BY o.stream_seq",
+        params![owner_key, stream],
     )
 }
 

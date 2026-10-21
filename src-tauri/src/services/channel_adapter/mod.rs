@@ -20,6 +20,7 @@
 //!   slowmode state, retry-queue enqueue.
 //! * `events`      — `ChannelEvent` → tracing + `ChatEvent`/`CommunityEvent`
 //!   local echo + delivery state emits.
+//! * `posts`       — the posts' rows on the Host's outbox (plan E2.5).
 
 use std::sync::Arc;
 
@@ -33,6 +34,7 @@ mod dht;
 mod events;
 mod misc;
 mod persist;
+mod posts;
 mod state_mutations;
 mod state_reads;
 

@@ -162,3 +162,24 @@ pub fn bundle_from(owner: &[u8; 32], values: &[Publish], subkey: Option<u32>) ->
     // Read at the head's own time: the age bound always holds.
     PreKeyBundle::from_record(owner, &head, slot.as_ref(), head.issued_at).unwrap()
 }
+
+/// Our channel post `message_id` in `channel_id`, written `queued` as the
+/// desktop's send writes it before its record write (a `channel_post`
+/// outbox row's echo, plan E2.5).
+///
+/// # Panics
+/// The insert failed.
+pub fn queued_channel_post(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) {
+    conn.execute(
+        "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, \
+         body, timestamp, is_read, message_id, send_state) \
+         VALUES (?1, ?2, 'channel', ?1, 'post', 1, 1, ?3, 'queued')",
+        rusqlite::params![owner_key, channel_id, message_id],
+    )
+    .expect("insert a queued channel post");
+}

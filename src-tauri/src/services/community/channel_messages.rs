@@ -153,7 +153,8 @@ pub fn start_delivery_settle(
                 &event.record_key,
                 event.subkey,
                 event.landed,
-            );
+            )
+            .await;
         }
     })
 }

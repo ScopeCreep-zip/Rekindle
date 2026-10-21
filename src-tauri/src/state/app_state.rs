@@ -161,10 +161,6 @@ pub struct AppState {
     /// M10.4 — receiver-side per-(community, channel, sender) last-send
     /// timestamps (unix seconds) for slowmode enforcement.
     pub channel_last_received: Mutex<HashMap<(String, String, String), u64>>,
-    /// Sent channel messages whose write the record pool holds, by
-    /// (record key, subkey), until that slot settles (plan C7.13).
-    pub channel_pending_deliveries:
-        Mutex<HashMap<(String, u32), Vec<rekindle_channel::deps::PendingDelivery>>>,
     /// Per-community compiled AutoMod cache.
     pub automod_cache: Arc<RwLock<HashMap<String, Arc<AutoModCompiledCache>>>>,
     /// Wake-up signal for the event reminder scheduler.
@@ -307,7 +303,6 @@ impl Default for AppState {
                 rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore::default(),
             gossip_rate_limits: Mutex::new(HashMap::new()),
             channel_last_received: Mutex::new(HashMap::new()),
-            channel_pending_deliveries: Mutex::new(HashMap::new()),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
             event_reminder_wake_tx: Arc::new(RwLock::new(None)),
             file_caches: RwLock::new(HashMap::new()),

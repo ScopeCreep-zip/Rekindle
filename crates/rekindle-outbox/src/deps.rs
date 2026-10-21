@@ -112,6 +112,8 @@ pub trait OutboxDeps: Send + Sync {
     async fn insert(&self, row: NewOutboxRow, echo: Self::Echo) -> Result<i64, OutboxError>;
     /// The unsettled rows due at `now` that no stream head blocks.
     async fn due(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError>;
+    /// The unsettled rows of `stream`, in `stream_seq` order.
+    async fn stream_rows(&self, stream: &str) -> Result<Vec<OutboxRow>, OutboxError>;
     /// The unsettled rows whose deadline is at or before `now`.
     async fn expired(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError>;
     /// The earliest due time or deadline of an unsettled row.

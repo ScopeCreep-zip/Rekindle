@@ -143,3 +143,52 @@ async fn a_redelivered_entry_is_received_once() {
         "per stream"
     );
 }
+
+async fn queued_post(
+    outbox: &Arc<Outbox<HostOutbox>>,
+    id: &'static str,
+) -> rekindle_types::message::ChannelPost {
+    let db = outbox.deps().db.current().unwrap();
+    db.call(move |c| {
+        rekindle_db::test_support::queued_channel_post(c, OWNER, "ch1", id);
+        Ok(())
+    })
+    .await
+    .unwrap();
+    rekindle_types::message::ChannelPost {
+        community: "c1".into(),
+        channel: "ch1".into(),
+        message: id.into(),
+        record_key: "rk".into(),
+        subkey: 4,
+    }
+}
+
+async fn post_state(outbox: &Arc<Outbox<HostOutbox>>, id: &'static str) -> Option<SendState> {
+    let db = outbox.deps().db.current().unwrap();
+    (db.call(move |c| rekindle_db::repo::messages::send_state(c, OWNER, id))
+        .await)
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_post_queued_offline_settles_from_the_pools_settle() {
+    let dir = tempfile::tempdir().unwrap();
+    let outbox = Arc::new(Outbox::new(
+        host(dir.path(), Arc::new(Senders::default())).await,
+    ));
+    let posts = super::ChannelPosts(Arc::clone(&outbox));
+    let first = queued_post(&outbox, "m1").await;
+    posts.queue(&first).await.unwrap();
+    // The pool's write is the send: a pass leaves the row queued.
+    outbox.pump().await.unwrap();
+    assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Queued));
+    let settled = posts.settle("rk", 4, true).await.unwrap();
+    assert_eq!(settled, [first]);
+    assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Sent));
+    let second = queued_post(&outbox, "m2").await;
+    posts.queue(&second).await.unwrap();
+    assert_eq!(posts.settle("rk", 4, false).await.unwrap(), [second]);
+    assert_eq!(post_state(&outbox, "m2").await, Some(SendState::Failed));
+    assert_eq!(outbox.unsettled().await.unwrap(), 0);
+}

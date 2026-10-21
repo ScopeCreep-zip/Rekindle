@@ -208,6 +208,37 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(attempted)
     }
 
+    /// The write that carries every unsettled row of stream `kind:scope`
+    /// settled (a `channel_post` stream, whose send is the record pool's
+    /// write of one record slot, plan E2.5): `Ok` when it landed, each row
+    /// `sent`; `Err(reason)` when it did not, each row `failed` with
+    /// `reason`. Every row leaves its stream. Returns the rows settled.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn settle_stream(
+        &self,
+        kind: StreamKind,
+        scope: &str,
+        outcome: Result<(), String>,
+    ) -> Result<Vec<OutboxRow>, OutboxError> {
+        let rows = self.deps.stream_rows(&kind.stream(scope)).await?;
+        let (state, reason) = match outcome {
+            Ok(()) => (StateInput::LocalSent, None),
+            Err(reason) => (StateInput::Failed, Some(reason)),
+        };
+        for row in &rows {
+            let settled = merge(row.state, state);
+            self.deps.settle(&row.client_id, settled).await?;
+            self.deps
+                .publish(StateChange::of(row, settled, reason.clone()));
+        }
+        if !rows.is_empty() {
+            self.wake.notify_one();
+        }
+        Ok(rows)
+    }
+
     /// The peer acknowledged `stream_seq` of `stream`. Returns whether a
     /// row was waiting for it.
     ///

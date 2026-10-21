@@ -56,7 +56,6 @@ pub(super) async fn run(
     {
         tracing::warn!(%error, "failed to restore governance from local cache");
     }
-    rewait_held_posts(state, &pool, owner).await;
 
     // The network stages need a window to report to and a node.
     let staged = match app {
@@ -75,33 +74,6 @@ pub(super) async fn run(
         });
     }
     staged
-}
-
-/// The posts that wait on writes the last lock left unsent wait on them
-/// again (the Host restored those writes into the pool), so each settle
-/// moves its post to sent or failed (plan D1, C7.14; → E3.1).
-async fn rewait_held_posts(state: &SharedState, pool: &rekindle_db::Db, owner: &str) {
-    let owner = owner.to_string();
-    let held = crate::db_helpers::db_call(pool, move |conn| {
-        rekindle_db::repo::messages::held_channel_messages(conn, &owner)
-    })
-    .await;
-    match held {
-        Ok(held) => {
-            let mut pending = state.channel_pending_deliveries.lock();
-            for message in held {
-                pending
-                    .entry((message.record_key, message.subkey))
-                    .or_default()
-                    .push(rekindle_channel::deps::PendingDelivery {
-                        community: message.community_id,
-                        channel: message.channel_id,
-                        message: message.message_id,
-                    });
-            }
-        }
-        Err(error) => tracing::warn!(%error, "reading the queued posts failed"),
-    }
 }
 
 /// The unported network stages, each a task of `scope`.
