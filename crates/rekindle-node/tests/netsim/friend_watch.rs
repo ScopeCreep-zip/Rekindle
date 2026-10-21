@@ -127,6 +127,26 @@ async fn a_participant_record_received_mid_session_is_watched() {
 /// runs reads the message he missed.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_watch_whose_open_failed_opens_on_a_later_tick_and_reads_what_it_missed() {
+    // Every app message is dropped (no hint or resend reaches him).
+    missed_while_shut(Fault::DropMessages { per_mille: 1000 }).await;
+}
+
+/// As above, with Kim and Lev cut off by a real `Partition` (plan E2.B S6,
+/// finding F6): it also splits the DHT's replicas, each side reaching five
+/// of ten (S4), and the replicas on Lev's side hold the message.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+#[ignore = "E2.B finding F6: under a Partition Lev never reads the missed message (watch catch-up modeled, S6); host/adapters/friends/watch.rs retry_failed_watches never logs `a failed watch opened on retry`: suspect participant_records/the wanted check settling the retry, or watch_participant staying pending"]
+async fn a_watch_whose_open_failed_reads_what_it_missed_across_a_partition() {
+    missed_while_shut(Fault::Partition {
+        a: vec![0],
+        b: vec![1],
+    })
+    .await;
+}
+
+/// Lev unlocks with his DHT off and misses Kim's message; then `cut` splits
+/// them and his DHT returns: his retried watch reads the message.
+async fn missed_while_shut(cut: Fault) {
     let (sim, mut nodes) = start(2, 87).await;
     for (node, name) in nodes.iter_mut().zip(["Kim", "Lev"]) {
         node.unlock_new_identity(name).await;
@@ -154,10 +174,7 @@ async fn a_watch_whose_open_failed_opens_on_a_later_tick_and_reads_what_it_misse
         .await,
         "nothing Lev reads reaches the network"
     );
-    // Every app message is dropped (no hint or resend reaches him); a
-    // partition would also split the DHT's replicas (plan E2.B S4), which
-    // this scenario is not about.
-    sim.fault(Fault::DropMessages { per_mille: 1000 });
+    sim.fault(cut);
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: false,

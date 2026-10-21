@@ -79,11 +79,14 @@ pub(super) fn readiness(inner: &mut Inner, node: usize, now: u64) {
     }
 }
 
-/// Whether `node` has an inspection queued or a readiness edge to take.
+/// Whether `node` has catch-up work a tick can make progress on: a
+/// readiness edge to take, or an inspection queued while it is online (an
+/// offline node's retries change nothing until it is back, so they do not
+/// keep the network busy).
 pub(super) fn pending(inner: &Inner, node: usize) -> bool {
     let slot = &inner.nodes[node];
-    !slot.inspects.is_empty()
-        || (slot.was_online != watches::online(inner, node) && !slot.watches.is_empty())
+    let on = watches::online(inner, node);
+    (on && !slot.inspects.is_empty()) || (slot.was_online != on && !slot.watches.is_empty())
 }
 
 /// Run `node`'s due inspections; each change found with its delay.
