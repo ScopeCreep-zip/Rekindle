@@ -69,10 +69,7 @@ fn end_removal(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite
         .optional()?
         .is_some();
     if removing {
-        conn.execute(
-            "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key = ?2",
-            params![owner_key, public_key],
-        )?;
+        crate::repo::outbox::delete_to_peer(conn, owner_key, public_key)?;
         delete(conn, owner_key, public_key)?;
     }
     Ok(())
@@ -427,24 +424,43 @@ mod tests {
     }
 
     #[test]
-    fn a_removed_friend_is_forgotten_once_nothing_is_queued_to_them() {
+    fn a_removed_friend_is_forgotten_only_once_its_unfriended_row_settles() {
+        use crate::repo::outbox;
         let conn = fixture::conn();
         insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        insert_accepted(&conn, OWNER, "bobby", "Bobby", 1).unwrap();
         set_state(&conn, OWNER, "bob", FriendshipState::Removing).unwrap();
-        conn.execute(
-            "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) \
-             VALUES (?1, 'bob', 'unfriended', 1)",
-            params![OWNER],
-        )
-        .unwrap();
+        outbox::queue_for_test(
+            &conn,
+            OWNER,
+            "friend_handshake:bob",
+            "unfriended:bob",
+            b"{}",
+        );
+        // A send to another peer whose key extends bob's holds nothing.
+        outbox::queue_for_test(&conn, OWNER, "dm:bobby", "m1", b"{}");
         assert!(forget_removed(&conn, OWNER).unwrap().is_empty());
         assert_eq!(
             load_all(&conn, OWNER).unwrap()[0].friendship_state,
             FriendshipState::Removing
         );
-        conn.execute("DELETE FROM pending_messages", []).unwrap();
+        // Failed at its deadline: settled for the removal, and forgotten
+        // with the friend.
+        let failed = outbox::Update {
+            state: rekindle_types::message::SendState::Failed,
+            attempts: 3,
+            next_at: 0,
+            deadline: 0,
+            wedge_reason: Some("deadline"),
+        };
+        outbox::update(&conn, OWNER, "unfriended:bob", &failed).unwrap();
         assert_eq!(forget_removed(&conn, OWNER).unwrap(), ["bob"]);
-        assert!(load_all(&conn, OWNER).unwrap().is_empty());
+        assert_eq!(load_all(&conn, OWNER).unwrap().len(), 1);
+        assert_eq!(
+            outbox::unsettled_count(&conn, OWNER).unwrap(),
+            1,
+            "bobby's stays"
+        );
     }
 
     #[test]
@@ -452,21 +468,22 @@ mod tests {
         let conn = fixture::conn();
         insert_accepted(&conn, OWNER, "bob", "Bob", 1).unwrap();
         set_state(&conn, OWNER, "bob", FriendshipState::Removing).unwrap();
-        conn.execute(
-            "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) \
-             VALUES (?1, 'bob', 'unfriended', 1)",
-            params![OWNER],
-        )
-        .unwrap();
+        crate::repo::outbox::queue_for_test(
+            &conn,
+            OWNER,
+            "friend_handshake:bob",
+            "unfriended:bob",
+            b"{}",
+        );
         insert_pending_out(&conn, OWNER, "bob", "Bob", 2).unwrap();
         assert_eq!(
             load_all(&conn, OWNER).unwrap()[0].friendship_state,
             FriendshipState::PendingOut
         );
-        let queued: i64 = conn
-            .query_row("SELECT COUNT(*) FROM pending_messages", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(queued, 0);
+        assert_eq!(
+            crate::repo::outbox::unsettled_count(&conn, OWNER).unwrap(),
+            0
+        );
     }
 
     #[test]

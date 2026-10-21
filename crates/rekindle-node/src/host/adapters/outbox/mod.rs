@@ -75,6 +75,34 @@ impl HostOutbox {
         self.changes.subscribe()
     }
 
+    /// Mark `peer` removing and store `unfriended`, its `Unfriended` row,
+    /// in one transaction (plan audit D-1).
+    ///
+    /// # Errors
+    /// The storage failed; nothing was stored.
+    pub(super) async fn mark_removing(
+        &self,
+        peer: &str,
+        unfriended: NewOutboxRow,
+    ) -> Result<(), OutboxError> {
+        let (db, owner) = self.db()?;
+        let peer = peer.to_owned();
+        db.call(move |conn| {
+            let row = repo::NewRow {
+                owner_key: &owner,
+                stream: &unfriended.stream,
+                client_id: &unfriended.client_id,
+                kind: unfriended.kind.as_str(),
+                payload: &unfriended.payload,
+                next_at: unfriended.next_at,
+                deadline: unfriended.deadline,
+            };
+            rekindle_db::repo::friends::mark_removing(conn, &owner, &peer, &row)
+        })
+        .await
+        .map_err(|e| storage(&e))
+    }
+
     /// The open database and the owner its rows belong to.
     fn db(&self) -> Result<(Db, String), OutboxError> {
         let db = self.db.current().map_err(|e| storage(&e))?;

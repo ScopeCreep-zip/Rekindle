@@ -58,7 +58,7 @@ async fn route_from_code(host: &dyn FriendHost, code: &FriendCode) -> Result<(),
 /// Add a friend by friend code: the target's route read from the profile
 /// the code names, a `PendingOut` friend with that profile, and a request
 /// carrying the code's token, sealed to the code's identity and sent by
-/// `app_call` (queued when the target is offline).
+/// `app_call` (an outbox row, sent once the target is reachable).
 ///
 /// # Errors
 /// The code names us or a blocked user; our profile is not published yet,
@@ -98,9 +98,7 @@ pub async fn add(
     state::put(host, friend);
 
     let auth = RequestAuth::Token(code.token.as_str().to_string());
-    if let Err(e) = dm::send_friend_request(host, public_key, message, auth).await {
-        tracing::warn!(error = %e, "failed to send friend request (peer may be offline)");
-    }
+    let committed = dm::send_friend_request(host, public_key, message, auth).await;
     host.watch_friend(public_key, code.profile_key.as_str())
         .await;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Added {
@@ -118,7 +116,9 @@ pub async fn add(
         }),
     )
     .await;
-    Ok(())
+    // Returned once the request is committed (plan E2.5): its progress
+    // arrives as events, and a request that could not be stored fails here.
+    committed
 }
 
 /// Add the friend an invite link names: decoded, verified and checked for
@@ -171,9 +171,7 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     state::put(host, friend);
 
     setup_invite_contact(host, &blob).await;
-    if let Err(e) = super::inbox::redeem(host, &blob, invite_id, "Added via invite link").await {
-        tracing::warn!(error = %e, "failed to write the friend request to the invite's inbox");
-    }
+    let committed = super::inbox::redeem(host, &blob, invite_id, "Added via invite link").await;
     host.watch_friend(&blob.public_key, &blob.profile_dht_key)
         .await;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Added {
@@ -183,7 +181,9 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
         group_label: rekindle_types::dto::friends::group_label(None),
     }));
     tracing::info!(public_key = %blob.public_key, "friend added from invite");
-    Ok(())
+    // Returned once the request is committed (plan E2.5): its progress
+    // arrives as events, and a request that could not be stored fails here.
+    committed
 }
 
 /// End any session left from a prior friendship with this peer, and cache

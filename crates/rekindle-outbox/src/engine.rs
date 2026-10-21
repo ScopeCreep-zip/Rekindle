@@ -86,31 +86,44 @@ impl<D: OutboxDeps> Outbox<D> {
     /// # Errors
     /// The storage failed; nothing was queued.
     pub async fn enqueue(&self, entry: Entry, echo: D::Echo) -> Result<Enqueued, OutboxError> {
-        let now = self.now();
-        let deadline = match entry.deadline {
-            Deadline::Horizon => now.saturating_add(horizon_ms()),
-            Deadline::At(at) => at,
-        };
-        let stream = entry.kind.stream(&entry.scope);
-        let row = NewOutboxRow {
-            stream: stream.clone(),
-            client_id: entry.client_id.clone(),
-            kind: entry.kind,
-            payload: entry.payload,
-            next_at: now,
-            deadline,
-        };
+        let row = self.new_row(entry);
+        let (stream, client_id, kind) = (row.stream.clone(), row.client_id.clone(), row.kind);
         let stream_seq = self.deps.insert(row, echo).await?;
         self.deps.publish(StateChange {
             stream: stream.clone(),
             stream_seq,
-            client_id: entry.client_id,
-            kind: entry.kind,
+            client_id,
+            kind,
             state: SendState::Queued,
             wedge_reason: None,
         });
         self.wake.notify_one();
         Ok(Enqueued { stream, stream_seq })
+    }
+
+    /// The row `entry` is stored as, `queued` and due now: for a host that
+    /// stores it in a transaction of its own with other state (a friend's
+    /// removal and its `Unfriended` notice), then calls [`Self::wake`].
+    #[must_use]
+    pub fn new_row(&self, entry: Entry) -> NewOutboxRow {
+        let now = self.now();
+        let deadline = match entry.deadline {
+            Deadline::Horizon => now.saturating_add(horizon_ms()),
+            Deadline::At(at) => at,
+        };
+        NewOutboxRow {
+            stream: entry.kind.stream(&entry.scope),
+            client_id: entry.client_id,
+            kind: entry.kind,
+            payload: entry.payload,
+            next_at: now,
+            deadline,
+        }
+    }
+
+    /// Attempt the due rows now (a row was stored through [`Self::new_row`]).
+    pub fn wake(&self) {
+        self.wake.notify_one();
     }
 
     async fn fail(&self, row: &OutboxRow, reason: String) -> Result<(), OutboxError> {
@@ -135,11 +148,14 @@ impl<D: OutboxDeps> Outbox<D> {
                 self.deps
                     .publish(StateChange::of(row, SendState::Sent, None));
             }
-            outcome @ (AttemptOutcome::Sent | AttemptOutcome::Deferred) => {
-                let state = if outcome == AttemptOutcome::Sent {
-                    merge(row.state, StateInput::LocalSent)
-                } else {
+            AttemptOutcome::Receipted => self.settle_acked(row, PeerAck::Delivered).await?,
+            outcome @ (AttemptOutcome::Sent
+            | AttemptOutcome::Awaiting
+            | AttemptOutcome::Deferred) => {
+                let state = if outcome == AttemptOutcome::Deferred {
                     row.state
+                } else {
+                    merge(row.state, StateInput::LocalSent)
                 };
                 let update = RowUpdate {
                     state,
@@ -188,11 +204,33 @@ impl<D: OutboxDeps> Outbox<D> {
         let Some(row) = self.deps.row_at(stream, stream_seq).await? else {
             return Ok(false);
         };
+        self.settle_acked(&row, ack).await?;
+        Ok(true)
+    }
+
+    /// The peer acknowledged row `client_id` by a frame that names no
+    /// stream seq (`UnfriendedAck`). Returns whether a row was waiting.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn acknowledge_client(
+        &self,
+        client_id: &str,
+        ack: PeerAck,
+    ) -> Result<bool, OutboxError> {
+        let Some(row) = self.deps.row(client_id).await? else {
+            return Ok(false);
+        };
+        self.settle_acked(&row, ack).await?;
+        Ok(true)
+    }
+
+    async fn settle_acked(&self, row: &OutboxRow, ack: PeerAck) -> Result<(), OutboxError> {
         let state = merge(row.state, StateInput::Peer(ack));
         self.deps.settle(&row.client_id, state).await?;
-        self.deps.publish(StateChange::of(&row, state, None));
+        self.deps.publish(StateChange::of(row, state, None));
         self.wake.notify_one();
-        Ok(true)
+        Ok(())
     }
 
     /// The peer read our `kind` stream to `scope` through `up_to`

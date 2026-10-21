@@ -74,7 +74,7 @@ pub async fn start(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
     let request = DirectBody::SessionResetRequest(SessionResetRequest {
         reason: String::new(),
     });
-    if let Err(e) = dm::send_to_peer(host, peer, &request).await {
+    if let Err(e) = dm::handshake::enqueue(host, peer, &request).await {
         let pk = peer.to_string();
         state::db_fire!(host, "withdraw the reset request", move |conn| {
             rekindle_db::repo::session_reset_requests::take(conn, &owner, &pk).map(|_| ())
@@ -137,13 +137,13 @@ pub async fn accept(
 /// Decline the reset `peer` asked for and tell them.
 ///
 /// # Errors
-/// The decline could not be sent.
+/// The decline could not be committed to the outbox.
 pub async fn decline(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
     host.stores().incoming_resets.lock().remove(peer);
     let decline = DirectBody::SessionResetDecline(SessionResetDecline {
         reason: String::new(),
     });
-    dm::send_to_peer(host, peer, &decline).await
+    dm::handshake::enqueue(host, peer, &decline).await.map(drop)
 }
 
 /// A friend asked to reset our session: the request is kept (the newest

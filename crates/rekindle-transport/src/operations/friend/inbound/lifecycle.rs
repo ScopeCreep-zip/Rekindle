@@ -47,13 +47,13 @@ pub(crate) async fn on_profile_key_rotated(
 /// The peer confirms our `Unfriended`: nothing more is queued to them.
 /// Whether it is done (`false`: the queue was not cleared).
 pub(crate) async fn on_unfriended_ack(host: &dyn FriendHost, sender: &str) -> bool {
-    if !state::write_drop_queued(host, sender).await {
+    if !state::acknowledge_unfriended(host, sender).await {
         return false;
     }
     host.publish(SubscriptionEvent::Friend(FriendEvent::RemoveAcknowledged {
         peer_key: sender.to_string(),
     }));
-    tracing::info!(from = %sender, "received UnfriendedAck — cleared pending messages");
+    tracing::info!(from = %sender, "received UnfriendedAck — our Unfriended row settled");
     true
 }
 
@@ -100,8 +100,8 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
     if !state::write_unfriended(host, sender).await {
         return false;
     }
-    if let Err(e) = dm::send_to_peer(host, sender, &DirectBody::UnfriendedAck).await {
-        tracing::debug!(to = %sender, error = %e, "UnfriendedAck not sent");
+    if let Err(e) = dm::handshake::enqueue(host, sender, &DirectBody::UnfriendedAck).await {
+        tracing::warn!(to = %sender, error = %e, "UnfriendedAck not committed to the outbox");
     }
     state::take(host, sender);
     host.unwatch_friend(sender).await;

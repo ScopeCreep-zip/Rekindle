@@ -1,12 +1,10 @@
 //! The friend and 1:1 operations' Host (plan E2.1): one implementation of
 //! `rekindle_transport::operations::friend::FriendHost` over the
 //! [`DaemonContext`], used by both hosts. The friend presence adapter
-//! (`presence`), the maintenance task (`maintenance`) and the pending
-//! message retry (`pending_retry`) run over it too.
+//! (`presence`) and the maintenance task (`maintenance`) run over it too.
 
 mod inbox_watch;
 mod maintenance;
-mod pending_retry;
 mod presence;
 
 use std::collections::{HashMap, HashSet};

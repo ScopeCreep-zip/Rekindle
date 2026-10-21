@@ -5,6 +5,7 @@
 pub mod ack;
 mod chat;
 pub mod frame;
+pub mod handshake;
 pub mod outbox;
 mod outgoing;
 pub(crate) mod receipts;
@@ -18,10 +19,7 @@ pub use chat::{
 pub(crate) use chat::{count_unread, NewDmFields};
 pub use frame::wire;
 pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};
-pub use send::{
-    build_and_queue, hint_for, queued_form, reply_frame, resend, send_frame, send_to_peer,
-    send_to_peer_call, Queued, Resend,
-};
+pub use send::{hint_for, reply_frame, send_frame, send_to_peer, send_to_peer_call, Framed};
 pub use typing::report_draft;
 
 /// The ingress tag of a 1:1 message: the first byte of every 1:1 datagram

@@ -442,3 +442,43 @@ fn backoff_is_jittered_within_its_step_and_capped() {
     );
     assert_eq!(StreamKind::parse("group_dm"), None);
 }
+
+#[tokio::test]
+async fn a_handshake_frame_settles_sent_and_a_receipt_delivered() {
+    let o = outbox();
+    o.enqueue(entry(StreamKind::FriendHandshake, "bob", "accept"), ())
+        .await
+        .unwrap();
+    o.enqueue(entry(StreamKind::FriendHandshake, "bob", "request"), ())
+        .await
+        .unwrap();
+    script(&o, [AttemptOutcome::Sent, AttemptOutcome::Receipted]);
+    o.pump().await.unwrap();
+    o.pump().await.unwrap();
+    assert_eq!(state_of(&o, "accept"), None, "settled and gone");
+    assert_eq!(state_of(&o, "request"), None);
+    assert_eq!(o.unsettled().await.unwrap(), 0);
+}
+
+#[tokio::test]
+async fn an_awaiting_row_waits_for_its_ack_by_client_id() {
+    let o = outbox();
+    o.enqueue(
+        entry(StreamKind::FriendHandshake, "bob", "unfriended:bob"),
+        (),
+    )
+    .await
+    .unwrap();
+    script(&o, [AttemptOutcome::Awaiting]);
+    o.pump().await.unwrap();
+    assert_eq!(state_of(&o, "unfriended:bob"), Some(SendState::Sent));
+    assert!(o
+        .acknowledge_client("unfriended:bob", PeerAck::Delivered)
+        .await
+        .unwrap());
+    assert_eq!(state_of(&o, "unfriended:bob"), None);
+    assert!(!o
+        .acknowledge_client("unfriended:bob", PeerAck::Delivered)
+        .await
+        .unwrap());
+}

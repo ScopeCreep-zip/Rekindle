@@ -46,10 +46,7 @@ pub fn rotate_peer(
              WHERE owner_key = ?1 AND conversation_type = 'dm' AND sender_key = ?2",
             params![owner_key, old_key, new_key],
         )?;
-        tx.execute(
-            "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key = ?2",
-            params![owner_key, old_key],
-        )?;
+        super::outbox::delete_to_peer(&tx, &owner_key, &old_key)?;
         tx.execute(
             "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
             params![owner_key, old_key],
@@ -92,12 +89,7 @@ mod tests {
             params![owner, old],
         )
         .unwrap();
-        conn.execute(
-            "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) \
-             VALUES (?1, ?2, '{}', 1)",
-            params![owner, old],
-        )
-        .unwrap();
+        super::super::outbox::queue_for_test(&conn, &owner, &format!("dm:{old}"), "m1", b"{}");
         conn.execute(
             "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
              VALUES (?1, ?2, '', x'00', 1)",
@@ -136,7 +128,7 @@ mod tests {
             count("SELECT COUNT(*) FROM friends WHERE mailbox_dht_key IS NOT NULL"),
             0
         );
-        assert_eq!(count("SELECT COUNT(*) FROM pending_messages"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM outbox"), 0);
         assert_eq!(
             count(&format!(
                 "SELECT COUNT(*) FROM missed_calls WHERE peer_key = '{new}'"

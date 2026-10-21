@@ -264,16 +264,22 @@ pub(crate) async fn write_unfriended(host: &dyn FriendHost, public_key: &str) ->
     )
 }
 
-/// Delete everything queued to `public_key`, and wait for it.
-pub(crate) async fn write_drop_queued(host: &dyn FriendHost, public_key: &str) -> bool {
-    let Ok(owner) = owner(host) else {
-        return false;
-    };
-    let pk = public_key.to_string();
-    stored(
-        db_call!(host, "delete pending messages", move |conn| {
-            rekindle_db::repo::pending_messages::delete_to(conn, &owner, &pk)
-        })
-        .await,
-    )
+/// Their `UnfriendedAck`: our `Unfriended` row to `public_key` settles
+/// `delivered` (plan E2.5); the removal ends on the outbox's settle event.
+/// Whether it was stored.
+pub(crate) async fn acknowledge_unfriended(host: &dyn FriendHost, public_key: &str) -> bool {
+    let id = crate::operations::dm::handshake::unfriended_client_id(public_key);
+    match host.outbox() {
+        Ok(outbox) => match outbox.acknowledge_client(&id).await {
+            Ok(_) => true,
+            Err(e) => {
+                tracing::warn!(from = %public_key, error = %e, "UnfriendedAck not stored");
+                false
+            }
+        },
+        Err(e) => {
+            tracing::warn!(from = %public_key, error = %e, "UnfriendedAck with no outbox");
+            false
+        }
+    }
 }

@@ -57,10 +57,13 @@ impl StreamKind {
 
     /// Whether a row stays unsettled after it is sent, until the peer
     /// acknowledges it (and is re-sent meanwhile). A DHT write and a
-    /// channel post settle when the write reaches consensus.
+    /// channel post settle when the write reaches consensus; a friend
+    /// handshake frame is a control frame no `DmAck` answers, so it settles
+    /// `sent` once it leaves (or `delivered` on an `app_call` receipt), and
+    /// the one that waits says so per row ([`crate::AttemptOutcome::Awaiting`]).
     #[must_use]
     pub fn awaits_ack(self) -> bool {
-        matches!(self, Self::Dm | Self::FriendHandshake | Self::MediaKey)
+        matches!(self, Self::Dm | Self::MediaKey)
     }
 
     /// This kind's default retry policy.

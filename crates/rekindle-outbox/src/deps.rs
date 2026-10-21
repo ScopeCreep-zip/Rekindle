@@ -56,8 +56,17 @@ pub struct RowUpdate {
 /// How one send attempt went.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AttemptOutcome {
-    /// The frame left this device.
+    /// The frame left this device. A row of a kind that
+    /// [`StreamKind::awaits_ack`] waits for the peer; any other settles
+    /// `sent`.
     Sent,
+    /// The frame left this device, and this row waits for the peer's
+    /// acknowledgement of it whatever its kind (`Unfriended`, settled by
+    /// `UnfriendedAck` or its deadline), re-sent meanwhile.
+    Awaiting,
+    /// The peer's own reply received the frame (an `app_call`'s receipt):
+    /// the row settles `delivered`.
+    Receipted,
     /// It could not be sent now (no route, no sender yet); try again.
     Deferred,
     /// It can never be sent as it stands (`prekey_rejected`): the row

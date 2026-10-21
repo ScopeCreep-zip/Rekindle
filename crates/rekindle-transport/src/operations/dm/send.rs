@@ -1,16 +1,17 @@
 //! Sending one 1:1 frame: the cached route, an inline route refresh from
-//! the peer's profile, a status probe (§13.5), and finally the
-//! pending-message queue. Every send goes through the node's ports; the
+//! the peer's profile and a status probe (§13.5). Nothing here queues: a
+//! send that must arrive is an outbox row (plan E2.5, D22: `dm::outbox`,
+//! `dm::handshake`), and a send that finds no route fails visibly. Every send goes through the node's ports; the
 //! bytes are [`frame::wire`]. The Strand Relay fallback (§13.3) returns at
 //! E5.5, whose pool entries name the relay's identity: a relay frame is
 //! addressed and signed to it, and a bare route blob names no one.
 //!
-//! What the queue holds until E2.5 (D22): a ratchet or PreKeyInit frame's
-//! wire bytes exactly as encrypted and recorded (retried byte-identical:
-//! the ratchet state was committed before the first send, and the receiver
-//! drops a used `(dh, n)`), and a sealed frame's body and nonce, re-sealed
-//! with a fresh `sent_at` per attempt (the replay guard drops a copy that
-//! already arrived).
+//! A `friend_handshake` row keeps its frame as [`Framed`]: a ratchet or
+//! PreKeyInit frame's wire bytes exactly as encrypted and recorded (sent
+//! again byte-identical: the ratchet state was committed before the first
+//! attempt, and the receiver drops a used `(dh, n)`), and a sealed frame's
+//! body and nonce, re-sealed with a fresh `sent_at` per attempt (the replay
+//! guard drops a copy that already arrived).
 
 use rekindle_codec::capnp_codec::direct::{Carrier, ContentHint, DirectBody, DmFrame, DmTypeId};
 use serde::{Deserialize, Serialize};
@@ -18,12 +19,12 @@ use serde::{Deserialize, Serialize};
 use super::frame::{self, Nonce};
 use super::route;
 use crate::operations::direct::frame::Opened;
-use crate::operations::friend::{state, FriendError, FriendHost};
+use crate::operations::friend::{FriendError, FriendHost};
 
-/// A queued frame (`pending_messages.body`, JSON).
+/// A frame as a `friend_handshake` row stores it (JSON).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
-pub enum Queued {
+pub enum Framed {
     /// A ratchet or PreKeyInit frame's datagram, sent again as it is.
     Wire {
         #[serde(with = "rekindle_types::base64_bytes")]
@@ -79,40 +80,6 @@ fn probe_in_background(host: &dyn FriendHost, to: &str) {
         });
 }
 
-/// Queue `queued` for the pending-message retry.
-///
-/// # Errors
-/// The queue could not be written.
-async fn queue(host: &dyn FriendHost, to: &str, queued: &Queued) -> Result<(), FriendError> {
-    let owner = state::owner(host)?;
-    let body = queued_json(queued)?;
-    let recipient = to.to_string();
-    let now = host.clock().now_ms_i64();
-    state::db_call!(host, "queue pending message", move |conn| {
-        rekindle_db::repo::pending_messages::insert(conn, &owner, &recipient, &body, now)
-    })
-    .await
-}
-
-fn queued_json(queued: &Queued) -> Result<String, FriendError> {
-    serde_json::to_string(queued)
-        .map_err(|e| FriendError::Failed(format!("serialize queued frame: {e}")))
-}
-
-/// `body` to `to` as the pending-message queue stores it, for a caller
-/// that queues it in a transaction of its own (a removal, plan audit D-1).
-///
-/// # Errors
-/// The frame could not be built.
-pub async fn queued_form(
-    host: &dyn FriendHost,
-    to: &str,
-    body: &DirectBody,
-) -> Result<String, FriendError> {
-    let (_, queued) = framed(host, to, body).await?;
-    queued_json(&queued)
-}
-
 /// The wired `app_call` reply carrying `body` to `to`, framed as any send
 /// of its kind (the verification gate, the kind's carrier and hint).
 ///
@@ -127,12 +94,12 @@ pub async fn reply_frame(
     frame::wire(&frame)
 }
 
-/// The frame to `to` for `body`, and how the queue keeps it.
-async fn framed(
+/// The frame to `to` for `body`, and how an outbox row keeps it.
+pub(super) async fn framed(
     host: &dyn FriendHost,
     to: &str,
     body: &DirectBody,
-) -> Result<(DmFrame, Queued), FriendError> {
+) -> Result<(DmFrame, Framed), FriendError> {
     let type_id = body.type_id();
     if !crate::operations::friend::verification::is_protective(type_id) {
         crate::operations::friend::verification::require_acknowledged(host, to).await?;
@@ -141,7 +108,7 @@ async fn framed(
         let mut nonce = Nonce::default();
         host.rng().fill(&mut nonce);
         let frame = frame::sealed_frame(host, to, body, nonce)?;
-        let queued = Queued::Sealed {
+        let queued = Framed::Sealed {
             type_id: type_id.as_u16(),
             body: body.encode(),
             nonce,
@@ -149,47 +116,41 @@ async fn framed(
         return Ok((frame, queued));
     }
     let frame = frame::frame(host, to, body, hint_for(type_id)).await?;
-    let queued = Queued::Wire {
+    let queued = Framed::Wire {
         datagram: frame::wire(&frame)?,
     };
     Ok((frame, queued))
 }
 
-/// Send `body` to `to` as its kind travels.
-///
-/// With no usable route the frame is refreshed inline, and otherwise
-/// queued for the retry. An ephemeral kind (typing, a call signal, DM
-/// video: `DmTypeId::is_ephemeral`) is never queued: minutes late it is
-/// worse than none.
+/// Send `body` to `to` once, as its kind travels: the cached route, then
+/// one refreshed inline. An ephemeral kind (typing, a call signal, DM
+/// video: `DmTypeId::is_ephemeral`) that finds no route is dropped:
+/// minutes late it is worse than none.
 ///
 /// # Errors
-/// The frame could not be sealed (no session for a ratchet kind), or it is
-/// over Veilid's message cap (never queued: it fails on every path, plan
-/// C7.25).
+/// The frame could not be sealed (no session for a ratchet kind), it is
+/// over Veilid's message cap (plan C7.25), or a kind that is not ephemeral
+/// found no usable route (`NotReady`; what must arrive is an outbox row).
 pub async fn send_to_peer(
     host: &dyn FriendHost,
     to: &str,
     body: &DirectBody,
 ) -> Result<(), FriendError> {
-    let (frame, queued) = framed(host, to, body).await?;
-    deliver(host, to, &frame, &queued).await
+    let (frame, _) = framed(host, to, body).await?;
+    deliver(host, to, &frame).await
 }
 
-/// Send a frame built elsewhere (a PreKeyInit opened from a bundle) to
-/// `to`, queued like any other when no route takes it.
+/// Send a frame built elsewhere (a resend a retry request asked for) to
+/// `to` once, like [`send_to_peer`].
 ///
 /// # Errors
-/// The frame is over Veilid's message cap, or the queue could not be
-/// written.
+/// The frame is over Veilid's message cap, or no usable route took it.
 pub async fn send_frame(
     host: &dyn FriendHost,
     to: &str,
     frame: &DmFrame,
 ) -> Result<(), FriendError> {
-    let queued = Queued::Wire {
-        datagram: frame::wire(frame)?,
-    };
-    deliver(host, to, frame, &queued).await
+    deliver(host, to, frame).await
 }
 
 /// One send of `frame`: the cached route, then (with `refresh`; never for
@@ -204,12 +165,26 @@ pub(crate) async fn route_send(
     frame: &DmFrame,
     refresh: bool,
 ) -> Result<bool, FriendError> {
-    let datagram = frame::wire(frame)?;
+    route_send_datagram(host, to, &frame::wire(frame)?, frame.type_id, refresh).await
+}
+
+/// [`route_send`] of a datagram already wired (a `friend_handshake` row's).
+///
+/// # Errors
+/// The node is not up.
+pub(super) async fn route_send_datagram(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: &[u8],
+    kind: DmTypeId,
+    refresh: bool,
+) -> Result<bool, FriendError> {
+    let datagram = datagram.to_vec();
     let node = host.node()?;
     let failure = match route::cached_target(&node, to) {
         Some(target) => match node.sender().send_direct(&target, datagram.clone()).await {
             Ok(()) => {
-                tracing::debug!(to = %to, kind = ?frame.type_id, "frame sent via veilid");
+                tracing::debug!(to = %to, ?kind, "frame sent via veilid");
                 return Ok(true);
             }
             Err(e) => {
@@ -264,7 +239,7 @@ pub(crate) async fn stream_frame(
     frame::ratchet_frame_at(host, to, body, hint_for(type_id), stream_seq).await
 }
 
-/// Send `body` to `to` once and never queue it: a receipt the peer's resend
+/// Send `body` to `to` once: a receipt the peer's resend
 /// asks for again (`DmAck`, plan E2.5). Whether it left this device.
 ///
 /// # Errors
@@ -278,34 +253,16 @@ pub(crate) async fn send_once(
     route_send(host, to, &frame, true).await
 }
 
-/// One send of `frame`, queued last unless its kind is ephemeral.
-async fn deliver(
-    host: &dyn FriendHost,
-    to: &str,
-    frame: &DmFrame,
-    queued: &Queued,
-) -> Result<(), FriendError> {
+/// One send of `frame`; an ephemeral kind that finds no route is dropped.
+async fn deliver(host: &dyn FriendHost, to: &str, frame: &DmFrame) -> Result<(), FriendError> {
     let ephemeral = frame.type_id.is_ephemeral();
     if route_send(host, to, frame, !ephemeral).await? || ephemeral {
         return Ok(());
     }
-    tracing::debug!(to = %to, "queuing frame for retry");
-    queue(host, to, queued).await
-}
-
-/// Frame `body` and queue it for the retry without trying to send it now:
-/// a notice whose delivery the queue must track (`Unfriended` until its
-/// ack).
-///
-/// # Errors
-/// The frame could not be sealed, or the queue could not be written.
-pub async fn build_and_queue(
-    host: &dyn FriendHost,
-    to: &str,
-    body: &DirectBody,
-) -> Result<(), FriendError> {
-    let (_, queued) = framed(host, to, body).await?;
-    queue(host, to, &queued).await
+    Err(FriendError::NotReady(format!(
+        "no usable route to {to} for {:?}",
+        frame.type_id
+    )))
 }
 
 /// `app_call` `body` to `to` and open the reply: a frame from `to`, or
@@ -323,48 +280,24 @@ pub async fn send_to_peer_call(
     call_frame(host, to, &frame).await
 }
 
-/// What [`call_or_send`] came to.
-#[derive(Debug)]
-pub enum Delivery {
-    /// The call returned its receipt.
-    Receipted,
-    /// The call did not land; the same frame went down the send fallbacks
-    /// (sent, or queued).
-    Sent,
-}
-
-/// `app_call` `body` to `to`; when no receipt comes back (no route, a
-/// timeout, a NAK), send the same frame like any other. A sealed kind
-/// keeps the call's nonce on the fallback and in the queue, so a copy of a
-/// call that did land is dropped by the receiver's replay guard (plan
-/// audit G4).
-///
-/// # Errors
-/// The frame could not be sealed, or the fallback failed.
-pub async fn call_or_send(
-    host: &dyn FriendHost,
-    to: &str,
-    body: &DirectBody,
-) -> Result<Delivery, FriendError> {
-    let (frame, queued) = framed(host, to, body).await?;
-    match call_frame(host, to, &frame).await {
-        Ok(_) => Ok(Delivery::Receipted),
-        Err(e) => {
-            tracing::debug!(to = %to, kind = ?frame.type_id, error = %e,
-                "not receipted by app_call — sending");
-            deliver(host, to, &frame, &queued).await?;
-            Ok(Delivery::Sent)
-        }
-    }
-}
-
 /// `app_call` `frame` to `to` and open the reply ([`send_to_peer_call`]).
 async fn call_frame(
     host: &dyn FriendHost,
     to: &str,
     frame: &DmFrame,
 ) -> Result<Option<Opened>, FriendError> {
-    let datagram = frame::wire(frame)?;
+    call_datagram(host, to, frame::wire(frame)?).await
+}
+
+/// [`call_frame`] of a datagram already wired (a `friend_handshake` row's).
+///
+/// # Errors
+/// As [`send_to_peer_call`].
+pub(super) async fn call_datagram(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+) -> Result<Option<Opened>, FriendError> {
     let node = host.node()?;
     let target = route::cached_target(&node, to)
         .ok_or_else(|| FriendError::NotReady(format!("no cached route for peer {to}")))?;
@@ -394,67 +327,23 @@ async fn call_frame(
     Ok(Some(opened))
 }
 
-/// What one retry of a queued frame came to.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Resend {
-    /// It went out.
-    Delivered,
-    /// No route, or the send failed: try again next tick.
-    Failed,
-    /// It cannot be sent again (its kind is not one, its recipient is not a
-    /// key, or the identity is gone): drop it.
-    Unsendable,
-}
-
-/// Send a queued frame again over the peer's cached route, or their
-/// mailbox's route when none is cached (the pending-message retry).
-pub async fn resend(host: &dyn FriendHost, to: &str, queued: &Queued) -> Resend {
-    let Ok(node) = host.node() else {
-        return Resend::Failed;
-    };
-    let target = if let Some(target) = route::cached_target(&node, to) {
-        target
-    } else {
-        let Some(blob) = route::fetch_from_mailbox(host, to).await else {
-            return Resend::Failed;
-        };
-        let Some(target) = route::import(&node, to, &blob) else {
-            return Resend::Failed;
-        };
-        tracing::debug!(to = %to, "discovered route via mailbox fallback");
-        target
-    };
-    let datagram = match datagram_for_retry(host, to, queued) {
-        Ok(datagram) => datagram,
-        Err(error) => {
-            tracing::warn!(to = %to, %error, "queued frame cannot be sent again — dropping");
-            return Resend::Unsendable;
-        }
-    };
-    match node.sender().send_direct(&target, datagram).await {
-        Ok(()) => {
-            tracing::debug!(to = %to, "queued frame delivered");
-            Resend::Delivered
-        }
-        Err(error) => {
-            if matches!(error, crate::error::TransportError::RouteUnusable { .. }) {
-                route::invalidate(&node, to);
-            }
-            tracing::debug!(to = %to, %error, "queued frame retry failed");
-            Resend::Failed
-        }
-    }
-}
-
-/// The datagram one retry sends.
-fn datagram_for_retry(
+/// The datagram one attempt of a stored frame sends, and its kind.
+///
+/// # Errors
+/// The stored frame does not decode, or the sealed kind does not re-seal.
+pub(super) fn datagram_of(
     host: &dyn FriendHost,
     to: &str,
-    queued: &Queued,
-) -> Result<Vec<u8>, FriendError> {
-    match queued {
-        Queued::Wire { datagram } => Ok(datagram.clone()),
-        Queued::Sealed {
+    framed: &Framed,
+) -> Result<(Vec<u8>, DmTypeId), FriendError> {
+    match framed {
+        Framed::Wire { datagram } => {
+            let frame = super::unwire(datagram)
+                .and_then(|bytes| DmFrame::decode(bytes).ok())
+                .ok_or_else(|| FriendError::Invalid("stored frame does not decode".into()))?;
+            Ok((datagram.clone(), frame.type_id))
+        }
+        Framed::Sealed {
             type_id,
             body,
             nonce,
@@ -463,7 +352,8 @@ fn datagram_for_retry(
                 .ok_or_else(|| FriendError::Invalid(format!("typeId {type_id:#06x}")))?;
             let body = DirectBody::decode(type_id, body)
                 .map_err(|e| FriendError::Invalid(format!("queued body: {e}")))?;
-            frame::wire(&frame::sealed_frame(host, to, &body, *nonce)?)
+            let datagram = frame::wire(&frame::sealed_frame(host, to, &body, *nonce)?)?;
+            Ok((datagram, type_id))
         }
     }
 }
@@ -473,19 +363,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_queued_frame_survives_its_json_row() {
+    fn a_stored_frame_survives_its_json_row() {
         for queued in [
-            Queued::Wire {
+            Framed::Wire {
                 datagram: vec![b'D', 1, 2, 3],
             },
-            Queued::Sealed {
+            Framed::Sealed {
                 type_id: DmTypeId::FriendReject.as_u16(),
                 body: Vec::new(),
                 nonce: [9; 16],
             },
         ] {
             let row = serde_json::to_string(&queued).unwrap();
-            assert_eq!(serde_json::from_str::<Queued>(&row).unwrap(), queued);
+            assert_eq!(serde_json::from_str::<Framed>(&row).unwrap(), queued);
         }
     }
 

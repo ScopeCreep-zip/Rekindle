@@ -13,15 +13,12 @@ use super::{IncomingFriendAccept, IncomingFriendRequest};
 use crate::operations::dm;
 use crate::operations::friend::{invites, state, FriendError, FriendHost};
 
-/// Send `body`; when it cannot go now, queue it for the retry, so the peer
-/// is not left re-sending (a lost rejection made the requester retry
-/// forever, B10/P3.4). The queue is bounded (20 × 30 s).
-async fn send_or_queue(host: &dyn FriendHost, to: &str, body: &DirectBody, what: &str) {
-    if let Err(e) = dm::send_to_peer(host, to, body).await {
-        tracing::info!(to = %to, error = %e, "{what} send failed, queueing for retry");
-        if let Err(e) = dm::build_and_queue(host, to, body).await {
-            tracing::warn!(to = %to, error = %e, "failed to queue {what} for retry");
-        }
+/// Commit `body` to the outbox, so the peer is not left re-sending (a lost
+/// rejection made the requester retry forever, B10/P3.4); the row's
+/// deadline bounds it.
+async fn enqueue_reply(host: &dyn FriendHost, to: &str, body: &DirectBody, what: &str) {
+    if let Err(e) = dm::handshake::enqueue(host, to, body).await {
+        tracing::warn!(to = %to, error = %e, "{what} not committed to the outbox");
     }
 }
 
@@ -78,7 +75,7 @@ async fn admit_invite(
         }
         Ok(false) => {
             tracing::info!(from = %req.sender_hex, %invite_id, "rejecting request for a closed invite");
-            send_or_queue(
+            enqueue_reply(
                 host,
                 req.sender_hex,
                 &DirectBody::FriendReject,

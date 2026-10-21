@@ -59,7 +59,24 @@ pub fn enqueue_with_echo(
     echo: Option<&NewDm<'_>>,
 ) -> rusqlite::Result<i64> {
     let tx = conn.unchecked_transaction()?;
-    let seq: i64 = tx.query_row(
+    let seq = append(&tx, row, echo)?;
+    tx.commit()?;
+    Ok(seq)
+}
+
+/// Store `row` at the end of its stream, with its local echo if any (written
+/// `queued` under the row's client id and seq), inside the caller's
+/// transaction (a friend's removal stores its `Unfriended` row with the
+/// state, plan audit D-1). Returns the row's `stream_seq`.
+///
+/// # Errors
+/// The write failed.
+pub fn append(
+    conn: &Connection,
+    row: &NewRow<'_>,
+    echo: Option<&NewDm<'_>>,
+) -> rusqlite::Result<i64> {
+    let seq: i64 = conn.query_row(
         "INSERT INTO outbox_streams (owner_key, stream, last_seq) VALUES (?1, ?2, 1) \
          ON CONFLICT(owner_key, stream) DO UPDATE SET last_seq = last_seq + 1 \
          RETURNING last_seq",
@@ -75,11 +92,11 @@ pub fn enqueue_with_echo(
                 stream_seq: Some(seq),
                 ..*dm
             };
-            Some(insert_dm(&tx, &dm)?.id)
+            Some(insert_dm(conn, &dm)?.id)
         }
         None => None,
     };
-    tx.execute(
+    conn.execute(
         "INSERT INTO outbox (owner_key, stream, stream_seq, client_id, kind, payload, state, \
          attempts, next_at, deadline, wedge_reason, echo_id) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', 0, ?7, ?8, NULL, ?9)",
@@ -95,7 +112,6 @@ pub fn enqueue_with_echo(
             echo_id
         ],
     )?;
-    tx.commit()?;
     Ok(seq)
 }
 
@@ -132,6 +148,42 @@ pub fn read_through(
     )?;
     tx.commit()?;
     Ok(raised)
+}
+
+/// The rows of the streams scoped to one peer (`dm:<peer>`,
+/// `friend_handshake:<peer>`; the scope follows the kind's `:`), as a
+/// condition on `o` whose peer is the next placeholder's value.
+macro_rules! to_peer {
+    ($peer:literal) => {
+        concat!(
+            "o.kind IN ('dm', 'friend_handshake') \
+             AND substr(o.stream, instr(o.stream, ':') + 1) = ",
+            $peer
+        )
+    };
+}
+
+/// The condition [`to_peer!`] for the friend `f` with a send not settled
+/// (`queued`, or `sent` and waiting for the peer).
+pub(crate) const UNSETTLED_TO_FRIEND: &str = concat!(
+    "EXISTS (SELECT 1 FROM outbox o WHERE o.owner_key = f.owner_key AND ",
+    to_peer!("f.public_key"),
+    " AND o.state IN ('queued', 'sent'))"
+);
+
+/// Delete every row of the streams to `peer` (the friendship ended, or
+/// they were blocked or forgotten). Returns how many went.
+///
+/// # Errors
+/// The write failed.
+pub fn delete_to_peer(conn: &Connection, owner_key: &str, peer: &str) -> rusqlite::Result<usize> {
+    conn.execute(
+        concat!(
+            "DELETE FROM outbox AS o WHERE o.owner_key = ?1 AND ",
+            to_peer!("?2")
+        ),
+        params![owner_key, peer],
+    )
 }
 
 const COLS: &str = "o.stream, o.stream_seq, o.client_id, o.kind, o.payload, o.state, o.attempts, \
@@ -362,3 +414,25 @@ pub fn unsettled_count(conn: &Connection, owner_key: &str) -> rusqlite::Result<i
 
 #[cfg(test)]
 mod tests;
+
+/// Store a row of `stream` (`<kind>:<scope>`) for a test.
+#[cfg(test)]
+pub(crate) fn queue_for_test(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    client_id: &str,
+    payload: &[u8],
+) -> i64 {
+    let kind = stream.split(':').next().unwrap();
+    let row = NewRow {
+        owner_key,
+        stream,
+        client_id,
+        kind,
+        payload,
+        next_at: 0,
+        deadline: i64::MAX,
+    };
+    enqueue_with_echo(conn, &row, None).unwrap()
+}

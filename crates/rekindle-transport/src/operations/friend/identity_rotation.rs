@@ -67,8 +67,8 @@ pub async fn notify_identity_rotated(host: &dyn FriendHost, new: &Identity) -> u
         };
         let notice =
             DirectBody::IdentityRotated(rotation(&local.identity, new, &recipient.to_bytes()));
-        match dm::send_to_peer(host, friend, &notice).await {
-            Ok(()) => notified += 1,
+        match dm::handshake::enqueue(host, friend, &notice).await {
+            Ok(_) => notified += 1,
             Err(e) => tracing::warn!(to = %friend, error = %e, "IdentityRotated not sent"),
         }
     }

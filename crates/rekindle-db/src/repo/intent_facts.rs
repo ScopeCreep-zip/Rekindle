@@ -42,18 +42,20 @@ pub fn community_members(
     )
 }
 
-/// Messages queued for a retry, and record writes a logout left for the
-/// next login: what a logout or lock leaves undelivered.
+/// Sends the outbox has not settled (plan E2.5), and record writes a
+/// logout left for the next login: what a logout or lock leaves
+/// undelivered.
 ///
 /// # Errors
 /// The query failed.
 pub fn unsent(conn: &Connection, owner_key: &str) -> rusqlite::Result<u32> {
-    count(
+    let writes = count(
         conn,
-        "SELECT (SELECT COUNT(*) FROM pending_messages WHERE owner_key = ?1) \
-              + (SELECT COUNT(*) FROM dht_outbox WHERE owner_key = ?1)",
+        "SELECT COUNT(*) FROM dht_outbox WHERE owner_key = ?1",
         params![owner_key],
-    )
+    )?;
+    let sends = super::outbox::unsettled_count(conn, owner_key)?;
+    Ok(writes.saturating_add(u32::try_from(sends).unwrap_or(u32::MAX)))
 }
 
 #[cfg(test)]
@@ -87,11 +89,7 @@ mod tests {
         assert_eq!(community_members(&conn, OWNER, "c").unwrap(), 2);
 
         assert_eq!(unsent(&conn, OWNER).unwrap(), 0);
-        conn.execute(
-            "INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) VALUES (?1, 'r', 'b', 0)",
-            params![OWNER],
-        )
-        .unwrap();
+        crate::repo::outbox::queue_for_test(&conn, OWNER, "dm:r", "m1", b"{}");
         crate::repo::dht_outbox::save(
             &conn,
             OWNER,

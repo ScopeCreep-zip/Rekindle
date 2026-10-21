@@ -1,6 +1,6 @@
-//! Removing a friend: they are told (`Unfriended`, queued until they ack
-//! it), the row stays `Removing` while the notice is queued, and the
-//! maintenance task forgets them once nothing is.
+//! Removing a friend: they are told (`Unfriended`, an outbox row that waits
+//! for their `UnfriendedAck`), the row stays `Removing` while that row is
+//! unsettled, and the outbox's settle event forgets them (plan E2.5).
 
 use rekindle_codec::capnp_codec::direct::DirectBody;
 use rekindle_types::friend::FriendshipState;
@@ -16,19 +16,17 @@ use crate::operations::dm;
 /// # Errors
 /// The removal could not be stored.
 pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
-    let owner = state::owner(host)?;
-    // Always queued: an app message has no delivery guarantee, and the
-    // queue entry is what keeps the row until the peer's ack. The row
-    // stays `removing` while the notice is queued (its retries need the
-    // friend's routing information, across a restart too): the state and
-    // the queued notice are one transaction (plan audit D-1).
-    let queued = dm::queued_form(host, public_key, &DirectBody::Unfriended).await?;
-    let (ok, pk) = (owner, public_key.to_string());
-    let now = host.clock().now_ms_i64();
-    state::db_call!(host, "mark friend removing", move |conn| {
-        rekindle_db::repo::friends::mark_removing(conn, &ok, &pk, &queued, now)
-    })
-    .await?;
+    // The state and the `Unfriended` row are one transaction (plan audit
+    // D-1): the row keeps the friend's routing information until it
+    // settles, across a restart too.
+    let payload = dm::handshake::payload(host, public_key, &DirectBody::Unfriended).await?;
+    host.outbox()?
+        .enqueue_removal(
+            public_key,
+            dm::handshake::unfriended_client_id(public_key),
+            payload,
+        )
+        .await?;
     host.audit(
         rekindle_audit::AuditKind::FriendRemoved,
         serde_json::json!({ "peer_public_key": public_key }),
@@ -47,12 +45,6 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     host.scope()
         .spawn_or_drop("friend removal cleanup", async move {
             let host = owned.as_ref();
-            if let Err(e) = dm::send_to_peer(host, &peer, &DirectBody::Unfriended).await {
-                tracing::warn!(to = %peer, error = %e, "failed to send unfriend notification");
-            }
-            if let Ok(node) = host.node() {
-                dm::route::invalidate(&node, &peer);
-            }
             host.unwatch_friend(&peer).await;
             if let Err(e) = list_record::push(host).await {
                 tracing::warn!(error = %e, "failed to update DHT friend list after removal");
@@ -62,8 +54,9 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     presence_key::rotate(host, public_key).await
 }
 
-/// Forget the friends we removed once nothing is queued to them (their
-/// `Unfriended` notice was acknowledged or ran out of retries): their rows,
+/// Forget the friends we removed once no send to them is unsettled (their
+/// `Unfriended` row was acknowledged or failed at its deadline; run from
+/// the outbox's settle event): their rows,
 /// their projection entries and their sessions, in one transaction. A
 /// removal that spans a restart still ends.
 ///

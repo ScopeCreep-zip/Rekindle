@@ -22,8 +22,8 @@ pub async fn notify_profile_key_rotated(host: &dyn FriendHost, profile_dht_key: 
     });
     let mut notified = 0;
     for friend in &friends {
-        match dm::send_to_peer(host, friend, &notice).await {
-            Ok(()) => notified += 1,
+        match dm::handshake::enqueue(host, friend, &notice).await {
+            Ok(_) => notified += 1,
             Err(e) => tracing::warn!(to = %friend, error = %e, "failed to send ProfileKeyRotated"),
         }
     }

@@ -23,7 +23,6 @@ pub mod messages;
 pub mod outbox;
 pub mod outgoing_invites;
 pub mod peer_rekey;
-pub mod pending_messages;
 pub mod pending_requests;
 pub mod preferences;
 pub mod presence_keys;

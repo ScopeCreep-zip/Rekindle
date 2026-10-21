@@ -7960,19 +7960,14 @@ dependencies = [
 name = "rekindle-sync"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "blake3",
  "hex",
- "parking_lot 0.12.5",
  "rand 0.8.5",
  "rekindle-codec",
  "rekindle-records",
  "rekindle-types",
  "rekindle-utils",
  "serde_json",
- "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]

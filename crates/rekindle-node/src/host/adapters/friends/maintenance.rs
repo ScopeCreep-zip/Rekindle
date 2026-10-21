@@ -1,10 +1,9 @@
 //! The friend maintenance task (plan E2.1), one per unlock on both hosts:
-//! every 30 s the pending-message retry, then forgetting the removed
-//! friends nothing is queued to any more and evicting the peer routes past
-//! their TTL (the route cache's half of the old route watchdog); every
+//! every 30 s evicting the peer routes past their TTL (the route cache's half of the old route watchdog); every
 //! sixth tick (~3 min) the expiry of stale requests and invites. The ticks
 //! are tokio time (paused under netsim): C9.2's `Clock` reads the time, it
-//! does not wait.
+//! does not wait. Sends are the outbox's (plan E2.5), and a removed friend
+//! is forgotten on its `Unfriended` row's settle event, not here.
 //!
 //! The prekey maintenance (plan E2.4, B1) is a task of its own. It starts
 //! only when the own-records stage says our prekey record is held,
@@ -20,11 +19,11 @@ use std::time::Duration;
 use rekindle_transport::operations::friend;
 use tokio_util::sync::CancellationToken;
 
-use super::{pending_retry::PendingRetry, HostFriends};
+use super::HostFriends;
 use crate::daemon::dispatch::DaemonContext;
 
-/// The tick: `rekindle_sync`'s retry interval.
-const TICK: Duration = Duration::from_millis(rekindle_sync::pending_retry::SYNC_LOOP_INTERVAL_MS);
+/// The tick.
+const TICK: Duration = Duration::from_secs(30);
 /// Expiry runs every this many ticks.
 const EXPIRY_EVERY: u64 = 6;
 /// The prekey maintenance's tick: its rules run in days (B1), and a
@@ -106,17 +105,6 @@ async fn run(host: HostFriends, stop: CancellationToken) {
             _ = ticks.tick() => {}
         }
         count += 1;
-        let retry = PendingRetry {
-            host: host.clone(),
-            stop: stop.clone(),
-        };
-        rekindle_sync::process_pending_retry_queue(&retry, &stop).await;
-        if stop.is_cancelled() {
-            return;
-        }
-        if let Err(e) = friend::forget_removed(&host).await {
-            tracing::warn!(error = %e, "forgetting removed friends failed");
-        }
         if let Some(node) = host.ctx().transport.read().clone() {
             let evicted = node.peers().write().evict_stale_routes();
             if !evicted.is_empty() {

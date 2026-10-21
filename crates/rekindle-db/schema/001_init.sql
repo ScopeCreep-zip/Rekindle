@@ -261,17 +261,6 @@ CREATE INDEX IF NOT EXISTS idx_friends_group_id ON friends(owner_key, group_id);
 CREATE INDEX IF NOT EXISTS idx_channels_community_id ON channels(owner_key, community_id);
 CREATE INDEX IF NOT EXISTS idx_community_members_community ON community_members(owner_key, community_id, pseudonym_key);
 
-CREATE TABLE IF NOT EXISTS pending_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    recipient_key TEXT NOT NULL,
-    body TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    retry_count INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE INDEX IF NOT EXISTS idx_pending_recipient ON pending_messages (owner_key, recipient_key);
-
 -- Phase 4 — tamper-evident audit chain. One row per audit-worthy action
 -- (friend add/remove, channel join/leave, identity rotate, vault unlock).
 -- `mac = BLAKE3-keyed(audit_mac_key, prev_mac || cursor_le || payload_json)`.

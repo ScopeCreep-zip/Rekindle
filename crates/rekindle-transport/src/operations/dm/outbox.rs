@@ -35,6 +35,39 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed; nothing was committed.
     async fn enqueue(&self, to: &str, dm: OutgoingDm) -> Result<i64, FriendError>;
+    /// Commit a `friend_handshake` frame (`payload`, [`super::Framed`]) at
+    /// the end of our handshake stream to `to`; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_handshake(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError>;
+    /// Mark `to` removing and commit our `Unfriended` frame to them, in one
+    /// transaction (plan audit D-1).
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_removal(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<(), FriendError>;
+    /// The peer acknowledged row `client_id` by a frame naming no stream
+    /// seq (`UnfriendedAck`); `false` when no row waits.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn acknowledge_client(&self, client_id: &str) -> Result<bool, FriendError>;
+    /// The user's Discard: the row settles `failed` and leaves its stream.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn discard(&self, client_id: &str) -> Result<bool, FriendError>;
     /// The user's Retry under the same client id; `false` when no row waits.
     ///
     /// # Errors
@@ -92,6 +125,11 @@ fn decode(payload: &[u8]) -> Result<DirectBody, String> {
 pub enum Attempt {
     /// The frame left this device.
     Sent,
+    /// The frame left this device, and the row waits for the peer's ack
+    /// of it (`Unfriended`).
+    Awaiting,
+    /// The peer's `app_call` reply received it (a `FriendRequest`).
+    Receipted,
     /// Not now: no route, no session yet, the node is not up, or the
     /// peer's changed key waits for the user's review.
     Deferred,

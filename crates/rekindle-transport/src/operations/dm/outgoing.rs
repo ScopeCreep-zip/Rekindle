@@ -5,9 +5,8 @@
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, RequestAuth};
 use rekindle_crypto::signal::PreKeyBundle;
-use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
-use super::send::{call_or_send, send_frame, send_to_peer, Delivery};
+use super::handshake;
 use crate::operations::friend::{state, FriendError, FriendHost};
 
 /// Send a friend request, sealed to `to` and naming our profile, so the
@@ -15,14 +14,14 @@ use crate::operations::friend::{state, FriendError, FriendHost};
 /// `auth` admits it: the token of the friend code we were given, or the
 /// invite we redeem (plan E2.5, D17).
 ///
-/// It goes by `app_call` when we hold a route to them: the call's empty
-/// return is the receipt (the receiver stored it), raising
-/// `RequestAcknowledged`. Otherwise — no route, a timeout, a NAK — the same
-/// frame, under the same nonce, is sent like any other (refreshed, then
-/// queued) and the accept is its receipt.
+/// It is committed to our `friend_handshake` stream to them (plan E2.5)
+/// and returns then: the outbox sends it by `app_call`, whose empty return
+/// is the receipt (`RequestAcknowledged`, the row `delivered`), and
+/// otherwise as any frame, under the same nonce, until it leaves.
 ///
 /// # Errors
-/// Our profile or route is not published yet, or the send failed.
+/// Our profile or route is not published yet, or the row could not be
+/// stored.
 pub async fn send_friend_request(
     host: &dyn FriendHost,
     to: &str,
@@ -30,14 +29,7 @@ pub async fn send_friend_request(
     auth: RequestAuth,
 ) -> Result<(), FriendError> {
     let request = crate::operations::friend::request::build(host, message, auth).await?;
-    if let Delivery::Receipted = call_or_send(host, to, &request).await? {
-        host.publish(SubscriptionEvent::Friend(
-            FriendEvent::RequestAcknowledged {
-                peer_key: to.to_string(),
-            },
-        ));
-    }
-    Ok(())
+    handshake::enqueue(host, to, &request).await.map(drop)
 }
 
 /// Accept `to`'s request: open the session from `bundle` (picked from their
@@ -64,13 +56,15 @@ pub async fn send_friend_accept(
         mailbox_dht_key: own.mailbox_dht_key,
     });
     let frame = super::frame::initiate_frame(host, to, bundle, &accept).await?;
-    send_frame(host, to, &frame).await
+    handshake::enqueue_frame(host, to, &frame).await.map(drop)
 }
 
-/// Send a friend rejection.
+/// Commit a friend rejection to the outbox.
 ///
 /// # Errors
-/// The send failed.
+/// The row could not be stored.
 pub async fn send_friend_reject(host: &dyn FriendHost, to: &str) -> Result<(), FriendError> {
-    send_to_peer(host, to, &DirectBody::FriendReject).await
+    handshake::enqueue(host, to, &DirectBody::FriendReject)
+        .await
+        .map(drop)
 }

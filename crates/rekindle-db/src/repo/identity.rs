@@ -259,7 +259,7 @@ pub fn rekey(
     // over (audit 2026-10-20 R-2, R-3): open invites carry the old key and
     // are cancelled; requests out (`pending_out` rows) and in were
     // addressed to or from it and go; frames queued under the deleted
-    // sessions (`Queued::Wire`) can never be read. Our own messages move
+    // sessions (a `friend_handshake` row's wired frame) can never be read. Our own messages move
     // to the new key, and a verification goes with the safety number it
     // was made over, which the new key changes (Signal resets it).
     tx.execute(
@@ -268,14 +268,16 @@ pub fn rekey(
         params![old_key],
     )?;
     tx.execute(
-        "DELETE FROM pending_messages WHERE owner_key = ?1 AND recipient_key IN \
+        "DELETE FROM outbox AS o WHERE o.owner_key = ?1 AND o.kind IN ('dm', 'friend_handshake') \
+         AND substr(o.stream, instr(o.stream, ':') + 1) IN \
          (SELECT public_key FROM friends WHERE owner_key = ?1 AND friendship_state = 'pending_out')",
         params![old_key],
     )?;
     for sql in [
         "DELETE FROM friends WHERE owner_key = ?1 AND friendship_state = 'pending_out'",
         "DELETE FROM pending_friend_requests WHERE owner_key = ?1",
-        "DELETE FROM pending_messages WHERE owner_key = ?1 AND json_extract(body, '$.kind') = 'wire'",
+        "DELETE FROM outbox WHERE owner_key = ?1 AND kind = 'friend_handshake' \
+         AND json_extract(CAST(payload AS TEXT), '$.kind') = 'wire'",
         "UPDATE signal_identities SET verified = 0, verified_at = NULL WHERE owner_key = ?1",
     ] {
         tx.execute(sql, params![old_key])?;
@@ -436,14 +438,21 @@ mod tests {
              INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp) \
                VALUES ('{OWNER}', 'bob', 'dm', '{OWNER}', 'mine', 1), \
                       ('{OWNER}', 'bob', 'dm', 'bob', 'theirs', 2); \
-             INSERT INTO pending_messages (owner_key, recipient_key, body, created_at) \
-               VALUES ('{OWNER}', 'bob', '{{\"kind\":\"wire\",\"datagram\":\"AA==\"}}', 1), \
-                      ('{OWNER}', 'bob', '{{\"kind\":\"sealed\"}}', 1), \
-                      ('{OWNER}', 'carol', '{{\"kind\":\"sealed\"}}', 1); \
              INSERT INTO signal_identities (owner_key, peer_identity, identity_key, verified, verified_at) \
                VALUES ('{OWNER}', 'bob', zeroblob(32), 1, 5);"
         ))
         .unwrap();
+        for (stream, id, payload) in [
+            (
+                "friend_handshake:bob",
+                "w",
+                &br#"{"kind":"wire","datagram":"AA=="}"#[..],
+            ),
+            ("friend_handshake:bob", "s", br#"{"kind":"sealed"}"#),
+            ("friend_handshake:carol", "c", br#"{"kind":"sealed"}"#),
+        ] {
+            crate::repo::outbox::queue_for_test(&conn, OWNER, stream, id, payload);
+        }
         insert_invite(&conn, "i1");
         rekey(&mut conn, OWNER, "new-pk", None).unwrap();
         let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
@@ -466,7 +475,7 @@ mod tests {
         assert_eq!(count("SELECT count(*) FROM pending_friend_requests"), 0);
         assert_eq!(count("SELECT count(*) FROM friends"), 1);
         assert_eq!(
-            count("SELECT count(*) FROM pending_messages WHERE owner_key = 'new-pk'"),
+            count("SELECT count(*) FROM outbox WHERE owner_key = 'new-pk' AND client_id = 's'"),
             1
         );
     }

@@ -55,17 +55,16 @@ fn mentions(events: &[String], needle: &str) -> usize {
     events.iter().filter(|e| e.contains(needle)).count()
 }
 
-/// The rows `owner`'s retry queue holds.
-async fn queued(host: &Host, owner: [u8; 32]) -> usize {
+/// The rows `owner`'s outbox holds.
+async fn queued(host: &Host, owner: [u8; 32]) -> i64 {
     let owner = hex::encode(owner);
     host.ctx
         .db
         .current()
         .unwrap()
-        .call(move |conn| rekindle_db::repo::pending_messages::list(conn, &owner))
+        .call(move |conn| rekindle_db::repo::outbox::unsettled_count(conn, &owner))
         .await
         .unwrap()
-        .len()
 }
 
 /// Ann and Bob, each the other's accepted friend, with the session Bob

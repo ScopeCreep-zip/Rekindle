@@ -6,7 +6,7 @@ use rekindle_types::friend_store::FriendshipState;
 use rusqlite::{params, Connection};
 
 use super::{delete, insert_accepted, replace_with_invited_rows, set_record_keys, set_state};
-use crate::repo::{blocked, pending_messages, pending_requests};
+use crate::repo::{blocked, outbox, pending_requests};
 
 /// Run `change` atomically: in a transaction of its own, or in the
 /// caller's when `conn` is already inside one (a `Transaction` derefs to
@@ -105,14 +105,15 @@ pub fn block(
     atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
-        pending_messages::delete_to(conn, owner_key, public_key)?;
+        outbox::delete_to_peer(conn, owner_key, public_key)?;
         delete_sessions(conn, owner_key, public_key)?;
         blocked::insert(conn, owner_key, public_key, display_name, blocked_at)
     })
 }
 
 /// We remove `public_key`: the row is `removing`, their request goes, and
-/// the `Unfriended` notice (`queued`, the queue's form) is queued to them.
+/// the `Unfriended` notice is stored as `unfriended`, a row of their
+/// `friend_handshake` stream (plan E2.5): one transaction.
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -120,14 +121,13 @@ pub fn mark_removing(
     conn: &Connection,
     owner_key: &str,
     public_key: &str,
-    queued: &str,
-    queued_at: i64,
+    unfriended: &outbox::NewRow<'_>,
 ) -> rusqlite::Result<()> {
     atomically(conn, |conn| {
         set_state(conn, owner_key, public_key, FriendshipState::Removing)?;
         super::clear_presence_key(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
-        pending_messages::insert(conn, owner_key, public_key, queued, queued_at)
+        outbox::append(conn, unfriended, None).map(drop)
     })
 }
 
@@ -150,30 +150,31 @@ pub fn forget(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
 pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
     atomically(conn, |conn| {
         forget(conn, owner_key, public_key)?;
-        pending_messages::delete_to(conn, owner_key, public_key)?;
+        outbox::delete_to_peer(conn, owner_key, public_key)?;
         delete_sessions(conn, owner_key, public_key)
     })
 }
 
-/// Forget the friends we removed once nothing is queued to them (their
-/// `Unfriended` notice was acknowledged or ran out of retries): their rows
-/// and their sessions; their keys.
+/// Forget the friends we removed once no send to them is unsettled (their
+/// `Unfriended` row was acknowledged or failed at its deadline, plan
+/// E2.5): their rows, the rest of their streams and their sessions; their
+/// keys.
 ///
 /// # Errors
 /// The query or a delete failed; nothing is kept.
 pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
     atomically(conn, |conn| {
         let done = conn
-            .prepare(
+            .prepare(&format!(
                 "SELECT public_key FROM friends f \
                  WHERE owner_key = ?1 AND friendship_state = 'removing' \
-                   AND NOT EXISTS (SELECT 1 FROM pending_messages p \
-                                   WHERE p.owner_key = f.owner_key \
-                                     AND p.recipient_key = f.public_key)",
-            )?
+                   AND NOT {}",
+                outbox::UNSETTLED_TO_FRIEND
+            ))?
             .query_map(params![owner_key], |row| row.get(0))?
             .collect::<rusqlite::Result<Vec<String>>>()?;
         for public_key in &done {
+            outbox::delete_to_peer(conn, owner_key, public_key)?;
             delete(conn, owner_key, public_key)?;
             delete_sessions(conn, owner_key, public_key)?;
         }
@@ -249,13 +250,23 @@ mod tests {
     fn a_failed_removal_leaves_the_friend_accepted() {
         let conn = conn();
         insert_accepted(&conn, OWNER, BOB, "Bob", 1).unwrap();
-        fail_on(&conn, "pending_messages");
-        assert!(mark_removing(&conn, OWNER, BOB, "{}", 2).is_err());
+        let stream = format!("friend_handshake:{BOB}");
+        let row = outbox::NewRow {
+            owner_key: OWNER,
+            stream: &stream,
+            client_id: "unfriended:bb",
+            kind: "friend_handshake",
+            payload: b"{}",
+            next_at: 2,
+            deadline: 9,
+        };
+        fail_on(&conn, "outbox");
+        assert!(mark_removing(&conn, OWNER, BOB, &row).is_err());
         assert_eq!(state_of(&conn).as_deref(), Some("accepted"));
         conn.execute_batch("DROP TRIGGER injected").unwrap();
-        mark_removing(&conn, OWNER, BOB, "{}", 2).unwrap();
+        mark_removing(&conn, OWNER, BOB, &row).unwrap();
         assert_eq!(state_of(&conn).as_deref(), Some("removing"));
-        assert_eq!(pending_messages::list(&conn, OWNER).unwrap().len(), 1);
+        assert_eq!(outbox::unsettled_count(&conn, OWNER).unwrap(), 1);
     }
 
     #[test]

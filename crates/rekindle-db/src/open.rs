@@ -149,7 +149,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 102 (plan E2.5, r10): `messages.stream_seq`, each DM's place in its stream
 /// (ours at enqueue, the sender's when received), which `ReadUpTo` names.
-pub const SCHEMA_VERSION: i64 = 102;
+///
+/// 103 (plan E2.5, D22): `pending_messages` is gone; the friend handshake,
+/// removal and lifecycle frames are `friend_handshake` outbox rows.
+pub const SCHEMA_VERSION: i64 = 103;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
