@@ -245,67 +245,6 @@ fn own(request: &IpcRequest) -> Checked {
     }
 }
 
-/// A community's channels: their names, kinds, topics and bodies.
-fn channels(request: &IpcRequest) -> Checked {
-    match request {
-        IpcRequest::ChannelCreate {
-            community: c,
-            name: channel_name,
-            kind,
-            category,
-            topic,
-            slowmode_seconds,
-        } => {
-            community(c)?;
-            name(channel_name, "channel")?;
-            channel_kind(kind)?;
-            opt(category.as_deref(), |n| name(n, "category"))?;
-            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
-            slowmode(*slowmode_seconds)
-        }
-        IpcRequest::ChannelDelete {
-            community: c,
-            channel_id,
-        } => {
-            community(c)?;
-            channel(channel_id)
-        }
-        IpcRequest::ChannelUpdate {
-            community: c,
-            channel_id,
-            name: new_name,
-            topic,
-            slowmode_seconds,
-        } => {
-            community(c)?;
-            channel(channel_id)?;
-            opt(new_name.as_deref(), |n| name(n, "channel"))?;
-            opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
-            opt(slowmode_seconds.as_ref(), |s| slowmode(*s))
-        }
-        IpcRequest::ChannelSend {
-            community: c,
-            channel: ch,
-            body,
-            reply_to: _,
-        } => {
-            community(c)?;
-            channel(ch)?;
-            message_body(body)
-        }
-        IpcRequest::ChannelHistory {
-            community: c,
-            channel: ch,
-            limit,
-        } => {
-            community(c)?;
-            channel(ch)?;
-            page(*limit)
-        }
-        other => unreachable!("{} is not a channel request", other.name()),
-    }
-}
-
 /// Validate every field of `request`. The first malformed field answers
 /// 400; nothing past this point sees malformed input.
 pub fn validate_request(request: &IpcRequest) -> Checked {
@@ -451,7 +390,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::ChannelDelete { .. }
         | IpcRequest::ChannelUpdate { .. }
         | IpcRequest::ChannelSend { .. }
-        | IpcRequest::ChannelHistory { .. } => channels(request),
+        | IpcRequest::ChannelHistory { .. } => channels::check(request),
 
         IpcRequest::MekRotate {
             community: c,
@@ -597,6 +536,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
     }
 }
 
+mod channels;
 mod friends;
 #[cfg(test)]
 mod tests;
