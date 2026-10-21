@@ -311,6 +311,10 @@ pub async fn frame(
             "{:?} opens a session: initiate it from a bundle",
             body.type_id()
         ))),
+        Carrier::GroupChain => Err(FriendError::Invalid(format!(
+            "{:?} is a group chain entry, never a pairwise frame",
+            body.type_id()
+        ))),
     }
 }
 

@@ -295,20 +295,34 @@ impl FriendsKey {
 /// dm participant record for this conversation, whose chain holds their
 /// stream to us (plan E2.5). Sent once a session exists and again after the
 /// record is replaced. A key that is empty or not a record key's shape is
-/// malformed.
+/// malformed. `group_id` names the group when the record is our group
+/// chain (plan E2.6), announced pairwise to each member like a DM one.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StreamRecord {
     pub record_key: String,
+    pub group_id: Option<super::GroupId>,
 }
 
 impl StreamRecord {
     pub(super) fn write(&self, mut b: stream_record::Builder<'_>) {
         b.set_record_key(&self.record_key);
+        if let Some(group_id) = &self.group_id {
+            b.set_group_id(group_id);
+        }
     }
 
+    /// A group id that is neither empty nor 16 bytes is malformed.
     pub(super) fn read(r: stream_record::Reader<'_>) -> Result<Self, CodecError> {
+        let group_id = r
+            .get_group_id()
+            .map_err(|e| crate::capnp_codec::capnp_err(&e))?;
         Ok(Self {
             record_key: record_key(r.get_record_key(), "stream record key")?,
+            group_id: if group_id.is_empty() {
+                None
+            } else {
+                Some(super::super::fixed(Ok(group_id), "stream record group id")?)
+            },
         })
     }
 }

@@ -397,6 +397,7 @@ async fn a_stream_record_is_kept_from_an_accepted_friend_only() {
     let send = |n: char| {
         let body = DirectBody::StreamRecord(StreamRecord {
             record_key: format!("VLD0:{}", n.to_string().repeat(43)),
+            group_id: None,
         });
         let (other, host, to) = (other.clone(), host.clone(), o.clone());
         async move {

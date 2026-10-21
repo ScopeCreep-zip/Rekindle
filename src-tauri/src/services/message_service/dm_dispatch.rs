@@ -1,14 +1,15 @@
 //! DM-family `app_message` dispatcher.
 //!
-//! Routes the incoming group DM kinds (`GroupDmInvite` 0x0120,
-//! `GroupDmLeave` 0x0123, until E2.6) and DM video fragments (0x0220,
-//! until E4.3.8) to the `services::dm` ingest handlers. Lifted out of
+//! Routes DM video fragments (0x0220, until E4.3.8) to the `services::dm`
+//! handlers. The group-DM kinds never reach it: their sender-key bodies
+//! (plan E2.6) are `rekindle-dm`'s, applied from slice G2, and the
+//! transport drops them until then. Lifted out of
 //! the main inbound dispatcher so it stays under the workspace line
 //! budget. The 1:1 SMPL invite arms went with that path (plan E2.3).
 
 use std::sync::Arc;
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, GroupDmInvite, GroupDmLeave};
+use rekindle_codec::capnp_codec::direct::DirectBody;
 
 use crate::state::AppState;
 use rekindle_db::Db;
@@ -21,39 +22,6 @@ pub(crate) async fn handle_dm_payload(
     body: DirectBody,
 ) {
     match body {
-        DirectBody::GroupDmInvite(GroupDmInvite {
-            record_key,
-            slot_seed,
-            initiator_pseudonym,
-            participants_json,
-            wrapped_mek,
-            mek_generation,
-        }) => {
-            if let Err(e) = crate::services::dm::handle_incoming_group_dm_invite(
-                app_handle,
-                state,
-                pool,
-                sender_hex,
-                &record_key,
-                &slot_seed,
-                &initiator_pseudonym,
-                &participants_json,
-                &wrapped_mek,
-                mek_generation,
-            )
-            .await
-            {
-                tracing::warn!(error = %e, from = %sender_hex, "failed to ingest GroupDmInvite");
-            }
-        }
-        DirectBody::GroupDmLeave(GroupDmLeave { record_key }) => {
-            if let Err(e) =
-                crate::services::dm::handle_incoming_dm_leave(state, pool, sender_hex, &record_key)
-                    .await
-            {
-                tracing::debug!(error = %e, "GroupDmLeave drop");
-            }
-        }
         DirectBody::DmVideoFragment(fragment) => {
             // W11.4 — accumulate fragments and emit a `videoFrame`
             // event when the last chunk lands. The ratchet has already

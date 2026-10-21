@@ -15,6 +15,14 @@ pub enum Carrier {
     /// The Double Ratchet session: a `ratchet` body, or the first payload
     /// of a PreKeyInit that opens a session.
     Ratchet,
+    /// Never a `DmFrame`: an entry of the sender's group chain (plan E2.6),
+    /// its `sealed` already the AEAD under the sender's group sending key,
+    /// which every member holds. The chain is read by every member, so a
+    /// pairwise ratchet or HPKE seal (one reader) cannot carry it, and
+    /// sealing it again per member would write one entry per reader; the
+    /// members' hints only name the entry. A frame of this typeId is
+    /// refused at decode.
+    GroupChain,
 }
 
 macro_rules! type_ids {
@@ -95,14 +103,16 @@ type_ids! {
     DmDelete = 0x0111 => Ratchet,
     /// React to a message.
     DmReaction = 0x0112 => Ratchet,
-    /// A group-DM invite (the SMPL group path's fields until E2.6).
+    /// The creator's signed group-DM invite and sending key (plan E2.6).
     GroupDmInvite = 0x0120 => Ratchet,
-    /// Allocated E2.3; body E2.6.
+    /// We joined a group DM: our sending key, to each member.
     GroupDmAccept = 0x0121 => Ratchet,
-    /// Allocated E2.3; body E2.6.
+    /// We declined a group-DM invite.
     GroupDmDecline = 0x0122 => Ratchet,
-    /// A member left a group DM (the SMPL group path's fields until E2.6).
+    /// We left a group DM.
     GroupDmLeave = 0x0123 => Ratchet,
+    /// Group-DM content sealed under the sender's key, on its group chain.
+    GroupContent = 0x0124 => GroupChain,
     /// A friend offers a relay route.
     RelayOffer = 0x0130 => Ratchet,
     /// The relay friend withdraws its offer.
@@ -222,7 +232,7 @@ mod tests {
     #[test]
     fn unallocated_ids_are_not_kinds() {
         for id in [
-            0x0000, 0x0109, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
+            0x0000, 0x0109, 0x0125, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }
@@ -241,6 +251,7 @@ mod tests {
             [0x0002, 0x0005, 0x0007, 0x0009, 0x0102, 0x0310, 0x0311, 0x0312]
         );
         assert_eq!(DmTypeId::PreKeyInit.carrier(), Carrier::PreKeyInit);
+        assert_eq!(DmTypeId::GroupContent.carrier(), Carrier::GroupChain);
         assert_eq!(DmTypeId::FriendAccept.carrier(), Carrier::FirstPayload);
         assert_eq!(
             DmTypeId::SessionResetAccept.carrier(),

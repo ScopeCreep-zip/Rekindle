@@ -170,6 +170,7 @@ pub fn stream_record_client_id(record_key: &str) -> String {
 async fn send_record(host: &dyn FriendHost, to: &str, record_key: &str) -> Result<(), FriendError> {
     let body = DirectBody::StreamRecord(StreamRecord {
         record_key: record_key.to_string(),
+        group_id: None,
     });
     let payload = super::outbox::payload(&body)?;
     host.outbox()?
@@ -187,6 +188,12 @@ pub(crate) async fn on_stream_record(
 ) -> bool {
     if !state::is_accepted(host, sender) {
         tracing::debug!(from = %sender, "ignoring StreamRecord from non-friend");
+        return true;
+    }
+    if body.group_id.is_some() {
+        // A member's group chain (plan E2.6) is `rekindle-dm`'s to follow,
+        // from slice G2; it is never this friend's DM record.
+        tracing::debug!(from = %sender, "group StreamRecord not applied before E2.6 G2");
         return true;
     }
     let Ok(owner) = state::owner(host) else {

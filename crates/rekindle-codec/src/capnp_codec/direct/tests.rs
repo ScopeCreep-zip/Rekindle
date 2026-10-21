@@ -27,6 +27,18 @@ fn dht_key() -> String {
     format!("VLD0:{}", "A".repeat(43))
 }
 
+/// A full roster of three.
+fn roster() -> Vec<rekindle_types::group_dm::RosterMember> {
+    ['a', 'b', 'c']
+        .into_iter()
+        .map(|n| rekindle_types::group_dm::RosterMember {
+            identity: n.to_string().repeat(64),
+            profile_record_key: dht_key(),
+            participant_record_key: dht_key(),
+        })
+        .collect()
+}
+
 /// One body of every kind that has one.
 fn samples() -> Vec<DirectBody> {
     let id = [0xA1; 16];
@@ -86,6 +98,11 @@ fn samples() -> Vec<DirectBody> {
         }),
         DirectBody::StreamRecord(StreamRecord {
             record_key: dht_key(),
+            group_id: None,
+        }),
+        DirectBody::StreamRecord(StreamRecord {
+            record_key: dht_key(),
+            group_id: Some([0x6D; 16]),
         }),
         DirectBody::IdentityRotated(IdentityRotated {
             new_identity: [3; 32],
@@ -106,15 +123,29 @@ fn samples() -> Vec<DirectBody> {
             add: true,
         }),
         DirectBody::GroupDmInvite(GroupDmInvite {
-            record_key: dht_key(),
-            slot_seed: vec![0x5E; 32],
-            initiator_pseudonym: "ab".repeat(32),
-            participants_json: s(r#"[{"pseudonym":"p0","subkey":0,"publicKey":"pk0"}]"#),
-            wrapped_mek: vec![0x3C; 92],
-            mek_generation: 2,
+            group_id: [0x6D; 16],
+            name: s("raid night"),
+            roster: roster(),
+            creator_sender_key: [0x5E; 32],
+            epoch: 0,
+            signature: [0x51; 64],
+        }),
+        DirectBody::GroupDmAccept(GroupDmAccept {
+            group_id: [0x6D; 16],
+            epoch: 2,
+            sender_key: [0x5F; 32],
+        }),
+        DirectBody::GroupDmDecline(GroupDmDecline {
+            group_id: [0x6D; 16],
         }),
         DirectBody::GroupDmLeave(GroupDmLeave {
-            record_key: dht_key(),
+            group_id: [0x6D; 16],
+            epoch: 3,
+        }),
+        DirectBody::GroupContent(GroupContent {
+            group_id: [0x6D; 16],
+            epoch: 3,
+            sealed: vec![0xC1; 48],
         }),
         DirectBody::RelayOffer(RelayOffer {
             relay_route_blob: vec![6; 40],
@@ -230,11 +261,7 @@ fn samples() -> Vec<DirectBody> {
 
 /// The kinds §6 allocates whose bodies a later step defines, and the
 /// PreKeyInit, which is a frame.
-const NO_BODY_YET: [DmTypeId; 3] = [
-    DmTypeId::PreKeyInit,
-    DmTypeId::GroupDmAccept,
-    DmTypeId::GroupDmDecline,
-];
+const NO_BODY_YET: [DmTypeId; 1] = [DmTypeId::PreKeyInit];
 
 #[test]
 fn every_body_round_trips_under_its_kind() {
@@ -489,10 +516,76 @@ fn bodies_a_peer_could_abuse_are_refused() {
 #[test]
 fn a_stream_record_without_a_record_key_is_refused() {
     for record_key in [String::new(), "A".repeat(257), s("not-a-key")] {
-        let bytes = DirectBody::StreamRecord(StreamRecord { record_key }).encode();
+        let bytes = DirectBody::StreamRecord(StreamRecord {
+            record_key,
+            group_id: None,
+        })
+        .encode();
         assert!(matches!(
             DirectBody::decode(DmTypeId::StreamRecord, &bytes),
             Err(CodecError::Deserialization(_))
         ));
     }
+}
+
+/// A roster outside 3-8 members, an empty name or content, and a group id
+/// of the wrong length are refused; the signing bytes cover the roster and
+/// not the key; no key is printed.
+#[test]
+fn group_bodies_hold_their_shapes() {
+    let invite = GroupDmInvite {
+        group_id: [1; 16],
+        name: s("g"),
+        roster: roster(),
+        creator_sender_key: [0xAB; 32],
+        epoch: 0,
+        signature: [2; 64],
+    };
+    for roster in [
+        roster()[..2].to_vec(),
+        roster().iter().cycle().take(9).cloned().collect(),
+    ] {
+        let short = GroupDmInvite {
+            roster,
+            ..invite.clone()
+        };
+        let bytes = DirectBody::GroupDmInvite(short).encode();
+        assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &bytes).is_err());
+    }
+    let unnamed = DirectBody::GroupDmInvite(GroupDmInvite {
+        name: String::new(),
+        ..invite.clone()
+    });
+    assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &unnamed.encode()).is_err());
+    let rekeyed = GroupDmInvite {
+        creator_sender_key: [0xCD; 32],
+        signature: [3; 64],
+        ..invite.clone()
+    };
+    assert_eq!(invite.signing_bytes(), rekeyed.signing_bytes());
+    let mut fewer = invite.clone();
+    fewer.roster[2].identity = "d".repeat(64);
+    assert_ne!(invite.signing_bytes(), fewer.signing_bytes());
+    assert!(!format!("{invite:?}").contains("171, 171"));
+    let accept = GroupDmAccept {
+        group_id: [1; 16],
+        epoch: 0,
+        sender_key: [0xAB; 32],
+    };
+    assert!(!format!("{accept:?}").contains("171"));
+    let empty = DirectBody::GroupContent(GroupContent {
+        group_id: [1; 16],
+        epoch: 0,
+        sealed: Vec::new(),
+    });
+    assert!(DirectBody::decode(DmTypeId::GroupContent, &empty.encode()).is_err());
+    let bad_id = encode_root::<crate::direct_capnp::group_dm_decline::Owned>(|mut b| {
+        b.set_group_id(&[1; 15]);
+    });
+    assert!(DirectBody::decode(DmTypeId::GroupDmDecline, &bad_id).is_err());
+    let bad_stream = encode_root::<crate::direct_capnp::stream_record::Owned>(|mut b| {
+        b.set_record_key(&dht_key());
+        b.set_group_id(&[1; 3]);
+    });
+    assert!(DirectBody::decode(DmTypeId::StreamRecord, &bad_stream).is_err());
 }

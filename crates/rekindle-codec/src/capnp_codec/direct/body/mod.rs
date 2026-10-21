@@ -7,10 +7,8 @@
 //! `Text`, empty when absent), so the cutover maps each variant without
 //! a semantic change. The friendship and content kinds are E2.3's own
 //! definitions. FriendReject, Unfriended, UnfriendedAck and
-//! SessionResetAccept have an empty body. GroupDmInvite and GroupDmLeave
-//! carry the SMPL group path's fields unchanged until E2.6 replaces them.
-//! GroupDmAccept and GroupDmDecline (E2.6) are allocated here; their step
-//! defines their bodies, so [`DirectBody::decode`] refuses them until then.
+//! SessionResetAccept have an empty body. The group-DM kinds (0x0120-0x0124)
+//! are E2.6's sender-key bodies.
 
 mod calls;
 mod content;
@@ -27,7 +25,9 @@ pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
     RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StreamRecord,
 };
-pub use group::{GroupDmInvite, GroupDmLeave};
+pub use group::{
+    GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite, GroupDmLeave, GroupId,
+};
 pub use relay::{
     RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, StatusRequest,
     StatusResponse, UnregisterPushRelay, WakeNotify,
@@ -123,7 +123,10 @@ direct_bodies! {
         DmDelete(DmDelete) = dm_delete,
         DmReaction(DmReaction) = dm_reaction,
         GroupDmInvite(GroupDmInvite) = group_dm_invite,
+        GroupDmAccept(GroupDmAccept) = group_dm_accept,
+        GroupDmDecline(GroupDmDecline) = group_dm_decline,
         GroupDmLeave(GroupDmLeave) = group_dm_leave,
+        GroupContent(GroupContent) = group_content,
         RelayOffer(RelayOffer) = relay_offer,
         RelayWithdraw(RelayWithdraw) = relay_withdraw,
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,

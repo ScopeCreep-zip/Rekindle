@@ -146,9 +146,17 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::DmEdit(_) | DirectBody::DmDelete(_) | DirectBody::DmReaction(_) => {
             tracing::debug!(from = %sender, kind = ?opened.type_id, "DM edit/delete/reaction not applied before E6.4");
         }
-        DirectBody::RelayEnvelope(_)
-        | DirectBody::GroupDmInvite(_)
+        // Group DMs (plan E2.6) are `rekindle-dm`'s, which applies them from
+        // slice G2 with the roster admission; until then they are dropped
+        // here, never handed to the desktop's retired SMPL group path.
+        DirectBody::GroupDmInvite(_)
+        | DirectBody::GroupDmAccept(_)
+        | DirectBody::GroupDmDecline(_)
         | DirectBody::GroupDmLeave(_)
+        | DirectBody::GroupContent(_) => {
+            tracing::debug!(from = %sender, kind = ?opened.type_id, "group DM kind not applied before E2.6 G2");
+        }
+        DirectBody::RelayEnvelope(_)
         | DirectBody::RelayOffer(_)
         | DirectBody::RelayWithdraw(_)
         | DirectBody::StatusRequest(_)

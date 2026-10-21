@@ -8,6 +8,9 @@ pub const MAX_MEMBERS: usize = 8;
 /// The fewest members a group DM holds, its creator included.
 pub const MIN_MEMBERS: usize = 3;
 
+/// The most characters in a group's name.
+pub const MAX_NAME_CHARS: usize = 64;
+
 /// One member on a group's signed roster (the creator's `GroupDmInvite`),
 /// stored in `group_dms.roster`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

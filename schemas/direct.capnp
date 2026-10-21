@@ -157,6 +157,7 @@ struct FriendsKey {
 # to us; sent once a session exists and again after the record is replaced.
 struct StreamRecord {
   recordKey @0 :Text;
+  groupId @1 :Data;                     # 16 for a group chain (E2.6); empty for a DM
 }
 
 # 0x0108, over the old session; both signatures over
@@ -214,23 +215,52 @@ struct Typing {
   typing @0 :Bool;
 }
 
-# --- Group DMs (0x0120, 0x0123: moved unchanged from the SMPL group path
-# until E2.6 replaces them with sender keys; 0x0121/0x0122 have no body
-# until E2.6) ---
+# --- Group DMs (plan E2.6: 3-8 members, no governance, sender-owned keys).
+# 0x0120-0x0123 ride each member's pairwise ratchet; 0x0124 is the entry
+# of a member's group chain, sealed under that member's sending key. ---
 
-# 0x0120.
-struct GroupDmInvite {
-  recordKey @0 :Text;
-  slotSeed @1 :Data;
-  initiatorPseudonym @2 :Text;
-  participantsJson @3 :Text;            # JSON `Vec<GroupDmParticipant>`
-  wrappedMek @4 :Data;                  # the MEK wrapped for this recipient
-  mekGeneration @5 :UInt32;
+# One member on the signed roster.
+struct GroupDmRosterMember {
+  identity @0 :Text;                    # 64 lowercase hex
+  profileRecordKey @1 :Text;            # where its prekey record is found
+  participantRecordKey @2 :Text;        # its group chain (dm_participant)
 }
 
-# 0x0123.
+# 0x0120: the creator's invite, signed by its identity over
+# `GROUP_DM_INVITE || groupId || name || roster || epoch`.
+struct GroupDmInvite {
+  groupId @0 :Data;                     # 16
+  name @1 :Text;
+  roster @2 :List(GroupDmRosterMember); # 3-8, the creator included
+  creatorSenderKey @3 :Data;            # 32
+  epoch @4 :UInt32;
+  signature @5 :Data;                   # 64
+}
+
+# 0x0121: we joined; our sending key, to each member.
+struct GroupDmAccept {
+  groupId @0 :Data;                     # 16
+  epoch @1 :UInt32;
+  senderKey @2 :Data;                   # 32
+}
+
+# 0x0122.
+struct GroupDmDecline {
+  groupId @0 :Data;                     # 16
+}
+
+# 0x0123: we left at our key's `epoch`.
 struct GroupDmLeave {
-  recordKey @0 :Text;
+  groupId @0 :Data;                     # 16
+  epoch @1 :UInt32;
+}
+
+# 0x0124: a content kind (0x01xx) or typing (0x0401), sealed under the
+# sender's sending key of `epoch`; an entry of the sender's group chain.
+struct GroupContent {
+  groupId @0 :Data;                     # 16
+  epoch @1 :UInt32;
+  sealed @2 :Data;
 }
 
 # --- Strand relay, status probes and push relay (moved unchanged) ---

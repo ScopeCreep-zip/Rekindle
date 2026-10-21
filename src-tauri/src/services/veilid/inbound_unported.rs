@@ -54,9 +54,7 @@ pub(super) async fn handle(app: &AppHandle, state: &Arc<AppState>, pool: &Db, op
                 tracing::debug!(error = %e, target = %target_pubkey, "RelayEnvelope dropped");
             }
         }
-        body @ (DirectBody::GroupDmInvite(_)
-        | DirectBody::GroupDmLeave(_)
-        | DirectBody::DmVideoFragment(_)) => {
+        body @ DirectBody::DmVideoFragment(_) => {
             handle_dm_payload(app, state, pool, sender, body).await;
         }
         body @ (DirectBody::CallInvite(_)

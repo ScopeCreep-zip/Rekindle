@@ -26,11 +26,12 @@ mod type_id;
 pub use body::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DirectBody,
     DmAck, DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
-    FriendsKey, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, GroupDmInvite,
-    GroupDmLeave, IdentityRotated, PreKeyRejected, ProfileKeyRotated, ReadUpTo, RegisterPushRelay,
-    RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RequestAuth, RetryRequest,
-    SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse, StreamRecord, Typing,
-    UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS,
+    FriendsKey, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, GroupContent,
+    GroupDmAccept, GroupDmDecline, GroupDmInvite, GroupDmLeave, GroupId, IdentityRotated,
+    PreKeyRejected, ProfileKeyRotated, ReadUpTo, RegisterPushRelay, RelayEnvelope, RelayOffer,
+    RelayOfferAck, RelayWithdraw, RequestAuth, RetryRequest, SessionResetDecline,
+    SessionResetRequest, StatusRequest, StatusResponse, StreamRecord, Typing, UnregisterPushRelay,
+    WakeNotify, MAX_DM_ACK_SEQS,
 };
 pub use frame::{
     ContentHint, DmContent, DmFrame, FrameBody, PqPrekey, PreKeyInitBody, RatchetBody,
@@ -87,7 +88,9 @@ pub(super) fn data(field: Result<&[u8], capnp::Error>) -> Result<Vec<u8>, CodecE
 }
 
 /// A `Text` field, owned.
-fn text(field: Result<capnp::text::Reader<'_>, capnp::Error>) -> Result<String, CodecError> {
+pub(super) fn text(
+    field: Result<capnp::text::Reader<'_>, capnp::Error>,
+) -> Result<String, CodecError> {
     super::text_to_string(field.map_err(|e| capnp_err(&e))?)
 }
 
@@ -108,7 +111,7 @@ fn refused(what: &str, e: &key_format::KeyFormatError) -> CodecError {
 
 /// A `Text` field a peer wrote, within `max` characters, holding no
 /// control or hidden format character ([`key_format::text`]).
-fn bounded_text(
+pub(super) fn bounded_text(
     field: Result<capnp::text::Reader<'_>, capnp::Error>,
     max: usize,
     what: &str,
@@ -139,7 +142,7 @@ fn message_body(
 }
 
 /// A `Text` field holding a DHT record key.
-fn record_key(
+pub(super) fn record_key(
     field: Result<capnp::text::Reader<'_>, capnp::Error>,
     what: &str,
 ) -> Result<String, CodecError> {
@@ -161,7 +164,7 @@ fn opt_record_key(
 }
 
 /// A `Text` field holding an identity key (64 lowercase hex).
-fn public_key(
+pub(super) fn public_key(
     field: Result<capnp::text::Reader<'_>, capnp::Error>,
     what: &str,
 ) -> Result<String, CodecError> {
@@ -188,6 +191,6 @@ fn set_text_list(mut list: capnp::text_list::Builder<'_>, items: &[String]) {
 }
 
 /// The length of a list field for `items`.
-fn list_len<T>(items: &[T]) -> u32 {
+pub(super) fn list_len<T>(items: &[T]) -> u32 {
     u32::try_from(items.len()).expect("a 1:1 datagram's list fits a u32 length")
 }
