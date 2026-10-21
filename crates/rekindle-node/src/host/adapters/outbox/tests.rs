@@ -23,9 +23,11 @@ const OWNER: &str = "aa";
 
 async fn host(dir: &std::path::Path, senders: Arc<Senders>) -> HostOutbox {
     let db = rekindle_db::open(&dir.join("o.db"), &[7; 32]).unwrap();
-    db.call(|c| rekindle_db::repo::identity::insert(c, OWNER, "me", 0))
-        .await
-        .unwrap();
+    db.call(|c| {
+        rekindle_db::repo::identity::insert(c, OWNER, "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa")
+    })
+    .await
+    .unwrap();
     let handle = Arc::new(rekindle_db::DbHandle::default());
     handle.set(db);
     HostOutbox::new(

@@ -136,11 +136,7 @@ fn rows_survive_a_reopen() {
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
         conn.execute_batch(crate::SCHEMA).unwrap();
-        conn.execute(
-            "INSERT INTO identity (public_key, display_name, created_at) VALUES (?1, 'me', 0)",
-            [OWNER],
-        )
-        .unwrap();
+        crate::repo::identity::insert(&conn, OWNER, "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap();
         enqueue_with_echo(&conn, &row("dm:bob", "a", 0), Some(&echo())).unwrap();
     }
     let conn = Connection::open(&path).unwrap();
