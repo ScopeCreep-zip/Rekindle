@@ -117,7 +117,10 @@ pub async fn read_device_list(
 /// The record could not be opened or read.
 pub async fn read_record(pool: &dyn RecordPort, key: &str) -> Result<RecordRead, ProtocolError> {
     let lease = pool.acquire(key, None).await?;
-    let subkeys: Vec<u32> = (layout::HEAD..layout::FIRST_SLOT + layout::SLOT_COUNT).collect();
+    // The head, then each slot `FIRST_SLOT..FIRST_SLOT + SLOT_COUNT`.
+    let subkeys: Vec<u32> = std::iter::once(layout::HEAD)
+        .chain((0..layout::SLOT_COUNT).map(|i| layout::FIRST_SLOT + i))
+        .collect();
     let values = pool.read_changed(lease, &subkeys).await;
     pool.release(lease).await;
     let mut read = RecordRead::default();
