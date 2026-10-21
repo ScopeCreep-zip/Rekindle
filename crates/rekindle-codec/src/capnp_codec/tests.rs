@@ -33,24 +33,6 @@ fn round_trip_presence_update() {
 }
 
 #[test]
-fn round_trip_friend_request() {
-    let req = friend::FriendRequest {
-        sender_key: vec![0xAA; 32],
-        display_name: "FriendlyUser".to_string(),
-        message: "Let's be friends!".to_string(),
-        prekey_bundle: vec![0xBB; 128],
-    };
-
-    let encoded = friend::encode_request(&req);
-    let decoded = friend::decode_request(&encoded).unwrap();
-
-    assert_eq!(decoded.sender_key, req.sender_key);
-    assert_eq!(decoded.display_name, "FriendlyUser");
-    assert_eq!(decoded.message, "Let's be friends!");
-    assert_eq!(decoded.prekey_bundle, req.prekey_bundle);
-}
-
-#[test]
 fn round_trip_friend_list() {
     use crate::friend::FriendEntry;
 

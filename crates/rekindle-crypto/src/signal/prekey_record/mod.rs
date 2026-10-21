@@ -228,13 +228,9 @@ impl RecordView {
         })
     }
 
-    /// The verified head.
-    pub fn head(&self) -> &PrekeyRecordHead {
-        &self.head
-    }
-
-    /// The verified slots, as `(subkey, slot)`.
-    pub fn slots(&self) -> &[(u32, OpkSlot)] {
+    /// The verified slots, as `(subkey, slot)` (the tests' check of a view).
+    #[cfg(test)]
+    fn slots(&self) -> &[(u32, OpkSlot)] {
         &self.slots
     }
 

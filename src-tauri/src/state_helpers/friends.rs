@@ -6,15 +6,6 @@ use std::sync::Arc;
 
 use crate::state::{AppState, FriendState};
 
-/// Every friend the Host holds, any friendship state.
-pub fn friends(state: &AppState) -> Vec<FriendState> {
-    state
-        .host
-        .current()
-        .map(|host| host.friends())
-        .unwrap_or_default()
-}
-
 /// Generic friend field extractor.
 pub fn friend_field<T>(
     state: &AppState,

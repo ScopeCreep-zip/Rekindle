@@ -1,12 +1,5 @@
 @0xeb1413f2ea507df6;
 
-struct FriendRequest {
-    senderKey @0 :Data;
-    displayName @1 :Text;
-    message @2 :Text;
-    preKeyBundle @3 :Data;       # For immediate session setup
-}
-
 struct FriendList {
     friends @0 :List(FriendEntry);
 }

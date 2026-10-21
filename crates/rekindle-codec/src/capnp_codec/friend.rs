@@ -1,44 +1,6 @@
-use super::{capnp_err, pack, text_or_none, text_to_string, unpack, CodecError};
+use super::{capnp_err, pack, text_or_none, unpack, CodecError};
 use crate::friend::FriendEntry;
 use crate::friend_capnp;
-
-/// Domain struct for a friend request payload.
-#[derive(Debug, Clone)]
-pub struct FriendRequest {
-    pub sender_key: Vec<u8>,
-    pub display_name: String,
-    pub message: String,
-    pub prekey_bundle: Vec<u8>,
-}
-
-pub fn encode_request(req: &FriendRequest) -> Vec<u8> {
-    let mut builder = capnp::message::Builder::new_default();
-    {
-        let mut root = builder.init_root::<friend_capnp::friend_request::Builder<'_>>();
-        root.set_sender_key(&req.sender_key);
-        root.set_display_name(&req.display_name);
-        root.set_message(&req.message);
-        root.set_pre_key_bundle(&req.prekey_bundle);
-    }
-    pack(&builder)
-}
-
-pub fn decode_request(data: &[u8]) -> Result<FriendRequest, CodecError> {
-    let reader = unpack(data)?;
-    let root = reader
-        .get_root::<friend_capnp::friend_request::Reader<'_>>()
-        .map_err(|e| capnp_err(&e))?;
-
-    Ok(FriendRequest {
-        sender_key: root.get_sender_key().map_err(|e| capnp_err(&e))?.to_vec(),
-        display_name: text_to_string(root.get_display_name().map_err(|e| capnp_err(&e))?)?,
-        message: text_to_string(root.get_message().map_err(|e| capnp_err(&e))?)?,
-        prekey_bundle: root
-            .get_pre_key_bundle()
-            .map_err(|e| capnp_err(&e))?
-            .to_vec(),
-    })
-}
 
 pub fn encode_friend_list(entries: &[FriendEntry]) -> Vec<u8> {
     let mut builder = capnp::message::Builder::new_default();

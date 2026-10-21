@@ -39,7 +39,7 @@ pub use communities::{
     push_community_channel, set_community_channels, spawn_in_community,
     spawn_in_community_with_token,
 };
-pub use friends::{friend_display_name, friend_field, friend_presence_change, friends, is_friend};
+pub use friends::{friend_display_name, friend_field, friend_presence_change, is_friend};
 pub use governance::{
     governance_clock, governance_key, governance_state, merge_message_lamport, my_permissions,
     next_governance_lamport, next_message_lamport, observe_governance_lamport, permissions_for,
