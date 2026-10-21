@@ -31,7 +31,7 @@ const GroupChat: Component<{ recordKey: string }> = (props) => {
   const load = (): Promise<void> => loadGroupChat(props.recordKey, ownPublicKey());
 
   onMount(async () => {
-    unlisteners.push(subscribeDmInbox(() => ownPublicKey()));
+    unlisteners.push(subscribeDmInbox());
     void startEventStream(() => void load());
     await load();
   });

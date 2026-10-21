@@ -82,13 +82,15 @@ export type FriendEvent =
         peerKey: string;
         displayName: string;
         friendshipState: string;
+        /** The group the buddy list shows them under (the backend's). */
+        groupLabel: string;
       };
     }
   | { removed: { peerKey: string } }
   | { removeAcknowledged: { peerKey: string } }
   | { profileKeyRotated: { peerKey: string; newProfileDhtKey: string } }
   | { nicknameChanged: { peerKey: string; nickname: string | null } }
-  | { groupChanged: { peerKey: string; group: string | null } }
+  | { groupChanged: { peerKey: string; group: string | null; groupLabel: string } }
   | { keyChanged: { peerKey: string; newKey: string } }
   | { handshakeFailed: { peerKey: string; reason: string } }
   | { handshakeRetrying: { peerKey: string } }

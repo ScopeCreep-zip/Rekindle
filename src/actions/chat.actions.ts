@@ -65,6 +65,15 @@ export function handleIncomingMessage(
 ): void {
   const existing = chatState.conversations[peerId];
   if (existing) {
+    // The backend's message id names the row: a message already shown
+    // (our own send, echoed back) is updated in place, not repeated.
+    const idx = message.serverMessageId
+      ? existing.messages.findIndex((m) => m.serverMessageId === message.serverMessageId)
+      : -1;
+    if (idx >= 0) {
+      setChatState("conversations", peerId, "messages", idx, (m) => ({ ...m, ...message, id: m.id }));
+      return;
+    }
     setChatState("conversations", peerId, {
       ...existing,
       messages: [...existing.messages, message],

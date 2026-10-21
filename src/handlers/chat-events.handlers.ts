@@ -105,11 +105,11 @@ function applyFriendEvent(friend: FriendEvent): void {
   }
 
   if ("added" in friend) {
-    const { peerKey, displayName, friendshipState } = friend.added;
+    const { peerKey, displayName, friendshipState, groupLabel } = friend.added;
     setFriendsState(
       "friends",
       peerKey,
-      transformNewFriend(peerKey, displayName, friendshipState),
+      transformNewFriend(peerKey, displayName, friendshipState, groupLabel),
     );
     return;
   }
@@ -189,9 +189,9 @@ function applyFriendEvent(friend: FriendEvent): void {
     return;
   }
   if ("groupChanged" in friend) {
-    const { peerKey, group } = friend.groupChanged;
+    const { peerKey, groupLabel } = friend.groupChanged;
     if (friendsState.friends[peerKey]) {
-      setFriendsState("friends", peerKey, "group", group ?? "Friends");
+      setFriendsState("friends", peerKey, "group", groupLabel);
     }
     return;
   }
@@ -247,6 +247,8 @@ export function subscribeDmChatEvents(
           automodBlurred: dm.automodBlurred,
           timestamp: dm.timestamp,
           isOwn: dm.isOwn,
+          serverMessageId: dm.serverMessageId ?? undefined,
+          replyToId: dm.replyToId ?? undefined,
         });
         handleResetUnread(peerId);
       });

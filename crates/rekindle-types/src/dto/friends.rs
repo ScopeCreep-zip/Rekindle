@@ -9,6 +9,13 @@ use crate::friend::{FriendshipState, GameInfoState, UserStatus};
 /// The group a friend in no group of ours is listed under.
 pub const DEFAULT_FRIEND_GROUP: &str = "Friends";
 
+/// The group the buddy list shows a friend in `group` under: the group, or
+/// [`DEFAULT_FRIEND_GROUP`] for none.
+#[must_use]
+pub fn group_label(group: Option<&str>) -> String {
+    group.unwrap_or(DEFAULT_FRIEND_GROUP).to_string()
+}
+
 /// A friend on the buddy list. Presence is shown only for an accepted
 /// friend; a pending one reads offline.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,10 +60,7 @@ impl Friend {
             status_message: friend.status_message.clone().filter(|_| accepted),
             game_info: friend.game_info.clone().filter(|_| accepted),
             group: friend.group.clone(),
-            group_label: friend
-                .group
-                .clone()
-                .unwrap_or_else(|| DEFAULT_FRIEND_GROUP.to_string()),
+            group_label: group_label(friend.group.as_deref()),
             unread_count: friend.unread_count,
             last_seen_at: friend.last_seen_at,
             friendship_state: friend.friendship_state,

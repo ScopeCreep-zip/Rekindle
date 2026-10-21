@@ -77,6 +77,7 @@ fn relabel(host: &dyn FriendHost, from: &str, to: Option<&str>) {
             host.publish(SubscriptionEvent::Friend(FriendEvent::GroupChanged {
                 peer_key: friend.public_key,
                 group: to.map(str::to_string),
+                group_label: rekindle_types::dto::friends::group_label(to),
             }));
         }
     }
@@ -174,6 +175,7 @@ pub async fn move_to_group(
     state::update(host, public_key, |f| f.group.clone_from(&group));
     host.publish(SubscriptionEvent::Friend(FriendEvent::GroupChanged {
         peer_key: public_key.to_string(),
+        group_label: rekindle_types::dto::friends::group_label(group.as_deref()),
         group,
     }));
     Ok(())

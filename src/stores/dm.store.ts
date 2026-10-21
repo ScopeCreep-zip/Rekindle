@@ -17,6 +17,8 @@ export interface DmMessage {
   body: string;
   timestamp: number;
   isOwn: boolean;
+  /** The backend's id for the message, when it names one. */
+  serverMessageId?: string;
 }
 
 export interface DmState {

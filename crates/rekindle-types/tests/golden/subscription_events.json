@@ -282,6 +282,7 @@
       "added": {
         "displayName": "Bob",
         "friendshipState": "pendingOut",
+        "groupLabel": "Friends",
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }
@@ -298,6 +299,7 @@
     "friend": {
       "groupChanged": {
         "group": "Raid team",
+        "groupLabel": "Raid team",
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }
     }

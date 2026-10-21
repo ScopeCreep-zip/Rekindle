@@ -45,7 +45,7 @@ const BuddyList: Component = () => {
         pendingOut.push(friend);
         continue;
       }
-      const group = friend.group || "Friends";
+      const group = friend.group;
       if (!groups[group]) groups[group] = [];
       groups[group].push(friend);
     }

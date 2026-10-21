@@ -199,10 +199,12 @@ export function transformMember(m: {
 }
 
 /** Minimal friendAdded event data → default Friend for store insertion. */
-export function transformNewFriend(publicKey: string, displayName: string, friendshipState: string): Friend {
+export function transformNewFriend(
+  publicKey: string, displayName: string, friendshipState: string, groupLabel: string,
+): Friend {
   return {
     publicKey, displayName, nickname: null, status: "offline" as const,
-    statusMessage: null, gameInfo: null, group: "Friends", unreadCount: 0,
+    statusMessage: null, gameInfo: null, group: groupLabel, unreadCount: 0,
     lastSeenAt: null, voiceChannel: null,
     friendshipState: (friendshipState === "accepted" ? "accepted" : "pendingOut") as Friend["friendshipState"],
     handshakeError: null,

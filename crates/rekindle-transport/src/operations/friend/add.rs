@@ -75,6 +75,7 @@ pub async fn add(
         peer_key: public_key.to_string(),
         display_name: display_name.to_string(),
         friendship_state: FriendshipState::PendingOut,
+        group_label: rekindle_types::dto::friends::group_label(None),
     }));
     host.audit(
         rekindle_audit::AuditKind::FriendAdded,
@@ -148,6 +149,7 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
         peer_key: blob.public_key.clone(),
         display_name: blob.display_name.clone(),
         friendship_state: FriendshipState::PendingOut,
+        group_label: rekindle_types::dto::friends::group_label(None),
     }));
     tracing::info!(public_key = %blob.public_key, "friend added from invite");
     Ok(())

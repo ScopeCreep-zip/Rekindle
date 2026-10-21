@@ -229,6 +229,8 @@ impl DmDeps for DmAdapter {
                 sender_pseudonym,
                 sender_public_key_hex,
             } => {
+                // The inbox row's words are the backend's, as every notice.
+                let body = format!("{sender_pseudonym} wants to add you to a group DM.");
                 crate::event_dispatch::emit_subscription(
                     &self.app_handle,
                     &rekindle_types::subscription_events::SubscriptionEvent::ChannelMessage(rekindle_types::subscription_events::ChannelMessageEvent::DirectConversationInvited {
@@ -237,6 +239,13 @@ impl DmDeps for DmAdapter {
                         initiator_pseudonym: sender_pseudonym,
                         is_group: true,
                     }),
+                );
+                crate::event_dispatch::emit_notification(
+                    &self.app_handle,
+                    rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                        title: "Group DM invite".into(),
+                        body,
+                    },
                 );
             }
             DmEvent::GroupMemberLeft {

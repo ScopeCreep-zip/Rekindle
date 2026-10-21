@@ -78,6 +78,7 @@ pub fn samples() -> Vec<Sample> {
                 peer_key: pk('b'),
                 display_name: text("Bob"),
                 friendship_state: rekindle_types::friend_store::FriendshipState::PendingOut,
+                group_label: text("Friends"),
             },
         ),
         ev("removed", FriendEvent::Removed { peer_key: pk('b') }),
@@ -104,6 +105,7 @@ pub fn samples() -> Vec<Sample> {
             FriendEvent::GroupChanged {
                 peer_key: pk('b'),
                 group: Some(text("Raid team")),
+                group_label: text("Raid team"),
             },
         ),
         ev(

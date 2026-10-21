@@ -5,10 +5,9 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
 import { isLegacy } from "../ipc/channels/chat_events";
 import { dmState, setDmState, type DmMessage } from "../stores/dm.store";
-import { setNotificationState } from "../stores/notification.store";
 
 /// The buddy list's half: an incoming group DM invite goes to the pending
-/// list (DmInviteModal) and the notification inbox.
+/// list (DmInviteModal). Its inbox row is the backend's `systemAlert`.
 export function subscribeDmInvites(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
     if (isLegacy(event) || !("channelMessage" in event)) return;
@@ -21,24 +20,12 @@ export function subscribeDmInvites(): Promise<UnlistenFn> {
       initiatorPseudonym,
       receivedAt: Date.now(),
     });
-    setNotificationState("notifications", (prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        type: "system",
-        title: "Group DM invite",
-        body: `${initiatorPseudonym} wants to add you to a group DM.`,
-        timestamp: Date.now(),
-        read: false,
-      },
-    ]);
-    setNotificationState("unreadCount", (c) => c + 1);
   });
 }
 
 /// The chat window's group mode: a message whose conversationId is an
 /// accepted group DM's record key is appended to that group's log.
-export function subscribeDmInbox(getOwnPublicKey: () => string): Promise<UnlistenFn> {
+export function subscribeDmInbox(): Promise<UnlistenFn> {
   return subscribeChatEvents((event) => {
     // The legacy envelope is community channel messages.
     if (isLegacy(event) || !("channelMessage" in event)) return;
@@ -47,15 +34,25 @@ export function subscribeDmInbox(getOwnPublicKey: () => string): Promise<Unliste
     const dm = msg.directMessageReceived;
     const recordKey = dm.conversationId;
     if (!dmState.conversations[recordKey]) return;
+    // `isOwn` is the backend's: the log's echo of our own send.
     const message: DmMessage = {
       id: Date.now(),
       senderId: dm.peerKey,
       body: dm.body ?? "",
       timestamp: dm.timestamp,
-      isOwn: dm.peerKey === getOwnPublicKey(),
+      isOwn: dm.isOwn,
+      serverMessageId: dm.serverMessageId ?? undefined,
     };
     const existing = dmState.messages[recordKey] ?? [];
-    setDmState("messages", recordKey, [...existing, message]);
+    // The backend's message id names the row: one already shown is not repeated.
+    const idx = message.serverMessageId
+      ? existing.findIndex((m) => m.serverMessageId === message.serverMessageId)
+      : -1;
+    if (idx >= 0) {
+      setDmState("messages", recordKey, idx, (m) => ({ ...m, ...message, id: m.id }));
+    } else {
+      setDmState("messages", recordKey, [...existing, message]);
+    }
     setDmState("conversations", recordKey, "lastMessageAt", dm.timestamp);
   });
 }

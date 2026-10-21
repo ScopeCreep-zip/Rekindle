@@ -38,6 +38,9 @@ pub enum FriendEvent {
         peer_key: String,
         display_name: String,
         friendship_state: crate::friend_store::FriendshipState,
+        /// The group the buddy list shows them under
+        /// ([`crate::dto::friends::group_label`]).
+        group_label: String,
     },
     /// A friend removed us.
     /// Triggered by: an inbound 1:1 `Unfriended`.
@@ -63,6 +66,9 @@ pub enum FriendEvent {
     GroupChanged {
         peer_key: String,
         group: Option<String>,
+        /// The group the buddy list shows them under now
+        /// ([`crate::dto::friends::group_label`]).
+        group_label: String,
     },
     /// A friend rotated their identity: they are `new_key` now, with their
     /// history and settings moved, and unverified (plan E2.3).
