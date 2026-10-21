@@ -4,10 +4,12 @@ import { setCommunityState, communityState } from "../../stores/community.store"
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
+import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
 import { truncateKey } from "../../utils/formatting";
 import { transformMessages } from "../../utils/transformers";
 import { setTypingUsers, typingTimers } from "../../actions/community/shared";
+import { markChannelReadToLatest } from "../../actions/community/channels";
 
 /// Channel-message slice of the community event dispatcher (edits,
 /// deletes, reactions, pins, delivery receipts, typing, system msgs,
@@ -159,8 +161,30 @@ function applyPinned(channel: string, messageId: string, pinned: boolean): void 
   }
 }
 
+/// A channel's unread count is the Host's (`UnreadChanged`), rendered as
+/// is. A count in the channel being viewed is read at once.
+function applyChannelUnread(u: UnreadChanged): void {
+  const ctx = u.context;
+  if (typeof ctx !== "object" || !("channel" in ctx)) return;
+  const { community: communityId, channel: channelId } = ctx.channel;
+  const community = communityState.communities[communityId];
+  const chIdx = community?.channels.findIndex((ch) => ch.id === channelId) ?? -1;
+  if (chIdx < 0) return;
+  const viewing =
+    communityState.activeCommunity === communityId && communityState.activeChannel === channelId;
+  if (viewing && u.count > 0) {
+    markChannelReadToLatest(communityId, channelId);
+    return;
+  }
+  setCommunityState("communities", communityId, "channels", chIdx, "unreadCount", u.count);
+}
+
 /// Channel-message and social events on the daemon vocabulary.
 export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {
+  if ("unreadChanged" in event) {
+    applyChannelUnread(event.unreadChanged);
+    return;
+  }
   if ("channelMessage" in event) {
     const m = event.channelMessage;
     if ("edited" in m) {

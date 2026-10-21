@@ -3,7 +3,9 @@
 //! delegations; this file hosts the AppState read + mutate pair.
 //! Pure state access — no protocol logic per Invariant 7.
 
-use crate::state::SharedState;
+use rekindle_types::subscription_events::{SubscriptionEvent, UnreadContext};
+
+use crate::state::{AppState, SharedState};
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -13,12 +15,46 @@ pub struct UnreadCountEntry {
 }
 
 pub fn mark_channel_read_inner(state: &SharedState, community_id: &str, channel_id: &str) {
-    let mut communities = state.communities.write();
-    if let Some(community) = communities.get_mut(community_id) {
-        if let Some(ch) = community.channels.iter_mut().find(|c| c.id == channel_id) {
-            ch.unread_count = 0;
-        }
+    if set_channel_unread(state, community_id, channel_id, |_| 0).is_some() {
+        publish_channel_unread(state, community_id, channel_id, 0);
     }
+}
+
+/// Count one more unread message stored in a channel and tell the
+/// frontends the count, which they render as is (the DM twin is the
+/// transport's `dm::chat::count_unread`).
+pub fn count_channel_unread(state: &AppState, community_id: &str, channel_id: &str) {
+    if let Some(count) =
+        set_channel_unread(state, community_id, channel_id, |n| n.saturating_add(1))
+    {
+        publish_channel_unread(state, community_id, channel_id, count);
+    }
+}
+
+fn set_channel_unread(
+    state: &AppState,
+    community_id: &str,
+    channel_id: &str,
+    next: impl FnOnce(u32) -> u32,
+) -> Option<u32> {
+    let mut communities = state.communities.write();
+    let ch = communities
+        .get_mut(community_id)?
+        .channels
+        .iter_mut()
+        .find(|c| c.id == channel_id)?;
+    ch.unread_count = next(ch.unread_count);
+    Some(ch.unread_count)
+}
+
+fn publish_channel_unread(state: &AppState, community_id: &str, channel_id: &str, count: u32) {
+    state.host.publish(SubscriptionEvent::UnreadChanged {
+        context: UnreadContext::Channel {
+            community: community_id.to_string(),
+            channel: channel_id.to_string(),
+        },
+        count,
+    });
 }
 
 pub fn get_unread_counts_inner(

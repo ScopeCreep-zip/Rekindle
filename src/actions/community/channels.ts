@@ -53,6 +53,17 @@ function publishActiveChannel(communityId: string, channelId: string, kind: stri
   }, 400);
 }
 
+/// Mark `channelId` read up to its latest loaded message. Also called
+/// when the Host counts a message in the channel the user is viewing.
+export function markChannelReadToLatest(communityId: string, channelId: string): void {
+  const msgs = communityState.channelMessages[channelId];
+  const lastMsg = msgs && msgs.length > 0 ? msgs[msgs.length - 1] : undefined;
+  const lastMessageId = lastMsg ? (lastMsg.serverMessageId ?? String(lastMsg.id)) : "";
+  commands.markChannelRead(communityId, channelId, lastMessageId).catch((e) => {
+    console.warn("Failed to mark channel read:", e);
+  });
+}
+
 export function handleSelectChannel(channelId: string): void {
   setCommunityState("activeChannel", channelId);
 
@@ -61,11 +72,7 @@ export function handleSelectChannel(channelId: string): void {
   if (communityId) {
     const community = communityState.communities[communityId];
     if (community) {
-      // Zero unread count locally immediately for responsiveness
       const chIdx = community.channels.findIndex((ch) => ch.id === channelId);
-      if (chIdx >= 0 && community.channels[chIdx].unreadCount > 0) {
-        setCommunityState("communities", communityId, "channels", chIdx, "unreadCount", 0);
-      }
 
       // Tell peers which channel we're focused on (debounced). Voice
       // join/leave publishes its own Voice location separately.
@@ -75,15 +82,8 @@ export function handleSelectChannel(channelId: string): void {
         publishActiveChannel(communityId, channelId, kind);
       }
 
-      // Find the last message in the channel to send as read position
-      const msgs = communityState.channelMessages[channelId];
-      if (msgs && msgs.length > 0) {
-        const lastMsg = msgs[msgs.length - 1];
-        const lastMessageId = lastMsg.serverMessageId ?? String(lastMsg.id);
-        commands.markChannelRead(communityId, channelId, lastMessageId).catch((e) => {
-          console.warn("Failed to mark channel read:", e);
-        });
-      }
+      // The Host zeroes its count and publishes `UnreadChanged`.
+      markChannelReadToLatest(communityId, channelId);
     }
   }
 
@@ -100,14 +100,8 @@ export async function handleMarkChannelRead(
   lastMessageId: string,
 ): Promise<void> {
   try {
+    // The Host zeroes its count and publishes `UnreadChanged`.
     await commands.markChannelRead(communityId, channelId, lastMessageId);
-    const community = communityState.communities[communityId];
-    if (community) {
-      const chIdx = community.channels.findIndex((ch) => ch.id === channelId);
-      if (chIdx >= 0) {
-        setCommunityState("communities", communityId, "channels", chIdx, "unreadCount", 0);
-      }
-    }
   } catch (e) {
     console.error("Failed to mark channel read:", e);
   }

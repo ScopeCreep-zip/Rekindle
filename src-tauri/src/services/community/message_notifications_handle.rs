@@ -215,6 +215,11 @@ pub async fn handle_message_notification(
         false,
         automod_blurred,
     );
+    crate::services::community_unread_runtime::count_channel_unread(
+        state,
+        &pending.community_id,
+        &pending.channel_id,
+    );
 
     if automod_action == crate::services::community::automod::AutoModAction::AlertModerators {
         let rule_name =
