@@ -28,6 +28,7 @@ pub(crate) mod state;
 /// The unlocked identity's key, which the per-identity rows are owned by.
 pub use state::owner as session_owner;
 pub mod verification;
+pub mod watch_retry;
 
 #[cfg(test)]
 mod handshake_size_tests;

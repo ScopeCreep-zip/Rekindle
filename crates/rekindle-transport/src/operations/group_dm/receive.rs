@@ -147,18 +147,26 @@ pub async fn catch_up_all(host: &dyn FriendHost) {
 /// The watch on `key` ([`watch_key`]) saw `record` change: diff it when it
 /// is the chain we hold for that member.
 pub async fn on_watch_change(host: &dyn FriendHost, key: &str, record: &str) {
-    let Some((group, member)) = parse_watch_key(key) else {
-        return;
-    };
-    let Ok(id) = super::parse_group_id(&group) else {
-        return;
-    };
-    let Ok(deps) = host.group_dm() else {
-        return;
-    };
+    if let Some((id, member)) = held_chain(host, key, record).await {
+        diff(host, &id, &member).await;
+    } else {
+        tracing::debug!(key = %key, "change on a group chain we do not read");
+    }
+}
+
+/// Whether `record` is the chain we hold for the member `key` names
+/// ([`watch_key`]): a failed watch on it is still worth re-opening.
+pub async fn holds_chain(host: &dyn FriendHost, key: &str, record: &str) -> bool {
+    held_chain(host, key, record).await.is_some()
+}
+
+async fn held_chain(host: &dyn FriendHost, key: &str, record: &str) -> Option<(GroupId, String)> {
+    let (group, member) = parse_watch_key(key)?;
+    let id = super::parse_group_id(&group).ok()?;
+    let deps = host.group_dm().ok()?;
     match deps.chain(&id, &member).await {
-        Ok(Some(held)) if held == record => diff(host, &id, &member).await,
-        _ => tracing::debug!(member = %member, "change on a group chain we do not read"),
+        Ok(Some(held)) if held == record => Some((id, member)),
+        _ => None,
     }
 }
 

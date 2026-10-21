@@ -67,6 +67,9 @@ pub struct FriendStores {
     /// One gate per peer around our participant record's check-and-create
     /// (plan E2.5, MSR): one creator, the others await its record.
     pub participant_gates: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
+    /// The watch opens that failed, retried on the maintenance tick until
+    /// they open (plan E2.6).
+    pub watch_retries: Mutex<super::watch_retry::WatchRetries>,
 }
 
 impl FriendStores {
@@ -81,6 +84,7 @@ impl FriendStores {
         self.typing_out.lock().clear();
         self.acks.lock().clear();
         self.participant_gates.lock().clear();
+        self.watch_retries.lock().clear();
     }
 
     /// The gate around our participant record for `peer`.

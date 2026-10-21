@@ -3,13 +3,15 @@
 //! watch dies (Veilid's last change, `count == 0`) the pool re-arms it, so
 //! the next change arrives too.
 
+use std::time::Duration;
+
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_netsim::Fault;
 use rekindle_types::presence::SessionStatus;
 use rekindle_types::subscription_events::{PresenceEvent, SubscriptionEvent};
 
-use crate::harness::{eventually, start, Events};
-use crate::pair::{befriend, key, LIMIT};
+use crate::harness::{eventually, start, Events, PASSPHRASE};
+use crate::pair::{befriend, holds_message, key, send, talk, LIMIT};
 
 fn saw(events: &Events, peer: &str, status: &str) -> bool {
     events.any(|event| {
@@ -115,5 +117,53 @@ async fn a_participant_record_received_mid_session_is_watched() {
         ))
         .await,
         "Pim reads Ora's chain by its watch"
+    );
+}
+
+/// Plan E2.6: Lev unlocks while his DHT is off, so every watch his unlock
+/// opens fails, and so does the diff of Kim's next hint. With the two then
+/// partitioned (no hint or resend reaches him) and his DHT back, no network
+/// change re-opens them. The maintenance tick's retry does, and the diff it
+/// runs reads the message he missed.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_watch_whose_open_failed_opens_on_a_later_tick_and_reads_what_it_missed() {
+    let (sim, mut nodes) = start(2, 87).await;
+    for (node, name) in nodes.iter_mut().zip(["Kim", "Lev"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (kim, lev) = (key(&nodes[0]), key(&nodes[1]));
+    nodes[1].ok(IpcRequest::Lock).await;
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: true,
+    });
+    nodes[1]
+        .ok(IpcRequest::Unlock {
+            identity: lev.clone(),
+            passphrase: PASSPHRASE.into(),
+        })
+        .await;
+    let missed = "while your watches were shut";
+    send(&nodes[0], &lev, missed).await;
+    assert!(
+        !eventually(&sim, Duration::from_secs(20), || holds_message(
+            &nodes[1], &kim, missed
+        ))
+        .await,
+        "nothing Lev reads reaches the network"
+    );
+    sim.fault(Fault::Partition {
+        a: vec![0],
+        b: vec![1],
+    });
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: false,
+    });
+    assert!(
+        eventually(&sim, LIMIT, || holds_message(&nodes[1], &kim, missed)).await,
+        "Lev's retried watch opens and its diff reads the message"
     );
 }

@@ -3,7 +3,8 @@
 //! sixth tick (~3 min) the expiry of stale requests and invites, and the
 //! retire of our DM chains past `DELIVERY_HORIZON` (`dm::stream::
 //! retire_quiet`, plan E2.5), so a quiet conversation does not wait for
-//! our next send. The ticks
+//! our next send. Every tick also re-opens the watches whose open failed
+//! and whose backoff is due (`retry_failed_watches`, plan E2.6). The ticks
 //! are tokio time (paused under netsim): C9.2's `Clock` reads the time, it
 //! does not wait. Sends are the outbox's (plan E2.5), and a removed friend
 //! is forgotten on its `Unfriended` row's settle event, not here.
@@ -131,6 +132,7 @@ async fn run(host: HostFriends, stop: CancellationToken) {
             _ = ticks.tick() => {}
         }
         count += 1;
+        host.retry_failed_watches().await;
         if let Some(node) = host.ctx().transport.read().clone() {
             let evicted = node.peers().write().evict_stale_routes();
             if !evicted.is_empty() {

@@ -5,12 +5,17 @@
 //! subkey, the first from the change itself) and applied, and a missed
 //! change is recovered by the network-ready trigger, which re-opens the
 //! watches and catches every chain up (`dm::stream::catch_up_all`).
+//! A watch that fails to open (a record created moments ago is not
+//! reachable yet) is kept in the friend stores' `watch_retries` and
+//! re-opened on the maintenance tick with backoff; once it opens, what
+//! changed meanwhile is read (plan E2.6).
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use rekindle_presence::FriendPresenceDeps;
 use rekindle_records::lease::LeaseId;
+use rekindle_transport::operations::friend::watch_retry::WatchTarget;
 use rekindle_transport::operations::friend::FriendHost;
 use rekindle_transport::operations::{dm, group_dm};
 use rekindle_types::friend::FriendshipState;
@@ -57,18 +62,86 @@ impl HostFriends {
             .values()
             .copied()
             .collect();
-        let pool = self.node().ok().and_then(|node| node.records());
         for lease in held {
-            let Some(profile) = pool.as_ref().and_then(|pool| pool.key_of(lease)) else {
-                continue;
-            };
-            let subkeys = rekindle_presence::FRIEND_WATCH_SUBKEYS;
-            for (subkey, value) in read_changed(self, Some(lease), subkeys, None).await {
-                rekindle_presence::handle_value_change(self, &profile, &[subkey], &value);
-            }
+            self.apply_profile(lease).await;
         }
         dm::stream::catch_up_all(self).await;
         group_dm::receive::catch_up_all(self).await;
+    }
+
+    /// Apply what changed on the profile record `lease` holds while no
+    /// watch of ours fired for it.
+    async fn apply_profile(&self, lease: LeaseId) {
+        let pool = self.node().ok().and_then(|node| node.records());
+        let Some(profile) = pool.as_ref().and_then(|pool| pool.key_of(lease)) else {
+            return;
+        };
+        let subkeys = rekindle_presence::FRIEND_WATCH_SUBKEYS;
+        for (subkey, value) in read_changed(self, Some(lease), subkeys, None).await {
+            rekindle_presence::handle_value_change(self, &profile, &[subkey], &value);
+        }
+    }
+
+    /// The maintenance tick: re-open every failed watch whose retry is due
+    /// and still wanted; one that opens has its changes read (its profile
+    /// applied, its chain diffed), one that fails waits a longer backoff.
+    pub(super) async fn retry_failed_watches(&self) {
+        let now = self.ctx().clock.now_ms();
+        let due = self.ctx().friend_stores.watch_retries.lock().due(now);
+        if due.is_empty() {
+            return;
+        }
+        let participants = participant_records(self).await;
+        for (record, target) in due {
+            let wanted = match &target {
+                WatchTarget::Profile { peer } => self.wants_profile(peer, &record),
+                WatchTarget::Participant { key } => match group_dm::receive::parse_watch_key(key) {
+                    Some(_) => group_dm::receive::holds_chain(self, key, &record).await,
+                    None => participants.iter().any(|(p, r)| p == key && *r == record),
+                },
+            };
+            if !wanted {
+                self.ctx()
+                    .friend_stores
+                    .watch_retries
+                    .lock()
+                    .settled(&record);
+                continue;
+            }
+            match &target {
+                WatchTarget::Profile { peer } => self.watch_friend(peer, &record).await,
+                WatchTarget::Participant { key } => watch_participant(self, key, &record).await,
+            }
+            if self
+                .ctx()
+                .friend_stores
+                .watch_retries
+                .lock()
+                .is_pending(&record)
+            {
+                continue;
+            }
+            tracing::debug!(record = %record, "a failed watch opened on retry");
+            match &target {
+                WatchTarget::Profile { peer } => {
+                    let lease = self.ctx().friend_watches.leases.lock().get(peer).copied();
+                    if let Some(lease) = lease {
+                        self.apply_profile(lease).await;
+                    }
+                }
+                WatchTarget::Participant { key } => diff_participant(self, key, &record).await,
+            }
+        }
+    }
+
+    /// Whether `peer` is an accepted friend whose profile is `record`.
+    fn wants_profile(&self, peer: &str, record: &str) -> bool {
+        self.ctx().session.read().as_ref().is_some_and(|s| {
+            s.friends.get(peer).is_some_and(|f| {
+                f.friendship_state == FriendshipState::Accepted
+                    && f.dht_record_key.as_deref() == Some(record)
+            })
+        })
     }
 
     /// A watched record changed: an invite's inbox, a friend's participant
@@ -84,11 +157,7 @@ impl HostFriends {
             return true;
         }
         if let Some(peer) = participant_peer(self, record) {
-            if group_dm::receive::parse_watch_key(&peer).is_some() {
-                group_dm::receive::on_watch_change(self, &peer, record).await;
-                return true;
-            }
-            dm::stream::on_watch_change(self, &peer, record).await;
+            diff_participant(self, &peer, record).await;
             return true;
         }
         let Some(friend) = self.friend_for_dht_key(record) else {
@@ -132,6 +201,16 @@ impl HostFriends {
     }
 }
 
+/// Diff the chain on the participant record `record` held under `key` (a
+/// friend, or a member's group chain, `group_dm::receive::watch_key`).
+async fn diff_participant(host: &HostFriends, key: &str, record: &str) {
+    if group_dm::receive::parse_watch_key(key).is_some() {
+        group_dm::receive::on_watch_change(host, key, record).await;
+    } else {
+        dm::stream::on_watch_change(host, key, record).await;
+    }
+}
+
 /// Every changed subkey's value: the first from the change, the rest read
 /// through the friend's lease.
 async fn read_changed(
@@ -171,17 +250,34 @@ async fn participant_records(host: &HostFriends) -> Vec<(String, String)> {
 }
 
 /// Watch every subkey of `peer`'s participant record `record`, holding its
-/// lease (the one held for them before is released).
+/// lease (the one held for them before is released). A failed open or
+/// watch is retried on the maintenance tick (`retry_failed_watches`).
 pub(super) async fn watch_participant(host: &HostFriends, peer: &str, record: &str) {
     let Some(pool) = host.node().ok().and_then(|node| node.records()) else {
         return;
     };
+    let failed = |e: &dyn std::fmt::Display, what: &str| {
+        tracing::warn!(peer = %peer, error = %e, "participant record not {what}; retried");
+        let target = WatchTarget::Participant {
+            key: peer.to_string(),
+        };
+        let now = host.ctx().clock.now_ms();
+        let rng = host.ctx().rng.as_ref();
+        let mut retries = host.ctx().friend_stores.watch_retries.lock();
+        retries.failed(record, target, now, rng);
+    };
     let lease = match pool.acquire(record, None).await {
         Ok(lease) => lease,
-        Err(e) => return tracing::warn!(peer = %peer, error = %e, "participant record not opened"),
+        Err(e) => return failed(&e, "opened"),
     };
-    if let Err(e) = pool.watch_all(lease).await {
-        tracing::warn!(peer = %peer, error = %e, "participant record not watched");
+    match pool.watch_all(lease).await {
+        Ok(()) => host
+            .ctx()
+            .friend_stores
+            .watch_retries
+            .lock()
+            .settled(record),
+        Err(e) => failed(&e, "watched"),
     }
     let previous = host
         .ctx()

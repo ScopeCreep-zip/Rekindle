@@ -15,6 +15,7 @@ use std::sync::Arc;
 use parking_lot::{Mutex, RwLock};
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_records::lease::LeaseId;
+use rekindle_transport::operations::friend::watch_retry::WatchTarget;
 use rekindle_transport::operations::friend::{BackendHold, FriendError, FriendHost, FriendStores};
 use rekindle_transport::{Session, TransportNode};
 use rekindle_types::friend_store::FriendStore;
@@ -184,6 +185,25 @@ impl FriendHost for HostFriends {
         {
             tracing::trace!(peer = %peer, error = %e, "friend presence not watched");
         }
+        // The profile is held only once its record opened; a failed open is
+        // retried on the maintenance tick (`retry_failed_watches`).
+        let lease = self.ctx.friend_watches.leases.lock().get(peer).copied();
+        let pool = self.node().ok().and_then(|node| node.records());
+        let held = lease.zip(pool).and_then(|(lease, pool)| pool.key_of(lease));
+        let mut retries = self.ctx.friend_stores.watch_retries.lock();
+        if held.as_deref() == Some(profile_dht_key) {
+            retries.settled(profile_dht_key);
+        } else {
+            let target = WatchTarget::Profile {
+                peer: peer.to_string(),
+            };
+            retries.failed(
+                profile_dht_key,
+                target,
+                self.ctx.clock.now_ms(),
+                self.ctx.rng.as_ref(),
+            );
+        }
     }
 
     async fn watch_participant(&self, peer: &str, record_key: &str) {
@@ -194,6 +214,7 @@ impl FriendHost for HostFriends {
         // Releasing the friend's lease closes the record, which is what
         // ends its watch; the key-to-friend mapping is the projection's.
         watch::release_participant(self, peer).await;
+        self.ctx.friend_stores.watch_retries.lock().forget(peer);
         let lease = self.ctx.friend_watches.leases.lock().remove(peer);
         let pool = self.node().ok().and_then(|node| node.records());
         if let (Some(lease), Some(pool)) = (lease, pool) {
