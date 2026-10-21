@@ -172,6 +172,16 @@ pub async fn ratchet_frame_at(
             if type_id != DmTypeId::Typing
                 && crate::operations::friend::state::is_accepted(host, to) =>
         {
+            // A kind that may not open a session (a `StreamRecord`, an
+            // ack) waits for the one the next content message opens: an
+            // outbox row of it is deferred, not wedged, so it never holds
+            // its stream (a `StreamRecord` left unacknowledged by our
+            // rotation once wedged the stream behind it).
+            if !type_id.is_first_payload() {
+                return Err(FriendError::Conflict(format!(
+                    "no secure session with {to}: a {type_id:?} waits for the one a message opens"
+                )));
+            }
             let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
             return initiate_frame(host, to, bundle, body, stream_seq).await;
         }

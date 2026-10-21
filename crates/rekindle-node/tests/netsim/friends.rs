@@ -6,6 +6,7 @@
 //! (`dm/frame.rs`, `published_bundle`).
 
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_netsim::{Fault, Netsim};
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
 use crate::pair::{
@@ -20,9 +21,11 @@ async fn mailbox(node: &SimNode) -> String {
         .to_string()
 }
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_rotated_friend_is_messaged_both_ways() {
-    let (sim, mut nodes) = start(2, 7).await;
+/// Ann and Bea befriend and message both ways; Ann rotates, Bea accepts
+/// the rotation and Ann unlocks under the new key with a new mailbox.
+/// Returns the sim, the nodes, Ann's old and new keys and Bea's.
+async fn rotated_pair(seed: u64) -> (Netsim, Vec<SimNode>, String, String, String) {
+    let (sim, mut nodes) = start(2, seed).await;
     nodes[0].unlock_new_identity("Ann").await;
     nodes[1].unlock_new_identity("Bea").await;
     let ann = nodes[0].public_key.clone().expect("ann's key");
@@ -88,7 +91,12 @@ async fn a_rotated_friend_is_messaged_both_ways() {
     );
     let mailbox = mailbox(&nodes[0]).await;
     assert_ne!(Some(mailbox), mailbox_before);
+    (sim, nodes, ann, new_ann, bea)
+}
 
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_rotated_friend_is_messaged_both_ways() {
+    let (sim, nodes, _, new_ann, bea) = rotated_pair(7).await;
     send(&nodes[1], &new_ann, "bea to new ann").await;
     assert!(
         eventually(&sim, LIMIT, || holds_message(
@@ -104,6 +112,24 @@ async fn a_rotated_friend_is_messaged_both_ways() {
             &nodes[1],
             &new_ann,
             "new ann to bea"
+        ))
+        .await
+    );
+}
+
+/// After the rotation, Ann's chain to Bea (the record carries over) is
+/// still watched under her new key: with every app message lost, Bea
+/// reads Ann's next message from the chain alone.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_rotated_friends_chain_is_still_watched() {
+    let (sim, nodes, _, new_ann, bea) = rotated_pair(17).await;
+    sim.fault(Fault::DropMessages { per_mille: 1000 });
+    send(&nodes[0], &bea, "new ann over the chain").await;
+    assert!(
+        eventually(&sim, LIMIT * 4, || holds_message(
+            &nodes[1],
+            &new_ann,
+            "new ann over the chain"
         ))
         .await
     );
