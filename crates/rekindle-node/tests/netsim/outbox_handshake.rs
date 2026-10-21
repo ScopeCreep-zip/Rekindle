@@ -63,3 +63,38 @@ async fn a_request_to_an_unreachable_peer_is_queued_and_sent_later() {
         "its receipt settled the row"
     );
 }
+
+/// An invite redeemed while our DHT is unreachable: the add returns once
+/// the redemption is committed, nothing lands in the inviter's inbox while
+/// we are offline, and the outbox writes it once we are back.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_offline_redemption_is_committed_and_lands_after_the_heal() {
+    let (sim, mut nodes) = start(2, 57).await;
+    for (node, name) in nodes.iter_mut().zip(["Rae", "Ann"]) {
+        node.unlock_new_identity(name).await;
+    }
+    let rae = key(&nodes[0]);
+    let invite: rekindle_types::dto::friends::InviteCreated =
+        serde_json::from_value(nodes[1].ok(IpcRequest::FriendInviteCreate).await)
+            .expect("the invite");
+    sim.fault(Fault::DhtOffline {
+        node: 0,
+        offline: true,
+    });
+    nodes[0]
+        .ok(IpcRequest::FriendAddFromInvite { invite: invite.url })
+        .await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert!(
+        !has_request_from(&nodes[1], &rae).await,
+        "nothing landed while Rae was offline"
+    );
+    sim.fault(Fault::DhtOffline {
+        node: 0,
+        offline: false,
+    });
+    assert!(
+        eventually(&sim, LIMIT * 10, || has_request_from(&nodes[1], &rae)).await,
+        "the outbox wrote the redemption once Rae was back"
+    );
+}

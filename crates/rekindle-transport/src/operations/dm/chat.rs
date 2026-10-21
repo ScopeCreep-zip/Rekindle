@@ -178,15 +178,17 @@ async fn own_dm(
     .await
 }
 
-/// The user's Retry of an outbox row by its client id (plan E2.5): it is
-/// queued again under the **same** client id, so the peer keeps one copy,
-/// and no new row is stored. Our direct message must have failed; a retry
-/// whose review was held on the peer's verified key changing acknowledges
-/// the change (plan E2.3, R-4).
+/// The user's Retry of any outbox row by its client id (plan E2.5): a
+/// direct message, a handshake row (a request, an invite's redemption) or
+/// a channel post, queued again under the **same** client id, so the peer
+/// keeps one copy, and no new row is stored; a channel post's write is
+/// made again through the channel send path (`OutboxDeps::reissue`). A
+/// direct message must have failed; a retry whose review was held on the
+/// peer's verified key changing acknowledges the change (plan E2.3, R-4).
 ///
 /// # Errors
-/// `Conflict` when our message with that id did not fail, `NotFound` when
-/// no outbox row has the id, or the storage failed.
+/// `Conflict` when our direct message with that id did not fail,
+/// `NotFound` when no outbox row has the id, or the storage failed.
 pub async fn retry_send(
     host: &dyn FriendHost,
     client_id: &str,
