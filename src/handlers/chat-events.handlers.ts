@@ -3,14 +3,14 @@ import { reconcile } from "solid-js/store";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeChatEvents } from "../ipc/channels";
 import { isLegacy } from "../ipc/channels/chat_events";
-import type { DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
+import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { chatState, setChatState } from "../stores/chat.store";
 import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "../actions/chat.actions";
 import { handleRefreshFriends } from "../actions/buddy.actions";
 import type { Message } from "../stores/chat.store";
-import { transformNewFriend } from "../utils/transformers";
+import { transformHistoryGap, transformNewFriend } from "../utils/transformers";
 
 // A DM we sent changed delivery state (`dmSendStatus`): the
 // message whose client id (`serverMessageId`) it names takes the state the
@@ -27,6 +27,28 @@ function applyMessageState(state: DmSendStatus): void {
   const idx = convo.messages.findIndex((m) => m.serverMessageId === state.clientId);
   if (idx < 0) return;
   setChatState("conversations", state.conversationId, "messages", idx, "status", state.state);
+}
+
+// The peer's stream lost entries we never fetched (`dmHistoryGap`): the
+// conversation gets one marker where the report arrived. The backend
+// decides there is a gap; nothing here infers one.
+function applyHistoryGap(gap: DmHistoryGap): void {
+  const convo = chatState.conversations[gap.peerKey];
+  if (!convo) {
+    setChatState("conversations", gap.peerKey, {
+      peerId: gap.peerKey,
+      messages: [],
+      isTyping: false,
+      lastRead: 0,
+      historyGaps: [transformHistoryGap(gap, null)],
+    });
+    return;
+  }
+  const last = convo.messages[convo.messages.length - 1];
+  setChatState("conversations", gap.peerKey, "historyGaps", (gaps) => [
+    ...(gaps ?? []),
+    transformHistoryGap(gap, last ? last.id : null),
+  ]);
 }
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
@@ -253,6 +275,13 @@ export function subscribeDmChatEvents(
     if ("channelMessage" in event && "dmSendStatus" in event.channelMessage) {
       const state = event.channelMessage.dmSendStatus;
       if (state.conversationId === peerId) applyMessageState(state);
+      return;
+    }
+
+    // Their stream to us lost entries (plan E2.5): draw the gap marker.
+    if ("channelMessage" in event && "dmHistoryGap" in event.channelMessage) {
+      const gap = event.channelMessage.dmHistoryGap;
+      if (gap.peerKey === peerId) applyHistoryGap(gap);
       return;
     }
 

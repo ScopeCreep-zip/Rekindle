@@ -53,6 +53,8 @@ pub struct FriendStores {
     /// Delivery receipts waiting for their coalescing delay, or held while
     /// we are Invisible (plan E2.5).
     pub acks: Mutex<crate::operations::dm::ack::PendingAcks>,
+    /// The DM chain diffs in flight, one per peer (plan E2.5, D23).
+    pub streams: rekindle_sync::stream::StreamEngine,
 }
 
 impl FriendStores {
@@ -110,6 +112,13 @@ pub trait FriendHost: Send + Sync {
     /// # Errors
     /// `Locked` while no identity is unlocked.
     fn outbox(&self) -> Result<Arc<dyn crate::operations::dm::outbox::DmOutbox>, FriendError>;
+    /// Our dm participant record for the conversation with `peer` and its
+    /// owner keypair (plan E2.5, MSR), created when none is stored: the
+    /// keypair is saved to the vault before the record key is stored.
+    async fn participant_writer(
+        &self,
+        peer: &str,
+    ) -> Result<crate::operations::dm::stream::ParticipantWriter, FriendError>;
     /// Whether our own status is Invisible (receipts are held meanwhile).
     fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).

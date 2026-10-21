@@ -451,6 +451,21 @@ impl Netsim {
             .flatten()
     }
 
+    /// The single-subkey records the network holds (sealed pages, among
+    /// others): `(key, value bytes)`, sorted by key.
+    #[must_use]
+    pub fn single_subkey_values(&self) -> Vec<(String, Vec<u8>)> {
+        let inner = self.net.inner.lock();
+        let mut values: Vec<(String, Vec<u8>)> = inner
+            .records
+            .iter()
+            .filter(|(_, r)| r.values.len() == 1)
+            .filter_map(|(k, r)| Some((k.clone(), r.values[0].as_ref()?.data.clone())))
+            .collect();
+        values.sort();
+        values
+    }
+
     /// Record a semantic event `node` saw (a scenario's or a Host's).
     pub fn mark(&self, node: usize, event: impl Into<String>) {
         self.net.inner.lock().trace.push(node, event.into());

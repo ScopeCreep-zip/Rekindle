@@ -1,5 +1,5 @@
-import { Component, For, Show, createEffect, createMemo, onMount, onCleanup } from "solid-js";
-import type { Message } from "../../stores/chat.store";
+import { Component, For, Show, type JSX, createEffect, createMemo, onMount, onCleanup } from "solid-js";
+import type { HistoryGap, Message } from "../../stores/chat.store";
 import {
   bulkSelection,
   clearBulkSelection,
@@ -21,6 +21,9 @@ interface MessageListProps {
   memberNames?: Record<string, string>;
   myPseudonymKey?: string | null;
   threads?: Thread[];
+  /** Gaps the backend reported in a DM peer's stream, each drawn as a
+   *  marker after the message it names. */
+  historyGaps?: HistoryGap[];
   onRetry?: (messageId: number) => void;
   onDiscard?: (messageId: number) => void;
   onReply?: (message: Message) => void;
@@ -110,6 +113,27 @@ const MessageList: Component<MessageListProps> = (props) => {
     return map;
   });
 
+  // Gap markers keyed by the message they follow (`null`: before all).
+  const gapsAfter = createMemo(() => {
+    const map = new Map<number | null, HistoryGap[]>();
+    for (const g of props.historyGaps ?? []) {
+      map.set(g.afterId, [...(map.get(g.afterId) ?? []), g]);
+    }
+    return map;
+  });
+
+  function gapMarkers(afterId: number | null): JSX.Element {
+    return (
+      <For each={gapsAfter().get(afterId) ?? []}>
+        {() => (
+          <div class="dm-history-gap" role="note">
+            Some earlier messages could not be delivered
+          </div>
+        )}
+      </For>
+    );
+  }
+
   function handleEnterSelection(): void {
     if (!props.channelId) return;
     startBulkSelection(props.channelId);
@@ -164,6 +188,7 @@ const MessageList: Component<MessageListProps> = (props) => {
           </button>
         </div>
       </Show>
+      {gapMarkers(null)}
       <For each={props.messages}>
         {(msg) => {
           const thread = () => msg.serverMessageId ? threadByStarterMessage().get(msg.serverMessageId) : undefined;
@@ -173,6 +198,7 @@ const MessageList: Component<MessageListProps> = (props) => {
             return Boolean(sel && msg.serverMessageId && sel.selectedIds.has(msg.serverMessageId));
           };
           return (
+            <>
             <MessageBubble
               communityId={props.communityId}
               channelId={props.channelId}
@@ -201,6 +227,8 @@ const MessageList: Component<MessageListProps> = (props) => {
                 ? () => toggleBulkSelected(msg.serverMessageId!)
                 : undefined}
             />
+            {gapMarkers(msg.id)}
+            </>
           );
         }}
       </For>

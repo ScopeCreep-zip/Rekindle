@@ -25,7 +25,7 @@ pub use calls::{
 pub use content::{DmAck, DmDelete, DmEdit, DmReaction, DmText, ReadUpTo, Typing, MAX_DM_ACK_SEQS};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
-    RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest,
+    RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest, StreamRecord,
 };
 pub use group::{GroupDmInvite, GroupDmLeave};
 pub use relay::{
@@ -117,6 +117,7 @@ direct_bodies! {
         FriendAccept(FriendAccept) = friend_accept,
         ProfileKeyRotated(ProfileKeyRotated) = profile_key_rotated,
         FriendsKey(FriendsKey) = friends_key,
+        StreamRecord(StreamRecord) = stream_record,
         IdentityRotated(IdentityRotated) = identity_rotated,
         DmEdit(DmEdit) = dm_edit,
         DmDelete(DmDelete) = dm_delete,

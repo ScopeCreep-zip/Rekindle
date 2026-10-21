@@ -11,6 +11,7 @@ mod outgoing;
 pub(crate) mod receipts;
 pub mod route;
 mod send;
+pub mod stream;
 mod typing;
 
 pub use chat::{

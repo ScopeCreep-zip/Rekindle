@@ -30,6 +30,7 @@ mod role_ids;
 pub mod send_log;
 pub mod session_reset_requests;
 pub mod signal_identities;
+pub mod stream_cursors;
 pub mod unprocessed;
 
 #[cfg(test)]

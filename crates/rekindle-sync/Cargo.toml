@@ -8,13 +8,16 @@ description = "Consistency and sync primitives for Rekindle v2.0"
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
 blake3 = "1"
 hex = { workspace = true }
+parking_lot = { workspace = true }
 rand = { workspace = true }
 rekindle-records = { path = "../rekindle-records" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 rekindle-codec = { path = "../rekindle-codec" }

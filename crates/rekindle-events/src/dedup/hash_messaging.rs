@@ -67,6 +67,15 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(b"|");
             h.update(state.as_str().as_bytes());
         }
+        ChannelMessageEvent::DmHistoryGap {
+            peer_key,
+            through_seq,
+        } => {
+            h.update(b"dm_gap|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
+        }
         ChannelMessageEvent::DirectConversationInvited {
             from, record_key, ..
         } => {

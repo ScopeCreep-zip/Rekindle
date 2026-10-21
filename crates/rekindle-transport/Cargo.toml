@@ -38,6 +38,7 @@ subtle = "2"
 rekindle-protocol = { path = "../rekindle-protocol" }
 # The record, route and app-message ports (`rekindle_records::port`).
 rekindle-records = { path = "../rekindle-records" }
+rekindle-sync = { path = "../rekindle-sync" }
 # The friend and 1:1 operations (plan E2.1) store through the identity's
 # database (`rekindle_db::repo`, Tier 3; no SQL leaves the storage crates)
 # and audit through `rekindle_audit::AuditKind` (Tier 2).

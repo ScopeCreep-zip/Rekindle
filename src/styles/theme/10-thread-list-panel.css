@@ -204,6 +204,18 @@
     font-style: italic;
   }
 
+  /* ─── DM history gap marker (plan E2.5) ─── */
+  .dm-history-gap {
+    text-align: center;
+    padding: 6px 0;
+    margin: 4px 0;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    font-style: italic;
+    border-top: 1px solid var(--color-xfire-border);
+    border-bottom: 1px solid var(--color-xfire-border);
+  }
+
   /* ─── Channel topic in header ─── */
   .channel-topic {
     font-size: 11px;

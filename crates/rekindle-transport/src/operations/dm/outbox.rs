@@ -137,7 +137,10 @@ pub enum Attempt {
     Wedged(String),
 }
 
-/// Frame entry `stream_seq` of our stream to `to` and send it once.
+/// Frame entry `stream_seq` of our stream to `to`, append it to our chain
+/// to them (plan E2.5, D23: the chain is authoritative), then send it once
+/// as the hint that makes the peer diff. Once on the chain it counts as
+/// sent whether or not the hint left.
 pub async fn attempt(host: &dyn FriendHost, to: &str, stream_seq: i64, payload: &[u8]) -> Attempt {
     let body = match decode(payload) {
         Ok(body) => body,
@@ -151,11 +154,21 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, stream_seq: i64, payload: 
         }
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
-    match send::route_send(host, to, &frame, true).await {
-        Ok(true) => Attempt::Sent,
-        Ok(false) | Err(FriendError::NotReady(_)) => Attempt::Deferred,
-        Err(e) => Attempt::Wedged(e.to_string()),
+    let datagram = match super::frame::wire(&frame) {
+        Ok(datagram) => datagram,
+        Err(e) => return Attempt::Wedged(e.to_string()),
+    };
+    match super::stream::append(host, to, &datagram).await {
+        Ok(_) => {}
+        Err(FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_)) => {
+            return Attempt::Deferred;
+        }
+        Err(e) => return Attempt::Wedged(e.to_string()),
     }
+    if let Err(e) = send::route_send_datagram(host, to, &datagram, frame.type_id, true).await {
+        tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
+    }
+    Attempt::Sent
 }
 
 #[cfg(test)]

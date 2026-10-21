@@ -9,6 +9,7 @@ use crate::capnp_codec::CodecError;
 use crate::direct_capnp::{
     friend_accept, friend_request, friends_key, identity_rotated, pre_key_rejected,
     profile_key_rotated, retry_request, session_reset_decline, session_reset_request,
+    stream_record,
 };
 
 /// What admits a friend request (plan E2.5, D17): exactly one of the
@@ -286,6 +287,28 @@ impl FriendsKey {
         Ok(Self {
             epoch: r.get_epoch(),
             key: fixed(r.get_key(), "friends key")?,
+        })
+    }
+}
+
+/// 0x0107 StreamRecord, inside the ratchet: the record key of the sender's
+/// dm participant record for this conversation, whose chain holds their
+/// stream to us (plan E2.5). Sent once a session exists and again after the
+/// record is replaced. A key that is empty or not a record key's shape is
+/// malformed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StreamRecord {
+    pub record_key: String,
+}
+
+impl StreamRecord {
+    pub(super) fn write(&self, mut b: stream_record::Builder<'_>) {
+        b.set_record_key(&self.record_key);
+    }
+
+    pub(super) fn read(r: stream_record::Reader<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            record_key: record_key(r.get_record_key(), "stream record key")?,
         })
     }
 }

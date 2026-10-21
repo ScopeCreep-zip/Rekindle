@@ -49,7 +49,9 @@ pub enum Called {
 }
 
 /// Handle one inbound `app_message`. `datagram` starts with the `'D'` tag;
-/// anything else is dropped.
+/// anything else is dropped. A stream entry's message is a hint (plan
+/// E2.5, D23): it is applied as it comes, and the sender's chain, which
+/// is authoritative, is diffed for anything before it that was lost.
 pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::debug!(len = datagram.len(), "dropping untagged 1:1 message");
@@ -58,6 +60,27 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     let Ok(opened) = frame::open(host, bytes).await else {
         return Routed::Handled;
     };
+    if opened.stream_seq > 0 {
+        dm::stream::on_hint(host, &opened.sender_hex);
+    }
+    handlers::handle(host, opened).await
+}
+
+/// Handle one entry of `writer`'s DM chain (a wired frame they appended):
+/// the receive path of [`receive`], for a frame by `writer` only.
+pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8]) -> Routed {
+    let Some(bytes) = dm::unwire(datagram) else {
+        tracing::debug!(from = %writer, "dropping an untagged chain entry");
+        return Routed::Handled;
+    };
+    let Ok(opened) = frame::open(host, bytes).await else {
+        return Routed::Handled;
+    };
+    if opened.sender_hex != writer {
+        tracing::warn!(from = %writer, by = %opened.sender_hex, "dropping a chain entry by another sender");
+        frame::processed(host, &opened);
+        return Routed::Handled;
+    }
     handlers::handle(host, opened).await
 }
 

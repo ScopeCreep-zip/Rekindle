@@ -152,6 +152,13 @@ struct FriendsKey {
   key @1 :Data;                         # 32 B
 }
 
+# 0x0107 (E2.5), inside the ratchet: the record key of the sender's dm
+# participant record for this conversation, whose chain holds their stream
+# to us; sent once a session exists and again after the record is replaced.
+struct StreamRecord {
+  recordKey @0 :Text;
+}
+
 # 0x0108, over the old session; both signatures over
 # `IDENTITY_ROTATED || old || new || recipient`.
 struct IdentityRotated {

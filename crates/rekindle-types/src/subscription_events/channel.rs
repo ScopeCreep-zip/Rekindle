@@ -97,6 +97,19 @@ pub enum ChannelMessageEvent {
         state: crate::message::SendState,
     },
 
+    /// The peer's DM chain retired entries we never fetched: every entry
+    /// of their stream to us up to and including `through_seq` is gone
+    /// (plan E2.5). Every window shows one gap marker in the conversation
+    /// where it falls; none infers a gap itself.
+    /// Triggered by: the inbound stream finding its next unread entry
+    /// already retired from the peer's chain.
+    DmHistoryGap {
+        /// The peer (and the conversation: a 1:1 DM is keyed by its peer).
+        peer_key: String,
+        /// The last sequence of the peer's stream that is lost.
+        through_seq: u64,
+    },
+
     /// We were invited into a direct conversation — a per-peer DM log,
     /// or a group DM.
     DirectConversationInvited {

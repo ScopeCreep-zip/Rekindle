@@ -42,9 +42,17 @@ export interface DmSendStatus {
   state: SendState;
 }
 
+/** The peer's DM chain retired entries we never fetched: their stream to
+ *  us is gone up to and including `throughSeq` (plan E2.5). */
+export interface DmHistoryGap {
+  peerKey: string;
+  throughSeq: number;
+}
+
 export type ChannelMessageEvent =
   | { directMessageReceived: DirectMessageReceived }
   | { dmSendStatus: DmSendStatus }
+  | { dmHistoryGap: DmHistoryGap }
   | {
       directConversationInvited: {
         from: string;

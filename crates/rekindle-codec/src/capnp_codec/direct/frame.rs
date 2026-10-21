@@ -421,7 +421,7 @@ pub(super) mod tests {
     #[test]
     fn an_unallocated_type_id_or_a_short_key_is_refused() {
         let bytes = encode_root::<dm_frame::Owned>(|mut root| {
-            root.set_type_id(0x0107);
+            root.set_type_id(0x0109);
             root.set_sender(&[1; 32]);
             write_ratchet(root.init_body().init_ratchet(), &ratchet(8));
         });

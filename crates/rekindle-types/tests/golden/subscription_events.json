@@ -167,6 +167,14 @@
       }
     }
   },
+  "channelMessage.dmHistoryGap": {
+    "channelMessage": {
+      "dmHistoryGap": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "throughSeq": 17
+      }
+    }
+  },
   "channelMessage.dmSendStatus": {
     "channelMessage": {
       "dmSendStatus": {

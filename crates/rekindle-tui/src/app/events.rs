@@ -158,7 +158,11 @@ impl App {
                 Some(self.dm_send_status(event))
             }
             SubscriptionEvent::ChannelMessage(
-                ChannelMessageEvent::Edited { .. } | ChannelMessageEvent::Deleted { .. },
+                ChannelMessageEvent::Edited { .. }
+                | ChannelMessageEvent::Deleted { .. }
+                // A gap in the peer's stream (plan E2.5): the DM view
+                // draws its marker.
+                | ChannelMessageEvent::DmHistoryGap { .. },
             )
             | SubscriptionEvent::Voice(
                 VoiceEvent::ModeChanged { .. }

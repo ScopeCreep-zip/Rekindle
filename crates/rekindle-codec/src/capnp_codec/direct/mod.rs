@@ -29,7 +29,7 @@ pub use body::{
     FriendsKey, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, GroupDmInvite,
     GroupDmLeave, IdentityRotated, PreKeyRejected, ProfileKeyRotated, ReadUpTo, RegisterPushRelay,
     RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RequestAuth, RetryRequest,
-    SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse, Typing,
+    SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse, StreamRecord, Typing,
     UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS,
 };
 pub use frame::{

@@ -84,6 +84,9 @@ type_ids! {
     ProfileKeyRotated = 0x0105 => Ratchet,
     /// Our friend-presence key (plan E2.5), rotated on unfriend or block.
     FriendsKey = 0x0106 => Ratchet,
+    /// The record key of our dm participant record for this conversation,
+    /// whose chain holds our stream to the peer (plan E2.5).
+    StreamRecord = 0x0107 => Ratchet,
     /// Our identity moved to a new key, over the old session.
     IdentityRotated = 0x0108 => Ratchet,
     /// Edit one of our messages.
@@ -219,7 +222,7 @@ mod tests {
     #[test]
     fn unallocated_ids_are_not_kinds() {
         for id in [
-            0x0000, 0x0107, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
+            0x0000, 0x0109, 0x0124, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }

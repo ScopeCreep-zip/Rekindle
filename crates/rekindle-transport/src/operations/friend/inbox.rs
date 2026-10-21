@@ -24,7 +24,11 @@ use super::host::FriendHost;
 use super::state;
 use crate::operations::dm;
 
-fn records(
+/// The session's records pool.
+///
+/// # Errors
+/// The node or its pool is not up.
+pub(crate) fn records(
     host: &dyn FriendHost,
 ) -> Result<std::sync::Arc<dyn rekindle_records::port::RecordPort>, FriendError> {
     host.node()?

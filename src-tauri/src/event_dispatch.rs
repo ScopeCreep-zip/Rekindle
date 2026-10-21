@@ -498,6 +498,14 @@ mod tests {
         assert!(a.includes("chat-3f1a9c0b7e2d4f6a"));
         assert!(!a.includes("chat-0000000000000000"));
         assert!(!a.includes("community-browser"));
+        let gap = sub(SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::DmHistoryGap {
+                peer_key: PK.into(),
+                through_seq: 7,
+            },
+        ));
+        assert!(gap.includes("chat-3f1a9c0b7e2d4f6a"));
+        assert!(!gap.includes("chat-0000000000000000"));
     }
 
     #[test]

@@ -103,6 +103,9 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::FriendsKey(k) => {
             applied = presence_key::on_friends_key(host, sender, k).await;
         }
+        DirectBody::StreamRecord(r) => {
+            applied = crate::operations::dm::stream::on_stream_record(host, sender, r).await;
+        }
         DirectBody::IdentityRotated(r) => {
             applied = identity_rotation::on_identity_rotated(host, sender, r).await;
         }

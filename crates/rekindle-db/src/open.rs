@@ -158,7 +158,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 105 (plan E2.5, D22): a channel post waits on its `channel_post` outbox
 /// row; the held record slot columns of `messages` are gone.
-pub const SCHEMA_VERSION: i64 = 105;
+///
+/// 106 (plan E2.5, D23): `stream_cursors`, and `friends.participant_record_key`
+/// and `peer_participant_record_key`, the dm participant records whose chains
+/// carry each direction of a conversation.
+pub const SCHEMA_VERSION: i64 = 106;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

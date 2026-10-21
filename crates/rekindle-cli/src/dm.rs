@@ -130,6 +130,14 @@ async fn watch_dms(
             rekindle_client::fmt::abbreviate_key(conversation_id),
             format!("{state:?}").to_lowercase()
         )),
+        // The peer's chain retired entries we never fetched (plan E2.5).
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmHistoryGap {
+            peer_key,
+            through_seq,
+        }) if friend.is_none_or(|f| f == peer_key) => Some(format!(
+            "! some earlier messages from {} could not be delivered (through #{through_seq})",
+            rekindle_client::fmt::abbreviate_key(peer_key)
+        )),
         SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
             peer_key,
             display_name,

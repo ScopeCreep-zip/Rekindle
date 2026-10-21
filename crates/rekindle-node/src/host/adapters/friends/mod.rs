@@ -5,6 +5,7 @@
 
 mod inbox_watch;
 mod maintenance;
+mod participant;
 mod presence;
 
 use std::collections::{HashMap, HashSet};
@@ -121,6 +122,13 @@ impl FriendHost for HostFriends {
         &self,
     ) -> Result<Arc<dyn rekindle_transport::operations::dm::outbox::DmOutbox>, FriendError> {
         self.ctx.outbox.dm().ok_or(FriendError::Locked)
+    }
+
+    async fn participant_writer(
+        &self,
+        peer: &str,
+    ) -> Result<rekindle_transport::operations::dm::stream::ParticipantWriter, FriendError> {
+        participant::writer(self, peer).await
     }
 
     fn invisible(&self) -> bool {

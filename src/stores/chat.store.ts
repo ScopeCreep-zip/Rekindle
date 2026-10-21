@@ -65,11 +65,21 @@ export interface MessageAttachment {
   downloaded: boolean;
 }
 
+/** A gap the backend reported in the peer's stream (`dmHistoryGap`):
+ *  their messages through `throughSeq` are gone. The marker is drawn where
+ *  the report arrived, after the message `afterId` names (or first, when
+ *  nothing was shown yet). */
+export interface HistoryGap {
+  throughSeq: number;
+  afterId: number | null;
+}
+
 export interface Conversation {
   peerId: string;
   messages: Message[];
   isTyping: boolean;
   lastRead: number;
+  historyGaps?: HistoryGap[];
 }
 
 export interface ChatState {

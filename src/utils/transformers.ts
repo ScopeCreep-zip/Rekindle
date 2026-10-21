@@ -1,9 +1,10 @@
 import type { FriendInfo, Message as IpcMessage } from "../ipc/commands";
 import type { DmMessage } from "../ipc/commands/dto";
+import type { DmHistoryGap } from "../ipc/channels/chat_events";
 import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../ipc/commands/dto";
-import type { Message } from "../stores/chat.store";
+import type { HistoryGap, Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
@@ -81,6 +82,12 @@ function ownStatus(state: IpcMessage["sendState"]): Message["status"] {
  *  `DmSendStatus` and a resend name it by. */
 export function transformDmMessage(m: DmMessage): Message {
   return { ...transformMessage(m), serverMessageId: m.messageId ?? undefined };
+}
+
+/** A `dmHistoryGap` event → the conversation's gap marker, anchored after
+ *  the last message shown when it arrived. */
+export function transformHistoryGap(gap: DmHistoryGap, afterId: number | null): HistoryGap {
+  return { throughSeq: gap.throughSeq, afterId };
 }
 
 /** Convenience: transform an array of messages. */

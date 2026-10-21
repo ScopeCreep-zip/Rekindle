@@ -163,6 +163,7 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
         ChannelMessageEvent::DmSendStatus {
             conversation_id, ..
         } => EventScope::Peer(conversation_id.clone()),
+        ChannelMessageEvent::DmHistoryGap { peer_key, .. } => EventScope::Peer(peer_key.clone()),
         // An invitation names a conversation we do not show yet; it is
         // answered from the device-wide inbox.
         ChannelMessageEvent::DirectConversationInvited { .. }
@@ -252,6 +253,11 @@ mod tests {
             state: crate::message::SendState::Sent,
         });
         assert_eq!(ack.scope(), EventScope::Peer("pk".into()));
+        let gap = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmHistoryGap {
+            peer_key: "pk".into(),
+            through_seq: 7,
+        });
+        assert_eq!(gap.scope(), EventScope::Peer("pk".into()));
     }
 
     #[test]

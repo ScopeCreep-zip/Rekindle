@@ -65,6 +65,12 @@ CREATE TABLE IF NOT EXISTS friends (
     -- Cleared when we remove them; the row goes when they or we block.
     presence_epoch INTEGER CHECK(presence_epoch > 0),
     presence_key BLOB CHECK(length(presence_key) = 32),
+    -- Plan E2.5 (MSR): our dm participant record for this conversation
+    -- (its owner keypair is `VaultKey::DmParticipantOwner`), whose chain
+    -- holds our stream to them, and theirs (their `StreamRecord`), whose
+    -- chain holds their stream to us.
+    participant_record_key TEXT,
+    peer_participant_record_key TEXT,
     CHECK((presence_epoch IS NULL) = (presence_key IS NULL)),
     PRIMARY KEY (owner_key, public_key)
 );
@@ -796,6 +802,19 @@ CREATE TABLE IF NOT EXISTS outbox_streams (
     stream TEXT NOT NULL,
     last_seq INTEGER NOT NULL CHECK(last_seq >= 1),
     PRIMARY KEY (owner_key, stream)
+);
+
+-- Per-writer stream cursors (plan E2.5, D23): the highest sequence number
+-- of `writer`'s chain on `stream` this identity has applied (or passed as
+-- a duplicate, or skipped as retired). Committed only after the entry's
+-- effect commits.
+CREATE TABLE IF NOT EXISTS stream_cursors (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    stream TEXT NOT NULL,
+    writer TEXT NOT NULL,
+    seq INTEGER NOT NULL CHECK(seq >= 0),
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, stream, writer)
 );
 
 -- Client ids already applied from each peer stream (plan E2.5, D22): a

@@ -176,6 +176,7 @@ impl SubscriptionEvent {
                 // community.
                 ChannelMessageEvent::DirectMessageReceived { .. }
                 | ChannelMessageEvent::DmSendStatus { .. }
+                | ChannelMessageEvent::DmHistoryGap { .. }
                 | ChannelMessageEvent::DirectConversationInvited { .. }
                 | ChannelMessageEvent::ConversationFocusRequested { .. } => None,
             },

@@ -25,6 +25,8 @@ mod rotate;
 pub mod session_reset;
 pub use session_reset::expire_resets;
 pub(crate) mod state;
+/// The unlocked identity's key, which the per-identity rows are owned by.
+pub use state::owner as session_owner;
 pub mod verification;
 
 #[cfg(test)]

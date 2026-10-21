@@ -87,6 +87,12 @@ pub enum VaultKey {
     RequestInboxOwnerKeypair {
         record: String,
     },
+    /// Our dm participant record's owner keypair for one conversation
+    /// (plan E2.5, MSR): the record whose chain holds our stream to that
+    /// peer. Written before the record key is stored.
+    DmParticipantOwner {
+        conversation: String,
+    },
 
     /// Our identity rotation in flight (audit 2026-10-20 R-2): the new
     /// secret and its prekey set's mint seed, journalled before the first
@@ -113,6 +119,7 @@ impl VaultKey {
             | Self::PersonalSyncOwnerKeypair
             | Self::PrekeyRecordOwnerKeypair
             | Self::RequestInboxOwnerKeypair { .. }
+            | Self::DmParticipantOwner { .. }
             | Self::PendingRotation => "identity",
             Self::CommunityMek { .. }
             | Self::CommunityMekGeneration { .. }
@@ -141,6 +148,9 @@ impl VaultKey {
             Self::PrekeyRecordOwnerKeypair => ("prekey_record_owner_keypair", vec![]),
             Self::RequestInboxOwnerKeypair { record } => {
                 ("request_inbox_owner_keypair", vec![s(record)])
+            }
+            Self::DmParticipantOwner { conversation } => {
+                ("dm_participant_owner", vec![s(conversation)])
             }
             Self::PendingRotation => ("pending_rotation", vec![]),
             Self::CommunityMek { community } => ("community_mek", vec![s(community)]),
@@ -210,6 +220,9 @@ impl VaultKey {
             ("request_inbox_owner_keypair", [r]) => {
                 Self::RequestInboxOwnerKeypair { record: r.clone() }
             }
+            ("dm_participant_owner", [c]) => Self::DmParticipantOwner {
+                conversation: c.clone(),
+            },
             ("pending_rotation", []) => Self::PendingRotation,
             ("community_mek", [c]) => Self::CommunityMek {
                 community: c.clone(),
@@ -308,6 +321,7 @@ mod tests {
             },
             VaultKey::SlotKeypair { community: c() },
             VaultKey::RequestInboxOwnerKeypair { record: c() },
+            VaultKey::DmParticipantOwner { conversation: c() },
             VaultKey::RegistryKeypair { community: c() },
             VaultKey::SlotSeed { community: c() },
             VaultKey::AuditMacKey,

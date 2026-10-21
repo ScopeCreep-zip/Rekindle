@@ -10,6 +10,7 @@ pub const NAMES: &[&str] = &[
     "deleted",
     "directMessageReceived",
     "dmSendStatus",
+    "dmHistoryGap",
     "directConversationInvited",
     "conversationFocusRequested",
 ];
@@ -21,6 +22,7 @@ pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
         ChannelMessageEvent::Deleted { .. } => "deleted",
         ChannelMessageEvent::DirectMessageReceived { .. } => "directMessageReceived",
         ChannelMessageEvent::DmSendStatus { .. } => "dmSendStatus",
+        ChannelMessageEvent::DmHistoryGap { .. } => "dmHistoryGap",
         ChannelMessageEvent::DirectConversationInvited { .. } => "directConversationInvited",
         ChannelMessageEvent::ConversationFocusRequested { .. } => "conversationFocusRequested",
     }
@@ -87,6 +89,13 @@ pub fn samples() -> Vec<Sample> {
                 client_id: text("01900000-0000-7000-8000-000000000002"),
                 conversation_id: pk('b'),
                 state: rekindle_types::message::SendState::Failed,
+            },
+        ),
+        ev(
+            "dmHistoryGap",
+            ChannelMessageEvent::DmHistoryGap {
+                peer_key: pk('b'),
+                through_seq: 17,
             },
         ),
         ev(

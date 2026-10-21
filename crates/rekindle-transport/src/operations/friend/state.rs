@@ -11,7 +11,7 @@ use super::host::FriendHost;
 ///
 /// # Errors
 /// `Locked` while no identity is unlocked.
-pub(crate) fn owner(host: &dyn FriendHost) -> Result<String, FriendError> {
+pub fn owner(host: &dyn FriendHost) -> Result<String, FriendError> {
     host.session()
         .read()
         .as_ref()

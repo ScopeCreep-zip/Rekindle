@@ -84,6 +84,9 @@ fn samples() -> Vec<DirectBody> {
             epoch: 7,
             key: [0x5A; 32],
         }),
+        DirectBody::StreamRecord(StreamRecord {
+            record_key: dht_key(),
+        }),
         DirectBody::IdentityRotated(IdentityRotated {
             new_identity: [3; 32],
             sig_old: [4; 64],
@@ -479,4 +482,17 @@ fn bodies_a_peer_could_abuse_are_refused() {
         DirectBody::decode(DmTypeId::DmText, &family.encode()).as_ref(),
         Ok(&family)
     );
+}
+
+/// A StreamRecord whose key is empty, too long or not a record key is
+/// malformed.
+#[test]
+fn a_stream_record_without_a_record_key_is_refused() {
+    for record_key in [String::new(), "A".repeat(257), s("not-a-key")] {
+        let bytes = DirectBody::StreamRecord(StreamRecord { record_key }).encode();
+        assert!(matches!(
+            DirectBody::decode(DmTypeId::StreamRecord, &bytes),
+            Err(CodecError::Deserialization(_))
+        ));
+    }
 }
