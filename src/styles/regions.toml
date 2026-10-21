@@ -512,3 +512,7 @@
 '.chat-mention-here' = { on = ["--color-xfire-mention-everyone 22% over --color-xfire-bg-dark", "--color-xfire-mention-everyone 22% over --color-xfire-bg-panel"] }
 '.chat-mention-role' = { on = ["--color-xfire-mention-role 20% over --color-xfire-bg-dark", "--color-xfire-mention-role 20% over --color-xfire-bg-panel"] }
 '.chat-mention-self' = { on = ["--color-xfire-mention-self 28% over --color-xfire-bg-dark", "--color-xfire-mention-self 28% over --color-xfire-bg-panel"] }
+'.group-dm-count' = { on = ["--color-xfire-bg-dark"] }
+'.group-dm-picker-hint' = { on = ["--color-xfire-bg-panel"] }
+'.group-chat-member' = { on = ["--color-xfire-bg-dark"] }
+'.group-chat-leave' = { on = ["--color-xfire-danger 50% over --color-xfire-bg-dark"] }

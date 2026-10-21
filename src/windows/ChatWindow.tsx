@@ -4,8 +4,8 @@ import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
-/// conversation, `?group=<record key>` a group DM (the group mode E2.6
-/// completes). The backend builds both URLs (`windows::open_chat_window`).
+/// conversation, `?group=<group id>` a group DM (32 hex, plan E2.6
+/// ). The backend builds both URLs (`windows::open_chat_window`).
 const ChatWindow: Component = () => {
   const params = new URLSearchParams(window.location.search);
   const peer = params.get("peer") ?? "";
@@ -29,7 +29,7 @@ const ChatWindow: Component = () => {
         }
       >
         <Match when={group}>
-          <GroupChat recordKey={group} />
+          <GroupChat groupId={group} />
         </Match>
         <Match when={peer}>
           <DirectChat peerId={peer} />

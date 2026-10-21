@@ -5,6 +5,7 @@ use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::subscription_events::SubscriptionEvent;
 
 impl App {
     /// Process a single action — the TEA reducer.
@@ -141,6 +142,21 @@ impl App {
                     .navigate(ViewKind::FriendList, self.theme.use_unicode());
                 self.load_friend_list();
             }
+            Action::ShowGroupDms => {
+                self.nav
+                    .navigate(ViewKind::GroupDms, self.theme.use_unicode());
+                self.load_group_dms();
+            }
+            Action::ShowGroupMessages { group_id } => self.load_group_messages(group_id),
+            Action::AcceptGroupInvite { group_id } => {
+                self.spawn_group_request(IpcRequest::GroupDmAccept { group_id }, "accept group");
+            }
+            Action::DeclineGroupInvite { group_id } => {
+                self.spawn_group_request(IpcRequest::GroupDmDecline { group_id }, "decline group");
+            }
+            Action::LeaveGroup { group_id } => {
+                self.spawn_group_request(IpcRequest::GroupDmLeave { group_id }, "leave group");
+            }
             Action::ShowVoiceSession { community, channel } => {
                 self.nav.navigate(
                     ViewKind::VoiceSession { community, channel },
@@ -221,6 +237,12 @@ impl App {
             }
 
             Action::SubscriptionEvent(ref event) => {
+                // A group's invite, member or key changed: the list reloads.
+                if matches!(**event, SubscriptionEvent::GroupDm(_))
+                    && *self.nav.current_view() == ViewKind::GroupDms
+                {
+                    self.load_group_dms();
+                }
                 self.nav.current_view_mut().on_subscription_event(event)?;
             }
 

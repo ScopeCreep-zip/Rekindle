@@ -10,6 +10,7 @@ pub mod dashboard;
 pub mod dm_inbox;
 pub mod doctor;
 pub mod friend_list;
+pub mod group_dm;
 pub mod identity_settings;
 pub mod voice_session;
 
@@ -59,6 +60,7 @@ pub enum ViewKind {
     DmThread { peer_key: String },
     VoiceSession { community: String, channel: String },
     FriendList,
+    GroupDms,
     Doctor,
     CommunityInfo { community: String },
 }
@@ -132,6 +134,7 @@ pub struct ViewRegistry {
     dm_inbox: Option<dm_inbox::DmInboxView>,
     voice_session: Option<voice_session::VoiceSessionView>,
     friend_list: Option<friend_list::FriendListView>,
+    group_dms: Option<group_dm::GroupDmListView>,
     doctor_view: Option<doctor::DoctorView>,
     community_info: Option<community_info::CommunityInfoView>,
 }
@@ -147,6 +150,7 @@ impl ViewRegistry {
             dm_inbox: None,
             voice_session: None,
             friend_list: None,
+            group_dms: None,
             doctor_view: None,
             community_info: None,
         }
@@ -197,6 +201,11 @@ impl ViewRegistry {
                     self.friend_list = Some(friend_list::FriendListView::new(use_unicode));
                 }
             }
+            ViewKind::GroupDms => {
+                if self.group_dms.is_none() {
+                    self.group_dms = Some(group_dm::GroupDmListView::new());
+                }
+            }
             ViewKind::Doctor => {
                 if self.doctor_view.is_none() {
                     self.doctor_view = Some(doctor::DoctorView::new(use_unicode));
@@ -245,6 +254,10 @@ impl ViewRegistry {
                 .friend_list
                 .as_mut()
                 .expect("friend_list view should exist after transition"),
+            ViewKind::GroupDms => self
+                .group_dms
+                .as_mut()
+                .expect("group_dms view should exist after transition"),
             ViewKind::Doctor => self
                 .doctor_view
                 .as_mut()

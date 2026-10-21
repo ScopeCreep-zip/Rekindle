@@ -90,18 +90,34 @@ pub fn chat_label(peer: &PublicKeyHex) -> String {
     format!("chat-{}", rekindle_utils::text::prefix(peer.as_str(), 16))
 }
 
-/// The chat window in group mode: `chat-` + the first 20 alphanumeric
-/// characters of the group DM's record key. A record key starts with its
-/// kind (`VLD0`), never 16 hex digits, so it cannot name a 1:1 window.
+/// A group DM's id as a window names it: the creator's 16 random bytes
+/// as 32 lowercase hex (plan E2.6). Validated here so a label never carries
+/// attacker-chosen characters.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GroupIdHex(String);
+
+impl GroupIdHex {
+    /// `text` when it is 32 lowercase hex digits.
+    #[must_use]
+    pub fn parse(text: &str) -> Option<Self> {
+        (text.len() == 32
+            && text
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+        .then(|| Self(text.to_owned()))
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// The chat window in group mode: `chat-g` + the group id. A 1:1 window is
+/// `chat-` + 16 hex digits, never a `g`, so the two cannot collide.
 #[must_use]
-pub fn group_chat_label(record: &RecordKeyStr) -> String {
-    let suffix: String = record
-        .as_str()
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .take(20)
-        .collect();
-    format!("chat-{suffix}")
+pub fn group_chat_label(group: &GroupIdHex) -> String {
+    format!("chat-g{}", group.as_str())
 }
 
 /// `community-` + the first 16 characters of the community record key, or
@@ -142,13 +158,11 @@ pub fn peer_labels(peer_key: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The group-mode chat window for a record-backed conversation named by an
-/// event.
+/// The group-mode chat window for a group conversation named by an event
+/// (its group id).
 #[must_use]
-pub fn conversation_label(record_key: &str) -> Option<String> {
-    key_format::record_key(record_key)
-        .ok()
-        .map(|rk| group_chat_label(&rk))
+pub fn conversation_label(group_id: &str) -> Option<String> {
+    GroupIdHex::parse(group_id).map(|g| group_chat_label(&g))
 }
 
 /// The pop-out window for a call named by an event.
@@ -170,9 +184,10 @@ mod tests {
         let pk = key_format::public_key_hex(HEX64).unwrap();
         let rk = key_format::record_key(&format!("VLD0:{B64}:{B64}")).unwrap();
         let call = key_format::call_id(rekindle_utils::text::prefix(HEX64, 32)).unwrap();
+        let group = GroupIdHex::parse(rekindle_utils::text::prefix(HEX64, 32)).unwrap();
         let cases = [
             (chat_label(&pk), WindowKind::Chat),
-            (group_chat_label(&rk), WindowKind::Chat),
+            (group_chat_label(&group), WindowKind::Chat),
             (community_label(Some(&rk)), WindowKind::Community),
             (community_label(None), WindowKind::Community),
             (call_label(&call), WindowKind::Call),
@@ -189,10 +204,12 @@ mod tests {
             );
         }
         assert_eq!(
-            group_chat_label(&rk),
-            format!("chat-VLD0{}", rekindle_utils::text::prefix(B64, 16))
+            group_chat_label(&group),
+            format!("chat-g{}", rekindle_utils::text::prefix(HEX64, 32))
         );
-        assert_ne!(group_chat_label(&rk), chat_label(&pk));
+        assert_ne!(group_chat_label(&group), chat_label(&pk));
+        let upper: String = HEX64.chars().take(32).collect::<String>().to_uppercase();
+        assert!(GroupIdHex::parse(&upper).is_none());
     }
 
     #[test]
@@ -213,5 +230,6 @@ mod tests {
         assert_eq!(peer_labels(HEX64).len(), 2);
         assert!(call_label_for(rekindle_utils::text::prefix(HEX64, 32)).is_some());
         assert!(conversation_label("nope").is_none());
+        assert!(conversation_label(rekindle_utils::text::prefix(HEX64, 32)).is_some());
     }
 }

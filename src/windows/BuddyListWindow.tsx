@@ -16,6 +16,10 @@ import DeepLinkConsentDialog from "../components/buddy-list/DeepLinkConsentDialo
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
+import NewGroupModal from "../components/buddy-list/NewGroupModal";
+import GroupDmList from "../components/buddy-list/GroupDmList";
+import { subscribeBuddyListGroupDmEvents } from "../handlers/group-dm.handlers";
+import { handleLoadGroupDms } from "../actions/group-dm.actions";
 import StatusPicker from "../components/status/StatusPicker";
 import NetworkIndicator from "../components/status/NetworkIndicator";
 import { authState, setAuthState } from "../stores/auth.store";
@@ -74,6 +78,7 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeCallEvents({ owner: true }));
     unlisteners.push(subscribeNotificationHandler());
     unlisteners.push(subscribeBuddyListChatEvents());
+    unlisteners.push(subscribeBuddyListGroupDmEvents());
     unlisteners.push(subscribeBuddyListPresenceEvents());
     unlisteners.push(subscribeBuddyListVoiceEvents());
     unlisteners.push(subscribeNetworkStatus((event: NetworkStatusEvent) => {
@@ -94,6 +99,7 @@ const BuddyListWindow: Component = () => {
 
     // Load persisted pending friend requests from SQLite
     handleLoadPendingRequests();
+    void handleLoadGroupDms();
 
     // Poll current game status on mount
     handleGetGameStatus().then((game) => {
@@ -132,6 +138,7 @@ const BuddyListWindow: Component = () => {
       <div id="main-content" tabindex="-1" class="window-main">
         <Show when={buddyListUI.activeTab === "friends"}>
           <PendingRequests />
+          <GroupDmList />
           <BuddyList />
         </Show>
         <Show when={buddyListUI.activeTab === "communities"}>
@@ -155,6 +162,7 @@ const BuddyListWindow: Component = () => {
       />
       <CallController />
       <DeepLinkConsentDialog />
+      <NewGroupModal />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}
         onClose={() => setBuddyListUI("showStartGroupCall", false)}

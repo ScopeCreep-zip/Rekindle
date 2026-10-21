@@ -11,6 +11,8 @@ import { governanceCommands } from "./commands/governance";
 import { voiceCommands } from "./commands/voice";
 import { systemCommands } from "./commands/system";
 import { syncCommands } from "./commands/sync";
+import { groupDmCommands } from "./commands/group_dm";
+export type { GroupDmView, GroupDmMemberView } from "./commands/group_dm";
 
 export const commands = {
   ...accountCommands,
@@ -19,6 +21,7 @@ export const commands = {
   ...voiceCommands,
   ...systemCommands,
   ...syncCommands,
+  ...groupDmCommands,
 };
 
 export function avatarDataUrl(base64: string | null | undefined): string | undefined {

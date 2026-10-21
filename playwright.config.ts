@@ -13,7 +13,7 @@ export default defineConfig({
     // Frontend-only tests with mocked IPC (fast, no Rust backend needed)
     {
       name: "mock",
-      testMatch: ["login.spec.ts", "events.spec.ts", "chat-window.spec.ts"],
+      testMatch: ["login.spec.ts", "events.spec.ts", "chat-window.spec.ts", "group-dm.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
     // Real E2E tests against live Rust backend (SQLite + Stronghold + Ed25519)

@@ -192,6 +192,7 @@ impl App {
                 format!("{} / #{channel} (voice)", self.community_name(community))
             }
             ViewKind::FriendList => "Friends".into(),
+            ViewKind::GroupDms => "Groups".into(),
             ViewKind::Doctor => "Doctor".into(),
             ViewKind::CommunityInfo { community } => {
                 format!("{} / Info", self.community_name(community))

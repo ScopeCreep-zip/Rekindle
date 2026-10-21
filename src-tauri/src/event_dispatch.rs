@@ -172,8 +172,8 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
                     audience
                 }
             }
-            EventScope::Conversation(record) => {
-                buddy_list().with_labels(labels::conversation_label(&record))
+            EventScope::Conversation(group) => {
+                buddy_list().with_labels(labels::conversation_label(&group))
             }
             EventScope::Call(id) => buddy_list().with_labels(labels::call_label_for(&id)),
         },
@@ -468,6 +468,7 @@ mod tests {
     const PK: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a";
     const CALL: &str = "0123456789abcdef0123456789abcdef";
     const REC: &str = "VLD0:um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
+    const GROUP: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c";
 
     fn sub(e: SubscriptionEvent) -> Audience {
         WebviewEvent::Subscription(e).audience()
@@ -519,13 +520,13 @@ mod tests {
                 body: None,
                 decryption_failed: false,
                 automod_blurred: false,
-                conversation_id: REC.into(),
+                conversation_id: GROUP.into(),
                 server_message_id: None,
                 reply_to_id: None,
                 is_own: false,
             },
         ));
-        assert!(a.includes(&labels::conversation_label(REC).unwrap()));
+        assert!(a.includes(&labels::conversation_label(GROUP).unwrap()));
         assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
     }
 

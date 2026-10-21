@@ -56,11 +56,11 @@ export const systemCommands = {
   // Windows
   showBuddyList: () => invoke<void>("show_buddy_list"),
   // Window titles are resolved by the backend from its own state. One chat
-  // window: 1:1 with a peer, or a group DM by its record key (plan E2.3).
+  // window: 1:1 with a peer, or a group DM by its group id (plan E2.6).
   openChatWindow: (publicKey: string) =>
     invoke<void>("open_chat_window", { target: { peer: publicKey } }),
-  openGroupChatWindow: (recordKey: string) =>
-    invoke<void>("open_chat_window", { target: { group: recordKey } }),
+  openGroupChatWindow: (groupId: string) =>
+    invoke<void>("open_chat_window", { target: { group: groupId } }),
   openSettingsWindow: (tab?: SettingsTab) =>
     invoke<void>("open_settings_window", { tab: tab ?? null }),
   /// `communityId` absent opens the community browser.

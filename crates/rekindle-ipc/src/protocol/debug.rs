@@ -2,6 +2,7 @@
 
 use super::IpcRequest;
 
+mod dm;
 mod friend;
 mod group_dm;
 
@@ -226,38 +227,12 @@ impl std::fmt::Debug for IpcRequest {
                 .field("channel", channel)
                 .field("limit", limit)
                 .finish(),
-            Self::DmTyping { peer_key, typing } => f
-                .debug_struct("DmTyping")
-                .field("peer_key", peer_key)
-                .field("typing", typing)
-                .finish(),
-            Self::DmInbox { limit } => f.debug_struct("DmInbox").field("limit", limit).finish(),
-            Self::DmHistory {
-                peer_key,
-                limit,
-                before,
-            } => f
-                .debug_struct("DmHistory")
-                .field("peer_key", peer_key)
-                .field("limit", limit)
-                .field("before", before)
-                .finish(),
-            Self::DmMarkRead {
-                peer_key,
-                rendered_through,
-            } => f
-                .debug_struct("DmMarkRead")
-                .field("peer_key", peer_key)
-                .field("rendered_through", rendered_through)
-                .finish(),
-            Self::OutboxRetry { client_id } => f
-                .debug_struct("OutboxRetry")
-                .field("client_id", client_id)
-                .finish(),
-            Self::OutboxDiscard { client_id } => f
-                .debug_struct("OutboxDiscard")
-                .field("client_id", client_id)
-                .finish(),
+            Self::DmTyping { .. }
+            | Self::DmInbox { .. }
+            | Self::DmHistory { .. }
+            | Self::DmMarkRead { .. }
+            | Self::OutboxRetry { .. }
+            | Self::OutboxDiscard { .. } => self.fmt_dm(f),
             Self::Subscribe { filters, from } => f
                 .debug_struct("Subscribe")
                 .field("filter_count", &filters.len())

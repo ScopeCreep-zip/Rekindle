@@ -168,8 +168,8 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
 }
 
 /// What a chat window shows: a 1:1 conversation with a friend (identity
-/// key) or a community member (pseudonym key), or a group DM by its record
-/// key (the group mode E2.6 completes).
+/// key) or a community member (pseudonym key), or a group DM by its group
+/// id (32 hex, plan E2.6).
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ChatTarget {
@@ -194,16 +194,16 @@ pub async fn open_chat_window(
             let title = titles::chat(state, pool, &peer).await;
             (label, format!("/chat?peer={peer}"), title)
         }
-        ChatTarget::Group(record) => {
-            let record =
-                key_format::record_key(record).map_err(|e| invalid("group record key", &e))?;
-            let label = labels::group_chat_label(&record);
+        ChatTarget::Group(group) => {
+            let group = labels::GroupIdHex::parse(group)
+                .ok_or_else(|| "invalid group id: not 32 lowercase hex".to_owned())?;
+            let label = labels::group_chat_label(&group);
             if raise(app, &label) {
                 return Ok(());
             }
             (
                 label,
-                format!("/chat?group={record}"),
+                format!("/chat?group={}", group.as_str()),
                 titles::GROUP.to_owned(),
             )
         }

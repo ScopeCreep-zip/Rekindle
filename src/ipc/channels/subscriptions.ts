@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "../invoke";
-import type { ChatEvent } from "./chat_events";
+import { isLegacy, type ChatEvent, type GroupDmEvent } from "./chat_events";
 import type {
   PresenceEvent,
   PresenceSubscriptionEvent,
@@ -152,6 +152,19 @@ export function subscribeChatEvents(
 ): Promise<UnlistenFn> {
   return on<ChatEvent>("chat-event", (payload) => {
     onEvent(payload);
+  });
+}
+
+/**
+ * Subscribe to group-DM lifecycle events (plan E2.6). They ride the
+ * `chat-event` channel as `{ groupDm: … }`; unwrapped here so callers see
+ * just the group event.
+ */
+export function subscribeGroupDmEvents(
+  onEvent: (event: GroupDmEvent) => void,
+): Promise<UnlistenFn> {
+  return on<ChatEvent>("chat-event", (payload) => {
+    if (!isLegacy(payload) && "groupDm" in payload) onEvent(payload.groupDm);
   });
 }
 

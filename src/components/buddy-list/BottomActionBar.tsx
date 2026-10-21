@@ -38,6 +38,9 @@ const BottomActionBar: Component = () => {
         <button class="action-bar-icon-btn" onClick={handleToggleAddFriend} title="Add Friend" aria-label="Add Friend">
           <span class="nf-icon" aria-hidden="true">{ICON_ADD_FRIEND}</span>
         </button>
+        <button class="action-bar-icon-btn" onClick={() => setBuddyListUI("showNewGroup", true)} title="New Group" aria-label="New Group">
+          <span class="nf-icon" aria-hidden="true">{ICON_PLUS}</span>
+        </button>
       </Show>
       <Show when={buddyListUI.activeTab === "communities"}>
         <button class="action-bar-icon-btn" onClick={handleToggleCreateCommunity} title="Create Community" aria-label="Create Community">

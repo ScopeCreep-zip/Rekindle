@@ -19,7 +19,7 @@ const GOLDEN = JSON.parse(
 const ALICE = "a".repeat(64);
 // The golden typing samples name this peer.
 const BOB = "b".repeat(64);
-const GROUP = `VLD0:${"G".repeat(43)}`;
+const GROUP = "0123456789abcdef0123456789abcdef";
 
 const HANDLER = `
   switch (cmd) {
@@ -100,11 +100,12 @@ test("the 1:1 mode reports its draft and keeps no typing timer", async ({ page }
   expect(await typingReports(page)).toEqual([true, true, false]);
 });
 
-// The group mode is empty until E2.6 slice G3 wires the group requests.
-test("the group mode renders an empty group and no call controls", async ({ page }) => {
-  await preloadMocks(page, "chat-VLD0GGGGGGGGGGGGGGGG", HANDLER);
-  await page.goto(`/chat?group=${encodeURIComponent(GROUP)}`);
-  await expect(page.getByText("Group chats are not available yet.")).toBeVisible();
+// The group mode reads the Host's list and stored history; its compose
+// box stays disabled until the group send is wired, and it has no calls.
+test("the group mode shows the group's members and history, and no call controls", async ({ page }) => {
+  await preloadMocks(page, `chat-g${GROUP}`, HANDLER);
+  await page.goto(`/chat?group=${GROUP}`);
   await expect(page.getByText("Chat — Group DM")).toBeVisible();
+  await expect(page.getByRole("textbox", { name: /^Message / })).toBeDisabled();
   await expect(page.locator(".chat-call-btn")).toHaveCount(0);
 });

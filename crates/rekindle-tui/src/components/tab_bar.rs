@@ -101,7 +101,7 @@ impl TabBarState {
         use crate::views::ViewKind;
         let tab_id = match view {
             ViewKind::Dashboard | ViewKind::Doctor | ViewKind::IdentitySettings => "dashboard",
-            ViewKind::DmInbox | ViewKind::DmThread { .. } => "dms",
+            ViewKind::DmInbox | ViewKind::DmThread { .. } | ViewKind::GroupDms => "dms",
             ViewKind::FriendList => "friends",
             ViewKind::ChannelWatch { .. }
             | ViewKind::CommunityInfo { .. }

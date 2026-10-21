@@ -57,6 +57,12 @@ pub enum Action {
         peer_key: String,
     },
     ShowFriendList,
+    /// Our group DMs and pending invites (plan E2.6).
+    ShowGroupDms,
+    /// Load a group's stored messages into the group view.
+    ShowGroupMessages {
+        group_id: String,
+    },
     ShowVoiceSession {
         community: String,
         channel: String,
@@ -103,6 +109,17 @@ pub enum Action {
     /// Cancel one of our open friend invites.
     CancelInvite {
         invite_id: String,
+    },
+
+    // ─── Group DMs (plan E2.6; the host reviews each) ──────────
+    AcceptGroupInvite {
+        group_id: String,
+    },
+    DeclineGroupInvite {
+        group_id: String,
+    },
+    LeaveGroup {
+        group_id: String,
     },
 
     // ─── Clipboard ───────────────────────────────────────────────
@@ -211,6 +228,15 @@ pub enum CommandResult {
     },
     DmInboxLoaded {
         threads: Vec<rekindle_types::display::DmThreadDisplay>,
+    },
+    /// Our groups and unanswered invites (`GroupDmList`, plan E2.6).
+    GroupDmsLoaded {
+        groups: Vec<rekindle_types::dto::group_dm::GroupDmView>,
+    },
+    /// A group's stored messages (`GroupDmMessages`).
+    GroupMessagesLoaded {
+        group_id: String,
+        messages: Vec<rekindle_types::dto::dm::DmMessage>,
     },
     StatusLoaded {
         snapshot: rekindle_types::display::StatusSnapshot,

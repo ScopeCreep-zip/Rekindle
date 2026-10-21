@@ -318,9 +318,10 @@ impl Navigator {
                 }
                 _ => KeyResolution::Consumed,
             }),
-            // Dashboard quick shortcuts: d=DMs, f=Friends
+            // Dashboard quick shortcuts: d=DMs, f=Friends, g=Groups
             KeyCode::Char('d') => Some(KeyResolution::Action(Action::ShowDmInbox)),
             KeyCode::Char('f') => Some(KeyResolution::Action(Action::ShowFriendList)),
+            KeyCode::Char('g') => Some(KeyResolution::Action(Action::ShowGroupDms)),
             // All other keys fall through to global keymap
             _ => None,
         }

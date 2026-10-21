@@ -66,7 +66,30 @@ export type ChannelMessageEvent =
 
 export type TypingContext =
   | { channel: { community: string; channel: string } }
-  | { dm: { peerKey: string } };
+  | { dm: { peerKey: string } }
+  | { groupDm: { groupId: string } };
+
+/** A group member as an event names them (our nickname or fingerprint,
+ *  never a name their payload carries). */
+export interface GroupDmMember {
+  publicKey: string;
+  displayName: string;
+}
+
+/** `subscription_events::GroupDmEvent` (plan E2.6). */
+export type GroupDmEvent =
+  | {
+      invited: {
+        groupId: string;
+        name: string;
+        inviter: GroupDmMember;
+        members: GroupDmMember[];
+      };
+    }
+  | { joined: { groupId: string; member: GroupDmMember } }
+  | { left: { groupId: string; member: GroupDmMember } }
+  | { keyRotated: { groupId: string; member: GroupDmMember; epoch: number } }
+  | { sendStatus: { groupId: string; clientId: string; state: SendState } };
 
 export type TypingEvent =
   | { started: { context: TypingContext; who: string } }
@@ -174,6 +197,7 @@ export type ChatSubscriptionEvent =
   | { typing: TypingEvent }
   | { friend: FriendEvent }
   | { call: CallEvent }
+  | { groupDm: GroupDmEvent }
   | { unreadChanged: UnreadChanged };
 
 /** The desktop's remaining `{ type, data }` event. */
