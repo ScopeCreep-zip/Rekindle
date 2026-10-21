@@ -27,7 +27,6 @@ fn published(sim: &Netsim, prekeys: &str, profile: &str, friends: &str) -> bool 
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E2.B finding F1: serial own-record writes"]
 async fn a_fresh_identity_publishes_within_two_set_latencies() {
     let (sim, nodes) = harness::start(1, 41).await;
     let reader = sim.add_node();

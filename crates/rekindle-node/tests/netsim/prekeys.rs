@@ -34,6 +34,14 @@ fn slots(sim: &Netsim, record: &str) -> Vec<Option<Vec<u8>>> {
         .collect()
 }
 
+/// Whether the network holds `record`'s head and every slot: the unlock
+/// writes the first-contact part before the profile and the later slots
+/// after it, in bounded batches (plan E2.B), so a new identity's record
+/// fills over a few set latencies.
+fn published_in_full(sim: &Netsim, record: &str) -> bool {
+    sim.network_value(record, HEAD).is_some() && slots(sim, record).iter().all(Option::is_some)
+}
+
 fn mismatch(event: &FriendEvent) -> Option<&str> {
     match event {
         FriendEvent::IdentityPinMismatch { peer_key, .. } => Some(peer_key),
@@ -54,13 +62,16 @@ async fn holds_review(sim: &Netsim, events: &crate::harness::Events) -> bool {
 /// record — 100 fresh slots, the record the profile's device list names,
 /// and this device's id.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E2.B finding F1: the 90 later slots publish one after another (operations/prekeys/own.rs:54), ~20 min under latency"]
 async fn the_prekey_status_reads_the_record_the_profile_names() {
     let (sim, mut nodes) = start(1, 35).await;
     nodes[0].unlock_new_identity("Ann").await;
     assert!(
         eventually(&sim, LIMIT, || async {
-            nodes[0].prekey_status().await.fresh_slots == 100
+            let status = nodes[0].prekey_status().await;
+            status.fresh_slots == 100
+                && status
+                    .record_key
+                    .is_some_and(|record| published_in_full(&sim, &record))
         })
         .await
     );
@@ -212,6 +223,7 @@ async fn a_refill_lost_in_a_crash_is_published_at_the_next_unlock() {
     let (rae, ann) = (key(&nodes[0]), key(&nodes[1]));
     request(&sim, &nodes[0], &nodes[1]).await;
     let record = record_key(&nodes[0]).await;
+    assert!(eventually(&sim, LIMIT, || async { published_in_full(&sim, &record) }).await);
     let before = slots(&sim, &record);
 
     let rae_events = nodes[0].events().await;
