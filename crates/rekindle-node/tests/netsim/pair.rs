@@ -110,7 +110,8 @@ pub async fn talk(sim: &Netsim, a: &SimNode, b: &SimNode, tag: &str) {
 /// retire mark yet: the writer's chain records among them (a record's
 /// `RETIRE_THROUGH` subkey is empty until its first retire). A change comes
 /// from the replica that held the watch (Veilid's ValueChanged is the
-/// replica's RPC), not from the writer's node.
+/// replica's RPC), not from the writer's node, or from the reader's own
+/// catch-up inspection (`ChangeInspect`, plan E2.B S6).
 pub fn unretired(sim: &rekindle_netsim::Netsim, reader: usize) -> Vec<String> {
     use rekindle_types::dht_layout::dm_participant;
     let prefix = format!("{reader}<-");
@@ -118,9 +119,10 @@ pub fn unretired(sim: &rekindle_netsim::Netsim, reader: usize) -> Vec<String> {
         .trace()
         .of(reader)
         .filter_map(|e| {
-            let (_, key) = e
-                .strip_prefix(prefix.as_str())?
-                .split_once(" ValueChange ")?;
+            let rest = e.strip_prefix(prefix.as_str())?;
+            let (_, key) = rest
+                .split_once(" ValueChange ")
+                .or_else(|| rest.split_once(" ChangeInspect "))?;
             Some(key.to_string())
         })
         .filter(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_none())

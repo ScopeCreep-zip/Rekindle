@@ -166,7 +166,6 @@ async fn a_lost_stream_record_is_resent_until_acknowledged() {
 /// but never diffed (his DHT was off); 31 days on, his diff stores a
 /// `HistoryGap` marker in his history.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E2.B finding F8: with the watch catch-up modeled (S6) the full suite run fails dm_hint_loss.rs:200 (Ida's chain is not retired within LIMIT after the 31-day skew send); passes alone 2 of 2 and on cf9927f7 in the suite: suspect the dm outbox append that retires the stretch (dm::outbox::attempt/chain retire) racing the catch-up's change on Jon's side"]
 async fn a_retired_stretch_is_a_stored_history_gap() {
     let (sim, mut nodes) = start(2, 73).await;
     for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
@@ -174,6 +173,17 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
     }
     befriend(&sim, &nodes[0], &nodes[1]).await;
     talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    // Finding F8: the test finds Ida's chain by a watched change of it that
+    // reached Jon. "hello" can land before his watch on the chain is held
+    // (it is placed when her participant record reaches him), and then his
+    // hint diff reads it first and no change of it reaches him; once the
+    // watch is held, the next entry's change does (at the replica's next
+    // tick, so Jon stays online until it has).
+    talk(&sim, &nodes[0], &nodes[1], "watched").await;
+    assert!(
+        eventually(&sim, LIMIT, || async { !unretired(&sim, 1).is_empty() }).await,
+        "a change of Ida's chain reached Jon"
+    );
     let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
     sim.fault(Fault::DhtOffline {
         node: 1,
