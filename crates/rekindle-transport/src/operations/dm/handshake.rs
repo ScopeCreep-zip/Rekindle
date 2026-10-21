@@ -115,7 +115,8 @@ pub const INBOX_TAKEN: &str = "the invite was already used";
 
 /// One write of an invite's redemption: stored (or already ours) settles
 /// it `sent`; a miss is attempted again; an inbox holding another value
-/// fails it visibly ([`INBOX_TAKEN`]).
+/// fails it visibly ([`INBOX_TAKEN`]), as does a write the schema or
+/// writer refuses ([`refuses`]); any other error is attempted again.
 async fn attempt_inbox(
     host: &dyn FriendHost,
     record_key: &str,
@@ -135,8 +136,33 @@ async fn attempt_inbox(
         Ok(SetOutcome::Superseded(value)) if value.data == frame => Attempt::Sent,
         Ok(SetOutcome::Superseded(_)) => Attempt::Wedged(INBOX_TAKEN.to_owned()),
         Ok(SetOutcome::BelowConsensus | SetOutcome::Offline) => Attempt::Deferred,
-        Err(e) => Attempt::Wedged(format!("{INBOX_TAKEN}: {e}")),
+        Err(e) if refuses(&e) => Attempt::Wedged(format!("inbox write refused: {e}")),
+        Err(e) => {
+            tracing::debug!(error = %e, "inbox write missed — attempted again");
+            Attempt::Deferred
+        }
     }
+}
+
+/// Whether an inbox write's error refuses it for good: the schema or the
+/// writer (Veilid's "wrong writer" is an `InvalidArgument`
+/// (`storage_manager/schema.rs` `check_subkey_value_data`), which the pool
+/// reports as `Dht` because it is not transient (`dht/pool/mod.rs`
+/// `transient`); the netsim's `admits` refusal is `NotWritable`), or a
+/// value that can never be written. The network's misses, a closed pool
+/// and the node not being ready are attempted again.
+fn refuses(e: &rekindle_records::port::PortError) -> bool {
+    use rekindle_records::port::PortError;
+    matches!(
+        e,
+        PortError::Dht(_)
+            | PortError::NotWritable(_)
+            | PortError::SubkeyTooLarge { .. }
+            | PortError::MessageTooLarge { .. }
+            | PortError::KeyText(_)
+            | PortError::Codec(_)
+            | PortError::Crypto(_)
+    )
 }
 
 async fn commit(
@@ -198,6 +224,19 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_inbox_write_fails_only_when_refused() {
+        use rekindle_records::port::PortError;
+        assert!(refuses(&PortError::NotWritable("rk".into())));
+        assert!(refuses(&PortError::Dht(
+            "InvalidArgument: wrong writer".into()
+        )));
+        assert!(!refuses(&PortError::Unreachable("TryAgain".into())));
+        assert!(!refuses(&PortError::Closed));
+        assert!(!refuses(&PortError::Node("not attached".into())));
+        assert!(!refuses(&PortError::LeaseNotHeld(3)));
+    }
 
     #[test]
     fn the_unfriended_row_names_its_peer() {
