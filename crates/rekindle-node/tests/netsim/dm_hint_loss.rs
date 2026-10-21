@@ -258,17 +258,22 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
         history.iter().any(|m| m.history_gap_through.is_some())
     };
     // No send from Ida: only her maintenance tick (~3 min) can retire.
-    // Then Jon's next unlock catches up (`catch_up_all`) and diffs.
-    tokio::time::sleep(Duration::from_secs(6 * 60)).await;
-    nodes[1].ok(IpcRequest::Lock).await;
-    nodes[1]
-        .ok(IpcRequest::Unlock {
-            identity: jon.clone(),
-            passphrase: PASSPHRASE.into(),
-        })
-        .await;
-    assert!(
-        eventually(&sim, LIMIT * 4, gap).await,
-        "Jon's history holds the gap marker"
-    );
+    // Each round, Jon's next unlock catches up (`catch_up_all`) and diffs;
+    // the tick's DHT write may land after a round's unlock, so a few go.
+    let mut found = false;
+    for _ in 0..5 {
+        tokio::time::sleep(Duration::from_secs(3 * 60)).await;
+        nodes[1].ok(IpcRequest::Lock).await;
+        nodes[1]
+            .ok(IpcRequest::Unlock {
+                identity: jon.clone(),
+                passphrase: PASSPHRASE.into(),
+            })
+            .await;
+        if eventually(&sim, LIMIT, &gap).await {
+            found = true;
+            break;
+        }
+    }
+    assert!(found, "Jon's history holds the gap marker");
 }
