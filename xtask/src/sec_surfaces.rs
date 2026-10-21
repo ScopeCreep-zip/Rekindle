@@ -91,6 +91,15 @@ pub(crate) const SURFACES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "src/components/buddy-list/FriendCodeCard.tsx",
+        &[
+            "sec-friend-code",
+            "sec-friend-code-url",
+            "sec-friend-code-qr",
+            "sec-btn-secondary",
+        ],
+    ),
+    (
         "src/components/profile/VerifiedBadge.tsx",
         &[
             "sec-verified-badge",

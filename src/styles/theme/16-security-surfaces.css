@@ -200,8 +200,11 @@
 
   /* The safety number (plan E2.3): the digits, their QR code and the
    * verified state on a fixed light card, the way Signal shows them, so a
-   * skin can neither hide nor restyle what two people compare. */
-  .sec-safety-number {
+   * skin can neither hide nor restyle what two people compare. Our friend
+   * code (plan E2.5, D17) sits on the same card, so a skin cannot swap what
+   * a friend scans or copies. */
+  .sec-safety-number,
+  .sec-friend-code {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -231,21 +234,39 @@
     letter-spacing: 0.04em;
   }
 
-  .sec-safety-number-qr {
+  .sec-safety-number-qr,
+  .sec-friend-code-qr {
     display: block;
     width: 160px;
     height: 160px;
   }
 
-  .sec-safety-number-qr-ground {
+  .sec-safety-number-qr-ground,
+  .sec-friend-code-qr-ground {
     fill: var(--sec-qr-backing);
   }
 
-  .sec-safety-number-qr-modules {
+  .sec-safety-number-qr-modules,
+  .sec-friend-code-qr-modules {
     fill: var(--sec-qr-ink);
   }
 
-  .sec-safety-number-hint {
+  .sec-friend-code-url {
+    max-width: 260px;
+    font-family: var(--sec-mono-font-family);
+    font-size: 11px;
+    overflow-wrap: anywhere;
+    text-align: center;
+    user-select: all;
+  }
+
+  .sec-friend-code-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .sec-safety-number-hint,
+  .sec-friend-code-hint {
     margin: 0;
     max-width: 260px;
     text-align: center;
@@ -322,7 +343,8 @@
 
     .sec-pairing-qr,
     .sec-pairing-qr svg,
-    .sec-safety-number-qr {
+    .sec-safety-number-qr,
+    .sec-friend-code-qr {
       forced-color-adjust: none;
     }
 

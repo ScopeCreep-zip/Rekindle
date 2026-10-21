@@ -10,6 +10,7 @@ import type {
   OutgoingInvite,
   PendingRequest,
   SafetyNumberView,
+  FriendCodeView,
 } from "./dto";
 
 export const accountCommands = {
@@ -46,6 +47,10 @@ export const accountCommands = {
 
   addFriendFromCode: (code: string, message: string) =>
     hostInvoke<unknown>("add_friend_from_code", { code, message }),
+  getFriendCode: () => hostInvoke<FriendCodeView>("get_friend_code"),
+  /** Reviewed by the Host (Consequential): codes already shared stop
+   *  working; resolves with the new code. */
+  rotateFriendToken: () => hostInvoke<FriendCodeView>("rotate_friend_token"),
   removeFriend: (publicKey: string) => hostInvoke<unknown>("remove_friend", { publicKey }),
   acceptRequest: (publicKey: string) => hostInvoke<unknown>("accept_request", { publicKey }),
   rejectRequest: (publicKey: string) => hostInvoke<unknown>("reject_request", { publicKey }),

@@ -5,6 +5,7 @@ import { authState } from "../stores/auth.store";
 import type { OutgoingInvite } from "../stores/friends.store";
 import { transformFriendMap } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
+import { isCancelled, type FriendCodeView } from "../ipc/commands/dto";
 
 export function handleDoubleClickFriend(publicKey: string): void {
   commands.openChatWindow(publicKey);
@@ -45,6 +46,28 @@ export async function handleAddFriendFromCode(
     await commands.addFriendFromCode(code, message);
     return null;
   } catch (e) {
+    return errorMessage(e);
+  }
+}
+
+/// Our friend code and its QR, or the error to show in its place.
+export async function handleGetFriendCode(): Promise<FriendCodeView | string> {
+  try {
+    return await commands.getFriendCode();
+  } catch (e) {
+    return errorMessage(e);
+  }
+}
+
+/// Rotate our friend-request token through the Host's review
+/// (Consequential, plan E2.5 D17): codes already shared stop working and
+/// friends are untouched. Resolves with the new code, null when the user
+/// cancelled the review, or the error to show.
+export async function handleRotateFriendToken(): Promise<FriendCodeView | string | null> {
+  try {
+    return await commands.rotateFriendToken();
+  } catch (e) {
+    if (isCancelled(e)) return null;
     return errorMessage(e);
   }
 }

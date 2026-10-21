@@ -3,21 +3,8 @@ import type { SafetyNumberView } from "../../ipc/commands/dto";
 import { handleSetVerified } from "../../actions/verification.actions";
 import { addToast } from "../../stores/toast.store";
 import { groupDigits } from "../../utils/safety_number";
+import { qrPath, qrSize } from "../../utils/qr";
 import VerifiedBadge from "./VerifiedBadge";
-
-/** Modules of light margin a scanner needs around a QR code. */
-const QUIET_ZONE = 4;
-
-/** The dark modules of `rows` as one SVG path, offset by the quiet zone. */
-function qrPath(rows: string[]): string {
-  let d = "";
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      if (row[x] === "1") d += `M${x + QUIET_ZONE} ${y + QUIET_ZONE}h1v1h-1z`;
-    }
-  });
-  return d;
-}
 
 /**
  * Our safety number with a peer (plan E2.3): the 60 digits in twelve groups
@@ -38,7 +25,7 @@ const SafetyNumberPanel: Component<{
 }> = (props) => {
   const [busy, setBusy] = createSignal(false);
   const groups = createMemo(() => groupDigits(props.view?.digits ?? ""));
-  const size = createMemo(() => (props.view?.qrRows.length ?? 0) + 2 * QUIET_ZONE);
+  const size = createMemo(() => qrSize(props.view?.qrRows ?? []));
 
   async function setVerified(verified: boolean): Promise<void> {
     setBusy(true);

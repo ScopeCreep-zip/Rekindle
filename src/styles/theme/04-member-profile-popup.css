@@ -462,4 +462,11 @@
     font-size: 11px;
     cursor: pointer;
   }
+
+  /* The friend-code tab's line while our code is read or failed. */
+  .add-friend-code-status {
+    padding: 8px 0;
+    font-size: 11px;
+    text-align: center;
+  }
 }

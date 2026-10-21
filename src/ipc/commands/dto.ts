@@ -85,6 +85,19 @@ export interface SafetyNumberView {
   changed: boolean;
 }
 
+/** Our friend code and its QR (`dto::friends::FriendCodeView`, plan E2.5
+ *  D17): what `get_friend_code` and `rotate_friend_token` answer. */
+export interface FriendCodeView {
+  /** `rekindle://add/<public key>/<profile key>/<token>`. */
+  url: string;
+  publicKey: string;
+  profileKey: string;
+  token: string;
+  /** The code as a QR code: one string per row, `1` a dark module,
+   *  without the quiet zone. */
+  qrRows: string[];
+}
+
 /** A friend invite we made that is still open. */
 export interface OutgoingInvite {
   inviteId: string;
