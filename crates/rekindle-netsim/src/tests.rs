@@ -480,13 +480,13 @@ async fn only_the_one_time_writer_writes_a_request_inbox() {
     inviter
         .set(
             lease,
-            request_inbox::OWNER,
+            request_inbox::OWNER_SUBKEY,
             request_inbox::OPENED.to_vec(),
             None,
         )
         .await
         .unwrap()
-        .require_stored(request_inbox::OWNER)
+        .require_stored(request_inbox::OWNER_SUBKEY)
         .unwrap();
     assert!(matches!(
         redeemer

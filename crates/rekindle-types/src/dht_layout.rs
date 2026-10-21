@@ -179,8 +179,8 @@ pub mod dm_participant {
 /// record on the network, so the requester's write finds its descriptor.
 pub mod request_inbox {
     /// The inviter's owner subkey, written once with [`OPENED`].
-    pub const OWNER: u32 = 0;
-    /// What the inviter writes to [`OWNER`] at creation: the layout's
+    pub const OWNER_SUBKEY: u32 = 0;
+    /// What the inviter writes to [`OWNER_SUBKEY`] at creation: the layout's
     /// version.
     pub const OPENED: &[u8] = &[1];
     /// Owner subkeys in the schema.
@@ -208,7 +208,7 @@ mod tests {
     /// per-subkey cap Veilid derives for two subkeys.
     #[test]
     fn request_inbox_layout_is_pinned() {
-        assert_eq!(request_inbox::OWNER, 0);
+        assert_eq!(request_inbox::OWNER_SUBKEY, 0);
         assert_eq!(
             request_inbox::REQUEST,
             u32::from(request_inbox::OWNER_SUBKEY_COUNT)

@@ -55,12 +55,12 @@ pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, Fri
     let opened = pool
         .set(
             lease,
-            request_inbox::OWNER,
+            request_inbox::OWNER_SUBKEY,
             request_inbox::OPENED.to_vec(),
             None,
         )
         .await
-        .and_then(|outcome| outcome.require_stored(request_inbox::OWNER));
+        .and_then(|outcome| outcome.require_stored(request_inbox::OWNER_SUBKEY));
     if let Err(e) = opened {
         pool.release(lease).await;
         return Err(FriendError::Failed(format!(
