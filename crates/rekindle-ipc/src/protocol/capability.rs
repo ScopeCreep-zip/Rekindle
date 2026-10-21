@@ -156,7 +156,8 @@ impl IpcRequest {
             Self::ChannelSend { .. } => Some(C::ChatWrite),
             Self::DmInbox { .. } | Self::DmHistory { .. } => Some(C::ImHistory),
             Self::DmSend { .. }
-            | Self::DmResend { .. }
+            | Self::OutboxRetry { .. }
+            | Self::OutboxDiscard { .. }
             | Self::DmTyping { .. }
             | Self::DmMarkRead { .. } => Some(C::ImWrite),
             Self::PresenceSet { .. }

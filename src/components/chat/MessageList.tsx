@@ -22,6 +22,7 @@ interface MessageListProps {
   myPseudonymKey?: string | null;
   threads?: Thread[];
   onRetry?: (messageId: number) => void;
+  onDiscard?: (messageId: number) => void;
   onReply?: (message: Message) => void;
   onReaction?: (messageId: string, emoji: string) => void;
   onRemoveReaction?: (messageId: string, emoji: string) => void;
@@ -181,6 +182,7 @@ const MessageList: Component<MessageListProps> = (props) => {
               replyToMessage={msg.replyToId ? messageMap().get(msg.replyToId) ?? null : null}
               threadInfo={thread() ? { name: thread()!.name, messageCount: thread()!.messageCount, threadId: thread()!.id } : undefined}
               onRetry={props.onRetry}
+              onDiscard={props.onDiscard}
               onReply={selectionActive() ? undefined : props.onReply}
               onReaction={!selectionActive() && msg.serverMessageId ? (emoji) => props.onReaction?.(msg.serverMessageId!, emoji) : undefined}
               onRemoveReaction={!selectionActive() && msg.serverMessageId ? (emoji) => props.onRemoveReaction?.(msg.serverMessageId!, emoji) : undefined}

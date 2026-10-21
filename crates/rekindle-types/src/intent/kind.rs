@@ -13,6 +13,8 @@ pub enum IntentKind {
     // Routine: Messaging (send)
     SendChannelMessage,
     SendDmMessage,
+    /// Retry an unsettled or failed send under its client id (plan E2.5).
+    RetrySend,
     SendMessage,
     SendThreadMessage,
     SendVoiceMessage,
@@ -150,6 +152,8 @@ pub enum IntentKind {
     AdminDeleteChannelMessage,
     DeleteChannelMessage,
     DeleteEmoji,
+    /// Discard a failed send: it settles failed and leaves its stream.
+    DiscardSend,
     DeleteEvent,
     // Consequential: Deleting containers
     DeleteCategory,
@@ -244,6 +248,7 @@ impl IntentKind {
         match self {
             Self::SendChannelMessage
             | Self::SendDmMessage
+            | Self::RetrySend
             | Self::SendMessage
             | Self::SendThreadMessage
             | Self::SendVoiceMessage
@@ -370,6 +375,7 @@ impl IntentKind {
             | Self::AdminDeleteChannelMessage
             | Self::DeleteChannelMessage
             | Self::DeleteEmoji
+            | Self::DiscardSend
             | Self::DeleteEvent
             | Self::DeleteCategory
             | Self::DeleteChannel

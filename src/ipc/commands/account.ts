@@ -37,8 +37,8 @@ export const accountCommands = {
     hostInvoke<DmMessage>("send_message", { to, body, replyTo }),
   /** Sends our failed message again by its client id; the Host re-frames
    *  the stored row, stores no new one, and publishes its new state. */
-  resendMessage: (messageId: string) =>
-    hostInvoke<DmMessage>("resend_message", { messageId }),
+  outboxRetry: (clientId: string) => hostInvoke<null>("outbox_retry", { clientId }),
+  outboxDiscard: (clientId: string) => hostInvoke<null>("outbox_discard", { clientId }),
   sendTyping: (peerId: string, typing: boolean) =>
     hostInvoke<unknown>("send_typing", { peerId, typing }),
   getMessageHistory: (peerId: string, limit: number, before?: number) =>

@@ -1,4 +1,5 @@
-//! DM commands: send, inbox, watch, history, read marks.
+//! DM commands: send, inbox, watch, history, read marks, and the
+//! outbox's retry and discard of a failed send.
 
 use rekindle_ipc::protocol::IpcRequest;
 
@@ -61,6 +62,18 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             )
             .await?;
             format::print_structured(&value, mode)
+        }
+        DmCmd::Retry { client_id } => {
+            let request = IpcRequest::OutboxRetry {
+                client_id: client_id.clone(),
+            };
+            format::print_structured(&helpers::send(client, request).await?, mode)
+        }
+        DmCmd::Discard { client_id } => {
+            let request = IpcRequest::OutboxDiscard {
+                client_id: client_id.clone(),
+            };
+            format::print_structured(&helpers::send(client, request).await?, mode)
         }
     }
 }

@@ -242,9 +242,13 @@ impl std::fmt::Debug for IpcRequest {
                 .field("peer_key", peer_key)
                 .field("rendered_through", rendered_through)
                 .finish(),
-            Self::DmResend { message_id } => f
-                .debug_struct("DmResend")
-                .field("message_id", message_id)
+            Self::OutboxRetry { client_id } => f
+                .debug_struct("OutboxRetry")
+                .field("client_id", client_id)
+                .finish(),
+            Self::OutboxDiscard { client_id } => f
+                .debug_struct("OutboxDiscard")
+                .field("client_id", client_id)
                 .finish(),
             Self::Subscribe { filters, from } => f
                 .debug_struct("Subscribe")

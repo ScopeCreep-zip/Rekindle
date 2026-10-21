@@ -30,7 +30,8 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::intent::undo,
         // chat
         commands::chat::send_message,
-        commands::chat::resend_message,
+        commands::chat::outbox_retry,
+        commands::chat::outbox_discard,
         commands::chat::send_typing,
         commands::chat::get_message_history,
         commands::chat::mark_read,

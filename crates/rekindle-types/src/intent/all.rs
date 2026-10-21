@@ -7,6 +7,7 @@ impl IntentKind {
     pub const ALL: &[Self] = &[
         Self::SendChannelMessage,
         Self::SendDmMessage,
+        Self::RetrySend,
         Self::SendMessage,
         Self::SendThreadMessage,
         Self::SendVoiceMessage,
@@ -127,6 +128,7 @@ impl IntentKind {
         Self::AdminDeleteChannelMessage,
         Self::DeleteChannelMessage,
         Self::DeleteEmoji,
+        Self::DiscardSend,
         Self::DeleteEvent,
         Self::DeleteCategory,
         Self::DeleteChannel,

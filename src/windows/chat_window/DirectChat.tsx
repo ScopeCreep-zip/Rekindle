@@ -10,7 +10,7 @@ import { chatState, setChatState, type Message } from "../../stores/chat.store";
 import { authState } from "../../stores/auth.store";
 import { friendsState } from "../../stores/friends.store";
 import { callsState } from "../../stores/calls.store";
-import { handleLoadHistory, handleResetUnread, handleRetrySendMessage } from "../../actions/chat.actions";
+import { handleLoadHistory, handleResetUnread, handleRetrySendMessage, handleDiscardSendMessage } from "../../actions/chat.actions";
 import { handleStartDmCall, handleEndDmCall } from "../../actions/calls.actions";
 import { subscribeDmChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../../handlers/presence-events.handlers";
@@ -99,6 +99,10 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
 
   function handleRetry(messageId: number): void {
     handleRetrySendMessage(peerId, messageId);
+  }
+
+  function handleDiscard(messageId: number): void {
+    handleDiscardSendMessage(peerId, messageId);
   }
 
   const unlisteners: Promise<UnlistenFn>[] = [];
@@ -201,6 +205,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         ownName={ownName()}
         peerName={peerName()}
         onRetry={handleRetry}
+        onDiscard={handleDiscard}
       />
       {/* A connected call's controls (timer, mute, hangup, video) live in
        *  its own call window, which the backend opens on connect. */}

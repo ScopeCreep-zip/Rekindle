@@ -152,21 +152,27 @@ export function handleResetUnread(peerId: string): void {
   });
 }
 
-/// Retry our failed message: the Host re-sends the stored row by its
-/// client id (`DmResend`); nothing is re-sent as a new message.
+/// Retry our failed message: the Host queues the stored row again under
+/// its client id (`OutboxRetry`); its state arrives as `DmSendStatus`.
 export async function handleRetrySendMessage(peerId: string, messageId: number): Promise<void> {
-  const convo = chatState.conversations[peerId];
-  const message = convo?.messages.find((m) => m.id === messageId);
-  const clientId = message?.serverMessageId;
-  if (!message || message.status !== "failed" || !clientId) return;
-  const setStatus = (status: Message["status"]) =>
-    setChatState("conversations", peerId, "messages", (msgs) =>
-      msgs.map((m) => (m.id === messageId ? { ...m, status } : m)),
-    );
-  setStatus("sending");
-  try {
-    setStatus(transformDmMessage(await commands.resendMessage(clientId)).status);
-  } catch {
-    setStatus("failed");
-  }
+  const clientId = failedClientId(peerId, messageId);
+  if (!clientId) return;
+  await commands.outboxRetry(clientId).catch((e) => {
+    console.error("Retry failed:", e);
+  });
+}
+
+/// Discard our failed message (`OutboxDiscard`, reviewed by the Host's
+/// intent gate): it stays failed and the messages behind it go on.
+export async function handleDiscardSendMessage(peerId: string, messageId: number): Promise<void> {
+  const clientId = failedClientId(peerId, messageId);
+  if (!clientId) return;
+  await commands.outboxDiscard(clientId).catch((e) => {
+    console.error("Discard failed:", e);
+  });
+}
+
+function failedClientId(peerId: string, messageId: number): string | undefined {
+  const message = chatState.conversations[peerId]?.messages.find((m) => m.id === messageId);
+  return message?.status === "failed" ? message.serverMessageId : undefined;
 }

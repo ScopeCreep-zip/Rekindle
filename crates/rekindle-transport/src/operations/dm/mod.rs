@@ -14,7 +14,8 @@ mod send;
 mod typing;
 
 pub use chat::{
-    client_id_text, history, inbox, mark_read, parse_client_id, resend_dm, resend_peer, send_dm,
+    client_id_text, discard_send, history, inbox, mark_read, parse_client_id, retry_peer,
+    retry_send, send_dm,
 };
 pub(crate) use chat::{count_unread, NewDmFields};
 pub use frame::wire;

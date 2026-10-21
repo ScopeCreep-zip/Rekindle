@@ -164,7 +164,10 @@ async fn route(
         | IpcRequest::DmInbox { .. }
         | IpcRequest::DmHistory { .. }
         | IpcRequest::DmMarkRead { .. }
-        | IpcRequest::DmResend { .. }) => friends::route(ctx, state, request, acknowledged).await,
+        | IpcRequest::OutboxRetry { .. }
+        | IpcRequest::OutboxDiscard { .. }) => {
+            friends::route(ctx, state, request, acknowledged).await
+        }
 
         // ── Governance (roles, moderation, invites) ──────────────
         IpcRequest::RoleList { community } => governance::handle_role_list(ctx, state, &community),

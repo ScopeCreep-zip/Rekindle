@@ -325,8 +325,8 @@ async fn a_send_commits_queued_and_a_resend_stores_none() {
     assert_eq!(rows[0].send_state, SendState::Queued);
     let message_id = rows[0].message_id.clone().unwrap();
 
-    let resend = IpcRequest::DmResend {
-        message_id: message_id.clone(),
+    let resend = IpcRequest::OutboxRetry {
+        client_id: message_id.clone(),
     };
     let answer = settle(&host, host.call(bus(1), resend).await).await;
     assert!(code(&answer).is_some(), "{answer:?}");
@@ -335,8 +335,8 @@ async fn a_send_commits_queued_and_a_resend_stores_none() {
     assert_eq!(after[0].message_id.as_deref(), Some(message_id.as_str()));
     assert_eq!(after[0].send_state, SendState::Queued);
 
-    let unknown = IpcRequest::DmResend {
-        message_id: uuid::Uuid::nil().to_string(),
+    let unknown = IpcRequest::OutboxRetry {
+        client_id: uuid::Uuid::nil().to_string(),
     };
     let answer = settle(&host, host.call(bus(1), unknown).await).await;
     assert!(code(&answer).is_some(), "{answer:?}");

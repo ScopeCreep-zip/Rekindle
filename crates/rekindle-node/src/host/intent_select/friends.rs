@@ -190,12 +190,13 @@ pub(super) async fn selection(
             s.notifies = Notifies::Subject;
             s.escalations.extend(key_change(ctx, peer_key).await?);
         }
-        IpcRequest::DmResend { message_id } => {
-            // The peer of the stored row; an unknown id fails on its own.
+        IpcRequest::OutboxRetry { client_id } => {
+            // A direct message's peer: the retry is reviewed as its send
+            // was, escalated on their unacknowledged key change (R-4).
             let peer = if ctx.require_owner().is_ok() {
-                dm::resend_peer(&HostFriends::of(ctx), message_id)
+                dm::retry_peer(&HostFriends::of(ctx), client_id)
                     .await
-                    .map_err(|e| unavailable("the message to resend", e))?
+                    .map_err(|e| unavailable("the send to retry", e))?
             } else {
                 None
             };
@@ -204,6 +205,9 @@ pub(super) async fn selection(
                 s.notifies = Notifies::Subject;
                 s.escalations.extend(key_change(ctx, &peer).await?);
             }
+        }
+        IpcRequest::OutboxDiscard { .. } => {
+            s.reversibility = Reversibility::Never;
         }
         _ => {}
     }

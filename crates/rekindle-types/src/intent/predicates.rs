@@ -24,6 +24,7 @@ impl IntentKind {
             | Self::RevokeAgent => true,
             Self::SendChannelMessage
             | Self::SendDmMessage
+            | Self::RetrySend
             | Self::SendMessage
             | Self::SendThreadMessage
             | Self::SendVoiceMessage
@@ -136,6 +137,7 @@ impl IntentKind {
             | Self::AdminDeleteChannelMessage
             | Self::DeleteChannelMessage
             | Self::DeleteEmoji
+            | Self::DiscardSend
             | Self::DeleteEvent
             | Self::DeleteCategory
             | Self::DeleteChannel
@@ -202,6 +204,7 @@ impl IntentKind {
             Self::CreateIdentity | Self::Login | Self::ImportIdentity => true,
             Self::SendChannelMessage
             | Self::SendDmMessage
+            | Self::RetrySend
             | Self::SendMessage
             | Self::SendThreadMessage
             | Self::SendVoiceMessage
@@ -322,6 +325,7 @@ impl IntentKind {
             | Self::AdminDeleteChannelMessage
             | Self::DeleteChannelMessage
             | Self::DeleteEmoji
+            | Self::DiscardSend
             | Self::DeleteEvent
             | Self::DeleteCategory
             | Self::DeleteChannel

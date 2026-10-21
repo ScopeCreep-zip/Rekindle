@@ -271,9 +271,12 @@ pub enum IpcRequest {
         peer_key: String,
         rendered_through: Option<String>,
     },
-    /// Send our failed message again, by its client id (a UUID); the
-    /// stored row goes out under the same id, and no new row is stored.
-    DmResend { message_id: String },
+    /// Retry an outbox row by its client id (plan E2.5): queued again
+    /// under the same id, and no new row is stored.
+    OutboxRetry { client_id: String },
+    /// Discard a failed outbox row: it settles failed and leaves its
+    /// stream.
+    OutboxDiscard { client_id: String },
 
     // ── Intents (plan D3.3, ADR 0019) ──────────────────────────────
     /// Commit a held action with the proof its review asked for.

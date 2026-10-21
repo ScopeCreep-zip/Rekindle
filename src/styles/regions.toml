@@ -265,6 +265,7 @@
 '.chat-call-btn-active' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }
 '.message-retry-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-retry-btn:hover' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-discard-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.settings-value' = { on = ["--color-xfire-bg-panel"] }
 '.settings-value-mono' = { on = ["--color-xfire-bg-panel"] }
 '.settings-copy-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }

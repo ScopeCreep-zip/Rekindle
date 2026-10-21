@@ -125,7 +125,8 @@ impl IpcRequest {
             Self::DmInbox { .. } => ("DmInbox", Query, Authenticated),
             Self::DmHistory { .. } => ("DmHistory", Query, Authenticated),
             Self::DmMarkRead { .. } => ("DmMarkRead", Write, Authenticated),
-            Self::DmResend { .. } => ("DmResend", Write, Authenticated),
+            Self::OutboxRetry { .. } => ("OutboxRetry", Write, Authenticated),
+            Self::OutboxDiscard { .. } => ("OutboxDiscard", Write, Authenticated),
 
             Self::Undo { .. } => ("Undo", Write, Authenticated),
             Self::Subscribe { .. } => ("Subscribe", Query, Authenticated),

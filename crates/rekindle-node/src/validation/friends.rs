@@ -27,6 +27,28 @@ fn client_id(id: &str) -> Checked {
     }
 }
 
+/// The longest outbox client id (`unfriended:` and a 64-hex key).
+const MAX_SEND_CLIENT_ID: usize = 96;
+
+/// An outbox row's client id (plan E2.5): a direct message's UUID, or a
+/// handshake row's `<kind>:<hex>` / `unfriended:<key>`, at most
+/// [`MAX_SEND_CLIENT_ID`] bytes of `[A-Za-z0-9:_-]`.
+fn send_client_id(id: &str) -> Checked {
+    let shaped = !id.is_empty()
+        && id.len() <= MAX_SEND_CLIENT_ID
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b':' | b'_' | b'-'));
+    if shaped {
+        Ok(())
+    } else {
+        Err(IpcResponse::error(
+            400,
+            "invalid client id: not an outbox client id",
+        ))
+    }
+}
+
 /// Check a friend, DM or session-reset request.
 pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
@@ -89,7 +111,9 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             peer_key,
             rendered_through: Some(id),
         } => public_key(peer_key, "peer key").and_then(|()| client_id(id)),
-        IpcRequest::DmResend { message_id } => client_id(message_id),
+        IpcRequest::OutboxRetry { client_id } | IpcRequest::OutboxDiscard { client_id } => {
+            send_client_id(client_id)
+        }
         IpcRequest::DmInbox { limit } => page(*limit),
         IpcRequest::DmHistory {
             peer_key,

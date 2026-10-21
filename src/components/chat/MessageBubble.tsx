@@ -13,7 +13,7 @@ import { FLAG_VOICE_MESSAGE } from "../../stores/chat.store";
 import { formatTimestamp } from "../../utils/formatting";
 import { linkPreviewKey, linkPreviews } from "../../stores/link_preview.store";
 import { commands } from "../../ipc/commands";
-import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX, ICON_FORWARD } from "../../icons";
+import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX, ICON_FORWARD, ICON_CHECK_ALL, ICON_EYE} from "../../icons";
 
 interface MessageBubbleProps {
   communityId?: string;
@@ -23,6 +23,7 @@ interface MessageBubbleProps {
   replyToMessage?: Message | null;
   threadInfo?: { name: string; messageCount: number; threadId: string };
   onRetry?: (messageId: number) => void;
+  onDiscard?: (messageId: number) => void;
   onReply?: (message: Message) => void;
   onReaction?: (emoji: string) => void;
   onRemoveReaction?: (emoji: string) => void;
@@ -67,6 +68,8 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     switch (props.message.status) {
       case "sending": return ICON_DOTS;
       case "sent": return ICON_CHECK;
+      case "delivered": return ICON_CHECK_ALL;
+      case "read": return ICON_EYE;
       case "queued": return ICON_TIMEOUT;
       case "failed": return ICON_CLOSE_CIRCLE;
       default: return null;
@@ -81,6 +84,12 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
   function handleRetryClick(): void {
     if (props.onRetry && props.message.status === "failed") {
       props.onRetry(props.message.id);
+    }
+  }
+
+  function handleDiscardClick(): void {
+    if (props.onDiscard && props.message.status === "failed") {
+      props.onDiscard(props.message.id);
     }
   }
 
@@ -189,6 +198,16 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         >
           <span class="nf-icon" aria-hidden="true">{ICON_REFRESH}</span>
         </button>
+        <Show when={props.onDiscard}>
+          <button
+            class="message-discard-btn"
+            onClick={handleDiscardClick}
+            title="Discard"
+            aria-label="Discard failed message"
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+          </button>
+        </Show>
       </Show>
 
       {/* Action toolbar (appears on hover) */}

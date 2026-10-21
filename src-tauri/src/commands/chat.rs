@@ -153,14 +153,24 @@ pub async fn send_message(
     .await
 }
 
-/// Send our failed message again by its client id (`IpcRequest::DmResend`);
-/// the stored row goes out under the same id, so no new row appears.
+/// Retry a send by its client id (`IpcRequest::OutboxRetry`, plan E2.5):
+/// the stored row goes out under the same id, so no new row appears; its
+/// state arrives as `DmSendStatus`.
 #[tauri::command]
-pub async fn resend_message(
-    message_id: String,
+pub async fn outbox_retry(
+    client_id: String,
     state: State<'_, SharedState>,
-) -> Result<Done<DmMessage>, CommandError> {
-    host_call::call(&state, IpcRequest::DmResend { message_id }).await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::OutboxRetry { client_id }).await
+}
+
+/// Discard a failed send by its client id (`IpcRequest::OutboxDiscard`).
+#[tauri::command]
+pub async fn outbox_discard(
+    client_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::OutboxDiscard { client_id }).await
 }
 
 /// Report the draft to a peer (`IpcRequest::DmTyping`): `typing` is whether

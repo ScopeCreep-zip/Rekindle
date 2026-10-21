@@ -158,7 +158,7 @@ pub async fn send_dm(
 ///
 /// # Errors
 /// The identity is locked or the read failed.
-pub async fn resend_peer(
+pub async fn retry_peer(
     host: &dyn FriendHost,
     message_id: &str,
 ) -> Result<Option<String>, FriendError> {
@@ -177,49 +177,48 @@ async fn own_dm(
     .await
 }
 
-/// Retry our failed message `message_id` (its client id): its outbox row
-/// is queued again under the **same** client id, so the peer keeps one
-/// copy, and no new row is stored. A resend whose review was held on the
-/// peer's verified key changing acknowledges the change (plan E2.3).
+/// The user's Retry of an outbox row by its client id (plan E2.5): it is
+/// queued again under the **same** client id, so the peer keeps one copy,
+/// and no new row is stored. Our direct message must have failed; a retry
+/// whose review was held on the peer's verified key changing acknowledges
+/// the change (plan E2.3, R-4).
 ///
 /// # Errors
-/// `NotFound` when we sent no message with that id, `Conflict` when it did
-/// not fail or has no outbox row, or the storage failed.
-pub async fn resend_dm(
+/// `Conflict` when our message with that id did not fail, `NotFound` when
+/// no outbox row has the id, or the storage failed.
+pub async fn retry_send(
     host: &dyn FriendHost,
-    message_id: &str,
+    client_id: &str,
     acknowledges_key_change: bool,
-) -> Result<DmMessage, FriendError> {
-    parse_client_id(message_id)?;
-    let row = own_dm(host, message_id)
-        .await?
-        .ok_or_else(|| FriendError::NotFound(format!("message {message_id}")))?
-        .row;
-    if row.send_state != SendState::Failed {
-        return Err(FriendError::Conflict(format!(
-            "message {message_id} did not fail"
-        )));
-    }
-    let owner = state::owner(host)?;
+) -> Result<(), FriendError> {
     let outbox = host.outbox()?;
-    if acknowledges_key_change {
-        acknowledge_key_change(host, &row.peer_key).await?;
+    if let Some(dm) = own_dm(host, client_id).await? {
+        if dm.row.send_state != SendState::Failed {
+            return Err(FriendError::Conflict(format!(
+                "message {client_id} did not fail"
+            )));
+        }
+        if acknowledges_key_change {
+            acknowledge_key_change(host, &dm.row.peer_key).await?;
+        }
     }
-    tracing::debug!(to = %row.peer_key, "retrying message");
-    if !outbox.retry(message_id).await? {
-        return Err(FriendError::Conflict(format!(
-            "message {message_id} has no outbox entry"
-        )));
+    if !outbox.retry(client_id).await? {
+        return Err(FriendError::NotFound(format!("send {client_id}")));
     }
-    Ok(DmMessage {
-        id: row.id,
-        message_id: Some(message_id.to_string()),
-        sender_id: owner,
-        body: row.body,
-        timestamp: row.timestamp,
-        is_own: true,
-        send_state: SendState::Queued,
-    })
+    tracing::debug!(%client_id, "send retried by the user");
+    Ok(())
+}
+
+/// The user's Discard of an outbox row by its client id: it settles
+/// `failed` and leaves its stream, so the rows behind it go on.
+///
+/// # Errors
+/// `NotFound` when no outbox row has the id, or the storage failed.
+pub async fn discard_send(host: &dyn FriendHost, client_id: &str) -> Result<(), FriendError> {
+    if !host.outbox()?.discard(client_id).await? {
+        return Err(FriendError::NotFound(format!("send {client_id}")));
+    }
+    Ok(())
 }
 
 /// The newest `limit` messages with `peer` before `before` (ms), oldest

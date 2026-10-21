@@ -162,9 +162,10 @@ pub(crate) async fn route(
             peer_key,
             rendered_through,
         } => done(dm::mark_read(&host, &peer_key, rendered_through.as_deref()).await),
-        IpcRequest::DmResend { message_id } => {
-            answer(dm::resend_dm(&host, &message_id, acknowledged.key_change).await)
+        IpcRequest::OutboxRetry { client_id } => {
+            done(dm::retry_send(&host, &client_id, acknowledged.key_change).await)
         }
+        IpcRequest::OutboxDiscard { client_id } => done(dm::discard_send(&host, &client_id).await),
         other => unreachable!("{} is not a friend or DM request", other.name()),
     }
 }

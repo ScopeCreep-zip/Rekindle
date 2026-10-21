@@ -252,6 +252,18 @@ pub enum DmCmd {
         #[arg(long, short = 'f')]
         friend: String,
     },
+
+    /// Retry a failed send by its client id (the outbox row keeps its id).
+    Retry {
+        /// The send's client id, as `dm history` or a send status shows it.
+        client_id: String,
+    },
+
+    /// Discard a failed send by its client id.
+    Discard {
+        /// The send's client id.
+        client_id: String,
+    },
 }
 
 /// A status the user may pick (offline is locking or logging out;

@@ -47,7 +47,8 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("open_external_url", HostCall::Request("LinkOpen")),
     // Friends and the 1:1 paths (plan E2.1).
     ("send_message", HostCall::Request("DmSend")),
-    ("resend_message", HostCall::Request("DmResend")),
+    ("outbox_retry", HostCall::Request("OutboxRetry")),
+    ("outbox_discard", HostCall::Request("OutboxDiscard")),
     ("send_typing", HostCall::Request("DmTyping")),
     ("get_message_history", HostCall::Request("DmHistory")),
     ("mark_read", HostCall::Request("DmMarkRead")),

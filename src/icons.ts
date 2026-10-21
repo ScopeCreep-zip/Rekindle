@@ -11,6 +11,8 @@ export const ICON_SEARCH = "\u{F0349}";          // nf-md-magnify
 // Notifications
 export const ICON_BELL = "\u{F009A}";            // nf-md-bell
 export const ICON_CHECK = "\u{F012C}";           // nf-md-check
+export const ICON_CHECK_ALL = "\u{F012D}";       // nf-md-check_all
+export const ICON_EYE = "\u{F0208}";             // nf-md-eye
 
 // Voice
 export const ICON_MIC = "\u{F036C}";             // nf-md-microphone
