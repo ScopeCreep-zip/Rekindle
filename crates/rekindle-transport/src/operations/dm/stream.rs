@@ -173,6 +173,12 @@ pub(crate) async fn on_stream_record(
     match stored {
         Ok(changed) => {
             if changed {
+                let (owned, peer, record) =
+                    (host.owned(), sender.to_string(), body.record_key.clone());
+                host.scope()
+                    .spawn_or_drop("watch participant record", async move {
+                        owned.watch_participant(&peer, &record).await;
+                    });
                 spawn_diff(host, sender);
             }
             true

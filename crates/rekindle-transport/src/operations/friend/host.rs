@@ -127,6 +127,9 @@ pub trait FriendHost: Send + Sync {
     async fn audit(&self, kind: rekindle_audit::AuditKind, detail: serde_json::Value);
     /// Watch a friend's profile record for their presence.
     async fn watch_friend(&self, peer: &str, profile_dht_key: &str);
+    /// Watch the participant record `record_key` that `peer`'s chain to us
+    /// is on (plan E2.5): a record replacing the one held re-watches.
+    async fn watch_participant(&self, peer: &str, record_key: &str);
     /// Stop watching a friend's profile record (removal, block, rotation).
     async fn unwatch_friend(&self, peer: &str);
     /// Hold an invite's request inbox (plan E2.5, D17): keep its owner

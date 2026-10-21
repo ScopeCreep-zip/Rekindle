@@ -59,6 +59,8 @@ pub(crate) struct Faults {
     pub try_again: HashMap<usize, u32>,
     /// Nodes whose DHT calls all fail, as with no connection.
     pub dht_offline: HashSet<usize>,
+    /// Detached nodes: no watch change reaches them.
+    pub detached: HashSet<usize>,
     /// Nodes whose reads return their local copy without asking the
     /// network (a stale value).
     pub stale_reads: HashSet<usize>,
@@ -203,6 +205,7 @@ impl Network {
                 .enumerate()
                 .filter(|(i, node)| {
                     *i != writer
+                        && !inner.faults.detached.contains(i)
                         && node
                             .watches
                             .get(key)

@@ -313,6 +313,17 @@ impl InboundHandler for DaemonHandler {
 
     async fn on_event(&self, event: TransportEvent) {
         debug!(event = ?std::mem::discriminant(&event), "handler: on_event");
+        // The friends' network-ready trigger (plan E2.5), subscribers or not.
+        if let (
+            Some(host),
+            TransportEvent::AttachmentChanged {
+                public_internet_ready,
+                ..
+            },
+        ) = (self.friends(), &event)
+        {
+            host.network_changed(*public_internet_ready);
+        }
         if let Some(ref sub_mgr) = *self.subscriptions.read() {
             match event {
                 TransportEvent::AttachmentChanged {
@@ -320,9 +331,6 @@ impl InboundHandler for DaemonHandler {
                     is_attached,
                     public_internet_ready,
                 } => {
-                    if let Some(host) = self.friends() {
-                        host.network_changed(public_internet_ready);
-                    }
                     let (has_route, media_route) = self.route_status();
                     sub_mgr.on_attachment_change(
                         state,

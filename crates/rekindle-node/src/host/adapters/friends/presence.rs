@@ -163,15 +163,6 @@ impl FriendPresenceDeps for HostFriends {
         }
     }
 
-    fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool) {
-        let mut set = self.ctx().friend_watches.unwatched.write();
-        if unwatched {
-            set.insert(friend_key.to_string());
-        } else {
-            set.remove(friend_key);
-        }
-    }
-
     async fn acquire_friend_record(&self, dht_record_key: &str) -> Result<LeaseId, PresenceError> {
         self.records()?
             .acquire(dht_record_key, None)

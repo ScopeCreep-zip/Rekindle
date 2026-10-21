@@ -9,7 +9,7 @@ mod participant;
 mod presence;
 mod watch;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
@@ -30,12 +30,11 @@ pub(crate) use maintenance::{
 };
 pub(crate) use watch::watch_friends;
 
-/// Each watched friend's profile and participant-record leases, and the
-/// friends whose watch failed (re-opened when the network comes back).
+/// Each watched friend's profile and participant-record leases (a watch
+/// that failed is re-opened when the network comes back).
 #[derive(Default)]
 pub struct FriendWatches {
     leases: Mutex<HashMap<String, LeaseId>>,
-    unwatched: RwLock<HashSet<String>>,
     /// Each open invite's request inbox lease, by record key (plan E2.5).
     inboxes: Mutex<HashMap<String, LeaseId>>,
     /// Each friend's participant record (key, lease), by friend (plan E2.5).
@@ -160,12 +159,15 @@ impl FriendHost for HostFriends {
         }
     }
 
+    async fn watch_participant(&self, peer: &str, record_key: &str) {
+        watch::watch_participant(self, peer, record_key).await;
+    }
+
     async fn unwatch_friend(&self, peer: &str) {
         // Releasing the friend's lease closes the record, which is what
         // ends its watch; the key-to-friend mapping is the projection's.
         watch::release_participant(self, peer).await;
         let lease = self.ctx.friend_watches.leases.lock().remove(peer);
-        self.ctx.friend_watches.unwatched.write().remove(peer);
         let pool = self.node().ok().and_then(|node| node.records());
         if let (Some(lease), Some(pool)) = (lease, pool) {
             pool.release(lease).await;

@@ -45,9 +45,28 @@ impl HostFriends {
         }
     }
 
-    /// Re-open every friend's watches, then diff every chain.
+    /// Re-open every friend's watches, apply what changed on their profiles
+    /// meanwhile (no watch of ours fired for it), then diff every chain.
     pub async fn heal(&self) {
         self.rewatch().await;
+        let held: Vec<LeaseId> = self
+            .ctx()
+            .friend_watches
+            .leases
+            .lock()
+            .values()
+            .copied()
+            .collect();
+        let pool = self.node().ok().and_then(|node| node.records());
+        for lease in held {
+            let Some(profile) = pool.as_ref().and_then(|pool| pool.key_of(lease)) else {
+                continue;
+            };
+            let subkeys = rekindle_presence::FRIEND_WATCH_SUBKEYS;
+            for (subkey, value) in read_changed(self, Some(lease), subkeys, None).await {
+                rekindle_presence::handle_value_change(self, &profile, &[subkey], &value);
+            }
+        }
         dm::stream::catch_up_all(self).await;
     }
 
@@ -147,7 +166,7 @@ async fn participant_records(host: &HostFriends) -> Vec<(String, String)> {
 
 /// Watch every subkey of `peer`'s participant record `record`, holding its
 /// lease (the one held for them before is released).
-async fn watch_participant(host: &HostFriends, peer: &str, record: &str) {
+pub(super) async fn watch_participant(host: &HostFriends, peer: &str, record: &str) {
     let Some(pool) = host.node().ok().and_then(|node| node.records()) else {
         return;
     };

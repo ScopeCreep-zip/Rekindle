@@ -55,3 +55,65 @@ async fn a_status_change_arrives_by_watch_and_survives_a_watch_death() {
         "Lev sees Kim busy after the watch was re-armed"
     );
 }
+
+/// A status change made while Lev is detached fires no watch of his; his
+/// reattach (the network-ready trigger) re-opens the watches and applies
+/// what changed meanwhile.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_change_missed_while_detached_is_recovered_on_reattach() {
+    let (sim, mut nodes) = start(2, 89).await;
+    for (node, name) in nodes.iter_mut().zip(["Mia", "Ned"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    let mia = key(&nodes[0]);
+    let events = nodes[1].events().await;
+
+    sim.fault(Fault::Detach {
+        node: 1,
+        detached: true,
+    });
+    nodes[0]
+        .ok(IpcRequest::PresenceSet {
+            status: SessionStatus::Busy,
+        })
+        .await;
+    assert!(
+        !eventually(&sim, LIMIT, || async { saw(&events, &mia, "busy") }).await,
+        "no watch change reaches a detached node"
+    );
+    sim.fault(Fault::Detach {
+        node: 1,
+        detached: false,
+    });
+    assert!(
+        eventually(&sim, LIMIT, || async { saw(&events, &mia, "busy") }).await,
+        "Ned sees Mia busy after his reattach"
+    );
+}
+
+/// A participant record received mid-session is watched at once: with
+/// every app message dropped (no hint arrives), a message still reaches
+/// the peer through the watch on the sender's chain.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_participant_record_received_mid_session_is_watched() {
+    let (sim, mut nodes) = start(2, 97).await;
+    for (node, name) in nodes.iter_mut().zip(["Ora", "Pim"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    crate::pair::talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (ora, pim) = (key(&nodes[0]), key(&nodes[1]));
+
+    sim.fault(Fault::DropMessages { per_mille: 1000 });
+    crate::pair::send(&nodes[0], &pim, "by the watch").await;
+    assert!(
+        eventually(&sim, LIMIT, || crate::pair::holds_message(
+            &nodes[1],
+            &ora,
+            "by the watch"
+        ))
+        .await,
+        "Pim reads Ora's chain by its watch"
+    );
+}

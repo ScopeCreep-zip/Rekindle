@@ -49,7 +49,6 @@ mod tests {
         calls_set_offline: Vec<(String, i64)>,
         calls_is_accepted: Vec<String>,
         calls_emit: Vec<FriendPresenceEvent>,
-        calls_set_unwatched: Vec<(String, bool)>,
         calls_hold: Vec<(String, u64)>,
         calls_find_stale: Vec<i64>,
     }
@@ -115,12 +114,6 @@ mod tests {
                 .push((dht_key.to_string(), friend_key.to_string()));
         }
         fn cache_route_blob(&self, _: &str, _: Vec<u8>) {}
-        fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool) {
-            self.state
-                .lock()
-                .calls_set_unwatched
-                .push((friend_key.to_string(), unwatched));
-        }
         async fn acquire_friend_record(
             &self,
             dht_record_key: &str,
@@ -219,7 +212,6 @@ mod tests {
             vec![(1, crate::FRIEND_WATCH_SUBKEYS.to_vec())]
         );
         assert_eq!(st.calls_hold, vec![("alice".to_string(), 1)]);
-        assert_eq!(st.calls_set_unwatched, vec![("alice".to_string(), false)]);
         assert!(st.calls_fetch_subkey.is_empty(), "no subkey is polled");
     }
 

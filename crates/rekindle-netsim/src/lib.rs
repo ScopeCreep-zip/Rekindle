@@ -61,6 +61,9 @@ pub enum Fault {
     WatchDeath { node: usize, key: String },
     /// The node's own routes die: the owner and every importer hear of it.
     RouteDeath { node: usize },
+    /// The node detaches (or reattaches): its DHT calls fail, no watch
+    /// change reaches it, and it hears an attachment change.
+    Detach { node: usize, detached: bool },
 }
 
 /// A simulated node's side: what a Host on it needs.
@@ -233,6 +236,7 @@ impl Netsim {
             }
             Fault::WatchDeath { node, key } => self.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
+            Fault::Detach { node, detached } => self.detach(node, detached),
         }
     }
 
@@ -248,6 +252,35 @@ impl Netsim {
                 pool.retry_held();
             }
         }
+    }
+
+    fn detach(&self, node: usize, detached: bool) {
+        let peers = {
+            let mut inner = self.net.inner.lock();
+            toggle(&mut inner.faults.dht_offline, node, detached);
+            toggle(&mut inner.faults.detached, node, detached);
+            inner.nodes.len().saturating_sub(1) as u64
+        };
+        let (state, live) = if detached {
+            ("detached", 0)
+        } else {
+            ("attached_good", peers)
+        };
+        self.net.send(
+            node,
+            node,
+            "Attachment",
+            PortEvent::Attachment {
+                state: state.to_string(),
+                is_attached: !detached,
+                public_internet_ready: !detached,
+                reliable_peers: live,
+                live_peers: live,
+                network_size: live,
+                median_latency_us: 0,
+            },
+            false,
+        );
     }
 
     fn kill_watch(&self, node: usize, key: &str) {

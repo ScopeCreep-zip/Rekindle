@@ -108,7 +108,6 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
 
     // === Route and watch state ===
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>);
-    fn set_unwatched_friend(&self, friend_key: &str, unwatched: bool);
 
     // === DHT IO (async) ===
     //

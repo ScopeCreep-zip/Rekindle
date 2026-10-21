@@ -231,7 +231,7 @@ fn parse_game_info(data: &[u8]) -> Option<GameInfoSnapshot> {
 
 /// Subscribe to a friend's DHT presence record. On hard failures
 /// (invalid key, open fails) the friend is added to the
-/// unwatched set + the function returns `Ok(())` — non-fatal so
+/// log + the function returns `Ok(())` — non-fatal so
 /// the calling friend-add flow proceeds.
 pub async fn watch_friend<D: FriendPresenceDeps>(
     deps: Arc<D>,
@@ -248,7 +248,6 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
                 dht_key = %dht_record_key,
                 "failed to open DHT record for watching"
             );
-            deps.set_unwatched_friend(friend_key, true);
             return Ok(());
         }
     };
@@ -262,7 +261,6 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
                 dht_key = %dht_record_key,
                 "watching friend presence",
             );
-            deps.set_unwatched_friend(friend_key, false);
         }
         Err(error) => {
             tracing::warn!(
@@ -270,7 +268,6 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
                 friend = %friend_key,
                 "failed to watch friend presence; the watch is re-armed by the pool",
             );
-            deps.set_unwatched_friend(friend_key, true);
         }
     }
     // Held either way: the pool re-arms a held record's watch.
