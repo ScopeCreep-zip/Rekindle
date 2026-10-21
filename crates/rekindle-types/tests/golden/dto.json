@@ -68,6 +68,16 @@
     },
     "type": "intentRequired"
   },
+  "dm.historyGap": {
+    "body": "",
+    "historyGapThrough": 4,
+    "id": 10,
+    "isOwn": false,
+    "messageId": null,
+    "sendState": "delivered",
+    "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timestamp": 1700000000000
+  },
   "dm.inboxEntry": {
     "body": "gg",
     "isRead": false,
@@ -77,6 +87,7 @@
   },
   "dm.message": {
     "body": "gg",
+    "historyGapThrough": null,
     "id": 9,
     "isOwn": true,
     "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e11",

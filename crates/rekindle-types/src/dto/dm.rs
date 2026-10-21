@@ -19,6 +19,10 @@ pub struct DmMessage {
     pub is_own: bool,
     /// Our own message's delivery state; `delivered` for a received one.
     pub send_state: SendState,
+    /// A history-gap marker (plan E2.5, D23): the peer's entries through
+    /// this seq were retired before we fetched them; shown as a gap line,
+    /// never a bubble. `None` for a message.
+    pub history_gap_through: Option<u64>,
 }
 
 /// The latest message of one direct conversation.

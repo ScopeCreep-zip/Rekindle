@@ -137,6 +137,8 @@ async fn forget_removed(friends: &HostFriends) {
 /// (its `FriendRequest:` client id names it on the peer's pending row).
 fn send_status(change: &StateChange) -> Option<SubscriptionEvent> {
     let peer = match change.kind {
+        // A control row (`StreamRecord`) has no message to show a state on.
+        StreamKind::Dm if change.client_id.starts_with("StreamRecord:") => return None,
         StreamKind::Dm => change.stream.strip_prefix("dm:")?,
         StreamKind::FriendHandshake if change.client_id.starts_with("FriendRequest:") => {
             change.stream.strip_prefix("friend_handshake:")?
@@ -223,6 +225,23 @@ impl DmOutbox for DmStream {
             reply_to: dm.reply_to,
         };
         let enqueued = self.0.enqueue(entry, Some(echo)).await;
+        enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
+    }
+
+    async fn enqueue_control(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError> {
+        let entry = Entry {
+            kind: StreamKind::Dm,
+            scope: to.to_owned(),
+            client_id,
+            payload,
+            deadline: Deadline::Horizon,
+        };
+        let enqueued = self.0.enqueue(entry, None).await;
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
     }
 

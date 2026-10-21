@@ -40,6 +40,18 @@ pub trait DmOutbox: Send + Sync {
     ///
     /// # Errors
     /// The storage failed; nothing was committed.
+    /// Commit a control frame (`payload`, [`payload`]) with no echo at
+    /// the end of our `dm` stream to `to` (a `StreamRecord`): it waits for
+    /// the peer's `DmAck` like a message; its stream seq.
+    ///
+    /// # Errors
+    /// The storage failed; nothing was committed.
+    async fn enqueue_control(
+        &self,
+        to: &str,
+        client_id: String,
+        payload: Vec<u8>,
+    ) -> Result<i64, FriendError>;
     async fn enqueue_handshake(
         &self,
         to: &str,
@@ -158,7 +170,16 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, stream_seq: i64, payload: 
         Ok(datagram) => datagram,
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
-    match super::stream::append(host, to, &datagram).await {
+    // A `StreamRecord` names the chain; it is not on it, and it waits for
+    // the peer's `DmAck` (resent until then) like any `dm` row.
+    if matches!(body, DirectBody::StreamRecord(_)) {
+        return match send::route_send_datagram(host, to, &datagram, frame.type_id, true).await {
+            Ok(true) => Attempt::Sent,
+            Ok(false) | Err(FriendError::NotReady(_)) => Attempt::Deferred,
+            Err(e) => Attempt::Wedged(e.to_string()),
+        };
+    }
+    match super::stream::append(host, to, &datagram, stream_seq).await {
         Ok(_) => {}
         Err(FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_)) => {
             return Attempt::Deferred;

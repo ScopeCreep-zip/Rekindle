@@ -97,6 +97,7 @@ impl PendingAcks {
 pub fn acknowledged_id(body: &DirectBody) -> Option<String> {
     match body {
         DirectBody::DmText(text) => Some(client_id_text(&text.client_id)),
+        DirectBody::StreamRecord(r) => Some(super::stream::stream_record_client_id(&r.record_key)),
         _ => None,
     }
 }

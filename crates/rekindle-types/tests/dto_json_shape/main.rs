@@ -286,6 +286,20 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             timestamp: 1_700_000_000_000,
             is_own: true,
             send_state: SendState::Delivered,
+            history_gap_through: None,
+        }),
+    );
+    add(
+        "dm.historyGap",
+        to(DmMessage {
+            id: 10,
+            message_id: None,
+            sender_id: pk('b'),
+            body: String::new(),
+            timestamp: 1_700_000_000_000,
+            is_own: false,
+            send_state: SendState::Delivered,
+            history_gap_through: Some(4),
         }),
     );
     add(

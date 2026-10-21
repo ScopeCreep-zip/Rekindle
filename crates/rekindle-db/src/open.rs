@@ -162,7 +162,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 106 (plan E2.5, D23): `stream_cursors`, and `friends.participant_record_key`
 /// and `peer_participant_record_key`, the dm participant records whose chains
 /// carry each direction of a conversation.
-pub const SCHEMA_VERSION: i64 = 106;
+///
+/// 107 (plan E2.5, D23/D24): `chain_entries`, which chain seq each `dm` row
+/// went to (for `retire_through`), and `messages.history_gap_through`, the
+/// stored `HistoryGap` marker.
+pub const SCHEMA_VERSION: i64 = 107;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

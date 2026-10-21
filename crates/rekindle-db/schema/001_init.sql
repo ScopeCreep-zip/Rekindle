@@ -113,7 +113,12 @@ CREATE TABLE IF NOT EXISTS messages (
     -- A direct message's place in its DM stream (plan E2.5, r10): ours is
     -- our outbox seq to the peer, a received one the sender's; a
     -- `ReadUpTo` names it. NULL for a channel message.
-    stream_seq INTEGER CHECK(stream_seq IS NULL OR stream_seq >= 1)
+    stream_seq INTEGER CHECK(stream_seq IS NULL OR stream_seq >= 1),
+    -- A DM history gap (plan E2.5, D23): a local marker row, never sent.
+    -- The peer's chain entries up to this seq were retired before we
+    -- fetched them; body empty, sender the peer. NULL for a message.
+    history_gap_through INTEGER
+        CHECK(history_gap_through IS NULL OR history_gap_through >= 1)
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
@@ -815,6 +820,20 @@ CREATE TABLE IF NOT EXISTS stream_cursors (
     seq INTEGER NOT NULL CHECK(seq >= 0),
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, stream, writer)
+);
+
+-- The entries of our DM chains (plan E2.5, D23/D24): which chain seq each
+-- `dm` outbox row's frame went to, and when. An entry is retired (the
+-- chain's RETIRE_THROUGH) once it is older than DELIVERY_HORIZON and every
+-- entry up to it belongs to a row the peer acknowledged (no outbox row
+-- left); retired entries' rows go.
+CREATE TABLE IF NOT EXISTS chain_entries (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    peer TEXT NOT NULL,
+    chain_seq INTEGER NOT NULL CHECK(chain_seq >= 1),
+    stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
+    appended_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_key, peer, chain_seq)
 );
 
 -- Client ids already applied from each peer stream (plan E2.5, D22): a

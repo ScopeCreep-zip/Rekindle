@@ -156,6 +156,13 @@ pub(crate) async fn run(
     if ctx.mode == HostMode::Daemon {
         super::adapters::friends::watch_friends(ctx, &scope);
     }
+    // 3c'. The DM chains (plan E2.5, D23): with the outbox and the friends
+    // up, every accepted friend's chain is diffed from our cursor, so what
+    // arrived while we were away is fetched whether or not its hint was.
+    let streams = super::adapters::friends::HostFriends::of(ctx);
+    scope.spawn_or_drop("dm stream catch-up", async move {
+        rekindle_transport::operations::dm::stream::catch_up_all(&streams).await;
+    });
     // 3d. The audit check.
     audit(
         ctx,

@@ -105,6 +105,17 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         }
         DirectBody::StreamRecord(r) => {
             applied = crate::operations::dm::stream::on_stream_record(host, sender, r).await;
+            if applied {
+                // Stored (or refused from a non-friend, which `committed`
+                // never acknowledges): its row settles on our `DmAck`.
+                crate::operations::dm::ack::committed(
+                    host,
+                    sender,
+                    &opened.body,
+                    opened.stream_seq,
+                )
+                .await;
+            }
         }
         DirectBody::IdentityRotated(r) => {
             applied = identity_rotation::on_identity_rotated(host, sender, r).await;

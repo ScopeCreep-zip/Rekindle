@@ -4,7 +4,7 @@ import type { DmHistoryGap } from "../ipc/channels/chat_events";
 import type { ExpressionInfo } from "../ipc/commands";
 import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../ipc/commands/dto";
-import type { HistoryGap, Message } from "../stores/chat.store";
+import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
@@ -81,13 +81,26 @@ function ownStatus(state: IpcMessage["sendState"]): Message["status"] {
 /** A direct message: its client id is the row's `serverMessageId`, which
  *  `DmSendStatus` and a resend name it by. */
 export function transformDmMessage(m: DmMessage): Message {
-  return { ...transformMessage(m), serverMessageId: m.messageId ?? undefined };
+  return {
+    ...transformMessage(m),
+    serverMessageId: m.messageId ?? undefined,
+    historyGapThrough: m.historyGapThrough ?? undefined,
+  };
 }
 
-/** A `dmHistoryGap` event → the conversation's gap marker, anchored after
- *  the last message shown when it arrived. */
-export function transformHistoryGap(gap: DmHistoryGap, afterId: number | null): HistoryGap {
-  return { throughSeq: gap.throughSeq, afterId };
+/** A live `dmHistoryGap` event → the marker row the backend stored, as its
+ *  history shows it (an empty, read row from the peer). The event carries
+ *  no row id, so the live copy takes a local negative one; a reload reads
+ *  the stored row. */
+export function transformHistoryGap(gap: DmHistoryGap): Message {
+  return {
+    id: -gap.throughSeq,
+    senderId: gap.peerKey,
+    body: "",
+    timestamp: Date.now(),
+    isOwn: false,
+    historyGapThrough: gap.throughSeq,
+  };
 }
 
 /** Convenience: transform an array of messages. */

@@ -354,3 +354,68 @@ async fn a_friends_key_is_stored_and_a_removal_rotates_ours() {
         "the removed friend's key is cleared"
     );
 }
+
+/// Plan E2.5 (MSR): a `StreamRecord` is kept from an accepted friend only;
+/// while Bob is not one at Ann's, his record key is ignored.
+#[tokio::test]
+async fn a_stream_record_is_kept_from_an_accepted_friend_only() {
+    use rekindle_codec::capnp_codec::direct::StreamRecord;
+    let (dir, theirs) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (host, owner, other, bob) = session_pair(&dir, &theirs).await;
+    let (o, b) = (hex::encode(owner), hex::encode(bob));
+    let set_state = |state: rekindle_types::friend::FriendshipState| {
+        let (o, b) = (o.clone(), b.clone());
+        if let Some(f) = host
+            .ctx
+            .session
+            .write()
+            .as_mut()
+            .and_then(|s| s.friends.get_mut(&b))
+        {
+            f.friendship_state = state;
+        }
+        let db = host.ctx.db.current().unwrap();
+        async move {
+            db.call(move |conn| rekindle_db::repo::friends::set_state(conn, &o, &b, state))
+                .await
+                .unwrap();
+        }
+    };
+    let held = || {
+        let o = o.clone();
+        let db = host.ctx.db.current().unwrap();
+        async move {
+            db.call(move |conn| {
+                rekindle_db::repo::friends::peer_participant_record_key(conn, &o, None)
+            })
+            .await
+            .unwrap()
+        }
+    };
+    let send = |n: char| {
+        let body = DirectBody::StreamRecord(StreamRecord {
+            record_key: format!("VLD0:{}", n.to_string().repeat(43)),
+        });
+        let (other, host, to) = (other.clone(), host.clone(), o.clone());
+        async move {
+            let sent = frame::ratchet_frame(
+                &HostFriends::of(&other.ctx),
+                &to,
+                &body,
+                ContentHint::Default,
+            )
+            .await
+            .unwrap();
+            receive(&HostFriends::of(&host.ctx), &wire(&sent).unwrap()).await;
+        }
+    };
+    set_state(rekindle_types::friend::FriendshipState::PendingOut).await;
+    send('A').await;
+    assert!(held().await.is_empty(), "ignored from a pending friend");
+    set_state(rekindle_types::friend::FriendshipState::Accepted).await;
+    send('B').await;
+    assert_eq!(
+        held().await,
+        [(b.clone(), format!("VLD0:{}", "B".repeat(43)))]
+    );
+}

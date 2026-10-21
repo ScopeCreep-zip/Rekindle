@@ -45,6 +45,9 @@ pub struct DmRow {
     pub timestamp: i64,
     pub is_read: bool,
     pub send_state: SendState,
+    /// A history-gap marker's last retired seq (plan E2.5, D23); `None`
+    /// for a message.
+    pub history_gap_through: Option<u64>,
 }
 
 /// A direct message to store (plan E2.3): `message_id` is its client id,
@@ -135,11 +138,57 @@ fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
                 format!("unknown send state {stored}").into(),
             )
         })?,
+        history_gap_through: row
+            .get::<_, Option<i64>>(8)?
+            .map(|seq| {
+                u64::try_from(seq).map_err(|e| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        8,
+                        rusqlite::types::Type::Integer,
+                        Box::new(e),
+                    )
+                })
+            })
+            .transpose()?,
     })
 }
 
-const DM_COLS: &str =
-    "id, conversation_id, sender_key, body, timestamp, is_read, send_state, message_id";
+const DM_COLS: &str = "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
+                       message_id, history_gap_through";
+
+/// Store the local marker of a DM history gap (plan E2.5, D23): `peer`'s
+/// chain entries through `through_seq` were retired before we fetched
+/// them. It is never sent: an empty body from the peer, read and
+/// `delivered`. A second marker for the same `(peer, through_seq)` is not
+/// stored; the held row's id is returned.
+///
+/// # Errors
+/// `through_seq` is not a stored seq (0 or above `i64::MAX`), or the write
+/// failed.
+pub fn insert_history_gap(
+    conn: &Connection,
+    owner_key: &str,
+    peer: &str,
+    through_seq: u64,
+    timestamp: i64,
+) -> rusqlite::Result<i64> {
+    let through = i64::try_from(through_seq)
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
+    conn.execute(
+        "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
+         timestamp, is_read, send_state, history_gap_through) \
+         SELECT ?1, ?2, 'dm', ?2, '', ?3, 1, 'delivered', ?4 \
+         WHERE NOT EXISTS (SELECT 1 FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+                           AND conversation_type = 'dm' AND history_gap_through = ?4)",
+        params![owner_key, peer, timestamp, through],
+    )?;
+    conn.query_row(
+        "SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+         AND conversation_type = 'dm' AND history_gap_through = ?3",
+        params![owner_key, peer, through],
+        |row| row.get(0),
+    )
+}
 
 /// The newest `limit` messages with `peer_key` before `before` (a
 /// timestamp, ms; all when `None`), oldest first.
@@ -188,7 +237,7 @@ pub fn own_dm(
     use rusqlite::OptionalExtension as _;
     conn.query_row(
         "SELECT m.id, m.conversation_id, m.sender_key, m.body, m.timestamp, m.is_read, \
-         m.send_state, m.message_id, p.message_id FROM messages m \
+         m.send_state, m.message_id, m.history_gap_through, p.message_id FROM messages m \
          LEFT JOIN messages p ON p.id = m.reply_to_id \
          WHERE m.owner_key = ?1 AND m.sender_key = ?1 AND m.message_id = ?2 \
          AND m.conversation_type = 'dm'",
@@ -196,7 +245,7 @@ pub fn own_dm(
         |row| {
             Ok(OwnDm {
                 row: dm_row(row)?,
-                reply_to: row.get(8)?,
+                reply_to: row.get(9)?,
             })
         },
     )
@@ -249,7 +298,7 @@ pub fn dm_inbox(conn: &Connection, owner_key: &str, limit: u32) -> rusqlite::Res
         "SELECT {DM_COLS} FROM messages m WHERE owner_key = ?1 AND conversation_type = 'dm' \
          AND id = (SELECT id FROM messages n WHERE n.owner_key = m.owner_key \
                    AND n.conversation_id = m.conversation_id AND n.conversation_type = 'dm' \
-                   ORDER BY n.timestamp DESC, n.id DESC LIMIT 1) \
+                   AND n.history_gap_through IS NULL ORDER BY n.timestamp DESC, n.id DESC LIMIT 1) \
          ORDER BY timestamp DESC LIMIT ?2"
     ))?;
     let rows = stmt.query_map(params![owner_key, limit], dm_row)?.collect();
@@ -431,6 +480,31 @@ mod tests {
             inbox,
             [("carol".into(), "hey".into()), ("bob".into(), "m3".into())]
         );
+    }
+
+    /// D23: a history gap is a local row of the conversation, stored once
+    /// per `(peer, through_seq)`, read in history and kept off the inbox.
+    #[test]
+    fn a_history_gap_is_stored_once_and_read_back_in_history() {
+        let conn = fixture::conn();
+        insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None)).unwrap();
+        let gap = insert_history_gap(&conn, OWNER, "bob", 4, 2).unwrap();
+        assert_eq!(insert_history_gap(&conn, OWNER, "bob", 4, 3).unwrap(), gap);
+        assert_ne!(insert_history_gap(&conn, OWNER, "bob", 9, 3).unwrap(), gap);
+        assert!(insert_history_gap(&conn, OWNER, "bob", 0, 3).is_err());
+        let history = dm_history(&conn, OWNER, "bob", 10, None).unwrap();
+        assert_eq!(history.len(), 3);
+        let marker = history.iter().find(|m| m.id == gap).unwrap();
+        assert_eq!(marker.history_gap_through, Some(4));
+        assert_eq!(
+            (marker.sender_key.as_str(), marker.body.as_str()),
+            ("bob", "")
+        );
+        assert!(marker.is_read && marker.send_state == SendState::Delivered);
+        assert_eq!(history[0].history_gap_through, None);
+        let inbox = dm_inbox(&conn, OWNER, 10).unwrap();
+        assert_eq!(inbox.len(), 1);
+        assert_eq!(inbox[0].body, "m1");
     }
 
     #[test]

@@ -30,25 +30,23 @@ function applyMessageState(state: DmSendStatus): void {
 }
 
 // The peer's stream lost entries we never fetched (`dmHistoryGap`): the
-// conversation gets one marker where the report arrived. The backend
-// decides there is a gap; nothing here infers one.
+// backend stored a marker row; it is appended as history would show it,
+// once per `throughSeq`. The backend decides there is a gap; nothing here
+// infers one.
 function applyHistoryGap(gap: DmHistoryGap): void {
+  const marker = transformHistoryGap(gap);
   const convo = chatState.conversations[gap.peerKey];
   if (!convo) {
     setChatState("conversations", gap.peerKey, {
       peerId: gap.peerKey,
-      messages: [],
+      messages: [marker],
       isTyping: false,
       lastRead: 0,
-      historyGaps: [transformHistoryGap(gap, null)],
     });
     return;
   }
-  const last = convo.messages[convo.messages.length - 1];
-  setChatState("conversations", gap.peerKey, "historyGaps", (gaps) => [
-    ...(gaps ?? []),
-    transformHistoryGap(gap, last ? last.id : null),
-  ]);
+  if (convo.messages.some((m) => m.historyGapThrough === gap.throughSeq)) return;
+  setChatState("conversations", gap.peerKey, "messages", (msgs) => [...msgs, marker]);
 }
 
 export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {

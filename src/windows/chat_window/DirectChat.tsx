@@ -204,7 +204,6 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         messages={messages()}
         ownName={ownName()}
         peerName={peerName()}
-        historyGaps={conversation().historyGaps}
         onRetry={handleRetry}
         onDiscard={handleDiscard}
       />

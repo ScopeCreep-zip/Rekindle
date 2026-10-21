@@ -51,6 +51,9 @@ export interface DmMessage {
   timestamp: number;
   isOwn: boolean;
   sendState: SendState;
+  /** A history-gap marker row (plan E2.5, D23): the peer's entries through
+   *  this seq were retired before we fetched them; null for a message. */
+  historyGapThrough: number | null;
 }
 
 /** An incoming friend request, waiting for our answer. */

@@ -16,6 +16,7 @@
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, StreamRecord};
 use rekindle_records::chain::{self, ChainEntry};
+use rekindle_records::port::RecordPort;
 use rekindle_sync::stream::{SinkError, StreamSink, DM_STREAM};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
@@ -43,13 +44,20 @@ impl std::fmt::Debug for ParticipantWriter {
     }
 }
 
-/// Append `datagram` (a wired ratchet frame to `to`) to our chain to them.
-/// A record created for it has its key committed to `to` first.
+/// Append `datagram` (the wired frame of our `dm` row `stream_seq` to
+/// `to`) to our chain to them, note the entry, and retire what may go
+/// ([`retire`]). A record created for it has its key committed to `to`
+/// first.
 ///
 /// # Errors
 /// The record could not be made or the page did not land: the frame is
 /// not on the chain and must not be counted as sent.
-pub async fn append(host: &dyn FriendHost, to: &str, datagram: &[u8]) -> Result<u64, FriendError> {
+pub async fn append(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: &[u8],
+    stream_seq: i64,
+) -> Result<u64, FriendError> {
     let ours = host.participant_writer(to).await?;
     if ours.created {
         send_record(host, to, &ours.record_key).await?;
@@ -63,16 +71,79 @@ pub async fn append(host: &dyn FriendHost, to: &str, datagram: &[u8]) -> Result<
     )
     .await
     .map_err(|e| FriendError::NotReady(format!("chain append: {e}")))?;
-    Ok(page.last_seq)
+    let (owner, peer, now) = (
+        state::owner(host)?,
+        to.to_string(),
+        host.clock().now_ms_i64(),
+    );
+    let chain_seq = page.last_seq;
+    state::db_call!(host, "note chain entry", move |conn| {
+        rekindle_db::repo::chain_entries::record(conn, &owner, &peer, chain_seq, stream_seq, now)
+    })
+    .await?;
+    retire(host, to, &ours, port.as_ref()).await;
+    Ok(chain_seq)
 }
 
-/// Commit our participant record's key to `to`'s handshake stream (sent
-/// once a session exists, and again after the record is replaced).
+/// Retire our chain to `to` through the newest entry the peer has
+/// acknowledged, with every entry before it, once it is older than
+/// `DELIVERY_HORIZON` (D24, ruling Q2b): readers stop at the mark, and a
+/// reader still behind it is shown a `HistoryGap`. A failure waits for the
+/// next append.
+async fn retire(host: &dyn FriendHost, to: &str, ours: &ParticipantWriter, port: &dyn RecordPort) {
+    let horizon =
+        i64::try_from(rekindle_crypto::horizon::DELIVERY_HORIZON.as_millis()).unwrap_or(i64::MAX);
+    let Ok(owner) = state::owner(host) else {
+        return;
+    };
+    let cutoff = host.clock().now_ms_i64().saturating_sub(horizon);
+    let (o, peer) = (owner.clone(), to.to_string());
+    let through = state::db_call!(host, "read the retire point", move |conn| {
+        rekindle_db::repo::chain_entries::retirable(conn, &o, &peer, cutoff)
+    })
+    .await;
+    let seq = match through {
+        Ok(Some(seq)) => seq,
+        Ok(None) => return,
+        Err(e) => return tracing::debug!(to = %to, error = %e, "retire point not read"),
+    };
+    if let Err(e) = chain::retire_through(port, &ours.record_key, &ours.writer, seq).await {
+        return tracing::debug!(to = %to, error = %e, "chain not retired");
+    }
+    let peer = to.to_string();
+    let forgot = state::db_call!(host, "forget retired chain entries", move |conn| {
+        rekindle_db::repo::chain_entries::forget_through(conn, &owner, &peer, seq)
+    })
+    .await;
+    if let Err(e) = forgot {
+        tracing::debug!(to = %to, error = %e, "retired chain entries not forgotten");
+    }
+    tracing::info!(to = %to, through = seq, "dm chain retired");
+}
+
+/// The client id of the `dm` row that carries `record_key` in a
+/// `StreamRecord`: both sides derive it from the key, so the receiver's
+/// `received` row and the sender's outbox row name the same entry.
+#[must_use]
+pub fn stream_record_client_id(record_key: &str) -> String {
+    format!(
+        "StreamRecord:{}",
+        blake3::hash(record_key.as_bytes()).to_hex()
+    )
+}
+
+/// Commit our participant record's key to `to` as a row of our `dm` stream
+/// (sent once a session exists, and again after the record is replaced):
+/// the outbox resends it until the peer's `DmAck` names it.
 async fn send_record(host: &dyn FriendHost, to: &str, record_key: &str) -> Result<(), FriendError> {
     let body = DirectBody::StreamRecord(StreamRecord {
         record_key: record_key.to_string(),
     });
-    super::handshake::enqueue(host, to, &body).await.map(|_| ())
+    let payload = super::outbox::payload(&body)?;
+    host.outbox()?
+        .enqueue_control(to, stream_record_client_id(record_key), payload)
+        .await
+        .map(|_| ())
 }
 
 /// A friend's `StreamRecord`: kept for an accepted friend only; a new key
@@ -242,6 +313,16 @@ impl StreamSink for DmSink<'_> {
         writer: &str,
         through: u64,
     ) -> Result<(), SinkError> {
+        // D23: the gap is a stored row of the conversation, so it survives
+        // a reload; a failed insert keeps the cursor, and the gap is seen
+        // again on the next diff.
+        let owner = state::owner(self.host).map_err(|e| SinkError(e.to_string()))?;
+        let (peer, now) = (writer.to_string(), self.host.clock().now_ms_i64());
+        state::db_call!(self.host, "store dm history gap", move |conn| {
+            rekindle_db::repo::messages::insert_history_gap(conn, &owner, &peer, through, now)
+        })
+        .await
+        .map_err(|e| SinkError(e.to_string()))?;
         self.host.publish(SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::DmHistoryGap {
                 peer_key: writer.to_string(),

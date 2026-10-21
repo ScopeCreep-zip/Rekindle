@@ -150,6 +150,7 @@ pub async fn send_dm(
         timestamp,
         is_own: true,
         send_state: SendState::Queued,
+        history_gap_through: None,
     })
 }
 
@@ -248,6 +249,7 @@ pub async fn history(
             body: row.body,
             timestamp: row.timestamp,
             send_state: row.send_state,
+            history_gap_through: row.history_gap_through,
         })
         .collect())
 }

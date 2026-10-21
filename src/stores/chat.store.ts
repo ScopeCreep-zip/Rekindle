@@ -49,6 +49,10 @@ export interface Message extends Omit<IpcMessage, "sendState"> {
   reactions?: ReactionGroup[];
   poll?: MessagePoll;
   attachment?: MessageAttachment;
+  /** A DM history-gap marker (plan E2.5, D23): the peer's messages through
+   *  this seq are gone. The row is the backend's, drawn as a gap line in
+   *  place of a bubble. */
+  historyGapThrough?: number;
 }
 
 /** VOICE_MESSAGE bit on `Message.flags` per architecture §16.4. */
@@ -65,21 +69,11 @@ export interface MessageAttachment {
   downloaded: boolean;
 }
 
-/** A gap the backend reported in the peer's stream (`dmHistoryGap`):
- *  their messages through `throughSeq` are gone. The marker is drawn where
- *  the report arrived, after the message `afterId` names (or first, when
- *  nothing was shown yet). */
-export interface HistoryGap {
-  throughSeq: number;
-  afterId: number | null;
-}
-
 export interface Conversation {
   peerId: string;
   messages: Message[];
   isTyping: boolean;
   lastRead: number;
-  historyGaps?: HistoryGap[];
 }
 
 export interface ChatState {
