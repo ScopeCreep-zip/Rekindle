@@ -47,7 +47,8 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
     let mut applied = true;
     match &opened.body {
         DirectBody::DmText(text) => {
-            applied = direct_message(host, sender, text, opened.sent_at_ms).await;
+            applied =
+                direct_message(host, sender, text, opened.sent_at_ms, opened.stream_seq).await;
             if applied {
                 // Committed: acknowledge it (a resend of one held again too,
                 // its first ack may be lost).
@@ -63,6 +64,10 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
             typing::stopped(host, &dm_typing(sender), sender);
         }
         DirectBody::DmAck(a) => crate::operations::dm::ack::on_ack(host, sender, a).await,
+        // Ignored, never stored, while our own setting is off (plan E2.5).
+        DirectBody::ReadUpTo(r) => {
+            crate::operations::dm::receipts::on_read_up_to(host, sender, r).await;
+        }
         DirectBody::Typing(t) => {
             if t.typing {
                 typing::started(host, dm_typing(sender), sender, TYPING_TTL_MS);
@@ -127,11 +132,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::DmEdit(_) | DirectBody::DmDelete(_) | DirectBody::DmReaction(_) => {
             tracing::debug!(from = %sender, kind = ?opened.type_id, "DM edit/delete/reaction not applied before E6.4");
         }
-        // A read receipt is the outbox's (plan E2.5, the receipts policy):
-        // ignored, never stored, while our own setting is off. Until that
-        // slice it is handed back like the other unported kinds.
-        DirectBody::ReadUpTo(_)
-        | DirectBody::RelayEnvelope(_)
+        DirectBody::RelayEnvelope(_)
         | DirectBody::GroupDmInvite(_)
         | DirectBody::GroupDmLeave(_)
         | DirectBody::RelayOffer(_)
@@ -175,6 +176,7 @@ async fn direct_message(
     sender: &str,
     text: &DmText,
     sent_at_ms: u64,
+    stream_seq: u64,
 ) -> bool {
     let timestamp = i64::try_from(sent_at_ms).unwrap_or(i64::MAX);
     let message_id = client_id_text(&text.client_id);
@@ -188,6 +190,7 @@ async fn direct_message(
         message_id: message_id.clone(),
         reply_to: reply_to.clone(),
         send_state: rekindle_types::message::SendState::Delivered,
+        stream_seq: i64::try_from(stream_seq).ok().filter(|s| *s >= 1),
     };
     match fields.store(host).await {
         Ok(stored) if stored.inserted => {}

@@ -146,7 +146,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 101 (plan E2.5, D17): `outgoing_invites.inbox_key`, the invite's
 /// single-use request inbox.
-pub const SCHEMA_VERSION: i64 = 101;
+///
+/// 102 (plan E2.5, r10): `messages.stream_seq`, each DM's place in its stream
+/// (ours at enqueue, the sender's when received), which `ReadUpTo` names.
+pub const SCHEMA_VERSION: i64 = 102;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

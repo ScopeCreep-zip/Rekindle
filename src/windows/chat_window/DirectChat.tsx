@@ -102,6 +102,9 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
   }
 
   const unlisteners: Promise<UnlistenFn>[] = [];
+  // Focusing the window reads what it shows (plan E2.5: the read marker
+  // follows focus and rendering).
+  const onFocus = (): void => handleResetUnread(peerId);
 
   onMount(async () => {
     // Register event listeners FIRST so no events are missed during hydration.
@@ -123,9 +126,11 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
     setChatState("activeConversation", peerId);
     await handleLoadHistory(peerId, 50);
     handleResetUnread(peerId);
+    window.addEventListener("focus", onFocus);
   });
 
   onCleanup(() => {
+    window.removeEventListener("focus", onFocus);
     for (const p of unlisteners) {
       p.then((unlisten) => unlisten());
     }

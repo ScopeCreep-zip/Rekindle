@@ -353,3 +353,7 @@ transports for Veilid are upstream work, not Rekindle's.
 - [`../protocol/relay.md`](../protocol/relay.md) — strand and push relay properties
 - [Veilid developer book](https://veilid.gitlab.io/developer-book/)
 - [Signal Protocol specifications](https://signal.org/docs/)
+
+## Read receipts
+
+Read receipts are reciprocal and off by default: a `ReadUpTo` marker goes only to an accepted friend while our own setting is on, after a uniform 2–10 s delay, never while we are Invisible, and a received one is ignored while our setting is off (plan E2.5).

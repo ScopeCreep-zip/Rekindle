@@ -141,6 +141,7 @@ impl OutboxDeps for HostOutbox {
                 message_id: &row.client_id,
                 reply_to: e.reply_to.as_deref(),
                 send_state: SendState::Queued,
+                stream_seq: None,
             });
             repo::enqueue_with_echo(conn, &new, dm.as_ref())
         })
@@ -211,6 +212,19 @@ impl OutboxDeps for HostOutbox {
         db.call(move |c| repo::settle(c, &owner, &id, state))
             .await
             .map(drop)
+            .map_err(|e| storage(&e))
+    }
+
+    async fn read_through(
+        &self,
+        stream: &str,
+        scope: &str,
+        up_to: i64,
+    ) -> Result<Vec<(i64, String)>, OutboxError> {
+        let (db, owner) = self.db()?;
+        let (stream, peer) = (stream.to_owned(), scope.to_owned());
+        db.call(move |c| repo::read_through(c, &owner, &stream, &peer, up_to))
+            .await
             .map_err(|e| storage(&e))
     }
 

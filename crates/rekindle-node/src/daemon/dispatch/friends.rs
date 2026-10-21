@@ -158,7 +158,10 @@ pub(crate) async fn route(
             limit,
             before,
         } => answer(dm::history(&host, &peer_key, limit, before).await),
-        IpcRequest::DmMarkRead { peer_key } => done(dm::mark_read(&host, &peer_key).await),
+        IpcRequest::DmMarkRead {
+            peer_key,
+            rendered_through,
+        } => done(dm::mark_read(&host, &peer_key, rendered_through.as_deref()).await),
         IpcRequest::DmResend { message_id } => {
             answer(dm::resend_dm(&host, &message_id, acknowledged.key_change).await)
         }

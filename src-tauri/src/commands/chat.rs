@@ -202,11 +202,17 @@ pub async fn get_message_history(
     .await
 }
 
-/// Mark everything from a friend read (`IpcRequest::DmMarkRead`).
+/// Mark everything from a friend read (`IpcRequest::DmMarkRead`), with the
+/// client id of the newest of their messages the focused window rendered.
 #[tauri::command]
 pub async fn mark_read(
     peer_id: String,
+    rendered_through: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(&state, IpcRequest::DmMarkRead { peer_key: peer_id }).await
+    let request = IpcRequest::DmMarkRead {
+        peer_key: peer_id,
+        rendered_through,
+    };
+    host_call::call(&state, request).await
 }

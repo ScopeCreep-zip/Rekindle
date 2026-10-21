@@ -59,18 +59,6 @@ pub fn enqueue_with_echo(
     echo: Option<&NewDm<'_>>,
 ) -> rusqlite::Result<i64> {
     let tx = conn.unchecked_transaction()?;
-    let echo_id = match echo {
-        Some(dm) => {
-            let dm = NewDm {
-                owner_key: row.owner_key,
-                message_id: row.client_id,
-                send_state: SendState::Queued,
-                ..*dm
-            };
-            Some(insert_dm(&tx, &dm)?.id)
-        }
-        None => None,
-    };
     let seq: i64 = tx.query_row(
         "INSERT INTO outbox_streams (owner_key, stream, last_seq) VALUES (?1, ?2, 1) \
          ON CONFLICT(owner_key, stream) DO UPDATE SET last_seq = last_seq + 1 \
@@ -78,6 +66,19 @@ pub fn enqueue_with_echo(
         params![row.owner_key, row.stream],
         |r| r.get(0),
     )?;
+    let echo_id = match echo {
+        Some(dm) => {
+            let dm = NewDm {
+                owner_key: row.owner_key,
+                message_id: row.client_id,
+                send_state: SendState::Queued,
+                stream_seq: Some(seq),
+                ..*dm
+            };
+            Some(insert_dm(&tx, &dm)?.id)
+        }
+        None => None,
+    };
     tx.execute(
         "INSERT INTO outbox (owner_key, stream, stream_seq, client_id, kind, payload, state, \
          attempts, next_at, deadline, wedge_reason, echo_id) \
@@ -96,6 +97,41 @@ pub fn enqueue_with_echo(
     )?;
     tx.commit()?;
     Ok(seq)
+}
+
+/// The peer read our stream to `peer_key` (`stream`) through `up_to`: every
+/// echo at or below it not yet `read` becomes `read`, and the rows still
+/// waiting there settle (the peer holds them), in one transaction. The
+/// echoes raised, as `(stream_seq, client_id)`.
+///
+/// # Errors
+/// The write failed; nothing changed.
+pub fn read_through(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    peer_key: &str,
+    up_to: i64,
+) -> rusqlite::Result<Vec<(i64, String)>> {
+    let tx = conn.unchecked_transaction()?;
+    let raised = {
+        let mut stmt = tx.prepare(
+            "UPDATE messages SET send_state = 'read' WHERE owner_key = ?1 \
+             AND conversation_id = ?2 AND conversation_type = 'dm' AND sender_key = ?1 \
+             AND stream_seq IS NOT NULL AND stream_seq <= ?3 AND message_id IS NOT NULL \
+             AND send_state != 'read' RETURNING stream_seq, message_id",
+        )?;
+        let rows = stmt.query_map(params![owner_key, peer_key, up_to], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<(i64, String)>>>()?
+    };
+    tx.execute(
+        "DELETE FROM outbox WHERE owner_key = ?1 AND stream = ?2 AND stream_seq <= ?3",
+        params![owner_key, stream, up_to],
+    )?;
+    tx.commit()?;
+    Ok(raised)
 }
 
 const COLS: &str = "o.stream, o.stream_seq, o.client_id, o.kind, o.payload, o.state, o.attempts, \

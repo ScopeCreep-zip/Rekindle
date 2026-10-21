@@ -125,16 +125,30 @@ export async function handleLoadHistory(
 }
 
 export function handleMarkRead(peerId: string): void {
-  commands.markRead(peerId).catch((e) => {
-    console.error("Failed to mark read:", e);
-  });
+  handleResetUnread(peerId);
 }
 
-/// Mark the conversation read; the Host publishes the zero count
-/// (`UnreadChanged`), which every window renders.
+/// The client id of the newest of the peer's messages this window has
+/// rendered while it has focus, or null: the Host sends our read marker
+/// for it when our receipts setting is on (plan E2.5).
+function renderedThrough(peerId: string): string | null {
+  if (!document.hasFocus()) return null;
+  const messages = chatState.conversations[peerId]?.messages ?? [];
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m.isOwn && m.serverMessageId) return m.serverMessageId;
+  }
+  return null;
+}
+
+/// Mark the conversation read once the frame with its messages is
+/// painted; the Host publishes the zero count (`UnreadChanged`), which
+/// every window renders.
 export function handleResetUnread(peerId: string): void {
-  commands.markRead(peerId).catch((e) => {
-    console.error("Failed to mark read:", e);
+  requestAnimationFrame(() => {
+    commands.markRead(peerId, renderedThrough(peerId)).catch((e) => {
+      console.error("Failed to mark read:", e);
+    });
   });
 }
 

@@ -43,7 +43,8 @@ export const accountCommands = {
     hostInvoke<unknown>("send_typing", { peerId, typing }),
   getMessageHistory: (peerId: string, limit: number, before?: number) =>
     hostInvoke<DmMessage[]>("get_message_history", { peerId, limit, before: before ?? null }),
-  markRead: (peerId: string) => hostInvoke<unknown>("mark_read", { peerId }),
+  markRead: (peerId: string, renderedThrough: string | null) =>
+    hostInvoke<unknown>("mark_read", { peerId, renderedThrough }),
 
   addFriendFromCode: (code: string, message: string) =>
     hostInvoke<unknown>("add_friend_from_code", { code, message }),

@@ -264,8 +264,13 @@ pub enum IpcRequest {
         limit: u32,
         before: Option<i64>,
     },
-    /// Mark everything from `peer_key` read.
-    DmMarkRead { peer_key: String },
+    /// Mark everything from `peer_key` read; `rendered_through` is the
+    /// client id of the newest of their messages the focused window
+    /// rendered, for our read marker (plan E2.5).
+    DmMarkRead {
+        peer_key: String,
+        rendered_through: Option<String>,
+    },
     /// Send our failed message again, by its client id (a UUID); the
     /// stored row goes out under the same id, and no new row is stored.
     DmResend { message_id: String },

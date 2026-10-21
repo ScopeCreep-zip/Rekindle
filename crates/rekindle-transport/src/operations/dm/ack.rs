@@ -6,15 +6,17 @@
 //! acknowledged), coalesced per peer after a uniform 2–10 s random delay
 //! from the Host's generator, and held while we are Invisible, then flushed
 //! on leaving it. A received `DmAck` is the only source of `delivered`.
+//! Our read marker (`ReadUpTo`, [`super::receipts`]) rides the same
+//! coalescer, delay and Invisible hold.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, DmAck, MAX_DM_ACK_SEQS};
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmAck, ReadUpTo, MAX_DM_ACK_SEQS};
 use rekindle_types::friend::FriendshipState;
 use rekindle_utils::RandomSource;
 
-use super::{client_id_text, send};
+use super::{client_id_text, receipts, send};
 use crate::operations::friend::{state, FriendHost};
 
 /// The coalescing delay's bounds, milliseconds.
@@ -32,11 +34,20 @@ pub fn delay(rng: &dyn RandomSource) -> Duration {
     delay_from(rng.below(ACK_DELAY_MAX_MS - ACK_DELAY_MIN_MS + 1))
 }
 
-/// The acknowledgements waiting per peer.
+/// The receipts waiting per peer: delivery acknowledgements and our read
+/// marker, sent together by one flush.
 #[derive(Debug, Default)]
 pub struct PendingAcks {
     by_peer: HashMap<String, BTreeSet<u64>>,
+    read_up_to: HashMap<String, u64>,
     scheduled: HashSet<String>,
+}
+
+/// What one flush to a peer sends.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Held {
+    seqs: BTreeSet<u64>,
+    read_up_to: Option<u64>,
 }
 
 impl PendingAcks {
@@ -47,22 +58,36 @@ impl PendingAcks {
         self.scheduled.insert(peer.to_owned())
     }
 
-    /// The flush for `peer` ran: its entries, unless they stay held.
-    fn take(&mut self, peer: &str, hold: bool) -> Option<BTreeSet<u64>> {
+    /// Hold our read marker `seq` for `peer` (the highest one wins);
+    /// `true` when a flush must be scheduled.
+    fn add_read(&mut self, peer: &str, seq: u64) -> bool {
+        let marker = self.read_up_to.entry(peer.to_owned()).or_default();
+        *marker = (*marker).max(seq);
+        self.scheduled.insert(peer.to_owned())
+    }
+
+    /// The flush for `peer` ran: what it sends, unless it stays held.
+    fn take(&mut self, peer: &str, hold: bool) -> Option<Held> {
         self.scheduled.remove(peer);
         if hold {
             return None;
         }
-        self.by_peer.remove(peer)
+        let held = Held {
+            seqs: self.by_peer.remove(peer).unwrap_or_default(),
+            read_up_to: self.read_up_to.remove(peer),
+        };
+        (held != Held::default()).then_some(held)
     }
 
     fn held_peers(&self) -> Vec<String> {
-        self.by_peer.keys().cloned().collect()
+        let peers: BTreeSet<&String> = self.by_peer.keys().chain(self.read_up_to.keys()).collect();
+        peers.into_iter().cloned().collect()
     }
 
     /// Forget everything (lock).
     pub fn clear(&mut self) {
         self.by_peer.clear();
+        self.read_up_to.clear();
         self.scheduled.clear();
     }
 }
@@ -95,38 +120,67 @@ pub(crate) async fn committed(
         }
         Err(e) => tracing::debug!(error = %e, "no outbox: entry not recorded"),
     }
-    let accepted =
-        state::friend(host, from).is_some_and(|f| f.friendship_state == FriendshipState::Accepted);
-    if stream_seq == 0 || !accepted {
+    if stream_seq == 0 || !accepted(host, from) {
         return;
     }
-    if !host.stores().acks.lock().add(from, stream_seq) {
-        return;
+    let first = host.stores().acks.lock().add(from, stream_seq);
+    if first {
+        schedule(host, from);
     }
-    let (owned, peer, wait) = (host.owned(), from.to_owned(), delay(host.rng()));
-    host.scope().spawn_or_drop("dm ack", async move {
+}
+
+/// Whether `peer` is an accepted friend (never a pending, blocked or
+/// unknown one): the only peer a receipt goes to.
+pub(crate) fn accepted(host: &dyn FriendHost, peer: &str) -> bool {
+    state::friend(host, peer).is_some_and(|f| f.friendship_state == FriendshipState::Accepted)
+}
+
+/// Hold our read marker `seq` for `peer` on the coalescer.
+pub(crate) fn hold_read(host: &dyn FriendHost, peer: &str, seq: u64) {
+    let first = host.stores().acks.lock().add_read(peer, seq);
+    if first {
+        schedule(host, peer);
+    }
+}
+
+/// Flush `peer` after the coalescing delay.
+fn schedule(host: &dyn FriendHost, peer: &str) {
+    let (owned, peer, wait) = (host.owned(), peer.to_owned(), delay(host.rng()));
+    host.scope().spawn_or_drop("dm receipts", async move {
         tokio::time::sleep(wait).await;
         flush(owned.as_ref(), &peer).await;
     });
 }
 
-/// Send `peer`'s waiting acknowledgements, unless we are Invisible.
+/// Send `peer`'s waiting receipts, unless we are Invisible.
 async fn flush(host: &dyn FriendHost, peer: &str) {
     let invisible = host.invisible();
-    let Some(seqs) = host.stores().acks.lock().take(peer, invisible) else {
+    let Some(held) = host.stores().acks.lock().take(peer, invisible) else {
         return;
     };
-    let seqs: Vec<u64> = seqs.into_iter().collect();
-    for chunk in seqs.chunks(MAX_DM_ACK_SEQS) {
-        let ack = DirectBody::DmAck(DmAck {
-            stream_seqs: chunk.to_vec(),
-        });
+    let seqs: Vec<u64> = held.seqs.into_iter().collect();
+    let mut bodies: Vec<DirectBody> = seqs
+        .chunks(MAX_DM_ACK_SEQS)
+        .map(|chunk| {
+            DirectBody::DmAck(DmAck {
+                stream_seqs: chunk.to_vec(),
+            })
+        })
+        .collect();
+    // The marker is checked again as it leaves: the setting or the
+    // friendship may have changed while it waited.
+    if let Some(stream_seq) = held.read_up_to {
+        if receipts::may_send(host, peer).await {
+            bodies.push(DirectBody::ReadUpTo(ReadUpTo { stream_seq }));
+        }
+    }
+    for body in &bodies {
         // Never queued: an ack that does not leave is asked for again by
-        // the peer's resend.
-        match send::send_once(host, peer, &ack).await {
+        // the peer's resend, and a marker is sent again with the next read.
+        match send::send_once(host, peer, body).await {
             Ok(true) => {}
-            Ok(false) => tracing::debug!(to = %peer, "no route — DmAck dropped"),
-            Err(e) => tracing::debug!(to = %peer, error = %e, "DmAck not sent"),
+            Ok(false) => tracing::debug!(to = %peer, "no route — receipt dropped"),
+            Err(e) => tracing::debug!(to = %peer, error = %e, "receipt not sent"),
         }
     }
 }
@@ -184,8 +238,26 @@ mod tests {
         assert_eq!(acks.take("bob", true), None);
         assert_eq!(acks.held_peers().len(), 2);
         assert!(acks.add("bob", 4), "a held peer schedules again");
-        let seqs: Vec<u64> = acks.take("bob", false).unwrap().into_iter().collect();
+        let seqs: Vec<u64> = acks.take("bob", false).unwrap().seqs.into_iter().collect();
         assert_eq!(seqs, [1, 3, 4]);
+    }
+
+    #[test]
+    fn the_read_marker_shares_the_flush_and_is_held_while_invisible() {
+        let mut acks = PendingAcks::default();
+        assert!(acks.add_read("bob", 4));
+        assert!(!acks.add_read("bob", 2), "one flush per peer");
+        assert!(!acks.add("bob", 7), "acks ride the same flush");
+        // Invisible: nothing leaves, and the marker stays held.
+        assert_eq!(acks.take("bob", true), None);
+        assert_eq!(acks.held_peers(), ["bob"]);
+        assert!(acks.add_read("bob", 6), "a held peer schedules again");
+        // Leaving Invisible sends one marker, the highest.
+        let held = acks.take("bob", false).unwrap();
+        assert_eq!(held.read_up_to, Some(6));
+        assert_eq!(held.seqs.into_iter().collect::<Vec<_>>(), [7]);
+        assert_eq!(acks.take("bob", false), None, "sent once");
+        assert!(acks.held_peers().is_empty());
     }
 
     #[test]

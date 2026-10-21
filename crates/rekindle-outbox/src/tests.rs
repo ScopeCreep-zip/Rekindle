@@ -38,6 +38,8 @@ struct Store {
     last_seq: HashMap<String, i64>,
     received: HashSet<(String, String)>,
     published: Vec<(String, SendState)>,
+    /// Settled entries as their echo keeps them: stream, seq, id, state.
+    settled: Vec<(String, i64, String, SendState)>,
     attempted: Vec<String>,
     outcomes: VecDeque<AttemptOutcome>,
 }
@@ -142,9 +144,36 @@ impl OutboxDeps for Fake {
         }
         Ok(())
     }
-    async fn settle(&self, client_id: &str, _: SendState) -> Result<(), OutboxError> {
-        self.store.lock().rows.retain(|r| r.client_id != client_id);
+    async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError> {
+        let mut s = self.store.lock();
+        if let Some(r) = s.rows.iter().find(|r| r.client_id == client_id).cloned() {
+            s.settled.push((r.stream, r.stream_seq, r.client_id, state));
+        }
+        s.rows.retain(|r| r.client_id != client_id);
         Ok(())
+    }
+    async fn read_through(
+        &self,
+        stream: &str,
+        _: &str,
+        up_to: i64,
+    ) -> Result<Vec<(i64, String)>, OutboxError> {
+        let mut s = self.store.lock();
+        let mut raised: Vec<(i64, String)> = s
+            .rows
+            .iter()
+            .filter(|r| r.stream == stream && r.stream_seq <= up_to)
+            .map(|r| (r.stream_seq, r.client_id.clone()))
+            .collect();
+        s.rows
+            .retain(|r| !(r.stream == stream && r.stream_seq <= up_to));
+        for (st, seq, id, state) in &mut s.settled {
+            if st == stream && *seq <= up_to && *state != SendState::Read {
+                *state = SendState::Read;
+                raised.push((*seq, id.clone()));
+            }
+        }
+        Ok(raised)
     }
     async fn mark_received(&self, stream: &str, id: &str) -> Result<bool, OutboxError> {
         Ok(self
@@ -250,6 +279,41 @@ async fn a_local_ok_is_sent_and_only_the_peer_makes_it_delivered() {
         .acknowledge(&at.stream, at.stream_seq, PeerAck::Read)
         .await
         .unwrap());
+}
+
+#[tokio::test]
+async fn read_up_to_raises_every_entry_at_or_below_it_once() {
+    let o = outbox();
+    let a = o
+        .enqueue(entry(StreamKind::Dm, "bob", "a"), ())
+        .await
+        .unwrap();
+    o.enqueue(entry(StreamKind::Dm, "bob", "b"), ())
+        .await
+        .unwrap();
+    o.enqueue(entry(StreamKind::Dm, "bob", "c"), ())
+        .await
+        .unwrap();
+    o.enqueue(entry(StreamKind::Dm, "carol", "d"), ())
+        .await
+        .unwrap();
+    o.pump().await.unwrap();
+    // `a` was delivered and settled; `b` waits; `c` is past the marker.
+    o.acknowledge(&a.stream, a.stream_seq, PeerAck::Delivered)
+        .await
+        .unwrap();
+    o.deps().store.lock().published.clear();
+    assert_eq!(o.read_up_to(StreamKind::Dm, "bob", 2).await.unwrap(), 2);
+    let mut read = o.deps().store.lock().published.clone();
+    read.sort_by(|x, y| x.0.cmp(&y.0));
+    assert_eq!(
+        read,
+        [("a".into(), SendState::Read), ("b".into(), SendState::Read)]
+    );
+    let unread = |id| state_of(&o, id).is_some_and(|s| s != SendState::Read);
+    assert!(unread("c"), "past the marker");
+    assert!(unread("d"), "another stream");
+    assert_eq!(o.read_up_to(StreamKind::Dm, "bob", 2).await.unwrap(), 0);
 }
 
 #[tokio::test]

@@ -234,9 +234,13 @@ impl std::fmt::Debug for IpcRequest {
                 .field("limit", limit)
                 .field("before", before)
                 .finish(),
-            Self::DmMarkRead { peer_key } => f
+            Self::DmMarkRead {
+                peer_key,
+                rendered_through,
+            } => f
                 .debug_struct("DmMarkRead")
                 .field("peer_key", peer_key)
+                .field("rendered_through", rendered_through)
                 .finish(),
             Self::DmResend { message_id } => f
                 .debug_struct("DmResend")

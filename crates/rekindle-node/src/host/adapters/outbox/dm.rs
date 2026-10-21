@@ -177,6 +177,11 @@ impl DmOutbox for DmStream {
         acked.map_err(|e| failed(&e))
     }
 
+    async fn read_up_to(&self, from: &str, stream_seq: i64) -> Result<usize, FriendError> {
+        let read = self.0.read_up_to(StreamKind::Dm, from, stream_seq).await;
+        read.map_err(|e| failed(&e))
+    }
+
     async fn receive(&self, from: &str, client_id: &str) -> Result<bool, FriendError> {
         let stream = StreamKind::Dm.stream(from);
         self.0

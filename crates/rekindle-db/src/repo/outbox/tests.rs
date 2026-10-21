@@ -24,6 +24,7 @@ fn echo() -> NewDm<'static> {
         sender_key: OWNER,
         body: "hi",
         timestamp: 1,
+        stream_seq: None,
         is_read: true,
         message_id: "ignored",
         reply_to: None,
@@ -147,4 +148,39 @@ fn rows_survive_a_reopen() {
         ("a", SendState::Queued)
     );
     assert_eq!(rows[0].payload, b"frame");
+}
+
+#[test]
+fn read_through_raises_settled_and_waiting_echoes_at_or_below_the_marker() {
+    let conn = fixture::conn();
+    for id in ["a", "b", "c"] {
+        enqueue_with_echo(&conn, &row("dm:bob", id, 0), Some(&echo())).unwrap();
+    }
+    // `a` was delivered and settled; `b` and `c` wait.
+    assert!(settle(&conn, OWNER, "a", SendState::Delivered).unwrap());
+    let raised = read_through(&conn, OWNER, "dm:bob", "bob", 2).unwrap();
+    assert_eq!(raised, [(1, "a".to_owned()), (2, "b".to_owned())]);
+    let state = |id| own_dm(&conn, OWNER, id).unwrap().unwrap().row.send_state;
+    assert_eq!((state("a"), state("b")), (SendState::Read, SendState::Read));
+    assert_eq!(state("c"), SendState::Queued, "past the marker");
+    assert_eq!(unsettled_count(&conn, OWNER).unwrap(), 1);
+    assert!(read_through(&conn, OWNER, "dm:bob", "bob", 2)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn a_received_message_keeps_the_senders_stream_seq() {
+    let conn = fixture::conn();
+    let theirs = NewDm {
+        sender_key: "bob",
+        is_read: false,
+        message_id: "m1",
+        stream_seq: Some(7),
+        ..echo()
+    };
+    crate::repo::messages::insert_dm(&conn, &theirs).unwrap();
+    let seq = |id| crate::repo::messages::received_stream_seq(&conn, OWNER, "bob", id).unwrap();
+    assert_eq!(seq("m1"), Some(7));
+    assert_eq!(seq("unknown"), None);
 }

@@ -127,6 +127,9 @@ pub struct NewDm<'a> {
     /// Ours is `queued` until the send's outcome (`sent` or `failed`)
     /// replaces it; a received one is `delivered` (plan audit D-3).
     pub send_state: SendState,
+    /// Its place in its DM stream (ours: our outbox seq; received: the
+    /// sender's), which a `ReadUpTo` names (plan E2.5).
+    pub stream_seq: Option<i64>,
 }
 
 /// A stored direct message: its row, and whether this call stored it.
@@ -150,10 +153,10 @@ pub struct StoredDm {
 pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm> {
     let inserted = conn.execute(
         "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
-         timestamp, is_read, message_id, reply_to_id, send_state) \
+         timestamp, is_read, message_id, reply_to_id, send_state, stream_seq) \
          VALUES (?1, ?2, 'dm', ?3, ?4, ?5, ?6, ?7, \
                  (SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-                  AND message_id = ?8 ORDER BY id LIMIT 1), ?9) \
+                  AND message_id = ?8 ORDER BY id LIMIT 1), ?9, ?10) \
          ON CONFLICT(owner_key, conversation_id, sender_key, message_id) \
          WHERE message_id IS NOT NULL DO NOTHING",
         params![
@@ -165,7 +168,8 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
             dm.is_read,
             dm.message_id,
             dm.reply_to,
-            dm.send_state.as_str()
+            dm.send_state.as_str(),
+            dm.stream_seq
         ],
     )? > 0;
     let id = conn.query_row(
@@ -260,6 +264,29 @@ pub fn own_dm(
         },
     )
     .optional()
+}
+
+/// The stream seq of `peer_key`'s message `message_id` (its client id),
+/// as it arrived; `None` when no such received message is held or it
+/// carried none (plan E2.5: the window reports the newest one it rendered).
+///
+/// # Errors
+/// The read failed.
+pub fn received_stream_seq(
+    conn: &Connection,
+    owner_key: &str,
+    peer_key: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<i64>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT stream_seq FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+         AND conversation_type = 'dm' AND sender_key = ?2 AND message_id = ?3",
+        params![owner_key, peer_key, message_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(Option::flatten)
 }
 
 /// Mark every message from `peer_key` read.
@@ -360,6 +387,7 @@ mod tests {
             is_read: sender == OWNER,
             message_id: id,
             reply_to,
+            stream_seq: None,
             send_state: if sender == OWNER {
                 SendState::Queued
             } else {

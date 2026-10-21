@@ -106,11 +106,17 @@ CREATE TABLE IF NOT EXISTS messages (
     -- While `queued` on a held write: the record slot it waits on, so the
     -- next login re-registers it when the write is restored (C7.6h).
     held_record_key TEXT,
-    held_subkey INTEGER
+    held_subkey INTEGER,
+    -- A direct message's place in its DM stream (plan E2.5, r10): ours is
+    -- our outbox seq to the peer, a received one the sender's; a
+    -- `ReadUpTo` names it. NULL for a channel message.
+    stream_seq INTEGER CHECK(stream_seq IS NULL OR stream_seq >= 1)
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(owner_key, conversation_id, is_read) WHERE is_read = 0;
+CREATE INDEX IF NOT EXISTS idx_messages_stream_seq
+  ON messages(owner_key, conversation_id, sender_key, stream_seq) WHERE stream_seq IS NOT NULL;
 -- A row with no client id (a channel message from a path that carries
 -- none) is deduplicated by its sender and time; a row with one by its
 -- author's client id, so two messages in one millisecond stay two, and a

@@ -47,6 +47,8 @@ pub(crate) struct NewDmFields {
     /// `Delivered` for a received one (plan audit D-3); ours is the
     /// outbox's echo.
     pub send_state: SendState,
+    /// The entry's place in the sender's DM stream (plan E2.5).
+    pub stream_seq: Option<i64>,
 }
 
 impl NewDmFields {
@@ -70,6 +72,7 @@ impl NewDmFields {
                 message_id: &self.message_id,
                 reply_to: self.reply_to.as_deref(),
                 send_state: self.send_state,
+                stream_seq: self.stream_seq,
             };
             rekindle_db::repo::messages::insert_dm(conn, &dm)
         })
@@ -250,11 +253,18 @@ pub async fn history(
         .collect())
 }
 
-/// Mark everything from `peer` read.
+/// Mark everything from `peer` read. `rendered_through` is the client id
+/// of the newest message of theirs the focused window rendered: our read
+/// marker for it goes to them when our receipts setting is on (plan E2.5,
+/// [`super::receipts`]).
 ///
 /// # Errors
 /// The marks could not be stored.
-pub async fn mark_read(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
+pub async fn mark_read(
+    host: &dyn FriendHost,
+    peer: &str,
+    rendered_through: Option<&str>,
+) -> Result<(), FriendError> {
     let owner = state::owner(host)?;
     let pk = peer.to_string();
     state::db_call!(host, "mark messages read", move |conn| {
@@ -263,6 +273,9 @@ pub async fn mark_read(host: &dyn FriendHost, peer: &str) -> Result<(), FriendEr
     .await?;
     state::update(host, peer, |f| f.unread_count = 0);
     publish_unread(host, peer, 0);
+    if let Some(message_id) = rendered_through {
+        super::receipts::rendered(host, peer, message_id).await?;
+    }
     Ok(())
 }
 

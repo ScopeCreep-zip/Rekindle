@@ -195,6 +195,37 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(true)
     }
 
+    /// The peer read our `kind` stream to `scope` through `up_to`
+    /// (`ReadUpTo`, plan E2.5): every entry at or below it, settled or
+    /// not, becomes `read`, the top of the lattice (`merge` of any state
+    /// with the peer's `Read`). Returns how many entries changed.
+    ///
+    /// # Errors
+    /// The storage failed; nothing changed.
+    pub async fn read_up_to(
+        &self,
+        kind: StreamKind,
+        scope: &str,
+        up_to: i64,
+    ) -> Result<usize, OutboxError> {
+        let stream = kind.stream(scope);
+        let raised = self.deps.read_through(&stream, scope, up_to).await?;
+        for (stream_seq, client_id) in &raised {
+            self.deps.publish(StateChange {
+                stream: stream.clone(),
+                stream_seq: *stream_seq,
+                client_id: client_id.clone(),
+                kind,
+                state: SendState::Read,
+                wedge_reason: None,
+            });
+        }
+        if !raised.is_empty() {
+            self.wake.notify_one();
+        }
+        Ok(raised.len())
+    }
+
     /// The user's Retry: a failed row is queued again under the **same**
     /// client id, with a fresh deadline; a queued one is attempted now.
     /// This is the one move down the lattice, and only the user makes it.

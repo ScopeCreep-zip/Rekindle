@@ -7,6 +7,7 @@ mod chat;
 pub mod frame;
 pub mod outbox;
 mod outgoing;
+pub(crate) mod receipts;
 pub mod route;
 mod send;
 mod typing;

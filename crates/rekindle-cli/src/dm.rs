@@ -56,6 +56,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
                 client,
                 IpcRequest::DmMarkRead {
                     peer_key: friend.clone(),
+                    rendered_through: None,
                 },
             )
             .await?;

@@ -114,6 +114,15 @@ pub trait OutboxDeps: Send + Sync {
     async fn update(&self, client_id: &str, update: &RowUpdate) -> Result<(), OutboxError>;
     /// Project `state` and remove the row.
     async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError>;
+    /// The peer read `stream` (scope `scope`) through `up_to`: raise every
+    /// echo at or below it to `read` and settle its rows still waiting, in
+    /// one transaction; the entries raised, as `(stream_seq, client_id)`.
+    async fn read_through(
+        &self,
+        stream: &str,
+        scope: &str,
+        up_to: i64,
+    ) -> Result<Vec<(i64, String)>, OutboxError>;
     /// Record a received client id; `false` when it was already applied.
     async fn mark_received(&self, stream: &str, client_id: &str) -> Result<bool, OutboxError>;
     async fn unsettled_count(&self) -> Result<u64, OutboxError>;

@@ -45,6 +45,12 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn acknowledge(&self, from: &str, stream_seq: i64) -> Result<bool, FriendError>;
+    /// `from` read our stream to them through `stream_seq` (`ReadUpTo`):
+    /// every entry at or below it becomes `read`; how many changed.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn read_up_to(&self, from: &str, stream_seq: i64) -> Result<usize, FriendError>;
     /// Entry `client_id` of `from`'s stream was committed here: `true` the
     /// first time, `false` for a resend already applied.
     ///
