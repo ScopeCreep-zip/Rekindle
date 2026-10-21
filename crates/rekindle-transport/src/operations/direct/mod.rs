@@ -8,6 +8,7 @@ pub(crate) mod admission;
 pub mod frame;
 mod handlers;
 pub mod replay;
+pub mod retry_requests;
 
 pub use frame::{Dropped, Opened};
 use rekindle_codec::capnp_codec::direct::DirectBody;
@@ -119,7 +120,10 @@ pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
 /// Each row is judged by the gate again (a block or a removal since the
 /// decrypt refuses it, and the row goes). An unported kind's replay is
 /// dropped: its owner's live state did not survive the restart either.
+/// The send log and the retry state past their horizons are pruned first
+/// (plan E2.5, D24).
 pub async fn replay_unprocessed(host: &dyn FriendHost) {
+    retry_requests::prune(host).await;
     let (Ok(local), Ok(db)) = (host.local_party(), host.db()) else {
         return;
     };

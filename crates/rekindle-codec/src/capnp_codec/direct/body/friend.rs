@@ -8,7 +8,7 @@ use crate::capnp_codec::direct::{
 use crate::capnp_codec::CodecError;
 use crate::direct_capnp::{
     friend_accept, friend_request, friends_key, identity_rotated, pre_key_rejected,
-    profile_key_rotated, session_reset_decline, session_reset_request,
+    profile_key_rotated, retry_request, session_reset_decline, session_reset_request,
 };
 
 /// 0x0002 FriendRequest (sealed, by `app_call`). It carries no bundle:
@@ -237,6 +237,33 @@ impl FriendsKey {
         Ok(Self {
             epoch: r.get_epoch(),
             key: fixed(r.get_key(), "friends key")?,
+        })
+    }
+}
+
+/// 0x0006 RetryRequest, inside the ratchet: a message of the sender's we
+/// could not open, named by its header id and the ratchet key we observed
+/// on it (plan E2.5, D24).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RetryRequest {
+    pub msg_id: [u8; 32],
+    pub observed_ratchet_key: [u8; 32],
+    /// Milliseconds.
+    pub ts: u64,
+}
+
+impl RetryRequest {
+    pub(super) fn write(&self, mut b: retry_request::Builder<'_>) {
+        b.set_msg_id(&self.msg_id);
+        b.set_observed_ratchet_key(&self.observed_ratchet_key);
+        b.set_ts(self.ts);
+    }
+
+    pub(super) fn read(r: retry_request::Reader<'_>) -> Result<Self, CodecError> {
+        Ok(Self {
+            msg_id: fixed(r.get_msg_id(), "retry msg id")?,
+            observed_ratchet_key: fixed(r.get_observed_ratchet_key(), "observed ratchet key")?,
+            ts: r.get_ts(),
         })
     }
 }

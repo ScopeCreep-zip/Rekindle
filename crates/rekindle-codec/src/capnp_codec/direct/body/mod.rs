@@ -9,9 +9,8 @@
 //! definitions. FriendReject, Unfriended, UnfriendedAck and
 //! SessionResetAccept have an empty body. GroupDmInvite and GroupDmLeave
 //! carry the SMPL group path's fields unchanged until E2.6 replaces them.
-//! RetryRequest (E2.5), GroupDmAccept and GroupDmDecline (E2.6) are
-//! allocated here; their steps define their bodies, so
-//! [`DirectBody::decode`] refuses them until then.
+//! GroupDmAccept and GroupDmDecline (E2.6) are allocated here; their step
+//! defines their bodies, so [`DirectBody::decode`] refuses them until then.
 
 mod calls;
 mod content;
@@ -26,7 +25,7 @@ pub use calls::{
 pub use content::{DmDelete, DmEdit, DmReaction, DmText, Typing};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
-    SessionResetDecline, SessionResetRequest,
+    RetryRequest, SessionResetDecline, SessionResetRequest,
 };
 pub use group::{GroupDmInvite, GroupDmLeave};
 pub use relay::{
@@ -110,6 +109,7 @@ direct_bodies! {
         FriendRequest(FriendRequest) = friend_request,
         RelayEnvelope(RelayEnvelope) = relay_envelope,
         PreKeyRejected(PreKeyRejected) = pre_key_rejected,
+        RetryRequest(RetryRequest) = retry_request,
         SessionResetRequest(SessionResetRequest) = session_reset_request,
         SessionResetDecline(SessionResetDecline) = session_reset_decline,
         DmText(DmText) = dm_text,

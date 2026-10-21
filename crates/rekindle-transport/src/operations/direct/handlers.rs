@@ -94,6 +94,9 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::SessionResetRequest(r) => {
             applied = session_reset::on_request(host, sender, &r.reason).await;
         }
+        DirectBody::RetryRequest(r) => {
+            applied = super::retry_requests::on_retry_request(host, sender, r).await;
+        }
         DirectBody::SessionResetAccept => session_reset::on_accept(host, sender),
         DirectBody::PreKeyRejected(r) => {
             crate::operations::prekeys::on_rejected(host, sender, r).await;

@@ -220,6 +220,8 @@ non-repudiation from leaking globally.
 
 Covered under STRIDE I.
 
+The send log (`message_send_log`, plan E2.5, D24) keeps the plaintext of each user-content 1:1 message we sent, at rest under the identity database's SQLCipher key, for `DELIVERY_HORIZON` (30 days) so a peer can ask for it again; a resend needs the ratchet key we logged, and rows past the horizon are pruned at unlock.
+
 ### U — Unawareness
 
 | ID | Threat | Mitigation |

@@ -268,9 +268,15 @@ async fn open_ratchet(
         type_id.as_u16(),
     )
     .await;
-    if inbound.is_ok() {
+    match &inbound {
         // They answered under the session: our first contact landed.
-        crate::operations::prekeys::acknowledged(host, &sender_hex);
+        Ok(_) => crate::operations::prekeys::acknowledged(host, &sender_hex),
+        // User content that did not open is asked for again after their
+        // CaughtUp (plan E2.5, D24).
+        Err(e) if super::retry_requests::requestable(type_id, e) => {
+            super::retry_requests::note_failed(host, sender, body).await;
+        }
+        Err(_) => {}
     }
     recorded(host, sender, sender_hex, type_id, inbound)
 }

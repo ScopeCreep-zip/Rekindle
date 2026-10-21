@@ -213,14 +213,18 @@ fn samples() -> Vec<DirectBody> {
         }),
         DirectBody::WakeNotify(WakeNotify { ts: 1_700_000_000 }),
         DirectBody::Typing(Typing { typing: true }),
+        DirectBody::RetryRequest(RetryRequest {
+            msg_id: [4; 32],
+            observed_ratchet_key: [5; 32],
+            ts: 1_700_000_000_000,
+        }),
     ]
 }
 
 /// The kinds §6 allocates whose bodies a later step defines, and the
 /// PreKeyInit, which is a frame.
-const NO_BODY_YET: [DmTypeId; 4] = [
+const NO_BODY_YET: [DmTypeId; 3] = [
     DmTypeId::PreKeyInit,
-    DmTypeId::RetryRequest,
     DmTypeId::GroupDmAccept,
     DmTypeId::GroupDmDecline,
 ];

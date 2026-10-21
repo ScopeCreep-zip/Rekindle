@@ -34,6 +34,18 @@ pub fn ad_extra(type_id: DmTypeId) -> [u8; 2] {
     type_id.as_u16().to_be_bytes()
 }
 
+/// Whether a ratchet message of `type_id` is user content, logged in
+/// `message_send_log` when we send it and asked for again with a
+/// `RetryRequest` when it does not open (plan E2.5, D24): a direct message
+/// and its edits, deletes and reactions.
+#[must_use]
+pub fn is_logged(type_id: DmTypeId) -> bool {
+    matches!(
+        type_id,
+        DmTypeId::DmText | DmTypeId::DmEdit | DmTypeId::DmDelete | DmTypeId::DmReaction
+    )
+}
+
 /// The HPKE info label of a sealed kind; `None` for the other carriers.
 #[must_use]
 pub fn sealed_info(type_id: DmTypeId) -> Option<&'static str> {
@@ -99,7 +111,7 @@ fn content(host: &dyn FriendHost, body: &DirectBody, hint: ContentHint) -> Vec<u
 }
 
 /// `body` as a ratchet message under our session with `to`, recorded
-/// before it is returned. With no session at all with an accepted friend
+/// before it is returned (user content with its send-log row, [`is_logged`]). With no session at all with an accepted friend
 /// (they rotated their identity, or ours moved), the message opens one from
 /// a slot of their prekey record (plan E2.3: "the next send to the new
 /// identity initiates from its published bundle"; E2.4: from its record). This never re-initiates
@@ -118,14 +130,21 @@ pub async fn ratchet_frame(
     let type_id = body.type_id();
     let local = host.local_party()?;
     let peer = peer_address(to)?;
-    let encrypted = ratchet::encrypt_and_record_outbound(
-        &host.db()?,
-        &local,
-        &peer,
-        &content(host, body, hint),
-        &ad_extra(type_id),
-    )
-    .await;
+    let (db, plaintext) = (host.db()?, content(host, body, hint));
+    let encrypted = if is_logged(type_id) {
+        ratchet::encrypt_record_and_log_outbound(
+            &db,
+            &local,
+            &peer,
+            &plaintext,
+            &ad_extra(type_id),
+            type_id.as_u16(),
+        )
+        .await
+    } else {
+        ratchet::encrypt_and_record_outbound(&db, &local, &peer, &plaintext, &ad_extra(type_id))
+            .await
+    };
     let message = match encrypted {
         Ok(message) => message,
         Err(RatchetError::Crypto(CryptoError::NoSession(_)))

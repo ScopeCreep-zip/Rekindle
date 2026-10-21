@@ -123,6 +123,16 @@ struct SessionResetDecline {
   reason @0 :Text;
 }
 
+# 0x0006 (E2.5, D24), inside the ratchet: a message of the sender's we
+# could not open. `msgId` is its header id (BLAKE3 derive-key
+# DM_RATCHET_MESSAGE_ID over `dh || n`), `observedRatchetKey` the header's
+# `dh`; the sender resends only when that is the key it logged.
+struct RetryRequest {
+  msgId @0 :Data;                       # 32 B
+  observedRatchetKey @1 :Data;          # 32 B
+  ts @2 :UInt64;                        # ms
+}
+
 # 0x0105.
 struct ProfileKeyRotated {
   newProfileDhtKey @0 :Text;
