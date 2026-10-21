@@ -279,3 +279,45 @@ impl std::error::Error for MyError {
         None
     }
 }
+
+/// The installed watch is told of each call and its token is dropped only
+/// after the call's result is sent (plan E2.B S8).
+#[tokio::test]
+async fn the_call_watch_spans_each_call() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static BEGUN: AtomicUsize = AtomicUsize::new(0);
+    static ENDED: AtomicUsize = AtomicUsize::new(0);
+
+    struct Ends;
+    impl Drop for Ends {
+        fn drop(&mut self) {
+            ENDED.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct Counting;
+    impl crate::CallWatch for Counting {
+        fn begin(&self) -> crate::CallToken {
+            BEGUN.fetch_add(1, Ordering::SeqCst);
+            Some(Box::new(Ends))
+        }
+    }
+
+    static WATCH: Counting = Counting;
+    assert!(crate::watch_calls(&WATCH));
+    assert!(!crate::watch_calls(&WATCH), "the first watch stays");
+
+    let conn = Connection::open_in_memory().await.unwrap();
+    let begun = BEGUN.load(Ordering::SeqCst);
+    assert!(begun >= 1, "the open is a call");
+    let seen = conn
+        .call(|_| Ok::<_, rusqlite::Error>(ENDED.load(Ordering::SeqCst)))
+        .await
+        .unwrap();
+    assert!(seen < BEGUN.load(Ordering::SeqCst), "ended after it ran");
+    conn.call_detached(|_| {}).unwrap();
+    conn.close().await.unwrap();
+    assert!(BEGUN.load(Ordering::SeqCst) >= begun + 3);
+    assert!(ENDED.load(Ordering::SeqCst) >= begun + 2);
+}

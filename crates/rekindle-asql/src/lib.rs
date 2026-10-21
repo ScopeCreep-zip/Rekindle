@@ -4,8 +4,10 @@
 //! see the crate `LICENSE`). The only change vs upstream is the dependency
 //! pin (`rusqlite 0.37` → `0.38`) in `Cargo.toml` — upstream is unmaintained
 //! and its `rusqlite ^0.37` pin conflicts with veilid-core 0.5.3's sqlite
-//! chain (`rusqlite 0.38`). The source below is unmodified so it keeps
-//! upstream's battle-tested dedicated-thread + channel + close semantics; our
+//! chain (`rusqlite 0.38`). The source below keeps upstream's battle-tested
+//! dedicated-thread + channel + close semantics; its two additions are
+//! [`Connection::call_detached`] and the call watch (below), neither of which
+//! changes how a call runs. Our
 //! crates depend on it under the name `tokio_rusqlite` via a Cargo
 //! `package`-rename, so no call-sites change.
 //!
@@ -22,6 +24,14 @@
 //! is called: provided function is boxed, sent to the thread through mpsc
 //! channel and executed. Return value is then sent by oneshot channel from
 //! the thread and then returned from function.
+//!
+//! # Call watch
+//!
+//! The one addition to upstream's API: [`watch_calls`] installs a process-wide
+//! [`CallWatch`] told of every call queued on a connection's thread (open,
+//! call, detached call, close). Production installs none, so a call costs one
+//! unset `OnceLock` read. The network simulator installs one so its paused
+//! tokio clock does not advance while a database thread works (plan E2.B S8).
 //!
 //! # Example
 //!
@@ -118,6 +128,7 @@ use crossbeam_channel::{Receiver, Sender};
 use std::{
     fmt::{self, Debug, Display},
     path::Path,
+    sync::OnceLock,
     thread,
 };
 use tokio::sync::oneshot::{self};
@@ -125,6 +136,29 @@ use tokio::sync::oneshot::{self};
 pub use rusqlite::{self, *};
 
 const BUG_TEXT: &str = "bug in tokio-rusqlite, please report";
+
+/// Told of every call queued on a connection's background thread.
+pub trait CallWatch: Send + Sync {
+    /// A call is being queued. The token returned is dropped on the
+    /// background thread once the call has run and its result (if any) is
+    /// sent, or wherever the call is dropped unrun.
+    fn begin(&self) -> CallToken;
+}
+
+/// What a [`CallWatch`] holds for one call; dropping it ends the call.
+pub type CallToken = Option<Box<dyn Send>>;
+
+static WATCH: OnceLock<&'static dyn CallWatch> = OnceLock::new();
+
+/// Install the process-wide [`CallWatch`]. Returns `false` if one is
+/// already installed (the first stays).
+pub fn watch_calls(watch: &'static dyn CallWatch) -> bool {
+    WATCH.set(watch).is_ok()
+}
+
+fn begin() -> CallToken {
+    WATCH.get().and_then(|watch| watch.begin())
+}
 
 #[derive(Debug)]
 /// Represents the errors specific for this library.
@@ -179,7 +213,10 @@ type CallFn = Box<dyn FnOnce(&mut rusqlite::Connection) + Send + 'static>;
 
 enum Message {
     Execute(CallFn),
-    Close(oneshot::Sender<std::result::Result<(), rusqlite::Error>>),
+    Close(
+        oneshot::Sender<std::result::Result<(), rusqlite::Error>>,
+        CallToken,
+    ),
 }
 
 /// A handle to call functions in background thread.
@@ -313,11 +350,13 @@ impl Connection {
         R: Send + 'static,
     {
         let (sender, receiver) = oneshot::channel::<R>();
+        let token = begin();
 
         self.sender
             .send(Message::Execute(Box::new(move |conn| {
                 let value = function(conn);
                 let _ = sender.send(value);
+                drop(token);
             })))
             .map_err(|_| Error::ConnectionClosed)?;
 
@@ -336,8 +375,12 @@ impl Connection {
     where
         F: FnOnce(&mut rusqlite::Connection) + Send + 'static,
     {
+        let token = begin();
         self.sender
-            .send(Message::Execute(Box::new(function)))
+            .send(Message::Execute(Box::new(move |conn| {
+                function(conn);
+                drop(token);
+            })))
             .map_err(|_| Error::ConnectionClosed)
     }
 
@@ -355,11 +398,13 @@ impl Connection {
         R: Send + 'static,
     {
         let (sender, receiver) = oneshot::channel::<R>();
+        let token = begin();
 
         self.sender
             .send(Message::Execute(Box::new(move |conn| {
                 let value = function(conn);
                 let _ = sender.send(value);
+                drop(token);
             })))
             .expect("database connection should be open");
 
@@ -384,7 +429,9 @@ impl Connection {
     pub async fn close(self) -> Result<()> {
         let (sender, receiver) = oneshot::channel::<std::result::Result<(), rusqlite::Error>>();
 
-        if let Err(crossbeam_channel::SendError(_)) = self.sender.send(Message::Close(sender)) {
+        if let Err(crossbeam_channel::SendError(_)) =
+            self.sender.send(Message::Close(sender, begin()))
+        {
             // If the channel is closed on the other side, it means the connection closed successfully
             // This is a safeguard against calling close on a `Copy` of the connection
             return Ok(());
@@ -423,17 +470,21 @@ where
 {
     let (sender, receiver) = crossbeam_channel::unbounded::<Message>();
     let (result_sender, result_receiver) = oneshot::channel();
+    let token = begin();
 
     thread::spawn(move || {
         let conn = match open() {
             Ok(c) => c,
             Err(e) => {
                 let _ = result_sender.send(Err(e));
+                drop(token);
                 return;
             }
         };
 
-        if let Err(_e) = result_sender.send(Ok(())) {
+        let sent = result_sender.send(Ok(()));
+        drop(token);
+        if let Err(_e) = sent {
             return;
         }
 
@@ -456,17 +507,19 @@ fn event_loop(mut conn: rusqlite::Connection, receiver: Receiver<Message>) {
     while let Ok(message) = receiver.recv() {
         match message {
             Message::Execute(f) => f(&mut conn),
-            Message::Close(s) => {
+            Message::Close(s, token) => {
                 let result = conn.close();
 
                 match result {
                     Ok(v) => {
                         s.send(Ok(v)).expect(BUG_TEXT);
+                        drop(token);
                         break;
                     }
                     Err((c, e)) => {
                         conn = c;
                         s.send(Err(e)).expect(BUG_TEXT);
+                        drop(token);
                     }
                 }
             }
