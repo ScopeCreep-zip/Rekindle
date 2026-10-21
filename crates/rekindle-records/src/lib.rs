@@ -7,6 +7,7 @@
 //! All community records (governance, registry, channels) use the same
 //! schema — the Q-pid equation from architecture doc §4.2.
 
+pub mod chain;
 pub mod lease;
 pub mod lifecycle;
 pub mod port;

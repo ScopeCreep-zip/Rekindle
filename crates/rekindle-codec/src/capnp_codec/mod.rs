@@ -175,6 +175,7 @@ fn read_game_status(
 }
 
 pub mod account;
+pub mod chain;
 pub mod direct;
 pub mod friend;
 pub mod identity;

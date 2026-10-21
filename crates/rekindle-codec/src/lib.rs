@@ -44,6 +44,7 @@ macro_rules! capnp_module {
 capnp_module!(direct_capnp);
 capnp_module!(presence_capnp);
 capnp_module!(identity_capnp);
+capnp_module!(chain_capnp);
 capnp_module!(friend_capnp);
 capnp_module!(voice_capnp);
 capnp_module!(voice_packet_capnp);

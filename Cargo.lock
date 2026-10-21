@@ -7888,7 +7888,9 @@ name = "rekindle-records"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "parking_lot 0.12.5",
  "proptest",
+ "rekindle-codec",
  "rekindle-types",
  "serde",
  "serde_json",

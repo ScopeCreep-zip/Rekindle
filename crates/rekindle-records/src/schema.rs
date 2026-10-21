@@ -73,6 +73,15 @@ pub fn prekeys() -> RecordSchema {
     }
 }
 
+/// A DM participant record (plan E2.5): the chain head and the retire
+/// mark, owned by a keypair only the participant holds.
+#[must_use]
+pub fn dm_participant() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::dm_participant::SUBKEY_COUNT,
+    }
+}
+
 /// A single-subkey record: our friend list, the account header.
 #[must_use]
 pub fn single() -> RecordSchema {

@@ -156,9 +156,22 @@ pub mod prekeys {
     }
 }
 
+/// Subkey layout for a DM participant record (plan E2.5): one DFLT(2)
+/// record per participant per conversation, owned by a random keypair only
+/// that participant holds. It anchors the participant's append-only chain
+/// of sealed DFLT(1) pages (`rekindle_records::chain`).
+pub mod dm_participant {
+    /// The newest chain page: Cap'n Proto `ChainHead`.
+    pub const HEAD: u32 = 0;
+    /// The highest retired sequence number: Cap'n Proto `ChainRetire`.
+    pub const RETIRE_THROUGH: u32 = 1;
+    /// Total subkeys to allocate when creating the record.
+    pub const SUBKEY_COUNT: u16 = 2;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{manifest, prekeys, profile};
+    use super::{dm_participant, manifest, prekeys, profile};
 
     /// Pins the prekey record: the head, then exactly `SLOT_COUNT` slots,
     /// and the per-subkey cap Veilid derives for a DFLT(101) record.
@@ -180,6 +193,17 @@ mod tests {
             prekeys::SLOT_COUNT - 1
         )));
         assert!(!prekeys::is_slot(prekeys::slot_subkey(prekeys::SLOT_COUNT)));
+    }
+
+    /// Pins the DM participant record: the head, then the retire mark.
+    #[test]
+    fn dm_participant_layout_is_pinned() {
+        assert_eq!(dm_participant::HEAD, 0);
+        assert_eq!(dm_participant::RETIRE_THROUGH, 1);
+        assert_eq!(
+            u32::from(dm_participant::SUBKEY_COUNT),
+            dm_participant::RETIRE_THROUGH + 1
+        );
     }
 
     /// Every profile subkey must be distinct. The drift this module

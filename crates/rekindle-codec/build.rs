@@ -101,6 +101,7 @@ fn main() {
                 .src_prefix("../../schemas")
                 .file("../../schemas/direct.capnp")
                 .file("../../schemas/identity.capnp")
+                .file("../../schemas/chain.capnp")
                 .file("../../schemas/presence.capnp")
                 .file("../../schemas/friend.capnp")
                 .file("../../schemas/voice.capnp")

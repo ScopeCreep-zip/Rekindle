@@ -128,7 +128,12 @@ builds it), `hex`, `serde`, `serde_json`, `thiserror`, `tracing`, `zeroize`.
 
 DHT record lifecycle management for the v2.0 universal SMPL schema
 (`o_cnt: 0`, 255 member slots — the "Q-pid equation"), and the Veilid-free
-ports. Modules: `lease` (lease ids, subkey sets, community leases),
+ports. Modules: `chain` (plan E2.5, primitive N2: the append-only chain on
+`&dyn RecordPort` — a participant record's `HEAD` names the newest sealed
+DFLT(1) page, written once with its owner keypair dropped, each page names the
+one before it, and `read_after(cursor)` walks back to the cursor and stops at
+`RETIRE_THROUGH`, reporting a retired gap; pages are Cap'n Proto
+`schemas/chain.capnp` through `rekindle-codec`), `lease` (lease ids, subkey sets, community leases),
 `lifecycle` (open / close / republish / refresh), `port` (plan C9.1: the
 `RecordPort`/`RecordStore`, `RoutePort` and `AppMessagePort` traits, with
 keys, keypairs and route ids as Veilid's text, `PortEvent`, `PortSet` and
@@ -137,8 +142,8 @@ keys, keypairs and route ids as Veilid's text, `PortEvent`, `PortSet` and
 (the named record schemas as `RecordSchema` builders, and the universal
 SMPL constants).
 
-Dependencies: `rekindle-types`, `async-trait`, `serde`, `serde_json`,
-`thiserror`, `tokio` (`sync`). **No `veilid-core`**, and no `veilid_core`
+Dependencies: `rekindle-types`, `rekindle-codec`, `async-trait`, `serde`,
+`serde_json`, `thiserror`, `tokio` (`sync`). **No `veilid-core`**, and no `veilid_core`
 named anywhere in it (`cargo xtask check-veilid-dht-calls`).
 
 ### rekindle-events
