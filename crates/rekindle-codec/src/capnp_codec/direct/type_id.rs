@@ -171,7 +171,9 @@ impl DmTypeId {
 
     /// Whether a PreKeyInit may carry this kind as its first payload: the
     /// two accepts, and the content kinds a message to a friend with no
-    /// session opens one with (plan E2.3, after an identity rotation).
+    /// session opens one with (plan E2.3, after an identity rotation), and
+    /// the pairwise group control kinds a roster member who is not a friend
+    /// opens one with (plan E2.6; never `GroupContent`, a chain entry).
     /// An explicit allowlist (plan audit G1): a removal, its ack, a relay
     /// envelope, an identity rotation, typing and the call kinds never
     /// open a session.
@@ -185,6 +187,10 @@ impl DmTypeId {
                 | Self::DmEdit
                 | Self::DmDelete
                 | Self::DmReaction
+                | Self::GroupDmInvite
+                | Self::GroupDmAccept
+                | Self::GroupDmDecline
+                | Self::GroupDmLeave
         )
     }
 
@@ -259,7 +265,8 @@ mod tests {
         );
     }
 
-    /// G1: only the accepts and the content kinds open a session.
+    /// G1: only the accepts, the content kinds and the pairwise group
+    /// control kinds open a session.
     #[test]
     fn the_first_payloads_are_an_allowlist() {
         let first: Vec<u16> = DmTypeId::ALL
@@ -267,7 +274,10 @@ mod tests {
             .filter(|k| k.is_first_payload())
             .map(|k| k.as_u16())
             .collect();
-        assert_eq!(first, [0x0008, 0x0100, 0x0101, 0x0110, 0x0111, 0x0112]);
+        assert_eq!(
+            first,
+            [0x0008, 0x0100, 0x0101, 0x0110, 0x0111, 0x0112, 0x0120, 0x0121, 0x0122, 0x0123]
+        );
         for kind in [
             DmTypeId::Unfriended,
             DmTypeId::UnfriendedAck,
@@ -277,6 +287,8 @@ mod tests {
             DmTypeId::CallInvite,
             DmTypeId::PreKeyInit,
             DmTypeId::FriendRequest,
+            DmTypeId::GroupContent,
+            DmTypeId::StreamRecord,
         ] {
             assert!(!kind.is_first_payload(), "{kind:?}");
         }

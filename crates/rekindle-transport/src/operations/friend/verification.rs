@@ -143,6 +143,11 @@ pub async fn key_change(
 /// `resend_dm`), or carries it (`session_reset::accept`); nothing else goes,
 /// typing included.
 ///
+/// The change is recorded only for a key the user verified, and only a
+/// friend is verified: a group member who is not a friend (plan E2.6) has
+/// no verification row, so nothing is held for them here, and a friend's
+/// frames, the group ones included, are always held on their change.
+///
 /// # Errors
 /// `Conflict` while the change is unacknowledged, or it could not be read.
 /// Whether `kind` only withdraws from, or refuses, the peer: removing them,

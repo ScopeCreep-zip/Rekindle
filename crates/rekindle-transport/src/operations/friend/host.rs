@@ -46,6 +46,11 @@ pub struct FriendStores {
     /// Our first contacts not yet answered under their session, by peer
     /// (plan E2.4, B6).
     pub first_contacts: Mutex<HashMap<String, crate::operations::prekeys::FirstContact>>,
+    /// Our group control frames that opened a session with a roster member
+    /// from their prekey record, until they answer under it (plan E2.6,
+    /// B6): the frame resent once from a fresh slot if they refuse it.
+    pub group_first_contacts:
+        Mutex<HashMap<String, crate::operations::group_dm::GroupFirstContact>>,
     /// Each friend's verified identity rotation awaiting the user's
     /// review, by their current key: the new identity (owner ruling R1).
     /// Memory only; the friend re-sends it on their next contact.
@@ -70,6 +75,7 @@ impl FriendStores {
         self.replay.lock().clear();
         self.incoming_resets.lock().clear();
         self.first_contacts.lock().clear();
+        self.group_first_contacts.lock().clear();
         self.pending_rotations.lock().clear();
         self.typing_in.lock().clear();
         self.typing_out.lock().clear();

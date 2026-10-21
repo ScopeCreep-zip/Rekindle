@@ -65,19 +65,15 @@ pub(crate) async fn frame_admitted(
     status: Status,
     init: bool,
 ) -> bool {
-    let friend = if init {
-        may_open_session(kind, status, kind == DmTypeId::SessionResetAccept)
-    } else {
-        sender_admitted(kind, status)
-    };
-    if friend || crate::operations::group_dm::admitted(host, sender_hex, kind, init).await {
+    if init {
+        return init_admitted(host, sender_hex, kind, status).await;
+    }
+    if sender_admitted(kind, status)
+        || crate::operations::group_dm::admitted(host, sender_hex, kind, false).await
+    {
         return true;
     }
-    if init {
-        init_admitted(sender_hex, kind, status)
-    } else {
-        kind_admitted(sender_hex, kind, status)
-    }
+    kind_admitted(sender_hex, kind, status)
 }
 
 /// [`sender_admitted`], logged when it refuses.
@@ -90,15 +86,24 @@ pub(crate) fn kind_admitted(sender_hex: &str, kind: DmTypeId, status: Status) ->
     admitted
 }
 
-/// Whether `sender`, with `status`, may open a session with a PreKeyInit
-/// whose first payload is `kind` ([`may_open_session`], with whether a
-/// reset of ours is outstanding); logged when it refuses.
-pub(crate) fn init_admitted(sender_hex: &str, kind: DmTypeId, status: Status) -> bool {
+/// Whether `sender` (not blocked), with `status`, may open a session with
+/// a PreKeyInit whose first payload is `kind`: [`may_open_session`], with
+/// whether a reset of ours is outstanding, else the group admission (a
+/// member of a group we hold, for a pairwise group control kind only;
+/// plan E2.6); logged when both refuse. The B5 rejection asks the same.
+pub(crate) async fn init_admitted(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+    status: Status,
+) -> bool {
     // Whether we asked for the reset is our stored request, checked and
     // consumed in the transaction that accepts the init
     // (`Reinitiation::Requested`, plan audit D-4).
     let reset_outstanding = kind == DmTypeId::SessionResetAccept;
-    let admitted = may_open_session(kind, status, reset_outstanding);
+    let admitted = may_open_session(kind, status, reset_outstanding)
+        || (crate::operations::group_dm::opens_member_session(kind)
+            && crate::operations::group_dm::admitted(host, sender_hex, kind, true).await);
     if !admitted {
         tracing::info!(from = %sender_hex, ?status, ?kind,
             "dropping PreKeyInit: sender may not open a session with this kind");
@@ -108,7 +113,7 @@ pub(crate) fn init_admitted(sender_hex: &str, kind: DmTypeId, status: Status) ->
 
 /// The sender's friendship as the identity's database holds it; `None`
 /// (fail closed) when it cannot be read.
-async fn friendship_authoritative(host: &dyn FriendHost, sender: &str) -> Status {
+pub(crate) async fn friendship_authoritative(host: &dyn FriendHost, sender: &str) -> Status {
     let store = host.friend_store().ok()?;
     let owner = state::owner(host).ok()?;
     match store.status_of(&owner, sender).await {

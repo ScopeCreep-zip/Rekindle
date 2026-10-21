@@ -10,7 +10,7 @@ use rekindle_crypto::signal::prekey_record::{base_key_hash, rejection_delay_ms};
 use rekindle_db::prekeys::RejectionVerdict;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
-use crate::operations::direct::admission::{may_open_session, Status};
+use crate::operations::direct::admission::{init_admitted, Status};
 use crate::operations::dm;
 use crate::operations::friend::{state, FriendHost};
 
@@ -48,6 +48,7 @@ pub(crate) fn began_first_contact(host: &dyn FriendHost, peer: &str, kind: DmTyp
 
 /// `peer` answered under the session: the first contact landed.
 pub(crate) fn acknowledged(host: &dyn FriendHost, peer: &str) {
+    crate::operations::group_dm::first_contact::acknowledged(host, peer);
     if host.stores().first_contacts.lock().remove(peer).is_some() {
         state::update(host, peer, |f| {
             f.handshake_retrying = false;
@@ -73,7 +74,8 @@ pub(crate) fn refilled(host: &dyn FriendHost, refills: Vec<Publish>) {
 
 /// B5: `sender`'s init named prekeys we no longer hold. A sender with
 /// `status` whom the gate's own predicate admits for that init
-/// ([`may_open_session`], audit G9) gets a signed rejection after a random
+/// ([`init_admitted`], audit G9: a friend, or a group member for a group
+/// control kind) gets a signed rejection after a random
 /// 2–10 s delay, at most one per base key and ten per sender per 3 h.
 pub(crate) fn reject_init(
     host: &dyn FriendHost,
@@ -83,14 +85,6 @@ pub(crate) fn reject_init(
     status: Status,
 ) {
     let kind = init.first_type_id;
-    // A reset's init reaches here (a prekey we no longer hold) only past
-    // `accept_init`'s check of our stored request (plan audit D-4).
-    let reset_outstanding = kind == DmTypeId::SessionResetAccept;
-    if !may_open_session(kind, status, reset_outstanding) {
-        tracing::debug!(from = %sender_hex, kind = ?init.first_type_id,
-            "no rejection for this PreKeyInit");
-        return;
-    }
     let hash = base_key_hash(&init.base_key);
     let rejection = DirectBody::PreKeyRejected(PreKeyRejected {
         signed_prekey_id: init.signed_prekey_id,
@@ -101,6 +95,12 @@ pub(crate) fn reject_init(
     let (owned, peer) = (host.owned(), sender_hex.to_string());
     host.scope().spawn_or_drop("prekey rejection", async move {
         let host = owned.as_ref();
+        // A reset's init reaches here (a prekey we no longer hold) only
+        // past `accept_init`'s check of our stored request (audit D-4).
+        if !init_admitted(host, &peer, kind, status).await {
+            tracing::debug!(from = %peer, ?kind, "no rejection for this PreKeyInit");
+            return;
+        }
         let (Ok(db), Ok(local)) = (host.db(), host.local_party()) else {
             return;
         };
@@ -157,6 +157,9 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
             tracing::warn!(from = %sender, error = %e, "PreKeyRejected not applied");
             return;
         }
+    }
+    if crate::operations::group_dm::first_contact::on_rejected(host, sender).await {
+        return;
     }
     let contact = host.stores().first_contacts.lock().get(sender).copied();
     let Some(contact) = contact.filter(|c| !c.failed) else {

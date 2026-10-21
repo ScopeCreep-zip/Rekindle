@@ -10,10 +10,17 @@
 
 mod admission;
 mod inbound;
+mod pairwise;
 
 pub use admission::admitted;
 pub use inbound::apply;
 pub(crate) use inbound::on_stream_record;
+pub use pairwise::GroupFirstContact;
+pub(crate) use pairwise::{member_bundle, opens_member_session};
+pub(crate) mod first_contact {
+    //! The group first contact, as the prekey rejection flow sees it.
+    pub(crate) use super::pairwise::{acknowledged, began, on_rejected};
+}
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, GroupId};
 use rekindle_dm::{DmError, Outbound};
@@ -147,7 +154,9 @@ pub async fn decline(host: &dyn FriendHost, group_id: &str) -> Result<(), Friend
 }
 
 /// Leave `group_id`: our state of it is deleted and the leave goes to
-/// every other member, who each rotate their own key.
+/// every other member, who each rotate their own key. Each leave is framed
+/// when its row is committed, so the pairwise session with a member who
+/// is not our friend (and in no other group we hold) then ends.
 ///
 /// # Errors
 /// No such group, storage, or a member's row.
@@ -156,7 +165,10 @@ pub async fn leave(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendEr
     let out = rekindle_dm::leave(deps.as_ref(), &parse_group_id(group_id)?)
         .await
         .map_err(|e| friend_error(&e))?;
-    send_pairwise(host, out, DirectBody::GroupDmLeave).await
+    let members = out.to.clone();
+    let sent = send_pairwise(host, out, DirectBody::GroupDmLeave).await;
+    pairwise::drop_sessions(host, &members).await;
+    sent
 }
 
 /// We blocked `peer` (`friend::block`, whose transaction dropped our

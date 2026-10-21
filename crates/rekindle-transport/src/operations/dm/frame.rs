@@ -185,6 +185,17 @@ pub async fn ratchet_frame_at(
             let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
             return initiate_frame(host, to, bundle, body, stream_seq).await;
         }
+        Err(RatchetError::Crypto(CryptoError::NoSession(_)))
+            if crate::operations::group_dm::opens_member_session(type_id) =>
+        {
+            // A roster member who is not our friend (plan E2.6): the
+            // session opens from the prekey record their roster profile
+            // names, with this group frame as the init's first payload.
+            let bundle = crate::operations::group_dm::member_bundle(host, to).await?;
+            let frame = initiate_frame(host, to, bundle, body, stream_seq).await?;
+            crate::operations::group_dm::first_contact::began(host, to, body);
+            return Ok(frame);
+        }
         Err(e) => return Err(ratchet_error(to, e)),
     };
     Ok(DmFrame {
