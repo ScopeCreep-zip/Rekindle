@@ -6,6 +6,7 @@ mod first_contact_retry;
 mod friend_watch;
 mod friends;
 mod harness;
+mod offline_day;
 mod outbox_handshake;
 mod pair;
 mod prekey_collision;
