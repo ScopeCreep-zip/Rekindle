@@ -9,7 +9,7 @@ use super::adapters::friends::HostFriends;
 use super::adapters::group_dm::HostGroupDm;
 use super::direct_tests::ann;
 
-fn member(identity: String, n: char) -> GroupDmRosterMember {
+pub(super) fn member(identity: String, n: char) -> GroupDmRosterMember {
     GroupDmRosterMember {
         identity,
         profile_record_key: format!("VLD0:{}", n.to_string().repeat(43)),

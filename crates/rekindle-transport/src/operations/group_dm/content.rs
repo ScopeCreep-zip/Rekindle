@@ -33,7 +33,7 @@ pub fn stream_name(group_id: &str) -> String {
 
 /// The sealed plaintext of a group entry: the kind's typeId (big-endian)
 /// and the [`DmContent`] carrying its body and the author's clock.
-pub(crate) fn inner(body: &DirectBody, sent_at_ms: u64, stream_seq: u64) -> Vec<u8> {
+pub fn inner(body: &DirectBody, sent_at_ms: u64, stream_seq: u64) -> Vec<u8> {
     let type_id = body.type_id();
     let content = DmContent {
         content_hint: hint_for(type_id),
@@ -47,7 +47,10 @@ pub(crate) fn inner(body: &DirectBody, sent_at_ms: u64, stream_seq: u64) -> Vec<
 }
 
 /// [`inner`] read back: the body and the author's clock.
-pub(crate) fn parse_inner(plain: &[u8]) -> Result<(DirectBody, u64), String> {
+///
+/// # Errors
+/// Not an [`inner`] of an allocated kind.
+pub fn parse_inner(plain: &[u8]) -> Result<(DirectBody, u64), String> {
     let (id, rest) = plain.split_at_checked(2).ok_or("entry too short")?;
     let raw = u16::from_be_bytes([id[0], id[1]]);
     let type_id = DmTypeId::from_u16(raw).ok_or_else(|| format!("typeId {raw:#06x}"))?;

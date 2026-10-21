@@ -193,9 +193,17 @@ pub async fn diff(host: &dyn FriendHost, group_id: &GroupId, member: &str) {
 }
 
 /// A group stream's sink: `open_received`, `messages` and `stream_cursors`.
-struct GroupSink<'a> {
+pub struct GroupSink<'a> {
     host: &'a dyn FriendHost,
     group_id: GroupId,
+}
+
+impl<'a> GroupSink<'a> {
+    /// The sink of `group_id`'s streams on `host`.
+    #[must_use]
+    pub fn new(host: &'a dyn FriendHost, group_id: GroupId) -> Self {
+        Self { host, group_id }
+    }
 }
 
 fn sink_error(e: impl std::fmt::Display) -> SinkError {
