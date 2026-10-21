@@ -9,7 +9,13 @@
 //! What else is keyed by their identity moves too (audit 2026-10-20 R-3):
 //! missed calls and the strand relay we volunteered for them.
 //! `peer_reliability` is keyed by a community pseudonym, not the identity,
-//! so it stays.
+//! so it stays. Their chain to us (plan E2.5) is on a record whose owner
+//! is theirs and carries over: our cursor on it moves with them (the
+//! entries already passed, framed by the old identity, are not read
+//! again), as do the client ids applied from it and our stream's last seq
+//! (a seq is never handed out twice). Our own record to them is replaced
+//! at our next frame (its writer is saved under the old key), so its chain
+//! bookkeeping goes.
 
 use rusqlite::{params, Connection};
 
@@ -47,6 +53,20 @@ pub fn rotate_peer(
             params![owner_key, old_key, new_key],
         )?;
         super::outbox::delete_to_peer(&tx, &owner_key, &old_key)?;
+        for sql in [
+            "UPDATE stream_cursors SET writer = ?3 \
+             WHERE owner_key = ?1 AND stream = 'dm' AND writer = ?2",
+            "UPDATE received SET stream = 'dm:' || ?3 \
+             WHERE owner_key = ?1 AND stream = 'dm:' || ?2",
+            "UPDATE outbox_streams SET stream = 'dm:' || ?3 \
+             WHERE owner_key = ?1 AND stream = 'dm:' || ?2",
+        ] {
+            tx.execute(sql, params![owner_key, old_key, new_key])?;
+        }
+        tx.execute(
+            "DELETE FROM chain_entries WHERE owner_key = ?1 AND peer = ?2",
+            params![owner_key, old_key],
+        )?;
         tx.execute(
             "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
             params![owner_key, old_key],
@@ -108,6 +128,15 @@ mod tests {
             params![owner, old],
         )
         .unwrap();
+        for sql in [
+            "INSERT INTO stream_cursors (owner_key, stream, writer, seq, updated_at) \
+             VALUES (?1, 'dm', ?2, 4, 1)",
+            "INSERT INTO received (owner_key, stream, client_id) VALUES (?1, 'dm:' || ?2, 'c')",
+            "INSERT INTO chain_entries (owner_key, peer, chain_seq, stream_seq, appended_at) \
+             VALUES (?1, ?2, 1, 1, 1)",
+        ] {
+            conn.execute(sql, params![owner, old]).unwrap();
+        }
         signal_identities::ensure(&conn, &OWNER, &OLD).unwrap();
         signal_identities::mark_verified(&conn, &OWNER, &OLD, 5).unwrap();
 
@@ -142,6 +171,24 @@ mod tests {
             1
         );
         assert_eq!(count("SELECT COUNT(*) FROM ratchet_sessions"), 0);
+        // Their chain's cursor and applied ids move; our chain's entries go.
+        assert_eq!(
+            crate::repo::stream_cursors::get(&conn, &owner, "dm", &new).unwrap(),
+            4
+        );
+        assert_eq!(
+            count(&format!(
+                "SELECT COUNT(*) FROM received WHERE stream = 'dm:{new}'"
+            )),
+            1
+        );
+        assert_eq!(
+            count(&format!(
+                "SELECT COUNT(*) FROM outbox_streams WHERE stream = 'dm:{new}'"
+            )),
+            1
+        );
+        assert_eq!(count("SELECT COUNT(*) FROM chain_entries"), 0);
         // The verified key changed: the new row is unverified and records it.
         let row = signal_identities::get(&conn, &OWNER, &NEW)
             .unwrap()

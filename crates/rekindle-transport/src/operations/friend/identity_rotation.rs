@@ -188,12 +188,38 @@ pub async fn accept(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError
             host.watch_friend(&new_hex, &profile).await;
         }
     }
+    follow_chain(host, &new_hex).await;
     host.publish(SubscriptionEvent::Friend(FriendEvent::KeyChanged {
         peer_key: peer.to_string(),
         new_key: new_hex.clone(),
     }));
     tracing::info!(from = %peer, to = %new_hex, "friend's identity rotation accepted");
     Ok(())
+}
+
+/// The unwatch above released the watch on `new_hex`'s chain to us (plan
+/// E2.5): its record carries over, so it is watched again under the new
+/// key and diffed from the moved cursor (an entry appended while it was
+/// unwatched fires no change).
+async fn follow_chain(host: &dyn FriendHost, new_hex: &str) {
+    let owner = match state::owner(host) {
+        Ok(owner) => owner,
+        Err(e) => return tracing::warn!(error = %e, "rotated friend's chain not followed"),
+    };
+    let peer = new_hex.to_string();
+    let records = state::db_call!(host, "read rotated friend's chain record", move |conn| {
+        rekindle_db::repo::friends::peer_participant_record_key(conn, &owner, Some(&peer))
+    })
+    .await;
+    match records {
+        Ok(records) => {
+            for (peer, record) in records {
+                host.watch_participant(&peer, &record).await;
+            }
+            dm::stream::on_hint(host, new_hex);
+        }
+        Err(e) => tracing::warn!(error = %e, "rotated friend's chain record not read"),
+    }
 }
 
 /// The user declined `peer`'s pending rotation: it is dropped and nothing
