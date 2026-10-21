@@ -103,7 +103,7 @@ impl IpcRequest {
             | Self::FriendInviteList
             | Self::FriendBlockedList
             | Self::IdentitySafetyNumber { .. } => Some(C::FriendsRead),
-            Self::FriendAdd { .. }
+            Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
             | Self::FriendReject { .. }
             | Self::FriendRemove { .. }

@@ -9,7 +9,7 @@
     "allow-open-external-url",
     "allow-accept-dm-invite",
     "allow-accept-request",
-    "allow-add-friend",
+    "allow-add-friend-from-code",
     "allow-add-friend-from-invite",
     "allow-block-user",
     "allow-cancel-invite",

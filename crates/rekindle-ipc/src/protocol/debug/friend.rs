@@ -8,12 +8,9 @@ impl IpcRequest {
     /// show their length only.
     pub(super) fn fmt_friend(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::FriendAdd {
-                public_key,
-                message,
-            } => f
-                .debug_struct("FriendAdd")
-                .field("public_key", public_key)
+            Self::FriendAddFromCode { code, message } => f
+                .debug_struct("FriendAddFromCode")
+                .field("code_len", &code.len())
                 .field("message_len", &message.len())
                 .finish(),
             Self::FriendRemove { public_key } => f

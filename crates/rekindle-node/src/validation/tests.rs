@@ -38,17 +38,16 @@ fn short_and_multibyte_keys_are_400_not_a_panic() {
 }
 
 #[test]
-fn friend_add_needs_a_public_key_and_a_bounded_note() {
-    let add = |key: String, message: String| IpcRequest::FriendAdd {
-        public_key: key,
-        message,
-    };
-    assert!(!rejected(&add("ab".repeat(32), "hi\nthere".into())));
-    assert!(rejected(&add("VLD0:short".into(), String::new())));
-    assert!(rejected(&add(
+fn friend_add_needs_a_friend_code_and_a_bounded_note() {
+    let add = |code: String, message: String| IpcRequest::FriendAddFromCode { code, message };
+    let code = format!(
+        "rekindle://add/{}/VLD0:{}/abcdefghijklmnopqrstuvwx2q",
         "ab".repeat(32),
-        "a".repeat(MAX_NOTE_LEN + 1)
-    )));
+        "a".repeat(43)
+    );
+    assert!(!rejected(&add(code.clone(), "hi\nthere".into())));
+    assert!(rejected(&add("ab".repeat(32), String::new())));
+    assert!(rejected(&add(code, "a".repeat(MAX_NOTE_LEN + 1))));
 }
 
 #[test]

@@ -10,11 +10,10 @@ use clap::Subcommand;
 /// Friend management subcommands.
 #[derive(Subcommand)]
 pub enum FriendCmd {
-    /// Send a friend request to a public key.
+    /// Send a friend request to the identity a friend code names.
     Add {
-        /// Their public key (64 hex characters).
-        #[arg(long, short = 't')]
-        target: String,
+        /// Their friend code (`rekindle://add/...`, from `friend code`).
+        code: String,
         /// Attach a message to the request.
         #[arg(long, short = 'm')]
         message: Option<String>,

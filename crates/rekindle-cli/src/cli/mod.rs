@@ -441,14 +441,13 @@ mod tests {
             "rekindle",
             "friend",
             "add",
-            "-t",
-            "abcdef1234567890",
+            "rekindle://add/abcdef1234567890",
             "-m",
             "let's connect",
         ])
         .unwrap();
-        if let Some(Command::Friend(FriendCmd::Add { target, message })) = cli.command {
-            assert_eq!(target, "abcdef1234567890");
+        if let Some(Command::Friend(FriendCmd::Add { code, message })) = cli.command {
+            assert_eq!(code, "rekindle://add/abcdef1234567890");
             assert_eq!(message.as_deref(), Some("let's connect"));
         } else {
             panic!("expected Friend Add");

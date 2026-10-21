@@ -129,7 +129,7 @@ async fn route(
         | IpcRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
 
         // ── Friends, DMs and session resets (plan E2.1) ─────────
-        request @ (IpcRequest::FriendAdd { .. }
+        request @ (IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }
         | IpcRequest::FriendReject { .. }
         | IpcRequest::FriendRemove { .. }

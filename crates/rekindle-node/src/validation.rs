@@ -354,7 +354,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         IpcRequest::IdentityImport { archive, .. } => identity_archive(archive),
         IpcRequest::IntentCommit { proof: given, .. } => proof(given),
 
-        IpcRequest::FriendAdd { .. }
+        IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }
         | IpcRequest::FriendBlock { .. }
         | IpcRequest::FriendSetNickname { .. }

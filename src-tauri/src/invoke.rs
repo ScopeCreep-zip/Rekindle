@@ -35,7 +35,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::chat::get_message_history,
         commands::chat::mark_read,
         // friends
-        commands::friends::add_friend,
+        commands::friends::add_friend_from_code,
         commands::friends::remove_friend,
         commands::friends::accept_request,
         commands::friends::get_friends,

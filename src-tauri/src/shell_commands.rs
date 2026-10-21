@@ -47,7 +47,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("send_typing", HostCall::Request("DmTyping")),
     ("get_message_history", HostCall::Request("DmHistory")),
     ("mark_read", HostCall::Request("DmMarkRead")),
-    ("add_friend", HostCall::Request("FriendAdd")),
+    (
+        "add_friend_from_code",
+        HostCall::Request("FriendAddFromCode"),
+    ),
     ("remove_friend", HostCall::Request("FriendRemove")),
     ("accept_request", HostCall::Request("FriendAccept")),
     ("reject_request", HostCall::Request("FriendReject")),

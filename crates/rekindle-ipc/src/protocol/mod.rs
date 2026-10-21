@@ -28,7 +28,7 @@ pub use rekindle_types::subscription_events::{
 /// Every variant is explicitly matched in `daemon::dispatch::dispatch()`.
 /// No wildcard arm — adding a variant here forces a handler implementation.
 ///
-/// Variant naming: `{Domain}{Verb}` — e.g., `ChannelCreate`, `FriendAdd`.
+/// Variant naming: `{Domain}{Verb}` — e.g., `ChannelCreate`, `FriendRemove`.
 /// This convention makes the exhaustive match self-documenting.
 ///
 /// [RC-16] Variants containing secrets (`Unlock`, `IdentityCreate`) have
@@ -95,7 +95,9 @@ pub enum IpcRequest {
     // ── Friends (plan E2.1) ───────────────────────────────────────
     /// Send a friend request to `public_key` (they become a pending friend).
     /// Their name is the Host's (plan audit U-7), never the caller's.
-    FriendAdd { public_key: String, message: String },
+    /// Send a friend request to the identity a friend code names
+    /// (`rekindle://add/<key>/<profile>/<token>`, plan E2.5 D17).
+    FriendAddFromCode { code: String, message: String },
     /// Accept the pending request from `public_key` (named by the request).
     FriendAccept { public_key: String },
     /// Reject the pending request from `public_key`.

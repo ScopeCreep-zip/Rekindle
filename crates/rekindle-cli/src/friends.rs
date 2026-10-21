@@ -18,8 +18,8 @@ pub async fn dispatch(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     let request = match cmd {
-        FriendCmd::Add { target, message } => IpcRequest::FriendAdd {
-            public_key: target.clone(),
+        FriendCmd::Add { code, message } => IpcRequest::FriendAddFromCode {
+            code: code.clone(),
             message: message.clone().unwrap_or_default(),
         },
         FriendCmd::Accept { request_id } => IpcRequest::FriendAccept {

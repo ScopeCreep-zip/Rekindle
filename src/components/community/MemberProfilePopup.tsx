@@ -8,7 +8,6 @@ import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
-import { handleAddFriend as addFriendAction } from "../../actions/buddy.actions";
 import {
   handleSelfAssignRole,
   handleSelfUnassignRole,
@@ -166,12 +165,6 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
     props.onClose();
   }
 
-  function handleAddFriend(): void {
-    void addFriendAction(props.member.pseudonymKey, "").then((err) => {
-      if (err) addToast(err, "error");
-    });
-    props.onClose();
-  }
 
   function handleCopyKey(): void {
     navigator.clipboard.writeText(props.member.pseudonymKey);
@@ -469,7 +462,6 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         <Show when={!isSelf()}>
           <div class="profile-popup-actions">
             <button class="profile-popup-action-btn" onClick={handleMessage}>Message</button>
-            <button class="profile-popup-action-btn" onClick={handleAddFriend}>Add Friend</button>
             <button class="profile-popup-action-btn" onClick={handleCopyKey}>Copy Key</button>
           </div>
         </Show>

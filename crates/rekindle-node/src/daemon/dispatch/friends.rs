@@ -54,10 +54,12 @@ pub(crate) async fn route(
     }
     let host = HostFriends::of(ctx);
     match request {
-        IpcRequest::FriendAdd {
-            public_key,
-            message,
-        } => done(friend::add(&host, &public_key, &message).await),
+        IpcRequest::FriendAddFromCode { code, message } => {
+            match rekindle_types::friend_code::FriendCode::parse(&code) {
+                Ok(code) => done(friend::add(&host, &code, &message).await),
+                Err(e) => IpcResponse::error(400, e.to_string()),
+            }
+        }
         IpcRequest::FriendAccept { public_key } => done(friend::accept(&host, &public_key).await),
         IpcRequest::FriendReject { public_key } => done(friend::reject(&host, &public_key).await),
         IpcRequest::FriendRemove { public_key } => done(friend::remove(&host, &public_key).await),

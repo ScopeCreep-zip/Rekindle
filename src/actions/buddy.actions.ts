@@ -33,14 +33,16 @@ export async function handleResetSignalSession(publicKey: string): Promise<strin
   }
 }
 
-export async function handleAddFriend(
-  publicKey: string,
+/// Send a friend request to the identity a friend code names
+/// (`rekindle://add/...`, plan E2.5 D17).
+export async function handleAddFriendFromCode(
+  code: string,
   message: string,
 ): Promise<string | null> {
   try {
     // The Host names them from its own rows (audit U-7). Not time-bounded here: the Host's review may be on screen, and the
     // Host bounds its own wait for our route (plan E2.1).
-    await commands.addFriend(publicKey, message);
+    await commands.addFriendFromCode(code, message);
     return null;
   } catch (e) {
     return errorMessage(e);

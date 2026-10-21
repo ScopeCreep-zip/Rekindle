@@ -69,7 +69,7 @@ impl IpcRequest {
             Self::IntentCommit { .. } => ("IntentCommit", Write, Open),
             Self::IntentCancel { .. } => ("IntentCancel", Write, Open),
 
-            Self::FriendAdd { .. } => ("FriendAdd", Write, Authenticated),
+            Self::FriendAddFromCode { .. } => ("FriendAddFromCode", Write, Authenticated),
             Self::FriendAccept { .. } => ("FriendAccept", Write, Authenticated),
             Self::FriendReject { .. } => ("FriendReject", Write, Authenticated),
             Self::FriendRemove { .. } => ("FriendRemove", Write, Authenticated),

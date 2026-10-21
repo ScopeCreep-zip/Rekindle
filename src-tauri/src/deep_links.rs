@@ -88,7 +88,7 @@ impl PendingDeepLink {
     }
 }
 
-/// A friend invite from the OS: reviewed by the Host now while an identity
+/// A friend invite or friend code from the OS: reviewed by the Host now while an identity
 /// is unlocked, else held until the unlock submits it.
 fn friend_invite(state: &Arc<AppState>, invite: String) {
     if state.identity.read().is_some() {
@@ -108,7 +108,16 @@ fn friend_invite(state: &Arc<AppState>, invite: String) {
 /// fingerprint card.
 pub async fn review_friend_invite(state: &AppState, invite: String) {
     let api = state.host.api().await;
-    let request = rekindle_ipc::protocol::IpcRequest::FriendAddFromInvite { invite };
+    // A friend code (`rekindle://add/`, plan E2.5) is a request to the
+    // identity it names; anything else held here is an invite blob.
+    let request = if invite.starts_with(rekindle_types::friend_code::FRIEND_CODE_PREFIX) {
+        rekindle_ipc::protocol::IpcRequest::FriendAddFromCode {
+            code: invite,
+            message: String::new(),
+        }
+    } else {
+        rekindle_ipc::protocol::IpcRequest::FriendAddFromInvite { invite }
+    };
     match api.call(rekindle_ipc::Caller::shell(), request).await {
         rekindle_ipc::protocol::IpcResponse::IntentRequired(review) => {
             if let Some(host) = state.host.current() {
@@ -147,8 +156,8 @@ pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
             return;
         }
         Ok(DeepLink::Pairing) => PendingAction::PairingRefused,
-        Ok(DeepLink::Add(_)) => {
-            tracing::warn!("deep link: friend code not yet submitted (E2.5 S3 part 3)");
+        Ok(DeepLink::Add(code)) => {
+            friend_invite(&state, code.to_url());
             return;
         }
         Err(e) => {

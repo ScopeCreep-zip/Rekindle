@@ -228,7 +228,7 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::Logout
         | IpcRequest::CommunityCreate { .. }
         | IpcRequest::CommunityJoin { .. }
-        | IpcRequest::FriendAdd { .. }
+        | IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }
         | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::Unlock { .. }

@@ -30,11 +30,9 @@ fn client_id(id: &str) -> Checked {
 /// Check a friend, DM or session-reset request.
 pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
-        IpcRequest::FriendAdd {
-            public_key: key,
-            message,
-        } => {
-            public_key(key, "public key")?;
+        IpcRequest::FriendAddFromCode { code, message } => {
+            rekindle_types::friend_code::FriendCode::parse(code)
+                .map_err(|e| IpcResponse::error(400, e.to_string()))?;
             text(message, MAX_NOTE_LEN, "message")
         }
         IpcRequest::FriendSetNickname {

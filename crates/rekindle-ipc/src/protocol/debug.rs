@@ -83,7 +83,7 @@ impl std::fmt::Debug for IpcRequest {
                 .debug_struct("IntentCancel")
                 .field("intent_id", intent_id)
                 .finish(),
-            Self::FriendAdd { .. }
+            Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
             | Self::FriendReject { .. }
             | Self::FriendRemove { .. }

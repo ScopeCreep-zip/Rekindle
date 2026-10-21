@@ -24,8 +24,10 @@ pub(super) async fn selection(
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     match request {
-        IpcRequest::FriendAdd { public_key, .. } => {
-            s.subject = person(ctx, public_key).await?;
+        IpcRequest::FriendAddFromCode { code, .. } => {
+            let code = rekindle_types::friend_code::FriendCode::parse(code)
+                .map_err(|e| IpcResponse::error(400, e.to_string()))?;
+            s.subject = person(ctx, code.public_key.as_str()).await?;
             s.facts.push(Fact::PresenceVisible);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::CancelRequest);
             s.notifies = Notifies::Subject;

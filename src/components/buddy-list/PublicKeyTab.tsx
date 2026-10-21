@@ -1,21 +1,21 @@
 import { Component, Show, createSignal } from "solid-js";
-import { handleAddFriend } from "../../actions/buddy.actions";
+import { handleAddFriendFromCode } from "../../actions/buddy.actions";
 
 interface PublicKeyTabProps {
   onClose: () => void;
 }
 
 const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
-  const [publicKey, setPublicKey] = createSignal("");
+  const [friendCode, setFriendCode] = createSignal("");
   const [message, setMessage] = createSignal("Hey, add me!");
   const [error, setError] = createSignal<string | null>(null);
 
   async function handleKeySubmit(e: Event): Promise<void> {
     e.preventDefault();
-    const key = publicKey().trim();
+    const key = friendCode().trim();
     if (!key) return;
     setError(null);
-    const err = await handleAddFriend(key, message().trim());
+    const err = await handleAddFriendFromCode(key, message().trim());
     if (err) {
       setError(err);
     } else {
@@ -28,9 +28,9 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
       <input
         class="form-input"
         type="text"
-        placeholder="Enter public key..."
-        value={publicKey()}
-        onInput={(e) => setPublicKey(e.currentTarget.value)}
+        placeholder="Paste a friend code (rekindle://add/...)"
+        value={friendCode()}
+        onInput={(e) => setFriendCode(e.currentTarget.value)}
       />
       <input
         class="form-input"
@@ -42,7 +42,7 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
       <Show when={error()}>
         <div class="form-error">{error()}</div>
       </Show>
-      <button class="form-btn-primary" type="submit" disabled={!publicKey().trim()}>
+      <button class="form-btn-primary" type="submit" disabled={!friendCode().trim()}>
         Send Friend Request
       </button>
     </form>

@@ -124,8 +124,14 @@ async fn adding_a_friend_waits_for_our_published_profile() {
     let (host, owner) = ann(&dir).await;
     let friends = HostFriends::of(&host.ctx);
     let bob = hex::encode(Identity::generate().public_key_bytes());
+    let code = rekindle_types::friend_code::FriendCode::parse(&format!(
+        "rekindle://add/{bob}/VLD0:{}/{}",
+        "a".repeat(43),
+        rekindle_secrets::friend_token::mint()
+    ))
+    .unwrap();
 
-    let added = rekindle_transport::operations::friend::add(&friends, &bob, "hi").await;
+    let added = rekindle_transport::operations::friend::add(&friends, &code, "hi").await;
     assert!(
         matches!(
             added,

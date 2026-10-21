@@ -39,10 +39,10 @@ async fn check_addable(
 /// stored.
 pub async fn add(
     host: &dyn FriendHost,
-    public_key: &str,
+    code: &rekindle_types::friend_code::FriendCode,
     message: &str,
 ) -> Result<(), FriendError> {
-    state::require_public_key(public_key)?;
+    let public_key = code.public_key.as_str();
     let owner = state::owner(host)?;
     check_addable(host, &owner, public_key).await?;
     invites::published_identity(host).await?;

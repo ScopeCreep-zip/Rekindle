@@ -7,7 +7,6 @@
   ],
   "permissions": [
     "allow-open-external-url",
-    "allow-add-friend",
     "allow-add-game-server",
     "allow-add-reaction",
     "allow-admin-delete-channel-message",

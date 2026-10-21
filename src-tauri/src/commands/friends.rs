@@ -24,21 +24,15 @@ pub async fn get_pending_requests(
     host_call::call(&state, IpcRequest::FriendRequests).await
 }
 
-/// Add a friend by public key (`IpcRequest::FriendAdd`).
+/// Send a friend request to the identity a friend code names
+/// (`IpcRequest::FriendAddFromCode`).
 #[tauri::command]
-pub async fn add_friend(
-    public_key: String,
+pub async fn add_friend_from_code(
+    code: String,
     message: String,
     state: State<'_, SharedState>,
 ) -> Result<Ran, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::FriendAdd {
-            public_key,
-            message,
-        },
-    )
-    .await
+    host_call::call(&state, IpcRequest::FriendAddFromCode { code, message }).await
 }
 
 /// Remove a friend (`IpcRequest::FriendRemove`).

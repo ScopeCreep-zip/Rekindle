@@ -72,7 +72,7 @@ pub(crate) async fn select(
                     .unwrap_or_else(|| "a new identity".into()),
             };
         }
-        IpcRequest::FriendAdd { .. }
+        IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAddFromInvite { .. }
         | IpcRequest::FriendCancelRequest { .. }
         | IpcRequest::FriendRetryHandshake { .. }
