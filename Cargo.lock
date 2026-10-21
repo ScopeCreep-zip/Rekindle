@@ -7829,6 +7829,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "rekindle-outbox"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "parking_lot 0.12.5",
+ "rand 0.8.5",
+ "rekindle-crypto",
+ "rekindle-types",
+ "rekindle-utils",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
 name = "rekindle-presence"
 version = "0.1.0"
 dependencies = [

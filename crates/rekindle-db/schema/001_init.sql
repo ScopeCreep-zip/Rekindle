@@ -749,6 +749,55 @@ CREATE TABLE IF NOT EXISTS dht_outbox (
     PRIMARY KEY (owner_key, record_key, subkey)
 );
 
+-- The outbox (plan E2.5, D22; `rekindle_outbox`, `rekindle_db::repo::
+-- outbox`): one row per send intent not yet settled. `stream` names an
+-- ordered stream (`<kind>:<scope>`), `stream_seq` the row's place in it;
+-- the stream's head (its lowest row not yet sent, or wedged `failed`)
+-- blocks the rows after it. `client_id` is the id the frame carries, kept
+-- across every attempt and a Retry; `messages.send_state` of the row
+-- whose `message_id` it is mirrors `state`. Times are ms since the epoch;
+-- `deadline` is `DELIVERY_HORIZON` (D24) after the enqueue unless the
+-- stream sets a shorter one. A settled row is deleted.
+CREATE TABLE IF NOT EXISTS outbox (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    stream TEXT NOT NULL CHECK(length(stream) > 0),
+    stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
+    client_id TEXT NOT NULL CHECK(length(client_id) > 0),
+    kind TEXT NOT NULL
+        CHECK(kind IN ('dm', 'friend_handshake', 'dht_write', 'channel_post', 'media_key')),
+    payload BLOB NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('queued', 'sent', 'delivered', 'read', 'failed')),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+    next_at INTEGER NOT NULL,
+    deadline INTEGER NOT NULL,
+    wedge_reason TEXT,
+    -- The local echo this row projects onto (`messages.send_state`);
+    -- NULL for a send with no echo (a DHT write).
+    echo_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+    PRIMARY KEY (owner_key, stream, stream_seq),
+    UNIQUE (owner_key, client_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_next_at ON outbox (owner_key, next_at);
+
+-- Each stream's last assigned `stream_seq`: a settled row is deleted, and
+-- a seq is never handed out twice (the peer acknowledges by it).
+CREATE TABLE IF NOT EXISTS outbox_streams (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    stream TEXT NOT NULL,
+    last_seq INTEGER NOT NULL CHECK(last_seq >= 1),
+    PRIMARY KEY (owner_key, stream)
+);
+
+-- Client ids already applied from each peer stream (plan E2.5, D22): a
+-- resend of a frame we hold is acknowledged, not shown twice.
+CREATE TABLE IF NOT EXISTS received (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    stream TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    PRIMARY KEY (owner_key, stream, client_id)
+);
+
 -- The 1:1 ratchet (plan E2.3; `rekindle_db::ratchet`). One
 -- `rekindle_crypto::SessionRecord` per peer device, stored in the same
 -- transaction as whatever the message changed, before any send.

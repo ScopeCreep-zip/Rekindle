@@ -34,6 +34,7 @@ const SCANNED: &[&str] = &[
     "crates/rekindle-calls/src",
     "crates/rekindle-video/src",
     "crates/rekindle-game-detect/src",
+    "crates/rekindle-outbox/src",
 ];
 
 /// `(file, function, why it outlives every session)`.

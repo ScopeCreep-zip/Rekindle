@@ -20,6 +20,7 @@ pub mod identity;
 pub mod intent_facts;
 pub mod members;
 pub mod messages;
+pub mod outbox;
 pub mod outgoing_invites;
 pub mod peer_rekey;
 pub mod pending_messages;

@@ -1,0 +1,107 @@
+//! Stream kinds (plan E2.5): each send belongs to one ordered stream
+//! `<kind>:<scope>`, and each kind has its retry policy. `group_dm` comes
+//! at E2.6 and `signaling` at E4.1.
+
+use std::time::Duration;
+
+use rekindle_utils::random::RandomSource;
+
+/// What a stream carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StreamKind {
+    /// 1:1 messages to one peer.
+    Dm,
+    /// A friend request, accept or removal to one peer.
+    FriendHandshake,
+    /// An own-record DHT write (the C7.6h `dht_outbox`).
+    DhtWrite,
+    /// A community channel post (C7.14).
+    ChannelPost,
+    /// A call media key to one recipient (C7.22); its deadline is the
+    /// session's end.
+    MediaKey,
+}
+
+impl StreamKind {
+    const ALL: [Self; 5] = [
+        Self::Dm,
+        Self::FriendHandshake,
+        Self::DhtWrite,
+        Self::ChannelPost,
+        Self::MediaKey,
+    ];
+
+    /// The stored form.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Dm => "dm",
+            Self::FriendHandshake => "friend_handshake",
+            Self::DhtWrite => "dht_write",
+            Self::ChannelPost => "channel_post",
+            Self::MediaKey => "media_key",
+        }
+    }
+
+    /// The kind a stored form names.
+    #[must_use]
+    pub fn parse(stored: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|k| k.as_str() == stored)
+    }
+
+    /// The stream of this kind for `scope` (a peer, a record, a channel).
+    #[must_use]
+    pub fn stream(self, scope: &str) -> String {
+        format!("{}:{scope}", self.as_str())
+    }
+
+    /// Whether a row stays unsettled after it is sent, until the peer
+    /// acknowledges it (and is re-sent meanwhile). A DHT write and a
+    /// channel post settle when the write reaches consensus.
+    #[must_use]
+    pub fn awaits_ack(self) -> bool {
+        matches!(self, Self::Dm | Self::FriendHandshake | Self::MediaKey)
+    }
+
+    /// This kind's default retry policy.
+    #[must_use]
+    pub fn policy(self) -> RetryPolicy {
+        let (base, cap) = match self {
+            Self::Dm => (1, 300),
+            Self::FriendHandshake => (2, 900),
+            Self::DhtWrite | Self::ChannelPost => (1, 60),
+            // C7.22's 1/2/4/8/15 s: a call key is useless late.
+            Self::MediaKey => (1, 15),
+        };
+        RetryPolicy::Backoff {
+            base: Duration::from_secs(base),
+            cap: Duration::from_secs(cap),
+        }
+    }
+}
+
+/// When a row is attempted again.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RetryPolicy {
+    /// Exponential backoff from `base`, capped at `cap`, with equal jitter
+    /// (half the step fixed, half uniform), so peers that failed together
+    /// do not retry together.
+    Backoff { base: Duration, cap: Duration },
+}
+
+impl RetryPolicy {
+    /// The wait after the `attempts`-th attempt (1 for the first).
+    #[must_use]
+    pub fn delay(self, attempts: u32, rng: &dyn RandomSource) -> Duration {
+        match self {
+            Self::Backoff { base, cap } => {
+                let step = base
+                    .saturating_mul(1u32 << attempts.saturating_sub(1).min(20))
+                    .min(cap);
+                let step_ms = u64::try_from(step.as_millis()).unwrap_or(u64::MAX);
+                let half = step_ms / 2;
+                Duration::from_millis(half + rng.below(step_ms - half + 1))
+            }
+        }
+    }
+}

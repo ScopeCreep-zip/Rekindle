@@ -1,0 +1,23 @@
+[package]
+name = "rekindle-outbox"
+version = "0.1.0"
+edition = "2021"
+description = "The one durable outbox (plan E2.5, D22): send intents, delivery states and retry for every Rekindle send"
+
+[lints]
+workspace = true
+
+[dependencies]
+async-trait = "0.1"
+rekindle-crypto = { path = "../rekindle-crypto" }
+rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = [ "sync", "time", "macros" ] }
+tokio-util = { version = "0.7", features = [ "rt" ] }
+tracing = { workspace = true }
+
+[dev-dependencies]
+parking_lot = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true, features = [ "sync", "time", "macros", "rt" ] }
