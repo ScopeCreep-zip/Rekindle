@@ -222,6 +222,10 @@ pub enum CommandResult {
         public_key: String,
         display_name: String,
     },
+    /// Our friend code and its QR (`FriendCode`, plan E2.5).
+    FriendCodeLoaded {
+        view: rekindle_types::dto::friends::FriendCodeView,
+    },
     /// Our own status, message, game and idle state (`PresenceGet`).
     OwnPresenceLoaded {
         view: rekindle_types::dto::presence::OwnPresenceView,

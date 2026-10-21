@@ -131,6 +131,38 @@ pub struct FriendCodeView {
     pub qr_rows: Vec<String>,
 }
 
+/// QR rows (`FriendCodeView::qr_rows`, `SafetyNumberView::qr_rows`) as
+/// terminal text, for the CLI and the TUI alike.
+#[must_use]
+/// QR rows as terminal text: two rows per line in half blocks, dark on a
+/// light quiet zone of four modules, as a scanner needs.
+pub fn qr_text(rows: &[String]) -> String {
+    const QUIET: usize = 4;
+    let width = rows.first().map_or(0, String::len) + 2 * QUIET;
+    let dark = |y: usize, x: usize| {
+        y.checked_sub(QUIET)
+            .and_then(|y| rows.get(y))
+            .zip(x.checked_sub(QUIET))
+            .and_then(|(row, x)| row.as_bytes().get(x))
+            == Some(&b'1')
+    };
+    let height = rows.len() + 2 * QUIET;
+    (0..height)
+        .step_by(2)
+        .map(|y| {
+            (0..width)
+                .map(|x| match (dark(y, x), dark(y + 1, x)) {
+                    (true, true) => ' ',
+                    (true, false) => '\u{2584}',
+                    (false, true) => '\u{2580}',
+                    (false, false) => '\u{2588}',
+                })
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Our safety number with a peer and whether we verified it (plan E2.3):
 /// what `IdentitySafetyNumber` answers.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

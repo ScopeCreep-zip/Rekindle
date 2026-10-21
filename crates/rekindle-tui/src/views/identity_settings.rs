@@ -65,6 +65,8 @@ pub struct IdentitySettingsView {
     /// The `crypto.prekeys` check's reading (plan E2.4): the fresh slots,
     /// or what the prekey maintenance is failing to keep.
     prekeys: String,
+    /// Our friend code and its QR (plan E2.5), once loaded.
+    friend_code: Option<rekindle_types::dto::friends::FriendCodeView>,
     /// Which sections are expanded.
     expanded: [bool; 4],
     /// Whether data has been loaded.
@@ -91,6 +93,7 @@ impl IdentitySettingsView {
             friend_list_dht_key: String::new(),
             signing_key_loaded: false,
             prekeys: "unknown".into(),
+            friend_code: None,
             expanded: [false; 4],
             loaded: false,
             use_unicode,
@@ -137,6 +140,14 @@ impl IdentitySettingsView {
         items.push(Self::kv_item("  Route", &route_str));
         items.push(Self::kv_item("  Watches", &self.active_watches.to_string()));
         items.push(Self::kv_item("  Prekeys", &self.prekeys));
+        if let Some(code) = &self.friend_code {
+            items.push(Self::kv_item("  Friend Code", &code.url));
+            let qr = rekindle_types::dto::friends::qr_text(&code.qr_rows);
+            items.extend(
+                qr.lines()
+                    .map(|row| ListItem::new(Line::raw(format!("  {row}")))),
+            );
+        }
         items.push(ListItem::new(Line::raw("")));
 
         // ── DHT Records section ──────────────────────────────
@@ -354,6 +365,9 @@ impl View for IdentitySettingsView {
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
         if let CommandResult::StatusLoaded { ref snapshot } = result {
             self.load_from_snapshot(snapshot);
+        }
+        if let CommandResult::FriendCodeLoaded { ref view } = result {
+            self.friend_code = Some(view.clone());
         }
         // Also populate DHT keys from IdentityLoaded
         if let CommandResult::IdentityLoaded {

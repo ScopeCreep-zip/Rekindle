@@ -4,7 +4,7 @@
 //! (`helpers::send`).
 
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_types::dto::friends::{FriendCodeView, SafetyNumberView};
+use rekindle_types::dto::friends::{qr_text, FriendCodeView, SafetyNumberView};
 
 use crate::cli::{FriendCmd, FriendCodeCmd, FriendInviteCmd, GroupCmd};
 use crate::helpers;
@@ -184,35 +184,6 @@ async fn safety_number(client: &DaemonClient, peer: &str, mode: OutputMode) -> a
         "not verified"
     };
     format::print_text(state)
-}
-
-/// QR rows as terminal text: two rows per line in half blocks, dark on a
-/// light quiet zone of four modules, as a scanner needs.
-fn qr_text(rows: &[String]) -> String {
-    const QUIET: usize = 4;
-    let width = rows.first().map_or(0, String::len) + 2 * QUIET;
-    let dark = |y: usize, x: usize| {
-        y.checked_sub(QUIET)
-            .and_then(|y| rows.get(y))
-            .zip(x.checked_sub(QUIET))
-            .and_then(|(row, x)| row.as_bytes().get(x))
-            == Some(&b'1')
-    };
-    let height = rows.len() + 2 * QUIET;
-    (0..height)
-        .step_by(2)
-        .map(|y| {
-            (0..width)
-                .map(|x| match (dark(y, x), dark(y + 1, x)) {
-                    (true, true) => ' ',
-                    (true, false) => '\u{2584}',
-                    (false, true) => '\u{2580}',
-                    (false, false) => '\u{2588}',
-                })
-                .collect::<String>()
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 #[cfg(test)]

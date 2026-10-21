@@ -89,6 +89,17 @@ impl App {
                 }
             }
 
+            // Our friend code and its QR (plan E2.5).
+            if let Ok(Ok(view)) = client
+                .request_ok(IpcRequest::FriendCode)
+                .await
+                .map(serde_json::from_value::<rekindle_types::dto::friends::FriendCodeView>)
+            {
+                let _ = tx.send(Action::CommandComplete(Box::new(
+                    CommandResult::FriendCodeLoaded { view },
+                )));
+            }
+
             // Our own presence (plan E1.2), live after this from `SelfChanged`.
             if let Ok(Ok(view)) = client
                 .request_ok(IpcRequest::PresenceGet)
