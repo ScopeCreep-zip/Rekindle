@@ -198,7 +198,7 @@ impl RecordPool {
             records: Mutex::new(HashMap::new()),
             key_locks: Mutex::new(HashMap::new()),
             rearm: Mutex::new(HashMap::new()),
-            held: Mutex::new(HashMap::new()),
+            held: Mutex::new(durable::HeldWrites::new()),
             held_changed: tokio::sync::Notify::new(),
             settled: tokio::sync::broadcast::channel(256).0,
             repush_started: std::sync::atomic::AtomicBool::new(false),
@@ -509,7 +509,9 @@ impl RecordPool {
         self.repush_stop.cancel();
         self.table.lock().clear();
         self.rearm.lock().clear();
-        let keys: Vec<String> = self.records.lock().drain().map(|(key, _)| key).collect();
+        let mut keys: Vec<String> = self.records.lock().drain().map(|(key, _)| key).collect();
+        // One close order on every run.
+        keys.sort_unstable();
         let count = keys.len();
         self.closer
             .close_after(Arc::clone(&self.scope), Arc::clone(&self.backend), keys);

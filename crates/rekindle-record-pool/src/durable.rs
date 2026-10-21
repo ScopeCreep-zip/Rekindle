@@ -36,7 +36,7 @@
 //! merges (a channel slot) learns there that its held value was replaced
 //! and its entries did not land (plan C7.13).
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
@@ -73,8 +73,10 @@ struct DuePush {
 
 use rekindle_records::port::{Settled, UnsentWrite};
 
-/// Held writes by (record key, subkey).
-pub(super) type HeldWrites = HashMap<(String, u32), HeldWrite>;
+/// Held writes by (record key, subkey), in key order: re-pushes and the
+/// logout export run in one order on every run (the netsim's seed fixes its
+/// trace, plan C9.3).
+pub(super) type HeldWrites = BTreeMap<(String, u32), HeldWrite>;
 
 fn backoff(attempts: u32) -> Duration {
     REPUSH_MIN
@@ -186,9 +188,8 @@ impl RecordPool {
     /// [`drain`](Self::drain) stopped the re-push).
     #[must_use]
     pub fn take_held(&self) -> Vec<UnsentWrite> {
-        self.held
-            .lock()
-            .drain()
+        std::mem::take(&mut *self.held.lock())
+            .into_iter()
             .map(|((record_key, subkey), write)| UnsentWrite {
                 record_key,
                 subkey,

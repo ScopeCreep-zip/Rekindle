@@ -105,11 +105,14 @@ async fn two_first_contacts_on_one_slot_open_after_one_retry() {
         "the refill waits while Rae's writes fail"
     );
 
+    // Heal ends the fault; the pool's own re-push timer (backoff from
+    // 2 s to 60 s) lands the held refill.
     sim.fault(Fault::Heal);
-    sim.quiesce().await;
-    assert_ne!(
-        sim.network_value(&record, FIRST_SLOT).map(|v| v.data),
-        Some(listed),
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            sim.network_value(&record, FIRST_SLOT).map(|v| v.data) != Some(listed.clone())
+        })
+        .await,
         "the refill lands once her writes do"
     );
     talk(&sim, &nodes[0], &nodes[1], "after the collision").await;
