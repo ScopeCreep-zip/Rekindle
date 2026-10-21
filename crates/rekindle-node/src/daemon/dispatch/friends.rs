@@ -2,7 +2,7 @@
 //! (plans E2.1, E2.3): each request runs the ported operation
 //! (`operations::{friend, dm}`) over the Host (`HostFriends`).
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, Lane};
 use rekindle_transport::operations::{dm, friend, friend::FriendError};
 
 use super::{state_error, DaemonContext};
@@ -34,20 +34,6 @@ fn done(result: Result<(), FriendError>) -> IpcResponse {
     answer(result.map(|()| serde_json::json!({ "status": "ok" })))
 }
 
-/// Whether `request` reads (it needs a queryable state) or writes.
-fn reads(request: &IpcRequest) -> bool {
-    matches!(
-        request,
-        IpcRequest::FriendList
-            | IpcRequest::FriendRequests
-            | IpcRequest::FriendInviteList
-            | IpcRequest::FriendBlockedList
-            | IpcRequest::IdentitySafetyNumber { .. }
-            | IpcRequest::DmInbox { .. }
-            | IpcRequest::DmHistory { .. }
-    )
-}
-
 /// Route one friend, DM, session-reset or verification request (the
 /// router's arm). An action whose review was held on the peer's verified
 /// key changing acknowledges the change with its own write
@@ -58,7 +44,8 @@ pub(crate) async fn route(
     request: IpcRequest,
     acknowledged: Acknowledged,
 ) -> IpcResponse {
-    if reads(&request) {
+    // A query needs a queryable state; a write, an operational one.
+    if request.lane() == Lane::Query {
         if !state.can_query() {
             return state_error(state, "query");
         }

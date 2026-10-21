@@ -9,7 +9,7 @@ use std::sync::Arc;
 use rekindle_codec::capnp_codec::direct::{DirectBody, StatusResponse};
 
 use crate::db_helpers::db_call;
-use crate::state::{AppState, UserStatus};
+use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
 use rusqlite::OptionalExtension;
@@ -67,7 +67,7 @@ pub async fn respond_to_status_request(
             .or(f.last_seen_at)
             .map_or(0, |ms| u64::try_from(ms / 1000).unwrap_or(0));
         Some((
-            user_status_str(f.status),
+            f.status.as_wire_str().to_string(),
             f.status_message.clone(),
             last_seen,
         ))
@@ -95,17 +95,4 @@ async fn send(state: &AppState, to: &str, body: &DirectBody) -> Result<(), Strin
     )
     .await
     .map_err(|e| e.to_string())
-}
-
-fn user_status_str(status: UserStatus) -> String {
-    // Architecture §13.5: relay-served status MUST match what we'd serve
-    // over the regular presence channel. Treat `Invisible` as `Offline`
-    // on the wire so we don't out our friend.
-    match status {
-        UserStatus::Online => "online",
-        UserStatus::Away => "away",
-        UserStatus::Busy => "busy",
-        UserStatus::Offline | UserStatus::Invisible => "offline",
-    }
-    .to_string()
 }

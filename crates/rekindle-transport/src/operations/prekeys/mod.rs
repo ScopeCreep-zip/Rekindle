@@ -18,10 +18,3 @@ pub use own::{device_list, maintain, plan_and_store, prekey_problem, publish, re
 pub use pick::pick_bundle;
 pub use reject::FirstContact;
 pub(crate) use reject::{acknowledged, began_first_contact, on_rejected, refilled, reject_init};
-
-use crate::operations::friend::FriendError;
-
-/// A storage step's failure as the friend operations report it.
-fn stored(what: &str, e: impl std::fmt::Display) -> FriendError {
-    FriendError::Failed(format!("{what}: {e}"))
-}

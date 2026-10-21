@@ -13,7 +13,6 @@ use rekindle_db::ratchet::PeerAddress;
 use rekindle_protocol::dht::prekeys as record;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
-use super::stored;
 use crate::operations::friend::{state, FriendError, FriendHost};
 
 /// The bundle to open a session with `peer` (a hex identity) from: their
@@ -105,10 +104,10 @@ pub async fn pick_bundle(
     let listed: Vec<u32> = view.listed_opk_ids().collect();
     rekindle_db::prekeys::sweep_used_slots(&db, &owner, &address, listed)
         .await
-        .map_err(|e| stored("sweep used prekey slots", e))?;
+        .map_err(|e| FriendError::store("sweep used prekey slots", e))?;
     let used = rekindle_db::prekeys::used_slots(&db, &owner, &address)
         .await
-        .map_err(|e| stored("read used prekey slots", e))?;
+        .map_err(|e| FriendError::store("read used prekey slots", e))?;
     let pick = pick_slot(&view, &used, host.rng());
     if pick == Pick::LastResortOnly {
         tracing::info!(peer = %peer, "no unused one-time slot; initiating from the last-resort key");

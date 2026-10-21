@@ -69,6 +69,19 @@ impl SessionStatus {
         }
     }
 
+    /// Parse a wire string [`Self::as_wire_str`] writes; `None` for any
+    /// other text. Invisible never arrives: the wire folds it to offline.
+    #[must_use]
+    pub fn from_wire_str(s: &str) -> Option<Self> {
+        match s {
+            "online" => Some(Self::Online),
+            "away" => Some(Self::Away),
+            "busy" => Some(Self::Busy),
+            INVISIBLE_WIRE_VALUE => Some(Self::Offline),
+            _ => None,
+        }
+    }
+
     /// `true` when peers should consider this status "available"
     /// (receive routing decisions + mention escalation).
     #[must_use]

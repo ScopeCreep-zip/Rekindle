@@ -63,16 +63,6 @@ pub async fn probe_friends_for_status(host: &dyn FriendHost, target: &str) {
     }
 }
 
-fn parse_status(s: &str) -> Option<UserStatus> {
-    match s {
-        "online" => Some(UserStatus::Online),
-        "away" => Some(UserStatus::Away),
-        "busy" => Some(UserStatus::Busy),
-        "offline" => Some(UserStatus::Offline),
-        _ => None,
-    }
-}
-
 /// `friend` answered a probe (the 0x0141 body, §6): the snapshot
 /// refreshes our view of `target_pubkey` only when we asked that friend
 /// about that target within the cooldown and the target is our accepted
@@ -103,7 +93,7 @@ pub(crate) fn on_status_response(host: &dyn FriendHost, friend: &str, r: &Status
         .and_then(|s| s.checked_mul(1000))
         .filter(|_| r.last_seen > 0);
     state::update(host, target, |f| {
-        if let Some(status) = parse_status(&r.status) {
+        if let Some(status) = UserStatus::from_wire_str(&r.status) {
             f.status = status;
         }
         if let Some(message) = &r.status_message {

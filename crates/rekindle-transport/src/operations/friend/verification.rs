@@ -26,11 +26,7 @@ use super::state;
 /// `Locked` while no identity is unlocked; `Invalid` when `peer` is not a
 /// public key.
 pub(crate) fn keys(host: &dyn FriendHost, peer: &str) -> Result<([u8; 32], [u8; 32]), FriendError> {
-    let parse = |key: &str| {
-        rekindle_types::key_format::public_key_hex(key)
-            .map(|k| k.to_bytes())
-            .map_err(|e| FriendError::Invalid(format!("public key {key}: {e}")))
-    };
+    let parse = crate::operations::dm::recipient_key;
     Ok((parse(&state::owner(host)?)?, parse(peer)?))
 }
 

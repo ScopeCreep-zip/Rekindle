@@ -54,8 +54,9 @@ impl HostFriends {
             .transport
             .read()
             .as_ref()
-            .and_then(|node| node.records())
-            .ok_or(PresenceError::NotAttached)
+            .ok_or(PresenceError::NotAttached)?
+            .require_records()
+            .map_err(|_| PresenceError::NotAttached)
     }
 
     fn with_friend(

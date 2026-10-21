@@ -54,19 +54,21 @@ pub async fn open_prekey_record(
 /// re-pushed until it lands.
 ///
 /// # Errors
-/// The write failed outright.
+/// The head is larger than a subkey holds, or the write failed outright.
 pub async fn publish_head(
     pool: &dyn RecordPort,
     lease: LeaseId,
     head: Vec<u8>,
 ) -> Result<SetOutcome, ProtocolError> {
+    fits("the head", &head)?;
     Ok(pool.set_durable(lease, layout::HEAD, head, None).await?)
 }
 
 /// Write one slot, `subkey` in `FIRST_SLOT..FIRST_SLOT + SLOT_COUNT`.
 ///
 /// # Errors
-/// `subkey` is not a slot, or the write failed outright.
+/// `subkey` is not a slot, the slot is larger than a subkey holds, or the
+/// write failed outright.
 pub async fn publish_slot(
     pool: &dyn RecordPort,
     lease: LeaseId,
@@ -78,7 +80,21 @@ pub async fn publish_slot(
             "subkey {subkey} is not a prekey slot"
         )));
     }
+    fits("a slot", &slot)?;
     Ok(pool.set_durable(lease, subkey, slot, None).await?)
+}
+
+/// Refuse a value larger than one subkey holds (`MAX_SUBKEY_VALUE_LEN`)
+/// before it reaches the network.
+fn fits(what: &str, value: &[u8]) -> Result<(), ProtocolError> {
+    if value.len() > layout::MAX_SUBKEY_VALUE_LEN {
+        return Err(ProtocolError::DhtError(format!(
+            "{what} is {} B, more than a subkey holds ({} B)",
+            value.len(),
+            layout::MAX_SUBKEY_VALUE_LEN
+        )));
+    }
+    Ok(())
 }
 
 /// A peer's device list (their profile's subkey 5), read from the network
@@ -91,10 +107,7 @@ pub async fn read_device_list(
     profile_key: &str,
     force_refresh: bool,
 ) -> Result<Option<Vec<u8>>, ProtocolError> {
-    Ok(pool
-        .read_once(profile_key, PREKEY_RECORDS, force_refresh)
-        .await?
-        .map(|value| value.data))
+    super::profile::read_profile_subkey(pool, profile_key, PREKEY_RECORDS, force_refresh).await
 }
 
 /// A peer's prekey record: the head and every slot it holds, the subkeys
@@ -104,7 +117,7 @@ pub async fn read_device_list(
 /// The record could not be opened or read.
 pub async fn read_record(pool: &dyn RecordPort, key: &str) -> Result<RecordRead, ProtocolError> {
     let lease = pool.acquire(key, None).await?;
-    let subkeys: Vec<u32> = (layout::HEAD..=layout::SLOT_COUNT).collect();
+    let subkeys: Vec<u32> = (layout::HEAD..layout::FIRST_SLOT + layout::SLOT_COUNT).collect();
     let values = pool.read_changed(lease, &subkeys).await;
     pool.release(lease).await;
     let mut read = RecordRead::default();

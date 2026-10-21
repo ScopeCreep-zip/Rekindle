@@ -15,7 +15,6 @@ use rekindle_types::dht_layout::prekeys::HEAD;
 use rekindle_types::dto::identity::{PrekeyComponentLens, PrekeyStatus};
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
-use super::stored;
 use crate::operations::friend::{state, FriendError, FriendHost};
 
 /// The profile's subkey 5: this device's entry naming `record_key` (one
@@ -78,7 +77,7 @@ pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), 
     if failed.is_empty() {
         Ok(())
     } else {
-        Err(stored("publish prekeys", failed.join("; ")))
+        Err(FriendError::store("publish prekeys", failed.join("; ")))
     }
 }
 
@@ -133,10 +132,10 @@ pub async fn reconcile(host: &dyn FriendHost) -> Result<usize, FriendError> {
         .ok_or_else(|| FriendError::NotReady("our prekey record was released".to_string()))?;
     let ours = rekindle_db::prekeys::published_values(&host.db()?, &host.local_party()?)
         .await
-        .map_err(|e| stored("read our prekeys", e))?;
+        .map_err(|e| FriendError::store("read our prekeys", e))?;
     let held = record::read_record(pool.as_ref(), &key)
         .await
-        .map_err(|e| stored("read our prekey record", e))?;
+        .map_err(|e| FriendError::store("read our prekey record", e))?;
     let differs = |p: &Publish| {
         if p.subkey == HEAD {
             held.head.as_deref() != Some(p.value.as_slice())
@@ -186,18 +185,18 @@ pub async fn plan_and_store(host: &dyn FriendHost) -> Result<Vec<Publish>, Frien
     let now = local.now_ms;
     let prekeys = rekindle_db::prekeys::local_prekeys(&db, &owner)
         .await
-        .map_err(|e| stored("read our prekeys", e))?;
+        .map_err(|e| FriendError::store("read our prekeys", e))?;
     let actions = plan_maintenance(now, &prekeys);
     let mut values = Vec::new();
     if !actions.is_empty() {
         tracing::info!(actions = actions.len(), "prekey maintenance");
         values = rekindle_db::prekeys::apply_maintenance(&db, &local, actions)
             .await
-            .map_err(|e| stored("mint prekeys", e))?;
+            .map_err(|e| FriendError::store("mint prekeys", e))?;
     }
     let swept = rekindle_db::prekeys::sweep_archive(&db, &owner, now)
         .await
-        .map_err(|e| stored("sweep the prekey archive", e))?;
+        .map_err(|e| FriendError::store("sweep the prekey archive", e))?;
     tracing::debug!(?swept, "prekey archive swept");
     Ok(values)
 }
@@ -211,7 +210,7 @@ pub async fn status(host: &dyn FriendHost) -> Result<PrekeyStatus, FriendError> 
     let owner = state::owner(host)?;
     let row = rekindle_db::prekeys::status(&db, &local.owner(), local.now_ms)
         .await
-        .map_err(|e| stored("read prekey status", e))?;
+        .map_err(|e| FriendError::store("read prekey status", e))?;
     let columns = state::db_call!(host, "read the identity row", move |conn| {
         rekindle_db::repo::identity::login_row(conn, &owner)
     })
@@ -219,7 +218,7 @@ pub async fn status(host: &dyn FriendHost) -> Result<PrekeyStatus, FriendError> 
     .map(|(_, columns)| columns);
     let head = rekindle_db::prekeys::published_values(&db, &local)
         .await
-        .map_err(|e| stored("read our prekeys", e))?
+        .map_err(|e| FriendError::store("read our prekeys", e))?
         .into_iter()
         .find(|p| p.subkey == HEAD)
         .and_then(|p| decode_prekey_head(&p.value).ok());
