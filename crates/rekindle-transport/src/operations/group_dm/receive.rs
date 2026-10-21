@@ -260,8 +260,9 @@ impl GroupSink<'_> {
             reply_to.clone(),
         );
         let stream_seq = i64::try_from(seq).ok();
-        let stored = state::db_call!(self.host, "store group message", move |conn| {
-            rekindle_db::repo::messages::insert_dm(
+        let received_at = self.host.clock().now_ms_i64();
+        let (stored, timestamp) = state::db_call!(self.host, "store group message", move |conn| {
+            rekindle_db::repo::received_dm::insert_received(
                 conn,
                 &rekindle_db::repo::messages::NewDm {
                     owner_key: &owner,
@@ -276,6 +277,8 @@ impl GroupSink<'_> {
                     send_state: SendState::Delivered,
                     stream_seq,
                 },
+                received_at,
+                crate::operations::dm::MAX_FUTURE_SKEW_MS,
             )
         })
         .await

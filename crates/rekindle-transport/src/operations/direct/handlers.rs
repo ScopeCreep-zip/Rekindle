@@ -208,29 +208,29 @@ async fn direct_message(
     sent_at_ms: u64,
     stream_seq: u64,
 ) -> bool {
-    let timestamp = i64::try_from(sent_at_ms).unwrap_or(i64::MAX);
+    let claimed = i64::try_from(sent_at_ms).unwrap_or(i64::MAX);
     let message_id = client_id_text(&text.client_id);
     let reply_to = text.reply_to.as_ref().map(client_id_text);
     let fields = NewDmFields {
         peer: sender.to_string(),
         sender: sender.to_string(),
         body: text.body.clone(),
-        timestamp,
+        timestamp: claimed,
         is_read: false,
         message_id: message_id.clone(),
         reply_to: reply_to.clone(),
         send_state: rekindle_types::message::SendState::Delivered,
         stream_seq: i64::try_from(stream_seq).ok().filter(|s| *s >= 1),
     };
-    match fields.store(host).await {
-        Ok(stored) if stored.inserted => {}
+    let timestamp = match fields.store_received(host).await {
+        Ok((stored, at)) if stored.inserted => at,
         // A replay of a message already applied: no second unread or event.
         Ok(_) => return true,
         Err(e) => {
             tracing::warn!(from = %sender, error = %e, "incoming message not stored");
             return false;
         }
-    }
+    };
     host.publish(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DirectMessageReceived {
             peer_key: sender.to_string(),

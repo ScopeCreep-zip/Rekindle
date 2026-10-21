@@ -51,6 +51,11 @@ pub fn unwire(datagram: &[u8]) -> Option<&[u8]> {
     }
 }
 
+/// How far past our receive time a received message's claimed time may
+/// stand (`ENVELOPE_MAX_FUTURE_SKEW_MS`, the envelopes' allowed skew).
+pub(crate) const MAX_FUTURE_SKEW_MS: i64 =
+    rekindle_types::message::ENVELOPE_MAX_FUTURE_SKEW_MS.cast_signed();
+
 #[cfg(test)]
 mod tests {
     use rekindle_codec::capnp_codec::direct::{

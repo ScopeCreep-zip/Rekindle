@@ -52,32 +52,43 @@ pub(crate) struct NewDmFields {
 }
 
 impl NewDmFields {
-    /// Store it; its row, and whether it was new (a replay finds it held).
+    /// Store a received one at its clamped time
+    /// (`rekindle_db::repo::received_dm`); its row and the time stored.
     ///
     /// # Errors
     /// The identity is locked, or the write failed.
-    pub(crate) async fn store(
+    pub(crate) async fn store_received(
         self,
         host: &dyn FriendHost,
-    ) -> Result<rekindle_db::repo::messages::StoredDm, FriendError> {
+    ) -> Result<(rekindle_db::repo::messages::StoredDm, i64), FriendError> {
         let owner = state::owner(host)?;
+        let received_at = host.clock().now_ms_i64();
         state::db_call!(host, "store direct message", move |conn| {
-            let dm = rekindle_db::repo::messages::NewDm {
-                owner_key: &owner,
-                peer_key: &self.peer,
-                conversation_type: rekindle_types::message::ConversationType::Dm,
-                sender_key: &self.sender,
-                body: &self.body,
-                timestamp: self.timestamp,
-                is_read: self.is_read,
-                message_id: &self.message_id,
-                reply_to: self.reply_to.as_deref(),
-                send_state: self.send_state,
-                stream_seq: self.stream_seq,
-            };
-            rekindle_db::repo::messages::insert_dm(conn, &dm)
+            let dm = self.new_dm(&owner);
+            rekindle_db::repo::received_dm::insert_received(
+                conn,
+                &dm,
+                received_at,
+                super::MAX_FUTURE_SKEW_MS,
+            )
         })
         .await
+    }
+
+    fn new_dm<'a>(&'a self, owner: &'a str) -> rekindle_db::repo::messages::NewDm<'a> {
+        rekindle_db::repo::messages::NewDm {
+            owner_key: owner,
+            peer_key: &self.peer,
+            conversation_type: rekindle_types::message::ConversationType::Dm,
+            sender_key: &self.sender,
+            body: &self.body,
+            timestamp: self.timestamp,
+            is_read: self.is_read,
+            message_id: &self.message_id,
+            reply_to: self.reply_to.as_deref(),
+            send_state: self.send_state,
+            stream_seq: self.stream_seq,
+        }
     }
 }
 
