@@ -18,7 +18,7 @@ use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, start, SimNode};
-use crate::pair::{befriend, key, LIMIT};
+use crate::pair::{befriend, key, retired, unretired, LIMIT};
 
 /// The group as `node` lists it (a pending invite included).
 async fn view(node: &SimNode, group_id: &str) -> Option<GroupDmView> {
@@ -251,12 +251,21 @@ async fn a_retired_group_stretch_is_a_stored_history_gap() {
         ))
         .await
     );
+    let keys = unretired(&sim, 2, 0);
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,
     });
     send(&nodes[0], &gid, "after the horizon").await;
     assert!(eventually(&sim, LIMIT, || reads(&nodes[2], &gid, "after the horizon")).await);
+    // Cid reads the entry from its page once `HEAD` names it; the retire
+    // mark is Ann's next write (a set of its own), and Bea must not be
+    // back (her watch and catch-up read the chain at once) before it is on
+    // the network, or she reads the stretch the mark is about to retire.
+    assert!(
+        eventually(&sim, LIMIT, || async { retired(&sim, &keys) }).await,
+        "Ann's group chain is retired"
+    );
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: false,
