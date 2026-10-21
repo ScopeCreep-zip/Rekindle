@@ -34,6 +34,17 @@ pub fn friend_host(
         .ok_or_else(|| "the host has not started".to_string())
 }
 
+/// A peer's name for an OS notice: our nickname for them, else their
+/// key's fingerprint (the transport's `friend::label`), never the name
+/// their own payload carried. With no Host there is no nickname to hold.
+pub fn peer_label(state: &AppState, peer_key: &str) -> String {
+    use rekindle_transport::operations::friend;
+    friend_host(state).map_or_else(
+        |_| friend::short_key(peer_key),
+        |host| friend::label(host.as_ref(), peer_key),
+    )
+}
+
 /// The `RouteId` for a route blob, through the process's one importer.
 pub fn import_route_blob(
     state: &Arc<AppState>,

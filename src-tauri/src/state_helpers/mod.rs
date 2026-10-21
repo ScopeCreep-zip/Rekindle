@@ -63,7 +63,7 @@ pub use node::{
 pub use owner_keys::{load_owner, persist_owner};
 pub use routes::{
     call_route_blob, friend_host, import_route_blob, message_route_blob, on_dead_remote_routes,
-    peer_route, route_imports, route_send_failed,
+    peer_label, peer_route, route_imports, route_send_failed,
 };
 pub use voice::{
     current_voice_scope, media_live_peers, media_roster_for, note_media_live,

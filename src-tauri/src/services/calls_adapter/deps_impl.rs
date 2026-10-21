@@ -327,8 +327,11 @@ impl CallSignalingDeps for CallsAdapter {
                     &self.app_handle,
                     rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
+                        display_name: crate::state_helpers::peer_label(
+                            &self.state,
+                            &from_public_key,
+                        ),
                         from: from_public_key,
-                        display_name: from_display_name,
                         kind: kind_str(kind),
                         expires_at_ms,
                         is_group: false,
@@ -460,8 +463,11 @@ impl CallSignalingDeps for CallsAdapter {
                     &self.app_handle,
                     rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
+                        display_name: crate::state_helpers::peer_label(
+                            &self.state,
+                            &initiator_public_key,
+                        ),
                         from: initiator_public_key,
-                        display_name: initiator_display_name,
                         kind: kind_u8_str(kind),
                         expires_at_ms,
                         is_group: true,

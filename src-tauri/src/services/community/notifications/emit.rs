@@ -127,7 +127,7 @@ pub async fn emit_message_notification(
             (title, body)
         }
         NotificationDecision::Emit => {
-            let sender_name = sender_pseudonym.chars().take(8).collect::<String>();
+            let sender_name = crate::state_helpers::peer_label(state, sender_pseudonym);
             let title = format!("{sender_name} in #{channel_name}");
             let body = format!("[{community_name}] {body}");
             (title, body)

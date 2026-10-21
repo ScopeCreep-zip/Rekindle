@@ -102,16 +102,20 @@ pub(crate) fn take(host: &dyn FriendHost, public_key: &str) -> Option<FriendStat
         .and_then(|s| s.friends.remove(public_key))
 }
 
-/// A friend's name for a notice: their display name, or a short key.
-pub(crate) fn label(host: &dyn FriendHost, public_key: &str) -> String {
+/// A peer's name for a notice: the nickname we gave them, or their key's
+/// fingerprint. Never a name from the peer's own payload.
+pub fn label(host: &dyn FriendHost, public_key: &str) -> String {
     friend(host, public_key)
         .and_then(|f| f.nickname)
-        .unwrap_or_else(|| {
-            rekindle_types::key_format::public_key_hex(public_key).map_or_else(
-                |_| format!("{}…", rekindle_utils::text::prefix(public_key, 16)),
-                |key| rekindle_crypto::identity::key_fingerprint(&key.to_bytes()),
-            )
-        })
+        .unwrap_or_else(|| short_key(public_key))
+}
+
+/// A key's fingerprint, or its first characters when it is not a key.
+pub fn short_key(public_key: &str) -> String {
+    rekindle_types::key_format::public_key_hex(public_key).map_or_else(
+        |_| format!("{}…", rekindle_utils::text::prefix(public_key, 16)),
+        |key| rekindle_crypto::identity::key_fingerprint(&key.to_bytes()),
+    )
 }
 
 /// The name the Host itself holds for `public_key` (plan audit U-7: a
