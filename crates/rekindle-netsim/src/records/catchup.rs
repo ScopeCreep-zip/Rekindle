@@ -134,8 +134,13 @@ fn inspect(inner: &mut Inner, node: usize, key: &str) -> Option<ValueChange> {
         .as_ref()?
         .subkeys
         .clone();
+    let reach = reachable(
+        &inner.records.get(key)?.replicas,
+        &inner.faults.partitions,
+        node,
+    );
+    super::stores::touch(inner, key, &reach);
     let record = inner.records.get(key)?;
-    let reach = reachable(&record.replicas, &inner.faults.partitions, node);
     let mut newer: BTreeSet<u32> = {
         let local = &inner.nodes[node].local;
         subkeys

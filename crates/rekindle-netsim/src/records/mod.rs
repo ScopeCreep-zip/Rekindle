@@ -26,6 +26,10 @@
 //!   tick lag, and when a watch is established or newly held, reporting
 //!   what the network holds newer than its local copy ([`catchup`] cites
 //!   Veilid);
+//! - an open of a locally held record queues Veilid's rehydration, which
+//!   pushes the local subkeys the replicas lack ([`rehydrate`] cites
+//!   Veilid); each DHT store keeps at most Veilid's remote record count and
+//!   evicts the least recently used record ([`stores`]);
 //! - every call that reaches the network costs Veilid's latency
 //!   ([`crate::latency`]) before its effect lands, under the per-subkey
 //!   locks and the node's DHT cap.
@@ -45,7 +49,11 @@ mod catchup;
 #[cfg(test)]
 mod catchup_tests;
 mod dht;
+mod rehydrate;
+#[cfg(test)]
+mod rehydrate_tests;
 mod replicas;
+mod stores;
 #[cfg(test)]
 mod watch_tests;
 pub(crate) mod watches;

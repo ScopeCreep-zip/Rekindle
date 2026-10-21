@@ -319,6 +319,7 @@ impl Network {
     pub(crate) fn watch_work(inner: &Inner) -> bool {
         inner.nodes.iter().enumerate().any(|(i, n)| {
             super::catchup::pending(inner, i)
+                || super::rehydrate::pending(inner, i)
                 || n.watches
                     .values()
                     .any(|d| d.as_ref().is_none_or(|d| d.expiration.is_some()))

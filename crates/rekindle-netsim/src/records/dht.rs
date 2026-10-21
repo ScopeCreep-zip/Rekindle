@@ -36,6 +36,9 @@
 //!   newest seq of the replicas the node reaches; with
 //!   `allow_offline` false no write is ever queued, so `offline_subkeys`
 //!   is empty;
+//! - an open of a locally held record queues a rehydration
+//!   ([`super::rehydrate`]); a call that reads or writes replicas uses the
+//!   record on their stores ([`super::stores`]);
 //! - a watch records the wanted state on the node, answers whether one is
 //!   wanted and is held by the replicas the node reaches; a close is
 //!   node-wide and ends the record's watch ([`super::watches`]).
@@ -57,7 +60,8 @@ use rekindle_records::port::{
 use rekindle_utils::RandomSource;
 
 use super::{
-    admits, new_key_text, public_text, reachable, replicas, subkey_count, watches, writer_public,
+    admits, new_key_text, public_text, reachable, rehydrate, replicas, stores, subkey_count,
+    watches, writer_public,
 };
 use crate::clock::SimRandom;
 use crate::latency::{self, Slot, Span};
@@ -183,10 +187,14 @@ impl SimDht {
             .local
             .get(&(key.to_string(), subkey))
             .cloned();
-        let found = inner.records.get(key).and_then(|r| {
-            let reach = reachable(&r.replicas, &inner.faults.partitions, self.node);
-            replicas::get(&r.replicas, &reach, subkey as usize, local.as_ref())
+        let reach = inner.records.get(key).map_or_else(Vec::new, |r| {
+            reachable(&r.replicas, &inner.faults.partitions, self.node)
         });
+        stores::touch(&mut inner, key, &reach);
+        let found = inner
+            .records
+            .get(key)
+            .and_then(|r| replicas::get(&r.replicas, &reach, subkey as usize, local.as_ref()));
         if let Some(found) = &found {
             if local.as_ref().is_none_or(|l| l.seq != found.seq) {
                 inner.nodes[self.node]
@@ -243,6 +251,8 @@ impl SimDht {
         let reach = reachable(&record.replicas, &inner.faults.partitions, self.node);
         let fanout = replicas::set(&mut record.replicas, &reach, subkey as usize, &ours);
         watches::mark(record, &fanout.stored, subkey, self.node);
+        stores::touch(inner, key, &reach);
+        stores::admit(inner, key, &fanout.stored);
         let answer = fanout.consensus.then(|| {
             inner.nodes[self.node]
                 .local
@@ -342,6 +352,11 @@ impl DhtBackend for SimDht {
         }
         {
             let mut inner = self.net.inner.lock();
+            if known {
+                // A record in the local store: Veilid checks the network
+                // against it in the background (`open_record.rs:31-38`).
+                rehydrate::request(&mut inner, self.node, key);
+            }
             let slot = &mut inner.nodes[self.node];
             slot.known.insert(key.to_string());
             slot.opened.insert(key.to_string(), writer);
@@ -411,7 +426,13 @@ impl DhtBackend for SimDht {
         } else {
             Some(self.network(self.read_span(key, subkeys), key, &[]).await?)
         };
-        let inner = self.net.inner.lock();
+        let mut inner = self.net.inner.lock();
+        if scope != ReportScope::Local {
+            let reach = inner.records.get(key).map_or_else(Vec::new, |r| {
+                reachable(&r.replicas, &inner.faults.partitions, self.node)
+            });
+            stores::touch(&mut inner, key, &reach);
+        }
         let record = inner
             .records
             .get(key)

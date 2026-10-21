@@ -139,6 +139,8 @@ impl Netsim {
                 last_lag_inspect: None,
                 pools: Vec::new(),
                 imported: std::collections::HashSet::new(),
+                rehydrations: std::collections::BTreeSet::new(),
+                pushes: std::collections::BTreeMap::new(),
             });
             inner.nodes.len() - 1
         };

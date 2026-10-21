@@ -7,7 +7,7 @@
 //! ([`crate::Netsim::start`]) delivers each batch in an order drawn from the
 //! run seed, so a seed fixes the interleaving.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -104,6 +104,13 @@ pub(crate) struct NodeSlot {
     pub pools: Vec<Weak<RecordPool>>,
     /// Route ids this node imported.
     pub imported: HashSet<String>,
+    /// The node's queued rehydrations, by record key (Veilid's
+    /// `rehydration_requests`, [`crate::records`]' rehydration).
+    pub rehydrations: BTreeSet<String>,
+    /// The node's queued subkey pushes (Veilid's `offline_subkey_writes`,
+    /// fed only by rehydration): the reach of the last attempt that left
+    /// the subkey queued, `None` before any.
+    pub pushes: BTreeMap<(String, u32), Option<Vec<usize>>>,
 }
 
 #[derive(Default)]
@@ -122,6 +129,9 @@ pub(crate) struct Inner {
     pub trace: Trace,
     /// When the next watch tick runs.
     pub next_tick: Option<tokio::time::Instant>,
+    /// The DHT stores' use counter (each store's record LRU,
+    /// [`crate::records`]' `stores`).
+    pub lru: u64,
 }
 
 /// The network, shared by every node's ports.
@@ -212,6 +222,9 @@ impl Network {
             now >= due
         };
         if tick {
+            // The storage manager's tick: offline writes and rehydration run
+            // before the watch tasks (`tasks/mod.rs:119-125`).
+            self.tick_rehydration();
             self.tick_watches();
         }
         let (batch, senders) = {

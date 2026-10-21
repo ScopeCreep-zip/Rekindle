@@ -50,6 +50,12 @@ pub(crate) const GET_COUNT: usize = 3;
 pub(crate) struct Replica {
     /// The simulated node this replica sits beside (for partitions).
     pub home: usize,
+    /// The DHT store holding this replica (`home` is `store % nodes`):
+    /// each simulated node is beside [`REPLICAS`] stores, so the records of
+    /// one store are bounded ([`super::stores`]).
+    pub store: usize,
+    /// When the store last used this record (its LRU stamp).
+    pub used: u64,
     pub values: Vec<Option<RecordValue>>,
     /// The watches this replica holds ([`super::watches`]).
     pub watches: Vec<super::watches::ReplicaWatch>,
@@ -61,9 +67,12 @@ pub(crate) fn place(key: &str, nodes: usize, subkeys: usize) -> Vec<Replica> {
     let offset = key.bytes().fold(0usize, |acc, b| {
         acc.wrapping_mul(31).wrapping_add(usize::from(b))
     });
+    let stores = nodes.max(1) * REPLICAS;
     (0..REPLICAS)
         .map(|r| Replica {
             home: offset.wrapping_add(r) % nodes.max(1),
+            store: offset.wrapping_add(r) % stores,
+            used: 0,
             values: vec![None; subkeys],
             watches: Vec::new(),
         })
@@ -115,6 +124,8 @@ pub(crate) struct SetFanout {
     pub value: RecordValue,
     /// Whether [`SET_COUNT`] replicas accepted `value`.
     pub consensus: bool,
+    /// How many replicas accepted `value`.
+    pub accepted: usize,
     /// The replicas that stored a value in this fanout, in order (one may
     /// appear twice: a restart sent it the newer value).
     pub stored: Vec<usize>,
@@ -157,6 +168,7 @@ pub(crate) fn set(
     }
     SetFanout {
         consensus: accepted.len() >= SET_COUNT,
+        accepted: accepted.len(),
         value: ctx,
         stored,
     }
