@@ -107,52 +107,64 @@ impl OwnRecords {
                 .map(ToString::to_string),
         );
 
-        if stop.is_cancelled() {
-            return;
-        }
-        keys.mailbox = self
-            .mailbox(
-                pool.as_ref(),
-                stored.mailbox.clone(),
-                &identity_keypair,
-                &route_blob,
-            )
+        // The prekey maintenance may start once our record is held,
+        // reconciled and filled (or not held, and the sender goes unsent).
+        let ready = self.prekeys_ready.take();
+        let this = &self;
+        let pool = pool.as_ref();
+        // The records that do not depend on one another are written at
+        // once (plan E2.B): the mailbox, the profile and the friend list
+        // beside the prekey record; only the profile's subkey 5, which
+        // names the record, waits for its first-contact part.
+        let profile = async {
+            let prekeys = async {
+                let held = this.prekeys(pool, &stored).await;
+                if let Some(ready) = ready {
+                    if this.prekey_lease.lock().is_some() {
+                        let _ = ready.send(());
+                    }
+                }
+                held
+            };
+            let ((device_list, later), profile) =
+                tokio::join!(prekeys, this.profile(pool, &stored, &route_blob));
+            // The account, read by no one else, is written beside the
+            // device list rather than with the first writes: those already
+            // fill Veilid's 16 concurrent DHT operations (11 prekey writes,
+            // the profile's 3 fields, the mailbox route and the friend
+            // list), and one more would wait a whole set latency for a slot
+            // ahead of the record the profile names.
+            let device_list = async {
+                if let Some((key, _)) = &profile {
+                    this.device_list(pool, key, &device_list).await;
+                }
+            };
+            tokio::join!(device_list, this.account(pool, &stored));
+            // The later slots after the profile names the record, so they
+            // never hold its writes back under the DHT cap.
+            this.publish_later(later);
+            profile
+        };
+        let joined = stop
+            .run_until_cancelled(async {
+                tokio::join!(
+                    this.mailbox(pool, stored.mailbox.clone(), &identity_keypair, &route_blob),
+                    profile,
+                    this.friend_list(pool, &stored),
+                )
+            })
             .await;
-        if stop.is_cancelled() {
+        let Some((mailbox, profile, friend_list)) = joined else {
             return;
-        }
-        // The prekey record before the profile, whose subkey 5 names it.
-        let device_list = self.prekeys(pool.as_ref(), &stored).await;
-        if stop.is_cancelled() {
-            return;
-        }
-        // Held, reconciled and filled (or not held, and the sender goes
-        // unsent): the prekey maintenance may start.
-        if let Some(ready) = self.prekeys_ready.take() {
-            if self.prekey_lease.lock().is_some() {
-                let _ = ready.send(());
-            }
-        }
-        if let Some((key, owner)) = self
-            .profile(pool.as_ref(), &stored, &route_blob, &device_list)
-            .await
-        {
+        };
+        keys.mailbox = mailbox;
+        if let Some((key, owner)) = profile {
             keys.profile = Some(key);
             owners.0 = Some(owner);
         }
-        if stop.is_cancelled() {
-            return;
-        }
-        if let Some((key, owner)) = self.friend_list(pool.as_ref(), &stored).await {
+        if let Some((key, owner)) = friend_list {
             keys.friend_list = Some(key);
             owners.1 = Some(owner);
-        }
-        if stop.is_cancelled() {
-            return;
-        }
-        self.account(pool.as_ref(), &stored).await;
-        if stop.is_cancelled() {
-            return;
         }
         self.project(&keys, owners);
         // The status, now that the projection names the profile (a created
@@ -241,13 +253,12 @@ impl OwnRecords {
         pool: &dyn RecordPort,
         stored: &Stored,
         route_blob: &[u8],
-        device_list: &[u8],
     ) -> Option<(String, String)> {
         let status_message = self.presence.view().status_message;
         let fields = profile::ProfileFields {
             display_name: &self.display_name,
             status_message: &status_message,
-            prekey_records: device_list,
+            prekey_records: None,
             route_blob,
         };
         // An existing profile is re-opened, never replaced: its key is
@@ -283,6 +294,21 @@ impl OwnRecords {
             }
         }
         Some((held.key, held.keypair))
+    }
+
+    /// Name our prekey record in the profile (subkey 5), now that it holds
+    /// its first-contact keys; nothing when it could not be held.
+    async fn device_list(&self, pool: &dyn RecordPort, profile_key: &str, list: &[u8]) {
+        if list.is_empty() {
+            return;
+        }
+        match profile::publish_device_list(pool, profile_key, list).await {
+            Ok(outcome) if outcome.missed() => {
+                tracing::warn!(?outcome, "own records: device list not stored at consensus");
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!(error = %e, "own records: device list not written"),
+        }
     }
 
     async fn friend_list(
@@ -401,7 +427,7 @@ pub(crate) async fn rotate_profile(
         profile::ProfileFields {
             display_name: &display_name,
             status_message: &status_message,
-            prekey_records: &device_list,
+            prekey_records: Some(&device_list),
             route_blob: &route_blob,
         },
     )

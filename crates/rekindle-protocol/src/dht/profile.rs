@@ -22,8 +22,11 @@ pub struct ProfileFields<'a> {
     pub display_name: &'a str,
     pub status_message: &'a str,
     /// Our device list (plan E2.4): the encoded `PrekeyRecordList`
-    /// naming each device's prekey record.
-    pub prekey_records: &'a [u8],
+    /// naming each device's prekey record. `None` at the unlock, which
+    /// writes it with [`publish_device_list`] once the record it names
+    /// holds its first-contact keys, so the rest of the profile need not
+    /// wait for them (plan E2.B).
+    pub prekey_records: Option<&'a [u8]>,
     pub route_blob: &'a [u8],
 }
 
@@ -78,6 +81,19 @@ pub async fn publish_profile_fields(
     fields: ProfileFields<'_>,
 ) -> Result<SetOutcome, ProtocolError> {
     publish_fields(pool, key, fields, "profile reopen").await
+}
+
+/// Write our device list (subkey 5, plan E2.4) to our profile: the unlock
+/// calls it once the prekey record it names holds its first-contact keys.
+///
+/// # Errors
+/// The record could not be reached, or the write failed outright.
+pub async fn publish_device_list(
+    pool: &dyn RecordPort,
+    key: &str,
+    list: &[u8],
+) -> Result<SetOutcome, ProtocolError> {
+    set_own_profile_subkey(pool, key, SUBKEY_PREKEY_RECORDS, list.to_vec()).await
 }
 
 /// Write one subkey of our own profile. Needs the session's writable lease
@@ -158,12 +174,26 @@ async fn publish_fields(
             SUBKEY_STATUS_MESSAGE,
             fields.status_message.as_bytes().to_vec(),
         ),
-        (SUBKEY_PREKEY_RECORDS, fields.prekey_records.to_vec()),
         (SUBKEY_ROUTE_BLOB, fields.route_blob.to_vec()),
-    ];
+    ]
+    .into_iter()
+    .chain(
+        fields
+            .prekey_records
+            .map(|list| (SUBKEY_PREKEY_RECORDS, list.to_vec())),
+    );
+    // The subkeys are written at once: Veilid locks per subkey, so
+    // they overlap and the profile lands in one set latency (plan E2.B).
+    let outcomes = futures::future::join_all(writes.map(|(subkey, value)| async move {
+        (
+            subkey,
+            set_own_profile_subkey(pool, key, subkey, value).await,
+        )
+    }))
+    .await;
     let mut first_miss = SetOutcome::Landed;
-    for (subkey, value) in writes {
-        let outcome = set_own_profile_subkey(pool, key, subkey, value).await?;
+    for (subkey, outcome) in outcomes {
+        let outcome = outcome?;
         if outcome.missed() {
             if matches!(outcome, SetOutcome::Superseded(_)) {
                 // A newer write of ours (another device of this identity) won.

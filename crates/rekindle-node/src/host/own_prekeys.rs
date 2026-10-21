@@ -6,6 +6,7 @@
 //! friend never reads an empty record (the stage then lets the
 //! maintenance start); and this device's id, minted once.
 
+use rekindle_crypto::signal::prekey_record::Publish;
 use rekindle_db::repo::identity::OwnedRecord;
 use rekindle_protocol::dht::prekeys as record;
 use rekindle_records::port::RecordPort;
@@ -14,12 +15,18 @@ use rekindle_transport::operations::prekeys::device_list;
 use super::own_records::{OwnRecords, Stored};
 
 impl OwnRecords {
-    /// Hold our prekey record and return the device list naming it; empty
-    /// when it could not be held (the profile then names no record, and a
-    /// friend's first contact waits for the next unlock).
-    pub(super) async fn prekeys(&self, pool: &dyn RecordPort, stored: &Stored) -> Vec<u8> {
+    /// Hold our prekey record and return the device list naming it, with
+    /// the pass's values written after the profile ([`Self::publish_later`]);
+    /// the list is empty when the record could not be held (the profile
+    /// then names no record, and a friend's first contact waits for the
+    /// next unlock).
+    pub(super) async fn prekeys(
+        &self,
+        pool: &dyn RecordPort,
+        stored: &Stored,
+    ) -> (Vec<u8>, Vec<Publish>) {
         let Some(device_id) = self.device_id(stored).await else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         let held = self
             .owner()
@@ -32,24 +39,24 @@ impl OwnRecords {
             )
             .await;
         let Some(held) = held else {
-            return Vec::new();
+            return (Vec::new(), Vec::new());
         };
         *self.prekey_lease.lock() = Some(held.lease);
         let key = held.key;
-        self.fill_record().await;
-        device_list(&key, &device_id)
+        let later = self.fill_record().await;
+        let list = device_list(&key, &device_id)
             .map_err(|e| tracing::error!(error = %e, "own records: no device list"))
-            .unwrap_or_default()
+            .unwrap_or_default();
+        (list, later)
     }
 
     /// The unlock's reconciliation (what our rows say the record holds and
     /// it does not), then a maintenance pass (a new identity's first set).
     /// The pass's first-contact part (`split_first_contact`) is written
-    /// before the profile names the record; the rest follows in the unlock
-    /// scope.
-    async fn fill_record(&self) {
+    /// before the profile names the record; the rest is returned for
+    /// [`Self::publish_later`].
+    async fn fill_record(&self) -> Vec<Publish> {
         use rekindle_crypto::signal::prekey_record::split_first_contact;
-        use rekindle_transport::operations::friend::FriendHost as _;
         use rekindle_transport::operations::prekeys;
         match prekeys::reconcile(&self.friends).await {
             Ok(0) => {}
@@ -60,23 +67,32 @@ impl OwnRecords {
             Ok(values) => values,
             Err(e) => {
                 tracing::warn!(error = %e, "own records: prekey maintenance failed");
-                return;
+                return Vec::new();
             }
         };
         let (values, later) = split_first_contact(values);
         if let Err(e) = prekeys::publish(&self.friends, values).await {
             tracing::warn!(error = %e, "own records: prekeys not published");
         }
-        if !later.is_empty() {
-            let host = self.friends.clone();
-            self.friends
-                .scope()
-                .spawn_or_drop("publish prekeys", async move {
-                    if let Err(e) = prekeys::publish(&host, later).await {
-                        tracing::warn!(error = %e, "prekey slots not published");
-                    }
-                });
+        later
+    }
+
+    /// Write the pass's later slots in the unlock scope, in bounded
+    /// concurrent batches under the DHT cap (`prekeys::publish`).
+    pub(super) fn publish_later(&self, later: Vec<Publish>) {
+        use rekindle_transport::operations::friend::FriendHost as _;
+        use rekindle_transport::operations::prekeys;
+        if later.is_empty() {
+            return;
         }
+        let host = self.friends.clone();
+        self.friends
+            .scope()
+            .spawn_or_drop("publish prekeys", async move {
+                if let Err(e) = prekeys::publish(&host, later).await {
+                    tracing::warn!(error = %e, "prekey slots not published");
+                }
+            });
     }
 
     /// This device's id: the stored one, or 16 random bytes minted now.
