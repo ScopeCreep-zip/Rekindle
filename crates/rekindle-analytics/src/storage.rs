@@ -16,7 +16,7 @@ use rusqlite::Connection;
 /// Approximate per-row overhead — index entries, hidden ROWID, small
 /// integer columns we don't bother summing. Tuned against
 /// `dbstat`-measured rows in the SQLite shell.
-const ROW_OVERHEAD_BYTES: u64 = 48;
+const ROW_OVERHEAD_BYTES: i64 = 48;
 
 pub fn compute(conn: &Connection, owner_key: &str, community_id: &str) -> StorageUsage {
     let message_bytes = sum_table_bytes(
