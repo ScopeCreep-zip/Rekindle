@@ -5,7 +5,6 @@ import { subscribeChatEvents } from "../ipc/channels";
 import { isLegacy } from "../ipc/channels/chat_events";
 import type { DirectMessageStateChanged, FriendEvent } from "../ipc/channels/chat_events";
 import { friendsState, setFriendsState } from "../stores/friends.store";
-import { setNotificationState } from "../stores/notification.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { chatState, setChatState } from "../stores/chat.store";
 import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "../actions/chat.actions";
@@ -122,19 +121,7 @@ function applyFriendEvent(friend: FriendEvent): void {
       delete next[peerKey];
       setFriendsState("friends", reconcile(next));
     }
-    const truncatedKey = peerKey.slice(0, 8);
-    setNotificationState("notifications", (prev) => [
-      ...prev,
-      {
-        id: crypto.randomUUID(),
-        type: "system",
-        title: "Friend Request Declined",
-        body: `Your friend request was declined by ${truncatedKey}...`,
-        timestamp: Date.now(),
-        read: false,
-      },
-    ]);
-    setNotificationState("unreadCount", (c) => c + 1);
+    // Its inbox row is the backend's systemAlert.
     return;
   }
 
@@ -189,9 +176,9 @@ function applyFriendEvent(friend: FriendEvent): void {
     return;
   }
   if ("groupChanged" in friend) {
-    const { peerKey, groupLabel } = friend.groupChanged;
+    const { peerKey, group, groupLabel } = friend.groupChanged;
     if (friendsState.friends[peerKey]) {
-      setFriendsState("friends", peerKey, "group", groupLabel);
+      setFriendsState("friends", peerKey, { group: groupLabel, inDefaultGroup: group === null });
     }
     return;
   }

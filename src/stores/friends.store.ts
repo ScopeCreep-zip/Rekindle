@@ -13,7 +13,10 @@ export interface Friend {
   status: UserStatus;
   statusMessage: string | null;
   gameInfo: GameInfo | null;
+  /** The group label the buddy list shows them under (the Host's). */
   group: string;
+  /** They are in no group of ours: `group` is the Host's default label. */
+  inDefaultGroup: boolean;
   unreadCount: number;
   lastSeenAt: number | null;
   voiceChannel: string | null;

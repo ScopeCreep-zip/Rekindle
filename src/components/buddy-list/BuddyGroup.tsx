@@ -5,6 +5,8 @@ import BuddyItem from "./BuddyItem";
 
 interface BuddyGroupProps {
   name: string;
+  /** One of our groups (not the default group nor the request list). */
+  renamable: boolean;
   friends: Friend[];
   selectedKey: string | null;
   onDoubleClick: (publicKey: string, displayName: string) => void;
@@ -29,7 +31,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
 
   function handleGroupContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    if (props.name === "Friends") return;
+    if (!props.renamable) return;
     setRenameValue(props.name);
     setRenaming(true);
   }
