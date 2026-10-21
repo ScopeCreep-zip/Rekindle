@@ -2,7 +2,7 @@
 
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
-use crate::{channel, community, id, pk, rk, text, Sample};
+use crate::{channel, community, id, pk, text, Sample};
 
 pub const NAMES: &[&str] = &[
     "new",
@@ -11,7 +11,6 @@ pub const NAMES: &[&str] = &[
     "directMessageReceived",
     "dmSendStatus",
     "dmHistoryGap",
-    "directConversationInvited",
     "conversationFocusRequested",
 ];
 
@@ -23,7 +22,6 @@ pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
         ChannelMessageEvent::DirectMessageReceived { .. } => "directMessageReceived",
         ChannelMessageEvent::DmSendStatus { .. } => "dmSendStatus",
         ChannelMessageEvent::DmHistoryGap { .. } => "dmHistoryGap",
-        ChannelMessageEvent::DirectConversationInvited { .. } => "directConversationInvited",
         ChannelMessageEvent::ConversationFocusRequested { .. } => "conversationFocusRequested",
     }
 }
@@ -96,15 +94,6 @@ pub fn samples() -> Vec<Sample> {
             ChannelMessageEvent::DmHistoryGap {
                 peer_key: pk('b'),
                 through_seq: 17,
-            },
-        ),
-        ev(
-            "directConversationInvited",
-            ChannelMessageEvent::DirectConversationInvited {
-                from: pk('b'),
-                record_key: rk('d'),
-                initiator_pseudonym: pk('e'),
-                is_group: true,
             },
         ),
         ev(

@@ -160,7 +160,9 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
     match e {
         ChannelMessageEvent::New { community, .. }
         | ChannelMessageEvent::Edited { community, .. }
-        | ChannelMessageEvent::Deleted { community, .. } => EventScope::Community(community.clone()),
+        | ChannelMessageEvent::Deleted { community, .. } => {
+            EventScope::Community(community.clone())
+        }
         ChannelMessageEvent::DirectMessageReceived {
             peer_key,
             conversation_id,
@@ -170,11 +172,8 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
             conversation_id, ..
         } => EventScope::Peer(conversation_id.clone()),
         ChannelMessageEvent::DmHistoryGap { peer_key, .. } => EventScope::Peer(peer_key.clone()),
-        // An invitation names a conversation we do not show yet; it is
-        // answered from the device-wide inbox.
-        ChannelMessageEvent::DirectConversationInvited { .. }
         // Bringing a conversation forward is the device's decision.
-        | ChannelMessageEvent::ConversationFocusRequested { .. } => EventScope::Device,
+        ChannelMessageEvent::ConversationFocusRequested { .. } => EventScope::Device,
     }
 }
 

@@ -184,7 +184,6 @@ impl SubscriptionEvent {
                 ChannelMessageEvent::DirectMessageReceived { .. }
                 | ChannelMessageEvent::DmSendStatus { .. }
                 | ChannelMessageEvent::DmHistoryGap { .. }
-                | ChannelMessageEvent::DirectConversationInvited { .. }
                 | ChannelMessageEvent::ConversationFocusRequested { .. } => None,
             },
             Self::Typing(e) => match e {

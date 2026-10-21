@@ -76,14 +76,6 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(b"|");
             h.update(&through_seq.to_le_bytes());
         }
-        ChannelMessageEvent::DirectConversationInvited {
-            from, record_key, ..
-        } => {
-            h.update(b"dm_invite|");
-            h.update(from.as_bytes());
-            h.update(b"|");
-            h.update(record_key.as_bytes());
-        }
         ChannelMessageEvent::ConversationFocusRequested {
             peer_key, reason, ..
         } => {

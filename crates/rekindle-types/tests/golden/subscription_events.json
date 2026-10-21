@@ -141,16 +141,6 @@
       }
     }
   },
-  "channelMessage.directConversationInvited": {
-    "channelMessage": {
-      "directConversationInvited": {
-        "from": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "initiatorPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-        "isGroup": true,
-        "recordKey": "VLD0:ddddddddddddddddddddddddddddddddddddddddddd"
-      }
-    }
-  },
   "channelMessage.directMessageReceived": {
     "channelMessage": {
       "directMessageReceived": {

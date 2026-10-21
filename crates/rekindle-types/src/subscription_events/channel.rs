@@ -110,18 +110,6 @@ pub enum ChannelMessageEvent {
         through_seq: u64,
     },
 
-    /// We were invited into a direct conversation — a per-peer DM log,
-    /// or a group DM.
-    DirectConversationInvited {
-        /// Who invited us.
-        from: String,
-        /// The conversation's DHT record.
-        record_key: String,
-        /// The initiator's pseudonym within the conversation.
-        initiator_pseudonym: String,
-        is_group: bool,
-    },
-
     /// Something happened that should bring a conversation to the
     /// front — an incoming call, an accepted friend request.
     ///
