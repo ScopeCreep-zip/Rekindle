@@ -36,7 +36,7 @@ fn slots(sim: &Netsim, record: &str) -> Vec<Option<Vec<u8>>> {
 /// after it, in bounded batches (plan E2.B), so a new identity's record
 /// fills over a few set latencies.
 fn published_in_full(sim: &Netsim, record: &str) -> bool {
-    sim.network_value(record, HEAD).is_some() && slots(sim, record).iter().all(Option::is_some)
+    sim.network_get(record, HEAD).is_some() && slots(sim, record).iter().all(Option::is_some)
 }
 
 fn mismatch(event: &FriendEvent) -> Option<&str> {

@@ -10,7 +10,7 @@
 //!   (`outbound_watch_manager/outbound_watch.rs:185-215`);
 //! - **placement:** the node's watch sits on up to [`GET_COUNT`] reachable
 //!   replicas, its consensus count (`watch_value.rs:1185`), placed at the
-//!   call and reconciled every [`TICK`] (`CHECK_OUTBOUND_WATCHES_INTERVAL_SECS`,
+//!   call and reconciled every [`WATCH_TICK`] (`CHECK_OUTBOUND_WATCHES_INTERVAL_SECS`,
 //!   `constants.rs:16`). A replica refuses a watch past
 //!   [`MEMBER_WATCH_LIMIT`] per member, or past [`PUBLIC_WATCH_LIMIT`]
 //!   anonymous watches per record; a member is the owner or a SMPL member the
@@ -23,7 +23,7 @@
 //!   one loses them;
 //! - **a change:** a replica that stores a new value marks the subkey on
 //!   every watch of it but the writer's (`inbound_watches_interface.rs:32-69`);
-//!   every [`TICK`] (`SEND_VALUE_CHANGES_INTERVAL_SECS`, `constants.rs:14`)
+//!   every [`WATCH_TICK`] (`SEND_VALUE_CHANGES_INTERVAL_SECS`, `constants.rs:14`)
 //!   it sends each watch its changed subkeys, with the value only when one
 //!   subkey changed, and counts the watch down (`:228-273`,
 //!   `inbound_watch.rs:124-140`). An identical re-push stores nothing and
@@ -58,7 +58,7 @@ pub(crate) const MAX_WATCH_EXPIRATION: Duration = Duration::from_millis(600_000)
 /// `rpc.timeout_ms` (`veilid_config.rs:852`, `storage_manager/mod.rs:366-367`).
 pub(crate) const MIN_WATCH_EXPIRATION: Duration = Duration::from_millis(5_000);
 /// The send-changes and check-watches tick (`constants.rs:14,16`).
-pub(crate) const TICK: Duration = Duration::from_secs(1);
+pub(crate) const WATCH_TICK: Duration = Duration::from_secs(1);
 
 /// A node's desired watch (Veilid's outbound watch's desired parameters).
 #[derive(Debug, Clone)]

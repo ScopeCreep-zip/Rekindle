@@ -198,9 +198,9 @@ impl Network {
             let mut inner = self.inner.lock();
             let due = *inner
                 .next_tick
-                .get_or_insert(now + crate::records::watches::TICK);
+                .get_or_insert(now + crate::records::watches::WATCH_TICK);
             if now >= due {
-                inner.next_tick = Some(now + crate::records::watches::TICK);
+                inner.next_tick = Some(now + crate::records::watches::WATCH_TICK);
             }
             now >= due
         };

@@ -10,7 +10,7 @@ use rekindle_records::port::{
 };
 
 use super::dht::SimDht;
-use super::watches::{self, Desired, MEMBER_WATCH_LIMIT, PUBLIC_WATCH_LIMIT, TICK};
+use super::watches::{self, Desired, MEMBER_WATCH_LIMIT, PUBLIC_WATCH_LIMIT, WATCH_TICK};
 use crate::{Netsim, Node};
 
 fn dht(sim: &Netsim, node: &Node) -> SimDht {
@@ -190,7 +190,7 @@ async fn expiration_is_checked_clamped_and_ends_the_watch() {
     // a node offline past the max loses them, and gets them back online.
     b.watch(&key, None, None, None).await.unwrap();
     sim.net.inner.lock().faults.dht_offline.insert(1);
-    tokio::time::advance(watches::MAX_WATCH_EXPIRATION + TICK).await;
+    tokio::time::advance(watches::MAX_WATCH_EXPIRATION + WATCH_TICK).await;
     tick(&sim, &mut nodes, 1);
     assert_eq!(watches::held(&sim.net.inner.lock(), 1, &key), 0);
     sim.net.inner.lock().faults.dht_offline.remove(&1);
