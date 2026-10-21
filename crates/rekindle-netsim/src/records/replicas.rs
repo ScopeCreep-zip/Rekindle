@@ -51,6 +51,8 @@ pub(crate) struct Replica {
     /// The simulated node this replica sits beside (for partitions).
     pub home: usize,
     pub values: Vec<Option<RecordValue>>,
+    /// The watches this replica holds ([`super::watches`]).
+    pub watches: Vec<super::watches::ReplicaWatch>,
 }
 
 /// The replicas of a new record with `subkeys` subkeys, placed among
@@ -63,6 +65,7 @@ pub(crate) fn place(key: &str, nodes: usize, subkeys: usize) -> Vec<Replica> {
         .map(|r| Replica {
             home: offset.wrapping_add(r) % nodes.max(1),
             values: vec![None; subkeys],
+            watches: Vec::new(),
         })
         .collect()
 }

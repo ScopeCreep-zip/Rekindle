@@ -1,12 +1,13 @@
 //! The simulated network every node's ports share: the DHT's records, the
-//! private-route table, each node's watches and local record copies, the
+//! private-route table, each node's desired watches and local record
+//! copies, the
 //! queue of events in flight, the faults in force, and the trace.
 //!
 //! Events are never delivered on send. They queue here, and the pump
 //! ([`crate::Netsim::start`]) delivers each batch in an order drawn from the
 //! run seed, so a seed fixes the interleaving.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use rekindle_record_pool::RecordPool;
-use rekindle_records::port::{PortEvent, RecordSchema, RecordValue, ValueChange};
+use rekindle_records::port::{PortEvent, RecordSchema, RecordValue};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::latency::Latency;
@@ -89,8 +90,9 @@ pub(crate) struct NodeSlot {
     /// The node's open records and the writer keypair each is open with
     /// (node-wide, as Veilid's `opened_records`).
     pub opened: HashMap<String, Option<String>>,
-    /// What the node watches, by record key.
-    pub watches: HashMap<String, BTreeSet<u32>>,
+    /// The node's desired watches, by record key; `None` is cancelled and
+    /// dies at the next watch tick ([`crate::records::watches`]).
+    pub watches: HashMap<String, Option<crate::records::watches::Desired>>,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// Route ids this node imported.
@@ -111,6 +113,8 @@ pub(crate) struct Inner {
     pub next_call: u64,
     pub faults: Faults,
     pub trace: Trace,
+    /// When the next watch tick runs.
+    pub next_tick: Option<tokio::time::Instant>,
 }
 
 /// The network, shared by every node's ports.
@@ -120,6 +124,8 @@ pub struct Network {
     order: Mutex<StdRng>,
     /// What each call costs (plan E2.B), always on.
     pub(crate) latency: Latency,
+    /// Simulated time zero (Veilid timestamps are counted from it).
+    pub(crate) epoch: tokio::time::Instant,
 }
 
 impl Network {
@@ -128,6 +134,7 @@ impl Network {
             inner: Mutex::new(Inner::default()),
             order: Mutex::new(StdRng::seed_from_u64(seed ^ 0x6e65_7473_696d)),
             latency: Latency::new(seed),
+            epoch: tokio::time::Instant::now(),
         })
     }
 
@@ -186,6 +193,20 @@ impl Network {
     /// within the pair), so the draw does not depend on which task queued
     /// first. Returns how many were delivered.
     pub(crate) fn deliver(&self) -> usize {
+        let now = tokio::time::Instant::now();
+        let tick = {
+            let mut inner = self.inner.lock();
+            let due = *inner
+                .next_tick
+                .get_or_insert(now + crate::records::watches::TICK);
+            if now >= due {
+                inner.next_tick = Some(now + crate::records::watches::TICK);
+            }
+            now >= due
+        };
+        if tick {
+            self.tick_watches();
+        }
         let (batch, senders) = {
             let mut inner = self.inner.lock();
             let now = tokio::time::Instant::now();
@@ -222,65 +243,9 @@ impl Network {
 
     /// When the next event in flight arrives, if any is.
     pub(crate) fn next_due(&self) -> Option<tokio::time::Instant> {
-        self.inner.lock().pending.iter().map(|p| p.due).min()
-    }
-
-    /// Notify every node but `writer` that watches `subkey` of `key` and
-    /// reaches one of the replicas beside `homes` (the replicas that took
-    /// `value`). Each watcher's storage manager stores the value it is sent
-    /// when it is newer than its local copy (the inbound `ValueChanged`).
-    pub(crate) fn notify_watchers(
-        &self,
-        writer: usize,
-        key: &str,
-        subkey: u32,
-        value: &RecordValue,
-        homes: &[usize],
-    ) {
-        let watchers: Vec<usize> = {
-            let mut inner = self.inner.lock();
-            let watchers: Vec<usize> = inner
-                .nodes
-                .iter()
-                .enumerate()
-                .filter(|(i, node)| {
-                    *i != writer
-                        && !inner.faults.detached.contains(i)
-                        && homes
-                            .iter()
-                            .any(|h| crate::records::reaches(&inner.faults.partitions, *i, *h))
-                        && node
-                            .watches
-                            .get(key)
-                            .is_some_and(|subkeys| subkeys.contains(&subkey))
-                })
-                .map(|(i, _)| i)
-                .collect();
-            for to in &watchers {
-                let local = &mut inner.nodes[*to].local;
-                let entry = local
-                    .entry((key.to_string(), subkey))
-                    .or_insert_with(|| value.clone());
-                if value.seq > entry.seq {
-                    *entry = value.clone();
-                }
-            }
-            watchers
-        };
-        for to in watchers {
-            self.send(
-                writer,
-                to,
-                "ValueChange",
-                PortEvent::ValueChange(ValueChange {
-                    key: key.to_string(),
-                    subkeys: vec![subkey],
-                    count: u32::MAX,
-                    value: Some(value.clone()),
-                }),
-                false,
-            );
-        }
+        let inner = self.inner.lock();
+        let tick = inner.next_tick.filter(|_| Self::watch_work(&inner));
+        inner.pending.iter().map(|p| p.due).chain(tick).min()
     }
 
     /// The node's live record sessions.

@@ -19,13 +19,13 @@
 //! - each node keeps local copies across its sessions; reads refresh them
 //!   from the replicas it reaches; a watched value that arrives is stored
 //!   locally;
-//! - watches are per node, the union of the session's borrowers, and end
-//!   with the record's close;
+//! - watches are per node, the union of the session's borrowers, held by
+//!   the replicas the node reaches within Veilid's limits, and end with the
+//!   death shape on cancel, close or expiry ([`watches`] cites Veilid);
 //! - every call that reaches the network costs Veilid's latency
 //!   ([`crate::latency`]) before its effect lands, under the per-subkey
 //!   locks and the node's DHT cap.
 
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -39,6 +39,9 @@ use crate::network::{NetRecord, Network};
 
 mod dht;
 mod replicas;
+#[cfg(test)]
+mod watch_tests;
+pub(crate) mod watches;
 
 pub(crate) use replicas::{reachable, reaches, Replica};
 
@@ -148,14 +151,4 @@ pub(crate) fn admits(record: &NetRecord, subkey: u32, writer: &[u8; 32]) -> bool
 
 fn subkey_count(schema: &RecordSchema) -> u32 {
     u32::try_from(schema.subkey_count()).unwrap_or(u32::MAX)
-}
-
-/// Every watched subkey of `key` on `node`, for a fault that kills it.
-pub(crate) fn watched_subkeys(net: &Network, node: usize, key: &str) -> BTreeSet<u32> {
-    net.inner
-        .lock()
-        .nodes
-        .get(node)
-        .and_then(|slot| slot.watches.get(key).cloned())
-        .unwrap_or_default()
 }

@@ -68,7 +68,7 @@ pub enum Fault {
     /// The node's clock runs this far from simulated true time.
     ClockSkew { node: usize, ms: i64 },
     /// The node's watch on `key` dies: Veilid sends a last change with
-    /// `count == 0`.
+    /// empty subkeys, `count == 0` and no value (`watch_value.rs:697-703`).
     WatchDeath { node: usize, key: String },
     /// The node's own routes die: the owner and every importer hear of it.
     RouteDeath { node: usize },
@@ -253,7 +253,7 @@ impl Netsim {
                     clock.set_skew_ms(ms);
                 }
             }
-            Fault::WatchDeath { node, key } => self.kill_watch(node, &key),
+            Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
             Fault::Detach { node, detached } => self.detach(node, detached),
         }
@@ -300,25 +300,6 @@ impl Netsim {
                 network_size: live,
                 median_latency_us: 0,
             },
-            false,
-        );
-    }
-
-    fn kill_watch(&self, node: usize, key: &str) {
-        let subkeys = records::watched_subkeys(&self.net, node, key);
-        if let Some(slot) = self.net.inner.lock().nodes.get_mut(node) {
-            slot.watches.remove(key);
-        }
-        self.net.send(
-            node,
-            node,
-            "WatchDeath",
-            PortEvent::ValueChange(rekindle_records::port::ValueChange {
-                key: key.to_string(),
-                subkeys: subkeys.into_iter().collect(),
-                count: 0,
-                value: None,
-            }),
             false,
         );
     }
@@ -422,7 +403,7 @@ impl Netsim {
     ) -> Result<(), rekindle_records::port::PortError> {
         use rekindle_records::port::PortError;
         let public = records::writer_public(writer)?;
-        let (value, homes) = {
+        {
             let mut inner = self.net.inner.lock();
             let record = inner
                 .records
@@ -453,20 +434,18 @@ impl Netsim {
                 data,
                 writer: records::public_text(&public),
             };
-            let mut homes = Vec::new();
-            for replica in &mut record.replicas {
+            let mut stored = Vec::new();
+            for (r, replica) in record.replicas.iter_mut().enumerate() {
                 if replica.values[at].as_ref().is_none_or(|v| v.seq < seq) {
                     replica.values[at] = Some(value.clone());
-                    homes.push(replica.home);
+                    stored.push(r);
                 }
             }
-            if homes.is_empty() {
+            if stored.is_empty() {
                 return Err(PortError::Dht("every replica holds that seq".into()));
             }
-            (value, homes)
-        };
-        self.net
-            .notify_watchers(usize::MAX, key, subkey, &value, &homes);
+            records::watches::mark(record, &stored, subkey, usize::MAX);
+        }
         Ok(())
     }
 

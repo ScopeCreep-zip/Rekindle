@@ -36,8 +36,9 @@
 //!   newest seq of the replicas the node reaches; with
 //!   `allow_offline` false no write is ever queued, so `offline_subkeys`
 //!   is empty;
-//! - a watch records the wanted state on the node and answers `true`
-//!   (accepted locally); a close is node-wide and ends the record's watch.
+//! - a watch records the wanted state on the node, answers whether one is
+//!   wanted and is held by the replicas the node reaches; a close is
+//!   node-wide and ends the record's watch ([`super::watches`]).
 //!
 //! Every call that reaches the network costs Veilid's latency
 //! ([`crate::latency`]) under the per-(node, record, subkey) locks and the
@@ -55,7 +56,9 @@ use rekindle_records::port::{
 };
 use rekindle_utils::RandomSource;
 
-use super::{admits, new_key_text, public_text, reachable, replicas, subkey_count, writer_public};
+use super::{
+    admits, new_key_text, public_text, reachable, replicas, subkey_count, watches, writer_public,
+};
 use crate::clock::SimRandom;
 use crate::latency::{self, Slot, Span};
 use crate::network::{NetRecord, Network};
@@ -239,17 +242,7 @@ impl SimDht {
         let record = inner.records.get_mut(key)?;
         let reach = reachable(&record.replicas, &inner.faults.partitions, self.node);
         let fanout = replicas::set(&mut record.replicas, &reach, subkey as usize, &ours);
-        let mut landed: Vec<(RecordValue, Vec<usize>)> = Vec::new();
-        for r in &fanout.stored {
-            let replica = &record.replicas[*r];
-            let Some(value) = replica.values[subkey as usize].clone() else {
-                continue;
-            };
-            match landed.iter_mut().find(|(v, _)| *v == value) {
-                Some((_, homes)) => homes.push(replica.home),
-                None => landed.push((value, vec![replica.home])),
-            }
-        }
+        watches::mark(record, &fanout.stored, subkey, self.node);
         let answer = fanout.consensus.then(|| {
             inner.nodes[self.node]
                 .local
@@ -257,10 +250,6 @@ impl SimDht {
             fanout.value.clone()
         });
         drop(guard);
-        for (value, homes) in landed {
-            self.net
-                .notify_watchers(self.node, key, subkey, &value, &homes);
-        }
         answer.filter(|value| *value != ours)
     }
 }
@@ -363,7 +352,9 @@ impl DhtBackend for SimDht {
     async fn close(&self, key: &str) -> Result<(), DhtCallError> {
         let mut inner = self.net.inner.lock();
         let slot = &mut inner.nodes[self.node];
-        slot.watches.remove(key);
+        if let Some(watch) = slot.watches.get_mut(key) {
+            *watch = None;
+        }
         slot.opened
             .remove(key)
             .map(drop)
@@ -455,10 +446,16 @@ impl DhtBackend for SimDht {
         &self,
         key: &str,
         subkeys: Option<&[u32]>,
-        _expiration_us: Option<u64>,
-        _count: Option<u32>,
+        expiration_us: Option<u64>,
+        count: Option<u32>,
     ) -> Result<bool, DhtCallError> {
-        self.opened(key)?;
+        let writer = self.opened(key)?;
+        if watches::too_soon(expiration_us, self.net.now_us()) {
+            return Err(error(
+                DhtErrorKind::InvalidArgument,
+                format!("expiration is too soon: {key}"),
+            ));
+        }
         if !self.offline() {
             drop(
                 self.net
@@ -467,37 +464,44 @@ impl DhtBackend for SimDht {
                     .await,
             );
         }
+        let now = self.net.now_us();
         let mut inner = self.net.inner.lock();
-        let count = inner
-            .records
-            .get(key)
-            .map_or(0, |r| subkey_count(&r.schema));
-        let wanted: BTreeSet<u32> = match subkeys {
-            Some(s) => s.iter().copied().collect(),
-            None => (0..count).collect(),
+        let Some(record) = inner.records.get(key) else {
+            return Err(error(DhtErrorKind::Generic, "no local record found"));
         };
-        inner.nodes[self.node]
-            .watches
-            .insert(key.to_string(), wanted);
-        Ok(true)
+        let all = subkey_count(&record.schema);
+        let wanted: BTreeSet<u32> = match subkeys {
+            Some(s) if !s.is_empty() => s.iter().copied().filter(|s| *s < all).collect(),
+            _ => (0..all).collect(),
+        };
+        let count = count.unwrap_or(u32::MAX);
+        let desired = (count > 0).then(|| watches::Desired {
+            subkeys: wanted,
+            expiration: expiration_us.filter(|e| *e != 0),
+            count,
+            member: watches::member_of(record, writer.as_deref()),
+        });
+        let active = desired.is_some();
+        watches::desire(&mut inner, self.node, key, desired, now);
+        Ok(active)
     }
 
     async fn cancel_watch(&self, key: &str, subkeys: Option<&[u32]>) -> Result<bool, DhtCallError> {
         self.opened(key)?;
+        let now = self.net.now_us();
         let mut inner = self.net.inner.lock();
-        let watches = &mut inner.nodes[self.node].watches;
-        let remains = match (subkeys, watches.get_mut(key)) {
-            (Some(s), Some(watched)) => {
-                for subkey in s {
-                    watched.remove(subkey);
-                }
-                !watched.is_empty()
-            }
-            _ => false,
+        let Some(Some(mut desired)) = inner.nodes[self.node].watches.get(key).cloned() else {
+            return Ok(false);
         };
-        if !remains {
-            watches.remove(key);
+        if let Some(s) = subkeys.filter(|s| !s.is_empty()) {
+            for subkey in s {
+                desired.subkeys.remove(subkey);
+            }
+        } else {
+            desired.subkeys.clear();
         }
+        let remains = !desired.subkeys.is_empty();
+        watches::desire(&mut inner, self.node, key, remains.then_some(desired), now);
         Ok(remains)
     }
 }
