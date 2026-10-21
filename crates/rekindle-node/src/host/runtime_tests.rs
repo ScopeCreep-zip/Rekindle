@@ -102,10 +102,10 @@ struct Recorder(parking_lot::Mutex<Vec<String>>);
 impl shell_hooks::ShellHooks for Recorder {
     async fn unlocked(
         &self,
-        view: &shell_hooks::UnlockedView,
+        _view: &shell_hooks::UnlockedView,
         _scope: &Arc<rekindle_lifecycle::SessionScope>,
     ) -> Result<(), String> {
-        self.0.lock().push(format!("unlocked {}", view.created));
+        self.0.lock().push("unlocked".into());
         Ok(())
     }
     fn own_records(&self, _keys: &shell_hooks::OwnRecordKeys) {
@@ -143,10 +143,10 @@ async fn the_shell_hears_the_unlock_and_its_end_in_order() {
     assert_eq!(
         *recorder.0.lock(),
         [
-            "unlocked true",
+            "unlocked",
             "ending",
             "ended Lock",
-            "unlocked false",
+            "unlocked",
             "ending",
             "ended Exit",
         ]

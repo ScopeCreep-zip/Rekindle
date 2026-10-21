@@ -179,8 +179,6 @@ pub(crate) async fn run(
             public_key: installed.public_key.clone(),
             display_name: installed.display_name.clone(),
             secret: installed.secret.clone(),
-            friend_store: Arc::clone(&installed.friend_store),
-            created,
         };
         if let Err(e) = shell.unlocked(&view, &scope).await {
             tracing::error!(error = %e, "the shell's unlock stages failed — locking again");

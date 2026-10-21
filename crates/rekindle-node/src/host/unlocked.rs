@@ -4,9 +4,6 @@
 //! the audit chain, the trusted clients, the friend authority) and what a
 //! lock takes out again.
 
-use std::sync::Arc;
-
-use rekindle_db::SqliteFriendStore;
 use zeroize::Zeroizing;
 
 use super::identity::Unlocked;
@@ -18,8 +15,6 @@ pub struct Installed {
     pub display_name: String,
     /// The Ed25519 identity secret.
     pub secret: Zeroizing<[u8; 32]>,
-    /// The receive path's friend authority over the installed database.
-    pub friend_store: Arc<SqliteFriendStore>,
     /// What the audit chain's restore found, when it ran.
     pub audit: Option<rekindle_audit::Restored>,
 }
@@ -41,7 +36,7 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
     // This unlock's events start a new journal epoch (plan D3.2).
     ctx.journal.begin();
     *ctx.signing_key.write() = Some(crate::state::signing_key::SigningKeyHandle::new(*secret));
-    *ctx.friend_store.write() = Some(Arc::clone(&friend_store));
+    *ctx.friend_store.write() = Some(friend_store);
 
     // The session is projected from the identity's stores (plan D1).
     let loaded = match ctx.db.current() {
@@ -66,7 +61,6 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         public_key,
         display_name,
         secret,
-        friend_store,
         audit,
     })
 }

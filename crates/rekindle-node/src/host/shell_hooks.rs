@@ -13,7 +13,6 @@
 
 use std::sync::Arc;
 
-use rekindle_db::SqliteFriendStore;
 use rekindle_lifecycle::SessionScope;
 use zeroize::Zeroizing;
 
@@ -24,10 +23,6 @@ pub struct UnlockedView {
     pub display_name: String,
     /// The Ed25519 identity secret.
     pub secret: Zeroizing<[u8; 32]>,
-    /// The receive path's friend authority over the identity's database.
-    pub friend_store: Arc<SqliteFriendStore>,
-    /// A new identity (create), not a returning one (unlock).
-    pub created: bool,
 }
 
 /// The identity's own records, once the own-records stage has them.
@@ -35,7 +30,6 @@ pub struct UnlockedView {
 pub struct OwnRecordKeys {
     pub profile: Option<String>,
     pub friend_list: Option<String>,
-    pub account: Option<String>,
     pub mailbox: Option<String>,
 }
 

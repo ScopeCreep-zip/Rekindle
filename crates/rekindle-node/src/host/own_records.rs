@@ -150,7 +150,7 @@ impl OwnRecords {
         if stop.is_cancelled() {
             return;
         }
-        keys.account = self.account(pool.as_ref(), &stored).await;
+        self.account(pool.as_ref(), &stored).await;
         if stop.is_cancelled() {
             return;
         }
@@ -309,11 +309,10 @@ impl OwnRecords {
         Some((held.key, held.keypair))
     }
 
-    async fn account(&self, pool: &dyn RecordPort, stored: &Stored) -> Option<String> {
+    async fn account(&self, pool: &dyn RecordPort, stored: &Stored) {
         let secret = &self.secret;
         let display_name = self.display_name.as_str();
-        let held = self
-            .owner()
+        self.owner()
             .hold(
                 pool,
                 OwnedRecord::Account,
@@ -335,8 +334,7 @@ impl OwnRecords {
                     Ok((record.lease(), record.record_key(), owner))
                 },
             )
-            .await?;
-        Some(held.key)
+            .await;
     }
 
     /// Write the keys into the session projection.
