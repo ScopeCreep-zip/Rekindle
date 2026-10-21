@@ -19,6 +19,8 @@ use crate::state::{AppState, ChannelType};
 use crate::state_helpers;
 
 mod events;
+mod media_keys;
+pub use media_keys::{install_carrier as install_media_key_carrier, HostMediaKeyOutbox};
 use rekindle_db::Db;
 
 pub struct VoiceSignalingAdapter {
@@ -303,6 +305,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         rekindle_codec::capnp_envelope::try_decode_community_envelope(&reply)
             .ok()
             .flatten()
+    }
+
+    fn media_key_outbox(&self) -> Arc<dyn rekindle_voice::signaling::MediaKeyOutbox> {
+        Arc::new(HostMediaKeyOutbox(Arc::clone(&self.state)))
     }
 
     fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope) {

@@ -285,6 +285,10 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
         envelope: &CommunityEnvelope,
     ) -> Option<CommunityEnvelope>;
 
+    /// The host's outbox `media_key` streams (plan E2.5): every media key
+    /// we send is queued there, sealed, and delivered by the outbox.
+    fn media_key_outbox(&self) -> Arc<dyn crate::signaling::MediaKeyOutbox>;
+
     /// Send a gossip envelope to the community mesh. Phase 20
     /// (rekindle-gossip) eventually owns this; today the adapter
     /// delegates to `services::community::send_to_mesh`. Sync because

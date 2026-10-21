@@ -37,6 +37,8 @@ pub(super) async fn run(
     });
     let pool = state.db.current()?;
     let owner = view.public_key.as_str();
+    // Call media keys go out on the Host's outbox (plan E2.5).
+    services::voice_signaling_adapter::install_media_key_carrier(state);
 
     // Loaders: preferences (→ E4.1, E5.5), communities and their keys and
     // governance (→ E3.1). Friends are the Host's (plan E2.1).

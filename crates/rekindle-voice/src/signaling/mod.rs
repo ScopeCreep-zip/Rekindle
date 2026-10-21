@@ -29,6 +29,7 @@
 
 pub mod deps;
 pub(crate) mod dispatcher;
+pub mod media_key_outbox;
 pub(crate) mod media_keys;
 pub(crate) mod mute;
 pub(crate) mod presence;
@@ -39,6 +40,9 @@ pub use deps::{
     perms, CommunityVoiceEvent, StageChannelInfo, VoiceRosterParticipant, VoiceSignalingDeps,
 };
 pub use dispatcher::{handle_voice_signaling, is_voice_signaling};
+pub use media_key_outbox::{
+    attempt_media_key, end_media_key_session, session_scope, MediaKeyAttempt, MediaKeyOutbox,
+};
 pub use media_keys::{handle_voice_media_key, handle_voice_media_key_request};
 pub use presence::member_departed;
 pub use roster_reconcile::{

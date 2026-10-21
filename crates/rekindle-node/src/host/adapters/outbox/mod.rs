@@ -29,7 +29,7 @@ use tokio::sync::broadcast;
 pub use channel_post::{ChannelPosts, SUPERSEDED};
 pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
-pub use media_key::{MediaKeyCarrier, MediaKeyDelivery, MediaKeys, SESSION_ENDED};
+pub use media_key::{MediaKeyCarrier, MediaKeyDelivery, MediaKeyStreams, SESSION_ENDED};
 pub use senders::{Senders, StreamSender};
 
 /// How many state changes a slow subscriber may fall behind by.

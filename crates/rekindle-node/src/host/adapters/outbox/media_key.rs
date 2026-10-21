@@ -61,9 +61,9 @@ fn scope(session: &str, recipient: &str) -> String {
 }
 
 /// The unlocked identity's `media_key` streams.
-pub struct MediaKeys(Arc<Outbox<HostOutbox>>);
+pub struct MediaKeyStreams(Arc<Outbox<HostOutbox>>);
 
-impl MediaKeys {
+impl MediaKeyStreams {
     /// Queue `sealed`, a key sealed to `recipient`, on the stream of
     /// (`session`, `recipient`) as `client_id`.
     ///
@@ -99,8 +99,8 @@ impl MediaKeys {
 }
 
 impl OutboxSlot {
-    fn media_keys(&self) -> Option<MediaKeys> {
-        self.current.read().clone().map(MediaKeys)
+    fn media_keys(&self) -> Option<MediaKeyStreams> {
+        self.current.read().clone().map(MediaKeyStreams)
     }
 
     fn install_media_key_carrier(&self, carrier: Arc<dyn MediaKeyCarrier>) {
@@ -112,7 +112,7 @@ impl Host {
     /// The unlocked identity's `media_key` streams, for the GUI's voice
     /// signaling (until E4.1 ports it).
     #[must_use]
-    pub fn media_keys(&self) -> Option<MediaKeys> {
+    pub fn media_keys(&self) -> Option<MediaKeyStreams> {
         self.ctx.outbox.media_keys()
     }
 

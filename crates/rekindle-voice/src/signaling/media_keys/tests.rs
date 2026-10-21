@@ -21,6 +21,7 @@ use zeroize::Zeroizing;
 
 use super::*;
 use crate::signaling::deps::{CommunityVoiceEvent, StageChannelInfo, VoiceSignalingDeps};
+use crate::signaling::media_key_outbox::{attempt_media_key, MediaKeyAttempt, MediaKeyOutbox};
 use crate::transport::VoiceTransport;
 
 const COMMUNITY: &str = "c";
@@ -42,7 +43,36 @@ struct Peer {
     /// Calls to fail before the network starts delivering.
     drop_calls: AtomicUsize,
     scope: Arc<rekindle_lifecycle::SessionScope>,
+    outbox: Arc<Outbox>,
 }
+
+/// The host's `media_key` rows, as `(session, client_id, sealed)`.
+#[derive(Default)]
+struct Outbox {
+    rows: Mutex<Vec<(String, String, Vec<u8>)>>,
+}
+
+#[async_trait]
+impl MediaKeyOutbox for Outbox {
+    async fn queue(&self, session: &str, _: &str, id: &str, sealed: Vec<u8>) -> Result<(), String> {
+        let mut rows = self.rows.lock();
+        if rows.iter().any(|(_, queued, _)| queued == id) {
+            return Err("already queued".into());
+        }
+        rows.push((session.into(), id.into(), sealed));
+        Ok(())
+    }
+    async fn discard_session(&self, session: &str) -> Result<usize, String> {
+        let mut rows = self.rows.lock();
+        let before = rows.len();
+        rows.retain(|(s, _, _)| s != session);
+        Ok(before - rows.len())
+    }
+}
+
+/// The outbox's passes before a test looks: enough for the retries any
+/// test scripts, bounded for the ones whose calls never land.
+const PASSES: usize = 8;
 
 impl Peer {
     fn new(net: &Net, seed: u8, is_stage: bool) -> Arc<Self> {
@@ -58,6 +88,7 @@ impl Peer {
             calls: Mutex::new(Vec::new()),
             drop_calls: AtomicUsize::new(0),
             scope: rekindle_lifecycle::SessionScope::new("test", Arc::new(|_| {})),
+            outbox: Arc::default(),
         });
         net.lock().insert(peer.route.clone(), Arc::downgrade(&peer));
         peer
@@ -107,10 +138,34 @@ impl Peer {
     /// Let every task this participant started run to its end, including
     /// deliveries those tasks start (the scope stays open meanwhile, as a
     /// login scope does).
-    async fn settle(&self) {
+    async fn settle(self: &Arc<Self>) {
         while !self.scope.is_empty() {
             tokio::time::sleep(std::time::Duration::from_millis(1)).await;
         }
+        for _ in 0..PASSES {
+            if !self.pass().await {
+                return;
+            }
+        }
+    }
+
+    /// One outbox pass over the queued keys: a row settles when its key is
+    /// acknowledged or superseded. Whether any row still waits.
+    async fn pass(self: &Arc<Self>) -> bool {
+        let rows = self.outbox.rows.lock().clone();
+        for (_, id, sealed) in rows {
+            if attempt_media_key(&self.deps(), &sealed).await != MediaKeyAttempt::Unacknowledged {
+                self.outbox
+                    .rows
+                    .lock()
+                    .retain(|(_, queued, _)| *queued != id);
+            }
+        }
+        !self.outbox.rows.lock().is_empty()
+    }
+
+    fn queued(&self) -> usize {
+        self.outbox.rows.lock().len()
     }
 }
 
@@ -215,6 +270,9 @@ impl VoiceSignalingDeps for Peer {
             _ => None,
         }
     }
+    fn media_key_outbox(&self) -> Arc<dyn MediaKeyOutbox> {
+        Arc::clone(&self.outbox) as Arc<dyn MediaKeyOutbox>
+    }
     fn send_to_mesh(&self, _: &str, _: &CommunityEnvelope) {}
     fn advertise_media_capabilities(&self, _: &str, _: &str) {}
     fn send_to_channel(&self, _: &str, _: &str, _: &CommunityEnvelope) {}
@@ -267,58 +325,6 @@ async fn joiner_receives_and_acknowledges_the_ratcheted_key() {
     assert_eq!(alice.take_calls(), vec![(bob.id(), ours.index)]);
     assert_eq!(alice.held_by(&bob, ours.index), Some(*ours.secret));
     assert_eq!(alice.held_by(&bob, before.index), None);
-}
-
-/// An unacknowledged delivery is retried until it lands.
-#[tokio::test(start_paused = true)]
-async fn lost_deliveries_are_retried_until_acknowledged() {
-    let net = net();
-    let alice = Peer::new(&net, 1, false);
-    let bob = Peer::new(&net, 2, false);
-    alice.roster(&[&bob]).await;
-    alice.drop_calls.store(3, Ordering::SeqCst);
-
-    on_peer_added(
-        &alice.deps(),
-        COMMUNITY,
-        CHANNEL,
-        &alice.transport,
-        &bob.id(),
-    )
-    .await;
-    alice.settle().await;
-
-    assert_eq!(
-        alice.take_calls().len(),
-        4,
-        "three lost, the fourth acknowledged"
-    );
-    let ours = alice.sender_keys().send_key(Instant::now());
-    assert_eq!(alice.held_by(&bob, ours.index), Some(*ours.secret));
-}
-
-/// Retries end when the recipient leaves our roster.
-#[tokio::test(start_paused = true)]
-async fn retries_stop_when_the_recipient_leaves() {
-    let net = net();
-    let alice = Peer::new(&net, 1, false);
-    let bob = Peer::new(&net, 2, false);
-    alice.roster(&[&bob]).await;
-    alice.drop_calls.store(usize::MAX, Ordering::SeqCst);
-
-    on_peer_added(
-        &alice.deps(),
-        COMMUNITY,
-        CHANNEL,
-        &alice.transport,
-        &bob.id(),
-    )
-    .await;
-    tokio::task::yield_now().await;
-    alice.transport.lock().await.remove_peer(&bob.id());
-    alice.settle().await;
-
-    assert!(alice.take_calls().len() < 3);
 }
 
 /// A departure rotates: everyone left is delivered a fresh key, the
@@ -530,4 +536,5 @@ fn hosts_route_the_handshake_and_not_the_keys() {
     }
 }
 
+mod outbox;
 mod sealing;

@@ -30,9 +30,10 @@
 //! messages and can `resend_media_keys`, Jitsi answers each `key-info`
 //! with a `key-info-ack`. Here a key goes by `app_call` to the
 //! recipient's roster route (the MEK transfer's path) and the recipient
-//! replies `VoiceMediaKeyAck` once it opened and installed it. Unacked
-//! deliveries retry with backoff while the recipient is on our roster and
-//! the key is still ours to share. A recipient that still lacks a key —
+//! replies `VoiceMediaKeyAck` once it opened and installed it. Each key
+//! is a row of the host's outbox `media_key` stream (plan E2.5), retried
+//! by the outbox while the recipient is on our roster and the key is
+//! still ours to share (`media_key_outbox`). A recipient that still lacks a key —
 //! it restarted, or every attempt was lost — asks with
 //! `VoiceMediaKeyRequest`, also by `app_call`, so neither direction passes
 //! the gossip layer's content dedup.
@@ -41,8 +42,9 @@
 //! [`ChannelSenderKeys::on_leave`]: rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys::on_leave
 
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
+use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MediaSessionKey};
 use rekindle_secrets::media_sender_key::keyring::{
     ChannelSenderKeys, LeaveRotation, OwnKey, SignedSessionKey,
@@ -50,149 +52,91 @@ use rekindle_secrets::media_sender_key::keyring::{
 use rekindle_secrets::media_sender_key::{seal_aad, session};
 
 use crate::signaling::deps::VoiceSignalingDeps;
+use crate::signaling::media_key_outbox::session_scope;
 use crate::transport::VoiceTransport;
 
-/// Waits before each delivery attempt after the first: about 30 s in all,
-/// past which the recipient's own request takes over.
-const DELIVERY_BACKOFF: [Duration; 5] = [
-    Duration::from_secs(1),
-    Duration::from_secs(2),
-    Duration::from_secs(4),
-    Duration::from_secs(8),
-    Duration::from_secs(15),
-];
-
-/// One delivery: `key` to `recipient` in a channel.
-struct Delivery {
-    community_id: String,
-    channel_id: String,
-    recipient: String,
-    key: OwnKey,
-}
-
-/// Deliver `key` to `recipient` in the background, retrying until it is
-/// acknowledged, the recipient leaves our roster, or the key is no
-/// longer ours to share.
+/// Queue `key` for `recipient` on the outbox in the background.
 fn spawn_delivery(
     deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
     channel_id: &str,
-    transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
     recipient: &str,
     key: OwnKey,
 ) {
-    let delivery = Delivery {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
-        recipient: recipient.to_string(),
-        key,
-    };
     let deps_task = Arc::clone(deps);
-    let transport = Arc::clone(transport);
+    let (cid, ch, recipient) = (
+        community_id.to_string(),
+        channel_id.to_string(),
+        recipient.to_string(),
+    );
     deps.scope()
         .spawn_or_drop("voice media key delivery", async move {
-            deliver(&deps_task, &transport, &delivery).await;
+            queue_delivery(&deps_task, &cid, &ch, &recipient, &key).await;
         });
 }
 
-/// Whether `reply` acknowledges exactly the key `envelope` carried.
-fn acknowledges(envelope: &CommunityEnvelope, reply: Option<&CommunityEnvelope>) -> bool {
-    let (
-        CommunityEnvelope::Control(ControlPayload::VoiceMediaKey {
-            channel_id,
-            sender,
-            recipient,
-            key_index,
-            ..
-        }),
-        Some(CommunityEnvelope::Control(ControlPayload::VoiceMediaKeyAck {
-            channel_id: acked_channel,
-            sender: acked_sender,
-            recipient: acker,
-            key_index: acked_index,
-            ..
-        })),
-    ) = (envelope, reply)
-    else {
-        return false;
-    };
-    acked_channel == channel_id
-        && acked_sender == sender
-        && acker == recipient
-        && acked_index == key_index
-}
-
-/// The `VoiceMediaKey` envelope for `d`: our key sealed to the
+/// The `VoiceMediaKey` envelope of `key` for `recipient`: sealed to the
 /// recipient's session key and signed, or `None` while we hold no session
 /// key for the recipient (its join or ack brings one).
 fn sealed_envelope(
     deps: &Arc<dyn VoiceSignalingDeps>,
     keys: &ChannelSenderKeys,
-    d: &Delivery,
-    sender: &str,
+    community_id: &str,
+    channel_id: &str,
+    recipient: &str,
+    key: &OwnKey,
 ) -> Option<CommunityEnvelope> {
-    let aad = seal_aad(&d.channel_id, &d.recipient, d.key.index);
-    let sealed = keys.seal_for(&d.recipient, &aad, &d.key.secret)?;
-    let signature = deps.sign_sealed_media_key(
-        &d.community_id,
-        &d.channel_id,
-        &d.recipient,
-        d.key.index,
-        &sealed,
-    )?;
+    let sender = deps.my_pseudonym(community_id)?;
+    let aad = seal_aad(channel_id, recipient, key.index);
+    let sealed = keys.seal_for(recipient, &aad, &key.secret)?;
+    let signature =
+        deps.sign_sealed_media_key(community_id, channel_id, recipient, key.index, &sealed)?;
     Some(CommunityEnvelope::Control(ControlPayload::VoiceMediaKey {
-        community_id: d.community_id.clone(),
-        channel_id: d.channel_id.clone(),
-        sender: sender.to_string(),
-        recipient: d.recipient.clone(),
-        key_index: d.key.index,
+        community_id: community_id.to_string(),
+        channel_id: channel_id.to_string(),
+        sender,
+        recipient: recipient.to_string(),
+        key_index: key.index,
         sealed,
         signature,
     }))
 }
 
-async fn deliver(
+/// Seal `key` for `recipient` and queue it on the session's `media_key`
+/// stream; the outbox delivers it ([`attempt_media_key`]). With no
+/// session key of the recipient yet nothing is queued: its request asks
+/// once it has announced one.
+///
+/// [`attempt_media_key`]: crate::signaling::media_key_outbox::attempt_media_key
+async fn queue_delivery(
     deps: &Arc<dyn VoiceSignalingDeps>,
-    transport: &tokio::sync::Mutex<VoiceTransport>,
-    d: &Delivery,
+    community_id: &str,
+    channel_id: &str,
+    recipient: &str,
+    key: &OwnKey,
 ) {
-    let Some(sender) = deps.my_pseudonym(&d.community_id) else {
+    let keys = deps.channel_sender_keys(community_id, channel_id);
+    let Some(envelope) = sealed_envelope(deps, &keys, community_id, channel_id, recipient, key)
+    else {
+        tracing::debug!(community = %community_id, channel = %channel_id, recipient,
+            key_index = key.index, "media key not sealed: no session key of the recipient yet");
         return;
     };
-    let keys = deps.channel_sender_keys(&d.community_id, &d.channel_id);
-    let mut envelope = None;
-    let mut waits = DELIVERY_BACKOFF.iter();
-    loop {
-        let route = {
-            let t = transport.lock().await;
-            t.peer_entries()
-                .into_iter()
-                .find_map(|(peer, route)| (peer == d.recipient).then_some(route))
-        };
-        // Off our roster: it left, and a departure rotates past this key.
-        let Some(route) = route else { return };
-        // Superseded by a later rotation, which has its own deliveries.
-        if !keys.still_current(d.key.index) {
+    let sealed = match encode_community_envelope(&envelope) {
+        Ok(sealed) => sealed,
+        Err(error) => {
+            tracing::warn!(%error, "media key envelope not encoded");
             return;
         }
-        if envelope.is_none() {
-            envelope = sealed_envelope(deps, &keys, d, &sender);
-        }
-        if let Some(envelope) = &envelope {
-            let reply = deps.call_peer(&route, envelope).await;
-            if acknowledges(envelope, reply.as_ref()) {
-                tracing::debug!(community = %d.community_id, channel = %d.channel_id,
-                    recipient = %d.recipient, key_index = d.key.index, "media key delivered");
-                return;
-            }
-        }
-        let Some(wait) = waits.next() else {
-            tracing::warn!(community = %d.community_id, channel = %d.channel_id,
-                recipient = %d.recipient, key_index = d.key.index, sealed = envelope.is_some(),
-                "media key not delivered; the recipient will ask for it");
-            return;
-        };
-        tokio::time::sleep(*wait).await;
+    };
+    let session = session_scope(community_id, channel_id);
+    let client_id = format!("{session}/{recipient}/{}", key.index);
+    if let Err(error) = (deps.media_key_outbox())
+        .queue(&session, recipient, &client_id, sealed)
+        .await
+    {
+        tracing::debug!(%error, community = %community_id, channel = %channel_id, recipient,
+            key_index = key.index, "media key not queued");
     }
 }
 
@@ -274,14 +218,7 @@ async fn deliver_to_roster(
 ) {
     let peers = transport.lock().await.peer_keys();
     for peer in peers {
-        spawn_delivery(
-            deps,
-            community_id,
-            channel_id,
-            transport,
-            &peer,
-            key.clone(),
-        );
+        spawn_delivery(deps, community_id, channel_id, &peer, key.clone());
     }
 }
 
@@ -298,7 +235,7 @@ pub(in crate::signaling) async fn on_peer_added(
     let keys = deps.channel_sender_keys(community_id, channel_id);
     let join = keys.on_join(joiner, Instant::now());
     for key in join.joiner {
-        spawn_delivery(deps, community_id, channel_id, transport, joiner, key);
+        spawn_delivery(deps, community_id, channel_id, joiner, key);
     }
     if let Some(key) = join.everyone {
         deliver_to_roster(deps, community_id, channel_id, transport, &key).await;
@@ -447,7 +384,7 @@ pub fn handle_voice_media_key_request(
                 .channel_sender_keys(&cid, &ch)
                 .shareable_for(&requester)
             {
-                spawn_delivery(&deps_task, &cid, &ch, &transport, &requester, key);
+                spawn_delivery(&deps_task, &cid, &ch, &requester, key);
             }
         });
 }
