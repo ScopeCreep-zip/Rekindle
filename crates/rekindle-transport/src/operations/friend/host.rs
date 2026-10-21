@@ -59,6 +59,9 @@ pub struct FriendStores {
     pub acks: Mutex<crate::operations::dm::ack::PendingAcks>,
     /// The DM chain diffs in flight, one per peer (plan E2.5, D23).
     pub streams: rekindle_sync::stream::StreamEngine,
+    /// One gate per peer around our participant record's check-and-create
+    /// (plan E2.5, MSR): one creator, the others await its record.
+    pub participant_gates: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl FriendStores {
@@ -71,6 +74,18 @@ impl FriendStores {
         self.typing_in.lock().clear();
         self.typing_out.lock().clear();
         self.acks.lock().clear();
+        self.participant_gates.lock().clear();
+    }
+
+    /// The gate around our participant record for `peer`.
+    #[must_use]
+    pub fn participant_gate(&self, peer: &str) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(
+            self.participant_gates
+                .lock()
+                .entry(peer.to_string())
+                .or_default(),
+        )
     }
 }
 
@@ -123,6 +138,12 @@ pub trait FriendHost: Send + Sync {
         &self,
         peer: &str,
     ) -> Result<crate::operations::dm::stream::ParticipantWriter, FriendError>;
+    /// Our stored participant record for `peer` and its saved writer, when
+    /// both are held; never creates one.
+    async fn held_participant_writer(
+        &self,
+        peer: &str,
+    ) -> Result<Option<crate::operations::dm::stream::ParticipantWriter>, FriendError>;
     /// Whether our own status is Invisible (receipts are held meanwhile).
     fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).

@@ -128,6 +128,14 @@ impl FriendHost for HostFriends {
         participant::writer(self, peer).await
     }
 
+    async fn held_participant_writer(
+        &self,
+        peer: &str,
+    ) -> Result<Option<rekindle_transport::operations::dm::stream::ParticipantWriter>, FriendError>
+    {
+        participant::held(self, peer).await
+    }
+
     fn invisible(&self) -> bool {
         self.ctx.own_presence.status() == rekindle_types::presence::SessionStatus::Invisible
     }

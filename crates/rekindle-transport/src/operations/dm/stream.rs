@@ -124,10 +124,9 @@ async fn retire(host: &dyn FriendHost, to: &str, ours: &ParticipantWriter, port:
 /// The friend maintenance's retire tick (plan E2.5): retire each accepted
 /// friend's chain that may go ([`retire`]), so a quiet conversation's
 /// acknowledged entries past `DELIVERY_HORIZON` go without waiting for our
-/// next append. Only a conversation with noted entries is looked at, so
-/// its record and writer exist; one whose writer had to be replaced has
-/// nothing of the new record to retire, and its key goes to the peer as
-/// [`append`] sends it.
+/// next append. Only a conversation with noted entries and a record of
+/// ours held (`FriendHost::held_participant_writer`) is retired; the tick
+/// never creates or sends a record.
 pub async fn retire_quiet(host: &dyn FriendHost) {
     let Ok(owner) = state::owner(host) else {
         return;
@@ -144,13 +143,11 @@ pub async fn retire_quiet(host: &dyn FriendHost) {
         return;
     };
     for peer in peers.iter().filter(|p| state::is_accepted(host, p)) {
-        match host.participant_writer(peer).await {
-            Ok(ours) if !ours.created => retire(host, peer, &ours, port.as_ref()).await,
-            Ok(ours) => {
-                if let Err(e) = send_record(host, peer, &ours.record_key).await {
-                    tracing::debug!(to = %peer, error = %e, "replaced record key not committed");
-                }
-            }
+        match host.held_participant_writer(peer).await {
+            Ok(Some(ours)) => retire(host, peer, &ours, port.as_ref()).await,
+            // No record of ours held: nothing to retire (the tick never
+            // creates or sends one).
+            Ok(None) => {}
             Err(e) => tracing::debug!(to = %peer, error = %e, "participant record unreadable"),
         }
     }
