@@ -49,10 +49,16 @@ pub(crate) fn cached_target(node: &TransportNode, peer: &str) -> Option<PeerTarg
     import(node, peer, &blob)
 }
 
-/// Read a fresh route blob from the friend's profile record (subkey 6) and
+/// Read a fresh route blob from the peer's profile record (subkey 6): a
+/// friend's, or a group member's from the roster we hold; and
 /// cache it.
 pub async fn fetch_from_profile(host: &dyn FriendHost, peer: &str) -> Option<Vec<u8>> {
-    let profile_key = state::friend(host, peer)?.dht_record_key?;
+    // A friend's profile, else the roster's for a group member who is not
+    // our friend (plan E2.6): the record their route is published on.
+    let profile_key = match state::friend(host, peer).and_then(|f| f.dht_record_key) {
+        Some(key) => key,
+        None => crate::operations::group_dm::member_profile(host, peer).await?,
+    };
     let node = host.node().ok()?;
     let records = node.require_records().ok()?;
     let blob = rekindle_protocol::dht::profile::read_profile_subkey(

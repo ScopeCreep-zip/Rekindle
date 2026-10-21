@@ -23,6 +23,26 @@ pub struct GroupFirstContact {
     pub retried: bool,
 }
 
+/// The profile record of `peer`, a member of a group we hold, as the
+/// creator-signed roster names it (the decided 2026-10-21 rule): where a
+/// member who is not our friend publishes the prekeys our first contact
+/// opens from and the route our frames to them take. `None`: they are on
+/// no roster we hold.
+pub(crate) async fn member_profile(host: &dyn FriendHost, peer: &str) -> Option<String> {
+    let deps = host.group_dm().ok()?;
+    let groups = match deps.groups().await {
+        Ok(groups) => groups,
+        Err(e) => {
+            tracing::debug!(error = %e, "groups not read for a member profile");
+            return None;
+        }
+    };
+    groups
+        .iter()
+        .find_map(|g| g.roster.member(peer))
+        .map(|m| m.profile_record_key.clone())
+}
+
 /// The bundle a session with `peer`, a member of a group we hold, opens
 /// from: a slot of the prekey record their roster profile names.
 ///
@@ -32,18 +52,12 @@ pub(crate) async fn member_bundle(
     host: &dyn FriendHost,
     peer: &str,
 ) -> Result<PreKeyBundle, FriendError> {
-    let deps = host.group_dm()?;
-    let groups = deps.groups().await.map_err(|e| super::friend_error(&e))?;
-    let profile = groups
-        .iter()
-        .find_map(|g| g.roster.member(peer))
-        .map(|m| m.profile_record_key.clone())
-        .ok_or_else(|| {
-            FriendError::Conflict(format!(
-                "no secure session with {}: they are on no group we hold",
-                state::short_key(peer)
-            ))
-        })?;
+    let profile = member_profile(host, peer).await.ok_or_else(|| {
+        FriendError::Conflict(format!(
+            "no secure session with {}: they are on no group we hold",
+            state::short_key(peer)
+        ))
+    })?;
     crate::operations::prekeys::pick_bundle(host, peer, &profile).await
 }
 

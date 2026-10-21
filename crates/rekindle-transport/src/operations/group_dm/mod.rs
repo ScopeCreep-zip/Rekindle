@@ -21,6 +21,7 @@ pub use admission::admitted;
 pub use content::{report_draft, send};
 pub use inbound::apply;
 pub(crate) use inbound::on_stream_record;
+pub(crate) use pairwise::member_profile;
 pub use pairwise::GroupFirstContact;
 pub(crate) use pairwise::{member_bundle, opens_member_session};
 pub use review::{key_changes, send_reviewed};
