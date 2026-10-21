@@ -54,7 +54,7 @@ async fn holds_review(sim: &Netsim, events: &crate::harness::Events) -> bool {
 /// record — 100 fresh slots, the record the profile's device list names,
 /// and this device's id.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E2.B part 2: the 90 later slots publish one after another (operations/prekeys/own.rs:54), ~20 min under latency"]
+#[ignore = "E2.B finding F1: the 90 later slots publish one after another (operations/prekeys/own.rs:54), ~20 min under latency"]
 async fn the_prekey_status_reads_the_record_the_profile_names() {
     let (sim, mut nodes) = start(1, 35).await;
     nodes[0].unlock_new_identity("Ann").await;
