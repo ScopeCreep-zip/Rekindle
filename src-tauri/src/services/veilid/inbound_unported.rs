@@ -7,8 +7,7 @@
 use std::sync::Arc;
 
 use rekindle_codec::capnp_codec::direct::{
-    DirectBody, DmTypeId, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, StatusRequest,
-    WakeNotify,
+    DirectBody, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, StatusRequest, WakeNotify,
 };
 use rekindle_transport::operations::direct::Opened;
 use rekindle_transport::operations::dm;
@@ -141,16 +140,10 @@ async fn accept_offer(state: &Arc<AppState>, pool: &Db, offer: &RelayOffer) -> R
     Ok(())
 }
 
-/// `body` as a ratchet frame to `to`, wired: an `app_call` reply.
+/// `body` to `to` as the transport frames an `app_call` reply.
 async fn seal_reply(state: &AppState, to: &str, body: DirectBody) -> Result<Vec<u8>, String> {
     let host = state_helpers::friend_host(state)?;
-    let frame = dm::frame::ratchet_frame(
-        host.as_ref(),
-        to,
-        &body,
-        dm::hint_for(DmTypeId::RelayOfferAck),
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    dm::wire(&frame).map_err(|e| e.to_string())
+    dm::reply_frame(host.as_ref(), to, &body)
+        .await
+        .map_err(|e| e.to_string())
 }

@@ -190,7 +190,10 @@ async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
     )
     .await;
     assert_eq!(handler.seen(), [Seen::DirectCall(datagram.to_vec())]);
-    assert_eq!(*replies.0.lock(), [b"reply".to_vec(), b"NAK".to_vec()]);
+    assert_eq!(
+        *replies.0.lock(),
+        [b"reply".to_vec(), crate::operations::direct::NAK.to_vec()]
+    );
 }
 
 /// Audit G10: a `'G'` call is refused by its tag, whatever follows it: one
@@ -209,5 +212,11 @@ async fn a_gossip_call_is_refused_before_any_decode() {
         dispatch_app_call(&handler, &replies, AppCallId(n as u64), &datagram).await;
     }
     assert_eq!(handler.seen(), []);
-    assert_eq!(*replies.0.lock(), [b"NAK".to_vec(), b"NAK".to_vec()]);
+    assert_eq!(
+        *replies.0.lock(),
+        [
+            crate::operations::direct::NAK.to_vec(),
+            crate::operations::direct::NAK.to_vec()
+        ]
+    );
 }

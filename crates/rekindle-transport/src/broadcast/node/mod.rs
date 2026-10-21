@@ -146,6 +146,17 @@ impl TransportNode {
         }
     }
 
+    /// Veilid declared these imported routes (`RouteChange`'s remote
+    /// ids) dead: the importer forgets them and every peer whose cached
+    /// blob was one of them loses it. Returns those peers.
+    pub fn on_dead_remote_routes(&self, dead: &[String]) -> Vec<String> {
+        crate::subscriptions::dispatch::forget_dead_remote(
+            self.ports.routes.as_ref(),
+            &self.peer_registry,
+            dead,
+        )
+    }
+
     pub fn peers(&self) -> Arc<parking_lot::RwLock<PeerRegistry>> {
         Arc::clone(&self.peer_registry)
     }

@@ -29,7 +29,12 @@ pub enum Routed {
 
 /// The `app_call` reply that refuses a call: no receipt (plan audit G3).
 /// One byte, so it is never empty (the receipt) nor a `'D'` frame.
+/// It is the one refusal of every `app_call` either host answers.
 pub const NAK: &[u8] = b"N";
+
+/// How long an inbound `app_call` may take to be answered before it is
+/// refused with [`NAK`], on both hosts.
+pub const CALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
 
 /// What became of an inbound 1:1 `app_call`.
 #[derive(Debug)]
@@ -96,6 +101,17 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
         }
     });
     Called::Answered(Vec::new())
+}
+
+/// [`receive_call`] within [`CALL_DEADLINE`]: past it the call is refused
+/// with [`NAK`]. Each host answers its 1:1 `app_call`s through this.
+pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
+    tokio::time::timeout(CALL_DEADLINE, receive_call(host, datagram))
+        .await
+        .unwrap_or_else(|_| {
+            tracing::warn!("1:1 app_call exceeded its deadline — refused");
+            Called::Answered(NAK.to_vec())
+        })
 }
 
 /// Replay what was decrypted but never applied (a crash between the

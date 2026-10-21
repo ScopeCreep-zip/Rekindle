@@ -30,6 +30,7 @@ use crate::crypto::envelope::{Addressing, SignedPayload};
 use crate::frame;
 use crate::gossip::DedupCache;
 use crate::handler::InboundHandler;
+use crate::operations::direct::{CALL_DEADLINE, NAK};
 use crate::shared::{AttachmentState, SharedState};
 
 /// The route owners the dispatch loop reports `RouteChange` to.
@@ -108,7 +109,7 @@ async fn dispatch_event<H: InboundHandler>(
                 .await;
         }
         PortEvent::RouteChange { dead, dead_remote } => {
-            dispatch_route_change(handler, routes, &dead, dead_remote).await;
+            dispatch_route_change(handler, routes, &dead, &dead_remote).await;
         }
         PortEvent::Shutdown => {
             info!("network shutdown event received");
@@ -135,8 +136,6 @@ async fn dispatch_app_message<H: InboundHandler>(
     }
 }
 
-const APP_CALL_HANDLER_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
-
 async fn dispatch_app_call<H: InboundHandler>(
     handler: &Arc<H>,
     messages: &dyn AppMessagePort,
@@ -152,19 +151,12 @@ async fn dispatch_app_call<H: InboundHandler>(
         return;
     }
     if let Ingress::Direct(_) = ingress {
-        let reply = match tokio::time::timeout(
-            APP_CALL_HANDLER_DEADLINE,
-            handler.on_direct_call(raw),
-        )
-        .await
-        {
-            Ok(Some(reply)) => reply,
-            Ok(None) => b"NAK".to_vec(),
-            Err(_) => {
-                warn!("1:1 app_call handler exceeded deadline — sending NAK");
-                b"NAK".to_vec()
-            }
-        };
+        // The handler answers within the deadline itself
+        // (`operations::direct::answer_call`).
+        let reply = handler
+            .on_direct_call(raw)
+            .await
+            .unwrap_or_else(|| NAK.to_vec());
         if let Err(e) = messages.reply(call_id, reply).await {
             warn!(error = %e, "failed to send 1:1 app_call reply");
         }
@@ -238,7 +230,7 @@ async fn dispatch_app_call<H: InboundHandler>(
         Some(signed.sender_key_hex.as_str())
     };
 
-    let response_bytes = if let Ok(bytes) = tokio::time::timeout(APP_CALL_HANDLER_DEADLINE, async {
+    let response_bytes = if let Ok(bytes) = tokio::time::timeout(CALL_DEADLINE, async {
         let response = handler.on_call(sender, request).await;
         crate::payload::rpc::serialize_call_response(&response)
     })
@@ -248,10 +240,10 @@ async fn dispatch_app_call<H: InboundHandler>(
     } else {
         warn!(
             type_id = type_id as u8,
-            deadline_secs = APP_CALL_HANDLER_DEADLINE.as_secs(),
+            deadline_secs = CALL_DEADLINE.as_secs(),
             "app_call handler exceeded deadline — sending NAK"
         );
-        b"NAK".to_vec()
+        NAK.to_vec()
     };
 
     if let Err(e) = messages.reply(call_id, response_bytes).await {
@@ -287,7 +279,7 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
     let sender = transfer.sender_pseudonym.clone();
 
     let response_bytes = match tokio::time::timeout(
-        APP_CALL_HANDLER_DEADLINE,
+        CALL_DEADLINE,
         handler.on_call(
             Some(sender.as_str()),
             crate::payload::rpc::InboundCall::CommunityMekTransfer(transfer),
@@ -311,7 +303,7 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
                 // worse answer than nothing, but it at least resolves
                 // their `app_call` instead of leaving it to time out.
                 warn!(error = %e, "encoding MekTransferAck failed");
-                b"NAK".to_vec()
+                NAK.to_vec()
             })
         }
         Ok(other) => {
@@ -320,15 +312,15 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
                 response = ?other,
                 "MEK transfer not accepted"
             );
-            b"NAK".to_vec()
+            NAK.to_vec()
         }
         Err(_) => {
             warn!(
                 community = %community_id,
-                deadline_secs = APP_CALL_HANDLER_DEADLINE.as_secs(),
+                deadline_secs = CALL_DEADLINE.as_secs(),
                 "MEK transfer handler exceeded deadline — sending NAK"
             );
-            b"NAK".to_vec()
+            NAK.to_vec()
         }
     };
 
@@ -358,11 +350,28 @@ async fn dispatch_value_change<H: InboundHandler>(
     }
 }
 
+/// Veilid declared these imported routes dead: the importer forgets them
+/// (the network already released them) and the peers holding one of those
+/// blobs lose it, so their next send fetches a fresh route (plan C7.9e).
+/// Returns those peers. Both hosts take a `RouteChange` through this.
+pub(crate) fn forget_dead_remote(
+    routes: &dyn RoutePort,
+    peers: &parking_lot::RwLock<crate::broadcast::peer_registry::PeerRegistry>,
+    dead: &[String],
+) -> Vec<String> {
+    let dead: Vec<PeerTarget> = dead.iter().cloned().map(PeerTarget::new).collect();
+    let blobs = routes.on_dead_remote(&dead);
+    if blobs.is_empty() {
+        return Vec::new();
+    }
+    peers.write().invalidate_blobs(&blobs)
+}
+
 async fn dispatch_route_change<H: InboundHandler>(
     handler: &Arc<H>,
     routes: &RouteOwners,
     dead: &[String],
-    dead_remote: Vec<String>,
+    dead_remote: &[String],
 ) {
     if !dead.is_empty() {
         // Ours among the dead are forgotten (never released: the network
@@ -375,12 +384,7 @@ async fn dispatch_route_change<H: InboundHandler>(
             .await;
     }
     if !dead_remote.is_empty() {
-        // The importer forgets them (the network already released them) and
-        // the peers holding one of those blobs lose it, so their next send
-        // fetches a fresh route (plan C7.9e).
-        let dead_remote: Vec<PeerTarget> = dead_remote.into_iter().map(PeerTarget::new).collect();
-        let blobs = routes.routes.on_dead_remote(&dead_remote);
-        let peer_keys = routes.peers.write().invalidate_blobs(&blobs);
+        let peer_keys = forget_dead_remote(routes.routes.as_ref(), &routes.peers, dead_remote);
         handler
             .on_event(TransportEvent::RemoteRoutesDied { peer_keys })
             .await;
@@ -388,7 +392,7 @@ async fn dispatch_route_change<H: InboundHandler>(
 }
 
 async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
-    if let Err(e) = messages.reply(call_id, b"NAK".to_vec()).await {
+    if let Err(e) = messages.reply(call_id, NAK.to_vec()).await {
         warn!(error = %e, "failed to send NAK reply");
     }
 }

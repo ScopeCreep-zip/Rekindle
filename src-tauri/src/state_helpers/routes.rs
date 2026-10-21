@@ -64,22 +64,15 @@ pub fn route_send_failed(state: &Arc<AppState>, route_id: &veilid_core::RouteId)
     }
 }
 
-/// Veilid declared these imported routes dead (`RouteChange`): the importer
-/// forgets them, and every peer whose cached blob was one of them loses it,
-/// so the next send re-fetches a fresh route. Returns those peers.
-pub fn on_dead_remote_routes(state: &Arc<AppState>, dead: &[veilid_core::RouteId]) -> Vec<String> {
-    let Ok(imports) = route_imports(state) else {
-        return Vec::new();
-    };
-    let blobs = imports.on_dead_remote(dead);
-    if blobs.is_empty() {
-        return Vec::new();
-    }
+/// Veilid declared these imported routes dead (`RouteChange`): the
+/// transport's decision (`TransportNode::on_dead_remote_routes`, shared
+/// with the daemon's dispatch). Returns the peers whose blob was one.
+pub fn on_dead_remote_routes(state: &AppState, dead: &[String]) -> Vec<String> {
     state
         .transport
         .read()
         .as_ref()
-        .map(|node| node.peers().write().invalidate_blobs(&blobs))
+        .map(|node| node.on_dead_remote_routes(dead))
         .unwrap_or_default()
 }
 

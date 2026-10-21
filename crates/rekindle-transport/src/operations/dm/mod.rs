@@ -16,8 +16,8 @@ pub(crate) use chat::{count_unread, NewDmFields};
 pub use frame::wire;
 pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};
 pub use send::{
-    build_and_queue, hint_for, queued_form, resend, send_frame, send_to_peer, send_to_peer_call,
-    Queued, Resend,
+    build_and_queue, hint_for, queued_form, reply_frame, resend, send_frame, send_to_peer,
+    send_to_peer_call, Queued, Resend,
 };
 pub use typing::report_draft;
 

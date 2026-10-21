@@ -81,8 +81,9 @@ pub fn handle_value_change<D: FriendPresenceDeps>(
     subkeys: &[u32],
     value: &[u8],
 ) {
+    // Most watched records are not a friend's: no news.
     let Some(friend_key) = deps.friend_for_dht_key(dht_key) else {
-        tracing::debug!(dht_key, "value change for unknown DHT key");
+        tracing::trace!(dht_key, "value change for a record that is no friend's");
         return;
     };
     for &subkey in subkeys {

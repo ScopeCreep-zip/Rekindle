@@ -29,12 +29,13 @@ pub fn friend_display_name(state: &Arc<AppState>, key: &str) -> Option<String> {
 /// A watched record changed: when it is a friend's profile, the Host's
 /// friend presence applies it (plan E2.1).
 pub fn friend_presence_change(state: &AppState, record_key: &str, subkeys: &[u32], value: &[u8]) {
-    use rekindle_presence::FriendPresenceDeps as _;
     let Some(host) = state.host.current() else {
         return;
     };
-    let presence = host.friend_presence();
-    if presence.friend_for_dht_key(record_key).is_some() {
-        rekindle_presence::handle_value_change(presence.as_ref(), record_key, subkeys, value);
-    }
+    rekindle_presence::handle_value_change(
+        host.friend_presence().as_ref(),
+        record_key,
+        subkeys,
+        value,
+    );
 }

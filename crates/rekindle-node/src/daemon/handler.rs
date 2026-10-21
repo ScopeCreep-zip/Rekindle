@@ -142,7 +142,7 @@ impl InboundHandler for DaemonHandler {
 
     async fn on_direct_call(&self, datagram: &[u8]) -> Option<Vec<u8>> {
         let host = self.friends()?;
-        match direct::receive_call(&host, datagram).await {
+        match direct::answer_call(&host, datagram).await {
             direct::Called::Answered(reply) => Some(reply),
             direct::Called::Unported(opened) => {
                 // The daemon relays for no one yet (E5.2): no answer.
@@ -298,12 +298,14 @@ impl InboundHandler for DaemonHandler {
         // re-relayed, or one change echoes around the mesh.
         self.relay_watch_change(record_key, &changed_subkeys, first_value.as_deref());
 
-        // A friend's profile changed: their presence (plan E2.1).
-        if let (Some(host), Some(value)) = (self.friends(), first_value.as_deref()) {
-            use rekindle_presence::FriendPresenceDeps as _;
-            if host.friend_for_dht_key(record_key).is_some() {
-                rekindle_presence::handle_value_change(&host, record_key, &changed_subkeys, value);
-            }
+        // A friend's profile changed: their presence (plan E2.1). The
+        // inline value is the first changed subkey's only.
+        if let (Some(host), Some(value), Some(first)) = (
+            self.friends(),
+            first_value.as_deref(),
+            changed_subkeys.first(),
+        ) {
+            rekindle_presence::handle_value_change(&host, record_key, &[*first], value);
         }
 
         // Forward to SubscriptionManager for event emission

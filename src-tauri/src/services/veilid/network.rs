@@ -6,6 +6,8 @@ use crate::services::sync_service;
 use crate::state::AppState;
 use crate::state_helpers;
 
+use rekindle_transport::operations::direct::NAK;
+
 use rekindle_codec::community::envelope::{
     CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
 };
@@ -41,7 +43,7 @@ pub async fn handle_app_call(
         }
         rekindle_codec::ingress::Ingress::Gossip(_) => {
             tracing::debug!(msg_len = message.len(), "gossip by app_call — NAK");
-            reply_to_call(state, call_id, b"NAK".to_vec()).await;
+            reply_to_call(state, call_id, NAK.to_vec()).await;
             return;
         }
         rekindle_codec::ingress::Ingress::Untagged => {}
@@ -232,7 +234,7 @@ async fn community_call(
         }
         _ => {
             tracing::debug!(msg_len = message.len(), "untagged app_call — NAK");
-            b"NAK".to_vec()
+            NAK.to_vec()
         }
     }
 }
@@ -240,17 +242,17 @@ async fn community_call(
 /// Answer a 1:1 `app_call` through the Host: its reply (empty for a
 /// handled call, whose return is the receipt, or a frame); an unported
 /// kind is answered by the desktop's arm. With no host or no identity
-/// database nothing was received, so the reply is `NAK`, which no caller
-/// takes for a receipt.
+/// database nothing was received, so the reply is the transport's [`NAK`],
+/// which no caller takes for a receipt.
 async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Vec<u8> {
     let Some(host) = state.host.current() else {
-        return b"NAK".to_vec();
+        return NAK.to_vec();
     };
     match host.receive_direct_call(message).await {
         rekindle_transport::operations::direct::Called::Answered(reply) => reply,
         rekindle_transport::operations::direct::Called::Unported(opened) => {
             let Ok(pool) = state.db.current() else {
-                return b"NAK".to_vec();
+                return NAK.to_vec();
             };
             super::inbound_unported::handle_call(state, &pool, *opened).await
         }
@@ -358,12 +360,15 @@ pub fn handle_route_change(state: &Arc<AppState>, change: &veilid_core::VeilidRo
     }
 
     if !change.dead_remote_routes.is_empty() {
-        // The importer forgets the dead routes (Veilid already dropped
-        // them, so nothing is released) and the peers whose cached blob was
-        // one of them lose it, so the next send re-fetches a fresh route.
-        // Voice resolves its routes through the same importer, so it holds
+        // The transport's decision, as the daemon's dispatch takes it
+        // (`TransportNode::on_dead_remote_routes`). Voice resolves its routes through the same importer, so it holds
         // no copy of its own to evict.
-        let affected = state_helpers::on_dead_remote_routes(state, &change.dead_remote_routes);
+        let dead: Vec<String> = change
+            .dead_remote_routes
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let affected = state_helpers::on_dead_remote_routes(state, &dead);
         if !affected.is_empty() {
             tracing::debug!(peers = affected.len(), "dropped dead remote routes");
         }

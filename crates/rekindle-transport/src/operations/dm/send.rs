@@ -113,6 +113,20 @@ pub async fn queued_form(
     queued_json(&queued)
 }
 
+/// The wired `app_call` reply carrying `body` to `to`, framed as any send
+/// of its kind (the verification gate, the kind's carrier and hint).
+///
+/// # Errors
+/// The frame could not be built.
+pub async fn reply_frame(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<Vec<u8>, FriendError> {
+    let (frame, _) = framed(host, to, body).await?;
+    frame::wire(&frame)
+}
+
 /// The frame to `to` for `body`, and how the queue keeps it.
 async fn framed(
     host: &dyn FriendHost,

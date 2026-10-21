@@ -173,5 +173,5 @@ pub fn deserialize_inbound_call(type_id: TypeId, bytes: &[u8]) -> Result<Inbound
 
 /// Serialize a CallResponse for transmission back via app_call_reply.
 pub fn serialize_call_response(response: &CallResponse) -> Vec<u8> {
-    postcard::to_stdvec(response).unwrap_or_else(|_| b"NAK".to_vec())
+    postcard::to_stdvec(response).unwrap_or_else(|_| crate::operations::direct::NAK.to_vec())
 }
