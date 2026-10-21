@@ -77,9 +77,6 @@ pub struct AppState {
     /// The one lifecycle FSM (plan E1.1), the Host's (`HostStores`): the
     /// Host makes every identity transition on it.
     pub lifecycle: std::sync::Arc<rekindle_lifecycle::AppLifecycle>,
-    /// Phase 7 — friendship inbox-scan handle (direct_tx + shutdown_tx +
-    /// watch_disabled_until + watch_tx + watch_counter consolidated).
-    pub friendship_handle: std::sync::Arc<crate::services::friendship::FriendshipHandle>,
     /// Phase 8 — shared idempotency cache for mutating commands
     /// returning `Result<(), String>`.
     pub idempotency: std::sync::Arc<rekindle_idempotency::IdempotencyCache<Result<(), String>>>,
@@ -271,7 +268,6 @@ impl Default for AppState {
             audit_chain: Arc::new(Mutex::new(None)),
             keystore: rekindle_vault::new_handle(),
             lifecycle: std::sync::Arc::new(rekindle_lifecycle::AppLifecycle::new()),
-            friendship_handle: crate::services::friendship::FriendshipHandle::new(),
             idempotency: std::sync::Arc::new(
                 rekindle_idempotency::IdempotencyCache::with_defaults(),
             ),

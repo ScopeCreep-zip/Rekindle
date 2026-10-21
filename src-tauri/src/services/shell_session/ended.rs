@@ -90,9 +90,6 @@ fn clear(state: &AppState) {
     // Each cache is the identity's own keyed tree (plan E3.0a).
     state.file_caches.write().clear();
     state.pinned_attachments.write().clear();
-    // The friendship coordinator stopped with the scope; the next unlock
-    // installs fresh trigger senders.
-    state.friendship_handle.clear();
     crate::state_helpers::clear_meks(state);
     state.dm_mek_cache.lock().clear();
     state.dedup_cache.lock().clear();

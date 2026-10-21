@@ -138,21 +138,10 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
     // === Event emit ===
     fn emit(&self, event: FriendPresenceEvent);
 
-    // === Friend-sync surface (22.c-REDO) ===
+    // === Watch-change reads and the staleness timer (plan E2.5) ===
 
-    /// `(friend_key, dht_record_key)` pairs for every friend whose
-    /// profile DHT record is known. Used by the periodic sync loop
-    /// to iterate friends + force-poll their profile subkeys when
-    /// watches haven't fired.
-    fn friends_with_dht_keys(&self) -> Vec<(String, String)>;
-
-    /// Friend keys whose DHT watch failed and need force-polling
-    /// from the network each tick (per Veilid GitLab #377). Pre-port
-    /// these landed in `state.unwatched_friends`.
-    fn unwatched_friends(&self) -> std::collections::HashSet<String>;
-
-    /// Force a fresh `get_dht_value` for one subkey on the friend's
-    /// profile record. Returns the raw bytes when the subkey has
+    /// Read one changed subkey of the friend's profile record (a watch
+    /// reported it; plan E2.5). Returns the raw bytes when the subkey has
     /// a payload, `None` when it's empty or the read failed.
     async fn fetch_friend_dht_subkey(
         &self,
@@ -162,7 +151,7 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
     ) -> Option<Vec<u8>>;
 
     /// Friend keys whose `last_heartbeat_at` is older than
-    /// `threshold_ms` (and aren't already Offline). The sync loop
+    /// `threshold_ms` (and aren't already Offline). The staleness timer
     /// marks each one offline + emits FriendOffline (privacy-gated
     /// by `is_friend_accepted`). Pre-port this lived in
     /// `check_stale_presences`.

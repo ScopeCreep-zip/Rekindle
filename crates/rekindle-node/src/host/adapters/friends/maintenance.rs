@@ -5,6 +5,10 @@
 //! does not wait. Sends are the outbox's (plan E2.5), and a removed friend
 //! is forgotten on its `Unfriended` row's settle event, not here.
 //!
+//! Friend-presence staleness (plan E2.5, D23) is a local TTL timer of its
+//! own: every [`STALE_TICK`] it marks offline the friends whose last
+//! heartbeat is past the threshold, reading nothing from the DHT.
+//!
 //! The prekey maintenance (plan E2.4, B1) is a task of its own. It starts
 //! only when the own-records stage says our prekey record is held,
 //! reconciled and filled (a oneshot sent after `fill_record`; audit D-7:
@@ -26,6 +30,8 @@ use crate::daemon::dispatch::DaemonContext;
 const TICK: Duration = Duration::from_secs(30);
 /// Expiry runs every this many ticks.
 const EXPIRY_EVERY: u64 = 6;
+/// The staleness timer's tick.
+const STALE_TICK: Duration = Duration::from_secs(30);
 /// The prekey maintenance's tick: its rules run in days (B1), and a
 /// consumed slot is refilled at once by the accept that used it (B8).
 const PREKEY_TICK: Duration = Duration::from_secs(60 * 60);
@@ -39,7 +45,24 @@ pub(crate) fn start(
     scope: &Arc<rekindle_lifecycle::SessionScope>,
 ) -> Result<(), rekindle_lifecycle::ScopeClosed> {
     let host = HostFriends::of(ctx);
-    scope.spawn_with_token("friend maintenance", move |stop| run(host, stop))
+    let stale = host.clone();
+    scope.spawn_with_token("friend maintenance", move |stop| run(host, stop))?;
+    scope.spawn_with_token("friend presence staleness", move |stop| {
+        run_staleness(stale, stop)
+    })
+}
+
+/// Every [`STALE_TICK`], mark the friends with a stale heartbeat offline.
+async fn run_staleness(host: HostFriends, stop: CancellationToken) {
+    let mut ticks = tokio::time::interval(STALE_TICK);
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    loop {
+        tokio::select! {
+            () = stop.cancelled() => return,
+            _ = ticks.tick() => {}
+        }
+        rekindle_presence::check_stale_friend_presences(&host);
+    }
 }
 
 /// Start the prekey maintenance in `scope` (the unlock's); it waits for

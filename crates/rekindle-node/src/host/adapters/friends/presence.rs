@@ -230,28 +230,6 @@ impl FriendPresenceDeps for HostFriends {
             .publish_event(SubscriptionEvent::Presence(presence_event(event)));
     }
 
-    fn friends_with_dht_keys(&self) -> Vec<(String, String)> {
-        self.ctx()
-            .session
-            .read()
-            .as_ref()
-            .map(|s| {
-                s.friends
-                    .values()
-                    .filter_map(|f| {
-                        f.dht_record_key
-                            .clone()
-                            .map(|key| (f.public_key.clone(), key))
-                    })
-                    .collect()
-            })
-            .unwrap_or_default()
-    }
-
-    fn unwatched_friends(&self) -> std::collections::HashSet<String> {
-        self.ctx().friend_watches.unwatched.read().clone()
-    }
-
     async fn fetch_friend_dht_subkey(
         &self,
         dht_record_key: &str,

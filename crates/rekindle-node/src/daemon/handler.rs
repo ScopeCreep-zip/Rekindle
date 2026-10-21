@@ -298,18 +298,11 @@ impl InboundHandler for DaemonHandler {
         // re-relayed, or one change echoes around the mesh.
         self.relay_watch_change(record_key, &changed_subkeys, first_value.as_deref());
 
-        // A friend's profile changed: their presence (plan E2.1). The
-        // inline value is the first changed subkey's only.
-        // One of our invites' request inboxes was written (plan E2.5, D17).
+        // An invite's inbox, a friend's participant record or a friend's
+        // profile: the Host reads every changed subkey (plan E2.5).
         if let Some(host) = self.friends() {
-            host.request_inbox_change(record_key, &changed_subkeys, first_value.as_deref());
-        }
-        if let (Some(host), Some(value), Some(first)) = (
-            self.friends(),
-            first_value.as_deref(),
-            changed_subkeys.first(),
-        ) {
-            rekindle_presence::handle_value_change(&host, record_key, &[*first], value);
+            host.on_watched_change(record_key, &changed_subkeys, first_value.as_deref())
+                .await;
         }
 
         // Forward to SubscriptionManager for event emission
@@ -327,6 +320,9 @@ impl InboundHandler for DaemonHandler {
                     is_attached,
                     public_internet_ready,
                 } => {
+                    if let Some(host) = self.friends() {
+                        host.network_changed(public_internet_ready);
+                    }
                     let (has_route, media_route) = self.route_status();
                     sub_mgr.on_attachment_change(
                         state,

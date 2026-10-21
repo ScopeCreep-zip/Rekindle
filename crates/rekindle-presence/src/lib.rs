@@ -37,7 +37,7 @@ pub use friend::{
     handle_value_change, parse_status, parse_status_timestamp, publish_status, status_to_wire_byte,
     watch_friend, FRIEND_WATCH_SUBKEYS, PROFILE_STATUS_SUBKEY, STALE_PRESENCE_THRESHOLD_MS,
 };
-pub use friend_sync::{check_stale_friend_presences, sync_friends};
+pub use friend_sync::check_stale_friend_presences;
 pub use heartbeat::{run_status_publisher, HEARTBEAT_INTERVAL_SECS};
 pub use idle::{decide_status_after_idle, IDLE_THRESHOLD_MS};
 pub use poll_buckets::{is_member_stale, presence_poll_interval_ms, STALE_MEMBER_TTL_MS};

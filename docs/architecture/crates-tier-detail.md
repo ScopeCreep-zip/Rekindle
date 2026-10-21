@@ -361,24 +361,6 @@ Public surface includes `presence_poll_tick`, `compute_rebuild_plan`,
 (`STEADY_TICK_INTERVAL_SECS`, `RAPID_TICK_INTERVAL_SECS`,
 `STALE_HEARTBEAT_SECS`, `MAX_SYNC_ATTEMPTS`).
 
-### rekindle-friendship
-
-Three-tier inbox-scan coordinator. Friend requests land in a per-peer
-DHT inbox; scanning every second wastes the network, scanning every
-minute makes UX laggy. The coordinator fans three independent triggers
-into one stream of scans:
-
-1. **`watch_rx`** — `watch::Receiver<u64>` that fires on
-   Veilid `ValueChanged`. ~1 s end-to-end when the watch is healthy.
-2. **30-second poll** — backstop for silent watch death under route
-   churn.
-3. **Direct trigger** — `mpsc::Sender<()>` exposed via the Tauri command
-   `friendship_scan_now`.
-
-All three debounce on a 500 ms coalesce window. Modules: `coordinator`
-(`InboxScanCoordinator`, `InboxScanner`, `ScanError`), `watch_trigger`,
-`veilid_scanner`.
-
 ## Tier 6 — Governance
 
 ### rekindle-governance

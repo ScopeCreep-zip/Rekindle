@@ -7400,7 +7400,6 @@ dependencies = [
  "rekindle-dm",
  "rekindle-events",
  "rekindle-files",
- "rekindle-friendship",
  "rekindle-game-detect",
  "rekindle-gossip",
  "rekindle-governance",
@@ -7531,19 +7530,6 @@ dependencies = [
  "tracing",
  "uuid",
  "zeroize",
-]
-
-[[package]]
-name = "rekindle-friendship"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "parking_lot 0.12.5",
- "thiserror 2.0.18",
- "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]

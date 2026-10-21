@@ -51,7 +51,6 @@ crates/
 # ── Tier 5 — Gossip mesh + presence ───────────────────────────────────
 ├── rekindle-gossip/                 (9) gossip mesh primitives
 ├── rekindle-presence/              (24) presence primitives + orchestrators [NEW]
-├── rekindle-friendship/             (4) inbox-scan coordinator [NEW]
 
 # ── Tier 6 — Governance ───────────────────────────────────────────────
 ├── rekindle-governance/            (24) pure CRDT merge, permissions
@@ -111,7 +110,7 @@ The tier hierarchy is a contract. The CI gauntlet greps every crate's
 | 2 | `secrets`, `vault`, `audit` | crypto libs (only here) | `veilid-core`, `tauri`, network I/O |
 | 3 | `codec`, `records`, `events`, `idempotency`, `mek-rotation`, `analytics`, `image` | `tokio`, `async-trait`, in-process DB (`rusqlite`) for `analytics` only, `image` (pure-Rust codecs) for `image` only | `veilid-core`, `tauri`, `unsafe` in `image` |
 | 4 | `route`, `lifecycle` | `tokio` | `veilid-core`, `tauri` |
-| 5 | `gossip`, `presence`, `friendship` | `tokio`, `async-trait` (deps traits) | `veilid-core`, `tauri` |
+| 5 | `gossip`, `presence` | `tokio`, `async-trait` (deps traits) | `veilid-core`, `tauri` |
 | 6 | `governance`, `governance-runtime` | `tokio` (runtime only), `async-trait` | `veilid-core`, `tauri`, `rusqlite`, `iota_stronghold` |
 | 7 | `channel`, `dm`, `calls`, `files`, `link-preview`, `video` | `tokio`, `async-trait`, file I/O (`files` cache) | `veilid-core`, `tauri` |
 
@@ -172,7 +171,7 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
               │ Tier 7  channel, dm, calls, files,       │
               │         video, link-preview              │
               │ Tier 6  governance + governance-runtime  │
-              │ Tier 5  gossip, presence, friendship     │
+              │ Tier 5  gossip, presence                 │
               │ Tier 4  route, lifecycle                 │
               │ Tier 3  codec, records, events, db,      │
               │         idempotency, mek-rotation,       │

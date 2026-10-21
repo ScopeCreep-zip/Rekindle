@@ -49,7 +49,6 @@ There are ~47 fields. They are grouped below by concern, not by type.
 | `friends` | `Arc<RwLock<HashMap<String, FriendState>>>` | Friend state by pubkey |
 | `unwatched_friends` | `RwLock<HashSet<String>>` | Friends whose DHT watch failed; `sync_service` polls them with `force_refresh=true` |
 | `pre_away_status` | `RwLock<Option<UserStatus>>` | Status before auto-away (restored on activity) |
-| `friendship_handle` | `Arc<FriendshipHandle>` | `rekindle-friendship::InboxScanCoordinator` wiring — watch + 30 s poll + direct trigger |
 
 ## Communities & Channels
 

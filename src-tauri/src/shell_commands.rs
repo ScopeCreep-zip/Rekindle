@@ -139,9 +139,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("list_dms", "E2.6"),
     ("get_dm_messages", "E2.6"),
     ("send_dm_message", "E2.6"),
-    // E2.5 — the friendship coordinator is deleted.
-    ("friendship_scan_now", "E2.5"),
-    ("dev_disable_watch", "E2.5"),
     // E3.1 — communities.
     ("add_game_server", "E3.1"),
     ("remove_game_server", "E3.1"),

@@ -40,25 +40,12 @@ impl Host {
         Arc::new(HostFriends::of(&self.ctx))
     }
 
-    /// The one friend presence adapter, for the GUI's friend sync (until
-    /// E2.5) and its watch dispatch.
+    /// The one friend adapter, for the GUI's watch dispatch
+    /// (`HostFriends::on_watched_change`) and its network-ready trigger
+    /// (`HostFriends::network_changed`).
     #[must_use]
     pub fn friend_presence(&self) -> Arc<HostFriends> {
         Arc::new(HostFriends::of(&self.ctx))
-    }
-
-    /// The network reattached: every friend with a profile record is marked
-    /// unwatched, so the friend sync re-establishes the watches; how many.
-    pub fn invalidate_friend_watches(&self) -> usize {
-        let peers: Vec<String> = self
-            .friends()
-            .into_iter()
-            .filter(|f| f.dht_record_key.is_some())
-            .map(|f| f.public_key)
-            .collect();
-        let count = peers.len();
-        self.ctx.friend_watches.mark_unwatched(peers);
-        count
     }
 
     /// Handle a `'D'` app message the GUI's Veilid loop received.

@@ -1,101 +1,11 @@
-//! Phase 22.c-REDO — friend-sync orchestrator.
-//!
-//! Pre-port lived in `src-tauri/services/sync_service.rs` as ~390
-//! LoC of duplicated per-subkey parse/state/emit logic. Here it
-//! parameterises over [`FriendPresenceDeps`] and reuses the
-//! existing `handle_value_change` per-subkey processing so each
-//! status/game/route fetch funnels through the SAME state-update +
-//! emit path that the live DHT watch fires on.
-//!
-//! Architecture references:
-//! - §13.4 presence cadence (force-poll fallback when watches fail)
-//! - §26 W26 — friend profile record subkey layout (2=status,
-//!   4=game, 6=route blob; 5, the prekey device list, is read only by a
-//!   first contact, plan E2.4)
-
-use std::collections::HashSet;
-use std::sync::Arc;
+//! Friend-presence staleness (plan E2.5, D23): a local TTL timer over the
+//! friend projection, with no DHT read. A friend's presence arrives by
+//! their profile record's watch (`watch_friend`, `handle_value_change`);
+//! a friend whose last heartbeat is older than
+//! [`STALE_PRESENCE_THRESHOLD_MS`] is marked offline here.
 
 use crate::deps::{FriendPresenceDeps, FriendPresenceEvent};
-use crate::friend::{handle_value_change, STALE_PRESENCE_THRESHOLD_MS};
-
-/// Profile subkeys we force-poll each tick (mirror of
-/// [`crate::friend::FRIEND_WATCH_SUBKEYS`]).
-const SYNC_POLL_SUBKEYS: &[u32] = &[2, 4, 6];
-
-/// Run a single friend-sync tick: iterate every friend with a DHT
-/// record, register the DHT key mapping, start a watch if one
-/// hasn't fired this session, force-poll each profile subkey, and
-/// finally mark stale-heartbeat friends offline.
-///
-/// `watched_keys` is the per-loop set of `dht_record_key`s where
-/// the live watch has been established. The orchestrator clears
-/// keys for friends in [`FriendPresenceDeps::unwatched_friends`]
-/// so they get re-watched on the next tick.
-///
-/// `first_tick` + `force_all` drive when to force the DHT
-/// `force_refresh=true` flag — the first tick or every 10th tick
-/// per pre-port `sync_service::start_sync_loop` cadence. Stops before
-/// the next friend's calls once `stop` is cancelled (plan C4.L1).
-pub async fn sync_friends<D, S>(
-    deps: Arc<D>,
-    watched_keys: &mut HashSet<String, S>,
-    first_tick: bool,
-    force_all: bool,
-    stop: &tokio_util::sync::CancellationToken,
-) where
-    D: FriendPresenceDeps,
-    S: std::hash::BuildHasher,
-{
-    let friends_with_dht = deps.friends_with_dht_keys();
-    let unwatched = deps.unwatched_friends();
-
-    // Clear watched_keys for friends whose watches died so they
-    // get re-watched this tick.
-    for friend_key in &unwatched {
-        // Re-derive the dht key for this friend by matching against
-        // the friends_with_dht list (cheap — small N).
-        if let Some((_, dht_key)) = friends_with_dht.iter().find(|(fk, _)| fk == friend_key) {
-            watched_keys.remove(dht_key);
-        }
-    }
-
-    for (friend_key, dht_key) in &friends_with_dht {
-        if stop.is_cancelled() {
-            return;
-        }
-        if !watched_keys.contains(dht_key) {
-            // `watch_friend` returns `Ok(())` even when the underlying
-            // watch couldn't be established (it adds the friend to the
-            // unwatched set instead). Either way we mark this key as
-            // attempted so we don't spam the watch call every tick.
-            let _ = crate::watch_friend(Arc::clone(&deps), friend_key, dht_key).await;
-            watched_keys.insert(dht_key.clone());
-        }
-
-        let force_refresh = first_tick || force_all || unwatched.contains(friend_key);
-        force_poll_subkeys(deps.as_ref(), dht_key, force_refresh).await;
-    }
-
-    check_stale_friend_presences(deps.as_ref());
-    tracing::debug!(friends = friends_with_dht.len(), "friend sync complete");
-}
-
-/// Force-poll each watched-presence subkey for one friend and
-/// funnel the bytes through `handle_value_change` so the status /
-/// game / route paths share the same state-update + emit code
-/// that the live DHT watch fires on.
-async fn force_poll_subkeys<D: FriendPresenceDeps>(deps: &D, dht_key: &str, force_refresh: bool) {
-    for &subkey in SYNC_POLL_SUBKEYS {
-        let Some(bytes) = deps
-            .fetch_friend_dht_subkey(dht_key, subkey, force_refresh)
-            .await
-        else {
-            continue;
-        };
-        handle_value_change(deps, dht_key, &[subkey], &bytes);
-    }
-}
+use crate::friend::STALE_PRESENCE_THRESHOLD_MS;
 
 /// Mark every friend with a stale `last_heartbeat_at` as offline
 /// and emit `FriendOffline` (privacy-gated by `is_friend_accepted`).
@@ -114,6 +24,7 @@ pub fn check_stale_friend_presences<D: FriendPresenceDeps>(deps: &D) {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::sync::Arc;
 
     use async_trait::async_trait;
@@ -127,13 +38,10 @@ mod tests {
     #[derive(Default)]
     struct MockState {
         friends_with_dht: Vec<(String, String)>,
-        unwatched: HashSet<String>,
         subkey_bytes: HashMap<(String, u32), Vec<u8>>,
         stale_friends: Vec<String>,
         presence_keys: HashMap<String, rekindle_secrets::friend_presence::PresenceKey>,
         // Recorders
-        calls_friends_with_dht: u32,
-        calls_unwatched: u32,
         calls_set_dht_key: Vec<(String, String)>,
         calls_open_friend: Vec<String>,
         calls_watch_subkeys: Vec<(u64, Vec<u32>)>,
@@ -248,16 +156,6 @@ mod tests {
         fn emit(&self, event: FriendPresenceEvent) {
             self.state.lock().calls_emit.push(event);
         }
-        fn friends_with_dht_keys(&self) -> Vec<(String, String)> {
-            let mut st = self.state.lock();
-            st.calls_friends_with_dht += 1;
-            st.friends_with_dht.clone()
-        }
-        fn unwatched_friends(&self) -> HashSet<String> {
-            let mut st = self.state.lock();
-            st.calls_unwatched += 1;
-            st.unwatched.clone()
-        }
         async fn fetch_friend_dht_subkey(
             &self,
             dht_record_key: &str,
@@ -305,104 +203,24 @@ mod tests {
         assert_eq!(deps.state.lock().calls_set_offline.len(), 1);
     }
 
+    /// Plan E2.5 (D23): a friend's watch is opened on their profile record
+    /// and held, and nothing is read: the watch brings each change.
     #[tokio::test]
-    async fn empty_friend_list_is_a_no_op() {
+    async fn watching_a_friend_holds_the_watch_and_reads_nothing() {
         let deps = Arc::new(MockDeps::default());
-        let mut watched = HashSet::new();
-        sync_friends(
-            Arc::clone(&deps),
-            &mut watched,
-            false,
-            false,
-            &tokio_util::sync::CancellationToken::new(),
-        )
-        .await;
-        let st = deps.state.lock();
-        assert!(st.calls_set_dht_key.is_empty());
-        assert!(st.calls_fetch_subkey.is_empty());
-    }
-
-    #[tokio::test]
-    async fn friend_sync_registers_then_watches_then_polls() {
-        let deps = Arc::new(MockDeps {
-            state: Mutex::new(MockState {
-                friends_with_dht: vec![("alice".into(), "dht1".into())],
-                ..Default::default()
-            }),
-            accepted: HashSet::new(),
-        });
-        let mut watched = HashSet::new();
-        sync_friends(
-            Arc::clone(&deps),
-            &mut watched,
-            true,
-            false,
-            &tokio_util::sync::CancellationToken::new(),
-        )
-        .await;
+        crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
+            .await
+            .unwrap();
         let st = deps.state.lock();
         assert_eq!(st.calls_set_dht_key, vec![("dht1".into(), "alice".into())]);
         assert_eq!(st.calls_open_friend, vec!["dht1".to_string()]);
-        // The watch sits on the lease the host then keeps for the friend.
-        assert_eq!(st.calls_watch_subkeys.first().map(|(l, _)| *l), Some(1));
+        assert_eq!(
+            st.calls_watch_subkeys,
+            vec![(1, crate::FRIEND_WATCH_SUBKEYS.to_vec())]
+        );
         assert_eq!(st.calls_hold, vec![("alice".to_string(), 1)]);
-        // 3 subkeys polled: status, game, route.
-        let subkeys: Vec<u32> = st.calls_fetch_subkey.iter().map(|(_, sk, _)| *sk).collect();
-        assert_eq!(subkeys, vec![2, 4, 6]);
-        // All polled with force_refresh=true (first_tick).
-        for (_, _, force) in &st.calls_fetch_subkey {
-            assert!(*force);
-        }
-        assert!(watched.contains("dht1"));
-    }
-
-    #[tokio::test]
-    async fn unwatched_friend_clears_watched_set_so_watch_retries() {
-        let deps = Arc::new(MockDeps {
-            state: Mutex::new(MockState {
-                friends_with_dht: vec![("alice".into(), "dht1".into())],
-                unwatched: ["alice".to_string()].into_iter().collect(),
-                ..Default::default()
-            }),
-            accepted: HashSet::new(),
-        });
-        let mut watched: HashSet<String> = ["dht1".to_string()].into_iter().collect();
-        sync_friends(
-            Arc::clone(&deps),
-            &mut watched,
-            false,
-            false,
-            &tokio_util::sync::CancellationToken::new(),
-        )
-        .await;
-        // unwatched cleared "dht1" → re-watched this tick → restored.
-        assert!(watched.contains("dht1"));
-        let st = deps.state.lock();
-        assert_eq!(st.calls_open_friend, vec!["dht1".to_string()]);
-    }
-
-    #[tokio::test]
-    async fn force_all_passes_force_refresh_true_to_every_fetch() {
-        let deps = Arc::new(MockDeps {
-            state: Mutex::new(MockState {
-                friends_with_dht: vec![("alice".into(), "dht1".into())],
-                ..Default::default()
-            }),
-            accepted: HashSet::new(),
-        });
-        let mut watched: HashSet<String> = ["dht1".to_string()].into_iter().collect();
-        sync_friends(
-            Arc::clone(&deps),
-            &mut watched,
-            false,
-            true,
-            &tokio_util::sync::CancellationToken::new(),
-        )
-        .await;
-        let st = deps.state.lock();
-        for (_, _, force) in &st.calls_fetch_subkey {
-            assert!(*force, "force_all should propagate to every subkey fetch");
-        }
+        assert_eq!(st.calls_set_unwatched, vec![("alice".to_string(), false)]);
+        assert!(st.calls_fetch_subkey.is_empty(), "no subkey is polled");
     }
 
     #[test]

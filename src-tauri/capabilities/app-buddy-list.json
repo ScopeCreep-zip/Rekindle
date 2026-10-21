@@ -20,7 +20,6 @@
     "allow-create-community",
     "allow-create-friend-group",
     "allow-decline-dm-invite",
-    "allow-friendship-scan-now",
     "allow-generate-invite",
     "allow-get-communities",
     "allow-get-game-status",

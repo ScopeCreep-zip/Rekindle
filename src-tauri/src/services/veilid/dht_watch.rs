@@ -7,21 +7,6 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
     let change = rekindle_protocol::dht::pool::value_change(&change);
     let key = change.key.clone();
 
-    // Phase 7 — watch-tier trigger. If the ValueChange is on the
-    // local user's mailbox key (where peers write friend requests),
-    // wake the friendship coordinator so it scans within ~500 ms
-    // instead of waiting for the 30 s poll backstop. The helper
-    // honours the watch trigger's dev-disable deadline (kill-switch)
-    // and is a no-op when no coordinator is running.
-    let own_mailbox_key = state
-        .node
-        .read()
-        .as_ref()
-        .and_then(|nh| nh.mailbox_dht_key.clone());
-    if own_mailbox_key.as_deref() == Some(key.as_str()) {
-        state.friendship_handle.fire_watch_trigger();
-    }
-
     // The pool is the one owner of watch death (plan C7.8): it re-arms the
     // watch of a record it holds, which stays in the watched set meanwhile
     // (so the inspect tick does not take it over). A record it does not
@@ -86,6 +71,18 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
         return;
     }
 
+    // An invite's inbox, a friend's participant record or a friend's
+    // profile: the Host reads every changed subkey (plan E2.5).
+    if let Some(host) = state.host.current() {
+        if host
+            .friend_presence()
+            .on_watched_change(&key, &subkeys, inline_value.as_deref())
+            .await
+        {
+            return;
+        }
+    }
+
     for &subkey in &subkeys {
         let use_inline = Some(subkey) == first_subkey;
         let value = if use_inline && inline_value.is_some() {
@@ -106,8 +103,6 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
             tracing::debug!(subkey, "no routing context to fetch subkey value");
             continue;
         };
-        crate::state_helpers::request_inbox_change(state, &key, &[subkey], &value);
-        crate::state_helpers::friend_presence_change(state, &key, &[subkey], &value);
         // Mutual Aid (architecture §14.3): we hold a watch slot for this
         // record, so gossip-relay the notification to community peers
         // who may not — the receivers fetch the new value themselves

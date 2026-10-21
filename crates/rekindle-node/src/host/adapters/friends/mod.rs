@@ -7,6 +7,7 @@ mod inbox_watch;
 mod maintenance;
 mod participant;
 mod presence;
+mod watch;
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -27,23 +28,20 @@ use crate::host::gate::IntentOwner;
 pub(crate) use maintenance::{
     start as start_maintenance, start_prekeys as start_prekey_maintenance,
 };
+pub(crate) use watch::watch_friends;
 
-/// Each watched friend's profile lease, and the friends whose watch failed
-/// (polled instead, Veilid GitLab #377).
+/// Each watched friend's profile and participant-record leases, and the
+/// friends whose watch failed (re-opened when the network comes back).
 #[derive(Default)]
 pub struct FriendWatches {
     leases: Mutex<HashMap<String, LeaseId>>,
     unwatched: RwLock<HashSet<String>>,
     /// Each open invite's request inbox lease, by record key (plan E2.5).
     inboxes: Mutex<HashMap<String, LeaseId>>,
-}
-
-impl FriendWatches {
-    /// Mark `peers` unwatched, so the friend sync re-establishes their
-    /// watches (a network reattach drops them).
-    pub(crate) fn mark_unwatched(&self, peers: impl IntoIterator<Item = String>) {
-        self.unwatched.write().extend(peers);
-    }
+    /// Each friend's participant record (key, lease), by friend (plan E2.5).
+    participants: Mutex<HashMap<String, (String, LeaseId)>>,
+    /// Whether the network was ready at its last change.
+    network_ready: std::sync::atomic::AtomicBool,
 }
 
 /// The Host, as the friend operations see it.
@@ -165,6 +163,7 @@ impl FriendHost for HostFriends {
     async fn unwatch_friend(&self, peer: &str) {
         // Releasing the friend's lease closes the record, which is what
         // ends its watch; the key-to-friend mapping is the projection's.
+        watch::release_participant(self, peer).await;
         let lease = self.ctx.friend_watches.leases.lock().remove(peer);
         self.ctx.friend_watches.unwatched.write().remove(peer);
         let pool = self.node().ok().and_then(|node| node.records());
@@ -335,30 +334,4 @@ fn same_hold(a: &IpcRequest, b: &IpcRequest) -> bool {
         ) => x == y,
         _ => false,
     }
-}
-
-/// Watch every accepted friend's profile for their presence, in `scope`.
-pub(crate) fn watch_friends(ctx: &DaemonContext, scope: &Arc<rekindle_lifecycle::SessionScope>) {
-    let host = HostFriends::of(ctx);
-    scope.spawn_or_drop("friend watches", async move {
-        let friends: Vec<(String, String)> = host
-            .ctx
-            .session
-            .read()
-            .as_ref()
-            .map(|s| {
-                s.friends
-                    .values()
-                    .filter(|f| {
-                        f.friendship_state == rekindle_types::friend::FriendshipState::Accepted
-                    })
-                    .filter_map(|f| f.dht_record_key.clone().map(|k| (f.public_key.clone(), k)))
-                    .collect()
-            })
-            .unwrap_or_default();
-        for (peer, profile_key) in friends {
-            host.watch_friend(&peer, &profile_key).await;
-        }
-        inbox_watch::rewatch_pending(&host).await;
-    });
 }

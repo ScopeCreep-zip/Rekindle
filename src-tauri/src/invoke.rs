@@ -20,9 +20,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::auth::audit_verify,
         commands::auth::audit_export,
         commands::auth::lifecycle_current,
-        commands::auth::friendship_scan_now,
-        #[cfg(debug_assertions)]
-        commands::auth::dev_disable_watch,
         commands::event::subscribe_events,
         // the intent gate
         commands::intent::intent_commit,

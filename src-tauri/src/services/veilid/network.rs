@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use crate::services::sync_service;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -301,6 +300,11 @@ pub fn handle_attachment(
     // which is exactly what `wait_for_network_ready` exists to prevent.
     let ready = public_internet_ready && attachment.live_peer_count.as_u64() >= 1;
     let _ = state.network_ready_tx.send(ready);
+    // The friends' network-ready trigger (plan E2.5): re-open their
+    // watches and catch every chain up once the network is back.
+    if let Some(host) = state.host.current() {
+        host.friend_presence().network_changed(ready);
+    }
 
     super::emit_network_status(app_handle, state);
 
@@ -316,10 +320,7 @@ pub fn handle_attachment(
     crate::event_dispatch::emit_notification(app_handle, notification);
 
     if reconnected && public_internet_ready && state.identity.read().is_some() {
-        tracing::info!(
-            "network reconnected; invalidating watches, rebuilding governance, triggering friend resync"
-        );
-        invalidate_all_watches(state);
+        tracing::info!("network reconnected; rebuilding governance");
         let state = state.clone();
         crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
             "attachment heal",
@@ -328,7 +329,6 @@ pub fn handle_attachment(
                 // being reallocated by its owner (plan C7.9b).
                 crate::services::governance_adapter::open_community_dht_records(&state).await;
                 crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
-                let _ = sync_service::sync_friends_now(&state).await;
             },
         );
     }
@@ -372,15 +372,5 @@ pub fn handle_route_change(state: &Arc<AppState>, change: &veilid_core::VeilidRo
         if !affected.is_empty() {
             tracing::debug!(peers = affected.len(), "dropped dead remote routes");
         }
-    }
-}
-
-fn invalidate_all_watches(state: &Arc<AppState>) {
-    let count = state
-        .host
-        .current()
-        .map_or(0, |host| host.invalidate_friend_watches());
-    if count > 0 {
-        tracing::info!(count, "invalidated all friend watches for re-establishment");
     }
 }

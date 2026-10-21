@@ -27,7 +27,6 @@ rekindle-db = { path = "../crates/rekindle-db" }
 rekindle-dm = { path = "../crates/rekindle-dm" }
 rekindle-events = { path = "../crates/rekindle-events" }
 rekindle-files = { path = "../crates/rekindle-files" }
-rekindle-friendship = { path = "../crates/rekindle-friendship" }
 rekindle-gossip = { path = "../crates/rekindle-gossip" }
 rekindle-governance = { path = "../crates/rekindle-governance" }
 rekindle-governance-runtime = { path = "../crates/rekindle-governance-runtime" }

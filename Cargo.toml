@@ -37,7 +37,6 @@ members = [
     # Decomposed-harvest crates (added per `.claude/plans/memoized-dazzling-torvalds.md`).
     "crates/rekindle-audit",
     "crates/rekindle-events",
-    "crates/rekindle-friendship",
     "crates/rekindle-idempotency",
     "crates/rekindle-outbox",
     "crates/rekindle-lifecycle",
@@ -95,7 +94,6 @@ default-members = [
     # Decomposed-harvest crates (shipped with the Tauri app).
     "crates/rekindle-audit",
     "crates/rekindle-events",
-    "crates/rekindle-friendship",
     "crates/rekindle-idempotency",
     "crates/rekindle-outbox",
     "crates/rekindle-lifecycle",

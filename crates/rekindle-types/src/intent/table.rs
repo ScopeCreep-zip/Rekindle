@@ -23,8 +23,6 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("intent_commit", None),
     ("intent_cancel", None),
     ("undo", None),
-    ("friendship_scan_now", None),
-    ("dev_disable_watch", None),
     ("subscribe_events", None),
     ("send_message", Some(IntentKind::SendMessage)),
     ("outbox_retry", Some(IntentKind::RetrySend)),

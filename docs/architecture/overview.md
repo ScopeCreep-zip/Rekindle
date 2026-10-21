@@ -26,7 +26,7 @@ provides peer-to-peer transport and distributed storage.
 │  Tier 3   codec, records, events, idempotency,          │
 │           mek-rotation, analytics                       │
 │  Tier 4   route, lifecycle                              │
-│  Tier 5   gossip, presence, friendship                  │
+│  Tier 5   gossip, presence                              │
 │  Tier 6   governance + governance-runtime               │
 │  Tier 7   channel, dm, calls, files, video, link-       │
 │           preview                                       │
@@ -76,7 +76,7 @@ inventory is [`crates.md`](crates.md); per-crate detail is
 | 2 | `rekindle-secrets`, `rekindle-vault`, `rekindle-audit` | All key material (`secrets`), SQLCipher persistent store (`vault`), tamper-evident BLAKE3 keyed hash chain (`audit`). The sole crypto / persistence boundary. |
 | 3 | `rekindle-codec`, `rekindle-records`, `rekindle-events`, `rekindle-idempotency`, `rekindle-mek-rotation`, `rekindle-analytics`, `rekindle-image` | Signed envelope build / verify, DHT record lifecycle, event dedup + journal, command idempotency, MEK cascade rotation, local-only analytics, the one limited image decoder. |
 | 4 | `rekindle-route`, `rekindle-lifecycle` | Private route allocation + cache; 9-state app FSM + `TransportGuard`. |
-| 5 | `rekindle-gossip`, `rekindle-presence`, `rekindle-friendship` | Transport-agnostic gossip primitives; presence orchestrators; inbox-scan coordinator. |
+| 5 | `rekindle-gossip`, `rekindle-presence` | Transport-agnostic gossip primitives; presence orchestrators (a friend's presence arrives by watch, plan E2.5). |
 | 6 | `rekindle-governance`, `rekindle-governance-runtime` | Pure CRDT merge (no I/O, no async); async lifecycle layer for community origin / bootstrap / join / segments. |
 | 7 | `rekindle-channel`, `rekindle-dm`, `rekindle-calls`, `rekindle-files`, `rekindle-video`, `rekindle-link-preview` | Self-contained features built on lower tiers. |
 | — | `rekindle-protocol`, `rekindle-transport`, `rekindle-crypto`, `rekindle-voice`, `rekindle-game-detect`, `rekindle-sync`, `rekindle-utils`, `rekindle-e2e-server` | Cross-cutting integration. `protocol` is the **desktop** Veilid boundary; `transport` is the **daemon** Veilid boundary. |

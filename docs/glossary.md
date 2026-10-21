@@ -481,10 +481,6 @@ the lifecycle is in a `can_write` state. Lives in
 `rekindle-mek-rotation` — lowest `blake3(departed || self)` hash
 rotates; cascade fallback if the elected peer is offline.
 
-**InboxScanCoordinator.** Three-tier scan coordinator
-(`rekindle-friendship`): Veilid watch + 30 s backstop poll +
-user-triggered direct trigger, debounced into one stream.
-
 **Presence orchestrator.** Pure-logic decision and timing layer
 (`rekindle-presence`) covering friend, community, idle, and game
 presence. See [`architecture/presence.md`](architecture/presence.md).

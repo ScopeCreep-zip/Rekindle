@@ -3,6 +3,7 @@
 
 mod dm_hint_loss;
 mod first_contact_retry;
+mod friend_watch;
 mod friends;
 mod harness;
 mod outbox_handshake;

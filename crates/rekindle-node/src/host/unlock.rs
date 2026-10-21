@@ -138,8 +138,7 @@ pub(crate) async fn run(
     // 3c. Friends (plan E2.1): what was decrypted but never applied is
     // applied first (D24, plan E2.3), then the friend and prekey (plan
     // E2.4) maintenance tasks on both hosts (the prekey one waits for the
-    // own-records stage to fill our record); on the daemon, the friends' presence watches too (the GUI's
-    // friend sync holds them until E2.5).
+    // own-records stage to fill our record); and the friends' watches (plan E2.5, D23).
     rekindle_transport::operations::direct::replay_unprocessed(
         &super::adapters::friends::HostFriends::of(ctx),
     )
@@ -153,9 +152,7 @@ pub(crate) async fn run(
         )
         .await;
     }
-    if ctx.mode == HostMode::Daemon {
-        super::adapters::friends::watch_friends(ctx, &scope);
-    }
+    super::adapters::friends::watch_friends(ctx, &scope);
     // 3c'. The DM chains (plan E2.5, D23): with the outbox and the friends
     // up, every accepted friend's chain is diffed from our cursor, so what
     // arrived while we were away is fetched whether or not its hint was.
