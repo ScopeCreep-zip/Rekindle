@@ -37,6 +37,17 @@ pub enum Framed {
         body: Vec<u8>,
         nonce: Nonce,
     },
+    /// An invite's redemption (plan E2.5, D17): the sealed `FriendRequest`
+    /// frame, written into the invite's request inbox as its one-time
+    /// writer (`friend::inbox`). The writer's secret is stored in the row
+    /// only because the row is in the identity's SQLCipher database (ruling
+    /// R2) and is deleted when the row settles.
+    Inbox {
+        record_key: String,
+        writer: String,
+        #[serde(with = "rekindle_types::base64_bytes")]
+        frame: Vec<u8>,
+    },
 }
 
 /// The D24 content hint of a kind: a text message may be resent from the
@@ -362,6 +373,9 @@ pub(super) fn datagram_of(
             let datagram = frame::wire(&frame::sealed_frame(host, to, &body, *nonce)?)?;
             Ok((datagram, type_id))
         }
+        Framed::Inbox { .. } => Err(FriendError::Invalid(
+            "an inbox write is not sent over a route".into(),
+        )),
     }
 }
 

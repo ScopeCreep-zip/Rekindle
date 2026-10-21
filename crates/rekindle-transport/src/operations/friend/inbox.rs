@@ -75,13 +75,15 @@ pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, Fri
     Ok(InboxCapability { record_key, writer })
 }
 
-/// Redeem `blob`: write our sealed `FriendRequest`, admitted by
-/// `invite_id`, into its inbox as the one-time writer. A retry writes the
-/// same subkey again under the same writer.
+/// Redeem `blob`: our sealed `FriendRequest`, admitted by `invite_id`,
+/// committed to our handshake stream to the inviter as an inbox write
+/// (plan E2.5): the outbox writes it into the invite's inbox as the
+/// one-time writer, again while the network misses it, and fails it
+/// visibly when the inbox already holds another requester's request.
 ///
 /// # Errors
-/// Our profile or route is not published yet, the frame cannot be sealed,
-/// or the write did not land.
+/// Our profile or route is not published yet, the frame cannot be sealed
+/// or is over the inbox's cap, or the row could not be stored.
 pub(crate) async fn redeem(
     host: &dyn FriendHost,
     blob: &InviteBlob,
@@ -97,16 +99,16 @@ pub(crate) async fn redeem(
             request_inbox::MAX_SUBKEY_VALUE_LEN
         )));
     }
-    records(host)?
-        .write_once(
-            &blob.inbox.record_key,
-            request_inbox::REQUEST,
-            frame,
-            Some(&blob.inbox.writer),
-        )
-        .await
-        .and_then(|outcome| outcome.require_stored(request_inbox::REQUEST))
-        .map_err(|e| FriendError::Failed(format!("request inbox not written: {e}")))
+    let inbox = &blob.inbox;
+    dm::handshake::enqueue_inbox(
+        host,
+        &blob.public_key,
+        &inbox.record_key,
+        &inbox.writer,
+        frame,
+    )
+    .await
+    .map(drop)
 }
 
 /// What landed in one of our inboxes: opened and applied as any inbound

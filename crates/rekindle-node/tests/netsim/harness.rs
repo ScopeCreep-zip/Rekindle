@@ -161,6 +161,11 @@ impl SimNode {
         seen
     }
 
+    /// Whether any event seen so far satisfies `pred`.
+    pub fn saw(events: &Events, pred: impl Fn(&SubscriptionEvent) -> bool) -> bool {
+        events.0.lock().iter().any(pred)
+    }
+
     /// The unlocked identity's `PrekeyStatus`, as the CLI's `keys prekeys
     /// status` and the debug `pqxdh_bundle_info` read it.
     pub async fn prekey_status(&self) -> rekindle_types::dto::identity::PrekeyStatus {

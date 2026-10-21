@@ -8,7 +8,8 @@
 //! delivery guarantee, and a request lost on the way would leave the row
 //! settled and the peer never asked), and the `Unfriended` row waits
 //! for the peer's `UnfriendedAck` (or fails at its deadline), which ends
-//! the removal.
+//! the removal. An invite's redemption is a request row too, whose send
+//! is the write into the invite's inbox ([`enqueue_inbox`]).
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmFrame, DmTypeId};
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
@@ -86,6 +87,58 @@ pub async fn enqueue_frame(
     commit(host, to, client_id(host, frame.type_id), payload).await
 }
 
+/// Commit an invite's redemption to our handshake stream to `to`, the
+/// inviter: `frame` (our sealed request) written into the inbox
+/// `record_key` as its one-time `writer` by the outbox. It returns once
+/// the row is stored.
+///
+/// # Errors
+/// The row could not be stored.
+pub async fn enqueue_inbox(
+    host: &dyn FriendHost,
+    to: &str,
+    record_key: &str,
+    writer: &str,
+    frame: Vec<u8>,
+) -> Result<String, FriendError> {
+    let payload = encode(&Framed::Inbox {
+        record_key: record_key.to_owned(),
+        writer: writer.to_owned(),
+        frame,
+    })?;
+    commit(host, to, client_id(host, DmTypeId::FriendRequest), payload).await
+}
+
+/// The reason an inbox write fails with when the inbox already holds
+/// another requester's request.
+pub const INBOX_TAKEN: &str = "the invite was already used";
+
+/// One write of an invite's redemption: stored (or already ours) settles
+/// it `sent`; a miss is attempted again; an inbox holding another value
+/// fails it visibly ([`INBOX_TAKEN`]).
+async fn attempt_inbox(
+    host: &dyn FriendHost,
+    record_key: &str,
+    writer: &str,
+    frame: &[u8],
+) -> Attempt {
+    use rekindle_records::port::SetOutcome;
+    let Ok(Ok(records)) = host.node().map(|node| node.require_records()) else {
+        return Attempt::Deferred;
+    };
+    let subkey = rekindle_types::dht_layout::request_inbox::REQUEST;
+    match records
+        .write_once(record_key, subkey, frame.to_vec(), Some(writer))
+        .await
+    {
+        Ok(SetOutcome::Landed | SetOutcome::Unchanged) => Attempt::Sent,
+        Ok(SetOutcome::Superseded(value)) if value.data == frame => Attempt::Sent,
+        Ok(SetOutcome::Superseded(_)) => Attempt::Wedged(INBOX_TAKEN.to_owned()),
+        Ok(SetOutcome::BelowConsensus | SetOutcome::Offline) => Attempt::Deferred,
+        Err(e) => Attempt::Wedged(format!("{INBOX_TAKEN}: {e}")),
+    }
+}
+
 async fn commit(
     host: &dyn FriendHost,
     to: &str,
@@ -108,6 +161,14 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Ok(framed) => framed,
         Err(e) => return Attempt::Wedged(format!("payload: {e}")),
     };
+    if let Framed::Inbox {
+        record_key,
+        writer,
+        frame,
+    } = &framed
+    {
+        return attempt_inbox(host, record_key, writer, frame).await;
+    }
     let (datagram, kind) = match send::datagram_of(host, to, &framed) {
         Ok(sent) => sent,
         Err(FriendError::Locked | FriendError::NotReady(_)) => return Attempt::Deferred,

@@ -129,12 +129,32 @@ async fn an_invite_admits_one_requester() {
         })
         .await;
     assert!(eventually(&sim, LIMIT, || has_request_from(&nodes[1], &ann)).await);
-    // The inbox holds Ann's request: a second redeemer's write is refused
-    // and they see it.
-    assert!(nodes[2]
-        .call(IpcRequest::FriendAddFromInvite { invite: invite.url })
-        .await
-        .is_err());
+    // The inbox holds Ann's request: a second redeemer's add returns once
+    // its redemption is committed, the write is refused and its row fails
+    // visibly, and no request of theirs reaches the inviter.
+    let events = nodes[2].events().await;
+    nodes[2]
+        .ok(IpcRequest::FriendAddFromInvite { invite: invite.url })
+        .await;
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            crate::harness::SimNode::saw(&events, redemption_failed)
+        })
+        .await,
+        "the second redemption's row failed visibly"
+    );
     assert!(!eventually(&sim, LIMIT, || has_request_from(&nodes[1], &cat)).await);
     assert!(has_request_from(&nodes[1], &ann).await);
+}
+
+/// Whether `event` is a friend request's row failing (`DmSendStatus` on
+/// the PendingOut row).
+fn redemption_failed(event: &rekindle_types::subscription_events::SubscriptionEvent) -> bool {
+    use rekindle_types::message::SendState;
+    use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+    matches!(
+        event,
+        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmSendStatus { client_id, state, .. })
+            if client_id.starts_with("FriendRequest:") && *state == SendState::Failed
+    )
 }
