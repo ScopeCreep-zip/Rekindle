@@ -8,7 +8,9 @@
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
-use crate::pair::{accept, holds_message, is_accepted_friend, request, send, LIMIT};
+use crate::pair::{
+    accept, has_request_from, holds_message, is_accepted_friend, key, request, send, LIMIT,
+};
 
 /// The unlocked identity's mailbox key, empty before the unlock made one.
 async fn mailbox(node: &SimNode) -> String {
@@ -105,4 +107,31 @@ async fn a_rotated_friend_is_messaged_both_ways() {
         ))
         .await
     );
+}
+
+/// An invite is single use (plan E2.5, D17): the first request written to
+/// its inbox is admitted and the inbox is dropped, so a second holder of
+/// the same link — whose write still lands, it holds the writer — is never
+/// admitted.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_invite_admits_one_requester() {
+    let (sim, mut nodes) = start(3, 11).await;
+    nodes[0].unlock_new_identity("Ann").await;
+    nodes[1].unlock_new_identity("Bea").await;
+    nodes[2].unlock_new_identity("Cat").await;
+    let (ann, cat) = (key(&nodes[0]), key(&nodes[2]));
+    let invite: rekindle_types::dto::friends::InviteCreated =
+        serde_json::from_value(nodes[1].ok(IpcRequest::FriendInviteCreate).await)
+            .expect("the invite");
+    nodes[0]
+        .ok(IpcRequest::FriendAddFromInvite {
+            invite: invite.url.clone(),
+        })
+        .await;
+    assert!(eventually(&sim, LIMIT, || has_request_from(&nodes[1], &ann)).await);
+    nodes[2]
+        .ok(IpcRequest::FriendAddFromInvite { invite: invite.url })
+        .await;
+    assert!(!eventually(&sim, LIMIT, || has_request_from(&nodes[1], &cat)).await);
+    assert!(has_request_from(&nodes[1], &ann).await);
 }

@@ -455,3 +455,67 @@ async fn the_creator_s_owner_key_rewrites_and_a_crash_loses_held_writes() {
     sim.fault(Fault::Heal);
     assert_eq!(sim.network_value(&key, 1), None);
 }
+
+/// A friend invite's request inbox (plan E2.5, D17): once the inviter's
+/// owner write puts it on the network, the invite's one-time writer writes
+/// the request subkey from another node, and nobody else can — not
+/// another keypair, and not the inviter's owner key.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn only_the_one_time_writer_writes_a_request_inbox() {
+    use rekindle_types::dht_layout::request_inbox;
+    let (_sim, nodes) = Netsim::nodes(3, 3);
+    let (inviter, redeemer, stranger) = (
+        nodes[0].ports.records.start_session().unwrap(),
+        nodes[1].ports.records.start_session().unwrap(),
+        nodes[2].ports.records.start_session().unwrap(),
+    );
+    let (writer, writer_key) = keypair(21);
+    let (other, _) = keypair(22);
+    let schema = rekindle_records::schema::request_inbox(&writer_key);
+    let (lease, key, _) = inviter.create(&schema, None).await.unwrap();
+    assert!(matches!(
+        redeemer.acquire(&key, None).await,
+        Err(PortError::Unreachable(_))
+    ));
+    inviter
+        .set(
+            lease,
+            request_inbox::OWNER,
+            request_inbox::OPENED.to_vec(),
+            None,
+        )
+        .await
+        .unwrap()
+        .require_stored(request_inbox::OWNER)
+        .unwrap();
+    assert!(matches!(
+        redeemer
+            .write_once(
+                &key,
+                request_inbox::REQUEST,
+                b"request".to_vec(),
+                Some(&writer)
+            )
+            .await,
+        Ok(SetOutcome::Landed)
+    ));
+    assert!(matches!(
+        stranger
+            .write_once(&key, request_inbox::REQUEST, b"spam".to_vec(), Some(&other))
+            .await,
+        Err(PortError::NotWritable(_))
+    ));
+    assert!(matches!(
+        inviter
+            .set(lease, request_inbox::REQUEST, b"owner".to_vec(), None)
+            .await,
+        Err(PortError::NotWritable(_))
+    ));
+    let theirs = stranger.acquire(&key, None).await.unwrap();
+    let value = stranger
+        .get(theirs, request_inbox::REQUEST, true)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(value.data, b"request");
+}
