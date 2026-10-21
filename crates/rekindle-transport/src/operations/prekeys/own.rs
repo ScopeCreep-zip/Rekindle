@@ -81,6 +81,50 @@ pub async fn publish(host: &dyn FriendHost, values: Vec<Publish>) -> Result<(), 
     }
 }
 
+/// Write `values` to our record, every one of which must land now (the
+/// identity rotation, plan E2.4: friends told of the new identity read
+/// its set from the record at once). Nothing is held for re-push, so an
+/// abandoned set never lands later; a set partly written is put back to
+/// our rows' values by [`reconcile`] (here, and at every maintenance
+/// tick if the network is still away). There is no retry here: the
+/// network layer already retried each write, and the user retries the
+/// rotation.
+///
+/// # Errors
+/// Our record is not open, or a write failed or missed: the error names
+/// every subkey that did not land.
+pub async fn publish_landed(
+    host: &dyn FriendHost,
+    values: Vec<Publish>,
+) -> Result<(), FriendError> {
+    let lease = host
+        .own_prekey_lease()
+        .ok_or_else(|| FriendError::NotReady("our prekey record is not open yet".to_string()))?;
+    let pool = host.node()?.require_records()?;
+    let mut written = Written::default();
+    let mut missed = Vec::new();
+    for Publish { subkey, value } in values {
+        match record::write_once(pool.as_ref(), lease, subkey, value).await {
+            Ok(outcome) if outcome.missed() => missed.push(format!("subkey {subkey}: {outcome:?}")),
+            Ok(_) => written.add(subkey),
+            Err(e) => missed.push(format!("subkey {subkey}: {e}")),
+        }
+    }
+    if missed.is_empty() {
+        written.publish(host);
+        return Ok(());
+    }
+    if written != Written::default() {
+        if let Err(e) = reconcile(host).await {
+            tracing::warn!(error = %e, "partly written prekey set not yet restored");
+        }
+    }
+    Err(FriendError::store(
+        "publish the prekey set",
+        missed.join("; "),
+    ))
+}
+
 /// What one [`publish`] call wrote.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Written {

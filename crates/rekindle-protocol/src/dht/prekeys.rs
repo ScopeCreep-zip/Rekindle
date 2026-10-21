@@ -97,6 +97,28 @@ fn fits(what: &str, value: &[u8]) -> Result<(), ProtocolError> {
     Ok(())
 }
 
+/// Write the head or one slot once, not held for re-push: a miss is the
+/// caller's to handle (the identity rotation, which must not leave a held
+/// value of a set it abandons to land later).
+///
+/// # Errors
+/// `subkey` is neither the head nor a slot, the value is larger than a
+/// subkey holds, or the write failed outright.
+pub async fn write_once(
+    pool: &dyn RecordPort,
+    lease: LeaseId,
+    subkey: u32,
+    value: Vec<u8>,
+) -> Result<SetOutcome, ProtocolError> {
+    if subkey != layout::HEAD && !is_slot(subkey) {
+        return Err(ProtocolError::DhtError(format!(
+            "subkey {subkey} is not the prekey head or a slot"
+        )));
+    }
+    fits("a prekey value", &value)?;
+    Ok(pool.set(lease, subkey, value, None).await?)
+}
+
 /// A peer's device list (their profile's subkey 5), read from the network
 /// when `force_refresh`; `None` before they published one.
 ///

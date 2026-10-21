@@ -7,5 +7,6 @@ mod harness;
 mod pair;
 mod prekey_collision;
 mod prekeys;
+mod rotation;
 mod scenarios;
 mod smoke;

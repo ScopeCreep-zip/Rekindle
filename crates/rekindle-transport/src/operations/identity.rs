@@ -31,8 +31,8 @@ pub fn mint_rotation_set(
 /// identity afterwards (`rekindle_node::host::identity::rotate`).
 ///
 /// # Errors
-/// No identity is unlocked, or the set was not published: no notice went
-/// out (P13: a friend's first send after the notice must find the set).
+/// No identity is unlocked, or a write of the set did not land: no notice
+/// went out (P13: a friend's first send after the notice must find the set).
 pub async fn rotate_identity(
     host: &dyn FriendHost,
     secret: &[u8; 32],
@@ -45,7 +45,11 @@ pub async fn rotate_identity(
     info!(new_public_key = %new_public_key_hex, "new keypair generated");
 
     let set = mint_rotation_set(&new_identity, mint_seed, issued_at_ms);
-    crate::operations::prekeys::publish(host, rekindle_db::prekeys::set_values(&set)).await?;
+    // Every write must land before any friend is told (plan E2.4): a
+    // friend who accepts reads the set at once, and a record still holding
+    // the old head would show them a false pin mismatch.
+    crate::operations::prekeys::publish_landed(host, rekindle_db::prekeys::set_values(&set))
+        .await?;
 
     // Every friend learns the new identity, signed by both, over the old
     // session, before the identity moves (plan E2.3).
