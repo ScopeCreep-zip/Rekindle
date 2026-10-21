@@ -5,9 +5,8 @@
 //! later hint (or a resend's) triggers; and no chain page holds plaintext.
 
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_netsim::Fault;
-
-use std::time::Duration;
+use rekindle_netsim::{Fault, Netsim};
+use rekindle_types::dht_layout::dm_participant;
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
 use crate::pair::{befriend, key, send, talk, LIMIT};
@@ -145,6 +144,31 @@ async fn a_lost_stream_record_is_resent_until_acknowledged() {
     );
 }
 
+/// The records Ida's changes reached Jon on that carry no retire mark yet:
+/// her participant record among them (a record's `RETIRE_THROUGH` subkey
+/// is empty until its first retire).
+fn unretired(sim: &Netsim) -> Vec<String> {
+    let mut keys: Vec<String> = sim
+        .trace()
+        .of(1)
+        .filter_map(|e| e.strip_prefix("1<-0 ValueChange ").map(str::to_string))
+        .filter(|k| {
+            sim.network_value(k, dm_participant::RETIRE_THROUGH)
+                .is_none()
+        })
+        .collect();
+    keys.dedup();
+    keys
+}
+
+/// Whether one of `keys` now carries a retire mark: Ida's chain is retired.
+fn retired(sim: &Netsim, keys: &[String]) -> bool {
+    keys.iter().any(|k| {
+        sim.network_value(k, dm_participant::RETIRE_THROUGH)
+            .is_some()
+    })
+}
+
 /// Ida retires her chain past entries Jon acknowledged (by their hints)
 /// but never diffed (his DHT was off); 31 days on, his diff stores a
 /// `HistoryGap` marker in his history.
@@ -175,7 +199,15 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,
     });
+    let keys = unretired(&sim);
     send(&nodes[0], &jon, "after the horizon").await;
+    // The send is committed, not yet appended: the append retires the
+    // stretch, and Jon must not be back (his watch and catch-up read the
+    // chain at once) before it has.
+    assert!(
+        eventually(&sim, LIMIT, || async { retired(&sim, &keys) }).await,
+        "Ida's chain is retired"
+    );
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: false,
@@ -211,8 +243,8 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
 
 /// The friend maintenance's retire tick (plan E2.5): Ida's chain is
 /// retired past entries Jon acknowledged but never diffed with no further
-/// send from her: 31 days on, her next tick retires them, and the diff of
-/// Jon's next unlock stores the `HistoryGap` marker.
+/// send from her: 31 days on, her next tick retires them while he is still
+/// away, and the diff of his next unlock stores the `HistoryGap` marker.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn the_retire_tick_retires_a_quiet_conversation() {
     let (sim, mut nodes) = start(2, 74).await;
@@ -236,10 +268,17 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
         .await,
         "Jon acknowledged it from its hint"
     );
+    let keys = unretired(&sim);
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,
     });
+    // No send from Ida: only her maintenance tick (~3 min) can retire, and
+    // Jon stays away until it has (back, he would read the stretch first).
+    assert!(
+        eventually(&sim, LIMIT * 4, || async { retired(&sim, &keys) }).await,
+        "Ida's tick retired her chain"
+    );
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: false,
@@ -257,23 +296,16 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
         .expect("the history");
         history.iter().any(|m| m.history_gap_through.is_some())
     };
-    // No send from Ida: only her maintenance tick (~3 min) can retire.
-    // Each round, Jon's next unlock catches up (`catch_up_all`) and diffs;
-    // the tick's DHT write may land after a round's unlock, so a few go.
-    let mut found = false;
-    for _ in 0..5 {
-        tokio::time::sleep(Duration::from_secs(3 * 60)).await;
-        nodes[1].ok(IpcRequest::Lock).await;
-        nodes[1]
-            .ok(IpcRequest::Unlock {
-                identity: jon.clone(),
-                passphrase: PASSPHRASE.into(),
-            })
-            .await;
-        if eventually(&sim, LIMIT, &gap).await {
-            found = true;
-            break;
-        }
-    }
-    assert!(found, "Jon's history holds the gap marker");
+    // Jon's next unlock catches up (`catch_up_all`) and diffs.
+    nodes[1].ok(IpcRequest::Lock).await;
+    nodes[1]
+        .ok(IpcRequest::Unlock {
+            identity: jon.clone(),
+            passphrase: PASSPHRASE.into(),
+        })
+        .await;
+    assert!(
+        eventually(&sim, LIMIT, gap).await,
+        "Jon's history holds the gap marker"
+    );
 }
