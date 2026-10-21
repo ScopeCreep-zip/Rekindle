@@ -4,19 +4,26 @@ import { startEventStream } from "../../ipc/channels";
 import Titlebar from "../../components/titlebar/Titlebar";
 import MessageList from "../../components/chat/MessageList";
 import TypingIndicator from "../../components/chat/TypingIndicator";
+import MessageInput from "../../components/chat/MessageInput";
 import { authState } from "../../stores/auth.store";
 import { groupDmState } from "../../stores/group-dm.store";
 import { hydrateState } from "../../stores/hydrate";
 import {
+  handleDiscardGroupSend,
+  handleGroupDraftChanged,
   handleLeaveGroupDm,
+  handleRetryGroupSend,
+  handleSendGroupDm,
   handleLoadGroupDms,
   handleLoadGroupMessages,
 } from "../../actions/group-dm.actions";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
-/// (`group_dm_messages`), its members as the Host labels them, who is
-/// typing, and Leave (reviewed by the Host). `groupId` is 32 hex; the
+/// (`group_dm_messages`) with members' messages as they arrive, its members
+/// as the Host labels them, who is typing, our send (its echo following
+/// `sendStatus`: queued, sent or failed, with Retry and Discard), our
+/// typing reported per edit, and Leave (reviewed by the Host). `groupId` is 32 hex; the
 /// backend builds the URL (`windows::open_chat_window`).
 const GroupChat: Component<{ groupId: string }> = (props) => {
   const groupId = props.groupId;
@@ -48,6 +55,13 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     for (const p of unlisteners) p.then((unlisten) => unlisten());
   });
 
+  const held = createMemo(() => !!group() && !group()!.pending);
+
+  async function send(body: string): Promise<void> {
+    const err = await handleSendGroupDm(groupId, body);
+    if (err) console.error("group_dm_send failed:", err);
+  }
+
   async function leave(): Promise<void> {
     const err = await handleLeaveGroupDm(groupId);
     if (!err) window.close();
@@ -74,20 +88,17 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           ownName={authState.displayName ?? "You"}
           peerName={name()}
           memberNames={memberNames()}
+          onRetry={(id) => void handleRetryGroupSend(groupId, id)}
+          onDiscard={(id) => void handleDiscardGroupSend(groupId, id)}
         />
         <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
-        {/* The compose box stays disabled until the group send request
-         *  (`GroupDmSend` → `operations::group_dm::send`, the outbox's
-         *  group_dm sender) is wired to this window; the history above is
-         *  read from the stored rows. */}
-        <div class="empty-placeholder group-chat-compose">
-          <textarea
-            class="message-input-field"
-            disabled
-            aria-label={`Message ${name()}`}
-            aria-disabled="true"
-          />
-        </div>
+        <MessageInput
+          peerId={groupId}
+          onSend={(_, body) => void send(body)}
+          onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}
+          disabled={!held()}
+          disabledMessage="You can send once you are in this group."
+        />
         <Show when={!group()}>
           <div class="empty-placeholder-subtitle" role="status">
             This group is not in your list.

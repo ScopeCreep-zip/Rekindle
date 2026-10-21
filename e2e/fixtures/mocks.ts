@@ -21,7 +21,7 @@ const HOST_CALLS = [
   // Safety numbers and verification (plan E2.3).
   "get_safety_number", "mark_identity_verified", "clear_identity_verification",
   "group_dm_create", "group_dm_accept", "group_dm_decline", "group_dm_leave", "group_dm_list",
-  "group_dm_messages",
+  "group_dm_messages", "group_dm_send", "group_dm_typing",
 ];
 
 /**

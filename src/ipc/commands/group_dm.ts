@@ -27,6 +27,14 @@ export const groupDmCommands = {
   groupDmAccept: (groupId: string) => hostInvoke<unknown>("group_dm_accept", { groupId }),
   groupDmDecline: (groupId: string) => hostInvoke<unknown>("group_dm_decline", { groupId }),
   groupDmLeave: (groupId: string) => hostInvoke<unknown>("group_dm_leave", { groupId }),
+  /** Our message's client id once its row and echo are committed
+   *  (`queued`, then `sendStatus` events). */
+  groupDmSend: (groupId: string, body: string) =>
+    hostInvoke<string>("group_dm_send", { groupId, body }),
+  /** Whether our draft to the group holds text; the Host decides what goes
+   *  out. */
+  groupDmTyping: (groupId: string, typing: boolean) =>
+    hostInvoke<unknown>("group_dm_typing", { groupId, typing }),
   groupDmList: () => hostInvoke<GroupDmView[]>("group_dm_list"),
   /** The newest `limit` stored messages of the group before `before` (ms),
    *  oldest first. */

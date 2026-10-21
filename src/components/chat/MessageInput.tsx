@@ -102,7 +102,8 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     mentions.recomputeOnInput(target.value, target.selectionStart ?? target.value.length);
     props.onTyping?.();
     // The 1:1 chat (no `onSend`) reports its draft for the typing indicator.
-    if (!props.onSend) handleDraftChanged(props.peerId, target.value);
+    if (props.onDraftChanged) props.onDraftChanged(target.value);
+    else if (!props.onSend) handleDraftChanged(props.peerId, target.value);
   }
 
   function insertEmoji(value: string): void {

@@ -22,6 +22,9 @@ export interface MessageInputProps {
   onEditSave?: (messageId: string, newBody: string) => void;
   onEditCancel?: () => void;
   onTyping?: () => void;
+  /** Each edit's draft, for a window that reports its own typing (a
+   *  group); without it a 1:1 draft is reported to `peerId`. */
+  onDraftChanged?: (body: string) => void;
   disabled?: boolean;
   disabledMessage?: string;
   slowmodeSeconds?: number;

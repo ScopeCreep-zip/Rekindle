@@ -89,7 +89,17 @@ export type GroupDmEvent =
   | { joined: { groupId: string; member: GroupDmMember } }
   | { left: { groupId: string; member: GroupDmMember } }
   | { keyRotated: { groupId: string; member: GroupDmMember; epoch: number } }
-  | { sendStatus: { groupId: string; clientId: string; state: SendState } };
+  | { sendStatus: { groupId: string; clientId: string; state: SendState } }
+  | {
+      message: {
+        groupId: string;
+        messageId: string;
+        sender: GroupDmMember;
+        body: string;
+        timestamp: number;
+        replyTo: string | null;
+      };
+    };
 
 export type TypingEvent =
   | { started: { context: TypingContext; who: string } }

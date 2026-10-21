@@ -64,3 +64,44 @@ export async function handleLoadGroupMessages(groupId: string, limit: number): P
     console.error("group_dm_messages failed", e);
   }
 }
+
+/** Send `body` to the group; once the Host commits its row, the stored
+ *  history (with our queued echo) is read again, and its state then
+ *  follows `sendStatus`. `null` on success, else the Host's error. */
+export async function handleSendGroupDm(groupId: string, body: string): Promise<string | null> {
+  try {
+    await commands.groupDmSend(groupId, body);
+    await handleLoadGroupMessages(groupId, 50);
+    return null;
+  } catch (e) {
+    return errorMessage(e);
+  }
+}
+
+/** Report the draft to the group after each edit: whether it holds text.
+ *  The Host decides what the members see, as for a peer; typing is best
+ *  effort, so a failed report is dropped. */
+export function handleGroupDraftChanged(groupId: string, body: string): void {
+  commands.groupDmTyping(groupId, body.trim().length > 0).catch(() => {});
+}
+
+function failedClientId(groupId: string, messageId: number): string | undefined {
+  const m = groupDmState.conversations[groupId]?.messages.find((x) => x.id === messageId);
+  return m?.status === "failed" ? m.serverMessageId : undefined;
+}
+
+/** Retry our failed group message (`OutboxRetry` takes any outbox row's
+ *  client id); its state arrives as `sendStatus`. */
+export async function handleRetryGroupSend(groupId: string, messageId: number): Promise<void> {
+  const clientId = failedClientId(groupId, messageId);
+  if (!clientId) return;
+  await commands.outboxRetry(clientId).catch((e) => console.error("Retry failed:", e));
+}
+
+/** Discard our failed group message (`OutboxDiscard`, reviewed by the
+ *  Host): it stays failed and leaves the group's stream. */
+export async function handleDiscardGroupSend(groupId: string, messageId: number): Promise<void> {
+  const clientId = failedClientId(groupId, messageId);
+  if (!clientId) return;
+  await commands.outboxDiscard(clientId).catch((e) => console.error("Discard failed:", e));
+}
