@@ -251,7 +251,7 @@ async fn a_retired_group_stretch_is_a_stored_history_gap() {
         ))
         .await
     );
-    let keys = unretired(&sim, 2, 0);
+    let keys = unretired(&sim, 2);
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,
