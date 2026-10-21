@@ -620,6 +620,7 @@
   "intent.fact.sessionDeleted": "sessionDeleted",
   "intent.fact.sessionKeptUntilReplaced": "sessionKeptUntilReplaced",
   "intent.fact.subjectNotTold": "subjectNotTold",
+  "intent.fact.unopenedMessagesLost": "unopenedMessagesLost",
   "intent.intentClass.consequential": "consequential",
   "intent.intentClass.destructive": "destructive",
   "intent.intentClass.protected": "protected",
