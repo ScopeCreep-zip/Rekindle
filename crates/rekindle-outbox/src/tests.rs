@@ -11,7 +11,7 @@ use rekindle_types::message::SendState;
 use rekindle_utils::random::RandomSource;
 use rekindle_utils::time::Clock;
 
-use crate::state::{merge, Input, PeerAck};
+use crate::state::{merge, PeerAck, StateInput};
 use crate::*;
 
 struct FixedClock(AtomicI64);
@@ -34,7 +34,7 @@ impl RandomSource for CounterRng {
 
 #[derive(Default)]
 struct Store {
-    rows: Vec<Row>,
+    rows: Vec<OutboxRow>,
     last_seq: HashMap<String, i64>,
     received: HashSet<(String, String)>,
     published: Vec<(String, SendState)>,
@@ -49,7 +49,7 @@ struct Fake {
     rng: Arc<CounterRng>,
 }
 
-fn blocked(rows: &[Row], row: &Row) -> bool {
+fn blocked(rows: &[OutboxRow], row: &OutboxRow) -> bool {
     rows.iter().any(|h| {
         h.stream == row.stream
             && h.stream_seq < row.stream_seq
@@ -57,7 +57,7 @@ fn blocked(rows: &[Row], row: &Row) -> bool {
     })
 }
 
-fn unsettled(row: &Row) -> bool {
+fn unsettled(row: &OutboxRow) -> bool {
     matches!(row.state, SendState::Queued | SendState::Sent)
 }
 
@@ -70,12 +70,12 @@ impl OutboxDeps for Fake {
     fn rng(&self) -> &dyn RandomSource {
         &*self.rng
     }
-    async fn insert(&self, row: NewRow, (): ()) -> Result<i64, OutboxError> {
+    async fn insert(&self, row: NewOutboxRow, (): ()) -> Result<i64, OutboxError> {
         let mut s = self.store.lock();
         let seq = s.last_seq.entry(row.stream.clone()).or_insert(0);
         *seq += 1;
         let stream_seq = *seq;
-        s.rows.push(Row {
+        s.rows.push(OutboxRow {
             stream: row.stream,
             stream_seq,
             client_id: row.client_id,
@@ -89,9 +89,9 @@ impl OutboxDeps for Fake {
         });
         Ok(stream_seq)
     }
-    async fn due(&self, now: i64) -> Result<Vec<Row>, OutboxError> {
+    async fn due(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError> {
         let s = self.store.lock();
-        let mut due: Vec<Row> = (s.rows.iter())
+        let mut due: Vec<OutboxRow> = (s.rows.iter())
             .filter(|r| unsettled(r) && r.next_at <= now && !blocked(&s.rows, r))
             .cloned()
             .collect();
@@ -100,7 +100,7 @@ impl OutboxDeps for Fake {
         });
         Ok(due)
     }
-    async fn expired(&self, now: i64) -> Result<Vec<Row>, OutboxError> {
+    async fn expired(&self, now: i64) -> Result<Vec<OutboxRow>, OutboxError> {
         let s = self.store.lock();
         Ok(s.rows
             .iter()
@@ -118,7 +118,7 @@ impl OutboxDeps for Fake {
         let ends = s.rows.iter().filter(|r| unsettled(r)).map(|r| r.deadline);
         Ok(due.chain(ends).min())
     }
-    async fn row(&self, client_id: &str) -> Result<Option<Row>, OutboxError> {
+    async fn row(&self, client_id: &str) -> Result<Option<OutboxRow>, OutboxError> {
         Ok(self
             .store
             .lock()
@@ -127,7 +127,7 @@ impl OutboxDeps for Fake {
             .find(|r| r.client_id == client_id)
             .cloned())
     }
-    async fn row_at(&self, stream: &str, seq: i64) -> Result<Option<Row>, OutboxError> {
+    async fn row_at(&self, stream: &str, seq: i64) -> Result<Option<OutboxRow>, OutboxError> {
         let s = self.store.lock();
         Ok(s.rows
             .iter()
@@ -156,7 +156,7 @@ impl OutboxDeps for Fake {
     async fn unsettled_count(&self) -> Result<u64, OutboxError> {
         Ok(self.store.lock().rows.len() as u64)
     }
-    async fn attempt(&self, row: &Row) -> AttemptOutcome {
+    async fn attempt(&self, row: &OutboxRow) -> AttemptOutcome {
         let mut s = self.store.lock();
         s.attempted.push(row.client_id.clone());
         s.outcomes.pop_front().unwrap_or(AttemptOutcome::Sent)
@@ -208,15 +208,18 @@ fn advance(o: &Outbox<Fake>, ms: i64) {
 #[test]
 fn the_lattice_only_climbs_and_failed_only_replaces_unsettled() {
     use SendState::*;
-    assert_eq!(merge(Queued, Input::LocalSent), Sent);
-    assert_eq!(merge(Delivered, Input::LocalSent), Delivered);
-    assert_eq!(merge(Read, Input::Peer(PeerAck::Delivered)), Read);
-    assert_eq!(merge(Sent, Input::Peer(PeerAck::Read)), Read);
-    assert_eq!(merge(Sent, Input::Failed), Failed);
-    assert_eq!(merge(Queued, Input::Failed), Failed);
-    assert_eq!(merge(Delivered, Input::Failed), Delivered);
-    assert_eq!(merge(Failed, Input::LocalSent), Failed);
-    assert_eq!(merge(Failed, Input::Peer(PeerAck::Delivered)), Delivered);
+    assert_eq!(merge(Queued, StateInput::LocalSent), Sent);
+    assert_eq!(merge(Delivered, StateInput::LocalSent), Delivered);
+    assert_eq!(merge(Read, StateInput::Peer(PeerAck::Delivered)), Read);
+    assert_eq!(merge(Sent, StateInput::Peer(PeerAck::Read)), Read);
+    assert_eq!(merge(Sent, StateInput::Failed), Failed);
+    assert_eq!(merge(Queued, StateInput::Failed), Failed);
+    assert_eq!(merge(Delivered, StateInput::Failed), Delivered);
+    assert_eq!(merge(Failed, StateInput::LocalSent), Failed);
+    assert_eq!(
+        merge(Failed, StateInput::Peer(PeerAck::Delivered)),
+        Delivered
+    );
 }
 
 #[tokio::test]

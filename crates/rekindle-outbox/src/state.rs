@@ -2,7 +2,7 @@
 //! read`, plus `failed`, merged monotonically. A lower state never
 //! overwrites a higher one; `failed` replaces only an unsettled state
 //! (`queued`, or `sent` and waiting for the peer). `delivered` and `read`
-//! come only from the peer ([`Input::Peer`]), never from a local send.
+//! come only from the peer ([`StateInput::Peer`]), never from a local send.
 
 use rekindle_types::message::SendState;
 
@@ -15,7 +15,7 @@ pub enum PeerAck {
 
 /// One input to a row's state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Input {
+pub enum StateInput {
     /// A send attempt left this device (the transport's `Ok`).
     LocalSent,
     /// The peer acknowledged the row.
@@ -42,12 +42,12 @@ pub fn is_unsettled(state: SendState) -> bool {
 
 /// `current` after `input`.
 #[must_use]
-pub fn merge(current: SendState, input: Input) -> SendState {
+pub fn merge(current: SendState, input: StateInput) -> SendState {
     let incoming = match input {
-        Input::LocalSent => SendState::Sent,
-        Input::Peer(PeerAck::Delivered) => SendState::Delivered,
-        Input::Peer(PeerAck::Read) => SendState::Read,
-        Input::Failed => {
+        StateInput::LocalSent => SendState::Sent,
+        StateInput::Peer(PeerAck::Delivered) => SendState::Delivered,
+        StateInput::Peer(PeerAck::Read) => SendState::Read,
+        StateInput::Failed => {
             return if is_unsettled(current) {
                 SendState::Failed
             } else {
@@ -58,7 +58,7 @@ pub fn merge(current: SendState, input: Input) -> SendState {
     match rank(current) {
         // The peer holding the row outranks a local failure; a local send
         // does not.
-        None if matches!(input, Input::Peer(_)) => incoming,
+        None if matches!(input, StateInput::Peer(_)) => incoming,
         Some(have) if rank(incoming) > Some(have) => incoming,
         _ => current,
     }

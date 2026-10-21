@@ -65,7 +65,7 @@ impl StreamKind {
 
     /// This kind's default retry policy.
     #[must_use]
-    pub fn policy(self) -> RetryPolicy {
+    pub fn policy(self) -> OutboxRetry {
         let (base, cap) = match self {
             Self::Dm => (1, 300),
             Self::FriendHandshake => (2, 900),
@@ -73,7 +73,7 @@ impl StreamKind {
             // C7.22's 1/2/4/8/15 s: a call key is useless late.
             Self::MediaKey => (1, 15),
         };
-        RetryPolicy::Backoff {
+        OutboxRetry::Backoff {
             base: Duration::from_secs(base),
             cap: Duration::from_secs(cap),
         }
@@ -82,14 +82,14 @@ impl StreamKind {
 
 /// When a row is attempted again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RetryPolicy {
+pub enum OutboxRetry {
     /// Exponential backoff from `base`, capped at `cap`, with equal jitter
     /// (half the step fixed, half uniform), so peers that failed together
     /// do not retry together.
     Backoff { base: Duration, cap: Duration },
 }
 
-impl RetryPolicy {
+impl OutboxRetry {
     /// The wait after the `attempts`-th attempt (1 for the first).
     #[must_use]
     pub fn delay(self, attempts: u32, rng: &dyn RandomSource) -> Duration {

@@ -13,10 +13,12 @@ mod engine;
 pub mod state;
 mod stream;
 
-pub use deps::{AttemptOutcome, NewRow, OutboxDeps, OutboxError, Row, RowUpdate, StateChange};
+pub use deps::{
+    AttemptOutcome, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate, StateChange,
+};
 pub use engine::{Deadline, Enqueued, Entry, Outbox, DEADLINE_REASON};
-pub use state::{Input, PeerAck};
-pub use stream::{RetryPolicy, StreamKind};
+pub use state::{PeerAck, StateInput};
+pub use stream::{OutboxRetry, StreamKind};
 
 #[cfg(test)]
 mod tests;

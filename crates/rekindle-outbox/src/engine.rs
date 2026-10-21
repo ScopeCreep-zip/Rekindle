@@ -7,8 +7,10 @@ use rekindle_types::message::SendState;
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 
-use crate::deps::{AttemptOutcome, NewRow, OutboxDeps, OutboxError, Row, RowUpdate, StateChange};
-use crate::state::{is_unsettled, merge, Input, PeerAck};
+use crate::deps::{
+    AttemptOutcome, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate, StateChange,
+};
+use crate::state::{is_unsettled, merge, PeerAck, StateInput};
 use crate::stream::StreamKind;
 
 /// The wait before the next pass after the storage failed.
@@ -90,7 +92,7 @@ impl<D: OutboxDeps> Outbox<D> {
             Deadline::At(at) => at,
         };
         let stream = entry.kind.stream(&entry.scope);
-        let row = NewRow {
+        let row = NewOutboxRow {
             stream: stream.clone(),
             client_id: entry.client_id.clone(),
             kind: entry.kind,
@@ -111,8 +113,8 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(Enqueued { stream, stream_seq })
     }
 
-    async fn fail(&self, row: &Row, reason: String) -> Result<(), OutboxError> {
-        let state = merge(row.state, Input::Failed);
+    async fn fail(&self, row: &OutboxRow, reason: String) -> Result<(), OutboxError> {
+        let state = merge(row.state, StateInput::Failed);
         let update = RowUpdate {
             state,
             attempts: row.attempts,
@@ -125,7 +127,7 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(())
     }
 
-    async fn attempt(&self, row: &Row) -> Result<(), OutboxError> {
+    async fn attempt(&self, row: &OutboxRow) -> Result<(), OutboxError> {
         let attempts = row.attempts.saturating_add(1);
         match self.deps.attempt(row).await {
             AttemptOutcome::Sent if !row.kind.awaits_ack() => {
@@ -135,7 +137,7 @@ impl<D: OutboxDeps> Outbox<D> {
             }
             outcome @ (AttemptOutcome::Sent | AttemptOutcome::Deferred) => {
                 let state = if outcome == AttemptOutcome::Sent {
-                    merge(row.state, Input::LocalSent)
+                    merge(row.state, StateInput::LocalSent)
                 } else {
                     row.state
                 };
@@ -186,7 +188,7 @@ impl<D: OutboxDeps> Outbox<D> {
         let Some(row) = self.deps.row_at(stream, stream_seq).await? else {
             return Ok(false);
         };
-        let state = merge(row.state, Input::Peer(ack));
+        let state = merge(row.state, StateInput::Peer(ack));
         self.deps.settle(&row.client_id, state).await?;
         self.deps.publish(StateChange::of(&row, state, None));
         self.wake.notify_one();

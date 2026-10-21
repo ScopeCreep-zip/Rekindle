@@ -52,6 +52,7 @@ rekindle-sync = { path = "../rekindle-sync" }
 # daemon implements its `MekDistributeDeps` so a departure rotates the
 # key on this track too; before this it only logged the intent.
 rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
+rekindle-outbox = { path = "../rekindle-outbox" }
 # MediaEncryptionKey — the key type `MekDistributeDeps` exchanges.
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-vault = { path = "../rekindle-vault" }

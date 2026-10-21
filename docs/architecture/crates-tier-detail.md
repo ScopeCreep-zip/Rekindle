@@ -291,6 +291,30 @@ See [`lifecycle-fsm.md`](lifecycle-fsm.md).
 Dependencies: `tokio`, `tokio-util` (`rt`), `futures-util` (`catch_unwind`),
 `parking_lot`.
 
+### rekindle-outbox
+
+The one owner of every send intent (plan E2.5, D22). A send is a row in an
+ordered stream `<kind>:<scope>` — kinds `dm`, `friend_handshake`,
+`dht_write`, `channel_post` and `media_key` (`group_dm` arrives at E2.6,
+`signaling` at E4.1) — written with its local echo in one transaction and
+attempted by `next_at` until it settles. Modules: `state` (one vocabulary,
+`queued < sent < delivered < read` plus `failed`, merged monotonically;
+`delivered`/`read` only from a peer ack, `failed` only over an unsettled
+state), `stream` (`StreamKind`, each kind's `OutboxRetry`: exponential
+backoff with equal jitter drawn from the injected `RandomSource`), `deps`
+(`OutboxDeps`: storage, attempt, clock, RNG and the state-change publish)
+and `engine` (`Outbox`: `enqueue`, `pump`, `run`, `acknowledge`, `retry`
+under the same client id, `discard`, `receive` dedupe, `unsettled`). Each
+row's deadline is `DELIVERY_HORIZON` (D24) unless its stream sets an
+earlier end; past it the row fails and wedges its stream head until Retry
+or Discard. Storage is `rekindle_db::repo::outbox`; `OutboxDeps` is
+implemented once in `rekindle-node/src/host/adapters/outbox/`. No SQL, no
+Veilid.
+
+Dependencies: `rekindle-types` (`SendState`), `rekindle-utils` (`Clock`,
+`RandomSource`), `rekindle-crypto` (`horizon::DELIVERY_HORIZON`),
+`async-trait`, `thiserror`, `tokio`, `tokio-util`, `tracing`.
+
 ## Tier 5 — Gossip Mesh & Presence
 
 ### rekindle-gossip

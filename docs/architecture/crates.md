@@ -46,6 +46,7 @@ crates/
 # ── Tier 4 — Routing ──────────────────────────────────────────────────
 ├── rekindle-route/                  (6) private-route lifecycle, peer cache
 ├── rekindle-lifecycle/              (4) 9-state app FSM + TransportGuard [NEW]
+├── rekindle-outbox/                 (6) the one durable outbox: send streams, delivery states, retry (D22) [NEW]
 
 # ── Tier 5 — Gossip mesh + presence ───────────────────────────────────
 ├── rekindle-gossip/                 (9) gossip mesh primitives
