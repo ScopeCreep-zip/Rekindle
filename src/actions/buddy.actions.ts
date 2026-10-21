@@ -173,12 +173,11 @@ export async function handleGenerateInvite(): Promise<{ url: string; inviteId: s
   try {
     const result = await commands.generateInvite();
     // Append to store so the invite list updates immediately
-    const now = Date.now();
     const newInvite: OutgoingInvite = {
       inviteId: result.inviteId,
       url: result.url,
-      createdAt: now,
-      expiresAt: now + 48 * 60 * 60 * 1000, // 48h default
+      createdAt: result.createdAt,
+      expiresAt: result.expiresAt,
       status: "pending",
       acceptedBy: null,
     };

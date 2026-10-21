@@ -6,14 +6,11 @@ use std::time::Duration;
 
 use rekindle_codec::message::envelope::InviteBlob;
 use rekindle_types::dto::friends::{InviteCreated, OutgoingInvite};
+use rekindle_types::invite::FRIEND_INVITE_TTL_SECS;
 
 use super::error::FriendError;
 use super::host::FriendHost;
 use super::state;
-
-/// 7-day invite recency window (B11): even a harvested link stops working
-/// after it, so a leaked link never grants indefinite reach.
-pub const MAX_INVITE_AGE_SECS: u64 = 7 * 24 * 3600;
 
 /// How long making an invite or a friend request waits for our profile,
 /// mailbox (and, for an invite, route) to be published (right after
@@ -105,12 +102,17 @@ pub async fn create(host: &dyn FriendHost) -> Result<InviteCreated, FriendError>
 
     let now = host.clock().now_ms_i64();
     let (owner, id, link) = (own.public_key, invite_id.clone(), url.clone());
-    state::db_call!(host, "store invite", move |conn| {
+    let expires_at = state::db_call!(host, "store invite", move |conn| {
         rekindle_db::repo::outgoing_invites::insert(conn, &owner, &id, &link, now)
     })
     .await?;
     tracing::info!(%invite_id, "generated tracked invite");
-    Ok(InviteCreated { url, invite_id })
+    Ok(InviteCreated {
+        url,
+        invite_id,
+        created_at: now,
+        expires_at,
+    })
 }
 
 /// Our open invites, newest first.
@@ -156,18 +158,22 @@ pub async fn expire_stale(host: &dyn FriendHost) -> Result<usize, FriendError> {
     .await
 }
 
-/// Whether `invite_id` was cancelled (a request answering it is rejected).
+/// Whether a request from `requester` may answer `invite_id` now: the
+/// invite is open and unexpired, or this requester already answered it (a
+/// retry). Cancelled, expired, used and unknown invites are refused.
 ///
 /// # Errors
 /// The invite's state could not be read.
-pub(crate) async fn is_cancelled(
+pub(crate) async fn admits_request(
     host: &dyn FriendHost,
     invite_id: &str,
+    requester: &str,
 ) -> Result<bool, FriendError> {
     let owner = state::owner(host)?;
-    let id = invite_id.to_string();
+    let (id, who) = (invite_id.to_string(), requester.to_string());
+    let now = host.clock().now_ms_i64();
     state::db_call!(host, "read invite", move |conn| {
-        rekindle_db::repo::outgoing_invites::is_cancelled(conn, &owner, &id)
+        rekindle_db::repo::outgoing_invites::admits_request(conn, &owner, &id, &who, now)
     })
     .await
 }
@@ -206,14 +212,14 @@ pub(crate) fn mark_rejected(host: &dyn FriendHost, invite_id: &str) {
 }
 
 /// The invite in a link: decoded, its signature checked, and no older
-/// than [`MAX_INVITE_AGE_SECS`].
+/// than [`FRIEND_INVITE_TTL_SECS`].
 ///
 /// # Errors
 /// `Invalid` when it does not decode, its signature fails, or it expired.
 pub fn open(link: &str, now_ms: u64) -> Result<InviteBlob, FriendError> {
     let blob = rekindle_codec::message::decode_invite_url(link).map_err(FriendError::Invalid)?;
     rekindle_codec::message::verify_invite_blob(&blob).map_err(FriendError::Invalid)?;
-    rekindle_codec::message::check_invite_recency(&blob, now_ms, MAX_INVITE_AGE_SECS)
+    rekindle_codec::message::check_invite_recency(&blob, now_ms, FRIEND_INVITE_TTL_SECS)
         .map_err(FriendError::Invalid)?;
     Ok(blob)
 }

@@ -4,7 +4,7 @@
 //! accept arrives as the first payload of the PreKeyInit that opened our
 //! session with the sender (plan E2.3).
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, RequestAuth};
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
@@ -39,7 +39,10 @@ async fn persist_request(
     let pdk = req.profile_dht_key.to_string();
     let rb = req.route_blob.to_vec();
     let mdk = req.mailbox_dht_key.to_string();
-    let iid = req.invite_id.map(str::to_string);
+    let iid = match req.auth {
+        RequestAuth::Invite(id) => Some(id.clone()),
+        RequestAuth::Token(_) => None,
+    };
     let now = host.clock().now_ms_i64();
     state::db_call!(host, "store friend request", move |conn| {
         rekindle_db::repo::pending_requests::upsert(
@@ -60,20 +63,21 @@ async fn persist_request(
     .await
 }
 
-/// A request that answers one of our invites: a cancelled invite's request
-/// is rejected; `false` when the request goes no further.
+/// A request that answers one of our invites: one answering a cancelled,
+/// expired, already-used or unknown invite is rejected; `false` when the
+/// request goes no further.
 async fn admit_invite(
     host: &dyn FriendHost,
     req: &IncomingFriendRequest<'_>,
     invite_id: &str,
 ) -> bool {
-    match invites::is_cancelled(host, invite_id).await {
-        Ok(false) => {
+    match invites::admits_request(host, invite_id, req.sender_hex).await {
+        Ok(true) => {
             invites::mark_responded(host, invite_id, req.sender_hex);
             true
         }
-        Ok(true) => {
-            tracing::info!(from = %req.sender_hex, %invite_id, "rejecting request for cancelled invite");
+        Ok(false) => {
+            tracing::info!(from = %req.sender_hex, %invite_id, "rejecting request for a closed invite");
             send_or_queue(
                 host,
                 req.sender_hex,
@@ -84,12 +88,48 @@ async fn admit_invite(
             false
         }
         Err(e) => {
-            // Unknown invite state: drop rather than accept a request that
-            // may answer a cancelled invite; the sender retries.
+            // Unreadable invite state: drop rather than accept a request
+            // that may answer a closed invite; the sender retries.
             tracing::warn!(from = %req.sender_hex, %invite_id, error = %e,
                 "invite status unreadable; dropping request");
             false
         }
+    }
+}
+
+/// A request carrying a friend-code token: admitted only when it is our
+/// current token, compared in constant time. A stale or wrong token is
+/// dropped silently — no reply, so a guesser learns nothing (plan E2.5,
+/// D17).
+async fn admit_token(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>, token: &str) -> bool {
+    let Ok(owner) = state::owner(host) else {
+        return false;
+    };
+    let ours = state::db_call!(host, "read friend token", move |conn| {
+        rekindle_db::repo::identity::friend_request_token(conn, &owner)
+    })
+    .await;
+    let admitted = match ours {
+        Ok(Some(ours)) => rekindle_types::key_format::friend_request_token(&ours)
+            .is_ok_and(|ours| rekindle_secrets::friend_token::matches(&ours, token)),
+        Ok(None) => false,
+        Err(e) => {
+            tracing::warn!(error = %e, "friend token unreadable; dropping request");
+            false
+        }
+    };
+    if !admitted {
+        tracing::debug!(from = %req.sender_hex, "friend request token refused — dropped");
+    }
+    admitted
+}
+
+/// The admission of a request from a stranger: by our friend-code token,
+/// or by one of our invites — the two paths stay apart.
+async fn admit(host: &dyn FriendHost, req: &IncomingFriendRequest<'_>) -> bool {
+    match req.auth {
+        RequestAuth::Token(token) => admit_token(host, req, token).await,
+        RequestAuth::Invite(invite_id) => admit_invite(host, req, invite_id).await,
     }
 }
 
@@ -131,13 +171,19 @@ pub(crate) async fn on_friend_request(
     host: &dyn FriendHost,
     req: &IncomingFriendRequest<'_>,
 ) -> bool {
+    let status = state::friendship(host, req.sender_hex);
+    // A stranger (or a friend we are removing) is admitted first; nothing
+    // of a refused request is kept, not even its route.
+    if matches!(status, None | Some(FriendshipState::Removing)) && !admit(host, req).await {
+        return true;
+    }
     if !req.route_blob.is_empty() {
         if let Ok(node) = host.node() {
             dm::route::cache(&node, req.sender_hex, req.route_blob.to_vec());
         }
     }
 
-    match state::friendship(host, req.sender_hex) {
+    match status {
         Some(FriendshipState::PendingOut) => {
             tracing::info!(from = %req.sender_hex, "cross-request detected — auto-accepting");
             accept_crossing_request(host, req).await;
@@ -160,11 +206,6 @@ pub(crate) async fn on_friend_request(
         None => {}
     }
 
-    if let Some(invite_id) = req.invite_id {
-        if !admit_invite(host, req, invite_id).await {
-            return true;
-        }
-    }
     match persist_request(host, req).await {
         Ok(true) => {}
         Ok(false) => {

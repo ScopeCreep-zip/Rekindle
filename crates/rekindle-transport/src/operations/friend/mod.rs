@@ -34,7 +34,7 @@ pub use error::FriendError;
 pub use host::{BackendHold, FriendHost, FriendStores};
 pub use invites::{
     cancel as cancel_invite, create as create_invite, expire_stale as expire_stale_invites,
-    list as invites, open as open_invite, MAX_INVITE_AGE_SECS,
+    list as invites, open as open_invite,
 };
 pub use list::{friends, pending};
 pub use list_record::push as push_friend_list;

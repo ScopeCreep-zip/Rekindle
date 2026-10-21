@@ -109,6 +109,10 @@ pub struct OutgoingInvite {
 pub struct InviteCreated {
     pub url: String,
     pub invite_id: String,
+    /// When it was made and when it stops admitting a request (ms; the one
+    /// TTL, `invite::FRIEND_INVITE_TTL_SECS`, which the UI shows from here).
+    pub created_at: i64,
+    pub expires_at: i64,
 }
 
 /// Our safety number with a peer and whether we verified it (plan E2.3):

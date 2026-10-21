@@ -1,6 +1,6 @@
 //! Friendship and session bodies.
 
-use rekindle_types::key_format::{MAX_INVITE_ID_LEN, MAX_NOTE_LEN};
+use rekindle_types::key_format::{self, FRIEND_REQUEST_TOKEN_LEN, MAX_INVITE_ID_LEN, MAX_NOTE_LEN};
 
 use crate::capnp_codec::direct::{
     bounded_text, data, display_name, fixed, opt_record_key, opt_text, record_key, PqPrekey,
@@ -11,6 +11,27 @@ use crate::direct_capnp::{
     profile_key_rotated, retry_request, session_reset_decline, session_reset_request,
 };
 
+/// What admits a friend request (plan E2.5, D17): exactly one of the
+/// target's friend-code token or one of its invites. The two paths stay
+/// apart on the wire and in the receiver's admission.
+#[derive(Clone, PartialEq, Eq)]
+pub enum RequestAuth {
+    /// The request-token our friend code carried.
+    Token(String),
+    /// The invite this request answers (its id; the invite capability).
+    Invite(String),
+}
+
+/// The token is never printed.
+impl std::fmt::Debug for RequestAuth {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Token(_) => f.write_str("Token(..)"),
+            Self::Invite(id) => f.debug_tuple("Invite").field(id).finish(),
+        }
+    }
+}
+
 /// 0x0002 FriendRequest (sealed, by `app_call`). It carries no bundle:
 /// the accepter reads our prekey record (plan E2.4).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,8 +41,8 @@ pub struct FriendRequest {
     pub profile_dht_key: String,
     pub route_blob: Vec<u8>,
     pub mailbox_dht_key: String,
-    /// The invite this request answers.
-    pub invite_id: Option<String>,
+    /// The token or the invite that admits it.
+    pub auth: RequestAuth,
 }
 
 impl FriendRequest {
@@ -31,7 +52,10 @@ impl FriendRequest {
         b.set_profile_dht_key(&self.profile_dht_key);
         b.set_route_blob(&self.route_blob);
         b.set_mailbox_dht_key(&self.mailbox_dht_key);
-        b.set_invite_id(self.invite_id.as_deref().unwrap_or_default());
+        match &self.auth {
+            RequestAuth::Token(token) => b.set_request_token(token),
+            RequestAuth::Invite(id) => b.set_invite_id(id),
+        }
     }
 
     pub(super) fn read(r: friend_request::Reader<'_>) -> Result<Self, CodecError> {
@@ -43,8 +67,33 @@ impl FriendRequest {
             profile_dht_key: record_key(r.get_profile_dht_key(), "profile key")?,
             route_blob: data(r.get_route_blob())?,
             mailbox_dht_key: opt_record_key(r.get_mailbox_dht_key(), "mailbox key")?,
-            invite_id: opt_text(r.get_invite_id(), MAX_INVITE_ID_LEN, "invite id")?,
+            auth: request_auth(r)?,
         })
+    }
+}
+
+/// The one admission a request names: a token of the friend-code shape,
+/// or an invite id; both or neither is refused.
+fn request_auth(r: friend_request::Reader<'_>) -> Result<RequestAuth, CodecError> {
+    let invite = opt_text(r.get_invite_id(), MAX_INVITE_ID_LEN, "invite id")?;
+    let token = opt_text(
+        r.get_request_token(),
+        FRIEND_REQUEST_TOKEN_LEN,
+        "request token",
+    )?;
+    match (token, invite) {
+        (Some(token), None) => {
+            key_format::friend_request_token(&token)
+                .map_err(|e| CodecError::Deserialization(format!("request token: {e}")))?;
+            Ok(RequestAuth::Token(token))
+        }
+        (None, Some(id)) => Ok(RequestAuth::Invite(id)),
+        (Some(_), Some(_)) => Err(CodecError::Deserialization(
+            "friend request names both a token and an invite".into(),
+        )),
+        (None, None) => Err(CodecError::Deserialization(
+            "friend request names neither a token nor an invite".into(),
+        )),
     }
 }
 

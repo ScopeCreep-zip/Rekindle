@@ -5,10 +5,12 @@
 use rekindle_types::dto::friends::OutgoingInvite;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
-/// How long an invite we made stays open: 48 hours.
-pub const INVITE_EXPIRY_MS: i64 = 48 * 60 * 60 * 1000;
+/// How long an invite we made stays open: the one invite TTL
+/// ([`rekindle_types::invite::FRIEND_INVITE_TTL_SECS`], plan E2.5).
+pub const INVITE_EXPIRY_MS: i64 =
+    rekindle_types::invite::FRIEND_INVITE_TTL_SECS.cast_signed() * 1000;
 
-/// Record a new invite, open for [`INVITE_EXPIRY_MS`].
+/// Record a new invite, open for [`INVITE_EXPIRY_MS`]; when it expires.
 ///
 /// # Errors
 /// The write failed.
@@ -18,19 +20,14 @@ pub fn insert(
     invite_id: &str,
     url: &str,
     created_at: i64,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<i64> {
+    let expires_at = created_at + INVITE_EXPIRY_MS;
     conn.execute(
         "INSERT INTO outgoing_invites (owner_key, invite_id, url, created_at, expires_at, status) \
          VALUES (?1, ?2, ?3, ?4, ?5, 'pending')",
-        params![
-            owner_key,
-            invite_id,
-            url,
-            created_at,
-            created_at + INVITE_EXPIRY_MS
-        ],
+        params![owner_key, invite_id, url, created_at, expires_at],
     )?;
-    Ok(())
+    Ok(expires_at)
 }
 
 /// Cancel a pending invite; whether one was.
@@ -45,19 +42,34 @@ pub fn cancel(conn: &Connection, owner_key: &str, invite_id: &str) -> rusqlite::
     )? > 0)
 }
 
-/// Whether the invite was cancelled (a request answering it is refused).
+/// Whether a request from `requester` may answer the invite at `now`: it
+/// is ours, still `pending` and not past its expiry, or `responded` by
+/// this same requester (their retry). A cancelled, expired, accepted,
+/// rejected, unknown, or someone else's answered invite is refused: an
+/// invite is single-use (plan E2.5, D17).
 ///
 /// # Errors
 /// The query failed.
-pub fn is_cancelled(conn: &Connection, owner_key: &str, invite_id: &str) -> rusqlite::Result<bool> {
-    let status: Option<String> = conn
+pub fn admits_request(
+    conn: &Connection,
+    owner_key: &str,
+    invite_id: &str,
+    requester: &str,
+    now: i64,
+) -> rusqlite::Result<bool> {
+    let row: Option<(String, i64, Option<String>)> = conn
         .query_row(
-            "SELECT status FROM outgoing_invites WHERE owner_key = ?1 AND invite_id = ?2",
+            "SELECT status, expires_at, accepted_by FROM outgoing_invites \
+             WHERE owner_key = ?1 AND invite_id = ?2",
             params![owner_key, invite_id],
-            |row| row.get(0),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    Ok(status.as_deref() == Some("cancelled"))
+    Ok(match row {
+        Some((status, expires_at, _)) if status == "pending" => now <= expires_at,
+        Some((status, _, by)) if status == "responded" => by.as_deref() == Some(requester),
+        _ => false,
+    })
 }
 
 /// A pending invite was answered by `responder_key`'s request.
@@ -156,9 +168,24 @@ mod tests {
         assert_eq!(open_now[1].accepted_by.as_deref(), Some("bob"));
         mark_accepted(&conn, OWNER, "a").unwrap();
         assert!(cancel(&conn, OWNER, "b").unwrap());
-        assert!(is_cancelled(&conn, OWNER, "b").unwrap());
+        assert!(!admits_request(&conn, OWNER, "b", "x", 0).unwrap());
         assert!(open(&conn, OWNER).unwrap().is_empty());
         insert(&conn, OWNER, "c", "rekindle://c", 0).unwrap();
         assert_eq!(expire(&conn, OWNER, INVITE_EXPIRY_MS + 1).unwrap(), 1);
+    }
+
+    #[test]
+    fn only_an_open_unexpired_invite_or_its_own_responder_is_admitted() {
+        let conn = fixture::conn();
+        let expires = insert(&conn, OWNER, "i", "u", 0).unwrap();
+        assert!(admits_request(&conn, OWNER, "i", "bob", expires).unwrap());
+        assert!(!admits_request(&conn, OWNER, "i", "bob", expires + 1).unwrap());
+        assert!(!admits_request(&conn, OWNER, "unknown", "bob", 0).unwrap());
+        mark_responded(&conn, OWNER, "i", "bob").unwrap();
+        assert!(admits_request(&conn, OWNER, "i", "bob", 0).unwrap());
+        assert!(!admits_request(&conn, OWNER, "i", "carol", 0).unwrap());
+        insert(&conn, OWNER, "e", "u", 0).unwrap();
+        expire(&conn, OWNER, expires + 1).unwrap();
+        assert!(!admits_request(&conn, OWNER, "e", "bob", 0).unwrap());
     }
 }

@@ -128,6 +128,8 @@
     "unreadCount": 0
   },
   "friends.inviteCreated": {
+    "createdAt": 1700000000000,
+    "expiresAt": 1700604800000,
     "inviteId": "3f2a7c1e-0000-4000-8000-000000000001",
     "url": "rekindle://abc"
   },

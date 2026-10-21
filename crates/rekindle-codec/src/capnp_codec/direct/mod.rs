@@ -28,9 +28,9 @@ pub use body::{
     DmAck, DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
     FriendsKey, GroupCallMember, GroupCallOffer, GroupCallParticipantLeft, GroupDmInvite,
     GroupDmLeave, IdentityRotated, PreKeyRejected, ProfileKeyRotated, RegisterPushRelay,
-    RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RetryRequest, SessionResetDecline,
-    SessionResetRequest, StatusRequest, StatusResponse, Typing, UnregisterPushRelay, WakeNotify,
-    MAX_DM_ACK_SEQS,
+    RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RequestAuth, RetryRequest,
+    SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse, Typing,
+    UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS,
 };
 pub use frame::{
     ContentHint, DmContent, DmFrame, FrameBody, PqPrekey, PreKeyInitBody, RatchetBody,

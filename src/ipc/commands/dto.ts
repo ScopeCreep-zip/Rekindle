@@ -99,6 +99,9 @@ export interface OutgoingInvite {
 export interface FriendInviteCreated {
   url: string;
   inviteId: string;
+  /** Milliseconds; the backend's one invite TTL decides `expiresAt`. */
+  createdAt: number;
+  expiresAt: number;
 }
 
 /** A freshly minted invite. */

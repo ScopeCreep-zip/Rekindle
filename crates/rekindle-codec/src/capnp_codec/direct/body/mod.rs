@@ -25,7 +25,7 @@ pub use calls::{
 pub use content::{DmAck, DmDelete, DmEdit, DmReaction, DmText, Typing, MAX_DM_ACK_SEQS};
 pub use friend::{
     FriendAccept, FriendRequest, FriendsKey, IdentityRotated, PreKeyRejected, ProfileKeyRotated,
-    RetryRequest, SessionResetDecline, SessionResetRequest,
+    RequestAuth, RetryRequest, SessionResetDecline, SessionResetRequest,
 };
 pub use group::{GroupDmInvite, GroupDmLeave};
 pub use relay::{

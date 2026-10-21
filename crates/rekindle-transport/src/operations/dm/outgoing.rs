@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, FriendRequest};
+use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, FriendRequest, RequestAuth};
 use rekindle_crypto::signal::PreKeyBundle;
 use rekindle_records::port::RouteClass;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
@@ -20,6 +20,8 @@ const ROUTE_WAIT: Duration = Duration::from_secs(5);
 
 /// Send a friend request, sealed to `to` and naming our profile, so the
 /// receiver can open the session from our prekey record when they accept.
+/// `auth` admits it: the token of the friend code we were given, or the
+/// invite we redeem (plan E2.5, D17).
 ///
 /// It goes by `app_call` when we hold a route to them: the call's empty
 /// return is the receipt (the receiver stored it), raising
@@ -33,7 +35,7 @@ pub async fn send_friend_request(
     host: &dyn FriendHost,
     to: &str,
     message: &str,
-    invite_id: Option<&str>,
+    auth: RequestAuth,
 ) -> Result<(), FriendError> {
     let own = state::own_identity(host)?;
     if own.profile_dht_key.is_empty() {
@@ -57,7 +59,7 @@ pub async fn send_friend_request(
         profile_dht_key: own.profile_dht_key,
         route_blob,
         mailbox_dht_key: own.mailbox_dht_key,
-        invite_id: invite_id.map(str::to_string),
+        auth,
     });
     if let Delivery::Receipted = call_or_send(host, to, &request).await? {
         host.publish(SubscriptionEvent::Friend(

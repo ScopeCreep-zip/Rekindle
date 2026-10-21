@@ -90,6 +90,7 @@ struct FriendRequest {
   routeBlob @4 :Data;
   mailboxDhtKey @5 :Text;
   inviteId @6 :Text;                    # empty when the request answers no invite
+  requestToken @7 :Text;                # the friend code's token; empty when it answers an invite
 }
 
 # 0x0101, the first payload of a PreKeyInit: the session it opens is the

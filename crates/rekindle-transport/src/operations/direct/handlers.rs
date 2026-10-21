@@ -78,7 +78,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
                 profile_dht_key: &r.profile_dht_key,
                 route_blob: &r.route_blob,
                 mailbox_dht_key: &r.mailbox_dht_key,
-                invite_id: r.invite_id.as_deref(),
+                auth: &r.auth,
             };
             applied = inbound::on_friend_request(host, &req).await;
         }

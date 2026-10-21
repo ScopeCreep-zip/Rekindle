@@ -237,6 +237,8 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
         to(InviteCreated {
             url: "rekindle://abc".into(),
             invite_id: "3f2a7c1e-0000-4000-8000-000000000001".into(),
+            created_at: 1_700_000_000_000,
+            expires_at: 1_700_604_800_000,
         }),
     );
     add(

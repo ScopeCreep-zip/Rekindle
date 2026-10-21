@@ -9,10 +9,15 @@
 //! assembled from a real record minted by `rekindle_db::prekeys` over a
 //! temporary database (a one-time slot included), and wire it as every 1:1
 //! send does (`operations::dm::wire`, the `'D'` tag included).
+//!
+//! A `FriendRequest` goes by `app_call`, whose cap is the same 32,768 B
+//! (`~/veilid/veilid-core/src/rpc_processor/coders/operations/operation_app_call.rs:3-4`):
+//! it is measured HPKE-sealed with each admission it can carry, the friend
+//! code's token or an invite (plan E2.5, D17).
 
 use rekindle_codec::capnp_codec::direct::{
     DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, FriendRequest, PqPrekey,
-    PreKeyRejected, RegisterPushRelay, SessionResetDecline, SessionResetRequest,
+    PreKeyRejected, RegisterPushRelay, RequestAuth, SessionResetDecline, SessionResetRequest,
     UnregisterPushRelay, WakeNotify,
 };
 use rekindle_db::test_support::Party;
@@ -89,18 +94,73 @@ async fn init_len(from: &Party, to: &Party, first: &DirectBody) -> usize {
 }
 
 #[tokio::test]
-async fn friend_request_fits() {
+async fn friend_request_fits_by_app_call_with_either_admission() {
     let (alice, bob) = (Party::new(1), Party::new(2));
-    let request = DirectBody::FriendRequest(FriendRequest {
-        display_name: widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
-        message: widest(rekindle_types::key_format::MAX_MESSAGE_LEN),
-        profile_dht_key: dht_key(),
-        route_blob: vec![0xAB; ROUTE_BLOB_LEN],
-        mailbox_dht_key: dht_key(),
-        invite_id: Some(uuid::Uuid::new_v4().to_string()),
-    });
-    let len = sealed_len(&alice, &bob, &request);
-    assert!(len <= MAX_APP_MESSAGE_LEN, "FriendRequest {len} B");
+    let token = rekindle_secrets::friend_token::mint().as_str().to_string();
+    let invite = uuid::Uuid::new_v4().to_string();
+    for auth in [RequestAuth::Token(token), RequestAuth::Invite(invite)] {
+        let request = DirectBody::FriendRequest(FriendRequest {
+            display_name: widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
+            message: widest(rekindle_types::key_format::MAX_MESSAGE_LEN),
+            profile_dht_key: dht_key(),
+            route_blob: vec![0xAB; ROUTE_BLOB_LEN],
+            mailbox_dht_key: dht_key(),
+            auth: auth.clone(),
+        });
+        let len = sealed_len(&alice, &bob, &request);
+        assert!(len <= MAX_APP_MESSAGE_LEN, "FriendRequest {auth:?} {len} B");
+    }
+}
+
+/// The friend code and the invite URL each come back out of the OS
+/// deep-link parser as what was printed.
+#[test]
+fn the_friend_code_and_the_invite_url_round_trip_through_deep_link_parse() {
+    use rekindle_types::friend_code::{FriendCode, MAX_FRIEND_CODE_URL_LEN};
+    use rekindle_types::invite::{DeepLink, MAX_FRIEND_INVITE_URL_LEN};
+
+    let secret = [7u8; 32];
+    let public_key = hex::encode(
+        rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&secret)
+            .verifying_key()
+            .to_bytes(),
+    );
+    let token = rekindle_secrets::friend_token::mint();
+    let url = format!(
+        "rekindle://add/{public_key}/{}/{}",
+        dht_key(),
+        token.as_str()
+    );
+    let code = FriendCode::parse(&url).unwrap();
+    assert!(code.to_url().len() <= MAX_FRIEND_CODE_URL_LEN);
+    assert_eq!(
+        DeepLink::parse(&code.to_url()),
+        Ok(DeepLink::Add(code.clone()))
+    );
+
+    let blob = rekindle_codec::message::create_invite_blob(
+        &secret,
+        &public_key,
+        &widest(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
+        &dht_key(),
+        &dht_key(),
+        &[0xAB; ROUTE_BLOB_LEN],
+        Some(&uuid::Uuid::new_v4().to_string()),
+        1_715_000_000_000,
+    );
+    let invite = rekindle_codec::message::encode_invite_url(&blob);
+    assert!(
+        invite.len() <= MAX_FRIEND_INVITE_URL_LEN,
+        "{} B",
+        invite.len()
+    );
+    let Ok(DeepLink::FriendInvite(parsed)) = DeepLink::parse(&invite) else {
+        panic!("the invite URL is not a friend invite");
+    };
+    let decoded = rekindle_codec::message::decode_invite_url(&parsed).unwrap();
+    rekindle_codec::message::verify_invite_blob(&decoded).unwrap();
+    assert_eq!(decoded.invite_id, blob.invite_id);
+    assert_eq!(decoded.route_blob, blob.route_blob);
 }
 
 #[tokio::test]

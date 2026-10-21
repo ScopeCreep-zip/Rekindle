@@ -11,6 +11,8 @@ pub mod bus_key;
 pub mod dht_outbox;
 #[cfg(test)]
 mod direct_tests;
+#[cfg(test)]
+mod friend_admission_tests;
 mod friends;
 mod game;
 pub mod gate;

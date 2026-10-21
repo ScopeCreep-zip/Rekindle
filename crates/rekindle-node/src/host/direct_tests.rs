@@ -57,8 +57,21 @@ pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
         matches!(unlocked, rekindle_ipc::protocol::IpcResponse::Ok { .. }),
         "{unlocked:?}"
     );
+    let owner = ann.clone();
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            rekindle_db::repo::identity::set_friend_request_token(conn, &owner, ANN_TOKEN)
+        })
+        .await
+        .unwrap();
     (host, hex::decode(ann).unwrap().try_into().unwrap())
 }
+
+/// The token Ann's friend code carries in these tests.
+pub(super) const ANN_TOKEN: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaa";
 
 /// Bob, an accepted friend of Ann's.
 pub(super) async fn befriend(host: &Host, owner: [u8; 32], bob: [u8; 32]) {
@@ -389,13 +402,25 @@ pub(super) fn sealed_request(
     nonce: [u8; 16],
     sent_at: u64,
 ) -> rekindle_codec::capnp_codec::direct::DmFrame {
+    let auth = rekindle_codec::capnp_codec::direct::RequestAuth::Token(ANN_TOKEN.into());
+    sealed_request_with(from, to, nonce, sent_at, auth)
+}
+
+/// A sealed friend request from `from` to `to` admitted by `auth`.
+pub(super) fn sealed_request_with(
+    from: &rekindle_crypto::Identity,
+    to: [u8; 32],
+    nonce: [u8; 16],
+    sent_at: u64,
+    auth: rekindle_codec::capnp_codec::direct::RequestAuth,
+) -> rekindle_codec::capnp_codec::direct::DmFrame {
     let body = DirectBody::FriendRequest(rekindle_codec::capnp_codec::direct::FriendRequest {
         display_name: "Bob".into(),
         message: "hi".into(),
         profile_dht_key: format!("VLD0:{}", "A".repeat(43)),
         route_blob: Vec::new(),
         mailbox_dht_key: format!("VLD0:{}", "B".repeat(43)),
-        invite_id: None,
+        auth,
     });
     rekindle_transport::operations::dm::frame::seal_presession(from, &to, &body, nonce, sent_at)
         .unwrap()
@@ -419,7 +444,7 @@ async fn reply(host: &Host, datagram: &[u8]) -> Vec<u8> {
 }
 
 /// The friend requests Ann holds.
-async fn requests(host: &Host, owner: [u8; 32]) -> usize {
+pub(super) async fn requests(host: &Host, owner: [u8; 32]) -> usize {
     let owner = hex::encode(owner);
     host.ctx
         .db
@@ -432,7 +457,7 @@ async fn requests(host: &Host, owner: [u8; 32]) -> usize {
 }
 
 /// How many `RequestReceived` events are already in `stream`.
-async fn received_events(stream: &mut rekindle_events::EventStream) -> usize {
+pub(super) async fn received_events(stream: &mut rekindle_events::EventStream) -> usize {
     let mut count = 0;
     while let Ok(Some(frame)) =
         tokio::time::timeout(std::time::Duration::from_millis(50), stream.next()).await
