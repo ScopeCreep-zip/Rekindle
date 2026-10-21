@@ -1,5 +1,5 @@
 //! Veilid's latency, always part of the model (plan E2.B). Every DHT call
-//! through a [`crate::FakePool`] and every app message or call costs
+//! through a session pool's backend (`records::dht::SimDht`) and every app message or call costs
 //! simulated time drawn, per node, from a generator seeded by the run seed.
 //! There is no switch that turns it off: a scenario's budgets are simulated
 //! time on a paused runtime, so a real network's waits cost no wall time.

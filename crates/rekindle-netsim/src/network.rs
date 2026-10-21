@@ -14,11 +14,11 @@ use parking_lot::Mutex;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
+use rekindle_record_pool::RecordPool;
 use rekindle_records::port::{PortEvent, RecordSchema, RecordValue, ValueChange};
 use tokio::sync::{mpsc, oneshot, watch};
 
 use crate::latency::Latency;
-use crate::records::FakePool;
 use crate::trace::Trace;
 
 /// The per-node event queue's bound, as the Veilid one (`UPDATE_QUEUE`).
@@ -83,10 +83,16 @@ pub(crate) struct NodeSlot {
     /// The node's local record copies, across its sessions (Veilid's
     /// local store).
     pub local: HashMap<(String, u32), RecordValue>,
+    /// The records in the node's local store (created or opened here):
+    /// opening one again needs no network (`open_record.rs:27-44`).
+    pub known: HashSet<String>,
+    /// The node's open records and the writer keypair each is open with
+    /// (node-wide, as Veilid's `opened_records`).
+    pub opened: HashMap<String, Option<String>>,
     /// What the node watches, by record key.
     pub watches: HashMap<String, BTreeSet<u32>>,
-    /// The node's live record sessions.
-    pub pools: Vec<Weak<FakePool>>,
+    /// The node's live record sessions (the production pool).
+    pub pools: Vec<Weak<RecordPool>>,
     /// Route ids this node imported.
     pub imported: HashSet<String>,
 }
@@ -219,7 +225,9 @@ impl Network {
         self.inner.lock().pending.iter().map(|p| p.due).min()
     }
 
-    /// Notify every node but `writer` that watches `subkey` of `key`.
+    /// Notify every node but `writer` that watches `subkey` of `key`. Each
+    /// watcher's storage manager stores the value it is sent when it is
+    /// newer than its local copy (the inbound `ValueChanged`).
     pub(crate) fn notify_watchers(
         &self,
         writer: usize,
@@ -228,8 +236,8 @@ impl Network {
         value: &RecordValue,
     ) {
         let watchers: Vec<usize> = {
-            let inner = self.inner.lock();
-            inner
+            let mut inner = self.inner.lock();
+            let watchers: Vec<usize> = inner
                 .nodes
                 .iter()
                 .enumerate()
@@ -242,7 +250,17 @@ impl Network {
                             .is_some_and(|subkeys| subkeys.contains(&subkey))
                 })
                 .map(|(i, _)| i)
-                .collect()
+                .collect();
+            for to in &watchers {
+                let local = &mut inner.nodes[*to].local;
+                let entry = local
+                    .entry((key.to_string(), subkey))
+                    .or_insert_with(|| value.clone());
+                if value.seq > entry.seq {
+                    *entry = value.clone();
+                }
+            }
+            watchers
         };
         for to in watchers {
             self.send(
@@ -261,7 +279,7 @@ impl Network {
     }
 
     /// The node's live record sessions.
-    pub(crate) fn pools(&self, node: usize) -> Vec<Arc<FakePool>> {
+    pub(crate) fn pools(&self, node: usize) -> Vec<Arc<RecordPool>> {
         let mut inner = self.inner.lock();
         let Some(slot) = inner.nodes.get_mut(node) else {
             return Vec::new();

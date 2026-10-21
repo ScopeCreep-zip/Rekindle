@@ -7739,6 +7739,8 @@ dependencies = [
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "rekindle-crypto",
+ "rekindle-lifecycle",
+ "rekindle-record-pool",
  "rekindle-records",
  "rekindle-route",
  "rekindle-secrets",

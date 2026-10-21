@@ -127,10 +127,15 @@ impl RecordPool {
             .local_seq(&key, subkey)
             .await
             .map_err(|e| to_port(&e))?;
-        let identical = self
-            .is_local_copy(&key, subkey, &data, writer.as_ref())
-            .await
-            .map_err(|e| to_port(&e))?;
+        // Only a subkey with a local copy is compared: veilid-core's get
+        // with no local value goes to the network even without
+        // `force_refresh` (`get_value.rs:72-92`), a full fanout online and
+        // `TryAgain` offline.
+        let identical = before.is_some()
+            && self
+                .is_local_copy(&key, subkey, &data, writer.as_ref())
+                .await
+                .map_err(|e| to_port(&e))?;
         let k = key.clone();
         let result = self
             .run("dht set", move |backend| async move {

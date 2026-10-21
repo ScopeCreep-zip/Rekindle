@@ -78,11 +78,11 @@ async fn only_the_schema_s_writers_write() {
     );
     assert!(matches!(
         pool.set(lease, 2, b"theirs".to_vec(), Some(&member)).await,
-        Err(PortError::NotWritable(_))
+        Err(PortError::Dht(_))
     ));
     assert!(matches!(
         pool.set(lease, 0, b"owner".to_vec(), Some(&other)).await,
-        Err(PortError::NotWritable(_))
+        Err(PortError::Dht(_))
     ));
     let cap = pool.subkey_cap(lease).unwrap();
     assert!(matches!(
@@ -266,7 +266,7 @@ async fn an_unanswered_call_times_out_and_a_partition_drops() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn an_offline_durable_write_is_held_and_lands_on_heal() {
+async fn an_offline_durable_write_is_held_and_the_pool_re_pushes_it() {
     let (sim, nodes) = Netsim::nodes(1, 7);
     let pool = nodes[0].ports.records.start_session().unwrap();
     let mut settled = pool.settled();
@@ -274,11 +274,9 @@ async fn an_offline_durable_write_is_held_and_lands_on_heal() {
         .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
         .await
         .unwrap();
+    // The pool's one retry layer answers a "try again" read.
     sim.fault(Fault::TryAgain { node: 0, calls: 1 });
-    assert!(matches!(
-        pool.get(lease, 0, true).await,
-        Err(PortError::Unreachable(_))
-    ));
+    assert_eq!(pool.get(lease, 0, true).await.unwrap(), None);
     sim.fault(Fault::DhtOffline {
         node: 0,
         offline: true,
@@ -290,8 +288,12 @@ async fn an_offline_durable_write_is_held_and_lands_on_heal() {
         SetOutcome::Offline
     );
     assert_eq!(pool.held_writes(), vec![(key.clone(), 0)]);
+    // The pool's re-push lands it once the network is back.
     sim.fault(Fault::Heal);
-    let landed = settled.try_recv().unwrap();
+    let landed = tokio::time::timeout(Duration::from_secs(120), settled.recv())
+        .await
+        .unwrap()
+        .unwrap();
     assert!(landed.landed);
     assert!(pool.held_writes().is_empty());
     assert_eq!(sim.network_value(&key, 0).unwrap().data, b"held");
@@ -503,13 +505,13 @@ async fn only_the_one_time_writer_writes_a_request_inbox() {
         stranger
             .write_once(&key, request_inbox::REQUEST, b"spam".to_vec(), Some(&other))
             .await,
-        Err(PortError::NotWritable(_))
+        Err(PortError::Dht(_))
     ));
     assert!(matches!(
         inviter
             .set(lease, request_inbox::REQUEST, b"owner".to_vec(), None)
             .await,
-        Err(PortError::NotWritable(_))
+        Err(PortError::Dht(_))
     ));
     let theirs = stranger.acquire(&key, None).await.unwrap();
     let value = stranger

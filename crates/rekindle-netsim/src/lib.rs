@@ -38,7 +38,7 @@ use tokio::sync::{mpsc, watch};
 pub use clock::{SimClock, SimRandom, SIM_EPOCH_MS};
 pub use messages::{FakeMessages, CALL_TIMEOUT};
 pub use network::Network;
-pub use records::{FakePool, FakeRecords};
+pub use records::FakeRecords;
 pub use routes::{FakeAllocator, FakeRoutes};
 pub use trace::Trace;
 
@@ -51,11 +51,13 @@ pub enum Fault {
     TryAgain { node: usize, calls: u32 },
     /// Every DHT call of the node fails (or stops failing): no connection.
     DhtOffline { node: usize, offline: bool },
-    /// The node's reads return its local copy without asking the network.
+    /// The node's reads see only its local copy: a get answers it and an
+    /// inspect reports no network seq.
     StaleReads { node: usize, stale: bool },
     /// The two groups cannot exchange app messages or calls.
     Partition { a: Vec<usize>, b: Vec<usize> },
-    /// Every partition ends, and every held write is pushed again.
+    /// Every partition and offline DHT ends, and every attached node is
+    /// ready again; the record pools' own timers re-push their held writes.
     Heal,
     /// This fraction (per mille) of app messages and calls is dropped.
     DropMessages { per_mille: u32 },
@@ -69,7 +71,8 @@ pub enum Fault {
     /// The node's own routes die: the owner and every importer hear of it.
     RouteDeath { node: usize },
     /// The node detaches (or reattaches): its DHT calls fail, no watch
-    /// change reaches it, and it hears an attachment change.
+    /// change reaches it, its readiness follows, and it hears an
+    /// attachment change.
     Detach { node: usize, detached: bool },
 }
 
@@ -122,6 +125,8 @@ impl Netsim {
                 events: events_tx,
                 ready,
                 local: std::collections::HashMap::new(),
+                known: std::collections::HashSet::new(),
+                opened: std::collections::HashMap::new(),
                 watches: std::collections::HashMap::new(),
                 pools: Vec::new(),
                 imported: std::collections::HashSet::new(),
@@ -256,15 +261,14 @@ impl Netsim {
     }
 
     fn heal(&self) {
-        let count = {
-            let mut inner = self.net.inner.lock();
-            inner.faults.partitions.clear();
-            inner.faults.dht_offline.clear();
-            inner.nodes.len()
-        };
-        for node in 0..count {
-            for pool in self.net.pools(node) {
-                pool.retry_held();
+        let mut inner = self.net.inner.lock();
+        inner.faults.partitions.clear();
+        inner.faults.dht_offline.clear();
+        let inner = &*inner;
+        for (node, slot) in inner.nodes.iter().enumerate() {
+            if !inner.faults.detached.contains(&node) {
+                slot.ready
+                    .send_if_modified(|ready| !std::mem::replace(ready, true));
             }
         }
     }
@@ -274,6 +278,9 @@ impl Netsim {
             let mut inner = self.net.inner.lock();
             toggle(&mut inner.faults.dht_offline, node, detached);
             toggle(&mut inner.faults.detached, node, detached);
+            if let Some(slot) = inner.nodes.get(node) {
+                slot.ready.send_replace(!detached);
+            }
             inner.nodes.len().saturating_sub(1) as u64
         };
         let (state, live) = if detached {
@@ -460,13 +467,12 @@ impl Netsim {
         self.net.inner.lock().owners.get(key).cloned()
     }
 
-    /// A kill -9 on `node`: its record sessions lose the writes they hold
+    /// A kill -9 on `node`: its record pools discard the writes they hold
     /// for a re-push, which live only in memory (a graceful lock saves
-    /// them for the next unlock). Nothing re-pushes them, not even
-    /// [`Fault::Heal`].
+    /// them for the next unlock). Nothing re-pushes them.
     pub fn lose_held(&self, node: usize) {
         for pool in self.net.pools(node) {
-            pool.forget_held();
+            drop(pool.take_held());
         }
     }
 
