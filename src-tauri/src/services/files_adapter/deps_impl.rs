@@ -290,7 +290,7 @@ impl FilesDeps for FilesAdapter {
         slot_index: u32,
         slot_keypair: &str,
         message: &ChannelMessage,
-    ) -> Result<(), FilesError> {
+    ) -> Result<rekindle_files::ChannelWrite, FilesError> {
         helpers::write_channel_message_impl(
             &self.state,
             community_id,
@@ -357,6 +357,18 @@ impl FilesDeps for FilesAdapter {
         state_helpers::call_route_blob(&self.state, route_blob, payload)
             .await
             .map_err(FilesError::Transport)
+    }
+
+    async fn queue_post(&self, post: &rekindle_files::ChannelPost) -> Result<(), FilesError> {
+        helpers::queue_post_impl(&self.state, post).await
+    }
+
+    async fn settle_posts(&self, record_key: &str, subkey: u32) {
+        helpers::settle_posts_impl(&self.state, record_key, subkey).await;
+    }
+
+    async fn fail_post(&self, message_id: &str) {
+        helpers::fail_post_impl(&self.state, message_id).await;
     }
 
     async fn insert_channel_message_full(

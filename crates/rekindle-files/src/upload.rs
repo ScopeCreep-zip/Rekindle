@@ -322,15 +322,17 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     })
     .await?;
 
-    // SMPL write — embed offer in a Message entry.
-    deps.write_channel_message_to_smpl(
+    // SMPL write — embed offer in a Message entry; its outbox row settles
+    // from the write (plan E2.5).
+    let target = crate::post::PostTarget {
         community_id,
-        &ctx.channel_key,
-        ctx.slot_index,
-        &ctx.slot_keypair,
-        &channel_msg,
-    )
-    .await?;
+        channel_id,
+        record_key: &ctx.channel_key,
+        slot_index: ctx.slot_index,
+        slot_keypair: &ctx.slot_keypair,
+        subkey: u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + ctx.slot_index,
+    };
+    crate::post::write_post(deps, &target, &channel_msg, &message_id).await?;
 
     // Architecture §28.7 — record this send for the slowmode window so
     // the next call to enforce_slowmode (from any send path) sees the

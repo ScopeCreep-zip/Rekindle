@@ -40,6 +40,9 @@ pub struct MockCalls {
     pub attachment_pinneds: Vec<([u8; 16], bool, u64)>, // attachment_id, pinned, lamport
     pub events: Vec<FilesEvent>,
     pub app_calls: Vec<Vec<u8>>, // routed payloads
+    pub posts_queued: Vec<crate::deps::ChannelPost>,
+    pub posts_settled: Vec<(String, u32)>,
+    pub posts_failed: Vec<String>,
 }
 
 /// Programmable app_call reply queue — pop FIFO.
@@ -80,6 +83,8 @@ pub struct MockDeps {
     /// Holds the TempDir alive (drop with the mock).
     pub _tempdir: TempDir,
 
+    /// What the channel write reports.
+    pub channel_write: crate::deps::ChannelWrite,
     /// Recorded mutations.
     pub calls: Mutex<MockCalls>,
     /// Programmable app_call_peer replies.
@@ -117,6 +122,7 @@ impl MockDeps {
             cache: Mutex::new(cache),
             pinned: PinnedSet::new(),
             _tempdir: temp,
+            channel_write: crate::deps::ChannelWrite::Stored,
             calls: Mutex::new(MockCalls::default()),
             replies: Mutex::new(MockReplies::default()),
         }
@@ -272,12 +278,25 @@ impl FilesDeps for MockDeps {
         _idx: u32,
         _keypair: &str,
         message: &ChannelMessage,
-    ) -> Result<(), FilesError> {
+    ) -> Result<crate::deps::ChannelWrite, FilesError> {
         self.calls
             .lock()
             .channel_messages_written
             .push(message.clone());
+        Ok(self.channel_write)
+    }
+
+    async fn queue_post(&self, post: &crate::deps::ChannelPost) -> Result<(), FilesError> {
+        self.calls.lock().posts_queued.push(post.clone());
         Ok(())
+    }
+
+    async fn settle_posts(&self, record_key: &str, subkey: u32) {
+        (self.calls.lock().posts_settled).push((record_key.to_owned(), subkey));
+    }
+
+    async fn fail_post(&self, message_id: &str) {
+        self.calls.lock().posts_failed.push(message_id.to_owned());
     }
 
     async fn write_attachment_cached_to_smpl(

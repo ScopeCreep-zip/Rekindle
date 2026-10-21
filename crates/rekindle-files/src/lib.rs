@@ -46,6 +46,7 @@ pub mod intent_facts;
 mod keys;
 pub mod manifest;
 pub mod pinned;
+mod post;
 pub mod sanitize;
 pub mod serve;
 pub mod upload;
@@ -56,7 +57,10 @@ mod test_mock;
 
 pub use cache::{scope_root, CacheConfig, CacheScope, ChunkCache};
 pub use chunker::{merkle_root_of, ChunkedFile, Chunker, CHUNK_SIZE_BYTES, MAX_FILE_SIZE_BYTES};
-pub use deps::{read_bitmap_for, FilesDeps, FilesEvent, InsertChannelMessage, SharedFilesDeps};
+pub use deps::{
+    read_bitmap_for, ChannelPost, ChannelWrite, FilesDeps, FilesEvent, InsertChannelMessage,
+    SharedFilesDeps,
+};
 pub use dht_scan::{discover_sources_in_entries, fetch_offer_in_entries, DiscoveredSource};
 pub use download::{
     assemble_attachment, download_attachment, fetch_attachment_to_cache, FetchedAttachment,

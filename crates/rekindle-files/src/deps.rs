@@ -27,6 +27,18 @@ use crate::cache::ChunkCache;
 use crate::error::FilesError;
 use crate::pinned::PinnedSet;
 use rekindle_types::attachment::{AttachmentBitmap, AttachmentOffer};
+pub use rekindle_types::message::ChannelPost;
+
+/// What an attachment message's channel write did (plan E2.5): the record
+/// pool's outcome, so the message's outbox row is settled by it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelWrite {
+    /// Our page is stored at consensus.
+    Stored,
+    /// The pool holds the page and re-pushes it; its settle settles the
+    /// message.
+    Held,
+}
 
 /// Events emitted to the UI as Lost Cargo flows complete.
 #[derive(Debug, Clone)]
@@ -179,7 +191,16 @@ pub trait FilesDeps: Send + Sync + 'static {
         slot_index: u32,
         slot_keypair: &str,
         message: &ChannelMessage,
-    ) -> Result<(), FilesError>;
+    ) -> Result<ChannelWrite, FilesError>;
+
+    /// Store `post`'s outbox `channel_post` row, its echo the attachment
+    /// message already written `queued` (plan E2.5).
+    async fn queue_post(&self, post: &ChannelPost) -> Result<(), FilesError>;
+    /// Our page of `record_key`/`subkey` was stored: every post waiting on
+    /// it settles `sent`.
+    async fn settle_posts(&self, record_key: &str, subkey: u32);
+    /// `message_id`'s write could not be made: its row settles `failed`.
+    async fn fail_post(&self, message_id: &str);
 
     async fn write_attachment_cached_to_smpl(
         &self,

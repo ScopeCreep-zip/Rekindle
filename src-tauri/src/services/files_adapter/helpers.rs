@@ -7,7 +7,9 @@ use std::path::Path;
 use std::sync::Arc;
 
 use rekindle_codec::community::channel_record::{ChannelAttachmentCached, ChannelMessage};
-use rekindle_files::{FilesError, FilesEvent};
+use rekindle_files::{ChannelPost, ChannelWrite, FilesError, FilesEvent};
+use rekindle_node::host::adapters::outbox::ChannelPosts;
+use rekindle_protocol::dht::community::channel_record::AppendOutcome;
 use rekindle_protocol::dht::community::channel_record::{
     write_member_attachment_cached, write_member_message,
 };
@@ -47,7 +49,7 @@ pub(super) async fn write_channel_message_impl(
     slot_index: u32,
     slot_keypair: &str,
     message: &ChannelMessage,
-) -> Result<(), FilesError> {
+) -> Result<ChannelWrite, FilesError> {
     let ctx = build_dht_writer_context(state, community_id)?;
     let written = write_member_message(
         ctx.pool.as_ref(),
@@ -59,7 +61,49 @@ pub(super) async fn write_channel_message_impl(
         message,
     )
     .await;
-    held_is_written(written, "SMPL channel write")
+    // A held page (or one a logout cut short) is the pool's to land; its
+    // settle settles the message's outbox row (plan E2.5).
+    match written {
+        Ok(AppendOutcome::Stored) => Ok(ChannelWrite::Stored),
+        Ok(AppendOutcome::Held) | Err(rekindle_protocol::ProtocolError::PoolClosed) => {
+            Ok(ChannelWrite::Held)
+        }
+        Err(e) => Err(FilesError::Transport(format!("SMPL channel write: {e}"))),
+    }
+}
+
+/// The unlocked identity's outbox `channel_post` stream.
+fn channel_posts(state: &Arc<AppState>) -> Result<ChannelPosts, FilesError> {
+    (state.host.current())
+        .and_then(|host| host.channel_posts())
+        .ok_or_else(|| FilesError::Db("no unlocked outbox".into()))
+}
+
+pub(super) async fn queue_post_impl(
+    state: &Arc<AppState>,
+    post: &ChannelPost,
+) -> Result<(), FilesError> {
+    (channel_posts(state)?.queue(post).await).map_err(|e| FilesError::Db(e.to_string()))
+}
+
+pub(super) async fn settle_posts_impl(state: &Arc<AppState>, record_key: &str, subkey: u32) {
+    let settled = match channel_posts(state) {
+        Ok(posts) => posts.settle(record_key, subkey, true).await.map(drop),
+        Err(e) => Err(rekindle_outbox::OutboxError::Storage(e.to_string())),
+    };
+    if let Err(error) = settled {
+        tracing::warn!(%error, "settling the attachment posts failed");
+    }
+}
+
+pub(super) async fn fail_post_impl(state: &Arc<AppState>, message_id: &str) {
+    let failed = match channel_posts(state) {
+        Ok(posts) => posts.fail(message_id).await.map(drop),
+        Err(e) => Err(rekindle_outbox::OutboxError::Storage(e.to_string())),
+    };
+    if let Err(error) = failed {
+        tracing::warn!(%error, message_id, "failing the attachment post failed");
+    }
 }
 
 pub(super) async fn write_attachment_cached_impl(
@@ -85,8 +129,8 @@ pub(super) async fn write_attachment_cached_impl(
 }
 
 /// A channel write the record pool holds (a miss, or one logout cut short)
-/// lands when it can (plan C7.13); file entries carry no delivery status,
-/// so held is written.
+/// lands when it can (plan C7.13); an `AttachmentCached` entry carries no
+/// delivery status, so held is written.
 fn held_is_written(
     written: Result<
         rekindle_protocol::dht::community::channel_record::AppendOutcome,
@@ -131,10 +175,9 @@ pub(super) async fn insert_channel_message_full_impl(
                 forwarded_from_author: None,
                 flags,
                 attachment_json: Some(&attachment_json),
-                // The upload's write does not report held from stored (E2.5
-                // gives attachments the outbox's state); a write that returned
-                // is sent, as the upload UI shows it.
-                send_state: rekindle_types::message::SendState::Sent,
+                // Queued: its outbox `channel_post` row's settle raises it
+                // (plan E2.5).
+                send_state: rekindle_types::message::SendState::Queued,
             },
         )
     })
