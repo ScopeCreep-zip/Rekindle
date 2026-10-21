@@ -1,12 +1,34 @@
 //! The channel pipeline's posts on the Host's outbox `channel_post` stream
 //! (plan E2.5): the Host owns the rows and their state; this only converts
-//! the Host's outbox errors to the pipeline's.
+//! the Host's outbox errors to the pipeline's, and forwards the outbox's
+//! Retry of a failed post to the pipeline's rewrite.
 
+use std::sync::Arc;
+
+use async_trait::async_trait;
 use rekindle_channel::deps::ChannelPost;
 use rekindle_channel::error::ChannelError;
-use rekindle_node::host::adapters::outbox::ChannelPosts;
+use rekindle_node::host::adapters::outbox::{post_of_row, ChannelPosts, Reissuer};
+use rekindle_outbox::OutboxRow;
 
 use super::ChannelAdapter;
+use crate::state::AppState;
+
+/// The outbox's Retry of a failed channel post, forwarded to
+/// `rekindle_channel::reissue::reissue_channel_post`.
+pub struct PostReissuer(pub Arc<AppState>);
+
+#[async_trait]
+impl Reissuer for PostReissuer {
+    async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
+        let post = post_of_row(row)?;
+        let adapter = crate::services::build_adapter(&self.0, ChannelAdapter::new)?;
+        rekindle_channel::reissue::reissue_channel_post(&adapter, &post)
+            .await
+            .map(drop)
+            .map_err(|e| e.to_string())
+    }
+}
 
 impl ChannelAdapter {
     fn channel_posts(&self) -> Result<ChannelPosts, ChannelError> {

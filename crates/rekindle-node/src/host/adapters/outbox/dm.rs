@@ -78,6 +78,7 @@ impl OutboxSlot {
         self.senders.remove(StreamKind::FriendHandshake);
         self.senders.remove(StreamKind::DhtWrite);
         self.senders.remove(StreamKind::MediaKey);
+        self.senders.remove(StreamKind::ChannelPost);
         self.current.write().take();
     }
 

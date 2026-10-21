@@ -26,11 +26,11 @@ use rekindle_types::message::SendState;
 use rekindle_utils::{Clock, RandomSource};
 use tokio::sync::broadcast;
 
-pub use channel_post::{ChannelPosts, SUPERSEDED};
+pub use channel_post::{post_of_row, ChannelPosts, SUPERSEDED};
 pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
 pub use media_key::{MediaKeyCarrier, MediaKeyDelivery, MediaKeyStreams, SESSION_ENDED};
-pub use senders::{Senders, StreamSender};
+pub use senders::{Reissuer, Senders, StreamSender};
 
 /// How many state changes a slow subscriber may fall behind by.
 const CHANGES: usize = 256;
@@ -296,6 +296,10 @@ impl OutboxDeps for HostOutbox {
 
     async fn attempt(&self, row: &OutboxRow) -> AttemptOutcome {
         self.senders.send(row).await
+    }
+
+    async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
+        self.senders.reissue(row).await
     }
 
     fn publish(&self, change: StateChange) {

@@ -123,6 +123,8 @@ pub(crate) fn resolve_outbound_mentions(
 /// channel write that missed consensus is held and re-pushed by the pool,
 /// and when its slot settles, the messages waiting on it are delivered, or
 /// failed when the network superseded our page. Runs on the login scope.
+/// The outbox's Retry of a failed post is installed to rewrite it through
+/// the same pipeline.
 ///
 /// # Errors
 /// [`ScopeClosed`] when the session already ended.
@@ -134,6 +136,11 @@ pub fn start_delivery_settle(
         return Ok(());
     };
     let mut settled = pool.settled();
+    if let Some(posts) = state.host.current().and_then(|host| host.channel_posts()) {
+        posts.install_reissuer(Arc::new(crate::services::channel_adapter::PostReissuer(
+            Arc::clone(&state),
+        )));
+    }
     scope.spawn_with_token("channel delivery settle", |stop| async move {
         loop {
             let event = match stop.run_until_cancelled(settled.recv()).await {

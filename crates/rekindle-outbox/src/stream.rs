@@ -79,9 +79,11 @@ impl StreamKind {
     #[must_use]
     pub fn policy(self) -> OutboxRetry {
         let (base, cap) = match self {
+            // The record pool's write of the slot is the send (plan E2.5).
+            Self::ChannelPost => return OutboxRetry::SettledExternally,
             Self::Dm => (1, 300),
             Self::FriendHandshake => (2, 900),
-            Self::DhtWrite | Self::ChannelPost => (1, 60),
+            Self::DhtWrite => (1, 60),
             // C7.22's 1/2/4/8/15 s: a call key is useless late.
             Self::MediaKey => (1, 15),
         };
@@ -99,20 +101,27 @@ pub enum OutboxRetry {
     /// (half the step fixed, half uniform), so peers that failed together
     /// do not retry together.
     Backoff { base: Duration, cap: Duration },
+    /// Never attempted by the engine: no sender, no attempt, no backoff
+    /// pass. Only the host's settle of the stream
+    /// ([`crate::Outbox::settle_stream`]) or the row's deadline settles it
+    /// (a `channel_post`, whose send is the record pool's write).
+    SettledExternally,
 }
 
 impl OutboxRetry {
-    /// The wait after the `attempts`-th attempt (1 for the first).
+    /// The wait after the `attempts`-th attempt (1 for the first); `None`
+    /// for a policy the engine never attempts.
     #[must_use]
-    pub fn delay(self, attempts: u32, rng: &dyn RandomSource) -> Duration {
+    pub fn delay(self, attempts: u32, rng: &dyn RandomSource) -> Option<Duration> {
         match self {
+            Self::SettledExternally => None,
             Self::Backoff { base, cap } => {
                 let step = base
                     .saturating_mul(1u32 << attempts.saturating_sub(1).min(20))
                     .min(cap);
                 let step_ms = u64::try_from(step.as_millis()).unwrap_or(u64::MAX);
                 let half = step_ms / 2;
-                Duration::from_millis(half + rng.below(step_ms - half + 1))
+                Some(Duration::from_millis(half + rng.below(step_ms - half + 1)))
             }
         }
     }

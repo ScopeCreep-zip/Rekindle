@@ -56,7 +56,7 @@ pub fn enforce_slowmode_with_bypass<D: ChannelMessagingDeps>(
 }
 
 /// Build the `CommunityEnvelope::MessageNotification` for a send.
-fn build_message_notification(
+pub(crate) fn build_message_notification(
     channel_id: &str,
     channel_msg: &ChannelMessage,
     slot_index: u32,
@@ -436,7 +436,7 @@ async fn resolve_write<D: ChannelMessagingDeps>(
 
 /// Tell the windows how the settled posts went, but `except` (the post
 /// whose own send reports its state).
-fn emit_settled<D: ChannelMessagingDeps>(
+pub(crate) fn emit_settled<D: ChannelMessagingDeps>(
     deps: &D,
     settled: &[ChannelPost],
     landed: bool,

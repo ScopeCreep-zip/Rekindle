@@ -25,6 +25,7 @@ pub mod pipeline;
 pub mod polls;
 pub mod reactions;
 pub mod receive;
+pub mod reissue;
 pub mod send;
 pub mod stage;
 mod text_keys;

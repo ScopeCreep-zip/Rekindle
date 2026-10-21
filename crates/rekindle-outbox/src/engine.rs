@@ -11,7 +11,7 @@ use crate::deps::{
     AttemptOutcome, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate, StateChange,
 };
 use crate::state::{is_unsettled, merge, PeerAck, StateInput};
-use crate::stream::StreamKind;
+use crate::stream::{OutboxRetry, StreamKind};
 
 /// The wait before the next pass after the storage failed.
 const STORAGE_RETRY: Duration = Duration::from_secs(5);
@@ -75,10 +75,18 @@ impl<D: OutboxDeps> Outbox<D> {
         self.deps.clock().now_ms_i64()
     }
 
-    fn backoff(&self, kind: StreamKind, attempts: u32) -> i64 {
-        let wait = kind.policy().delay(attempts, self.deps.rng());
-        self.now()
-            .saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX))
+    /// When `kind`'s row is next due after `attempts` attempts (0: its
+    /// first) at `now`: a kind the engine never attempts
+    /// ([`crate::OutboxRetry::SettledExternally`]) is due only at its
+    /// `deadline`, where the pass fails it first.
+    fn next_due(&self, kind: StreamKind, attempts: u32, now: i64, deadline: i64) -> i64 {
+        if attempts == 0 && kind.policy() != OutboxRetry::SettledExternally {
+            return now;
+        }
+        match kind.policy().delay(attempts, self.deps.rng()) {
+            Some(wait) => now.saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX)),
+            None => deadline,
+        }
     }
 
     /// Store `entry` with its local `echo`, `queued`, and wake the engine.
@@ -116,7 +124,7 @@ impl<D: OutboxDeps> Outbox<D> {
             client_id: entry.client_id,
             kind: entry.kind,
             payload: entry.payload,
-            next_at: now,
+            next_at: self.next_due(entry.kind, 0, now, deadline),
             deadline,
         }
     }
@@ -141,6 +149,9 @@ impl<D: OutboxDeps> Outbox<D> {
     }
 
     async fn attempt(&self, row: &OutboxRow) -> Result<(), OutboxError> {
+        if row.kind.policy() == OutboxRetry::SettledExternally {
+            return Ok(());
+        }
         let attempts = row.attempts.saturating_add(1);
         match self.deps.attempt(row).await {
             AttemptOutcome::Sent if !row.kind.awaits_ack() => {
@@ -160,7 +171,7 @@ impl<D: OutboxDeps> Outbox<D> {
                 let update = RowUpdate {
                     state,
                     attempts,
-                    next_at: self.backoff(row.kind, attempts),
+                    next_at: self.next_due(row.kind, attempts, self.now(), row.deadline),
                     deadline: row.deadline,
                     wedge_reason: None,
                 };
@@ -205,6 +216,9 @@ impl<D: OutboxDeps> Outbox<D> {
     /// The storage failed.
     pub async fn flush(&self, kind: StreamKind) -> Result<usize, OutboxError> {
         let mut attempted = 0;
+        if kind.policy() == OutboxRetry::SettledExternally {
+            return Ok(0);
+        }
         for row in self.deps.due(i64::MAX).await? {
             if row.kind == kind {
                 self.attempt(&row).await?;
@@ -320,7 +334,9 @@ impl<D: OutboxDeps> Outbox<D> {
     }
 
     /// The user's Retry: a failed row is queued again under the **same**
-    /// client id, with a fresh deadline; a queued one is attempted now.
+    /// client id, with a fresh deadline; a queued one is attempted now. A
+    /// row the engine never attempts has its write made again
+    /// ([`OutboxDeps::reissue`]); it fails at once when that cannot be.
     /// This is the one move down the lattice, and only the user makes it.
     ///
     /// # Errors
@@ -337,17 +353,31 @@ impl<D: OutboxDeps> Outbox<D> {
             return Ok(false);
         }
         let now = self.now();
+        let deadline = now.saturating_add(horizon_ms());
         let update = RowUpdate {
             state: SendState::Queued,
             attempts: 0,
-            next_at: now,
-            deadline: now.saturating_add(horizon_ms()),
+            next_at: self.next_due(row.kind, 0, now, deadline),
+            deadline,
             wedge_reason: None,
         };
         self.deps.update(client_id, &update).await?;
         if row.state != SendState::Queued {
             self.deps
                 .publish(StateChange::of(&row, SendState::Queued, None));
+        }
+        if row.kind.policy() == OutboxRetry::SettledExternally {
+            if let Err(reason) = self.deps.reissue(&row).await {
+                let queued = OutboxRow {
+                    state: SendState::Queued,
+                    attempts: 0,
+                    next_at: update.next_at,
+                    deadline,
+                    wedge_reason: None,
+                    ..row
+                };
+                self.fail(&queued, reason).await?;
+            }
         }
         self.wake.notify_one();
         Ok(true)

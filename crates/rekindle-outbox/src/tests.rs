@@ -41,6 +41,7 @@ struct Store {
     /// Settled entries as their echo keeps them: stream, seq, id, state.
     settled: Vec<(String, i64, String, SendState)>,
     attempted: Vec<String>,
+    reissued: Vec<String>,
     outcomes: VecDeque<AttemptOutcome>,
 }
 
@@ -207,6 +208,14 @@ impl OutboxDeps for Fake {
         let mut s = self.store.lock();
         s.attempted.push(row.client_id.clone());
         s.outcomes.pop_front().unwrap_or(AttemptOutcome::Sent)
+    }
+    async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
+        let mut s = self.store.lock();
+        s.reissued.push(row.client_id.clone());
+        if row.client_id.starts_with("gone") {
+            return Err("no slot".into());
+        }
+        Ok(())
     }
     fn publish(&self, change: StateChange) {
         self.store
@@ -445,7 +454,7 @@ async fn rows_outlive_the_engine_and_resends_are_received_once() {
 #[test]
 fn backoff_is_jittered_within_its_step_and_capped() {
     let rng = CounterRng(AtomicU64::new(3));
-    let ms = |kind: StreamKind, n| kind.policy().delay(n, &rng).as_millis();
+    let ms = |kind: StreamKind, n| kind.policy().delay(n, &rng).unwrap().as_millis();
     let first = ms(StreamKind::Dm, 1);
     assert!((500..=1_000).contains(&first), "{first}");
     let third = ms(StreamKind::Dm, 3);
@@ -453,12 +462,20 @@ fn backoff_is_jittered_within_its_step_and_capped() {
     let late = ms(StreamKind::MediaKey, 30);
     assert!((7_500..=15_000).contains(&late), "{late}");
     let again = CounterRng(AtomicU64::new(3));
-    assert_eq!(StreamKind::Dm.policy().delay(1, &again).as_millis(), first);
+    assert_eq!(
+        StreamKind::Dm
+            .policy()
+            .delay(1, &again)
+            .unwrap()
+            .as_millis(),
+        first
+    );
     assert_eq!(
         StreamKind::parse("friend_handshake"),
         Some(StreamKind::FriendHandshake)
     );
     assert_eq!(StreamKind::parse("group_dm"), None);
+    assert_eq!(StreamKind::ChannelPost.policy().delay(1, &rng), None);
 }
 
 #[tokio::test]
@@ -535,6 +552,38 @@ async fn a_channel_post_stream_settles_from_its_write_settle() {
             ("p3", SendState::Failed)
         ]
     );
+}
+
+#[tokio::test]
+async fn a_channel_post_gets_no_attempt_pass_and_fails_at_its_deadline() {
+    let o = outbox();
+    o.enqueue(entry(StreamKind::ChannelPost, "rk:4", "p1"), ())
+        .await
+        .unwrap();
+    let wake = o.pump().await.unwrap();
+    assert!(o.deps().store.lock().attempted.is_empty());
+    let deadline = o.deps().store.lock().rows[0].deadline;
+    assert_eq!(wake, Some(deadline), "no backoff pass, only its deadline");
+    assert_eq!(o.flush(StreamKind::ChannelPost).await.unwrap(), 0);
+    advance(&o, deadline);
+    o.pump().await.unwrap();
+    assert!(o.deps().store.lock().attempted.is_empty());
+    assert_eq!(state_of(&o, "p1"), Some(SendState::Failed));
+    // The user's Retry makes its write again under its id; the engine
+    // still never attempts it.
+    assert!(o.retry("p1").await.unwrap());
+    o.pump().await.unwrap();
+    assert!(o.deps().store.lock().attempted.is_empty());
+    assert_eq!(o.deps().store.lock().reissued, ["p1"]);
+    assert_eq!(state_of(&o, "p1"), Some(SendState::Queued));
+    // A write that cannot be made again fails the row at once.
+    o.enqueue(entry(StreamKind::ChannelPost, "rk:9", "gone1"), ())
+        .await
+        .unwrap();
+    advance(&o, deadline);
+    o.pump().await.unwrap();
+    assert!(o.retry("gone1").await.unwrap());
+    assert_eq!(state_of(&o, "gone1"), Some(SendState::Failed));
 }
 
 mod media_key;

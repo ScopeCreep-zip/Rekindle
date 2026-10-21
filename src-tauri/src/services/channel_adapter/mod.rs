@@ -35,6 +35,8 @@ mod events;
 mod misc;
 mod persist;
 mod posts;
+
+pub use posts::PostReissuer;
 mod state_mutations;
 mod state_reads;
 
