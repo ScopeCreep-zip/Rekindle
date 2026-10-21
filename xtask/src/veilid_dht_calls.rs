@@ -165,6 +165,7 @@ const VEILID_FREE: &[&str] = &[
     "rekindle-transport",
     "rekindle-records",
     "rekindle-record-pool",
+    "rekindle-netsim",
 ];
 
 /// Every mention of `veilid_core` (or a `veilid-core` dependency) in a
