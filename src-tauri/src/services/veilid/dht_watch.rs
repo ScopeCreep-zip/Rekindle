@@ -106,6 +106,7 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
             tracing::debug!(subkey, "no routing context to fetch subkey value");
             continue;
         };
+        crate::state_helpers::request_inbox_change(state, &key, &[subkey], &value);
         crate::state_helpers::friend_presence_change(state, &key, &[subkey], &value);
         // Mutual Aid (architecture §14.3): we hold a watch slot for this
         // record, so gossip-relay the notification to community peers

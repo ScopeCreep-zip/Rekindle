@@ -4,6 +4,7 @@
 //! (`presence`), the maintenance task (`maintenance`) and the pending
 //! message retry (`pending_retry`) run over it too.
 
+mod inbox_watch;
 mod maintenance;
 mod pending_retry;
 mod presence;
@@ -34,6 +35,8 @@ pub(crate) use maintenance::{
 pub struct FriendWatches {
     leases: Mutex<HashMap<String, LeaseId>>,
     unwatched: RwLock<HashSet<String>>,
+    /// Each open invite's request inbox lease, by record key (plan E2.5).
+    inboxes: Mutex<HashMap<String, LeaseId>>,
 }
 
 impl FriendWatches {
@@ -161,6 +164,48 @@ impl FriendHost for HostFriends {
         let pool = self.node().ok().and_then(|node| node.records());
         if let (Some(lease), Some(pool)) = (lease, pool) {
             pool.release(lease).await;
+        }
+    }
+
+    async fn keep_request_inbox(
+        &self,
+        record_key: &str,
+        owner_keypair: &str,
+        lease: LeaseId,
+    ) -> Result<(), FriendError> {
+        let kept = {
+            let guard = self.ctx.vault.lock();
+            guard
+                .as_ref()
+                .ok_or_else(|| FriendError::NotReady("the vault is locked".to_string()))
+                .and_then(|vault| {
+                    let entry = rekindle_vault::typed::owner_keys::OwnerEntry {
+                        record_key: record_key.to_string(),
+                        keypair: owner_keypair.to_string(),
+                    };
+                    rekindle_vault::typed::owner_keys::persist_inbox_owner(vault, &entry)
+                        .map_err(|e| FriendError::Failed(format!("inbox owner not saved: {e}")))
+                })
+        };
+        let pool = self
+            .node()?
+            .require_records()
+            .map_err(|e| FriendError::NotReady(format!("records: {e}")))?;
+        if let Err(e) = kept {
+            pool.release(lease).await;
+            return Err(e);
+        }
+        inbox_watch::hold(self, &pool, record_key, lease).await;
+        Ok(())
+    }
+
+    async fn drop_request_inbox(&self, record_key: &str) {
+        inbox_watch::release(self, record_key).await;
+        if let Some(vault) = self.ctx.vault.lock().as_ref() {
+            if let Err(e) = rekindle_vault::typed::owner_keys::forget_inbox_owner(vault, record_key)
+            {
+                tracing::warn!(error = %e, "invite inbox owner keypair not forgotten");
+            }
         }
     }
 
@@ -308,5 +353,6 @@ pub(crate) fn watch_friends(ctx: &DaemonContext, scope: &Arc<rekindle_lifecycle:
         for (peer, profile_key) in friends {
             host.watch_friend(&peer, &profile_key).await;
         }
+        inbox_watch::rewatch_pending(&host).await;
     });
 }

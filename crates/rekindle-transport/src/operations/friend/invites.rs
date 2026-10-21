@@ -1,6 +1,8 @@
-//! Friend invites we make: a signed invite link (no prekey bundle, plan
-//! C7.25) tracked in `outgoing_invites` until it is answered, cancelled or
-//! expires, and the invite a link we open carries.
+//! Friend invites we make: a signed invite link naming its single-use
+//! request inbox (no route and no prekey bundle, plans C7.25, E2.5)
+//! tracked in `outgoing_invites` until it is answered, cancelled or
+//! expires, when its inbox is dropped; and the invite a link we open
+//! carries.
 
 use std::time::Duration;
 
@@ -10,10 +12,11 @@ use rekindle_types::invite::FRIEND_INVITE_TTL_SECS;
 
 use super::error::FriendError;
 use super::host::FriendHost;
+use super::inbox;
 use super::state;
 
-/// How long making an invite or a friend request waits for our profile,
-/// mailbox (and, for an invite, route) to be published (right after
+/// How long making an invite or a friend request waits for our profile
+/// and mailbox to be published (right after
 /// unlock, while the own-records stage writes them).
 const PUBLISHED_WAIT: Duration = Duration::from_secs(30);
 /// How often that wait looks again.
@@ -25,13 +28,6 @@ const PUBLISHED_POLL: Duration = Duration::from_millis(500);
 fn records_published(host: &dyn FriendHost) -> Option<state::OwnIdentity> {
     let own = state::own_identity(host).ok()?;
     (!own.profile_dht_key.is_empty() && !own.mailbox_dht_key.is_empty()).then_some(own)
-}
-
-/// Our profile and mailbox keys and our route, once all are published.
-fn published(host: &dyn FriendHost) -> Option<(state::OwnIdentity, Vec<u8>)> {
-    let own = records_published(host)?;
-    let route_blob = host.node().ok()?.personal_route_blob()?;
-    Some((own, route_blob))
 }
 
 /// What `ready` gives, waiting up to [`PUBLISHED_WAIT`] for it.
@@ -67,33 +63,25 @@ pub(crate) async fn published_identity(
 /// Make a tracked friend invite.
 ///
 /// # Errors
-/// Our records or route are not published within 30 s, our own route does
-/// not import, or the invite cannot be stored.
+/// Our records are not published within 30 s, the inbox cannot be
+/// created, or the invite cannot be stored.
 pub async fn create(host: &dyn FriendHost) -> Result<InviteCreated, FriendError> {
     let secret = host.identity_secret()?;
-    let (own, route_blob) = await_published(host, published).await?;
-    tracing::info!(
-        route_blob_len = route_blob.len(),
-        route_count = route_blob.first().copied().unwrap_or(0),
-        "generate_invite: route blob from state"
-    );
-    if let Err(e) = host.node()?.routes().import(&route_blob) {
-        tracing::error!(error = %e, "generate_invite: OUR OWN route blob fails to import!");
-        return Err(FriendError::Failed(format!("route blob is invalid: {e}")));
-    }
+    let own = await_published(host, records_published).await?;
 
     let id_bytes = rekindle_utils::random::id_bytes_16_from(host.rng());
     let invite_id = uuid::Builder::from_random_bytes(id_bytes)
         .into_uuid()
         .to_string();
     let issued_at = host.clock().now_ms();
+    let inbox = inbox::create(host).await?;
     let blob = rekindle_codec::message::create_invite_blob(
         &secret,
         &own.public_key,
         &own.display_name,
         &own.mailbox_dht_key,
         &own.profile_dht_key,
-        &route_blob,
+        &inbox,
         Some(&invite_id),
         issued_at,
     );
@@ -102,10 +90,18 @@ pub async fn create(host: &dyn FriendHost) -> Result<InviteCreated, FriendError>
 
     let now = host.clock().now_ms_i64();
     let (owner, id, link) = (own.public_key, invite_id.clone(), url.clone());
-    let expires_at = state::db_call!(host, "store invite", move |conn| {
-        rekindle_db::repo::outgoing_invites::insert(conn, &owner, &id, &link, now)
+    let inbox_key = inbox.record_key.clone();
+    let stored = state::db_call!(host, "store invite", move |conn| {
+        rekindle_db::repo::outgoing_invites::insert(conn, &owner, &id, &link, &inbox_key, now)
     })
-    .await?;
+    .await;
+    let expires_at = match stored {
+        Ok(expires_at) => expires_at,
+        Err(e) => {
+            host.drop_request_inbox(&inbox.record_key).await;
+            return Err(e);
+        }
+    };
     tracing::info!(%invite_id, "generated tracked invite");
     Ok(InviteCreated {
         url,
@@ -141,21 +137,27 @@ pub async fn cancel(host: &dyn FriendHost, invite_id: &str) -> Result<(), Friend
     if !cancelled {
         return Err(FriendError::NotFound(format!("no open invite {invite_id}")));
     }
+    inbox::drop_for(host, invite_id).await;
     tracing::info!(%invite_id, "invite cancelled");
     Ok(())
 }
 
-/// Expire our invites past their time (the maintenance task).
+/// Expire our invites past their time and drop their inboxes (the
+/// maintenance task); how many.
 ///
 /// # Errors
 /// The expiry could not be written.
 pub async fn expire_stale(host: &dyn FriendHost) -> Result<usize, FriendError> {
     let owner = state::owner(host)?;
     let now = host.clock().now_ms_i64();
-    state::db_call!(host, "expire invites", move |conn| {
+    let inboxes = state::db_call!(host, "expire invites", move |conn| {
         rekindle_db::repo::outgoing_invites::expire(conn, &owner, now)
     })
-    .await
+    .await?;
+    for key in &inboxes {
+        host.drop_request_inbox(key).await;
+    }
+    Ok(inboxes.len())
 }
 
 /// Whether a request from `requester` may answer `invite_id` now: the
@@ -178,7 +180,8 @@ pub(crate) async fn admits_request(
     .await
 }
 
-/// A request from `responder` answered `invite_id`.
+/// A request from `responder` answered `invite_id`: the invite leaves
+/// `pending` and its inbox is dropped.
 pub(crate) fn mark_responded(host: &dyn FriendHost, invite_id: &str, responder: &str) {
     let Ok(owner) = state::owner(host) else {
         return;
@@ -187,6 +190,12 @@ pub(crate) fn mark_responded(host: &dyn FriendHost, invite_id: &str, responder: 
     state::db_fire!(host, "mark invite responded", move |conn| {
         rekindle_db::repo::outgoing_invites::mark_responded(conn, &owner, &id, &who)
     });
+    let owned = host.owned();
+    let id = invite_id.to_string();
+    host.scope()
+        .spawn_or_drop("drop answered invite inbox", async move {
+            inbox::drop_for(owned.as_ref(), &id).await;
+        });
 }
 
 /// We accepted the request that answered `invite_id`.

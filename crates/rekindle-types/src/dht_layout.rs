@@ -169,9 +169,51 @@ pub mod dm_participant {
     pub const SUBKEY_COUNT: u16 = 2;
 }
 
+/// Subkey layout for a friend invite's request inbox (plan E2.5, D17):
+/// `SMPL(o_cnt: 1, [oneTimeWriter])`, a single-use capability. The invite
+/// carries the one-time writer's keypair, so exactly one requester can
+/// write [`request_inbox::REQUEST`]; Veilid refuses any other writer
+/// (`veilid-core/src/storage_manager/schema.rs` `check_subkey_value_data`,
+/// "wrong writer", fork 0cd847de). The owner subkey is the inviter's and
+/// holds nothing: Veilid's SMPL owner range is what lets the inviter own
+/// (and so hold and drop) the record it created.
+pub mod request_inbox {
+    /// The inviter's owner subkey (never written).
+    pub const OWNER: u32 = 0;
+    /// Owner subkeys in the schema.
+    pub const OWNER_SUBKEY_COUNT: u16 = 1;
+    /// The one-time writer's subkey: the requester's sealed `FriendRequest`
+    /// frame.
+    pub const REQUEST: u32 = 1;
+    /// Subkeys the one-time writer owns.
+    pub const WRITER_SUBKEY_COUNT: u16 = 1;
+    /// Total subkeys of the record.
+    pub const SUBKEY_COUNT: u16 = OWNER_SUBKEY_COUNT + WRITER_SUBKEY_COUNT;
+    /// Largest value the writer's subkey accepts:
+    /// `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / subkey_count)` =
+    /// `min(32,768, 1,048,576 / 2)` = 32,768 bytes
+    /// (`veilid-core/src/storage_manager/schema.rs` SMPL `max_value_len`,
+    /// constants at `storage_manager/types/mod.rs:14-16`, fork 0cd847de).
+    pub const MAX_SUBKEY_VALUE_LEN: usize = 32_768;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{dm_participant, manifest, prekeys, profile};
+    use super::{dm_participant, manifest, prekeys, profile, request_inbox};
+
+    /// Pins the request inbox: the owner subkey, then the writer's, and the
+    /// per-subkey cap Veilid derives for two subkeys.
+    #[test]
+    fn request_inbox_layout_is_pinned() {
+        assert_eq!(request_inbox::OWNER, 0);
+        assert_eq!(
+            request_inbox::REQUEST,
+            u32::from(request_inbox::OWNER_SUBKEY_COUNT)
+        );
+        assert_eq!(request_inbox::SUBKEY_COUNT, 2);
+        let cap = usize::min(32_768, 1_048_576 / usize::from(request_inbox::SUBKEY_COUNT));
+        assert_eq!(request_inbox::MAX_SUBKEY_VALUE_LEN, cap);
+    }
 
     /// Pins the prekey record: the head, then exactly `SLOT_COUNT` slots,
     /// and the per-subkey cap Veilid derives for a DFLT(101) record.

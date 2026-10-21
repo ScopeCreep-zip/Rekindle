@@ -171,15 +171,8 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     state::put(host, friend);
 
     setup_invite_contact(host, &blob).await;
-    if let Err(e) = dm::send_friend_request(
-        host,
-        &blob.public_key,
-        "Added via invite link",
-        RequestAuth::Invite(invite_id),
-    )
-    .await
-    {
-        tracing::warn!(error = %e, "failed to send friend request");
+    if let Err(e) = super::inbox::redeem(host, &blob, invite_id, "Added via invite link").await {
+        tracing::warn!(error = %e, "failed to write the friend request to the invite's inbox");
     }
     host.watch_friend(&blob.public_key, &blob.profile_dht_key)
         .await;
@@ -193,9 +186,9 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     Ok(())
 }
 
-/// Cache the invite's route for immediate contact, end any session left
-/// from a prior friendship with this peer, and refresh the
-/// route from the peer's mailbox when it has a newer one.
+/// End any session left from a prior friendship with this peer, and cache
+/// the route in the peer's mailbox for contact once they accept (the
+/// invite carries no route: its request goes to the invite's inbox).
 ///
 /// Deliberately does NOT establish a session: the invite's bundle carries
 /// no one-time keys and `FriendRequest` has no session-init fields, so a
@@ -203,16 +196,9 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
 /// handshake is the `FriendRequest` → `FriendAccept` round trip, as for an
 /// add by public key.
 async fn setup_invite_contact(host: &dyn FriendHost, blob: &InviteBlob) {
-    tracing::info!(
-        peer = %blob.public_key,
-        route_blob_len = blob.route_blob.len(),
-        route_count = blob.route_blob.first().copied().unwrap_or(0),
-        "setup_invite_contact: received route blob from invite"
-    );
     let Ok(node) = host.node() else {
         return;
     };
-    dm::route::cache(&node, &blob.public_key, blob.route_blob.clone());
     state::forget_session(host, &blob.public_key).await;
     let Ok(records) = node.require_records() else {
         return;
@@ -225,8 +211,8 @@ async fn setup_invite_contact(host: &dyn FriendHost, blob: &InviteBlob) {
     {
         Ok(Some(fresh)) if !fresh.is_empty() => {
             dm::route::cache(&node, &blob.public_key, fresh);
-            tracing::debug!("refreshed route blob from peer's mailbox");
+            tracing::debug!("cached the route blob from the peer's mailbox");
         }
-        _ => tracing::trace!("no fresh route blob in peer mailbox — using invite blob"),
+        _ => tracing::trace!("no route blob in the peer's mailbox yet"),
     }
 }

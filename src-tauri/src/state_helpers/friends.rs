@@ -26,6 +26,15 @@ pub fn friend_display_name(state: &Arc<AppState>, key: &str) -> Option<String> {
     friend_field(state, key, |f| Some(f.display_name.clone()))
 }
 
+/// A watched record changed: when it is one of our invites' request
+/// inboxes, the Host opens what was written (plan E2.5, D17).
+pub fn request_inbox_change(state: &AppState, record_key: &str, subkeys: &[u32], value: &[u8]) {
+    if let Some(host) = state.host.current() {
+        host.friend_presence()
+            .request_inbox_change(record_key, subkeys, Some(value));
+    }
+}
+
 /// A watched record changed: when it is a friend's profile, the Host's
 /// friend presence applies it (plan E2.1).
 pub fn friend_presence_change(state: &AppState, record_key: &str, subkeys: &[u32], value: &[u8]) {

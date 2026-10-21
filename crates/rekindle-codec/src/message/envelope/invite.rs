@@ -16,9 +16,10 @@ pub struct InviteBlob {
     pub mailbox_dht_key: String,
     /// Sender's private profile DHT record key (for presence watching).
     pub profile_dht_key: String,
-    /// Sender's current route blob (for immediate contact, may be stale).
-    #[serde(with = "rekindle_types::base64_bytes")]
-    pub route_blob: Vec<u8>,
+    /// The invite's single-use request inbox (plan E2.5, D17): the
+    /// requester writes its sealed `FriendRequest` there, so the invite
+    /// carries no route.
+    pub inbox: InboxCapability,
     /// Correlation token linking this invite to tracked outgoing invites.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub invite_id: Option<String>,
@@ -35,6 +36,33 @@ pub struct InviteBlob {
     pub signature: Vec<u8>,
 }
 
+/// A friend invite's request inbox: the `SMPL(o_cnt: 1, [oneTimeWriter])`
+/// record (`rekindle_types::dht_layout::request_inbox`) and the keypair
+/// text of its one-time writer, the capability to write it once. The
+/// writer's secret is wiped when the value is dropped.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct InboxCapability {
+    /// The inbox's record key.
+    pub record_key: String,
+    /// The one-time writer's keypair text (`VLD0:<public>:<secret>`).
+    pub writer: String,
+}
+
+impl Drop for InboxCapability {
+    fn drop(&mut self) {
+        zeroize::Zeroize::zeroize(&mut self.writer);
+    }
+}
+
+impl std::fmt::Debug for InboxCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InboxCapability")
+            .field("record_key", &self.record_key)
+            .field("writer", &"<redacted>")
+            .finish()
+    }
+}
+
 /// Create a signed invite blob from identity credentials.
 ///
 /// Signs over a JSON-serialized form of the invite data (excluding the
@@ -47,7 +75,7 @@ pub fn create_invite_blob(
     display_name: &str,
     mailbox_dht_key: &str,
     profile_dht_key: &str,
-    route_blob: &[u8],
+    inbox: &InboxCapability,
     invite_id: Option<&str>,
     issued_at_ms: u64,
 ) -> InviteBlob {
@@ -60,7 +88,7 @@ pub fn create_invite_blob(
         display_name,
         mailbox_dht_key,
         profile_dht_key,
-        route_blob,
+        inbox,
         invite_id,
         issued_at_ms,
     ));
@@ -70,7 +98,7 @@ pub fn create_invite_blob(
         display_name: display_name.to_string(),
         mailbox_dht_key: mailbox_dht_key.to_string(),
         profile_dht_key: profile_dht_key.to_string(),
-        route_blob: route_blob.to_vec(),
+        inbox: inbox.clone(),
         invite_id: invite_id.map(str::to_string),
         issued_at: issued_at_ms,
         signature: signature.to_bytes().to_vec(),
@@ -79,7 +107,7 @@ pub fn create_invite_blob(
 
 /// The bytes an invite's signature covers: the registered domain
 /// `FRIEND_INVITE_SIG`, then every field but the signature as JSON, with
-/// the route blob base64 as the blob itself carries it. The domain keeps
+/// the inbox as its record key and writer text. The domain keeps
 /// an identity-key signature over invite JSON from ever verifying as any
 /// other identity-key signature, and the reverse.
 /// The invite carries no prekey bundle: B1's accepter starts the
@@ -90,7 +118,7 @@ fn signable_bytes(
     display_name: &str,
     mailbox_dht_key: &str,
     profile_dht_key: &str,
-    route_blob: &[u8],
+    inbox: &InboxCapability,
     invite_id: Option<&str>,
     issued_at_ms: u64,
 ) -> Vec<u8> {
@@ -99,7 +127,8 @@ fn signable_bytes(
         "display_name": display_name,
         "mailbox_dht_key": mailbox_dht_key,
         "profile_dht_key": profile_dht_key,
-        "route_blob": base64::engine::general_purpose::STANDARD.encode(route_blob),
+        "inbox_key": inbox.record_key,
+        "inbox_writer": inbox.writer,
         "invite_id": invite_id,
         "issued_at": issued_at_ms,
     });
@@ -137,7 +166,7 @@ pub fn verify_invite_blob(blob: &InviteBlob) -> Result<(), String> {
         &blob.display_name,
         &blob.mailbox_dht_key,
         &blob.profile_dht_key,
-        &blob.route_blob,
+        &blob.inbox,
         blob.invite_id.as_deref(),
         blob.issued_at,
     );
@@ -221,6 +250,23 @@ pub fn decode_invite_url(url: &str) -> Result<InviteBlob, String> {
 mod invite_blob_tests {
     use super::*;
 
+    fn inbox() -> InboxCapability {
+        InboxCapability {
+            record_key: "VLD0:inbox".into(),
+            writer: "VLD0:pub:secret".into(),
+        }
+    }
+
+    /// The longest inbox: a record key with its encryption half and a
+    /// writer's keypair text, each half 43 base64url characters.
+    fn worst_inbox() -> InboxCapability {
+        let half = "A".repeat(43);
+        InboxCapability {
+            record_key: format!("VLD0:{half}:{half}"),
+            writer: format!("VLD0:{half}:{half}"),
+        }
+    }
+
     fn make_secret() -> [u8; 32] {
         // Fixed test secret so the test is deterministic.
         let mut s = [0u8; 32];
@@ -247,7 +293,7 @@ mod invite_blob_tests {
             "Alice",
             "VLD0:mailbox-key",
             "VLD0:profile-key",
-            &[1u8, 2, 3],
+            &inbox(),
             Some("inv-123"),
             1_715_000_000_000,
         );
@@ -262,8 +308,8 @@ mod invite_blob_tests {
         use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
         let secret = make_secret();
         let pk = pubkey_hex(&secret);
-        let mut blob = create_invite_blob(&secret, &pk, "Alice", "mb", "pr", &[], None, 7);
-        let signed = signable_bytes(&pk, "Alice", "mb", "pr", &[], None, 7);
+        let mut blob = create_invite_blob(&secret, &pk, "Alice", "mb", "pr", &inbox(), None, 7);
+        let signed = signable_bytes(&pk, "Alice", "mb", "pr", &inbox(), None, 7);
         let domain = rekindle_types::domains::FRIEND_INVITE_SIG.as_bytes();
         assert_eq!(&signed[..domain.len()], domain);
         let bare = SigningKey::from_bytes(&secret).sign(&signed[domain.len()..]);
@@ -288,7 +334,7 @@ mod invite_blob_tests {
             "display_name": "Alice",
             "mailbox_dht_key": "VLD0:mailbox",
             "profile_dht_key": "VLD0:profile",
-            "route_blob": "AQID",
+            "inbox": { "record_key": "VLD0:k", "writer": "VLD0:p:s" },
             "invite_id": Some("inv-old"),
         });
         let signable_bytes = serde_json::to_vec(&pre_b11_signable).unwrap();
@@ -298,7 +344,7 @@ mod invite_blob_tests {
             display_name: "Alice".to_string(),
             mailbox_dht_key: "VLD0:mailbox".to_string(),
             profile_dht_key: "VLD0:profile".to_string(),
-            route_blob: vec![1u8, 2, 3],
+            inbox: inbox(),
             invite_id: Some("inv-old".to_string()),
             issued_at: 0, // pre-B11 sender didn't include this field
             signature: signature.to_bytes().to_vec(),
@@ -319,7 +365,7 @@ mod invite_blob_tests {
             "Alice",
             "mb",
             "pr",
-            &[],
+            &inbox(),
             None,
             1_715_000_000_000,
         );
@@ -338,7 +384,7 @@ mod invite_blob_tests {
             "Alice",
             "mb",
             "pr",
-            &[],
+            &inbox(),
             None,
             1_715_000_000_000,
         );
@@ -349,23 +395,25 @@ mod invite_blob_tests {
     }
 
     /// The worst-case friend invite fits the OS deep-link cap: a 64-char
-    /// display name of 4-byte characters, a 4,096-byte route blob (3.5x
-    /// the largest 1-hop blob measured) and an invite id (plan C7.25).
+    /// display name of 4-byte characters, record keys with their
+    /// encryption halves, the inbox writer's keypair text, an invite id
+    /// and the longest `issued_at` (plans C7.25, E2.5).
     #[test]
     fn the_worst_case_invite_url_fits_the_deep_link_cap() {
         use rekindle_types::invite::{DeepLink, MAX_FRIEND_INVITE_URL_LEN};
         let secret = make_secret();
         let pk = pubkey_hex(&secret);
-        let key = format!("VLD0:{}", "A".repeat(43));
+        let half = "A".repeat(43);
+        let key = format!("VLD0:{half}:{half}");
         let blob = create_invite_blob(
             &secret,
             &pk,
             &"😀".repeat(rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN),
             &key,
             &key,
-            &[0xAB; 4_096],
+            &worst_inbox(),
             Some("6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f"),
-            1_715_000_000_000,
+            u64::MAX,
         );
         let url = encode_invite_url(&blob);
         assert!(url.len() <= MAX_FRIEND_INVITE_URL_LEN, "{} B", url.len());
@@ -375,6 +423,6 @@ mod invite_blob_tests {
         ));
         let decoded = decode_invite_url(&url).unwrap();
         verify_invite_blob(&decoded).expect("the decoded invite verifies");
-        assert_eq!(decoded.route_blob.len(), 4_096);
+        assert_eq!(decoded.inbox, worst_inbox());
     }
 }

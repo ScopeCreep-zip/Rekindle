@@ -72,6 +72,33 @@ pub fn persist_owner(
     stored
 }
 
+/// Store an invite's request inbox owner keypair (plan E2.5, D17), under
+/// its record key.
+///
+/// # Errors
+/// The vault write failed.
+pub fn persist_inbox_owner(vault: &VaultStore, entry: &OwnerEntry) -> Result<(), VaultError> {
+    let mut bytes =
+        serde_json::to_vec(entry).map_err(|e| VaultError::Schema(format!("owner entry: {e}")))?;
+    let key = VaultKey::RequestInboxOwnerKeypair {
+        record: entry.record_key.clone(),
+    };
+    let stored = vault.put(&key, &bytes);
+    bytes.zeroize();
+    stored
+}
+
+/// Remove an invite's request inbox owner keypair: the invite left
+/// `pending` and its inbox is dropped.
+///
+/// # Errors
+/// The vault write failed.
+pub fn forget_inbox_owner(vault: &VaultStore, record_key: &str) -> Result<(), VaultError> {
+    vault.delete(&VaultKey::RequestInboxOwnerKeypair {
+        record: record_key.to_string(),
+    })
+}
+
 /// Remove `record`'s entry (a write that could not finish is undone).
 ///
 /// # Errors

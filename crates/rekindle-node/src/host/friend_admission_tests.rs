@@ -34,6 +34,7 @@ async fn invite(host: &Host, owner: [u8; 32], id: &'static str, created_at: i64)
                 &owner,
                 id,
                 "rekindle://x",
+                "inbox",
                 created_at,
             )
         })

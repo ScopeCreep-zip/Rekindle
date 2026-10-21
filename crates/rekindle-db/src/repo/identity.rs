@@ -472,7 +472,7 @@ mod tests {
     }
 
     fn insert_invite(conn: &Connection, id: &str) {
-        crate::repo::outgoing_invites::insert(conn, OWNER, id, "u", 1).unwrap();
+        crate::repo::outgoing_invites::insert(conn, OWNER, id, "u", "inbox", 1).unwrap();
     }
 
     /// The rotation stores the new identity's minted set under the new

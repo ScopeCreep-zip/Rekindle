@@ -82,6 +82,20 @@ pub fn dm_participant() -> RecordSchema {
     }
 }
 
+/// A friend invite's request inbox (plan E2.5, D17): one owner subkey and
+/// one subkey for the invite's one-time writer, whose raw Ed25519 public
+/// key is its member id (VLD0).
+#[must_use]
+pub fn request_inbox(one_time_writer: &[u8; 32]) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: layout::request_inbox::OWNER_SUBKEY_COUNT,
+        members: vec![SchemaMember {
+            key: *one_time_writer,
+            subkeys: layout::request_inbox::WRITER_SUBKEY_COUNT,
+        }],
+    }
+}
+
 /// A single-subkey record: our friend list, the account header.
 #[must_use]
 pub fn single() -> RecordSchema {
@@ -114,6 +128,7 @@ mod tests {
         assert_eq!(profile().subkey_count(), 9);
         assert_eq!(mailbox().subkey_count(), 1);
         assert_eq!(prekeys().subkey_count(), 101);
+        assert_eq!(request_inbox(&[3u8; 32]).subkey_count(), 2);
         let keys = [[1u8; 32], [2u8; 32]];
         assert_eq!(community_smpl(&keys).subkey_count(), 2);
         assert_eq!(channel(&keys).subkey_count(), 2);

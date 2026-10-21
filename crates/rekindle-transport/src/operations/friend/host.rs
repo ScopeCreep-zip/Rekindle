@@ -120,6 +120,17 @@ pub trait FriendHost: Send + Sync {
     async fn watch_friend(&self, peer: &str, profile_dht_key: &str);
     /// Stop watching a friend's profile record (removal, block, rotation).
     async fn unwatch_friend(&self, peer: &str);
+    /// Hold an invite's request inbox (plan E2.5, D17): keep its owner
+    /// keypair in the vault, and watch its writer's subkey on `lease`.
+    async fn keep_request_inbox(
+        &self,
+        record_key: &str,
+        owner_keypair: &str,
+        lease: rekindle_records::lease::LeaseId,
+    ) -> Result<(), FriendError>;
+    /// Drop an invite's request inbox: stop watching it, release it and
+    /// forget its owner keypair.
+    async fn drop_request_inbox(&self, record_key: &str);
     /// Move our profile to a new record under a fresh owner key (block),
     /// as the Host's own-records stage writes one; the new record's key.
     ///

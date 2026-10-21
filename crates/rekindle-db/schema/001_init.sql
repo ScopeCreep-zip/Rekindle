@@ -424,6 +424,8 @@ CREATE TABLE IF NOT EXISTS outgoing_invites (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     invite_id TEXT NOT NULL,
     url TEXT NOT NULL DEFAULT '',
+    -- The invite's request inbox record (plan E2.5, D17).
+    inbox_key TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'

@@ -13,6 +13,7 @@ mod error;
 mod host;
 pub mod identity_rotation;
 pub(crate) mod inbound;
+pub mod inbox;
 mod invites;
 mod list;
 mod list_record;

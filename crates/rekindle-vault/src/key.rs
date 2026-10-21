@@ -82,6 +82,11 @@ pub enum VaultKey {
     AccountOwnerKeypair,
     PersonalSyncOwnerKeypair,
     PrekeyRecordOwnerKeypair,
+    /// A friend invite's request inbox: its record key and owner keypair
+    /// (plan E2.5, D17), one entry per open invite.
+    RequestInboxOwnerKeypair {
+        record: String,
+    },
 
     /// Our identity rotation in flight (audit 2026-10-20 R-2): the new
     /// secret and its prekey set's mint seed, journalled before the first
@@ -107,6 +112,7 @@ impl VaultKey {
             | Self::AccountOwnerKeypair
             | Self::PersonalSyncOwnerKeypair
             | Self::PrekeyRecordOwnerKeypair
+            | Self::RequestInboxOwnerKeypair { .. }
             | Self::PendingRotation => "identity",
             Self::CommunityMek { .. }
             | Self::CommunityMekGeneration { .. }
@@ -133,6 +139,9 @@ impl VaultKey {
             Self::AccountOwnerKeypair => ("account_owner_keypair", vec![]),
             Self::PersonalSyncOwnerKeypair => ("personal_sync_owner_keypair", vec![]),
             Self::PrekeyRecordOwnerKeypair => ("prekey_record_owner_keypair", vec![]),
+            Self::RequestInboxOwnerKeypair { record } => {
+                ("request_inbox_owner_keypair", vec![s(record)])
+            }
             Self::PendingRotation => ("pending_rotation", vec![]),
             Self::CommunityMek { community } => ("community_mek", vec![s(community)]),
             Self::CommunityMekGeneration {
@@ -198,6 +207,9 @@ impl VaultKey {
             ("account_owner_keypair", []) => Self::AccountOwnerKeypair,
             ("personal_sync_owner_keypair", []) => Self::PersonalSyncOwnerKeypair,
             ("prekey_record_owner_keypair", []) => Self::PrekeyRecordOwnerKeypair,
+            ("request_inbox_owner_keypair", [r]) => {
+                Self::RequestInboxOwnerKeypair { record: r.clone() }
+            }
             ("pending_rotation", []) => Self::PendingRotation,
             ("community_mek", [c]) => Self::CommunityMek {
                 community: c.clone(),
@@ -295,6 +307,7 @@ mod tests {
                 channel: "ch".into(),
             },
             VaultKey::SlotKeypair { community: c() },
+            VaultKey::RequestInboxOwnerKeypair { record: c() },
             VaultKey::RegistryKeypair { community: c() },
             VaultKey::SlotSeed { community: c() },
             VaultKey::AuditMacKey,

@@ -164,14 +164,16 @@ const PAIRING_PREFIX: &str = "rekindle://pair";
 /// Every Rekindle URL.
 const SCHEME_PREFIX: &str = "rekindle://";
 /// Longest friend-invite URL accepted from the OS. A friend invite is a
-/// signed blob of keys, a display name and a route blob, with no prekey
-/// bundle (plan C7.25). The worst case, a 64-character name of 4-byte
-/// characters and a 4,096-byte route blob (3.5x the largest 1-hop blob
-/// measured, room for 3-hop inbound routes), encodes to 8,215 bytes: the
-/// route blob is base64 inside JSON that is base64url'd again. 12 KiB
-/// holds it with headroom (`rekindle-codec`'s
-/// `the_worst_case_invite_url_fits_the_deep_link_cap` builds it).
-pub const MAX_FRIEND_INVITE_URL_LEN: usize = 12 * 1024;
+/// signed blob of keys, a display name and its request inbox capability
+/// (the inbox record key and the one-time writer's keypair text), with no
+/// route and no prekey bundle (plans C7.25, E2.5). The worst case — a
+/// 64-character name of 4-byte characters (256 B), three record keys and
+/// the writer text at 92 B each, a 36-character invite id, a 20-digit
+/// `issued_at` and the 88-character signature, as JSON base64url'd behind
+/// `rekindle://` — encodes to 1,331 bytes. 2 KiB holds it with headroom
+/// (`rekindle-codec`'s `the_worst_case_invite_url_fits_the_deep_link_cap`
+/// builds it).
+pub const MAX_FRIEND_INVITE_URL_LEN: usize = 2 * 1024;
 
 /// How long a friend invite is honoured after it is minted: 7 days, the
 /// one expiry every host and the UI use (plan E2.5, D17). It bounds the

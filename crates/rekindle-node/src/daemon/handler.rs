@@ -300,6 +300,10 @@ impl InboundHandler for DaemonHandler {
 
         // A friend's profile changed: their presence (plan E2.1). The
         // inline value is the first changed subkey's only.
+        // One of our invites' request inboxes was written (plan E2.5, D17).
+        if let Some(host) = self.friends() {
+            host.request_inbox_change(record_key, &changed_subkeys, first_value.as_deref());
+        }
         if let (Some(host), Some(value), Some(first)) = (
             self.friends(),
             first_value.as_deref(),
