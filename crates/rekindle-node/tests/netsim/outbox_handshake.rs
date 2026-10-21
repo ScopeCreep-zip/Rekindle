@@ -27,16 +27,20 @@ async fn a_request_to_an_unreachable_peer_is_queued_and_sent_later() {
         node.unlock_new_identity(name).await;
     }
     let (rae, ann) = (key(&nodes[0]), key(&nodes[1]));
-    let invite: rekindle_types::dto::friends::InviteCreated =
-        serde_json::from_value(nodes[1].ok(IpcRequest::FriendInviteCreate).await)
-            .expect("the invite");
+    // By Ann's friend code: the request goes by app_call, which a
+    // partition stops (an invite's request is a record write instead).
+    let code: rekindle_types::dto::friends::FriendCodeView =
+        serde_json::from_value(nodes[1].ok(IpcRequest::FriendCode).await).expect("the code");
     sim.fault(Fault::Partition {
         a: vec![0],
         b: vec![1],
     });
     let events = nodes[0].events().await;
     nodes[0]
-        .ok(IpcRequest::FriendAddFromInvite { invite: invite.url })
+        .ok(IpcRequest::FriendAddFromCode {
+            code: code.url,
+            message: "hi".to_string(),
+        })
         .await;
 
     tokio::time::sleep(Duration::from_secs(60)).await;

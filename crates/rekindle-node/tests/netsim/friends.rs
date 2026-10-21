@@ -129,9 +129,12 @@ async fn an_invite_admits_one_requester() {
         })
         .await;
     assert!(eventually(&sim, LIMIT, || has_request_from(&nodes[1], &ann)).await);
-    nodes[2]
-        .ok(IpcRequest::FriendAddFromInvite { invite: invite.url })
-        .await;
+    // The inbox holds Ann's request: a second redeemer's write is refused
+    // and they see it.
+    assert!(nodes[2]
+        .call(IpcRequest::FriendAddFromInvite { invite: invite.url })
+        .await
+        .is_err());
     assert!(!eventually(&sim, LIMIT, || has_request_from(&nodes[1], &cat)).await);
     assert!(has_request_from(&nodes[1], &ann).await);
 }
