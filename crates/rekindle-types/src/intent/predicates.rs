@@ -157,6 +157,7 @@ impl IntentKind {
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
             | Self::ResetSignalSession
+            | Self::ReinitiateSession
             | Self::RotateMek
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled
@@ -347,6 +348,7 @@ impl IntentKind {
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
             | Self::ResetSignalSession
+            | Self::ReinitiateSession
             | Self::RotateMek
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled

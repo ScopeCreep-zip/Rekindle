@@ -55,6 +55,8 @@ export function factText(fact: Fact): string {
   if (fact === "sessionDeleted") return "Your secure session with them is deleted.";
   if (fact === "sessionKeptUntilReplaced")
     return "Your secure session with them stays until the new one their answer opens replaces it.";
+  if (fact === "unopenedMessagesLost")
+    return "Messages from them that could not be opened are lost unless they send them again.";
   if (fact === "presenceVisible") return "They will see when you are online and can reach you.";
   if (fact === "ipAddressLeaves") return "The site will see your IP address.";
   if (fact === "rejoinNeedsInvite") return "Rejoining needs a new invite.";

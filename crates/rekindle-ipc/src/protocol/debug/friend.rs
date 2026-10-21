@@ -26,6 +26,7 @@ impl IpcRequest {
             | Self::FriendRetryHandshake { public_key }
             | Self::FriendUnblock { public_key }
             | Self::SessionResetStart { public_key }
+            | Self::SessionReinitiate { public_key }
             | Self::SessionResetAccept { public_key }
             | Self::IdentityRotationAccept { public_key }
             | Self::IdentityRotationDecline { public_key }

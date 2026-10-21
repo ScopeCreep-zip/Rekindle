@@ -307,6 +307,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::FriendUnblock { .. }
         | IpcRequest::SessionResetStart { .. }
+        | IpcRequest::SessionReinitiate { .. }
         | IpcRequest::SessionResetAccept { .. }
         | IpcRequest::IdentityRotationAccept { .. }
         | IpcRequest::IdentityRotationDecline { .. }

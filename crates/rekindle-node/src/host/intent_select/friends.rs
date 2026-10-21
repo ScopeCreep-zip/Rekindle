@@ -110,9 +110,13 @@ pub(super) async fn selection(
                 name: format!("friend group {group_id}"),
             };
         }
-        IpcRequest::SessionResetStart { public_key } => {
+        IpcRequest::SessionResetStart { public_key }
+        | IpcRequest::SessionReinitiate { public_key } => {
             s.subject = person(ctx, public_key).await?;
             s.facts.push(Fact::SessionKeptUntilReplaced);
+            if matches!(request, IpcRequest::SessionReinitiate { .. }) {
+                s.facts.push(Fact::UnopenedMessagesLost);
+            }
             s.notifies = Notifies::Subject;
         }
         IpcRequest::SessionResetAccept { public_key }

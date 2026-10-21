@@ -122,6 +122,7 @@ impl IpcRequest {
             | Self::FriendGroupMove { .. }
             | Self::FriendGroupDelete { .. }
             | Self::SessionResetStart { .. }
+            | Self::SessionReinitiate { .. }
             | Self::SessionResetAccept { .. }
             | Self::IdentityRotationAccept { .. }
             | Self::IdentityRotationDecline { .. }

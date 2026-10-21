@@ -87,6 +87,7 @@ pub(crate) async fn select(
         | IpcRequest::FriendGroupRename { .. }
         | IpcRequest::FriendGroupDelete { .. }
         | IpcRequest::SessionResetStart { .. }
+        | IpcRequest::SessionReinitiate { .. }
         | IpcRequest::SessionResetAccept { .. }
         | IpcRequest::IdentityRotationAccept { .. }
         | IpcRequest::IdentityRotationDecline { .. }

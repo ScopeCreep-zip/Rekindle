@@ -15,6 +15,8 @@ mod friend_admission_tests;
 mod friends;
 mod game;
 pub mod gate;
+#[cfg(test)]
+mod horizon_tests;
 pub mod identity;
 mod idle;
 mod intent_select;
@@ -28,6 +30,8 @@ pub mod policy;
 mod prekey_tests;
 #[cfg(test)]
 mod receive_tests;
+#[cfg(test)]
+mod reinitiate_tests;
 pub mod runtime;
 mod serve;
 pub mod session;

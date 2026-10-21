@@ -76,6 +76,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendRetryHandshake { public_key: key }
         | IpcRequest::FriendUnblock { public_key: key }
         | IpcRequest::SessionResetStart { public_key: key }
+        | IpcRequest::SessionReinitiate { public_key: key }
         | IpcRequest::SessionResetAccept { public_key: key }
         | IpcRequest::IdentityRotationAccept { public_key: key }
         | IpcRequest::IdentityRotationDecline { public_key: key }

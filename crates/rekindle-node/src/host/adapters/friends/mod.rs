@@ -232,8 +232,15 @@ impl FriendHost for HostFriends {
                 IpcRequest::SessionResetAccept {
                     public_key: peer.clone(),
                 },
-                IpcRequest::SessionResetDecline { public_key: peer },
+                Some(IpcRequest::SessionResetDecline { public_key: peer }),
                 IntentKind::AcceptSessionReset,
+            ),
+            // Nothing was asked of the friend: Cancel only drops the hold
+            // (ruling Q1).
+            BackendHold::SessionReinitiate { peer } => (
+                IpcRequest::SessionReinitiate { public_key: peer },
+                None,
+                IntentKind::ReinitiateSession,
             ),
             // The review is on the friend as we know them; the new key is
             // in the pending rotation it shows (owner ruling R1).
@@ -243,7 +250,7 @@ impl FriendHost for HostFriends {
                     IpcRequest::IdentityRotationAccept {
                         public_key: peer.clone(),
                     },
-                    IpcRequest::IdentityRotationDecline { public_key: peer },
+                    Some(IpcRequest::IdentityRotationDecline { public_key: peer }),
                     IntentKind::AcceptIdentityRotation,
                 )
             }
@@ -280,7 +287,7 @@ impl FriendHost for HostFriends {
                 owner,
                 selection,
                 action,
-                Some(cancel),
+                cancel,
                 rekindle_idempotency::intent_gate::BACKEND_HOLD_TTL_MS,
                 now,
             )
@@ -333,6 +340,10 @@ fn same_hold(a: &IpcRequest, b: &IpcRequest) -> bool {
         | (
             IpcRequest::IdentityRotationAccept { public_key: x },
             IpcRequest::IdentityRotationAccept { public_key: y },
+        )
+        | (
+            IpcRequest::SessionReinitiate { public_key: x },
+            IpcRequest::SessionReinitiate { public_key: y },
         ) => x == y,
         _ => false,
     }

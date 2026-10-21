@@ -92,6 +92,7 @@ impl IpcRequest {
             Self::FriendGroupMove { .. } => ("FriendGroupMove", Write, Authenticated),
             Self::FriendGroupDelete { .. } => ("FriendGroupDelete", Write, Authenticated),
             Self::SessionResetStart { .. } => ("SessionResetStart", Write, Authenticated),
+            Self::SessionReinitiate { .. } => ("SessionReinitiate", Write, Authenticated),
             Self::SessionResetAccept { .. } => ("SessionResetAccept", Write, Authenticated),
             Self::SessionResetDecline { .. } => ("SessionResetDecline", Write, Authenticated),
             Self::IdentityRotationAccept { .. } => ("IdentityRotationAccept", Write, Authenticated),

@@ -28,6 +28,10 @@ pub enum BackendHold {
     /// A friend rotated their identity to `new_identity` (hex): commit
     /// moves them to it, Cancel drops the rotation (owner ruling R1).
     IdentityRotation { peer: String, new_identity: String },
+    /// Our retry requests to a friend are exhausted (plan E2.5 last stage,
+    /// ruling Q1): commit re-initiates the session with the user-started
+    /// reset, Cancel only drops the hold. Nothing re-initiates without it.
+    SessionReinitiate { peer: String },
 }
 
 /// The 1:1 receive and handshake state the Host keeps for the unlocked

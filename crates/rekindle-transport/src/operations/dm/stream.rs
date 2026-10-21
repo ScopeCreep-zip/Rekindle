@@ -91,8 +91,8 @@ pub async fn append(
 /// reader still behind it is shown a `HistoryGap`. A failure waits for the
 /// next append.
 async fn retire(host: &dyn FriendHost, to: &str, ours: &ParticipantWriter, port: &dyn RecordPort) {
-    let horizon =
-        i64::try_from(rekindle_crypto::horizon::DELIVERY_HORIZON.as_millis()).unwrap_or(i64::MAX);
+    let horizon = i64::try_from(rekindle_db::repo::chain_entries::CHAIN_RETENTION.as_millis())
+        .unwrap_or(i64::MAX);
     let Ok(owner) = state::owner(host) else {
         return;
     };
@@ -119,6 +119,41 @@ async fn retire(host: &dyn FriendHost, to: &str, ours: &ParticipantWriter, port:
         tracing::debug!(to = %to, error = %e, "retired chain entries not forgotten");
     }
     tracing::info!(to = %to, through = seq, "dm chain retired");
+}
+
+/// The friend maintenance's retire tick (plan E2.5): retire each accepted
+/// friend's chain that may go ([`retire`]), so a quiet conversation's
+/// acknowledged entries past `DELIVERY_HORIZON` go without waiting for our
+/// next append. Only a conversation with noted entries is looked at, so
+/// its record and writer exist; one whose writer had to be replaced has
+/// nothing of the new record to retire, and its key goes to the peer as
+/// [`append`] sends it.
+pub async fn retire_quiet(host: &dyn FriendHost) {
+    let Ok(owner) = state::owner(host) else {
+        return;
+    };
+    let peers = match state::db_call!(host, "list chain peers", move |conn| {
+        rekindle_db::repo::chain_entries::peers(conn, &owner)
+    })
+    .await
+    {
+        Ok(peers) => peers,
+        Err(e) => return tracing::debug!(error = %e, "chain peers not read"),
+    };
+    let Ok(port) = records(host) else {
+        return;
+    };
+    for peer in peers.iter().filter(|p| state::is_accepted(host, p)) {
+        match host.participant_writer(peer).await {
+            Ok(ours) if !ours.created => retire(host, peer, &ours, port.as_ref()).await,
+            Ok(ours) => {
+                if let Err(e) = send_record(host, peer, &ours.record_key).await {
+                    tracing::debug!(to = %peer, error = %e, "replaced record key not committed");
+                }
+            }
+            Err(e) => tracing::debug!(to = %peer, error = %e, "participant record unreadable"),
+        }
+    }
 }
 
 /// The client id of the `dm` row that carries `record_key` in a

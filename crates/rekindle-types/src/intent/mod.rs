@@ -262,6 +262,10 @@ pub enum Fact {
     /// Our secure session with the subject stays until the new one their
     /// answer opens replaces it (a reset we start).
     SessionKeptUntilReplaced,
+    /// The messages from the subject that could not be opened after our
+    /// retry requests are lost unless they send them again (a re-initiation
+    /// after D24's retry requests fail, ruling Q1).
+    UnopenedMessagesLost,
     /// The key fingerprint to compare out of band.
     #[serde(rename_all = "camelCase")]
     Fingerprint { fingerprint: String },

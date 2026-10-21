@@ -103,7 +103,10 @@ pub(crate) async fn route(
         IpcRequest::FriendGroupDelete { group_id } => {
             done(friend::delete_group(&host, group_id).await)
         }
-        IpcRequest::SessionResetStart { public_key } => {
+        // A re-initiation the backend held (ruling Q1) is the same reset,
+        // run only on the user's commit.
+        IpcRequest::SessionResetStart { public_key }
+        | IpcRequest::SessionReinitiate { public_key } => {
             done(friend::session_reset::start(&host, &public_key).await)
         }
         IpcRequest::SessionResetAccept { public_key } => {

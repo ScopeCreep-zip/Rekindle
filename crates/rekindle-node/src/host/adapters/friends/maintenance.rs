@@ -1,6 +1,9 @@
 //! The friend maintenance task (plan E2.1), one per unlock on both hosts:
 //! every 30 s evicting the peer routes past their TTL (the route cache's half of the old route watchdog); every
-//! sixth tick (~3 min) the expiry of stale requests and invites. The ticks
+//! sixth tick (~3 min) the expiry of stale requests and invites, and the
+//! retire of our DM chains past `DELIVERY_HORIZON` (`dm::stream::
+//! retire_quiet`, plan E2.5), so a quiet conversation does not wait for
+//! our next send. The ticks
 //! are tokio time (paused under netsim): C9.2's `Clock` reads the time, it
 //! does not wait. Sends are the outbox's (plan E2.5), and a removed friend
 //! is forgotten on its `Unfriended` row's settle event, not here.
@@ -143,6 +146,7 @@ async fn run(host: HostFriends, stop: CancellationToken) {
             if let Err(e) = friend::expire_resets(&host, ttl).await {
                 tracing::warn!(error = %e, "expiring stale session resets failed");
             }
+            rekindle_transport::operations::dm::stream::retire_quiet(&host).await;
             match friend::expire_stale_invites(&host).await {
                 Ok(0) => {}
                 Ok(expired) => tracing::info!(expired, "expired stale friend invites"),

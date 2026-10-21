@@ -19,6 +19,10 @@ const STORAGE_RETRY: Duration = Duration::from_secs(5);
 /// The reason a row past its deadline carries.
 pub const DEADLINE_REASON: &str = "deadline";
 
+/// How long a row may wait for its peer before it settles failed at its
+/// deadline: [`DELIVERY_HORIZON`] (D22, D24).
+pub const OUTBOX_DEADLINE: std::time::Duration = DELIVERY_HORIZON;
+
 /// When a row gives up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Deadline {
@@ -54,7 +58,7 @@ pub struct Outbox<D> {
 }
 
 fn horizon_ms() -> i64 {
-    i64::try_from(DELIVERY_HORIZON.as_millis()).unwrap_or(i64::MAX)
+    i64::try_from(OUTBOX_DEADLINE.as_millis()).unwrap_or(i64::MAX)
 }
 
 impl<D: OutboxDeps> Outbox<D> {

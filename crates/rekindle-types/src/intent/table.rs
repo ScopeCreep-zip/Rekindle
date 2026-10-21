@@ -423,6 +423,7 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("FriendGroupMove", Some(IntentKind::MoveFriendToGroup)),
     ("FriendGroupDelete", Some(IntentKind::DeleteFriendGroup)),
     ("SessionResetStart", Some(IntentKind::ResetSignalSession)),
+    ("SessionReinitiate", Some(IntentKind::ReinitiateSession)),
     ("SessionResetAccept", Some(IntentKind::AcceptSessionReset)),
     ("SessionResetDecline", Some(IntentKind::DeclineSessionReset)),
     (

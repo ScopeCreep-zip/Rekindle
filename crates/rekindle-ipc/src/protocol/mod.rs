@@ -153,6 +153,10 @@ pub enum IpcRequest {
     FriendGroupDelete { group_id: i64 },
     /// Reset our secure session with a friend (safety-number checked).
     SessionResetStart { public_key: String },
+    /// Re-initiate our secure session with a friend whose retry requests
+    /// are exhausted (plan E2.5 last stage, ruling Q1): the backend holds
+    /// it for the user's review, and commit runs the same reset.
+    SessionReinitiate { public_key: String },
     /// Accept the session reset a friend asked for.
     SessionResetAccept { public_key: String },
     /// Decline the session reset a friend asked for.

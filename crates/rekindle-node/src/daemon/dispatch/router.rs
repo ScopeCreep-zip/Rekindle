@@ -152,6 +152,7 @@ async fn route(
         | IpcRequest::FriendGroupMove { .. }
         | IpcRequest::FriendGroupDelete { .. }
         | IpcRequest::SessionResetStart { .. }
+        | IpcRequest::SessionReinitiate { .. }
         | IpcRequest::SessionResetAccept { .. }
         | IpcRequest::IdentityRotationAccept { .. }
         | IpcRequest::IdentityRotationDecline { .. }

@@ -182,6 +182,7 @@ pub enum IntentKind {
     AcceptSessionReset,
     AcceptIdentityRotation,
     ResetSignalSession,
+    ReinitiateSession,
     RotateMek,
     // TrustChanging: Exposure settings
     RegisterWithPushRelay,
@@ -399,6 +400,7 @@ impl IntentKind {
             | Self::AcceptSessionReset
             | Self::AcceptIdentityRotation
             | Self::ResetSignalSession
+            | Self::ReinitiateSession
             | Self::RotateMek
             | Self::RegisterWithPushRelay
             | Self::SetLinkPreviewsEnabled

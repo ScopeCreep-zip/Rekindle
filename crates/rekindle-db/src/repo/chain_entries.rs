@@ -2,7 +2,14 @@
 //! each peer, by chain seq, with the `dm` outbox row each one carried and
 //! when it was appended; read to decide how far the chain may retire.
 
+use std::time::Duration;
+
+use rekindle_crypto::horizon::DELIVERY_HORIZON;
 use rusqlite::{params, Connection};
+
+/// How long an acknowledged entry stays on our chain, the peer's inbox,
+/// before it may be retired: [`DELIVERY_HORIZON`] (D24, ruling Q2b).
+pub const CHAIN_RETENTION: Duration = DELIVERY_HORIZON;
 
 fn sql_seq(seq: u64) -> rusqlite::Result<i64> {
     i64::try_from(seq).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))
@@ -54,6 +61,20 @@ pub fn retirable(
         |row| row.get(0),
     )?;
     Ok(seq.and_then(|s| u64::try_from(s).ok()))
+}
+
+/// The peers our chain holds noted entries for: the conversations the
+/// friend maintenance's retire tick looks at.
+///
+/// # Errors
+/// The query failed.
+pub fn peers(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
+    let mut stmt =
+        conn.prepare("SELECT DISTINCT peer FROM chain_entries WHERE owner_key = ?1 ORDER BY peer")?;
+    let rows = stmt
+        .query_map(params![owner_key], |row| row.get(0))?
+        .collect::<rusqlite::Result<Vec<String>>>()?;
+    Ok(rows)
 }
 
 /// The chain retired through `chain_seq`: forget those entries.

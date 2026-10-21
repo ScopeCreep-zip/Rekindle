@@ -8,6 +8,11 @@
 //! per [`PEER_WINDOW`] (Signal-Android's `retryReceiptMaxCount` and its
 //! per-sender bound, r10 B.3). Each request handed out is counted in the
 //! same transaction, so a crash never sends more than the caps allow.
+//!
+//! A message that fails again after its [`MAX_PER_MESSAGE`]th request is
+//! exhausted ([`Taken::exhausted`]): no request is left for it, and the
+//! Host offers the user a session re-initiation (plan E2.5 last stage,
+//! ruling Q1), which runs only when they accept.
 
 use std::time::Duration;
 
@@ -28,6 +33,16 @@ pub const PEER_WINDOW: Duration = Duration::from_secs(3 * 60 * 60);
 pub struct Due {
     pub msg_id: [u8; 32],
     pub observed_ratchet_key: [u8; 32],
+}
+
+/// What [`take_due`] hands out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Taken {
+    /// The requests to send now.
+    pub due: Vec<Due>,
+    /// The messages that failed again with no request left: their retry
+    /// requests are exhausted.
+    pub exhausted: usize,
 }
 
 fn ms(d: Duration) -> i64 {
@@ -64,7 +79,7 @@ pub fn note_failed(
 
 /// `peer` caught up: the pending requests that fit the caps, oldest
 /// first, each counted as sent; a pending one at its message cap is
-/// dropped from pending.
+/// dropped from pending and counted exhausted.
 ///
 /// # Errors
 /// The query failed.
@@ -73,7 +88,7 @@ pub fn take_due(
     owner: &[u8; 32],
     peer: &[u8; 32],
     now_ms: i64,
-) -> rusqlite::Result<Vec<Due>> {
+) -> rusqlite::Result<Taken> {
     let (owner, peer) = (identity_text(owner), identity_text(peer));
     let tx = conn.unchecked_transaction()?;
     let recent: u32 = tx.query_row(
@@ -82,9 +97,9 @@ pub fn take_due(
         params![owner, peer, now_ms.saturating_sub(ms(PEER_WINDOW))],
         |row| row.get(0),
     )?;
-    tx.execute(
+    let exhausted = tx.execute(
         "UPDATE retry_requests SET pending = 0 WHERE owner_key = ?1 AND peer = ?2 \
-         AND sent_count >= ?3",
+         AND pending = 1 AND sent_count >= ?3",
         params![owner, peer, MAX_PER_MESSAGE],
     )?;
     let due = {
@@ -118,7 +133,7 @@ pub fn take_due(
         )?;
     }
     tx.commit()?;
-    Ok(due)
+    Ok(Taken { due, exhausted })
 }
 
 /// Drop the sends older than [`PEER_WINDOW`] and the requests whose last
@@ -157,11 +172,11 @@ mod tests {
     #[test]
     fn nothing_goes_before_a_failure_is_noted() {
         let conn = fixture::identity_conn(&OWNER);
-        assert!(take_due(&conn, &OWNER, &PEER, 0).unwrap().is_empty());
+        assert!(take_due(&conn, &OWNER, &PEER, 0).unwrap().due.is_empty());
         note_failed(&conn, &OWNER, &PEER, &due(1), 0).unwrap();
-        assert_eq!(take_due(&conn, &OWNER, &PEER, 1).unwrap(), vec![due(1)]);
+        assert_eq!(take_due(&conn, &OWNER, &PEER, 1).unwrap().due, vec![due(1)]);
         // Sent: not again until it fails again.
-        assert!(take_due(&conn, &OWNER, &PEER, 2).unwrap().is_empty());
+        assert!(take_due(&conn, &OWNER, &PEER, 2).unwrap().due.is_empty());
     }
 
     #[test]
@@ -173,9 +188,31 @@ mod tests {
             // Outside each other's window, so only the message cap binds.
             let now = i * window * 2;
             note_failed(&conn, &OWNER, &PEER, &due(1), now).unwrap();
-            sent += take_due(&conn, &OWNER, &PEER, now).unwrap().len();
+            sent += take_due(&conn, &OWNER, &PEER, now).unwrap().due.len();
         }
         assert_eq!(sent, MAX_PER_MESSAGE as usize);
+    }
+
+    #[test]
+    fn a_message_failing_after_its_last_request_is_exhausted_once() {
+        let conn = fixture::identity_conn(&OWNER);
+        let window = ms(PEER_WINDOW);
+        let mut exhausted = 0;
+        for i in 0..=i64::from(MAX_PER_MESSAGE) {
+            let now = i * window * 2;
+            note_failed(&conn, &OWNER, &PEER, &due(1), now).unwrap();
+            let taken = take_due(&conn, &OWNER, &PEER, now).unwrap();
+            exhausted += taken.exhausted;
+            assert_eq!(taken.due.is_empty(), i == i64::from(MAX_PER_MESSAGE));
+        }
+        assert_eq!(exhausted, 1);
+        // Not counted again until it fails again.
+        assert_eq!(
+            take_due(&conn, &OWNER, &PEER, window * 20)
+                .unwrap()
+                .exhausted,
+            0
+        );
     }
 
     #[test]
@@ -184,15 +221,15 @@ mod tests {
         for id in 0..12 {
             note_failed(&conn, &OWNER, &PEER, &due(id), i64::from(id)).unwrap();
         }
-        assert_eq!(take_due(&conn, &OWNER, &PEER, 100).unwrap().len(), 10);
-        assert!(take_due(&conn, &OWNER, &PEER, 200).unwrap().is_empty());
+        assert_eq!(take_due(&conn, &OWNER, &PEER, 100).unwrap().due.len(), 10);
+        assert!(take_due(&conn, &OWNER, &PEER, 200).unwrap().due.is_empty());
         // Another peer has its own window.
         note_failed(&conn, &OWNER, &[3; 32], &due(1), 0).unwrap();
-        assert_eq!(take_due(&conn, &OWNER, &[3; 32], 300).unwrap().len(), 1);
+        assert_eq!(take_due(&conn, &OWNER, &[3; 32], 300).unwrap().due.len(), 1);
         // Past the window the rest go.
         let later = 100 + ms(PEER_WINDOW);
         assert_eq!(
-            take_due(&conn, &OWNER, &PEER, later).unwrap(),
+            take_due(&conn, &OWNER, &PEER, later).unwrap().due,
             vec![due(10), due(11)]
         );
         prune(&conn, &OWNER, later + ms(PEER_WINDOW)).unwrap();

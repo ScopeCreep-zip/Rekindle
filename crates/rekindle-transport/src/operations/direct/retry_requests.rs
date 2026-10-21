@@ -11,6 +11,10 @@
 //! ([`on_retry_request`]). A request naming another key changes no
 //! session and resends nothing; nothing here ever re-initiates a session
 //! (threat model, Scope: no auto-rehandshake).
+//!
+//! Exhausted: a message that fails again after its last request
+//! (`Taken::exhausted`) makes the Host hold a `SessionReinitiate` review
+//! for the user (ruling Q1); only their commit runs the reset.
 
 use std::time::Duration;
 
@@ -22,7 +26,7 @@ use rekindle_db::ratchet::{self, RatchetError};
 use rekindle_db::repo::{retry_requests, send_log};
 
 use crate::operations::dm::{self, frame};
-use crate::operations::friend::FriendHost;
+use crate::operations::friend::{state, BackendHold, FriendHost};
 
 /// The most a request waits before it goes, so a burst of failures after
 /// a catch-up does not leave in one instant.
@@ -66,8 +70,10 @@ pub(super) async fn note_failed(host: &dyn FriendHost, sender: [u8; 32], body: &
 }
 
 /// `peer` (a hex identity) has caught up: send the requests the caps
-/// allow, each after a jittered delay. The sync engine's CaughtUp calls
-/// this (D23); nothing else does.
+/// allow, each after a jittered delay, and hold the user's review of a
+/// session re-initiation when a message's requests are exhausted
+/// ([`hold_reinitiate`]). The sync engine's CaughtUp calls this (D23);
+/// nothing else does.
 pub async fn on_caught_up(host: &dyn FriendHost, peer: &str) {
     let (Some(peer_bytes), Ok(owner), Ok(db)) = (
         peer_key(peer),
@@ -77,18 +83,21 @@ pub async fn on_caught_up(host: &dyn FriendHost, peer: &str) {
         return;
     };
     let now = host.clock().now_ms_i64();
-    let due = match db
+    let taken = match db
         .call(move |conn| retry_requests::take_due(conn, &owner, &peer_bytes, now))
         .await
     {
-        Ok(due) => due,
+        Ok(taken) => taken,
         Err(e) => {
             tracing::warn!(error = %e, "retry requests unreadable");
             return;
         }
     };
+    if taken.exhausted > 0 {
+        hold_reinitiate(host, peer, taken.exhausted).await;
+    }
     let jitter_ms = u64::try_from(RETRY_JITTER_MAX.as_millis()).expect("seconds fit u64 ms");
-    for d in due {
+    for d in taken.due {
         let delay = Duration::from_millis(u64::from(host.rng().next_u32()) % (jitter_ms + 1));
         let (owned, peer) = (host.owned(), peer.to_string());
         host.scope().spawn_or_drop("retry request", async move {
@@ -102,6 +111,22 @@ pub async fn on_caught_up(host: &dyn FriendHost, peer: &str) {
                 tracing::warn!(to = %peer, error = %e, "retry request not sent");
             }
         });
+    }
+}
+
+/// `peer`'s retry requests are exhausted: hold a `SessionReinitiate`
+/// review for the user (ruling Q1). It sends nothing; one hold per friend
+/// (a newer replaces the older), and it expires like every backend hold.
+pub async fn hold_reinitiate(host: &dyn FriendHost, peer: &str, exhausted: usize) {
+    if !state::is_accepted(host, peer) {
+        return;
+    }
+    tracing::info!(peer = %peer, exhausted, "retry requests exhausted; re-initiation held for review");
+    let held = BackendHold::SessionReinitiate {
+        peer: peer.to_string(),
+    };
+    if let Err(e) = host.hold_backend_intent(held).await {
+        tracing::warn!(peer = %peer, error = %e, "session re-initiation not held");
     }
 }
 
