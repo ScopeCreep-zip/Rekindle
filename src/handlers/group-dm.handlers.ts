@@ -4,7 +4,7 @@ import { isLegacy, type GroupDmEvent, type GroupDmMember } from "../ipc/channels
 import type { GroupDmMemberView, SendState } from "../ipc/commands";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
-import { transformDmMessage } from "../utils/transformers";
+import { transformDmMessage, transformHistoryGap } from "../utils/transformers";
 
 // Group-DM events (plan E2.6). The Host decides every change; an invite
 // arrives whole and is shown as is, and a roster change (join, leave, key
@@ -70,6 +70,23 @@ function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unkn
   setGroupDmState("conversations", groupId, "typing", m.sender.publicKey, false);
 }
 
+// A member's chain retired entries we never read (`historyGap`): the
+// backend stored the marker row, appended here as history shows it (the
+// DM marker's shape and rendering), once per member and `throughSeq`.
+function applyHistoryGap(groupId: string, member: string, throughSeq: number): void {
+  const marker = transformHistoryGap({ peerKey: member, throughSeq });
+  const convo = groupDmState.conversations[groupId];
+  if (!convo) {
+    setGroupDmState("conversations", groupId, { messages: [marker], typing: {} });
+    return;
+  }
+  const held = convo.messages.some(
+    (m) => m.senderId === member && m.historyGapThrough === throughSeq,
+  );
+  if (held) return;
+  setGroupDmState("conversations", groupId, "messages", (msgs) => [...msgs, marker]);
+}
+
 function setTyping(groupId: string, who: string, typing: boolean): void {
   if (!groupDmState.conversations[groupId]) {
     setGroupDmState("conversations", groupId, { messages: [], typing: {} });
@@ -87,6 +104,11 @@ export function subscribeGroupChatEvents(groupId: string): Promise<UnlistenFn>[]
     }
     if ("message" in event && event.message.groupId === groupId) {
       appendMessage(groupId, event.message);
+      return;
+    }
+    if ("historyGap" in event && event.historyGap.groupId === groupId) {
+      const gap = event.historyGap;
+      applyHistoryGap(groupId, gap.member.publicKey, gap.throughSeq);
     }
   });
   const typing = subscribeChatEvents((event) => {

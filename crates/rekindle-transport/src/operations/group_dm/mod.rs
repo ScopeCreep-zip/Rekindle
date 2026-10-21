@@ -13,6 +13,7 @@ pub mod content;
 mod inbound;
 mod pairwise;
 pub mod receive;
+pub mod retire;
 mod review;
 mod view;
 

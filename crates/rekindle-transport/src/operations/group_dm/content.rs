@@ -171,6 +171,7 @@ async fn append(
         rekindle_db::repo::chain_entries::record(conn, &owner, &stream, chain_seq, stream_seq, now)
     })
     .await?;
+    super::retire::retire(host, group_id, &ours, port.as_ref()).await;
     Ok(content)
 }
 

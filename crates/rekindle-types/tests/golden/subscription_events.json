@@ -536,6 +536,18 @@
       }
     }
   },
+  "groupDm.historyGap": {
+    "groupDm": {
+      "historyGap": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "member": {
+          "displayName": "Bob",
+          "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "throughSeq": 4
+      }
+    }
+  },
   "groupDm.invited": {
     "groupDm": {
       "invited": {

@@ -18,6 +18,22 @@ fn saved(host: &HostFriends, group_id: &str) -> Result<Option<OwnerEntry>, Frien
         .map_err(|e| FriendError::Failed(format!("group chain owner not read: {e}")))
 }
 
+/// Our saved group chain for `group_id` (32 hex), when held; never makes
+/// one.
+///
+/// # Errors
+/// Locked, or the vault.
+pub(crate) fn held(
+    host: &HostFriends,
+    group_id: &str,
+) -> Result<Option<ParticipantWriter>, FriendError> {
+    Ok(saved(host, group_id)?.map(|entry| ParticipantWriter {
+        record_key: entry.record_key,
+        writer: entry.keypair,
+        created: false,
+    }))
+}
+
 /// Our group chain for `group_id` (32 hex), made when none is saved.
 ///
 /// # Errors

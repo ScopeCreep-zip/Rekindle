@@ -12,6 +12,7 @@ pub const NAMES: &[&str] = &[
     "keyRotated",
     "sendStatus",
     "message",
+    "historyGap",
 ];
 
 pub fn variant_name(e: &GroupDmEvent) -> &'static str {
@@ -22,6 +23,7 @@ pub fn variant_name(e: &GroupDmEvent) -> &'static str {
         GroupDmEvent::KeyRotated { .. } => "keyRotated",
         GroupDmEvent::SendStatus { .. } => "sendStatus",
         GroupDmEvent::Message { .. } => "message",
+        GroupDmEvent::HistoryGap { .. } => "historyGap",
     }
 }
 
@@ -94,6 +96,14 @@ pub fn samples() -> Vec<Sample> {
                 body: text("hello group"),
                 timestamp: 1_700_000_000_000,
                 reply_to: None,
+            },
+        ),
+        ev(
+            "historyGap",
+            GroupDmEvent::HistoryGap {
+                group_id: group(),
+                member: member('b', "Bob"),
+                through_seq: 4,
             },
         ),
     ]

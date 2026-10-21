@@ -329,11 +329,42 @@ impl StreamSink for GroupSink<'_> {
         self.advance(stream, writer, entry.seq).await
     }
 
-    /// The member retired entries before we read them: the cursor moves
-    /// past them (a group shows no gap marker; its members' history is
-    /// each member's own chain).
+    /// The member retired entries before we read them (their chain
+    /// retires by age, `content::retire`): the gap is a stored row of the
+    /// group's history, in the 1:1 marker's shape, so it survives a reload
+    /// and renders as the DM one does; a failed insert keeps the cursor,
+    /// and the gap is seen again on the next diff.
     async fn history_gap(&self, stream: &str, writer: &str, through: u64) -> Result<(), SinkError> {
+        let owner = state::owner(self.host).map_err(sink_error)?;
+        let gid = group_id_hex(&self.group_id);
+        let (group, member, now) = (
+            gid.clone(),
+            writer.to_string(),
+            self.host.clock().now_ms_i64(),
+        );
+        state::db_call!(self.host, "store group history gap", move |conn| {
+            rekindle_db::repo::history_gap::insert(
+                conn,
+                &owner,
+                (&group, ConversationType::GroupDm),
+                &member,
+                through,
+                now,
+            )
+        })
+        .await
+        .map_err(sink_error)?;
         tracing::info!(from = %writer, through, "group chain retired past our cursor");
+        let deps = self.host.group_dm().map_err(sink_error)?;
+        self.host
+            .publish(SubscriptionEvent::GroupDm(GroupDmEvent::HistoryGap {
+                group_id: gid,
+                member: GroupDmMember {
+                    public_key: writer.to_string(),
+                    display_name: deps.display_name(writer).await,
+                },
+                through_seq: through,
+            }));
         self.advance(stream, writer, through).await
     }
 

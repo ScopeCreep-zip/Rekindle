@@ -1,6 +1,8 @@
 //! `chain_entries` (plan E2.5, D23/D24): the entries of our DM chain to
-//! each peer, by chain seq, with the `dm` outbox row each one carried and
-//! when it was appended; read to decide how far the chain may retire.
+//! each peer, and of our group chain in each group (plan E2.6, keyed by
+//! the stream `group_dm:<group id>`), by chain seq, with the outbox row
+//! each one carried and when it was appended; read to decide how far the
+//! chain may retire.
 
 use std::time::Duration;
 
@@ -58,6 +60,30 @@ pub fn retirable(
              AND o.stream_seq = w.stream_seq \
              WHERE w.owner_key = ?1 AND w.peer = ?2), 9223372036854775807)",
         params![owner_key, peer, cutoff],
+        |row| row.get(0),
+    )?;
+    Ok(seq.and_then(|s| u64::try_from(s).ok()))
+}
+
+/// The highest chain seq our group chain `stream` (`group_dm:<group id>`)
+/// may retire through: the newest entry appended before `cutoff`
+/// (`now - CHAIN_RETENTION`). A group has no acknowledgements (plan E2.6:
+/// a row settles `sent` when its entry lands), so the rule is age only,
+/// and a member still behind the mark is shown a history gap. `None`:
+/// nothing that old.
+///
+/// # Errors
+/// The query failed.
+pub fn retirable_by_age(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    cutoff: i64,
+) -> rusqlite::Result<Option<u64>> {
+    let seq: Option<i64> = conn.query_row(
+        "SELECT MAX(chain_seq) FROM chain_entries \
+         WHERE owner_key = ?1 AND peer = ?2 AND appended_at < ?3",
+        params![owner_key, stream, cutoff],
         |row| row.get(0),
     )?;
     Ok(seq.and_then(|s| u64::try_from(s).ok()))
@@ -123,5 +149,20 @@ mod tests {
         assert_eq!(forget_through(&conn, OWNER, "bob", 2).unwrap(), 2);
         assert_eq!(retirable(&conn, OWNER, "bob", 50).unwrap(), None);
         assert_eq!(retirable(&conn, OWNER, "eve", 50).unwrap(), None);
+    }
+
+    /// A group chain retires by age alone, to the newest entry older than
+    /// the cutoff.
+    #[test]
+    fn a_group_chain_retires_by_age_only() {
+        let conn = fixture::conn();
+        let stream = "group_dm:00";
+        for (chain, stream_seq, at) in [(1, 1, 10), (2, 2, 20), (3, 3, 90)] {
+            record(&conn, OWNER, stream, chain, stream_seq, at).unwrap();
+        }
+        assert_eq!(retirable_by_age(&conn, OWNER, stream, 50).unwrap(), Some(2));
+        assert_eq!(retirable_by_age(&conn, OWNER, stream, 5).unwrap(), None);
+        assert_eq!(forget_through(&conn, OWNER, stream, 2).unwrap(), 2);
+        assert_eq!(retirable_by_age(&conn, OWNER, stream, 50).unwrap(), None);
     }
 }

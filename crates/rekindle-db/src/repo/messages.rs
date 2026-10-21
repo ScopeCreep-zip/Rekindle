@@ -161,40 +161,6 @@ pub(crate) const DM_COLS: &str =
     "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
                        message_id, history_gap_through";
 
-/// Store the local marker of a DM history gap (plan E2.5, D23): `peer`'s
-/// chain entries through `through_seq` were retired before we fetched
-/// them. It is never sent: an empty body from the peer, read and
-/// `delivered`. A second marker for the same `(peer, through_seq)` is not
-/// stored; the held row's id is returned.
-///
-/// # Errors
-/// `through_seq` is not a stored seq (0 or above `i64::MAX`), or the write
-/// failed.
-pub fn insert_history_gap(
-    conn: &Connection,
-    owner_key: &str,
-    peer: &str,
-    through_seq: u64,
-    timestamp: i64,
-) -> rusqlite::Result<i64> {
-    let through = i64::try_from(through_seq)
-        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
-    conn.execute(
-        "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
-         timestamp, is_read, send_state, history_gap_through) \
-         SELECT ?1, ?2, 'dm', ?2, '', ?3, 1, 'delivered', ?4 \
-         WHERE NOT EXISTS (SELECT 1 FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-                           AND conversation_type = 'dm' AND history_gap_through = ?4)",
-        params![owner_key, peer, timestamp, through],
-    )?;
-    conn.query_row(
-        "SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-         AND conversation_type = 'dm' AND history_gap_through = ?3",
-        params![owner_key, peer, through],
-        |row| row.get(0),
-    )
-}
-
 /// The newest `limit` messages with `peer_key` before `before` (a
 /// timestamp, ms; all when `None`), oldest first.
 ///
@@ -341,6 +307,7 @@ mod tests {
     use crate::repo::channels::{self, StoredChannel};
     use crate::repo::communities::{self, NewCommunity};
     use crate::repo::fixture::{self, OWNER};
+    use crate::repo::history_gap;
 
     fn seed(conn: &Connection) {
         communities::insert(
@@ -519,10 +486,17 @@ mod tests {
     fn a_history_gap_is_stored_once_and_read_back_in_history() {
         let conn = fixture::conn();
         insert_dm(&conn, &dm("bob", "bob", 1, ("m1", "id1"), None)).unwrap();
-        let gap = insert_history_gap(&conn, OWNER, "bob", 4, 2).unwrap();
-        assert_eq!(insert_history_gap(&conn, OWNER, "bob", 4, 3).unwrap(), gap);
-        assert_ne!(insert_history_gap(&conn, OWNER, "bob", 9, 3).unwrap(), gap);
-        assert!(insert_history_gap(&conn, OWNER, "bob", 0, 3).is_err());
+        let bob = ("bob", rekindle_types::message::ConversationType::Dm);
+        let gap = history_gap::insert(&conn, OWNER, bob, "bob", 4, 2).unwrap();
+        assert_eq!(
+            history_gap::insert(&conn, OWNER, bob, "bob", 4, 3).unwrap(),
+            gap
+        );
+        assert_ne!(
+            history_gap::insert(&conn, OWNER, bob, "bob", 9, 3).unwrap(),
+            gap
+        );
+        assert!(history_gap::insert(&conn, OWNER, bob, "bob", 0, 3).is_err());
         let history = dm_history(&conn, OWNER, "bob", 10, None).unwrap();
         assert_eq!(history.len(), 3);
         let marker = history.iter().find(|m| m.id == gap).unwrap();

@@ -147,6 +147,14 @@ impl FriendHost for HostFriends {
         super::group_dm::chain::writer(self, group_id).await
     }
 
+    async fn held_group_chain_writer(
+        &self,
+        group_id: &str,
+    ) -> Result<Option<rekindle_transport::operations::dm::stream::ParticipantWriter>, FriendError>
+    {
+        super::group_dm::chain::held(self, group_id)
+    }
+
     fn invisible(&self) -> bool {
         self.ctx.own_presence.status() == rekindle_types::presence::SessionStatus::Invisible
     }

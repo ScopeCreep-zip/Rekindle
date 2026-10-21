@@ -164,6 +164,12 @@ pub trait FriendHost: Send + Sync {
         &self,
         group_id: &str,
     ) -> Result<crate::operations::dm::stream::ParticipantWriter, FriendError>;
+    /// Our saved group chain for `group_id` (32 hex) and its writer, when
+    /// held; never creates one (the retire tick, plan E2.6).
+    async fn held_group_chain_writer(
+        &self,
+        group_id: &str,
+    ) -> Result<Option<crate::operations::dm::stream::ParticipantWriter>, FriendError>;
     /// Whether our own status is Invisible (receipts are held meanwhile).
     fn invisible(&self) -> bool;
     /// Journal an event for every frontend (D21).

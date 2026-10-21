@@ -147,6 +147,7 @@ async fn run(host: HostFriends, stop: CancellationToken) {
                 tracing::warn!(error = %e, "expiring stale session resets failed");
             }
             rekindle_transport::operations::dm::stream::retire_quiet(&host).await;
+            rekindle_transport::operations::group_dm::retire::retire_quiet(&host).await;
             match friend::expire_stale_invites(&host).await {
                 Ok(0) => {}
                 Ok(expired) => tracing::info!(expired, "expired stale friend invites"),

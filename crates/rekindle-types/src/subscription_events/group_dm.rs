@@ -67,6 +67,16 @@ pub enum GroupDmEvent {
         timestamp: i64,
         reply_to: Option<String>,
     },
+    /// `member`'s group chain was retired past our cursor: their entries
+    /// through `through_seq` were never read. It is stored as the group's
+    /// history-gap row (`messages.history_gap_through`, the 1:1 marker's
+    /// shape), so one marker renders for a DM and a group. Triggered by: a
+    /// diff of the member's chain that met its retire mark.
+    HistoryGap {
+        group_id: String,
+        member: GroupDmMember,
+        through_seq: u64,
+    },
 }
 
 impl GroupDmEvent {
@@ -79,7 +89,8 @@ impl GroupDmEvent {
             | Self::Left { group_id, .. }
             | Self::KeyRotated { group_id, .. }
             | Self::SendStatus { group_id, .. }
-            | Self::Message { group_id, .. } => group_id,
+            | Self::Message { group_id, .. }
+            | Self::HistoryGap { group_id, .. } => group_id,
         }
     }
 }

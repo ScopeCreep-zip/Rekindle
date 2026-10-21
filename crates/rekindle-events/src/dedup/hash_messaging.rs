@@ -227,5 +227,15 @@ pub(super) fn hash_group_dm(
             h.update(sender.public_key.as_bytes());
             h.update(message_id.as_bytes());
         }
+        GroupDmEvent::HistoryGap {
+            member,
+            through_seq,
+            ..
+        } => {
+            h.update(b"gap|");
+            h.update(member.public_key.as_bytes());
+            h.update(b"|");
+            h.update(&through_seq.to_le_bytes());
+        }
     }
 }

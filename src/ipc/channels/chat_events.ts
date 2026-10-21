@@ -99,7 +99,8 @@ export type GroupDmEvent =
         timestamp: number;
         replyTo: string | null;
       };
-    };
+    }
+  | { historyGap: { groupId: string; member: GroupDmMember; throughSeq: number } };
 
 export type TypingEvent =
   | { started: { context: TypingContext; who: string } }

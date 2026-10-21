@@ -364,7 +364,14 @@ impl StreamSink for DmSink<'_> {
         let owner = state::owner(self.host).map_err(|e| SinkError(e.to_string()))?;
         let (peer, now) = (writer.to_string(), self.host.clock().now_ms_i64());
         state::db_call!(self.host, "store dm history gap", move |conn| {
-            rekindle_db::repo::messages::insert_history_gap(conn, &owner, &peer, through, now)
+            rekindle_db::repo::history_gap::insert(
+                conn,
+                &owner,
+                (&peer, rekindle_types::message::ConversationType::Dm),
+                &peer,
+                through,
+                now,
+            )
         })
         .await
         .map_err(|e| SinkError(e.to_string()))?;
