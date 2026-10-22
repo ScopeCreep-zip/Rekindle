@@ -20,6 +20,7 @@ mod outbox_handshake;
 mod pair;
 mod prekey_collision;
 mod prekeys;
+mod resume_after_restart;
 mod rotation;
 mod route_link_failure;
 mod scenarios;

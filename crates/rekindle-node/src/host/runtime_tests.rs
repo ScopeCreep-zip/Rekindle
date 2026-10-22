@@ -8,6 +8,8 @@ use crate::host::fixture::temp_root;
 use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
 
+#[path = "login_stage_tests.rs"]
+mod login_stage;
 #[path = "membership_tests.rs"]
 mod membership;
 
