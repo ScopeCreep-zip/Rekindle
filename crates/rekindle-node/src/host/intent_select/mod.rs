@@ -14,6 +14,7 @@ use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibili
 use crate::daemon::dispatch::DaemonContext;
 
 mod community;
+mod community_messages;
 mod events;
 mod friends;
 mod game_servers;
@@ -135,6 +136,9 @@ pub(crate) async fn select(
             | CommunityRequest::ChannelSend { .. }
             | CommunityRequest::ChannelMessageEdit { .. }
             | CommunityRequest::ChannelMessageDelete { .. }
+            | CommunityRequest::ChannelMessageForward { .. }
+            | CommunityRequest::ChannelMessageAdminDelete { .. }
+            | CommunityRequest::ChannelMessageBulkDelete { .. }
             | CommunityRequest::ChannelMessageSend { .. }
             | CommunityRequest::MekRotate { .. }
             | CommunityRequest::RoleCreate { .. }
@@ -255,6 +259,8 @@ pub(crate) async fn select(
             | CommunityRequest::CommunityPendingMembers { .. }
             | CommunityRequest::ChannelList { .. }
             | CommunityRequest::ChannelHistory { .. }
+            | CommunityRequest::ChannelTyping { .. }
+            | CommunityRequest::ChannelSetActive { .. }
             | CommunityRequest::MekList { .. }
             | CommunityRequest::MekRequest { .. }
             | CommunityRequest::RoleList { .. }

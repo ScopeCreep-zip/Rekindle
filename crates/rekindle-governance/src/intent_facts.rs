@@ -77,6 +77,37 @@ pub fn channel_delete_escalations(
     vec![Escalation::ContainerNotEmpty { messages, members }]
 }
 
+/// A channel and the members who could read it: its community's merged
+/// state and the registry's members.
+#[derive(Debug, Clone, Copy)]
+pub struct ChannelAudience<'a> {
+    pub state: &'a GovernanceState,
+    pub channel: &'a ChannelId,
+    pub members: &'a [PseudonymKey],
+}
+
+/// The E4 escalation for forwarding a message from `from` into `to`: the
+/// readers of each (`channel_members`), when the two read rosters differ.
+/// A forward within one community to the same readers is none; pseudonyms
+/// are scoped to their community, so a forward to another community always
+/// reaches a different membership.
+#[must_use]
+pub fn forward_escalations(from: ChannelAudience<'_>, to: ChannelAudience<'_>) -> Vec<Escalation> {
+    let mut from_roster = channel_read_roster(from.state, from.channel, from.members);
+    let mut to_roster = channel_read_roster(to.state, to.channel, to.members);
+    from_roster.sort_unstable_by_key(|k| k.0);
+    from_roster.dedup();
+    to_roster.sort_unstable_by_key(|k| k.0);
+    to_roster.dedup();
+    if from_roster == to_roster {
+        return Vec::new();
+    }
+    vec![Escalation::CrossAudience {
+        from_members: channel_members(from.state, from.channel, from.members),
+        to_members: channel_members(to.state, to.channel, to.members),
+    }]
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -153,5 +184,40 @@ mod tests {
             }]
         );
         assert!(channel_delete_escalations(&state, &channel, &[], 0).is_empty());
+    }
+
+    #[test]
+    fn a_forward_to_other_readers_names_both_audiences() {
+        let mut state = GovernanceState {
+            creator: Some(key(1)),
+            ..GovernanceState::default()
+        };
+        let channel = ChannelId([3; 16]);
+        let everyone = [key(1), key(2)];
+        let audience = |members| ChannelAudience {
+            state: &state,
+            channel: &channel,
+            members,
+        };
+        assert!(
+            forward_escalations(audience(&everyone), audience(&[key(1)])).is_empty(),
+            "only the creator reads either channel"
+        );
+
+        let role = admin_role(&mut state);
+        state.role_assignments.insert(key(2), HashSet::from([role]));
+        let audience = |members| ChannelAudience {
+            state: &state,
+            channel: &channel,
+            members,
+        };
+        assert!(forward_escalations(audience(&everyone), audience(&everyone)).is_empty());
+        assert_eq!(
+            forward_escalations(audience(&everyone), audience(&[key(1)])),
+            vec![Escalation::CrossAudience {
+                from_members: 2,
+                to_members: 1
+            }]
+        );
     }
 }

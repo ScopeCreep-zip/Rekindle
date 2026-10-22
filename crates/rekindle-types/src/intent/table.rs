@@ -484,6 +484,20 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
         "ChannelMessageDelete",
         Some(IntentKind::DeleteChannelMessage),
     ),
+    (
+        "ChannelMessageForward",
+        Some(IntentKind::ForwardChannelMessage),
+    ),
+    (
+        "ChannelMessageAdminDelete",
+        Some(IntentKind::AdminDeleteChannelMessage),
+    ),
+    (
+        "ChannelMessageBulkDelete",
+        Some(IntentKind::BulkDeleteChannelMessages),
+    ),
+    ("ChannelTyping", None),
+    ("ChannelSetActive", None),
     ("DmSend", Some(IntentKind::SendDmMessage)),
     ("OutboxRetry", Some(IntentKind::RetrySend)),
     ("OutboxDiscard", Some(IntentKind::DiscardSend)),

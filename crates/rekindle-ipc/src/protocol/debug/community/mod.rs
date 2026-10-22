@@ -44,6 +44,11 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::ChannelUpdate { .. }
             | Self::ChannelMessageEdit { .. }
             | Self::ChannelMessageDelete { .. }
+            | Self::ChannelMessageForward { .. }
+            | Self::ChannelMessageAdminDelete { .. }
+            | Self::ChannelMessageBulkDelete { .. }
+            | Self::ChannelTyping { .. }
+            | Self::ChannelSetActive { .. }
             | Self::ChannelMessageSend { .. }
             | Self::ChannelHistory { .. }
             | Self::MekList { .. }

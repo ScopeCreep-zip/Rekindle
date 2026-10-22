@@ -40,6 +40,8 @@ pub enum ModerationRefusal {
     NotAMember,
     /// The target is not a pseudonym.
     BadTarget,
+    /// A channel or message id is malformed.
+    BadMessage,
     /// The write failed.
     Failed(GovernanceRuntimeError),
 }
@@ -51,7 +53,7 @@ impl ModerationRefusal {
         match self {
             Self::NotPermitted(_) => 403,
             Self::NotAMember => 404,
-            Self::BadTarget => 400,
+            Self::BadTarget | Self::BadMessage => 400,
             Self::Failed(_) => 500,
         }
     }
@@ -63,6 +65,7 @@ impl fmt::Display for ModerationRefusal {
             Self::NotPermitted(what) => write!(f, "not permitted: {what}"),
             Self::NotAMember => f.write_str("no pseudonym for this community"),
             Self::BadTarget => f.write_str("the target is not a pseudonym"),
+            Self::BadMessage => f.write_str("not a channel or message id"),
             Self::Failed(e) => write!(f, "moderation write: {e}"),
         }
     }
@@ -160,7 +163,7 @@ pub fn permitted(
 }
 
 /// A 64-hex pseudonym.
-fn pseudonym(hex_str: &str) -> Option<PseudonymKey> {
+pub(super) fn pseudonym(hex_str: &str) -> Option<PseudonymKey> {
     let bytes: [u8; 32] = hex::decode(hex_str).ok()?.try_into().ok()?;
     Some(PseudonymKey(bytes))
 }

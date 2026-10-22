@@ -5,8 +5,8 @@
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
-    audit, channel, channel_message, community, community_profile, events, game_servers,
-    governance, keys, onboarding, DaemonContext,
+    audit, channel, channel_message, channel_message_ops, community, community_profile, events,
+    game_servers, governance, keys, onboarding, DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -101,6 +101,13 @@ pub(super) async fn route(
         | CommunityRequest::ChannelMessageEdit { .. }
         | CommunityRequest::ChannelMessageDelete { .. }) => {
             channel_message::handle(ctx, state, request).await
+        }
+        request @ (CommunityRequest::ChannelMessageForward { .. }
+        | CommunityRequest::ChannelMessageAdminDelete { .. }
+        | CommunityRequest::ChannelMessageBulkDelete { .. }
+        | CommunityRequest::ChannelTyping { .. }
+        | CommunityRequest::ChannelSetActive { .. }) => {
+            channel_message_ops::handle(ctx, state, request).await
         }
 
         // ── Governance (roles, moderation, invites) ──────────────

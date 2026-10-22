@@ -93,7 +93,7 @@ impl HostGovernance {
         Ok((sealed, epoch.0))
     }
 
-    async fn delete_stored(
+    pub(super) async fn delete_stored(
         &self,
         channel_id: &str,
         message_id: &str,

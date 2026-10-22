@@ -86,6 +86,19 @@ impl HostChannel {
     ) -> Result<ChannelSendResult, ChannelError> {
         rekindle_channel::send_channel_message(self, community_id, channel_id, body, reply_to).await
     }
+
+    /// Forward our stored copy of a message into another channel (plan
+    /// E3.1 E2d): the pipeline seals its body under the destination's key,
+    /// stores our row, writes our slot as a `ChannelForward` and gossips it.
+    ///
+    /// # Errors
+    /// The pipeline's refusal or failure (the source is not stored here).
+    pub(crate) async fn forward(
+        &self,
+        params: rekindle_channel::ForwardChannelMessageParams<'_>,
+    ) -> Result<ChannelSendResult, ChannelError> {
+        rekindle_channel::forward_channel_message(self, params).await
+    }
 }
 
 /// A send's refusal as the IPC reports it.

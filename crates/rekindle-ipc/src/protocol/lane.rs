@@ -204,6 +204,15 @@ impl CommunityRequest {
             Self::ChannelMessageEdit { .. } => ("ChannelMessageEdit", Write, Authenticated),
             Self::ChannelMessageDelete { .. } => ("ChannelMessageDelete", Write, Authenticated),
             Self::ChannelMessageSend { .. } => ("ChannelMessageSend", Write, Authenticated),
+            Self::ChannelMessageForward { .. } => ("ChannelMessageForward", Write, Authenticated),
+            Self::ChannelMessageAdminDelete { .. } => {
+                ("ChannelMessageAdminDelete", Write, Authenticated)
+            }
+            Self::ChannelMessageBulkDelete { .. } => {
+                ("ChannelMessageBulkDelete", Write, Authenticated)
+            }
+            Self::ChannelTyping { .. } => ("ChannelTyping", Write, Authenticated),
+            Self::ChannelSetActive { .. } => ("ChannelSetActive", Write, Authenticated),
             Self::MekList { .. } => ("MekList", Query, Authenticated),
             Self::MekRotate { .. } => ("MekRotate", Write, Authenticated),
             Self::MekRequest { .. } => ("MekRequest", Write, Authenticated),

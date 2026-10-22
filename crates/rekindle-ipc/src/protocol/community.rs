@@ -226,6 +226,40 @@ pub enum CommunityRequest {
     },
     /// Delete our message `message_id` in `channel` (a channel id).
     ChannelMessageDelete { channel: String, message_id: String },
+    /// Forward the stored message `source_message` of `source_channel` (in
+    /// `source_community`) into `dest_channel` of `dest_community`.
+    ChannelMessageForward {
+        source_community: String,
+        source_channel: String,
+        source_message: String,
+        dest_community: String,
+        dest_channel: String,
+    },
+    /// Delete another member's message `message_id` in `channel` of
+    /// `community` (`MANAGE_MESSAGES`).
+    ChannelMessageAdminDelete {
+        community: String,
+        channel: String,
+        message_id: String,
+        reason: Option<String>,
+    },
+    /// Delete up to 100 messages in `channel` of `community`
+    /// (`MANAGE_MESSAGES`): how many were deleted.
+    ChannelMessageBulkDelete {
+        community: String,
+        channel: String,
+        message_ids: Vec<String>,
+        reason: Option<String>,
+    },
+    /// Tell the community's mesh we are typing in `channel`.
+    ChannelTyping { community: String, channel: String },
+    /// The channel we are in (`kind` "voice" or "text"), or none, which our
+    /// presence carries.
+    ChannelSetActive {
+        community: String,
+        channel: Option<String>,
+        kind: String,
+    },
 
     // ── Channel keys (MEK) ─────────────────────────────────────
     /// List cached MEKs for a community.

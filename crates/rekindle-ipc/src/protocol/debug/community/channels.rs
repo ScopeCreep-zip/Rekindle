@@ -81,6 +81,59 @@ impl CommunityRequest {
                 .field("channel", channel)
                 .field("message_id", message_id)
                 .finish(),
+            Self::ChannelMessageForward {
+                source_community,
+                source_channel,
+                source_message,
+                dest_community,
+                dest_channel,
+            } => f
+                .debug_struct("ChannelMessageForward")
+                .field("source_community", source_community)
+                .field("source_channel", source_channel)
+                .field("source_message", source_message)
+                .field("dest_community", dest_community)
+                .field("dest_channel", dest_channel)
+                .finish(),
+            Self::ChannelMessageAdminDelete {
+                community,
+                channel,
+                message_id,
+                reason,
+            } => f
+                .debug_struct("ChannelMessageAdminDelete")
+                .field("community", community)
+                .field("channel", channel)
+                .field("message_id", message_id)
+                .field("has_reason", &reason.is_some())
+                .finish(),
+            Self::ChannelMessageBulkDelete {
+                community,
+                channel,
+                message_ids,
+                reason,
+            } => f
+                .debug_struct("ChannelMessageBulkDelete")
+                .field("community", community)
+                .field("channel", channel)
+                .field("messages", &message_ids.len())
+                .field("has_reason", &reason.is_some())
+                .finish(),
+            Self::ChannelTyping { community, channel } => f
+                .debug_struct("ChannelTyping")
+                .field("community", community)
+                .field("channel", channel)
+                .finish(),
+            Self::ChannelSetActive {
+                community,
+                channel,
+                kind,
+            } => f
+                .debug_struct("ChannelSetActive")
+                .field("community", community)
+                .field("channel", channel)
+                .field("kind", kind)
+                .finish(),
             Self::ChannelMessageSend { channel, .. } => f
                 .debug_struct("ChannelMessageSend")
                 .field("channel", channel)

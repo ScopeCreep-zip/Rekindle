@@ -10,6 +10,7 @@ mod dm_hint_loss;
 mod events;
 mod first_contact_retry;
 mod first_login;
+mod forward_cross_audience;
 mod friend_watch;
 mod friends;
 mod game_servers;

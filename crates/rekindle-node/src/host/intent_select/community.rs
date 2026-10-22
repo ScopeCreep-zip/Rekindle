@@ -165,6 +165,11 @@ pub(super) async fn selection(
             };
             s.notifies = members(ctx, &id);
         }
+        CommunityRequest::ChannelMessageForward { .. }
+        | CommunityRequest::ChannelMessageAdminDelete { .. }
+        | CommunityRequest::ChannelMessageBulkDelete { .. } => {
+            super::community_messages::selection(ctx, request, s)?;
+        }
         CommunityRequest::ChannelReorder {
             community: target, ..
         }
@@ -350,18 +355,21 @@ fn member_selection(
 }
 
 /// A community by governance key or name: `(id, name)`.
-fn community(ctx: &DaemonContext, target: &str) -> Result<(String, String), IpcResponse> {
+pub(super) fn community(
+    ctx: &DaemonContext,
+    target: &str,
+) -> Result<(String, String), IpcResponse> {
     ctx.resolve_community(target)
         .map(|m| (m.governance_key, m.community_name))
 }
 
 /// The members a community action reaches (its known members, the
 /// validated roster in the daemon).
-fn members(ctx: &DaemonContext, community_id: &str) -> Notifies {
+pub(super) fn members(ctx: &DaemonContext, community_id: &str) -> Notifies {
     Notifies::Members(u32::try_from(ctx.communities.member_count(community_id)).unwrap_or(u32::MAX))
 }
 
-fn channel_name(ctx: &DaemonContext, community_id: &str, channel_id: &str) -> String {
+pub(super) fn channel_name(ctx: &DaemonContext, community_id: &str, channel_id: &str) -> String {
     let parsed = hex::decode(channel_id)
         .ok()
         .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
@@ -441,13 +449,7 @@ async fn channel_delete_escalations(
             format!("channel '{channel}' not found"),
         ));
     };
-    let mut members: Vec<_> = ctx
-        .communities
-        .known_members(community_id)
-        .iter()
-        .filter_map(|key| pseudonym(key))
-        .collect();
-    members.extend(pseudonym(&ctx.my_pseudonym(community_id)));
+    let members = roster(ctx, community_id);
     let (owner, db) = (ctx.require_owner()?, ctx.require_db()?);
     let messages = db
         .call(move |conn| rekindle_db::repo::intent_facts::channel_messages(conn, &owner, &hex_id))
@@ -460,7 +462,23 @@ async fn channel_delete_escalations(
     )
 }
 
-fn pseudonym(hex_key: &str) -> Option<rekindle_types::id::PseudonymKey> {
+/// The community's members, from the registry, and ourselves: the members
+/// a channel's read roster is drawn from.
+pub(super) fn roster(
+    ctx: &DaemonContext,
+    community_id: &str,
+) -> Vec<rekindle_types::id::PseudonymKey> {
+    let mut members: Vec<_> = ctx
+        .communities
+        .known_members(community_id)
+        .iter()
+        .filter_map(|key| pseudonym(key))
+        .collect();
+    members.extend(pseudonym(&ctx.my_pseudonym(community_id)));
+    members
+}
+
+pub(super) fn pseudonym(hex_key: &str) -> Option<rekindle_types::id::PseudonymKey> {
     hex::decode(hex_key)
         .ok()
         .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())

@@ -24,6 +24,7 @@ mod audit;
 pub(crate) mod channel;
 mod channel_admin;
 mod channel_message;
+mod channel_message_ops;
 pub(crate) mod community;
 mod community_profile;
 mod context;

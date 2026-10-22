@@ -1,7 +1,8 @@
 //! Channel delete, container not empty (plan E3.1 E1): deleting a channel
 //! its members read is held for review with `ContainerNotEmpty` (the
 //! messages stored for it and its readers, `channel_read_roster`), and
-//! once confirmed it is gone on both members.
+//! once confirmed it is gone on both members. The creator posted to it, and
+//! `rekindled` stores its sent messages, so the review counts that one.
 
 use std::time::Duration;
 
@@ -38,6 +39,16 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
         "the member sees the new channel"
     );
 
+    creator
+        .ok(IpcRequest::Community(
+            CommunityRequest::ChannelMessageSend {
+                channel: channel.clone(),
+                body: "the last word".into(),
+                reply_to: None,
+            },
+        ))
+        .await;
+
     let delete = || {
         IpcRequest::Community(CommunityRequest::ChannelDelete {
             community: community.governance_key.clone(),
@@ -51,7 +62,8 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
         Escalation::ContainerNotEmpty { messages, members } => Some((*messages, *members)),
         _ => None,
     });
-    let (_, members) = held.expect("the review names ContainerNotEmpty");
+    let (messages, members) = held.expect("the review names ContainerNotEmpty");
+    assert_eq!(messages, 1, "the creator's post is stored");
     assert_eq!(members, 2, "both members read the channel");
     creator
         .ok(IpcRequest::IntentCancel {
