@@ -52,6 +52,13 @@ pub enum GovernanceRuntimeError {
     #[error("governance entry out of bounds: {field}")]
     OutOfBounds { field: &'static str },
 
+    /// The entry breaks a structural invariant every reader checks
+    /// (`rekindle_governance::validate::well_formed`), such as an automod
+    /// regex that does not compile: no peer applies it, so it is never
+    /// written.
+    #[error("governance entry malformed: every reader drops it")]
+    Malformed,
+
     #[error("governance write conflicted with newer network state ({0} bytes)")]
     WriteConflict(usize),
 

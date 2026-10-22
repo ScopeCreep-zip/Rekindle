@@ -43,7 +43,10 @@ impl OnboardingRefusal {
     #[must_use]
     pub fn code(&self) -> u16 {
         match self {
-            Self::Invalid(_) | Self::Failed(GovernanceRuntimeError::OutOfBounds { .. }) => 400,
+            Self::Invalid(_)
+            | Self::Failed(
+                GovernanceRuntimeError::OutOfBounds { .. } | GovernanceRuntimeError::Malformed,
+            ) => 400,
             Self::NotAMember => 404,
             Self::Failed(GovernanceRuntimeError::PermissionDenied) => 403,
             Self::Failed(_) => 500,

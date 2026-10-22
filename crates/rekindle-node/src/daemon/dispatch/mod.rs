@@ -28,7 +28,7 @@ mod channel_message;
 mod channel_message_ops;
 pub(crate) mod community;
 mod community_profile;
-mod context;
+pub(crate) mod context;
 mod events;
 mod expressions;
 mod friends;

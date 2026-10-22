@@ -8,6 +8,8 @@ use crate::host::fixture::temp_root;
 use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
 
+#[path = "automod_malformed_tests.rs"]
+mod automod_malformed;
 #[path = "channel_ingest_tests.rs"]
 mod channel_ingest_tests;
 #[path = "channel_send_tests.rs"]

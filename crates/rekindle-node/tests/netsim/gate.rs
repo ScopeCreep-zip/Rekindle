@@ -115,16 +115,15 @@ async fn timeout_expires_on_post() {
     );
 }
 
-/// The Host's `AutomodRuleSet` accepts the rule and the writer's own apply
-/// holds it, so the writer's compile fails: each post it receives is
-/// dropped, the second by the same cached compile
-/// (`an_uncompilable_rule_drops_and_is_compiled_once`).
+/// A rule whose regex does not compile is malformed, so the Host refuses
+/// it with 400 before writing, as every reader would drop it at merge; the
+/// writer's gate never holds it and admits the post every member admits.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn automod_error_drops() {
+async fn automod_uncompilable_rule_refused() {
     let community = Community::of(2, 251).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
-    community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::AutomodRuleSet {
+    let refused = community.nodes[0]
+        .call(IpcRequest::Community(CommunityRequest::AutomodRuleSet {
             community: community.governance_key.clone(),
             rule_id: None,
             name: "broken".into(),
@@ -133,13 +132,14 @@ async fn automod_error_drops() {
             regex_patterns: vec!["(".into()],
             action: AutoModAction::BlockLocally,
         }))
-        .await;
-    tokio::time::sleep(Duration::from_secs(60)).await;
+        .await
+        .expect_err("an uncompilable rule is refused");
+    assert_eq!(refused.code, 400, "{}", refused.message);
     let ann = community.nodes[0].events().await;
-    for body in ["(", "( again"] {
-        let posted = community.post(1, body).await.expect("bea posts");
-        let id = message_id(&posted);
-        tokio::time::sleep(Duration::from_secs(60)).await;
-        assert!(!saw_post(&ann, &id), "{body:?} is dropped");
-    }
+    let posted = community.post(1, "(").await.expect("bea posts");
+    let id = message_id(&posted);
+    assert!(
+        eventually(&community.sim, LIMIT, || async { saw_post(&ann, &id) }).await,
+        "with no rule written, the post is admitted"
+    );
 }

@@ -133,9 +133,7 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
         })?;
     let pseudo = PseudonymKey(pseudo_bytes);
 
-    if !validate::validate_write(&pseudo, &entry, &gov_state) {
-        return Err(GovernanceRuntimeError::PermissionDenied);
-    }
+    refuse_invalid(&pseudo, &entry, &gov_state)?;
 
     let gov_key_str = membership
         .governance_key
@@ -312,9 +310,13 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     deps.send_to_mesh(community_id, &notification)?;
 
     // Local CRDT merge after the network confirms the entry landed.
+    // The same reader validation every peer runs, against the state as it
+    // is now: our view must not hold an entry the community drops.
     if let Some(mut current_state) = deps.governance_state(community_id) {
-        merge::apply_entry(&pseudo, &entry, &mut current_state);
-        deps.set_governance_state(community_id, current_state);
+        if validate::validate_write(&pseudo, &entry, &current_state) {
+            merge::apply_entry(&pseudo, &entry, &mut current_state);
+            deps.set_governance_state(community_id, current_state);
+        }
     }
 
     deps.emit_event(GovernanceRuntimeEvent::GovernanceEntryApplied {
@@ -345,6 +347,24 @@ fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntime
         Some(field) => Err(GovernanceRuntimeError::OutOfBounds { field }),
         None => Ok(()),
     }
+}
+
+/// Every reader runs `validate_write` against its merged state before it
+/// applies an entry, so the writer runs it before writing: a malformed
+/// entry is `Malformed` (400), a missing permission `PermissionDenied`
+/// (403), and neither is written or applied.
+fn refuse_invalid(
+    writer: &PseudonymKey,
+    entry: &GovernanceEntry,
+    state: &rekindle_governance::state::GovernanceState,
+) -> Result<(), GovernanceRuntimeError> {
+    if !validate::well_formed(writer, entry, state) {
+        return Err(GovernanceRuntimeError::Malformed);
+    }
+    if !validate::validate_write(writer, entry, state) {
+        return Err(GovernanceRuntimeError::PermissionDenied);
+    }
+    Ok(())
 }
 
 /// M9.5: set the primary subkey, surfacing a newer network value as

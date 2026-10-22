@@ -115,7 +115,8 @@ pub(crate) fn transition(ctx: &DaemonContext, next: DaemonState) -> Result<(), I
 }
 
 /// A governance runtime error as the answer: 403 when we lack the
-/// permission, 500 otherwise.
+/// permission, 400 when the entry is malformed or out of bounds, 500
+/// otherwise.
 pub(crate) fn runtime_refused(
     e: &rekindle_governance_runtime::GovernanceRuntimeError,
     what: &str,
@@ -123,6 +124,10 @@ pub(crate) fn runtime_refused(
     match e {
         rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied => {
             IpcResponse::error(403, format!("{what}: {e}"))
+        }
+        rekindle_governance_runtime::GovernanceRuntimeError::Malformed
+        | rekindle_governance_runtime::GovernanceRuntimeError::OutOfBounds { .. } => {
+            IpcResponse::error(400, format!("{what}: {e}"))
         }
         _ => IpcResponse::error(500, format!("{what}: {e}")),
     }

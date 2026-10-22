@@ -36,6 +36,22 @@ pub fn validate_write(
     entry: &GovernanceEntry,
     state: &GovernanceState,
 ) -> bool {
+    if !well_formed(writer, entry, state) {
+        return false;
+    }
+    permitted(writer, entry, state)
+}
+
+/// The structural half of [`validate_write`]: whether `entry` is well
+/// formed against `state`, whoever wrote it. A writer checks this before
+/// writing, so an entry every reader drops is refused as malformed (400),
+/// not reported as a missing permission (403).
+#[must_use]
+pub fn well_formed(
+    writer: &PseudonymKey,
+    entry: &GovernanceEntry,
+    state: &GovernanceState,
+) -> bool {
     // ── Structural invariants: checked BEFORE the creator bypass ──
     //
     // These are not permissions, so "the creator may do anything" does
@@ -79,9 +95,25 @@ pub fn validate_write(
         // Value bounds (plan E3.0): an out-of-range slowmode, timeout or
         // description is malformed whoever wrote it, the creator included.
         _ if !bounds::entry_within_bounds(entry) => return false,
+        // A rule's trigger must parse, its regexes compile within the
+        // budget and the community's quotas hold, the creator's rules
+        // included: a rule our own gate cannot compile would drop posts
+        // that every other member admits.
+        GovernanceEntry::AutoModRule {
+            rule_id,
+            enabled,
+            trigger_json,
+            ..
+        } if !validate_automod_rule(rule_id, *enabled, trigger_json, state) => {
+            return false;
+        }
         _ => {}
     }
+    true
+}
 
+/// The permission half of [`validate_write`], for a well-formed entry.
+fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceState) -> bool {
     // Creator always passes validation
     if state.creator.as_ref() == Some(writer) {
         return true;
@@ -312,15 +344,7 @@ pub fn validate_write(
             has(perms, SEND_MESSAGES) && state.channels.contains_key(channel_id)
         }
 
-        GovernanceEntry::AutoModRule {
-            rule_id,
-            enabled,
-            trigger_json,
-            ..
-        } => {
-            has(perms, MANAGE_COMMUNITY)
-                && validate_automod_rule(rule_id, *enabled, trigger_json, state)
-        }
+        GovernanceEntry::AutoModRule { .. } => has(perms, MANAGE_COMMUNITY),
 
         GovernanceEntry::RoleArchived { .. } => has(perms, MANAGE_ROLES),
 

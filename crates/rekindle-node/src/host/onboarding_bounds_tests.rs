@@ -33,7 +33,7 @@ fn channel() -> WelcomeChannelEntryDto {
 }
 
 /// Ann's membership of `c1`, so a write takes its next Lamport clock.
-fn load_membership(host: &crate::host::Host) {
+pub(super) fn load_membership(host: &crate::host::Host) {
     let membership = CommunityMembership {
         governance_key: "c1".into(),
         pseudonym_key: "cd".repeat(32),
