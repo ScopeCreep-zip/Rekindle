@@ -19,6 +19,26 @@ fn refused(e: &rekindle_channel::error::ChannelError) -> IpcResponse {
     IpcResponse::error(400, e.to_string())
 }
 
+/// Whether `request` is a reaction, thread or poll request.
+pub(super) fn is_rich(request: &CommunityRequest) -> bool {
+    matches!(
+        request,
+        CommunityRequest::ReactionAdd { .. }
+            | CommunityRequest::ReactionRemove { .. }
+            | CommunityRequest::ThreadCreate { .. }
+            | CommunityRequest::ThreadArchive { .. }
+            | CommunityRequest::ThreadUnarchive { .. }
+            | CommunityRequest::ThreadList { .. }
+            | CommunityRequest::ThreadListActive { .. }
+            | CommunityRequest::ThreadMessages { .. }
+            | CommunityRequest::ThreadSend { .. }
+            | CommunityRequest::PollCreate { .. }
+            | CommunityRequest::PollVote { .. }
+            | CommunityRequest::PollClose { .. }
+            | CommunityRequest::PollResults { .. }
+    )
+}
+
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::ReactionAdd {

@@ -77,19 +77,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         request @ (CommunityRequest::AuditLog { .. }
         | CommunityRequest::NotificationDefaultSet { .. }) => audit_fields(request),
         request @ (CommunityRequest::MemberBlock { .. } | CommunityRequest::MemberUnblock { .. } | CommunityRequest::MemberBlockList { .. }) => block_fields(request),
-        request @ (CommunityRequest::ReactionAdd { .. }
-        | CommunityRequest::ReactionRemove { .. }
-        | CommunityRequest::ThreadCreate { .. }
-        | CommunityRequest::ThreadArchive { .. }
-        | CommunityRequest::ThreadUnarchive { .. }
-        | CommunityRequest::ThreadList { .. }
-        | CommunityRequest::ThreadListActive { .. }
-        | CommunityRequest::ThreadMessages { .. }
-        | CommunityRequest::ThreadSend { .. }
-        | CommunityRequest::PollCreate { .. }
-        | CommunityRequest::PollVote { .. }
-        | CommunityRequest::PollClose { .. }
-        | CommunityRequest::PollResults { .. }) => super::rich_messaging::check(request),
+        request if super::rich_messaging::is_rich(request) => super::rich_messaging::check(request),
         request @ (CommunityRequest::AutomodRuleSet { .. }
         | CommunityRequest::AutomodRuleDelete { .. }) => automod_fields(request),
         request @ (CommunityRequest::ChannelPins { .. }
