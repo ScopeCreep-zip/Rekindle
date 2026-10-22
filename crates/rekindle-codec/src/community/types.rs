@@ -167,13 +167,16 @@ pub enum ModerationLevel {
 
 /// Invite entry stored in manifest subkey 7.
 ///
-/// The `code_hash` is SHA-256(raw_code) so the raw invite code is never
+/// The `code_hash` is the code's lookup id (BLAKE3 `derive_key` under
+/// `domains::INVITE_CODE_ID`, `rekindle_secrets::invite::hash_invite_code`)
+/// so the raw invite code is never
 /// exposed in the publicly-readable DHT manifest. The `encrypted_secrets`
 /// blob can only be decrypted by someone who has the raw code.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteEntry {
-    /// SHA-256 hash of the invite code (hex). Raw code never stored in DHT.
+    /// The invite code's lookup id (hex, `hash_invite_code`). Raw code never
+    /// stored in DHT.
     pub code_hash: String,
     pub created_by: String,
     pub created_at: u64,

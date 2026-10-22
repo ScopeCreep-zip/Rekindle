@@ -312,6 +312,9 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   sender ‖ nonce)` (`rekindle-crypto::replay`).
 - **Base-key hash** a `PreKeyRejected` names: `derive_key` under
   `rekindle-prekey-rejected-base-key-v1`.
+- **Invite-code lookup id** (the `code_hash` an invite entry is stored
+  under): `derive_key` under `rekindle-invite-code-id-v1` over the code
+  (`rekindle_secrets::invite::hash_invite_code`).
 - **File-cache names**: every directory under `state/{pk}.files/` is a
   keyed BLAKE3 hash (`FILE_CACHE_COMMUNITY`, `FILE_CACHE_DM`,
   `FILE_CACHE_ATTACHMENT` prefixes) under a key

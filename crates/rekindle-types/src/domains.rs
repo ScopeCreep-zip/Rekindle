@@ -108,6 +108,10 @@ labels! {
     PRESENCE_ROW = "rekindle-presence-v1";
     /// HKDF info: invite-secrets record key.
     INVITE_SECRETS = "rekindle-invite-secrets-v1";
+    /// BLAKE3 derive-key context: a community invite code's lookup id, the
+    /// `code_hash` invite entries are stored under
+    /// (`rekindle_secrets::invite::hash_invite_code`).
+    INVITE_CODE_ID = "rekindle-invite-code-id-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// Ed25519 signature prefix: the daemon's framed community RPC
