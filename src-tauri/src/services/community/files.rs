@@ -15,25 +15,10 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use rekindle_files::{CacheConfig, ChunkCache};
-use tauri::Manager as _;
-
 use crate::state::{AppState, SharedState};
 use rekindle_db::Db;
 
-/// 1 GB per spec §28.9 line 3283.
-const DEFAULT_BYTE_BUDGET: u64 = 1024 * 1024 * 1024;
-
 // ─── Phase 3: cache lifecycle ──────────────────────────────────────────
-
-/// Ensure the chunk cache for a given community is open in the Host's
-/// store (plan E3.1 E3c). Idempotent.
-pub fn ensure_cache_open(state: &SharedState, community_id: &str) -> Result<(), String> {
-    state
-        .files
-        .ensure_open(community_id)
-        .map_err(|e| format!("failed to open file cache: {e}"))
-}
 
 /// Sync the in-memory pinned set for a community from the merged governance
 /// state's `pinned_attachments`. Run after every governance merge.
