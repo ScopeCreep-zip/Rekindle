@@ -9,11 +9,9 @@
 
 use rekindle_governance::validate::bounds;
 use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
-use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{
-    self, KeyFormatError, MAX_NAME_LEN, MAX_NOTE_LEN, MAX_STATUS_LEN, MAX_TOPIC_LEN,
+    self, KeyFormatError, MAX_NAME_LEN, MAX_STATUS_LEN, MAX_TOPIC_LEN,
 };
-use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
 use rekindle_ipc::noise_keys::validate_agent_name;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
@@ -270,7 +268,6 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::FriendInviteList
         | IpcRequest::FriendBlockedList
         | IpcRequest::FriendGroupDelete { group_id: _ }
-        | IpcRequest::CommunityList
         | IpcRequest::PresenceGet
         | IpcRequest::Undo { id: _ }
         | IpcRequest::AuditVerify
@@ -338,86 +335,38 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityMarkVerified { peer: key }
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
-        IpcRequest::CommunityCreate {
-            name: community_name,
-            description,
-            approval_required: _,
-        } => {
-            name(community_name, "community")?;
-            bounds::description(description)
-                .map(drop)
-                .map_err(|e| reject("description", &e))
-        }
-        IpcRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
-            IpcResponse::error(
-                400,
-                format!(
-                    "join requires a full invite link \
-                     (rekindle://invite/{{governance_key}}/{{secrets_record_key}}/{{invite_code}}): {e}"
-                ),
-            )
-        }),
-        IpcRequest::CommunityLeave { governance_key }
-        | IpcRequest::CommunityInfo { governance_key }
-        | IpcRequest::CommunityPendingMembers { governance_key } => community(governance_key),
-        IpcRequest::CommunityApprove {
-            governance_key,
-            member_pseudonym,
-        } => {
-            community(governance_key)?;
-            pseudonym(member_pseudonym, "member pseudonym")
-        }
-        IpcRequest::CommunityReject {
-            governance_key,
-            member_pseudonym,
-            reason,
-        } => {
-            community(governance_key)?;
-            pseudonym(member_pseudonym, "member pseudonym")?;
-            text(reason, MAX_NOTE_LEN, "reason")
-        }
-        IpcRequest::CommunityTransferOwnership {
-            governance_key,
-            new_owner_pseudonym,
-        } => {
-            community(governance_key)?;
-            pseudonym(new_owner_pseudonym, "new owner pseudonym")
-        }
-
-        IpcRequest::ChannelList { community: c }
-        | IpcRequest::MekList { community: c }
-        | IpcRequest::RoleList { community: c }
-        | IpcRequest::BanList { community: c }
-        | IpcRequest::InviteList { community: c }
-        // Role ids, invite use counts and expiries are governance rules,
-        // checked where the op is validated.
-        | IpcRequest::RoleDelete {
-            community: c,
-            role_id: _,
-        }
-        | IpcRequest::InviteCreate {
-            community: c,
-            max_uses: _,
-            expires_seconds: _,
-        } => community(c),
-        IpcRequest::ChannelCreate { .. }
+        IpcRequest::CommunityList
+        | IpcRequest::CommunityCreate { .. }
+        | IpcRequest::CommunityJoin { .. }
+        | IpcRequest::CommunityLeave { .. }
+        | IpcRequest::CommunityInfo { .. }
+        | IpcRequest::CommunityPendingMembers { .. }
+        | IpcRequest::CommunityApprove { .. }
+        | IpcRequest::CommunityReject { .. }
+        | IpcRequest::CommunityTransferOwnership { .. }
+        | IpcRequest::ChannelList { .. }
+        | IpcRequest::MekList { .. }
+        | IpcRequest::RoleList { .. }
+        | IpcRequest::BanList { .. }
+        | IpcRequest::InviteList { .. }
+        | IpcRequest::RoleDelete { .. }
+        | IpcRequest::InviteCreate { .. }
+        | IpcRequest::ChannelCreate { .. }
         | IpcRequest::ChannelDelete { .. }
         | IpcRequest::ChannelUpdate { .. }
         | IpcRequest::ChannelSend { .. }
-        | IpcRequest::ChannelHistory { .. } => channels::check(request),
-
-        IpcRequest::MekRotate {
-            community: c,
-            channel: ch,
-        }
-        | IpcRequest::MekRequest {
-            community: c,
-            channel: ch,
-            generation: _,
-        } => {
-            community(c)?;
-            key_scope(ch)
-        }
+        | IpcRequest::ChannelHistory { .. }
+        | IpcRequest::MekRotate { .. }
+        | IpcRequest::MekRequest { .. }
+        | IpcRequest::RoleCreate { .. }
+        | IpcRequest::RoleUpdate { .. }
+        | IpcRequest::RoleAssign { .. }
+        | IpcRequest::RoleUnassign { .. }
+        | IpcRequest::Kick { .. }
+        | IpcRequest::Unban { .. }
+        | IpcRequest::Ban { .. }
+        | IpcRequest::Timeout { .. }
+        | IpcRequest::InviteRevoke { .. } => community::check(request),
 
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
@@ -436,95 +385,6 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
                 rekindle_types::game_server::ServerAddress::parse(a)
                     .map(drop)
                     .map_err(|e| IpcResponse::error(400, format!("invalid server address: {e}")))
-            })
-        }
-
-        IpcRequest::RoleCreate {
-            community: c,
-            name: role_name,
-            permissions: _,
-            color: _,
-            position: _,
-        } => {
-            community(c)?;
-            name(role_name, "role")
-        }
-        IpcRequest::RoleUpdate {
-            community: c,
-            role_id: _,
-            name: new_name,
-            permissions: _,
-            color: _,
-        } => {
-            community(c)?;
-            opt(new_name.as_deref(), |n| name(n, "role"))
-        }
-        IpcRequest::RoleAssign {
-            community: c,
-            member_pseudonym,
-            role_id: _,
-        }
-        | IpcRequest::RoleUnassign {
-            community: c,
-            member_pseudonym,
-            role_id: _,
-        } => {
-            community(c)?;
-            pseudonym(member_pseudonym, "member pseudonym")
-        }
-
-        IpcRequest::Kick {
-            community: c,
-            target_pseudonym,
-        }
-        | IpcRequest::Unban {
-            community: c,
-            target_pseudonym,
-        } => {
-            community(c)?;
-            pseudonym(target_pseudonym, "target pseudonym")
-        }
-        IpcRequest::Ban {
-            community: c,
-            target_pseudonym,
-            reason,
-        } => {
-            community(c)?;
-            pseudonym(target_pseudonym, "target pseudonym")?;
-            opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
-        }
-        IpcRequest::Timeout {
-            community: c,
-            target_pseudonym,
-            duration_seconds,
-            reason,
-        } => {
-            community(c)?;
-            pseudonym(target_pseudonym, "target pseudonym")?;
-            if !bounds::timeout_ok(*duration_seconds) {
-                return Err(IpcResponse::error(
-                    400,
-                    format!(
-                        "timeout must be 1-{MAX_TIMEOUT_SECONDS} seconds, got {duration_seconds}"
-                    ),
-                ));
-            }
-            opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
-        }
-
-        IpcRequest::InviteRevoke {
-            community: c,
-            invite_code,
-        } => {
-            community(c)?;
-            key_format::hex16_id(invite_code).map(drop).map_err(|e| {
-                IpcResponse::error(
-                    400,
-                    format!(
-                        "invalid invite id: {e} — revoke takes the 16-byte invite id from \
-                         `invite list`, not the raw code, which is never published"
-                    ),
-                )
             })
         }
 
@@ -551,6 +411,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
 }
 
 mod channels;
+mod community;
 mod friends;
 mod group_dm;
 #[cfg(test)]

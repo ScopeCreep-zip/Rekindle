@@ -2,6 +2,7 @@
 
 use super::IpcRequest;
 
+mod community;
 mod dm;
 mod friend;
 mod group_dm;
@@ -40,18 +41,6 @@ impl std::fmt::Debug for IpcRequest {
                 .finish(),
 
             // Variants with message bodies — show length only
-            Self::ChannelSend {
-                community,
-                channel,
-                body,
-                reply_to,
-            } => f
-                .debug_struct("ChannelSend")
-                .field("community", community)
-                .field("channel", channel)
-                .field("body_len", &body.len())
-                .field("reply_to", reply_to)
-                .finish(),
             Self::DmSend {
                 peer_key,
                 body,
@@ -124,111 +113,38 @@ impl std::fmt::Debug for IpcRequest {
             | Self::IdentitySafetyNumber { .. }
             | Self::IdentityMarkVerified { .. }
             | Self::IdentityClearVerification { .. } => self.fmt_friend(f),
-            Self::CommunityCreate {
-                name,
-                description,
-                approval_required,
-            } => f
-                .debug_struct("CommunityCreate")
-                .field("name", name)
-                .field("description", description)
-                .field("approval_required", approval_required)
-                .finish(),
-            Self::CommunityJoin { invite } => f
-                .debug_struct("CommunityJoin")
-                .field("invite", invite)
-                .finish(),
-            Self::CommunityLeave { governance_key } => f
-                .debug_struct("CommunityLeave")
-                .field("governance_key", governance_key)
-                .finish(),
-            Self::CommunityList => write!(f, "CommunityList"),
-            Self::CommunityInfo { governance_key } => f
-                .debug_struct("CommunityInfo")
-                .field("governance_key", governance_key)
-                .finish(),
-            Self::CommunityApprove {
-                governance_key,
-                member_pseudonym,
-            } => f
-                .debug_struct("CommunityApprove")
-                .field("governance_key", governance_key)
-                .field("member_pseudonym", member_pseudonym)
-                .finish(),
-            Self::CommunityReject {
-                governance_key,
-                member_pseudonym,
-                reason,
-            } => f
-                .debug_struct("CommunityReject")
-                .field("governance_key", governance_key)
-                .field("member_pseudonym", member_pseudonym)
-                .field("reason", reason)
-                .finish(),
-            Self::CommunityPendingMembers { governance_key } => f
-                .debug_struct("CommunityPendingMembers")
-                .field("governance_key", governance_key)
-                .finish(),
-            Self::CommunityTransferOwnership {
-                governance_key,
-                new_owner_pseudonym,
-            } => f
-                .debug_struct("CommunityTransferOwnership")
-                .field("governance_key", governance_key)
-                .field("new_owner_pseudonym", new_owner_pseudonym)
-                .finish(),
-            Self::ChannelList { community } => f
-                .debug_struct("ChannelList")
-                .field("community", community)
-                .finish(),
-            Self::ChannelCreate {
-                community,
-                name,
-                kind,
-                category,
-                topic,
-                slowmode_seconds,
-            } => f
-                .debug_struct("ChannelCreate")
-                .field("community", community)
-                .field("name", name)
-                .field("kind", kind)
-                .field("category", category)
-                .field("topic", topic)
-                .field("slowmode_seconds", slowmode_seconds)
-                .finish(),
-            Self::ChannelDelete {
-                community,
-                channel_id,
-            } => f
-                .debug_struct("ChannelDelete")
-                .field("community", community)
-                .field("channel_id", channel_id)
-                .finish(),
-            Self::ChannelUpdate {
-                community,
-                channel_id,
-                name,
-                topic,
-                slowmode_seconds,
-            } => f
-                .debug_struct("ChannelUpdate")
-                .field("community", community)
-                .field("channel_id", channel_id)
-                .field("name", name)
-                .field("topic", topic)
-                .field("slowmode_seconds", slowmode_seconds)
-                .finish(),
-            Self::ChannelHistory {
-                community,
-                channel,
-                limit,
-            } => f
-                .debug_struct("ChannelHistory")
-                .field("community", community)
-                .field("channel", channel)
-                .field("limit", limit)
-                .finish(),
+            Self::ChannelSend { .. }
+            | Self::CommunityCreate { .. }
+            | Self::CommunityJoin { .. }
+            | Self::CommunityLeave { .. }
+            | Self::CommunityList
+            | Self::CommunityInfo { .. }
+            | Self::CommunityApprove { .. }
+            | Self::CommunityReject { .. }
+            | Self::CommunityPendingMembers { .. }
+            | Self::CommunityTransferOwnership { .. }
+            | Self::ChannelList { .. }
+            | Self::ChannelCreate { .. }
+            | Self::ChannelDelete { .. }
+            | Self::ChannelUpdate { .. }
+            | Self::ChannelHistory { .. }
+            | Self::MekList { .. }
+            | Self::MekRotate { .. }
+            | Self::MekRequest { .. }
+            | Self::RoleList { .. }
+            | Self::RoleCreate { .. }
+            | Self::RoleUpdate { .. }
+            | Self::RoleDelete { .. }
+            | Self::RoleAssign { .. }
+            | Self::RoleUnassign { .. }
+            | Self::Kick { .. }
+            | Self::Ban { .. }
+            | Self::Unban { .. }
+            | Self::Timeout { .. }
+            | Self::BanList { .. }
+            | Self::InviteCreate { .. }
+            | Self::InviteList { .. }
+            | Self::InviteRevoke { .. } => self.fmt_community(f),
             Self::DmTyping { .. }
             | Self::DmInbox { .. }
             | Self::DmHistory { .. }
@@ -243,25 +159,6 @@ impl std::fmt::Debug for IpcRequest {
             Self::Unsubscribe { filters } => f
                 .debug_struct("Unsubscribe")
                 .field("filter_count", &filters.len())
-                .finish(),
-            Self::MekList { community } => f
-                .debug_struct("MekList")
-                .field("community", community)
-                .finish(),
-            Self::MekRotate { community, channel } => f
-                .debug_struct("MekRotate")
-                .field("community", community)
-                .field("channel", channel)
-                .finish(),
-            Self::MekRequest {
-                community,
-                channel,
-                generation,
-            } => f
-                .debug_struct("MekRequest")
-                .field("community", community)
-                .field("channel", channel)
-                .field("generation", generation)
                 .finish(),
 
             // The remaining variants are formatted by `fmt_rest` to keep this
@@ -281,20 +178,6 @@ impl std::fmt::Debug for IpcRequest {
             Self::PresenceSet { .. }
             | Self::GamePresenceSet { .. }
             | Self::GamePresenceClear
-            | Self::RoleList { .. }
-            | Self::RoleCreate { .. }
-            | Self::RoleUpdate { .. }
-            | Self::RoleDelete { .. }
-            | Self::RoleAssign { .. }
-            | Self::RoleUnassign { .. }
-            | Self::Kick { .. }
-            | Self::Ban { .. }
-            | Self::Unban { .. }
-            | Self::Timeout { .. }
-            | Self::BanList { .. }
-            | Self::InviteCreate { .. }
-            | Self::InviteList { .. }
-            | Self::InviteRevoke { .. }
             | Self::VoiceJoin { .. }
             | Self::VoiceLeave
             | Self::NetworkStatus
@@ -369,127 +252,6 @@ impl IpcRequest {
                 .field("server_address", server_address)
                 .finish(),
             Self::GamePresenceClear => write!(f, "GamePresenceClear"),
-            Self::RoleList { community } => f
-                .debug_struct("RoleList")
-                .field("community", community)
-                .finish(),
-            Self::RoleCreate {
-                community,
-                name,
-                permissions,
-                color,
-                position,
-            } => f
-                .debug_struct("RoleCreate")
-                .field("community", community)
-                .field("name", name)
-                .field("permissions", permissions)
-                .field("color", color)
-                .field("position", position)
-                .finish(),
-            Self::RoleUpdate {
-                community,
-                role_id,
-                name,
-                permissions,
-                color,
-            } => f
-                .debug_struct("RoleUpdate")
-                .field("community", community)
-                .field("role_id", role_id)
-                .field("name", name)
-                .field("permissions", permissions)
-                .field("color", color)
-                .finish(),
-            Self::RoleDelete { community, role_id } => f
-                .debug_struct("RoleDelete")
-                .field("community", community)
-                .field("role_id", role_id)
-                .finish(),
-            Self::RoleAssign {
-                community,
-                member_pseudonym,
-                role_id,
-            } => f
-                .debug_struct("RoleAssign")
-                .field("community", community)
-                .field("member_pseudonym", member_pseudonym)
-                .field("role_id", role_id)
-                .finish(),
-            Self::RoleUnassign {
-                community,
-                member_pseudonym,
-                role_id,
-            } => f
-                .debug_struct("RoleUnassign")
-                .field("community", community)
-                .field("member_pseudonym", member_pseudonym)
-                .field("role_id", role_id)
-                .finish(),
-            Self::Kick {
-                community,
-                target_pseudonym,
-            } => f
-                .debug_struct("Kick")
-                .field("community", community)
-                .field("target_pseudonym", target_pseudonym)
-                .finish(),
-            Self::Ban {
-                community,
-                target_pseudonym,
-                reason,
-            } => f
-                .debug_struct("Ban")
-                .field("community", community)
-                .field("target_pseudonym", target_pseudonym)
-                .field("reason", reason)
-                .finish(),
-            Self::Unban {
-                community,
-                target_pseudonym,
-            } => f
-                .debug_struct("Unban")
-                .field("community", community)
-                .field("target_pseudonym", target_pseudonym)
-                .finish(),
-            Self::Timeout {
-                community,
-                target_pseudonym,
-                duration_seconds,
-                reason,
-            } => f
-                .debug_struct("Timeout")
-                .field("community", community)
-                .field("target_pseudonym", target_pseudonym)
-                .field("duration_seconds", duration_seconds)
-                .field("reason", reason)
-                .finish(),
-            Self::BanList { community } => f
-                .debug_struct("BanList")
-                .field("community", community)
-                .finish(),
-            Self::InviteCreate {
-                community,
-                max_uses,
-                expires_seconds,
-            } => f
-                .debug_struct("InviteCreate")
-                .field("community", community)
-                .field("max_uses", max_uses)
-                .field("expires_seconds", expires_seconds)
-                .finish(),
-            Self::InviteList { community } => f
-                .debug_struct("InviteList")
-                .field("community", community)
-                .finish(),
-            Self::InviteRevoke {
-                community,
-                invite_code,
-            } => f
-                .debug_struct("InviteRevoke")
-                .field("community", community)
-                .field("invite_code", invite_code)
-                .finish(),
             Self::VoiceJoin {
                 community,
                 channel,
