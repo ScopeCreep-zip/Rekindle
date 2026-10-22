@@ -19,10 +19,8 @@ use serde::Serialize;
 /// no community id at all.
 ///
 /// Merging it into `DirectMessageReceived` instead was tried and
-/// reverted: that variant drives `increment_dm` in the daemon's
-/// `state_effects`, so routing channel messages through it would count
-/// every channel message as DM unread. The two conversation kinds are
-/// not distinguishable from `conversation_id` alone.
+/// reverted: the two conversation kinds are not distinguishable from
+/// `conversation_id` alone.
 ///
 /// Closing this properly means threading `community_id` to the five
 /// emit sites so they can produce `ChannelMessageEvent::New`, which is

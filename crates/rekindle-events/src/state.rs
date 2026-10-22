@@ -1,4 +1,4 @@
-//! Mutable subscription state — unread counts, typing, presence, voice.
+//! Mutable subscription state — friend requests, typing, presence, voice.
 //!
 //! All state is owned by the `SubscriptionManager` behind a `RwLock`.
 //! Readers (TUI badge queries) take a read lock. Writers (event handlers)
@@ -13,61 +13,13 @@ use rekindle_types::subscription_events::PresenceSnapshot;
 /// Combined subscription state. One instance per `SubscriptionManager`.
 #[derive(Debug, Default)]
 pub struct SubscriptionState {
-    pub unread: UnreadState,
+    /// Pending inbound friend requests (`UnreadContext::FriendRequests`).
+    /// Channel and DM counts are the Host's, derived from the read markers
+    /// (plan E3.1, D25).
+    pub friend_requests: u32,
     pub typing: TypingState,
     pub presence: PresenceState,
     pub voice: VoiceState,
-}
-
-// ── Unread tracking ────────────────────────────────────────────────────
-
-/// Unread message counts across all contexts.
-#[derive(Debug, Default)]
-pub struct UnreadState {
-    /// (community_governance_key, channel_id) → unread count.
-    pub channels: HashMap<(String, String), u32>,
-    /// peer_public_key → unread DM count.
-    pub dms: HashMap<String, u32>,
-    /// Pending inbound friend request count.
-    pub friend_requests: u32,
-}
-
-impl UnreadState {
-    /// Increment channel unread count. Returns the new count.
-    pub fn increment_channel(&mut self, community: &str, channel: &str) -> u32 {
-        let key = (community.to_string(), channel.to_string());
-        let count = self.channels.entry(key).or_insert(0);
-        *count = count.saturating_add(1);
-        *count
-    }
-
-    /// Increment DM unread count. Returns the new count.
-    pub fn increment_dm(&mut self, peer_key: &str) -> u32 {
-        let count = self.dms.entry(peer_key.to_string()).or_insert(0);
-        *count = count.saturating_add(1);
-        *count
-    }
-
-    /// Mark a channel as read. Returns the previous count.
-    pub fn mark_channel_read(&mut self, community: &str, channel: &str) -> u32 {
-        let key = (community.to_string(), channel.to_string());
-        self.channels.remove(&key).unwrap_or(0)
-    }
-
-    /// Mark a DM conversation as read. Returns the previous count.
-    pub fn mark_dm_read(&mut self, peer_key: &str) -> u32 {
-        self.dms.remove(peer_key).unwrap_or(0)
-    }
-
-    /// Remove all unread state for a community (on leave).
-    pub fn remove_community(&mut self, community: &str) {
-        self.channels.retain(|k, _| k.0 != community);
-    }
-
-    /// Remove all unread state for a DM peer (on unfriend).
-    pub fn remove_dm_peer(&mut self, peer_key: &str) {
-        self.dms.remove(peer_key);
-    }
 }
 
 // ── Typing indicators ──────────────────────────────────────────────────

@@ -16,7 +16,24 @@ use super::DaemonContext;
 /// health, and full diagnostic checks. Renderers (CLI/TUI) decide display depth.
 pub(crate) async fn handle_status(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
     let prekeys = prekey_check(ctx).await;
-    status_response(ctx, state, prekeys)
+    let unread = unread_scopes(ctx).await;
+    status_response(ctx, state, prekeys, unread)
+}
+
+/// How many channels and DMs have an unread message, derived from the read
+/// markers (plan E3.1, D25); none while locked.
+async fn unread_scopes(ctx: &DaemonContext) -> (usize, usize) {
+    let Some(owner) = (ctx.session.read().as_ref()).map(|s| s.identity.public_key_hex.clone())
+    else {
+        return (0, 0);
+    };
+    let Ok(db) = ctx.db.current() else {
+        return (0, 0);
+    };
+    db.call(move |conn| rekindle_db::repo::read_markers::unread_scopes(conn, &owner))
+        .await
+        .inspect_err(|e| tracing::warn!(error = %e, "unread scopes unreadable"))
+        .unwrap_or_default()
 }
 
 /// `crypto.prekeys` (plan E2.4): the prekey maintenance keeps fresh slots
@@ -46,7 +63,12 @@ async fn prekey_check(ctx: &DaemonContext) -> Option<Check> {
     })
 }
 
-fn status_response(ctx: &DaemonContext, state: DaemonState, prekeys: Option<Check>) -> IpcResponse {
+fn status_response(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    prekeys: Option<Check>,
+    (unread_channels, unread_dms): (usize, usize),
+) -> IpcResponse {
     use rekindle_types::display::{CircuitSummary, StatusSnapshot};
 
     let session_guard = ctx.session.read();
@@ -62,8 +84,6 @@ fn status_response(ctx: &DaemonContext, state: DaemonState, prekeys: Option<Chec
         active_watches,
         gossip_meshes,
         gossip_mesh_peers,
-        unread_channels,
-        unread_dms,
         unread_friend_requests,
         dedup_entries,
         dedup_suppressed,
@@ -75,15 +95,13 @@ fn status_response(ctx: &DaemonContext, state: DaemonState, prekeys: Option<Chec
             sub_mgr.watch_count(),
             meshes.len(),
             mesh_peers,
-            sub_mgr.unread_channels().len(),
-            sub_mgr.unread_dms().len(),
             sub_mgr.unread_friend_requests(),
             sub_mgr.dedup_entries(),
             sub_mgr.dedup_suppressed(),
             true,
         )
     } else {
-        (0, 0, 0, 0, 0, 0, 0, 0, false)
+        (0, 0, 0, 0, 0, 0, false)
     };
     drop(sub_guard);
 

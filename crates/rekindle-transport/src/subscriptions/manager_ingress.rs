@@ -194,11 +194,6 @@ impl SubscriptionManager {
                 // author's slot within the segment; the ciphertext is
                 // in the record, not in this notification, so the
                 // reader fetches and decrypts.
-                let count = self
-                    .state
-                    .write()
-                    .unread
-                    .increment_channel(&community, &channel_id);
                 for subkey in &changed_subkeys {
                     self.process_event(SubscriptionEvent::ChannelMessage(
                         events::ChannelMessageEvent::New {
@@ -222,13 +217,6 @@ impl SubscriptionManager {
                         },
                     ));
                 }
-                self.process_event(SubscriptionEvent::UnreadChanged {
-                    context: events::UnreadContext::Channel {
-                        community,
-                        channel: channel_id,
-                    },
-                    count,
-                });
             }
         }
     }

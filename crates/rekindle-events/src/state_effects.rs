@@ -1,14 +1,14 @@
 //! State side-effects for subscription events.
 //!
-//! Extracts the ~10 event variants that mutate internal state (unread counts,
+//! Extracts the ~10 event variants that mutate internal state (friend requests,
 //! typing indicators, presence, voice participants). Called once per event
 //! after the mechanical `into_event()` conversion, before dedup + emit.
 //!
 //! Pure state mutation — no I/O, no logging, no event emission.
 
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, FriendEvent, MembershipEvent, PresenceEvent, SubscriptionEvent,
-    TypingContext, TypingEvent, UnreadContext, VoiceEvent, VoiceScope,
+    FriendEvent, MembershipEvent, PresenceEvent, SubscriptionEvent, TypingContext, TypingEvent,
+    UnreadContext, VoiceEvent, VoiceScope,
 };
 
 use crate::state::SubscriptionState;
@@ -23,40 +23,12 @@ pub fn apply(
     let mut extra = Vec::new();
 
     match event {
-        // ── Unread: channel messages ────────────────────────────
-        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-            community, channel, ..
-        }) => {
-            let count = state.unread.increment_channel(community, channel);
-            extra.push(SubscriptionEvent::UnreadChanged {
-                context: UnreadContext::Channel {
-                    community: community.clone(),
-                    channel: channel.clone(),
-                },
-                count,
-            });
-        }
-
-        // ── Unread: DMs ─────────────────────────────────────────
-        SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
-            peer_key,
-            ..
-        }) => {
-            let count = state.unread.increment_dm(peer_key);
-            extra.push(SubscriptionEvent::UnreadChanged {
-                context: UnreadContext::Dm {
-                    peer_key: peer_key.clone(),
-                },
-                count,
-            });
-        }
-
         // ── Unread: friend requests ─────────────────────────────
         SubscriptionEvent::Friend(FriendEvent::RequestReceived { .. }) => {
-            state.unread.friend_requests = state.unread.friend_requests.saturating_add(1);
+            state.friend_requests = state.friend_requests.saturating_add(1);
             extra.push(SubscriptionEvent::UnreadChanged {
                 context: UnreadContext::FriendRequests,
-                count: state.unread.friend_requests,
+                count: state.friend_requests,
             });
         }
 
@@ -165,7 +137,6 @@ pub fn apply(
 
         // ── Friend: cleanup on unfriend ─────────────────────────
         SubscriptionEvent::Friend(FriendEvent::Removed { peer_key }) => {
-            state.unread.remove_dm_peer(peer_key);
             state.presence.remove_dm_peer(peer_key);
         }
 

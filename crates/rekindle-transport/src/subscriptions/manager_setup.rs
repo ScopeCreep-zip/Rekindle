@@ -36,7 +36,6 @@ impl SubscriptionManager {
     pub fn teardown_community(&self, governance_key: &str) -> Vec<LeaseId> {
         let leases = self.watches.write().remove_community(governance_key);
         self.meshes.write().remove(governance_key);
-        self.state.write().unread.remove_community(governance_key);
         self.state.write().typing.remove_community(governance_key);
         self.state.write().presence.remove_community(governance_key);
         self.state.write().voice.remove_community(governance_key);
