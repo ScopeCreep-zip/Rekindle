@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::{ChannelRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::governance::AutoModAction;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
@@ -47,13 +48,13 @@ async fn slowmode_refused() {
     tokio::time::sleep(Duration::from_secs(60)).await;
     let general = community.general_id(0).await;
     community.nodes[0]
-        .ok(IpcRequest::Community(
-            CommunityRequest::ChannelSetSlowmode {
+        .ok(IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelSetSlowmode {
                 community: community.governance_key.clone(),
                 channel_id: general,
                 seconds: 60,
             },
-        ))
+        )))
         .await;
     tokio::time::sleep(Duration::from_secs(60)).await;
     community.post(1, "first").await.expect("the first post");
@@ -70,11 +71,13 @@ async fn banned_post_dropped() {
     tokio::time::sleep(Duration::from_secs(60)).await;
     let bea = community.pseudonym(1).await;
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::Ban {
-            community: community.governance_key.clone(),
-            target_pseudonym: bea,
-            reason: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Ban {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea,
+                reason: None,
+            },
+        )))
         .await;
     tokio::time::sleep(Duration::from_secs(60)).await;
     let cat = community.nodes[2].events().await;
@@ -92,12 +95,14 @@ async fn timeout_expires_on_post() {
     tokio::time::sleep(Duration::from_secs(60)).await;
     let bea = community.pseudonym(1).await;
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::Timeout {
-            community: community.governance_key.clone(),
-            target_pseudonym: bea,
-            duration_seconds: 240,
-            reason: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Timeout {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea,
+                duration_seconds: 240,
+                reason: None,
+            },
+        )))
         .await;
     tokio::time::sleep(Duration::from_secs(30)).await;
     let ann = community.nodes[0].events().await;
@@ -123,15 +128,17 @@ async fn automod_uncompilable_rule_refused() {
     let community = Community::of(2, 251).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
     let refused = community.nodes[0]
-        .call(IpcRequest::Community(CommunityRequest::AutomodRuleSet {
-            community: community.governance_key.clone(),
-            rule_id: None,
-            name: "broken".into(),
-            enabled: true,
-            keywords: Vec::new(),
-            regex_patterns: vec!["(".into()],
-            action: AutoModAction::BlockLocally,
-        }))
+        .call(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::AutomodRuleSet {
+                community: community.governance_key.clone(),
+                rule_id: None,
+                name: "broken".into(),
+                enabled: true,
+                keywords: Vec::new(),
+                regex_patterns: vec!["(".into()],
+                action: AutoModAction::BlockLocally,
+            },
+        )))
         .await
         .expect_err("an uncompilable rule is refused");
     assert_eq!(refused.code, 400, "{}", refused.message);

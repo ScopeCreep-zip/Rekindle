@@ -2,7 +2,8 @@
 //! search (plan E3.1 E3b), answered by the Host's governance adapter on
 //! both hosts.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::PinRequest;
 
 use super::{adapter, runtime_refused, state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -11,11 +12,11 @@ use crate::daemon::DaemonState;
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: PinRequest,
 ) -> IpcResponse {
     let read = matches!(
         request,
-        CommunityRequest::ChannelPins { .. } | CommunityRequest::MessageSearch { .. }
+        PinRequest::ChannelPins { .. } | PinRequest::MessageSearch { .. }
     );
     if read && !state.can_query() {
         return state_error(state, "query");
@@ -25,30 +26,29 @@ pub(crate) async fn handle(
     }
     let host = adapter(ctx);
     let community = match &request {
-        CommunityRequest::MessageSearch { request } => {
+        PinRequest::MessageSearch { request } => {
             return match host.search_messages(request.clone()).await {
                 Ok(result) => IpcResponse::ok(&result),
                 Err(e) => runtime_refused(&e, "message search"),
             };
         }
-        CommunityRequest::ChannelPins { community, .. }
-        | CommunityRequest::MessagePin { community, .. }
-        | CommunityRequest::MessageUnpin { community, .. }
-        | CommunityRequest::AttachmentPin { community, .. } => community.clone(),
-        other => return IpcResponse::error(500, format!("{} is not a pin request", other.name())),
+        PinRequest::ChannelPins { community, .. }
+        | PinRequest::MessagePin { community, .. }
+        | PinRequest::MessageUnpin { community, .. }
+        | PinRequest::AttachmentPin { community, .. } => community.clone(),
     };
     let key = match ctx.resolve_community(&community) {
         Ok(m) => m.governance_key,
         Err(e) => return e,
     };
     match request {
-        CommunityRequest::ChannelPins { channel_id, .. } => {
+        PinRequest::ChannelPins { channel_id, .. } => {
             match host.channel_pins(&key, &channel_id).await {
                 Ok(pins) => IpcResponse::ok(&pins),
                 Err(e) => runtime_refused(&e, "channel pins"),
             }
         }
-        CommunityRequest::MessagePin {
+        PinRequest::MessagePin {
             channel_id,
             message_id,
             ..
@@ -56,7 +56,7 @@ pub(crate) async fn handle(
             Ok(()) => IpcResponse::ok(&()),
             Err(e) => runtime_refused(&e, "pin message"),
         },
-        CommunityRequest::MessageUnpin {
+        PinRequest::MessageUnpin {
             channel_id,
             message_id,
             ..
@@ -64,7 +64,7 @@ pub(crate) async fn handle(
             Ok(()) => IpcResponse::ok(&()),
             Err(e) => runtime_refused(&e, "unpin message"),
         },
-        CommunityRequest::AttachmentPin {
+        PinRequest::AttachmentPin {
             attachment_id,
             pinned,
             ..

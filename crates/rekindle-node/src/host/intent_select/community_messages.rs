@@ -6,7 +6,8 @@
 
 use rekindle_governance::intent_facts::{forward_escalations, ChannelAudience};
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ChannelMessageRequest;
+use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::intent::Subject;
 
 use super::community::{channel_name, community, members, roster};
@@ -21,11 +22,11 @@ use crate::daemon::dispatch::DaemonContext;
 /// loaded.
 pub(super) fn selection(
     ctx: &DaemonContext,
-    request: &CommunityRequest,
+    request: &ChannelMessageRequest,
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     match request {
-        CommunityRequest::ChannelMessageForward {
+        ChannelMessageRequest::ChannelMessageForward {
             source_community,
             source_channel,
             dest_community,
@@ -43,12 +44,12 @@ pub(super) fn selection(
             };
             s.notifies = members(ctx, &to_id);
         }
-        CommunityRequest::ChannelMessageAdminDelete {
+        ChannelMessageRequest::ChannelMessageAdminDelete {
             community: target,
             channel,
             ..
         }
-        | CommunityRequest::ChannelMessageBulkDelete {
+        | ChannelMessageRequest::ChannelMessageBulkDelete {
             community: target,
             channel,
             ..

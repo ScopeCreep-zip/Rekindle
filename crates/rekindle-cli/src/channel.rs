@@ -1,5 +1,6 @@
 //! Channel commands.
 
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::cli::ChannelCmd;
@@ -17,9 +18,9 @@ pub async fn dispatch(
         ChannelCmd::List { community, .. } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::ChannelList {
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelList {
                     community: community.clone(),
-                }),
+                })),
             )
             .await?;
             if mode.is_structured() {
@@ -61,7 +62,7 @@ pub async fn dispatch(
             let validated_name = helpers::validate_name(name, "Channel")?;
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::ChannelCreate {
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
                     community: community.clone(),
                     name: validated_name,
                     kind: kind.clone(),
@@ -69,7 +70,7 @@ pub async fn dispatch(
                     topic: topic.clone(),
                     slowmode_seconds: slowmode.unwrap_or(0),
                     parent_voice_channel: None,
-                }),
+                })),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -78,10 +79,10 @@ pub async fn dispatch(
             let channel_id = channel.clone();
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::ChannelDelete {
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelDelete {
                     community: community.clone(),
                     channel_id,
-                }),
+                })),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -100,13 +101,13 @@ pub async fn dispatch(
                 .transpose()?;
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::ChannelUpdate {
+                IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelUpdate {
                     community: community.clone(),
                     channel_id,
                     name: validated_name,
                     topic: topic.clone(),
                     slowmode_seconds: *slowmode,
-                }),
+                })),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -119,12 +120,14 @@ pub async fn dispatch(
         } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::ChannelSend {
-                    community: community.clone(),
-                    channel: channel.clone(),
-                    body: message.clone(),
-                    reply_to: reply_to.clone(),
-                }),
+                IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::ChannelSend {
+                        community: community.clone(),
+                        channel: channel.clone(),
+                        body: message.clone(),
+                        reply_to: reply_to.clone(),
+                    },
+                )),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -138,10 +141,12 @@ pub async fn dispatch(
             let (_, channel_id) = resolve_channel(client, community, channel).await?;
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::ChannelMessages {
-                    channel: channel_id,
-                    limit: u32::try_from(*limit).unwrap_or(u32::MAX),
-                }),
+                IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::ChannelMessages {
+                        channel: channel_id,
+                        limit: u32::try_from(*limit).unwrap_or(u32::MAX),
+                    },
+                )),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -165,9 +170,11 @@ async fn resolve_channel(
     let detail: rekindle_types::display::CommunityDetail = serde_json::from_value(
         helpers::send(
             client,
-            IpcRequest::Community(CommunityRequest::CommunityInfo {
-                governance_key: community.to_owned(),
-            }),
+            IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityInfo {
+                    governance_key: community.to_owned(),
+                },
+            )),
         )
         .await?,
     )?;

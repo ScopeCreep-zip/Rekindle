@@ -1,5 +1,6 @@
 //! A community block by pseudonym (plan E3.1 F3, D26), answered by the Host.
 
+use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -15,10 +16,10 @@ pub async fn block_community_member(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::MemberBlock {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::MemberBlock {
             community: community_id,
             target_pseudonym: pseudonym_key,
-        }),
+        })),
     )
     .await
 }
@@ -31,10 +32,10 @@ pub async fn unblock_community_member(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::MemberUnblock {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::MemberUnblock {
             community: community_id,
             target_pseudonym: pseudonym_key,
-        }),
+        })),
     )
     .await
 }
@@ -46,9 +47,9 @@ pub async fn list_community_blocks(
 ) -> Result<Done<Vec<String>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::MemberBlockList {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::MemberBlockList {
             community: community_id,
-        }),
+        })),
     )
     .await
 }

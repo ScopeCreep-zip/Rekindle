@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::display as dt;
 use rekindle_types::dto::channel_message::ChannelMessageView;
@@ -57,7 +58,9 @@ impl App {
 
             // Community list
             match client
-                .request_ok(IpcRequest::Community(CommunityRequest::CommunityList))
+                .request_ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityList,
+                )))
                 .await
             {
                 Ok(value) => {
@@ -135,10 +138,12 @@ impl App {
         let channel = channel.to_string();
         tokio::spawn(async move {
             match client
-                .request_ok(IpcRequest::Community(CommunityRequest::ChannelMessages {
-                    channel: channel.clone(),
-                    limit: 50,
-                }))
+                .request_ok(IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::ChannelMessages {
+                        channel: channel.clone(),
+                        limit: 50,
+                    },
+                )))
                 .await
             {
                 Ok(value) => match serde_json::from_value::<Vec<ChannelMessageView>>(value) {
@@ -170,9 +175,11 @@ impl App {
         let community = community.to_string();
         tokio::spawn(async move {
             match client
-                .request_ok(IpcRequest::Community(CommunityRequest::CommunityInfo {
-                    governance_key: community,
-                }))
+                .request_ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityInfo {
+                        governance_key: community,
+                    },
+                )))
                 .await
             {
                 Ok(value) => match serde_json::from_value::<dt::CommunityDetail>(value) {
@@ -206,12 +213,14 @@ impl App {
         let channel_clone = channel.to_string();
         tokio::spawn(async move {
             match client
-                .request_ok(IpcRequest::Community(CommunityRequest::ChannelSend {
-                    community,
-                    channel: channel_clone.clone(),
-                    body: text,
-                    reply_to,
-                }))
+                .request_ok(IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::ChannelSend {
+                        community,
+                        channel: channel_clone.clone(),
+                        body: text,
+                        reply_to,
+                    },
+                )))
                 .await
             {
                 Ok(value) => {
@@ -269,9 +278,11 @@ impl App {
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
             match client
-                .request_ok(IpcRequest::Community(CommunityRequest::CommunityLeave {
-                    governance_key: governance_key.clone(),
-                }))
+                .request_ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityLeave {
+                        governance_key: governance_key.clone(),
+                    },
+                )))
                 .await
             {
                 Ok(_) => {

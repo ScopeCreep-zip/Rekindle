@@ -2,7 +2,8 @@
 //! reaching the community's members.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ActivityRequest;
+use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::intent::{IntentKind, Notifies, Reversibility, Subject};
 
 use crate::daemon::dispatch::DaemonContext;
@@ -13,11 +14,11 @@ use crate::daemon::dispatch::DaemonContext;
 /// The community is not joined, or the server to remove is not stored.
 pub(super) async fn selection(
     ctx: &DaemonContext,
-    request: &CommunityRequest,
+    request: &ActivityRequest,
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     match request {
-        CommunityRequest::GameServerAdd {
+        ActivityRequest::GameServerAdd {
             community, label, ..
         } => {
             let id = ctx.resolve_community(community)?.governance_key;
@@ -27,7 +28,7 @@ pub(super) async fn selection(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RemoveGameServer);
             s.notifies = members(ctx, &id);
         }
-        CommunityRequest::GameServerRemove {
+        ActivityRequest::GameServerRemove {
             community,
             server_id,
         } => {

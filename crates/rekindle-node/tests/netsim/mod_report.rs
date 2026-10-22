@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::governance::AutoModAction;
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
@@ -18,15 +19,17 @@ async fn mod_report_reaches_moderators() {
     tokio::time::sleep(Duration::from_secs(60)).await;
     let owner = &community.nodes[0];
     owner
-        .ok(IpcRequest::Community(CommunityRequest::AutomodRuleSet {
-            community: community.governance_key.clone(),
-            rule_id: None,
-            name: "asks for help".into(),
-            enabled: true,
-            keywords: vec!["help".into()],
-            regex_patterns: Vec::new(),
-            action: AutoModAction::AlertModerators,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::AutomodRuleSet {
+                community: community.governance_key.clone(),
+                rule_id: None,
+                name: "asks for help".into(),
+                enabled: true,
+                keywords: vec!["help".into()],
+                regex_patterns: Vec::new(),
+                action: AutoModAction::AlertModerators,
+            },
+        )))
         .await;
     let alerts = owner.events().await;
 
@@ -52,9 +55,11 @@ async fn mod_report_reaches_moderators() {
     assert!(alerted, "the moderator is alerted");
 
     let queue = owner
-        .ok(IpcRequest::Community(CommunityRequest::ModReportList {
-            community: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::ModReportList {
+                community: community.governance_key.clone(),
+            },
+        )))
         .await;
     let reports = queue.as_array().expect("a report list");
     assert_eq!(reports.len(), 1, "one report for the post: {queue}");

@@ -1,12 +1,42 @@
-//! The profile, picture and policy requests' `Debug` (plan E3.1 D4):
-//! a picture and free text show their length only.
+//! `Debug` for the community settings requests: free text shows its length only.
 
-use super::super::super::CommunityRequest;
+use crate::protocol::SettingsRequest;
 
-impl CommunityRequest {
-    /// The profile, picture and policy requests' `Debug`.
-    pub(super) fn fmt_profile(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for SettingsRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::OnboardingConfigGet { community } => f
+                .debug_struct("OnboardingConfigGet")
+                .field("community", community)
+                .finish(),
+            Self::OnboardingConfigSet { community, config } => f
+                .debug_struct("OnboardingConfigSet")
+                .field("community", community)
+                .field("questions", &config.questions.len())
+                .finish_non_exhaustive(),
+            Self::WelcomeScreenGet { community } => f
+                .debug_struct("WelcomeScreenGet")
+                .field("community", community)
+                .finish(),
+            Self::WelcomeScreenSet { community, screen } => f
+                .debug_struct("WelcomeScreenSet")
+                .field("community", community)
+                .field("channels", &screen.channels.len())
+                .finish_non_exhaustive(),
+            Self::OnboardingSubmit {
+                community,
+                answers,
+                acknowledged_rules,
+            } => f
+                .debug_struct("OnboardingSubmit")
+                .field("community", community)
+                .field("answers", &answers.len())
+                .field("acknowledged_rules", acknowledged_rules)
+                .finish(),
+            Self::OnboardingComplete { community } => f
+                .debug_struct("OnboardingComplete")
+                .field("community", community)
+                .finish(),
             Self::CommunitySetAvatar {
                 community,
                 image,
@@ -65,7 +95,6 @@ impl CommunityRequest {
                 .field("max_joins_per_interval", max_joins_per_interval)
                 .field("join_interval_seconds", join_interval_seconds)
                 .finish(),
-            other => unreachable!("{} is not a profile request", other.name()),
         }
     }
 }

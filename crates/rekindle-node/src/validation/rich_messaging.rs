@@ -1,6 +1,7 @@
 //! The reaction, thread and poll requests' fields (plan E3.1 E3).
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::RichRequest;
 
 use super::{channel, community, hex16, message_body, name, opt, page, text, Checked};
 
@@ -19,35 +20,15 @@ fn refused(e: &rekindle_channel::error::ChannelError) -> IpcResponse {
     IpcResponse::error(400, e.to_string())
 }
 
-/// Whether `request` is a reaction, thread or poll request.
-pub(super) fn is_rich(request: &CommunityRequest) -> bool {
-    matches!(
-        request,
-        CommunityRequest::ReactionAdd { .. }
-            | CommunityRequest::ReactionRemove { .. }
-            | CommunityRequest::ThreadCreate { .. }
-            | CommunityRequest::ThreadArchive { .. }
-            | CommunityRequest::ThreadUnarchive { .. }
-            | CommunityRequest::ThreadList { .. }
-            | CommunityRequest::ThreadListActive { .. }
-            | CommunityRequest::ThreadMessages { .. }
-            | CommunityRequest::ThreadSend { .. }
-            | CommunityRequest::PollCreate { .. }
-            | CommunityRequest::PollVote { .. }
-            | CommunityRequest::PollClose { .. }
-            | CommunityRequest::PollResults { .. }
-    )
-}
-
-pub(super) fn check(request: &CommunityRequest) -> Checked {
+pub(super) fn check(request: &RichRequest) -> Checked {
     match request {
-        CommunityRequest::ReactionAdd {
+        RichRequest::ReactionAdd {
             community: c,
             channel_id,
             message_id: m,
             emoji,
         }
-        | CommunityRequest::ReactionRemove {
+        | RichRequest::ReactionRemove {
             community: c,
             channel_id,
             message_id: m,
@@ -58,7 +39,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             message_id(m)?;
             text(emoji, MAX_EXPRESSION_LEN, "expression")
         }
-        CommunityRequest::ThreadCreate {
+        RichRequest::ThreadCreate {
             community: c,
             channel_id,
             name: thread_name,
@@ -79,29 +60,29 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                     .map_err(|e| refused(&e))
             })
         }
-        CommunityRequest::ThreadArchive {
+        RichRequest::ThreadArchive {
             community: c,
             thread_id,
         }
-        | CommunityRequest::ThreadUnarchive {
+        | RichRequest::ThreadUnarchive {
             community: c,
             thread_id,
         } => {
             community(c)?;
             hex16(thread_id, "thread id")
         }
-        CommunityRequest::ThreadList {
+        RichRequest::ThreadList {
             community: c,
             channel_id,
         }
-        | CommunityRequest::ThreadListActive {
+        | RichRequest::ThreadListActive {
             community: c,
             channel_id,
         } => {
             community(c)?;
             channel(channel_id)
         }
-        CommunityRequest::ThreadMessages {
+        RichRequest::ThreadMessages {
             community: c,
             thread_id,
             limit,
@@ -111,7 +92,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             hex16(thread_id, "thread id")?;
             page(*limit)
         }
-        CommunityRequest::ThreadSend {
+        RichRequest::ThreadSend {
             community: c,
             thread_id,
             body,
@@ -120,7 +101,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             hex16(thread_id, "thread id")?;
             message_body(body)
         }
-        CommunityRequest::PollCreate {
+        RichRequest::PollCreate {
             community: c,
             channel_id,
             message_id: m,
@@ -133,7 +114,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             message_id(m)?;
             rekindle_channel::validate_poll_create(question, answers).map_err(|e| refused(&e))
         }
-        CommunityRequest::PollVote {
+        RichRequest::PollVote {
             community: c,
             channel_id,
             poll_id,
@@ -150,12 +131,12 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             }
             Ok(())
         }
-        CommunityRequest::PollClose {
+        RichRequest::PollClose {
             community: c,
             channel_id,
             poll_id,
         }
-        | CommunityRequest::PollResults {
+        | RichRequest::PollResults {
             community: c,
             channel_id,
             poll_id,
@@ -164,6 +145,5 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             channel(channel_id)?;
             hex16(poll_id, "poll id")
         }
-        _ => Ok(()),
     }
 }

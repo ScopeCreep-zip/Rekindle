@@ -8,6 +8,10 @@
 //! E4.1/E5.1): none is a placeholder.
 
 use rekindle_idempotency::intent_gate::Selection;
+use rekindle_ipc::protocol::{
+    ActivityRequest, AuditRequest, ChannelMessageRequest, ChannelRequest, ExpressionRequest,
+    LifecycleRequest, MemberRequest, PinRequest, RichRequest, SettingsRequest, UnreadRequest,
+};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibility, Subject};
 
@@ -114,95 +118,107 @@ pub(crate) async fn select(
             group_dm::selection(ctx, request, &mut s).await?;
         }
         IpcRequest::Community(
-            request @ (CommunityRequest::CommunityCreate { .. }
-            | CommunityRequest::CommunityJoin { .. }
-            | CommunityRequest::CommunityLeave { .. }
-            | CommunityRequest::CommunityApprove { .. }
-            | CommunityRequest::CommunityReject { .. }
-            | CommunityRequest::CommunityTransferOwnership { .. }
-            | CommunityRequest::ChannelCreate { .. }
-            | CommunityRequest::ChannelDelete { .. }
-            | CommunityRequest::ChannelUpdate { .. }
-            | CommunityRequest::ChannelRename { .. }
-            | CommunityRequest::ChannelMove { .. }
-            | CommunityRequest::ChannelReorder { .. }
-            | CommunityRequest::ChannelSetTopic { .. }
-            | CommunityRequest::ChannelSetSlowmode { .. }
-            | CommunityRequest::ChannelSetForumTags { .. }
-            | CommunityRequest::ChannelOverwriteSet { .. }
-            | CommunityRequest::ChannelOverwriteDelete { .. }
-            | CommunityRequest::CategoryCreate { .. }
-            | CommunityRequest::CategoryDelete { .. }
-            | CommunityRequest::CategoryRename { .. }
-            | CommunityRequest::CategoryReorder { .. }
-            | CommunityRequest::ChannelSend { .. }
-            | CommunityRequest::ChannelMessageEdit { .. }
-            | CommunityRequest::ChannelMessageDelete { .. }
-            | CommunityRequest::ChannelMessageForward { .. }
-            | CommunityRequest::ChannelMessageAdminDelete { .. }
-            | CommunityRequest::ChannelMessageBulkDelete { .. }
-            | CommunityRequest::ChannelMessageSend { .. }
-            | CommunityRequest::MekRotate { .. }
-            | CommunityRequest::RoleCreate { .. }
-            | CommunityRequest::RoleUpdate { .. }
-            | CommunityRequest::RoleDelete { .. }
-            | CommunityRequest::RoleAssign { .. }
-            | CommunityRequest::RoleUnassign { .. }
-            | CommunityRequest::RoleSelfAssign { .. }
-            | CommunityRequest::RoleSelfUnassign { .. }
-            | CommunityRequest::Kick { .. }
-            | CommunityRequest::MemberBlock { .. }
-            | CommunityRequest::MemberUnblock { .. }
-            | CommunityRequest::Ban { .. }
-            | CommunityRequest::Unban { .. }
-            | CommunityRequest::Timeout { .. }
-            | CommunityRequest::TimeoutRemove { .. }
-            | CommunityRequest::InviteCreate { .. }
-            | CommunityRequest::InviteRevoke { .. }
-            | CommunityRequest::NotificationDefaultSet { .. }
-            | CommunityRequest::AutomodRuleSet { .. }
-            | CommunityRequest::AutomodRuleDelete { .. }
-            | CommunityRequest::MessagePin { .. }
-            | CommunityRequest::MessageUnpin { .. }
-            | CommunityRequest::AttachmentPin { .. }
-            | CommunityRequest::EmojiUpload { .. }
-            | CommunityRequest::StickerUpload { .. }
-            | CommunityRequest::ExpressionDelete { .. }),
+            request @ (CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityCreate { .. }
+                | LifecycleRequest::CommunityJoin { .. }
+                | LifecycleRequest::CommunityLeave { .. }
+                | LifecycleRequest::CommunityApprove { .. }
+                | LifecycleRequest::CommunityReject { .. }
+                | LifecycleRequest::CommunityTransferOwnership { .. }
+                | LifecycleRequest::InviteCreate { .. }
+                | LifecycleRequest::InviteRevoke { .. },
+            )
+            | CommunityRequest::Channels(
+                ChannelRequest::ChannelCreate { .. }
+                | ChannelRequest::ChannelDelete { .. }
+                | ChannelRequest::ChannelUpdate { .. }
+                | ChannelRequest::ChannelRename { .. }
+                | ChannelRequest::ChannelMove { .. }
+                | ChannelRequest::ChannelReorder { .. }
+                | ChannelRequest::ChannelSetTopic { .. }
+                | ChannelRequest::ChannelSetSlowmode { .. }
+                | ChannelRequest::ChannelSetForumTags { .. }
+                | ChannelRequest::ChannelOverwriteSet { .. }
+                | ChannelRequest::ChannelOverwriteDelete { .. }
+                | ChannelRequest::CategoryCreate { .. }
+                | ChannelRequest::CategoryDelete { .. }
+                | ChannelRequest::CategoryRename { .. }
+                | ChannelRequest::CategoryReorder { .. },
+            )
+            | CommunityRequest::Messages(
+                ChannelMessageRequest::ChannelSend { .. }
+                | ChannelMessageRequest::ChannelMessageEdit { .. }
+                | ChannelMessageRequest::ChannelMessageDelete { .. }
+                | ChannelMessageRequest::ChannelMessageForward { .. }
+                | ChannelMessageRequest::ChannelMessageAdminDelete { .. }
+                | ChannelMessageRequest::ChannelMessageBulkDelete { .. }
+                | ChannelMessageRequest::ChannelMessageSend { .. }
+                | ChannelMessageRequest::MekRotate { .. },
+            )
+            | CommunityRequest::Members(
+                MemberRequest::RoleCreate { .. }
+                | MemberRequest::RoleUpdate { .. }
+                | MemberRequest::RoleDelete { .. }
+                | MemberRequest::RoleAssign { .. }
+                | MemberRequest::RoleUnassign { .. }
+                | MemberRequest::RoleSelfAssign { .. }
+                | MemberRequest::RoleSelfUnassign { .. }
+                | MemberRequest::Kick { .. }
+                | MemberRequest::MemberBlock { .. }
+                | MemberRequest::MemberUnblock { .. }
+                | MemberRequest::Ban { .. }
+                | MemberRequest::Unban { .. }
+                | MemberRequest::Timeout { .. }
+                | MemberRequest::TimeoutRemove { .. }
+                | MemberRequest::AutomodRuleSet { .. }
+                | MemberRequest::AutomodRuleDelete { .. },
+            )
+            | CommunityRequest::Audit(AuditRequest::NotificationDefaultSet { .. })
+            | CommunityRequest::Pins(
+                PinRequest::MessagePin { .. }
+                | PinRequest::MessageUnpin { .. }
+                | PinRequest::AttachmentPin { .. },
+            )
+            | CommunityRequest::Expressions(
+                ExpressionRequest::EmojiUpload { .. }
+                | ExpressionRequest::StickerUpload { .. }
+                | ExpressionRequest::ExpressionDelete { .. },
+            )),
         ) => community::selection(ctx, request, &mut s).await?,
-        IpcRequest::Community(
-            request @ (CommunityRequest::ReactionAdd { .. }
-            | CommunityRequest::ReactionRemove { .. }
-            | CommunityRequest::ThreadCreate { .. }
-            | CommunityRequest::ThreadArchive { .. }
-            | CommunityRequest::ThreadUnarchive { .. }
-            | CommunityRequest::ThreadSend { .. }
-            | CommunityRequest::PollCreate { .. }
-            | CommunityRequest::PollVote { .. }
-            | CommunityRequest::PollClose { .. }),
-        ) => rich_messaging::selection(ctx, request, &mut s)?,
-        IpcRequest::Community(
-            request @ (CommunityRequest::CommunityUpdateProfile { .. }
-            | CommunityRequest::CommunitySetAvatar { .. }
-            | CommunityRequest::CommunitySetBanner { .. }
-            | CommunityRequest::CommunityPolicySet { .. }
-            | CommunityRequest::OnboardingConfigSet { .. }
-            | CommunityRequest::WelcomeScreenSet { .. }
-            | CommunityRequest::OnboardingSubmit { .. }
-            | CommunityRequest::OnboardingComplete { .. }),
-        ) => community::settings_selection(ctx, request, &mut s)?,
-        IpcRequest::Community(
-            request @ (CommunityRequest::GameServerAdd { .. }
-            | CommunityRequest::GameServerRemove { .. }),
-        ) => {
+        IpcRequest::Community(CommunityRequest::Rich(
+            request @ (RichRequest::ReactionAdd { .. }
+            | RichRequest::ReactionRemove { .. }
+            | RichRequest::ThreadCreate { .. }
+            | RichRequest::ThreadArchive { .. }
+            | RichRequest::ThreadUnarchive { .. }
+            | RichRequest::ThreadSend { .. }
+            | RichRequest::PollCreate { .. }
+            | RichRequest::PollVote { .. }
+            | RichRequest::PollClose { .. }),
+        )) => rich_messaging::selection(ctx, request, &mut s)?,
+        IpcRequest::Community(CommunityRequest::Settings(
+            request @ (SettingsRequest::CommunityUpdateProfile { .. }
+            | SettingsRequest::CommunitySetAvatar { .. }
+            | SettingsRequest::CommunitySetBanner { .. }
+            | SettingsRequest::CommunityPolicySet { .. }
+            | SettingsRequest::OnboardingConfigSet { .. }
+            | SettingsRequest::WelcomeScreenSet { .. }
+            | SettingsRequest::OnboardingSubmit { .. }
+            | SettingsRequest::OnboardingComplete { .. }),
+        )) => community::settings_selection(ctx, request, &mut s)?,
+        IpcRequest::Community(CommunityRequest::Activities(
+            request @ (ActivityRequest::GameServerAdd { .. }
+            | ActivityRequest::GameServerRemove { .. }),
+        )) => {
             game_servers::selection(ctx, request, &mut s).await?;
         }
-        IpcRequest::Community(
-            request @ (CommunityRequest::EventCreate { .. }
-            | CommunityRequest::EventEdit { .. }
-            | CommunityRequest::EventCancel { .. }
-            | CommunityRequest::EventDelete { .. }
-            | CommunityRequest::EventRsvp { .. }),
-        ) => {
+        IpcRequest::Community(CommunityRequest::Activities(
+            request @ (ActivityRequest::EventCreate { .. }
+            | ActivityRequest::EventEdit { .. }
+            | ActivityRequest::EventCancel { .. }
+            | ActivityRequest::EventDelete { .. }
+            | ActivityRequest::EventRsvp { .. }),
+        )) => {
             events::selection(ctx, request, &mut s).await?;
         }
         IpcRequest::PresenceSet { .. }
@@ -274,43 +290,58 @@ pub(crate) async fn select(
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. }
         | IpcRequest::Community(
-            CommunityRequest::CommunityList
-            | CommunityRequest::CommunityViews
-            | CommunityRequest::CommunityMembers { .. }
-            | CommunityRequest::CommunityInfo { .. }
-            | CommunityRequest::CommunityUpdateInfo { .. }
-            | CommunityRequest::CommunityPendingMembers { .. }
-            | CommunityRequest::ChannelList { .. }
-            | CommunityRequest::ChannelTyping { .. }
-            | CommunityRequest::ChannelSetActive { .. }
-            | CommunityRequest::ChannelMessages { .. }
-            | CommunityRequest::ChannelMessagesBefore { .. }
-            | CommunityRequest::MekList { .. }
-            | CommunityRequest::MekRequest { .. }
-            | CommunityRequest::RoleList { .. }
-            | CommunityRequest::GameServerList { .. }
-            | CommunityRequest::ChannelMarkRead { .. }
-            | CommunityRequest::UnreadCounts { .. }
-            | CommunityRequest::OnboardingConfigGet { .. }
-            | CommunityRequest::WelcomeScreenGet { .. }
-            | CommunityRequest::AuditLog { .. }
-            | CommunityRequest::NotificationDefaultGet { .. }
-            | CommunityRequest::CommunityAvatarGet { .. }
-            | CommunityRequest::CommunityPolicyGet { .. }
-            | CommunityRequest::EventList { .. }
-            | CommunityRequest::EventAttendees { .. }
-            | CommunityRequest::BanList { .. }
-            | CommunityRequest::MemberBlockList { .. }
-            | CommunityRequest::AutomodRules { .. }
-            | CommunityRequest::ModReportList { .. }
-            | CommunityRequest::ChannelPins { .. }
-            | CommunityRequest::MessageSearch { .. }
-            | CommunityRequest::ThreadList { .. }
-            | CommunityRequest::ThreadListActive { .. }
-            | CommunityRequest::ThreadMessages { .. }
-            | CommunityRequest::PollResults { .. }
-            | CommunityRequest::Expressions { .. }
-            | CommunityRequest::InviteList { .. },
+            CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityList
+                | LifecycleRequest::CommunityViews
+                | LifecycleRequest::CommunityMembers { .. }
+                | LifecycleRequest::CommunityInfo { .. }
+                | LifecycleRequest::CommunityUpdateInfo { .. }
+                | LifecycleRequest::CommunityPendingMembers { .. }
+                | LifecycleRequest::InviteList { .. },
+            )
+            | CommunityRequest::Channels(ChannelRequest::ChannelList { .. })
+            | CommunityRequest::Messages(
+                ChannelMessageRequest::ChannelTyping { .. }
+                | ChannelMessageRequest::ChannelSetActive { .. }
+                | ChannelMessageRequest::ChannelMessages { .. }
+                | ChannelMessageRequest::ChannelMessagesBefore { .. }
+                | ChannelMessageRequest::MekList { .. }
+                | ChannelMessageRequest::MekRequest { .. },
+            )
+            | CommunityRequest::Members(
+                MemberRequest::RoleList { .. }
+                | MemberRequest::BanList { .. }
+                | MemberRequest::MemberBlockList { .. }
+                | MemberRequest::AutomodRules { .. }
+                | MemberRequest::ModReportList { .. },
+            )
+            | CommunityRequest::Activities(
+                ActivityRequest::GameServerList { .. }
+                | ActivityRequest::EventList { .. }
+                | ActivityRequest::EventAttendees { .. },
+            )
+            | CommunityRequest::Unread(
+                UnreadRequest::ChannelMarkRead { .. } | UnreadRequest::UnreadCounts { .. },
+            )
+            | CommunityRequest::Settings(
+                SettingsRequest::OnboardingConfigGet { .. }
+                | SettingsRequest::WelcomeScreenGet { .. }
+                | SettingsRequest::CommunityAvatarGet { .. }
+                | SettingsRequest::CommunityPolicyGet { .. },
+            )
+            | CommunityRequest::Audit(
+                AuditRequest::AuditLog { .. } | AuditRequest::NotificationDefaultGet { .. },
+            )
+            | CommunityRequest::Pins(
+                PinRequest::ChannelPins { .. } | PinRequest::MessageSearch { .. },
+            )
+            | CommunityRequest::Rich(
+                RichRequest::ThreadList { .. }
+                | RichRequest::ThreadListActive { .. }
+                | RichRequest::ThreadMessages { .. }
+                | RichRequest::PollResults { .. },
+            )
+            | CommunityRequest::Expressions(ExpressionRequest::Expressions { .. }),
         )
         | IpcRequest::DmTyping { .. }
         | IpcRequest::GroupDmTyping { .. }

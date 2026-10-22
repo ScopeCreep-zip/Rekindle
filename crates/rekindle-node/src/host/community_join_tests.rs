@@ -3,6 +3,7 @@
 //! and refused, not held, before an identity is unlocked (the shell keeps
 //! an OS link as raw input until the unlock and submits it then).
 
+use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
 use rekindle_types::intent::{IntentClass, IntentKind, Subject};
@@ -12,9 +13,9 @@ use super::tests::host_with_identity;
 const INVITE_RECORD_KEY: &str = "VLD0:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 
 fn join() -> IpcRequest {
-    IpcRequest::Community(CommunityRequest::CommunityJoin {
+    IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityJoin {
         invite: format!("rekindle://invite/{INVITE_RECORD_KEY}/{INVITE_RECORD_KEY}/3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c"),
-    })
+    }))
 }
 
 /// From the window, as the shell submits an OS link: held as a

@@ -1,5 +1,6 @@
 //! A community's automod rules (plan E3.1 F3), answered by the Host.
 
+use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::AutoModRuleView;
 use rekindle_types::dto::{CommandError, Done};
@@ -16,9 +17,9 @@ pub async fn list_automod_rules(
 ) -> Result<Done<Vec<AutoModRuleView>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::AutomodRules {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::AutomodRules {
             community: community_id,
-        }),
+        })),
     )
     .await
 }
@@ -36,7 +37,7 @@ pub async fn set_automod_rule(
 ) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::AutomodRuleSet {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::AutomodRuleSet {
             community: community_id,
             rule_id,
             name,
@@ -44,7 +45,7 @@ pub async fn set_automod_rule(
             keywords,
             regex_patterns,
             action,
-        }),
+        })),
     )
     .await
 }
@@ -57,10 +58,12 @@ pub async fn delete_automod_rule(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::AutomodRuleDelete {
-            community: community_id,
-            rule_id,
-        }),
+        IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::AutomodRuleDelete {
+                community: community_id,
+                rule_id,
+            },
+        )),
     )
     .await
 }

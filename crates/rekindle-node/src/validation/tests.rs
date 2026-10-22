@@ -2,6 +2,10 @@
 
 use super::*;
 use rekindle_ipc::protocol::CommunityRequest;
+use rekindle_ipc::protocol::{
+    ActivityRequest, ChannelMessageRequest, ChannelRequest, LifecycleRequest, MemberRequest,
+    SettingsRequest,
+};
 use rekindle_types::key_format::{MAX_DESCRIPTION_LEN, MAX_NOTE_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
@@ -71,7 +75,7 @@ fn community_refs_take_a_key_or_a_name() {
         "日本語".into(),
     ] {
         assert!(!rejected(&IpcRequest::Community(
-            CommunityRequest::ChannelList { community: ok }
+            CommunityRequest::Channels(ChannelRequest::ChannelList { community: ok })
         )));
     }
     for bad in [
@@ -82,7 +86,7 @@ fn community_refs_take_a_key_or_a_name() {
         "a".repeat(MAX_NAME_LEN + 1),
     ] {
         assert!(rejected(&IpcRequest::Community(
-            CommunityRequest::ChannelList { community: bad }
+            CommunityRequest::Channels(ChannelRequest::ChannelList { community: bad })
         )));
     }
 }
@@ -90,12 +94,14 @@ fn community_refs_take_a_key_or_a_name() {
 #[test]
 fn channel_send_checks_ref_and_body() {
     let send = |channel: &str, body: &str| {
-        IpcRequest::Community(CommunityRequest::ChannelSend {
-            community: "c".into(),
-            channel: channel.into(),
-            body: body.into(),
-            reply_to: None,
-        })
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelSend {
+                community: "c".into(),
+                channel: channel.into(),
+                body: body.into(),
+                reply_to: None,
+            },
+        ))
     };
     assert!(!rejected(&send(HEX32, "hello")));
     assert!(!rejected(&send("general", "hello")));
@@ -115,14 +121,18 @@ fn channel_send_checks_ref_and_body() {
 
 #[test]
 fn pseudonyms_and_ids_are_exact_hex() {
-    assert!(!rejected(&IpcRequest::Community(CommunityRequest::Kick {
-        community: "c".into(),
-        target_pseudonym: HEX64.into()
-    })));
-    assert!(rejected(&IpcRequest::Community(CommunityRequest::Kick {
-        community: "c".into(),
-        target_pseudonym: "abcdef".into()
-    })));
+    assert!(!rejected(&IpcRequest::Community(
+        CommunityRequest::Members(MemberRequest::Kick {
+            community: "c".into(),
+            target_pseudonym: HEX64.into()
+        })
+    )));
+    assert!(rejected(&IpcRequest::Community(CommunityRequest::Members(
+        MemberRequest::Kick {
+            community: "c".into(),
+            target_pseudonym: "abcdef".into()
+        }
+    ))));
     assert!(!rejected(&IpcRequest::VoiceJoin {
         community: "c".into(),
         channel: HEX32.into(),
@@ -136,20 +146,22 @@ fn pseudonyms_and_ids_are_exact_hex() {
         deafened: false
     }));
     assert!(rejected(&IpcRequest::Community(
-        CommunityRequest::InviteRevoke {
+        CommunityRequest::Lifecycle(LifecycleRequest::InviteRevoke {
             community: "c".into(),
             invite_code: "raw-code".into()
-        }
+        })
     )));
 }
 
 #[test]
 fn key_scope_is_empty_or_a_channel_id() {
     let rotate = |channel: &str| {
-        IpcRequest::Community(CommunityRequest::MekRotate {
-            community: "c".into(),
-            channel: channel.into(),
-        })
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::MekRotate {
+                community: "c".into(),
+                channel: channel.into(),
+            },
+        ))
     };
     assert!(!rejected(&rotate("")));
     assert!(!rejected(&rotate(HEX32)));
@@ -159,29 +171,31 @@ fn key_scope_is_empty_or_a_channel_id() {
 #[test]
 fn numeric_bounds() {
     let history = |limit| {
-        IpcRequest::Community(CommunityRequest::ChannelMessagesBefore {
-            community: "c".into(),
-            channel: "general".into(),
-            before_timestamp: 0,
-            limit,
-        })
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelMessagesBefore {
+                community: "c".into(),
+                channel: "general".into(),
+                before_timestamp: 0,
+                limit,
+            },
+        ))
     };
     assert!(rejected(&history(0)));
     assert!(!rejected(&history(MAX_PAGE)));
     assert!(rejected(&history(MAX_PAGE + 1)));
     let timeout = |duration_seconds| {
-        IpcRequest::Community(CommunityRequest::Timeout {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::Timeout {
             community: "c".into(),
             target_pseudonym: HEX64.into(),
             duration_seconds,
             reason: None,
-        })
+        }))
     };
     assert!(rejected(&timeout(0)));
     assert!(!rejected(&timeout(MAX_TIMEOUT_SECONDS)));
     assert!(rejected(&timeout(MAX_TIMEOUT_SECONDS + 1)));
     let create = |slowmode_seconds| {
-        IpcRequest::Community(CommunityRequest::ChannelCreate {
+        IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
             community: "c".into(),
             name: "general".into(),
             kind: "text".into(),
@@ -189,7 +203,7 @@ fn numeric_bounds() {
             topic: Some("about\nthings".into()),
             slowmode_seconds,
             parent_voice_channel: None,
-        })
+        }))
     };
     assert!(!rejected(&create(MAX_SLOWMODE_SECONDS)));
     assert!(rejected(&create(MAX_SLOWMODE_SECONDS + 1)));
@@ -212,7 +226,7 @@ fn closed_vocabularies() {
         "only the teardown writes offline"
     );
     let create = |kind: &str| {
-        IpcRequest::Community(CommunityRequest::ChannelCreate {
+        IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
             community: "c".into(),
             name: "general".into(),
             kind: kind.into(),
@@ -220,7 +234,7 @@ fn closed_vocabularies() {
             topic: None,
             slowmode_seconds: 0,
             parent_voice_channel: None,
-        })
+        }))
     };
     assert!(!rejected(&create("voice")));
     assert!(rejected(&create("chat")));
@@ -236,11 +250,13 @@ fn status_and_description_caps() {
     );
     assert!(rejected(&presence("a".repeat(MAX_STATUS_LEN + 1))));
     let create = |description: String| {
-        IpcRequest::Community(CommunityRequest::CommunityCreate {
-            name: "Rekindle".into(),
-            description,
-            approval_required: false,
-        })
+        IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityCreate {
+                name: "Rekindle".into(),
+                description,
+                approval_required: false,
+            },
+        ))
     };
     assert!(!rejected(&create("a".repeat(MAX_DESCRIPTION_LEN))));
     assert!(rejected(&create("a".repeat(MAX_DESCRIPTION_LEN + 1))));
@@ -257,25 +273,26 @@ fn message_of(request: &IpcRequest) -> String {
 /// (plan E3.0), the error texts stay the boundary's own.
 #[test]
 fn governance_bounds_keep_their_error_texts() {
-    let timeout = IpcRequest::Community(CommunityRequest::Timeout {
+    let timeout = IpcRequest::Community(CommunityRequest::Members(MemberRequest::Timeout {
         community: "c".into(),
         target_pseudonym: HEX64.into(),
         duration_seconds: 0,
         reason: None,
-    });
+    }));
     assert_eq!(
         message_of(&timeout),
         format!("timeout must be 1-{MAX_TIMEOUT_SECONDS} seconds, got 0")
     );
-    let channel = IpcRequest::Community(CommunityRequest::ChannelCreate {
-        community: "c".into(),
-        name: "general".into(),
-        kind: "text".into(),
-        category: None,
-        topic: None,
-        slowmode_seconds: MAX_SLOWMODE_SECONDS + 1,
-        parent_voice_channel: None,
-    });
+    let channel =
+        IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
+            community: "c".into(),
+            name: "general".into(),
+            kind: "text".into(),
+            category: None,
+            topic: None,
+            slowmode_seconds: MAX_SLOWMODE_SECONDS + 1,
+            parent_voice_channel: None,
+        }));
     assert_eq!(
         message_of(&channel),
         format!(
@@ -283,11 +300,13 @@ fn governance_bounds_keep_their_error_texts() {
             MAX_SLOWMODE_SECONDS + 1
         )
     );
-    let community = IpcRequest::Community(CommunityRequest::CommunityCreate {
-        name: "Rekindle".into(),
-        description: "bell\u{7}".into(),
-        approval_required: false,
-    });
+    let community = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityCreate {
+            name: "Rekindle".into(),
+            description: "bell\u{7}".into(),
+            approval_required: false,
+        },
+    ));
     assert!(message_of(&community).starts_with("invalid description: "));
 }
 
@@ -302,16 +321,20 @@ fn onboarding_and_welcome_fields_are_bounded() {
         MAX_ONBOARDING_GUIDE_STEPS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
     };
     let config = |config: OnboardingConfigDto| {
-        IpcRequest::Community(CommunityRequest::OnboardingConfigSet {
-            community: "c".into(),
-            config,
-        })
+        IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::OnboardingConfigSet {
+                community: "c".into(),
+                config,
+            },
+        ))
     };
     let screen = |screen: WelcomeScreenDto| {
-        IpcRequest::Community(CommunityRequest::WelcomeScreenSet {
-            community: "c".into(),
-            screen,
-        })
+        IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::WelcomeScreenSet {
+                community: "c".into(),
+                screen,
+            },
+        ))
     };
     let step = GuideStepDto {
         title: "Say hello".into(),
@@ -418,9 +441,9 @@ fn identity_requests_name_a_key_and_a_new_passphrase_is_not_empty() {
 #[test]
 fn join_requires_a_full_invite_link() {
     assert!(rejected(&IpcRequest::Community(
-        CommunityRequest::CommunityJoin {
+        CommunityRequest::Lifecycle(LifecycleRequest::CommunityJoin {
             invite: format!("VLD0:{B64}")
-        }
+        })
     )));
 }
 
@@ -490,12 +513,14 @@ fn profile_links_and_game_servers_are_checked() {
 #[test]
 fn game_server_requests_take_a_label_an_address_and_an_id() {
     let add = |label: &str, address: &str, game_id: &str| {
-        IpcRequest::Community(CommunityRequest::GameServerAdd {
-            community: "My Community".into(),
-            game_id: game_id.into(),
-            label: label.into(),
-            address: address.into(),
-        })
+        IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::GameServerAdd {
+                community: "My Community".into(),
+                game_id: game_id.into(),
+                label: label.into(),
+                address: address.into(),
+            },
+        ))
     };
     assert!(!rejected(&add("Friday CTF", "10.0.0.1:27015", "4100")));
     assert!(!rejected(&add("Friday CTF", "[::1]:27015", "4100")));
@@ -517,17 +542,19 @@ fn game_server_requests_take_a_label_an_address_and_an_id() {
         &"9".repeat(65)
     )));
     let remove = |server_id: &str| {
-        IpcRequest::Community(CommunityRequest::GameServerRemove {
-            community: "My Community".into(),
-            server_id: server_id.into(),
-        })
+        IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::GameServerRemove {
+                community: "My Community".into(),
+                server_id: server_id.into(),
+            },
+        ))
     };
     assert!(!rejected(&remove("gs_0123456789abcdef")));
     assert!(rejected(&remove("gs_0123")));
     assert!(rejected(&remove("0123456789abcdef")));
     assert!(!rejected(&IpcRequest::Community(
-        CommunityRequest::GameServerList {
+        CommunityRequest::Activities(ActivityRequest::GameServerList {
             community: format!("VLD0:{B64}")
-        }
+        })
     )));
 }

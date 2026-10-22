@@ -1,3 +1,4 @@
+use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -14,7 +15,7 @@ pub async fn get_communities(
 ) -> Result<Done<Vec<rekindle_types::display::CommunityOverview>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::CommunityList),
+        IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList)),
     )
     .await
 }
@@ -27,7 +28,9 @@ pub async fn get_community_details(
 ) -> Result<Done<Vec<CommunityView>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::CommunityViews),
+        IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityViews,
+        )),
     )
     .await
 }
@@ -43,11 +46,13 @@ pub async fn create_community(
     approval_required: Option<bool>,
     state: State<'_, SharedState>,
 ) -> Result<Done<CommunityCreated>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunityCreate {
-        name,
-        description: String::new(),
-        approval_required: approval_required.unwrap_or(false),
-    });
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityCreate {
+            name,
+            description: String::new(),
+            approval_required: approval_required.unwrap_or(false),
+        },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -59,7 +64,9 @@ pub async fn join_community(
     invite_url: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<CommunityJoined>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunityJoin { invite: invite_url });
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityJoin { invite: invite_url },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -70,9 +77,11 @@ pub async fn leave_community(
     community_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunityLeave {
-        governance_key: community_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityLeave {
+            governance_key: community_id,
+        },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -87,12 +96,14 @@ pub async fn update_community_info(
     banner_hash: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunityUpdateInfo {
-        governance_key: community_id,
-        name,
-        description,
-        icon_hash,
-        banner_hash,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityUpdateInfo {
+            governance_key: community_id,
+            name,
+            description,
+            icon_hash,
+            banner_hash,
+        },
+    ));
     host_call::call(&state, request).await
 }

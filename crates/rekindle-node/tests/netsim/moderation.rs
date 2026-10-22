@@ -4,6 +4,7 @@
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{LifecycleRequest, MemberRequest};
 use serde_json::Value;
 
 use crate::harness::{eventually, Community};
@@ -11,9 +12,11 @@ use crate::harness::{eventually, Community};
 /// Node `i`'s view of `pseudonym` in the member list, if listed.
 async fn listed(community: &Community, i: usize, pseudonym: &str) -> Option<Value> {
     community.nodes[i]
-        .ok(IpcRequest::Community(CommunityRequest::CommunityMembers {
-            governance_key: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityMembers {
+                governance_key: community.governance_key.clone(),
+            },
+        )))
         .await
         .as_array()
         .and_then(|members| {
@@ -38,21 +41,25 @@ async fn ban_removes_member() {
         "the member is listed before the ban"
     );
     let refused = community.nodes[2]
-        .call(IpcRequest::Community(CommunityRequest::Ban {
-            community: community.governance_key.clone(),
-            target_pseudonym: bea.clone(),
-            reason: None,
-        }))
+        .call(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Ban {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea.clone(),
+                reason: None,
+            },
+        )))
         .await
         .expect_err("a member without BAN_MEMBERS is refused");
     assert_eq!(refused.code, 403, "{}", refused.message);
 
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::Ban {
-            community: community.governance_key.clone(),
-            target_pseudonym: bea.clone(),
-            reason: Some("spam".into()),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Ban {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea.clone(),
+                reason: Some("spam".into()),
+            },
+        )))
         .await;
     assert!(
         eventually(&community.sim, Duration::from_secs(120), || async {
@@ -62,9 +69,11 @@ async fn ban_removes_member() {
         "the banned member leaves the other member's list"
     );
     let bans = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::BanList {
-            community: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::BanList {
+                community: community.governance_key.clone(),
+            },
+        )))
         .await;
     assert!(
         bans.as_array()
@@ -87,12 +96,14 @@ async fn timeout_expires() {
         "the member is listed"
     );
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::Timeout {
-            community: community.governance_key.clone(),
-            target_pseudonym: bea.clone(),
-            duration_seconds: 120,
-            reason: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Timeout {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea.clone(),
+                duration_seconds: 120,
+                reason: None,
+            },
+        )))
         .await;
     let until = listed(&community, 0, &bea).await.expect("listed")["timeoutUntil"].as_u64();
     assert!(until.is_some(), "the timeout is in force");

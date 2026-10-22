@@ -6,19 +6,21 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_types::display::ChannelOverviewDisplay;
 
 use crate::daemon::DaemonState;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest};
 
 use super::{state_error, DaemonContext};
 
 /// Route one channel request (the router's arm for them).
-pub(crate) async fn route(
+/// `route` for the channel and category requests.
+pub(crate) async fn route_channels(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ChannelRequest,
 ) -> IpcResponse {
     match request {
-        CommunityRequest::ChannelList { community } => handle_list(ctx, state, &community),
-        CommunityRequest::ChannelCreate {
+        ChannelRequest::ChannelList { community } => handle_list(ctx, state, &community),
+        ChannelRequest::ChannelCreate {
             community,
             name,
             kind,
@@ -50,11 +52,11 @@ pub(crate) async fn route(
             )
             .await
         }
-        CommunityRequest::ChannelDelete {
+        ChannelRequest::ChannelDelete {
             community,
             channel_id,
         } => handle_delete(ctx, state, &community, &channel_id).await,
-        CommunityRequest::ChannelUpdate {
+        ChannelRequest::ChannelUpdate {
             community,
             channel_id,
             name,
@@ -74,7 +76,31 @@ pub(crate) async fn route(
             )
             .await
         }
-        CommunityRequest::ChannelSend {
+        request @ (ChannelRequest::ChannelRename { .. }
+        | ChannelRequest::ChannelMove { .. }
+        | ChannelRequest::ChannelReorder { .. }
+        | ChannelRequest::ChannelSetTopic { .. }
+        | ChannelRequest::ChannelSetSlowmode { .. }
+        | ChannelRequest::ChannelSetForumTags { .. }
+        | ChannelRequest::ChannelOverwriteSet { .. }
+        | ChannelRequest::ChannelOverwriteDelete { .. }
+        | ChannelRequest::CategoryCreate { .. }
+        | ChannelRequest::CategoryDelete { .. }
+        | ChannelRequest::CategoryRename { .. }
+        | ChannelRequest::CategoryReorder { .. }) => {
+            super::channel_admin::route(ctx, state, request).await
+        }
+    }
+}
+
+/// `route` for the channel message and channel key requests.
+pub(crate) async fn route_messages(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: ChannelMessageRequest,
+) -> IpcResponse {
+    match request {
+        ChannelMessageRequest::ChannelSend {
             community,
             channel,
             body,
@@ -82,20 +108,6 @@ pub(crate) async fn route(
         } => {
             super::channel_message::handle_send(ctx, state, &community, &channel, &body, reply_to)
                 .await
-        }
-        request @ (CommunityRequest::ChannelRename { .. }
-        | CommunityRequest::ChannelMove { .. }
-        | CommunityRequest::ChannelReorder { .. }
-        | CommunityRequest::ChannelSetTopic { .. }
-        | CommunityRequest::ChannelSetSlowmode { .. }
-        | CommunityRequest::ChannelSetForumTags { .. }
-        | CommunityRequest::ChannelOverwriteSet { .. }
-        | CommunityRequest::ChannelOverwriteDelete { .. }
-        | CommunityRequest::CategoryCreate { .. }
-        | CommunityRequest::CategoryDelete { .. }
-        | CommunityRequest::CategoryRename { .. }
-        | CommunityRequest::CategoryReorder { .. }) => {
-            super::channel_admin::route(ctx, state, request).await
         }
         other => unreachable!("{} is not a channel request", other.name()),
     }

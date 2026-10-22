@@ -1,11 +1,10 @@
 //! The community lifecycle, membership and invite requests' `Debug`
 //! (plan E3.1): free text shows its length only.
 
-use super::super::super::CommunityRequest;
+use crate::protocol::LifecycleRequest;
 
-impl CommunityRequest {
-    /// The lifecycle, membership and invite requests' `Debug`.
-    pub(super) fn fmt_lifecycle(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for LifecycleRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::CommunityCreate {
                 name,
@@ -101,10 +100,6 @@ impl CommunityRequest {
                 .field("community", community)
                 .field("invite_code", invite_code)
                 .finish(),
-            other => unreachable!(
-                "{} is not a community lifecycle or invite request",
-                other.name()
-            ),
         }
     }
 }

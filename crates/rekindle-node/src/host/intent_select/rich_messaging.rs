@@ -3,7 +3,8 @@
 //! reaches.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::RichRequest;
 use rekindle_types::id::ThreadId;
 use rekindle_types::intent::{IntentKind, Reversibility, Subject};
 
@@ -34,49 +35,49 @@ fn thread_channel(
 /// The community is not joined, or the thread is not in its governance.
 pub(super) fn selection(
     ctx: &DaemonContext,
-    request: &CommunityRequest,
+    request: &RichRequest,
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     let (target, channel) = match request {
-        CommunityRequest::ReactionAdd {
+        RichRequest::ReactionAdd {
             community,
             channel_id,
             ..
         }
-        | CommunityRequest::ReactionRemove {
+        | RichRequest::ReactionRemove {
             community,
             channel_id,
             ..
         }
-        | CommunityRequest::ThreadCreate {
+        | RichRequest::ThreadCreate {
             community,
             channel_id,
             ..
         }
-        | CommunityRequest::PollCreate {
+        | RichRequest::PollCreate {
             community,
             channel_id,
             ..
         }
-        | CommunityRequest::PollVote {
+        | RichRequest::PollVote {
             community,
             channel_id,
             ..
         }
-        | CommunityRequest::PollClose {
+        | RichRequest::PollClose {
             community,
             channel_id,
             ..
         } => (community.clone(), channel_id.clone()),
-        CommunityRequest::ThreadArchive {
+        RichRequest::ThreadArchive {
             community: c,
             thread_id,
         }
-        | CommunityRequest::ThreadUnarchive {
+        | RichRequest::ThreadUnarchive {
             community: c,
             thread_id,
         }
-        | CommunityRequest::ThreadSend {
+        | RichRequest::ThreadSend {
             community: c,
             thread_id,
             ..
@@ -99,13 +100,13 @@ pub(super) fn selection(
     };
     s.notifies = members(ctx, &id);
     match request {
-        CommunityRequest::ReactionAdd { .. } => {
+        RichRequest::ReactionAdd { .. } => {
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RemoveReaction);
         }
-        CommunityRequest::ReactionRemove { .. } => {
+        RichRequest::ReactionRemove { .. } => {
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::AddReaction);
         }
-        CommunityRequest::ThreadArchive { .. } => {
+        RichRequest::ThreadArchive { .. } => {
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::UnarchiveThread);
         }
         _ => {}

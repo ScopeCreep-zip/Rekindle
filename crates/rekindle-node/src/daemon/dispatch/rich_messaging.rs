@@ -2,7 +2,8 @@
 //! Host's channel adapter on both modes.
 
 use rekindle_channel::error::ChannelError;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::RichRequest;
 
 use crate::daemon::DaemonState;
 use crate::host::adapters::channel::rich::{NewPoll, NewThread};
@@ -29,22 +30,21 @@ fn answer<T: serde::Serialize>(result: Result<T, ChannelError>, what: &str) -> I
     }
 }
 
-fn community_of(request: &CommunityRequest) -> &str {
+fn community_of(request: &RichRequest) -> &str {
     match request {
-        CommunityRequest::ReactionAdd { community, .. }
-        | CommunityRequest::ReactionRemove { community, .. }
-        | CommunityRequest::ThreadCreate { community, .. }
-        | CommunityRequest::ThreadArchive { community, .. }
-        | CommunityRequest::ThreadUnarchive { community, .. }
-        | CommunityRequest::ThreadList { community, .. }
-        | CommunityRequest::ThreadListActive { community, .. }
-        | CommunityRequest::ThreadMessages { community, .. }
-        | CommunityRequest::ThreadSend { community, .. }
-        | CommunityRequest::PollCreate { community, .. }
-        | CommunityRequest::PollVote { community, .. }
-        | CommunityRequest::PollClose { community, .. }
-        | CommunityRequest::PollResults { community, .. } => community,
-        _ => "",
+        RichRequest::ReactionAdd { community, .. }
+        | RichRequest::ReactionRemove { community, .. }
+        | RichRequest::ThreadCreate { community, .. }
+        | RichRequest::ThreadArchive { community, .. }
+        | RichRequest::ThreadUnarchive { community, .. }
+        | RichRequest::ThreadList { community, .. }
+        | RichRequest::ThreadListActive { community, .. }
+        | RichRequest::ThreadMessages { community, .. }
+        | RichRequest::ThreadSend { community, .. }
+        | RichRequest::PollCreate { community, .. }
+        | RichRequest::PollVote { community, .. }
+        | RichRequest::PollClose { community, .. }
+        | RichRequest::PollResults { community, .. } => community,
     }
 }
 
@@ -52,14 +52,14 @@ fn community_of(request: &CommunityRequest) -> &str {
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: RichRequest,
 ) -> IpcResponse {
     let read = matches!(
         request,
-        CommunityRequest::ThreadList { .. }
-            | CommunityRequest::ThreadListActive { .. }
-            | CommunityRequest::ThreadMessages { .. }
-            | CommunityRequest::PollResults { .. }
+        RichRequest::ThreadList { .. }
+            | RichRequest::ThreadListActive { .. }
+            | RichRequest::ThreadMessages { .. }
+            | RichRequest::PollResults { .. }
     );
     if read && !state.can_query() {
         return state_error(state, "query");
@@ -73,7 +73,7 @@ pub(crate) async fn handle(
     };
     let host = HostChannel::new(ctx);
     match request {
-        CommunityRequest::ReactionAdd {
+        RichRequest::ReactionAdd {
             channel_id,
             message_id,
             emoji,
@@ -83,7 +83,7 @@ pub(crate) async fn handle(
                 .await,
             "reaction add",
         ),
-        CommunityRequest::ReactionRemove {
+        RichRequest::ReactionRemove {
             channel_id,
             message_id,
             emoji,
@@ -93,7 +93,7 @@ pub(crate) async fn handle(
                 .await,
             "reaction remove",
         ),
-        CommunityRequest::ThreadCreate {
+        RichRequest::ThreadCreate {
             channel_id,
             name,
             starter_message_id,
@@ -110,22 +110,22 @@ pub(crate) async fn handle(
             };
             answer(host.create_thread(&key, thread).await, "thread create")
         }
-        CommunityRequest::ThreadArchive { thread_id, .. } => answer(
+        RichRequest::ThreadArchive { thread_id, .. } => answer(
             host.archive_thread(&key, &thread_id).await,
             "thread archive",
         ),
-        CommunityRequest::ThreadUnarchive { thread_id, .. } => answer(
+        RichRequest::ThreadUnarchive { thread_id, .. } => answer(
             host.unarchive_thread(&key, &thread_id).await,
             "thread unarchive",
         ),
-        CommunityRequest::ThreadList { channel_id, .. } => {
+        RichRequest::ThreadList { channel_id, .. } => {
             answer(host.threads(&key, &channel_id, false).await, "thread list")
         }
-        CommunityRequest::ThreadListActive { channel_id, .. } => answer(
+        RichRequest::ThreadListActive { channel_id, .. } => answer(
             host.threads(&key, &channel_id, true).await,
             "active threads",
         ),
-        CommunityRequest::ThreadMessages {
+        RichRequest::ThreadMessages {
             thread_id,
             limit,
             before_timestamp,
@@ -135,13 +135,13 @@ pub(crate) async fn handle(
                 .await,
             "thread messages",
         ),
-        CommunityRequest::ThreadSend {
+        RichRequest::ThreadSend {
             thread_id, body, ..
         } => answer(
             host.send_thread_message(&key, &thread_id, &body).await,
             "thread send",
         ),
-        CommunityRequest::PollCreate {
+        RichRequest::PollCreate {
             channel_id,
             message_id,
             question,
@@ -160,7 +160,7 @@ pub(crate) async fn handle(
             };
             answer(host.create_poll(&key, poll).await, "poll create")
         }
-        CommunityRequest::PollVote {
+        RichRequest::PollVote {
             channel_id,
             poll_id,
             selected_answers,
@@ -170,7 +170,7 @@ pub(crate) async fn handle(
                 .await,
             "poll vote",
         ),
-        CommunityRequest::PollClose {
+        RichRequest::PollClose {
             channel_id,
             poll_id,
             ..
@@ -178,17 +178,13 @@ pub(crate) async fn handle(
             host.close_poll(&key, &channel_id, &poll_id).await,
             "poll close",
         ),
-        CommunityRequest::PollResults {
+        RichRequest::PollResults {
             channel_id,
             poll_id,
             ..
         } => answer(
             host.poll_results(&key, &channel_id, &poll_id).await,
             "poll results",
-        ),
-        other => IpcResponse::error(
-            500,
-            format!("{} is not a reaction, thread or poll request", other.name()),
         ),
     }
 }

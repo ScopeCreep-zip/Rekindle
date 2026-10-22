@@ -1,6 +1,6 @@
 //! A community's channel and category administration (plan E3.1 E1).
 
-use rekindle_ipc::protocol::CommunityRequest;
+use rekindle_ipc::protocol::ChannelRequest;
 
 use super::{channel, community, hex16, name, slowmode, text, Checked, MAX_TOPIC_LEN};
 
@@ -39,9 +39,9 @@ fn target(target_type: &str, target_id: &str) -> Checked {
 }
 
 /// Channel and category administration: names, ids, tags and targets.
-pub(super) fn check(request: &CommunityRequest) -> Checked {
+pub(super) fn check(request: &ChannelRequest) -> Checked {
     match request {
-        CommunityRequest::ChannelRename {
+        ChannelRequest::ChannelRename {
             community: c,
             channel_id,
             name: n,
@@ -50,7 +50,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             channel(channel_id)?;
             name(n, "channel")
         }
-        CommunityRequest::ChannelMove {
+        ChannelRequest::ChannelMove {
             community: c,
             channel_id,
             category,
@@ -61,14 +61,14 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 .as_deref()
                 .map_or(Ok(()), |id| hex16(id, "category"))
         }
-        CommunityRequest::ChannelReorder {
+        ChannelRequest::ChannelReorder {
             community: c,
             channel_ids,
         } => {
             community(c)?;
             ordered(channel_ids, channel)
         }
-        CommunityRequest::ChannelSetSlowmode {
+        ChannelRequest::ChannelSetSlowmode {
             community: c,
             channel_id,
             seconds,
@@ -77,7 +77,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             channel(channel_id)?;
             slowmode(*seconds)
         }
-        CommunityRequest::ChannelSetTopic {
+        ChannelRequest::ChannelSetTopic {
             community: c,
             channel_id,
             topic,
@@ -86,7 +86,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             channel(channel_id)?;
             text(topic, MAX_TOPIC_LEN, "topic")
         }
-        CommunityRequest::ChannelSetForumTags {
+        ChannelRequest::ChannelSetForumTags {
             community: c,
             channel_id,
             forum_tags,
@@ -101,7 +101,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             }
             forum_tags.iter().try_for_each(|tag| name(tag, "forum tag"))
         }
-        CommunityRequest::ChannelOverwriteSet {
+        ChannelRequest::ChannelOverwriteSet {
             community: c,
             channel_id,
             target_type,
@@ -109,7 +109,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             allow: _,
             deny: _,
         }
-        | CommunityRequest::ChannelOverwriteDelete {
+        | ChannelRequest::ChannelOverwriteDelete {
             community: c,
             channel_id,
             target_type,
@@ -119,21 +119,21 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             channel(channel_id)?;
             target(target_type, target_id)
         }
-        CommunityRequest::CategoryCreate {
+        ChannelRequest::CategoryCreate {
             community: c,
             name: n,
         } => {
             community(c)?;
             name(n, "category")
         }
-        CommunityRequest::CategoryDelete {
+        ChannelRequest::CategoryDelete {
             community: c,
             category_id,
         } => {
             community(c)?;
             hex16(category_id, "category")
         }
-        CommunityRequest::CategoryRename {
+        ChannelRequest::CategoryRename {
             community: c,
             category_id,
             name: n,
@@ -142,7 +142,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             hex16(category_id, "category")?;
             name(n, "category")
         }
-        CommunityRequest::CategoryReorder {
+        ChannelRequest::CategoryReorder {
             community: c,
             category_ids,
         } => {

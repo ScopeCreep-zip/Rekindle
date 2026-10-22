@@ -2,7 +2,8 @@
 //! reads.
 
 use crate::daemon::DaemonState;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ChannelMessageRequest;
+use rekindle_ipc::protocol::IpcResponse;
 
 use crate::host::adapters::governance::channel_messages::MessageChange;
 
@@ -103,15 +104,15 @@ pub(crate) async fn handle_change(
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ChannelMessageRequest,
 ) -> IpcResponse {
     match request {
-        CommunityRequest::ChannelMessageSend {
+        ChannelMessageRequest::ChannelMessageSend {
             channel,
             body,
             reply_to,
         } => handle_post(ctx, state, &channel, &body, reply_to).await,
-        CommunityRequest::ChannelMessageEdit {
+        ChannelMessageRequest::ChannelMessageEdit {
             channel,
             message_id,
             body,
@@ -119,7 +120,7 @@ pub(crate) async fn handle(
             let change = MessageChange::Edit { body };
             handle_change(ctx, state, &channel, &message_id, change).await
         }
-        CommunityRequest::ChannelMessageDelete {
+        ChannelMessageRequest::ChannelMessageDelete {
             channel,
             message_id,
         } => handle_change(ctx, state, &channel, &message_id, MessageChange::Delete).await,
@@ -132,13 +133,13 @@ pub(crate) async fn handle(
 pub(crate) async fn handle_read(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ChannelMessageRequest,
 ) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
     let (community_id, channel, before, limit) = match request {
-        CommunityRequest::ChannelMessages { channel, limit } => {
+        ChannelMessageRequest::ChannelMessages { channel, limit } => {
             let Some(community_id) =
                 crate::host::adapters::governance::channel_messages::community_of_channel(
                     ctx, &channel,
@@ -148,7 +149,7 @@ pub(crate) async fn handle_read(
             };
             (community_id, channel, None, limit)
         }
-        CommunityRequest::ChannelMessagesBefore {
+        ChannelMessageRequest::ChannelMessagesBefore {
             community,
             channel,
             before_timestamp,

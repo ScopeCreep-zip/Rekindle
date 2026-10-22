@@ -1,6 +1,7 @@
 //! A community's invites (plan E3.1 D1): each command is one Host request;
 //! the Host validates it, reviews its intent and mints, lists or revokes.
 
+use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::{CommunityInviteCreated, CommunityInviteView};
 use rekindle_types::dto::{CommandError, Done};
@@ -17,11 +18,13 @@ pub async fn create_community_invite(
     expires_in_seconds: Option<u64>,
     state: State<'_, SharedState>,
 ) -> Result<Done<CommunityInviteCreated>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::InviteCreate {
-        community: community_id,
-        max_uses: max_uses.unwrap_or(0),
-        expires_seconds: expires_in_seconds,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::InviteCreate {
+            community: community_id,
+            max_uses: max_uses.unwrap_or(0),
+            expires_seconds: expires_in_seconds,
+        },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -32,10 +35,12 @@ pub async fn revoke_community_invite(
     invite_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::InviteRevoke {
-        community: community_id,
-        invite_code: invite_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::InviteRevoke {
+            community: community_id,
+            invite_code: invite_id,
+        },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -47,9 +52,9 @@ pub async fn list_community_invites(
 ) -> Result<Done<Vec<CommunityInviteView>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::InviteList {
+        IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::InviteList {
             community: community_id,
-        }),
+        })),
     )
     .await
 }

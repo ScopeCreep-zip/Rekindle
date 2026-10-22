@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::ExpressionRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::ExpressionInfo;
 use rekindle_types::image_kind::ImageKind;
@@ -23,9 +24,11 @@ const PNG_1X1: &[u8] = &[
 
 async fn expressions(node: &SimNode, community: &str) -> Vec<ExpressionInfo> {
     let listed = node
-        .ok(IpcRequest::Community(CommunityRequest::Expressions {
-            community: community.into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::Expressions {
+                community: community.into(),
+            },
+        )))
         .await;
     serde_json::from_value(listed).expect("an expression list")
 }
@@ -38,12 +41,14 @@ async fn expression_upload_seen() {
     let key = community.governance_key.clone();
 
     let id = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::EmojiUpload {
-            community: key.clone(),
-            name: "spark".into(),
-            bytes: PNG_1X1.to_vec(),
-            kind: ImageKind::Png,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::EmojiUpload {
+                community: key.clone(),
+                name: "spark".into(),
+                bytes: PNG_1X1.to_vec(),
+                kind: ImageKind::Png,
+            },
+        )))
         .await;
     let id: String = serde_json::from_value(id).expect("an expression id");
     let own = expressions(&community.nodes[0], &key).await;

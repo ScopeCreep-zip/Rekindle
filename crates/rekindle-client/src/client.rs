@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use rekindle_ipc::client::BusClient;
 use rekindle_ipc::message::SecurityLevel;
+use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::IpcError;
 use rekindle_types::intent::{IntentId, IntentProof, Reversibility};
@@ -227,11 +228,14 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::IntentCommit { .. }
         | IpcRequest::Logout
         | IpcRequest::Community(
-            CommunityRequest::CommunityCreate { .. }
-            | CommunityRequest::CommunityJoin { .. }
-            | CommunityRequest::ChannelSend { .. }
-            | CommunityRequest::ChannelMessages { .. }
-            | CommunityRequest::ChannelMessagesBefore { .. },
+            CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityCreate { .. } | LifecycleRequest::CommunityJoin { .. },
+            )
+            | CommunityRequest::Messages(
+                ChannelMessageRequest::ChannelSend { .. }
+                | ChannelMessageRequest::ChannelMessages { .. }
+                | ChannelMessageRequest::ChannelMessagesBefore { .. },
+            ),
         )
         | IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }

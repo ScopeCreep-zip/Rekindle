@@ -12,7 +12,7 @@ use anyhow::{anyhow, Context, Result};
 
 const INVOKE: &str = "src-tauri/src/invoke.rs";
 const IPC_PROTOCOL: &str = "crates/rekindle-ipc/src/protocol/mod.rs";
-const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community.rs";
+const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community";
 const TABLE: &str = "crates/rekindle-types/src/intent/table";
 
 /// The command names in `invoke.rs`'s `generate_handler!` list.
@@ -45,18 +45,70 @@ fn enum_variants(src: &str, name: &str, path: &str) -> Result<Vec<String>> {
 }
 
 /// The leaf names of `pub enum IpcRequest`: its `Community` variant stands
-/// for every `CommunityRequest` variant, which `IpcRequest::name` answers.
-fn ipc_requests(protocol: &str, community: &str) -> Result<Vec<String>> {
+/// for every leaf of every domain sub-enum `CommunityRequest` carries, which
+/// `IpcRequest::name` answers. `community` is each file of `IPC_COMMUNITY`.
+fn ipc_requests(protocol: &str, community: &[String]) -> Result<Vec<String>> {
     let top = enum_variants(protocol, "IpcRequest", IPC_PROTOCOL)?;
     if !top.iter().any(|v| v == "Community") {
         return Err(anyhow!("no `IpcRequest::Community` in {IPC_PROTOCOL}"));
     }
-    let nested = enum_variants(community, "CommunityRequest", IPC_COMMUNITY)?;
+    let mut enums = Vec::new();
+    for src in community {
+        let file = syn::parse_file(src).with_context(|| format!("parsing {IPC_COMMUNITY}"))?;
+        enums.extend(file.items.into_iter().filter_map(|item| match item {
+            syn::Item::Enum(e) => Some(e),
+            _ => None,
+        }));
+    }
+    let find = |name: &str| {
+        enums
+            .iter()
+            .find(|e| e.ident == name)
+            .ok_or_else(|| anyhow!("no `enum {name}` in {IPC_COMMUNITY}"))
+    };
+    let mut nested = Vec::new();
+    for domain in &find("CommunityRequest")?.variants {
+        let sub = match &domain.fields {
+            syn::Fields::Unnamed(fields) if fields.unnamed.len() == 1 => {
+                match &fields.unnamed[0].ty {
+                    syn::Type::Path(path) => path.path.segments.last().map(|s| s.ident.to_string()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        }
+        .ok_or_else(|| {
+            anyhow!(
+                "`CommunityRequest::{}` does not carry one domain enum",
+                domain.ident
+            )
+        })?;
+        nested.extend(find(&sub)?.variants.iter().map(|v| v.ident.to_string()));
+    }
     Ok(top
         .into_iter()
         .filter(|v| v != "Community")
         .chain(nested)
         .collect())
+}
+
+/// Every `.rs` file of `IPC_COMMUNITY`, in name order.
+fn community_sources(root: &Path) -> Result<Vec<String>> {
+    let dir = root.join(IPC_COMMUNITY);
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(&dir).with_context(|| format!("reading {IPC_COMMUNITY}"))? {
+        let path = entry
+            .with_context(|| format!("reading {IPC_COMMUNITY}"))?
+            .path();
+        if path.extension().is_some_and(|x| x == "rs") {
+            paths.push(path);
+        }
+    }
+    paths.sort();
+    paths
+        .iter()
+        .map(|p| std::fs::read_to_string(p).with_context(|| format!("reading {}", p.display())))
+        .collect()
 }
 
 /// The first element of every `(name, kind)` row of one part of
@@ -150,7 +202,7 @@ pub(crate) fn check_intent_table(root: &Path) -> Result<()> {
     };
     let problems = compare(
         &tauri_commands(&read(INVOKE)?),
-        &ipc_requests(&read(IPC_PROTOCOL)?, &read(IPC_COMMUNITY)?)?,
+        &ipc_requests(&read(IPC_PROTOCOL)?, &community_sources(root)?)?,
         &table_parts(root)?,
     );
     if problems.is_empty() {
@@ -182,9 +234,10 @@ mod tests {
         );
         let ipc =
             "pub enum IpcRequest { Unlock { passphrase: String }, Community(CommunityRequest), Lock }";
-        let community = "pub enum CommunityRequest { Kick { target: String }, BanList }";
+        let community = "pub enum CommunityRequest { Moderation(ModerationRequest) } \
+             pub enum ModerationRequest { Kick { target: String }, BanList }";
         assert_eq!(
-            ipc_requests(ipc, community).unwrap(),
+            ipc_requests(ipc, &[community.to_string()]).unwrap(),
             names(&["Unlock", "Lock", "Kick", "BanList"])
         );
         let table = r#"pub(crate) const CORE_ROWS: &[(&str, Option<IntentKind>)] = &[("login", Some(IntentKind::Login)), ("Lock", None)]; pub const COMMAND_TABLE: &[&[(&str, Option<IntentKind>)]] = &[CORE_ROWS];"#;

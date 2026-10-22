@@ -1,7 +1,8 @@
 //! A community's audit log and notification default (plan E3.1 F4),
 //! answered by the Host's governance adapter on both hosts.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::AuditRequest;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::{adapter, runtime_refused, state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -10,21 +11,20 @@ use crate::daemon::DaemonState;
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: AuditRequest,
 ) -> IpcResponse {
     match request {
-        CommunityRequest::AuditLog {
+        AuditRequest::AuditLog {
             community,
             before_timestamp,
             limit,
         } => handle_audit_log(ctx, state, &community, before_timestamp, limit).await,
-        CommunityRequest::NotificationDefaultGet { community } => {
+        AuditRequest::NotificationDefaultGet { community } => {
             handle_notification_default_get(ctx, state, &community)
         }
-        CommunityRequest::NotificationDefaultSet { community, level } => {
+        AuditRequest::NotificationDefaultSet { community, level } => {
             handle_notification_default_set(ctx, state, &community, &level).await
         }
-        other => IpcResponse::error(500, format!("{} is not an audit request", other.name())),
     }
 }
 

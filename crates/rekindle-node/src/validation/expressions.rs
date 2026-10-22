@@ -6,7 +6,8 @@
 use rekindle_channel::expressions::{
     validate_expression_name, MAX_ANIMATED_EMOJI_BYTES, MAX_STATIC_EMOJI_BYTES, MAX_STICKER_BYTES,
 };
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ExpressionRequest;
+use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::image_kind::ImageKind;
 
 use super::{community, Checked};
@@ -22,9 +23,9 @@ fn picture(name: &str, bytes: &[u8], max: usize) -> Checked {
     Ok(())
 }
 
-pub(super) fn check(request: &CommunityRequest) -> Checked {
+pub(super) fn check(request: &ExpressionRequest) -> Checked {
     match request {
-        CommunityRequest::EmojiUpload {
+        ExpressionRequest::EmojiUpload {
             community: key,
             name,
             bytes,
@@ -38,7 +39,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             };
             picture(name, bytes, max)
         }
-        CommunityRequest::StickerUpload {
+        ExpressionRequest::StickerUpload {
             community: key,
             name,
             bytes,
@@ -47,7 +48,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             community(key)?;
             picture(name, bytes, MAX_STICKER_BYTES)
         }
-        CommunityRequest::ExpressionDelete {
+        ExpressionRequest::ExpressionDelete {
             community: key,
             expression_id,
         } => {
@@ -60,10 +61,6 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 )),
             }
         }
-        CommunityRequest::Expressions { community: key } => community(key),
-        other => Err(IpcResponse::error(
-            500,
-            format!("{} is not an expression request", other.name()),
-        )),
+        ExpressionRequest::Expressions { community: key } => community(key),
     }
 }

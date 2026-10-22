@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_types::intent::Escalation;
 
@@ -17,11 +18,13 @@ async fn a_forward_to_another_membership_is_held_with_both_counts() {
     let creator = &community.nodes[0];
 
     let elsewhere = creator
-        .ok(IpcRequest::Community(CommunityRequest::CommunityCreate {
-            name: "Elsewhere".into(),
-            description: String::new(),
-            approval_required: false,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityCreate {
+                name: "Elsewhere".into(),
+                description: String::new(),
+                approval_required: false,
+            },
+        )))
         .await["governanceKey"]
         .as_str()
         .expect("a governance key")
@@ -36,13 +39,15 @@ async fn a_forward_to_another_membership_is_held_with_both_counts() {
         .to_owned();
 
     let forward = || {
-        IpcRequest::Community(CommunityRequest::ChannelMessageForward {
-            source_community: community.governance_key.clone(),
-            source_channel: "general".into(),
-            source_message: source_message.clone(),
-            dest_community: elsewhere.clone(),
-            dest_channel: "general".into(),
-        })
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelMessageForward {
+                source_community: community.governance_key.clone(),
+                source_channel: "general".into(),
+                source_message: source_message.clone(),
+                dest_community: elsewhere.clone(),
+                dest_channel: "general".into(),
+            },
+        ))
     };
     let IpcResponse::IntentRequired(review) = creator.answer(forward()).await else {
         panic!("a forward to another membership is not held");

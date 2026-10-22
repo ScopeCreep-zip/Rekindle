@@ -1,5 +1,6 @@
 //! A community's scheduled events and RSVPs (plan E3.1 E4): Host calls.
 
+use rekindle_ipc::protocol::ActivityRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::event::{EventEdit, EventInfo, EventRsvp, NewEvent};
@@ -14,10 +15,11 @@ pub async fn create_event(
     community_id: String,
     request: NewEvent,
 ) -> Result<Done<String>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::EventCreate {
-        community: community_id,
-        event: request,
-    });
+    let request =
+        IpcRequest::Community(CommunityRequest::Activities(ActivityRequest::EventCreate {
+            community: community_id,
+            event: request,
+        }));
     host_call::call(&state, request).await
 }
 
@@ -33,7 +35,7 @@ pub async fn edit_event(
     channel_id: Option<String>,
     max_attendees: Option<u32>,
 ) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::EventEdit {
+    let request = IpcRequest::Community(CommunityRequest::Activities(ActivityRequest::EventEdit {
         community: community_id,
         event_id,
         edit: EventEdit {
@@ -44,7 +46,7 @@ pub async fn edit_event(
             channel_id,
             max_attendees,
         },
-    });
+    }));
     host_call::call(&state, request).await
 }
 
@@ -54,10 +56,11 @@ pub async fn delete_event(
     community_id: String,
     event_id: String,
 ) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::EventDelete {
-        community: community_id,
-        event_id,
-    });
+    let request =
+        IpcRequest::Community(CommunityRequest::Activities(ActivityRequest::EventDelete {
+            community: community_id,
+            event_id,
+        }));
     host_call::call(&state, request).await
 }
 
@@ -67,10 +70,11 @@ pub async fn cancel_event(
     community_id: String,
     event_id: String,
 ) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::EventCancel {
-        community: community_id,
-        event_id,
-    });
+    let request =
+        IpcRequest::Community(CommunityRequest::Activities(ActivityRequest::EventCancel {
+            community: community_id,
+            event_id,
+        }));
     host_call::call(&state, request).await
 }
 
@@ -91,11 +95,11 @@ pub async fn set_event_rsvp(
     event_id: String,
     status: String,
 ) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::EventRsvp {
+    let request = IpcRequest::Community(CommunityRequest::Activities(ActivityRequest::EventRsvp {
         community: community_id,
         event_id,
         status,
-    });
+    }));
     host_call::call(&state, request).await
 }
 
@@ -105,10 +109,12 @@ pub async fn list_event_attendees(
     community_id: String,
     event_id: String,
 ) -> Result<Done<Vec<EventRsvp>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::EventAttendees {
-        community: community_id,
-        event_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Activities(
+        ActivityRequest::EventAttendees {
+            community: community_id,
+            event_id,
+        },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -117,8 +123,8 @@ pub async fn get_events(
     state: State<'_, SharedState>,
     community_id: String,
 ) -> Result<Done<Vec<EventInfo>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::EventList {
+    let request = IpcRequest::Community(CommunityRequest::Activities(ActivityRequest::EventList {
         community: community_id,
-    });
+    }));
     host_call::call(&state, request).await
 }

@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::UnreadRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::harness::Community;
@@ -44,20 +45,24 @@ async fn general(community: &Community) -> String {
 
 async fn mark_read(community: &Community, channel: &str, up_to: &str) {
     community.nodes[BEA]
-        .ok(IpcRequest::Community(CommunityRequest::ChannelMarkRead {
-            community: community.governance_key.clone(),
-            channel: channel.to_owned(),
-            up_to: up_to.to_owned(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Unread(
+            UnreadRequest::ChannelMarkRead {
+                community: community.governance_key.clone(),
+                channel: channel.to_owned(),
+                up_to: up_to.to_owned(),
+            },
+        )))
         .await;
 }
 
 /// Bea's unread count on `channel`, as `UnreadCounts` answers it.
 async fn unread(community: &Community, channel: &str) -> u64 {
     let counts = community.nodes[BEA]
-        .ok(IpcRequest::Community(CommunityRequest::UnreadCounts {
-            community: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Unread(
+            UnreadRequest::UnreadCounts {
+                community: community.governance_key.clone(),
+            },
+        )))
         .await;
     counts
         .as_array()

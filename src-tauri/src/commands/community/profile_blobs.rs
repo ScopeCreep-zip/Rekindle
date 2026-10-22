@@ -2,6 +2,7 @@
 //! Host decodes an upload as its declared kind only and caches it as a
 //! WebP; a read answers a `data:image/webp;base64,…` URL.
 
+use rekindle_ipc::protocol::SettingsRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::image_kind::ImageKind;
@@ -17,11 +18,13 @@ pub async fn set_community_avatar(
     bytes: Vec<u8>,
     kind: ImageKind,
 ) -> Result<Done<String>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunitySetAvatar {
-        community: community_id,
-        image: bytes,
-        kind,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunitySetAvatar {
+            community: community_id,
+            image: bytes,
+            kind,
+        },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -32,11 +35,13 @@ pub async fn set_community_banner(
     bytes: Vec<u8>,
     kind: ImageKind,
 ) -> Result<Done<String>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunitySetBanner {
-        community: community_id,
-        image: bytes,
-        kind,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunitySetBanner {
+            community: community_id,
+            image: bytes,
+            kind,
+        },
+    ));
     host_call::call(&state, request).await
 }
 
@@ -46,9 +51,11 @@ pub async fn get_community_avatar_data_url(
     community_id: String,
     hash: String,
 ) -> Result<Done<Option<String>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunityAvatarGet {
-        community: community_id,
-        hash,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunityAvatarGet {
+            community: community_id,
+            hash,
+        },
+    ));
     host_call::call(&state, request).await
 }

@@ -1,7 +1,8 @@
 //! A community block's requests (plan E3.1 F3, D26), answered by the Host's
 //! channel adapter on both hosts.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::MemberRequest;
 
 use super::{state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -11,9 +12,9 @@ use crate::host::adapters::channel::{refusal, HostChannel};
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: MemberRequest,
 ) -> IpcResponse {
-    let read = matches!(request, CommunityRequest::MemberBlockList { .. });
+    let read = matches!(request, MemberRequest::MemberBlockList { .. });
     if read && !state.can_query() {
         return state_error(state, "query");
     }
@@ -21,9 +22,9 @@ pub(crate) async fn handle(
         return state_error(state, "write");
     }
     let community = match &request {
-        CommunityRequest::MemberBlock { community, .. }
-        | CommunityRequest::MemberUnblock { community, .. }
-        | CommunityRequest::MemberBlockList { community } => community.clone(),
+        MemberRequest::MemberBlock { community, .. }
+        | MemberRequest::MemberUnblock { community, .. }
+        | MemberRequest::MemberBlockList { community } => community.clone(),
         other => {
             return IpcResponse::error(500, format!("{} is not a block request", other.name()))
         }
@@ -34,13 +35,13 @@ pub(crate) async fn handle(
     };
     let channel = HostChannel::new(ctx);
     match request {
-        CommunityRequest::MemberBlock {
+        MemberRequest::MemberBlock {
             target_pseudonym, ..
         } => match channel.block_member(&key, &target_pseudonym).await {
             Ok(()) => IpcResponse::ok(&()),
             Err(e) => refusal(&e),
         },
-        CommunityRequest::MemberUnblock {
+        MemberRequest::MemberUnblock {
             target_pseudonym, ..
         } => match channel.unblock_member(&key, &target_pseudonym).await {
             Ok(()) => IpcResponse::ok(&()),

@@ -356,7 +356,11 @@ mod response;
 mod variant_names;
 
 pub use capability::AgentCapability;
-pub use community::CommunityRequest;
+pub use community::{
+    ActivityRequest, AuditRequest, ChannelMessageRequest, ChannelRequest, CommunityRequest,
+    ExpressionRequest, LifecycleRequest, MemberRequest, PinRequest, RichRequest, SettingsRequest,
+    UnreadRequest,
+};
 pub use lane::Lane;
 
 pub use response::{BusPayload, IpcResponse};

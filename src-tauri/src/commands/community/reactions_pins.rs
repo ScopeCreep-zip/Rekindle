@@ -1,6 +1,7 @@
 use tauri::State;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{PinRequest, RichRequest};
 use rekindle_types::dto::community::PinnedMessageView;
 use rekindle_types::dto::{CommandError, Done};
 
@@ -18,12 +19,12 @@ pub async fn add_reaction(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ReactionAdd {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ReactionAdd {
             community: community_id,
             channel_id,
             message_id,
             emoji,
-        }),
+        })),
     )
     .await
 }
@@ -39,12 +40,12 @@ pub async fn remove_reaction(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ReactionRemove {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ReactionRemove {
             community: community_id,
             channel_id,
             message_id,
             emoji,
-        }),
+        })),
     )
     .await
 }
@@ -59,11 +60,11 @@ pub async fn pin_message(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::MessagePin {
+        IpcRequest::Community(CommunityRequest::Pins(PinRequest::MessagePin {
             community: community_id,
             channel_id,
             message_id,
-        }),
+        })),
     )
     .await
 }
@@ -78,11 +79,11 @@ pub async fn unpin_message(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::MessageUnpin {
+        IpcRequest::Community(CommunityRequest::Pins(PinRequest::MessageUnpin {
             community: community_id,
             channel_id,
             message_id,
-        }),
+        })),
     )
     .await
 }
@@ -96,10 +97,10 @@ pub async fn get_channel_pins(
 ) -> Result<Done<Vec<PinnedMessageView>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ChannelPins {
+        IpcRequest::Community(CommunityRequest::Pins(PinRequest::ChannelPins {
             community: community_id,
             channel_id,
-        }),
+        })),
     )
     .await
 }

@@ -6,7 +6,7 @@
 //! with none (key material, identity moves, shutdown, administration) is
 //! never delegated to an agent.
 
-use super::{CommunityRequest, IpcRequest};
+use super::IpcRequest;
 
 /// One agent capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -186,137 +186,10 @@ impl IpcRequest {
     }
 }
 
-impl CommunityRequest {
-    /// The capability an `Agent`-level sender needs for this request, or
-    /// `None` when no agent may send it.
-    #[must_use]
-    pub fn agent_capability(&self) -> Option<AgentCapability> {
-        use AgentCapability as C;
-        match self {
-            Self::CommunityList
-            | Self::CommunityViews
-            | Self::CommunityMembers { .. }
-            | Self::CommunityInfo { .. }
-            | Self::CommunityPendingMembers { .. }
-            | Self::ChannelList { .. }
-            | Self::RoleList { .. }
-            | Self::GameServerList { .. }
-            | Self::ChannelMarkRead { .. }
-            | Self::UnreadCounts { .. }
-            | Self::OnboardingConfigGet { .. }
-            | Self::WelcomeScreenGet { .. }
-            | Self::AuditLog { .. }
-            | Self::NotificationDefaultGet { .. }
-            | Self::CommunityAvatarGet { .. }
-            | Self::CommunityPolicyGet { .. }
-            | Self::EventList { .. }
-            | Self::EventAttendees { .. }
-            | Self::BanList { .. }
-            | Self::MemberBlockList { .. }
-            | Self::AutomodRules { .. }
-            | Self::ModReportList { .. }
-            | Self::ChannelPins { .. }
-            | Self::MessageSearch { .. }
-            | Self::Expressions { .. }
-            | Self::InviteList { .. } => Some(C::CommunitiesRead),
-            Self::CommunityCreate { .. }
-            | Self::CommunityJoin { .. }
-            | Self::CommunityLeave { .. }
-            | Self::CommunityUpdateInfo { .. }
-            | Self::CommunityUpdateProfile { .. }
-            | Self::CommunitySetAvatar { .. }
-            | Self::CommunitySetBanner { .. }
-            | Self::CommunityPolicySet { .. }
-            | Self::MemberBlock { .. }
-            | Self::MemberUnblock { .. }
-            | Self::ChannelCreate { .. }
-            | Self::ChannelDelete { .. }
-            | Self::ChannelUpdate { .. }
-            | Self::ChannelRename { .. }
-            | Self::ChannelMove { .. }
-            | Self::ChannelReorder { .. }
-            | Self::ChannelSetTopic { .. }
-            | Self::ChannelSetSlowmode { .. }
-            | Self::MessagePin { .. }
-            | Self::EmojiUpload { .. }
-            | Self::StickerUpload { .. }
-            | Self::ExpressionDelete { .. }
-            | Self::MessageUnpin { .. }
-            | Self::AttachmentPin { .. }
-            | Self::ChannelSetForumTags { .. }
-            | Self::ChannelOverwriteSet { .. }
-            | Self::ChannelOverwriteDelete { .. }
-            | Self::CategoryCreate { .. }
-            | Self::CategoryDelete { .. }
-            | Self::CategoryRename { .. }
-            | Self::CategoryReorder { .. }
-            | Self::RoleCreate { .. }
-            | Self::RoleUpdate { .. }
-            | Self::RoleDelete { .. }
-            | Self::RoleSelfAssign { .. }
-            | Self::RoleSelfUnassign { .. }
-            | Self::GameServerAdd { .. }
-            | Self::NotificationDefaultSet { .. }
-            | Self::GameServerRemove { .. }
-            | Self::EventCreate { .. }
-            | Self::EventEdit { .. }
-            | Self::EventCancel { .. }
-            | Self::EventDelete { .. }
-            | Self::EventRsvp { .. }
-            | Self::OnboardingConfigSet { .. }
-            | Self::WelcomeScreenSet { .. }
-            | Self::OnboardingSubmit { .. }
-            | Self::OnboardingComplete { .. }
-            | Self::InviteCreate { .. }
-            | Self::InviteRevoke { .. } => Some(C::CommunitiesWrite),
-            Self::CommunityApprove { .. }
-            | Self::CommunityReject { .. }
-            | Self::RoleAssign { .. }
-            | Self::RoleUnassign { .. }
-            | Self::Kick { .. }
-            | Self::Ban { .. }
-            | Self::Unban { .. }
-            | Self::Timeout { .. }
-            | Self::TimeoutRemove { .. }
-            | Self::AutomodRuleSet { .. }
-            | Self::AutomodRuleDelete { .. } => Some(C::ModerationWrite),
-            Self::ChannelMessages { .. }
-            | Self::ChannelMessagesBefore { .. }
-            | Self::ThreadList { .. }
-            | Self::ThreadListActive { .. }
-            | Self::ThreadMessages { .. }
-            | Self::PollResults { .. } => Some(C::ChannelsHistory),
-            Self::ChannelSend { .. }
-            | Self::ChannelMessageEdit { .. }
-            | Self::ChannelMessageDelete { .. }
-            | Self::ChannelMessageSend { .. }
-            | Self::ChannelMessageForward { .. }
-            | Self::ChannelTyping { .. }
-            | Self::ChannelSetActive { .. }
-            | Self::ReactionAdd { .. }
-            | Self::ReactionRemove { .. }
-            | Self::ThreadCreate { .. }
-            | Self::ThreadArchive { .. }
-            | Self::ThreadUnarchive { .. }
-            | Self::ThreadSend { .. }
-            | Self::PollCreate { .. }
-            | Self::PollVote { .. }
-            | Self::PollClose { .. } => Some(C::ChatWrite),
-            Self::ChannelMessageAdminDelete { .. } | Self::ChannelMessageBulkDelete { .. } => {
-                Some(C::ModerationWrite)
-            }
-            // Channel keys are key material; ownership is the owner's own.
-            Self::MekList { .. }
-            | Self::MekRotate { .. }
-            | Self::MekRequest { .. }
-            | Self::CommunityTransferOwnership { .. } => None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::protocol::{ChannelMessageRequest, CommunityRequest};
 
     #[test]
     fn every_capability_round_trips_by_name() {
@@ -332,10 +205,12 @@ mod tests {
     #[test]
     fn key_material_is_never_delegated() {
         assert_eq!(
-            IpcRequest::Community(CommunityRequest::MekRotate {
-                community: String::new(),
-                channel: String::new()
-            })
+            IpcRequest::Community(CommunityRequest::Messages(
+                ChannelMessageRequest::MekRotate {
+                    community: String::new(),
+                    channel: String::new()
+                }
+            ))
             .agent_capability(),
             None
         );

@@ -5,6 +5,7 @@ use crate::services::community_presence_runtime::{
 };
 use crate::state::SharedState;
 
+use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest, SettingsRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::{CommandError, Done};
@@ -16,10 +17,12 @@ pub async fn send_channel_typing(
     channel_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelTyping {
-        community: community_id,
-        channel: channel_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelTyping {
+            community: community_id,
+            channel: channel_id,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -53,11 +56,13 @@ pub async fn set_active_channel(
     kind: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelSetActive {
-        community: community_id,
-        channel: channel_id,
-        kind,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelSetActive {
+            community: community_id,
+            channel: channel_id,
+            kind,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -85,9 +90,11 @@ pub async fn get_community_members(
     community_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<CommunityMemberView>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunityMembers {
-        governance_key: community_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityMembers {
+            governance_key: community_id,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -102,14 +109,16 @@ pub async fn update_community_profile(
     banner_ref: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::CommunityUpdateProfile {
-        community: community_id,
-        bio,
-        pronouns,
-        theme_color,
-        badges,
-        avatar_ref,
-        banner_ref,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunityUpdateProfile {
+            community: community_id,
+            bio,
+            pronouns,
+            theme_color,
+            badges,
+            avatar_ref,
+            banner_ref,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }

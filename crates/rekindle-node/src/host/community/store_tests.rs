@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use rekindle_governance::state::{GovernanceState, RoleState};
+use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_transport::session::CommunityMembership;
 use rekindle_types::id::{PseudonymKey, RoleId};
@@ -154,10 +155,10 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
         .write()
         .insert("gov-key".to_string(), community);
 
-    let request = IpcRequest::Community(CommunityRequest::RoleDelete {
+    let request = IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleDelete {
         community: "gov-key".into(),
         role_id: 5,
-    });
+    }));
     let selection = crate::host::intent_select::select(&host.ctx, &request, IntentKind::DeleteRole)
         .await
         .expect("the GUI's state is the Host's");

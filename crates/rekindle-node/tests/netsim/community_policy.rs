@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::SettingsRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityPolicyView;
 use rekindle_types::image_kind::ImageKind;
@@ -14,22 +15,24 @@ const LIMIT: Duration = Duration::from_secs(180);
 
 async fn policy(node: &SimNode, community: &str) -> CommunityPolicyView {
     let read = node
-        .ok(IpcRequest::Community(
-            CommunityRequest::CommunityPolicyGet {
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunityPolicyGet {
                 community: community.into(),
             },
-        ))
+        )))
         .await;
     serde_json::from_value(read).expect("a policy")
 }
 
 fn set_policy(community: &str, text: &str, joins: u32) -> IpcRequest {
-    IpcRequest::Community(CommunityRequest::CommunityPolicySet {
-        community: community.into(),
-        policy_text: Some(text.into()),
-        max_joins_per_interval: joins,
-        join_interval_seconds: 300,
-    })
+    IpcRequest::Community(CommunityRequest::Settings(
+        SettingsRequest::CommunityPolicySet {
+            community: community.into(),
+            policy_text: Some(text.into()),
+            max_joins_per_interval: joins,
+            join_interval_seconds: 300,
+        },
+    ))
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -69,22 +72,22 @@ async fn a_community_picture_is_cached_and_a_webp_is_refused() {
     let png = rekindle_image::encode_png(&rekindle_image::DynamicImage::ImageRgba8(picture))
         .expect("a png");
     let hash = community.nodes[0]
-        .ok(IpcRequest::Community(
-            CommunityRequest::CommunitySetAvatar {
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunitySetAvatar {
                 community: key.clone(),
                 image: png,
                 kind: ImageKind::Png,
             },
-        ))
+        )))
         .await;
     let hash = hash.as_str().expect("the picture's hash").to_owned();
     let url = community.nodes[0]
-        .ok(IpcRequest::Community(
-            CommunityRequest::CommunityAvatarGet {
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunityAvatarGet {
                 community: key.clone(),
                 hash,
             },
-        ))
+        )))
         .await;
     assert!(
         url.as_str()
@@ -94,13 +97,13 @@ async fn a_community_picture_is_cached_and_a_webp_is_refused() {
 
     let webp = b"RIFF\x10\0\0\0WEBPVP8L\x04\0\0\0\x2f\0\0\0".to_vec();
     let refused = community.nodes[0]
-        .call(IpcRequest::Community(
-            CommunityRequest::CommunitySetBanner {
+        .call(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunitySetBanner {
                 community: key,
                 image: webp,
                 kind: ImageKind::Png,
             },
-        ))
+        )))
         .await
         .expect_err("a WebP upload is refused");
     assert_eq!(refused.code, 400, "{}", refused.message);

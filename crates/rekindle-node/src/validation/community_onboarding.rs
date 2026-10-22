@@ -3,7 +3,8 @@
 //! screen, and the onboarding answers' counts and ids.
 
 use rekindle_governance::validate::bounds;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::SettingsRequest;
 use rekindle_types::governance::{
     GovernanceEntry, MAX_ONBOARDING_ID_CHARS, MAX_ONBOARDING_OPTIONS_PER_QUESTION,
     MAX_ONBOARDING_QUESTIONS,
@@ -15,20 +16,20 @@ use crate::host::adapters::governance::onboarding_map;
 use super::{community, text, Checked};
 
 /// An onboarding or welcome-screen request's fields.
-pub(super) fn check(request: &CommunityRequest) -> Checked {
+pub(super) fn check(request: &SettingsRequest) -> Checked {
     match request {
-        CommunityRequest::OnboardingConfigGet { community: key }
-        | CommunityRequest::WelcomeScreenGet { community: key }
-        | CommunityRequest::OnboardingComplete { community: key } => community(key),
-        CommunityRequest::OnboardingConfigSet {
+        SettingsRequest::OnboardingConfigGet { community: key }
+        | SettingsRequest::WelcomeScreenGet { community: key }
+        | SettingsRequest::OnboardingComplete { community: key } => community(key),
+        SettingsRequest::OnboardingConfigSet {
             community: key,
             config,
         } => community(key).and_then(|()| within_bounds(onboarding_map::config_entry(config, 0))),
-        CommunityRequest::WelcomeScreenSet {
+        SettingsRequest::WelcomeScreenSet {
             community: key,
             screen,
         } => community(key).and_then(|()| within_bounds(onboarding_map::welcome_entry(screen, 0))),
-        CommunityRequest::OnboardingSubmit {
+        SettingsRequest::OnboardingSubmit {
             community: key,
             answers,
             ..

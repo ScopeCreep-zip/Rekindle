@@ -3,6 +3,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::PinRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::PinnedMessageView;
 
@@ -14,10 +15,12 @@ const MESSAGE: &str = "pinned-message";
 
 async fn pins(node: &SimNode, community: &str) -> Vec<PinnedMessageView> {
     let listed = node
-        .ok(IpcRequest::Community(CommunityRequest::ChannelPins {
-            community: community.into(),
-            channel_id: CHANNEL.into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Pins(
+            PinRequest::ChannelPins {
+                community: community.into(),
+                channel_id: CHANNEL.into(),
+            },
+        )))
         .await;
     serde_json::from_value(listed).expect("a pin list")
 }
@@ -30,11 +33,13 @@ async fn pin_converges() {
     let key = community.governance_key.clone();
 
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::MessagePin {
-            community: key.clone(),
-            channel_id: CHANNEL.into(),
-            message_id: MESSAGE.into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Pins(
+            PinRequest::MessagePin {
+                community: key.clone(),
+                channel_id: CHANNEL.into(),
+                message_id: MESSAGE.into(),
+            },
+        )))
         .await;
     assert!(
         pins(&community.nodes[0], &key)
@@ -53,11 +58,13 @@ async fn pin_converges() {
     assert!(seen, "the other member lists the pin");
 
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::MessageUnpin {
-            community: key.clone(),
-            channel_id: CHANNEL.into(),
-            message_id: MESSAGE.into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Pins(
+            PinRequest::MessageUnpin {
+                community: key.clone(),
+                channel_id: CHANNEL.into(),
+                message_id: MESSAGE.into(),
+            },
+        )))
         .await;
     let gone = eventually(&community.sim, LIMIT, || async {
         pins(&community.nodes[1], &key).await.is_empty()

@@ -4,17 +4,18 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::{AuditRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use serde_json::Value;
 
 use crate::harness::{eventually, Community};
 
 fn audit_log(community: &Community) -> IpcRequest {
-    IpcRequest::Community(CommunityRequest::AuditLog {
+    IpcRequest::Community(CommunityRequest::Audit(AuditRequest::AuditLog {
         community: community.governance_key.clone(),
         before_timestamp: None,
         limit: 50,
-    })
+    }))
 }
 
 /// Whether `rows` holds `action` against `target`.
@@ -34,31 +35,37 @@ async fn audit_log_records_moderation_and_roles() {
     let bea = community.pseudonym(1).await;
     let cat = community.pseudonym(2).await;
     let role = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleCreate {
-            community: community.governance_key.clone(),
-            name: "raiders".into(),
-            permissions: 0,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleCreate {
+                community: community.governance_key.clone(),
+                name: "raiders".into(),
+                permissions: 0,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        )))
         .await;
     let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleAssign {
-            community: community.governance_key.clone(),
-            member_pseudonym: bea.clone(),
-            role_id,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleAssign {
+                community: community.governance_key.clone(),
+                member_pseudonym: bea.clone(),
+                role_id,
+            },
+        )))
         .await;
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::Ban {
-            community: community.governance_key.clone(),
-            target_pseudonym: cat.clone(),
-            reason: Some("spam".into()),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Ban {
+                community: community.governance_key.clone(),
+                target_pseudonym: cat.clone(),
+                reason: Some("spam".into()),
+            },
+        )))
         .await;
 
     assert!(
@@ -91,20 +98,20 @@ async fn audit_log_records_moderation_and_roles() {
 async fn notification_default_reaches_members() {
     let community = Community::of(2, 103).await;
     let get = |i: usize| {
-        community.nodes[i].ok(IpcRequest::Community(
-            CommunityRequest::NotificationDefaultGet {
+        community.nodes[i].ok(IpcRequest::Community(CommunityRequest::Audit(
+            AuditRequest::NotificationDefaultGet {
                 community: community.governance_key.clone(),
             },
-        ))
+        )))
     };
     assert_eq!(get(1).await, Value::Null, "no default before one is set");
     community.nodes[0]
-        .ok(IpcRequest::Community(
-            CommunityRequest::NotificationDefaultSet {
+        .ok(IpcRequest::Community(CommunityRequest::Audit(
+            AuditRequest::NotificationDefaultSet {
                 community: community.governance_key.clone(),
                 level: "mentions".into(),
             },
-        ))
+        )))
         .await;
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
@@ -114,12 +121,12 @@ async fn notification_default_reaches_members() {
         "the member learns the default"
     );
     let refused = community.nodes[1]
-        .call(IpcRequest::Community(
-            CommunityRequest::NotificationDefaultSet {
+        .call(IpcRequest::Community(CommunityRequest::Audit(
+            AuditRequest::NotificationDefaultSet {
                 community: community.governance_key.clone(),
                 level: "nothing".into(),
             },
-        ))
+        )))
         .await
         .expect_err("a member without MANAGE_COMMUNITY is refused");
     assert_eq!(refused.code, 403, "{}", refused.message);

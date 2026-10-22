@@ -1,3 +1,4 @@
+use rekindle_ipc::protocol::ExpressionRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::ExpressionInfo;
 use rekindle_types::dto::{CommandError, Done};
@@ -18,12 +19,14 @@ pub async fn upload_emoji(
 ) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::EmojiUpload {
-            community: community_id,
-            name,
-            bytes,
-            kind,
-        }),
+        IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::EmojiUpload {
+                community: community_id,
+                name,
+                bytes,
+                kind,
+            },
+        )),
     )
     .await
 }
@@ -40,13 +43,15 @@ pub async fn upload_sticker(
 ) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::StickerUpload {
-            community: community_id,
-            name,
-            bytes,
-            kind,
-            tags: tags.unwrap_or_default(),
-        }),
+        IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::StickerUpload {
+                community: community_id,
+                name,
+                bytes,
+                kind,
+                tags: tags.unwrap_or_default(),
+            },
+        )),
     )
     .await
 }
@@ -99,10 +104,12 @@ pub async fn delete_emoji(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ExpressionDelete {
-            community: community_id,
-            expression_id,
-        }),
+        IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::ExpressionDelete {
+                community: community_id,
+                expression_id,
+            },
+        )),
     )
     .await
 }
@@ -115,9 +122,11 @@ pub async fn list_expressions(
 ) -> Result<Done<Vec<ExpressionInfo>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::Expressions {
-            community: community_id,
-        }),
+        IpcRequest::Community(CommunityRequest::Expressions(
+            ExpressionRequest::Expressions {
+                community: community_id,
+            },
+        )),
     )
     .await
 }

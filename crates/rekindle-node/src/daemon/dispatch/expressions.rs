@@ -4,7 +4,8 @@
 
 use rekindle_channel::deps::ExpressionView;
 use rekindle_channel::error::ChannelError;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ExpressionRequest;
+use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::dto::community::ExpressionInfo;
 
 use super::{state_error, DaemonContext};
@@ -43,9 +44,9 @@ fn info(view: ExpressionView) -> ExpressionInfo {
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ExpressionRequest,
 ) -> IpcResponse {
-    let read = matches!(request, CommunityRequest::Expressions { .. });
+    let read = matches!(request, ExpressionRequest::Expressions { .. });
     if read && !state.can_query() {
         return state_error(state, "query");
     }
@@ -53,16 +54,10 @@ pub(crate) async fn handle(
         return state_error(state, "write");
     }
     let community = match &request {
-        CommunityRequest::EmojiUpload { community, .. }
-        | CommunityRequest::StickerUpload { community, .. }
-        | CommunityRequest::ExpressionDelete { community, .. }
-        | CommunityRequest::Expressions { community } => community.clone(),
-        other => {
-            return IpcResponse::error(
-                500,
-                format!("{} is not an expression request", other.name()),
-            )
-        }
+        ExpressionRequest::EmojiUpload { community, .. }
+        | ExpressionRequest::StickerUpload { community, .. }
+        | ExpressionRequest::ExpressionDelete { community, .. }
+        | ExpressionRequest::Expressions { community } => community.clone(),
     };
     let key = match ctx.resolve_community(&community) {
         Ok(m) => m.governance_key,
@@ -70,13 +65,13 @@ pub(crate) async fn handle(
     };
     let channel = HostChannel::new(ctx);
     match request {
-        CommunityRequest::EmojiUpload {
+        ExpressionRequest::EmojiUpload {
             name, bytes, kind, ..
         } => match rekindle_channel::upload_emoji(&channel, &key, &name, bytes, kind).await {
             Ok(id) => IpcResponse::ok(&id),
             Err(e) => refused(&e, "upload emoji"),
         },
-        CommunityRequest::StickerUpload {
+        ExpressionRequest::StickerUpload {
             name,
             bytes,
             kind,
@@ -88,21 +83,17 @@ pub(crate) async fn handle(
                 Err(e) => refused(&e, "upload sticker"),
             }
         }
-        CommunityRequest::ExpressionDelete { expression_id, .. } => {
+        ExpressionRequest::ExpressionDelete { expression_id, .. } => {
             match rekindle_channel::delete_expression(&channel, &key, &expression_id).await {
                 Ok(()) => IpcResponse::ok(&()),
                 Err(e) => refused(&e, "delete expression"),
             }
         }
-        CommunityRequest::Expressions { .. } => {
+        ExpressionRequest::Expressions { .. } => {
             match rekindle_channel::list_expressions(&channel, &key) {
                 Ok(views) => IpcResponse::ok(&views.into_iter().map(info).collect::<Vec<_>>()),
                 Err(e) => refused(&e, "expressions"),
             }
         }
-        other => IpcResponse::error(
-            500,
-            format!("{} is not an expression request", other.name()),
-        ),
     }
 }

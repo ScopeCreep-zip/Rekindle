@@ -1,3 +1,4 @@
+use rekindle_ipc::protocol::AuditRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityAuditEntry;
 use rekindle_types::dto::{CommandError, Done};
@@ -16,11 +17,11 @@ pub async fn get_audit_log(
 ) -> Result<Done<Vec<CommunityAuditEntry>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::AuditLog {
+        IpcRequest::Community(CommunityRequest::Audit(AuditRequest::AuditLog {
             community: community_id,
             before_timestamp,
             limit,
-        }),
+        })),
     )
     .await
 }

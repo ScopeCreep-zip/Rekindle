@@ -1,9 +1,9 @@
 //! Expressions (plan E3.1 E3c): an upload shows its picture's length only.
 
-use super::super::super::CommunityRequest;
+use crate::protocol::ExpressionRequest;
 
-impl CommunityRequest {
-    pub(super) fn fmt_expressions(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for ExpressionRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EmojiUpload {
                 community,
@@ -43,7 +43,6 @@ impl CommunityRequest {
                 .debug_struct("Expressions")
                 .field("community", community)
                 .finish(),
-            other => unreachable!("{} is not an expression request", other.name()),
         }
     }
 }

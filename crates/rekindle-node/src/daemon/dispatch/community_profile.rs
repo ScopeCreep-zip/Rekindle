@@ -1,7 +1,8 @@
 //! Our per-community profile, the community's pictures and its policy
 //! (plan E3.1 D4), answered by the Host's governance adapter on both hosts.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::SettingsRequest;
 use rekindle_types::image_kind::ImageKind;
 
 pub(crate) use crate::host::adapters::governance::community_pictures::PictureSlot;
@@ -125,10 +126,10 @@ pub(crate) async fn handle_set_policy(
 pub(crate) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: SettingsRequest,
 ) -> IpcResponse {
     match request {
-        CommunityRequest::CommunityUpdateProfile {
+        SettingsRequest::CommunityUpdateProfile {
             community,
             bio,
             pronouns,
@@ -147,7 +148,7 @@ pub(crate) async fn route(
             };
             handle_update_profile(ctx, state, &community, edit)
         }
-        CommunityRequest::CommunitySetAvatar {
+        SettingsRequest::CommunitySetAvatar {
             community,
             image,
             kind,
@@ -155,7 +156,7 @@ pub(crate) async fn route(
             let slot = PictureSlot::Avatar;
             handle_set_picture(ctx, state, &community, image, kind, slot).await
         }
-        CommunityRequest::CommunitySetBanner {
+        SettingsRequest::CommunitySetBanner {
             community,
             image,
             kind,
@@ -163,11 +164,11 @@ pub(crate) async fn route(
             let slot = PictureSlot::Banner;
             handle_set_picture(ctx, state, &community, image, kind, slot).await
         }
-        CommunityRequest::CommunityAvatarGet { community, hash } => {
+        SettingsRequest::CommunityAvatarGet { community, hash } => {
             handle_picture(ctx, state, &community, &hash).await
         }
-        CommunityRequest::CommunityPolicyGet { community } => handle_policy(ctx, state, &community),
-        CommunityRequest::CommunityPolicySet {
+        SettingsRequest::CommunityPolicyGet { community } => handle_policy(ctx, state, &community),
+        SettingsRequest::CommunityPolicySet {
             community,
             policy_text,
             max_joins_per_interval,

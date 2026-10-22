@@ -1,6 +1,7 @@
 //! Local FTS5 message search (architecture §23), answered by the Host
 //! (plan E3.1 E3b).
 
+use rekindle_ipc::protocol::PinRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::search::{MessageSearch, SearchResult};
@@ -16,7 +17,9 @@ pub async fn search_messages(
 ) -> Result<Done<SearchResult>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::MessageSearch { request }),
+        IpcRequest::Community(CommunityRequest::Pins(PinRequest::MessageSearch {
+            request,
+        })),
     )
     .await
 }

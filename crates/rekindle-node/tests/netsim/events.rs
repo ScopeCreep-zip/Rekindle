@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::ActivityRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::event::{EventInfo, EventRsvp, NewEvent};
 use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
@@ -28,29 +29,35 @@ fn new_event(title: &str, start_time: u64) -> NewEvent {
 
 async fn create(node: &SimNode, community: &str, event: NewEvent) -> String {
     let id = node
-        .ok(IpcRequest::Community(CommunityRequest::EventCreate {
-            community: community.into(),
-            event,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::EventCreate {
+                community: community.into(),
+                event,
+            },
+        )))
         .await;
     id.as_str().expect("the event's id").to_owned()
 }
 
 async fn events(node: &SimNode, community: &str) -> Vec<EventInfo> {
     let listed = node
-        .ok(IpcRequest::Community(CommunityRequest::EventList {
-            community: community.into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::EventList {
+                community: community.into(),
+            },
+        )))
         .await;
     serde_json::from_value(listed).expect("an event list")
 }
 
 async fn attendees(node: &SimNode, community: &str, event_id: &str) -> Vec<EventRsvp> {
     let listed = node
-        .ok(IpcRequest::Community(CommunityRequest::EventAttendees {
-            community: community.into(),
-            event_id: event_id.into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::EventAttendees {
+                community: community.into(),
+                event_id: event_id.into(),
+            },
+        )))
         .await;
     serde_json::from_value(listed).expect("an attendee list")
 }
@@ -77,11 +84,13 @@ async fn event_rsvp_converges() {
     assert!(seen, "the other member lists the event");
 
     community.nodes[1]
-        .ok(IpcRequest::Community(CommunityRequest::EventRsvp {
-            community: key.clone(),
-            event_id: id.clone(),
-            status: "going".into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::EventRsvp {
+                community: key.clone(),
+                event_id: id.clone(),
+                status: "going".into(),
+            },
+        )))
         .await;
     let member = community.pseudonym(1).await;
     let going = |list: &[EventRsvp]| {

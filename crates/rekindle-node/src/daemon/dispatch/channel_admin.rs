@@ -5,7 +5,8 @@
 //! and ids.
 
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ChannelRequest;
+use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::id::{CategoryId, ChannelId};
 
 use super::channel::resolve_channel;
@@ -31,20 +32,20 @@ fn category(hex_id: &str) -> Result<CategoryId, IpcResponse> {
 }
 
 /// The request's community.
-fn community_of(request: &CommunityRequest) -> &str {
+fn community_of(request: &ChannelRequest) -> &str {
     match request {
-        CommunityRequest::ChannelRename { community, .. }
-        | CommunityRequest::ChannelMove { community, .. }
-        | CommunityRequest::ChannelReorder { community, .. }
-        | CommunityRequest::ChannelSetTopic { community, .. }
-        | CommunityRequest::ChannelSetSlowmode { community, .. }
-        | CommunityRequest::ChannelSetForumTags { community, .. }
-        | CommunityRequest::ChannelOverwriteSet { community, .. }
-        | CommunityRequest::ChannelOverwriteDelete { community, .. }
-        | CommunityRequest::CategoryCreate { community, .. }
-        | CommunityRequest::CategoryDelete { community, .. }
-        | CommunityRequest::CategoryRename { community, .. }
-        | CommunityRequest::CategoryReorder { community, .. } => community,
+        ChannelRequest::ChannelRename { community, .. }
+        | ChannelRequest::ChannelMove { community, .. }
+        | ChannelRequest::ChannelReorder { community, .. }
+        | ChannelRequest::ChannelSetTopic { community, .. }
+        | ChannelRequest::ChannelSetSlowmode { community, .. }
+        | ChannelRequest::ChannelSetForumTags { community, .. }
+        | ChannelRequest::ChannelOverwriteSet { community, .. }
+        | ChannelRequest::ChannelOverwriteDelete { community, .. }
+        | ChannelRequest::CategoryCreate { community, .. }
+        | ChannelRequest::CategoryDelete { community, .. }
+        | ChannelRequest::CategoryRename { community, .. }
+        | ChannelRequest::CategoryReorder { community, .. } => community,
         other => unreachable!("{} is not a channel admin request", other.name()),
     }
 }
@@ -53,7 +54,7 @@ fn community_of(request: &CommunityRequest) -> &str {
 fn op(
     ctx: &DaemonContext,
     community_id: &str,
-    request: CommunityRequest,
+    request: ChannelRequest,
 ) -> Result<ChannelAdminOp, IpcResponse> {
     let channel = |needle: &str| {
         resolve_channel(ctx, community_id, needle)
@@ -61,13 +62,13 @@ fn op(
             .ok_or_else(|| IpcResponse::error(404, format!("channel '{needle}' not found")))
     };
     Ok(match request {
-        CommunityRequest::ChannelRename {
+        ChannelRequest::ChannelRename {
             channel_id, name, ..
         } => ChannelAdminOp::Rename {
             channel: channel(&channel_id)?,
             name: name.trim().to_owned(),
         },
-        CommunityRequest::ChannelMove {
+        ChannelRequest::ChannelMove {
             channel_id,
             category: target,
             ..
@@ -75,13 +76,13 @@ fn op(
             channel: channel(&channel_id)?,
             category: target.as_deref().map(category).transpose()?,
         },
-        CommunityRequest::ChannelReorder { channel_ids, .. } => ChannelAdminOp::Reorder {
+        ChannelRequest::ChannelReorder { channel_ids, .. } => ChannelAdminOp::Reorder {
             channels: channel_ids
                 .iter()
                 .map(|id| channel(id))
                 .collect::<Result<_, _>>()?,
         },
-        CommunityRequest::ChannelSetSlowmode {
+        ChannelRequest::ChannelSetSlowmode {
             channel_id,
             seconds,
             ..
@@ -89,13 +90,13 @@ fn op(
             channel: channel(&channel_id)?,
             seconds,
         },
-        CommunityRequest::ChannelSetTopic {
+        ChannelRequest::ChannelSetTopic {
             channel_id, topic, ..
         } => ChannelAdminOp::SetTopic {
             channel: channel(&channel_id)?,
             topic,
         },
-        CommunityRequest::ChannelSetForumTags {
+        ChannelRequest::ChannelSetForumTags {
             channel_id,
             forum_tags,
             ..
@@ -103,7 +104,7 @@ fn op(
             channel: channel(&channel_id)?,
             tags: forum_tags.iter().map(|t| t.trim().to_owned()).collect(),
         },
-        CommunityRequest::ChannelOverwriteSet {
+        ChannelRequest::ChannelOverwriteSet {
             channel_id,
             target_type,
             target_id,
@@ -117,7 +118,7 @@ fn op(
             allow,
             deny,
         },
-        CommunityRequest::ChannelOverwriteDelete {
+        ChannelRequest::ChannelOverwriteDelete {
             channel_id,
             target_type,
             target_id,
@@ -127,19 +128,19 @@ fn op(
             target_type,
             target_id,
         },
-        CommunityRequest::CategoryCreate { name, .. } => ChannelAdminOp::CategoryCreate {
+        ChannelRequest::CategoryCreate { name, .. } => ChannelAdminOp::CategoryCreate {
             name: name.trim().to_owned(),
         },
-        CommunityRequest::CategoryDelete { category_id, .. } => ChannelAdminOp::CategoryDelete {
+        ChannelRequest::CategoryDelete { category_id, .. } => ChannelAdminOp::CategoryDelete {
             category: category(&category_id)?,
         },
-        CommunityRequest::CategoryRename {
+        ChannelRequest::CategoryRename {
             category_id, name, ..
         } => ChannelAdminOp::CategoryRename {
             category: category(&category_id)?,
             name: name.trim().to_owned(),
         },
-        CommunityRequest::CategoryReorder { category_ids, .. } => ChannelAdminOp::CategoryReorder {
+        ChannelRequest::CategoryReorder { category_ids, .. } => ChannelAdminOp::CategoryReorder {
             categories: category_ids
                 .iter()
                 .map(|id| category(id))
@@ -153,7 +154,7 @@ fn op(
 pub(super) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ChannelRequest,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");

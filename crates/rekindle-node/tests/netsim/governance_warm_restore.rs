@@ -8,6 +8,7 @@
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{LifecycleRequest, MemberRequest};
 use rekindle_netsim::Fault;
 
 use crate::harness::{Community, PASSPHRASE};
@@ -43,27 +44,31 @@ async fn relock_offline(community: &Community, i: usize) {
 async fn reviewed_from_cache(node: &crate::harness::SimNode, governance_key: &str) {
     let governance_key = governance_key.to_string();
     let leave = node
-        .answer(IpcRequest::Community(CommunityRequest::CommunityLeave {
-            governance_key: governance_key.clone(),
-        }))
+        .answer(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityLeave {
+                governance_key: governance_key.clone(),
+            },
+        )))
         .await;
     assert!(
         matches!(leave, IpcResponse::IntentRequired(_)),
         "CommunityLeave is reviewed from the cache: {leave:?}"
     );
     let update = node
-        .answer(IpcRequest::Community(CommunityRequest::RoleUpdate {
-            community: governance_key,
-            role_id: 0,
-            name: Some("Everyone".into()),
-            permissions: None,
-            color: None,
-            position: None,
-            hoist: None,
-            mentionable: None,
-            self_assignable: None,
-            exclusion_group: rekindle_types::governance::ExclusionGroupEdit::Unchanged,
-        }))
+        .answer(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleUpdate {
+                community: governance_key,
+                role_id: 0,
+                name: Some("Everyone".into()),
+                permissions: None,
+                color: None,
+                position: None,
+                hoist: None,
+                mentionable: None,
+                self_assignable: None,
+                exclusion_group: rekindle_types::governance::ExclusionGroupEdit::Unchanged,
+            },
+        )))
         .await;
     assert!(
         !matches!(update, IpcResponse::Error { code: 503, .. }),

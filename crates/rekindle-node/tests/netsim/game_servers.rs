@@ -3,6 +3,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::ActivityRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::game_server::GameServerInfo;
 
@@ -12,9 +13,11 @@ const LIMIT: Duration = Duration::from_secs(180);
 
 async fn servers(node: &SimNode, community: &str) -> Vec<GameServerInfo> {
     let listed = node
-        .ok(IpcRequest::Community(CommunityRequest::GameServerList {
-            community: community.into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::GameServerList {
+                community: community.into(),
+            },
+        )))
         .await;
     serde_json::from_value(listed).expect("a server list")
 }
@@ -27,12 +30,14 @@ async fn a_game_server_one_member_adds_is_seen_by_another() {
     let key = community.governance_key.clone();
 
     let added = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::GameServerAdd {
-            community: key.clone(),
-            game_id: "4100".into(),
-            label: "Friday CTF".into(),
-            address: "10.0.0.1:27015".into(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::GameServerAdd {
+                community: key.clone(),
+                game_id: "4100".into(),
+                label: "Friday CTF".into(),
+                address: "10.0.0.1:27015".into(),
+            },
+        )))
         .await;
     let id = added.as_str().expect("the server's id").to_owned();
     assert!(
@@ -52,10 +57,12 @@ async fn a_game_server_one_member_adds_is_seen_by_another() {
     assert!(seen, "the other member lists the server");
 
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::GameServerRemove {
-            community: key.clone(),
-            server_id: id.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::GameServerRemove {
+                community: key.clone(),
+                server_id: id.clone(),
+            },
+        )))
         .await;
     let gone = eventually(&community.sim, LIMIT, || async {
         servers(&community.nodes[1], &key).await.is_empty()

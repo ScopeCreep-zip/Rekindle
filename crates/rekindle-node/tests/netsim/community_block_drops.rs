@@ -5,6 +5,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
@@ -36,22 +37,28 @@ async fn community_block_drops() {
     let ann = community.pseudonym(0).await;
     let block = |request| IpcRequest::Community(request);
     community.nodes[1]
-        .ok(block(CommunityRequest::MemberBlock {
-            community: community.governance_key.clone(),
-            target_pseudonym: ann.clone(),
-        }))
+        .ok(block(CommunityRequest::Members(
+            MemberRequest::MemberBlock {
+                community: community.governance_key.clone(),
+                target_pseudonym: ann.clone(),
+            },
+        )))
         .await;
     let listed = community.nodes[1]
-        .ok(block(CommunityRequest::MemberBlockList {
-            community: community.governance_key.clone(),
-        }))
+        .ok(block(CommunityRequest::Members(
+            MemberRequest::MemberBlockList {
+                community: community.governance_key.clone(),
+            },
+        )))
         .await;
     assert_eq!(listed, serde_json::json!([ann.to_ascii_lowercase()]));
     let refused = community.nodes[1]
-        .call(block(CommunityRequest::MemberBlock {
-            community: community.governance_key.clone(),
-            target_pseudonym: community.pseudonym(1).await,
-        }))
+        .call(block(CommunityRequest::Members(
+            MemberRequest::MemberBlock {
+                community: community.governance_key.clone(),
+                target_pseudonym: community.pseudonym(1).await,
+            },
+        )))
         .await
         .expect_err("we cannot block ourselves");
     assert_eq!(refused.code, 403, "{}", refused.message);
@@ -74,10 +81,12 @@ async fn community_block_drops() {
     assert!(!saw_body(&bea, &hidden), "the blocker's gate drops it");
 
     community.nodes[1]
-        .ok(block(CommunityRequest::MemberUnblock {
-            community: community.governance_key.clone(),
-            target_pseudonym: ann.clone(),
-        }))
+        .ok(block(CommunityRequest::Members(
+            MemberRequest::MemberUnblock {
+                community: community.governance_key.clone(),
+                target_pseudonym: ann.clone(),
+            },
+        )))
         .await;
     let shown = message_id(
         &community

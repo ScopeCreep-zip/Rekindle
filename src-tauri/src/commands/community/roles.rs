@@ -3,6 +3,7 @@
 //! both modes, and the windows learn the merged result from the governance
 //! projection.
 
+use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::display::RoleDisplay;
 use rekindle_types::dto::{CommandError, Done};
@@ -23,9 +24,9 @@ pub async fn get_roles(
 ) -> Result<Done<Vec<RoleDisplay>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleList {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleList {
             community: community_id,
-        }),
+        })),
     )
     .await
 }
@@ -45,7 +46,7 @@ pub async fn create_role(
 ) -> Result<Done<u32>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleCreate {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleCreate {
             community: community_id,
             name,
             permissions,
@@ -54,7 +55,7 @@ pub async fn create_role(
             mentionable,
             self_assignable,
             exclusion_group,
-        }),
+        })),
     )
     .await
 }
@@ -76,7 +77,7 @@ pub async fn edit_role(
 ) -> Result<Ran, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleUpdate {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleUpdate {
             community: community_id,
             role_id,
             name,
@@ -87,7 +88,7 @@ pub async fn edit_role(
             mentionable,
             self_assignable,
             exclusion_group,
-        }),
+        })),
     )
     .await
 }
@@ -101,10 +102,10 @@ pub async fn delete_role(
 ) -> Result<Ran, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleDelete {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleDelete {
             community: community_id,
             role_id,
-        }),
+        })),
     )
     .await
 }
@@ -119,11 +120,11 @@ pub async fn assign_role(
 ) -> Result<Ran, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleAssign {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleAssign {
             community: community_id,
             member_pseudonym: pseudonym_key,
             role_id,
-        }),
+        })),
     )
     .await
 }
@@ -138,11 +139,11 @@ pub async fn unassign_role(
 ) -> Result<Ran, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleUnassign {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleUnassign {
             community: community_id,
             member_pseudonym: pseudonym_key,
             role_id,
-        }),
+        })),
     )
     .await
 }
@@ -156,10 +157,10 @@ pub async fn self_assign_role(
 ) -> Result<Ran, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleSelfAssign {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleSelfAssign {
             community: community_id,
             role_id,
-        }),
+        })),
     )
     .await
 }
@@ -173,10 +174,10 @@ pub async fn self_unassign_role(
 ) -> Result<Ran, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::RoleSelfUnassign {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleSelfUnassign {
             community: community_id,
             role_id,
-        }),
+        })),
     )
     .await
 }

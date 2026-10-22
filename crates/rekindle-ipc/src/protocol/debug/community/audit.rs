@@ -1,10 +1,9 @@
 //! The audit-log and notification-default requests' `Debug` (plan E3.1 F4).
 
-use super::super::super::CommunityRequest;
+use crate::protocol::AuditRequest;
 
-impl CommunityRequest {
-    /// The audit-log and notification-default requests' `Debug`.
-    pub(super) fn fmt_audit(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for AuditRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::AuditLog {
                 community,
@@ -25,7 +24,6 @@ impl CommunityRequest {
                 .field("community", community)
                 .field("level", level)
                 .finish(),
-            other => unreachable!("{} is not an audit request", other.name()),
         }
     }
 }

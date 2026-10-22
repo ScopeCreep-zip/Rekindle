@@ -1,3 +1,4 @@
+use rekindle_ipc::protocol::AuditRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -35,10 +36,12 @@ pub async fn set_community_default_notification_level(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::NotificationDefaultSet {
-            community: community_id,
-            level,
-        }),
+        IpcRequest::Community(CommunityRequest::Audit(
+            AuditRequest::NotificationDefaultSet {
+                community: community_id,
+                level,
+            },
+        )),
     )
     .await
 }
@@ -51,9 +54,11 @@ pub async fn get_community_default_notification_level(
 ) -> Result<Done<Option<String>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::NotificationDefaultGet {
-            community: community_id,
-        }),
+        IpcRequest::Community(CommunityRequest::Audit(
+            AuditRequest::NotificationDefaultGet {
+                community: community_id,
+            },
+        )),
     )
     .await
 }

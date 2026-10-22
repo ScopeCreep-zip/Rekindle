@@ -1,11 +1,9 @@
-//! The event and RSVP requests' `Debug` (plan E3.1): a title and
-//! description show their length only.
+//! `Debug` for the community activities requests: free text shows its length only.
 
-use super::super::super::CommunityRequest;
+use crate::protocol::ActivityRequest;
 
-impl CommunityRequest {
-    /// The event and RSVP requests' `Debug`.
-    pub(super) fn fmt_events(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for ActivityRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::EventList { community } => f
                 .debug_struct("EventList")
@@ -51,7 +49,30 @@ impl CommunityRequest {
                 .field("event_id", event_id)
                 .field("status", status)
                 .finish(),
-            other => unreachable!("{} is not an event request", other.name()),
+            Self::GameServerList { community } => f
+                .debug_struct("GameServerList")
+                .field("community", community)
+                .finish(),
+            Self::GameServerAdd {
+                community,
+                game_id,
+                label,
+                address,
+            } => f
+                .debug_struct("GameServerAdd")
+                .field("community", community)
+                .field("game_id", game_id)
+                .field("label", label)
+                .field("address", address)
+                .finish(),
+            Self::GameServerRemove {
+                community,
+                server_id,
+            } => f
+                .debug_struct("GameServerRemove")
+                .field("community", community)
+                .field("server_id", server_id)
+                .finish(),
         }
     }
 }

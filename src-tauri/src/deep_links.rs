@@ -20,6 +20,7 @@
 
 use std::sync::Arc;
 
+use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_types::invite::DeepLink;
 use tauri::{AppHandle, Manager};
@@ -47,11 +48,11 @@ pub fn handle_deep_link_url(app: &AppHandle, url: &str) {
 /// (OS input reached the GUI, not a bus client); a pairing link is refused.
 pub async fn submit(state: &AppState, url: &str) {
     let request = match DeepLink::parse(url) {
-        Ok(DeepLink::CommunityInvite(link)) => {
-            IpcRequest::Community(CommunityRequest::CommunityJoin {
+        Ok(DeepLink::CommunityInvite(link)) => IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityJoin {
                 invite: link.to_url(),
-            })
-        }
+            },
+        )),
         Ok(DeepLink::FriendInvite(invite)) => IpcRequest::FriendAddFromInvite { invite },
         Ok(DeepLink::Add(code)) => IpcRequest::FriendAddFromCode {
             code: code.to_url(),

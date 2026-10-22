@@ -9,6 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_ipc::message::SecurityLevel;
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_netsim::Netsim;
@@ -343,11 +344,13 @@ impl Community {
             node.unlock_new_identity(&format!("member{i}")).await;
         }
         let created = nodes[0]
-            .ok(IpcRequest::Community(CommunityRequest::CommunityCreate {
-                name: "Netsim".into(),
-                description: String::new(),
-                approval_required: false,
-            }))
+            .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityCreate {
+                    name: "Netsim".into(),
+                    description: String::new(),
+                    approval_required: false,
+                },
+            )))
             .await;
         let governance_key = created["governanceKey"]
             .as_str()
@@ -364,11 +367,13 @@ impl Community {
     /// A one-use invite from node 0; kept as [`link`](Self::link).
     pub async fn invite(&mut self) -> String {
         let invite = self.nodes[0]
-            .ok(IpcRequest::Community(CommunityRequest::InviteCreate {
-                community: self.governance_key.clone(),
-                max_uses: 1,
-                expires_seconds: None,
-            }))
+            .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::InviteCreate {
+                    community: self.governance_key.clone(),
+                    max_uses: 1,
+                    expires_seconds: None,
+                },
+            )))
             .await;
         self.link = invite["url"].as_str().expect("an invite link").to_string();
         self.link.clone()
@@ -378,13 +383,15 @@ impl Community {
     pub async fn join(&mut self, i: usize) {
         let link = self.invite().await;
         self.nodes[i]
-            .ok(IpcRequest::Community(CommunityRequest::CommunityJoin {
-                invite: link,
-            }))
+            .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityJoin { invite: link },
+            )))
             .await;
         let listed = eventually(&self.sim, Duration::from_secs(60), || async {
             self.nodes[i]
-                .call(IpcRequest::Community(CommunityRequest::CommunityList))
+                .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityList,
+                )))
                 .await
                 .is_ok_and(|v| v.to_string().contains(&self.governance_key))
         })
@@ -395,9 +402,11 @@ impl Community {
     /// Node `i`'s community info.
     pub async fn info(&self, i: usize) -> serde_json::Value {
         self.nodes[i]
-            .ok(IpcRequest::Community(CommunityRequest::CommunityInfo {
-                governance_key: self.governance_key.clone(),
-            }))
+            .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityInfo {
+                    governance_key: self.governance_key.clone(),
+                },
+            )))
             .await
     }
 
@@ -422,21 +431,25 @@ impl Community {
     /// Post `body` from node `i` to the general channel.
     pub async fn post(&self, i: usize, body: &str) -> Result<serde_json::Value, Refused> {
         self.nodes[i]
-            .call(IpcRequest::Community(CommunityRequest::ChannelSend {
-                community: self.governance_key.clone(),
-                channel: "general".into(),
-                body: body.into(),
-                reply_to: None,
-            }))
+            .call(IpcRequest::Community(CommunityRequest::Messages(
+                ChannelMessageRequest::ChannelSend {
+                    community: self.governance_key.clone(),
+                    channel: "general".into(),
+                    body: body.into(),
+                    reply_to: None,
+                },
+            )))
             .await
     }
 
     /// The general channel's id as node `i` lists it.
     pub async fn general_id(&self, i: usize) -> String {
         let channels = self.nodes[i]
-            .call(IpcRequest::Community(CommunityRequest::ChannelList {
-                community: self.governance_key.clone(),
-            }))
+            .call(IpcRequest::Community(CommunityRequest::Channels(
+                ChannelRequest::ChannelList {
+                    community: self.governance_key.clone(),
+                },
+            )))
             .await
             .expect("channel list");
         (channels.as_array().into_iter().flatten())
@@ -455,13 +468,18 @@ impl Community {
     ) -> Result<Vec<serde_json::Value>, Refused> {
         let channel = self.general_id(i).await;
         let request = match before {
-            None => CommunityRequest::ChannelMessages { channel, limit },
-            Some(before_timestamp) => CommunityRequest::ChannelMessagesBefore {
-                community: self.governance_key.clone(),
+            None => CommunityRequest::Messages(ChannelMessageRequest::ChannelMessages {
                 channel,
-                before_timestamp,
                 limit,
-            },
+            }),
+            Some(before_timestamp) => {
+                CommunityRequest::Messages(ChannelMessageRequest::ChannelMessagesBefore {
+                    community: self.governance_key.clone(),
+                    channel,
+                    before_timestamp,
+                    limit,
+                })
+            }
         };
         let page = self.nodes[i].call(IpcRequest::Community(request)).await?;
         Ok(page.as_array().cloned().unwrap_or_default())
@@ -484,10 +502,12 @@ impl Community {
         let channel = self.general_id(0).await;
         eventually(&self.sim, limit, || async {
             self.nodes[i]
-                .call(IpcRequest::Community(CommunityRequest::ChannelMessages {
-                    channel: channel.clone(),
-                    limit: 100,
-                }))
+                .call(IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::ChannelMessages {
+                        channel: channel.clone(),
+                        limit: 100,
+                    },
+                )))
                 .await
                 .is_ok_and(|v| v.to_string().contains(body))
         })

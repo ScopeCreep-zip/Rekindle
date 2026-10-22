@@ -3,9 +3,13 @@
 //! `channels`'.
 
 use rekindle_governance::validate::bounds;
-use rekindle_governance_runtime::audit::NOTIFICATION_LEVELS;
+use rekindle_ipc::protocol::{
+    ActivityRequest, AuditRequest, ExpressionRequest, PinRequest, SettingsRequest, UnreadRequest,
+};
+use rekindle_ipc::protocol::{
+    ChannelMessageRequest, ChannelRequest, LifecycleRequest, MemberRequest, RichRequest,
+};
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
-use rekindle_types::game_server;
 use rekindle_types::governance::ExclusionGroupEdit;
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{self, MAX_NOTE_LEN};
@@ -21,18 +25,18 @@ const MAX_POLICY_TEXT_CHARS: usize = 4096;
 /// The longest channel or message id a read marker names.
 const MAX_UNREAD_ID_LEN: usize = 128;
 
-use crate::host::adapters::governance::audit::MAX_AUDIT_PAGE;
 use crate::host::adapters::governance::community_pictures::{
     is_picture_hash, MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
 };
 
+use super::community_fields::{audit_fields, automod_fields, game_server_fields};
 use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 
 /// A community request's fields.
 /// A read-marker or unread-count request (plan E3.1 G1).
-fn unread_fields(request: &CommunityRequest) -> Checked {
+fn unread_fields(request: &UnreadRequest) -> Checked {
     match request {
-        CommunityRequest::ChannelMarkRead {
+        UnreadRequest::ChannelMarkRead {
             community: key,
             channel,
             up_to,
@@ -41,54 +45,140 @@ fn unread_fields(request: &CommunityRequest) -> Checked {
             text(channel, MAX_UNREAD_ID_LEN, "channel")?;
             text(up_to, MAX_UNREAD_ID_LEN, "message id")
         }
-        CommunityRequest::UnreadCounts { community: key } => community(key),
-        _ => Ok(()),
+        UnreadRequest::UnreadCounts { community: key } => community(key),
     }
 }
 
 /// A community block request (plan E3.1 F3, D26).
-fn block_fields(request: &CommunityRequest) -> Checked {
+fn block_fields(request: &MemberRequest) -> Checked {
     match request {
-        CommunityRequest::MemberBlock {
+        MemberRequest::MemberBlock {
             community: c,
             target_pseudonym,
         }
-        | CommunityRequest::MemberUnblock {
+        | MemberRequest::MemberUnblock {
             community: c,
             target_pseudonym,
         } => {
             community(c)?;
             pseudonym(target_pseudonym, "target pseudonym")
         }
-        CommunityRequest::MemberBlockList { community: c } => community(c),
+        MemberRequest::MemberBlockList { community: c } => community(c),
         _ => Ok(()),
     }
 }
 
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
-        CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
-        request @ (CommunityRequest::ChannelMarkRead { .. }
-        | CommunityRequest::UnreadCounts { .. }) => unread_fields(request),
-        CommunityRequest::GameServerList { community: key }
-        | CommunityRequest::AutomodRules { community: key }
-        | CommunityRequest::NotificationDefaultGet { community: key }
-        | CommunityRequest::CommunityPolicyGet { community: key } => community(key),
-        request @ (CommunityRequest::AuditLog { .. }
-        | CommunityRequest::NotificationDefaultSet { .. }) => audit_fields(request),
-        request @ (CommunityRequest::MemberBlock { .. } | CommunityRequest::MemberUnblock { .. } | CommunityRequest::MemberBlockList { .. }) => block_fields(request),
-        request @ (CommunityRequest::AutomodRuleSet { .. }
-        | CommunityRequest::AutomodRuleDelete { .. }) => automod_fields(request),
-        request @ (CommunityRequest::ChannelPins { .. }
-        | CommunityRequest::MessagePin { .. }
-        | CommunityRequest::MessageUnpin { .. }
-        | CommunityRequest::AttachmentPin { .. }
-        | CommunityRequest::MessageSearch { .. }) => super::pins::check(request),
-        request @ (CommunityRequest::EmojiUpload { .. }
-        | CommunityRequest::StickerUpload { .. }
-        | CommunityRequest::ExpressionDelete { .. }
-        | CommunityRequest::Expressions { .. }) => super::expressions::check(request),
-        CommunityRequest::CommunityUpdateProfile {
+        CommunityRequest::Lifecycle(request) => check_lifecycle(request),
+        CommunityRequest::Settings(request) => check_settings(request),
+        CommunityRequest::Channels(request) => check_channels(request),
+        CommunityRequest::Messages(request) => check_messages(request),
+        CommunityRequest::Unread(request) => check_unread(request),
+        CommunityRequest::Audit(request) => check_audit(request),
+        CommunityRequest::Activities(request) => check_activities(request),
+        CommunityRequest::Members(request) => check_members(request),
+        CommunityRequest::Pins(request) => check_pins(request),
+        CommunityRequest::Rich(request) => check_rich(request),
+        CommunityRequest::Expressions(request) => check_expressions(request),
+    }
+}
+
+/// `check` for the community lifecycle and invite requests.
+pub(super) fn check_lifecycle(request: &LifecycleRequest) -> Checked {
+    match request {
+LifecycleRequest::CommunityList | LifecycleRequest::CommunityViews => Ok(()),
+LifecycleRequest::CommunityCreate {
+            name: community_name,
+            description,
+            approval_required: _,
+        } => {
+            name(community_name, "community")?;
+            bounds::description(description)
+                .map(drop)
+                .map_err(|e| reject("description", &e))
+        }
+LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
+            IpcResponse::error(
+                400,
+                format!(
+                    "join requires a full invite link \
+                     (rekindle://invite/{{governance_key}}/{{secrets_record_key}}/{{invite_code}}): {e}"
+                ),
+            )
+        }),
+LifecycleRequest::CommunityLeave { governance_key } | LifecycleRequest::CommunityInfo { governance_key } | LifecycleRequest::CommunityMembers { governance_key } | LifecycleRequest::CommunityPendingMembers { governance_key } => community(governance_key),
+LifecycleRequest::CommunityUpdateInfo {
+            governance_key,
+            name: community_name,
+            description,
+            icon_hash,
+            banner_hash,
+        } => {
+            community(governance_key)?;
+            opt(community_name.as_deref(), |n| name(n, "community"))?;
+            opt(description.as_deref(), |d| {
+                bounds::description(d)
+                    .map(drop)
+                    .map_err(|e| reject("description", &e))
+            })?;
+            opt(icon_hash.as_deref(), |h| blob_hash(h, "icon hash"))?;
+            opt(banner_hash.as_deref(), |h| blob_hash(h, "banner hash"))
+        }
+LifecycleRequest::CommunityApprove {
+            governance_key,
+            member_pseudonym,
+        } => {
+            community(governance_key)?;
+            pseudonym(member_pseudonym, "member pseudonym")
+        }
+LifecycleRequest::CommunityReject {
+            governance_key,
+            member_pseudonym,
+            reason,
+        } => {
+            community(governance_key)?;
+            pseudonym(member_pseudonym, "member pseudonym")?;
+            text(reason, MAX_NOTE_LEN, "reason")
+        }
+LifecycleRequest::CommunityTransferOwnership {
+            governance_key,
+            new_owner_pseudonym,
+        } => {
+            community(governance_key)?;
+            pseudonym(new_owner_pseudonym, "new owner pseudonym")
+        }
+LifecycleRequest::InviteList { community: c }
+        // Role ids, invite use counts and expiries are governance rules,
+        // checked where the op is validated.
+| LifecycleRequest::InviteCreate {
+            community: c,
+            max_uses: _,
+            expires_seconds: _,
+        } => community(c),
+LifecycleRequest::InviteRevoke {
+            community: c,
+            invite_code,
+        } => {
+            community(c)?;
+            key_format::hex16_id(invite_code).map(drop).map_err(|e| {
+                IpcResponse::error(
+                    400,
+                    format!(
+                        "invalid invite id: {e} — revoke takes the 16-byte invite id from \
+                         `invite list`, not the raw code, which is never published"
+                    ),
+                )
+            })
+        }
+}
+}
+
+/// `check` for the profile, policy and onboarding requests.
+pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
+    match request {
+        SettingsRequest::CommunityPolicyGet { community: key } => community(key),
+        SettingsRequest::CommunityUpdateProfile {
             community: key,
             bio,
             pronouns,
@@ -107,12 +197,12 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             )
             .map_err(|e| IpcResponse::error(400, e))
         }
-        CommunityRequest::CommunitySetAvatar {
+        SettingsRequest::CommunitySetAvatar {
             community: key,
             image,
             kind: _,
         }
-        | CommunityRequest::CommunitySetBanner {
+        | SettingsRequest::CommunitySetBanner {
             community: key,
             image,
             kind: _,
@@ -126,15 +216,21 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             }
             Ok(())
         }
-        CommunityRequest::CommunityAvatarGet { community: key, hash } => {
+        SettingsRequest::CommunityAvatarGet {
+            community: key,
+            hash,
+        } => {
             community(key)?;
             if is_picture_hash(hash) {
                 Ok(())
             } else {
-                Err(IpcResponse::error(400, "a picture hash is 64 lowercase hex digits"))
+                Err(IpcResponse::error(
+                    400,
+                    "a picture hash is 64 lowercase hex digits",
+                ))
             }
         }
-        CommunityRequest::CommunityPolicySet {
+        SettingsRequest::CommunityPolicySet {
             community: key,
             policy_text,
             max_joins_per_interval,
@@ -142,7 +238,10 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         } => {
             community(key)?;
             if *max_joins_per_interval == 0 || *join_interval_seconds == 0 {
-                return Err(IpcResponse::error(400, "the raid thresholds must be above 0"));
+                return Err(IpcResponse::error(
+                    400,
+                    "the raid thresholds must be above 0",
+                ));
             }
             opt(policy_text.as_deref(), |t| {
                 if t.chars().count() > MAX_POLICY_TEXT_CHARS {
@@ -155,105 +254,59 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 }
             })
         }
-        CommunityRequest::EventList { .. }
-        | CommunityRequest::EventAttendees { .. }
-        | CommunityRequest::EventCreate { .. }
-        | CommunityRequest::EventEdit { .. }
-        | CommunityRequest::EventCancel { .. }
-        | CommunityRequest::EventDelete { .. }
-        | CommunityRequest::EventRsvp { .. } => super::community_events::check(request),
-        CommunityRequest::OnboardingConfigGet { .. }
-        | CommunityRequest::OnboardingConfigSet { .. }
-        | CommunityRequest::WelcomeScreenGet { .. }
-        | CommunityRequest::WelcomeScreenSet { .. }
-        | CommunityRequest::OnboardingSubmit { .. }
-        | CommunityRequest::OnboardingComplete { .. } => super::community_onboarding::check(request),
-        request @ (CommunityRequest::GameServerAdd { .. }
-        | CommunityRequest::GameServerRemove { .. }) => game_server_fields(request),
-        CommunityRequest::CommunityCreate {
-            name: community_name,
-            description,
-            approval_required: _,
-        } => {
-            name(community_name, "community")?;
-            bounds::description(description)
-                .map(drop)
-                .map_err(|e| reject("description", &e))
-        }
-        CommunityRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
-            IpcResponse::error(
-                400,
-                format!(
-                    "join requires a full invite link \
-                     (rekindle://invite/{{governance_key}}/{{secrets_record_key}}/{{invite_code}}): {e}"
-                ),
-            )
-        }),
-        CommunityRequest::CommunityLeave { governance_key } | CommunityRequest::CommunityInfo { governance_key } | CommunityRequest::CommunityMembers { governance_key } | CommunityRequest::CommunityPendingMembers { governance_key } => community(governance_key),
-        CommunityRequest::CommunityUpdateInfo {
-            governance_key,
-            name: community_name,
-            description,
-            icon_hash,
-            banner_hash,
-        } => {
-            community(governance_key)?;
-            opt(community_name.as_deref(), |n| name(n, "community"))?;
-            opt(description.as_deref(), |d| {
-                bounds::description(d)
-                    .map(drop)
-                    .map_err(|e| reject("description", &e))
-            })?;
-            opt(icon_hash.as_deref(), |h| blob_hash(h, "icon hash"))?;
-            opt(banner_hash.as_deref(), |h| blob_hash(h, "banner hash"))
-        }
-        CommunityRequest::CommunityApprove {
-            governance_key,
-            member_pseudonym,
-        } => {
-            community(governance_key)?;
-            pseudonym(member_pseudonym, "member pseudonym")
-        }
-        CommunityRequest::CommunityReject {
-            governance_key,
-            member_pseudonym,
-            reason,
-        } => {
-            community(governance_key)?;
-            pseudonym(member_pseudonym, "member pseudonym")?;
-            text(reason, MAX_NOTE_LEN, "reason")
-        }
-        CommunityRequest::CommunityTransferOwnership {
-            governance_key,
-            new_owner_pseudonym,
-        } => {
-            community(governance_key)?;
-            pseudonym(new_owner_pseudonym, "new owner pseudonym")
-        }
+        SettingsRequest::OnboardingConfigGet { .. }
+        | SettingsRequest::OnboardingConfigSet { .. }
+        | SettingsRequest::WelcomeScreenGet { .. }
+        | SettingsRequest::WelcomeScreenSet { .. }
+        | SettingsRequest::OnboardingSubmit { .. }
+        | SettingsRequest::OnboardingComplete { .. } => super::community_onboarding::check(request),
+    }
+}
 
-        CommunityRequest::ChannelList { community: c } | CommunityRequest::MekList { community: c } | CommunityRequest::RoleList { community: c } | CommunityRequest::BanList { community: c } | CommunityRequest::ModReportList { community: c } | CommunityRequest::InviteList { community: c }
-        // Role ids, invite use counts and expiries are governance rules,
-        // checked where the op is validated.
-        | CommunityRequest::RoleDelete {
-            community: c,
-            role_id: _,
-        } | CommunityRequest::RoleSelfAssign {
-            community: c,
-            role_id: _,
-        } | CommunityRequest::RoleSelfUnassign {
-            community: c,
-            role_id: _,
-        } | CommunityRequest::InviteCreate {
-            community: c,
-            max_uses: _,
-            expires_seconds: _,
-        } => community(c),
-        CommunityRequest::ChannelCreate { .. } | CommunityRequest::ChannelDelete { .. } | CommunityRequest::ChannelUpdate { .. } | CommunityRequest::ChannelRename { .. } | CommunityRequest::ChannelMove { .. } | CommunityRequest::ChannelReorder { .. } | CommunityRequest::ChannelSetTopic { .. } | CommunityRequest::ChannelSetSlowmode { .. } | CommunityRequest::ChannelSetForumTags { .. } | CommunityRequest::ChannelOverwriteSet { .. } | CommunityRequest::ChannelOverwriteDelete { .. } | CommunityRequest::CategoryCreate { .. } | CommunityRequest::CategoryDelete { .. } | CommunityRequest::CategoryRename { .. } | CommunityRequest::CategoryReorder { .. } | CommunityRequest::ChannelSend { .. } | CommunityRequest::ChannelMessages { .. } | CommunityRequest::ChannelMessagesBefore { .. } | CommunityRequest::ChannelMessageEdit { .. } | CommunityRequest::ChannelMessageDelete { .. } | CommunityRequest::ChannelMessageSend { .. } | CommunityRequest::ChannelMessageForward { .. } | CommunityRequest::ChannelMessageAdminDelete { .. } | CommunityRequest::ChannelMessageBulkDelete { .. } | CommunityRequest::ChannelTyping { .. } | CommunityRequest::ChannelSetActive { .. } | CommunityRequest::ReactionAdd { .. } | CommunityRequest::ReactionRemove { .. } | CommunityRequest::ThreadCreate { .. } | CommunityRequest::ThreadArchive { .. } | CommunityRequest::ThreadUnarchive { .. } | CommunityRequest::ThreadList { .. } | CommunityRequest::ThreadListActive { .. } | CommunityRequest::ThreadMessages { .. } | CommunityRequest::ThreadSend { .. } | CommunityRequest::PollCreate { .. } | CommunityRequest::PollVote { .. } | CommunityRequest::PollClose { .. } | CommunityRequest::PollResults { .. } => super::channels::check(request),
+/// `check` for the channel and category requests.
+pub(super) fn check_channels(request: &ChannelRequest) -> Checked {
+    match request {
+        ChannelRequest::ChannelList { community: c } => community(c),
+        ChannelRequest::ChannelCreate { .. }
+        | ChannelRequest::ChannelDelete { .. }
+        | ChannelRequest::ChannelUpdate { .. }
+        | ChannelRequest::ChannelRename { .. }
+        | ChannelRequest::ChannelMove { .. }
+        | ChannelRequest::ChannelReorder { .. }
+        | ChannelRequest::ChannelSetTopic { .. }
+        | ChannelRequest::ChannelSetSlowmode { .. }
+        | ChannelRequest::ChannelSetForumTags { .. }
+        | ChannelRequest::ChannelOverwriteSet { .. }
+        | ChannelRequest::ChannelOverwriteDelete { .. }
+        | ChannelRequest::CategoryCreate { .. }
+        | ChannelRequest::CategoryDelete { .. }
+        | ChannelRequest::CategoryRename { .. }
+        | ChannelRequest::CategoryReorder { .. } => super::channels::check_channels(request),
+    }
+}
 
-        CommunityRequest::MekRotate {
+/// `check` for the channel message and channel key requests.
+pub(super) fn check_messages(request: &ChannelMessageRequest) -> Checked {
+    match request {
+        ChannelMessageRequest::MekList { community: c } => community(c),
+        ChannelMessageRequest::ChannelSend { .. }
+        | ChannelMessageRequest::ChannelMessages { .. }
+        | ChannelMessageRequest::ChannelMessagesBefore { .. }
+        | ChannelMessageRequest::ChannelMessageEdit { .. }
+        | ChannelMessageRequest::ChannelMessageDelete { .. }
+        | ChannelMessageRequest::ChannelMessageSend { .. }
+        | ChannelMessageRequest::ChannelMessageForward { .. }
+        | ChannelMessageRequest::ChannelMessageAdminDelete { .. }
+        | ChannelMessageRequest::ChannelMessageBulkDelete { .. }
+        | ChannelMessageRequest::ChannelTyping { .. }
+        | ChannelMessageRequest::ChannelSetActive { .. } => {
+            super::channels::check_messages(request)
+        }
+        ChannelMessageRequest::MekRotate {
             community: c,
             channel: ch,
-        } | CommunityRequest::MekRequest {
+        }
+        | ChannelMessageRequest::MekRequest {
             community: c,
             channel: ch,
             generation: _,
@@ -261,8 +314,69 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             community(c)?;
             key_scope(ch)
         }
+    }
+}
 
-        CommunityRequest::RoleCreate {
+/// `check` for the read marker requests.
+pub(super) fn check_unread(request: &UnreadRequest) -> Checked {
+    match request {
+        request @ (UnreadRequest::ChannelMarkRead { .. } | UnreadRequest::UnreadCounts { .. }) => {
+            unread_fields(request)
+        }
+    }
+}
+
+/// `check` for the audit and notification default requests.
+pub(super) fn check_audit(request: &AuditRequest) -> Checked {
+    match request {
+        AuditRequest::NotificationDefaultGet { community: key } => community(key),
+        request @ (AuditRequest::AuditLog { .. } | AuditRequest::NotificationDefaultSet { .. }) => {
+            audit_fields(request)
+        }
+    }
+}
+
+/// `check` for the event and game server requests.
+pub(super) fn check_activities(request: &ActivityRequest) -> Checked {
+    match request {
+        ActivityRequest::GameServerList { community: key } => community(key),
+        ActivityRequest::EventList { .. }
+        | ActivityRequest::EventAttendees { .. }
+        | ActivityRequest::EventCreate { .. }
+        | ActivityRequest::EventEdit { .. }
+        | ActivityRequest::EventCancel { .. }
+        | ActivityRequest::EventDelete { .. }
+        | ActivityRequest::EventRsvp { .. } => super::community_events::check(request),
+        request @ (ActivityRequest::GameServerAdd { .. }
+        | ActivityRequest::GameServerRemove { .. }) => game_server_fields(request),
+    }
+}
+
+/// `check` for the role and moderation requests.
+pub(super) fn check_members(request: &MemberRequest) -> Checked {
+    match request {
+        MemberRequest::AutomodRules { community: key } => community(key),
+        request @ (MemberRequest::MemberBlock { .. }
+        | MemberRequest::MemberUnblock { .. }
+        | MemberRequest::MemberBlockList { .. }) => block_fields(request),
+        request @ (MemberRequest::AutomodRuleSet { .. }
+        | MemberRequest::AutomodRuleDelete { .. }) => automod_fields(request),
+        MemberRequest::RoleList { community: c }
+        | MemberRequest::BanList { community: c }
+        | MemberRequest::ModReportList { community: c }
+        | MemberRequest::RoleDelete {
+            community: c,
+            role_id: _,
+        }
+        | MemberRequest::RoleSelfAssign {
+            community: c,
+            role_id: _,
+        }
+        | MemberRequest::RoleSelfUnassign {
+            community: c,
+            role_id: _,
+        } => community(c),
+        MemberRequest::RoleCreate {
             community: c,
             name: role_name,
             exclusion_group,
@@ -274,7 +388,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 text(g, MAX_EXCLUSION_GROUP_LEN, "exclusion group")
             })
         }
-        CommunityRequest::RoleUpdate {
+        MemberRequest::RoleUpdate {
             community: c,
             role_id: _,
             name: new_name,
@@ -288,11 +402,12 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 ExclusionGroupEdit::Unchanged | ExclusionGroupEdit::Clear => Ok(()),
             }
         }
-        CommunityRequest::RoleAssign {
+        MemberRequest::RoleAssign {
             community: c,
             member_pseudonym,
             role_id: _,
-        } | CommunityRequest::RoleUnassign {
+        }
+        | MemberRequest::RoleUnassign {
             community: c,
             member_pseudonym,
             role_id: _,
@@ -300,21 +415,22 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             community(c)?;
             pseudonym(member_pseudonym, "member pseudonym")
         }
-
-        CommunityRequest::Kick {
+        MemberRequest::Kick {
             community: c,
             target_pseudonym,
-        } | CommunityRequest::Unban {
+        }
+        | MemberRequest::Unban {
             community: c,
             target_pseudonym,
-        } | CommunityRequest::TimeoutRemove {
+        }
+        | MemberRequest::TimeoutRemove {
             community: c,
             target_pseudonym,
         } => {
             community(c)?;
             pseudonym(target_pseudonym, "target pseudonym")
         }
-        CommunityRequest::Ban {
+        MemberRequest::Ban {
             community: c,
             target_pseudonym,
             reason,
@@ -323,7 +439,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             pseudonym(target_pseudonym, "target pseudonym")?;
             opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
         }
-        CommunityRequest::Timeout {
+        MemberRequest::Timeout {
             community: c,
             target_pseudonym,
             duration_seconds,
@@ -341,22 +457,46 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             }
             opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
         }
+    }
+}
 
-        CommunityRequest::InviteRevoke {
-            community: c,
-            invite_code,
-        } => {
-            community(c)?;
-            key_format::hex16_id(invite_code).map(drop).map_err(|e| {
-                IpcResponse::error(
-                    400,
-                    format!(
-                        "invalid invite id: {e} — revoke takes the 16-byte invite id from \
-                         `invite list`, not the raw code, which is never published"
-                    ),
-                )
-            })
-        }
+/// `check` for the pin and search requests.
+pub(super) fn check_pins(request: &PinRequest) -> Checked {
+    match request {
+        request @ (PinRequest::ChannelPins { .. }
+        | PinRequest::MessagePin { .. }
+        | PinRequest::MessageUnpin { .. }
+        | PinRequest::AttachmentPin { .. }
+        | PinRequest::MessageSearch { .. }) => super::pins::check(request),
+    }
+}
+
+/// `check` for the reaction, thread and poll requests.
+pub(super) fn check_rich(request: &RichRequest) -> Checked {
+    match request {
+        RichRequest::ReactionAdd { .. }
+        | RichRequest::ReactionRemove { .. }
+        | RichRequest::ThreadCreate { .. }
+        | RichRequest::ThreadArchive { .. }
+        | RichRequest::ThreadUnarchive { .. }
+        | RichRequest::ThreadList { .. }
+        | RichRequest::ThreadListActive { .. }
+        | RichRequest::ThreadMessages { .. }
+        | RichRequest::ThreadSend { .. }
+        | RichRequest::PollCreate { .. }
+        | RichRequest::PollVote { .. }
+        | RichRequest::PollClose { .. }
+        | RichRequest::PollResults { .. } => super::rich_messaging::check(request),
+    }
+}
+
+/// `check` for the expression requests.
+pub(super) fn check_expressions(request: &ExpressionRequest) -> Checked {
+    match request {
+        request @ (ExpressionRequest::EmojiUpload { .. }
+        | ExpressionRequest::StickerUpload { .. }
+        | ExpressionRequest::ExpressionDelete { .. }
+        | ExpressionRequest::Expressions { .. }) => super::expressions::check(request),
     }
 }
 
@@ -373,119 +513,5 @@ fn blob_hash(hash: &str, what: &str) -> Checked {
             400,
             format!("invalid {what}: 64 lowercase hex"),
         ))
-    }
-}
-
-/// The audit-log page bound and the notification level (plan E3.1 F4).
-fn audit_fields(request: &CommunityRequest) -> Checked {
-    match request {
-        CommunityRequest::AuditLog {
-            community: key,
-            before_timestamp: _,
-            limit,
-        } => {
-            community(key)?;
-            if *limit == 0 || *limit > MAX_AUDIT_PAGE {
-                return Err(IpcResponse::error(
-                    400,
-                    format!("invalid limit: must be 1..={MAX_AUDIT_PAGE}"),
-                ));
-            }
-            Ok(())
-        }
-        CommunityRequest::NotificationDefaultSet {
-            community: key,
-            level,
-        } => {
-            community(key)?;
-            if !NOTIFICATION_LEVELS.contains(&level.as_str()) {
-                return Err(IpcResponse::error(
-                    400,
-                    format!("invalid level: must be one of {NOTIFICATION_LEVELS:?}"),
-                ));
-            }
-            Ok(())
-        }
-        _ => Ok(()),
-    }
-}
-
-/// A game server add's or removal's fields (plan E3.1 H1).
-fn game_server_fields(request: &CommunityRequest) -> Checked {
-    match request {
-        CommunityRequest::GameServerAdd {
-            community: key,
-            game_id,
-            label,
-            address,
-        } => {
-            community(key)?;
-            name(game_id, "game id")?;
-            text(game_id, game_server::MAX_GAME_ID_LEN, "game id")?;
-            name(label, "server label")?;
-            text(
-                label,
-                game_server::MAX_GAME_SERVER_LABEL_LEN,
-                "server label",
-            )?;
-            game_server::ServerAddress::parse(address)
-                .map(drop)
-                .map_err(|e| IpcResponse::error(400, format!("server address: {e}")))
-        }
-        CommunityRequest::GameServerRemove {
-            community: key,
-            server_id,
-        } => {
-            community(key)?;
-            if game_server::is_server_id(server_id) {
-                Ok(())
-            } else {
-                Err(IpcResponse::error(
-                    400,
-                    "server id must be gs_ and 16 hex digits",
-                ))
-            }
-        }
-        _ => Ok(()),
-    }
-}
-
-/// An automod rule set's or delete's fields.
-fn automod_fields(request: &CommunityRequest) -> Checked {
-    match request {
-        CommunityRequest::AutomodRuleSet {
-            community: key,
-            rule_id,
-            name,
-            ..
-        } => {
-            community(key)?;
-            if let Some(id) = rule_id {
-                rule_id_field(id)?;
-            }
-            if name.trim().is_empty() {
-                return Err(IpcResponse::error(400, "an automod rule needs a name"));
-            }
-            Ok(())
-        }
-        CommunityRequest::AutomodRuleDelete {
-            community: key,
-            rule_id,
-        } => {
-            community(key)?;
-            rule_id_field(rule_id)
-        }
-        _ => Ok(()),
-    }
-}
-
-/// An automod rule id: 16 bytes of hex.
-fn rule_id_field(id: &str) -> Result<(), IpcResponse> {
-    match hex::decode(id) {
-        Ok(bytes) if bytes.len() == 16 => Ok(()),
-        _ => Err(IpcResponse::error(
-            400,
-            "invalid rule id: must be 32 hex characters",
-        )),
     }
 }

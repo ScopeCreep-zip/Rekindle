@@ -2,31 +2,32 @@
 //! event id, the title and description bounds of architecture §21, the
 //! channel id, and the three RSVP answers.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ActivityRequest;
+use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::event::{is_event_id, MAX_EVENT_DESCRIPTION_CHARS, MAX_EVENT_NAME_CHARS};
 
 use super::{community, name, opt, Checked};
 
 /// An event request's fields.
-pub(super) fn check(request: &CommunityRequest) -> Checked {
+pub(super) fn check(request: &ActivityRequest) -> Checked {
     match request {
-        CommunityRequest::EventList { community: key } => community(key),
-        CommunityRequest::EventAttendees {
+        ActivityRequest::EventList { community: key } => community(key),
+        ActivityRequest::EventAttendees {
             community: key,
             event_id,
         }
-        | CommunityRequest::EventCancel {
+        | ActivityRequest::EventCancel {
             community: key,
             event_id,
         }
-        | CommunityRequest::EventDelete {
+        | ActivityRequest::EventDelete {
             community: key,
             event_id,
         } => {
             community(key)?;
             event(event_id)
         }
-        CommunityRequest::EventCreate {
+        ActivityRequest::EventCreate {
             community: key,
             event: new,
         } => {
@@ -35,7 +36,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             description(&new.description)?;
             opt(new.channel_id.as_deref(), channel)
         }
-        CommunityRequest::EventEdit {
+        ActivityRequest::EventEdit {
             community: key,
             event_id,
             edit,
@@ -46,7 +47,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             opt(edit.description.as_deref(), description)?;
             opt(edit.channel_id.as_deref(), channel)
         }
-        CommunityRequest::EventRsvp {
+        ActivityRequest::EventRsvp {
             community: key,
             event_id,
             status,

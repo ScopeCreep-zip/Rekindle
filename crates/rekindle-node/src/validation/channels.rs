@@ -1,6 +1,7 @@
 //! A community's channels.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest};
 
 use super::{
     channel, channel_kind, community, hex16, message_body, name, opt, page, slowmode, text,
@@ -17,10 +18,10 @@ const MAX_BULK_DELETE: usize = 100;
 const MAX_DELETE_REASON_LEN: usize = 512;
 
 /// A community's channels: their names, kinds, topics and bodies.
-pub(super) fn check(request: &CommunityRequest) -> Checked {
+/// `check` for the channel and category requests.
+pub(super) fn check_channels(request: &ChannelRequest) -> Checked {
     match request {
-        request if super::rich_messaging::is_rich(request) => super::rich_messaging::check(request),
-        CommunityRequest::ChannelCreate {
+        ChannelRequest::ChannelCreate {
             community: c,
             name: channel_name,
             kind,
@@ -39,14 +40,14 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
             slowmode(*slowmode_seconds)
         }
-        CommunityRequest::ChannelDelete {
+        ChannelRequest::ChannelDelete {
             community: c,
             channel_id,
         } => {
             community(c)?;
             channel(channel_id)
         }
-        CommunityRequest::ChannelUpdate {
+        ChannelRequest::ChannelUpdate {
             community: c,
             channel_id,
             name: new_name,
@@ -59,7 +60,14 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
             opt(slowmode_seconds.as_ref(), |s| slowmode(*s))
         }
-        CommunityRequest::ChannelSend {
+        other => super::channel_admin::check(other),
+    }
+}
+
+/// `check` for the channel message and channel key requests.
+pub(super) fn check_messages(request: &ChannelMessageRequest) -> Checked {
+    match request {
+        ChannelMessageRequest::ChannelSend {
             community: c,
             channel: ch,
             body,
@@ -72,7 +80,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             })?;
             message_body(body)
         }
-        CommunityRequest::ChannelMessagesBefore {
+        ChannelMessageRequest::ChannelMessagesBefore {
             community: c,
             channel: ch,
             limit,
@@ -82,11 +90,11 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             channel(ch)?;
             page(*limit)
         }
-        CommunityRequest::ChannelMessages { channel: ch, limit } => {
+        ChannelMessageRequest::ChannelMessages { channel: ch, limit } => {
             channel(ch)?;
             page(*limit)
         }
-        CommunityRequest::ChannelMessageEdit {
+        ChannelMessageRequest::ChannelMessageEdit {
             channel: ch,
             message_id,
             body,
@@ -95,7 +103,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             text(message_id, MAX_MESSAGE_ID_LEN, "message id")?;
             message_body(body)
         }
-        CommunityRequest::ChannelMessageSend {
+        ChannelMessageRequest::ChannelMessageSend {
             channel: ch,
             body,
             reply_to,
@@ -106,14 +114,14 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             })?;
             message_body(body)
         }
-        CommunityRequest::ChannelMessageDelete {
+        ChannelMessageRequest::ChannelMessageDelete {
             channel: ch,
             message_id,
         } => {
             channel(ch)?;
             text(message_id, MAX_MESSAGE_ID_LEN, "message id")
         }
-        CommunityRequest::ChannelMessageForward {
+        ChannelMessageRequest::ChannelMessageForward {
             source_community,
             source_channel,
             source_message,
@@ -126,7 +134,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             community(dest_community)?;
             channel(dest_channel)
         }
-        CommunityRequest::ChannelMessageAdminDelete {
+        ChannelMessageRequest::ChannelMessageAdminDelete {
             community: c,
             channel: ch,
             message_id,
@@ -139,7 +147,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 text(r, MAX_DELETE_REASON_LEN, "reason")
             })
         }
-        CommunityRequest::ChannelMessageBulkDelete {
+        ChannelMessageRequest::ChannelMessageBulkDelete {
             community: c,
             channel: ch,
             message_ids,
@@ -160,14 +168,14 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 text(r, MAX_DELETE_REASON_LEN, "reason")
             })
         }
-        CommunityRequest::ChannelTyping {
+        ChannelMessageRequest::ChannelTyping {
             community: c,
             channel: ch,
         } => {
             community(c)?;
             channel(ch)
         }
-        CommunityRequest::ChannelSetActive {
+        ChannelMessageRequest::ChannelSetActive {
             community: c,
             channel: ch,
             kind,
@@ -176,6 +184,6 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             opt(ch.as_deref(), channel)?;
             channel_kind(kind)
         }
-        other => super::channel_admin::check(other),
+        other => unreachable!("{} is not a channel message request", other.name()),
     }
 }

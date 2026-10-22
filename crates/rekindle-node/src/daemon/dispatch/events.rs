@@ -2,7 +2,8 @@
 //! governance adapter on both hosts.
 
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ActivityRequest;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::{adapter, state_error, DaemonContext};
 use crate::daemon::DaemonState;
@@ -11,11 +12,11 @@ use crate::daemon::DaemonState;
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ActivityRequest,
 ) -> IpcResponse {
     let query = matches!(
         request,
-        CommunityRequest::EventList { .. } | CommunityRequest::EventAttendees { .. }
+        ActivityRequest::EventList { .. } | ActivityRequest::EventAttendees { .. }
     );
     if query && !state.can_query() {
         return state_error(state, "query");
@@ -24,13 +25,13 @@ pub(crate) async fn handle(
         return state_error(state, "write");
     }
     let community = match &request {
-        CommunityRequest::EventList { community }
-        | CommunityRequest::EventAttendees { community, .. }
-        | CommunityRequest::EventCreate { community, .. }
-        | CommunityRequest::EventEdit { community, .. }
-        | CommunityRequest::EventCancel { community, .. }
-        | CommunityRequest::EventDelete { community, .. }
-        | CommunityRequest::EventRsvp { community, .. } => community.clone(),
+        ActivityRequest::EventList { community }
+        | ActivityRequest::EventAttendees { community, .. }
+        | ActivityRequest::EventCreate { community, .. }
+        | ActivityRequest::EventEdit { community, .. }
+        | ActivityRequest::EventCancel { community, .. }
+        | ActivityRequest::EventDelete { community, .. }
+        | ActivityRequest::EventRsvp { community, .. } => community.clone(),
         _ => return IpcResponse::error(400, "not an event request"),
     };
     let id = match ctx.resolve_community(&community) {
@@ -39,23 +40,23 @@ pub(crate) async fn handle(
     };
     let host = adapter(ctx);
     match request {
-        CommunityRequest::EventList { .. } => answer(host.events(&id).await, "events"),
-        CommunityRequest::EventAttendees { event_id, .. } => {
+        ActivityRequest::EventList { .. } => answer(host.events(&id).await, "events"),
+        ActivityRequest::EventAttendees { event_id, .. } => {
             answer(host.event_attendees(&id, &event_id), "event attendees")
         }
-        CommunityRequest::EventCreate { event, .. } => {
+        ActivityRequest::EventCreate { event, .. } => {
             answer(host.create_event(&id, event).await, "event create")
         }
-        CommunityRequest::EventEdit { event_id, edit, .. } => {
+        ActivityRequest::EventEdit { event_id, edit, .. } => {
             answer(host.edit_event(&id, &event_id, edit).await, "event edit")
         }
-        CommunityRequest::EventCancel { event_id, .. } => {
+        ActivityRequest::EventCancel { event_id, .. } => {
             answer(host.cancel_event(&id, &event_id).await, "event cancel")
         }
-        CommunityRequest::EventDelete { event_id, .. } => {
+        ActivityRequest::EventDelete { event_id, .. } => {
             answer(host.delete_event(&id, &event_id).await, "event delete")
         }
-        CommunityRequest::EventRsvp {
+        ActivityRequest::EventRsvp {
             event_id, status, ..
         } => answer(
             host.set_event_rsvp(&id, &event_id, &status).await,

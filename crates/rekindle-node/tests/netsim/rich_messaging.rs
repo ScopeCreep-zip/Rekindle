@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::RichRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::harness::{eventually, Community};
@@ -34,24 +35,26 @@ async fn thread_reply_both_ways() {
     let thread = ask(
         &community,
         0,
-        CommunityRequest::ThreadCreate {
+        CommunityRequest::Rich(RichRequest::ThreadCreate {
             community: key.clone(),
             channel_id: channel.clone(),
             name: "plans".into(),
             starter_message_id: message_id(&starter),
             forum_tag: None,
             auto_archive_seconds: None,
-        },
+        }),
     )
     .await;
     let thread = thread.as_str().expect("a thread id").to_owned();
 
     let listed = eventually(&community.sim, LIMIT, || async {
         community.nodes[1]
-            .call(IpcRequest::Community(CommunityRequest::ThreadListActive {
-                community: key.clone(),
-                channel_id: channel.clone(),
-            }))
+            .call(IpcRequest::Community(CommunityRequest::Rich(
+                RichRequest::ThreadListActive {
+                    community: key.clone(),
+                    channel_id: channel.clone(),
+                },
+            )))
             .await
             .is_ok_and(|v| v.to_string().contains(&thread))
     })
@@ -59,10 +62,12 @@ async fn thread_reply_both_ways() {
     assert!(listed, "bea lists ann's thread");
 
     let archive = community.nodes[1]
-        .call(IpcRequest::Community(CommunityRequest::ThreadArchive {
-            community: key.clone(),
-            thread_id: thread.clone(),
-        }))
+        .call(IpcRequest::Community(CommunityRequest::Rich(
+            RichRequest::ThreadArchive {
+                community: key.clone(),
+                thread_id: thread.clone(),
+            },
+        )))
         .await;
     assert!(
         archive.is_err_and(|refused| refused.code == 403),
@@ -71,20 +76,22 @@ async fn thread_reply_both_ways() {
 
     let active_for_bea = || async {
         community.nodes[1]
-            .call(IpcRequest::Community(CommunityRequest::ThreadListActive {
-                community: key.clone(),
-                channel_id: channel.clone(),
-            }))
+            .call(IpcRequest::Community(CommunityRequest::Rich(
+                RichRequest::ThreadListActive {
+                    community: key.clone(),
+                    channel_id: channel.clone(),
+                },
+            )))
             .await
             .is_ok_and(|v| v.to_string().contains(&thread))
     };
     ask(
         &community,
         0,
-        CommunityRequest::ThreadArchive {
+        CommunityRequest::Rich(RichRequest::ThreadArchive {
             community: key.clone(),
             thread_id: thread.clone(),
-        },
+        }),
     )
     .await;
     let archived = eventually(&community.sim, LIMIT, || async { !active_for_bea().await }).await;
@@ -92,10 +99,10 @@ async fn thread_reply_both_ways() {
     ask(
         &community,
         0,
-        CommunityRequest::ThreadUnarchive {
+        CommunityRequest::Rich(RichRequest::ThreadUnarchive {
             community: key.clone(),
             thread_id: thread.clone(),
-        },
+        }),
     )
     .await;
     let reopened = eventually(&community.sim, LIMIT, active_for_bea).await;
@@ -107,21 +114,23 @@ async fn thread_reply_both_ways() {
     ask(
         &community,
         1,
-        CommunityRequest::ThreadSend {
+        CommunityRequest::Rich(RichRequest::ThreadSend {
             community: key.clone(),
             thread_id: thread.clone(),
             body: "count me in".into(),
-        },
+        }),
     )
     .await;
     let replied = eventually(&community.sim, LIMIT, || async {
         community.nodes[0]
-            .call(IpcRequest::Community(CommunityRequest::ThreadMessages {
-                community: key.clone(),
-                thread_id: thread.clone(),
-                limit: 50,
-                before_timestamp: None,
-            }))
+            .call(IpcRequest::Community(CommunityRequest::Rich(
+                RichRequest::ThreadMessages {
+                    community: key.clone(),
+                    thread_id: thread.clone(),
+                    limit: 50,
+                    before_timestamp: None,
+                },
+            )))
             .await
             .is_ok_and(|v| v.to_string().contains("count me in"))
     })
@@ -142,12 +151,12 @@ async fn reaction_converges() {
     ask(
         &community,
         1,
-        CommunityRequest::ReactionAdd {
+        CommunityRequest::Rich(RichRequest::ReactionAdd {
             community: key,
             channel_id: community.general_id(1).await,
             message_id: message_id(&posted),
             emoji: "tada".into(),
-        },
+        }),
     )
     .await;
     let reacted = eventually(&community.sim, LIMIT, || async {
@@ -170,7 +179,7 @@ async fn poll_vote_converges() {
     let poll = ask(
         &community,
         0,
-        CommunityRequest::PollCreate {
+        CommunityRequest::Rich(RichRequest::PollCreate {
             community: key.clone(),
             channel_id: channel.clone(),
             message_id: message_id(&posted),
@@ -178,19 +187,21 @@ async fn poll_vote_converges() {
             answers: vec!["tacos".into(), "pho".into()],
             multi_select: false,
             duration_seconds: None,
-        },
+        }),
     )
     .await;
     let poll = poll.as_str().expect("a poll id").to_owned();
 
     let voted = eventually(&community.sim, LIMIT, || async {
         community.nodes[1]
-            .call(IpcRequest::Community(CommunityRequest::PollVote {
-                community: key.clone(),
-                channel_id: channel.clone(),
-                poll_id: poll.clone(),
-                selected_answers: vec![1],
-            }))
+            .call(IpcRequest::Community(CommunityRequest::Rich(
+                RichRequest::PollVote {
+                    community: key.clone(),
+                    channel_id: channel.clone(),
+                    poll_id: poll.clone(),
+                    selected_answers: vec![1],
+                },
+            )))
             .await
             .is_ok()
     })
@@ -198,11 +209,13 @@ async fn poll_vote_converges() {
     assert!(voted, "bea votes once she reads the poll");
 
     let close = community.nodes[1]
-        .call(IpcRequest::Community(CommunityRequest::PollClose {
-            community: key.clone(),
-            channel_id: channel.clone(),
-            poll_id: poll.clone(),
-        }))
+        .call(IpcRequest::Community(CommunityRequest::Rich(
+            RichRequest::PollClose {
+                community: key.clone(),
+                channel_id: channel.clone(),
+                poll_id: poll.clone(),
+            },
+        )))
         .await;
     assert!(
         close.is_err_and(|refused| refused.code == 403),
@@ -211,11 +224,13 @@ async fn poll_vote_converges() {
 
     let counted = eventually(&community.sim, LIMIT, || async {
         community.nodes[0]
-            .call(IpcRequest::Community(CommunityRequest::PollResults {
-                community: key.clone(),
-                channel_id: channel.clone(),
-                poll_id: poll.clone(),
-            }))
+            .call(IpcRequest::Community(CommunityRequest::Rich(
+                RichRequest::PollResults {
+                    community: key.clone(),
+                    channel_id: channel.clone(),
+                    poll_id: poll.clone(),
+                },
+            )))
             .await
             .is_ok_and(|v| v == serde_json::json!([0, 1]))
     })

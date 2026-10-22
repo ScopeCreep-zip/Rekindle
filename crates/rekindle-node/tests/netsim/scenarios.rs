@@ -7,6 +7,7 @@ use std::time::Duration;
 use base64::Engine as _;
 use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
+use rekindle_ipc::protocol::{ChannelMessageRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::config::SafetyProfile;
 use rekindle_types::governance::GovernanceEntry;
@@ -94,24 +95,28 @@ async fn a_concurrent_mutual_kick_removes_both_everywhere() {
     let community = Community::of(3, 42).await;
     let (ann, bea) = (community.pseudonym(0).await, community.pseudonym(1).await);
     let role = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleCreate {
-            community: community.governance_key.clone(),
-            name: "mod".into(),
-            permissions: KICK_MEMBERS,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleCreate {
+                community: community.governance_key.clone(),
+                name: "mod".into(),
+                permissions: KICK_MEMBERS,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        )))
         .await;
     let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleAssign {
-            community: community.governance_key.clone(),
-            member_pseudonym: bea.clone(),
-            role_id,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleAssign {
+                community: community.governance_key.clone(),
+                member_pseudonym: bea.clone(),
+                role_id,
+            },
+        )))
         .await;
     assert!(
         community.holds_role(1, role_id).await,
@@ -119,10 +124,12 @@ async fn a_concurrent_mutual_kick_removes_both_everywhere() {
     );
 
     let kick = |by: usize, target: &str| {
-        community.nodes[by].call(IpcRequest::Community(CommunityRequest::Kick {
-            community: community.governance_key.clone(),
-            target_pseudonym: target.to_string(),
-        }))
+        community.nodes[by].call(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Kick {
+                community: community.governance_key.clone(),
+                target_pseudonym: target.to_string(),
+            },
+        )))
     };
     let (by_ann, by_bea) = tokio::join!(kick(0, &bea), kick(1, &ann));
     assert!(by_ann.is_ok() && by_bea.is_ok(), "{by_ann:?} / {by_bea:?}");
@@ -143,24 +150,28 @@ async fn concurrent_rotations_converge_on_one_generation() {
     let community = Community::of(3, 43).await;
     let bea = community.pseudonym(1).await;
     let role = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleCreate {
-            community: community.governance_key.clone(),
-            name: "admin".into(),
-            permissions: ADMINISTRATOR,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleCreate {
+                community: community.governance_key.clone(),
+                name: "admin".into(),
+                permissions: ADMINISTRATOR,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        )))
         .await;
     let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleAssign {
-            community: community.governance_key.clone(),
-            member_pseudonym: bea,
-            role_id,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleAssign {
+                community: community.governance_key.clone(),
+                member_pseudonym: bea,
+                role_id,
+            },
+        )))
         .await;
     assert!(
         community.holds_role(1, role_id).await,
@@ -172,10 +183,12 @@ async fn concurrent_rotations_converge_on_one_generation() {
         .to_string();
 
     let rotate = |by: usize| {
-        community.nodes[by].call(IpcRequest::Community(CommunityRequest::MekRotate {
-            community: community.governance_key.clone(),
-            channel: general.clone(),
-        }))
+        community.nodes[by].call(IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::MekRotate {
+                community: community.governance_key.clone(),
+                channel: general.clone(),
+            },
+        )))
     };
     let (a, b) = tokio::join!(rotate(0), rotate(1));
     assert!(a.is_ok() && b.is_ok(), "{a:?} / {b:?}");
@@ -185,9 +198,11 @@ async fn concurrent_rotations_converge_on_one_generation() {
         let mut out = Vec::new();
         for node in &community.nodes {
             out.push(
-                node.ok(IpcRequest::Community(CommunityRequest::MekList {
-                    community: community.governance_key.clone(),
-                }))
+                node.ok(IpcRequest::Community(CommunityRequest::Messages(
+                    ChannelMessageRequest::MekList {
+                        community: community.governance_key.clone(),
+                    },
+                )))
                 .await
                 .to_string(),
             );
@@ -221,9 +236,11 @@ async fn concurrent_rotations_converge_on_one_generation() {
 async fn an_outsider_cannot_inject_a_community_key() {
     let community = Community::of(2, 44).await;
     let before = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::MekList {
-            community: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::MekList {
+                community: community.governance_key.clone(),
+            },
+        )))
         .await;
     let victim = PseudonymKey::from_hex_lossy(&community.pseudonym(0).await);
 
@@ -262,9 +279,11 @@ async fn an_outsider_cannot_inject_a_community_key() {
     community.sim.quiesce().await;
 
     let after = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::MekList {
-            community: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::MekList {
+                community: community.governance_key.clone(),
+            },
+        )))
         .await;
     assert_eq!(after, before, "the forged key is refused");
 }

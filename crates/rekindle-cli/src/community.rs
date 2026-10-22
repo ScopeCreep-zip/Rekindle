@@ -1,5 +1,6 @@
 //! Community commands: create, join, leave, list, info.
 
+use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::cli::CommunityCmd;
@@ -23,11 +24,13 @@ pub async fn dispatch(
             let validated_name = helpers::validate_name(name, "Community")?;
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityCreate {
-                    name: validated_name,
-                    description: description.clone().unwrap_or_default(),
-                    approval_required: *approval_required,
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityCreate {
+                        name: validated_name,
+                        description: description.clone().unwrap_or_default(),
+                        approval_required: *approval_required,
+                    },
+                )),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -35,9 +38,11 @@ pub async fn dispatch(
         CommunityCmd::Join { invite, .. } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityJoin {
-                    invite: invite.clone(),
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityJoin {
+                        invite: invite.clone(),
+                    },
+                )),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -45,9 +50,11 @@ pub async fn dispatch(
         CommunityCmd::Leave { community } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityLeave {
-                    governance_key: community.clone(),
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityLeave {
+                        governance_key: community.clone(),
+                    },
+                )),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -55,7 +62,7 @@ pub async fn dispatch(
         CommunityCmd::List { .. } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityList),
+                IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList)),
             )
             .await?;
             if mode.is_structured() {
@@ -92,9 +99,11 @@ pub async fn dispatch(
         CommunityCmd::Info { community, .. } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityInfo {
-                    governance_key: community.clone(),
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityInfo {
+                        governance_key: community.clone(),
+                    },
+                )),
             )
             .await?;
             if mode.is_structured() {
@@ -153,10 +162,12 @@ pub async fn dispatch(
         CommunityCmd::Approve { community, member } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityApprove {
-                    governance_key: community.clone(),
-                    member_pseudonym: member.clone(),
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityApprove {
+                        governance_key: community.clone(),
+                        member_pseudonym: member.clone(),
+                    },
+                )),
             )
             .await?;
             if mode.is_structured() {
@@ -175,11 +186,13 @@ pub async fn dispatch(
         } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityReject {
-                    governance_key: community.clone(),
-                    member_pseudonym: member.clone(),
-                    reason: reason.clone().unwrap_or_default(),
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityReject {
+                        governance_key: community.clone(),
+                        member_pseudonym: member.clone(),
+                        reason: reason.clone().unwrap_or_default(),
+                    },
+                )),
             )
             .await?;
             if mode.is_structured() {
@@ -190,9 +203,11 @@ pub async fn dispatch(
         CommunityCmd::Pending { community } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityPendingMembers {
-                    governance_key: community.clone(),
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityPendingMembers {
+                        governance_key: community.clone(),
+                    },
+                )),
             )
             .await?;
             if mode.is_structured() {
@@ -230,10 +245,12 @@ pub async fn dispatch(
         } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::CommunityTransferOwnership {
-                    governance_key: community.clone(),
-                    new_owner_pseudonym: new_owner.clone(),
-                }),
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityTransferOwnership {
+                        governance_key: community.clone(),
+                        new_owner_pseudonym: new_owner.clone(),
+                    },
+                )),
             )
             .await?;
             if mode.is_structured() {

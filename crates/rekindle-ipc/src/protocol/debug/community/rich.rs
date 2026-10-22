@@ -2,10 +2,10 @@
 //! questions and answers are what members wrote, so only their sizes are
 //! logged.
 
-use crate::protocol::CommunityRequest;
+use crate::protocol::RichRequest;
 
-impl CommunityRequest {
-    pub(super) fn fmt_rich(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for RichRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ReactionAdd {
                 community,
@@ -129,7 +129,6 @@ impl CommunityRequest {
                 .field("channel_id", channel_id)
                 .field("poll_id", poll_id)
                 .finish(),
-            other => unreachable!("{} is not a reaction, thread or poll request", other.name()),
         }
     }
 }

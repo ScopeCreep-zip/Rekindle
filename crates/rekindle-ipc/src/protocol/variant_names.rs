@@ -5,7 +5,11 @@
 
 use serde::de::{self, Deserialize, Deserializer, Visitor};
 
-use super::{CommunityRequest, IpcRequest};
+use super::{
+    ActivityRequest, AuditRequest, ChannelMessageRequest, ChannelRequest, CommunityRequest,
+    ExpressionRequest, IpcRequest, LifecycleRequest, MemberRequest, PinRequest, RichRequest,
+    SettingsRequest, UnreadRequest,
+};
 
 /// The variant names a derived enum `Deserialize` declared.
 #[derive(Debug)]
@@ -61,12 +65,26 @@ fn variants<'de, T: Deserialize<'de>>() -> &'static [&'static str] {
 #[test]
 fn every_leaf_name_has_a_command_table_row() {
     let top = variants::<IpcRequest>();
-    let community = variants::<CommunityRequest>();
+    assert_eq!(variants::<CommunityRequest>().len(), 11);
+    let community: Vec<&str> = [
+        variants::<LifecycleRequest>(),
+        variants::<SettingsRequest>(),
+        variants::<ChannelRequest>(),
+        variants::<ChannelMessageRequest>(),
+        variants::<UnreadRequest>(),
+        variants::<AuditRequest>(),
+        variants::<ActivityRequest>(),
+        variants::<MemberRequest>(),
+        variants::<PinRequest>(),
+        variants::<RichRequest>(),
+        variants::<ExpressionRequest>(),
+    ]
+    .concat();
     assert!(top.contains(&"Community"), "{top:?}");
     assert!(community.contains(&"ChannelSend"), "{community:?}");
     let missing: Vec<&str> = top
         .iter()
-        .chain(community)
+        .chain(&community)
         .copied()
         .filter(|name| *name != "Community")
         .filter(|name| rekindle_types::intent::kind_of(name).is_none())
@@ -79,7 +97,8 @@ fn every_leaf_name_has_a_command_table_row() {
 
 #[test]
 fn a_community_leaf_keeps_its_name() {
-    let request = IpcRequest::Community(CommunityRequest::CommunityList);
+    let request =
+        IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList));
     assert_eq!(request.name(), "CommunityList");
     assert_eq!(request.lane(), super::Lane::Query);
 }

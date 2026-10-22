@@ -31,13 +31,6 @@ use super::HostChannel;
 /// The thread counter's key among the per-channel sequences.
 const THREAD_SEQUENCE: &str = "__thread__";
 
-/// Thread rows and expression blobs are E3.1 E3's (rich messaging, the
-/// files domain); the GUI's thread and expression paths run on its own
-/// adapter until then, so the Host is never asked for them.
-fn not_ported(what: &str) -> ChannelError {
-    ChannelError::Adapter(format!("{what} move to the Host at E3.1 E3"))
-}
-
 fn adapter(e: impl std::fmt::Display) -> ChannelError {
     ChannelError::Adapter(e.to_string())
 }

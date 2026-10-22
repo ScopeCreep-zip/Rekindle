@@ -112,11 +112,13 @@ pub async fn pin_attachment(
     crate::host_call::call(
         &state,
         rekindle_ipc::protocol::IpcRequest::Community(
-            rekindle_ipc::protocol::CommunityRequest::AttachmentPin {
-                community: community_id,
-                attachment_id,
-                pinned,
-            },
+            rekindle_ipc::protocol::CommunityRequest::Pins(
+                rekindle_ipc::protocol::PinRequest::AttachmentPin {
+                    community: community_id,
+                    attachment_id,
+                    pinned,
+                },
+            ),
         ),
     )
     .await

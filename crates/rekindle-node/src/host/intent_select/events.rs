@@ -2,7 +2,8 @@
 //! reaching the community's members.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ActivityRequest;
+use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::intent::{IntentKind, Notifies, Reversibility, Subject};
 
 use crate::daemon::dispatch::DaemonContext;
@@ -13,11 +14,11 @@ use crate::daemon::dispatch::DaemonContext;
 /// The community is not joined, or the event named is not known.
 pub(super) async fn selection(
     ctx: &DaemonContext,
-    request: &CommunityRequest,
+    request: &ActivityRequest,
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     let (community, event_id) = match request {
-        CommunityRequest::EventCreate { community, event } => {
+        ActivityRequest::EventCreate { community, event } => {
             let id = ctx.resolve_community(community)?.governance_key;
             s.subject = Subject::Named {
                 name: event.title.clone(),
@@ -26,20 +27,20 @@ pub(super) async fn selection(
             s.notifies = members(ctx, &id);
             return Ok(());
         }
-        CommunityRequest::EventEdit {
+        ActivityRequest::EventEdit {
             community,
             event_id,
             ..
         }
-        | CommunityRequest::EventCancel {
+        | ActivityRequest::EventCancel {
             community,
             event_id,
         }
-        | CommunityRequest::EventDelete {
+        | ActivityRequest::EventDelete {
             community,
             event_id,
         }
-        | CommunityRequest::EventRsvp {
+        | ActivityRequest::EventRsvp {
             community,
             event_id,
             ..

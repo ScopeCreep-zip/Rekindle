@@ -1,5 +1,6 @@
 //! Threads (plan E3.1 E3), answered by the Host.
 
+use rekindle_ipc::protocol::RichRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -22,14 +23,14 @@ pub async fn create_thread(
 ) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ThreadCreate {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadCreate {
             community: community_id,
             channel_id,
             name,
             starter_message_id,
             forum_tag,
             auto_archive_seconds,
-        }),
+        })),
     )
     .await
 }
@@ -43,10 +44,10 @@ pub async fn get_channel_threads(
 ) -> Result<Done<Vec<ThreadInfo>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ThreadList {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadList {
             community: community_id,
             channel_id,
-        }),
+        })),
     )
     .await
 }
@@ -60,10 +61,10 @@ pub async fn get_active_threads(
 ) -> Result<Done<Vec<ThreadInfo>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ThreadListActive {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadListActive {
             community: community_id,
             channel_id,
-        }),
+        })),
     )
     .await
 }
@@ -78,11 +79,11 @@ pub async fn send_thread_message(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ThreadSend {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadSend {
             community: community_id,
             thread_id,
             body,
-        }),
+        })),
     )
     .await
 }
@@ -98,12 +99,12 @@ pub async fn get_thread_messages(
 ) -> Result<Done<Vec<ChannelMessageView>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ThreadMessages {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadMessages {
             community: community_id,
             thread_id,
             limit,
             before_timestamp,
-        }),
+        })),
     )
     .await
 }
@@ -117,10 +118,10 @@ pub async fn archive_thread(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ThreadArchive {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadArchive {
             community: community_id,
             thread_id,
-        }),
+        })),
     )
     .await
 }
@@ -134,10 +135,10 @@ pub async fn unarchive_thread(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ThreadUnarchive {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadUnarchive {
             community: community_id,
             thread_id,
-        }),
+        })),
     )
     .await
 }

@@ -2,7 +2,8 @@
 //! and message ids, an attachment id of 16 bytes of hex, and a bounded
 //! search query.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::PinRequest;
 use rekindle_types::search::MAX_SEARCH_LIMIT;
 
 use super::{community, Checked};
@@ -23,21 +24,21 @@ fn id(value: &str, what: &str) -> Checked {
     Ok(())
 }
 
-pub(super) fn check(request: &CommunityRequest) -> Checked {
+pub(super) fn check(request: &PinRequest) -> Checked {
     match request {
-        CommunityRequest::ChannelPins {
+        PinRequest::ChannelPins {
             community: key,
             channel_id,
         } => {
             community(key)?;
             id(channel_id, "channel id")
         }
-        CommunityRequest::MessagePin {
+        PinRequest::MessagePin {
             community: key,
             channel_id,
             message_id,
         }
-        | CommunityRequest::MessageUnpin {
+        | PinRequest::MessageUnpin {
             community: key,
             channel_id,
             message_id,
@@ -46,7 +47,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             id(channel_id, "channel id")?;
             id(message_id, "message id")
         }
-        CommunityRequest::AttachmentPin {
+        PinRequest::AttachmentPin {
             community: key,
             attachment_id,
             ..
@@ -60,7 +61,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 )),
             }
         }
-        CommunityRequest::MessageSearch { request } => {
+        PinRequest::MessageSearch { request } => {
             if request.query.len() > MAX_SEARCH_QUERY_LEN {
                 return Err(IpcResponse::error(
                     400,
@@ -75,7 +76,6 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             }
             Ok(())
         }
-        _ => Ok(()),
     }
 }
 
@@ -85,8 +85,8 @@ mod tests {
 
     use super::*;
 
-    fn search(query: String, limit: u32) -> CommunityRequest {
-        CommunityRequest::MessageSearch {
+    fn search(query: String, limit: u32) -> PinRequest {
+        PinRequest::MessageSearch {
             request: MessageSearch {
                 query,
                 filters: SearchFilters::default(),
@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn an_attachment_pin_names_sixteen_bytes() {
-        let pin = |attachment_id: &str| CommunityRequest::AttachmentPin {
+        let pin = |attachment_id: &str| PinRequest::AttachmentPin {
             community: "VLD0:".to_owned() + &"A".repeat(43),
             attachment_id: attachment_id.into(),
             pinned: true,

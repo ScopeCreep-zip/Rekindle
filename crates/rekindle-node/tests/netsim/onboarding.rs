@@ -5,6 +5,7 @@
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{LifecycleRequest, MemberRequest, SettingsRequest};
 use rekindle_types::dto::onboarding::{
     OnboardingConfigDto, OnboardingModeDto, OnboardingOptionDto, OnboardingQuestionDto,
 };
@@ -15,9 +16,11 @@ use crate::harness::{eventually, Community};
 /// The role ids node `i` lists for member `pseudonym`.
 async fn member_roles(community: &Community, i: usize, pseudonym: &str) -> Vec<u64> {
     community.nodes[i]
-        .ok(IpcRequest::Community(CommunityRequest::CommunityMembers {
-            governance_key: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityMembers {
+                governance_key: community.governance_key.clone(),
+            },
+        )))
         .await
         .as_array()
         .and_then(|members| {
@@ -64,33 +67,35 @@ async fn onboarding_role_assignment() {
     let bea = community.pseudonym(1).await;
     let key = community.governance_key.clone();
     let role = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleCreate {
-            community: key.clone(),
-            name: "raiders".into(),
-            permissions: 0,
-            color: 0x00ff_8800,
-            hoist: true,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleCreate {
+                community: key.clone(),
+                name: "raiders".into(),
+                permissions: 0,
+                color: 0x00ff_8800,
+                hoist: true,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        )))
         .await;
     let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
-        .ok(IpcRequest::Community(
-            CommunityRequest::OnboardingConfigSet {
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::OnboardingConfigSet {
                 community: key.clone(),
                 config: prompt(role_id),
             },
-        ))
+        )))
         .await;
     let refused = community.nodes[1]
-        .call(IpcRequest::Community(
-            CommunityRequest::OnboardingConfigSet {
+        .call(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::OnboardingConfigSet {
                 community: key.clone(),
                 config: prompt(role_id),
             },
-        ))
+        )))
         .await
         .expect_err("a member without MANAGE_COMMUNITY is refused");
     assert_eq!(refused.code, 403, "{}", refused.message);
@@ -98,11 +103,11 @@ async fn onboarding_role_assignment() {
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
             community.nodes[1]
-                .ok(IpcRequest::Community(
-                    CommunityRequest::OnboardingConfigGet {
+                .ok(IpcRequest::Community(CommunityRequest::Settings(
+                    SettingsRequest::OnboardingConfigGet {
                         community: key.clone(),
                     },
-                ))
+                )))
                 .await["questions"]
                 .as_array()
                 .is_some_and(|q| q.len() == 1)
@@ -111,21 +116,23 @@ async fn onboarding_role_assignment() {
         "the member reads the prompt"
     );
     community.nodes[1]
-        .ok(IpcRequest::Community(CommunityRequest::OnboardingSubmit {
-            community: key.clone(),
-            answers: vec![OnboardingAnswer {
-                question_id: "q1".into(),
-                selected_options: vec!["raid".into()],
-            }],
-            acknowledged_rules: false,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::OnboardingSubmit {
+                community: key.clone(),
+                answers: vec![OnboardingAnswer {
+                    question_id: "q1".into(),
+                    selected_options: vec!["raid".into()],
+                }],
+                acknowledged_rules: false,
+            },
+        )))
         .await;
     community.nodes[1]
-        .ok(IpcRequest::Community(
-            CommunityRequest::OnboardingComplete {
+        .ok(IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::OnboardingComplete {
                 community: key.clone(),
             },
-        ))
+        )))
         .await;
 
     assert!(
@@ -142,11 +149,13 @@ async fn onboarding_role_assignment() {
     );
 
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleUnassign {
-            community: key.clone(),
-            member_pseudonym: bea.clone(),
-            role_id,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleUnassign {
+                community: key.clone(),
+                member_pseudonym: bea.clone(),
+                role_id,
+            },
+        )))
         .await;
     for i in 0..2 {
         assert!(

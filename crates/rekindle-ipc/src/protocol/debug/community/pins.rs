@@ -1,9 +1,9 @@
 //! Pins and search (plan E3.1 E3b): a search query shows its length only.
 
-use super::super::super::CommunityRequest;
+use crate::protocol::PinRequest;
 
-impl CommunityRequest {
-    pub(super) fn fmt_pins(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for PinRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ChannelPins {
                 community,
@@ -43,7 +43,6 @@ impl CommunityRequest {
                 .field("query", &request.query.len())
                 .field("limit", &request.limit)
                 .finish_non_exhaustive(),
-            other => unreachable!("{} is not a pins or search request", other.name()),
         }
     }
 }

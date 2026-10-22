@@ -1,3 +1,4 @@
+use rekindle_ipc::protocol::ChannelMessageRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -17,13 +18,15 @@ pub async fn forward_channel_message(
     dest_channel_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelMessageForward {
-        source_community: source_community_id,
-        source_channel: source_channel_id,
-        source_message: source_message_id,
-        dest_community: dest_community_id,
-        dest_channel: dest_channel_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelMessageForward {
+            source_community: source_community_id,
+            source_channel: source_channel_id,
+            source_message: source_message_id,
+            dest_community: dest_community_id,
+            dest_channel: dest_channel_id,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -36,11 +39,13 @@ pub async fn send_channel_message(
     reply_to_id: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelMessageSend {
-        channel: channel_id,
-        body,
-        reply_to: reply_to_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelMessageSend {
+            channel: channel_id,
+            body,
+            reply_to: reply_to_id,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -53,11 +58,13 @@ pub async fn edit_channel_message(
     new_body: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelMessageEdit {
-        channel: channel_id,
-        message_id,
-        body: new_body,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelMessageEdit {
+            channel: channel_id,
+            message_id,
+            body: new_body,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -68,10 +75,12 @@ pub async fn delete_channel_message(
     message_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelMessageDelete {
-        channel: channel_id,
-        message_id,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelMessageDelete {
+            channel: channel_id,
+            message_id,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -83,10 +92,12 @@ pub async fn get_channel_messages(
     limit: u32,
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<Message>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelMessages {
-        channel: channel_id,
-        limit,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelMessages {
+            channel: channel_id,
+            limit,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }
 
@@ -100,11 +111,13 @@ pub async fn get_older_channel_messages(
     limit: u32,
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<Message>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelMessagesBefore {
-        community: community_id,
-        channel: channel_id,
-        before_timestamp,
-        limit,
-    });
+    let request = IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelMessagesBefore {
+            community: community_id,
+            channel: channel_id,
+            before_timestamp,
+            limit,
+        },
+    ));
     crate::host_call::call(&state, request).await
 }

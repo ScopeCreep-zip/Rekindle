@@ -2,7 +2,8 @@
 //! channel (plan E3.1 E2d): each request resolved to its community and
 //! channel, then run by the Host's channel or governance adapter.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ChannelMessageRequest;
+use rekindle_ipc::protocol::IpcResponse;
 
 use super::channel::resolve_channel;
 use super::{state_error, DaemonContext};
@@ -24,7 +25,7 @@ fn target(
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ChannelMessageRequest,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -34,10 +35,13 @@ pub(crate) async fn handle(
     }
 }
 
-async fn run(ctx: &DaemonContext, request: CommunityRequest) -> Result<IpcResponse, IpcResponse> {
+async fn run(
+    ctx: &DaemonContext,
+    request: ChannelMessageRequest,
+) -> Result<IpcResponse, IpcResponse> {
     let governance = || super::adapter(ctx);
     Ok(match request {
-        CommunityRequest::ChannelMessageForward {
+        ChannelMessageRequest::ChannelMessageForward {
             source_community,
             source_channel,
             source_message,
@@ -65,7 +69,7 @@ async fn run(ctx: &DaemonContext, request: CommunityRequest) -> Result<IpcRespon
                 "messageId": sent.message_id,
             }))
         }
-        CommunityRequest::ChannelMessageAdminDelete {
+        ChannelMessageRequest::ChannelMessageAdminDelete {
             community,
             channel,
             message_id,
@@ -78,7 +82,7 @@ async fn run(ctx: &DaemonContext, request: CommunityRequest) -> Result<IpcRespon
                 .map_err(|e| IpcResponse::error(u32::from(e.code()), e.to_string()))?;
             IpcResponse::ok(&serde_json::Value::Null)
         }
-        CommunityRequest::ChannelMessageBulkDelete {
+        ChannelMessageRequest::ChannelMessageBulkDelete {
             community,
             channel,
             message_ids,
@@ -91,14 +95,14 @@ async fn run(ctx: &DaemonContext, request: CommunityRequest) -> Result<IpcRespon
                 .map_err(|e| IpcResponse::error(u32::from(e.code()), e.to_string()))?;
             IpcResponse::ok(&deleted)
         }
-        CommunityRequest::ChannelTyping { community, channel } => {
+        ChannelMessageRequest::ChannelTyping { community, channel } => {
             let (community, channel) = target(ctx, &community, &channel)?;
             governance()
                 .send_typing(&community, &channel)
                 .map_err(|e| IpcResponse::error(500, format!("typing: {e}")))?;
             IpcResponse::ok(&serde_json::Value::Null)
         }
-        CommunityRequest::ChannelSetActive {
+        ChannelMessageRequest::ChannelSetActive {
             community,
             channel,
             kind,

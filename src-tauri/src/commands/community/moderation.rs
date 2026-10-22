@@ -1,3 +1,4 @@
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -17,10 +18,10 @@ pub async fn remove_community_member(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::Kick {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::Kick {
             community: community_id,
             target_pseudonym: pseudonym_key,
-        }),
+        })),
     )
     .await
 }
@@ -35,12 +36,12 @@ pub async fn timeout_member(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::Timeout {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::Timeout {
             community: community_id,
             target_pseudonym: pseudonym_key,
             duration_seconds,
             reason,
-        }),
+        })),
     )
     .await
 }
@@ -53,10 +54,10 @@ pub async fn remove_timeout(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::TimeoutRemove {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::TimeoutRemove {
             community: community_id,
             target_pseudonym: pseudonym_key,
-        }),
+        })),
     )
     .await
 }
@@ -73,14 +74,16 @@ pub async fn set_channel_overwrite(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ChannelOverwriteSet {
-            community: community_id,
-            channel_id,
-            target_type,
-            target_id,
-            allow,
-            deny,
-        }),
+        IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelOverwriteSet {
+                community: community_id,
+                channel_id,
+                target_type,
+                target_id,
+                allow,
+                deny,
+            },
+        )),
     )
     .await
 }
@@ -95,12 +98,14 @@ pub async fn delete_channel_overwrite(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ChannelOverwriteDelete {
-            community: community_id,
-            channel_id,
-            target_type,
-            target_id,
-        }),
+        IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelOverwriteDelete {
+                community: community_id,
+                channel_id,
+                target_type,
+                target_id,
+            },
+        )),
     )
     .await
 }
@@ -114,11 +119,13 @@ pub async fn set_slowmode(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ChannelSetSlowmode {
-            community: community_id,
-            channel_id,
-            seconds,
-        }),
+        IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelSetSlowmode {
+                community: community_id,
+                channel_id,
+                seconds,
+            },
+        )),
     )
     .await
 }
@@ -131,11 +138,11 @@ pub async fn ban_member(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::Ban {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::Ban {
             community: community_id,
             target_pseudonym: pseudonym_key,
             reason: None,
-        }),
+        })),
     )
     .await
 }
@@ -148,10 +155,10 @@ pub async fn unban_member(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::Unban {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::Unban {
             community: community_id,
             target_pseudonym: pseudonym_key,
-        }),
+        })),
     )
     .await
 }
@@ -168,12 +175,14 @@ pub async fn admin_delete_channel_message(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ChannelMessageAdminDelete {
-            community: community_id,
-            channel: channel_id,
-            message_id,
-            reason,
-        }),
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelMessageAdminDelete {
+                community: community_id,
+                channel: channel_id,
+                message_id,
+                reason,
+            },
+        )),
     )
     .await
 }
@@ -190,12 +199,14 @@ pub async fn bulk_delete_channel_messages(
 ) -> Result<Done<u32>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::ChannelMessageBulkDelete {
-            community: community_id,
-            channel: channel_id,
-            message_ids,
-            reason,
-        }),
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelMessageBulkDelete {
+                community: community_id,
+                channel: channel_id,
+                message_ids,
+                reason,
+            },
+        )),
     )
     .await
 }
@@ -208,9 +219,9 @@ pub async fn get_ban_list(
 ) -> Result<Done<Vec<CommunityBanView>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::BanList {
+        IpcRequest::Community(CommunityRequest::Members(MemberRequest::BanList {
             community: community_id,
-        }),
+        })),
     )
     .await
 }

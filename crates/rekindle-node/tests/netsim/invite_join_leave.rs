@@ -4,6 +4,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::harness::{eventually, Community};
@@ -11,9 +12,11 @@ use crate::harness::{eventually, Community};
 /// The pseudonyms node `i` lists as the community's members.
 async fn members(community: &Community, i: usize) -> Vec<String> {
     community.nodes[i]
-        .call(IpcRequest::Community(CommunityRequest::CommunityMembers {
-            governance_key: community.governance_key.clone(),
-        }))
+        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityMembers {
+                governance_key: community.governance_key.clone(),
+            },
+        )))
         .await
         .ok()
         .and_then(|v| v.as_array().cloned())
@@ -41,9 +44,11 @@ async fn invite_join_leave() {
     }
 
     community.nodes[1]
-        .call_held(IpcRequest::Community(CommunityRequest::CommunityLeave {
-            governance_key: community.governance_key.clone(),
-        }))
+        .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityLeave {
+                governance_key: community.governance_key.clone(),
+            },
+        )))
         .await
         .expect("the leave commits");
 
@@ -55,20 +60,26 @@ async fn invite_join_leave() {
         "the leaver is gone from the creator's member list"
     );
     let listed = community.nodes[1]
-        .ok(IpcRequest::Community(CommunityRequest::CommunityList))
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityList,
+        )))
         .await;
     assert!(
         !listed.to_string().contains(&community.governance_key),
         "the leaver no longer lists the community: {listed}"
     );
     let views = community.nodes[1]
-        .ok(IpcRequest::Community(CommunityRequest::CommunityViews))
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityViews,
+        )))
         .await;
     assert_eq!(views.as_array().map(Vec::len), Some(0), "{views}");
     let refused = community.nodes[1]
-        .call(IpcRequest::Community(CommunityRequest::CommunityMembers {
-            governance_key: community.governance_key.clone(),
-        }))
+        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityMembers {
+                governance_key: community.governance_key.clone(),
+            },
+        )))
         .await
         .expect_err("the leaver's records of the community are gone");
     assert_eq!(refused.code, 404, "{}", refused.message);

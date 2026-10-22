@@ -3,6 +3,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::MemberRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::harness::{eventually, Community};
@@ -10,9 +11,11 @@ use crate::harness::{eventually, Community};
 /// The role ids node `i` lists for the community.
 async fn listed_roles(community: &Community, i: usize) -> Vec<u64> {
     community.nodes[i]
-        .ok(IpcRequest::Community(CommunityRequest::RoleList {
-            community: community.governance_key.clone(),
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleList {
+                community: community.governance_key.clone(),
+            },
+        )))
         .await
         .as_array()
         .map(|roles| roles.iter().filter_map(|r| r["id"].as_u64()).collect())
@@ -29,24 +32,28 @@ async fn role_assign_converges() {
     let bea = community.pseudonym(1).await;
     let cat = community.pseudonym(2).await;
     let role = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleCreate {
-            community: community.governance_key.clone(),
-            name: "raiders".into(),
-            permissions: 0,
-            color: 0x00ff_8800,
-            hoist: true,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleCreate {
+                community: community.governance_key.clone(),
+                name: "raiders".into(),
+                permissions: 0,
+                color: 0x00ff_8800,
+                hoist: true,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        )))
         .await;
     let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::RoleAssign {
-            community: community.governance_key.clone(),
-            member_pseudonym: bea,
-            role_id,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleAssign {
+                community: community.governance_key.clone(),
+                member_pseudonym: bea,
+                role_id,
+            },
+        )))
         .await;
 
     assert!(
@@ -64,11 +71,13 @@ async fn role_assign_converges() {
     );
 
     let refused = community.nodes[2]
-        .call(IpcRequest::Community(CommunityRequest::RoleAssign {
-            community: community.governance_key.clone(),
-            member_pseudonym: cat,
-            role_id,
-        }))
+        .call(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleAssign {
+                community: community.governance_key.clone(),
+                member_pseudonym: cat,
+                role_id,
+            },
+        )))
         .await
         .expect_err("a member without MANAGE_ROLES is refused");
     assert_eq!(refused.code, 403, "{}", refused.message);

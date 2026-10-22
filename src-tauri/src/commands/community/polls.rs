@@ -1,5 +1,6 @@
 //! Polls (plan E3.1 E3), answered by the Host.
 
+use rekindle_ipc::protocol::RichRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
@@ -21,7 +22,7 @@ pub async fn create_poll(
 ) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::PollCreate {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollCreate {
             community: community_id,
             channel_id,
             message_id,
@@ -29,7 +30,7 @@ pub async fn create_poll(
             answers,
             multi_select,
             duration_seconds,
-        }),
+        })),
     )
     .await
 }
@@ -45,12 +46,12 @@ pub async fn vote_poll(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::PollVote {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollVote {
             community: community_id,
             channel_id,
             poll_id,
             selected_answers,
-        }),
+        })),
     )
     .await
 }
@@ -65,11 +66,11 @@ pub async fn close_poll(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::PollClose {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollClose {
             community: community_id,
             channel_id,
             poll_id,
-        }),
+        })),
     )
     .await
 }
@@ -84,11 +85,11 @@ pub async fn get_poll_results(
 ) -> Result<Done<Vec<u32>>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::Community(CommunityRequest::PollResults {
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollResults {
             community: community_id,
             channel_id,
             poll_id,
-        }),
+        })),
     )
     .await
 }

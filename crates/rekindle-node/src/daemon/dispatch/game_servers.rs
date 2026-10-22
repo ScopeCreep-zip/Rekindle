@@ -1,7 +1,8 @@
 //! A community's game-server requests (plan E3.1 H1), answered by the
 //! Host's governance adapter on both hosts.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::ActivityRequest;
+use rekindle_ipc::protocol::IpcResponse;
 
 use crate::host::adapters::governance::game_servers::NewGameServer;
 
@@ -12,11 +13,11 @@ use crate::daemon::DaemonState;
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: ActivityRequest,
 ) -> IpcResponse {
     match request {
-        CommunityRequest::GameServerList { community } => handle_list(ctx, state, &community).await,
-        CommunityRequest::GameServerAdd {
+        ActivityRequest::GameServerList { community } => handle_list(ctx, state, &community).await,
+        ActivityRequest::GameServerAdd {
             community,
             game_id,
             label,
@@ -29,7 +30,7 @@ pub(crate) async fn handle(
             };
             handle_add(ctx, state, &community, server).await
         }
-        CommunityRequest::GameServerRemove {
+        ActivityRequest::GameServerRemove {
             community,
             server_id,
         } => handle_remove(ctx, state, &community, &server_id).await,

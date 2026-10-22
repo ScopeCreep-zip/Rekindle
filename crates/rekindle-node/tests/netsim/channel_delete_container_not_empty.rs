@@ -6,6 +6,7 @@
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_types::intent::Escalation;
 
@@ -20,15 +21,17 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
 
     let creator = &community.nodes[0];
     let created = creator
-        .ok(IpcRequest::Community(CommunityRequest::ChannelCreate {
-            community: community.governance_key.clone(),
-            name: "doomed".into(),
-            kind: "text".into(),
-            category: None,
-            topic: None,
-            slowmode_seconds: 0,
-            parent_voice_channel: None,
-        }))
+        .ok(IpcRequest::Community(CommunityRequest::Channels(
+            ChannelRequest::ChannelCreate {
+                community: community.governance_key.clone(),
+                name: "doomed".into(),
+                kind: "text".into(),
+                category: None,
+                topic: None,
+                slowmode_seconds: 0,
+                parent_voice_channel: None,
+            },
+        )))
         .await;
     let channel = created["id"].as_str().expect("a channel id").to_owned();
     assert!(
@@ -40,20 +43,20 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
     );
 
     creator
-        .ok(IpcRequest::Community(
-            CommunityRequest::ChannelMessageSend {
+        .ok(IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelMessageSend {
                 channel: channel.clone(),
                 body: "the last word".into(),
                 reply_to: None,
             },
-        ))
+        )))
         .await;
 
     let delete = || {
-        IpcRequest::Community(CommunityRequest::ChannelDelete {
+        IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelDelete {
             community: community.governance_key.clone(),
             channel_id: channel.clone(),
-        })
+        }))
     };
     let IpcResponse::IntentRequired(review) = creator.answer(delete()).await else {
         panic!("deleting a channel two members read is not held");

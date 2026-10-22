@@ -1,5 +1,6 @@
 //! Read markers and unread counts (plan E3.1 G1, D25): Host calls.
 
+use rekindle_ipc::protocol::UnreadRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::ChannelUnreadView;
 use rekindle_types::dto::{CommandError, Done};
@@ -15,11 +16,11 @@ pub async fn mark_channel_read(
     channel_id: String,
     last_message_id: String,
 ) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::ChannelMarkRead {
+    let request = IpcRequest::Community(CommunityRequest::Unread(UnreadRequest::ChannelMarkRead {
         community: community_id,
         channel: channel_id,
         up_to: last_message_id,
-    });
+    }));
     host_call::call(&state, request).await
 }
 
@@ -28,8 +29,8 @@ pub async fn get_unread_counts(
     state: State<'_, SharedState>,
     community_id: String,
 ) -> Result<Done<Vec<ChannelUnreadView>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::UnreadCounts {
+    let request = IpcRequest::Community(CommunityRequest::Unread(UnreadRequest::UnreadCounts {
         community: community_id,
-    });
+    }));
     host_call::call(&state, request).await
 }

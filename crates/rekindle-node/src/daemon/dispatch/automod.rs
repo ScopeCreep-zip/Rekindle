@@ -1,7 +1,8 @@
 //! A community's automod rule requests (plan E3.1 F3, D26), answered by
 //! the Host's governance adapter on both hosts.
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::MemberRequest;
 
 use crate::host::adapters::governance::automod_rules::AutoModRuleEdit;
 
@@ -12,9 +13,9 @@ use crate::daemon::DaemonState;
 pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: CommunityRequest,
+    request: MemberRequest,
 ) -> IpcResponse {
-    let read = matches!(request, CommunityRequest::AutomodRules { .. });
+    let read = matches!(request, MemberRequest::AutomodRules { .. });
     if read && !state.can_query() {
         return state_error(state, "query");
     }
@@ -22,9 +23,9 @@ pub(crate) async fn handle(
         return state_error(state, "write");
     }
     let community = match &request {
-        CommunityRequest::AutomodRules { community }
-        | CommunityRequest::AutomodRuleSet { community, .. }
-        | CommunityRequest::AutomodRuleDelete { community, .. } => community.clone(),
+        MemberRequest::AutomodRules { community }
+        | MemberRequest::AutomodRuleSet { community, .. }
+        | MemberRequest::AutomodRuleDelete { community, .. } => community.clone(),
         other => {
             return IpcResponse::error(500, format!("{} is not an automod request", other.name()))
         }
@@ -35,7 +36,7 @@ pub(crate) async fn handle(
     };
     let host = adapter(ctx);
     match request {
-        CommunityRequest::AutomodRuleSet {
+        MemberRequest::AutomodRuleSet {
             rule_id,
             name,
             enabled,
@@ -57,7 +58,7 @@ pub(crate) async fn handle(
                 Err(e) => runtime_refused(&e, "automod rule set"),
             }
         }
-        CommunityRequest::AutomodRuleDelete { rule_id, .. } => {
+        MemberRequest::AutomodRuleDelete { rule_id, .. } => {
             match host.delete_automod_rule(&key, &rule_id).await {
                 Ok(()) => IpcResponse::ok(&()),
                 Err(e) => runtime_refused(&e, "automod rule delete"),
