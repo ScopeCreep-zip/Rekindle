@@ -122,6 +122,19 @@ impl shell_hooks::ShellHooks for Recorder {
     fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
         Ok(())
     }
+    fn spawn_presence_poll_tick(&self, _community_id: &str) {}
+
+    fn push_onboarding_complete_to_sync(&self, _community_id: &str) {}
+
+    fn on_mek_installed(
+        &self,
+        _community_id: &str,
+        _scope: rekindle_types::channel_keys::KeyScope,
+        _key_bytes: [u8; 32],
+        _generation: u64,
+    ) {
+    }
+
     fn on_governance_projected(
         &self,
         _community_id: &str,
@@ -194,6 +207,19 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
             Ok(())
         }
+        fn spawn_presence_poll_tick(&self, _community_id: &str) {}
+
+        fn push_onboarding_complete_to_sync(&self, _community_id: &str) {}
+
+        fn on_mek_installed(
+            &self,
+            _community_id: &str,
+            _scope: rekindle_types::channel_keys::KeyScope,
+            _key_bytes: [u8; 32],
+            _generation: u64,
+        ) {
+        }
+
         fn on_governance_projected(
             &self,
             _community_id: &str,

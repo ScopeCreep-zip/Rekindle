@@ -10,7 +10,8 @@
 //! hold the bodies; `lifecycle` holds the gossip, permission, join and
 //! hydration bodies (its `governance_entries_cache` save is what C1's warm
 //! restore reads back); `registry` the discovered members and the stored registry keypair
-//! (B2d); `mek` the key installs, which move to the MEK
+//! (B2d); `membership` / `membership_route` the membership control
+//! messages and `state_builder` a created community's state (B2e); `mek` the key installs, which move to the MEK
 //! adapters at E3.5; `deps_impl` is the single trait impl and delegates.
 
 use std::sync::Arc;
@@ -27,10 +28,13 @@ mod events;
 mod lifecycle;
 pub(crate) mod loader;
 mod mek;
+mod membership;
+mod membership_route;
 pub mod projection;
 mod registry;
 
 mod roles;
+mod state_builder;
 mod state_mutations;
 mod state_reads;
 mod watch;

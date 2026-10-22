@@ -343,6 +343,107 @@ impl CommunityStore {
         });
     }
 
+    /// The MEK generation and member registry a JoinAccepted carried.
+    pub fn set_mek_generation_and_registry(
+        &self,
+        community_id: &str,
+        mek_generation: u64,
+        registry_key: Option<&str>,
+    ) {
+        self.update(community_id, |c| {
+            c.mek_generation = mek_generation;
+            if let Some(key) = registry_key {
+                c.member_registry_key = Some(key.to_string());
+            }
+        });
+    }
+
+    /// Our slot index from a member list, when we have none; `true` when
+    /// it was taken.
+    pub fn backfill_my_subkey_index(&self, community_id: &str, subkey_index: u32) -> bool {
+        let mut map = self.map.write();
+        match map.get_mut(community_id) {
+            Some(c) if c.my_subkey_index.is_none() => {
+                c.my_subkey_index = Some(subkey_index);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Install the material a keypair or slot-seed grant unwrapped.
+    pub fn apply_slot_grant(
+        &self,
+        community_id: &str,
+        slot_seed_hex: Option<&str>,
+        slot_keypair: Option<&str>,
+        dht_owner_keypair: Option<&str>,
+        my_subkey_index: Option<u32>,
+    ) {
+        self.update(community_id, |c| {
+            if let Some(seed) = slot_seed_hex {
+                c.slot_seed = Some(seed.to_string());
+            }
+            if let Some(keypair) = slot_keypair {
+                c.slot_keypair = Some(keypair.to_string());
+            }
+            if let Some(keypair) = dht_owner_keypair {
+                c.dht_owner_keypair = Some(keypair.to_string());
+            }
+            if let Some(index) = my_subkey_index {
+                c.my_subkey_index = Some(index);
+            }
+        });
+    }
+
+    /// A member finished onboarding with `role_ids`; ours when `is_self`.
+    pub fn note_onboarding_completion(
+        &self,
+        community_id: &str,
+        pseudonym_hex: &str,
+        role_ids: &[u32],
+        is_self: bool,
+    ) {
+        self.update(community_id, |c| {
+            c.member_roles
+                .insert(pseudonym_hex.to_string(), role_ids.to_vec());
+            if is_self {
+                c.onboarding_complete = true;
+            }
+        });
+    }
+
+    /// The member registry key and our pseudonym.
+    pub fn registry_and_pseudonym(&self, community_id: &str) -> (Option<String>, Option<String>) {
+        self.read(community_id, |c| {
+            (c.member_registry_key.clone(), c.my_pseudonym_key.clone())
+        })
+        .unwrap_or_default()
+    }
+
+    /// An online member seen in the registry: on the roster, and a gossip
+    /// peer once it has a route. `false` when the community has no overlay.
+    pub fn note_online_member(
+        &self,
+        community_id: &str,
+        pseudonym_hex: &str,
+        member: super::state::OnlineMember,
+    ) -> bool {
+        let mut map = self.map.write();
+        let Some(gossip) = map.get_mut(community_id).and_then(|c| c.gossip.as_mut()) else {
+            return false;
+        };
+        if !member.route_blob.is_empty() {
+            gossip
+                .peers
+                .insert(pseudonym_hex.to_string(), member.clone());
+        }
+        gossip
+            .online_members
+            .insert(pseudonym_hex.to_string(), member);
+        true
+    }
+
     /// A channel's record key merged governance gave it, onto the channel
     /// the store holds (insert-only, as the session records it).
     pub fn note_channel_record_key(&self, community_id: &str, channel_id: &str, record_key: &str) {

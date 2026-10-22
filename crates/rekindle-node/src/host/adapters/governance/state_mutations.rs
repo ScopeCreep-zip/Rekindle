@@ -100,6 +100,15 @@ impl HostGovernance {
             tracing::error!(error = %e, community = %community.id, "created community not recorded");
             return;
         }
+        self.install_created(&super::state_builder::CreatedCommunity {
+            id: &community.id,
+            governance_key: &community.governance_key,
+            registry_key: &community.registry_key,
+            channel_id_hex: &community.channel_id_hex,
+            channel_record_key: &community.channel_record_key,
+            slot_keypair: &community.slot_keypair,
+            my_pseudonym_hex: &community.my_pseudonym_hex,
+        });
         // The genesis channel's record key, from the genesis state.
         self.set_governance_state_impl(&community.id, community.governance_state);
         self.insert_community_mek_impl(&community.id, &community.mek);

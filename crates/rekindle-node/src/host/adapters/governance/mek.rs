@@ -34,6 +34,9 @@ impl HostGovernance {
         if !taken {
             return;
         }
+        if let Some(shell) = &self.ctx.shell {
+            shell.on_mek_installed(community_id, scope, mek.key_bytes, mek.generation);
+        }
         let guard = self.ctx.vault.lock();
         let Some(vault) = guard.as_ref() else {
             return;

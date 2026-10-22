@@ -117,4 +117,25 @@ pub trait ShellHooks: Send + Sync {
         community_id: &str,
         projected: &crate::host::adapters::governance::projection::GovernanceProjected,
     );
+
+    /// One presence poll of the community right after a slot grant: the
+    /// shell runs its own presence polls until they move with presence at
+    /// E3.4.
+    fn spawn_presence_poll_tick(&self, community_id: &str);
+
+    /// Mark our onboarding of the community complete in the personal sync
+    /// record, so paired devices stop showing the wizard. Ported with
+    /// cross-device sync at E5.2.
+    fn push_onboarding_complete_to_sync(&self, community_id: &str);
+
+    /// A community or channel key the Host's cache took: the shell's own key
+    /// cache, which its channel paths read, until the MEK adapters move at
+    /// E3.5.
+    fn on_mek_installed(
+        &self,
+        community_id: &str,
+        scope: rekindle_types::channel_keys::KeyScope,
+        key_bytes: [u8; 32],
+        generation: u64,
+    );
 }

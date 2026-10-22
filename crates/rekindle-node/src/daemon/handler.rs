@@ -199,41 +199,24 @@ impl InboundHandler for DaemonHandler {
             }
         }
 
-        // Tier 2: If this is a JoinAccepted for a pending join, cache MEK + complete oneshot.
+        // The membership control messages (plan E3.1 B2e): a JoinAccepted's
+        // community key, members and slot seed are installed before the
+        // pending join below resumes.
+        if let CommunityEnvelope::Control(ref payload) = envelope {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .on_membership_control(community_id, sender_pseudonym, payload)
+                    .await;
+            }
+        }
+
+        // Tier 2: If this is a JoinAccepted for a pending join, complete oneshot.
         // Check BEFORE forwarding to SubscriptionManager (which takes ownership).
         if let CommunityEnvelope::Control(ControlPayload::JoinAccepted {
             slot_index: Some(slot),
-            ref mek_encrypted,
-            mek_generation,
             ..
         }) = &envelope
         {
-            // The accept carries the community key as MEK wire bytes, the
-            // same reading the desktop's `process_join_accepted` applies.
-            // It is the community scope, installed under the shared
-            // convergence rule.
-            if !mek_encrypted.is_empty() && *mek_generation > 0 {
-                if let Some(mek) =
-                    rekindle_transport::crypto::mek::Mek::from_wire_bytes(mek_encrypted)
-                {
-                    rekindle_mek_rotation::ChannelMekCache::insert(
-                        &super::mek_rotation::MekCacheAdapter::new(Arc::clone(&self.mek_cache)),
-                        community_id,
-                        rekindle_types::channel_keys::KeyScope::Community,
-                        mek,
-                    );
-                    info!(
-                        community = community_id,
-                        generation = mek_generation,
-                        "community MEK cached from JoinAccepted"
-                    );
-                } else {
-                    debug!(
-                        community = community_id,
-                        "JoinAccepted carried invalid MEK wire bytes"
-                    );
-                }
-            }
             let mut pending = self.pending_joins.lock();
             if let Some((tx, _)) = pending.remove(community_id) {
                 let _ = tx.send(*slot);

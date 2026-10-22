@@ -98,4 +98,22 @@ impl ShellHooks for ShellSession {
     fn on_governance_projected(&self, community_id: &str, projected: &GovernanceProjected) {
         governance::on_projected(&self.state, community_id, *projected);
     }
+
+    fn spawn_presence_poll_tick(&self, community_id: &str) {
+        governance::spawn_presence_poll_tick(&self.state, community_id);
+    }
+
+    fn push_onboarding_complete_to_sync(&self, community_id: &str) {
+        governance::push_onboarding_complete_to_sync(&self.state, community_id);
+    }
+
+    fn on_mek_installed(
+        &self,
+        community_id: &str,
+        scope: rekindle_types::channel_keys::KeyScope,
+        key_bytes: [u8; 32],
+        generation: u64,
+    ) {
+        governance::install_mek(&self.state, community_id, scope, key_bytes, generation);
+    }
 }
