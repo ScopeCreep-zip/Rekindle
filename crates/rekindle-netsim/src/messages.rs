@@ -48,18 +48,27 @@ impl FakeMessages {
         Self { node, net }
     }
 
-    /// The node owning `target`'s route, or `RouteUnusable`; `Send` when
-    /// this node is detached.
-    fn route_owner(&self, target: &PeerTarget) -> Result<usize, PortError> {
-        let inner = self.net.inner.lock();
-        if inner.faults.detached.contains(&self.node) {
+    /// The node owning `target`'s route, `None` when its owner released
+    /// it (what is sent is lost); `RouteUnusable` when this node's cache
+    /// does not resolve it (Veilid's `NoConnection`, [`crate::routes`]);
+    /// `Send` when this node is detached.
+    fn route_owner(&self, target: &PeerTarget) -> Result<Option<usize>, PortError> {
+        if self.net.inner.lock().faults.detached.contains(&self.node) {
             return Err(not_started());
         }
-        inner
+        if !self.net.resolve_route(self.node, target.as_str()) {
+            return Err(PortError::RouteUnusable(format!(
+                "no connection: route {} could not be resolved",
+                target.as_str()
+            )));
+        }
+        Ok(self
+            .net
+            .inner
+            .lock()
             .routes
             .get(target.as_str())
-            .map(|r| r.node)
-            .ok_or_else(|| PortError::RouteUnusable(format!("route {} is gone", target.as_str())))
+            .map(|r| r.node))
     }
 }
 
@@ -72,7 +81,10 @@ impl AppMessagePort for FakeMessages {
         message: Vec<u8>,
     ) -> Result<(), PortError> {
         check_message_len(&message)?;
-        let to = self.route_owner(target)?;
+        let Some(to) = self.route_owner(target)? else {
+            // Dispatched into a released route: lost, and still "sent".
+            return Ok(());
+        };
         // Fire and forget: a dropped message still "sent".
         let delay = self.net.latency.draw(self.node, latency::MESSAGE);
         self.net.send_after(
@@ -93,7 +105,12 @@ impl AppMessagePort for FakeMessages {
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
         check_message_len(&message)?;
-        let to = self.route_owner(target)?;
+        let Some(to) = self.route_owner(target)? else {
+            // Into a released route: no answer comes back.
+            tokio::time::sleep(call_timeout(profile)).await;
+            self.net.lost_question(self.node, target.as_str());
+            return Err(PortError::Send("app call timed out".into()));
+        };
         let (tx, rx) = oneshot::channel();
         let call_id = {
             let mut inner = self.net.inner.lock();
@@ -125,9 +142,11 @@ impl AppMessagePort for FakeMessages {
             reply
         });
         if let Ok(Ok(reply)) = answered.await {
+            self.net.answered(self.node);
             Ok(reply)
         } else {
             self.net.inner.lock().calls.remove(&call_id);
+            self.net.lost_question(self.node, target.as_str());
             Err(PortError::Send("app call timed out".into()))
         }
     }

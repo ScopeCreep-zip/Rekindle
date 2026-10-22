@@ -34,6 +34,8 @@ mod attach_tests;
 #[cfg(test)]
 mod replica_tests;
 #[cfg(test)]
+mod routes_tests;
+#[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
@@ -77,7 +79,8 @@ pub enum Fault {
     /// The node's watch on `key` dies: Veilid sends a last change with
     /// empty subkeys, `count == 0` and no value (`watch_value.rs:697-703`).
     WatchDeath { node: usize, key: String },
-    /// The node's own routes die: the owner and every importer hear of it.
+    /// The node's own routes die: the owner hears of it, its importers do
+    /// not (their sends are lost until they fetch the new route).
     RouteDeath { node: usize },
     /// The node detaches (or reattaches): its DHT calls fail, it neither
     /// sends nor receives app messages or calls (a call to it times out),
@@ -270,8 +273,10 @@ impl Netsim {
         }
     }
 
+    /// The node's routes die: it hears `dead_routes`; no importer hears
+    /// (Veilid tells an importer only of its own cache, [`routes`]).
     fn kill_routes(&self, node: usize) {
-        let (dead, importers) = {
+        let dead: Vec<String> = {
             let mut inner = self.net.inner.lock();
             let dead: Vec<String> = inner
                 .routes
@@ -282,22 +287,7 @@ impl Netsim {
             for id in &dead {
                 inner.routes.remove(id);
             }
-            let importers: Vec<(usize, Vec<String>)> = inner
-                .nodes
-                .iter()
-                .enumerate()
-                .filter(|(i, _)| *i != node)
-                .map(|(i, slot)| {
-                    let theirs: Vec<String> = dead
-                        .iter()
-                        .filter(|id| slot.imported.contains(*id))
-                        .cloned()
-                        .collect();
-                    (i, theirs)
-                })
-                .filter(|(_, theirs)| !theirs.is_empty())
-                .collect();
-            (dead, importers)
+            dead
         };
         self.net.send(
             node,
@@ -309,18 +299,6 @@ impl Netsim {
             },
             false,
         );
-        for (to, theirs) in importers {
-            self.net.send(
-                node,
-                to,
-                "RouteChange",
-                PortEvent::RouteChange {
-                    dead: Vec::new(),
-                    dead_remote: theirs,
-                },
-                false,
-            );
-        }
     }
 
     /// A modified client's write: any writer the schema admits, bypassing

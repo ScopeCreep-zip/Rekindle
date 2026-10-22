@@ -315,7 +315,7 @@ async fn an_offline_durable_write_is_held_and_the_pool_re_pushes_it() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn route_death_reaches_the_owner_and_the_importers() {
+async fn route_death_reaches_the_owner_only() {
     let (sim, mut nodes) = Netsim::nodes(2, 8);
     let _pump = sim.start();
     nodes[1].ports.routes.want_own();
@@ -332,9 +332,8 @@ async fn route_death_reaches_the_owner_and_the_importers() {
         panic!("expected a route change");
     };
     assert!(!dead.is_empty());
-    assert!(
-        matches!(recv(&mut nodes[0]).await, PortEvent::RouteChange { dead_remote, .. } if !dead_remote.is_empty())
-    );
+    // The importer hears nothing: its sends are lost.
+    assert!(nodes[0].events.try_recv().is_err());
     // The owner forgets the dead route and allocates a new one, as the
     // transport's dispatch has it do.
     nodes[1].ports.routes.on_dead_own(&dead);

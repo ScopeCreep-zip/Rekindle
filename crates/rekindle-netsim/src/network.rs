@@ -117,8 +117,10 @@ pub(crate) struct NodeSlot {
     /// When the node's next attachment update may arrive: one after
     /// another, in order.
     pub attach_next: tokio::time::Instant,
-    /// Route ids this node imported.
-    pub imported: HashSet<String>,
+    /// The node's remote route cache ([`crate::routes`]).
+    pub imported: HashMap<String, crate::routes::CacheEntry>,
+    /// Per own route: the destinations of questions lost on it.
+    pub lost: HashMap<String, HashSet<String>>,
     /// The node's queued rehydrations, by record key (Veilid's
     /// `rehydration_requests`, [`crate::records`]' rehydration).
     pub rehydrations: BTreeSet<String>,
@@ -143,7 +145,8 @@ impl NodeSlot {
             pools: Vec::new(),
             state: "detached",
             attach_next: tokio::time::Instant::now(),
-            imported: HashSet::new(),
+            imported: HashMap::new(),
+            lost: HashMap::new(),
             rehydrations: BTreeSet::new(),
             pushes: BTreeMap::new(),
         }
