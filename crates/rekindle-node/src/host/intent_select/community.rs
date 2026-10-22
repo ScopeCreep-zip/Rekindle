@@ -13,7 +13,7 @@ use crate::daemon::dispatch::DaemonContext;
 ///
 /// # Errors
 /// The community is not joined, or its governance is not loaded.
-pub(super) fn selection(
+pub(super) async fn selection(
     ctx: &DaemonContext,
     request: &IpcRequest,
     s: &mut Selection,
@@ -95,6 +95,36 @@ pub(super) fn selection(
             channel,
             ..
         }
+        | IpcRequest::ChannelRename {
+            community: target,
+            channel_id: channel,
+            ..
+        }
+        | IpcRequest::ChannelMove {
+            community: target,
+            channel_id: channel,
+            ..
+        }
+        | IpcRequest::ChannelSetTopic {
+            community: target,
+            channel_id: channel,
+            ..
+        }
+        | IpcRequest::ChannelSetForumTags {
+            community: target,
+            channel_id: channel,
+            ..
+        }
+        | IpcRequest::ChannelOverwriteSet {
+            community: target,
+            channel_id: channel,
+            ..
+        }
+        | IpcRequest::ChannelOverwriteDelete {
+            community: target,
+            channel_id: channel,
+            ..
+        }
         | IpcRequest::MekRotate {
             community: target,
             channel,
@@ -109,6 +139,31 @@ pub(super) fn selection(
             if matches!(request, IpcRequest::ChannelUpdate { .. }) {
                 s.reversibility = Reversibility::Undoable;
             }
+            if matches!(request, IpcRequest::ChannelDelete { .. }) {
+                s.escalations = channel_delete_escalations(ctx, &id, channel).await?;
+            }
+        }
+        IpcRequest::ChannelReorder {
+            community: target, ..
+        }
+        | IpcRequest::CategoryCreate {
+            community: target, ..
+        }
+        | IpcRequest::CategoryDelete {
+            community: target, ..
+        }
+        | IpcRequest::CategoryRename {
+            community: target, ..
+        }
+        | IpcRequest::CategoryReorder {
+            community: target, ..
+        } => {
+            let (id, name) = community(ctx, target)?;
+            if matches!(request, IpcRequest::CategoryCreate { .. }) {
+                s.reversibility = Reversibility::ReversibleByInverse(IntentKind::DeleteCategory);
+            }
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
         }
         IpcRequest::RoleCreate {
             community: target,
@@ -286,6 +341,45 @@ fn leave_escalations(
         &members,
         ctx.clock.now_secs(),
     ))
+}
+
+/// E7 for deleting `channel` (plan E3.1): the messages we store for it
+/// (`repo::intent_facts::channel_messages`) and the members who read it
+/// (`intent_facts::channel_members` over the registry's members).
+async fn channel_delete_escalations(
+    ctx: &DaemonContext,
+    community_id: &str,
+    channel: &str,
+) -> Result<Vec<Escalation>, IpcResponse> {
+    let state = ctx
+        .communities
+        .governance_state(community_id)
+        .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
+    let Some((id, hex_id)) =
+        crate::daemon::dispatch::channel::resolve_channel(ctx, community_id, channel)
+    else {
+        return Err(IpcResponse::error(
+            404,
+            format!("channel '{channel}' not found"),
+        ));
+    };
+    let mut members: Vec<_> = ctx
+        .communities
+        .known_members(community_id)
+        .iter()
+        .filter_map(|key| pseudonym(key))
+        .collect();
+    members.extend(pseudonym(&ctx.my_pseudonym(community_id)));
+    let (owner, db) = (ctx.require_owner()?, ctx.require_db()?);
+    let messages = db
+        .call(move |conn| rekindle_db::repo::intent_facts::channel_messages(conn, &owner, &hex_id))
+        .await
+        .map_err(|e| unavailable("the channel's messages", e))?;
+    Ok(
+        rekindle_governance::intent_facts::channel_delete_escalations(
+            &state, &id, &members, messages,
+        ),
+    )
 }
 
 fn pseudonym(hex_key: &str) -> Option<rekindle_types::id::PseudonymKey> {

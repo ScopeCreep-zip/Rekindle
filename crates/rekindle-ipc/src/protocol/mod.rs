@@ -229,6 +229,8 @@ pub enum IpcRequest {
         category: Option<String>,
         topic: Option<String>,
         slowmode_seconds: u32,
+        /// The voice channel a text-in-voice channel belongs to.
+        parent_voice_channel: Option<String>,
     },
     /// Delete a channel.
     ChannelDelete {
@@ -242,6 +244,69 @@ pub enum IpcRequest {
         name: Option<String>,
         topic: Option<String>,
         slowmode_seconds: Option<u32>,
+    },
+    /// Rename a channel.
+    ChannelRename {
+        community: String,
+        channel_id: String,
+        name: String,
+    },
+    /// Move a channel into a category, or out of every category (`None`).
+    ChannelMove {
+        community: String,
+        channel_id: String,
+        category: Option<String>,
+    },
+    /// Order a community's channels: each gets its index as its position.
+    ChannelReorder {
+        community: String,
+        channel_ids: Vec<String>,
+    },
+    /// Set a channel's topic.
+    ChannelSetTopic {
+        community: String,
+        channel_id: String,
+        topic: String,
+    },
+    /// Set a forum channel's tags.
+    ChannelSetForumTags {
+        community: String,
+        channel_id: String,
+        forum_tags: Vec<String>,
+    },
+    /// Set a channel's permission overwrite for a role or member.
+    ChannelOverwriteSet {
+        community: String,
+        channel_id: String,
+        target_type: String,
+        target_id: String,
+        allow: u64,
+        deny: u64,
+    },
+    /// Clear a channel's permission overwrite for a role or member.
+    ChannelOverwriteDelete {
+        community: String,
+        channel_id: String,
+        target_type: String,
+        target_id: String,
+    },
+    /// Create a channel category.
+    CategoryCreate { community: String, name: String },
+    /// Delete a channel category; its channels leave it.
+    CategoryDelete {
+        community: String,
+        category_id: String,
+    },
+    /// Rename a channel category.
+    CategoryRename {
+        community: String,
+        category_id: String,
+        name: String,
+    },
+    /// Order a community's categories: each gets its index as its position.
+    CategoryReorder {
+        community: String,
+        category_ids: Vec<String>,
     },
     /// Send a message to a channel.
     ChannelSend {

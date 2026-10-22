@@ -171,6 +171,7 @@ fn numeric_bounds() {
         category: None,
         topic: Some("about\nthings".into()),
         slowmode_seconds,
+        parent_voice_channel: None,
     };
     assert!(!rejected(&create(MAX_SLOWMODE_SECONDS)));
     assert!(rejected(&create(MAX_SLOWMODE_SECONDS + 1)));
@@ -199,6 +200,7 @@ fn closed_vocabularies() {
         category: None,
         topic: None,
         slowmode_seconds: 0,
+        parent_voice_channel: None,
     };
     assert!(!rejected(&create("voice")));
     assert!(rejected(&create("chat")));
@@ -250,6 +252,7 @@ fn governance_bounds_keep_their_error_texts() {
         category: None,
         topic: None,
         slowmode_seconds: MAX_SLOWMODE_SECONDS + 1,
+        parent_voice_channel: None,
     };
     assert_eq!(
         message_of(&channel),

@@ -48,6 +48,7 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
             category: None,
             topic: None,
             slowmode_seconds: 0,
+            parent_voice_channel: None,
         })
         .await;
     let seen = eventually(&community.sim, Duration::from_secs(120), || async {

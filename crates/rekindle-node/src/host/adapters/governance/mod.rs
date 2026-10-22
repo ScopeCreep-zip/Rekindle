@@ -31,6 +31,7 @@ pub use dht::recent_channel_messages;
 mod catchup;
 mod community_info;
 pub(crate) use community_info::InfoEdit;
+pub(crate) mod channel_admin;
 mod events;
 mod invite_expiry;
 mod invites;

@@ -98,6 +98,17 @@ async fn route(
         | IpcRequest::ChannelCreate { .. }
         | IpcRequest::ChannelDelete { .. }
         | IpcRequest::ChannelUpdate { .. }
+        | IpcRequest::ChannelRename { .. }
+        | IpcRequest::ChannelMove { .. }
+        | IpcRequest::ChannelReorder { .. }
+        | IpcRequest::ChannelSetTopic { .. }
+        | IpcRequest::ChannelSetForumTags { .. }
+        | IpcRequest::ChannelOverwriteSet { .. }
+        | IpcRequest::ChannelOverwriteDelete { .. }
+        | IpcRequest::CategoryCreate { .. }
+        | IpcRequest::CategoryDelete { .. }
+        | IpcRequest::CategoryRename { .. }
+        | IpcRequest::CategoryReorder { .. }
         | IpcRequest::ChannelSend { .. }
         | IpcRequest::ChannelHistory { .. }
         | IpcRequest::RoleList { .. }

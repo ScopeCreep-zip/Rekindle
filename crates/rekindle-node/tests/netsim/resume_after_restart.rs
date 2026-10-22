@@ -32,6 +32,7 @@ async fn a_member_resumes_its_community_after_a_restart() {
             category: None,
             topic: None,
             slowmode_seconds: 0,
+            parent_voice_channel: None,
         })
         .await;
     community

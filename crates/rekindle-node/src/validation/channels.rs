@@ -3,8 +3,8 @@
 use rekindle_ipc::protocol::IpcRequest;
 
 use super::{
-    channel, channel_kind, community, message_body, name, opt, page, slowmode, text, Checked,
-    MAX_TOPIC_LEN,
+    channel, channel_kind, community, hex16, message_body, name, opt, page, slowmode, text,
+    Checked, MAX_TOPIC_LEN,
 };
 
 /// A community's channels: their names, kinds, topics and bodies.
@@ -17,8 +17,12 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             category,
             topic,
             slowmode_seconds,
+            parent_voice_channel,
         } => {
             community(c)?;
+            opt(parent_voice_channel.as_deref(), |p| {
+                hex16(p, "parent voice channel")
+            })?;
             name(channel_name, "channel")?;
             channel_kind(kind)?;
             opt(category.as_deref(), |n| name(n, "category"))?;
@@ -64,6 +68,6 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             channel(ch)?;
             page(*limit)
         }
-        other => unreachable!("{} is not a channel request", other.name()),
+        other => super::channel_admin::check(other),
     }
 }

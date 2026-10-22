@@ -196,7 +196,7 @@ impl HostGovernance {
 
     /// The community's projected governance into SQLite
     /// (`repo::communities::snapshot`), awaited so a restart restores it.
-    async fn persist_governance_snapshot(&self, community_id: &str) {
+    pub(crate) async fn persist_governance_snapshot(&self, community_id: &str) {
         let Some(owner) = self
             .ctx
             .session

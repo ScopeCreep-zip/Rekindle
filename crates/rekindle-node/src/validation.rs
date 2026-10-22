@@ -355,6 +355,17 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::ChannelCreate { .. }
         | IpcRequest::ChannelDelete { .. }
         | IpcRequest::ChannelUpdate { .. }
+        | IpcRequest::ChannelRename { .. }
+        | IpcRequest::ChannelMove { .. }
+        | IpcRequest::ChannelReorder { .. }
+        | IpcRequest::ChannelSetTopic { .. }
+        | IpcRequest::ChannelSetForumTags { .. }
+        | IpcRequest::ChannelOverwriteSet { .. }
+        | IpcRequest::ChannelOverwriteDelete { .. }
+        | IpcRequest::CategoryCreate { .. }
+        | IpcRequest::CategoryDelete { .. }
+        | IpcRequest::CategoryRename { .. }
+        | IpcRequest::CategoryReorder { .. }
         | IpcRequest::ChannelSend { .. }
         | IpcRequest::ChannelHistory { .. }
         | IpcRequest::MekRotate { .. }
@@ -411,6 +422,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
     }
 }
 
+mod channel_admin;
 mod channels;
 mod community;
 mod friends;

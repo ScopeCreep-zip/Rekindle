@@ -141,6 +141,17 @@ impl IpcRequest {
             | Self::ChannelCreate { .. }
             | Self::ChannelDelete { .. }
             | Self::ChannelUpdate { .. }
+            | Self::ChannelRename { .. }
+            | Self::ChannelMove { .. }
+            | Self::ChannelReorder { .. }
+            | Self::ChannelSetTopic { .. }
+            | Self::ChannelSetForumTags { .. }
+            | Self::ChannelOverwriteSet { .. }
+            | Self::ChannelOverwriteDelete { .. }
+            | Self::CategoryCreate { .. }
+            | Self::CategoryDelete { .. }
+            | Self::CategoryRename { .. }
+            | Self::CategoryReorder { .. }
             | Self::RoleCreate { .. }
             | Self::RoleUpdate { .. }
             | Self::RoleDelete { .. }

@@ -118,6 +118,17 @@ pub(crate) async fn select(
         | IpcRequest::ChannelCreate { .. }
         | IpcRequest::ChannelDelete { .. }
         | IpcRequest::ChannelUpdate { .. }
+        | IpcRequest::ChannelRename { .. }
+        | IpcRequest::ChannelMove { .. }
+        | IpcRequest::ChannelReorder { .. }
+        | IpcRequest::ChannelSetTopic { .. }
+        | IpcRequest::ChannelSetForumTags { .. }
+        | IpcRequest::ChannelOverwriteSet { .. }
+        | IpcRequest::ChannelOverwriteDelete { .. }
+        | IpcRequest::CategoryCreate { .. }
+        | IpcRequest::CategoryDelete { .. }
+        | IpcRequest::CategoryRename { .. }
+        | IpcRequest::CategoryReorder { .. }
         | IpcRequest::ChannelSend { .. }
         | IpcRequest::MekRotate { .. }
         | IpcRequest::RoleCreate { .. }
@@ -130,7 +141,7 @@ pub(crate) async fn select(
         | IpcRequest::Unban { .. }
         | IpcRequest::Timeout { .. }
         | IpcRequest::InviteCreate { .. }
-        | IpcRequest::InviteRevoke { .. } => community::selection(ctx, request, &mut s)?,
+        | IpcRequest::InviteRevoke { .. } => community::selection(ctx, request, &mut s).await?,
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::ProfileSetNickname { .. }

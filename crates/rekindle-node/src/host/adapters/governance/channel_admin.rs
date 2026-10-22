@@ -1,0 +1,270 @@
+//! Channel and category administration over [`HostGovernance`] (plan E3.1
+//! E1): each operation is one or more governance entries written through
+//! `rekindle_governance_runtime::apply::write_entry` (signed, gossiped,
+//! merged and projected onto the store), then the projected governance is
+//! persisted to SQLite (`repo::communities::snapshot`), on both modes.
+
+use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
+use rekindle_governance_runtime::GovernanceRuntimeError;
+use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::id::{CategoryId, ChannelId};
+
+use super::HostGovernance;
+
+/// One channel or category administration request, ids resolved.
+#[derive(Debug, Clone)]
+pub(crate) enum ChannelAdminOp {
+    Rename {
+        channel: ChannelId,
+        name: String,
+    },
+    Move {
+        channel: ChannelId,
+        category: Option<CategoryId>,
+    },
+    Reorder {
+        channels: Vec<ChannelId>,
+    },
+    SetTopic {
+        channel: ChannelId,
+        topic: String,
+    },
+    SetForumTags {
+        channel: ChannelId,
+        tags: Vec<String>,
+    },
+    OverwriteSet {
+        channel: ChannelId,
+        target_type: String,
+        target_id: String,
+        allow: u64,
+        deny: u64,
+    },
+    OverwriteDelete {
+        channel: ChannelId,
+        target_type: String,
+        target_id: String,
+    },
+    CategoryCreate {
+        name: String,
+    },
+    CategoryDelete {
+        category: CategoryId,
+    },
+    CategoryRename {
+        category: CategoryId,
+        name: String,
+    },
+    CategoryReorder {
+        categories: Vec<CategoryId>,
+    },
+}
+
+type Entry = Box<dyn FnOnce(u64) -> GovernanceEntry + Send>;
+
+/// A `ChannelUpdated` that changes only what `set` fills in.
+fn channel_update(
+    channel: ChannelId,
+    set: impl FnOnce(&mut GovernanceEntry) + Send + 'static,
+) -> Entry {
+    Box::new(move |lamport| {
+        let mut entry = GovernanceEntry::ChannelUpdated {
+            channel_id: channel,
+            name: None,
+            topic: None,
+            forum_tags: None,
+            position: None,
+            slowmode_seconds: None,
+            nsfw: None,
+            category_id: None,
+            lamport,
+        };
+        set(&mut entry);
+        entry
+    })
+}
+
+fn position(index: usize) -> u32 {
+    u32::try_from(index).unwrap_or(u32::MAX)
+}
+
+impl HostGovernance {
+    /// Apply `op` to `community_id`; the answer is the new category's id
+    /// for a create and `null` otherwise.
+    ///
+    /// # Errors
+    /// The community is not loaded, the entry is refused (permission,
+    /// bounds), or the write failed.
+    pub(crate) async fn channel_admin(
+        &self,
+        community_id: &str,
+        op: ChannelAdminOp,
+    ) -> Result<serde_json::Value, GovernanceRuntimeError> {
+        let (entries, answer) = self.entries(community_id, op);
+        for entry in entries {
+            let lamport = self.next_governance_lamport(community_id)?;
+            rekindle_governance_runtime::apply::write_entry(self, community_id, entry(lamport))
+                .await?;
+        }
+        self.persist_governance_snapshot(community_id).await;
+        Ok(answer)
+    }
+
+    fn entries(&self, community_id: &str, op: ChannelAdminOp) -> (Vec<Entry>, serde_json::Value) {
+        let null = serde_json::Value::Null;
+        match op {
+            ChannelAdminOp::Rename { channel, name } => (
+                vec![channel_update(channel, move |e| {
+                    set_channel(e, |f| *f.name = Some(name))
+                })],
+                null,
+            ),
+            ChannelAdminOp::Move { channel, category } => (
+                vec![channel_update(channel, move |e| {
+                    set_channel(e, |f| *f.category_id = Some(category));
+                })],
+                null,
+            ),
+            ChannelAdminOp::Reorder { channels } => (
+                channels
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, channel)| {
+                        channel_update(channel, move |e| {
+                            set_channel(e, |f| *f.position = Some(position(i)));
+                        })
+                    })
+                    .collect(),
+                null,
+            ),
+            ChannelAdminOp::SetTopic { channel, topic } => (
+                vec![channel_update(channel, move |e| {
+                    set_channel(e, |f| *f.topic = Some(topic))
+                })],
+                null,
+            ),
+            ChannelAdminOp::SetForumTags { channel, tags } => (
+                vec![channel_update(channel, move |e| {
+                    set_channel(e, |f| *f.forum_tags = Some(tags));
+                })],
+                null,
+            ),
+            ChannelAdminOp::OverwriteSet {
+                channel,
+                target_type,
+                target_id,
+                allow,
+                deny,
+            } => (
+                vec![overwrite(channel, target_type, target_id, allow, deny)],
+                null,
+            ),
+            // A zero overwrite is the merge's "none" (`compute_permissions`
+            // applies nothing for it); there is no delete entry.
+            ChannelAdminOp::OverwriteDelete {
+                channel,
+                target_type,
+                target_id,
+            } => (vec![overwrite(channel, target_type, target_id, 0, 0)], null),
+            ChannelAdminOp::CategoryCreate { name } => {
+                let mut id = [0u8; 16];
+                self.rng().fill(&mut id);
+                let next = self.next_category_position(community_id);
+                let entry: Entry = Box::new(move |lamport| GovernanceEntry::CategoryCreated {
+                    category_id: CategoryId(id),
+                    name,
+                    position: next,
+                    lamport,
+                });
+                (
+                    vec![entry],
+                    serde_json::json!({ "categoryId": hex::encode(id) }),
+                )
+            }
+            ChannelAdminOp::CategoryDelete { category } => {
+                let entry: Entry = Box::new(move |lamport| GovernanceEntry::CategoryArchived {
+                    category_id: category,
+                    lamport,
+                });
+                (vec![entry], null)
+            }
+            ChannelAdminOp::CategoryRename { category, name } => {
+                (vec![category_update(category, Some(name), None)], null)
+            }
+            ChannelAdminOp::CategoryReorder { categories } => (
+                categories
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, category)| category_update(category, None, Some(position(i))))
+                    .collect(),
+                null,
+            ),
+        }
+    }
+
+    /// After every live category, as a new channel goes after every channel.
+    fn next_category_position(&self, community_id: &str) -> u32 {
+        self.governance_state(community_id).map_or(0, |gov| {
+            gov.categories
+                .values()
+                .map(|category| category.position)
+                .max()
+                .map_or(0, |max| max.saturating_add(1))
+        })
+    }
+}
+
+/// The mutable fields of a `ChannelUpdated`.
+struct ChannelFields<'a> {
+    name: &'a mut Option<String>,
+    topic: &'a mut Option<String>,
+    forum_tags: &'a mut Option<Vec<String>>,
+    position: &'a mut Option<u32>,
+    category_id: &'a mut Option<Option<CategoryId>>,
+}
+
+fn set_channel(entry: &mut GovernanceEntry, set: impl FnOnce(ChannelFields<'_>)) {
+    if let GovernanceEntry::ChannelUpdated {
+        name,
+        topic,
+        forum_tags,
+        position,
+        category_id,
+        ..
+    } = entry
+    {
+        set(ChannelFields {
+            name,
+            topic,
+            forum_tags,
+            position,
+            category_id,
+        });
+    }
+}
+
+fn overwrite(
+    channel: ChannelId,
+    target_type: String,
+    target_id: String,
+    allow: u64,
+    deny: u64,
+) -> Entry {
+    Box::new(move |lamport| GovernanceEntry::PermissionOverwrite {
+        channel_id: channel,
+        target_type,
+        target_id,
+        allow,
+        deny,
+        lamport,
+    })
+}
+
+fn category_update(category: CategoryId, name: Option<String>, position: Option<u32>) -> Entry {
+    Box::new(move |lamport| GovernanceEntry::CategoryUpdated {
+        category_id: category,
+        name,
+        position,
+        lamport,
+    })
+}

@@ -68,6 +68,7 @@ pub async fn dispatch(
                     category: category.clone(),
                     topic: topic.clone(),
                     slowmode_seconds: slowmode.unwrap_or(0),
+                    parent_voice_channel: None,
                 },
             )
             .await?;

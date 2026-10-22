@@ -26,16 +26,20 @@ pub(crate) async fn route(
             category,
             topic,
             slowmode_seconds,
+            parent_voice_channel,
         } => {
             handle_create(
                 ctx,
                 state,
                 &community,
-                &name,
-                &kind,
-                category.as_deref(),
-                topic.as_deref(),
-                slowmode_seconds,
+                NewChannel {
+                    name: &name,
+                    kind: &kind,
+                    category: category.as_deref(),
+                    topic: topic.as_deref(),
+                    slowmode_seconds,
+                    parent_voice_channel: parent_voice_channel.as_deref(),
+                },
             )
             .await
         }
@@ -74,6 +78,19 @@ pub(crate) async fn route(
             channel,
             limit,
         } => handle_history(ctx, state, &community, &channel, limit).await,
+        request @ (IpcRequest::ChannelRename { .. }
+        | IpcRequest::ChannelMove { .. }
+        | IpcRequest::ChannelReorder { .. }
+        | IpcRequest::ChannelSetTopic { .. }
+        | IpcRequest::ChannelSetForumTags { .. }
+        | IpcRequest::ChannelOverwriteSet { .. }
+        | IpcRequest::ChannelOverwriteDelete { .. }
+        | IpcRequest::CategoryCreate { .. }
+        | IpcRequest::CategoryDelete { .. }
+        | IpcRequest::CategoryRename { .. }
+        | IpcRequest::CategoryReorder { .. }) => {
+            super::channel_admin::route(ctx, state, request).await
+        }
         other => unreachable!("{} is not a channel request", other.name()),
     }
 }
@@ -136,7 +153,7 @@ pub(crate) fn channel_overviews(
 }
 
 /// Resolve a channel by name or hex id against merged governance.
-fn resolve_channel(
+pub(crate) fn resolve_channel(
     ctx: &DaemonContext,
     community_id: &str,
     needle: &str,
@@ -148,16 +165,31 @@ fn resolve_channel(
     })
 }
 
+/// A channel to create, as the request names it.
+pub(crate) struct NewChannel<'a> {
+    pub name: &'a str,
+    pub kind: &'a str,
+    pub category: Option<&'a str>,
+    pub topic: Option<&'a str>,
+    pub slowmode_seconds: u32,
+    /// The voice channel a text-in-voice channel belongs to.
+    pub parent_voice_channel: Option<&'a str>,
+}
+
 pub(crate) async fn handle_create(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    name: &str,
-    kind: &str,
-    category: Option<&str>,
-    topic: Option<&str>,
-    slowmode_seconds: u32,
+    new: NewChannel<'_>,
 ) -> IpcResponse {
+    let NewChannel {
+        name,
+        kind,
+        category,
+        topic,
+        slowmode_seconds,
+        parent_voice_channel,
+    } = new;
     if !state.can_write() {
         return state_error(state, "write");
     }
@@ -191,7 +223,8 @@ pub(crate) async fn handle_create(
             channel_type: kind.to_string(),
             category_id,
             position,
-            parent_voice_channel_id: None,
+            parent_voice_channel_id: parent_voice_channel
+                .and_then(super::channel_admin::channel_id),
         },
     )
     .await
@@ -244,6 +277,9 @@ pub(crate) async fn handle_create(
         }
     }
 
+    adapter
+        .persist_governance_snapshot(&membership.governance_key)
+        .await;
     IpcResponse::ok(&serde_json::json!({
         "id": created.channel_id_hex,
         "name": name,
@@ -288,7 +324,12 @@ pub(crate) async fn handle_delete(
     )
     .await
     {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "deleted": hex_id })),
+        Ok(()) => {
+            adapter
+                .persist_governance_snapshot(&membership.governance_key)
+                .await;
+            IpcResponse::ok(&serde_json::json!({ "deleted": hex_id }))
+        }
         Err(e) => IpcResponse::error(500, format!("channel delete failed: {e}")),
     }
 }
