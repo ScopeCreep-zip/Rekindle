@@ -214,8 +214,22 @@ impl HostGovernance {
             .map_err(|e| format!("community members: {e}"))?;
         let my_status = self.ctx.own_presence.status().as_wire_str().to_owned();
         let now = self.ctx.clock.now_secs();
+        // Bans and timeouts are the merged governance's (plan E3.1 F2): a
+        // banned member leaves the list, and a timeout ends at its time.
+        let governance = self.governance_state_impl(community).unwrap_or_default();
+        let banned: std::collections::HashSet<String> =
+            governance.bans.iter().map(|p| hex::encode(p.0)).collect();
+        let timeout_until = |pseudonym: &str| {
+            governance
+                .timeouts
+                .iter()
+                .find(|(p, _)| hex::encode(p.0) == pseudonym)
+                .map(|(_, t)| t.started_at.saturating_add(t.duration_seconds))
+                .filter(|until| *until > now)
+        };
         Ok(rows
             .into_iter()
+            .filter(|row| !banned.contains(&row.pseudonym_key))
             .map(|row| {
                 let is_me = overlay.me.as_deref() == Some(row.pseudonym_key.as_str());
                 let online = overlay.online.get(&row.pseudonym_key);
@@ -237,7 +251,7 @@ impl HostGovernance {
                     display_name: row.display_name.unwrap_or_default(),
                     role_ids: row.role_ids,
                     status,
-                    timeout_until: row.timeout_until.map(i64::cast_unsigned),
+                    timeout_until: timeout_until(&row.pseudonym_key),
                     location,
                     last_active,
                     pseudonym_key: row.pseudonym_key,

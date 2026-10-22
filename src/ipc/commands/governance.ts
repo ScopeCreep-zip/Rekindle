@@ -141,9 +141,9 @@ export const governanceCommands = {
   selfUnassignRole: (communityId: string, roleId: number) =>
     hostInvoke<unknown>("self_unassign_role", { communityId, roleId }),
   timeoutMember: (communityId: string, pseudonymKey: string, durationSeconds: number, reason: string | null) =>
-    invoke<void>("timeout_member", { communityId, pseudonymKey, durationSeconds, reason }),
+    hostInvoke<unknown>("timeout_member", { communityId, pseudonymKey, durationSeconds, reason }).then(() => undefined),
   removeTimeout: (communityId: string, pseudonymKey: string) =>
-    invoke<void>("remove_timeout", { communityId, pseudonymKey }),
+    hostInvoke<unknown>("remove_timeout", { communityId, pseudonymKey }).then(() => undefined),
   setChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string, allow: number, deny: number) =>
     hostInvoke<void>("set_channel_overwrite", { communityId, channelId, targetType, targetId, allow, deny }),
   deleteChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string) =>

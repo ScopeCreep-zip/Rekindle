@@ -259,6 +259,9 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         } | CommunityRequest::Unban {
             community: c,
             target_pseudonym,
+        } | CommunityRequest::TimeoutRemove {
+            community: c,
+            target_pseudonym,
         } => {
             community(c)?;
             pseudonym(target_pseudonym, "target pseudonym")

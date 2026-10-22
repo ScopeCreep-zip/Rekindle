@@ -6,36 +6,27 @@ use crate::host_call;
 
 use crate::state::SharedState;
 
-use crate::services::community_audit_runtime::BannedMemberInfo;
+use rekindle_types::dto::community::CommunityBanView;
+
 use crate::services::community_moderation_runtime::{
-    admin_delete_channel_message_inner, ban_member_inner, remove_community_member_inner,
-    remove_timeout_inner, set_slowmode_inner, timeout_member_inner, unban_member_inner,
+    admin_delete_channel_message_inner, set_slowmode_inner,
 };
 
-/// Remove a member from a community.
-///
-/// Phase 8 — `idempotency_key` (UUID v7) dedupes click-spam. Two rapid
-/// clicks would each send a `Kick` control envelope; the second still
-/// fans out across the mesh even though the member is already gone
-/// locally — wasted bandwidth and a confusing audit trail.
+/// Remove a member from a community without barring return.
 #[tauri::command]
 pub async fn remove_community_member(
     community_id: String,
     pseudonym_key: String,
-    idempotency_key: uuid::Uuid,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    let s = state.inner().clone();
-    let p = pool.clone();
-    state
-        .idempotency
-        .wrap(idempotency_key, || async move {
-            remove_community_member_inner(s, p, community_id, pseudonym_key).await
-        })
-        .await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::Kick {
+            community: community_id,
+            target_pseudonym: pseudonym_key,
+        }),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -45,15 +36,15 @@ pub async fn timeout_member(
     duration_seconds: u64,
     reason: Option<String>,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    timeout_member_inner(
-        state.inner(),
-        &pool,
-        community_id,
-        pseudonym_key,
-        duration_seconds,
-        reason,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::Timeout {
+            community: community_id,
+            target_pseudonym: pseudonym_key,
+            duration_seconds,
+            reason,
+        }),
     )
     .await
 }
@@ -63,9 +54,15 @@ pub async fn remove_timeout(
     community_id: String,
     pseudonym_key: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    remove_timeout_inner(state.inner(), &pool, community_id, pseudonym_key).await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::TimeoutRemove {
+            community: community_id,
+            target_pseudonym: pseudonym_key,
+        }),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -127,8 +124,16 @@ pub async fn ban_member(
     community_id: String,
     pseudonym_key: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    ban_member_inner(state.inner(), community_id, pseudonym_key).await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::Ban {
+            community: community_id,
+            target_pseudonym: pseudonym_key,
+            reason: None,
+        }),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -136,8 +141,15 @@ pub async fn unban_member(
     community_id: String,
     pseudonym_key: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    unban_member_inner(state.inner(), community_id, pseudonym_key).await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::Unban {
+            community: community_id,
+            target_pseudonym: pseudonym_key,
+        }),
+    )
+    .await
 }
 
 /// Admin-deletes a single channel message: writes `GovernanceEntry::AdminDelete`
@@ -191,13 +203,19 @@ pub async fn bulk_delete_channel_messages(
     .await
 }
 
-/// Get the list of banned members for a community from the merged governance state.
+/// The community's bans, from the merged governance state.
 #[tauri::command]
 pub async fn get_ban_list(
     community_id: String,
     state: State<'_, SharedState>,
-) -> Result<Vec<BannedMemberInfo>, String> {
-    crate::services::community_audit_runtime::get_ban_list_inner(state.inner(), &community_id)
+) -> Result<Done<Vec<CommunityBanView>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::BanList {
+            community: community_id,
+        }),
+    )
+    .await
 }
 
 #[cfg(test)]

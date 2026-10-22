@@ -251,7 +251,7 @@ pub(super) async fn route(
         CommunityRequest::Kick {
             community,
             target_pseudonym,
-        } => governance::handle_kick(ctx, state, &community, &target_pseudonym).await,
+        } => governance::handle_kick(ctx, state, &community, &target_pseudonym),
         CommunityRequest::Ban {
             community,
             target_pseudonym,
@@ -280,8 +280,12 @@ pub(super) async fn route(
             )
             .await
         }
+        CommunityRequest::TimeoutRemove {
+            community,
+            target_pseudonym,
+        } => governance::handle_timeout_remove(ctx, state, &community, &target_pseudonym).await,
         CommunityRequest::BanList { community } => {
-            governance::handle_ban_list(ctx, state, &community)
+            governance::handle_ban_list(ctx, state, &community).await
         }
         CommunityRequest::InviteCreate {
             community,

@@ -236,6 +236,14 @@ impl CommunityRequest {
                 .field("duration_seconds", duration_seconds)
                 .field("reason", reason)
                 .finish(),
+            Self::TimeoutRemove {
+                community,
+                target_pseudonym,
+            } => f
+                .debug_struct("TimeoutRemove")
+                .field("community", community)
+                .field("target_pseudonym", target_pseudonym)
+                .finish(),
             Self::BanList { community } => f
                 .debug_struct("BanList")
                 .field("community", community)

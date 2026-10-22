@@ -10,16 +10,6 @@ use crate::commands::community::types::AuditLogEntryInfoDto;
 use crate::state::SharedState;
 use crate::state_helpers;
 
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BannedMemberInfo {
-    pub pseudonym_key: String,
-    pub display_name: String,
-    pub banned_at: u64,
-    pub reason: Option<String>,
-    pub banned_by: String,
-}
-
 pub async fn get_audit_log_inner(
     state: &SharedState,
     community_id: String,
@@ -89,36 +79,4 @@ pub async fn get_audit_log_inner(
     let page_size = usize::try_from(limit.max(1)).unwrap_or(100);
     rows.truncate(page_size);
     Ok(rows)
-}
-
-pub fn get_ban_list_inner(
-    state: &SharedState,
-    community_id: &str,
-) -> Result<Vec<BannedMemberInfo>, String> {
-    let communities = state.communities.read();
-    let community = communities.get(community_id).ok_or("community not found")?;
-    let mut bans: Vec<_> = community
-        .governance_state
-        .as_ref()
-        .map(|gov| gov.bans.iter().cloned().collect())
-        .unwrap_or_default();
-    bans.sort_by_key(|a| hex::encode(a.0));
-
-    Ok(bans
-        .into_iter()
-        .map(|pseudo| {
-            let pseudonym_key = hex::encode(pseudo.0);
-            BannedMemberInfo {
-                display_name: if pseudonym_key.len() > 12 {
-                    format!("{}…", rekindle_utils::text::prefix(&pseudonym_key, 12))
-                } else {
-                    pseudonym_key.clone()
-                },
-                pseudonym_key,
-                banned_at: 0,
-                reason: None,
-                banned_by: String::new(),
-            }
-        })
-        .collect())
 }

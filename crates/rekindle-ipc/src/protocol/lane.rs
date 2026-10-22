@@ -219,6 +219,7 @@ impl CommunityRequest {
             Self::Ban { .. } => ("Ban", Write, Authenticated),
             Self::Unban { .. } => ("Unban", Write, Authenticated),
             Self::Timeout { .. } => ("Timeout", Write, Authenticated),
+            Self::TimeoutRemove { .. } => ("TimeoutRemove", Write, Authenticated),
             Self::BanList { .. } => ("BanList", Query, Authenticated),
             Self::InviteCreate { .. } => ("InviteCreate", Write, Authenticated),
             Self::InviteList { .. } => ("InviteList", Query, Authenticated),

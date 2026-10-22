@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal, createEffect } from "solid-js";
 import { handleGetBanList, handleUnbanMember } from "../../../actions/community.actions";
 import { ICON_REFRESH } from "../../../icons";
+import type { CommunityBanView } from "../../../ipc/commands/dto";
 
 interface BansTabProps {
   communityId: string;
@@ -8,7 +9,7 @@ interface BansTabProps {
 }
 
 const BansTab: Component<BansTabProps> = (props) => {
-  const [banList, setBanList] = createSignal<{ pseudonymKey: string; displayName: string; bannedAt: number }[]>([]);
+  const [banList, setBanList] = createSignal<CommunityBanView[]>([]);
   const [loaded, setLoaded] = createSignal(false);
 
   createEffect(() => {
@@ -33,9 +34,6 @@ const BansTab: Component<BansTabProps> = (props) => {
             <div class="settings-list-item">
               <div class="settings-list-info">
                 <span class="settings-list-name">{banned.displayName || banned.pseudonymKey.slice(0, 16)}</span>
-                <span class="settings-list-date">
-                  Banned {new Date(banned.bannedAt * 1000).toLocaleDateString()}
-                </span>
               </div>
               <button
                 class="form-btn-secondary"

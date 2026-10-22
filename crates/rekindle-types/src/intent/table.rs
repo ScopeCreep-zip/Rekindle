@@ -533,6 +533,7 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("Ban", Some(IntentKind::BanMember)),
     ("Unban", Some(IntentKind::UnbanMember)),
     ("Timeout", Some(IntentKind::TimeoutMember)),
+    ("TimeoutRemove", Some(IntentKind::RemoveTimeout)),
     ("BanList", None),
     ("InviteCreate", Some(IntentKind::CreateCommunityInvite)),
     ("InviteList", None),

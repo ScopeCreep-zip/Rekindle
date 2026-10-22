@@ -144,6 +144,7 @@ pub(crate) async fn select(
             | CommunityRequest::Ban { .. }
             | CommunityRequest::Unban { .. }
             | CommunityRequest::Timeout { .. }
+            | CommunityRequest::TimeoutRemove { .. }
             | CommunityRequest::InviteCreate { .. }
             | CommunityRequest::InviteRevoke { .. }
             | CommunityRequest::CommunityUpdateProfile { .. }

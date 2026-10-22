@@ -68,6 +68,10 @@
     },
     "type": "intentRequired"
   },
+  "community.banView": {
+    "displayName": "Bea",
+    "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
   "community.inviteCreated": {
     "codeHash": "abababababababababababababababababababababababababababababababab",
     "expiresAt": 1700604800,

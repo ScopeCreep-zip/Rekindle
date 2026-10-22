@@ -192,3 +192,13 @@ pub struct CommunityPolicyView {
     pub max_joins_per_interval: u32,
     pub join_interval_seconds: u32,
 }
+
+/// A banned member of a community, from merged governance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityBanView {
+    /// 64 lowercase hex.
+    pub pseudonym_key: String,
+    /// The roster's name, or a short form of the key.
+    pub display_name: String,
+}

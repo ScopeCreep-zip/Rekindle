@@ -3,6 +3,7 @@ import type { ImageKind } from "./system";
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
+import type { CommunityBanView } from "./dto";
 
 export const communityCommands = {
   // Community
@@ -305,17 +306,8 @@ export const communityCommands = {
   }),
   deleteAutoModRule: (communityId: string, ruleId: string) =>
     invoke<void>("delete_automod_rule", { communityId, ruleId }),
-  removeCommunityMember: (
-    communityId: string,
-    pseudonymKey: string,
-    idempotencyKey?: string,
-  ) =>
-    invoke<void>("remove_community_member", {
-      communityId,
-      pseudonymKey,
-      // Phase 8 — idempotency key dedupes click-spam.
-      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
-    }),
+  removeCommunityMember: (communityId: string, pseudonymKey: string) =>
+    hostInvoke<unknown>("remove_community_member", { communityId, pseudonymKey }).then(() => undefined),
   leaveCommunity: (communityId: string) =>
     hostInvoke<unknown>("leave_community", { communityId }).then(() => undefined),
   deleteChannel: (communityId: string, channelId: string) =>
@@ -346,13 +338,11 @@ export const communityCommands = {
       bannerHash,
     }),
   banMember: (communityId: string, pseudonymKey: string) =>
-    invoke<void>("ban_member", { communityId, pseudonymKey }),
+    hostInvoke<unknown>("ban_member", { communityId, pseudonymKey }).then(() => undefined),
   unbanMember: (communityId: string, pseudonymKey: string) =>
-    invoke<void>("unban_member", { communityId, pseudonymKey }),
+    hostInvoke<unknown>("unban_member", { communityId, pseudonymKey }).then(() => undefined),
   getBanList: (communityId: string) =>
-    invoke<{ pseudonymKey: string; displayName: string; bannedAt: number }[]>(
-      "get_ban_list", { communityId },
-    ),
+    hostInvoke<CommunityBanView[]>("get_ban_list", { communityId }),
   rotateMek: (communityId: string, idempotencyKey?: string) =>
     invoke<void>("rotate_mek", {
       communityId,

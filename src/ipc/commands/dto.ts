@@ -28,6 +28,13 @@ export interface AuditLogEntryDto {
   timestamp: number;
 }
 
+/** A banned member (`rekindle_types::dto::community::CommunityBanView`). */
+export interface CommunityBanView {
+  pseudonymKey: string;
+  /** The roster's name, or a short form of the key. */
+  displayName: string;
+}
+
 /** A live community invite (`rekindle_types::dto::community::CommunityInviteView`). */
 export interface InviteDto {
   /** What a revoke names. */

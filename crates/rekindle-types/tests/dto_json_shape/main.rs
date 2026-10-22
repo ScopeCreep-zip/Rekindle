@@ -10,7 +10,9 @@ mod json;
 use std::path::PathBuf;
 
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
-use rekindle_types::dto::community::{CommunityInviteCreated, CommunityInviteView};
+use rekindle_types::dto::community::{
+    CommunityBanView, CommunityInviteCreated, CommunityInviteView,
+};
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
@@ -330,6 +332,13 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             ],
             epoch: 0,
             pending: true,
+        }),
+    );
+    add(
+        "community.banView",
+        to(CommunityBanView {
+            pseudonym_key: pk('b'),
+            display_name: "Bea".into(),
         }),
     );
     add(

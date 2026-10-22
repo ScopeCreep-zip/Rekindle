@@ -243,7 +243,8 @@ impl CommunityRequest {
             | Self::Kick { .. }
             | Self::Ban { .. }
             | Self::Unban { .. }
-            | Self::Timeout { .. } => Some(C::ModerationWrite),
+            | Self::Timeout { .. }
+            | Self::TimeoutRemove { .. } => Some(C::ModerationWrite),
             Self::ChannelHistory { .. } => Some(C::ChannelsHistory),
             Self::ChannelSend { .. } => Some(C::ChatWrite),
             // Channel keys are key material; ownership is the owner's own.

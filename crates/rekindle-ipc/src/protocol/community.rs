@@ -310,6 +310,11 @@ pub enum CommunityRequest {
         duration_seconds: u64,
         reason: Option<String>,
     },
+    /// Lift a member's timeout early.
+    TimeoutRemove {
+        community: String,
+        target_pseudonym: String,
+    },
     /// List all active bans in a community.
     BanList { community: String },
 

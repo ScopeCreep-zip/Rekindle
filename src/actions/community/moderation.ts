@@ -1,4 +1,5 @@
 import { commands } from "../../ipc/commands";
+import type { CommunityBanView } from "../../ipc/commands/dto";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 
@@ -106,7 +107,7 @@ export async function handleServerDeafenMember(
 
 export async function handleGetBanList(
   communityId: string,
-): Promise<{ pseudonymKey: string; displayName: string; bannedAt: number }[]> {
+): Promise<CommunityBanView[]> {
   try {
     return await commands.getBanList(communityId);
   } catch (e) {

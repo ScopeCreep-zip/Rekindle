@@ -276,6 +276,10 @@ pub(super) async fn selection(
             community: target,
             target_pseudonym: member_pseudonym,
             ..
+        }
+        | CommunityRequest::TimeoutRemove {
+            community: target,
+            target_pseudonym: member_pseudonym,
         } => {
             let (id, _) = community(ctx, target)?;
             s.subject = Subject::Named {
@@ -293,6 +297,12 @@ pub(super) async fn selection(
                 }
                 CommunityRequest::Unban { .. } => {
                     Reversibility::ReversibleByInverse(IntentKind::BanMember)
+                }
+                CommunityRequest::Timeout { .. } => {
+                    Reversibility::ReversibleByInverse(IntentKind::RemoveTimeout)
+                }
+                CommunityRequest::TimeoutRemove { .. } => {
+                    Reversibility::ReversibleByInverse(IntentKind::TimeoutMember)
                 }
                 CommunityRequest::Kick { .. } => {
                     s.facts.push(Fact::RejoinNeedsInvite);

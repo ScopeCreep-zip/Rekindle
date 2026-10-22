@@ -1,4 +1,6 @@
-//! Moderation: ban, unban, timeout, kick.
+//! Moderation: ban, unban, timeout, lifting a timeout. A removal writes
+//! no entry (the Host's `remove_member`: the `Kick` notice, the member
+//! forgotten, the departure rotation).
 //!
 //! Pure orchestration over `GovernanceRuntimeDeps`, so both tracks drive
 //! one implementation. The Tauri host already wrote these as governance
@@ -15,7 +17,7 @@
 
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::permissions::{BAN_MEMBERS, KICK_MEMBERS};
+use rekindle_types::permissions::{BAN_MEMBERS, TIMEOUT_MEMBERS};
 
 use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
@@ -74,7 +76,8 @@ pub async fn unban_member<D: GovernanceRuntimeDeps>(
     .await
 }
 
-/// Temporarily strip a member's permissions. Requires `KICK_MEMBERS`.
+/// Temporarily strip a member's permissions. Requires `TIMEOUT_MEMBERS`,
+/// the bit readers check the entry against (`validate_write`).
 pub async fn timeout_member<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -82,7 +85,7 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
     duration_seconds: u64,
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
-    deps.require_permission(community_id, KICK_MEMBERS)?;
+    deps.require_permission(community_id, TIMEOUT_MEMBERS)?;
     let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
@@ -100,13 +103,13 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
     .await
 }
 
-/// Lift a timeout early. Requires `KICK_MEMBERS`.
+/// Lift a timeout early. Requires `TIMEOUT_MEMBERS`.
 pub async fn remove_timeout<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    deps.require_permission(community_id, KICK_MEMBERS)?;
+    deps.require_permission(community_id, TIMEOUT_MEMBERS)?;
     let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
@@ -117,23 +120,4 @@ pub async fn remove_timeout<D: GovernanceRuntimeDeps>(
         },
     )
     .await
-}
-
-/// Remove a member without barring return. Requires `KICK_MEMBERS`.
-///
-/// v2.0 has no separate "kick" entry, and that is deliberate rather than
-/// an omission: nothing in a peer-to-peer registry can evict a member —
-/// their slot keypair is derived from a seed every member holds, so they
-/// can rewrite their presence immediately. What a kick actually means is
-/// "the community stops recognising you until you rejoin", which is a
-/// zero-duration timeout: permissions stripped now, no permanent bar.
-///
-/// The coordinator-era RPC pretended otherwise by deleting the member's
-/// row from the index — a change the member could simply undo.
-pub async fn kick_member<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    pseudonym_hex: &str,
-) -> Result<(), GovernanceRuntimeError> {
-    timeout_member(deps, community_id, pseudonym_hex, 0, Some("kicked")).await
 }
