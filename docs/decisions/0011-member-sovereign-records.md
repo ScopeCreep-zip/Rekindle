@@ -6,6 +6,11 @@
   `o_cnt: 0` records whose slot keypairs every member derives from a community-shared `slot_seed`
   (AUTH §8.3 "shared knowledge by design"). Flat governance, CRDT merge, reader-side permission
   validation and self-sovereign join from 0003 **stand**.
+- **Amended 2026-10-22** (plan §0, Q3 and Q6 decided from research): the `GenesisCert` names a fixed
+  creator set (`additionalCreators`) and a `predecessor`, and a creator-signed `CommunitySuccessor`
+  op is the recovery and ownership-transfer path (Q3); an `ApprovalRequired` community admits a
+  joiner by a reader-validated `MemberApproved`, and channel keys are withheld until then (Q6).
+  The 2026-10-04 text is kept; the amended passages say what changed.
 
 ## Context and problem statement
 
@@ -69,6 +74,26 @@ signed by `K_A` and by the creator's pseudonym, and is then zeroized and never p
 - Readers pin the record descriptor's owner to the certificate signer.
 - The anchor is physically immutable.
 - The community id is `A`'s record key.
+- *Amended 2026-10-22 (Q3).* The certificate names the **creator set**: `creatorPseudonym` plus
+  `additionalCreators`, at most 8 further pseudonyms, fixed at genesis and immutable like the rest
+  of the anchor (no op adds or removes a creator). It also carries `predecessor`, the anchor of the
+  community this one succeeds, or none. `state.creator` becomes this set; every creator-only act
+  (`validate/mod.rs:112-117`) accepts any member of it.
+
+**Successor community** *(added 2026-10-22, Q3).* An immutable anchor cannot be repaired, so
+recovery and ownership transfer go through a new community:
+- A `CommunitySuccessor{newAnchor, reason}` op counts only when signed by a creator of the old
+  community. A `MANAGE_COMMUNITY` holder cannot sign it: Matrix sets room upgrade above admin "to
+  guard against unauthorised privilege escalation by admins" (MSC4289:145-151), and Project Hydra
+  gives the same two exits, "establish a new creator by either upgrading the room or creating a new
+  one".
+- The new `GenesisCert` names the old anchor as `predecessor`; readers check both links (the op in
+  the old community and the `predecessor` in the new one) before they treat it as a successor.
+- Clients show who signed it and **offer** the move. Nobody is moved silently, no history is
+  copied, the old community stays readable, and if two valid successors exist both are shown.
+- Ownership transfer is a successor with a new creator set.
+- If every creator key is lost, members create a new community and re-invite. There is no
+  member-signed successor: it would let any member phish the whole community.
 
 **MemberRecord `M(p)`.** One DFLT(8) record per member pseudonym per community, owned by a random
 key only that member holds (vault `MemberRecordOwner{community}`).
@@ -110,7 +135,13 @@ signature verifies.
 3. Walk the DAG.
 4. Publish card, `MemberJoined`, frontier and beat to one's own `M`.
 
-There is no slot claim and no approval loop.
+There is no slot claim and no coordinator approval loop; an `ApprovalRequired` community admits by
+a reader-validated `MemberApproved`, and channel keys are withheld until then. *(Amended
+2026-10-22, Q6; the original read "no slot claim and no approval loop".)* The joiner still writes
+its own `M` and `MemberJoined`, which acts as a knock (Matrix MSC2403). Readers count it a member
+only after a converged `MemberApproved` by a `KICK_MEMBERS` holder; no channel MEK reaches a
+pending member, the converged approval supplies the current generation's wraps (a key supplement,
+not a generation bump), and `MemberRejected` drops the pending member's ops.
 
 **Leave, kick, ban.** These are ops plus a departed beat in one's own record. Moderation never
 writes another member's data. A kicked member's own writes are dropped by readers
@@ -151,3 +182,9 @@ one subkey.
 - `.claude/plans/standards-remediation/00-integration-plan.md` D15, steps E3.2–E3.4
 - [Veilid developer book](https://veilid.gitlab.io/developer-book) — DHT writes and sequence numbers
 - [0003](0003-flat-smpl-governance.md)
+- Plan §0 decision log, 2026-10-22 rows "Q3 decided" and "Q6 decided"
+- [MSC4289](https://github.com/matrix-org/matrix-spec-proposals/pull/4289) — explicitly privileged
+  room creators; room upgrade above admin
+- [MSC2403](https://github.com/matrix-org/matrix-spec-proposals/pull/2403) — knocking
+- [Matrix Project Hydra](https://matrix.org/blog/2025/08/project-hydra-improving-state-res/) —
+  creators, room upgrades

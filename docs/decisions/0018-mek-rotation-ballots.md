@@ -1,6 +1,9 @@
-# 0018 — MEK rotation after a removal is agreed by write-once ballots and majority confirmation
+# 0018 — MEK generation bumps are agreed by write-once ballots and majority confirmation
 
-- **Status:** Accepted (owner ruling O5, 2026-10-15)
+- **Status:** Accepted (owner ruling O5, 2026-10-15). **Amended 2026-10-22** (plan §0, Q7 decided
+  from research): the ballot covers every MEK generation bump of either scope, not only the rotation
+  after a removal. The original title was "MEK rotation after a removal is agreed by write-once
+  ballots and majority confirmation".
 - **Date:** 2026-10-15
 - **Amends:** [0012](0012-community-keys-stay-on-mek.md), its "rotation by the deterministic rotator" clause.
   The rest of 0012 stands: per-channel MEKs, signed wraps checked against rank, rotators limited to
@@ -28,10 +31,14 @@ has to work with no server, on Veilid records, with members offline.
 
 **Keep the rotator model; add agreement before the new key is used.**
 
-1. **Write-once ballot.** Each rotation after a removal is a ballot: a sealed DFLT(1) record whose owner key is
-   discarded after one write (D15's sealed-page primitive). It cannot be rewritten, so it cannot equivocate, and
-   it needs no unreleased Veilid feature (no `min_seqnum`, V22). The ballot is referenced from the rotator's
-   own `MemberRecord` (ADR 0011).
+1. **Write-once ballot.** Every MEK generation bump of either scope (channel or community) is a ballot: after a
+   removal, a manual rotation, the scheduled 7-day rotation, an electorate refresh, a D16 history-visibility
+   change, and generation 0. *(Amended 2026-10-22, Q7; the original read "each rotation after a removal".)*
+   Admission never bumps: an approved joiner gets the current generation's wraps (0011, Q6). The ballot is a
+   sealed DFLT(1) record whose owner key is discarded after one write (D15's sealed-page primitive). It cannot
+   be rewritten, so it cannot equivocate, and it needs no unreleased Veilid feature (no `min_seqnum`, V22). The
+   ballot is referenced from the rotator's own `MemberRecord` (ADR 0011). Nothing mints a generation directly:
+   IPC `MekRotate` starts a ballot round, and the 7-day timer only nominates.
 2. **Steer-proof winner.** Among valid ballots for one transition the winner is the lowest
    `H(previous epoch content ‖ member)`. The inputs are fixed before anyone votes, so no member can grind for a
    win, and no clock or arrival order is involved (two readers would otherwise order the same ballots
@@ -60,6 +67,10 @@ owner's rule (O9, 2026-10-15) that is a lead, not a precedent; the reasons above
 
 - Deleted at E3.5: the B5 recovery mint ("last-resort mint", `community/mek_rotation.rs`) and the post-hoc
   same-generation tiebreak, because divergence can no longer be produced.
+- *(Added 2026-10-22, Q7.)* That deletion is sound only if no generation bump bypasses the ballot. RFC 9420 §14
+  rests on the same rule ("only one Commit is processed for each epoch"), and Keybase orders PTK rotations as
+  `team.rotate` links in one chain. So E3.5 also deletes the direct-mint paths: `rotate_mek_on_request`
+  (`rotate.rs:138`) and the desktop `rotate_mek_local` (`community_mek_local_rotate.rs:23`).
 - A kick or ban takes effect for new messages only once a majority confirms. While it waits, the kicked
   member may still read new text under the old key. U1's review for `ban_member` says so ("a key rotation
   starts; it completes when a majority confirms").
@@ -73,3 +84,5 @@ owner's rule (O9, 2026-10-15) that is a lead, not a precedent; the reasons above
 - [0012](0012-community-keys-stay-on-mek.md), [0002](0002-signal-protocol-for-1to1.md)
 - L. Lamport, [Paxos Made Simple](https://lamport.azurewebsites.net/pubs/paxos-simple.pdf) (2001), majority quorums
 - [DAVE protocol](https://daveprotocol.com/)
+- [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420) §14, one Commit per epoch
+- Plan §0 decision log, 2026-10-22 row "Q7 decided"

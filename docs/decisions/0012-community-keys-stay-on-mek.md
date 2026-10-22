@@ -2,8 +2,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-04
-- **Amended by [0018](0018-mek-rotation-ballots.md):** rotation after a removal is agreed by write-once
-  ballots and strict-majority confirmation before the new key is used. Call media is not under a MEK
+- **Amended by [0018](0018-mek-rotation-ballots.md):** every MEK generation bump (after a removal,
+  manual, scheduled, electorate refresh, visibility change, generation 0) is agreed by write-once
+  ballots and strict-majority confirmation before the new key is used. *(Amended 2026-10-22, Q7: the
+  line read "rotation after a removal".)* Call media is not under a MEK
   ([0016](0016-sender-owned-call-media-keys.md)).
 - **Re-affirms:** the community-key choice recorded in [0002](0002-signal-protocol-for-1to1.md)
   ("community channels use MEK + reader-validates governance … Revisit when a CRDT-friendly MLS
@@ -51,13 +53,14 @@ CRDT-friendly MLS variant has matured.
   rank, which closes the unsigned-MEK injection.
 - **Rotator election.** Only members holding KICK, BAN or MANAGE_COMMUNITY are eligible; if none
   is online the rotation waits.
-- **Generation rule.** A `MEKGenerationBump` is valid only as `generation == current + 1`.
+- **Generation rule.** A `MEKGenerationBump` is valid only as `generation == current + 1`, and
+  (amended 2026-10-22) only through an 0018 ballot: every bump, none minted directly.
 - **Durable kicks.** A kick is a durable `MemberRemoved` governance op that triggers rotation.
 - **Shared codec.** One channel-body codec with AAD for every host, in `rekindle-secrets::channel_body`.
 - **History for joiners**, following the Matrix MSC4268 pattern (spec v1.19):
   - each key generation is stamped at use time with the channel's history visibility;
   - joiners receive the generations their role may read;
-  - a visibility change forces rotation.
+  - a visibility change forces rotation (an 0018 ballot, like every bump).
 - **Private channels.** A deterministic `channel_read_roster` decides which members receive wraps,
   and bootstrap stops shipping every MEK.
 

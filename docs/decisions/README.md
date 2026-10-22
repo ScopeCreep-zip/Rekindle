@@ -22,14 +22,14 @@ filename is `NNNN-short-title.md`.
 | [0008](0008-runtime-adapter-pattern.md) | Runtime / adapter / pure-logic layering in `src-tauri/src/services/` | Superseded by 0020 |
 | [0009](0009-crate-harvest-tiers.md) | Tier bumps and the eleven harvest crates | Accepted; veilid-core rule superseded by 0014 |
 | [0010](0010-single-daemon-thin-frontends.md) | One daemon owns the node; GUI, TUI and CLI are thin frontends | Accepted (supersedes 0005 "Future direction") |
-| [0011](0011-member-sovereign-records.md) | Member-sovereign records replace the shared-`slot_seed` write model | Accepted (supersedes the 0003 write model) |
-| [0012](0012-community-keys-stay-on-mek.md) | Community channel keys stay on MEK + deterministic rotator (MLS re-evaluated) | Accepted (re-affirms 0002); rotator clause amended by 0018. Governs channel **text**; call media is 0016 |
+| [0011](0011-member-sovereign-records.md) | Member-sovereign records replace the shared-`slot_seed` write model | Accepted (supersedes the 0003 write model); amended 2026-10-22 (Q3: `GenesisCert` creator set `additionalCreators` + `predecessor`, creator-signed `CommunitySuccessor`; Q6: `ApprovalRequired` admits by reader-validated `MemberApproved`, keys withheld until then) |
+| [0012](0012-community-keys-stay-on-mek.md) | Community channel keys stay on MEK + deterministic rotator (MLS re-evaluated) | Accepted (re-affirms 0002); rotator clause amended by 0018 (every bump, 2026-10-22). Governs channel **text**; call media is 0016 |
 | [0013](0013-per-window-event-router.md) | Typed webview events delivered per window, no Tauri `Emitter` | Accepted (supersedes 0007 delivery and replay) |
 | [0014](0014-veilid-boundary-is-transitive.md) | The Veilid boundary is transitive | Accepted (supersedes the 0001 and 0009 boundary sentences) |
 | [0015](0015-media-engine.md) | Media engine: one Rust engine built from ported production components | Accepted (ruling Q5, Option F). Erratum: the "Decision outcome" heading still reads "(proposed)"; accepted 2026-10-07 |
 | [0016](0016-sender-owned-call-media-keys.md) | Call media is keyed by sender-owned keys (RFC 9605 §5.1) | Accepted (ruling Q4, 2026-10-15) |
 | [0017](0017-veilid-fork.md) | veilid-core is built from a minimal pinned fork until upstream carries our fixes | Accepted (amends 0001; ruling O4) |
-| [0018](0018-mek-rotation-ballots.md) | MEK rotation after a removal is agreed by write-once ballots and majority confirmation | Accepted (amends the 0012 rotator clause; ruling O5) |
+| [0018](0018-mek-rotation-ballots.md) | MEK generation bumps are agreed by write-once ballots and majority confirmation | Accepted (amends the 0012 rotator clause; ruling O5); amended 2026-10-22 (Q7: every bump of either scope, not only after a removal) |
 | [0019](0019-intentional-actions.md) | Intentional actions: one backend gate classifies every user action | Accepted (ruling O6) |
 | [0020](0020-domain-logic-in-host-and-tier-crates.md) | Domain logic lives in tier crates and the Host; `src-tauri` is a frontend | Accepted (supersedes 0008) |
 | [0021](0021-record-pool-crate.md) | The record pool is its own Veilid-free crate; `rekindle-protocol` keeps its Veilid backend | Accepted (amends 0014) |
