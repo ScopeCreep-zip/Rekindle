@@ -173,8 +173,6 @@
   .group-call-tile-active {
     border-color: var(--color-xfire-online);
   }
-  .group-call-tile-ringing {
-  }
   .group-call-tile-avatar {
     width: 32px;
     height: 32px;
