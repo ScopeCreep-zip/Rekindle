@@ -41,7 +41,6 @@ pub mod dm;
 pub mod dm_runtime; // Phase 23.C — DM video-frame command orchestration lifted from commands/dm.rs.
 pub mod files_adapter; // Phase 15 — FilesDeps impl + Tier-9 facades.
 pub mod gossip_adapter; // Phase 20.e-REDO — GossipDeps impl for mesh broadcast.
-pub mod governance_adapter; // Phase 18 — GovernanceRuntimeDeps impl for community lifecycle ops.
 pub mod mek_adapter; // Phase 17 — MekDistributeDeps impl + ChannelMekCache wrapper + Stronghold persist.
 pub mod message_service;
 pub mod messaging_runtime; // Phase 23.C — channel-messaging runtime orchestration lifted from commands/community/messaging.rs.

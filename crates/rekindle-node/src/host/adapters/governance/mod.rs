@@ -2,8 +2,9 @@
 //! `rekindle_governance_runtime::GovernanceRuntimeDeps` over the
 //! [`DaemonContext`] — its community store (`host::community::store`),
 //! database, vault, transport and journal — used by both hosts. It replaces
-//! the daemon's `daemon/governance_adapter/`; the desktop's adapter merges
-//! into it (B1/B2), and the login stage that drives hydration over it is C1.
+//! the daemon's `daemon/governance_adapter/` and the desktop's (B1/B2; the
+//! desktop's copy deleted at B2f), and the login stage that drives hydration
+//! over it is C1.
 //!
 //! File split: this module holds the struct, constructor and shared
 //! helpers; `state_reads` / `state_mutations` / `dht` / `roles` / `events`

@@ -8,7 +8,6 @@
 use crate::commands::community::helpers::require_permission;
 use crate::services::community_role_runtime::{create_role_inner, edit_role_inner};
 use crate::state::SharedState;
-use rekindle_db::Db;
 use rekindle_types::permissions;
 
 /// Architecture §19.4 — explicit edit verb so callers can either set
@@ -47,7 +46,6 @@ pub fn normalize_exclusion_group(raw: Option<String>) -> Result<Option<String>, 
 
 pub async fn create_role_handler_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     name: String,
     color: u32,
@@ -64,7 +62,6 @@ pub async fn create_role_handler_inner(
     let exclusion_group = normalize_exclusion_group(exclusion_group)?;
     create_role_inner(
         state,
-        pool,
         community_id,
         name,
         color,
@@ -79,7 +76,6 @@ pub async fn create_role_handler_inner(
 
 pub async fn edit_role_handler_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     role_id: u32,
     name: Option<String>,
@@ -110,7 +106,6 @@ pub async fn edit_role_handler_inner(
     };
     edit_role_inner(
         state,
-        pool,
         community_id,
         role_id,
         name,

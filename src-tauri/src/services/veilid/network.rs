@@ -327,8 +327,19 @@ pub fn handle_attachment(
             async move {
                 // A route that died while detached was reported dead and is
                 // being reallocated by its owner (plan C7.9b).
-                crate::services::governance_adapter::open_community_dht_records(&state).await;
-                crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
+                let governance = match crate::state_helpers::host_governance(&state) {
+                    Ok(governance) => governance,
+                    Err(e) => {
+                        tracing::debug!(error = %e, "locked before the governance rebuild ran");
+                        return;
+                    }
+                };
+                rekindle_governance_runtime::dht_hydration::open_community_dht_records(&governance)
+                    .await;
+                rekindle_governance_runtime::dht_hydration::rebuild_governance_from_dht(
+                    &governance,
+                )
+                .await;
             },
         );
     }

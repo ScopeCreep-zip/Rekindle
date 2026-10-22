@@ -56,7 +56,6 @@ pub use gossip::{
     send_to_channel_peers, send_to_channel_peers_now, send_to_mesh, start_peer_reliability_flush,
 };
 pub use governance::write_entry;
-pub(crate) use join::try_derive_slot_keypair;
 pub use join::{join_community, rejoin_community};
 pub use mek_rotation::{handle_incoming_mek_transfer, spawn_mek_request_with_retry};
 pub use mek_rotation_orchestrators::{handle_request_mek, spawn_departure_rotations};

@@ -116,4 +116,16 @@ impl ShellHooks for ShellSession {
     ) {
         governance::install_mek(&self.state, community_id, scope, key_bytes, generation);
     }
+
+    fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        crate::state_helpers::key_provider(&self.state)
+    }
+
+    async fn community_records_ready(
+        &self,
+        community_id: &str,
+        leases: rekindle_records::lease::CommunityLeases,
+    ) {
+        crate::services::community::leases::records_ready(&self.state, community_id, leases).await;
+    }
 }

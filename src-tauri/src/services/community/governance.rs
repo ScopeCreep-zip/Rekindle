@@ -3,9 +3,7 @@
 //! The full write_entry pipeline (signed payload + M9.5 conflict detect +
 //! mesh broadcast + local CRDT merge + UI snapshot emit) now lives in
 //! `rekindle_governance_runtime::apply::write_entry`. This module
-//! constructs a `GovernanceAdapter` and delegates.
-
-use std::sync::Arc;
+//! runs it over the Host's `HostGovernance` (plan E3.1 B2f).
 
 use rekindle_types::governance::GovernanceEntry;
 
@@ -16,17 +14,7 @@ pub async fn write_entry(
     community_id: &str,
     entry: GovernanceEntry,
 ) -> Result<(), String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = state.db.current()?;
-    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    );
+    let adapter = crate::state_helpers::host_governance(state)?;
     rekindle_governance_runtime::write_entry(&adapter, community_id, entry)
         .await
         .map_err(|e| e.to_string())

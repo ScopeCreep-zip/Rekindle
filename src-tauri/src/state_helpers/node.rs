@@ -80,6 +80,18 @@ pub fn record_pool(
         .ok_or_else(|| "record pool not running".to_string())
 }
 
+/// The Host's governance adapter (plan E3.1 B2f): every governance path
+/// runs over it; `NotLoggedIn` while no identity is unlocked.
+pub fn host_governance(
+    state: &AppState,
+) -> Result<rekindle_node::host::adapters::governance::HostGovernance, rekindle_db::NotLoggedIn> {
+    state
+        .host
+        .current()
+        .map(|host| host.governance())
+        .ok_or(rekindle_db::NotLoggedIn)
+}
+
 /// Routing context configured for safe community/chat transport, or a descriptive error.
 pub fn require_safe_routing_context(
     state: &Arc<AppState>,

@@ -90,7 +90,9 @@ fn network_stages(
         if !ready {
             tracing::warn!("network not ready — running community DHT hydration best-effort");
         }
-        hydrate_communities(&task_state, &stop).await;
+        if let Err(e) = hydrate_communities(&task_state, &stop).await {
+            tracing::debug!(error = %e, "locked before the community hydration ran");
+        }
     })?;
 
     // History catch-up per community (→ E3.1). Each community's presence
@@ -131,17 +133,23 @@ fn network_stages(
 /// Open, hydrate, rebuild and republish every community's records, then
 /// each rebuilt community tells the windows to refresh. Its DHT work is record-pool calls, which the
 /// lock's drain releases (plan C7.6g).
-async fn hydrate_communities(state: &SharedState, stop: &tokio_util::sync::CancellationToken) {
-    crate::services::governance_adapter::open_community_dht_records(state).await;
-    crate::services::governance_adapter::hydrate_community_state_from_dht(state).await;
-    crate::services::governance_adapter::rebuild_governance_from_dht(state).await;
-    crate::services::governance_adapter::republish_active_records(state).await;
+async fn hydrate_communities(
+    state: &SharedState,
+    stop: &tokio_util::sync::CancellationToken,
+) -> Result<(), rekindle_db::NotLoggedIn> {
+    use rekindle_governance_runtime::dht_hydration;
+    let governance = crate::state_helpers::host_governance(state)?;
+    dht_hydration::open_community_dht_records(&governance).await;
+    dht_hydration::hydrate_community_state_from_dht(&governance).await;
+    dht_hydration::rebuild_governance_from_dht(&governance).await;
+    dht_hydration::republish_active_records(&governance).await;
     if stop.is_cancelled() {
-        return;
+        return Ok(());
     }
     // Each rebuilt community's GovernanceRebuilt and MembersRefreshed
     // come from the rebuild itself (plan E3.1 C1).
     tracing::info!("background DHT hydration complete — governance state rebuilt");
+    Ok(())
 }
 
 /// Wait for `public_internet_ready` with a live peer, up to

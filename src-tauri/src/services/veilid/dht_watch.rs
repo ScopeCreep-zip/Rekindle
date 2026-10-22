@@ -45,9 +45,18 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
     // were never opened (V19).
     let record_pool = crate::state_helpers::record_pool(state).ok();
 
-    if crate::services::sync_communities::handle_community_record_change(state, &pool, &key).await {
-        tracing::debug!(key = %key, "handled community DHT change via sync service");
-        return;
+    match crate::services::sync_communities::handle_community_record_change(state, &pool, &key)
+        .await
+    {
+        Ok(true) => {
+            tracing::debug!(key = %key, "handled community DHT change via sync service");
+            return;
+        }
+        Ok(false) => {}
+        Err(e) => {
+            tracing::debug!(key = %key, error = %e, "DHT change while locked — not routed");
+            return;
+        }
     }
 
     // Personal cross-device sync record (architecture §28.4).

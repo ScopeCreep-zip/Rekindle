@@ -54,17 +54,7 @@ pub async fn join_community(
 ) -> Result<rekindle_db::repo::governance_cache::Entries, String> {
     let governance_key_str = link.governance_key.as_str();
 
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = state.db.current()?;
-    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    );
+    let adapter = crate::state_helpers::host_governance(state)?;
 
     // 1. Multi-segment governance snapshot via crate primitive (DHT scan +
     //    W26 signature verify + multi-segment re-merge), under its own gate.
@@ -367,7 +357,7 @@ pub async fn join_community(
 
 async fn decode_invite_context(
     state: &Arc<AppState>,
-    adapter: &crate::services::governance_adapter::GovernanceAdapter,
+    adapter: &rekindle_node::host::adapters::governance::HostGovernance,
     governance_key_str: &str,
     invite_code: &str,
     secrets_record_key: &str,

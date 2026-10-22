@@ -78,8 +78,8 @@ impl HostGovernance {
 
     /// `app_call` a peer through its advertised private route.
     ///
-    /// **Unframed**, matching the desktop, which sends a raw `app_call`
-    /// (`governance_adapter/dht.rs`). The daemon used to wrap the same
+    /// **Unframed**, as the desktop sent it, a raw `app_call` (its
+    /// governance adapter, deleted at E3.1 B2f). The daemon used to wrap the same
     /// bytes in a `TypeId::CommunityGovOp` frame and sign them as a
     /// `SignedPayload`, so the two shells could not have answered each
     /// other's peer calls — the frame is gone with the `GovernanceOp`

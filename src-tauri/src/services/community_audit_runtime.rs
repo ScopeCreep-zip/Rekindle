@@ -60,12 +60,7 @@ pub async fn get_audit_log_inner(
     // The governance runtime's reader: W26-verifies every payload and
     // follows each author's overflow chain, every page verified against the
     // author that pointed at it, through the record pool.
-    let app_handle = state_helpers::app_handle(state).ok_or("app handle not initialized")?;
-    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
-        std::sync::Arc::clone(state),
-        app_handle,
-        state.db.current()?,
-    );
+    let adapter = state_helpers::host_governance(state)?;
     let readout = rekindle_governance_runtime::read_governance_with_overflow(
         &adapter,
         &gov_key_str,

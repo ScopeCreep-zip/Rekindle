@@ -121,6 +121,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
     }
 
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases) {
+        if let Some(shell) = &self.ctx.shell {
+            shell.community_records_ready(community_id, leases).await;
+            return;
+        }
         self.community_records_ready_impl(community_id, leases)
             .await;
     }
@@ -168,7 +172,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
     // ---------- MEK cache ----------
 
     fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
-        crate::daemon::mek_rotation::key_provider(&self.ctx)
+        match &self.ctx.shell {
+            Some(shell) => shell.channel_keys(),
+            None => crate::daemon::mek_rotation::key_provider(&self.ctx),
+        }
     }
 
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot) {
@@ -295,11 +302,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
     }
 
     fn try_derive_slot_keypair_if_ready(&self, community_id: &str) {
-        // Nothing to do: this track derives the slot keypair on demand
-        // in `community_membership` from the seed plus the slot index,
-        // rather than caching it in state. There is no "not yet derived"
-        // condition to repair.
-        let _ = community_id;
+        self.try_derive_slot_keypair_impl(community_id);
     }
 
     fn list_missing_registry_keypairs(&self) -> Vec<String> {
@@ -381,23 +384,23 @@ impl GovernanceRuntimeDeps for HostGovernance {
     async fn apply_role_assignment(
         &self,
         community_id: &str,
-        _pseudonym_key: &str,
+        pseudonym_key: &str,
         role_id: u32,
         is_self: bool,
     ) -> Result<(), GovernanceRuntimeError> {
-        self.apply_role_assignment_impl(community_id, role_id, is_self);
-        Ok(())
+        self.apply_role_assignment_impl(community_id, pseudonym_key, role_id, is_self)
+            .await
     }
 
     async fn apply_role_unassignment(
         &self,
         community_id: &str,
-        _pseudonym_key: &str,
+        pseudonym_key: &str,
         role_id: u32,
         is_self: bool,
     ) -> Result<(), GovernanceRuntimeError> {
-        self.apply_role_unassignment_impl(community_id, role_id, is_self);
-        Ok(())
+        self.apply_role_unassignment_impl(community_id, pseudonym_key, role_id, is_self)
+            .await
     }
 
     /// No local mirror to update: the definition is already carried by
@@ -428,7 +431,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         role_id: u32,
     ) -> Result<(), GovernanceRuntimeError> {
-        self.apply_role_delete_impl(community_id, role_id);
-        Ok(())
+        self.apply_role_delete_impl(community_id, role_id).await
     }
 }

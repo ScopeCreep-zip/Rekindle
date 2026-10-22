@@ -62,12 +62,16 @@ pub(crate) fn handle_gossip_control_payloads(
             crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
                 "community record change",
                 async move {
-                    let _ = crate::services::sync_communities::handle_community_record_change(
-                        &state,
-                        &db_pool,
-                        &governance_key,
-                    )
-                    .await;
+                    if let Err(e) =
+                        crate::services::sync_communities::handle_community_record_change(
+                            &state,
+                            &db_pool,
+                            &governance_key,
+                        )
+                        .await
+                    {
+                        tracing::debug!(error = %e, "governance change while locked — not rebuilt");
+                    }
                 },
             );
         }

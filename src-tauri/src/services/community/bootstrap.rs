@@ -4,7 +4,7 @@
 //! keypair + per-channel MEK wrap + recent message re-encrypt + capnp
 //! envelope encode) now lives in
 //! `rekindle_governance_runtime::bootstrap::build_bootstrap_response`.
-//! This module constructs a `GovernanceAdapter` and delegates.
+//! This module runs it over the Host's `HostGovernance` (plan E3.1 B2f).
 
 use std::sync::Arc;
 
@@ -16,17 +16,7 @@ pub async fn build_bootstrap_response(
     governance_key: &str,
     joiner_pseudonym_hex: &str,
 ) -> Result<Vec<u8>, String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle unavailable".to_string())?;
-    let pool = state.db.current()?;
-    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool,
-    );
+    let adapter = crate::state_helpers::host_governance(state)?;
     rekindle_governance_runtime::build_bootstrap_response(
         &adapter,
         community_id,

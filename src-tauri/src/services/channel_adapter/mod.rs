@@ -5,7 +5,7 @@
 //! `send_channel_message`, `forward_channel_message`,
 //! `process_retry_write`, plus reactions/mentions/threads/expressions
 //! orchestrators parameterise over this trait — Phase 14.r module-dir
-//! pattern, same shape as Phase 18 governance_adapter.
+//! pattern.
 //!
 //! Schwarzschild boundary: this is the only place in src-tauri that
 //! both holds `Arc<AppState>` AND constructs `veilid_core::*` types

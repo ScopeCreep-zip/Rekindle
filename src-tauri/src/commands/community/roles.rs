@@ -38,10 +38,8 @@ pub async fn create_role(
     exclusion_group: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<u32, String> {
-    let pool = state.db.current()?;
     create_role_handler_inner(
         state.inner(),
-        &pool,
         community_id,
         name,
         color,
@@ -72,10 +70,8 @@ pub async fn edit_role(
     exclusion_group: Option<ExclusionGroupEdit>,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
     edit_role_handler_inner(
         state.inner(),
-        &pool,
         community_id,
         role_id,
         name,
@@ -97,8 +93,7 @@ pub async fn delete_role(
     role_id: u32,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
-    delete_role_with_check_inner(state.inner(), &pool, community_id, role_id).await
+    delete_role_with_check_inner(state.inner(), community_id, role_id).await
 }
 
 /// Assign a role to a member (additive — does not remove other roles).
@@ -109,8 +104,7 @@ pub async fn assign_role(
     role_id: u32,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
-    assign_role_with_check_inner(state.inner(), &pool, community_id, pseudonym_key, role_id).await
+    assign_role_with_check_inner(state.inner(), community_id, pseudonym_key, role_id).await
 }
 
 /// Remove a role from a member.
@@ -121,8 +115,7 @@ pub async fn unassign_role(
     role_id: u32,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
-    unassign_role_with_check_inner(state.inner(), &pool, community_id, pseudonym_key, role_id).await
+    unassign_role_with_check_inner(state.inner(), community_id, pseudonym_key, role_id).await
 }
 
 /// Assign a self-assignable role to the current member.
@@ -132,8 +125,7 @@ pub async fn self_assign_role(
     role_id: u32,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
-    self_assign_role_inner(state.inner(), &pool, community_id, role_id).await
+    self_assign_role_inner(state.inner(), community_id, role_id).await
 }
 
 /// Remove a self-assignable role from the current member.
@@ -143,6 +135,5 @@ pub async fn self_unassign_role(
     role_id: u32,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    let pool = state.db.current()?;
-    self_unassign_role_inner(state.inner(), &pool, community_id, role_id).await
+    self_unassign_role_inner(state.inner(), community_id, role_id).await
 }

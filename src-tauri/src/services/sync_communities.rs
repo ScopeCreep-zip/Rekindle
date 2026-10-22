@@ -45,15 +45,17 @@ pub(super) async fn sync_communities(
     Ok(())
 }
 
+/// Route a watched record's change: a governance record (or a Plate Gate
+/// segment's) to the Host's governance arm, which rebuilds that community
+/// alone and opens the channel records it newly names (plan E3.1 C1); a
+/// registry to a presence tick; a channel record to its sync. `Ok(false)`
+/// for a record no community holds; `NotLoggedIn` while locked.
 pub(crate) async fn handle_community_record_change(
     state: &Arc<AppState>,
     pool: &Db,
     dht_key: &str,
-) -> bool {
+) -> Result<bool, rekindle_db::NotLoggedIn> {
     enum ChangedRecord {
-        Governance {
-            community_id: String,
-        },
         Registry {
             community_id: String,
         },
@@ -63,14 +65,16 @@ pub(crate) async fn handle_community_record_change(
         },
     }
 
+    if state_helpers::host_governance(state)?
+        .on_watched_change(dht_key)
+        .await
+    {
+        return Ok(true);
+    }
+
     let changed = {
         let communities = state.communities.read();
         communities.values().find_map(|community| {
-            if community.governance_key.as_deref() == Some(dht_key) {
-                return Some(ChangedRecord::Governance {
-                    community_id: community.id.clone(),
-                });
-            }
             if community.member_registry_key.as_deref() == Some(dht_key) {
                 return Some(ChangedRecord::Registry {
                     community_id: community.id.clone(),
@@ -91,19 +95,14 @@ pub(crate) async fn handle_community_record_change(
             }
             // Plate Gate (§15.4) — segment-N records route to the same
             // arms as their segment-0 counterparts: a segment-registry
-            // change is a presence change, a segment-governance change
-            // is a governance change, a channel-segment record change
-            // is channel traffic. These are watched (tracked_watch_keys)
+            // change is a presence change, a channel-segment record change
+            // is channel traffic (a segment-governance change went to the
+            // Host above). These are watched (tracked_watch_keys)
             // and previously fell through to the friend-presence
             // handler, which silently ignored them.
             let gov = community.governance_state.as_ref()?;
             if gov.segments.iter().any(|s| s.registry_key == dht_key) {
                 return Some(ChangedRecord::Registry {
-                    community_id: community.id.clone(),
-                });
-            }
-            if gov.segments.iter().any(|s| s.governance_key == dht_key) {
-                return Some(ChangedRecord::Governance {
                     community_id: community.id.clone(),
                 });
             }
@@ -119,26 +118,19 @@ pub(crate) async fn handle_community_record_change(
     };
 
     match changed {
-        Some(ChangedRecord::Governance { community_id }) => {
-            // That community alone is rebuilt (plan E3.1 C1); the Host's
-            // governance arm once B2 makes the desktop's adapter the Host's.
-            crate::services::governance_adapter::rebuild_governance(state, &community_id).await;
-            open_new_channel_records(state, &community_id).await;
-            true
-        }
         Some(ChangedRecord::Registry { community_id }) => {
             let _ =
                 crate::services::community::presence_poll_tick_public(state, &community_id).await;
-            true
+            Ok(true)
         }
         Some(ChangedRecord::Channel {
             community_id,
             channel_id,
         }) => {
             request_channel_sync(state, pool, &community_id, &channel_id).await;
-            true
+            Ok(true)
         }
-        None => false,
+        None => Ok(false),
     }
 }
 
@@ -146,66 +138,6 @@ fn report_fingerprint(seqs: &[Option<u32>]) -> u64 {
     let mut hasher = DefaultHasher::new();
     seqs.hash(&mut hasher);
     hasher.finish()
-}
-
-/// Borrow every channel record governance now names that the community does
-/// not hold yet, and hand the leases to it (`leases::records_ready`: held,
-/// recorded in the inventory, watched).
-async fn open_new_channel_records(state: &Arc<AppState>, community_id: &str) {
-    let Ok(pool) = state_helpers::record_pool(state) else {
-        return;
-    };
-    let (channel_pairs, opened_keys, slot_writer) = {
-        let communities = state.communities.read();
-        let Some(cs) = communities.get(community_id) else {
-            return;
-        };
-        (
-            cs.channel_log_keys
-                .iter()
-                .map(|(channel_id, record_key)| (channel_id.clone(), record_key.clone()))
-                .collect::<Vec<_>>(),
-            cs.open_community_records
-                .channel_keys
-                .iter()
-                .cloned()
-                .collect::<std::collections::HashSet<_>>(),
-            // Our slot writer: channel records share the registry's slot
-            // seed, so a held channel write restored after a re-login
-            // re-pushes as us (plan C7.13).
-            cs.slot_keypair.clone(),
-        )
-    };
-
-    let mut leases = rekindle_records::lease::CommunityLeases::default();
-    for (channel_id, record_key) in channel_pairs {
-        if opened_keys.contains(&record_key) {
-            continue;
-        }
-        let Some(channel) = hex::decode(&channel_id)
-            .ok()
-            .and_then(|b| <[u8; 16]>::try_from(b).ok())
-            .map(rekindle_types::id::ChannelId)
-        else {
-            continue;
-        };
-        match pool.acquire(&record_key, slot_writer.as_deref()).await {
-            Ok(lease) => {
-                leases.channels.insert(channel, lease);
-            }
-            Err(e) => {
-                tracing::trace!(
-                    community = %community_id,
-                    channel_record = %record_key,
-                    error = %e,
-                    "failed to open newly discovered channel record"
-                );
-            }
-        }
-    }
-    if !leases.channels.is_empty() {
-        crate::services::community::leases::records_ready(state, community_id, leases).await;
-    }
 }
 
 async fn sync_community_channels(

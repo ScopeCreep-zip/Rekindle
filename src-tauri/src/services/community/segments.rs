@@ -2,7 +2,7 @@
 //!
 //! The 6 public segment operations + `MAX_SEGMENTS` constant live in
 //! `rekindle_governance_runtime::segments`. This module constructs a
-//! `GovernanceAdapter` per call and delegates.
+//! call over the Host's `HostGovernance` (plan E3.1 B2f).
 
 use rekindle_governance_runtime as gov_rt;
 
@@ -12,11 +12,8 @@ use gov_rt::SegmentDescriptor;
 
 fn build_adapter(
     state: &SharedState,
-) -> Result<crate::services::governance_adapter::GovernanceAdapter, String> {
-    crate::services::build_adapter(
-        state,
-        crate::services::governance_adapter::GovernanceAdapter::new,
-    )
+) -> Result<rekindle_node::host::adapters::governance::HostGovernance, String> {
+    Ok(crate::state_helpers::host_governance(state)?)
 }
 
 pub fn segment_descriptors(state: &SharedState, community_id: &str) -> Vec<SegmentDescriptor> {

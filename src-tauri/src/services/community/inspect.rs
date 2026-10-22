@@ -121,7 +121,7 @@ pub(crate) async fn inspect_record(
         if !crate::services::sync_communities::handle_community_record_change(
             state, &pool, record_key,
         )
-        .await
+        .await?
         {
             continue;
         }

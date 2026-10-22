@@ -83,6 +83,13 @@ impl HostGovernance {
         if keys.is_empty() {
             return;
         }
+        self.ctx.communities.note_channel_records(community, keys);
+        // The shell holds and watches its records itself (its leases move
+        // at E3.4); the daemon's `SubscriptionManager` watches its own.
+        if let Some(shell) = &self.ctx.shell {
+            shell.community_records_ready(community, leases).await;
+            return;
+        }
         let merged = self
             .ctx
             .communities
@@ -90,6 +97,5 @@ impl HostGovernance {
         for lease in merged.surplus {
             dht_writes::release(&transport, lease).await;
         }
-        self.ctx.communities.note_channel_records(community, keys);
     }
 }

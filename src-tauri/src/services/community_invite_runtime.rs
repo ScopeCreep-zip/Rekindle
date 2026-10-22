@@ -3,8 +3,6 @@
 //! (`create_community_invite_inner`, `revoke_community_invite_inner`,
 //! `list_community_invites_inner`).
 
-use std::sync::Arc;
-
 use rekindle_governance_runtime as gov_rt;
 use rekindle_types::permissions;
 
@@ -185,12 +183,7 @@ pub async fn create_community_invite_inner(
     // and carry only the pointer in governance — the blob is multi-KB and
     // would overflow the per-subkey SMPL cap if co-located with genesis
     // entries (architecture: modular pointer records, not inline blobs).
-    let app_handle = state_helpers::app_handle(state).ok_or("app handle unavailable")?;
-    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool.clone(),
-    );
+    let adapter = state_helpers::host_governance(state)?;
     let secrets_record_key = gov_rt::publish_invite_secrets(&adapter, &encrypted_b64)
         .await
         .map_err(|e| e.to_string())?;

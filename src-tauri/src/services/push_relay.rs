@@ -155,7 +155,7 @@ pub async fn list_registrations(
 /// background sync sweep of all active community records and friend
 /// presence so the user sees up-to-date state. Throttled to one sweep
 /// per `WAKE_NOTIFY_DEBOUNCE_SECS` because each call kicks off
-/// `governance_adapter::open_community_dht_records` + `governance_adapter::rebuild_governance_from_dht`,
+/// `dht_hydration::open_community_dht_records` + `dht_hydration::rebuild_governance_from_dht`,
 /// both of which spawn 30+ second DHT-bound work; back-to-back wakes
 /// without throttling would saturate the network and burn battery.
 pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
@@ -172,8 +172,17 @@ pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
     crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
         "wake sync sweep",
         async move {
-            crate::services::governance_adapter::open_community_dht_records(&state).await;
-            crate::services::governance_adapter::rebuild_governance_from_dht(&state).await;
+            let governance = match crate::state_helpers::host_governance(&state) {
+                Ok(governance) => governance,
+                Err(e) => {
+                    tracing::debug!(error = %e, "locked before the governance rebuild ran");
+                    return;
+                }
+            };
+            rekindle_governance_runtime::dht_hydration::open_community_dht_records(&governance)
+                .await;
+            rekindle_governance_runtime::dht_hydration::rebuild_governance_from_dht(&governance)
+                .await;
         },
     );
 }

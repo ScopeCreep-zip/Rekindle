@@ -138,4 +138,21 @@ pub trait ShellHooks: Send + Sync {
         key_bytes: [u8; 32],
         generation: u64,
     );
+
+    /// The shell's channel-key reader over its own key cache, which its
+    /// gossip, channel and rotation paths fill: the governance runtime reads
+    /// it (a joiner's bootstrap bundle, a rotation's prior key) until the MEK
+    /// adapters move at E3.5.
+    fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
+
+    /// The governance runtime handed over a community's session leases:
+    /// the shell holds them, watches the records and starts the community's
+    /// inspect, presence and keepalive loops once. Ported when the leases
+    /// and keepalive become both-mode and the presence polls move with
+    /// presence at E3.4.
+    async fn community_records_ready(
+        &self,
+        community_id: &str,
+        leases: rekindle_records::lease::CommunityLeases,
+    );
 }

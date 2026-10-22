@@ -93,6 +93,17 @@ async fn a_create_unlocks_until_logout() {
 #[derive(Default)]
 struct Recorder(parking_lot::Mutex<Vec<String>>);
 
+/// A key reader over an empty cache: the test shells hold no keys.
+fn empty_channel_keys() -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+    let cache = Arc::new(crate::daemon::mek_rotation::MekCacheAdapter::new(Arc::new(
+        parking_lot::RwLock::new(rekindle_transport::crypto::mek::MekCache::new()),
+    )));
+    Arc::new(rekindle_mek_rotation::MekKeyProvider::new(
+        cache.clone(),
+        cache,
+    ))
+}
+
 #[async_trait::async_trait]
 impl shell_hooks::ShellHooks for Recorder {
     async fn unlocked(
@@ -135,6 +146,17 @@ impl shell_hooks::ShellHooks for Recorder {
         _scope: rekindle_types::channel_keys::KeyScope,
         _key_bytes: [u8; 32],
         _generation: u64,
+    ) {
+    }
+
+    fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        empty_channel_keys()
+    }
+
+    async fn community_records_ready(
+        &self,
+        _community_id: &str,
+        _leases: rekindle_records::lease::CommunityLeases,
     ) {
     }
 
@@ -220,6 +242,17 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
             _scope: rekindle_types::channel_keys::KeyScope,
             _key_bytes: [u8; 32],
             _generation: u64,
+        ) {
+        }
+
+        fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+            empty_channel_keys()
+        }
+
+        async fn community_records_ready(
+            &self,
+            _community_id: &str,
+            _leases: rekindle_records::lease::CommunityLeases,
         ) {
         }
 

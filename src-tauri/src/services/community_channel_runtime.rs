@@ -56,12 +56,7 @@ pub async fn create_channel_inner(
     // daemon. Both shells were assembling this by hand, and only one of
     // them got it right: the daemon appended to the v1.0 manifest
     // channels subkey with no record key at all.
-    let app_handle = state_helpers::app_handle(&state).ok_or("app handle not initialized")?;
-    let adapter = crate::services::governance_adapter::GovernanceAdapter::new(
-        Arc::clone(&state),
-        app_handle,
-        pool.clone(),
-    );
+    let adapter = state_helpers::host_governance(&state)?;
     let created = rekindle_governance_runtime::channels::create_channel(
         &adapter,
         &community_id,

@@ -141,4 +141,37 @@ impl HostGovernance {
             role_ids,
         );
     }
+
+    /// Derive and keep our slot keypair once the seed and our slot index are
+    /// both known (a registry scan can recover the index after the join):
+    /// the channel, files and presence writers read it from the store.
+    pub(super) fn try_derive_slot_keypair_impl(&self, community_id: &str) {
+        let mut map = self.ctx.communities.map().write();
+        let Some(cs) = map.get_mut(community_id) else {
+            return;
+        };
+        if cs.slot_keypair.is_some() {
+            return;
+        }
+        let (Some(seed_hex), Some(index)) = (cs.slot_seed.as_deref(), cs.my_subkey_index) else {
+            return;
+        };
+        let Some(seed) = hex::decode(seed_hex)
+            .ok()
+            .and_then(|b| <[u8; 32]>::try_from(b).ok())
+        else {
+            tracing::warn!(community = %community_id, "stored slot seed is not 32 bytes");
+            return;
+        };
+        match rekindle_secrets::derive::derive_slot_keypair(&seed, index) {
+            Ok(key) => {
+                cs.slot_keypair = Some(rekindle_crypto::keypair_text::keypair_text_from_signing(
+                    &key,
+                ));
+            }
+            Err(e) => {
+                tracing::warn!(community = %community_id, error = %e, "slot keypair not derived");
+            }
+        }
+    }
 }

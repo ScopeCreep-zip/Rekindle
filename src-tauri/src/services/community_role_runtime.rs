@@ -1,21 +1,18 @@
 //! Phase 23.D.15 — thin facade. All role-mutation orchestration ported
 //! into `rekindle_governance_runtime::roles` parameterised over
 //! `GovernanceRuntimeDeps`. This module wraps the crate-side
-//! orchestrators with `GovernanceAdapter` construction so the
+//! orchestrators over the Host's `HostGovernance` so the
 //! existing command callers (which take `&SharedState` + `&Db`)
 //! keep their call shape unchanged.
-
-use std::sync::Arc;
 
 use rekindle_governance_runtime::roles::{ExclusionGroupEdit, RoleSnapshotPatch};
 use rekindle_types::permissions;
 
 use crate::commands::community::helpers::require_permission;
 use crate::commands::community::types::CommunityRoleDto;
-use crate::services::governance_adapter::GovernanceAdapter;
 use crate::state::SharedState;
 use crate::state_helpers;
-use rekindle_db::Db;
+use rekindle_node::host::adapters::governance::HostGovernance;
 
 pub fn get_roles_inner(
     state: &SharedState,
@@ -28,77 +25,62 @@ pub fn get_roles_inner(
 
 pub async fn self_assign_role_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     role_id: u32,
 ) -> Result<(), String> {
     let pseudonym_key = resolve_self_assignable_pseudonym(state, &community_id, role_id)?;
-    assign_role_inner(state, pool, &community_id, &pseudonym_key, role_id).await
+    assign_role_inner(state, &community_id, &pseudonym_key, role_id).await
 }
 
 pub async fn self_unassign_role_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     role_id: u32,
 ) -> Result<(), String> {
     let pseudonym_key = resolve_self_assignable_pseudonym(state, &community_id, role_id)?;
-    unassign_role_inner(state, pool, &community_id, &pseudonym_key, role_id).await
+    unassign_role_inner(state, &community_id, &pseudonym_key, role_id).await
 }
 
 pub async fn delete_role_with_check_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     role_id: u32,
 ) -> Result<(), String> {
     require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
-    delete_role_inner(state, pool, community_id, role_id).await
+    delete_role_inner(state, community_id, role_id).await
 }
 
 pub async fn assign_role_with_check_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     pseudonym_key: String,
     role_id: u32,
 ) -> Result<(), String> {
     require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
-    assign_role_inner(state, pool, &community_id, &pseudonym_key, role_id).await
+    assign_role_inner(state, &community_id, &pseudonym_key, role_id).await
 }
 
 pub async fn unassign_role_with_check_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     pseudonym_key: String,
     role_id: u32,
 ) -> Result<(), String> {
     require_permission(state, &community_id, permissions::MANAGE_ROLES)?;
-    unassign_role_inner(state, pool, &community_id, &pseudonym_key, role_id).await
+    unassign_role_inner(state, &community_id, &pseudonym_key, role_id).await
 }
 
-fn build_adapter(state: &SharedState, pool: &Db) -> Result<GovernanceAdapter, String> {
-    // The caller supplies the pool, so only the app handle is read here.
-    // This used to also do `let _: tauri::State<'_, Db> =
-    // app_handle.state();` — fetching the pool purely to discard it,
-    // which panics if the pool is unmanaged and otherwise does nothing.
-    let app_handle = state_helpers::app_handle(state).ok_or("app handle not initialized")?;
-    Ok(GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle,
-        pool.clone(),
-    ))
+fn build_adapter(state: &SharedState) -> Result<HostGovernance, String> {
+    Ok(state_helpers::host_governance(state)?)
 }
 
 pub async fn assign_role_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: &str,
     pseudonym_key: &str,
     role_id: u32,
 ) -> Result<(), String> {
-    let adapter = build_adapter(state, pool)?;
+    let adapter = build_adapter(state)?;
     rekindle_governance_runtime::roles::assign_role(&adapter, community_id, pseudonym_key, role_id)
         .await
         .map_err(|e| e.to_string())
@@ -106,12 +88,11 @@ pub async fn assign_role_inner(
 
 pub async fn unassign_role_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: &str,
     pseudonym_key: &str,
     role_id: u32,
 ) -> Result<(), String> {
-    let adapter = build_adapter(state, pool)?;
+    let adapter = build_adapter(state)?;
     rekindle_governance_runtime::roles::unassign_role(
         &adapter,
         community_id,
@@ -124,7 +105,6 @@ pub async fn unassign_role_inner(
 
 pub async fn create_role_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     name: String,
     color: u32,
@@ -134,7 +114,7 @@ pub async fn create_role_inner(
     self_assignable: bool,
     exclusion_group: Option<String>,
 ) -> Result<u32, String> {
-    let adapter = build_adapter(state, pool)?;
+    let adapter = build_adapter(state)?;
     rekindle_governance_runtime::roles::create_role(
         &adapter,
         &community_id,
@@ -152,7 +132,6 @@ pub async fn create_role_inner(
 
 pub async fn edit_role_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     role_id: u32,
     name: Option<String>,
@@ -164,7 +143,7 @@ pub async fn edit_role_inner(
     self_assignable: Option<bool>,
     exclusion_group: ExclusionGroupEdit,
 ) -> Result<(), String> {
-    let adapter = build_adapter(state, pool)?;
+    let adapter = build_adapter(state)?;
     let patch = RoleSnapshotPatch {
         name,
         color,
@@ -182,11 +161,10 @@ pub async fn edit_role_inner(
 
 pub async fn delete_role_inner(
     state: &SharedState,
-    pool: &Db,
     community_id: String,
     role_id: u32,
 ) -> Result<(), String> {
-    let adapter = build_adapter(state, pool)?;
+    let adapter = build_adapter(state)?;
     rekindle_governance_runtime::roles::delete_role(&adapter, &community_id, role_id)
         .await
         .map_err(|e| e.to_string())
@@ -197,13 +175,7 @@ pub fn resolve_self_assignable_pseudonym(
     community_id: &str,
     role_id: u32,
 ) -> Result<String, String> {
-    let app_handle = state
-        .app_handle
-        .read()
-        .clone()
-        .ok_or_else(|| "app handle not initialized".to_string())?;
-    let pool = state.db.current()?;
-    let adapter = GovernanceAdapter::new(Arc::clone(state), app_handle.clone(), pool.clone());
+    let adapter = build_adapter(state)?;
     rekindle_governance_runtime::roles::resolve_self_assignable_pseudonym(
         &adapter,
         community_id,
