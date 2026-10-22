@@ -198,6 +198,11 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), GovernanceRuntimeError> {
+        if let Some(shell) = &self.ctx.shell {
+            return shell
+                .send_to_mesh(community_id, envelope)
+                .map_err(GovernanceRuntimeError::Adapter);
+        }
         self.send_to_mesh_impl(community_id, envelope);
         Ok(())
     }
@@ -209,6 +214,11 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         perm_bits: u64,
     ) -> Result<(), GovernanceRuntimeError> {
+        if let Some(shell) = &self.ctx.shell {
+            return shell
+                .require_permission(community_id, perm_bits)
+                .map_err(|_| GovernanceRuntimeError::PermissionDenied);
+        }
         self.require_permission_impl(community_id, perm_bits)
     }
 
@@ -221,17 +231,19 @@ impl GovernanceRuntimeDeps for HostGovernance {
     // ---------- Background lifecycle ----------
 
     fn spawn_history_catchup(&self, community_id: &str) {
-        Self::spawn_history_catchup_impl(community_id);
+        match &self.ctx.shell {
+            Some(shell) => shell.spawn_history_catchup(community_id),
+            None => Self::spawn_history_catchup_impl(community_id),
+        }
     }
 
-    /// No daemon equivalent yet.
-    ///
-    /// The Lost Cargo chunk cache is a Tauri-side surface
-    /// (`ChunkCache`, filesystem-backed, per-community). The daemon has
-    /// no file-transfer subsystem, so there is nothing to open. Recorded
-    /// as a feature gap rather than silently satisfied — see the CLI
-    /// parity note in the module header.
+    /// The shell opens its Lost Cargo chunk cache; the daemon has no
+    /// file-transfer subsystem yet (E3.1 E3), so there is nothing to open.
     fn ensure_files_cache_open(&self, community_id: &str) {
+        if let Some(shell) = &self.ctx.shell {
+            shell.ensure_files_cache_open(community_id);
+            return;
+        }
         tracing::debug!(
             community_id,
             "governance adapter: files cache not implemented on the daemon track"
@@ -349,7 +361,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
     }
 
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str) {
-        self.spawn_text_mek_rotation_for_ban_impl(community_id, banned_pseudonym_hex);
+        match &self.ctx.shell {
+            Some(shell) => shell.spawn_departure_rotation(community_id, banned_pseudonym_hex),
+            None => self.spawn_text_mek_rotation_for_ban_impl(community_id, banned_pseudonym_hex),
+        }
     }
 
     // ---------- Role mutations ----------

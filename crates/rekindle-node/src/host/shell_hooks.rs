@@ -70,4 +70,37 @@ pub trait ShellHooks: Send + Sync {
 
     /// The teardown finished; the identity is out of the Host.
     async fn ended(&self, reason: EndReason);
+
+    // ---- Governance capabilities the Host's adapter cannot reach yet
+    // (plan E3.1 B2). `rekindled` runs its own; each owner step deletes one.
+
+    /// Fan a governance envelope out over the shell's gossip mesh; an error
+    /// when it could not go. Ported with the gossip mesh at E3.4.
+    ///
+    /// # Errors
+    /// The envelope did not reach the mesh.
+    fn send_to_mesh(
+        &self,
+        community_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    ) -> Result<(), String>;
+
+    /// Start the shell's history catch-up for a community. Ported with the
+    /// catch-up at E3.1 C2.
+    fn spawn_history_catchup(&self, community_id: &str);
+
+    /// Open the community's Lost Cargo chunk cache. Ported with the files
+    /// domain at E3.1 E3.
+    fn ensure_files_cache_open(&self, community_id: &str);
+
+    /// Start the key rotations a departure (a ban) requires. Ported with
+    /// the MEK adapters at E3.5.
+    fn spawn_departure_rotation(&self, community_id: &str, departed_pseudonym_hex: &str);
+
+    /// The shell's permission check over its own role mirror. Ported when
+    /// the Host's `community_membership` reads the community store (E3.1 B2).
+    ///
+    /// # Errors
+    /// We lack the permission, or the community is unknown.
+    fn require_permission(&self, community_id: &str, perm_bits: u64) -> Result<(), String>;
 }

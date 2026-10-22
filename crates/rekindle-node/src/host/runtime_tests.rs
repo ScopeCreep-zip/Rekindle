@@ -109,6 +109,19 @@ impl shell_hooks::ShellHooks for Recorder {
     async fn ended(&self, reason: shell_hooks::EndReason) {
         self.0.lock().push(format!("ended {reason:?}"));
     }
+    fn send_to_mesh(
+        &self,
+        _community_id: &str,
+        _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+    fn spawn_history_catchup(&self, _community_id: &str) {}
+    fn ensure_files_cache_open(&self, _community_id: &str) {}
+    fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
+    fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// The Host calls the shell at its fixed points: after its own stages,
@@ -162,6 +175,19 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         fn own_records(&self, _keys: &shell_hooks::OwnRecordKeys) {}
         async fn ending(&self) {}
         async fn ended(&self, _reason: shell_hooks::EndReason) {}
+        fn send_to_mesh(
+            &self,
+            _community_id: &str,
+            _envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+        fn spawn_history_catchup(&self, _community_id: &str) {}
+        fn ensure_files_cache_open(&self, _community_id: &str) {}
+        fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
+        fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
+            Ok(())
+        }
     }
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host_with(&dir, Some(Arc::new(Refuses))).await;

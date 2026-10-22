@@ -49,4 +49,44 @@ impl ShellHooks for ShellSession {
     async fn ended(&self, reason: EndReason) {
         ended::ended(&self.state, self.app.as_ref(), reason).await;
     }
+
+    fn send_to_mesh(
+        &self,
+        community_id: &str,
+        envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
+    ) -> Result<(), String> {
+        crate::services::community::send_to_mesh(&self.state, community_id, envelope)
+    }
+
+    fn spawn_history_catchup(&self, community_id: &str) {
+        crate::services::community::join::schedule_history_catchup(
+            self.state.clone(),
+            community_id.to_string(),
+        );
+    }
+
+    fn ensure_files_cache_open(&self, community_id: &str) {
+        if let Err(e) =
+            crate::services::community::files::ensure_cache_open(&self.state, community_id)
+        {
+            tracing::warn!(community = %community_id, error = %e, "Lost Cargo cache unavailable");
+        }
+    }
+
+    fn spawn_departure_rotation(&self, community_id: &str, departed_pseudonym_hex: &str) {
+        let Some(app) = &self.app else {
+            return;
+        };
+        crate::services::community::spawn_departure_rotations(
+            app,
+            &self.state,
+            community_id,
+            departed_pseudonym_hex,
+        );
+    }
+
+    fn require_permission(&self, community_id: &str, perm_bits: u64) -> Result<(), String> {
+        crate::commands::community::require_permission(&self.state, community_id, perm_bits)
+            .map(|_| ())
+    }
 }
