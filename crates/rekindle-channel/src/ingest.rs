@@ -110,13 +110,14 @@ pub fn timed_out_until(gov: &GovernanceState, member: &PseudonymKey, now_secs: u
 /// `ThreadCreated` carries no time and the merge reads no clock, so the
 /// moment we receive it is the only time we can judge. Replies are not
 /// judged by their thread's creator: each post passes [`gate`] on its own
-/// author.
+/// author. Returns the threads newly held, in id order, for the caller to
+/// keep across a restart.
 pub fn hold_timed_out_threads<S: BuildHasher>(
     previous: Option<&GovernanceState>,
     held: &mut HashSet<ThreadId, S>,
     state: &mut GovernanceState,
     now_secs: u64,
-) {
+) -> Vec<ThreadId> {
     let fresh: Vec<ThreadId> = state
         .threads
         .iter()
@@ -125,8 +126,11 @@ pub fn hold_timed_out_threads<S: BuildHasher>(
         .filter(|(_, t)| timed_out_until(state, &t.creator, now_secs).is_some())
         .map(|(id, _)| *id)
         .collect();
-    held.extend(fresh);
+    let mut fresh = fresh;
+    fresh.sort_unstable_by_key(|id| id.0);
+    held.extend(fresh.iter().copied());
     state.threads.retain(|id, _| !held.contains(id));
+    fresh
 }
 
 /// Judge `item` against the community's merged state `gov`, its compiled

@@ -72,6 +72,18 @@ pub(crate) async fn load(
         .map(|row| (row.id.clone(), assemble(row, &load)))
         .collect();
     restore_keys(vault, &mut states, secret);
+    for (community_id, thread_hex) in &load.held_threads {
+        let Some(state) = states.get_mut(community_id) else {
+            continue;
+        };
+        let Some(id) = hex::decode(thread_hex)
+            .ok()
+            .and_then(|bytes| <[u8; 16]>::try_from(bytes).ok())
+        else {
+            return Err(format!("held thread {thread_hex:?} is not a thread id"));
+        };
+        state.held_threads.insert(rekindle_types::id::ThreadId(id));
+    }
     for (community_id, entries) in &load.governance {
         let Some(state) = states.get_mut(community_id) else {
             continue;
@@ -79,7 +91,11 @@ pub(crate) async fn load(
         if entries.is_empty() {
             continue;
         }
-        let (governance, accepted_clock) = rekindle_governance::merge::merge_with_accepted(entries);
+        let (mut governance, accepted_clock) =
+            rekindle_governance::merge::merge_with_accepted(entries);
+        governance
+            .threads
+            .retain(|id, _| !state.held_threads.contains(id));
         state.governance_clock = state.governance_clock.max(accepted_clock);
         sync_my_roles(state, &governance);
         state.governance_state = Some(governance);

@@ -523,6 +523,19 @@ CREATE TABLE IF NOT EXISTS community_threads (
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
+-- Threads held at receipt because their creator was timed out (plan E3.1
+-- F3g/F3h): the governance merge reads no clock, so receipt is the only
+-- moment to judge; a held thread stays held across a restart.
+CREATE TABLE IF NOT EXISTS community_held_threads (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    thread_id TEXT NOT NULL
+        CHECK(length(thread_id) = 32 AND thread_id NOT GLOB '*[^0-9a-f]*'),
+    held_at INTEGER NOT NULL CHECK(held_at >= 0),
+    PRIMARY KEY (owner_key, community_id, thread_id),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+);
+
 -- Thread messages (messages within a thread).
 -- Thread reply messages (architecture §11). The synthetic `id` PK is
 -- required by FTS5 (`content_rowid` must be a single INTEGER column),

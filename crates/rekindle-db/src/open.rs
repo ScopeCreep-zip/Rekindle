@@ -180,7 +180,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 111 (plan E3.1, G1): `read_markers` (D25) replaces
 /// `channel_read_state`; `messages.mentions_me`.
-pub const SCHEMA_VERSION: i64 = 112;
+///
+/// 113 (plan E3.1, F3h): `community_held_threads`, the threads held at
+/// receipt, so a hold survives a restart.
+pub const SCHEMA_VERSION: i64 = 113;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

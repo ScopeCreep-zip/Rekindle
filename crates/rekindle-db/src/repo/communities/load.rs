@@ -79,6 +79,8 @@ pub struct CommunityLoad {
     pub slowmode: Vec<SlowmodeRow>,
     /// The governance cache's merge input per community.
     pub governance: Vec<(String, governance_cache::Entries)>,
+    /// The threads held at receipt, `(community_id, thread_id)`.
+    pub held_threads: Vec<(String, String)>,
 }
 
 /// Read every joined community of `owner_key`.
@@ -95,6 +97,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<CommunityLoa
         event_rsvps: event_rsvps(conn, owner_key)?,
         slowmode: slowmode(conn, owner_key)?,
         governance: governance_cache::load(conn, owner_key)?,
+        held_threads: crate::repo::held_threads::load(conn, owner_key)?,
     })
 }
 

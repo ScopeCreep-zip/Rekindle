@@ -61,6 +61,8 @@ fn seeded() -> Connection {
          VALUES (?1, 'dm', 'f', 0, 0)",
         "INSERT INTO community_blocks (owner_key, community_id, pseudonym, blocked_at) \
          VALUES (?1, 'c', 'p', 0)",
+        "INSERT INTO community_held_threads (owner_key, community_id, thread_id, held_at) \
+         VALUES (?1, 'c', '0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a', 0)",
     ] {
         conn.execute(sql, params![OWNER]).unwrap_or_else(|e| panic!("{sql}: {e}"));
     }
@@ -133,6 +135,13 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("community_blocks", "pseudonym", "''"),
     ("community_blocks", "pseudonym", "'P'"),
     ("community_blocks", "blocked_at", "-1"),
+    ("community_held_threads", "thread_id", "'t'"),
+    (
+        "community_held_threads",
+        "thread_id",
+        "'0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A0A'",
+    ),
+    ("community_held_threads", "held_at", "-1"),
 ];
 
 #[test]

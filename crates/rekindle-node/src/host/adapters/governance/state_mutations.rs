@@ -29,10 +29,12 @@ impl HostGovernance {
             community_id,
             &state,
         );
-        let projected =
+        let now_secs = self.ctx.clock.now_secs();
+        let (projected, held) =
             self.ctx
                 .communities
-                .project_governance(community_id, state, self.ctx.clock.now_secs());
+                .project_governance(community_id, state, now_secs);
+        self.store_held_threads(community_id, &held, now_secs);
         // The merged role assignments are authoritative for our own role
         // list: the session's membership (which `CommunityInfo` and the
         // permission checks read) and its stored row adopt them, so a role
@@ -48,6 +50,36 @@ impl HostGovernance {
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
         }
+    }
+
+    /// Keep the threads newly held at receipt, so the unlock loader holds
+    /// them again after a restart instead of re-merging them in.
+    fn store_held_threads(
+        &self,
+        community_id: &str,
+        held: &[rekindle_types::id::ThreadId],
+        now_secs: u64,
+    ) {
+        if held.is_empty() {
+            return;
+        }
+        let Some(owner) = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone())
+        else {
+            return;
+        };
+        let Ok(db) = self.ctx.db.current() else {
+            return;
+        };
+        let community = community_id.to_string();
+        let ids: Vec<String> = held.iter().map(|id| hex::encode(id.0)).collect();
+        db.fire("held threads", move |conn| {
+            rekindle_db::repo::held_threads::hold(conn, &owner, &community, &ids, now_secs)
+        });
     }
 
     /// Advance the community's **governance** Lamport counter and return

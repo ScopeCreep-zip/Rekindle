@@ -15,6 +15,7 @@ use parking_lot::RwLock;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
 use rekindle_transport::session::CommunityMembership;
+use rekindle_types::id::ThreadId;
 
 use rekindle_db::repo::communities::snapshot::StoredGovernance;
 
@@ -78,21 +79,23 @@ impl CommunityStore {
     /// categories, our role ids, segments; plan E3.1 B2c) and install it,
     /// creating the entry if this is the first merge for the community.
     /// A thread new to us whose creator is timed out at `now_secs` (the
-    /// clock port) is held from the state first, and stays held.
+    /// clock port) is held from the state first, and stays held; the
+    /// threads newly held come back with the projection, for the caller to
+    /// store (`repo::held_threads`).
     pub fn project_governance(
         &self,
         community_id: &str,
         mut state: GovernanceState,
         now_secs: u64,
-    ) -> GovernanceProjected {
+    ) -> (GovernanceProjected, Vec<ThreadId>) {
         self.write(community_id, |c| {
-            rekindle_channel::ingest::hold_timed_out_threads(
+            let held = rekindle_channel::ingest::hold_timed_out_threads(
                 c.governance_state.as_ref(),
                 &mut c.held_threads,
                 &mut state,
                 now_secs,
             );
-            projection::project(c, state)
+            (projection::project(c, state), held)
         })
     }
 

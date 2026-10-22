@@ -18,6 +18,8 @@ mod channel_send_tests;
 mod community_info;
 #[path = "expression_upload_tests.rs"]
 mod expression_upload_tests;
+#[path = "held_threads_tests.rs"]
+mod held_threads;
 #[path = "login_stage_tests.rs"]
 mod login_stage;
 #[path = "membership_tests.rs"]
