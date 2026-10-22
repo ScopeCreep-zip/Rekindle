@@ -249,6 +249,38 @@ pub(super) async fn selection(
             };
             s.notifies = members(ctx, &id);
         }
+        CommunityRequest::RoleAssign { .. }
+        | CommunityRequest::RoleUnassign { .. }
+        | CommunityRequest::Kick { .. }
+        | CommunityRequest::Ban { .. }
+        | CommunityRequest::Unban { .. }
+        | CommunityRequest::Timeout { .. }
+        | CommunityRequest::TimeoutRemove { .. } => member_selection(ctx, request, s)?,
+        CommunityRequest::InviteCreate {
+            community: target, ..
+        }
+        | CommunityRequest::InviteRevoke {
+            community: target, ..
+        } => {
+            let (id, name) = community(ctx, target)?;
+            if matches!(request, CommunityRequest::InviteCreate { .. }) {
+                s.reversibility =
+                    Reversibility::ReversibleByInverse(IntentKind::RevokeCommunityInvite);
+            }
+            s.subject = Subject::Community { id, name };
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Fill `s` for a role grant or a moderation request on one member.
+fn member_selection(
+    ctx: &DaemonContext,
+    request: &CommunityRequest,
+    s: &mut Selection,
+) -> Result<(), IpcResponse> {
+    match request {
         CommunityRequest::RoleAssign {
             community: target,
             member_pseudonym,
@@ -311,19 +343,6 @@ pub(super) async fn selection(
                 _ => Reversibility::Undoable,
             };
             s.notifies = members(ctx, &id);
-        }
-        CommunityRequest::InviteCreate {
-            community: target, ..
-        }
-        | CommunityRequest::InviteRevoke {
-            community: target, ..
-        } => {
-            let (id, name) = community(ctx, target)?;
-            if matches!(request, CommunityRequest::InviteCreate { .. }) {
-                s.reversibility =
-                    Reversibility::ReversibleByInverse(IntentKind::RevokeCommunityInvite);
-            }
-            s.subject = Subject::Community { id, name };
         }
         _ => {}
     }
