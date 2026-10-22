@@ -1,14 +1,13 @@
 //! Our per-community profile, the community's pictures and its policy
 //! (plan E3.1 D4), answered by the Host's governance adapter on both hosts.
 
-use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::image_kind::ImageKind;
 
 pub(crate) use crate::host::adapters::governance::community_pictures::PictureSlot;
 pub(crate) use crate::host::adapters::governance::community_profile::{PolicyEdit, ProfileEdit};
 
-use super::{adapter, state_error, DaemonContext};
+use super::{adapter, runtime_refused, state_error, DaemonContext};
 use crate::daemon::DaemonState;
 
 /// Make `edit` our profile in `community`.
@@ -94,7 +93,7 @@ pub(crate) fn handle_policy(
     };
     match adapter(ctx).community_policy(&membership.governance_key) {
         Ok(policy) => IpcResponse::ok(&policy),
-        Err(e) => refused(&e, "community policy"),
+        Err(e) => runtime_refused(&e, "community policy"),
     }
 }
 
@@ -117,14 +116,6 @@ pub(crate) async fn handle_set_policy(
         .await
     {
         Ok(()) => IpcResponse::ok(&()),
-        Err(e) => refused(&e, "community policy"),
-    }
-}
-
-/// A runtime error as the answer: 403 when we lack the permission.
-fn refused(e: &GovernanceRuntimeError, what: &str) -> IpcResponse {
-    match e {
-        GovernanceRuntimeError::PermissionDenied => IpcResponse::error(403, format!("{what}: {e}")),
-        _ => IpcResponse::error(500, format!("{what}: {e}")),
+        Err(e) => runtime_refused(&e, "community policy"),
     }
 }

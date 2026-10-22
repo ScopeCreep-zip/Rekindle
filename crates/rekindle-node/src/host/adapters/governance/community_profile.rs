@@ -64,20 +64,9 @@ impl HostGovernance {
         community: &str,
     ) -> Result<CommunityPolicyView, GovernanceRuntimeError> {
         self.require_permission(community, permissions::VIEW_CHANNELS)?;
-        let policy = self
-            .governance_state_impl(community)
-            .and_then(|s| s.community_policy);
-        Ok(policy.map_or(
-            CommunityPolicyView {
-                policy_text: None,
-                max_joins_per_interval: CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL,
-                join_interval_seconds: CommunityPolicyState::DEFAULT_JOIN_INTERVAL_SECONDS,
-            },
-            |p| CommunityPolicyView {
-                policy_text: p.policy_text,
-                max_joins_per_interval: p.max_joins_per_interval,
-                join_interval_seconds: p.join_interval_seconds,
-            },
+        Ok(policy_view(
+            self.governance_state_impl(community)
+                .and_then(|s| s.community_policy),
         ))
     }
 
@@ -95,13 +84,97 @@ impl HostGovernance {
         rekindle_governance_runtime::apply::write_entry(
             self,
             community,
-            GovernanceEntry::CommunityPolicy {
-                policy_text: edit.policy_text,
-                max_joins_per_interval: edit.max_joins_per_interval,
-                join_interval_seconds: edit.join_interval_seconds,
-                lamport,
-            },
+            policy_entry(edit, lamport),
         )
         .await
+    }
+}
+
+/// The governance entry that makes `edit` the policy.
+fn policy_entry(edit: PolicyEdit, lamport: u64) -> GovernanceEntry {
+    GovernanceEntry::CommunityPolicy {
+        policy_text: edit.policy_text,
+        max_joins_per_interval: edit.max_joins_per_interval,
+        join_interval_seconds: edit.join_interval_seconds,
+        lamport,
+    }
+}
+
+/// The merged policy as the frontends read it; the defaults before any.
+fn policy_view(policy: Option<CommunityPolicyState>) -> CommunityPolicyView {
+    policy.map_or(
+        CommunityPolicyView {
+            policy_text: None,
+            max_joins_per_interval: CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL,
+            join_interval_seconds: CommunityPolicyState::DEFAULT_JOIN_INTERVAL_SECONDS,
+        },
+        |p| CommunityPolicyView {
+            policy_text: p.policy_text,
+            max_joins_per_interval: p.max_joins_per_interval,
+            join_interval_seconds: p.join_interval_seconds,
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    //! A policy set is the policy read back, through the governance merge.
+
+    use rekindle_governance::merge::merge;
+    use rekindle_types::id::PseudonymKey;
+
+    use super::*;
+
+    fn edit() -> PolicyEdit {
+        PolicyEdit {
+            policy_text: Some("Be kind".into()),
+            max_joins_per_interval: 5,
+            join_interval_seconds: 120,
+        }
+    }
+
+    fn meta(lamport: u64) -> GovernanceEntry {
+        GovernanceEntry::CommunityMeta {
+            name: Some("C".into()),
+            description: None,
+            icon_hash: None,
+            banner_hash: None,
+            lamport,
+        }
+    }
+
+    #[test]
+    fn the_defaults_are_read_before_any_policy() {
+        let view = policy_view(None);
+        assert_eq!(view.policy_text, None);
+        assert_eq!(
+            view.max_joins_per_interval,
+            CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL
+        );
+        assert_eq!(
+            view.join_interval_seconds,
+            CommunityPolicyState::DEFAULT_JOIN_INTERVAL_SECONDS
+        );
+    }
+
+    #[test]
+    fn a_policy_set_is_read_back() {
+        let creator = PseudonymKey([1; 32]);
+        let state = merge(&[(creator, vec![meta(1), policy_entry(edit(), 2)])]);
+        let view = policy_view(state.community_policy);
+        assert_eq!(view.policy_text.as_deref(), Some("Be kind"));
+        assert_eq!(view.max_joins_per_interval, 5);
+        assert_eq!(view.join_interval_seconds, 120);
+    }
+
+    #[test]
+    fn a_policy_without_manage_community_is_not_read() {
+        let creator = PseudonymKey([1; 32]);
+        let member = PseudonymKey([2; 32]);
+        let state = merge(&[
+            (creator, vec![meta(1)]),
+            (member, vec![policy_entry(edit(), 2)]),
+        ]);
+        assert_eq!(policy_view(state.community_policy).policy_text, None);
     }
 }

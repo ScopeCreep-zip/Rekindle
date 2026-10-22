@@ -163,8 +163,6 @@ In the data folder:
   reset.
 - `node.lock` — held while a Rekindle node runs on this folder, so only
   one runs at a time.
-- `file_cache/community_avatars/` — cached community avatars (they move
-  into each identity's `.files/` folder in a later release).
 
 In the config folder: `config.toml` (your settings) and `agent-keys/`
 (the keys the CLI and TUI use to connect to the background service).

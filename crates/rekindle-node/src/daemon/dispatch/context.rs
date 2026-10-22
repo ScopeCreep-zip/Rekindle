@@ -114,6 +114,20 @@ pub(crate) fn transition(ctx: &DaemonContext, next: DaemonState) -> Result<(), I
         .map_err(|e| IpcResponse::error(409, e.to_string()))
 }
 
+/// A governance runtime error as the answer: 403 when we lack the
+/// permission, 500 otherwise.
+pub(crate) fn runtime_refused(
+    e: &rekindle_governance_runtime::GovernanceRuntimeError,
+    what: &str,
+) -> IpcResponse {
+    match e {
+        rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied => {
+            IpcResponse::error(403, format!("{what}: {e}"))
+        }
+        _ => IpcResponse::error(500, format!("{what}: {e}")),
+    }
+}
+
 /// Produce a standard error response for state violations.
 pub(crate) fn state_error(state: DaemonState, required: &str) -> IpcResponse {
     IpcResponse::error_with_remediation(

@@ -40,9 +40,9 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
         }
     };
 
-    // An install from before plan E3.0a keeps its chunk directories, named
-    // by community id, in `data/file_cache/`: remove them before the
-    // directory is recreated for the community avatars below.
+    // An install from before plan E3.1 keeps its chunk directories and
+    // community pictures, named by community id, in `data/file_cache/`:
+    // remove the directory.
     if let Err(e) = rekindle_db::reset::prune_file_cache(&root) {
         tracing::error!(error = %e, "old file cache prune failed");
         show_startup_error(app, &e.to_string());

@@ -48,7 +48,7 @@ use rekindle_transport::{crypto::mek::MekCache, Session, TransportNode};
 use crate::state::signing_key::SigningKeyHandle;
 use rekindle_ipc::registry::ClearanceRegistry;
 
-pub(crate) use context::{state_error, transition};
+pub(crate) use context::{runtime_refused, state_error, transition};
 pub(crate) use lifecycle::{daemon_stages, daemon_teardown};
 pub use router::dispatch;
 

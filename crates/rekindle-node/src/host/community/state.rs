@@ -222,8 +222,8 @@ pub struct CommunityState {
 
     /// Architecture §32 Phase 5 Week 15 — community-level icon (the
     /// avatar shown in the buddy list / community switcher). BLAKE3
-    /// hex hash of the WebP-compressed image cached at
-    /// `<app_data>/community_avatars/<community_id>/<hash>.webp`.
+    /// hex hash of the image, cached under the identity's keyed
+    /// `state/{pk}.files/` (plan E3.1).
     /// Synced from `governance.metadata.icon_hash` when CRDT state
     /// is rebuilt; persisted to the `communities.icon_hash` column.
     #[serde(default, skip_serializing_if = "Option::is_none")]

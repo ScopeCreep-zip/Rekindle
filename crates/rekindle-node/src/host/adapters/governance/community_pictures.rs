@@ -1,15 +1,15 @@
 //! Community avatars and banners on the Host (plan E3.1 D4), both modes.
 //!
 //! An upload is decoded as the picker's declared [`ImageKind`] only, under
-//! [`SOURCE_LIMITS`] (plan E7.11: PNG, JPEG or GIF in, WebP out), re-encoded
-//! as a WebP without metadata, and cached by its BLAKE3 hash in the
+//! our own avatar's [`AVATAR_SOURCE_LIMITS`] (plan E7.11: PNG, JPEG or GIF
+//! in, WebP out), re-encoded as a WebP without metadata, and cached by its BLAKE3 hash in the
 //! community's keyed directory under `state/{pk}.files/`
 //! (`rekindle_files::CacheScope::CommunityAvatars`), so no name on the disk
 //! carries the community id before unlock.
 
 use std::path::PathBuf;
 
-use rekindle_image::{DecodeLimits, Frames};
+use crate::host::own_profile::AVATAR_SOURCE_LIMITS;
 use rekindle_types::image_kind::ImageKind;
 
 use super::HostGovernance;
@@ -35,17 +35,6 @@ impl PictureSlot {
 
 /// The most bytes an upload may carry (an avatar or a banner, before decode).
 pub(crate) const MAX_UPLOAD_BYTES: usize = 8 * 1024 * 1024;
-
-/// What a picture offered as a community avatar or banner may cost to
-/// decode (plan E7.11, as our own avatar's): sides up to 8192 px and
-/// 40 Mpx, 192 MiB held. An animated GIF gives its first frame.
-const SOURCE_LIMITS: DecodeLimits = DecodeLimits {
-    max_width: 8192,
-    max_height: 8192,
-    max_pixels: 40_000_000,
-    max_alloc: 192 * 1024 * 1024,
-    frames: Frames::First,
-};
 
 /// Hex characters in a picture's BLAKE3 hash.
 const HASH_HEX_LEN: usize = 64;
@@ -155,10 +144,10 @@ fn is_webp(bytes: &[u8]) -> bool {
     bytes.len() > 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP"
 }
 
-/// Decode `raw` as `kind` only, under [`SOURCE_LIMITS`], and re-encode it
-/// as a WebP within `slot`'s bounds. CPU-bound: run off the executor.
+/// Decode `raw` as `kind` only, under [`AVATAR_SOURCE_LIMITS`], and
+/// re-encode it as a WebP within `slot`'s bounds. CPU-bound: run off the executor.
 fn compress(raw: &[u8], kind: ImageKind, slot: PictureSlot) -> Result<Vec<u8>, String> {
-    let picture = rekindle_image::decode_limited(raw, kind, &SOURCE_LIMITS)
+    let picture = rekindle_image::decode_limited(raw, kind, &AVATAR_SOURCE_LIMITS)
         .map_err(|e| e.to_string())?
         .into_first();
     let (max_w, max_h) = slot.bounds();

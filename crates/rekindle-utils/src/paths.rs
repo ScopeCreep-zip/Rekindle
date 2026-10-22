@@ -16,13 +16,6 @@ use std::path::PathBuf;
 /// `src-tauri/tauri.conf.json`'s `identifier` (tested).
 pub const IDENTIFIER: &str = "com.rekindle.app";
 
-/// The one child of [`DataRoot::file_cache`] still written: the desktop's
-/// community avatars (`community_avatars/<community id>/`), until plan
-/// E3.1 moves them under [`DataRoot::identity_files`]. Every other child is
-/// a chunk directory of the layout before E3.0a, removed at start
-/// (`rekindle_db::reset::prune_file_cache`).
-pub const COMMUNITY_AVATARS: &str = "community_avatars";
-
 /// A platform directory could not be resolved.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error("cannot resolve the platform {0} directory")]
@@ -31,8 +24,8 @@ pub struct PathsError(pub &'static str);
 /// Where every Rekindle host keeps its files.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DataRoot {
-    /// `dirs::data_dir()/com.rekindle.app`: `state/`, the node lock and,
-    /// until plan E3.3, the desktop's old `file_cache`.
+    /// `dirs::data_dir()/com.rekindle.app`: `state/` and the node lock (and
+    /// the retired `file_cache` of an older install until it is removed).
     pub data: PathBuf,
     /// `dirs::config_dir()/com.rekindle.app`: `config.toml`, and (until
     /// plan D1) the database and vault files. On macOS this is the same
@@ -95,12 +88,10 @@ impl DataRoot {
         Ok(dir)
     }
 
-    /// The desktop's old shared cache, `data/file_cache`. Before plan E3.0a
-    /// it held one chunk directory per community id; now only
-    /// [`COMMUNITY_AVATARS`] is written there. The desktop prunes every
-    /// other child at start, the layout check removes it whole on a reset,
-    /// and E3.3 deletes it with its last caller's port onto
-    /// [`DataRoot::identity_files`].
+    /// The desktop's retired shared cache, `data/file_cache`. Nothing
+    /// writes it since plan E3.1 (the pictures and chunks live under
+    /// [`DataRoot::identity_files`]); the desktop removes it at start
+    /// (`rekindle_db::reset::prune_file_cache`) and a reset removes it too.
     #[must_use]
     pub fn file_cache(&self) -> PathBuf {
         self.data.join("file_cache")

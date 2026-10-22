@@ -17,7 +17,7 @@ const AVATAR_MAX_DIM: u32 = 128;
 /// sides up to 8192 px and 40 Mpx (an 8K frame, a 24 Mpx camera's photo),
 /// 192 MiB held (40 Mpx of RGBA8 is 160 MB). An animated GIF gives its
 /// first frame.
-const AVATAR_SOURCE_LIMITS: DecodeLimits = DecodeLimits {
+pub(crate) const AVATAR_SOURCE_LIMITS: DecodeLimits = DecodeLimits {
     max_width: 8192,
     max_height: 8192,
     max_pixels: 40_000_000,

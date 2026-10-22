@@ -143,9 +143,9 @@ its scope directory today: its cached chunks stay until eviction or
 identity delete, and no plan step owns the removal yet. Identity delete
 removes `state/{pk}.files/`.
 The old `data/file_cache/` layout is removed by a schema/layout reset, and
-the desktop prunes it at every start to its one live child
-(`rekindle_db::reset::prune_file_cache`): community avatars still sit in
-`data/file_cache/community_avatars/<id>` until plan step E3.1 moves them.
+the desktop removes it at every start (`rekindle_db::reset::prune_file_cache`):
+nothing writes it since plan step E3.1 moved the community pictures into
+`state/{pk}.files/`.
 
 ## LRU eviction with pinned-skip
 
