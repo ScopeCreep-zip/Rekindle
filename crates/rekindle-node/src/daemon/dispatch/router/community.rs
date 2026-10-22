@@ -100,61 +100,16 @@ pub(super) async fn route(
 
         // ── Governance (roles, moderation, invites) ──────────────
         // ── Profile, pictures and policy (plan E3.1 D4) ──────────
-        CommunityRequest::CommunityUpdateProfile {
-            community,
-            bio,
-            pronouns,
-            theme_color,
-            badges,
-            avatar_ref,
-            banner_ref,
-        } => {
-            let edit = community_profile::ProfileEdit {
-                bio,
-                pronouns,
-                theme_color,
-                badges,
-                avatar_ref,
-                banner_ref,
-            };
-            community_profile::handle_update_profile(ctx, state, &community, edit)
+        request @ (CommunityRequest::CommunityUpdateProfile { .. }
+        | CommunityRequest::CommunitySetAvatar { .. }
+        | CommunityRequest::CommunitySetBanner { .. }
+        | CommunityRequest::CommunityAvatarGet { .. }
+        | CommunityRequest::CommunityPolicyGet { .. }
+        | CommunityRequest::CommunityPolicySet { .. }) => {
+            community_profile::route(ctx, state, request).await
         }
-        CommunityRequest::CommunitySetAvatar {
-            community,
-            image,
-            kind,
-        } => {
-            let slot = community_profile::PictureSlot::Avatar;
-            community_profile::handle_set_picture(ctx, state, &community, image, kind, slot).await
-        }
-        CommunityRequest::CommunitySetBanner {
-            community,
-            image,
-            kind,
-        } => {
-            let slot = community_profile::PictureSlot::Banner;
-            community_profile::handle_set_picture(ctx, state, &community, image, kind, slot).await
-        }
-        CommunityRequest::CommunityAvatarGet { community, hash } => {
-            community_profile::handle_picture(ctx, state, &community, &hash).await
-        }
-        CommunityRequest::CommunityPolicyGet { community } => {
-            community_profile::handle_policy(ctx, state, &community)
-        }
-        CommunityRequest::CommunityPolicySet {
-            community,
-            policy_text,
-            max_joins_per_interval,
-            join_interval_seconds,
-        } => {
-            let edit = community_profile::PolicyEdit {
-                policy_text,
-                max_joins_per_interval,
-                join_interval_seconds,
-            };
-            community_profile::handle_set_policy(ctx, state, &community, edit).await
-        }
-        // ── Game servers (plan E3.1 H1) ──────────────────────────
+
+        // ── Events (plan E3.1 E4) ────────────────────────────────
         request @ (CommunityRequest::EventList { .. }
         | CommunityRequest::EventAttendees { .. }
         | CommunityRequest::EventCreate { .. }
@@ -162,6 +117,8 @@ pub(super) async fn route(
         | CommunityRequest::EventCancel { .. }
         | CommunityRequest::EventDelete { .. }
         | CommunityRequest::EventRsvp { .. }) => events::handle(ctx, state, request).await,
+
+        // ── Game servers (plan E3.1 H1) ──────────────────────────
         CommunityRequest::GameServerList { community } => {
             game_servers::handle_list(ctx, state, &community).await
         }

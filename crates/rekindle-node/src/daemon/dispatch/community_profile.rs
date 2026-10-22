@@ -1,7 +1,7 @@
 //! Our per-community profile, the community's pictures and its policy
 //! (plan E3.1 D4), answered by the Host's governance adapter on both hosts.
 
-use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::image_kind::ImageKind;
 
 pub(crate) use crate::host::adapters::governance::community_pictures::PictureSlot;
@@ -117,5 +117,69 @@ pub(crate) async fn handle_set_policy(
     {
         Ok(()) => IpcResponse::ok(&()),
         Err(e) => runtime_refused(&e, "community policy"),
+    }
+}
+
+/// Route a profile, picture or policy request (the community router's
+/// profile arm) to its handler.
+pub(crate) async fn route(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: CommunityRequest,
+) -> IpcResponse {
+    match request {
+        CommunityRequest::CommunityUpdateProfile {
+            community,
+            bio,
+            pronouns,
+            theme_color,
+            badges,
+            avatar_ref,
+            banner_ref,
+        } => {
+            let edit = ProfileEdit {
+                bio,
+                pronouns,
+                theme_color,
+                badges,
+                avatar_ref,
+                banner_ref,
+            };
+            handle_update_profile(ctx, state, &community, edit)
+        }
+        CommunityRequest::CommunitySetAvatar {
+            community,
+            image,
+            kind,
+        } => {
+            let slot = PictureSlot::Avatar;
+            handle_set_picture(ctx, state, &community, image, kind, slot).await
+        }
+        CommunityRequest::CommunitySetBanner {
+            community,
+            image,
+            kind,
+        } => {
+            let slot = PictureSlot::Banner;
+            handle_set_picture(ctx, state, &community, image, kind, slot).await
+        }
+        CommunityRequest::CommunityAvatarGet { community, hash } => {
+            handle_picture(ctx, state, &community, &hash).await
+        }
+        CommunityRequest::CommunityPolicyGet { community } => handle_policy(ctx, state, &community),
+        CommunityRequest::CommunityPolicySet {
+            community,
+            policy_text,
+            max_joins_per_interval,
+            join_interval_seconds,
+        } => {
+            let edit = PolicyEdit {
+                policy_text,
+                max_joins_per_interval,
+                join_interval_seconds,
+            };
+            handle_set_policy(ctx, state, &community, edit).await
+        }
+        other => unreachable!("{} is not a profile request", other.name()),
     }
 }

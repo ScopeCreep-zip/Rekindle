@@ -383,6 +383,7 @@ mod channel_admin;
 mod channels;
 mod community;
 mod community_events;
+mod community_onboarding;
 mod friends;
 mod group_dm;
 #[cfg(test)]
