@@ -9,7 +9,7 @@ use rekindle_channel::ChannelMessagingDeps;
 use rekindle_db::repo::messages::channel::{
     self as rows, ChannelMessageInsert, StoredChannelMessage,
 };
-use rekindle_types::dto::channel_message::{ChannelMessage, MessageAttachment};
+use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment};
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
 
@@ -33,7 +33,7 @@ impl HostChannel {
         channel_id: &str,
         before: Option<u64>,
         limit: u32,
-    ) -> Result<Vec<ChannelMessage>, ChannelError> {
+    ) -> Result<Vec<ChannelMessageView>, ChannelError> {
         self.require_channel_permission(community_id, Some(channel_id), permissions::READ_HISTORY)?;
         let (owner, db) = self.owner_and_db()?;
         let me = self.my_pseudonym_impl(community_id).unwrap_or_default();
@@ -43,7 +43,7 @@ impl HostChannel {
             .call(move |conn| rows::page(conn, &key, &channel, before_row, limit))
             .await
             .map_err(stored)?;
-        let mut messages: Vec<ChannelMessage> = rows
+        let mut messages: Vec<ChannelMessageView> = rows
             .into_iter()
             .map(|row| stored_view(row, &owner, &me))
             .collect();
@@ -113,7 +113,7 @@ impl HostChannel {
 
 /// One stored row as a frontend renders it; `own_key` and `pseudonym` mark
 /// which senders are us.
-fn stored_view(row: StoredChannelMessage, own_key: &str, pseudonym: &str) -> ChannelMessage {
+fn stored_view(row: StoredChannelMessage, own_key: &str, pseudonym: &str) -> ChannelMessageView {
     let is_own = row.sender_key == own_key || row.sender_key == pseudonym;
     let attachment = (row.attachment_json.as_deref())
         .and_then(|json| serde_json::from_str::<rekindle_files::AttachmentRecordJson>(json).ok())
@@ -125,7 +125,7 @@ fn stored_view(row: StoredChannelMessage, own_key: &str, pseudonym: &str) -> Cha
             total_size: record.total_size,
             chunk_count: record.chunk_count,
         });
-    ChannelMessage {
+    ChannelMessageView {
         id: row.id,
         sender_id: row.sender_key,
         body: row.body,

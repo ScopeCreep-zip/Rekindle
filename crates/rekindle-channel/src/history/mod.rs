@@ -9,7 +9,7 @@ mod materialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rekindle_codec::community::channel_record::ChannelRecordEntry;
-use rekindle_types::dto::channel_message::{ChannelMessage, ReactionGroup};
+use rekindle_types::dto::channel_message::{ChannelMessageView, ReactionGroup};
 use rekindle_types::message::SendState;
 
 use crate::deps::ChannelMessagingDeps;
@@ -22,7 +22,7 @@ pub use materialize::{build_poll_states, build_reaction_groups};
 /// stores it with.
 #[derive(Debug, Clone)]
 pub struct RecordMessage {
-    pub view: ChannelMessage,
+    pub view: ChannelMessageView,
     /// The message id of the parent it replies to.
     pub reply_to: Option<String>,
     pub mek_generation: u64,
@@ -93,7 +93,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
             let mentions_me = crate::mentions::message_mentions_me(deps, community_id, &message);
             let id = message.message_id.as_ref();
             RecordMessage {
-                view: ChannelMessage {
+                view: ChannelMessageView {
                     id: 0,
                     sender_id: message.sender_pseudonym.clone(),
                     decryption_failed: body.is_none(),
@@ -130,8 +130,8 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
 /// row and takes the incoming one's id, failure flag, reactions, pin and
 /// poll. Sorted by timestamp, cut to the latest `limit` (at least one).
 pub fn merge_message_lists(
-    existing: &mut Vec<ChannelMessage>,
-    incoming: Vec<ChannelMessage>,
+    existing: &mut Vec<ChannelMessageView>,
+    incoming: Vec<ChannelMessageView>,
     limit: u32,
 ) {
     let mut seen: HashMap<String, usize> = existing
@@ -154,7 +154,7 @@ pub fn merge_message_lists(
     existing.drain(0..start);
 }
 
-fn merge_fields(existing: &mut ChannelMessage, incoming: &ChannelMessage) {
+fn merge_fields(existing: &mut ChannelMessageView, incoming: &ChannelMessageView) {
     if existing.server_message_id.is_none() {
         existing
             .server_message_id
@@ -197,7 +197,7 @@ fn merge_reactions(
     })
 }
 
-fn identity(message: &ChannelMessage) -> String {
+fn identity(message: &ChannelMessageView) -> String {
     match &message.server_message_id {
         Some(message_id) => format!("id:{message_id}"),
         None => format!(
