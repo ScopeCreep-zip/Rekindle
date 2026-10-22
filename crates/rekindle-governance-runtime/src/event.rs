@@ -87,6 +87,11 @@ pub enum GovernanceRuntimeEvent {
         entry: Box<GovernanceEntry>,
     },
 
+    /// A community's governance was rebuilt from its record (plan E3.1 C1)
+    /// — the host publishes `GovernanceEvent::GovernanceRebuilt` and
+    /// `MembershipEvent::MembersRefreshed` for it.
+    GovernanceRebuilt { community_id: String },
+
     /// A `JoinAccepted` control message has been processed — adapter
     /// emits `CommunityEvent::JoinAccepted`.
     JoinAccepted { community_id: String },

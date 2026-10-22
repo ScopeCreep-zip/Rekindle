@@ -110,6 +110,22 @@ pub(super) fn emit_event_impl(adapter: &GovernanceAdapter, event: GovernanceRunt
         } => {
             tracing::trace!(community = %community_id, "governance entry applied");
         }
+        GovernanceRuntimeEvent::GovernanceRebuilt { community_id } => {
+            crate::event_dispatch::emit_subscription(
+                &adapter.app_handle,
+                &rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                    rekindle_types::subscription_events::GovernanceEvent::GovernanceRebuilt {
+                        community: community_id.clone(),
+                    },
+                ),
+            );
+            crate::event_dispatch::emit_membership(
+                &adapter.app_handle,
+                rekindle_types::subscription_events::MembershipEvent::MembersRefreshed {
+                    community: community_id,
+                },
+            );
+        }
         GovernanceRuntimeEvent::JoinAccepted { community_id } => {
             crate::event_dispatch::emit_membership(
                 &adapter.app_handle,

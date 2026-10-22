@@ -77,7 +77,7 @@ fn network_stages(
     services::voice_adapter::spawn_drop_telemetry(state, app, scope)?;
 
     // Community DHT hydration, then a governance rebuild (→ E3.1).
-    let (task_app, task_state) = (app.clone(), Arc::clone(state));
+    let task_state = Arc::clone(state);
     scope.spawn_with_token("community DHT hydration", |stop| async move {
         // On a sparse cold-start routing table the opens fail; past the
         // wait hydration runs anyway, and the keepalive recovers the rest.
@@ -90,7 +90,7 @@ fn network_stages(
         if !ready {
             tracing::warn!("network not ready — running community DHT hydration best-effort");
         }
-        hydrate_communities(&task_app, &task_state, &stop).await;
+        hydrate_communities(&task_state, &stop).await;
     })?;
 
     // History catch-up per community (→ E3.1). Each community's presence
@@ -129,17 +129,9 @@ fn network_stages(
 }
 
 /// Open, hydrate, rebuild and republish every community's records, then
-/// tell the windows to refresh. Its DHT work is record-pool calls, which the
+/// each rebuilt community tells the windows to refresh. Its DHT work is record-pool calls, which the
 /// lock's drain releases (plan C7.6g).
-async fn hydrate_communities(
-    app: &tauri::AppHandle,
-    state: &SharedState,
-    stop: &tokio_util::sync::CancellationToken,
-) {
-    use rekindle_types::subscription_events::{
-        GovernanceEvent, MembershipEvent, SubscriptionEvent,
-    };
-
+async fn hydrate_communities(state: &SharedState, stop: &tokio_util::sync::CancellationToken) {
     crate::services::governance_adapter::open_community_dht_records(state).await;
     crate::services::governance_adapter::hydrate_community_state_from_dht(state).await;
     crate::services::governance_adapter::rebuild_governance_from_dht(state).await;
@@ -147,23 +139,9 @@ async fn hydrate_communities(
     if stop.is_cancelled() {
         return;
     }
+    // Each rebuilt community's GovernanceRebuilt and MembersRefreshed
+    // come from the rebuild itself (plan E3.1 C1).
     tracing::info!("background DHT hydration complete — governance state rebuilt");
-    let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
-    for community in &community_ids {
-        crate::event_dispatch::emit_subscription(
-            app,
-            &SubscriptionEvent::Governance(GovernanceEvent::GovernanceRebuilt {
-                community: community.clone(),
-            }),
-        );
-        // The members too, before the presence poll's first tick.
-        crate::event_dispatch::emit_membership(
-            app,
-            MembershipEvent::MembersRefreshed {
-                community: community.clone(),
-            },
-        );
-    }
 }
 
 /// Wait for `public_internet_ready` with a live peer, up to

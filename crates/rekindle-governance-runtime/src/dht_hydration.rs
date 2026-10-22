@@ -23,6 +23,7 @@
 //!    lamport restore via the adapter.
 //! 8. For each new ban: `spawn_text_mek_rotation_for_ban` (fire-and-forget).
 
+use crate::event::GovernanceRuntimeEvent;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
@@ -352,6 +353,9 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
 
     deps.apply_governance_rebuild_result(community_id, gov_state, accepted_clock)
         .await;
+    deps.emit_event(GovernanceRuntimeEvent::GovernanceRebuilt {
+        community_id: community_id.clone(),
+    });
 
     tracing::info!(
         community = %community_id,

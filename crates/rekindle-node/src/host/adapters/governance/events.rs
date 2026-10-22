@@ -19,6 +19,20 @@ impl HostGovernance {
     /// Translate and publish one runtime event; the progress and telemetry
     /// signals with no frontend counterpart are traced.
     pub(super) fn emit_event_impl(&self, event: &GovernanceRuntimeEvent) {
+        // One rebuild, two frontend events: the governance and the members.
+        if let GovernanceRuntimeEvent::GovernanceRebuilt { community_id } = event {
+            self.ctx.publish_event(SubscriptionEvent::Governance(
+                GovernanceEvent::GovernanceRebuilt {
+                    community: community_id.clone(),
+                },
+            ));
+            self.ctx.publish_event(SubscriptionEvent::Membership(
+                MembershipEvent::MembersRefreshed {
+                    community: community_id.clone(),
+                },
+            ));
+            return;
+        }
         let Some(mapped) = self.map_event(event) else {
             tracing::debug!(?event, "governance event: no frontend counterpart");
             return;
@@ -114,7 +128,8 @@ impl HostGovernance {
                 pseudonym: pseudonym_hex.clone(),
                 role_ids: role_ids.clone(),
             }),
-            GovernanceRuntimeEvent::BootstrapResponseBuilt { .. }
+            GovernanceRuntimeEvent::GovernanceRebuilt { .. }
+            | GovernanceRuntimeEvent::BootstrapResponseBuilt { .. }
             | GovernanceRuntimeEvent::GovernanceEntryApplied { .. } => None,
         }
     }

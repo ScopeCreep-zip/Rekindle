@@ -12,6 +12,7 @@ mod harness;
 mod internet_flap;
 mod logs;
 mod offline_day;
+mod one_community_rebuild;
 mod outbox_handshake;
 mod pair;
 mod prekey_collision;
