@@ -472,6 +472,14 @@
       }
     }
   },
+  "governance.inviteExpired": {
+    "governance": {
+      "inviteExpired": {
+        "codeHash": "7777777777777777777777777777777777777777777777777777777777777777",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
   "governance.inviteRevoked": {
     "governance": {
       "inviteRevoked": {
