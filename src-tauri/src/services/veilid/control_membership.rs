@@ -1,13 +1,12 @@
 //! Phase 23.D.4 — `handle_membership_payload` extracted from
 //! `services/veilid/control.rs` to keep that file under the 500-LoC
-//! cap (Invariant 1). Dispatches the five Member* ControlPayload
-//! variants — MemberJoinRequest / MemberJoined / MemberRemoved /
+//! cap (Invariant 1). Dispatches four Member* ControlPayload
+//! variants — MemberJoined / MemberRemoved /
 //! MemberLeave / MemberTimedOut — to their per-variant handlers.
 
 use std::sync::Arc;
 
 use crate::db_helpers::db_fire;
-use crate::services::governance_adapter;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
@@ -22,25 +21,6 @@ pub(super) fn handle_membership_payload(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        ControlPayload::MemberJoinRequest {
-            pseudonym_key,
-            display_name,
-            claimed_subkey_index,
-            route_blob,
-            invite_code,
-            ..
-        } => {
-            governance_adapter::process_peer_assisted_join(
-                state,
-                app_handle,
-                community_id,
-                &pseudonym_key,
-                &display_name,
-                claimed_subkey_index,
-                route_blob.as_deref(),
-                invite_code.as_deref(),
-            );
-        }
         ControlPayload::MemberJoined {
             pseudonym_key,
             display_name,

@@ -18,7 +18,6 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::state_helpers;
 
-use super::state_builder::insert_community_into_state;
 use super::{dht, events, roles, state_mutations, state_reads, GovernanceAdapter};
 
 #[async_trait]
@@ -80,8 +79,14 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         state_helpers::next_governance_lamport(&self.state, community_id)
     }
 
+    /// The Host records and builds the created community (plan E3.1 B2e).
     fn insert_community(&self, community: CommunityInsert) {
-        insert_community_into_state(&self.state, community);
+        match self.state.host.current() {
+            Some(host) => host.governance().insert_community(community),
+            None => {
+                tracing::warn!(community = %community.id, "created community arrived before the Host is up")
+            }
+        }
     }
 
     // ---------- DHT ----------

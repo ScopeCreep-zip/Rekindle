@@ -34,7 +34,6 @@ pub async fn create_community(
     name: String,
     approval_required: Option<bool>,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, VaultHandle>,
 ) -> Result<String, String> {
     let pool = state.db.current()?;
     let _g =
@@ -42,7 +41,6 @@ pub async fn create_community(
     crate::services::community_lifecycle_runtime::create_community_inner(
         state.inner(),
         &pool,
-        keystore_handle.inner(),
         name,
         if approval_required.unwrap_or(false) {
             rekindle_types::governance::AdmissionMode::ApprovalRequired

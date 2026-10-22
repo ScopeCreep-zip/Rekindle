@@ -6,7 +6,6 @@ use rekindle_db::Db;
 
 use super::control_event_records::{handle_event_payload, handle_game_server_payload};
 use super::control_moderation::handle_gossip_control_payloads;
-use crate::services::governance_adapter;
 
 pub(crate) async fn handle_control_events_and_threads(
     app_handle: &tauri::AppHandle,
@@ -79,15 +78,8 @@ pub(crate) async fn handle_control_events_and_threads(
                 ),
             );
         }
-        ControlPayload::SubmitOnboardingAnswers { ref answers } => {
-            governance_adapter::process_onboarding_answers(
-                state,
-                app_handle,
-                community_id,
-                sender_pseudonym,
-                answers,
-            )
-            .await;
+        payload @ ControlPayload::SubmitOnboardingAnswers { .. } => {
+            super::control::host_membership(state, community_id, sender_pseudonym, &payload).await;
         }
         ControlPayload::OnboardingComplete {
             ref pseudonym_key,

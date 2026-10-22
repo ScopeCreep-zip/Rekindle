@@ -12,8 +12,6 @@
 //!   + free `snapshot_roles` / `snapshot_channels_and_categories` used
 //!   by `emit_event`.
 //! - `deps_impl.rs`: the `GovernanceRuntimeDeps` trait impl.
-//! - `state_builder.rs`: the heaviest single method — `insert_community`
-//!   body, which builds a fresh `CommunityState` from `CommunityInsert`.
 
 use std::sync::Arc;
 
@@ -26,9 +24,7 @@ use rekindle_types::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDispl
 pub mod deps_impl;
 mod dht;
 mod events;
-mod membership_events;
 mod roles;
-mod state_builder;
 mod state_mutations;
 mod state_reads;
 
@@ -134,154 +130,6 @@ pub async fn rebuild_governance(state: &Arc<AppState>, community_id: &str) {
     };
     let adapter = GovernanceAdapter::new(Arc::clone(state), app_handle, pool);
     rekindle_governance_runtime::dht_hydration::rebuild_governance(&adapter, community_id).await;
-}
-
-// ---------- Phase 23.E membership-event entry points ----------
-
-/// Build an adapter from the live AppState + AppHandle. Shared by the
-/// membership-event entry points below (all need the same three fields).
-/// The adapter the membership processors run on; `None` when no identity
-/// database is open, and the inbound event is dropped.
-fn membership_adapter(state: &Arc<AppState>, app_handle: &AppHandle) -> Option<GovernanceAdapter> {
-    let Ok(pool) = state.db.current() else {
-        tracing::debug!("membership event: no identity database — dropped");
-        return None;
-    };
-    Some(GovernanceAdapter::new(
-        Arc::clone(state),
-        app_handle.clone(),
-        pool,
-    ))
-}
-
-/// `ControlPayload::JoinAccepted` — cache MEK, persist members, derive
-/// slot keypair, bootstrap peers.
-pub async fn process_join_accepted(
-    state: &Arc<AppState>,
-    app_handle: &AppHandle,
-    community_id: &str,
-    sender_pseudonym: &str,
-    input: rekindle_governance_runtime::membership_events::JoinAcceptedInput<'_>,
-) {
-    let Some(adapter) = membership_adapter(state, app_handle) else {
-        return;
-    };
-    rekindle_governance_runtime::membership_events::process_join_accepted(
-        &adapter,
-        community_id,
-        sender_pseudonym,
-        input,
-    )
-    .await;
-}
-
-/// `ControlPayload::MemberRolesChanged` — persist + emit.
-pub fn process_member_roles_changed(
-    state: &Arc<AppState>,
-    app_handle: &AppHandle,
-    community_id: &str,
-    pseudonym_hex: &str,
-    role_ids: &[u32],
-) {
-    let Some(adapter) = membership_adapter(state, app_handle) else {
-        return;
-    };
-    rekindle_governance_runtime::membership_events::process_member_roles_changed(
-        &adapter,
-        community_id,
-        pseudonym_hex,
-        role_ids,
-    );
-}
-
-/// `ControlPayload::AdminKeypairGrant` — unwrap + install owner keypair.
-pub fn process_admin_keypair_grant(
-    state: &Arc<AppState>,
-    app_handle: &AppHandle,
-    community_id: &str,
-    sender_pseudonym: &str,
-    wrapped_owner_keypair: &[u8],
-    wrapped_slot_seed: &[u8],
-) {
-    let Some(adapter) = membership_adapter(state, app_handle) else {
-        return;
-    };
-    rekindle_governance_runtime::membership_events::process_admin_keypair_grant(
-        &adapter,
-        community_id,
-        sender_pseudonym,
-        wrapped_owner_keypair,
-        wrapped_slot_seed,
-    );
-}
-
-/// `ControlPayload::SlotKeypairGrant` — unwrap + derive slot keypair.
-pub fn process_slot_keypair_grant(
-    state: &Arc<AppState>,
-    app_handle: &AppHandle,
-    community_id: &str,
-    sender_pseudonym: &str,
-    slot_index: u32,
-    segment_index: u32,
-    wrapped_slot_keypair: &[u8],
-) {
-    let Some(adapter) = membership_adapter(state, app_handle) else {
-        return;
-    };
-    rekindle_governance_runtime::membership_events::process_slot_keypair_grant(
-        &adapter,
-        community_id,
-        sender_pseudonym,
-        slot_index,
-        segment_index,
-        wrapped_slot_keypair,
-    );
-}
-
-/// `ControlPayload::OnboardingAnswers` — validate answers, assign roles,
-/// broadcast completion.
-pub async fn process_onboarding_answers(
-    state: &Arc<AppState>,
-    app_handle: &AppHandle,
-    community_id: &str,
-    sender_pseudonym: &str,
-    answers: &[rekindle_codec::community::envelope::OnboardingAnswer],
-) {
-    let Some(adapter) = membership_adapter(state, app_handle) else {
-        return;
-    };
-    rekindle_governance_runtime::membership_events::process_onboarding_answers(
-        &adapter,
-        community_id,
-        sender_pseudonym,
-        answers,
-    )
-    .await;
-}
-
-/// Peer-assisted join notice — note the peer + bump invite uses.
-pub fn process_peer_assisted_join(
-    state: &Arc<AppState>,
-    app_handle: &AppHandle,
-    community_id: &str,
-    pseudonym_key: &str,
-    display_name: &str,
-    claimed_subkey_index: Option<u32>,
-    route_blob: Option<&[u8]>,
-    invite_code: Option<&str>,
-) {
-    let Some(adapter) = membership_adapter(state, app_handle) else {
-        return;
-    };
-    rekindle_governance_runtime::membership_events::process_peer_assisted_join(
-        &adapter,
-        community_id,
-        pseudonym_key,
-        display_name,
-        claimed_subkey_index,
-        route_blob,
-        invite_code,
-    );
 }
 
 // ---------- Free helpers used by `emit_event` ----------

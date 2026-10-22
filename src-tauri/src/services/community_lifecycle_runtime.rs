@@ -120,7 +120,6 @@ pub async fn leave_community_inner(
 pub async fn create_community_inner(
     state: &SharedState,
     pool: &Db,
-    keystore_handle: &VaultHandle,
     name: String,
     admission: rekindle_types::governance::AdmissionMode,
 ) -> Result<String, String> {
@@ -128,34 +127,9 @@ pub async fn create_community_inner(
     use crate::services;
 
     let owner_key = state_helpers::current_owner_key(state)?;
+    // The Host records the community — its row, its vault keys and its
+    // store entry (`HostGovernance::insert_community`, plan E3.1 B2e).
     let community_id = services::community::create_community(state, &name, admission).await?;
-
-    {
-        let ks = keystore_handle.lock();
-        if let Some(ref keystore) = *ks {
-            if let Some(mek) = state_helpers::current_mek(state, &community_id, KeyScope::Community)
-            {
-                if let Err(e) =
-                    crate::keystore::persist_mek(keystore, &community_id, KeyScope::Community, &mek)
-                {
-                    tracing::warn!(community = %community_id, error = %e, "community MEK not persisted");
-                }
-            }
-
-            let communities = state.communities.read();
-            if let Some(community) = communities.get(&community_id) {
-                if let Some(ref keypair) = community.slot_keypair {
-                    crate::keystore::persist_slot_keypair(keystore, &community_id, keypair);
-                }
-                if let Some(ref seed) = community.slot_seed {
-                    crate::keystore::persist_slot_seed(keystore, &community_id, seed);
-                }
-                if let Some(ref keypair) = community.registry_owner_keypair {
-                    crate::keystore::persist_registry_keypair(keystore, &community_id, keypair);
-                }
-            }
-        }
-    }
 
     let community = {
         let communities = state.communities.read();
@@ -167,42 +141,13 @@ pub async fn create_community_inner(
 
     let creator_key = owner_key.clone();
     let creator_name = state_helpers::identity_display_name(state);
-    let my_pseudonym_key = {
-        let communities = state.communities.read();
-        communities
-            .get(&community_id)
-            .and_then(|community| community.my_pseudonym_key.clone())
-    };
-
     let now = db::timestamp_now();
     let community_id_clone = community_id.clone();
-    let name_clone = name.clone();
-    let dht_owner_keypair = community.dht_owner_keypair.clone();
-    let member_registry_key_db = community.member_registry_key.clone();
-    let governance_key_db = community.governance_key.clone();
-    let pseudonym_key = my_pseudonym_key.unwrap_or_else(|| creator_key.clone());
+    let pseudonym_key = community.my_pseudonym_key.clone().unwrap_or(creator_key);
     let roles_to_persist = community.roles.clone();
-    let mek_gen = community.mek_generation.cast_signed();
     let ok = owner_key;
     db_call(pool, move |conn| {
         let owner_role_ids = [0u32, u32::MAX];
-        rekindle_db::repo::communities::insert(
-            conn,
-            &ok,
-            &rekindle_db::repo::communities::NewCommunity {
-                id: &community_id_clone,
-                name: &name_clone,
-                my_role_ids: &owner_role_ids,
-                joined_at: now,
-                dht_owner_keypair: dht_owner_keypair.as_deref(),
-                my_pseudonym_key: &pseudonym_key,
-                mek_generation: mek_gen,
-                member_registry_key: member_registry_key_db.as_deref(),
-                my_subkey_index: Some(0),
-                governance_key: governance_key_db.as_deref(),
-            },
-        )?;
-
         for role in &roles_to_persist {
             conn.execute(
                 "INSERT INTO community_roles (owner_key, community_id, role_id, name, color, permissions, position, hoist, mentionable, self_assignable, exclusion_group) \

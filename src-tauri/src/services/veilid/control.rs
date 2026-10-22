@@ -4,7 +4,6 @@ use crate::state::AppState;
 use rekindle_db::Db;
 
 use super::control_events::handle_control_events_and_threads;
-use crate::services::governance_adapter;
 
 pub(crate) async fn handle_relayed_control(
     app_handle: &tauri::AppHandle,
@@ -17,8 +16,10 @@ pub(crate) async fn handle_relayed_control(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        payload @ (ControlPayload::MemberJoinRequest { .. }
-        | ControlPayload::MemberJoined { .. }
+        payload @ ControlPayload::MemberJoinRequest { .. } => {
+            host_membership(state, community_id, sender_pseudonym, &payload).await;
+        }
+        payload @ (ControlPayload::MemberJoined { .. }
         | ControlPayload::MemberRemoved { .. }
         | ControlPayload::MemberLeave { .. }
         | ControlPayload::MemberTimedOut { .. }) => {
@@ -194,42 +195,9 @@ async fn handle_join_and_roles_payload(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        ControlPayload::MemberRolesChanged {
-            pseudonym_key,
-            role_ids,
-        } => {
-            governance_adapter::process_member_roles_changed(
-                state,
-                app_handle,
-                community_id,
-                &pseudonym_key,
-                &role_ids,
-            );
-        }
-        ControlPayload::JoinAccepted {
-            mek_encrypted,
-            mek_generation,
-            members,
-            member_registry_key,
-            slot_index,
-            wrapped_slot_seed,
-        } => {
-            let input = rekindle_governance_runtime::membership_events::JoinAcceptedInput {
-                mek_wire_bytes: &mek_encrypted,
-                mek_generation,
-                members: &members,
-                member_registry_key: member_registry_key.as_deref(),
-                slot_index,
-                wrapped_slot_seed: wrapped_slot_seed.as_deref(),
-            };
-            governance_adapter::process_join_accepted(
-                state,
-                app_handle,
-                community_id,
-                sender_pseudonym,
-                input,
-            )
-            .await;
+        payload @ (ControlPayload::MemberRolesChanged { .. }
+        | ControlPayload::JoinAccepted { .. }) => {
+            host_membership(state, community_id, sender_pseudonym, &payload).await;
         }
         ControlPayload::JoinRejected { reason } => {
             tracing::warn!(community = %community_id, reason = %reason, "join request rejected by peer");
@@ -325,4 +293,43 @@ async fn handle_join_and_roles_payload(
         }
         _ => {}
     }
+}
+
+/// A membership control message (a JoinAccepted, a member's roles, a
+/// keypair grant, onboarding answers, a peer-assisted join), handled by the
+/// Host's governance adapter on both hosts (plan E3.1 B2e).
+pub(super) async fn host_membership(
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: &rekindle_codec::community::envelope::ControlPayload,
+) {
+    let Some(host) = state.host.current() else {
+        tracing::debug!(community = %community_id, "membership control before the Host is up — dropped");
+        return;
+    };
+    host.governance()
+        .on_membership_control(community_id, sender_pseudonym, payload)
+        .await;
+}
+
+/// [`host_membership`] from a synchronous handler, as a task of the login
+/// scope.
+pub(super) fn spawn_host_membership(
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: rekindle_codec::community::envelope::ControlPayload,
+) {
+    let (s, c, sender) = (
+        Arc::clone(state),
+        community_id.to_string(),
+        sender_pseudonym.to_string(),
+    );
+    crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+        "membership control",
+        async move {
+            host_membership(&s, &c, &sender, &payload).await;
+        },
+    );
 }

@@ -9,7 +9,6 @@ use crate::state::AppState;
 use super::control_sync::{
     check_gossip_moderation_permission, handle_sync_request, handle_sync_response,
 };
-use crate::services::governance_adapter;
 
 pub(crate) fn handle_gossip_control_payloads(
     app_handle: &tauri::AppHandle,
@@ -21,33 +20,9 @@ pub(crate) fn handle_gossip_control_payloads(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
-        ControlPayload::AdminKeypairGrant {
-            wrapped_owner_keypair,
-            wrapped_slot_seed,
-        } => {
-            governance_adapter::process_admin_keypair_grant(
-                state,
-                app_handle,
-                community_id,
-                sender_pseudonym,
-                &wrapped_owner_keypair,
-                &wrapped_slot_seed,
-            );
-        }
-        ControlPayload::SlotKeypairGrant {
-            slot_index,
-            segment_index,
-            wrapped_slot_keypair,
-        } => {
-            governance_adapter::process_slot_keypair_grant(
-                state,
-                app_handle,
-                community_id,
-                sender_pseudonym,
-                slot_index,
-                segment_index,
-                &wrapped_slot_keypair,
-            );
+        payload @ (ControlPayload::AdminKeypairGrant { .. }
+        | ControlPayload::SlotKeypairGrant { .. }) => {
+            super::control::spawn_host_membership(state, community_id, sender_pseudonym, payload);
         }
         ControlPayload::SyncRequest {
             channel_id,
