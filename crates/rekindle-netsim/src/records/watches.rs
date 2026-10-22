@@ -105,7 +105,9 @@ pub(crate) fn member_of(record: &NetRecord, writer: Option<&str>) -> Option<[u8;
 }
 
 pub(super) fn online(inner: &Inner, node: usize) -> bool {
-    !inner.faults.detached.contains(&node) && !inner.faults.dht_offline.contains(&node)
+    !inner.faults.detached.contains(&node)
+        && !inner.faults.dht_offline.contains(&node)
+        && !inner.faults.not_ready.contains(&node)
 }
 
 /// Set `node`'s desired watch on `key` (`None` cancels; it dies at the next

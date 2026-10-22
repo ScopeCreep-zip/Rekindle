@@ -59,6 +59,9 @@ struct Pending {
     event: PortEvent,
     /// When it arrives (simulated time; an app message's latency).
     due: tokio::time::Instant,
+    /// An app message or call: lost when its receiver is detached on
+    /// arrival.
+    droppable: bool,
 }
 
 /// Faults in force (plan C9.3).
@@ -68,8 +71,13 @@ pub(crate) struct Faults {
     pub try_again: HashMap<usize, u32>,
     /// Nodes whose DHT calls all fail, as with no connection.
     pub dht_offline: HashSet<usize>,
-    /// Detached nodes: no watch change reaches them.
+    /// Detached nodes: no watch change, app message or call reaches them,
+    /// and they send none.
     pub detached: HashSet<usize>,
+    /// Attached nodes whose public internet is not ready: their DHT calls
+    /// answer "try again" and no watch is placed (Veilid's storage manager
+    /// gates on `RoutingDomainReadyEvent`, `storage_manager/mod.rs:887-898`).
+    pub not_ready: HashSet<usize>,
     /// Unordered node pairs that cannot reach each other: no app message
     /// or call passes, and neither reaches the replicas beside the other.
     pub partitions: HashSet<(usize, usize)>,
@@ -104,6 +112,11 @@ pub(crate) struct NodeSlot {
     pub last_lag_inspect: Option<u64>,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
+    /// The attachment state last queued for the node ([`crate::attach`]).
+    pub state: &'static str,
+    /// When the node's next attachment update may arrive: one after
+    /// another, in order.
+    pub attach_next: tokio::time::Instant,
     /// Route ids this node imported.
     pub imported: HashSet<String>,
     /// The node's queued rehydrations, by record key (Veilid's
@@ -113,6 +126,28 @@ pub(crate) struct NodeSlot {
     /// fed only by rehydration): the reach of the last attempt that left
     /// the subkey queued, `None` before any.
     pub pushes: BTreeMap<(String, u32), Option<Vec<usize>>>,
+}
+
+impl NodeSlot {
+    pub(crate) fn new(events: mpsc::Sender<PortEvent>, ready: watch::Sender<bool>) -> Self {
+        Self {
+            events,
+            ready,
+            local: HashMap::new(),
+            known: HashSet::new(),
+            opened: HashMap::new(),
+            watches: HashMap::new(),
+            inspects: HashMap::new(),
+            was_online: true,
+            last_lag_inspect: None,
+            pools: Vec::new(),
+            state: "detached",
+            attach_next: tokio::time::Instant::now(),
+            imported: HashSet::new(),
+            rehydrations: BTreeSet::new(),
+            pushes: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Default)]
@@ -163,8 +198,8 @@ impl Network {
         })
     }
 
-    /// Queue `event` from `from` to `to`, unless a partition or the drop
-    /// fault takes it. `droppable`: an app message or call (DHT
+    /// Queue `event` from `from` to `to`, unless a partition, a detached
+    /// receiver or the drop fault takes it. `droppable`: an app message or call (DHT
     /// notifications and attachment changes are never dropped).
     pub(crate) fn send(
         &self,
@@ -189,7 +224,9 @@ impl Network {
     ) -> bool {
         let mut inner = self.inner.lock();
         if droppable && from != to {
-            if inner.faults.partitions.contains(&pair(from, to)) {
+            if inner.faults.partitions.contains(&pair(from, to))
+                || inner.faults.detached.contains(&to)
+            {
                 return false;
             }
             let per_mille = inner.faults.drop_per_mille;
@@ -209,6 +246,7 @@ impl Network {
             label,
             event,
             due: tokio::time::Instant::now() + delay,
+            droppable: droppable && from != to,
         });
         drop(inner);
         self.wake.notify_one();
@@ -244,6 +282,9 @@ impl Network {
                 .into_iter()
                 .partition(|p| p.due <= now);
             inner.pending = later;
+            // A message or call in flight to a node that detached meanwhile
+            // is lost: a detached Veilid node has no network to take it.
+            batch.retain(|p| !(p.droppable && inner.faults.detached.contains(&p.to)));
             batch.sort_by_key(|p| (p.from, p.to, p.rank));
             batch.shuffle(&mut *self.order.lock());
             for p in &batch {
@@ -256,6 +297,19 @@ impl Network {
                     _ => format!("{}<-{} {}", p.to, p.from, p.label),
                 };
                 inner.trace.push(p.to, entry);
+                // The ready watch follows the attachment update, as
+                // production's transport sets it from each one
+                // (`rekindle-transport` `SharedState::set_attachment`).
+                if let PortEvent::Attachment {
+                    public_internet_ready: pir,
+                    ..
+                } = &p.event
+                {
+                    if let Some(slot) = inner.nodes.get(p.to) {
+                        slot.ready
+                            .send_if_modified(|ready| std::mem::replace(ready, *pir) != *pir);
+                    }
+                }
             }
             let senders: Vec<_> = inner.nodes.iter().map(|n| n.events.clone()).collect();
             (batch, senders)

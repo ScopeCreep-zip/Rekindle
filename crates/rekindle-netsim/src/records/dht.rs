@@ -92,18 +92,20 @@ pub(crate) struct SimDht {
     rng: Arc<SimRandom>,
 }
 
+/// Whether `node`'s DHT is off: no connection, or attached with the public
+/// internet not ready (`storage_manager/mod.rs:887-898`: Veilid's
+/// `is_online` follows the routing domain's readiness).
+fn offline(faults: &crate::network::Faults, node: usize) -> bool {
+    faults.dht_offline.contains(&node) || faults.not_ready.contains(&node)
+}
+
 impl SimDht {
     pub(crate) fn new(node: usize, net: Arc<Network>, rng: Arc<SimRandom>) -> Self {
         Self { node, net, rng }
     }
 
     fn offline(&self) -> bool {
-        self.net
-            .inner
-            .lock()
-            .faults
-            .dht_offline
-            .contains(&self.node)
+        offline(&self.net.inner.lock().faults, self.node)
     }
 
     /// A network call's latency and slot: `TryAgain` at once when the node
@@ -116,7 +118,7 @@ impl SimDht {
         }
         let slot = self.net.latency.dht(self.node, span, key, subkeys).await;
         let mut inner = self.net.inner.lock();
-        if inner.faults.dht_offline.contains(&self.node) {
+        if offline(&inner.faults, self.node) {
             return Err(try_again());
         }
         if let Some(left) = inner.faults.try_again.get_mut(&self.node) {

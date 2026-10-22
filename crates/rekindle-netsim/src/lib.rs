@@ -19,6 +19,7 @@
 //! number's source (the pinned Veilid constant or the live log) and how to
 //! recalibrate it from a live log.
 
+mod attach;
 mod busy;
 mod clock;
 pub mod latency;
@@ -29,6 +30,8 @@ mod routes;
 mod trace;
 
 #[cfg(test)]
+mod attach_tests;
+#[cfg(test)]
 mod replica_tests;
 #[cfg(test)]
 mod tests;
@@ -38,9 +41,10 @@ use std::sync::Arc;
 use rekindle_records::port::{PortEvent, PortSet, RecordValue};
 use tokio::sync::{mpsc, watch};
 
+pub use attach::ATTACH_STEP;
 pub use busy::{db_call, DbCall};
 pub use clock::{SimClock, SimRandom, SIM_EPOCH_MS};
-pub use messages::{FakeMessages, CALL_TIMEOUT};
+pub use messages::{call_timeout, FakeMessages, RPC_TIMEOUT};
 pub use network::Network;
 pub use records::FakeRecords;
 pub use routes::{FakeAllocator, FakeRoutes};
@@ -60,8 +64,9 @@ pub enum Fault {
     /// stale read or a set below consensus follows from which replicas a
     /// side reaches; `records` notes the placement).
     Partition { a: Vec<usize>, b: Vec<usize> },
-    /// Every partition and offline DHT ends, and every attached node is
-    /// ready again; the record pools' own timers re-push their held writes.
+    /// Every partition and offline DHT ends, and every attached node whose
+    /// public internet was not ready is ready again; the record pools' own
+    /// timers re-push their held writes.
     Heal,
     /// This fraction (per mille) of app messages and calls is dropped.
     DropMessages { per_mille: u32 },
@@ -74,10 +79,17 @@ pub enum Fault {
     WatchDeath { node: usize, key: String },
     /// The node's own routes die: the owner and every importer hear of it.
     RouteDeath { node: usize },
-    /// The node detaches (or reattaches): its DHT calls fail, no watch
-    /// change reaches it, its readiness follows, and it hears an
-    /// attachment change.
+    /// The node detaches (or reattaches): its DHT calls fail, it neither
+    /// sends nor receives app messages or calls (a call to it times out),
+    /// no watch change reaches it, and it hears Detaching then Detached
+    /// (or Attaching up to AttachedGood); its ready watch follows
+    /// ([`attach`]).
     Detach { node: usize, detached: bool },
+    /// The node's public internet turns unready (or ready again) while it
+    /// stays attached, as on a `RoutingDomainReadyEvent`: its DHT calls
+    /// answer "try again", its ready watch follows, and it hears an
+    /// attachment update with `is_attached` still true.
+    InternetReady { node: usize, ready: bool },
     /// The node's storage-manager tick ran `ms` late (a suspended
     /// process): past 2 s, an online node inspects every watch, at most
     /// once per 30 s (`tasks/mod.rs:132-145`).
@@ -132,21 +144,7 @@ impl Netsim {
         let (ready, ready_rx) = watch::channel(false);
         let index = {
             let mut inner = self.net.inner.lock();
-            inner.nodes.push(NodeSlot {
-                events: events_tx,
-                ready,
-                local: std::collections::HashMap::new(),
-                known: std::collections::HashSet::new(),
-                opened: std::collections::HashMap::new(),
-                watches: std::collections::HashMap::new(),
-                inspects: std::collections::HashMap::new(),
-                was_online: true,
-                last_lag_inspect: None,
-                pools: Vec::new(),
-                imported: std::collections::HashSet::new(),
-                rehydrations: std::collections::BTreeSet::new(),
-                pushes: std::collections::BTreeMap::new(),
-            });
+            inner.nodes.push(NodeSlot::new(events_tx, ready));
             inner.nodes.len() - 1
         };
         let rng = Arc::new(SimRandom::new(self.seed, index));
@@ -195,29 +193,6 @@ impl Netsim {
                 }
             }
         })
-    }
-
-    /// Attach or detach `node`: its readiness, and the attachment event.
-    pub fn set_ready(&self, node: usize, ready: bool) {
-        if let Some(slot) = self.net.inner.lock().nodes.get(node) {
-            slot.ready.send_replace(ready);
-        }
-        let state = if ready { "attached_full" } else { "detached" };
-        self.net.send(
-            node,
-            node,
-            "Attachment",
-            PortEvent::Attachment {
-                state: state.into(),
-                is_attached: ready,
-                public_internet_ready: ready,
-                reliable_peers: 8,
-                live_peers: 8,
-                network_size: 64,
-                median_latency_us: 80_000,
-            },
-            false,
-        );
     }
 
     /// Let every task run until it waits, then deliver what is in flight;
@@ -274,6 +249,7 @@ impl Netsim {
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
             Fault::Detach { node, detached } => self.detach(node, detached),
+            Fault::InternetReady { node, ready } => self.internet_ready(node, ready),
             Fault::TickLag { node, ms } => self
                 .net
                 .tick_lag(node, std::time::Duration::from_millis(ms)),
@@ -281,48 +257,17 @@ impl Netsim {
     }
 
     fn heal(&self) {
-        let mut inner = self.net.inner.lock();
-        inner.faults.partitions.clear();
-        inner.faults.dht_offline.clear();
-        let inner = &*inner;
-        for (node, slot) in inner.nodes.iter().enumerate() {
-            if !inner.faults.detached.contains(&node) {
-                slot.ready
-                    .send_if_modified(|ready| !std::mem::replace(ready, true));
-            }
-        }
-    }
-
-    fn detach(&self, node: usize, detached: bool) {
-        let peers = {
+        let unready: Vec<usize> = {
             let mut inner = self.net.inner.lock();
-            toggle(&mut inner.faults.dht_offline, node, detached);
-            toggle(&mut inner.faults.detached, node, detached);
-            if let Some(slot) = inner.nodes.get(node) {
-                slot.ready.send_replace(!detached);
-            }
-            inner.nodes.len().saturating_sub(1) as u64
+            inner.faults.partitions.clear();
+            inner.faults.dht_offline.clear();
+            let mut nodes: Vec<usize> = inner.faults.not_ready.iter().copied().collect();
+            nodes.sort_unstable();
+            nodes
         };
-        let (state, live) = if detached {
-            ("detached", 0)
-        } else {
-            ("attached_good", peers)
-        };
-        self.net.send(
-            node,
-            node,
-            "Attachment",
-            PortEvent::Attachment {
-                state: state.to_string(),
-                is_attached: !detached,
-                public_internet_ready: !detached,
-                reliable_peers: live,
-                live_peers: live,
-                network_size: live,
-                median_latency_us: 0,
-            },
-            false,
-        );
+        for node in unready {
+            self.internet_ready(node, true);
+        }
     }
 
     fn kill_routes(&self, node: usize) {

@@ -10,7 +10,7 @@ use rekindle_types::config::SafetyProfile;
 
 use super::*;
 
-fn keypair(seed: u8) -> (String, [u8; 32]) {
+pub(crate) fn keypair(seed: u8) -> (String, [u8; 32]) {
     let signing = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&[seed; 32]);
     (
         rekindle_crypto::keypair_text::keypair_text_from_signing(&signing),
@@ -18,11 +18,18 @@ fn keypair(seed: u8) -> (String, [u8; 32]) {
     )
 }
 
-async fn recv(node: &mut Node) -> PortEvent {
+pub(crate) async fn recv(node: &mut Node) -> PortEvent {
     tokio::time::timeout(Duration::from_secs(5), node.events.recv())
         .await
         .expect("an event")
         .expect("open")
+}
+
+/// Take `node`'s attachment updates up to AttachedFull (after `start`).
+pub(crate) async fn attached(node: &mut Node) {
+    while !matches!(recv(node).await, PortEvent::Attachment { state, .. } if state == "attached_full")
+    {
+    }
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -136,7 +143,7 @@ async fn a_watcher_hears_another_node_s_write() {
     a.set(lease, 0, b"seed".to_vec(), None).await.unwrap();
     let theirs = b.acquire(&key, None).await.unwrap();
     b.watch(theirs, &[2]).await.unwrap();
-    let _ = recv(&mut nodes[1]).await; // its attachment
+    attached(&mut nodes[1]).await;
     a.set(lease, 2, b"news".to_vec(), None).await.unwrap();
     match recv(&mut nodes[1]).await {
         PortEvent::ValueChange(change) => {
@@ -176,7 +183,7 @@ async fn messages_and_calls_reach_the_route_s_owner() {
     )
     .await
     .unwrap();
-    let _ = recv(&mut nodes[1]).await; // its attachment
+    attached(&mut nodes[1]).await;
     let target = nodes[0].ports.routes.import(&blob).unwrap();
     let profile = SafetyProfile::default_dht();
     nodes[0]
@@ -239,7 +246,7 @@ async fn an_unanswered_call_times_out_and_a_partition_drops() {
         .routes
         .available_own(RouteClass::General)
         .await;
-    let _ = recv(&mut nodes[1]).await;
+    attached(&mut nodes[1]).await;
     let target = nodes[0].ports.routes.import(&blob).unwrap();
     let profile = SafetyProfile::default_dht();
     sim.fault(Fault::Unanswered {
@@ -253,7 +260,7 @@ async fn an_unanswered_call_times_out_and_a_partition_drops() {
         .call(&target, &profile, vec![1])
         .await
         .is_err());
-    assert!(started.elapsed() >= CALL_TIMEOUT);
+    assert!(started.elapsed() >= call_timeout(&profile));
     sim.fault(Fault::Partition {
         a: vec![0],
         b: vec![1],
@@ -317,8 +324,8 @@ async fn route_death_reaches_the_owner_and_the_importers() {
         .routes
         .available_own(RouteClass::General)
         .await;
-    let _ = recv(&mut nodes[0]).await;
-    let _ = recv(&mut nodes[1]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
     nodes[0].ports.routes.import(&blob).unwrap();
     sim.fault(Fault::RouteDeath { node: 1 });
     let PortEvent::RouteChange { dead, .. } = recv(&mut nodes[1]).await else {

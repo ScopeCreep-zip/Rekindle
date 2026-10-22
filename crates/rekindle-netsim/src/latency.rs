@@ -18,7 +18,7 @@
 //! | get, inspect, open finding no value | [`DEADLINE`] 10.0–10.3 s | measured: the fresh prekey record's inspect 18:18:51.272 → 18:19:01.287 (`present=[]`); derived: no consensus is possible, so the fanout runs to `get_value_timeout_ms` 10 000 |
 //! | watch | [`WATCH`] 1–3 s | derived: a watch is one fanout to the record's nodes (`storage_manager/watch_value.rs`), as a get |
 //! | create | [`CREATE`] 5–20 ms | derived: `storage_manager/create_record.rs` makes the record locally with no fanout; the live ~10 s between creates is the first set, charged as a set |
-//! | app message, one way; an app call is two | [`MESSAGE`] 0.2–0.8 s | derived, not measured: our safety route (3–4 hops, `messages.rs` [`crate::CALL_TIMEOUT`]) plus the peer's 1-hop private route, at the 80 ms median hop latency the netsim reports in its attachment |
+//! | app message, one way; an app call is two | [`MESSAGE`] 0.2–0.8 s | derived, not measured: our safety route (3–4 hops, `messages.rs` [`crate::call_timeout`]) plus the peer's 1-hop private route, at the 80 ms median hop latency the netsim reports in its attachment |
 //!
 //! Concurrency: calls on one node's `(record, subkey)` serialize, as
 //! Veilid's per-subkey lock does (`storage_manager/set_value.rs:52`,

@@ -46,7 +46,9 @@ impl RouteAllocator for FakeAllocator {
         let id = format!("n{}-{tag}{n}", self.node);
         let blob = blob_of(&id);
         let mut inner = self.net.inner.lock();
-        if inner.faults.dht_offline.contains(&self.node) {
+        if inner.faults.dht_offline.contains(&self.node)
+            || inner.faults.not_ready.contains(&self.node)
+        {
             return Err(AllocError::TryAgain("offline".into()));
         }
         inner
