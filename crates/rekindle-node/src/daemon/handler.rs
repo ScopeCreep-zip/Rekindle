@@ -257,8 +257,32 @@ impl InboundHandler for DaemonHandler {
             }
         }
 
-        if let Some(ref sub_mgr) = *self.subscriptions.read() {
-            sub_mgr.on_gossip(community_id, sender_pseudonym, envelope, lamport_ts);
+        // A channel post (plan E3.1 F3): the Host's ingest fetches, gates
+        // and stores it once the mesh admits its sender.
+        let notified = match &envelope {
+            CommunityEnvelope::MessageNotification {
+                channel_id,
+                message_id,
+                author_pseudonym,
+                subkey_index,
+                sequence,
+                ..
+            } if author_pseudonym.eq_ignore_ascii_case(sender_pseudonym) => Some((
+                channel_id.clone(),
+                message_id.clone(),
+                *subkey_index,
+                *sequence,
+            )),
+            _ => None,
+        };
+        let admitted = match *self.subscriptions.read() {
+            Some(ref sub_mgr) => {
+                sub_mgr.on_gossip(community_id, sender_pseudonym, envelope, lamport_ts)
+            }
+            None => false,
+        };
+        if let (true, Some(post)) = (admitted, notified) {
+            self.ingest_post(community_id, sender_pseudonym, post);
         }
     }
 
@@ -390,5 +414,25 @@ impl InboundHandler for DaemonHandler {
                 }
             }
         }
+    }
+}
+
+impl DaemonHandler {
+    /// Hand a notified channel post to the Host's ingest (plan E3.1 F3).
+    fn ingest_post(&self, community_id: &str, author: &str, post: (String, String, u32, u64)) {
+        let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+            return;
+        };
+        let (community, author) = (community_id.to_owned(), author.to_owned());
+        let (channel, message_id, subkey, sequence) = post;
+        tokio::spawn(async move {
+            let host = crate::host::adapters::channel::HostChannel::new(&ctx);
+            let ingested = host
+                .ingest_notified(&community, &channel, subkey, &message_id, &author, sequence)
+                .await;
+            if let Err(error) = ingested {
+                debug!(%error, community, channel, "received channel post not ingested");
+            }
+        });
     }
 }

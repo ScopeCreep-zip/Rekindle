@@ -68,7 +68,6 @@ async fn unread(community: &Community, channel: &str) -> u64 {
         .expect("the channel's count")
 }
 
-#[ignore = "E3.1 D26: the daemon stores no received channel post (its receive path is adopted with the ingest gate), so Bea counts 0"]
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn read_marker_only_advances() {
     let community = Community::of(2, 233).await;

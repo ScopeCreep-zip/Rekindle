@@ -287,6 +287,7 @@ impl Host {
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
             mode,
             read_markers: super::read_markers::PendingMarkers::default(),
+            channel_rate_limits: parking_lot::Mutex::default(),
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(
                 &stores.communities,
             ))),

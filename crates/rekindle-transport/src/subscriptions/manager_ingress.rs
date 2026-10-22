@@ -17,6 +17,8 @@ impl SubscriptionManager {
     /// Pipeline: rate limit → Lamport merge → `envelope_into_event` →
     /// state_effects → dedup → emit.
     ///
+    /// Whether the sender was admitted under its rate floor.
+    ///
     /// Takes the canonical `CommunityEnvelope`. It used to take a
     /// postcard `GossipPayload` — this track's own near-copy — so a
     /// desktop peer's broadcast could not be represented here at all.
@@ -26,7 +28,7 @@ impl SubscriptionManager {
         sender_pseudonym: &str,
         envelope: CommunityEnvelope,
         lamport_ts: u64,
-    ) {
+    ) -> bool {
         debug!(
             community = community_id,
             sender = %sender_pseudonym,
@@ -62,7 +64,7 @@ impl SubscriptionManager {
                     sender = %sender_pseudonym,
                     "sub: gossip dropped — sender over rate floor"
                 );
-                return;
+                return false;
             }
         }
 
@@ -74,6 +76,7 @@ impl SubscriptionManager {
         {
             self.process_event(event);
         }
+        true
     }
 
     /// Central event processing pipeline: enrich → state effects → dedup → emit.

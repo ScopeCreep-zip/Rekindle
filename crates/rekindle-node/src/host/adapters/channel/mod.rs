@@ -9,8 +9,8 @@
 //! File split: this module holds the struct, the send entry and the
 //! settle task; `deps_impl` is the single trait impl and delegates;
 //! `state` the community-store reads and mutations; `dht` the record
-//! writes and reads; `persist` the stored rows and the outbox; `events`
-//! the echo and delivery state on the Host bus; `history` the reads.
+//! writes and reads; `persist` the stored rows and the outbox; `ingest`
+//! the received posts; `events` the echo and delivery state on the Host bus; `history` the reads.
 
 use std::sync::Arc;
 
@@ -30,6 +30,7 @@ pub mod deps_impl;
 mod dht;
 mod events;
 mod history;
+pub mod ingest;
 mod persist;
 mod state;
 

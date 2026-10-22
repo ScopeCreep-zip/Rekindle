@@ -14,7 +14,7 @@
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_types::subscription_events::{
-    ChannelMessageEvent, PresenceEvent, SubscriptionEvent, TypingContext, TypingEvent,
+    PresenceEvent, SubscriptionEvent, TypingContext, TypingEvent,
 };
 
 use super::into_event_control::control_into_event;
@@ -32,25 +32,11 @@ pub fn envelope_into_event(
     sender: &str,
 ) -> Option<SubscriptionEvent> {
     let c = || community.to_string();
-    let s = || sender.to_string();
 
     Some(match envelope {
-        CommunityEnvelope::MessageNotification {
-            channel_id,
-            message_id,
-            sequence,
-            timestamp,
-            ..
-        } => SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-            community: c(),
-            channel: channel_id,
-            message_id,
-            sender_pseudonym: s(),
-            sequence,
-            timestamp,
-            body: None,                // populated by the enrichment stage
-            reply_to_message_id: None, // populated by the enrichment stage
-        }),
+        // A channel post is the Host's to ingest (plan E3.1 F3): it
+        // fetches, gates and stores the post, then publishes it.
+        CommunityEnvelope::MessageNotification { .. } => return None,
         CommunityEnvelope::TypingIndicator {
             channel_id,
             pseudonym_key,
