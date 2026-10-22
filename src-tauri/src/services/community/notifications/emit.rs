@@ -80,9 +80,11 @@ pub async fn emit_message_notification(
     sender_pseudonym: &str,
     body: &str,
 ) {
-    let decision = state
-        .notification_throttle
-        .record_attempt_now(community_id, channel_id);
+    let decision = state.notification_throttle.record_attempt(
+        community_id,
+        channel_id,
+        u128::from(state.clock.now_ms()),
+    );
     if matches!(decision, NotificationDecision::Drop) {
         return;
     }

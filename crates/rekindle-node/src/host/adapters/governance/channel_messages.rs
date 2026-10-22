@@ -59,7 +59,7 @@ impl HostGovernance {
                     message_id: message_id.to_string(),
                     new_ciphertext,
                     mek_generation,
-                    edited_at: rekindle_utils::timestamp_secs(),
+                    edited_at: self.ctx.clock.now_secs(),
                 }
             }
             MessageChange::Delete => {

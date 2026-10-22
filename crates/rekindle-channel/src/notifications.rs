@@ -61,10 +61,6 @@ impl NotificationThrottle {
         Self::default()
     }
 
-    fn now_ms() -> u128 {
-        u128::from(rekindle_utils::time::timestamp_ms())
-    }
-
     /// Architecture §17.2 line 2402 — record an attempt to notify and
     /// return the dispatch decision. Pure logic; takes `now_ms` so
     /// tests can drive the clock.
@@ -98,10 +94,6 @@ impl NotificationThrottle {
             window.suppressed_since_emit = window.suppressed_since_emit.saturating_add(1);
             NotificationDecision::Drop
         }
-    }
-
-    pub fn record_attempt_now(&self, community_id: &str, channel_id: &str) -> NotificationDecision {
-        self.record_attempt(community_id, channel_id, Self::now_ms())
     }
 }
 

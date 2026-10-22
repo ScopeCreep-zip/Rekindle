@@ -57,7 +57,7 @@ pub async fn create_thread<D: ChannelMessagingDeps>(
             starter_message_id: starter_message_id.to_string(),
             creator_pseudonym,
             forum_tag,
-            created_at: rekindle_utils::timestamp_secs(),
+            created_at: deps.now_secs(),
             archived: false,
             auto_archive_seconds: u32::try_from(auto_archive_seconds).unwrap_or(u32::MAX),
             last_message_at: 0,

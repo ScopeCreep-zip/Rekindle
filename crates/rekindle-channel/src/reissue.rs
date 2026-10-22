@@ -65,7 +65,7 @@ pub async fn reissue_channel_post<D: ChannelMessagingDeps>(
         .await?;
     let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
         resolve_outbound_mentions(deps, community_id, &sender_key, &stored.body);
-    let timestamp_ms = i64::try_from(rekindle_utils::timestamp_secs() * 1000).unwrap_or(i64::MAX);
+    let timestamp_ms = i64::try_from(deps.now_secs() * 1000).unwrap_or(i64::MAX);
     let channel_msg = build_channel_message(BuildChannelMessageParams {
         sequence,
         sender_pseudonym: sender_key,

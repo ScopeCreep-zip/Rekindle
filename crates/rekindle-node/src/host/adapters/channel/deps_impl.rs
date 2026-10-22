@@ -43,6 +43,10 @@ fn adapter(e: impl std::fmt::Display) -> ChannelError {
 
 #[async_trait]
 impl ChannelMessagingDeps for HostChannel {
+    fn now_secs(&self) -> u64 {
+        self.ctx().clock.now_secs()
+    }
+
     // ---------- Identity / credentials ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {

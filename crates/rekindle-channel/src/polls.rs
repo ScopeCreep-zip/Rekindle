@@ -94,8 +94,7 @@ pub async fn persist_poll_create<D: ChannelMessagingDeps>(
             .map(|answer| answer.trim().to_string())
             .collect(),
         multi_select,
-        expires_at: duration_seconds
-            .map(|seconds| rekindle_utils::timestamp_secs().saturating_add(seconds)),
+        expires_at: duration_seconds.map(|seconds| deps.now_secs().saturating_add(seconds)),
         lamport: deps.increment_lamport(community_id)?,
     };
     deps.write_channel_poll_create_smpl(&context, &entry)
@@ -298,7 +297,7 @@ async fn load_poll_snapshot<D: ChannelMessagingDeps>(
         author_subkey,
         answer_count,
         multi_select,
-        expired: expires_at.is_some_and(|ts| ts <= rekindle_utils::timestamp_secs()),
+        expired: expires_at.is_some_and(|ts| ts <= deps.now_secs()),
         closed: closed_lamport.is_some(),
         latest_votes,
     })

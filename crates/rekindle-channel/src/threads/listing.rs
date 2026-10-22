@@ -16,7 +16,7 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
         .governance_state(community_id)
         .ok_or_else(|| ChannelError::Adapter("governance state not loaded".into()))?;
     let mut out = Vec::new();
-    let now = rekindle_utils::timestamp_secs();
+    let now = deps.now_secs();
 
     for (thread_id, thread) in gov_state
         .threads

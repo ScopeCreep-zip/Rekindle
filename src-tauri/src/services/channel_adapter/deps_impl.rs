@@ -29,6 +29,10 @@ use super::{dht, events, misc, persist, state_mutations, state_reads, ChannelAda
 
 #[async_trait]
 impl ChannelMessagingDeps for ChannelAdapter {
+    fn now_secs(&self) -> u64 {
+        self.state.clock.now_secs()
+    }
+
     // ---------- Identity / credentials ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]> {

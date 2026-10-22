@@ -196,6 +196,13 @@ pub struct SentChannelMessageEcho {
 
 #[async_trait]
 pub trait ChannelMessagingDeps: Send + Sync {
+    // ---------- Clock ----------
+
+    /// The host's clock port in seconds (plan C9.2): message, thread,
+    /// poll and expression timestamps read it, never the wall clock, so
+    /// the netsim drives them.
+    fn now_secs(&self) -> u64;
+
     // ---------- Identity / credentials ----------
 
     fn identity_secret(&self) -> Option<[u8; 32]>;

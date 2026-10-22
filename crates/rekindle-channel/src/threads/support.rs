@@ -140,7 +140,7 @@ pub(super) fn build_thread_message<D: ChannelMessagingDeps>(
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
     let (mentioned_pseudonyms, mentioned_roles, mention_flags) =
         crate::mentions::resolve_outbound_mentions(deps, community_id, &sender_hex, body);
-    let timestamp_ms = rekindle_utils::timestamp_secs() * 1000;
+    let timestamp_ms = deps.now_secs() * 1000;
 
     Ok(build_channel_message(BuildChannelMessageParams {
         sequence: deps.next_thread_sequence(community_id),

@@ -133,7 +133,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
     body: &str,
     reply_to: Option<String>,
 ) -> Result<ChannelSendResult, ChannelError> {
-    let timestamp_ms = i64::try_from(rekindle_utils::timestamp_secs() * 1000).unwrap_or(i64::MAX);
+    let timestamp_ms = i64::try_from(deps.now_secs() * 1000).unwrap_or(i64::MAX);
 
     let info = deps
         .channel_info(community_id, channel_id)
@@ -293,7 +293,7 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         ));
     }
 
-    let timestamp_ms = i64::try_from(rekindle_utils::timestamp_secs() * 1000).unwrap_or(i64::MAX);
+    let timestamp_ms = i64::try_from(deps.now_secs() * 1000).unwrap_or(i64::MAX);
     enforce_slowmode_with_bypass(deps, dest_community_id, dest_channel_id, timestamp_ms)?;
 
     let source = deps
