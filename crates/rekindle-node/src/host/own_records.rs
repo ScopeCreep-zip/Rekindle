@@ -48,6 +48,10 @@ pub(crate) struct OwnRecords {
     /// (`DaemonContext.own_prekey_lease`): the prekey maintenance and the
     /// refills write through it.
     pub prekey_lease: Arc<parking_lot::Mutex<Option<LeaseId>>>,
+    /// The one writer at a time of our prekey record
+    /// (`DaemonContext.own_prekey_writes`): the stage holds it from its
+    /// reconcile through its later slots.
+    pub prekey_writes: Arc<tokio::sync::Mutex<()>>,
     /// Sent once our prekey record is held, reconciled and filled: the
     /// prekey maintenance waits for it (audit D-7), so it never mints
     /// beside the stage. Dropped unsent when the record is not held.
@@ -126,7 +130,7 @@ impl OwnRecords {
                 }
                 held
             };
-            let ((device_list, later), profile) =
+            let ((device_list, later, writes), profile) =
                 tokio::join!(prekeys, this.profile(pool, &stored, &route_blob));
             // The account, read by no one else, is written beside the
             // device list rather than with the first writes: those already
@@ -142,7 +146,7 @@ impl OwnRecords {
             tokio::join!(device_list, this.account(pool, &stored));
             // The later slots after the profile names the record, so they
             // never hold its writes back under the DHT cap.
-            this.publish_later(later);
+            this.publish_later(later, writes);
             profile
         };
         let joined = stop

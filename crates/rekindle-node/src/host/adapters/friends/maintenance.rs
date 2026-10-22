@@ -80,10 +80,17 @@ pub(crate) fn start_prekeys(
     ready: tokio::sync::oneshot::Receiver<()>,
 ) -> Result<(), rekindle_lifecycle::ScopeClosed> {
     let host = HostFriends::of(ctx);
+    let writes = Arc::clone(&ctx.own_prekey_writes);
     scope.spawn_with_token("prekey maintenance", move |stop| {
+        let ending = stop.clone();
         run_prekeys(ready, stop, move || {
-            let host = host.clone();
+            let (host, writes, ending) = (host.clone(), Arc::clone(&writes), ending.clone());
             async move {
+                // One writer of our record at a time (F9); a rotation holds
+                // it until the unlock ends, so the wait ends with the scope.
+                let Some(_writes) = ending.run_until_cancelled(writes.lock_owned()).await else {
+                    return;
+                };
                 if let Err(e) = rekindle_transport::operations::prekeys::maintain(&host).await {
                     tracing::warn!(error = %e, "prekey maintenance failed");
                 }

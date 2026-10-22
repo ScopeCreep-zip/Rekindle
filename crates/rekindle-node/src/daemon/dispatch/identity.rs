@@ -208,6 +208,11 @@ pub(crate) async fn handle_rotate(
     if let Err(e) = host_identity::journal_rotation(&ctx.identity_stores(), &pending) {
         return identity_error(&e);
     }
+    // Our prekey record's one writer (F9) until the unlock ends: no
+    // reconcile from our old rows puts the old set back over the new one.
+    let _writes = std::sync::Arc::clone(&ctx.own_prekey_writes)
+        .lock_owned()
+        .await;
     let result = match identity::rotate_identity(
         &crate::host::adapters::friends::HostFriends::of(ctx),
         &pending.secret,

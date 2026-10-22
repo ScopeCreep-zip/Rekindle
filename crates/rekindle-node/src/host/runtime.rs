@@ -272,6 +272,7 @@ impl Host {
             friend_watches: super::adapters::friends::FriendWatches::default(),
             own_profile_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),
+            own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
             mode,
             community_runtime: Arc::new(
                 crate::daemon::community_runtime::CommunityRuntimeMap::new(),

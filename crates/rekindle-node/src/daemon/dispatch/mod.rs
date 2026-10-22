@@ -234,6 +234,12 @@ pub struct DaemonContext {
     /// Our prekey record's session lease (plan E2.4), set by the own-records
     /// stage; the maintenance and the refills write through it.
     pub(crate) own_prekey_lease: Arc<parking_lot::Mutex<Option<rekindle_records::lease::LeaseId>>>,
+    /// Held by every writer of our prekey record (the own-records stage
+    /// from its reconcile through its later slots, each maintenance pass,
+    /// and a rotation from its set until the unlock ends): a reconcile
+    /// compares the record with our rows, so one running beside a rotation
+    /// would put the old set back over the new one (E2.B finding F9).
+    pub(crate) own_prekey_writes: Arc<tokio::sync::Mutex<()>>,
     /// This context, for work that outlives a call (`HostFriends::owned`).
     pub(crate) this: std::sync::Weak<DaemonContext>,
 }

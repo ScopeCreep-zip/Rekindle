@@ -6,11 +6,14 @@
 //! friend never reads an empty record (the stage then lets the
 //! maintenance start); and this device's id, minted once.
 
+use std::sync::Arc;
+
 use rekindle_crypto::signal::prekey_record::Publish;
 use rekindle_db::repo::identity::OwnedRecord;
 use rekindle_protocol::dht::prekeys as record;
 use rekindle_records::port::RecordPort;
 use rekindle_transport::operations::prekeys::device_list;
+use tokio::sync::OwnedMutexGuard;
 
 use super::own_records::{OwnRecords, Stored};
 
@@ -19,14 +22,16 @@ impl OwnRecords {
     /// the pass's values written after the profile ([`Self::publish_later`]);
     /// the list is empty when the record could not be held (the profile
     /// then names no record, and a friend's first contact waits for the
-    /// next unlock).
+    /// next unlock). The record's writer guard is taken first and
+    /// returned with the later values, held until they are written.
     pub(super) async fn prekeys(
         &self,
         pool: &dyn RecordPort,
         stored: &Stored,
-    ) -> (Vec<u8>, Vec<Publish>) {
+    ) -> (Vec<u8>, Vec<Publish>, Option<OwnedMutexGuard<()>>) {
+        let writes = Arc::clone(&self.prekey_writes).lock_owned().await;
         let Some(device_id) = self.device_id(stored).await else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), None);
         };
         let held = self
             .owner()
@@ -39,7 +44,7 @@ impl OwnRecords {
             )
             .await;
         let Some(held) = held else {
-            return (Vec::new(), Vec::new());
+            return (Vec::new(), Vec::new(), None);
         };
         *self.prekey_lease.lock() = Some(held.lease);
         let key = held.key;
@@ -47,7 +52,7 @@ impl OwnRecords {
         let list = device_list(&key, &device_id)
             .map_err(|e| tracing::error!(error = %e, "own records: no device list"))
             .unwrap_or_default();
-        (list, later)
+        (list, later, Some(writes))
     }
 
     /// The unlock's reconciliation (what our rows say the record holds and
@@ -78,8 +83,9 @@ impl OwnRecords {
     }
 
     /// Write the pass's later slots in the unlock scope, in bounded
-    /// concurrent batches under the DHT cap (`prekeys::publish`).
-    pub(super) fn publish_later(&self, later: Vec<Publish>) {
+    /// concurrent batches under the DHT cap (`prekeys::publish`), still
+    /// under the stage's writer guard `writes`.
+    pub(super) fn publish_later(&self, later: Vec<Publish>, writes: Option<OwnedMutexGuard<()>>) {
         use rekindle_transport::operations::friend::FriendHost as _;
         use rekindle_transport::operations::prekeys;
         if later.is_empty() {
@@ -89,6 +95,7 @@ impl OwnRecords {
         self.friends
             .scope()
             .spawn_or_drop("publish prekeys", async move {
+                let _writes = writes;
                 if let Err(e) = prekeys::publish(&host, later).await {
                     tracing::warn!(error = %e, "prekey slots not published");
                 }

@@ -103,6 +103,7 @@ pub(crate) async fn run(
             presence: ctx.own_presence.clone(),
             profile_lease: Arc::clone(&ctx.own_profile_lease),
             prekey_lease: Arc::clone(&ctx.own_prekey_lease),
+            prekey_writes: Arc::clone(&ctx.own_prekey_writes),
             prekeys_ready: Some(prekeys_ready),
             friends: super::adapters::friends::HostFriends::of(ctx),
             public_key: installed.public_key.clone(),
