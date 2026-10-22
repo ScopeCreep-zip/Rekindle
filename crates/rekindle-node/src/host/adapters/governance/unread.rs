@@ -54,7 +54,7 @@ impl HostGovernance {
         channel_id: &str,
         message_id: &str,
     ) -> Result<(), GovernanceRuntimeError> {
-        let (owner, db) = self.marker_db()?;
+        let (owner, db) = self.owner_db()?;
         let (channel, message) = (channel_id.to_owned(), message_id.to_owned());
         let position = db
             .call(move |conn| read_markers::channel_position(conn, &owner, &channel, &message))
@@ -126,7 +126,7 @@ impl HostGovernance {
         let after = self
             .marker(&channel_scope(community_id, channel_id))
             .await?;
-        let (owner, db) = self.marker_db()?;
+        let (owner, db) = self.owner_db()?;
         let (community, channel) = (community_id.to_owned(), channel_id.to_owned());
         db.call(move |conn| read_markers::channel_unread(conn, &owner, &community, &channel, after))
             .await
@@ -136,7 +136,7 @@ impl HostGovernance {
     /// Our marker on `scope`: the larger of the stored and the pending one.
     async fn marker(&self, scope: &Scope) -> Result<u64, GovernanceRuntimeError> {
         let pending = self.ctx.read_markers.get(scope).unwrap_or(0);
-        let (owner, db) = self.marker_db()?;
+        let (owner, db) = self.owner_db()?;
         let scope = scope.clone();
         let stored_seq = db
             .call(move |conn| read_markers::get(conn, &owner, &scope))
@@ -152,7 +152,7 @@ impl HostGovernance {
         if pending.is_empty() {
             return;
         }
-        let Ok((owner, db)) = self.marker_db() else {
+        let Ok((owner, db)) = self.owner_db() else {
             return;
         };
         let now = self.ctx.clock.now_ms_i64();
@@ -172,19 +172,5 @@ impl HostGovernance {
                 self.ctx.read_markers.note(scope, seq);
             }
         }
-    }
-
-    /// The unlocked identity's key and database; an error while locked.
-    fn marker_db(&self) -> Result<(String, rekindle_db::Db), GovernanceRuntimeError> {
-        let not_logged_in = || GovernanceRuntimeError::Adapter(rekindle_db::NotLoggedIn.into());
-        let owner = self
-            .ctx
-            .session
-            .read()
-            .as_ref()
-            .map(|s| s.identity.public_key_hex.clone())
-            .ok_or_else(not_logged_in)?;
-        let db = self.ctx.db.current().map_err(|_| not_logged_in())?;
-        Ok((owner, db))
     }
 }

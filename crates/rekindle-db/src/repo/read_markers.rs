@@ -6,6 +6,8 @@
 
 use rusqlite::{params, Connection, OptionalExtension as _};
 
+use super::chain_entries::sql_seq as to_i64;
+
 /// What a marker is a position in.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Scope {
@@ -23,10 +25,6 @@ pub enum Scope {
 pub struct Unread {
     pub messages: u32,
     pub mentions: u32,
-}
-
-fn to_i64(seq: u64) -> rusqlite::Result<i64> {
-    i64::try_from(seq).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))
 }
 
 fn to_u64(seq: i64) -> u64 {

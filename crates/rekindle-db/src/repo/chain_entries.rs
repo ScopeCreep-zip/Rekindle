@@ -13,7 +13,8 @@ use rusqlite::{params, Connection};
 /// before it may be retired: [`DELIVERY_HORIZON`] (D24, ruling Q2b).
 pub const CHAIN_RETENTION: Duration = DELIVERY_HORIZON;
 
-fn sql_seq(seq: u64) -> rusqlite::Result<i64> {
+/// A seq as a SQLite integer; one above `i64::MAX` is refused.
+pub(crate) fn sql_seq(seq: u64) -> rusqlite::Result<i64> {
     i64::try_from(seq).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))
 }
 

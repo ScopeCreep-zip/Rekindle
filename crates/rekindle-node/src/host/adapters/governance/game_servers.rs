@@ -197,7 +197,7 @@ impl HostGovernance {
     }
 
     /// The unlocked identity's key and database; an error while locked.
-    fn owner_db(&self) -> Result<(String, rekindle_db::Db), GovernanceRuntimeError> {
+    pub(super) fn owner_db(&self) -> Result<(String, rekindle_db::Db), GovernanceRuntimeError> {
         let not_logged_in = || GovernanceRuntimeError::Adapter(rekindle_db::NotLoggedIn.into());
         let owner = self
             .ctx
