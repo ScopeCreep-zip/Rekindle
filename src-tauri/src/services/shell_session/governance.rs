@@ -14,8 +14,7 @@ pub(super) fn on_projected(
     community_id: &str,
     projected: &GovernanceProjected,
 ) {
-    // The Lost Cargo cache and its pinned set (files domain, E3.1 E3).
-    super::open_files_cache(state, community_id);
+    // The pinned set of the cache the Host opened (plan E3.1 E3c).
     crate::services::community::files::sync_pinned_from_governance(state, community_id);
 
     let scope = crate::state_helpers::login_scope_or_closed(state);

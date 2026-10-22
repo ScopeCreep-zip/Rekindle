@@ -452,21 +452,29 @@ impl ChannelMessagingDeps for HostChannel {
 
     fn upload_expression_to_cache(
         &self,
-        _community_id: &str,
-        _expression_id: [u8; 16],
-        _bytes: &[u8],
-        _filename: String,
-        _mime_type: String,
+        community_id: &str,
+        expression_id: [u8; 16],
+        bytes: &[u8],
+        filename: String,
+        mime_type: String,
     ) -> Result<AttachmentOffer, ChannelError> {
-        Err(not_ported("expression blobs"))
+        rekindle_files::upload_expression_to_cache(
+            &self.files(),
+            community_id,
+            expression_id,
+            bytes,
+            filename,
+            mime_type,
+        )
+        .map_err(|e| ChannelError::Adapter(format!("expression cache: {e}")))
     }
 
     fn read_expression_bytes(
         &self,
-        _community_id: &str,
-        _offer: &AttachmentOffer,
+        community_id: &str,
+        offer: &AttachmentOffer,
     ) -> Option<Vec<u8>> {
-        None
+        rekindle_files::read_expression_bytes(&self.files(), community_id, offer)
     }
 
     fn send_to_mesh(

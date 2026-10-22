@@ -24,7 +24,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use crate::cache::{CacheConfig, ChunkCache};
-use crate::deps::{FilesDeps, FilesEvent};
+use crate::deps::{FileCacheDeps, FilesDeps, FilesEvent};
 use crate::error::FilesError;
 use crate::pinned::PinnedSet;
 use rekindle_types::attachment::AttachmentOffer;
@@ -147,6 +147,47 @@ impl MockDeps {
     }
 }
 
+impl FileCacheDeps for MockDeps {
+    fn keys(&self) -> std::sync::Arc<dyn ChannelKeyProvider> {
+        std::sync::Arc::new(MockKeys {
+            current: self.channel_mek.clone(),
+            history: self.historical_meks.clone(),
+        })
+    }
+
+    fn ensure_cache_open(&self, _c: &str) -> Result<(), FilesError> {
+        Ok(())
+    }
+
+    fn pinned_attachments(&self, _c: &str) -> PinnedSet {
+        self.pinned.clone()
+    }
+
+    fn set_community_pinned_set(&self, _c: &str, _ids: Vec<uuid::Uuid>) {
+        // MockDeps doesn't track per-community pinned overrides — the
+        // single `pinned` field above is shared. Tests that exercise
+        // sync_pinned_from_governance need a more elaborate mock.
+    }
+
+    fn with_cache_mut(
+        &self,
+        _c: &str,
+        f: &mut dyn FnMut(&mut ChunkCache, &PinnedSet) -> Result<(), FilesError>,
+    ) -> Result<(), FilesError> {
+        let mut cache = self.cache.lock();
+        f(&mut cache, &self.pinned)
+    }
+
+    fn with_cache(
+        &self,
+        _c: &str,
+        f: &mut dyn FnMut(&ChunkCache) -> Result<(), FilesError>,
+    ) -> Result<(), FilesError> {
+        let cache = self.cache.lock();
+        f(&cache)
+    }
+}
+
 #[async_trait]
 impl FilesDeps for MockDeps {
     fn owner_key(&self) -> Result<String, FilesError> {
@@ -171,13 +212,6 @@ impl FilesDeps for MockDeps {
 
     fn channel_is_forum(&self, _c: &str, _ch: &str) -> bool {
         self.forum_channel
-    }
-
-    fn keys(&self) -> std::sync::Arc<dyn ChannelKeyProvider> {
-        std::sync::Arc::new(MockKeys {
-            current: self.channel_mek.clone(),
-            history: self.historical_meks.clone(),
-        })
     }
 
     fn require_permission(&self, _c: &str, _p: u64) -> Result<(), FilesError> {
@@ -218,38 +252,6 @@ impl FilesDeps for MockDeps {
 
     fn next_channel_sequence(&self, _c: &str, _ch: &str) -> u64 {
         1
-    }
-
-    fn ensure_cache_open(&self, _c: &str) -> Result<(), FilesError> {
-        Ok(())
-    }
-
-    fn pinned_attachments(&self, _c: &str) -> PinnedSet {
-        self.pinned.clone()
-    }
-
-    fn set_community_pinned_set(&self, _c: &str, _ids: Vec<uuid::Uuid>) {
-        // MockDeps doesn't track per-community pinned overrides — the
-        // single `pinned` field above is shared. Tests that exercise
-        // sync_pinned_from_governance need a more elaborate mock.
-    }
-
-    fn with_cache_mut(
-        &self,
-        _c: &str,
-        f: &mut dyn FnMut(&mut ChunkCache, &PinnedSet) -> Result<(), FilesError>,
-    ) -> Result<(), FilesError> {
-        let mut cache = self.cache.lock();
-        f(&mut cache, &self.pinned)
-    }
-
-    fn with_cache(
-        &self,
-        _c: &str,
-        f: &mut dyn FnMut(&ChunkCache) -> Result<(), FilesError>,
-    ) -> Result<(), FilesError> {
-        let cache = self.cache.lock();
-        f(&cache)
     }
 
     fn peer_route_blob(&self, _c: &str, target: &str) -> Option<Vec<u8>> {

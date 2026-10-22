@@ -145,10 +145,9 @@ pub struct AppState {
         Mutex<HashMap<(String, String), rekindle_gossip::rate_limit::TokenBucket>>,
     /// Per-community compiled AutoMod cache.
     pub automod_cache: Arc<RwLock<HashMap<String, Arc<AutoModCompiledCache>>>>,
-    /// Per-community Lost Cargo chunk caches.
-    pub file_caches: RwLock<HashMap<String, rekindle_files::ChunkCache>>,
-    /// Pinned-attachment IDs per community.
-    pub pinned_attachments: RwLock<HashMap<String, rekindle_files::PinnedSet>>,
+    /// The Lost Cargo chunk caches: the Host's store (`HostStores::files`,
+    /// plan E3.1 E3c), opened at unlock.
+    pub files: Arc<rekindle_files::FileCacheStore>,
     /// Mutual Aid §14.5 dirty set for per-peer reliability counters.
     pub relay_reliability_dirty: Mutex<HashSet<(String, String)>>,
     /// Push relay (architecture §17.3 Tier 3) wake-notify debounce.
@@ -272,8 +271,7 @@ impl Default for AppState {
                 rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore::default(),
             gossip_rate_limits: Mutex::new(HashMap::new()),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
-            file_caches: RwLock::new(HashMap::new()),
-            pinned_attachments: RwLock::new(HashMap::new()),
+            files: Arc::default(),
             relay_reliability_dirty: Mutex::new(HashSet::new()),
             last_wake_notify_secs: Mutex::new(0),
             video_reassembly: rekindle_video::VideoReassemblyState::new(),
@@ -322,6 +320,7 @@ impl AppState {
             session: Arc::clone(&self.transport_session),
             lifecycle: Arc::clone(&self.lifecycle),
             communities: Arc::clone(&self.communities),
+            files: Arc::clone(&self.files),
         }
     }
 

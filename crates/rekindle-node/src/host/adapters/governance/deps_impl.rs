@@ -241,17 +241,11 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.spawn_history_catchup_impl(community_id);
     }
 
-    /// The shell opens its Lost Cargo chunk cache; the daemon has no
-    /// file-transfer subsystem yet (E3.1 E3), so there is nothing to open.
+    /// Open the community's chunk cache in the Host's store (plan E3.1 E3c).
     fn ensure_files_cache_open(&self, community_id: &str) {
-        if let Some(shell) = &self.ctx.shell {
-            shell.ensure_files_cache_open(community_id);
-            return;
+        if let Err(e) = self.ctx.files.ensure_open(community_id) {
+            tracing::warn!(community_id, error = %e, "file cache unavailable");
         }
-        tracing::debug!(
-            community_id,
-            "governance adapter: files cache not implemented on the daemon track"
-        );
     }
 
     fn persist_discovered_registry_members(

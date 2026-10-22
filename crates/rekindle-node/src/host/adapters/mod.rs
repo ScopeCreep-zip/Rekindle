@@ -3,6 +3,7 @@
 //! operations' Host (plan E2.1).
 
 pub mod channel;
+pub mod files;
 pub mod friends;
 pub mod governance;
 pub mod group_dm;

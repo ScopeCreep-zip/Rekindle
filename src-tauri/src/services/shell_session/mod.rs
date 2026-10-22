@@ -21,14 +21,6 @@ use rekindle_node::host::{EndReason, OwnRecordKeys, ShellHooks, UnlockedView};
 
 use crate::state::SharedState;
 
-/// Open the community's Lost Cargo chunk cache, logging a failure (the
-/// files domain ports it at E3.1 E3).
-pub(crate) fn open_files_cache(state: &SharedState, community_id: &str) {
-    if let Err(e) = crate::services::community::files::ensure_cache_open(state, community_id) {
-        tracing::warn!(community = %community_id, error = %e, "Lost Cargo cache unavailable");
-    }
-}
-
 /// The GUI's `ShellHooks`.
 pub struct ShellSession {
     state: SharedState,
@@ -70,10 +62,6 @@ impl ShellHooks for ShellSession {
 
     fn community_left(&self, community_id: &str) {
         crate::state_helpers::forget_community_keys(&self.state, community_id);
-    }
-
-    fn ensure_files_cache_open(&self, community_id: &str) {
-        open_files_cache(&self.state, community_id);
     }
 
     fn spawn_departure_rotation(&self, community_id: &str, departed_pseudonym_hex: &str) {

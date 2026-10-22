@@ -74,10 +74,46 @@ pub struct InsertChannelMessage<'a> {
     pub body: &'a str,
 }
 
+/// The community keys and the chunk caches: all the expression store
+/// (`expressions`) and the key lookups (`keys`) need, so a host that serves
+/// expressions implements it alone (plan E3.1 E3c).
+pub trait FileCacheDeps: Send + Sync + 'static {
+    /// Community and channel keys (plan D6).
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
+
+    fn ensure_cache_open(&self, community_id: &str) -> Result<(), FilesError>;
+
+    /// Returns a snapshot of the pinned set so the caller can pass it
+    /// into ChunkCache::insert() (which needs a borrow of the set).
+    fn pinned_attachments(&self, community_id: &str) -> PinnedSet;
+
+    /// Replace the per-community pinned attachment set. Used by
+    /// `sync_pinned_from_governance` after a governance merge to mirror
+    /// the canonical state into the cache's eviction-exemption set.
+    fn set_community_pinned_set(&self, community_id: &str, ids: Vec<Uuid>);
+
+    /// Borrow the cache + pinned set under a single write lock and
+    /// run `f`. Used by upload / download / expression_fetch for
+    /// chunk insertion (cache.insert needs &mut ChunkCache + &PinnedSet
+    /// borrowed together).
+    fn with_cache_mut(
+        &self,
+        community_id: &str,
+        f: &mut dyn FnMut(&mut ChunkCache, &PinnedSet) -> Result<(), FilesError>,
+    ) -> Result<(), FilesError>;
+
+    /// Read-only cache access for bitmap/get queries.
+    fn with_cache(
+        &self,
+        community_id: &str,
+        f: &mut dyn FnMut(&ChunkCache) -> Result<(), FilesError>,
+    ) -> Result<(), FilesError>;
+}
+
 /// Single deps trait for all Lost Cargo flows. Implementations
 /// supply concrete AppState / Db / AppHandle / Veilid wiring.
 #[async_trait]
-pub trait FilesDeps: Send + Sync + 'static {
+pub trait FilesDeps: FileCacheDeps {
     // ── Identity ───────────────────────────────────────────────────
 
     fn owner_key(&self) -> Result<String, FilesError>;
@@ -93,9 +129,6 @@ pub trait FilesDeps: Send + Sync + 'static {
     fn my_subkey_index(&self, community_id: &str) -> Result<u32, FilesError>;
 
     fn channel_is_forum(&self, community_id: &str, channel_id: &str) -> bool;
-
-    /// Community and channel keys (plan D6).
-    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
 
     // ── Permissions + slowmode + mentions ──────────────────────────
 
@@ -130,36 +163,6 @@ pub trait FilesDeps: Send + Sync + 'static {
     ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
-
-    // ── Cache (sync, AppState-coupled) ─────────────────────────────
-
-    fn ensure_cache_open(&self, community_id: &str) -> Result<(), FilesError>;
-
-    /// Returns a snapshot of the pinned set so the caller can pass it
-    /// into ChunkCache::insert() (which needs a borrow of the set).
-    fn pinned_attachments(&self, community_id: &str) -> PinnedSet;
-
-    /// Replace the per-community pinned attachment set. Used by
-    /// `sync_pinned_from_governance` after a governance merge to mirror
-    /// the canonical state into the cache's eviction-exemption set.
-    fn set_community_pinned_set(&self, community_id: &str, ids: Vec<Uuid>);
-
-    /// Borrow the cache + pinned set under a single write lock and
-    /// run `f`. Used by upload / download / expression_fetch for
-    /// chunk insertion (cache.insert needs &mut ChunkCache + &PinnedSet
-    /// borrowed together).
-    fn with_cache_mut(
-        &self,
-        community_id: &str,
-        f: &mut dyn FnMut(&mut ChunkCache, &PinnedSet) -> Result<(), FilesError>,
-    ) -> Result<(), FilesError>;
-
-    /// Read-only cache access for bitmap/get queries.
-    fn with_cache(
-        &self,
-        community_id: &str,
-        f: &mut dyn FnMut(&ChunkCache) -> Result<(), FilesError>,
-    ) -> Result<(), FilesError>;
 
     // ── Online-peer routing (gossip overlay) ───────────────────────
 

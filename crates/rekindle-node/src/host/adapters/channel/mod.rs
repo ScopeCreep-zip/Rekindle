@@ -61,6 +61,11 @@ impl HostChannel {
         }
     }
 
+    /// The Host's chunk caches, for the expression store.
+    fn files(&self) -> crate::host::adapters::files::HostFiles {
+        crate::host::adapters::files::HostFiles::new(self.gov.clone())
+    }
+
     fn ctx(&self) -> &DaemonContext {
         self.gov.context()
     }

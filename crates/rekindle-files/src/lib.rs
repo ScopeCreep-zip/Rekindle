@@ -55,11 +55,11 @@ pub mod verify;
 #[cfg(test)]
 mod test_mock;
 
-pub use cache::{scope_root, CacheConfig, CacheScope, ChunkCache};
+pub use cache::{scope_root, CacheConfig, CacheScope, ChunkCache, FileCacheStore};
 pub use chunker::{merkle_root_of, ChunkedFile, Chunker, CHUNK_SIZE_BYTES, MAX_FILE_SIZE_BYTES};
 pub use deps::{
-    read_bitmap_for, ChannelPost, ChannelWrite, FilesDeps, FilesEvent, InsertChannelMessage,
-    SharedFilesDeps,
+    read_bitmap_for, ChannelPost, ChannelWrite, FileCacheDeps, FilesDeps, FilesEvent,
+    InsertChannelMessage, SharedFilesDeps,
 };
 pub use dht_scan::{discover_sources_in_entries, fetch_offer_in_entries, DiscoveredSource};
 pub use download::{

@@ -26,51 +26,13 @@ const DEFAULT_BYTE_BUDGET: u64 = 1024 * 1024 * 1024;
 
 // ─── Phase 3: cache lifecycle ──────────────────────────────────────────
 
-/// The unlocked identity's cache for one community: its keyed directory
-/// under `state/{pk}.files/` and the name key (plan E3.0a), so no directory
-/// names the community or an attachment before unlock.
-fn community_cache_config(state: &SharedState, community_id: &str) -> Result<CacheConfig, String> {
-    let owner = crate::state_helpers::current_owner_key(state)?;
-    let secret = zeroize::Zeroizing::new(
-        crate::state_helpers::identity_secret(state).ok_or("not logged in")?,
-    );
-    let identity_files = state
-        .app_handle
-        .read()
-        .as_ref()
-        .ok_or("app handle not initialized")?
-        .state::<rekindle_db::paths::DataRoot>()
-        .identity_files(&owner);
-    let name_key = rekindle_secrets::derive::derive_file_cache_name_key(&secret);
-    Ok(CacheConfig {
-        root_dir: rekindle_files::scope_root(
-            &identity_files,
-            &name_key,
-            rekindle_files::CacheScope::Community(community_id),
-        ),
-        byte_budget: DEFAULT_BYTE_BUDGET,
-        name_key,
-    })
-}
-
-/// Ensure the chunk cache for a given community is open. Idempotent.
+/// Ensure the chunk cache for a given community is open in the Host's
+/// store (plan E3.1 E3c). Idempotent.
 pub fn ensure_cache_open(state: &SharedState, community_id: &str) -> Result<(), String> {
-    if state.file_caches.read().contains_key(community_id) {
-        return Ok(());
-    }
-    let cache = ChunkCache::open(community_cache_config(state, community_id)?)
-        .map_err(|e| format!("failed to open file cache: {e}"))?;
     state
-        .file_caches
-        .write()
-        .entry(community_id.to_string())
-        .or_insert(cache);
-    state
-        .pinned_attachments
-        .write()
-        .entry(community_id.to_string())
-        .or_default();
-    Ok(())
+        .files
+        .ensure_open(community_id)
+        .map_err(|e| format!("failed to open file cache: {e}"))
 }
 
 /// Sync the in-memory pinned set for a community from the merged governance
@@ -212,9 +174,9 @@ pub fn serve_attachment_request(
     attachment_id: [u8; 16],
     requested_chunks: &[u32],
 ) -> Option<Vec<u8>> {
-    let mut caches = state.file_caches.write();
-    let cache = caches.get_mut(community_id)?;
-    rekindle_files::serve_attachment_request(cache, attachment_id, requested_chunks)
+    state
+        .files
+        .serve(community_id, attachment_id, requested_chunks)
 }
 
 // ─── Phase 4: download (consumer side of app_call) ─────────────────────

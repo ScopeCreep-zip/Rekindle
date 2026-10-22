@@ -85,8 +85,6 @@ fn clear(state: &AppState) {
     *state.personal_sync_lease.lock() = None;
     state.communities.write().clear();
     // Each cache is the identity's own keyed tree (plan E3.0a).
-    state.file_caches.write().clear();
-    state.pinned_attachments.write().clear();
     crate::state_helpers::clear_meks(state);
     state.dedup_cache.lock().clear();
     state.voice_sender_keys.clear();

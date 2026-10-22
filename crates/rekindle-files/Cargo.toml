@@ -14,6 +14,7 @@ base64 = "0.22"
 blake3 = "1"
 hex = { workspace = true }
 lru = "0.12"
+parking_lot = { workspace = true }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-codec = { path = "../rekindle-codec" }
 rekindle-secrets = { path = "../rekindle-secrets" }
@@ -29,7 +30,6 @@ uuid = { version = "1", features = [ "v4", "serde" ] }
 zeroize = "1"
 
 [dev-dependencies]
-parking_lot = { workspace = true }
 proptest = "1"
 tempfile = "3"
 tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }

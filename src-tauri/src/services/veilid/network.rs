@@ -214,12 +214,7 @@ async fn community_call(
             // community members can do).
             let _ = requester_pseudonym;
             let attachment_uuid = uuid::Uuid::from_bytes(attachment_id);
-            let owning_community = {
-                let caches = state.file_caches.read();
-                caches
-                    .iter()
-                    .find_map(|(cid, cache)| cache.holds(attachment_uuid).then(|| cid.clone()))
-            };
+            let owning_community = state.files.holder_of(attachment_uuid);
             match owning_community {
                 Some(cid) => crate::services::community::files::serve_attachment_request(
                     state,

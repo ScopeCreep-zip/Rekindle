@@ -68,6 +68,10 @@ pub(crate) async fn run(
     // Our presence starts Online with the unlock (its publisher runs only
     // with a network).
     ctx.own_presence.start(&scope);
+    // The chunk caches, keyed by this identity (plan E3.1 E3c).
+    if let Err(e) = super::adapters::files::open(ctx, &scope) {
+        return fail(ctx, IpcResponse::error(500, format!("file cache: {e}"))).await;
+    }
     let view = rekindle_types::dto::identity::IdentityView {
         public_key: installed.public_key.clone(),
         display_name: installed.display_name.clone(),
@@ -342,6 +346,7 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
         }
     }
     ctx.outbox.stop();
+    super::adapters::files::close(ctx);
     if ctx.mode == HostMode::Daemon {
         crate::daemon::dispatch::daemon_teardown(ctx).await;
     }

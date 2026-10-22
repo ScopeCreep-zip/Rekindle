@@ -10,13 +10,48 @@ use rekindle_codec::community::channel_record::{
     ChannelAttachmentCached, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_codec::community::envelope::CommunityEnvelope;
-use rekindle_files::{ChunkCache, FilesDeps, FilesError, FilesEvent, PinnedSet};
+use rekindle_files::{ChunkCache, FileCacheDeps, FilesDeps, FilesError, FilesEvent, PinnedSet};
 use rekindle_types::attachment::AttachmentOffer;
 use uuid::Uuid;
 
 use super::helpers;
 use super::FilesAdapter;
 use crate::state_helpers;
+
+impl FileCacheDeps for FilesAdapter {
+    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
+        state_helpers::key_provider(&self.state)
+    }
+
+    // The Host's store (plan E3.1 E3c).
+    fn ensure_cache_open(&self, community_id: &str) -> Result<(), FilesError> {
+        self.state.files.ensure_open(community_id)
+    }
+
+    fn pinned_attachments(&self, community_id: &str) -> PinnedSet {
+        self.state.files.pinned(community_id)
+    }
+
+    fn set_community_pinned_set(&self, community_id: &str, ids: Vec<uuid::Uuid>) {
+        self.state.files.set_pinned(community_id, ids);
+    }
+
+    fn with_cache_mut(
+        &self,
+        community_id: &str,
+        f: &mut dyn FnMut(&mut ChunkCache, &PinnedSet) -> Result<(), FilesError>,
+    ) -> Result<(), FilesError> {
+        self.state.files.with_cache_mut(community_id, f)
+    }
+
+    fn with_cache(
+        &self,
+        community_id: &str,
+        f: &mut dyn FnMut(&ChunkCache) -> Result<(), FilesError>,
+    ) -> Result<(), FilesError> {
+        self.state.files.with_cache(community_id, f)
+    }
+}
 
 #[async_trait]
 impl FilesDeps for FilesAdapter {
@@ -70,10 +105,6 @@ impl FilesDeps for FilesAdapter {
         community.channels.iter().any(|ch| {
             ch.id == channel_id && matches!(ch.channel_type, crate::state::ChannelType::Forum)
         })
-    }
-
-    fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
-        state_helpers::key_provider(&self.state)
     }
 
     // ── Permissions + slowmode + mentions ──────────────────────────
@@ -143,52 +174,6 @@ impl FilesDeps for FilesAdapter {
     }
 
     // ── Cache ──────────────────────────────────────────────────────
-
-    fn ensure_cache_open(&self, community_id: &str) -> Result<(), FilesError> {
-        crate::services::community::files::ensure_cache_open(&self.state, community_id)
-            .map_err(FilesError::NotFound)
-    }
-
-    fn pinned_attachments(&self, community_id: &str) -> PinnedSet {
-        self.state
-            .pinned_attachments
-            .read()
-            .get(community_id)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    fn set_community_pinned_set(&self, community_id: &str, ids: Vec<uuid::Uuid>) {
-        let mut all = self.state.pinned_attachments.write();
-        let entry = all.entry(community_id.to_string()).or_default();
-        entry.replace(ids);
-    }
-
-    fn with_cache_mut(
-        &self,
-        community_id: &str,
-        f: &mut dyn FnMut(&mut ChunkCache, &PinnedSet) -> Result<(), FilesError>,
-    ) -> Result<(), FilesError> {
-        let mut caches = self.state.file_caches.write();
-        let cache = caches
-            .get_mut(community_id)
-            .ok_or_else(|| FilesError::NotFound(format!("file cache for {community_id}")))?;
-        let pinned_lock = self.state.pinned_attachments.read();
-        let pinned = pinned_lock.get(community_id).cloned().unwrap_or_default();
-        f(cache, &pinned)
-    }
-
-    fn with_cache(
-        &self,
-        community_id: &str,
-        f: &mut dyn FnMut(&ChunkCache) -> Result<(), FilesError>,
-    ) -> Result<(), FilesError> {
-        let caches = self.state.file_caches.read();
-        let cache = caches
-            .get(community_id)
-            .ok_or_else(|| FilesError::NotFound(format!("file cache for {community_id}")))?;
-        f(cache)
-    }
 
     // ── Online-peer routing (gossip overlay) ───────────────────────
 

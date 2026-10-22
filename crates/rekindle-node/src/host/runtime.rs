@@ -77,6 +77,9 @@ pub struct HostStores {
     /// The one community store (plan E3.1): the GUI's `AppState.communities`
     /// is this `Arc` in Shell mode.
     pub communities: super::community::CommunityMap,
+    /// The Lost Cargo chunk caches (plan E3.1 E3c): the GUI's
+    /// `AppState.files` is this `Arc` in Shell mode.
+    pub files: Arc<rekindle_files::FileCacheStore>,
 }
 
 impl Default for HostStores {
@@ -89,6 +92,7 @@ impl Default for HostStores {
             session: Arc::new(RwLock::new(None)),
             lifecycle: Arc::new(DaemonLifecycle::new()),
             communities: super::community::new_map(),
+            files: Arc::default(),
         }
     }
 }
@@ -291,6 +295,7 @@ impl Host {
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(
                 &stores.communities,
             ))),
+            files: Arc::clone(&stores.files),
             transport: RwLock::new(node.clone()),
             session: Arc::clone(&stores.session),
             root: root.clone(),

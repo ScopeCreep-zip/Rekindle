@@ -12,6 +12,7 @@
 //! attachment directory left empty is removed on the next `open`.
 
 pub mod names;
+pub mod store;
 
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
@@ -26,6 +27,7 @@ use crate::error::FilesError;
 use crate::pinned::PinnedSet;
 
 pub use names::{keyed_name, scope_root, AttachmentName, CacheScope};
+pub use store::FileCacheStore;
 
 #[derive(Clone)]
 pub struct CacheConfig {

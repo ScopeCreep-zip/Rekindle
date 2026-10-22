@@ -192,6 +192,9 @@ pub struct DaemonContext {
     /// cached CRDT `GovernanceState`, leases, roster and roles, over the
     /// map the GUI's `AppState.communities` shares in Shell mode.
     pub communities: Arc<crate::host::community::CommunityStore>,
+    /// The unlocked identity's chunk caches (plan E3.1 E3c,
+    /// `host::adapters::files`).
+    pub files: Arc<rekindle_files::FileCacheStore>,
     /// Read markers advanced but not yet written (plan E3.1, D25: ≤ 30 s
     /// write-behind; `host::read_markers`).
     pub read_markers: crate::host::read_markers::PendingMarkers,
