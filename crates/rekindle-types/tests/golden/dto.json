@@ -88,6 +88,18 @@
     "url": "rekindle://invite/VLD0:g/VLD0:s/0b0b",
     "uses": 2
   },
+  "community.memberView": {
+    "displayName": "Bea",
+    "displayRole": "Shooters",
+    "lastActive": 0,
+    "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "roleIds": [
+      0,
+      5
+    ],
+    "status": "online",
+    "timeoutUntil": null
+  },
   "dm.historyGap": {
     "body": "",
     "historyGapThrough": 4,
@@ -239,6 +251,59 @@
   "identity.view": {
     "displayName": "Ann",
     "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "onboarding.config.default": {
+    "defaultChannels": [],
+    "enabled": false,
+    "guideSteps": [],
+    "mode": "default",
+    "questions": []
+  },
+  "onboarding.config.guided": {
+    "defaultChannels": [
+      "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+    ],
+    "enabled": true,
+    "guideSteps": [
+      {
+        "channelId": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+        "description": "Introduce yourself",
+        "emoji": "👋",
+        "title": "Say hello"
+      }
+    ],
+    "mode": "guided",
+    "questions": [
+      {
+        "description": "Pick one",
+        "options": [
+          {
+            "channelsToShow": [
+              "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+            ],
+            "optionId": "opt_fps",
+            "rolesToAssign": [
+              5
+            ],
+            "title": "Shooters"
+          }
+        ],
+        "questionId": "q_01",
+        "required": true,
+        "singleSelect": true,
+        "title": "What do you play?"
+      }
+    ],
+    "welcomeMessage": "Welcome!"
+  },
+  "onboarding.welcomeScreen": {
+    "channels": [
+      {
+        "channelId": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+        "description": "Chat with everyone"
+      }
+    ],
+    "description": "LAN party HQ"
   },
   "preferences": {
     "autoAwayMinutes": 10,
