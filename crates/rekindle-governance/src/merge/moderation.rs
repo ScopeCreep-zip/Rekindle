@@ -4,6 +4,7 @@ use super::{
     AdmissionDecision, AutoModRuleState, GovernanceEntry, GovernanceState, PendingMemberState,
     PseudonymKey, TimeoutState,
 };
+use crate::state::ModReportState;
 
 pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceState) {
     match entry {
@@ -154,5 +155,36 @@ fn record_decision(
             .admitted
             .insert(target.clone(), AdmissionDecision { approved, lamport });
         state.pending_members.remove(target);
+    }
+}
+
+/// `ModReport`: a G-Set per report id. Two reports under one id keep the
+/// lowest `(lamport, reporter)`, so every peer's queue is the same.
+pub(super) fn apply_mod_report(
+    author: &PseudonymKey,
+    entry: &GovernanceEntry,
+    state: &mut GovernanceState,
+) {
+    let GovernanceEntry::ModReport {
+        report_id,
+        target,
+        reason,
+        lamport,
+    } = entry
+    else {
+        return;
+    };
+    let incoming = ModReportState {
+        reporter: author.clone(),
+        target: target.clone(),
+        reason: reason.clone(),
+        lamport: *lamport,
+    };
+    let slot = state
+        .mod_reports
+        .entry(*report_id)
+        .or_insert_with(|| incoming.clone());
+    if (incoming.lamport, &incoming.reporter.0) < (slot.lamport, &slot.reporter.0) {
+        *slot = incoming;
     }
 }

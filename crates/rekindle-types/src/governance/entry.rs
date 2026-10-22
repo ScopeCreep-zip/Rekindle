@@ -368,6 +368,17 @@ pub enum GovernanceEntry {
         lamport: u64,
     },
 
+    /// A report to the moderators (plan E3.1, D26): an automod
+    /// `alert_moderators` match or a member's report. Any member may write
+    /// one; readers holding `MANAGE_MESSAGES` see the queue. CRDT: G-Set
+    /// per `report_id`, the lowest `(lamport, author)` kept on a collision.
+    ModReport {
+        report_id: [u8; 16],
+        target: super::ModReportTarget,
+        reason: String,
+        lamport: u64,
+    },
+
     /// Onboarding configuration. CRDT: LWW (latest lamport wins).
     OnboardingConfig {
         enabled: bool,
@@ -544,6 +555,7 @@ impl GovernanceEntry {
             | Self::ExpressionRemoved { lamport, .. }
             | Self::EventArchived { lamport, .. }
             | Self::EventRsvp { lamport, .. }
+            | Self::ModReport { lamport, .. }
             | Self::OnboardingConfig { lamport, .. }
             | Self::WelcomeScreen { lamport, .. }
             | Self::AdminDelete { lamport, .. }

@@ -155,6 +155,7 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         | G::RemoveTimeoutEntry { .. }
         | G::AdminDelete { .. }
         | G::AutoModRule { .. } => apply_moderation(entry, state),
+        G::ModReport { .. } => apply_mod_report(author, entry, state),
         G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => apply_onboarding(entry, state),
         G::RoleDefinition { .. }
         | G::RoleAssignment { .. }
@@ -180,6 +181,6 @@ use channels::apply_channels;
 use community::apply_community;
 use events::apply_events;
 use expression::apply_expression;
-use moderation::{apply_admission, apply_moderation};
+use moderation::{apply_admission, apply_mod_report, apply_moderation};
 use onboarding::apply_onboarding;
 use roles::apply_roles;

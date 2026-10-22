@@ -39,8 +39,8 @@ use events::{
 use expression::{read_attachment_pinned, read_expression_added, read_expression_removed};
 use moderation::{
     read_admin_delete, read_admission_policy, read_auto_mod_rule, read_ban_entry,
-    read_join_requested, read_member_approved, read_member_rejected, read_remove_timeout_entry,
-    read_timeout_entry, read_unban_entry,
+    read_join_requested, read_member_approved, read_member_rejected, read_mod_report,
+    read_remove_timeout_entry, read_timeout_entry, read_unban_entry,
 };
 use onboarding::{read_onboarding_config, read_welcome_screen};
 use roles::{
@@ -97,6 +97,7 @@ pub(super) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::ExpressionRemoved(p) => read_expression_removed(p.map_err(|e| capnp_err(&e))?),
         Which::EventArchived(p) => read_event_archived(p.map_err(|e| capnp_err(&e))?),
         Which::EventRsvp(p) => read_event_rsvp(p.map_err(|e| capnp_err(&e))?),
+        Which::ModReport(p) => read_mod_report(p.map_err(|e| capnp_err(&e))?),
         Which::OnboardingConfig(p) => read_onboarding_config(p.map_err(|e| capnp_err(&e))?),
         Which::WelcomeScreen(p) => read_welcome_screen(p.map_err(|e| capnp_err(&e))?),
         Which::AdminDelete(p) => read_admin_delete(p.map_err(|e| capnp_err(&e))?),
@@ -189,6 +190,29 @@ mod admission_wire_tests {
                 lamport: lamport as u64 + 1,
             });
         }
+    }
+
+    #[test]
+    fn mod_report_round_trips_both_targets() {
+        use rekindle_types::governance::ModReportTarget;
+        use rekindle_types::id::{ChannelId, PseudonymKey};
+        round_trip(&GovernanceEntry::ModReport {
+            report_id: [0x11; 16],
+            target: ModReportTarget::Message {
+                channel_id: ChannelId([0x22; 16]),
+                message_id: "m-1".into(),
+            },
+            reason: "alert_moderators: slurs".into(),
+            lamport: 4,
+        });
+        round_trip(&GovernanceEntry::ModReport {
+            report_id: [0x33; 16],
+            target: ModReportTarget::Member {
+                pseudonym: PseudonymKey([0x44; 32]),
+            },
+            reason: "spam".into(),
+            lamport: 5,
+        });
     }
 
     #[test]

@@ -256,6 +256,11 @@ pub fn validate_write(
         // create, and readers show RSVPs of live events only.
         GovernanceEntry::EventRsvp { .. } => true,
 
+        // Reporting is not a permission: any member who is not banned
+        // (checked above) may report a message or a member to the
+        // moderators. The reason is bounded (`bounds::out_of_bounds_field`).
+        GovernanceEntry::ModReport { .. } => true,
+
         GovernanceEntry::ExpressionAdded {
             kind,
             animated,

@@ -70,6 +70,7 @@ pub fn out_of_bounds_field(entry: &GovernanceEntry) -> Option<&'static str> {
             channels,
             ..
         } => welcome_screen_field(description, channels),
+        GovernanceEntry::ModReport { reason, target, .. } => mod_report_field(reason, target),
         _ => None,
     }
 }
@@ -170,5 +171,25 @@ mod tests {
         assert!(description_ok("line\n\ttab"));
         assert!(!description_ok("bell\u{7}"));
         assert!(!description_ok("bidi\u{202e}"));
+    }
+}
+
+/// A moderator report's reason and message id: [`key_format::text`]
+/// within [`key_format::MAX_NOTE_LEN`].
+fn mod_report_field(
+    reason: &str,
+    target: &rekindle_types::governance::ModReportTarget,
+) -> Option<&'static str> {
+    use rekindle_types::governance::ModReportTarget;
+    if !text_ok(reason, key_format::MAX_NOTE_LEN) {
+        return Some("reason");
+    }
+    match target {
+        ModReportTarget::Message { message_id, .. }
+            if message_id.is_empty() || !text_ok(message_id, key_format::MAX_NOTE_LEN) =>
+        {
+            Some("message_id")
+        }
+        _ => None,
     }
 }

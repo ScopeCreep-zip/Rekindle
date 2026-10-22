@@ -25,8 +25,8 @@ use super::expression::{
 };
 use super::moderation::{
     write_admin_delete, write_admission_policy, write_auto_mod_rule, write_ban_entry,
-    write_join_requested, write_member_approved, write_member_rejected, write_remove_timeout_entry,
-    write_timeout_entry, write_unban_entry,
+    write_join_requested, write_member_approved, write_member_rejected, write_mod_report,
+    write_remove_timeout_entry, write_timeout_entry, write_unban_entry,
 };
 use super::onboarding::{write_onboarding_config, write_welcome_screen};
 use super::roles::{
@@ -158,6 +158,18 @@ pub(in crate::capnp_envelope) fn write_governance_entry(
             status,
             lamport,
         } => write_event_rsvp(b.reborrow().init_event_rsvp(), *event_id, *status, *lamport),
+        GovernanceEntry::ModReport {
+            report_id,
+            target,
+            reason,
+            lamport,
+        } => write_mod_report(
+            b.reborrow().init_mod_report(),
+            report_id,
+            target,
+            reason,
+            *lamport,
+        ),
         GovernanceEntry::EventCreated { .. } => {
             write_event_created(b.reborrow().init_event_created(), e);
         }

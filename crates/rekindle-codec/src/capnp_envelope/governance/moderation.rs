@@ -7,7 +7,7 @@ use super::super::sub_types::{
 use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::CodecError;
-use rekindle_types::governance::{AdmissionMode, AutoModAction, GovernanceEntry};
+use rekindle_types::governance::{AdmissionMode, AutoModAction, GovernanceEntry, ModReportTarget};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
 pub(super) fn write_ban_entry(
@@ -284,4 +284,50 @@ pub(super) fn write_admission_policy(
         AdmissionMode::ApprovalRequired => Wire::ApprovalRequired,
     });
     p.set_lamport(lamport);
+}
+
+pub(super) fn write_mod_report(
+    mut p: schema_pkg::mod_report_entry::Builder<'_>,
+    report_id: &[u8; 16],
+    target: &ModReportTarget,
+    reason: &str,
+    lamport: u64,
+) {
+    uuid16_to_capnp(p.reborrow().init_report_id(), report_id);
+    match target {
+        ModReportTarget::Message {
+            channel_id,
+            message_id,
+        } => {
+            let mut m = p.reborrow().init_target().init_message();
+            uuid16_to_capnp(m.reborrow().init_channel_id(), &channel_id.0);
+            m.set_message_id(message_id);
+        }
+        ModReportTarget::Member { pseudonym } => {
+            pseudonym_key_to_capnp(p.reborrow().init_target().init_member(), pseudonym);
+        }
+    }
+    p.set_reason(reason);
+    p.set_lamport(lamport);
+}
+
+pub(super) fn read_mod_report(
+    p: schema_pkg::mod_report_entry::Reader<'_>,
+) -> Result<GovernanceEntry, CodecError> {
+    use schema_pkg::mod_report_entry::target::Which;
+    let target = match p.get_target().which().map_err(not_in_schema)? {
+        Which::Message(m) => ModReportTarget::Message {
+            channel_id: channel_id_from_capnp(m.get_channel_id().map_err(|e| capnp_err(&e))?)?,
+            message_id: text_to_string(m.get_message_id().map_err(|e| capnp_err(&e))?)?,
+        },
+        Which::Member(m) => ModReportTarget::Member {
+            pseudonym: pseudonym_key_from_capnp(m.map_err(|e| capnp_err(&e))?)?,
+        },
+    };
+    Ok(GovernanceEntry::ModReport {
+        report_id: uuid16_from_capnp(p.get_report_id().map_err(|e| capnp_err(&e))?)?,
+        target,
+        reason: text_to_string(p.get_reason().map_err(|e| capnp_err(&e))?)?,
+        lamport: p.get_lamport(),
+    })
 }

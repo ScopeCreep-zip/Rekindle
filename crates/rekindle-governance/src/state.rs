@@ -5,7 +5,7 @@
 //! It's computed deterministically from all member subkeys and cached
 //! in memory for fast permission checks and UI rendering.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rekindle_types::governance::{AdmissionMode, GuideStep, OnboardingQuestion, WelcomeChannel};
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
@@ -141,6 +141,11 @@ pub struct GovernanceState {
     /// notification level + raid-protection thresholds). LWW; `None`
     /// until the first `CommunityPolicy` governance entry is merged.
     pub community_policy: Option<CommunityPolicyState>,
+
+    /// The moderator queue (plan E3.1, D26): every merged
+    /// `GovernanceEntry::ModReport`, by report id. Readers show it to
+    /// members holding `MANAGE_MESSAGES` only.
+    pub mod_reports: BTreeMap<[u8; 16], ModReportState>,
 }
 
 // ── Sub-states ──
@@ -256,6 +261,15 @@ pub struct EventState {
     pub recurrence: Option<rekindle_types::event::RecurrenceRule>,
     pub location: Option<rekindle_types::event::EventLocation>,
     pub status: rekindle_types::event::EventStatus,
+    pub lamport: u64,
+}
+
+/// One merged moderator report.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModReportState {
+    pub reporter: PseudonymKey,
+    pub target: rekindle_types::governance::ModReportTarget,
+    pub reason: String,
     pub lamport: u64,
 }
 

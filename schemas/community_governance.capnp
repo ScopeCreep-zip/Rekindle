@@ -466,7 +466,21 @@ struct CommunityPolicyEntry @0xd8d4eb16e9bf1c2e {
     lamport              @4 :UInt64;
 }
 
-# Top-level governance entry union — 39 arms, append-only.
+# A report to the moderators (plan E3.1, D26): a message or a member.
+struct ModReportEntry @0xe019ff96c073fa38 {
+    reportId             @0 :Uuid16;
+    target :union {
+        message :group {
+            channelId    @1 :Uuid16;
+            messageId    @2 :Text;
+        }
+        member           @3 :PseudonymKey;
+    }
+    reason               @4 :Text;
+    lamport              @5 :UInt64;
+}
+
+# Top-level governance entry union — 40 arms, append-only.
 struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
     union {
         channelCreated                @0  :ChannelCreatedEntry;
@@ -508,5 +522,6 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         memberRejected                @36 :MemberRejectedPayload;
         admissionPolicy               @37 :AdmissionPolicyPayload;
         eventRsvp                     @38 :EventRsvpEntry;
+        modReport                     @39 :ModReportEntry;
     }
 }
