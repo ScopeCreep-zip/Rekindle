@@ -41,7 +41,7 @@ use super::dispatch::DaemonContext;
 use super::gossip_adapter::DaemonGossipAdapter;
 
 /// One broadcast for the worker.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum GossipRequest {
     /// Something we are originating — sign it and fan it out.
     ///
@@ -52,6 +52,10 @@ pub enum GossipRequest {
     Originate {
         community_id: String,
         envelope: Box<CommunityEnvelope>,
+        /// Told once the envelope is signed and its fan-out holds the
+        /// peers it goes to, for a sender about to tear the overlay down
+        /// ([`send_awaited`]).
+        sent: Option<tokio::sync::oneshot::Sender<()>>,
     },
     /// Something a peer signed that we are relaying one hop further.
     ///
@@ -86,9 +90,31 @@ pub fn send(tx: &GossipSender, community_id: &str, envelope: &CommunityEnvelope)
         .send(GossipRequest::Originate {
             community_id: community_id.to_string(),
             envelope: Box::new(envelope.clone()),
+            sent: None,
         })
         .is_err()
     {
+        tracing::debug!(
+            community = %community_id,
+            "gossip: worker gone, dropping broadcast"
+        );
+    }
+}
+
+/// Broadcast an envelope and wait until its fan-out has taken the
+/// community's peers (or the send failed).
+///
+/// For the one sender that removes the community's gossip overlay right
+/// after sending: a leave's `MemberLeave`. Queued with [`send`], the worker
+/// would reach it after the overlay was gone and find no one to send to.
+pub async fn send_awaited(tx: &GossipSender, community_id: &str, envelope: &CommunityEnvelope) {
+    let (sent, taken) = tokio::sync::oneshot::channel();
+    let queued = tx.send(GossipRequest::Originate {
+        community_id: community_id.to_string(),
+        envelope: Box::new(envelope.clone()),
+        sent: Some(sent),
+    });
+    if queued.is_err() || taken.await.is_err() {
         tracing::debug!(
             community = %community_id,
             "gossip: worker gone, dropping broadcast"
@@ -116,6 +142,7 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
                 GossipRequest::Originate {
                     community_id,
                     envelope,
+                    sent,
                 } => {
                     if let Err(error) = rekindle_gossip::send_to_mesh(
                         Arc::clone(&adapter),
@@ -129,6 +156,9 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
                             %error,
                             "gossip: broadcast pipeline error"
                         );
+                    }
+                    if let Some(sent) = sent {
+                        let _ = sent.send(());
                     }
                 }
                 GossipRequest::Forward(signed) => {

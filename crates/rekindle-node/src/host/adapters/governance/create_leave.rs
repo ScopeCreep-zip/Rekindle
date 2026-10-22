@@ -141,9 +141,7 @@ impl HostGovernance {
         )
         .await
         .map_err(|e| format!("community leave failed: {e}"))?;
-        if let Err(e) = self.send_to_mesh(&id, &left.departure_notice) {
-            tracing::warn!(community = %id, error = %e, "departure not gossiped");
-        }
+        self.send_departure(&id, &left.departure_notice).await;
         let leases = self.ctx.communities.take_leases(&id);
         let watch_leases = self
             .ctx
@@ -168,6 +166,23 @@ impl HostGovernance {
         self.audit_left(&id);
         tracing::info!(community = %id, "left community");
         Ok(())
+    }
+
+    /// Gossip our departure while the community's overlay still holds its
+    /// peers: the daemon's worker is awaited until the fan-out has them,
+    /// since the teardown that follows removes the overlay.
+    async fn send_departure(
+        &self,
+        community: &str,
+        notice: &rekindle_codec::community::envelope::CommunityEnvelope,
+    ) {
+        if let Some(shell) = &self.ctx.shell {
+            if let Err(e) = shell.send_to_mesh(community, notice) {
+                tracing::warn!(community, error = %e, "departure not gossiped");
+            }
+            return;
+        }
+        crate::daemon::gossip::send_awaited(&self.ctx.gossip_tx, community, notice).await;
     }
 
     /// Every key of every scope of `community`, stored and live, ours and
