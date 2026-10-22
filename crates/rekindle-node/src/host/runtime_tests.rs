@@ -419,3 +419,6 @@ async fn discovered_registry_members_are_persisted() {
     assert_eq!(roster[0].role_ids, vec![0, 2]);
     host.shutdown().await.unwrap();
 }
+
+#[path = "runtime_projection_tests.rs"]
+mod projection;
