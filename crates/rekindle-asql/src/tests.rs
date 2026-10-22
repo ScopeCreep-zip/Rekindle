@@ -280,14 +280,16 @@ impl std::error::Error for MyError {
     }
 }
 
-/// The installed watch is told of each call and its token is dropped only
-/// after the call's result is sent (plan E2.B S8).
+/// The installed watch is told of each call, and again once it is queued,
+/// and its token is dropped only after the call's result is sent (plan E2.B
+/// S8, F11).
 #[tokio::test]
 async fn the_call_watch_spans_each_call() {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     static BEGUN: AtomicUsize = AtomicUsize::new(0);
     static ENDED: AtomicUsize = AtomicUsize::new(0);
+    static QUEUED: AtomicUsize = AtomicUsize::new(0);
 
     struct Ends;
     impl Drop for Ends {
@@ -301,6 +303,10 @@ async fn the_call_watch_spans_each_call() {
         fn begin(&self) -> crate::CallToken {
             BEGUN.fetch_add(1, Ordering::SeqCst);
             Some(Box::new(Ends))
+        }
+
+        fn queued(&self) {
+            QUEUED.fetch_add(1, Ordering::SeqCst);
         }
     }
 
@@ -320,4 +326,8 @@ async fn the_call_watch_spans_each_call() {
     conn.close().await.unwrap();
     assert!(BEGUN.load(Ordering::SeqCst) >= begun + 3);
     assert!(ENDED.load(Ordering::SeqCst) >= begun + 2);
+    assert!(
+        QUEUED.load(Ordering::SeqCst) >= begun + 3,
+        "each queued call"
+    );
 }

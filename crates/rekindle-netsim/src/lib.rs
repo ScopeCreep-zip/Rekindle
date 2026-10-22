@@ -44,7 +44,7 @@ use rekindle_records::port::{PortEvent, PortSet, RecordValue};
 use tokio::sync::{mpsc, watch};
 
 pub use attach::ATTACH_STEP;
-pub use busy::{db_call, DbCall};
+pub use busy::{db_call, db_queued, DbCall};
 pub use clock::{SimClock, SimRandom, SIM_EPOCH_MS};
 pub use messages::{call_timeout, FakeMessages, RPC_TIMEOUT};
 pub use network::Network;
@@ -540,7 +540,6 @@ fn toggle(set: &mut std::collections::HashSet<usize>, node: usize, on: bool) {
 /// included: again while a settle began a call.
 async fn settle(net: &Network) {
     loop {
-        net.busy.drained().await;
         let begun = net.busy.begun();
         for _ in 0..64 {
             tokio::task::yield_now().await;

@@ -29,9 +29,11 @@
 //!
 //! The one addition to upstream's API: [`watch_calls`] installs a process-wide
 //! [`CallWatch`] told of every call queued on a connection's thread (open,
-//! call, detached call, close). Production installs none, so a call costs one
-//! unset `OnceLock` read. The network simulator installs one so its paused
-//! tokio clock does not advance while a database thread works (plan E2.B S8).
+//! call, detached call, close), and again once the call is queued. Production
+//! installs none, so a call costs two unset `OnceLock` reads. The network
+//! simulator installs one that blocks its runtime thread until the call has
+//! run, so its tasks resume in one order whatever the database thread's
+//! timing (plan E2.B S8, F11).
 //!
 //! # Example
 //!
@@ -143,6 +145,11 @@ pub trait CallWatch: Send + Sync {
     /// background thread once the call has run and its result (if any) is
     /// sent, or wherever the call is dropped unrun.
     fn begin(&self) -> CallToken;
+
+    /// The call just begun is queued. Called on the queuing thread; a watch
+    /// may block it here until the call's token drops, so the caller resumes
+    /// with the result already sent. By default it returns at once.
+    fn queued(&self) {}
 }
 
 /// What a [`CallWatch`] holds for one call; dropping it ends the call.
@@ -158,6 +165,12 @@ pub fn watch_calls(watch: &'static dyn CallWatch) -> bool {
 
 fn begin() -> CallToken {
     CALL_WATCH.get().and_then(|watch| watch.begin())
+}
+
+fn queued() {
+    if let Some(watch) = CALL_WATCH.get() {
+        watch.queued();
+    }
 }
 
 #[derive(Debug)]
@@ -359,6 +372,7 @@ impl Connection {
                 drop(token);
             })))
             .map_err(|_| Error::ConnectionClosed)?;
+        queued();
 
         receiver.await.map_err(|_| Error::ConnectionClosed)
     }
@@ -381,7 +395,9 @@ impl Connection {
                 function(conn);
                 drop(token);
             })))
-            .map_err(|_| Error::ConnectionClosed)
+            .map_err(|_| Error::ConnectionClosed)?;
+        queued();
+        Ok(())
     }
 
     /// Call a function in background thread and get the result
@@ -407,6 +423,7 @@ impl Connection {
                 drop(token);
             })))
             .expect("database connection should be open");
+        queued();
 
         receiver.await.expect(BUG_TEXT)
     }
@@ -436,6 +453,7 @@ impl Connection {
             // This is a safeguard against calling close on a `Copy` of the connection
             return Ok(());
         }
+        queued();
 
         let result = receiver.await;
 
@@ -490,6 +508,7 @@ where
 
         event_loop(conn, receiver);
     });
+    queued();
 
     result_receiver
         .await

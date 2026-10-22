@@ -114,6 +114,10 @@ impl rekindle_db::CallWatch for SimDb {
     fn begin(&self) -> rekindle_db::CallToken {
         rekindle_netsim::db_call().map(|call| Box::new(call) as Box<dyn Send>)
     }
+
+    fn queued(&self) {
+        rekindle_netsim::db_queued();
+    }
 }
 
 /// The proof `review` asks for, as the CLI gives it with `--yes`,
