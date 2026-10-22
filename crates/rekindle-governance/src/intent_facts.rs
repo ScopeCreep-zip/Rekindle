@@ -2,11 +2,11 @@
 //! manages the community and how many hold a role. Pure, like the rest of
 //! the crate; the host passes the current member set from its registry.
 
-use rekindle_types::id::{PseudonymKey, RoleId};
+use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::intent::Escalation;
 use rekindle_types::permissions::ADMINISTRATOR;
 
-use crate::permissions::compute_permissions;
+use crate::permissions::{channel_read_roster, compute_permissions};
 use crate::state::GovernanceState;
 
 /// Whether `member` can manage the community (the creator, or a role with
@@ -48,6 +48,33 @@ pub fn role_holders(state: &GovernanceState, role: &RoleId) -> u32 {
         .filter(|roles| roles.contains(role))
         .count();
     u32::try_from(held).unwrap_or(u32::MAX)
+}
+
+/// How many of `members` read `channel` (`channel_read_roster`): the
+/// audience a channel deletion or a forward reaches.
+#[must_use]
+pub fn channel_members(
+    state: &GovernanceState,
+    channel: &ChannelId,
+    members: &[PseudonymKey],
+) -> u32 {
+    u32::try_from(channel_read_roster(state, channel, members).len()).unwrap_or(u32::MAX)
+}
+
+/// The E7 escalation for deleting `channel`: its stored `messages`, and
+/// the members who read it (`channel_members`). None when it holds neither.
+#[must_use]
+pub fn channel_delete_escalations(
+    state: &GovernanceState,
+    channel: &ChannelId,
+    members: &[PseudonymKey],
+    messages: u32,
+) -> Vec<Escalation> {
+    let members = channel_members(state, channel, members);
+    if messages == 0 && members == 0 {
+        return Vec::new();
+    }
+    vec![Escalation::ContainerNotEmpty { messages, members }]
 }
 
 #[cfg(test)]
@@ -108,5 +135,23 @@ mod tests {
             vec![Escalation::SoleMember],
             "a banned member is not one"
         );
+    }
+
+    #[test]
+    fn a_channel_with_history_or_readers_is_not_empty() {
+        let state = GovernanceState {
+            creator: Some(key(1)),
+            ..GovernanceState::default()
+        };
+        let channel = ChannelId([3; 16]);
+        assert_eq!(channel_members(&state, &channel, &[key(1), key(2)]), 1);
+        assert_eq!(
+            channel_delete_escalations(&state, &channel, &[key(1)], 12),
+            vec![Escalation::ContainerNotEmpty {
+                messages: 12,
+                members: 1
+            }]
+        );
+        assert!(channel_delete_escalations(&state, &channel, &[], 0).is_empty());
     }
 }
