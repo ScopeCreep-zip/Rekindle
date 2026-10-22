@@ -36,6 +36,7 @@ mod prekey_collision;
 mod prekeys;
 mod read_marker_only_advances;
 mod resume_after_restart;
+mod rich_messaging;
 mod role_assign;
 mod rotation;
 mod route_link_failure;

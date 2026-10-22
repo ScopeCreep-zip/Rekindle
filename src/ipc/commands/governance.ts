@@ -7,9 +7,9 @@ import type { CommunityAuditEntry, InviteCreated, InviteDto } from "./dto";
 export const governanceCommands = {
   // Reactions
   addReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
-    invoke<void>("add_reaction", { communityId, channelId, messageId, emoji }),
+    hostInvoke<unknown>("add_reaction", { communityId, channelId, messageId, emoji }).then(() => undefined),
   removeReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
-    invoke<void>("remove_reaction", { communityId, channelId, messageId, emoji }),
+    hostInvoke<unknown>("remove_reaction", { communityId, channelId, messageId, emoji }).then(() => undefined),
 
   // Pins
   pinMessage: (communityId: string, channelId: string, messageId: string) =>
@@ -167,7 +167,7 @@ export const governanceCommands = {
     forumTag?: string | null,
     autoArchiveSeconds?: number,
   ) =>
-    invoke<string>("create_thread", {
+    hostInvoke<string>("create_thread", {
       communityId,
       channelId,
       name,
@@ -176,19 +176,19 @@ export const governanceCommands = {
       autoArchiveSeconds: autoArchiveSeconds ?? null,
     }),
   getChannelThreads: (communityId: string, channelId: string) =>
-    invoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; forumTag?: string | null; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
+    hostInvoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; forumTag?: string | null; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
       "get_channel_threads", { communityId, channelId }),
   getActiveThreads: (communityId: string, channelId: string) =>
-    invoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; forumTag?: string | null; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
+    hostInvoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; forumTag?: string | null; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
       "get_active_threads", { communityId, channelId }),
   sendThreadMessage: (communityId: string, threadId: string, body: string) =>
-    invoke<void>("send_thread_message", { communityId, threadId, body }),
+    hostInvoke<unknown>("send_thread_message", { communityId, threadId, body }).then(() => undefined),
   getThreadMessages: (communityId: string, threadId: string, limit: number, beforeTimestamp?: number) =>
-    invoke<Message[]>("get_thread_messages", { communityId, threadId, limit, beforeTimestamp: beforeTimestamp ?? null }),
+    hostInvoke<Message[]>("get_thread_messages", { communityId, threadId, limit, beforeTimestamp: beforeTimestamp ?? null }),
   archiveThread: (communityId: string, threadId: string) =>
-    invoke<void>("archive_thread", { communityId, threadId }),
+    hostInvoke<unknown>("archive_thread", { communityId, threadId }).then(() => undefined),
   unarchiveThread: (communityId: string, threadId: string) =>
-    invoke<void>("unarchive_thread", { communityId, threadId }),
+    hostInvoke<unknown>("unarchive_thread", { communityId, threadId }).then(() => undefined),
 
   // Community Events (architecture §21)
   createEvent: (communityId: string, request: CreateEventRequest) =>

@@ -6,11 +6,8 @@ use rekindle_types::dto::{CommandError, Done};
 
 use crate::host_call;
 use crate::state::SharedState;
-use rekindle_types::permissions;
 
-use super::helpers::require_permission;
-
-/// Add a reaction to a community channel message.
+/// React to a channel message (`CommunityRequest::ReactionAdd`).
 #[tauri::command]
 pub async fn add_reaction(
     state: State<'_, SharedState>,
@@ -18,22 +15,20 @@ pub async fn add_reaction(
     channel_id: String,
     message_id: String,
     emoji: String,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _ = pool;
-    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
-    crate::services::community::persist_reaction(
-        state.inner(),
-        &community_id,
-        &channel_id,
-        &message_id,
-        &emoji,
-        true,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ReactionAdd {
+            community: community_id,
+            channel_id,
+            message_id,
+            emoji,
+        }),
     )
     .await
 }
 
-/// Remove a reaction from a community channel message.
+/// Take our reaction off a channel message (`CommunityRequest::ReactionRemove`).
 #[tauri::command]
 pub async fn remove_reaction(
     state: State<'_, SharedState>,
@@ -41,17 +36,15 @@ pub async fn remove_reaction(
     channel_id: String,
     message_id: String,
     emoji: String,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _ = pool;
-    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
-    crate::services::community::persist_reaction(
-        state.inner(),
-        &community_id,
-        &channel_id,
-        &message_id,
-        &emoji,
-        false,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ReactionRemove {
+            community: community_id,
+            channel_id,
+            message_id,
+            emoji,
+        }),
     )
     .await
 }

@@ -163,7 +163,9 @@ pub(super) async fn persist_thread_row_impl(
     community_id: &str,
     thread: &ThreadInfoSnapshot,
 ) -> Result<(), ChannelError> {
-    let dto = ThreadInfoDto {
+    let owner_key =
+        state_helpers::current_owner_key(&adapter.state).map_err(ChannelError::Adapter)?;
+    let row = ThreadInfoDto {
         id: thread.id.clone(),
         channel_id: thread.channel_id.clone(),
         name: thread.name.clone(),
@@ -176,12 +178,10 @@ pub(super) async fn persist_thread_row_impl(
         last_message_at: thread.last_message_at,
         message_count: thread.message_count,
     };
-    crate::services::community::threads_store::persist_thread_row(
-        &adapter.state,
-        &adapter.pool,
-        community_id,
-        &dto,
-    )
+    let community_id = community_id.to_string();
+    db_call(&adapter.pool, move |conn| {
+        rekindle_db::repo::threads::upsert(conn, &owner_key, &community_id, &row)
+    })
     .await
     .map_err(ChannelError::Adapter)
 }
@@ -192,12 +192,10 @@ pub(super) async fn load_thread_metadata_impl(
     thread_id: &str,
 ) -> Option<ThreadInfoSnapshot> {
     let owner_key = state_helpers::current_owner_key(&adapter.state).ok()?;
-    let dto = crate::services::community::threads_store::load_thread_metadata(
-        &adapter.pool,
-        &owner_key,
-        community_id,
-        thread_id,
-    )
+    let (community_id, thread_id) = (community_id.to_string(), thread_id.to_string());
+    let dto = db_call(&adapter.pool, move |conn| {
+        rekindle_db::repo::threads::get(conn, &owner_key, &community_id, &thread_id)
+    })
     .await
     .ok()
     .flatten()?;

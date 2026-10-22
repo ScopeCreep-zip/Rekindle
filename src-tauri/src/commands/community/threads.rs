@@ -1,13 +1,15 @@
+//! Threads (plan E3.1 E3), answered by the Host.
+
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::commands::chat::Message;
+use crate::host_call;
 use crate::state::SharedState;
-use rekindle_types::permissions;
+use rekindle_types::dto::channel_message::ChannelMessageView;
+use rekindle_types::thread::ThreadInfo;
 
-use super::helpers::require_permission;
-
-pub use crate::channels::community_channel::ThreadInfoDto;
-
+/// Open a thread off a channel message (`CommunityRequest::ThreadCreate`).
 #[tauri::command]
 pub async fn create_thread(
     state: State<'_, SharedState>,
@@ -17,74 +19,75 @@ pub async fn create_thread(
     starter_message_id: String,
     forum_tag: Option<String>,
     auto_archive_seconds: Option<u64>,
-) -> Result<String, String> {
-    let pool = state.db.current()?;
-    crate::services::community::threads::create_thread(
-        state.inner(),
-        &pool,
-        &community_id,
-        &channel_id,
-        &name,
-        &starter_message_id,
-        forum_tag,
-        auto_archive_seconds,
+) -> Result<Done<String>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ThreadCreate {
+            community: community_id,
+            channel_id,
+            name,
+            starter_message_id,
+            forum_tag,
+            auto_archive_seconds,
+        }),
     )
     .await
 }
 
+/// A channel's threads (`CommunityRequest::ThreadList`).
 #[tauri::command]
 pub async fn get_channel_threads(
     state: State<'_, SharedState>,
     community_id: String,
     channel_id: String,
-) -> Result<Vec<ThreadInfoDto>, String> {
-    let pool = state.db.current()?;
-    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
-    crate::services::community::threads::list_threads(
-        state.inner(),
-        &pool,
-        &community_id,
-        &channel_id,
+) -> Result<Done<Vec<ThreadInfo>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ThreadList {
+            community: community_id,
+            channel_id,
+        }),
     )
     .await
 }
 
+/// A channel's open threads (`CommunityRequest::ThreadListActive`).
 #[tauri::command]
 pub async fn get_active_threads(
     state: State<'_, SharedState>,
     community_id: String,
     channel_id: String,
-) -> Result<Vec<ThreadInfoDto>, String> {
-    let pool = state.db.current()?;
-    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
-    crate::services::community::threads::list_active_threads(
-        state.inner(),
-        &pool,
-        &community_id,
-        &channel_id,
+) -> Result<Done<Vec<ThreadInfo>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ThreadListActive {
+            community: community_id,
+            channel_id,
+        }),
     )
     .await
 }
 
+/// Post to a thread (`CommunityRequest::ThreadSend`).
 #[tauri::command]
 pub async fn send_thread_message(
     state: State<'_, SharedState>,
     community_id: String,
     thread_id: String,
     body: String,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _ = pool;
-    require_permission(state.inner(), &community_id, permissions::SEND_MESSAGES)?;
-    crate::services::community::threads::send_thread_message(
-        state.inner(),
-        &community_id,
-        &thread_id,
-        &body,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ThreadSend {
+            community: community_id,
+            thread_id,
+            body,
+        }),
     )
     .await
 }
 
+/// A page of a thread's messages (`CommunityRequest::ThreadMessages`).
 #[tauri::command]
 pub async fn get_thread_messages(
     state: State<'_, SharedState>,
@@ -92,40 +95,49 @@ pub async fn get_thread_messages(
     thread_id: String,
     limit: u32,
     before_timestamp: Option<u64>,
-) -> Result<Vec<Message>, String> {
-    let pool = state.db.current()?;
-    let _ = pool;
-    require_permission(state.inner(), &community_id, permissions::VIEW_CHANNELS)?;
-    crate::services::community::threads::load_thread_messages(
-        state.inner(),
-        &community_id,
-        &thread_id,
-        limit,
-        before_timestamp,
+) -> Result<Done<Vec<ChannelMessageView>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ThreadMessages {
+            community: community_id,
+            thread_id,
+            limit,
+            before_timestamp,
+        }),
     )
     .await
 }
 
+/// Archive a thread (`CommunityRequest::ThreadArchive`).
 #[tauri::command]
 pub async fn archive_thread(
     state: State<'_, SharedState>,
     community_id: String,
     thread_id: String,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _ = pool;
-    require_permission(state.inner(), &community_id, permissions::MANAGE_THREADS)?;
-    crate::services::community::threads::archive_thread(state.inner(), &community_id, &thread_id)
-        .await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ThreadArchive {
+            community: community_id,
+            thread_id,
+        }),
+    )
+    .await
 }
 
+/// Reopen a thread (`CommunityRequest::ThreadUnarchive`).
 #[tauri::command]
 pub async fn unarchive_thread(
     state: State<'_, SharedState>,
     community_id: String,
     thread_id: String,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _ = (state, pool, community_id, thread_id);
-    Err("archived threads reactivate when a new message is sent".into())
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ThreadUnarchive {
+            community: community_id,
+            thread_id,
+        }),
+    )
+    .await
 }

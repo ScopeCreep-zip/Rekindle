@@ -309,14 +309,14 @@ async fn fetch_thread_reply_body(
     message_id: &str,
 ) -> Option<String> {
     for attempt in 0..rekindle_records::retry::MAX_RETRIES {
-        if let Ok(messages) = crate::services::community::threads::load_thread_messages(
+        let adapter = crate::services::build_adapter(
             state,
-            community_id,
-            thread_id,
-            200,
-            None,
+            crate::services::channel_adapter::ChannelAdapter::new,
         )
-        .await
+        .ok()?;
+        if let Ok(messages) =
+            rekindle_channel::load_thread_messages(&adapter, community_id, thread_id, 200, None)
+                .await
         {
             if let Some(message) = messages
                 .into_iter()

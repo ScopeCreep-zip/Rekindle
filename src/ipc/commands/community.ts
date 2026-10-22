@@ -217,7 +217,7 @@ export const communityCommands = {
     answers: string[],
     multiSelect: boolean,
     durationSeconds?: number,
-  ) => invoke<string>("create_poll", {
+  ) => hostInvoke<string>("create_poll", {
     communityId,
     channelId,
     messageId,
@@ -227,11 +227,11 @@ export const communityCommands = {
     durationSeconds: durationSeconds ?? null,
   }),
   votePoll: (communityId: string, channelId: string, pollId: string, selectedAnswers: number[]) =>
-    invoke<void>("vote_poll", { communityId, channelId, pollId, selectedAnswers }),
+    hostInvoke<unknown>("vote_poll", { communityId, channelId, pollId, selectedAnswers }).then(() => undefined),
   closePoll: (communityId: string, channelId: string, pollId: string) =>
-    invoke<void>("close_poll", { communityId, channelId, pollId }),
+    hostInvoke<unknown>("close_poll", { communityId, channelId, pollId }).then(() => undefined),
   getPollResults: (communityId: string, channelId: string, pollId: string) =>
-    invoke<number[]>("get_poll_results", { communityId, channelId, pollId }),
+    hostInvoke<number[]>("get_poll_results", { communityId, channelId, pollId }),
   /// `kind` is the picked file's MIME type; the Host decodes it as that
   /// kind only and re-encodes it without metadata (`rekindle_types::ImageKind`).
   uploadEmoji: (communityId: string, name: string, bytes: number[], kind: ImageKind) =>

@@ -2,8 +2,6 @@ pub mod analytics;
 pub mod background_sync;
 pub mod bootstrap;
 pub mod channel_messages;
-pub mod channel_polls;
-pub mod channel_reactions;
 pub mod expression_assets;
 pub mod expressions;
 pub mod files;
@@ -27,8 +25,6 @@ pub mod record_inventory;
 pub mod routes;
 pub mod segments;
 pub mod stage;
-pub mod threads;
-pub mod threads_store;
 pub mod video;
 pub mod video_session;
 pub mod watch;
@@ -37,8 +33,6 @@ pub(crate) mod writers;
 // Re-export public API (callers use services::community::function_name)
 pub use bootstrap::build_bootstrap_response;
 
-pub use channel_polls::{persist_poll_close, persist_poll_create, persist_poll_vote};
-pub use channel_reactions::persist_reaction;
 pub use expressions::{
     delete_expression, list_expressions, play_soundboard, upload_emoji, upload_soundboard_sound,
     upload_sticker,
