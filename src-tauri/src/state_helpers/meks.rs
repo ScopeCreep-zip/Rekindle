@@ -75,6 +75,46 @@ pub fn install_mek(
     true
 }
 
+/// Load every joined community's latest community and channel keys from
+/// the vault through [`install_mek`] (the convergence rule, so a restore
+/// racing a live rotation cannot clobber it). A key the vault lacks stays
+/// absent: `mek_rotation::recover_behind_meks` re-acquires it from a peer;
+/// minting one here would fork the community.
+pub fn restore_meks_from_vault(state: &Arc<AppState>) {
+    let scopes: Vec<(String, KeyScope)> = state
+        .communities
+        .read()
+        .values()
+        .flat_map(|community| {
+            std::iter::once((community.id.clone(), KeyScope::Community)).chain(
+                community.channels.iter().filter_map(|channel| {
+                    ChannelId::from_hex(&channel.id)
+                        .map(|id| (community.id.clone(), KeyScope::Channel(id)))
+                }),
+            )
+        })
+        .collect();
+    let restored: Vec<(String, KeyScope, MediaEncryptionKey)> = {
+        let guard = state.keystore.lock();
+        let Some(vault) = guard.as_ref() else {
+            return;
+        };
+        scopes
+            .into_iter()
+            .filter_map(|(community, scope)| {
+                let mek = crate::keystore::load_latest_mek(vault, &community, scope);
+                if mek.is_none() && scope == KeyScope::Community {
+                    tracing::warn!(%community, "community key not in the vault — re-acquired from a peer");
+                }
+                Some((community, scope, mek?))
+            })
+            .collect()
+    };
+    for (community, scope, mek) in restored {
+        install_mek(state, &community, scope, mek);
+    }
+}
+
 /// `scope`'s live key.
 pub fn current_mek(
     state: &Arc<AppState>,

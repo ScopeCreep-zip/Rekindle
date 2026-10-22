@@ -7,7 +7,6 @@ pub mod audit_view;
 pub mod channel_materialize;
 mod channels;
 pub mod commands;
-pub mod community_loader;
 pub mod db;
 pub mod db_helpers;
 mod deep_links;

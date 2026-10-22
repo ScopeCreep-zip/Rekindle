@@ -9,7 +9,8 @@
 //! 2. the session's one record pool, holding the writes the last lock left
 //!    unsent (both modes, when the host has a transport);
 //! 3. the Host's own stages in the unlock scope: own records, own presence
-//!    (the STATUS publisher), idle, game, the audit check (both modes);
+//!    (the STATUS publisher), idle, game, the audit check, the communities'
+//!    warm cache (both modes);
 //! 4. community resume, keepalive, subscriptions, the broadcast mesh and the
 //!    presence polls (daemon only, until E2.1/E3.1/E3.4 port them);
 //! 5. the shell's unported stages (`ShellHooks::unlocked`, shell only);
@@ -171,6 +172,16 @@ pub(crate) async fn run(
         created,
     )
     .await;
+
+    // 3e. The warm cache (plan E3.1 C1): every community and its last
+    // merged governance from the identity's stores, before any stage that
+    // reads them, network or not.
+    if let Err(e) =
+        super::adapters::governance::loader::restore(ctx, &installed.public_key, &installed.secret)
+            .await
+    {
+        return fail(ctx, IpcResponse::error(500, e)).await;
+    }
 
     // 4. Daemon-only stages.
     if ctx.mode == HostMode::Daemon {

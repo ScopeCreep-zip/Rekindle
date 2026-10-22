@@ -26,7 +26,6 @@ pub(super) async fn run(
     view: &UnlockedView,
     scope: &Arc<SessionScope>,
 ) -> Result<(), String> {
-    state.communities.write().clear();
     // What the shell's unported code reads of the unlock (→ E3.1, E4.1).
     *state.identity_secret.lock() = Some(*view.secret);
     *state.identity.write() = Some(IdentityState {
@@ -40,24 +39,13 @@ pub(super) async fn run(
     // Call media keys go out on the Host's outbox (plan E2.5).
     services::voice_signaling_adapter::install_media_key_carrier(state);
 
-    // Loaders: preferences (→ E4.1, E5.5), communities and their keys and
-    // governance (→ E3.1). Friends are the Host's (plan E2.1).
+    // Loaders: preferences (→ E4.1, E5.5). Friends are the Host's (plan
+    // E2.1), and so are the communities and their governance (the Host's
+    // warm-cache stage, plan E3.1 C1); this shell's live channel keys come
+    // from the vault until E3.5 makes the Host's MEK cache the one.
     services::preferences::load(state, &pool, owner).await?;
-    crate::community_loader::load_communities_from_db(&pool, state, owner).await?;
     services::community::hydrate_peer_reliability(state, &pool).await;
-    crate::community_loader::restore_community_pseudonyms_and_meks(
-        state,
-        &state.keystore,
-        &view.secret,
-    );
-    // Last-known governance from the local cache, so communities are usable
-    // at once; after the pseudonym restore, which it reads. The DHT rebuild
-    // below overwrites it with anything newer.
-    if let Err(error) =
-        crate::community_loader::restore_governance_from_cache(&pool, state, owner).await
-    {
-        tracing::warn!(%error, "failed to restore governance from local cache");
-    }
+    crate::state_helpers::restore_meks_from_vault(state);
 
     // The network stages need a window to report to and a node.
     let staged = match app {

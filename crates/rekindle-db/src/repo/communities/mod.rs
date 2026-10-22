@@ -4,6 +4,8 @@ use rusqlite::{params, Connection, OptionalExtension as _};
 
 use super::role_ids;
 
+pub mod load;
+
 /// A community as login loads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CommunityRow {

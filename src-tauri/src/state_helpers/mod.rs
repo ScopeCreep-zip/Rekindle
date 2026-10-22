@@ -49,8 +49,8 @@ pub use identity::{
     owner_key_or_default, project_own, pseudonym_credentials, voice_self_identity,
 };
 pub use meks::{
-    clear_meks, current_mek, forget_community_keys, install_mek, key_provider, text_scope, LiveMek,
-    LiveMekCache,
+    clear_meks, current_mek, forget_community_keys, install_mek, key_provider,
+    restore_meks_from_vault, text_scope, LiveMek, LiveMekCache,
 };
 pub use node::{
     app_context, app_handle, friend_list_dht_key, is_attached, login_scope, login_scope_or_closed,

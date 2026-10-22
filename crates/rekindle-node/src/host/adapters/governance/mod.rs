@@ -24,6 +24,7 @@ mod dht;
 pub use dht::recent_channel_messages;
 mod events;
 mod lifecycle;
+pub(crate) mod loader;
 mod mek;
 
 mod roles;

@@ -2,21 +2,17 @@
 //! (plan D1: the daemon's session file is retired).
 //!
 //! [`load`] builds it at unlock from the identity's database and vault:
-//! the identity row, one membership per `communities` row (its channels'
-//! record keys from `channels`, its slot seed from the vault), and the
-//! friends (plan E2.1; pending requests are read where they are answered,
+//! the identity row and the friends (plan E2.1; pending requests are read where they are answered,
 //! `repo::pending_requests`). Every
 //! change after that is written to the store that holds it, then applied
 //! to the projection; nothing writes the projection back as a whole.
 
-use std::collections::HashMap;
 
 use rekindle_db::repo;
 use rekindle_db::Db;
 use rekindle_secrets::friend_presence::PresenceKey;
-use rekindle_transport::session::{CommunityMembership, Session, SessionIdentity};
+use rekindle_transport::session::{Session, SessionIdentity};
 use rekindle_types::friend::FriendState;
-use rekindle_vault::typed::community_keys::load_slot_seed;
 use rekindle_vault::typed::owner_keys::{load_owner, OwnerKey};
 use rekindle_vault::VaultHandle;
 
@@ -35,19 +31,9 @@ pub enum SessionError {
 struct Rows {
     display_name: String,
     records: repo::identity::IdentityDhtColumns,
-    communities: Vec<(
-        repo::communities::CommunityRow,
-        Vec<u32>,
-        Vec<(String, String)>,
-    )>,
     friends: Vec<repo::friends::FriendRow>,
     presence_key: (u32, Vec<u8>),
     friend_presence_keys: Vec<(String, u32, Vec<u8>)>,
-}
-
-/// A slot seed as stored (hex), or `None` when it does not decode.
-fn slot_seed(hex_seed: &str) -> Option<[u8; 32]> {
-    hex::decode(hex_seed).ok()?.try_into().ok()
 }
 
 /// Build the session of the unlocked identity `owner`. Its first unlock
@@ -69,13 +55,6 @@ pub async fn load(
             let Some((display_name, records)) = repo::identity::login_row(conn, &o)? else {
                 return Ok(None);
             };
-            let mut communities = Vec::new();
-            for row in repo::communities::load_all(conn, &o)? {
-                let role_ids =
-                    repo::communities::my_role_ids(conn, &o, &row.id)?.unwrap_or_default();
-                let channels = repo::channels::record_keys(conn, &o, &row.id)?;
-                communities.push((row, role_ids, channels));
-            }
             let friends = repo::friends::load_all(conn, &o)?;
             let presence_key = if let Some(key) = repo::presence_keys::current(conn, &o)? {
                 key
@@ -88,7 +67,6 @@ pub async fn load(
             Ok(Some(Rows {
                 display_name,
                 records,
-                communities,
                 friends,
                 presence_key,
                 friend_presence_keys,
@@ -127,23 +105,9 @@ pub async fn load(
         friend_list_dht_key: rows.records.friend_list.unwrap_or_default(),
     };
 
+    // The memberships are the community store's projection, made by the
+    // warm-cache stage (plan E3.1 C1, `adapters::governance::loader`).
     let mut session = Session::new(identity);
-    for (row, role_ids, channels) in rows.communities {
-        let seed = load_slot_seed(vault, &row.id).and_then(|hex_seed| slot_seed(&hex_seed));
-        session.join_community(CommunityMembership {
-            governance_key: row.id,
-            pseudonym_key: row.my_pseudonym_key.unwrap_or_default(),
-            role_ids,
-            registry_key: row.member_registry_key.unwrap_or_default(),
-            slot_index: row.my_subkey_index.unwrap_or(0),
-            community_name: row.name,
-            slot_seed: seed,
-            channel_record_keys: channels.into_iter().collect::<HashMap<_, _>>(),
-            segment_index: row.my_segment_index,
-            lamport_counter: row.governance_clock,
-            mek_generation: row.mek_generation,
-        });
-    }
     drop(guard);
     session.friends = rows
         .friends
