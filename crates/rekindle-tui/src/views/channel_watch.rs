@@ -426,7 +426,7 @@ impl View for ChannelWatchView {
                 sequence,
                 timestamp,
                 body,
-                reply_to_sequence,
+                reply_to_message_id,
             }) if *community == self.community && *channel == self.channel => {
                 self.message_list.push(DecryptedMessageDisplay {
                     message_id: message_id.clone(),
@@ -435,7 +435,7 @@ impl View for ChannelWatchView {
                     author_display_name: helpers::abbreviate_key(sender_pseudonym),
                     body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
                     timestamp: *timestamp,
-                    reply_to_sequence: *reply_to_sequence,
+                    reply_to_message_id: reply_to_message_id.clone(),
                     mek_generation: 0,
                     is_encrypted: body.is_none(),
                     needs_mek: if body.is_none() { Some(0) } else { None },

@@ -15,7 +15,7 @@ pub(crate) async fn handle_send(
     community: &str,
     channel: &str,
     body: &str,
-    reply_to: Option<u64>,
+    reply_to: Option<String>,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -36,6 +36,7 @@ pub(crate) async fn handle_post(
     state: DaemonState,
     channel: &str,
     body: &str,
+    reply_to: Option<String>,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -45,17 +46,17 @@ pub(crate) async fn handle_post(
     else {
         return IpcResponse::error(404, format!("channel '{channel}' not found"));
     };
-    post(ctx, &community_id, channel, body, None).await
+    post(ctx, &community_id, channel, body, reply_to).await
 }
 
 /// The Host's channel send, on both modes, as a reply to the message at
-/// sequence `reply_to` when given: the post's state and id.
+/// id `reply_to` when given: the post's state and id.
 async fn post(
     ctx: &DaemonContext,
     community_id: &str,
     channel_id: &str,
     body: &str,
-    reply_to: Option<u64>,
+    reply_to: Option<String>,
 ) -> IpcResponse {
     let channel = crate::host::adapters::channel::HostChannel::new(ctx);
     match channel.send(community_id, channel_id, body, reply_to).await {

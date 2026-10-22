@@ -45,7 +45,7 @@ pub fn samples() -> Vec<Sample> {
                 sequence: 42,
                 timestamp: 1_760_000_000_000,
                 body: Some(text("hello channel")),
-                reply_to_sequence: Some(41),
+                reply_to_message_id: Some("msg_41".into()),
             },
         ),
         ev(

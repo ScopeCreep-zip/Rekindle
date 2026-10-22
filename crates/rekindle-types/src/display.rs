@@ -79,7 +79,7 @@ pub struct DecryptedMessageDisplay {
     pub author_display_name: String,
     pub body: String,
     pub timestamp: u64,
-    pub reply_to_sequence: Option<u64>,
+    pub reply_to_message_id: Option<String>,
     pub mek_generation: u64,
     pub is_encrypted: bool,
     pub needs_mek: Option<u64>,

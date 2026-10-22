@@ -56,10 +56,13 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             community: c,
             channel: ch,
             body,
-            reply_to: _,
+            reply_to,
         } => {
             community(c)?;
             channel(ch)?;
+            opt(reply_to.as_deref(), |r| {
+                text(r, MAX_MESSAGE_ID_LEN, "reply id")
+            })?;
             message_body(body)
         }
         CommunityRequest::ChannelHistory {
@@ -80,8 +83,15 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             text(message_id, MAX_MESSAGE_ID_LEN, "message id")?;
             message_body(body)
         }
-        CommunityRequest::ChannelMessageSend { channel: ch, body } => {
+        CommunityRequest::ChannelMessageSend {
+            channel: ch,
+            body,
+            reply_to,
+        } => {
             channel(ch)?;
+            opt(reply_to.as_deref(), |r| {
+                text(r, MAX_MESSAGE_ID_LEN, "reply id")
+            })?;
             message_body(body)
         }
         CommunityRequest::ChannelMessageDelete {

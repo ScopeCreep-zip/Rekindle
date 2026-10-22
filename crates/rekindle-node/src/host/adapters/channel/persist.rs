@@ -36,6 +36,7 @@ impl HostChannel {
             rows::insert(
                 conn,
                 &ChannelMessageInsert {
+                    reply_to: outcome.reply_to.as_deref(),
                     owner_key: &owner,
                     channel_id: &channel,
                     sender_key: &outcome.sender_pseudonym_hex,
@@ -106,6 +107,7 @@ impl HostChannel {
         Some(ChannelMessageRow {
             sender_key: row.sender_key,
             body: row.body,
+            reply_to: row.reply_to,
         })
     }
 

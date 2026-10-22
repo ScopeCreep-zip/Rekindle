@@ -201,7 +201,8 @@ pub enum CommunityRequest {
         community: String,
         channel: String,
         body: String,
-        reply_to: Option<u64>,
+        /// The message id of the message this one replies to.
+        reply_to: Option<String>,
     },
     /// Get channel message history.
     ChannelHistory {
@@ -217,7 +218,12 @@ pub enum CommunityRequest {
         body: String,
     },
     /// Post `body` to `channel` (a channel id; the Host finds its community).
-    ChannelMessageSend { channel: String, body: String },
+    ChannelMessageSend {
+        channel: String,
+        body: String,
+        /// The message id of the message this one replies to.
+        reply_to: Option<String>,
+    },
     /// Delete our message `message_id` in `channel` (a channel id).
     ChannelMessageDelete { channel: String, message_id: String },
 

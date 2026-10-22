@@ -11,7 +11,7 @@ use serde::Serialize;
 /// and the reason is specific rather than incidental.
 ///
 /// Tier 1 models a channel message as `ChannelMessageEvent::New`, which
-/// carries `community`, `sequence` and `reply_to_sequence` — the DHT
+/// carries `community`, `sequence` and `reply_to_message_id` — the DHT
 /// metadata the daemon has when it reads a message off a channel
 /// record. The desktop's five emitters do not have those: two are local
 /// echoes of a message we just sent (the `rekindle_channel` echo,

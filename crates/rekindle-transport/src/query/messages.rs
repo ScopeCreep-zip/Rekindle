@@ -115,7 +115,7 @@ impl QueryEngine {
                         .unwrap_or_else(|| channel_msg.sender_pseudonym.clone()),
                     body,
                     timestamp: channel_msg.timestamp,
-                    reply_to_sequence: channel_msg.reply_to,
+                    reply_to_message_id: channel_msg.reply_to.clone(),
                     mek_generation: channel_msg.mek_generation,
                     is_encrypted,
                     needs_mek,

@@ -131,7 +131,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
     community_id: &str,
     channel_id: &str,
     body: &str,
-    reply_to: Option<u64>,
+    reply_to: Option<String>,
 ) -> Result<ChannelSendResult, ChannelError> {
     let timestamp_ms = i64::try_from(rekindle_utils::timestamp_secs() * 1000).unwrap_or(i64::MAX);
 
@@ -175,6 +175,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         mek_generation,
         lamport_ts,
         timestamp_ms,
+        reply_to: reply_to.clone(),
     };
     deps.persist_sent_message(community_id, channel_id, &outcome, body)
         .await?;
@@ -327,6 +328,7 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         mek_generation: dest_mek_generation,
         lamport_ts,
         timestamp_ms,
+        reply_to: None,
     };
     deps.persist_forwarded_message(
         dest_community_id,

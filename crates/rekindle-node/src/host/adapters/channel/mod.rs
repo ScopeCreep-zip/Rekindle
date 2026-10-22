@@ -82,7 +82,7 @@ impl HostChannel {
         community_id: &str,
         channel_id: &str,
         body: &str,
-        reply_to: Option<u64>,
+        reply_to: Option<String>,
     ) -> Result<ChannelSendResult, ChannelError> {
         rekindle_channel::send_channel_message(self, community_id, channel_id, body, reply_to).await
     }

@@ -33,6 +33,7 @@ async fn persist_own_post(
         rekindle_db::repo::messages::channel::insert(
             conn,
             &rekindle_db::repo::messages::channel::ChannelMessageInsert {
+                reply_to: outcome.reply_to.as_deref(),
                 owner_key: &owner_key,
                 channel_id: &channel_id,
                 sender_key: &outcome.sender_pseudonym_hex,
@@ -152,6 +153,7 @@ pub(super) async fn find_channel_message_by_id_impl(
     Some(ChannelMessageRow {
         sender_key: row.sender_key,
         body: row.body,
+        reply_to: row.reply_to,
     })
 }
 

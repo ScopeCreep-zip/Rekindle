@@ -64,8 +64,8 @@ pub struct BuildChannelMessageParams {
     pub timestamp_ms: i64,
     pub lamport_ts: u64,
     pub message_id: String,
-    /// The sequence of the message this one replies to, when it does.
-    pub reply_to: Option<u64>,
+    /// The message id of the message this one replies to, when it does.
+    pub reply_to: Option<String>,
     pub mention_flag_bits: u32,
     pub mentioned_pseudonyms: Vec<String>,
     pub mentioned_roles: Vec<String>,

@@ -114,3 +114,61 @@ async fn a_send_inside_the_slowmode_is_refused() {
     );
     host.shutdown().await.unwrap();
 }
+
+#[tokio::test]
+async fn a_reply_is_stored_against_its_parent_row() {
+    use rekindle_channel::deps::{ChannelMessagingDeps as _, ChannelSendOutcome};
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    add_channel(&host, &owner, None, None).await;
+    let channel = HostChannel::new(&host.ctx);
+    let sent = |message_id: &str, reply_to: Option<&str>| ChannelSendOutcome {
+        message_id: message_id.into(),
+        sender_pseudonym_hex: owner.clone(),
+        ciphertext: vec![1],
+        mek_generation: 1,
+        lamport_ts: 1,
+        timestamp_ms: 1,
+        reply_to: reply_to.map(str::to_string),
+    };
+    for (id, parent, body) in [
+        ("msg_parent", None, "first"),
+        ("msg_reply", Some("msg_parent"), "second"),
+    ] {
+        channel
+            .persist_sent_message("c1", SEND_CHANNEL, &sent(id, parent), body)
+            .await
+            .unwrap();
+    }
+    let o = owner.clone();
+    let (parent_row, linked) = (host.ctx.db.current().unwrap())
+        .call(move |conn| {
+            let parent_row = rekindle_db::repo::messages::channel::row_id_by_message_id(
+                conn,
+                &o,
+                SEND_CHANNEL,
+                "msg_parent",
+            )?;
+            let linked: Option<i64> = conn.query_row(
+                "SELECT reply_to_id FROM messages WHERE message_id = 'msg_reply'",
+                [],
+                |row| row.get(0),
+            )?;
+            Ok((parent_row, linked))
+        })
+        .await
+        .unwrap();
+    assert!(parent_row.is_some(), "the parent is stored");
+    assert_eq!(linked, parent_row, "reply_to_id is the parent's row");
+    let retry_source = channel
+        .find_channel_message_by_id(SEND_CHANNEL, "msg_reply")
+        .await;
+    assert_eq!(
+        retry_source.and_then(|row| row.reply_to).as_deref(),
+        Some("msg_parent"),
+        "the Retry re-sends the parent's id"
+    );
+    host.shutdown().await.unwrap();
+}

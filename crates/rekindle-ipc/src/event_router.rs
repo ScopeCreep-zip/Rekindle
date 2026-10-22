@@ -275,7 +275,7 @@ mod tests {
             sequence: 0,
             timestamp: 0,
             body: None,
-            reply_to_sequence: None,
+            reply_to_message_id: None,
         })
     }
 

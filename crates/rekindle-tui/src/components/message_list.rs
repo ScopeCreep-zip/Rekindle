@@ -266,7 +266,7 @@ impl MessageList {
                 }
             }
 
-            if let Some(reply_seq) = msg.reply_to_sequence {
+            if let Some(reply_seq) = &msg.reply_to_message_id {
                 lines.push(Line::from(vec![
                     Span::styled("  ↳ reply to ", Style::new().dim()),
                     Span::styled(format!("#{reply_seq}"), Style::new().dim().italic()),
@@ -401,7 +401,7 @@ mod tests {
             author_display_name: author.to_string(),
             body: body.to_string(),
             timestamp: ts,
-            reply_to_sequence: None,
+            reply_to_message_id: None,
             mek_generation: 1,
             is_encrypted: false,
             needs_mek: None,

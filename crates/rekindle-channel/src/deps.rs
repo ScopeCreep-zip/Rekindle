@@ -52,6 +52,8 @@ pub struct ChannelSendOutcome {
     pub mek_generation: u64,
     pub lamport_ts: u64,
     pub timestamp_ms: i64,
+    /// The message id of the message this one replies to, when it does.
+    pub reply_to: Option<String>,
 }
 
 /// Where a channel-record write targets: SMPL record key + slot info.
@@ -81,6 +83,8 @@ pub struct PseudonymCredentials {
 pub struct ChannelMessageRow {
     pub sender_key: String,
     pub body: String,
+    /// The message id of the stored parent this row replies to.
+    pub reply_to: Option<String>,
 }
 
 /// One entry from a thread record DHT scan, paired with the subkey

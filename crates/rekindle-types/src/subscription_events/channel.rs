@@ -27,7 +27,7 @@ pub enum ChannelMessageEvent {
         /// Decrypted plaintext body. None if MEK unavailable at emission time.
         body: Option<String>,
         /// Parent message sequence for threaded replies.
-        reply_to_sequence: Option<u64>,
+        reply_to_message_id: Option<String>,
     },
     /// A message was edited.
     /// Triggered by: gossip `ControlPayload::MessageEdited`.

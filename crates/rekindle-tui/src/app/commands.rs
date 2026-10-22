@@ -206,13 +206,12 @@ impl App {
         let community = community.to_string();
         let channel_clone = channel.to_string();
         tokio::spawn(async move {
-            let reply = reply_to.and_then(|r| r.parse::<u64>().ok());
             match client
                 .request_ok(IpcRequest::Community(CommunityRequest::ChannelSend {
                     community,
                     channel: channel_clone.clone(),
                     body: text,
-                    reply_to: reply,
+                    reply_to,
                 }))
                 .await
             {

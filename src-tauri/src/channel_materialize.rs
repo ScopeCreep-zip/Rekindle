@@ -418,6 +418,7 @@ pub(crate) async fn load_channel_messages_from_smpl(
                 let _ = rekindle_db::repo::messages::channel::insert(
                     conn,
                     &rekindle_db::repo::messages::channel::ChannelMessageInsert {
+                        reply_to: message.reply_to.as_deref(),
                         owner_key: &owner_key_for_db,
                         channel_id: &chid,
                         sender_key: &message.sender_pseudonym,

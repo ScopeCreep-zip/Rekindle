@@ -175,10 +175,12 @@ pub async fn handle_message_notification(
         .unwrap_or_default()
     });
     let flags_for_db = message.flags;
+    let reply_to_for_db = message.reply_to.clone();
     db_fire(&pool, "store notified channel message", move |conn| {
         rekindle_db::repo::messages::channel::insert(
             conn,
             &rekindle_db::repo::messages::channel::ChannelMessageInsert {
+                reply_to: reply_to_for_db.as_deref(),
                 owner_key: &owner_key,
                 channel_id: &channel_id,
                 sender_key: &sender,

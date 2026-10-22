@@ -48,8 +48,8 @@ pub fn envelope_into_event(
             sender_pseudonym: s(),
             sequence,
             timestamp,
-            body: None,              // populated by the enrichment stage
-            reply_to_sequence: None, // populated by the enrichment stage
+            body: None,                // populated by the enrichment stage
+            reply_to_message_id: None, // populated by the enrichment stage
         }),
         CommunityEnvelope::TypingIndicator {
             channel_id,

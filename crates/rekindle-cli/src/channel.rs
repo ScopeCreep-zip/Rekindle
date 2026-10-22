@@ -117,14 +117,13 @@ pub async fn dispatch(
             message,
             reply_to,
         } => {
-            let reply = reply_to.as_ref().and_then(|s| s.parse::<u64>().ok());
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::ChannelSend {
                     community: community.clone(),
                     channel: channel.clone(),
                     body: message.clone(),
-                    reply_to: reply,
+                    reply_to: reply_to.clone(),
                 }),
             )
             .await?;

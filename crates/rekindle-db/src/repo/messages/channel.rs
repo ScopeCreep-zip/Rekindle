@@ -27,6 +27,9 @@ pub struct ChannelMessageInsert<'a> {
     /// `Delivered` for a received row; our own post's state otherwise
     /// (plan D1).
     pub send_state: SendState,
+    /// The message id of the message this one replies to; stored as its
+    /// local row (`reply_to_id`) when we hold that parent.
+    pub reply_to: Option<&'a str>,
 }
 
 /// Insert one channel message row.
@@ -35,12 +38,16 @@ pub struct ChannelMessageInsert<'a> {
 /// The insert failed.
 pub fn insert(conn: &Connection, msg: &ChannelMessageInsert<'_>) -> rusqlite::Result<()> {
     let lamport_ts = i64::try_from(msg.lamport_ts).unwrap_or(i64::MAX);
+    let reply_to_id = match msg.reply_to {
+        Some(parent) => row_id_by_message_id(conn, msg.owner_key, msg.channel_id, parent)?,
+        None => None,
+    };
     conn.execute(
         "INSERT INTO messages \
          (owner_key, conversation_id, conversation_type, sender_key, body, automod_blurred, timestamp, is_read, \
           mek_generation, message_id, lamport_ts, forwarded_from_author, flags, attachment_json, \
-          send_state) \
-         VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          send_state, reply_to_id) \
+         VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             msg.owner_key,
             msg.channel_id,
@@ -56,9 +63,31 @@ pub fn insert(conn: &Connection, msg: &ChannelMessageInsert<'_>) -> rusqlite::Re
             i64::from(msg.flags),
             msg.attachment_json,
             msg.send_state.as_str(),
+            reply_to_id,
         ],
     )?;
     Ok(())
+}
+
+/// The local row id of the channel message `message_id`, when we hold it.
+///
+/// # Errors
+/// The query failed.
+pub fn row_id_by_message_id(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<i64>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT id FROM messages \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND message_id = ?3 LIMIT 1",
+        params![owner_key, channel_id, message_id],
+        |row| row.get(0),
+    )
+    .optional()
 }
 
 /// The sender and plaintext of one stored channel message, the fields a
@@ -67,6 +96,8 @@ pub fn insert(conn: &Connection, msg: &ChannelMessageInsert<'_>) -> rusqlite::Re
 pub struct ForwardSource {
     pub sender_key: String,
     pub body: String,
+    /// The message id of the stored parent it replies to.
+    pub reply_to: Option<String>,
 }
 
 /// Look up a stored channel message by its protocol message id.
@@ -81,14 +112,16 @@ pub fn find_by_message_id(
 ) -> rusqlite::Result<Option<ForwardSource>> {
     use rusqlite::OptionalExtension as _;
     conn.query_row(
-        "SELECT sender_key, body FROM messages \
-         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
-           AND message_id = ?3 LIMIT 1",
+        "SELECT m.sender_key, m.body, p.message_id FROM messages m \
+         LEFT JOIN messages p ON p.id = m.reply_to_id \
+         WHERE m.owner_key = ?1 AND m.conversation_id = ?2 AND m.conversation_type = 'channel' \
+           AND m.message_id = ?3 LIMIT 1",
         params![owner_key, channel_id, message_id],
         |row| {
             Ok(ForwardSource {
                 sender_key: row.get(0)?,
                 body: row.get(1)?,
+                reply_to: row.get(2)?,
             })
         },
     )
@@ -197,6 +230,7 @@ mod tests {
             flags: 0,
             attachment_json: None,
             send_state: SendState::Delivered,
+            reply_to: None,
         }
     }
 

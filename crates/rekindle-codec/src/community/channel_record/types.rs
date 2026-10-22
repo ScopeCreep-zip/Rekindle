@@ -20,9 +20,9 @@ pub struct ChannelMessage {
     pub mek_generation: u64,
     /// Unix timestamp (milliseconds).
     pub timestamp: u64,
-    /// Optional reply-to sequence number.
+    /// The message id of the message this one replies to, when it does.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reply_to: Option<u64>,
+    pub reply_to: Option<String>,
     /// Lamport logical timestamp for causal ordering.
     #[serde(default)]
     pub lamport_ts: u64,

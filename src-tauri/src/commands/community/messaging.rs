@@ -40,11 +40,13 @@ pub async fn forward_channel_message(
 pub async fn send_channel_message(
     channel_id: String,
     body: String,
+    reply_to_id: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::ChannelMessageSend {
         channel: channel_id,
         body,
+        reply_to: reply_to_id,
     });
     crate::host_call::call(&state, request).await
 }

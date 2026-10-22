@@ -162,6 +162,7 @@ pub(super) async fn insert_channel_message_full_impl(
         rekindle_db::repo::messages::channel::insert(
             conn,
             &rekindle_db::repo::messages::channel::ChannelMessageInsert {
+                reply_to: None,
                 owner_key: &owner,
                 channel_id: &chan,
                 sender_key: &sender,
