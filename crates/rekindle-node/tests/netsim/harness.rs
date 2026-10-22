@@ -370,7 +370,7 @@ impl Community {
                 expires_seconds: None,
             })
             .await;
-        self.link = invite["invite_link"]
+        self.link = invite["url"]
             .as_str()
             .expect("an invite link")
             .to_string();

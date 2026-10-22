@@ -25,7 +25,7 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
             expires_seconds: Some(TTL),
         })
         .await;
-    let link = invite["invite_link"]
+    let link = invite["url"]
         .as_str()
         .expect("an invite link")
         .to_string();
