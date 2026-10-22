@@ -114,6 +114,13 @@ impl CommunityStore {
             .unwrap_or_default()
     }
 
+    /// The community's segment descriptors (empty for an unknown one).
+    #[must_use]
+    pub fn segments(&self, community_id: &str) -> Vec<rekindle_types::presence::SegmentDescriptor> {
+        self.read(community_id, |c| c.segments.clone())
+            .unwrap_or_default()
+    }
+
     /// Governance overflow chain for the community, in order.
     #[must_use]
     pub fn overflow_keys(&self, community_id: &str) -> Vec<String> {

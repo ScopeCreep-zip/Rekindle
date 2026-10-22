@@ -1,43 +1,37 @@
-//! Event emission.
+//! Event emission: `GovernanceRuntimeEvent`, the runtime's host-agnostic
+//! vocabulary, mapped onto the `SubscriptionEvent`s the Host publishes to
+//! every frontend (the GUI's windows through its bus subscriber, a CLI or
+//! TUI over IPC), so each sees the same governance changes.
 //!
-//! The Tauri adapter calls `app.emit` and the SolidJS UI listens. The
-//! daemon's equivalent is the `SubscriptionEvent` broadcast that the IPC
-//! server subscribes to and fans out through `EventRouter` to connected
-//! clients — so a CLI or a third-party TUI sees the same governance
-//! changes the desktop UI does. That parity is the point: a capability
-//! that only reaches the Tauri frontend is a capability no other
-//! frontend can offer.
-//!
-//! `GovernanceRuntimeEvent` is the crate's host-agnostic vocabulary;
-//! `SubscriptionEvent::Governance` is this track's wire form. Mapping
-//! between them is the adapter's job.
+//! Role and channel tables come from the merged CRDT (the same builders
+//! `role list` and `channel list` use), segments from the community store.
 
-use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
-use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
+use rekindle_governance_runtime::event::{GovernanceRuntimeEvent, JoinStageStatus};
+use rekindle_types::subscription_events::{
+    GovernanceEvent, MembershipEvent, NotificationEvent, SubscriptionEvent,
+};
 
 use rekindle_types::display::CategoryDisplay;
 
 use super::HostGovernance;
 
 impl HostGovernance {
-    /// Translate and publish one runtime event.
-    ///
-    /// Events with no `SubscriptionEvent` counterpart are traced rather
-    /// than dropped silently — several are progress/telemetry signals
-    /// (`JoinProgress`, `BootstrapResponseBuilt`) that the IPC surface
-    /// has no variant for yet. Logging them keeps the gap visible
-    /// instead of making it look handled.
+    /// Translate and publish one runtime event; the progress and telemetry
+    /// signals with no frontend counterpart are traced.
     pub(super) fn emit_event_impl(&self, event: &GovernanceRuntimeEvent) {
-        let mapped = match event {
-            // A member's role set changing and the role table changing
-            // are the same signal to a client: re-read roles.
-            GovernanceRuntimeEvent::RolesChanged { community_id }
-            | GovernanceRuntimeEvent::MemberRolesChanged { community_id, .. } => {
-                // The event carries the new table rather than asking
-                // the client to re-read it — the merged state is right
-                // here, and `role_displays` is the same builder the
-                // `role list` command uses, so both render identically.
-                Some(GovernanceEvent::RolesChanged {
+        let Some(mapped) = self.map_event(event) else {
+            tracing::debug!(?event, "governance event: no frontend counterpart");
+            return;
+        };
+        self.ctx.publish_event(mapped);
+    }
+
+    fn map_event(&self, event: &GovernanceRuntimeEvent) -> Option<SubscriptionEvent> {
+        let governance = |e| Some(SubscriptionEvent::Governance(e));
+        let membership = |e| Some(SubscriptionEvent::Membership(e));
+        match event {
+            GovernanceRuntimeEvent::RolesChanged { community_id } => {
+                governance(GovernanceEvent::RolesChanged {
                     community: community_id.clone(),
                     roles: crate::daemon::dispatch::governance::role_displays(
                         &self.ctx,
@@ -46,7 +40,7 @@ impl HostGovernance {
                 })
             }
             GovernanceRuntimeEvent::ChannelsUpdated { community_id } => {
-                Some(GovernanceEvent::ChannelsChanged {
+                governance(GovernanceEvent::ChannelsChanged {
                     community: community_id.clone(),
                     channels: crate::daemon::dispatch::channel::channel_overviews(
                         &self.ctx,
@@ -55,48 +49,91 @@ impl HostGovernance {
                     categories: self.category_displays(community_id),
                 })
             }
-            GovernanceRuntimeEvent::CommunityCreated { community_id, .. }
-            | GovernanceRuntimeEvent::CommunityJoined { community_id, .. }
-            | GovernanceRuntimeEvent::JoinAccepted { community_id }
-            | GovernanceRuntimeEvent::SegmentAdded { community_id, .. } => {
-                // `metadata` is itself optional — a community that has
-                // never had a metadata entry merged has none — so this
-                // flattens rather than nesting two `Option`s.
-                let meta = self
-                    .ctx
-                    .communities
-                    .governance_state(community_id)
-                    .and_then(|gov| gov.metadata.clone());
-                Some(GovernanceEvent::MetadataChanged {
+            GovernanceRuntimeEvent::SegmentAdded { community_id, .. } => {
+                governance(GovernanceEvent::SegmentsChanged {
                     community: community_id.clone(),
-                    name: meta.as_ref().map(|m| m.name.clone()),
-                    description: meta.as_ref().and_then(|m| m.description.clone()),
-                    icon_hash: meta.as_ref().and_then(|m| m.icon_hash.clone()),
-                    banner_hash: meta.and_then(|m| m.banner_hash),
+                    segments: self.ctx.communities.segments(community_id),
                 })
             }
-            _ => None,
-        };
+            GovernanceRuntimeEvent::CommunityCreated { community_id, .. }
+            | GovernanceRuntimeEvent::CommunityJoined { community_id, .. } => {
+                governance(self.metadata_changed(community_id))
+            }
+            GovernanceRuntimeEvent::JoinProgress {
+                community_id,
+                stage_label,
+                status,
+            } => membership(MembershipEvent::JoinProgress {
+                community: community_id.clone(),
+                stage: stage_label.clone(),
+                status: match status {
+                    JoinStageStatus::Started => "started",
+                    JoinStageStatus::Done => "done",
+                    JoinStageStatus::Failed => "failed",
+                    JoinStageStatus::TimedOut => "timedOut",
+                }
+                .to_string(),
+            }),
+            GovernanceRuntimeEvent::JoinPendingAlert {
+                have_manage_community,
+            } => Some(SubscriptionEvent::Notification(
+                NotificationEvent::SystemAlert {
+                    title: "Joining community…".to_string(),
+                    body: if *have_manage_community {
+                        "Community is full — expanding capacity. This will take a few seconds."
+                    } else {
+                        "Community is full — waiting for an admin to expand it. Up to 30 seconds."
+                    }
+                    .to_string(),
+                },
+            )),
+            // The runtime signals acceptance before the MEK is read or a
+            // slot claimed; the gossip path's event carries both.
+            GovernanceRuntimeEvent::JoinAccepted { community_id } => {
+                membership(MembershipEvent::JoinAccepted {
+                    community: community_id.clone(),
+                    mek_generation: None,
+                    slot_index: None,
+                })
+            }
+            GovernanceRuntimeEvent::MemberRolesChanged {
+                community_id,
+                pseudonym_hex,
+                role_ids,
+            } => membership(MembershipEvent::RolesChanged {
+                community: community_id.clone(),
+                pseudonym: pseudonym_hex.clone(),
+                role_ids: role_ids.clone(),
+            }),
+            GovernanceRuntimeEvent::OnboardingComplete {
+                community_id,
+                pseudonym_hex,
+                role_ids,
+            } => membership(MembershipEvent::OnboardingCompleted {
+                community: community_id.clone(),
+                pseudonym: pseudonym_hex.clone(),
+                role_ids: role_ids.clone(),
+            }),
+            GovernanceRuntimeEvent::BootstrapResponseBuilt { .. }
+            | GovernanceRuntimeEvent::GovernanceEntryApplied { .. } => None,
+        }
+    }
 
-        let Some(governance_event) = mapped else {
-            tracing::debug!(
-                ?event,
-                "governance adapter: no SubscriptionEvent counterpart, not delivered to IPC clients"
-            );
-            return;
-        };
-
-        let guard = self.ctx.subscriptions.read();
-        let Some(manager) = guard.as_ref() else {
-            // Pre-unlock: nobody is subscribed, so there is nothing to
-            // deliver to. Not an error.
-            return;
-        };
-        // `send` fails only when every receiver has dropped, which is
-        // the normal state with no clients attached.
-        let _ = manager
-            .event_sender()
-            .send(SubscriptionEvent::Governance(governance_event));
+    /// The community's merged metadata (`metadata` is itself optional: a
+    /// community with no metadata entry merged has none).
+    fn metadata_changed(&self, community_id: &str) -> GovernanceEvent {
+        let meta = self
+            .ctx
+            .communities
+            .governance_state(community_id)
+            .and_then(|gov| gov.metadata.clone());
+        GovernanceEvent::MetadataChanged {
+            community: community_id.to_string(),
+            name: meta.as_ref().map(|m| m.name.clone()),
+            description: meta.as_ref().and_then(|m| m.description.clone()),
+            icon_hash: meta.as_ref().and_then(|m| m.icon_hash.clone()),
+            banner_hash: meta.and_then(|m| m.banner_hash),
+        }
     }
 
     /// Categories for a community, sorted by position then id.
