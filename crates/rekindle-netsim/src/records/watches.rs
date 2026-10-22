@@ -33,7 +33,11 @@
 //!   its local copy and that subkey with it (nothing when none is left);
 //!   stores a reported value before reporting it, else reports the range
 //!   with no value (`watch_value.rs:1866-1998`). A detached or offline node,
-//!   or one a partition cuts from the replica, receives nothing;
+//!   or one a partition cuts from the replica, receives nothing; a change
+//!   goes over the watcher's value-changed route
+//!   (`watch_value.rs:23`, `rpc_value_changed.rs`), is lost when that route
+//!   died, and the watcher re-watches on the next check tick
+//!   (`outbound_watch.rs:272-275`);
 //! - **death:** a cancelled, closed (`close_record.rs:116-120`), expired or
 //!   counted-out watch (`outbound_watch.rs:89-115`) ends at the next tick
 //!   with empty subkeys, count 0 and no value (`watch_value.rs:697-703`).
@@ -80,6 +84,8 @@ pub(crate) struct ReplicaWatch {
     count: u32,
     expiration: u64,
     changed: BTreeSet<u32>,
+    /// The watcher's value-changed route generation it was placed with.
+    route: u64,
 }
 
 fn micros(d: Duration) -> u64 {
@@ -156,6 +162,7 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
         Some(e) if e < now.saturating_add(micros(MIN_WATCH_EXPIRATION)) => return,
         Some(e) => e,
     };
+    let epoch = inner.nodes[node].route_epoch;
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
@@ -190,6 +197,7 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
                 count: d.count,
                 expiration,
                 changed: BTreeSet::new(),
+                route: epoch,
             });
             held += 1;
             added = true;
@@ -240,6 +248,24 @@ fn drop_replica_watches(inner: &mut Inner, node: usize, key: &str) {
     if let Some(record) = inner.records.get_mut(key) {
         for replica in &mut record.replicas {
             replica.watches.retain(|w| w.node != node);
+        }
+    }
+}
+
+/// After the tick's sends, an online watcher whose value-changed route died
+/// re-watches with its new one (`outbound_watch.rs:272-275`); changes sent
+/// before then were lost.
+fn renew_routes(inner: &mut Inner) {
+    let epochs: Vec<(u64, bool)> = (0..inner.nodes.len())
+        .map(|n| (inner.nodes[n].route_epoch, online(inner, n)))
+        .collect();
+    for record in inner.records.values_mut() {
+        for replica in &mut record.replicas {
+            for w in &mut replica.watches {
+                if let Some((epoch, true)) = epochs.get(w.node).copied() {
+                    w.route = epoch;
+                }
+            }
         }
     }
 }
@@ -399,13 +425,17 @@ impl Network {
                                 (1, Some(s)) => values.get(*s as usize).cloned().flatten(),
                                 _ => None,
                             };
-                            sent.push((home, w.node, (subkeys, w.count, value)));
+                            sent.push((home, w.node, w.route, (subkeys, w.count, value)));
                             w.count > 0
                         });
                     }
                 }
-                for (home, node, change) in sent {
+                for (home, node, route, change) in sent {
                     if !online(inner, node) || !reaches(&inner.faults.partitions, node, home) {
+                        continue;
+                    }
+                    // Sent over a dead value-changed route: lost.
+                    if route != inner.nodes[node].route_epoch {
                         continue;
                     }
                     if let Some(change) = receive(inner, node, &key, change) {
@@ -413,6 +443,7 @@ impl Network {
                     }
                 }
             }
+            renew_routes(inner);
         }
         for (from, to, label, event) in out {
             // A change is an RPC to the watcher; a death is the node's own.

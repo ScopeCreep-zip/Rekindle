@@ -101,6 +101,9 @@ impl AppMessagePort for FakeMessages {
             true,
             delay,
         );
+        // The statement returns once it is on its way: the first hop
+        // (`rpc_processor/mod.rs:1882-1926`).
+        tokio::time::sleep(self.net.latency.draw(self.node, latency::FIRST_HOP)).await;
         Ok(())
     }
 

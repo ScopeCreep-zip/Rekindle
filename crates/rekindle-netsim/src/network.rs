@@ -27,6 +27,8 @@ use crate::trace::Trace;
 
 /// The per-node event queue's bound, as the Veilid one (`UPDATE_QUEUE`).
 pub(crate) const EVENT_QUEUE: usize = 4096;
+/// A node's inbound RPC queue: `rpc.queue_size` (`veilid_config.rs:849`).
+pub(crate) const RPC_QUEUE: usize = 1024;
 
 /// A record on the simulated DHT.
 #[derive(Debug, Clone)]
@@ -125,6 +127,9 @@ pub(crate) struct NodeSlot {
     pub setting: HashMap<(String, u32), u32>,
     /// The node's clock skew (ms): what its Veilid's own clock reads.
     pub skew_ms: i64,
+    /// The generation of Veilid's own value-changed route for the node's
+    /// watches: a route death starts a new one ([`crate::records::watches`]).
+    pub route_epoch: u64,
     /// Per own route: the destinations of questions lost on it.
     pub lost: HashMap<String, HashSet<String>>,
     /// The node's queued rehydrations, by record key (Veilid's
@@ -155,6 +160,7 @@ impl NodeSlot {
             lost: HashMap::new(),
             setting: HashMap::new(),
             skew_ms: 0,
+            route_epoch: 0,
             rehydrations: BTreeSet::new(),
             pushes: BTreeMap::new(),
         }
@@ -180,6 +186,8 @@ pub(crate) struct Inner {
     /// The DHT stores' use counter (each store's record LRU,
     /// [`crate::records`]' `stores`).
     pub lru: u64,
+    /// Per node: inbound RPCs its full queue dropped.
+    pub rpc_dropped: HashMap<usize, u64>,
 }
 
 /// The network, shared by every node's ports.
@@ -297,6 +305,23 @@ impl Network {
             // is lost: a detached Veilid node has no network to take it.
             batch.retain(|p| !(p.droppable && inner.faults.detached.contains(&p.to)));
             batch.sort_by_key(|p| (p.from, p.to, p.rank));
+            // A node's inbound RPC queue holds `rpc.queue_size` 1024
+            // (`veilid_config.rs:849`); past it the enqueue fails and the RPC
+            // is dropped (`rpc_worker.rs:158-163`).
+            let mut queued: HashMap<usize, usize> = HashMap::new();
+            let dropped = &mut inner.rpc_dropped;
+            batch.retain(|p| {
+                if p.from == p.to || matches!(p.event, PortEvent::Attachment { .. }) {
+                    return true;
+                }
+                let n = queued.entry(p.to).or_default();
+                *n += 1;
+                if *n > RPC_QUEUE {
+                    *dropped.entry(p.to).or_default() += 1;
+                    return false;
+                }
+                true
+            });
             batch.shuffle(&mut *self.order.lock());
             for p in &batch {
                 // A value change names its record (keys come from the seeded

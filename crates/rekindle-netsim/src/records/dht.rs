@@ -457,7 +457,15 @@ impl DhtBackend for SimDht {
             .get(key)
             .ok_or_else(|| error(DhtErrorKind::KeyNotFound, key.to_string()))?;
         let subkeys: Vec<u32> = match subkeys {
-            Some(s) => s.to_vec(),
+            // Truncated to the schema, as a sorted range set
+            // (`inspect_record.rs:20`).
+            Some(s) => {
+                let all = subkey_count(&record.schema);
+                let mut s: Vec<u32> = s.iter().copied().filter(|s| *s < all).collect();
+                s.sort_unstable();
+                s.dedup();
+                s
+            }
             None => (0..subkey_count(&record.schema)).collect(),
         };
         let slot = &inner.nodes[self.node];

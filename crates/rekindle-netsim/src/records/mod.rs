@@ -53,6 +53,9 @@ mod dht;
 mod fanout;
 #[cfg(test)]
 mod fanout_tests;
+mod outside;
+#[cfg(test)]
+mod outside_tests;
 mod rehydrate;
 #[cfg(test)]
 mod rehydrate_tests;

@@ -103,6 +103,9 @@ pub enum Fault {
     /// process): past 2 s, an online node inspects every watch, at most
     /// once per 30 s (`tasks/mod.rs:132-145`).
     TickLag { node: usize, ms: u64 },
+    /// Nodes join closer to `key`: `count` of its replicas are pushed out
+    /// for empty stores, their watches gone (`records/outside.rs`).
+    ReplicaChurn { key: String, count: usize },
 }
 
 /// A simulated node's side: what a Host on it needs.
@@ -265,6 +268,7 @@ impl Netsim {
             }
             Fault::Detach { node, detached } => self.detach(node, detached),
             Fault::InternetReady { node, ready } => self.internet_ready(node, ready),
+            Fault::ReplicaChurn { key, count } => self.churn(&key, count),
             Fault::TickLag { node, ms } => self
                 .net
                 .tick_lag(node, std::time::Duration::from_millis(ms)),
@@ -298,6 +302,10 @@ impl Netsim {
                 .collect();
             for id in &dead {
                 inner.routes.remove(id);
+            }
+            // Veilid's own value-changed route dies with them.
+            if let Some(slot) = inner.nodes.get_mut(node) {
+                slot.route_epoch += 1;
             }
             dead
         };
