@@ -2,13 +2,13 @@ use rekindle_governance::state::{AutoModRuleState, ChannelState, TimeoutState};
 
 use super::*;
 
-const CHANNEL: &str = "00112233445566778899aabbccddeeff";
+const GATE_CHANNEL: &str = "00112233445566778899aabbccddeeff";
 const ANN: &str = "aa00000000000000000000000000000000000000000000000000000000000000";
 
 fn item(body: &str, sent_at_secs: u64, now_secs: u64) -> GateItem<'_> {
     GateItem {
         community_id: "c",
-        channel_id: CHANNEL,
+        channel_id: GATE_CHANNEL,
         sender_pseudonym: ANN,
         body,
         sent_at_secs,
@@ -19,7 +19,7 @@ fn item(body: &str, sent_at_secs: u64, now_secs: u64) -> GateItem<'_> {
 fn state() -> GovernanceState {
     let mut gov = GovernanceState::default();
     gov.channels.insert(
-        ChannelId::from_hex(CHANNEL).expect("channel id"),
+        ChannelId::from_hex(GATE_CHANNEL).expect("channel id"),
         ChannelState {
             name: "general".into(),
             channel_type: "text".into(),

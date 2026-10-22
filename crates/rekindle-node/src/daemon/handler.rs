@@ -425,7 +425,8 @@ impl DaemonHandler {
         };
         let (community, author) = (community_id.to_owned(), author.to_owned());
         let (channel, message_id, subkey, sequence) = post;
-        tokio::spawn(async move {
+        let scope = ctx.unlock_scope_or_closed();
+        scope.spawn_or_drop("channel post ingest", async move {
             let host = crate::host::adapters::channel::HostChannel::new(&ctx);
             let ingested = host
                 .ingest_notified(&community, &channel, subkey, &message_id, &author, sequence)
