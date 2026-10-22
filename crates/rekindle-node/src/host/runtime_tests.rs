@@ -8,6 +8,9 @@ use crate::host::fixture::temp_root;
 use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
 
+#[path = "membership_tests.rs"]
+mod membership;
+
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     offline_host_with(dir, None).await
 }
