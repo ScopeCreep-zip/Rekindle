@@ -78,6 +78,26 @@ impl CommunityRequest {
                 .field("regex_patterns", &regex_patterns.len())
                 .field("action", action)
                 .finish_non_exhaustive(),
+            Self::MemberBlock {
+                community,
+                target_pseudonym,
+            } => f
+                .debug_struct("MemberBlock")
+                .field("community", community)
+                .field("target_pseudonym", target_pseudonym)
+                .finish(),
+            Self::MemberUnblock {
+                community,
+                target_pseudonym,
+            } => f
+                .debug_struct("MemberUnblock")
+                .field("community", community)
+                .field("target_pseudonym", target_pseudonym)
+                .finish(),
+            Self::MemberBlockList { community } => f
+                .debug_struct("MemberBlockList")
+                .field("community", community)
+                .finish(),
             Self::AutomodRuleDelete { community, rule_id } => f
                 .debug_struct("AutomodRuleDelete")
                 .field("community", community)

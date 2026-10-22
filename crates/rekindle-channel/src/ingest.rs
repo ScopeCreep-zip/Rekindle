@@ -67,7 +67,8 @@ pub enum Verdict {
     Drop(GateReason),
 }
 
-/// The keys we blocked (`rekindle_db::repo::blocked`), lowercased.
+/// The pseudonyms we block in the post's community
+/// (`rekindle_db::repo::community_blocks`), lowercased.
 #[derive(Debug, Clone, Default)]
 pub struct BlockList(BTreeSet<String>);
 

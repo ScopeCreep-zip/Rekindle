@@ -259,7 +259,9 @@ pub(super) async fn selection(
         | CommunityRequest::Ban { .. }
         | CommunityRequest::Unban { .. }
         | CommunityRequest::Timeout { .. }
-        | CommunityRequest::TimeoutRemove { .. } => member_selection(ctx, request, s)?,
+        | CommunityRequest::TimeoutRemove { .. }
+        | CommunityRequest::MemberBlock { .. }
+        | CommunityRequest::MemberUnblock { .. } => member_selection(ctx, request, s)?,
         CommunityRequest::InviteCreate {
             community: target, ..
         }
@@ -328,6 +330,14 @@ fn member_selection(
         | CommunityRequest::TimeoutRemove {
             community: target,
             target_pseudonym: member_pseudonym,
+        }
+        | CommunityRequest::MemberBlock {
+            community: target,
+            target_pseudonym: member_pseudonym,
+        }
+        | CommunityRequest::MemberUnblock {
+            community: target,
+            target_pseudonym: member_pseudonym,
         } => {
             let (id, _) = community(ctx, target)?;
             s.subject = Subject::Named {
@@ -352,13 +362,25 @@ fn member_selection(
                 CommunityRequest::TimeoutRemove { .. } => {
                     Reversibility::ReversibleByInverse(IntentKind::TimeoutMember)
                 }
+                CommunityRequest::MemberBlock { .. } => {
+                    Reversibility::ReversibleByInverse(IntentKind::UnblockUser)
+                }
+                CommunityRequest::MemberUnblock { .. } => {
+                    Reversibility::ReversibleByInverse(IntentKind::BlockUser)
+                }
                 CommunityRequest::Kick { .. } => {
                     s.facts.push(Fact::RejoinNeedsInvite);
                     Reversibility::NeedsOthers
                 }
                 _ => Reversibility::Undoable,
             };
-            s.notifies = members(ctx, &id);
+            // A block is ours alone: it reaches no member.
+            if !matches!(
+                request,
+                CommunityRequest::MemberBlock { .. } | CommunityRequest::MemberUnblock { .. }
+            ) {
+                s.notifies = members(ctx, &id);
+            }
         }
         _ => {}
     }

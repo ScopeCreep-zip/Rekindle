@@ -6,7 +6,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
     audit, automod, channel, channel_message, channel_message_ops, community, community_profile,
-    events, game_servers, governance, keys, onboarding, unread, DaemonContext,
+    events, game_servers, governance, keys, member_block, onboarding, unread, DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -272,6 +272,11 @@ pub(super) async fn route(
             community,
             target_pseudonym,
         } => governance::handle_timeout_remove(ctx, state, &community, &target_pseudonym).await,
+        request @ (CommunityRequest::MemberBlock { .. }
+        | CommunityRequest::MemberUnblock { .. }
+        | CommunityRequest::MemberBlockList { .. }) => {
+            member_block::handle(ctx, state, request).await
+        }
         CommunityRequest::BanList { community } => {
             governance::handle_ban_list(ctx, state, &community).await
         }

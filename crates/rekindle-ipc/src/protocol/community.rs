@@ -446,6 +446,19 @@ pub enum CommunityRequest {
         community: String,
         target_pseudonym: String,
     },
+    /// Block a member in this community, by the pseudonym they post under
+    /// there (D26): our ingest gate drops their posts. Only we see it.
+    MemberBlock {
+        community: String,
+        target_pseudonym: String,
+    },
+    /// Lift a community block.
+    MemberUnblock {
+        community: String,
+        target_pseudonym: String,
+    },
+    /// The pseudonyms we block in a community, newest first.
+    MemberBlockList { community: String },
     /// Timeout a member for a duration.
     Timeout {
         community: String,

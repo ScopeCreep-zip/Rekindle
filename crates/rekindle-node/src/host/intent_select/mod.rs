@@ -150,6 +150,8 @@ pub(crate) async fn select(
             | CommunityRequest::RoleSelfAssign { .. }
             | CommunityRequest::RoleSelfUnassign { .. }
             | CommunityRequest::Kick { .. }
+            | CommunityRequest::MemberBlock { .. }
+            | CommunityRequest::MemberUnblock { .. }
             | CommunityRequest::Ban { .. }
             | CommunityRequest::Unban { .. }
             | CommunityRequest::Timeout { .. }
@@ -280,6 +282,7 @@ pub(crate) async fn select(
             | CommunityRequest::EventList { .. }
             | CommunityRequest::EventAttendees { .. }
             | CommunityRequest::BanList { .. }
+            | CommunityRequest::MemberBlockList { .. }
             | CommunityRequest::AutomodRules { .. }
             | CommunityRequest::ModReportList { .. }
             | CommunityRequest::InviteList { .. },

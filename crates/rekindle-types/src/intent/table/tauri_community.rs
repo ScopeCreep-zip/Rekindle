@@ -137,6 +137,9 @@ pub(crate) const TAURI_COMMUNITY_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("list_automod_rules", None),
     ("set_automod_rule", Some(IntentKind::SetAutomodRule)),
     ("delete_automod_rule", Some(IntentKind::DeleteAutomodRule)),
+    ("block_community_member", Some(IntentKind::BlockUser)),
+    ("unblock_community_member", Some(IntentKind::UnblockUser)),
+    ("list_community_blocks", None),
     ("get_onboarding_config", None),
     (
         "set_onboarding_config",

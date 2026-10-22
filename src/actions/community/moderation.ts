@@ -183,3 +183,32 @@ export async function handleRemoveTimeout(
     addToast("Failed to remove timeout", "error");
   }
 }
+
+/** The pseudonyms we block in a community (D26: the ingest gate drops their posts). */
+export async function loadCommunityBlocks(communityId: string): Promise<Set<string>> {
+  try {
+    return new Set(await commands.listCommunityBlocks(communityId));
+  } catch (e) {
+    console.error("Failed to load community blocks:", e);
+    return new Set();
+  }
+}
+
+/** Block or unblock a member by pseudonym; whether the change landed. */
+export async function handleSetCommunityBlock(
+  communityId: string,
+  pseudonymKey: string,
+  blocked: boolean,
+): Promise<boolean> {
+  try {
+    if (blocked) {
+      await commands.blockCommunityMember(communityId, pseudonymKey);
+    } else {
+      await commands.unblockCommunityMember(communityId, pseudonymKey);
+    }
+    return true;
+  } catch (e) {
+    console.error("Failed to change community block:", e);
+    return false;
+  }
+}

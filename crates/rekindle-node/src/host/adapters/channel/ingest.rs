@@ -289,12 +289,12 @@ impl HostChannel {
         let gov = self
             .governance_state(&post.community_id)
             .ok_or_else(|| ChannelError::Adapter("governance state not loaded".into()))?;
-        let key = owner.to_owned();
+        let (key, community) = (owner.to_owned(), post.community_id.clone());
         let blocked = db
-            .call(move |conn| rekindle_db::repo::blocked::list(conn, &key))
+            .call(move |conn| rekindle_db::repo::community_blocks::list(conn, &key, &community))
             .await
             .map_err(stored)?;
-        let blocked = BlockList::new(blocked.into_iter().map(|b| b.public_key));
+        let blocked = BlockList::new(blocked.into_iter().map(|b| b.pseudonym));
         let item = GateItem {
             community_id: &post.community_id,
             channel_id: &post.channel_id,

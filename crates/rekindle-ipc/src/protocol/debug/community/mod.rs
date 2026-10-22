@@ -102,6 +102,9 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::Timeout { .. }
             | Self::TimeoutRemove { .. }
             | Self::BanList { .. }
+            | Self::MemberBlock { .. }
+            | Self::MemberUnblock { .. }
+            | Self::MemberBlockList { .. }
             | Self::AutomodRules { .. }
             | Self::AutomodRuleSet { .. }
             | Self::AutomodRuleDelete { .. }

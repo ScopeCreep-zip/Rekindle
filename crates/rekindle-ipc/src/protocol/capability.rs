@@ -212,6 +212,7 @@ impl CommunityRequest {
             | Self::EventList { .. }
             | Self::EventAttendees { .. }
             | Self::BanList { .. }
+            | Self::MemberBlockList { .. }
             | Self::AutomodRules { .. }
             | Self::ModReportList { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
@@ -223,6 +224,8 @@ impl CommunityRequest {
             | Self::CommunitySetAvatar { .. }
             | Self::CommunitySetBanner { .. }
             | Self::CommunityPolicySet { .. }
+            | Self::MemberBlock { .. }
+            | Self::MemberUnblock { .. }
             | Self::ChannelCreate { .. }
             | Self::ChannelDelete { .. }
             | Self::ChannelUpdate { .. }

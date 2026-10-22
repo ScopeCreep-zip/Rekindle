@@ -46,6 +46,25 @@ fn unread_fields(request: &CommunityRequest) -> Checked {
     }
 }
 
+/// A community block request (plan E3.1 F3, D26).
+fn block_fields(request: &CommunityRequest) -> Checked {
+    match request {
+        CommunityRequest::MemberBlock {
+            community: c,
+            target_pseudonym,
+        }
+        | CommunityRequest::MemberUnblock {
+            community: c,
+            target_pseudonym,
+        } => {
+            community(c)?;
+            pseudonym(target_pseudonym, "target pseudonym")
+        }
+        CommunityRequest::MemberBlockList { community: c } => community(c),
+        _ => Ok(()),
+    }
+}
+
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
@@ -57,6 +76,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         | CommunityRequest::CommunityPolicyGet { community: key } => community(key),
         request @ (CommunityRequest::AuditLog { .. }
         | CommunityRequest::NotificationDefaultSet { .. }) => audit_fields(request),
+        request @ (CommunityRequest::MemberBlock { .. } | CommunityRequest::MemberUnblock { .. } | CommunityRequest::MemberBlockList { .. }) => block_fields(request),
         request @ (CommunityRequest::AutomodRuleSet { .. }
         | CommunityRequest::AutomodRuleDelete { .. }) => automod_fields(request),
         CommunityRequest::CommunityUpdateProfile {

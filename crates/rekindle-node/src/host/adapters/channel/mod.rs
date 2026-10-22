@@ -10,7 +10,7 @@
 //! settle task; `deps_impl` is the single trait impl and delegates;
 //! `state` the community-store reads and mutations; `dht` the record
 //! writes and reads; `persist` the stored rows and the outbox; `ingest`
-//! the received posts; `events` the echo and delivery state on the Host bus; `history` the reads.
+//! the received posts; `blocks` the community blocks its gate reads; `events` the echo and delivery state on the Host bus; `history` the reads.
 
 use std::sync::Arc;
 
@@ -26,6 +26,7 @@ use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::governance::HostGovernance;
 use crate::host::adapters::outbox::{post_of_row, Reissuer};
 
+mod blocks;
 pub mod deps_impl;
 mod dht;
 mod events;

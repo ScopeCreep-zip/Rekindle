@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createMemo, JSX } from "solid-js";
+import { Component, For, Show, createEffect, createSignal, createMemo, JSX } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
 import { Member, Role, communityState } from "../../stores/community.store";
@@ -22,6 +22,8 @@ import {
   handleTimeoutMember,
   handleServerMuteMember,
   handleServerDeafenMember,
+  handleSetCommunityBlock,
+  loadCommunityBlocks,
 } from "../../actions/community.actions";
 import {
   calculateBasePermissions,
@@ -55,6 +57,24 @@ const TIMEOUT_PRESETS: { label: string; seconds: number }[] = [
 const MemberList: Component<MemberListProps> = (props) => {
   const [searchQuery, setSearchQuery] = createSignal("");
   const [openProfileFor, setOpenProfileFor] = createSignal<string | null>(null);
+  const [blocked, setBlocked] = createSignal<Set<string>>(new Set());
+
+  createEffect(() => {
+    const communityId = props.communityId;
+    void loadCommunityBlocks(communityId).then((set) => {
+      if (props.communityId === communityId) setBlocked(set);
+    });
+  });
+
+  async function toggleBlock(pseudonymKey: string): Promise<void> {
+    const key = pseudonymKey.toLowerCase();
+    const next = !blocked().has(key);
+    if (!(await handleSetCommunityBlock(props.communityId, pseudonymKey, next))) return;
+    const set = new Set(blocked());
+    if (next) set.add(key);
+    else set.delete(key);
+    setBlocked(set);
+  }
 
   const [confirmAction, setConfirmAction] = createSignal<{
     type: "kick" | "ban";
@@ -154,6 +174,7 @@ const MemberList: Component<MemberListProps> = (props) => {
 
   function memberMenu(member: Member): JSX.Element {
     const perms = myPerms();
+    const manage = canManage(member);
     const voiceChannelId = memberVoiceChannelId(member);
     const assignableRoles = props.roles
       .filter((r) => r.id !== 0)
@@ -162,7 +183,7 @@ const MemberList: Component<MemberListProps> = (props) => {
     return (
       <ContextMenu.Portal>
         <ContextMenu.Content class="context-menu">
-          <Show when={hasPermission(perms, MANAGE_ROLES) && assignableRoles.length > 0}>
+          <Show when={manage && hasPermission(perms, MANAGE_ROLES) && assignableRoles.length > 0}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
                 <span class="nf-icon context-menu-icon">{ICON_SHIELD}</span>
@@ -194,7 +215,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Sub>
           </Show>
 
-          <Show when={hasPermission(perms, MODERATE_MEMBERS)}>
+          <Show when={manage && hasPermission(perms, MODERATE_MEMBERS)}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
                 <span class="nf-icon context-menu-icon">{ICON_TIMEOUT}</span>
@@ -224,7 +245,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Sub>
           </Show>
 
-          <Show when={voiceChannelId && hasPermission(perms, MUTE_MEMBERS)}>
+          <Show when={manage && voiceChannelId && hasPermission(perms, MUTE_MEMBERS)}>
             <ContextMenu.Item
               class="context-menu-item"
               onSelect={() =>
@@ -240,7 +261,7 @@ const MemberList: Component<MemberListProps> = (props) => {
               Server Mute
             </ContextMenu.Item>
           </Show>
-          <Show when={voiceChannelId && hasPermission(perms, DEAFEN_MEMBERS)}>
+          <Show when={manage && voiceChannelId && hasPermission(perms, DEAFEN_MEMBERS)}>
             <ContextMenu.Item
               class="context-menu-item"
               onSelect={() =>
@@ -257,7 +278,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={hasPermission(perms, KICK_MEMBERS)}>
+          <Show when={manage && hasPermission(perms, KICK_MEMBERS)}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
@@ -273,7 +294,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={hasPermission(perms, BAN_MEMBERS)}>
+          <Show when={manage && hasPermission(perms, BAN_MEMBERS)}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
@@ -288,6 +309,14 @@ const MemberList: Component<MemberListProps> = (props) => {
               Ban Member
             </ContextMenu.Item>
           </Show>
+
+          <ContextMenu.Item
+            class="context-menu-item context-menu-item-danger"
+            onSelect={() => void toggleBlock(member.pseudonymKey)}
+          >
+            <span class="nf-icon context-menu-icon">{ICON_BAN}</span>
+            {blocked().has(member.pseudonymKey.toLowerCase()) ? "Unblock" : "Block"}
+          </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
     );
@@ -295,7 +324,7 @@ const MemberList: Component<MemberListProps> = (props) => {
 
   function renderMember(member: Member): JSX.Element {
     const isSelf = member.pseudonymKey === props.myPseudonymKey;
-    const allowMenu = !isSelf && canManage(member);
+    const allowMenu = !isSelf;
     const roles = () => memberRoles(member);
     const isOpen = () => openProfileFor() === member.pseudonymKey;
 

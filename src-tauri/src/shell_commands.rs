@@ -279,6 +279,15 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "delete_automod_rule",
         HostCall::Request("AutomodRuleDelete"),
     ),
+    ("block_community_member", HostCall::Request("MemberBlock")),
+    (
+        "unblock_community_member",
+        HostCall::Request("MemberUnblock"),
+    ),
+    (
+        "list_community_blocks",
+        HostCall::Request("MemberBlockList"),
+    ),
 ];
 
 /// The shell's own commands.

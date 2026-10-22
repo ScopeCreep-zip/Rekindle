@@ -15,6 +15,7 @@ pub(crate) mod helpers;
 mod invites;
 mod link_previews;
 mod mek;
+mod member_blocks;
 mod messaging;
 mod moderation;
 mod notifications;
@@ -125,6 +126,12 @@ pub use link_previews::{
     set_link_previews_enabled,
 };
 pub use mek::{__cmd__rotate_mek, __tauri_command_name_rotate_mek, rotate_mek};
+pub use member_blocks::{
+    __cmd__block_community_member, __cmd__list_community_blocks, __cmd__unblock_community_member,
+    __tauri_command_name_block_community_member, __tauri_command_name_list_community_blocks,
+    __tauri_command_name_unblock_community_member, block_community_member, list_community_blocks,
+    unblock_community_member,
+};
 pub use messaging::{
     __cmd__delete_channel_message, __cmd__edit_channel_message, __cmd__forward_channel_message,
     __cmd__get_channel_messages, __cmd__get_older_channel_messages, __cmd__send_channel_message,

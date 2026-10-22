@@ -341,6 +341,12 @@ export const communityCommands = {
     hostInvoke<unknown>("ban_member", { communityId, pseudonymKey }).then(() => undefined),
   unbanMember: (communityId: string, pseudonymKey: string) =>
     hostInvoke<unknown>("unban_member", { communityId, pseudonymKey }).then(() => undefined),
+  blockCommunityMember: (communityId: string, pseudonymKey: string) =>
+    hostInvoke<unknown>("block_community_member", { communityId, pseudonymKey }).then(() => undefined),
+  unblockCommunityMember: (communityId: string, pseudonymKey: string) =>
+    hostInvoke<unknown>("unblock_community_member", { communityId, pseudonymKey }).then(() => undefined),
+  listCommunityBlocks: (communityId: string) =>
+    hostInvoke<string[]>("list_community_blocks", { communityId }),
   getBanList: (communityId: string) =>
     hostInvoke<CommunityBanView[]>("get_ban_list", { communityId }),
   rotateMek: (communityId: string, idempotencyKey?: string) =>
