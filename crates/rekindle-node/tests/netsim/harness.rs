@@ -479,12 +479,13 @@ impl Community {
     }
 
     /// Whether node `i` reads `body` in the general channel within `limit`.
+    /// The channel's id comes from the creator, node 0, who never leaves.
     pub async fn reads(&self, i: usize, body: &str, limit: Duration) -> bool {
+        let channel = self.general_id(0).await;
         eventually(&self.sim, limit, || async {
             self.nodes[i]
-                .call(IpcRequest::Community(CommunityRequest::ChannelHistory {
-                    community: self.governance_key.clone(),
-                    channel: "general".into(),
+                .call(IpcRequest::Community(CommunityRequest::ChannelMessages {
+                    channel: channel.clone(),
                     limit: 100,
                 }))
                 .await

@@ -83,11 +83,6 @@ pub(crate) async fn route(
             super::channel_message::handle_send(ctx, state, &community, &channel, &body, reply_to)
                 .await
         }
-        CommunityRequest::ChannelHistory {
-            community,
-            channel,
-            limit,
-        } => super::channel_message::handle_history(ctx, state, &community, &channel, limit).await,
         request @ (CommunityRequest::ChannelRename { .. }
         | CommunityRequest::ChannelMove { .. }
         | CommunityRequest::ChannelReorder { .. }

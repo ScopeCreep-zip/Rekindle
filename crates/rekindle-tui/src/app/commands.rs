@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::display as dt;
+use rekindle_types::dto::channel_message::ChannelMessageView;
 
 use super::super::action::{Action, CommandResult, ToastLevel};
 use super::App;
@@ -134,32 +135,30 @@ impl App {
         let channel = channel.to_string();
         tokio::spawn(async move {
             match client
-                .request_ok(IpcRequest::Community(CommunityRequest::ChannelHistory {
-                    community: community.clone(),
+                .request_ok(IpcRequest::Community(CommunityRequest::ChannelMessages {
                     channel: channel.clone(),
                     limit: 50,
                 }))
                 .await
             {
-                Ok(value) => {
-                    match serde_json::from_value::<Vec<dt::DecryptedMessageDisplay>>(value) {
-                        Ok(messages) => {
-                            let _ = tx.send(Action::CommandComplete(Box::new(
-                                CommandResult::ChannelHistoryLoaded {
-                                    community,
-                                    channel,
-                                    messages,
-                                },
-                            )));
-                        }
-                        Err(e) => {
-                            let _ = tx.send(Action::CommandFailed {
-                                context: "channel history parse".into(),
-                                error: e.to_string(),
-                            });
-                        }
+                Ok(value) => match serde_json::from_value::<Vec<ChannelMessageView>>(value) {
+                    Ok(views) => {
+                        let messages = views.into_iter().map(message_row).collect();
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::ChannelHistoryLoaded {
+                                community,
+                                channel,
+                                messages,
+                            },
+                        )));
                     }
-                }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "channel history parse".into(),
+                            error: e.to_string(),
+                        });
+                    }
+                },
                 Err(e) => report_failure(&tx, "channel history", e),
             }
         });
@@ -366,4 +365,25 @@ pub(super) fn report_failure(
         },
     };
     let _ = tx.send(action);
+}
+
+/// The message list's row for one message of the Host's channel history
+/// (`ChannelMessages`). A body that did not open is shown as encrypted,
+/// its generation unknown, as a live message without a body is.
+fn message_row(view: ChannelMessageView) -> dt::DecryptedMessageDisplay {
+    let encrypted = view.decryption_failed;
+    dt::DecryptedMessageDisplay {
+        message_id: view
+            .server_message_id
+            .unwrap_or_else(|| view.id.to_string()),
+        sequence: 0,
+        author_display_name: crate::helpers::abbreviate_key(&view.sender_id),
+        author_pseudonym: view.sender_id,
+        body: view.body,
+        timestamp: u64::try_from(view.timestamp).unwrap_or(0),
+        reply_to_message_id: None,
+        mek_generation: 0,
+        is_encrypted: encrypted,
+        needs_mek: encrypted.then_some(0),
+    }
 }

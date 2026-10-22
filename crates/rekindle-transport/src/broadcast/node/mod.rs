@@ -209,16 +209,11 @@ impl TransportNode {
     }
 
     /// Create a [`QueryEngine`](crate::query::QueryEngine) for high-level
-    /// read operations. Requires a shared `MekCache` for message decryption
-    /// and an unlocked session (its record pool).
+    /// read operations over the shared `MekCache`.
     pub fn query(
         &self,
         mek_cache: Arc<parking_lot::RwLock<crate::crypto::mek::MekCache>>,
-    ) -> Result<crate::query::QueryEngine> {
-        Ok(crate::query::QueryEngine::new(
-            self.require_records()?,
-            mek_cache,
-            Arc::clone(&self.peer_registry),
-        ))
+    ) -> crate::query::QueryEngine {
+        crate::query::QueryEngine::new(mek_cache, Arc::clone(&self.peer_registry))
     }
 }

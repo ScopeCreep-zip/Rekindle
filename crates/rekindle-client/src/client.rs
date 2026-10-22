@@ -230,7 +230,8 @@ fn request_timeout(request: &IpcRequest) -> Duration {
             CommunityRequest::CommunityCreate { .. }
             | CommunityRequest::CommunityJoin { .. }
             | CommunityRequest::ChannelSend { .. }
-            | CommunityRequest::ChannelHistory { .. },
+            | CommunityRequest::ChannelMessages { .. }
+            | CommunityRequest::ChannelMessagesBefore { .. },
         )
         | IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }

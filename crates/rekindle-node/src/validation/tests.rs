@@ -159,9 +159,10 @@ fn key_scope_is_empty_or_a_channel_id() {
 #[test]
 fn numeric_bounds() {
     let history = |limit| {
-        IpcRequest::Community(CommunityRequest::ChannelHistory {
+        IpcRequest::Community(CommunityRequest::ChannelMessagesBefore {
             community: "c".into(),
             channel: "general".into(),
+            before_timestamp: 0,
             limit,
         })
     };

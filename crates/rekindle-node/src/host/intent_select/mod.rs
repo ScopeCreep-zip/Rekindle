@@ -258,7 +258,6 @@ pub(crate) async fn select(
             | CommunityRequest::CommunityUpdateInfo { .. }
             | CommunityRequest::CommunityPendingMembers { .. }
             | CommunityRequest::ChannelList { .. }
-            | CommunityRequest::ChannelHistory { .. }
             | CommunityRequest::ChannelTyping { .. }
             | CommunityRequest::ChannelSetActive { .. }
             | CommunityRequest::ChannelMessages { .. }

@@ -50,7 +50,6 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::ChannelTyping { .. }
             | Self::ChannelSetActive { .. }
             | Self::ChannelMessageSend { .. }
-            | Self::ChannelHistory { .. }
             | Self::ChannelMessages { .. }
             | Self::ChannelMessagesBefore { .. }
             | Self::MekList { .. }

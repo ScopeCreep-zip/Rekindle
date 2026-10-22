@@ -135,11 +135,11 @@ pub async fn dispatch(
             limit,
             ..
         } => {
+            let (_, channel_id) = resolve_channel(client, community, channel).await?;
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::ChannelHistory {
-                    community: community.clone(),
-                    channel: channel.clone(),
+                IpcRequest::Community(CommunityRequest::ChannelMessages {
+                    channel: channel_id,
                     limit: u32::try_from(*limit).unwrap_or(u32::MAX),
                 }),
             )
@@ -155,18 +155,13 @@ pub async fn dispatch(
     }
 }
 
-/// `channel watch`: stream one channel's messages until Ctrl-C.
-async fn watch_channel(
+/// The governance key of `community` and the id of its channel `channel`;
+/// the user may have given either names or keys.
+async fn resolve_channel(
     client: &DaemonClient,
     community: &str,
     channel: &str,
-    mode: OutputMode,
-) -> anyhow::Result<()> {
-    use rekindle_types::subscription_events::{
-        ChannelMessageEvent, EventCategory, SubscriptionEvent, SubscriptionFilter,
-    };
-    // Events name the community by governance key and the channel by id;
-    // the user may have given either names or keys.
+) -> anyhow::Result<(String, String)> {
     let detail: rekindle_types::display::CommunityDetail = serde_json::from_value(
         helpers::send(
             client,
@@ -182,9 +177,24 @@ async fn watch_channel(
         .find(|c| c.id == channel || c.name == channel)
         .map(|c| c.id.clone())
         .ok_or_else(|| anyhow::anyhow!("no channel '{channel}' in '{community}'"))?;
+    Ok((detail.governance_key, channel_id))
+}
+
+/// `channel watch`: stream one channel's messages until Ctrl-C.
+async fn watch_channel(
+    client: &DaemonClient,
+    community: &str,
+    channel: &str,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    use rekindle_types::subscription_events::{
+        ChannelMessageEvent, EventCategory, SubscriptionEvent, SubscriptionFilter,
+    };
+    // Events name the community by governance key and the channel by id.
+    let (governance_key, channel_id) = resolve_channel(client, community, channel).await?;
     let filter = SubscriptionFilter {
         categories: Some(vec![EventCategory::ChannelMessage]),
-        community_scope: Some(detail.governance_key),
+        community_scope: Some(governance_key),
     };
     let body = |text: &Option<String>| {
         text.as_deref().map_or_else(

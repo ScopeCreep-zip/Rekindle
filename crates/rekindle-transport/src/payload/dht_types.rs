@@ -82,9 +82,8 @@ pub use rekindle_types::dht_layout::SLOTS_PER_SEGMENT as REGISTRY_MAX_MEMBERS;
 // `RoleEntry` lived here: the v1.0 governance-manifest payload types.
 // Nothing has written that manifest since channels, roles, categories
 // and bans became `ChannelCreated` / `RoleDefinition` / `CategoryAdded`
-// / `MemberBanned` governance entries, and `query/display_map.rs`
-// already records that its mappers for them were removed because the
-// caller builds display types from merged CRDT state. They were also
+// / `MemberBanned` governance entries, and the caller builds display
+// types from merged CRDT state. They were also
 // five of the eighteen type names this crate duplicated against
 // rekindle-protocol.
 

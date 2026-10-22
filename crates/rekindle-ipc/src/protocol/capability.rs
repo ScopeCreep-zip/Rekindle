@@ -263,9 +263,9 @@ impl CommunityRequest {
             | Self::Unban { .. }
             | Self::Timeout { .. }
             | Self::TimeoutRemove { .. } => Some(C::ModerationWrite),
-            Self::ChannelHistory { .. }
-            | Self::ChannelMessages { .. }
-            | Self::ChannelMessagesBefore { .. } => Some(C::ChannelsHistory),
+            Self::ChannelMessages { .. } | Self::ChannelMessagesBefore { .. } => {
+                Some(C::ChannelsHistory)
+            }
             Self::ChannelSend { .. }
             | Self::ChannelMessageEdit { .. }
             | Self::ChannelMessageDelete { .. }

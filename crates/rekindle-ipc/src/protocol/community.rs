@@ -204,12 +204,6 @@ pub enum CommunityRequest {
         /// The message id of the message this one replies to.
         reply_to: Option<String>,
     },
-    /// Get channel message history.
-    ChannelHistory {
-        community: String,
-        channel: String,
-        limit: u32,
-    },
     /// Replace the body of our message `message_id` in `channel` (a channel
     /// id; the Host finds its community).
     ChannelMessageEdit {

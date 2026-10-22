@@ -95,8 +95,7 @@ pub(super) async fn route(
         | CommunityRequest::CategoryDelete { .. }
         | CommunityRequest::CategoryRename { .. }
         | CommunityRequest::CategoryReorder { .. }
-        | CommunityRequest::ChannelSend { .. }
-        | CommunityRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
+        | CommunityRequest::ChannelSend { .. }) => channel::route(ctx, state, request).await,
         request @ (CommunityRequest::ChannelMessageSend { .. }
         | CommunityRequest::ChannelMessageEdit { .. }
         | CommunityRequest::ChannelMessageDelete { .. }) => {

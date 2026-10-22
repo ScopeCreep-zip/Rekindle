@@ -101,7 +101,6 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("CategoryReorder", Some(IntentKind::ReorderCategories)),
     ("ChannelSend", Some(IntentKind::SendChannelMessage)),
     ("ChannelMessageSend", Some(IntentKind::SendChannelMessage)),
-    ("ChannelHistory", None),
     ("ChannelMessages", None),
     ("ChannelMessagesBefore", None),
     ("ChannelMessageEdit", Some(IntentKind::EditChannelMessage)),

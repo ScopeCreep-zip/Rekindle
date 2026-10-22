@@ -1,7 +1,7 @@
 //! High-level query operations for CLI and TUI consumption.
 //!
-//! [`QueryEngine`] composes low-level DHT reads, MEK decryption, and
-//! profile resolution into display-ready types. Every returned type
+//! [`QueryEngine`] composes the peer registry and the MEK cache into
+//! display-ready types. Every returned type
 //! implements `Serialize + Clone + Debug` and contains no Veilid-internal
 //! types — only strings, numbers, and bools.
 //!
@@ -33,24 +33,17 @@ pub use rekindle_types::display::{
 /// High-level query interface for CLI and TUI.
 ///
 /// Obtained via [`TransportNode::query()`](crate::broadcast::node::TransportNode).
-/// Composes low-level DHT reads + MEK decryption + profile resolution
-/// into display-ready types.
+/// Composes the peer registry and the MEK cache into display-ready
+/// types.
 pub struct QueryEngine {
-    /// The unlocked session's record pool: every query's DHT reads.
-    records: Arc<dyn rekindle_records::port::RecordPort>,
     mek_cache: Arc<RwLock<MekCache>>,
     peer_registry: Arc<RwLock<PeerRegistry>>,
 }
 
 impl QueryEngine {
     /// Create a new query engine.
-    pub fn new(
-        records: Arc<dyn rekindle_records::port::RecordPort>,
-        mek_cache: Arc<RwLock<MekCache>>,
-        peer_registry: Arc<RwLock<PeerRegistry>>,
-    ) -> Self {
+    pub fn new(mek_cache: Arc<RwLock<MekCache>>, peer_registry: Arc<RwLock<PeerRegistry>>) -> Self {
         Self {
-            records,
             mek_cache,
             peer_registry,
         }
@@ -91,5 +84,3 @@ impl QueryEngine {
 
 mod communities;
 pub use communities::{community_detail, list_communities, CommunityMetaSummary};
-mod display_map;
-mod messages;

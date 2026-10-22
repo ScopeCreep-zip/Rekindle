@@ -138,16 +138,6 @@ impl CommunityRequest {
                 .debug_struct("ChannelMessageSend")
                 .field("channel", channel)
                 .finish_non_exhaustive(),
-            Self::ChannelHistory {
-                community,
-                channel,
-                limit,
-            } => f
-                .debug_struct("ChannelHistory")
-                .field("community", community)
-                .field("channel", channel)
-                .field("limit", limit)
-                .finish(),
             Self::ChannelMessages { channel, limit } => f
                 .debug_struct("ChannelMessages")
                 .field("channel", channel)

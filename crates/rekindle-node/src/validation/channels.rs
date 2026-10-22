@@ -71,12 +71,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             })?;
             message_body(body)
         }
-        CommunityRequest::ChannelHistory {
-            community: c,
-            channel: ch,
-            limit,
-        }
-        | CommunityRequest::ChannelMessagesBefore {
+        CommunityRequest::ChannelMessagesBefore {
             community: c,
             channel: ch,
             limit,

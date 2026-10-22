@@ -200,7 +200,6 @@ impl CommunityRequest {
             Self::CategoryRename { .. } => ("CategoryRename", Write, Authenticated),
             Self::CategoryReorder { .. } => ("CategoryReorder", Write, Authenticated),
             Self::ChannelSend { .. } => ("ChannelSend", Write, Authenticated),
-            Self::ChannelHistory { .. } => ("ChannelHistory", Query, Authenticated),
             Self::ChannelMessages { .. } => ("ChannelMessages", Query, Authenticated),
             Self::ChannelMessagesBefore { .. } => ("ChannelMessagesBefore", Query, Authenticated),
             Self::ChannelMessageEdit { .. } => ("ChannelMessageEdit", Write, Authenticated),
