@@ -390,8 +390,15 @@ impl Netsim {
                 data,
                 writer: records::public_text(&public),
             };
+            // Each replica checks the size rule (`set_value.rs:759`).
+            if !records::size::fits(&record.schema, &value) {
+                return Err(PortError::Dht("value too big".into()));
+            }
             let mut stored = Vec::new();
             for (r, replica) in record.replicas.iter_mut().enumerate() {
+                if !records::size::within_total(&replica.values, at, &value) {
+                    continue;
+                }
                 if replica.values[at].as_ref().is_none_or(|v| v.seq < seq) {
                     replica.values[at] = Some(value.clone());
                     stored.push(r);
@@ -459,9 +466,9 @@ impl Netsim {
     #[must_use]
     pub fn network_get(&self, key: &str, subkey: u32) -> Option<RecordValue> {
         let inner = self.net.inner.lock();
-        let replicas = &inner.records.get(key)?.replicas;
-        let all: Vec<usize> = (0..replicas.len()).collect();
-        records::get_from(replicas, &all, subkey)
+        let record = inner.records.get(key)?;
+        let all: Vec<usize> = (0..record.replicas.len()).collect();
+        records::get_from(record, &all, subkey)
     }
 
     /// Each replica's value at `key`/`subkey`, in placement order.

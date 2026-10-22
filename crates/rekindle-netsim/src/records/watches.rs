@@ -254,6 +254,13 @@ pub(super) fn receive(
     key: &str,
     (subkeys, count, mut value): (BTreeSet<u32>, u32, Option<RecordValue>),
 ) -> Option<ValueChange> {
+    // A watched value past the size rule makes the change invalid
+    // (`watch_value.rs:1934-1946`): it is dropped.
+    if let (Some(v), Some(record)) = (&value, inner.records.get(key)) {
+        if !super::size::fits(&record.schema, v) {
+            return None;
+        }
+    }
     let desired = inner.nodes[node].watches.get_mut(key)?.as_mut()?;
     let watched = desired.subkeys.clone();
     // The per-node state takes the replica's count (`watch_value.rs:1882-1891`).

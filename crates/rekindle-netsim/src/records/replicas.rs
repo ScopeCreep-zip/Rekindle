@@ -34,7 +34,7 @@
 
 use std::collections::{HashSet, VecDeque};
 
-use rekindle_records::port::RecordValue;
+use rekindle_records::port::{RecordSchema, RecordValue};
 
 use crate::network::pair;
 
@@ -133,6 +133,7 @@ pub(crate) struct SetFanout {
 
 /// Fan `ours` out to the `reach` replicas at `subkey`.
 pub(crate) fn set(
+    schema: &RecordSchema,
     replicas: &mut [Replica],
     reach: &[usize],
     subkey: usize,
@@ -146,7 +147,15 @@ pub(crate) fn set(
         let Some(r) = queue.pop_front() else {
             break;
         };
-        let Some(slot) = replicas.get_mut(r).and_then(|x| x.values.get_mut(subkey)) else {
+        // A value past the size rule is an invalid message: the replica
+        // stores nothing and its answer is skipped (`set_value.rs:759`).
+        let Some(replica) = replicas
+            .get_mut(r)
+            .filter(|x| super::size::admits(schema, &x.values, subkey, &ctx))
+        else {
+            continue;
+        };
+        let Some(slot) = replica.values.get_mut(subkey) else {
             continue;
         };
         match offer(slot, &ctx) {
@@ -176,6 +185,7 @@ pub(crate) fn set(
 
 /// A get's answer at `subkey` over the `reach` replicas, from `local`.
 pub(crate) fn get(
+    schema: &RecordSchema,
     replicas: &[Replica],
     reach: &[usize],
     subkey: usize,
@@ -187,6 +197,8 @@ pub(crate) fn get(
         let Some(held) = replicas
             .get(*r)
             .and_then(|x| x.values.get(subkey)?.as_ref())
+            // An answer past the size rule is invalid (`get_value.rs:385`).
+            .filter(|v| super::size::fits(schema, v))
         else {
             continue;
         };

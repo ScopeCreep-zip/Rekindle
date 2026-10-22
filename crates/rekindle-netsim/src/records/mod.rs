@@ -32,7 +32,8 @@
 //!   evicts the least recently used record ([`stores`]);
 //! - every call that reaches the network costs Veilid's latency
 //!   ([`crate::latency`]) before its effect lands, under the per-subkey
-//!   locks and the node's DHT cap.
+//!   locks and the node's DHT cap;
+//! - a value is within Veilid's size rule at every hop ([`size`]).
 
 use std::sync::Arc;
 
@@ -55,6 +56,7 @@ mod rehydrate_tests;
 mod replicas;
 #[cfg(test)]
 mod report_tests;
+pub(crate) mod size;
 mod stores;
 #[cfg(test)]
 mod watch_tests;
@@ -63,8 +65,14 @@ pub(crate) mod watches;
 pub(crate) use replicas::{reachable, reaches, Replica};
 
 /// A get's answer over the `reach` replicas with no local copy.
-pub(crate) fn get_from(replicas: &[Replica], reach: &[usize], subkey: u32) -> Option<RecordValue> {
-    replicas::get(replicas, reach, subkey as usize, None)
+pub(crate) fn get_from(record: &NetRecord, reach: &[usize], subkey: u32) -> Option<RecordValue> {
+    replicas::get(
+        &record.schema,
+        &record.replicas,
+        reach,
+        subkey as usize,
+        None,
+    )
 }
 
 /// The record store of one simulated node.

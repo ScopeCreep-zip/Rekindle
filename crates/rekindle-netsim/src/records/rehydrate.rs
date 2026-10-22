@@ -106,7 +106,13 @@ fn push(inner: &mut Inner, node: usize, key: &str, subkey: u32) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
-    let fanout = replicas::set(&mut record.replicas, &reach, subkey as usize, &ours);
+    let fanout = replicas::set(
+        &record.schema,
+        &mut record.replicas,
+        &reach,
+        subkey as usize,
+        &ours,
+    );
     watches::mark(record, &fanout.stored, subkey, node);
     stores::touch(inner, key, &reach);
     stores::admit(inner, key, &fanout.stored);

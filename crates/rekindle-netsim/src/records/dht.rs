@@ -64,7 +64,7 @@ use rekindle_records::port::{
 use rekindle_utils::RandomSource;
 
 use super::{
-    admits, new_key_text, public_text, reachable, rehydrate, replicas, stores, subkey_count,
+    admits, new_key_text, public_text, reachable, rehydrate, replicas, size, stores, subkey_count,
     watches, writer_public,
 };
 use crate::clock::SimRandom;
@@ -197,10 +197,15 @@ impl SimDht {
             reachable(&r.replicas, &inner.faults.partitions, self.node)
         });
         stores::touch(&mut inner, key, &reach);
-        let found = inner
-            .records
-            .get(key)
-            .and_then(|r| replicas::get(&r.replicas, &reach, subkey as usize, local.as_ref()));
+        let found = inner.records.get(key).and_then(|r| {
+            replicas::get(
+                &r.schema,
+                &r.replicas,
+                &reach,
+                subkey as usize,
+                local.as_ref(),
+            )
+        });
         if let Some(found) = &found {
             if local.as_ref().is_none_or(|l| l.seq != found.seq) {
                 inner.nodes[self.node]
@@ -211,14 +216,24 @@ impl SimDht {
         found
     }
 
-    /// Check a write against the record's schema (`set_value.rs:236-242`).
-    fn validate(&self, key: &str, subkey: u32, public: &[u8; 32]) -> Result<(), DhtCallError> {
+    /// Check a write against the record's schema, its writer and its size
+    /// (`set_value.rs:233-242`, [`super::size`]).
+    fn validate(
+        &self,
+        key: &str,
+        subkey: u32,
+        public: &[u8; 32],
+        len: usize,
+    ) -> Result<(), DhtCallError> {
         let inner = self.net.inner.lock();
         let record = inner
             .records
             .get(key)
             .ok_or_else(|| error(DhtErrorKind::Generic, "must have a descriptor"))?;
-        if subkey >= subkey_count(&record.schema) || !admits(record, subkey, public) {
+        if subkey >= subkey_count(&record.schema)
+            || !admits(record, subkey, public)
+            || len > size::max_value_len(&record.schema)
+        {
             return Err(error(
                 DhtErrorKind::Generic,
                 format!("failed schema validation: {key}:{subkey}"),
@@ -255,7 +270,13 @@ impl SimDht {
         };
         let record = inner.records.get_mut(key)?;
         let reach = reachable(&record.replicas, &inner.faults.partitions, self.node);
-        let fanout = replicas::set(&mut record.replicas, &reach, subkey as usize, &ours);
+        let fanout = replicas::set(
+            &record.schema,
+            &mut record.replicas,
+            &reach,
+            subkey as usize,
+            &ours,
+        );
         watches::mark(record, &fanout.stored, subkey, self.node);
         stores::touch(inner, key, &reach);
         stores::admit(inner, key, &fanout.stored);
@@ -411,7 +432,7 @@ impl DhtBackend for SimDht {
             .ok_or_else(|| error(DhtErrorKind::Generic, "value is not writable"))?;
         let public =
             writer_public(&writer).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
-        self.validate(key, subkey, &public)?;
+        self.validate(key, subkey, &public, data.len())?;
         // In flight until it returns (`inspect_record.rs:169-171`).
         let _setting = super::Setting::new(&self.net, self.node, key, subkey);
         let _slot = self.network(latency::SET, key, &[subkey]).await?;

@@ -156,7 +156,13 @@ fn inspect(inner: &mut Inner, node: usize, key: &str) -> Option<ValueChange> {
             .local
             .get(&(key.to_string(), first))
             .cloned();
-        let got = replicas::get(&record.replicas, &reach, first as usize, held.as_ref());
+        let got = replicas::get(
+            &record.schema,
+            &record.replicas,
+            &reach,
+            first as usize,
+            held.as_ref(),
+        );
         if let Some(value) = got {
             let local = &mut inner.nodes[node].local;
             if held.as_ref().is_none_or(|l| l.seq != value.seq) {
