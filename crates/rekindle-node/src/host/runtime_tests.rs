@@ -14,6 +14,8 @@ mod community_info;
 mod login_stage;
 #[path = "membership_tests.rs"]
 mod membership;
+#[path = "onboarding_bounds_tests.rs"]
+mod onboarding_bounds;
 
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     offline_host_with(dir, None).await

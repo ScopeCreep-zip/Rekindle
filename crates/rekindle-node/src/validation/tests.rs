@@ -290,6 +290,72 @@ fn governance_bounds_keep_their_error_texts() {
     assert!(message_of(&community).starts_with("invalid description: "));
 }
 
+/// An onboarding flow or welcome screen readers would drop is 400 at the
+/// boundary, naming its field (plan E3.1 D3).
+#[test]
+fn onboarding_and_welcome_fields_are_bounded() {
+    use rekindle_types::dto::onboarding::{
+        GuideStepDto, OnboardingConfigDto, WelcomeChannelEntryDto, WelcomeScreenDto,
+    };
+    use rekindle_types::governance::{
+        MAX_ONBOARDING_GUIDE_STEPS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
+    };
+    let config = |config: OnboardingConfigDto| {
+        IpcRequest::Community(CommunityRequest::OnboardingConfigSet {
+            community: "c".into(),
+            config,
+        })
+    };
+    let screen = |screen: WelcomeScreenDto| {
+        IpcRequest::Community(CommunityRequest::WelcomeScreenSet {
+            community: "c".into(),
+            screen,
+        })
+    };
+    let step = GuideStepDto {
+        title: "Say hello".into(),
+        description: "Introduce yourself".into(),
+        channel_id: None,
+        emoji: None,
+    };
+    let entry = WelcomeChannelEntryDto {
+        channel_id: HEX32.into(),
+        description: "Chat with everyone".into(),
+        emoji: None,
+    };
+    assert_eq!(status_of(&config(OnboardingConfigDto::default())), None);
+    let long = config(OnboardingConfigDto {
+        welcome_message: Some("x".repeat(MAX_ONBOARDING_WELCOME_CHARS + 1)),
+        ..OnboardingConfigDto::default()
+    });
+    assert_eq!(message_of(&long), "welcome_message is out of bounds");
+    let steps = config(OnboardingConfigDto {
+        guide_steps: vec![step; MAX_ONBOARDING_GUIDE_STEPS + 1],
+        ..OnboardingConfigDto::default()
+    });
+    assert!(rejected(&steps));
+    assert_eq!(message_of(&steps), "guide_steps is out of bounds");
+    let fits = screen(WelcomeScreenDto {
+        description: "LAN party HQ".into(),
+        channels: vec![entry.clone(); MAX_WELCOME_SCREEN_CHANNELS],
+    });
+    assert_eq!(status_of(&fits), None);
+    let crowded = screen(WelcomeScreenDto {
+        description: "LAN party HQ".into(),
+        channels: vec![entry.clone(); MAX_WELCOME_SCREEN_CHANNELS + 1],
+    });
+    assert!(rejected(&crowded));
+    assert_eq!(message_of(&crowded), "channels is out of bounds");
+    let hidden = screen(WelcomeScreenDto {
+        description: "LAN party HQ".into(),
+        channels: vec![WelcomeChannelEntryDto {
+            description: "bell\u{7}".into(),
+            ..entry
+        }],
+    });
+    assert_eq!(message_of(&hidden), "channel_description is out of bounds");
+}
+
 #[test]
 fn deletes_name_a_key_and_typed_proofs_are_bounded() {
     assert!(!rejected(&IpcRequest::IdentityDelete {
