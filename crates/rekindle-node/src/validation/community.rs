@@ -164,32 +164,8 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         | CommunityRequest::WelcomeScreenSet { .. }
         | CommunityRequest::OnboardingSubmit { .. }
         | CommunityRequest::OnboardingComplete { .. } => super::community_onboarding::check(request),
-        CommunityRequest::GameServerAdd {
-            community: key,
-            game_id,
-            label,
-            address,
-        } => {
-            community(key)?;
-            name(game_id, "game id")?;
-            text(game_id, game_server::MAX_GAME_ID_LEN, "game id")?;
-            name(label, "server label")?;
-            text(label, game_server::MAX_GAME_SERVER_LABEL_LEN, "server label")?;
-            game_server::ServerAddress::parse(address)
-                .map(drop)
-                .map_err(|e| IpcResponse::error(400, format!("server address: {e}")))
-        }
-        CommunityRequest::GameServerRemove {
-            community: key,
-            server_id,
-        } => {
-            community(key)?;
-            if game_server::is_server_id(server_id) {
-                Ok(())
-            } else {
-                Err(IpcResponse::error(400, "server id must be gs_ and 16 hex digits"))
-            }
-        }
+        request @ (CommunityRequest::GameServerAdd { .. }
+        | CommunityRequest::GameServerRemove { .. }) => game_server_fields(request),
         CommunityRequest::CommunityCreate {
             name: community_name,
             description,
@@ -425,6 +401,46 @@ fn audit_fields(request: &CommunityRequest) -> Checked {
                 ));
             }
             Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A game server add's or removal's fields (plan E3.1 H1).
+fn game_server_fields(request: &CommunityRequest) -> Checked {
+    match request {
+        CommunityRequest::GameServerAdd {
+            community: key,
+            game_id,
+            label,
+            address,
+        } => {
+            community(key)?;
+            name(game_id, "game id")?;
+            text(game_id, game_server::MAX_GAME_ID_LEN, "game id")?;
+            name(label, "server label")?;
+            text(
+                label,
+                game_server::MAX_GAME_SERVER_LABEL_LEN,
+                "server label",
+            )?;
+            game_server::ServerAddress::parse(address)
+                .map(drop)
+                .map_err(|e| IpcResponse::error(400, format!("server address: {e}")))
+        }
+        CommunityRequest::GameServerRemove {
+            community: key,
+            server_id,
+        } => {
+            community(key)?;
+            if game_server::is_server_id(server_id) {
+                Ok(())
+            } else {
+                Err(IpcResponse::error(
+                    400,
+                    "server id must be gs_ and 16 hex digits",
+                ))
+            }
         }
         _ => Ok(()),
     }
