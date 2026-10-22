@@ -118,7 +118,11 @@ pub enum IdleState {
 /// the string id the frontend + community wire envelopes already use
 /// (hex of the 16-byte UUID) — no byte/string conversion at the hops.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", rename_all_fields = "camelCase", tag = "kind")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind"
+)]
 pub enum SessionLocation {
     Text { channel_id: String },
     Voice { channel_id: String },
