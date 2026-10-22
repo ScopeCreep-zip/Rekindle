@@ -266,15 +266,22 @@ pub fn handle_attachment(
     let attached = attachment.state.is_attached();
     let public_internet_ready = attachment.public_internet_ready;
     state.network_ready.send_replace(public_internet_ready);
+    // The transport's readiness, which the Host's stages wait on (its login
+    // stage and reconnect heal, plan E3.1 C2a/C2c): this shell runs the
+    // node's update loop until E5.7.
+    if let Some(transport) = state.transport.read().as_ref() {
+        transport.shared().set_attachment(
+            rekindle_transport::AttachmentState::from_veilid_string(&attachment.state.to_string()),
+            attached,
+            public_internet_ready,
+        );
+    }
     let state_str = attachment.state.to_string();
     tracing::info!(
         state = %state_str,
         public_internet_ready,
         "network attachment changed"
     );
-
-    let was_attached = state_helpers::is_attached(state);
-    let reconnected = !was_attached && attached;
 
     {
         if let Some(ref mut node) = *state.node.write() {
@@ -317,31 +324,8 @@ pub fn handle_attachment(
         body: format!("Veilid network {status}"),
     };
     crate::event_dispatch::emit_notification(app_handle, notification);
-
-    if reconnected && public_internet_ready && state.identity.read().is_some() {
-        tracing::info!("network reconnected; rebuilding governance");
-        let state = state.clone();
-        crate::state_helpers::login_scope_or_closed(&state).spawn_or_drop(
-            "attachment heal",
-            async move {
-                // A route that died while detached was reported dead and is
-                // being reallocated by its owner (plan C7.9b).
-                let governance = match crate::state_helpers::host_governance(&state) {
-                    Ok(governance) => governance,
-                    Err(e) => {
-                        tracing::debug!(error = %e, "locked before the governance rebuild ran");
-                        return;
-                    }
-                };
-                rekindle_governance_runtime::dht_hydration::open_community_dht_records(&governance)
-                    .await;
-                rekindle_governance_runtime::dht_hydration::rebuild_governance_from_dht(
-                    &governance,
-                )
-                .await;
-            },
-        );
-    }
+    // The reconnect heal is the Host's login stage, on the transport's
+    // readiness edge (plan E3.1 C2c).
 }
 
 pub fn handle_route_change(state: &Arc<AppState>, change: &veilid_core::VeilidRouteChange) {

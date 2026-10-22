@@ -302,14 +302,14 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     /// Snapshot every joined community's `(community_id, governance_key)`.
     /// Communities without a `governance_key` (v1.0 legacy) are skipped.
-    /// Used by `dht_hydration::rebuild_governance_from_dht` to enumerate
+    /// Used by `dht_hydration::rebuild_governance` to enumerate
     /// records to merge.
     fn list_community_governance_targets(&self) -> Vec<(String, String)>;
 
     /// Snapshot every joined community's
     /// `(community_id, registry_key, my_pseudonym_hex_opt)`. Communities
     /// without a `member_registry_key` are skipped. Used by
-    /// `dht_hydration::hydrate_community_state_from_dht` to enumerate
+    /// `dht_hydration::hydrate_one_community` to enumerate
     /// records to read from the DHT.
     fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)>;
 
@@ -337,7 +337,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     fn recover_registry_keypair_from_keystore(&self, community_id: &str);
 
     /// Snapshot every joined community's open-DHT-records setup info.
-    /// Used by `dht_hydration::open_community_dht_records` to drive
+    /// Used by the Host's per-community login stage to drive
     /// the per-community `open_dht_record` calls without holding the
     /// `state.communities` read-guard across `.await`.
     fn list_communities_for_dht_open(&self) -> Vec<CommunityDhtOpenSetup>;

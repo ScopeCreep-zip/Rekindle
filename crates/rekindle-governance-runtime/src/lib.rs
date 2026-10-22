@@ -54,8 +54,8 @@ pub use deps::{
     GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 pub use dht_hydration::{
-    hydrate_community_state_from_dht, open_and_track_one_community, open_community_dht_records,
-    rebuild_governance, rebuild_governance_from_dht, republish_active_records,
+    hydrate_one_community, open_and_track_one_community, rebuild_governance,
+    republish_active_records,
 };
 pub use error::GovernanceRuntimeError;
 pub use event::{GovernanceRuntimeEvent, JoinStageStatus};

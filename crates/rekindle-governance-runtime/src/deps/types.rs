@@ -90,7 +90,7 @@ pub struct RecentMessageRow {
 }
 
 /// Snapshot of the per-community DHT-records info the
-/// `open_community_dht_records` orchestrator needs. The adapter
+/// per-community open (`open_and_track_one_community`) needs. The adapter
 /// builds this from a single `state.communities.read()` so the lock
 /// is dropped before any `.await`.
 #[derive(Debug, Clone)]

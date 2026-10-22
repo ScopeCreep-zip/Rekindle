@@ -155,7 +155,7 @@ pub async fn list_registrations(
 /// background sync sweep of all active community records and friend
 /// presence so the user sees up-to-date state. Throttled to one sweep
 /// per `WAKE_NOTIFY_DEBOUNCE_SECS` because each call kicks off
-/// `dht_hydration::open_community_dht_records` + `dht_hydration::rebuild_governance_from_dht`,
+/// the Host's per-community login stage (`HostGovernance::heal_communities`),
 /// both of which spawn 30+ second DHT-bound work; back-to-back wakes
 /// without throttling would saturate the network and burn battery.
 pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
@@ -179,10 +179,7 @@ pub fn handle_wake_notify(state: &Arc<AppState>, _ts: u64) {
                     return;
                 }
             };
-            rekindle_governance_runtime::dht_hydration::open_community_dht_records(&governance)
-                .await;
-            rekindle_governance_runtime::dht_hydration::rebuild_governance_from_dht(&governance)
-                .await;
+            governance.heal_communities().await;
         },
     );
 }

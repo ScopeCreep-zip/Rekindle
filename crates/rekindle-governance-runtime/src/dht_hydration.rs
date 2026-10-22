@@ -30,24 +30,6 @@ use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
 
-/// Take the session leases on governance + registry + channel-log DHT
-/// records for every joined community and hand them to the host.
-/// Best-effort — per-key failures are logged; the orchestrator never
-/// short-circuits.
-pub async fn open_community_dht_records<D: GovernanceRuntimeDeps>(deps: &D) {
-    let records = deps.list_communities_for_dht_open();
-    for rec in &records {
-        if crate::join_gate::should_stop(deps) {
-            return;
-        }
-        open_and_track_one_community(deps, rec).await;
-    }
-    tracing::info!(
-        count = records.len(),
-        "opened community DHT records after login"
-    );
-}
-
 /// Borrow a community's channel-log and GovernanceOverflow records
 /// concurrently (bounded). Best-effort — per-key failures are logged. Run
 /// in parallel so a cold join's 2-3 opens overlap instead of summing. No
@@ -178,89 +160,41 @@ fn channel_id_from_hex(id_hex: &str) -> Option<ChannelId> {
     Some(ChannelId(bytes))
 }
 
-/// Recover per-community registry-linked state from the DHT:
-///   1. Read each community's member registry; for the row matching
-///      our `my_pseudonym_key`, install `my_subkey_index` +
-///      `my_role_ids` on the in-memory `CommunityState` and persist
-///      both to SQLite.
-///   2. Derive `slot_keypair` immediately if `slot_seed` +
-///      `my_subkey_index` are both present (avoids the 60-second
-///      presence-poll wait).
-///   3. Belt-and-suspenders: recover `registry_owner_keypair` from
-///      Stronghold for any community where login didn't load it.
-///
-/// Best-effort — per-community failures are logged inside the
-/// adapter; the orchestrator never short-circuits.
-pub async fn hydrate_community_state_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
-    let registry_info = deps.list_registries_with_my_pseudonym();
-
-    for (community_id, registry_key, my_pk) in &registry_info {
-        if crate::join_gate::should_stop(deps) {
-            return;
-        }
-        let Some(pk) = my_pk else { continue };
-        // Recover our slot by finding the registry row that carries OUR
-        // signature, rather than by reading a member-index row that
-        // claimed to describe us.
-        //
-        // Strictly stronger than what it replaces. The index was a
-        // shared structure under `o_cnt: 0` — any member could write it,
-        // so a row asserting our slot index proved nothing. A presence
-        // row must be signed by the pseudonym it names, and only we hold
-        // that key.
-        //
-        // Roles come from the merged CRDT for the same reason: that is
-        // where role assignments are authoritative.
-        //
-        // Defaulted rather than skipped when absent. This runs *before*
-        // `rebuild_governance_from_dht`, so on a cold
-        // `governance_entries_cache` there is no merged state yet, and
-        // refusing to look would lose the slot recovery entirely. The
-        // state is only used to filter bans and read roles: an empty ban
-        // set means a banned-self row still resolves our slot (which the
-        // member index also did, being ban-blind), and empty roles are a
-        // documented no-op in `apply_recovered_member_state`.
+/// One community's member state from the DHT (plan E3.1 C2c: the Host's
+/// per-community login stage, which a reconnect or a wake re-runs): our slot and roles from its registry, its slot keypair, and
+/// its registry keypair from the vault when login did not load it.
+pub async fn hydrate_one_community<D: GovernanceRuntimeDeps>(deps: &D, community: &str) {
+    let registry = deps
+        .list_registries_with_my_pseudonym()
+        .into_iter()
+        .find(|(id, _, _)| id == community);
+    if let Some((community_id, registry_key, Some(pk))) = &registry {
         let gov_state = deps.governance_state(community_id).unwrap_or_default();
-        let Some(subkey) = crate::roster::find_my_slot(deps, registry_key, pk, &gov_state).await
-        else {
-            continue;
-        };
-        let role_ids = gov_state
-            .role_assignments
-            .get(&PseudonymKey::from_hex_lossy(pk))
-            .map(|roles| {
-                roles
-                    .iter()
-                    .copied()
-                    .map(RoleId::to_legacy_u32)
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        deps.apply_recovered_member_state(community_id, subkey, &role_ids);
-    }
-
-    for (community_id, _, _) in &registry_info {
-        deps.try_derive_slot_keypair_if_ready(community_id);
-    }
-
-    for community_id in deps.list_missing_registry_keypairs() {
-        deps.recover_registry_keypair_from_keystore(&community_id);
-    }
-
-    tracing::info!("hydrated community registry-linked state from DHT");
-}
-
-/// Rebuild governance state from SMPL governance records for every
-/// joined v2.0 community, one [`rebuild_governance`] each (the unlock's
-/// hydration, a network reconnect, a wake: any community may have changed
-/// while we were away). Best-effort — per-community failures are logged
-/// but never stop the loop.
-pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
-    for (community_id, _) in deps.list_community_governance_targets() {
-        if crate::join_gate::should_stop(deps) {
-            return;
+        if let Some(subkey) = crate::roster::find_my_slot(deps, registry_key, pk, &gov_state).await
+        {
+            let role_ids = gov_state
+                .role_assignments
+                .get(&PseudonymKey::from_hex_lossy(pk))
+                .map(|roles| {
+                    roles
+                        .iter()
+                        .copied()
+                        .map(RoleId::to_legacy_u32)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            deps.apply_recovered_member_state(community_id, subkey, &role_ids);
         }
-        rebuild_governance(deps, &community_id).await;
+    }
+    if registry.is_some() {
+        deps.try_derive_slot_keypair_if_ready(community);
+    }
+    if deps
+        .list_missing_registry_keypairs()
+        .iter()
+        .any(|id| id == community)
+    {
+        deps.recover_registry_keypair_from_keystore(community);
     }
 }
 
@@ -380,14 +314,14 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
 ///    resolving for new joiners.
 /// 2. **GovernanceOverflow records** this node holds — both the author's own
 ///    spill pages AND any overflow chain followed as a reader (the inventory is
-///    repopulated from the `overflow_next` chain by `rebuild_governance_from_dht`,
+///    repopulated from the `overflow_next` chain by `rebuild_governance`,
 ///    which runs just before this). Re-opening keeps them on the network across a
 ///    restart, symmetric for owner and member ("readers keep what they read
 ///    alive", §14.1) — without it a spilled channel vanishes for joiners once the
 ///    last holder restarts past the DHT TTL.
 ///
 /// Best-effort — per-key failures are logged, never fatal to login. Runs after
-/// `rebuild_governance_from_dht` so `gov_state.invites` + the overflow inventory
+/// each community's `rebuild_governance` so `gov_state.invites` + the overflow inventory
 /// are populated; both record classes are local-store hits (we authored or
 /// previously opened+tracked them).
 pub async fn republish_active_records<D: GovernanceRuntimeDeps>(deps: &D) {
