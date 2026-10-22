@@ -42,7 +42,7 @@ export const communityCommands = {
       badges?: string[];
       avatarRef?: string | null;
       bannerRef?: string | null;
-      location?: { kind: string; channelId?: string } | null;
+      location?: { kind: "text" | "voice"; channelId: string } | null;
       lastActive: number;
     }[]>(
       "get_community_members", { communityId },
