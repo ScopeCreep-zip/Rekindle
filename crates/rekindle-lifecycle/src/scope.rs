@@ -32,6 +32,7 @@ use parking_lot::Mutex;
 use tokio::task::AbortHandle;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use tracing::Instrument as _;
 
 /// How long aborted tasks get to unwind before shutdown returns.
 const ABORT_GRACE: Duration = Duration::from_secs(1);
@@ -179,7 +180,9 @@ impl SessionScope {
     }
 
     /// Track `fut` under `name` in this scope and every ancestor, report
-    /// a panic to the owner, and spawn it.
+    /// a panic to the owner, and spawn it in the spawner's current span, so
+    /// its events (and its panic report) keep the context they were
+    /// started in, as `tracing`'s `Instrument` documents for spawned tasks.
     fn track<F>(self: &Arc<Self>, name: &'static str, fut: F) -> Result<(), ScopeClosed>
     where
         F: Future<Output = ()> + Send + 'static,
@@ -208,7 +211,8 @@ impl SessionScope {
                     (family.on_panic)(name);
                 }
             }
-        };
+        }
+        .instrument(tracing::Span::current());
         let mut boxed: BoxedTask = Box::pin(task);
         for ancestor in self.trackers.iter().skip(1) {
             boxed = Box::pin(ancestor.track_future(boxed));
@@ -359,6 +363,25 @@ mod tests {
         assert_eq!(scope.running(), vec![("a", 2), ("b", 1)]);
         scope.shutdown(Duration::from_secs(1)).await.unwrap();
         assert!(scope.running().is_empty());
+    }
+
+    /// A task runs in the span it was spawned in.
+    #[tokio::test]
+    async fn a_task_keeps_the_spawners_span() {
+        let _subscriber = tracing::subscriber::set_default(tracing_subscriber::registry());
+        let scope = SessionScope::new("test", quiet());
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        tracing::info_span!("spawner").in_scope(|| {
+            scope
+                .spawn("named", async move {
+                    let name = tracing::Span::current()
+                        .metadata()
+                        .map(tracing::Metadata::name);
+                    let _ = tx.send(name);
+                })
+                .unwrap();
+        });
+        assert_eq!(rx.await.unwrap(), Some("spawner"));
     }
 
     #[tokio::test]

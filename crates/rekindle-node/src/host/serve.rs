@@ -3,6 +3,8 @@
 
 use std::sync::Arc;
 
+use tracing::Instrument as _;
+
 use super::runtime::Bus;
 use super::{bus_key, watchdog, ConfigFault};
 use crate::daemon::dispatch::DaemonContext;
@@ -70,12 +72,15 @@ fn spawn_accept(
     shutdown: &Arc<crate::daemon::shutdown::Shutdown>,
 ) -> tokio::task::JoinHandle<()> {
     let (server, shutdown) = (Arc::clone(server), Arc::clone(shutdown));
-    tokio::spawn(async move {
-        if let Err(e) = server.run().await {
-            tracing::error!(error = %e, "bus server fatal error");
-            shutdown.request(ExitReason::Requested);
+    tokio::spawn(
+        async move {
+            if let Err(e) = server.run().await {
+                tracing::error!(error = %e, "bus server fatal error");
+                shutdown.request(ExitReason::Requested);
+            }
         }
-    })
+        .in_current_span(),
+    )
 }
 
 /// Spawn the host's own bus subscriber: it connects to its own socket as a
@@ -87,34 +92,37 @@ fn spawn_bus_subscriber(
     socket: std::path::PathBuf,
     keypair: rekindle_ipc::ZeroizingKeypair,
 ) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let server_pub = match rekindle_ipc::noise_keys::read_bus_public_key().await {
-            Ok(k) => k,
-            Err(e) => {
-                tracing::error!(error = %e, "host subscriber: cannot read bus public key");
-                ctx.shutdown.request(ExitReason::SubscriberFailed);
-                return;
-            }
-        };
-        let client = match rekindle_ipc::BusClient::connect_with_retry(
-            uuid::Uuid::now_v7(),
-            &socket,
-            &server_pub,
-            keypair.as_inner(),
-            5,
-            std::time::Duration::from_millis(200),
-        )
-        .await
-        {
-            Ok(c) => c,
-            Err(e) => {
-                tracing::error!(error = %e, "host subscriber: failed to connect to own socket");
-                ctx.shutdown.request(ExitReason::SubscriberFailed);
-                return;
-            }
-        };
-        tracing::info!("host bus subscriber connected");
-        watchdog::notify_ready();
-        ctx.run_subscriber(client).await;
-    })
+    tokio::spawn(
+        async move {
+            let server_pub = match rekindle_ipc::noise_keys::read_bus_public_key().await {
+                Ok(k) => k,
+                Err(e) => {
+                    tracing::error!(error = %e, "host subscriber: cannot read bus public key");
+                    ctx.shutdown.request(ExitReason::SubscriberFailed);
+                    return;
+                }
+            };
+            let client = match rekindle_ipc::BusClient::connect_with_retry(
+                uuid::Uuid::now_v7(),
+                &socket,
+                &server_pub,
+                keypair.as_inner(),
+                5,
+                std::time::Duration::from_millis(200),
+            )
+            .await
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    tracing::error!(error = %e, "host subscriber: failed to connect to own socket");
+                    ctx.shutdown.request(ExitReason::SubscriberFailed);
+                    return;
+                }
+            };
+            tracing::info!("host bus subscriber connected");
+            watchdog::notify_ready();
+            ctx.run_subscriber(client).await;
+        }
+        .in_current_span(),
+    )
 }

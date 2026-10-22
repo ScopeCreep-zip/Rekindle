@@ -17,4 +17,5 @@ tokio-util = { version = "0.7", features = [ "rt" ] }
 tracing = { workspace = true }
 
 [dev-dependencies]
+tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = [ "sync", "rt", "rt-multi-thread", "macros", "time" ] }

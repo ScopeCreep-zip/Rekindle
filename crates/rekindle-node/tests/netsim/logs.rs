@@ -3,9 +3,11 @@
 //! parallel tests never share counts), which prints as `RUST_LOG` asks and
 //! counts every WARN and ERROR event by the node whose [`NODE_SPAN`] it ran
 //! in. The harness opens that span around a node's Host start and its
-//! requests; an event from a task the Host spawned carries no span (the
-//! Hosts' spawns do not propagate one) and counts under `None`. Events on
-//! other threads (a database thread) are not counted.
+//! requests; a task the Host spawns runs in its spawner's span
+//! (`SessionScope` and the transport's loops instrument it), so its events
+//! count under that node too. Only an event outside every node span (a
+//! bare `tokio::spawn` in a test) counts under `None`. Events on other
+//! threads (a database thread) are not counted.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -122,8 +124,9 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
     }
 }
 
-/// The capture counts an event by the node span it ran in, and one from a
-/// spawned task (no span) under `None`.
+/// The capture counts an event by the node span it ran in, one from a
+/// `SessionScope` task spawned in that span under the same node, and one
+/// from a bare spawn (no span) under `None`.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn the_capture_counts_by_node() {
     use tracing::Instrument;
@@ -132,6 +135,17 @@ async fn the_capture_counts_by_node() {
     async { tracing::warn!("in node 3") }
         .instrument(tracing::info_span!("netsim_node", node = 3_u64))
         .await;
+    let scope = rekindle_lifecycle::SessionScope::new("test", Arc::new(|_| {}));
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    tracing::info_span!("netsim_node", node = 3_u64).in_scope(|| {
+        scope
+            .spawn("warns", async move {
+                tracing::warn!("scope task of node 3");
+                let _ = tx.send(());
+            })
+            .expect("open scope");
+    });
+    rx.await.expect("task ran");
     tokio::spawn(async { tracing::error!("spawned") })
         .await
         .expect("task");
@@ -143,6 +157,6 @@ async fn the_capture_counts_by_node() {
         );
         (a.warn - b.warn, a.error - b.error)
     };
-    assert_eq!(delta(Some(3)), (1, 0));
+    assert_eq!(delta(Some(3)), (2, 0));
     assert_eq!(delta(None), (0, 1));
 }

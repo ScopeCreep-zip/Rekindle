@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use rekindle_records::port::{PortEvent, PortSet};
 use tokio::sync::mpsc;
-use tracing::{info, warn};
+use tracing::{info, warn, Instrument as _};
 
 use super::routes::{notify_handler, run_route_publisher, OnRoutesChanged};
 use super::TransportNode;
@@ -135,18 +135,21 @@ impl TransportNode {
         handler: Arc<H>,
         session: SharedSession,
     ) -> Self {
-        self.dispatch_handle = Some(tokio::spawn(dispatch::run_dispatch_loop(
-            Arc::clone(&handler),
-            Arc::clone(&self.config),
-            events,
-            shutdown_rx,
-            Arc::clone(&self.ports.messages),
-            Arc::clone(&self.shared_state),
-            dispatch::RouteOwners {
-                routes: Arc::clone(&self.ports.routes),
-                peers: Arc::clone(&self.peer_registry),
-            },
-        )));
+        self.dispatch_handle = Some(tokio::spawn(
+            dispatch::run_dispatch_loop(
+                Arc::clone(&handler),
+                Arc::clone(&self.config),
+                events,
+                shutdown_rx,
+                Arc::clone(&self.ports.messages),
+                Arc::clone(&self.shared_state),
+                dispatch::RouteOwners {
+                    routes: Arc::clone(&self.ports.routes),
+                    peers: Arc::clone(&self.peer_registry),
+                },
+            )
+            .in_current_span(),
+        ));
 
         self.spawn_route_publisher(Some(notify_handler(handler)), session);
         self
@@ -159,14 +162,17 @@ impl TransportNode {
         session: SharedSession,
     ) {
         let (ra_tx, ra_rx) = mpsc::channel(1);
-        self.route_publisher_handle = Some(tokio::spawn(run_route_publisher(
-            on_change,
-            Arc::clone(&self.ports.routes),
-            self.config.route_watchdog_secs,
-            ra_rx,
-            session,
-            Arc::clone(&self.shared_state),
-        )));
+        self.route_publisher_handle = Some(tokio::spawn(
+            run_route_publisher(
+                on_change,
+                Arc::clone(&self.ports.routes),
+                self.config.route_watchdog_secs,
+                ra_rx,
+                session,
+                Arc::clone(&self.shared_state),
+            )
+            .in_current_span(),
+        ));
         self.route_publisher_shutdown_tx = Some(ra_tx);
     }
 
