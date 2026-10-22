@@ -79,7 +79,7 @@ impl From<GovernanceRuntimeError> for ModerationRefusal {
 
 /// A moderation action, as the reader rule sees it.
 #[derive(Debug, Clone, Copy)]
-pub enum Action {
+pub enum ModerationAction {
     Ban,
     Unban,
     Timeout(u64),
@@ -87,7 +87,7 @@ pub enum Action {
     Remove,
 }
 
-impl Action {
+impl ModerationAction {
     fn what(self) -> &'static str {
         match self {
             Self::Ban => "ban members",
@@ -109,12 +109,12 @@ pub fn permitted(
     state: &GovernanceState,
     me: &PseudonymKey,
     target: &PseudonymKey,
-    action: Action,
+    action: ModerationAction,
     now: u64,
 ) -> Result<(), ModerationRefusal> {
     let target = target.clone();
     let ok = match action {
-        Action::Ban => validate_write(
+        ModerationAction::Ban => validate_write(
             me,
             &GovernanceEntry::BanEntry {
                 target,
@@ -123,12 +123,12 @@ pub fn permitted(
             },
             state,
         ),
-        Action::Unban => validate_write(
+        ModerationAction::Unban => validate_write(
             me,
             &GovernanceEntry::UnbanEntry { target, lamport: 0 },
             state,
         ),
-        Action::Timeout(duration_seconds) => validate_write(
+        ModerationAction::Timeout(duration_seconds) => validate_write(
             me,
             &GovernanceEntry::TimeoutEntry {
                 target,
@@ -139,12 +139,12 @@ pub fn permitted(
             },
             state,
         ),
-        Action::RemoveTimeout => validate_write(
+        ModerationAction::RemoveTimeout => validate_write(
             me,
             &GovernanceEntry::RemoveTimeoutEntry { target, lamport: 0 },
             state,
         ),
-        Action::Remove => {
+        ModerationAction::Remove => {
             let perms = rekindle_governance::permissions::compute_permissions(me, None, state, now);
             state.creator.as_ref() == Some(me)
                 || (perms & KICK_MEMBERS != 0
@@ -177,7 +177,7 @@ impl HostGovernance {
         &self,
         community_id: &str,
         target_hex: &str,
-        action: Action,
+        action: ModerationAction,
     ) -> Result<(), ModerationRefusal> {
         let target = pseudonym(target_hex).ok_or(ModerationRefusal::BadTarget)?;
         let state = self
@@ -201,7 +201,7 @@ impl HostGovernance {
         target: &str,
         reason: Option<&str>,
     ) -> Result<(), ModerationRefusal> {
-        self.moderate(community_id, target, Action::Ban)?;
+        self.moderate(community_id, target, ModerationAction::Ban)?;
         moderation::ban_member(self, community_id, target, reason).await?;
         Ok(())
     }
@@ -211,7 +211,7 @@ impl HostGovernance {
     /// # Errors
     /// Readers would refuse it, or the write failed.
     pub async fn unban(&self, community_id: &str, target: &str) -> Result<(), ModerationRefusal> {
-        self.moderate(community_id, target, Action::Unban)?;
+        self.moderate(community_id, target, ModerationAction::Unban)?;
         moderation::unban_member(self, community_id, target).await?;
         Ok(())
     }
@@ -227,7 +227,11 @@ impl HostGovernance {
         duration_seconds: u64,
         reason: Option<&str>,
     ) -> Result<(), ModerationRefusal> {
-        self.moderate(community_id, target, Action::Timeout(duration_seconds))?;
+        self.moderate(
+            community_id,
+            target,
+            ModerationAction::Timeout(duration_seconds),
+        )?;
         moderation::timeout_member(self, community_id, target, duration_seconds, reason).await?;
         Ok(())
     }
@@ -241,7 +245,7 @@ impl HostGovernance {
         community_id: &str,
         target: &str,
     ) -> Result<(), ModerationRefusal> {
-        self.moderate(community_id, target, Action::RemoveTimeout)?;
+        self.moderate(community_id, target, ModerationAction::RemoveTimeout)?;
         moderation::remove_timeout(self, community_id, target).await?;
         Ok(())
     }
@@ -252,7 +256,7 @@ impl HostGovernance {
     /// # Errors
     /// Not permitted, or the notice could not be queued.
     pub fn remove_member(&self, community_id: &str, target: &str) -> Result<(), ModerationRefusal> {
-        self.moderate(community_id, target, Action::Remove)?;
+        self.moderate(community_id, target, ModerationAction::Remove)?;
         let notice = CommunityEnvelope::Control(ControlPayload::Kick {
             target_pseudonym: target.to_owned(),
         });

@@ -198,6 +198,12 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("delete_category", HostCall::Request("CategoryDelete")),
     ("rename_category", HostCall::Request("CategoryRename")),
     ("reorder_categories", HostCall::Request("CategoryReorder")),
+    ("ban_member", HostCall::Request("Ban")),
+    ("unban_member", HostCall::Request("Unban")),
+    ("get_ban_list", HostCall::Request("BanList")),
+    ("timeout_member", HostCall::Request("Timeout")),
+    ("remove_timeout", HostCall::Request("TimeoutRemove")),
+    ("remove_community_member", HostCall::Request("Kick")),
 ];
 
 /// The shell's own commands.
