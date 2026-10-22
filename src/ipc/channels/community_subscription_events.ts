@@ -284,7 +284,20 @@ export type SocialEvent =
  * the chat windows rather than the community window.
  */
 export type ChannelMessageEvent =
-  | { new: Record<string, unknown> }
+  | {
+      new: {
+        community: string;
+        channel: string;
+        messageId: string;
+        senderPseudonym: string;
+        sequence: number;
+        timestamp: number;
+        /** `null` when the channel's text key was not cached at emission. */
+        body: string | null;
+        /** The message id of the parent this one replies to. */
+        replyToMessageId: string | null;
+      };
+    }
   | {
       edited: {
         community: string;

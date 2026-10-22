@@ -26,7 +26,7 @@ pub enum ChannelMessageEvent {
         timestamp: u64,
         /// Decrypted plaintext body. None if MEK unavailable at emission time.
         body: Option<String>,
-        /// Parent message sequence for threaded replies.
+        /// The message id of the parent this one replies to.
         reply_to_message_id: Option<String>,
     },
     /// A message was edited.

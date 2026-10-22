@@ -192,7 +192,7 @@
         "channel": "ch_cccccccccccccccccccccccccccccccc",
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "messageId": "msg_11111111111111111111111111111111",
-        "replyToSequence": 41,
+        "replyToMessageId": "msg_41",
         "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "sequence": 42,
         "timestamp": 1760000000000
