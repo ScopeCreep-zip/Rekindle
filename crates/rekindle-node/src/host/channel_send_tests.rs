@@ -151,10 +151,11 @@ async fn a_reply_is_stored_against_its_parent_row() {
                 SEND_CHANNEL,
                 "msg_parent",
             )?;
-            let linked: Option<i64> = conn.query_row(
-                "SELECT reply_to_id FROM messages WHERE message_id = 'msg_reply'",
-                [],
-                |row| row.get(0),
+            let linked = rekindle_db::repo::messages::channel::reply_row_id(
+                conn,
+                &o,
+                SEND_CHANNEL,
+                "msg_reply",
             )?;
             Ok((parent_row, linked))
         })

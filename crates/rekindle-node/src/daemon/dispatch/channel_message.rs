@@ -4,7 +4,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::daemon::DaemonState;
-use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
+
+use crate::host::adapters::governance::channel_messages::MessageChange;
 
 use super::channel::resolve_channel;
 use super::{state_error, DaemonContext};
@@ -163,7 +165,7 @@ pub(crate) async fn handle_change(
     state: DaemonState,
     channel: &str,
     message_id: &str,
-    change: crate::host::adapters::governance::channel_messages::MessageChange,
+    change: MessageChange,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
@@ -179,5 +181,34 @@ pub(crate) async fn handle_change(
     {
         Ok(()) => IpcResponse::ok(&serde_json::Value::Null),
         Err(e) => IpcResponse::error(500, format!("channel message change failed: {e}")),
+    }
+}
+
+/// Route a channel message send, edit or delete (the community router's
+/// channel-message arm) to its handler.
+pub(crate) async fn handle(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: CommunityRequest,
+) -> IpcResponse {
+    match request {
+        CommunityRequest::ChannelMessageSend {
+            channel,
+            body,
+            reply_to,
+        } => handle_post(ctx, state, &channel, &body, reply_to).await,
+        CommunityRequest::ChannelMessageEdit {
+            channel,
+            message_id,
+            body,
+        } => {
+            let change = MessageChange::Edit { body };
+            handle_change(ctx, state, &channel, &message_id, change).await
+        }
+        CommunityRequest::ChannelMessageDelete {
+            channel,
+            message_id,
+        } => handle_change(ctx, state, &channel, &message_id, MessageChange::Delete).await,
+        _ => IpcResponse::error(400, "not a channel message request"),
     }
 }

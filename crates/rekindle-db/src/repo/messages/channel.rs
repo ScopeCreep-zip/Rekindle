@@ -90,6 +90,27 @@ pub fn row_id_by_message_id(
     .optional()
 }
 
+/// The local row (`reply_to_id`) that our stored channel message
+/// `message_id` replies to, or `None` when it is not a reply or not stored.
+pub fn reply_row_id(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<i64>> {
+    use rusqlite::OptionalExtension as _;
+    let row: Option<Option<i64>> = conn
+        .query_row(
+            "SELECT reply_to_id FROM messages \
+             WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+               AND message_id = ?3 LIMIT 1",
+            params![owner_key, channel_id, message_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(row.flatten())
+}
+
 /// The sender and plaintext of one stored channel message, the fields a
 /// forward re-encrypts (the forwarder never fetches the source from the DHT).
 #[derive(Debug, Clone, PartialEq, Eq)]

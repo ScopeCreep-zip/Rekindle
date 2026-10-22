@@ -38,7 +38,7 @@ impl HostChannel {
 
     /// The community's writer index: the slots of every member the roster
     /// placed, and ours (plan C7.12), ascending.
-    async fn writer_slots(&self, community_id: &str) -> Vec<u32> {
+    fn writer_slots(&self, community_id: &str) -> Vec<u32> {
         let mut slots: Vec<u32> = (self.ctx().communities.members(community_id).into_values())
             .map(|member| member.subkey_index)
             .collect();
@@ -86,7 +86,7 @@ impl HostChannel {
         record_key: &str,
     ) -> Result<Vec<ChannelEntryItem>, ChannelError> {
         let pool = self.records()?;
-        let slots = self.writer_slots(community_id).await;
+        let slots = self.writer_slots(community_id);
         let items = channel_record::read_all_channel_entries(&*pool, record_key, &slots)
             .await
             .map_err(|e| ChannelError::Adapter(format!("read channel entries: {e}")))?;

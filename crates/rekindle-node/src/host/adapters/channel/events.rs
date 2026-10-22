@@ -41,9 +41,10 @@ impl HostChannel {
         message_id: &str,
         landed: bool,
     ) {
-        match &self.ctx().shell {
-            Some(shell) => shell.channel_post_settled(community_id, channel_id, message_id, landed),
-            None => tracing::info!(community_id, channel_id, message_id, landed, "post settled"),
+        if let Some(shell) = &self.ctx().shell {
+            shell.channel_post_settled(community_id, channel_id, message_id, landed);
+        } else {
+            tracing::info!(community_id, channel_id, message_id, landed, "post settled");
         }
     }
 }
