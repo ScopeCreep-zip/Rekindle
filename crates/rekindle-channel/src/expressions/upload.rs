@@ -1,9 +1,9 @@
 //! Expression uploads — emoji, stickers, soundboard sounds.
 
+use super::image::{prepare_upload, ExpressionPicture};
 use super::limits::{
-    normalize_tags, validate_emoji_bytes, validate_expression_name, validate_soundboard_bytes,
-    validate_sticker_bytes, MAX_ANIMATED_EMOJI_COUNT, MAX_SOUNDBOARD_COUNT, MAX_STATIC_EMOJI_COUNT,
-    MAX_STICKER_COUNT,
+    normalize_tags, validate_expression_name, validate_soundboard_bytes, MAX_ANIMATED_EMOJI_COUNT,
+    MAX_SOUNDBOARD_COUNT, MAX_STATIC_EMOJI_COUNT, MAX_STICKER_COUNT,
 };
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
@@ -11,6 +11,7 @@ use crate::error::ChannelError;
 use rekindle_types::expression::SoundboardMeta;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::image_kind::ImageKind;
 
 fn my_pseudonym_for_community<D: ChannelMessagingDeps>(
     deps: &D,
@@ -59,15 +60,19 @@ pub(super) fn next_lamport<D: ChannelMessagingDeps>(
     Ok(deps.next_governance_lamport(community_id)?)
 }
 
+/// Upload a custom emoji. `kind` is what the file picker declared; the
+/// picture is decoded as that kind only and re-encoded without metadata
+/// (a GIF stays animated, PNG and JPEG become a PNG).
 pub async fn upload_emoji<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     name: &str,
     bytes: Vec<u8>,
-    animated: bool,
+    kind: ImageKind,
 ) -> Result<String, ChannelError> {
     validate_expression_name(name)?;
-    validate_emoji_bytes(&bytes, animated)?;
+    let picture = prepare_upload(&bytes, kind, ExpressionPicture::Emoji)?;
+    let animated = picture.animated();
     let (max, kind_label) = if animated {
         (MAX_ANIMATED_EMOJI_COUNT, "animated emoji")
     } else {
@@ -76,12 +81,15 @@ pub async fn upload_emoji<D: ChannelMessagingDeps>(
     enforce_count_limit(deps, community_id, "emoji", animated, max, kind_label)?;
 
     let expression_id = rekindle_utils::random::id_bytes_16();
-    let content_hash = blake3::hash(&bytes).to_hex().to_string();
+    let content_hash = blake3::hash(&picture.bytes).to_hex().to_string();
     let creator = my_pseudonym_for_community(deps, community_id);
-    let mime_type = if animated { "image/gif" } else { "image/png" }.to_string();
-    let filename = format!("{name}.{}", if animated { "gif" } else { "png" });
-    let attachment =
-        deps.upload_expression_to_cache(community_id, expression_id, &bytes, filename, mime_type)?;
+    let attachment = deps.upload_expression_to_cache(
+        community_id,
+        expression_id,
+        &picture.bytes,
+        format!("{name}.{}", picture.extension()),
+        picture.kind.mime().to_string(),
+    )?;
 
     let lamport = next_lamport(deps, community_id)?;
     deps.write_governance_entry(
@@ -106,17 +114,19 @@ pub async fn upload_emoji<D: ChannelMessagingDeps>(
     Ok(hex::encode(expression_id))
 }
 
-/// Phase 19.f — upload a custom sticker.
+/// Phase 19.f — upload a custom sticker, its picture handled as
+/// [`upload_emoji`]'s is.
 pub async fn upload_sticker<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     name: &str,
     bytes: Vec<u8>,
-    animated: bool,
+    kind: ImageKind,
     tags: Vec<String>,
 ) -> Result<String, ChannelError> {
     validate_expression_name(name)?;
-    validate_sticker_bytes(&bytes, animated)?;
+    let picture = prepare_upload(&bytes, kind, ExpressionPicture::Sticker)?;
+    let animated = picture.animated();
     enforce_count_limit(
         deps,
         community_id,
@@ -128,12 +138,15 @@ pub async fn upload_sticker<D: ChannelMessagingDeps>(
     let normalized_tags = normalize_tags(tags)?;
 
     let expression_id = rekindle_utils::random::id_bytes_16();
-    let content_hash = blake3::hash(&bytes).to_hex().to_string();
+    let content_hash = blake3::hash(&picture.bytes).to_hex().to_string();
     let creator = my_pseudonym_for_community(deps, community_id);
-    let mime_type = if animated { "image/apng" } else { "image/png" }.to_string();
-    let filename = format!("{name}.{}", if animated { "apng" } else { "png" });
-    let attachment =
-        deps.upload_expression_to_cache(community_id, expression_id, &bytes, filename, mime_type)?;
+    let attachment = deps.upload_expression_to_cache(
+        community_id,
+        expression_id,
+        &picture.bytes,
+        format!("{name}.{}", picture.extension()),
+        picture.kind.mime().to_string(),
+    )?;
 
     let lamport = next_lamport(deps, community_id)?;
     deps.write_governance_entry(

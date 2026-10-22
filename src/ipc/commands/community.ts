@@ -1,4 +1,5 @@
 import { invoke } from "../invoke";
+import type { ImageKind } from "./system";
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
@@ -224,20 +225,22 @@ export const communityCommands = {
     invoke<void>("close_poll", { communityId, channelId, pollId }),
   getPollResults: (communityId: string, channelId: string, pollId: string) =>
     invoke<number[]>("get_poll_results", { communityId, channelId, pollId }),
-  uploadEmoji: (communityId: string, name: string, bytes: number[], animated: boolean) =>
-    invoke<string>("upload_emoji", { communityId, name, bytes, animated }),
+  /// `kind` is the picked file's MIME type; the Host decodes it as that
+  /// kind only and re-encodes it without metadata (`rekindle_types::ImageKind`).
+  uploadEmoji: (communityId: string, name: string, bytes: number[], kind: ImageKind) =>
+    invoke<string>("upload_emoji", { communityId, name, bytes, kind }),
   uploadSticker: (
     communityId: string,
     name: string,
     bytes: number[],
-    animated: boolean,
+    kind: ImageKind,
     tags?: string[],
   ) =>
     invoke<string>("upload_sticker", {
       communityId,
       name,
       bytes,
-      animated,
+      kind,
       tags: tags ?? null,
     }),
   /**

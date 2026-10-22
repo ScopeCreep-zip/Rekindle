@@ -1,3 +1,4 @@
+use rekindle_types::image_kind::ImageKind;
 use tauri::State;
 
 use crate::services::community_views_runtime::ExpressionInfoDto;
@@ -9,10 +10,9 @@ pub async fn upload_emoji(
     community_id: String,
     name: String,
     bytes: Vec<u8>,
-    animated: bool,
+    kind: ImageKind,
 ) -> Result<String, String> {
-    crate::services::community::upload_emoji(state.inner(), &community_id, &name, bytes, animated)
-        .await
+    crate::services::community::upload_emoji(state.inner(), &community_id, &name, bytes, kind).await
 }
 
 #[tauri::command]
@@ -21,7 +21,7 @@ pub async fn upload_sticker(
     community_id: String,
     name: String,
     bytes: Vec<u8>,
-    animated: bool,
+    kind: ImageKind,
     tags: Option<Vec<String>>,
 ) -> Result<String, String> {
     crate::services::community::upload_sticker(
@@ -29,7 +29,7 @@ pub async fn upload_sticker(
         &community_id,
         &name,
         bytes,
-        animated,
+        kind,
         tags.unwrap_or_default(),
     )
     .await

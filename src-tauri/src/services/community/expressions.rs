@@ -6,6 +6,7 @@
 //! `ExpressionView` ↔ src-tauri `ExpressionInfo`.
 
 use rekindle_types::expression::SoundboardMeta;
+use rekindle_types::image_kind::ImageKind;
 
 use crate::state::SharedState;
 
@@ -53,10 +54,10 @@ pub async fn upload_emoji(
     community_id: &str,
     name: &str,
     bytes: Vec<u8>,
-    animated: bool,
+    kind: ImageKind,
 ) -> Result<String, String> {
     let adapter = build_adapter(state)?;
-    rekindle_channel::upload_emoji(&adapter, community_id, name, bytes, animated)
+    rekindle_channel::upload_emoji(&adapter, community_id, name, bytes, kind)
         .await
         .map_err(|e| e.to_string())
 }
@@ -66,11 +67,11 @@ pub async fn upload_sticker(
     community_id: &str,
     name: &str,
     bytes: Vec<u8>,
-    animated: bool,
+    kind: ImageKind,
     tags: Vec<String>,
 ) -> Result<String, String> {
     let adapter = build_adapter(state)?;
-    rekindle_channel::upload_sticker(&adapter, community_id, name, bytes, animated, tags)
+    rekindle_channel::upload_sticker(&adapter, community_id, name, bytes, kind, tags)
         .await
         .map_err(|e| e.to_string())
 }

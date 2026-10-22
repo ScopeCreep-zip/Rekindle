@@ -109,7 +109,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   async function uploadEmoji(): Promise<void> {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/webp,image/gif";
+    input.accept = "image/png,image/jpeg,image/gif";
     input.style.display = "none";
     document.body.appendChild(input);
     input.onchange = async () => {
@@ -117,8 +117,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       document.body.removeChild(input);
       if (!file) return;
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      const animated = file.type === "image/gif";
-      await handleUploadEmoji(props.communityId, sanitizeExpressionName(file.name), bytes, animated);
+      await handleUploadEmoji(props.communityId, sanitizeExpressionName(file.name), bytes, file.type);
     };
     input.click();
   }
@@ -126,7 +125,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   async function uploadSticker(): Promise<void> {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/webp,image/gif";
+    input.accept = "image/png,image/jpeg,image/gif";
     input.style.display = "none";
     document.body.appendChild(input);
     input.onchange = async () => {
@@ -134,8 +133,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       document.body.removeChild(input);
       if (!file) return;
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      const animated = file.type === "image/gif";
-      await handleUploadSticker(props.communityId, sanitizeExpressionName(file.name), bytes, animated);
+      await handleUploadSticker(props.communityId, sanitizeExpressionName(file.name), bytes, file.type);
     };
     input.click();
   }

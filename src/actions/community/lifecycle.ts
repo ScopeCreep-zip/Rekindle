@@ -1,4 +1,5 @@
 import { commands } from "../../ipc/commands";
+import { asImageKind } from "../../ipc/commands/system";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import {
@@ -229,10 +230,15 @@ export async function handleUploadEmoji(
   communityId: string,
   name: string,
   bytes: number[],
-  animated: boolean,
+  mime: string,
 ): Promise<string | null> {
+  const kind = asImageKind(mime);
+  if (!kind) {
+    addToast("That picture can't be used: choose a PNG, JPEG, or GIF.", "error");
+    return null;
+  }
   try {
-    const expressionId = await commands.uploadEmoji(communityId, name, bytes, animated);
+    const expressionId = await commands.uploadEmoji(communityId, name, bytes, kind);
     await handleLoadExpressions(communityId);
     addToast("Emoji uploaded", "success");
     return expressionId;
@@ -249,11 +255,16 @@ export async function handleUploadSticker(
   communityId: string,
   name: string,
   bytes: number[],
-  animated: boolean,
+  mime: string,
   tags?: string[],
 ): Promise<string | null> {
+  const kind = asImageKind(mime);
+  if (!kind) {
+    addToast("That picture can't be used: choose a PNG, JPEG, or GIF.", "error");
+    return null;
+  }
   try {
-    const expressionId = await commands.uploadSticker(communityId, name, bytes, animated, tags);
+    const expressionId = await commands.uploadSticker(communityId, name, bytes, kind, tags);
     await handleLoadExpressions(communityId);
     addToast("Sticker uploaded", "success");
     return expressionId;

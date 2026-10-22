@@ -40,12 +40,13 @@ pub use deps::{ChannelInfoSnapshot, ChannelMessagingDeps, ChannelSendOutcome};
 pub use error::ChannelError;
 pub use event::ChannelEvent;
 pub use expressions::{
-    delete_expression, detect_audio_kind, detect_image_media_type, list_expressions,
-    normalize_tags, play_soundboard, upload_emoji, upload_soundboard_sound, upload_sticker,
-    validate_emoji_bytes, validate_expression_name, validate_soundboard_bytes,
-    validate_sticker_bytes, UploadSoundboardSoundParams, MAX_ANIMATED_EMOJI_BYTES,
-    MAX_ANIMATED_EMOJI_COUNT, MAX_SOUNDBOARD_BYTES, MAX_SOUNDBOARD_COUNT, MAX_STATIC_EMOJI_BYTES,
-    MAX_STATIC_EMOJI_COUNT, MAX_STICKER_BYTES, MAX_STICKER_COUNT,
+    delete_expression, detect_audio_kind, list_expressions, normalize_tags, play_soundboard,
+    prepare_upload, published_media_type, upload_emoji, upload_soundboard_sound, upload_sticker,
+    validate_expression_name, validate_soundboard_bytes, ExpressionPicture, PreparedPicture,
+    UploadSoundboardSoundParams, EMOJI_MAX_SIDE, MAX_ANIMATED_EMOJI_BYTES,
+    MAX_ANIMATED_EMOJI_COUNT, MAX_EXPRESSION_FRAMES, MAX_SOUNDBOARD_BYTES, MAX_SOUNDBOARD_COUNT,
+    MAX_STATIC_EMOJI_BYTES, MAX_STATIC_EMOJI_COUNT, MAX_STICKER_BYTES, MAX_STICKER_COUNT,
+    STICKER_MAX_SIDE,
 };
 pub use mentions::{
     has_perm, local_member_is_mentioned, matches_from_cleartext, parse_mentions,

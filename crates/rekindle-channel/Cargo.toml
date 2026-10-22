@@ -19,6 +19,7 @@ rekindle-codec = { path = "../rekindle-codec" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-gossip = { path = "../rekindle-gossip" }
 rekindle-governance = { path = "../rekindle-governance" }
+rekindle-image = { path = "../rekindle-image" }
 rekindle-mek-rotation = { path = "../rekindle-mek-rotation" }
 rekindle-records = { path = "../rekindle-records" }
 rekindle-secrets = { path = "../rekindle-secrets" }
@@ -31,4 +32,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# Only to build a JPEG carrying EXIF for the strip test (same version and
+# features rekindle-image already links).
+image = { version = "0.25", default-features = false, features = [ "jpeg" ] }
 tokio = { workspace = true, features = [ "macros", "rt-multi-thread" ] }
