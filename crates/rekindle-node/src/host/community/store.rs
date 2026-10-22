@@ -16,7 +16,7 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
 use rekindle_transport::session::CommunityMembership;
 
-use rekindle_db::repo::communities::snapshot::GovernanceSnapshot;
+use rekindle_db::repo::communities::snapshot::StoredGovernance;
 
 use super::state::{CommunityState, MemberRecord};
 use crate::host::adapters::governance::projection::{self, GovernanceProjected};
@@ -89,7 +89,7 @@ impl CommunityStore {
     /// governance clock; `None` before its governance has merged or when
     /// the clock is beyond what SQLite holds.
     #[must_use]
-    pub fn governance_snapshot(&self, community_id: &str) -> Option<GovernanceSnapshot> {
+    pub fn governance_snapshot(&self, community_id: &str) -> Option<StoredGovernance> {
         self.read(community_id, |c| {
             let clock = i64::try_from(c.governance_clock).ok()?;
             projection::snapshot(c, clock)

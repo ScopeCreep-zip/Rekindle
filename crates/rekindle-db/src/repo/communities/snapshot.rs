@@ -55,7 +55,7 @@ pub struct SnapshotOverwrite {
 
 /// Everything one merge decides for a community.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct GovernanceSnapshot {
+pub struct StoredGovernance {
     pub name: String,
     pub description: Option<String>,
     pub icon_hash: Option<String>,
@@ -79,7 +79,7 @@ pub fn replace(
     conn: &Connection,
     owner_key: &str,
     community_id: &str,
-    snapshot: &GovernanceSnapshot,
+    snapshot: &StoredGovernance,
 ) -> rusqlite::Result<()> {
     super::apply_governance(
         conn,

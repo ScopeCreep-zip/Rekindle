@@ -9,7 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use rekindle_db::repo::communities::snapshot::{
-    GovernanceSnapshot, SnapshotCategory, SnapshotChannel, SnapshotOverwrite, SnapshotRole,
+    SnapshotCategory, SnapshotChannel, SnapshotOverwrite, SnapshotRole, StoredGovernance,
 };
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::id::{PseudonymKey, RoleId};
@@ -202,7 +202,7 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
 /// The SQLite snapshot of a projected community at `lamport_clock`; `None`
 /// before its governance has merged.
 #[must_use]
-pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<GovernanceSnapshot> {
+pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGovernance> {
     let gov = cs.governance_state.as_ref()?;
     let mek_generation = i64::try_from(cs.mek_generation).unwrap_or(i64::MAX);
     let mut channels: Vec<SnapshotChannel> = gov
@@ -288,7 +288,7 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<GovernanceSna
     let mut my_role_ids = cs.my_role_ids.clone();
     my_role_ids.sort_unstable();
     let metadata = gov.metadata.as_ref();
-    Some(GovernanceSnapshot {
+    Some(StoredGovernance {
         name: cs.name.clone(),
         description: cs.description.clone(),
         icon_hash: metadata.and_then(|m| m.icon_hash.clone()),
