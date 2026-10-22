@@ -1,20 +1,20 @@
 //! Phase 23.D.4 — `handle_message_notification` extracted from
 //! `message_notifications.rs` to keep that file under the 500-LoC
-//! cap (Invariant 1). Orchestrates the announce → fetch → verify →
-//! decrypt → persist → automod gate → emit pipeline for an inbound
-//! channel-message notification.
+//! cap (Invariant 1). Orchestrates the announce → fetch → verify → Host
+//! ingest (open, D26 gate, store, publish; plan E3.1 F3) → display and
+//! notify pipeline for an inbound channel-message notification.
 
 use std::sync::Arc;
 
+use rekindle_node::host::adapters::channel::ingest::{Ingested, ReceivedPost};
 use rekindle_records::retry;
 
-use crate::db_helpers::db_fire;
 use crate::state::AppState;
 use crate::state_helpers;
 
 use super::message_notifications::{
-    decrypt_message_body, emit_automod_alert, emit_message_received, fetch_channel_message,
-    message_exists, queue_message_fetch_retry, update_peer_sequence, verify_notification_message,
+    emit_automod_alert, emit_message_received, fetch_channel_message, message_exists,
+    queue_message_fetch_retry, update_peer_sequence, verify_notification_message,
     PendingMessageFetch,
 };
 
@@ -50,7 +50,6 @@ pub async fn handle_message_notification(
         }
     };
     let message = fetched.message.clone();
-    let forwarded_from_author = fetched.forwarded_from_author.clone();
 
     if let Err(error) = verify_notification_message(&pending, &message) {
         if pending.attempt + 1 < retry::MAX_RETRIES {
@@ -59,111 +58,15 @@ pub async fn handle_message_notification(
         return Err(error.into());
     }
 
-    // M10.4 — receiver-side slowmode (architecture §28.7 line 3187).
-    // Sender-side enforcement is advisory; modified clients can ignore
-    // their own slowmode UI. Honest receivers drop sub-window writes
-    // unless the sender holds BYPASS_SLOWMODE (bit 29).
-    if !crate::services::community::receiver_limits::check_slowmode(
-        state,
-        &pending.community_id,
-        &pending.channel_id,
-        &message.sender_pseudonym,
-        rekindle_utils::timestamp_secs(),
-    ) {
-        tracing::trace!(
-            community = %pending.community_id,
-            channel = %pending.channel_id,
-            sender = %message.sender_pseudonym,
-            "slowmode floor exceeded — dropping silently"
-        );
-        return Ok(());
-    }
-
     // M9.2 — the clock advances past the message's timestamp by at most
     // MAX_LAMPORT_DRIFT + 1; the message itself is kept and orders by its
     // own timestamp (a clamp, not a drop — a fresh restart's clock may sit
     // far below live traffic).
     state_helpers::merge_message_lamport(state, &pending.community_id, message.lamport_ts);
-    let Some(body) = decrypt_message_body(
-        state,
-        &pending.community_id,
-        &pending.channel_id,
-        &fetched,
-        pending.subkey_index,
-    ) else {
-        let requester_pseudonym = {
-            let communities = state.communities.read();
-            communities
-                .get(&pending.community_id)
-                .and_then(|community| community.my_pseudonym_key.clone())
-        };
-        if let Some(requester_pseudonym) = requester_pseudonym {
-            // A3/P1.3 — spawn a retry loop with cascade fall-through instead of
-            // a single fire-and-forget send. The previous send dropped silently
-            // if the deterministic responder was offline, leaving the message
-            // permanently undecryptable until a future rotation broadcast.
-            if let Some(scope) =
-                state_helpers::text_scope(state, &pending.community_id, &pending.channel_id)
-            {
-                crate::services::community::spawn_mek_request_with_retry(
-                    state.clone(),
-                    pending.community_id.clone(),
-                    scope,
-                    message.mek_generation,
-                    requester_pseudonym,
-                );
-            }
-        }
-        emit_message_received(
-            state,
-            &pending,
-            message.sender_pseudonym.clone(),
-            String::new(),
-            message.timestamp,
-            true,
-            false,
-        );
-        update_peer_sequence(
-            state,
-            &pending.community_id,
-            &message.sender_pseudonym,
-            &pending.channel_id,
-            pending.sequence,
-        );
-        return Ok(());
-    };
-
-    let automod_action =
-        crate::services::community::automod::evaluate_message(state, &pending.community_id, &body)
-            .unwrap_or(crate::services::community::automod::AutoModAction::Allow);
-    if automod_action == crate::services::community::automod::AutoModAction::BlockLocally {
-        tracing::info!(
-            community_id = %pending.community_id,
-            channel_id = %pending.channel_id,
-            message_id = %pending.message_id,
-            "automod blocked"
-        );
-        update_peer_sequence(
-            state,
-            &pending.community_id,
-            &message.sender_pseudonym,
-            &pending.channel_id,
-            pending.sequence,
-        );
-        return Ok(());
-    }
-
-    let message_id = pending.message_id.clone();
-    let channel_id = pending.channel_id.clone();
-    let sender = message.sender_pseudonym.clone();
-    let body_for_db = body.clone();
-    let timestamp = i64::try_from(message.timestamp).unwrap_or(i64::MAX);
-    let mek_generation = i64::try_from(message.mek_generation).unwrap_or(i64::MAX);
-    let lamport_ts = message.lamport_ts;
-    let automod_blurred =
-        automod_action == crate::services::community::automod::AutoModAction::BlurContent;
-    let forwarded_from_author_for_db = forwarded_from_author.clone();
-    let attachment_json_for_db: Option<String> = message.attachment.as_ref().map(|att| {
+    // The Host's one ingest (plan E3.1 F3): it opens the body, runs the D26
+    // gate (block list, bans, timeouts, slowmode, automod), stores the row
+    // and publishes the post and the channel's unread count.
+    let attachment_json: Option<String> = message.attachment.as_ref().map(|att| {
         serde_json::to_string(&serde_json::json!({
             "attachmentId": hex::encode(att.attachment_id),
             "filename": att.filename,
@@ -174,37 +77,23 @@ pub async fn handle_message_notification(
         }))
         .unwrap_or_default()
     });
-    let flags_for_db = message.flags;
-    let mentions_me = crate::services::community::mentions::message_mentions_me(
-        state,
-        &pending.community_id,
-        &message,
-    );
-    let reply_to_for_db = message.reply_to.clone();
-    db_fire(&pool, "store notified channel message", move |conn| {
-        rekindle_db::repo::messages::channel::insert(
-            conn,
-            &rekindle_db::repo::messages::channel::ChannelMessageInsert {
-                reply_to: reply_to_for_db.as_deref(),
-                owner_key: &owner_key,
-                channel_id: &channel_id,
-                sender_key: &sender,
-                body: &body_for_db,
-                timestamp,
-                is_read: false,
-                mek_generation: Some(mek_generation),
-                message_id: &message_id,
-                lamport_ts,
-                automod_blurred,
-                forwarded_from_author: forwarded_from_author_for_db.as_deref(),
-                flags: flags_for_db,
-                attachment_json: attachment_json_for_db.as_deref(),
-                send_state: rekindle_types::message::SendState::Delivered,
-                mentions_me,
-            },
-        )
-    });
-
+    let ingested = state
+        .host
+        .get()
+        .await
+        .channel()
+        .ingest(ReceivedPost {
+            community_id: pending.community_id.clone(),
+            channel_id: pending.channel_id.clone(),
+            record_key: fetched.record_key.clone(),
+            subkey_index: pending.subkey_index,
+            sequence: pending.sequence,
+            message: message.clone(),
+            forwarded_from_author: fetched.forwarded_from_author.clone(),
+            attachment_json,
+        })
+        .await
+        .map_err(|e| e.to_string())?;
     update_peer_sequence(
         state,
         &pending.community_id,
@@ -212,7 +101,27 @@ pub async fn handle_message_notification(
         &pending.channel_id,
         pending.sequence,
     );
-
+    let (body, blurred, report) = match ingested {
+        Ingested::Stored {
+            body,
+            blurred,
+            report,
+        } => (body, blurred, report),
+        Ingested::Undecryptable => {
+            request_text_key(state, &pending, message.mek_generation);
+            emit_message_received(
+                state,
+                &pending,
+                message.sender_pseudonym.clone(),
+                String::new(),
+                message.timestamp,
+                true,
+                false,
+            );
+            return Ok(());
+        }
+        Ingested::Duplicate | Ingested::Dropped(_) => return Ok(()),
+    };
     let sender_pseudonym = message.sender_pseudonym.clone();
     emit_message_received(
         state,
@@ -221,40 +130,9 @@ pub async fn handle_message_notification(
         body.clone(),
         message.timestamp,
         false,
-        automod_blurred,
+        blurred,
     );
-    if let Err(e) = state
-        .host
-        .get()
-        .await
-        .governance()
-        .publish_channel_unread(&pending.community_id, &pending.channel_id)
-        .await
-    {
-        tracing::warn!(error = %e, "channel unread count not published");
-    }
-
-    if automod_action == crate::services::community::automod::AutoModAction::AlertModerators {
-        let rule_name =
-            crate::services::community::automod::list_rules(state, &pending.community_id)
-                .ok()
-                .and_then(|rules| {
-                    rules
-                        .into_iter()
-                        .find(|rule| {
-                            rule.enabled
-                                && rule.action == "alert_moderators"
-                                && (rule.keywords.iter().any(|keyword| {
-                                    body.to_lowercase().contains(&keyword.to_lowercase())
-                                }) || rule.regex_patterns.iter().any(|pattern| {
-                                    regex::Regex::new(pattern)
-                                        .map(|compiled| compiled.is_match(&body))
-                                        .unwrap_or(false)
-                                }))
-                        })
-                        .map(|rule| rule.name)
-                })
-                .unwrap_or_else(|| "AutoMod".to_string());
+    if let Some(rule_name) = report {
         emit_automod_alert(
             app_handle,
             state,
@@ -297,6 +175,32 @@ pub async fn handle_message_notification(
     }
 
     Ok(())
+}
+
+/// Ask a peer for the text key of `generation`, which the post needs (A3/
+/// P1.3: a retry loop with cascade fall-through, so an offline responder
+/// does not leave the message undecryptable until the next rotation).
+fn request_text_key(state: &Arc<AppState>, pending: &PendingMessageFetch, generation: u64) {
+    let requester_pseudonym = {
+        let communities = state.communities.read();
+        communities
+            .get(&pending.community_id)
+            .and_then(|community| community.my_pseudonym_key.clone())
+    };
+    let Some(requester_pseudonym) = requester_pseudonym else {
+        return;
+    };
+    if let Some(scope) =
+        state_helpers::text_scope(state, &pending.community_id, &pending.channel_id)
+    {
+        crate::services::community::spawn_mek_request_with_retry(
+            state.clone(),
+            pending.community_id.clone(),
+            scope,
+            generation,
+            requester_pseudonym,
+        );
+    }
 }
 
 #[cfg(test)]

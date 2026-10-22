@@ -2,6 +2,7 @@
 //! [`gate`] before it is stored, displayed or notified, on both hosts. It
 //! checks the block list, bans, timeouts, the channel's slowmode and the
 //! community's automod rules, in that order, and answers [`Verdict::Admit`],
+//! [`Verdict::Report`] (admitted, and reported to the moderators),
 //! [`Verdict::Hide`] (stored blurred) or [`Verdict::Drop`] (never stored).
 //! An automod rule that cannot be evaluated drops the post: a broken rule
 //! never admits what it was written to stop.
@@ -56,6 +57,8 @@ pub enum GateReason {
 pub enum Verdict {
     /// Stored and shown.
     Admit,
+    /// Stored and shown, and reported to the moderators.
+    Report(GateReason),
     /// Stored, shown blurred.
     Hide(GateReason),
     /// Never stored.
@@ -145,7 +148,7 @@ fn within_window(item: &GateItem<'_>, limits: &RateLimits, seconds: u32) -> bool
 }
 
 /// The automod verdict: a matching `block_locally` rule drops, then
-/// `blur_content` hides, then `alert_moderators` admits. Rules are taken in
+/// `blur_content` hides, then `alert_moderators` admits with a report. Rules are taken in
 /// rule-id order, so the rule named is the same on every peer.
 fn automod(gov: &GovernanceState, body: &str) -> Verdict {
     let compiled = match compile_rules(gov, &rule_fingerprint(gov)) {
@@ -161,7 +164,10 @@ fn automod(gov: &GovernanceState, body: &str) -> Verdict {
         };
         match rule.action.as_str() {
             "block_locally" => return Verdict::Drop(reason),
-            "blur_content" if verdict == Verdict::Admit => verdict = Verdict::Hide(reason),
+            "blur_content" if !matches!(verdict, Verdict::Hide(_)) => {
+                verdict = Verdict::Hide(reason);
+            }
+            "alert_moderators" if verdict == Verdict::Admit => verdict = Verdict::Report(reason),
             "blur_content" | "alert_moderators" => {}
             other => {
                 return Verdict::Drop(GateReason::AutoModError(format!(

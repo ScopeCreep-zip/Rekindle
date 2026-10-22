@@ -21,7 +21,8 @@ use super::into_event_control::control_into_event;
 
 /// Convert a verified gossip envelope into a subscription event.
 ///
-/// `None` for [`CommunityEnvelope::WatchRelay`]: it is not news about
+/// `None` for a [`CommunityEnvelope::MessageNotification`], which the
+/// Host ingests (plan E3.1 F3), and for [`CommunityEnvelope::WatchRelay`]: it is not news about
 /// the community, it is news about a *record*, and the handler acts on
 /// it by fetching rather than by emitting. Returning an event for it
 /// would surface Mutual Aid plumbing in the UI.
@@ -34,9 +35,6 @@ pub fn envelope_into_event(
     let c = || community.to_string();
 
     Some(match envelope {
-        // A channel post is the Host's to ingest (plan E3.1 F3): it
-        // fetches, gates and stores the post, then publishes it.
-        CommunityEnvelope::MessageNotification { .. } => return None,
         CommunityEnvelope::TypingIndicator {
             channel_id,
             pseudonym_key,
@@ -72,6 +70,10 @@ pub fn envelope_into_event(
         CommunityEnvelope::Control(control) => {
             return control_into_event(control, community, sender)
         }
-        CommunityEnvelope::WatchRelay { .. } => return None,
+        // A channel post is the Host's to ingest (plan E3.1 F3): it
+        // fetches, gates and stores the post, then publishes it.
+        CommunityEnvelope::WatchRelay { .. } | CommunityEnvelope::MessageNotification { .. } => {
+            return None
+        }
     })
 }

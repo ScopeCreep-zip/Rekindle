@@ -134,7 +134,10 @@ fn automod_blocks_blurs_and_alerts() {
         Verdict::Drop(named(1))
     );
     assert_eq!(judge(&gov, &item("so rude", 1, 1)), Verdict::Hide(named(2)));
-    assert_eq!(judge(&gov, &item("help me", 1, 1)), Verdict::Admit);
+    assert_eq!(
+        judge(&gov, &item("help me", 1, 1)),
+        Verdict::Report(named(3))
+    );
 }
 
 #[test]

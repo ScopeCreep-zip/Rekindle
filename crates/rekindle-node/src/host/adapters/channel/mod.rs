@@ -42,6 +42,14 @@ pub struct HostChannel {
     gov: HostGovernance,
 }
 
+impl crate::host::Host {
+    /// The channel adapter over this Host.
+    #[must_use]
+    pub fn channel(&self) -> HostChannel {
+        HostChannel::new(&self.ctx)
+    }
+}
+
 impl HostChannel {
     /// The channel adapter over `ctx`.
     pub(crate) fn new(ctx: &DaemonContext) -> Self {

@@ -59,32 +59,6 @@ pub(super) fn emit_message_received(
     );
 }
 
-/// Open a fetched message body under exactly its generation of the
-/// channel's text key, bound to the record and subkey it was fetched from
-/// (see `channel_materialize::decrypt_channel_record_message`). `None`
-/// when that generation is not held or the body does not open there.
-pub(super) fn decrypt_message_body(
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    fetched: &FetchedChannelEntry,
-    subkey_index: u32,
-) -> Option<String> {
-    let opened = crate::channel_materialize::decrypt_channel_record_message(
-        state,
-        community_id,
-        channel_id,
-        fetched.message.mek_generation,
-        &fetched.message.ciphertext,
-        rekindle_secrets::channel_body::BodyPosition {
-            channel_record_key: &fetched.record_key,
-            subkey_index,
-            lamport_ts: fetched.message.lamport_ts,
-        },
-    );
-    (!opened.decryption_failed).then_some(opened.body)
-}
-
 pub(super) async fn message_exists(
     pool: &Db,
     owner_key: &str,

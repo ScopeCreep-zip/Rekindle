@@ -1,4 +1,6 @@
-//! Phase 23.D.6 — thin facade. All automod compile + evaluate logic
+//! Phase 23.D.6 — thin facade. The automod rule reads; received posts are
+//! judged by the Host ingest gate (`rekindle_channel::ingest`, plan E3.1 F3).
+//! All automod compile logic
 //! lives in `rekindle_channel::automod` parameterised over
 //! `ChannelMessagingDeps`. Adapter holds the per-community
 //! `Arc<AutoModCompiledCache>` keyed by community_id (regex JIT state
@@ -9,7 +11,7 @@ use std::sync::Arc;
 use crate::services::channel_adapter::ChannelAdapter;
 use crate::state::AppState;
 
-pub use rekindle_channel::{AutoModAction, AutoModRuleInfo};
+pub use rekindle_channel::AutoModRuleInfo;
 
 fn build_adapter(state: &Arc<AppState>) -> Result<ChannelAdapter, String> {
     crate::services::build_adapter(state, ChannelAdapter::new)
@@ -21,15 +23,6 @@ pub fn list_rules(
 ) -> Result<Vec<AutoModRuleInfo>, String> {
     let adapter = build_adapter(state)?;
     rekindle_channel::list_automod_rules(&adapter, community_id).map_err(|e| e.to_string())
-}
-
-pub fn evaluate_message(
-    state: &Arc<AppState>,
-    community_id: &str,
-    body: &str,
-) -> Result<AutoModAction, String> {
-    let adapter = build_adapter(state)?;
-    rekindle_channel::evaluate_automod(&adapter, community_id, body).map_err(|e| e.to_string())
 }
 
 pub fn get_rule(

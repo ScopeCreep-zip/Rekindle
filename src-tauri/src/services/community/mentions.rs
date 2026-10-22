@@ -49,19 +49,6 @@ pub fn local_member_is_mentioned(
     rekindle_channel::local_member_is_mentioned(&adapter, community_id, matches)
 }
 
-/// Whether the received wire `message` mentions us (`messages.mentions_me`,
-/// plan E3.1 D25).
-pub fn message_mentions_me(
-    state: &Arc<AppState>,
-    community_id: &str,
-    message: &rekindle_codec::community::channel_record::ChannelMessage,
-) -> bool {
-    let Some(adapter) = build_adapter(state) else {
-        return false;
-    };
-    rekindle_channel::mentions::message_mentions_me(&adapter, community_id, message)
-}
-
 pub fn matches_from_cleartext(
     state: &Arc<AppState>,
     community_id: &str,

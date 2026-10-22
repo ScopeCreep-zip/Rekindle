@@ -5,24 +5,12 @@
 //! cache (regex JIT state) lives on the deps adapter; this module
 //! provides the rebuild-on-fingerprint-mismatch shape.
 
-use std::sync::Arc;
-
 use regex::Regex;
 use rekindle_governance::state::GovernanceState;
 use serde::Deserialize;
 
 use crate::deps::ChannelMessagingDeps;
 use crate::error::ChannelError;
-
-/// Action emitted by `evaluate_message` for a matching rule. Caller
-/// chooses how to apply (drop, blur, or alert moderators).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AutoModAction {
-    Allow,
-    BlockLocally,
-    BlurContent,
-    AlertModerators,
-}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,33 +61,6 @@ pub fn list_rules<D: ChannelMessagingDeps>(
     Ok(rules_from_governance(&governance))
 }
 
-pub fn evaluate_message<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-    body: &str,
-) -> Result<AutoModAction, ChannelError> {
-    let compiled = compiled_rules(deps, community_id)?;
-    if compiled
-        .iter()
-        .any(|rule| rule_matches(rule, body) && rule.action == "block_locally")
-    {
-        return Ok(AutoModAction::BlockLocally);
-    }
-    if compiled
-        .iter()
-        .any(|rule| rule_matches(rule, body) && rule.action == "blur_content")
-    {
-        return Ok(AutoModAction::BlurContent);
-    }
-    if compiled
-        .iter()
-        .any(|rule| rule_matches(rule, body) && rule.action == "alert_moderators")
-    {
-        return Ok(AutoModAction::AlertModerators);
-    }
-    Ok(AutoModAction::Allow)
-}
-
 pub fn get_rule<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
@@ -123,27 +84,6 @@ pub fn get_rule<D: ChannelMessagingDeps>(
         action: rule.action.clone(),
         lamport: rule.lamport,
     })
-}
-
-fn compiled_rules<D: ChannelMessagingDeps>(
-    deps: &D,
-    community_id: &str,
-) -> Result<Vec<CompiledAutoModRule>, ChannelError> {
-    let governance = deps
-        .governance_state(community_id)
-        .ok_or_else(|| ChannelError::Adapter("governance state not loaded".into()))?;
-    let fingerprint = rule_fingerprint(&governance);
-
-    if let Some(compiled) = deps.automod_compiled_cache_get(community_id) {
-        if compiled.fingerprint == fingerprint {
-            return Ok(compiled.rules.clone());
-        }
-    }
-
-    let compiled = compile_rules(&governance, &fingerprint)?;
-    let rules = compiled.rules.clone();
-    deps.automod_compiled_cache_set(community_id, Arc::new(compiled));
-    Ok(rules)
 }
 
 pub(crate) fn compile_rules(

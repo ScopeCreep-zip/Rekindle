@@ -143,9 +143,6 @@ pub struct AppState {
     /// M10.4 — receiver-side per-(community, sender) gossip rate floor.
     pub gossip_rate_limits:
         Mutex<HashMap<(String, String), rekindle_gossip::rate_limit::TokenBucket>>,
-    /// M10.4 — receiver-side per-(community, channel, sender) last-send
-    /// timestamps (unix seconds) for slowmode enforcement.
-    pub channel_last_received: Mutex<HashMap<(String, String, String), u64>>,
     /// Per-community compiled AutoMod cache.
     pub automod_cache: Arc<RwLock<HashMap<String, Arc<AutoModCompiledCache>>>>,
     /// Per-community Lost Cargo chunk caches.
@@ -274,7 +271,6 @@ impl Default for AppState {
             voice_sender_keys:
                 rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore::default(),
             gossip_rate_limits: Mutex::new(HashMap::new()),
-            channel_last_received: Mutex::new(HashMap::new()),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
             file_caches: RwLock::new(HashMap::new()),
             pinned_attachments: RwLock::new(HashMap::new()),

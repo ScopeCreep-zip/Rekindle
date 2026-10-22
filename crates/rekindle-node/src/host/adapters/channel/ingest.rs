@@ -46,8 +46,13 @@ struct Row {
 /// What the ingest did with a post.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ingested {
-    /// The row was stored and published; `blurred` when the gate hid it.
-    Stored { body: String, blurred: bool },
+    /// The row was stored and published; `blurred` when the gate hid it,
+    /// and `report` the automod rule that asks the moderators to look.
+    Stored {
+        body: String,
+        blurred: bool,
+        report: Option<String>,
+    },
     /// We already hold it.
     Duplicate,
     /// No key we hold opens it: it is not stored, so its row never keeps an
@@ -77,13 +82,15 @@ impl HostChannel {
         let record_key = self
             .channel_record_key(community_id, channel_id)
             .ok_or_else(|| ChannelError::Adapter(format!("channel {channel_id} has no record")))?;
-        let value = (self.records()?.read_once(&record_key, subkey_index, true).await)
+        let value = (self
+            .records()?
+            .read_once(&record_key, subkey_index, true)
+            .await)
             .map_err(|e| ChannelError::Adapter(format!("read channel slot: {e}")))?
             .ok_or_else(|| ChannelError::Adapter("channel slot is empty".into()))?;
-        let entries = rekindle_codec::community::channel_record::decode_channel_entries(
-            &value.data,
-        )
-        .map_err(|e| ChannelError::Adapter(format!("channel slot: {e}")))?;
+        let entries =
+            rekindle_codec::community::channel_record::decode_channel_entries(&value.data)
+                .map_err(|e| ChannelError::Adapter(format!("channel slot: {e}")))?;
         let message = entries
             .into_iter()
             .find_map(|entry| match entry {
@@ -136,16 +143,20 @@ impl HostChannel {
         ) else {
             return Ok(Ingested::Undecryptable);
         };
-        let blurred = match self.judge(&owner, &db, &post, &body).await? {
-            Verdict::Admit => false,
-            Verdict::Hide(_) => true,
+        let (blurred, report) = match self.judge(&owner, &db, &post, &body).await? {
+            Verdict::Admit => (false, None),
+            Verdict::Report(GateReason::AutoMod { rule }) => (false, Some(rule)),
+            Verdict::Report(reason) => (false, Some(format!("{reason:?}"))),
+            Verdict::Hide(_) => (true, None),
             Verdict::Drop(reason) => {
                 tracing::debug!(community, channel = %post.channel_id, ?reason, "post dropped");
                 return Ok(Ingested::Dropped(reason));
             }
         };
-        let own = self.my_pseudonym_impl(community).as_deref() == Some(&post.message.sender_pseudonym);
-        let mentions_me = !own && rekindle_channel::mentions::message_mentions_me(self, community, &post.message);
+        let own =
+            self.my_pseudonym_impl(community).as_deref() == Some(&post.message.sender_pseudonym);
+        let mentions_me =
+            !own && rekindle_channel::mentions::message_mentions_me(self, community, &post.message);
         let row = Row {
             message_id: message_id.clone(),
             body: body.clone(),
@@ -154,20 +165,30 @@ impl HostChannel {
             mentions_me,
         };
         self.store_received(owner, &db, post.clone(), row).await?;
-        self.ctx().publish_event(SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
-            community: post.community_id.clone(),
-            channel: post.channel_id.clone(),
-            message_id,
-            sender_pseudonym: post.message.sender_pseudonym.clone(),
-            sequence: post.sequence,
-            timestamp: post.message.timestamp,
-            body: Some(body.clone()),
-            reply_to_message_id: post.message.reply_to.clone(),
-        }));
-        if let Err(e) = self.gov.publish_channel_unread(community, &post.channel_id).await {
+        self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::New {
+                community: post.community_id.clone(),
+                channel: post.channel_id.clone(),
+                message_id,
+                sender_pseudonym: post.message.sender_pseudonym.clone(),
+                sequence: post.sequence,
+                timestamp: post.message.timestamp,
+                body: Some(body.clone()),
+                reply_to_message_id: post.message.reply_to.clone(),
+            },
+        ));
+        if let Err(e) = self
+            .gov
+            .publish_channel_unread(community, &post.channel_id)
+            .await
+        {
             tracing::warn!(error = %e, "channel unread count not published");
         }
-        Ok(Ingested::Stored { body, blurred })
+        Ok(Ingested::Stored {
+            body,
+            blurred,
+            report,
+        })
     }
 
     /// The gate's verdict on `post`, against the merged state, our block
@@ -196,7 +217,12 @@ impl HostChannel {
             sent_at_secs: post.message.timestamp / 1000,
             now_secs: self.ctx().clock.now_secs(),
         };
-        Ok(ingest::gate(&item, &gov, &blocked, &mut self.ctx().channel_rate_limits.lock()))
+        Ok(ingest::gate(
+            &item,
+            &gov,
+            &blocked,
+            &mut self.ctx().channel_rate_limits.lock(),
+        ))
     }
 
     async fn store_received(
