@@ -73,7 +73,7 @@ pub fn oldest_lamport_per_channel(
          GROUP BY conversation_id",
     )?;
     let rows = stmt.query_map(params![owner_key, community_id], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, u64>(1)?))
+        Ok((row.get::<_, String>(0)?, crate::row::get_u64(row, 1)?))
     })?;
     rows.collect()
 }
