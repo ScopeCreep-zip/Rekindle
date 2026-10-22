@@ -50,7 +50,8 @@ impl FakeMessages {
 
     /// The node owning `target`'s route, `None` when its owner released
     /// it (what is sent is lost); `RouteUnusable` when this node's cache
-    /// does not resolve it (Veilid's `NoConnection`, [`crate::routes`]);
+    /// does not resolve it (Veilid's `NoConnection`, [`crate::routes`]) or
+    /// the first hop of its own route fails ([`crate::Fault::RouteLinkFailure`]);
     /// `Send` when this node is detached.
     fn route_owner(&self, target: &PeerTarget) -> Result<Option<usize>, PortError> {
         if self.net.inner.lock().faults.detached.contains(&self.node) {
@@ -61,6 +62,11 @@ impl FakeMessages {
                 "no connection: route {} could not be resolved",
                 target.as_str()
             )));
+        }
+        if self.net.first_hop_failed(self.node) {
+            return Err(PortError::RouteUnusable(
+                "no connection: the safety route's first hop failed".into(),
+            ));
         }
         Ok(self
             .net

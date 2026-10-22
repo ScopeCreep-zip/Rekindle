@@ -85,6 +85,8 @@ pub(crate) struct Faults {
     pub drop_per_mille: u32,
     /// Nodes whose app calls are never answered (the caller times out).
     pub unanswered: HashSet<usize>,
+    /// Nodes whose next send fails at its own route's first hop.
+    pub link_failure: HashSet<usize>,
 }
 
 /// Each node's side of the network.

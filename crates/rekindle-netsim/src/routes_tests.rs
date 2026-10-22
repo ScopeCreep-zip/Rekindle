@@ -114,3 +114,42 @@ async fn five_lost_questions_kill_the_askers_route() {
     assert_eq!(dead.len(), 1);
     assert!(sim.route_blobs(0).iter().all(|b| *b != mine));
 }
+
+/// A send failing at the first hop of the sender's own route fails
+/// `RouteUnusable` and kills that route after one failure, reported to it
+/// as dead (`route_spec_store/mod.rs:48`); the next send goes out.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn one_first_hop_failure_kills_the_senders_route() {
+    let (sim, mut nodes) = Netsim::nodes(2, 24);
+    let _pump = sim.start();
+    let mine = own_blob(&nodes[0]).await;
+    let theirs = own_blob(&nodes[1]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&theirs).unwrap();
+    let profile = SafetyProfile::default_dht();
+    sim.fault(Fault::RouteLinkFailure { node: 0 });
+    assert!(matches!(
+        nodes[0]
+            .ports
+            .messages
+            .send(&target, &profile, vec![1])
+            .await,
+        Err(PortError::RouteUnusable(_))
+    ));
+    let PortEvent::RouteChange { dead, dead_remote } = recv(&mut nodes[0]).await else {
+        panic!("expected a route change");
+    };
+    assert_eq!((dead.len(), dead_remote.len()), (1, 0));
+    assert!(sim.route_blobs(0).iter().all(|b| *b != mine));
+    nodes[0]
+        .ports
+        .messages
+        .send(&target, &profile, vec![2])
+        .await
+        .unwrap();
+    assert!(matches!(
+        recv(&mut nodes[1]).await,
+        PortEvent::AppMessage { message } if message == vec![2]
+    ));
+}

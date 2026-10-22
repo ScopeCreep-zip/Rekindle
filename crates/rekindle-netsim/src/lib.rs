@@ -82,6 +82,12 @@ pub enum Fault {
     /// The node's own routes die: the owner hears of it, its importers do
     /// not (their sends are lost until they fetch the new route).
     RouteDeath { node: usize },
+    /// The first hop of the node's own route fails on its next app message
+    /// or call: the send fails `NoConnection` (our port's `RouteUnusable`),
+    /// one send failure kills that route (`route_spec_store/mod.rs:48`,
+    /// `route_stats.rs:56-60`), and the owner hears `dead_routes`. Its
+    /// next route starts at another hop, so the fault ends with the route.
+    RouteLinkFailure { node: usize },
     /// The node detaches (or reattaches): its DHT calls fail, it neither
     /// sends nor receives app messages or calls (a call to it times out),
     /// no watch change reaches it, and it hears Detaching then Detached
@@ -254,6 +260,9 @@ impl Netsim {
             }
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
+            Fault::RouteLinkFailure { node } => {
+                self.net.inner.lock().faults.link_failure.insert(node);
+            }
             Fault::Detach { node, detached } => self.detach(node, detached),
             Fault::InternetReady { node, ready } => self.internet_ready(node, ready),
             Fault::TickLag { node, ms } => self

@@ -26,9 +26,11 @@
 //!   destinations kill the route (`route_stats.rs:56-60`,
 //!   `mod.rs:46`), an answer clears them (`route_stats.rs:300-312`), and
 //!   the death is reported to the owner as `dead_routes` (`mod.rs:183-194`).
-//!   A send failure (1 kills, `mod.rs:48`) is a first-hop link failure,
-//!   which the netsim does not model: a partition or drop loses a message
-//!   in transit.
+//!   A send that fails at the safety route's first hop is a send failure
+//!   on that route (`rpc_processor/mod.rs:1255-1261`); one kills it
+//!   (`mod.rs:48`, `route_stats.rs:56-60`), reported as `dead_routes`, and
+//!   the send answers `NoConnection` ([`crate::Fault::RouteLinkFailure`]).
+//!   A partition or drop loses a message in transit instead.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -311,6 +313,44 @@ impl Network {
                 false,
             );
         }
+    }
+
+    /// Whether `node`'s send fails at its own route's first hop
+    /// ([`crate::Fault::RouteLinkFailure`]): the fault is spent, and the
+    /// route it went out on (the first live general route) dies after this
+    /// one failure, reported to `node` as `dead_routes`.
+    pub(crate) fn first_hop_failed(&self, node: usize) -> bool {
+        let dead: Vec<String> = {
+            let mut guard = self.inner.lock();
+            let inner = &mut *guard;
+            if !inner.faults.link_failure.remove(&node) {
+                return false;
+            }
+            let dead: Vec<String> = own_general(&inner.routes, node)
+                .into_iter()
+                .take(1)
+                .collect();
+            for id in &dead {
+                inner.routes.remove(id);
+                if let Some(slot) = inner.nodes.get_mut(node) {
+                    slot.lost.remove(id);
+                }
+            }
+            dead
+        };
+        if !dead.is_empty() {
+            self.send(
+                node,
+                node,
+                "RouteChange",
+                PortEvent::RouteChange {
+                    dead,
+                    dead_remote: Vec::new(),
+                },
+                false,
+            );
+        }
+        true
     }
 
     /// An answer reached `node`: its own routes' lost destinations clear.
