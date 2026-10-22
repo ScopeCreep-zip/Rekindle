@@ -174,7 +174,6 @@
     border-color: var(--color-xfire-online);
   }
   .group-call-tile-ringing {
-    opacity: 0.7;
   }
   .group-call-tile-avatar {
     width: 32px;
@@ -389,7 +388,7 @@
   }
 
   .pending-btn-accept:hover {
-    background: var(--color-xfire-online);
+    background: var(--color-xfire-success-fill);
   }
 
   .pending-btn-reject {
@@ -421,7 +420,7 @@
   }
 
   .pending-btn-block:hover {
-    background: var(--color-xfire-offline);
+    background: color-mix(in srgb, var(--color-xfire-offline) 85%, var(--color-xfire-fill-shade));
   }
 
   .blocked-user-item {

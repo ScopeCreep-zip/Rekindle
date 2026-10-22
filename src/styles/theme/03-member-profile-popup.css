@@ -445,7 +445,7 @@
     color: var(--color-xfire-danger-fg);
   }
   .call-control-btn-hangup:hover {
-    filter: brightness(1.15);
+    background: color-mix(in srgb, var(--color-xfire-danger) 85%, var(--color-xfire-fill-shade));
   }
 
   .active-call-devices {

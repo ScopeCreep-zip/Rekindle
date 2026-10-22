@@ -137,8 +137,6 @@
     margin-top: 10px;
   }
 
-  .poll-card-submit,
-
   .poll-card-submit:disabled {
     cursor: default;
     opacity: 0.5;

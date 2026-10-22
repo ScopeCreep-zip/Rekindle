@@ -28,7 +28,7 @@
     font-family: var(--sec-font-family);
     font-weight: 600;
     cursor: pointer;
-    transition: filter var(--sec-motion-duration);
+    transition: background-color var(--sec-motion-duration);
   }
 
   /* Commit and destructive commit share one size and place, so a review
@@ -61,10 +61,18 @@
     color: var(--sec-secondary-fg);
   }
 
-  .sec-btn-commit:hover:not(:disabled),
-  .sec-btn-commit-danger:hover:not(:disabled),
+  /* Hover is a fixed step toward the reserved shade (plan E7.7.0b), so its
+   * pairs are measured like the resting ones. */
+  .sec-btn-commit:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--sec-commit-bg) 88%, var(--sec-hover-shade));
+  }
+
+  .sec-btn-commit-danger:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--sec-danger-bg) 88%, var(--sec-hover-shade));
+  }
+
   .sec-btn-secondary:hover:not(:disabled) {
-    filter: brightness(1.12);
+    background: color-mix(in srgb, var(--sec-secondary-bg) 88%, var(--sec-hover-shade));
   }
 
   /* Disabled: its own fixed colours, never a fade (`opacity` is refused on

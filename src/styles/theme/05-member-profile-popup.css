@@ -249,7 +249,7 @@
   }
 
   .notification-item-read {
-    opacity: 0.5;
+    opacity: 0.8;
   }
 
 
@@ -303,7 +303,7 @@
   }
 
   .notification-mark-all:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 8%, transparent);
   }
 
   .notification-empty {

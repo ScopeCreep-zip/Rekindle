@@ -73,6 +73,9 @@
   --color-xfire-bg-secondary: #1a1a1a;
   --color-xfire-bg-tertiary: #252525;
   --color-xfire-border: #2a2a2a;
+  /* A form control's boundary (WCAG 1.4.11): 3.13:1 on bg-panel, 3.9:1 on
+   * bg-dark (plan E7.7.0b). */
+  --color-xfire-control-border: #6b6b6b;
   --color-xfire-text-primary: #e7e7e7;
   --color-xfire-text-secondary: #a0a0a0;
   /* Accent as a fill. #177cc1 carried white text at 4.48:1; the minimal
@@ -184,7 +187,7 @@
     --color-xfire-ingame: #0080ab;
     --color-xfire-busy: #df3337;
     --color-xfire-offline: #767676;
-    --color-xfire-online-text: #00892e;
+    --color-xfire-online-text: #007427;
     --color-xfire-away-text: #6e5600;
     --color-xfire-ingame-text: #006285;
     --color-xfire-danger-text: #b4001a;
@@ -220,6 +223,7 @@
     --sec-secondary-border: #767676;
     --sec-focus: #8cc4ff;
     --sec-focus-ground: #0a0a0a;
+    --sec-hover-shade: #000000;
     --sec-disabled-bg: #2a2a2a;
     --sec-disabled-fg: #9a9a9a;
     --sec-disabled-border: #4a4a4a;

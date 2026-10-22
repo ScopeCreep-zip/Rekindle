@@ -147,44 +147,76 @@ fn ground_problem(ground: &str, tokens: &BTreeSet<String>) -> Option<String> {
 }
 
 /// One entry of the map.
+#[derive(Default, Clone)]
 pub(crate) struct Entry {
     /// The grounds the colour is drawn on.
     pub on: Vec<String>,
+    /// The grounds it is drawn on while hovered (plan E7.7.0b).
+    pub on_hover: Vec<String>,
+    /// The grounds it is drawn on while selected or active (plan E7.7.0b).
+    pub on_selected: Vec<String>,
     /// The colour paints a graphic (WCAG 1.4.11, 3:1), not text (1.4.3).
     pub graphic: bool,
 }
 
-/// Entries of the map: selector → entry.
+/// Entries of the map's `[selectors]`: selector → entry.
 pub(crate) fn read_map(text: &str) -> Result<BTreeMap<String, Entry>> {
+    read_table(text, "selectors")
+}
+
+/// A list of grounds, absent meaning none.
+fn ground_list(
+    fields: &dyn toml_edit::TableLike,
+    key: &str,
+    selector: &str,
+) -> Result<Option<Vec<String>>> {
+    let Some(item) = fields.get(key) else {
+        return Ok(None);
+    };
+    let list = item
+        .as_array()
+        .ok_or_else(|| anyhow!("`{selector}`: `{key}` is not a list"))?;
+    list.iter()
+        .map(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .ok_or_else(|| anyhow!("`{selector}`: a ground is not a string"))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(Some)
+}
+
+/// Entries of one table of the map (`selectors`, `sec`, `boundaries`).
+pub(crate) fn read_table(text: &str, name: &str) -> Result<BTreeMap<String, Entry>> {
     let doc: toml_edit::DocumentMut = text.parse().context("parsing the region map")?;
     let table = doc
-        .get("selectors")
+        .get(name)
         .and_then(|t| t.as_table_like())
-        .ok_or_else(|| anyhow!("{MAP} has no [selectors] table"))?;
+        .ok_or_else(|| anyhow!("{MAP} has no [{name}] table"))?;
     let mut out = BTreeMap::new();
     for (selector, item) in table.iter() {
         let fields = item
             .as_table_like()
             .ok_or_else(|| anyhow!("`{selector}` is not a table"))?;
-        let on = fields
-            .get("on")
-            .and_then(|o| o.as_array())
+        let on = ground_list(fields, "on", selector)?
             .ok_or_else(|| anyhow!("`{selector}` has no `on = [...]`"))?;
-        let on = on
-            .iter()
-            .map(|v| {
-                v.as_str()
-                    .map(str::to_string)
-                    .ok_or_else(|| anyhow!("`{selector}`: a ground is not a string"))
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let on_hover = ground_list(fields, "on_hover", selector)?.unwrap_or_default();
+        let on_selected = ground_list(fields, "on_selected", selector)?.unwrap_or_default();
         let graphic = match fields.get("graphic") {
             None => false,
             Some(g) => g
                 .as_bool()
                 .ok_or_else(|| anyhow!("`{selector}`: `graphic` is not a boolean"))?,
         };
-        out.insert(selector.to_string(), Entry { on, graphic });
+        out.insert(
+            selector.to_string(),
+            Entry {
+                on,
+                on_hover,
+                on_selected,
+                graphic,
+            },
+        );
     }
     Ok(out)
 }
@@ -212,7 +244,12 @@ fn compare(
                 "{MAP}  `{selector}` is not a selector that colours text with a token"
             ));
         }
-        for ground in &entry.on {
+        for ground in entry
+            .on
+            .iter()
+            .chain(&entry.on_hover)
+            .chain(&entry.on_selected)
+        {
             if let Some(why) = ground_problem(ground, tokens) {
                 problems.push(format!("{MAP}  `{selector}`: {why}"));
             }
@@ -276,7 +313,7 @@ mod tests {
                     (*s).to_string(),
                     Entry {
                         on: on.iter().map(|g| (*g).to_string()).collect(),
-                        graphic: false,
+                        ..Entry::default()
                     },
                 )
             })

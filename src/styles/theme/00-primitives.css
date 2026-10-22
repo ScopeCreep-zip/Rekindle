@@ -104,7 +104,7 @@
   .form-select {
     background: var(--color-xfire-bg-input);
     border-radius: 0.25rem;
-    border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
+    border: 1px solid var(--color-xfire-control-border);
     color: var(--color-xfire-text);
     font-family: var(--font-family-xfire);
     font-size: 13px;

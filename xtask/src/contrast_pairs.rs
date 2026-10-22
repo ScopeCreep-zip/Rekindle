@@ -35,6 +35,7 @@ use anyhow::{anyhow, Result};
 
 use crate::css;
 use crate::declared_grounds::{self as grounds, Entry, TextRule, MAP};
+use crate::pair_model;
 
 const TEXT_FLOOR: f64 = 4.5;
 /// The ground of the light base until E7.7.1's registry defines its own.
@@ -43,7 +44,7 @@ const LIGHT_GROUND: &str = "#ffffff";
 const GROUND_PREFIX: &str = "--color-xfire-bg";
 const GRAPHIC_FLOOR: f64 = 3.0;
 
-type Rgb = [f64; 3];
+pub(crate) type Rgb = [f64; 3];
 
 /// `#rgb` or `#rrggbb` as gamma-encoded channels in 0..=1.
 fn hex(value: &str) -> Option<Rgb> {
@@ -64,7 +65,7 @@ fn hex(value: &str) -> Option<Rgb> {
     Some([channel(0)?, channel(2)?, channel(4)?])
 }
 
-fn token(tokens: &BTreeMap<String, String>, name: &str) -> Result<Rgb, String> {
+pub(crate) fn token(tokens: &BTreeMap<String, String>, name: &str) -> Result<Rgb, String> {
     let value = tokens
         .get(name)
         .ok_or_else(|| format!("`{name}` is not a `@theme` colour token"))?;
@@ -72,12 +73,12 @@ fn token(tokens: &BTreeMap<String, String>, name: &str) -> Result<Rgb, String> {
 }
 
 /// `top` at `pct`% over `under`, per channel in gamma-encoded sRGB.
-fn mix(top: Rgb, under: Rgb, pct: f64) -> Rgb {
+pub(crate) fn mix(top: Rgb, under: Rgb, pct: f64) -> Rgb {
     let a = pct / 100.0;
     [0, 1, 2].map(|i| top[i] * a + under[i] * (1.0 - a))
 }
 
-fn ground(tokens: &BTreeMap<String, String>, declared: &str) -> Result<Rgb, String> {
+pub(crate) fn ground(tokens: &BTreeMap<String, String>, declared: &str) -> Result<Rgb, String> {
     let parsed = grounds::parse_ground(declared)?;
     let mut rgb = token(tokens, parsed.base)?;
     for (tint, pct) in parsed.tints.iter().rev() {
@@ -89,7 +90,7 @@ fn ground(tokens: &BTreeMap<String, String>, declared: &str) -> Result<Rgb, Stri
 /// The first `var()` of `expr` that names a `@theme` token. In
 /// `var(--profile-accent, var(--color-xfire-accent-text))` the first is a
 /// runtime property, so the default is its fallback.
-fn var_colour(tokens: &BTreeMap<String, String>, expr: &str) -> Result<Rgb, String> {
+pub(crate) fn var_colour(tokens: &BTreeMap<String, String>, expr: &str) -> Result<Rgb, String> {
     let name = css::var_refs(expr)
         .into_iter()
         .find(|r| tokens.contains_key(r))
@@ -152,6 +153,7 @@ fn measure<'a>(
     rules: impl Iterator<Item = &'a TextRule>,
     map: &BTreeMap<String, Entry>,
     tokens: &BTreeMap<String, String>,
+    alpha: &BTreeMap<String, f64>,
 ) -> Report {
     let mut report = Report::default();
     for rule in rules {
@@ -164,14 +166,30 @@ fn measure<'a>(
         } else {
             TEXT_FLOOR
         };
-        for declared in &entry.on {
-            let pair = ground(tokens, declared)
-                .and_then(|g| text_colour(tokens, &rule.value, g).map(|t| contrast(t, g)));
+        // The opacity the text is drawn at (its own and its dimmers').
+        let a = alpha.get(&rule.selector).copied().unwrap_or(1.0);
+        let dimmed = if a < 1.0 {
+            format!(" at opacity {a:.2}")
+        } else {
+            String::new()
+        };
+        let states = [
+            ("", &entry.on),
+            (" hovered", &entry.on_hover),
+            (" selected", &entry.on_selected),
+        ];
+        for (state, declared) in states
+            .iter()
+            .flat_map(|(state, list)| list.iter().map(move |g| (*state, g)))
+        {
+            let pair = ground(tokens, declared).and_then(|g| {
+                text_colour(tokens, &rule.value, g).map(|t| contrast(mix(t, g, a * 100.0), g))
+            });
             report.measured += 1;
             match pair {
                 Ok(ratio) if ratio >= floor => {}
                 Ok(ratio) => report.problems.push(format!(
-                    "{}  `{}`: `{}` on `{declared}` reads {ratio:.2}:1, needs {floor}:1",
+                    "{}  `{}`{state}: `{}`{dimmed} on `{declared}` reads {ratio:.2}:1, needs {floor}:1",
                     rule.site, rule.selector, rule.value
                 )),
                 Err(why) => report
@@ -215,37 +233,99 @@ pub(crate) fn check_contrast_pairs(root: &Path) -> Result<()> {
     let (sheets, global, map_text) = grounds::read_inputs(root)?;
     let rules = grounds::text_rules(&sheets);
     let map = grounds::read_map(&map_text)?;
+    let model = pair_model::read_model(&map_text)?;
     let defaults = grounds::theme_colours(&global);
     let light = grounds::light_base_colours(&global);
-    let dark = measure(rules.iter(), &map, &defaults);
-    let lit = light_rules(&rules, &light);
-    let light_report = measure(lit.iter().copied(), &map, &light_tokens(&defaults, &light));
-    let problems: Vec<String> = dark
-        .problems
+    let light_all = light_tokens(&defaults, &light);
+    let sec_bases = pair_model::sec_bases(&global);
+    let alpha = pair_model::alphas(&sheets, &map, &model, false);
+    // Dimmed icons, drawn in a text selector's colour, at 3:1.
+    let icon_alpha = pair_model::alphas(&sheets, &map, &model, true);
+    let icons: BTreeMap<String, Entry> = map
         .iter()
-        .map(|p| format!("dark   {p}"))
-        .chain(light_report.problems.iter().map(|p| format!("light  {p}")))
+        .filter(|(s, _)| icon_alpha.contains_key(*s))
+        .map(|(s, e)| {
+            let mut e = e.clone();
+            e.graphic = true;
+            (s.clone(), e)
+        })
         .collect();
-    let measured = dark.measured + light_report.measured;
+    let opaque = BTreeMap::new();
+    let (bounds, sec_bounds) = pair_model::boundary_rules(&sheets, &model);
+    let sec_rules = pair_model::sec_text_rules(&sheets);
+    let sec_dark = sec_bases
+        .first()
+        .map(|(_, t)| t.clone())
+        .unwrap_or_default();
+    let mut problems: Vec<String> =
+        pair_model::structure(&sheets, &map, &model, &defaults, &sec_dark)
+            .into_iter()
+            .map(|p| format!("map    {p}"))
+            .collect();
+    let mut counts = Vec::new();
+    let mut run = |label: String, report: Report| {
+        counts.push(format!("{} {label}", report.measured));
+        problems.extend(report.problems.iter().map(|p| format!("{label}  {p}")));
+    };
+    let lit = light_rules(&rules, &light);
+    run(
+        "dark".into(),
+        measure(rules.iter(), &map, &defaults, &alpha),
+    );
+    run(
+        "light".into(),
+        measure(lit.iter().copied(), &map, &light_all, &alpha),
+    );
+    run(
+        "dark icon".into(),
+        measure(rules.iter(), &icons, &defaults, &icon_alpha),
+    );
+    run(
+        "light icon".into(),
+        measure(lit.iter().copied(), &icons, &light_all, &icon_alpha),
+    );
+    run(
+        "dark boundary".into(),
+        measure(bounds.iter(), &model.boundaries, &defaults, &opaque),
+    );
+    run(
+        "light boundary".into(),
+        measure(
+            light_rules(&bounds, &light).into_iter(),
+            &model.boundaries,
+            &light_all,
+            &opaque,
+        ),
+    );
+    for (base, tokens) in &sec_bases {
+        run(
+            format!("sec {base}"),
+            measure(sec_rules.iter(), &model.sec, tokens, &opaque),
+        );
+        run(
+            format!("sec {base} boundary"),
+            measure(sec_bounds.iter(), &model.boundaries, tokens, &opaque),
+        );
+    }
     if problems.is_empty() {
         println!(
-            "  {} declared pairs measured on the dark base, {} on the light base \
-             ({} rules there have no light-base text value until E7.7.1)",
-            dark.measured,
-            light_report.measured,
+            "  pairs measured: {} ({} rules have no light-base text value until E7.7.1)",
+            counts.join(", "),
             rules.len() - lit.len()
         );
         return Ok(());
     }
+    let measured = counts.len();
     for p in &problems {
         println!("  ✗ {p}");
     }
     Err(anyhow!(
-        "{} of {measured} declared pair(s) in {MAP} fail. Text needs 4.5:1 on \
-         each declared ground and a `graphic = true` entry 3:1, on each base: \
-         change the text role or the tint by the minimal Oklab-lightness step \
-         and record the value in the `@theme` defaults (dark) or the \
-         `{}` block (light).",
+        "{} problem(s) over {measured} passes of {MAP}. Text needs 4.5:1 on \
+         each declared ground (`on`, `on_hover`, `on_selected`, at its opacity), \
+         a `graphic = true` entry and every [boundaries] entry 3:1, on each \
+         base: change the text role or the tint by the minimal Oklab-lightness \
+         step and record the value in the `@theme` defaults (dark) or the \
+         `{}` block (light); keep the map true to the sheets.",
         problems.len(),
         grounds::LIGHT_BASE
     ))
@@ -269,6 +349,7 @@ mod tests {
         Entry {
             on: on.iter().map(|g| (*g).to_string()).collect(),
             graphic,
+            ..Entry::default()
         }
     }
 
@@ -350,7 +431,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let report = measure(rules(css).iter(), &map, &tokens());
+        let report = measure(rules(css).iter(), &map, &tokens(), &BTreeMap::new());
         assert_eq!(report.measured, 5);
         assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
         assert!(report.problems[0].contains("`.low`"));
@@ -363,7 +444,7 @@ mod tests {
         let map = [(".a".to_string(), entry(&["--color-bad"], false))]
             .into_iter()
             .collect();
-        let report = measure(rules(css).iter(), &map, &tokens());
+        let report = measure(rules(css).iter(), &map, &tokens(), &BTreeMap::new());
         assert!(
             report.problems[0].contains("not a hex colour"),
             "{:?}",
@@ -394,7 +475,7 @@ mod tests {
         ]
         .into_iter()
         .collect();
-        let report = measure(lit.into_iter(), &map, &tokens);
+        let report = measure(lit.into_iter(), &map, &tokens, &BTreeMap::new());
         assert_eq!(report.measured, 3);
         // #8a6d00 on white is 4.96:1, on the light away tint under 4.5:1.
         assert_eq!(report.problems.len(), 1, "{:?}", report.problems);

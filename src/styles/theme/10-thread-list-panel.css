@@ -93,7 +93,7 @@
   }
 
   .thread-archived {
-    opacity: 0.5;
+    opacity: 0.7;
   }
 
   /* ─── Thread starter badge ─── */
@@ -104,7 +104,7 @@
     padding: 2px 8px;
     margin-top: 3px;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--color-xfire-accent) 9%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 6%, transparent);
     border: none;
     color: var(--color-xfire-accent-text);
     font-size: 11px;
@@ -113,7 +113,7 @@
   }
 
   .thread-starter-badge:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 20%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-accent) 9%, transparent);
   }
 
   /* ─── Message actions (hover toolbar) ─── */
@@ -304,7 +304,7 @@
   }
 
   .game-server-join-btn:hover {
-    filter: brightness(1.2);
+    background: color-mix(in srgb, var(--color-xfire-ingame) 85%, var(--color-xfire-overlay));
   }
 
   .game-server-add-form {

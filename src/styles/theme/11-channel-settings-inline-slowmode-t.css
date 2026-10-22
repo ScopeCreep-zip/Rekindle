@@ -43,7 +43,7 @@
   }
 
   .call-stage-join-btn:hover {
-    filter: brightness(1.08);
+    background: color-mix(in srgb, var(--color-xfire-success-fill) 88%, var(--color-xfire-fill-shade));
   }
 
   .call-stage-body {

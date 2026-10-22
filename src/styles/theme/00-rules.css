@@ -404,7 +404,6 @@
 
   /* Pending friend requests (Awaiting Response group) */
   .buddy-group-pending .buddy-item {
-    opacity: 0.6;
   }
 
   .buddy-group-pending .buddy-name {

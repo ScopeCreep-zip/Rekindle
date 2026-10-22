@@ -4,7 +4,7 @@
   }
 
   .channel-voice-join-btn:hover {
-    background: var(--color-xfire-online);
+    background: var(--color-xfire-success-fill);
   }
 
   /* Timeout duration dropdown */
@@ -237,7 +237,7 @@
   }
 
   .menu-dropdown-item-danger:hover {
-    background: color-mix(in srgb, var(--color-xfire-busy) 20%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-busy) 12%, transparent);
   }
 
   /* Identity bar two-row layout */

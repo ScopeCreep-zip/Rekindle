@@ -72,6 +72,7 @@ mod literals;
 mod motion;
 mod no_emitter;
 mod no_managed_db;
+mod pair_model;
 mod platform_floor;
 mod sec_styles;
 mod sec_surfaces;

@@ -99,6 +99,12 @@
     color: var(--color-xfire-danger-text);
   }
 
+  /* A danger item's hover is its own tint: the accent hover under red text
+   * reads 3.86:1 (plan E7.7.0b). */
+  .context-menu-item-danger:hover {
+    background: color-mix(in srgb, var(--color-xfire-busy) 12%, transparent);
+  }
+
   /* Login — must claim the flex-1 slot inside `.app-frame` so the
    * titlebar stays at the top instead of overflowing. `min-height: 0`
    * lets the inner content scroll if the form ever overflows. */

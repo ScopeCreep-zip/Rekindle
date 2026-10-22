@@ -341,7 +341,7 @@
   }
 
   .profile-popup-join-btn:hover {
-    filter: brightness(1.2);
+    background: color-mix(in srgb, var(--color-xfire-ingame) 85%, var(--color-xfire-overlay));
   }
 
   .member-game-info {
