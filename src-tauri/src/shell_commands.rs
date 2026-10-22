@@ -32,6 +32,14 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "send_channel_message",
         HostCall::Request("ChannelMessageSend"),
     ),
+    (
+        "edit_channel_message",
+        HostCall::Request("ChannelMessageEdit"),
+    ),
+    (
+        "delete_channel_message",
+        HostCall::Request("ChannelMessageDelete"),
+    ),
     ("intent_commit", HostCall::Request("IntentCommit")),
     ("intent_cancel", HostCall::Request("IntentCancel")),
     ("undo", HostCall::Request("Undo")),

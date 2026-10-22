@@ -9,7 +9,7 @@ use super::{create_ann, offline_host, seed_registry_community};
 use crate::host::adapters::channel::{refusal, HostChannel};
 use crate::host::Host;
 
-const CHANNEL: &str = "0123456789abcdef0123456789abcdef";
+const SEND_CHANNEL: &str = "0123456789abcdef0123456789abcdef";
 
 /// A text channel in Ann's `c1`, with its record key, its slowmode and our
 /// last send in it, stored as a join stores them and loaded into the
@@ -29,7 +29,7 @@ async fn add_channel(
                 &o,
                 "c1",
                 &rekindle_db::repo::channels::StoredChannel {
-                    id: CHANNEL,
+                    id: SEND_CHANNEL,
                     name: "general",
                     channel_type: "text",
                     category_id: None,
@@ -42,7 +42,9 @@ async fn add_channel(
                 },
             )?;
             match last_send_ms {
-                Some(at) => rekindle_db::repo::channels::set_last_send(conn, &o, "c1", CHANNEL, at),
+                Some(at) => {
+                    rekindle_db::repo::channels::set_last_send(conn, &o, "c1", SEND_CHANNEL, at)
+                }
                 None => Ok(()),
             }
         })
@@ -65,10 +67,12 @@ fn code(response: &rekindle_ipc::IpcResponse) -> u32 {
 async fn stored_rows(host: &Host, owner: &str) -> usize {
     let owner = owner.to_string();
     let db = host.ctx.db.current().unwrap();
-    db.call(move |conn| rekindle_db::repo::messages::channel::page(conn, &owner, CHANNEL, None, 10))
-        .await
-        .unwrap()
-        .len()
+    db.call(move |conn| {
+        rekindle_db::repo::messages::channel::page(conn, &owner, SEND_CHANNEL, None, 10)
+    })
+    .await
+    .unwrap()
+    .len()
 }
 
 #[tokio::test]
@@ -79,7 +83,7 @@ async fn a_send_without_send_messages_is_refused() {
     seed_registry_community(&host, &owner).await;
     add_channel(&host, &owner, None, None).await;
     let refused = HostChannel::new(&host.ctx)
-        .send("c1", CHANNEL, "hello", None)
+        .send("c1", SEND_CHANNEL, "hello", None)
         .await
         .unwrap_err();
     assert!(
@@ -100,11 +104,13 @@ async fn a_send_inside_the_slowmode_is_refused() {
     let now = host.ctx.clock.now_ms_i64();
     add_channel(&host, &owner, Some(30), Some(now - 1_000)).await;
     let channel = HostChannel::new(&host.ctx);
-    let refused =
-        rekindle_channel::enforce_slowmode_with_bypass(&channel, "c1", CHANNEL, now).unwrap_err();
+    let refused = rekindle_channel::enforce_slowmode_with_bypass(&channel, "c1", SEND_CHANNEL, now)
+        .unwrap_err();
     assert!(refused.to_string().contains("slowmode active"), "{refused}");
     assert_eq!(code(&refusal(&refused)), 429);
     let later = now + 31_000;
-    assert!(rekindle_channel::enforce_slowmode_with_bypass(&channel, "c1", CHANNEL, later).is_ok());
+    assert!(
+        rekindle_channel::enforce_slowmode_with_bypass(&channel, "c1", SEND_CHANNEL, later).is_ok()
+    );
     host.shutdown().await.unwrap();
 }

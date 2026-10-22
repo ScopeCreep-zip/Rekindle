@@ -32,6 +32,8 @@ mod events;
 mod persist;
 mod state;
 
+pub use dht::delivery;
+
 /// The Host, as the channel pipeline sees it.
 #[derive(Clone)]
 pub struct HostChannel {

@@ -118,7 +118,7 @@ impl HostChannel {
 /// An append's outcome as the channel crate sees it (plan C7.13): a miss
 /// is held by the record pool, and so is a write a lock cut short (the
 /// pool persists it), so neither is a failure.
-pub(super) fn delivery(
+pub fn delivery(
     written: Result<AppendOutcome, ProtocolError>,
     what: &str,
 ) -> Result<DhtWrite, ChannelError> {

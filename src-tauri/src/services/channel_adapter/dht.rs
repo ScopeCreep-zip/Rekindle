@@ -9,13 +9,12 @@ use rekindle_codec::community::channel_record::{
     ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose, ChannelPollCreate,
     ChannelPollVote, ChannelReaction,
 };
-use rekindle_protocol::dht::community::channel_record::AppendOutcome;
+use rekindle_node::host::adapters::channel::delivery;
 use rekindle_protocol::dht::community::channel_record::{
     create_smpl_channel_record, read_all_channel_entries, read_all_channel_messages,
     write_member_forward, write_member_hand_raise, write_member_message, write_member_poll_close,
     write_member_poll_create, write_member_poll_vote, write_member_reaction,
 };
-use rekindle_protocol::ProtocolError;
 
 use crate::state_helpers;
 
@@ -230,18 +229,4 @@ async fn writer_slot_list(
     )
     .await
     .map_err(ChannelError::Adapter)
-}
-
-/// An append's outcome as the channel crate sees it (plan C7.13). A miss is
-/// held by the record pool, and so is a write logout cut short (the pool
-/// persists it), so neither is a failure.
-fn delivery(
-    written: Result<AppendOutcome, ProtocolError>,
-    what: &str,
-) -> Result<DhtWrite, ChannelError> {
-    match written {
-        Ok(AppendOutcome::Stored) => Ok(DhtWrite::Stored),
-        Ok(AppendOutcome::Held) | Err(ProtocolError::PoolClosed) => Ok(DhtWrite::Held),
-        Err(e) => Err(ChannelError::Adapter(format!("{what}: {e}"))),
-    }
 }

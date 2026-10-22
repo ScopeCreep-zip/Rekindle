@@ -136,6 +136,46 @@ pub fn record_keys(
     rows
 }
 
+/// Store our own send sequence of a channel.
+///
+/// # Errors
+/// The write failed.
+pub fn set_my_sequence(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    channel_id: &str,
+    sequence: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE channels SET my_sequence = ?1 WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
+        params![sequence, owner_key, community_id, channel_id],
+    )?;
+    Ok(())
+}
+
+/// Store the time of our last send in a channel, which its slowmode
+/// counts from.
+///
+/// # Errors
+/// The write failed.
+pub fn set_last_send(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    channel_id: &str,
+    last_send_ms: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO channel_slowmode_state (owner_key, community_id, channel_id, last_send_ms) \
+         VALUES (?1, ?2, ?3, ?4) \
+         ON CONFLICT(owner_key, community_id, channel_id) DO UPDATE SET \
+           last_send_ms = excluded.last_send_ms",
+        params![owner_key, community_id, channel_id, last_send_ms],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -190,44 +230,4 @@ mod tests {
         delete(&conn, OWNER, "c1", "a").unwrap();
         assert_eq!(record_keys(&conn, OWNER, "c1").unwrap().len(), 1);
     }
-}
-
-/// Store our own send sequence of a channel.
-///
-/// # Errors
-/// The write failed.
-pub fn set_my_sequence(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    channel_id: &str,
-    sequence: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE channels SET my_sequence = ?1 WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
-        params![sequence, owner_key, community_id, channel_id],
-    )?;
-    Ok(())
-}
-
-/// Store the time of our last send in a channel, which its slowmode
-/// counts from.
-///
-/// # Errors
-/// The write failed.
-pub fn set_last_send(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    channel_id: &str,
-    last_send_ms: i64,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT INTO channel_slowmode_state (owner_key, community_id, channel_id, last_send_ms) \
-         VALUES (?1, ?2, ?3, ?4) \
-         ON CONFLICT(owner_key, community_id, channel_id) DO UPDATE SET \
-           last_send_ms = excluded.last_send_ms",
-        params![owner_key, community_id, channel_id, last_send_ms],
-    )?;
-    Ok(())
 }
