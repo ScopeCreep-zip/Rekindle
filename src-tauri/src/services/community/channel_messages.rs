@@ -1,60 +1,14 @@
-//! Phase 19.i-REDO — thin facade.
-//!
-//! `forward_message` lives in `rekindle_channel::pipeline`.
-//! This module constructs a `ChannelAdapter` per call and:
-//! - re-exports `SendChannelMessageResult` for the command callers
-//! - (a send, and every post's settle and Retry, are the Host's:
-//!   `rekindle_node::host::adapters::channel`, plan E3.1 E2b)
-//! - (the local echo of a sent message is emitted by `rekindle_channel`)
-//! - delegates `enforce_slowmode` + `resolve_outbound_mentions` to
-//!   crate primitives via the adapter (files_adapter still calls these)
+//! The channel pipeline's slowmode gate and mention resolver for the
+//! shell's files adapter, over a `ChannelAdapter` built per call. A send,
+//! a forward, and every post's settle and Retry are the Host's
+//! (`rekindle_node::host::adapters::channel`, plan E3.1 E2b and E2d).
 
 use crate::state::SharedState;
-use rekindle_db::Db;
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SendChannelMessageResult {
-    pub status: String,
-    pub message_id: String,
-}
 
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::channel_adapter::ChannelAdapter, String> {
     crate::services::build_adapter(state, crate::services::channel_adapter::ChannelAdapter::new)
-}
-
-fn map_result(result: rekindle_channel::ChannelSendResult) -> SendChannelMessageResult {
-    SendChannelMessageResult {
-        status: result.status,
-        message_id: result.message_id,
-    }
-}
-
-pub async fn forward_message(
-    state: &SharedState,
-    _pool: &Db,
-    source_community_id: &str,
-    source_channel_id: &str,
-    source_message_id: &str,
-    dest_community_id: &str,
-    dest_channel_id: &str,
-) -> Result<SendChannelMessageResult, String> {
-    let adapter = build_adapter(state)?;
-    let result = rekindle_channel::forward_channel_message(
-        &adapter,
-        rekindle_channel::ForwardChannelMessageParams {
-            source_community: source_community_id,
-            source_channel: source_channel_id,
-            source_message: source_message_id,
-            dest_community: dest_community_id,
-            dest_channel: dest_channel_id,
-        },
-    )
-    .await
-    .map_err(|e| e.to_string())?;
-    Ok(map_result(result))
 }
 
 /// Architecture §28.7 slowmode gate, retained as a re-export for

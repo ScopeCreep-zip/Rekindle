@@ -23,12 +23,12 @@ export const governanceCommands = {
     ),
 
   sendChannelTyping: (communityId: string, channelId: string) =>
-    invoke<void>("send_channel_typing", { communityId, channelId }),
+    hostInvoke<null>("send_channel_typing", { communityId, channelId }),
 
   // Presence: tell peers which channel we're focused on (or null to clear).
   // `kind` is "voice" for voice channels, "text" otherwise.
   setActiveChannel: (communityId: string, channelId: string | null, kind: string) =>
-    invoke<void>("set_active_channel", { communityId, channelId, kind }),
+    hostInvoke<null>("set_active_channel", { communityId, channelId, kind }),
 
   // Presence sharing consent (default-deny). Local-only; never published.
   getPresencePolicy: (communityId: string) =>

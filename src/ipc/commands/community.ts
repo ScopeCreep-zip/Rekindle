@@ -118,7 +118,7 @@ export const communityCommands = {
     channelId: string,
     messageId: string,
     reason?: string,
-  ) => invoke<void>("admin_delete_channel_message", {
+  ) => hostInvoke<null>("admin_delete_channel_message", {
     communityId,
     channelId,
     messageId,
@@ -129,7 +129,7 @@ export const communityCommands = {
     channelId: string,
     messageIds: string[],
     reason?: string,
-  ) => invoke<number>("bulk_delete_channel_messages", {
+  ) => hostInvoke<number>("bulk_delete_channel_messages", {
     communityId,
     channelId,
     messageIds,
@@ -141,7 +141,7 @@ export const communityCommands = {
     sourceMessageId: string,
     destCommunityId: string,
     destChannelId: string,
-  ) => invoke<{ status: string; messageId: string }>("forward_channel_message", {
+  ) => hostInvoke<{ status: string; messageId: string }>("forward_channel_message", {
     sourceCommunityId,
     sourceChannelId,
     sourceMessageId,

@@ -1,6 +1,6 @@
 //! Phase 23.C — presence-handler Tauri-runtime orchestration lifted
-//! from `commands/community/presence.rs`. Hosts the four orchestrators
-//! (`send_channel_typing_inner`, `update_community_presence_inner`,
+//! from `commands/community/presence.rs`. Hosts the orchestrators
+//! (`update_community_presence_inner`,
 //! `get_community_members_inner`, `update_community_profile_inner`).
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
@@ -9,21 +9,6 @@ use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
 use rekindle_db::Db;
-
-pub fn send_channel_typing_inner(
-    state: &SharedState,
-    community_id: &str,
-    channel_id: String,
-) -> Result<(), String> {
-    let pseudonym_key =
-        state_helpers::my_pseudonym_key(state, community_id).ok_or("no pseudonym key")?;
-
-    let envelope = CommunityEnvelope::TypingIndicator {
-        channel_id,
-        pseudonym_key,
-    };
-    crate::services::community::send_to_mesh(state, community_id, &envelope)
-}
 
 pub async fn update_community_presence_inner(
     state: &SharedState,
@@ -55,39 +40,6 @@ pub async fn update_community_presence_inner(
     let gossip_result = crate::services::community::send_to_mesh(state, &community_id, &envelope);
     crate::services::community::write_our_presence(state, &community_id).await;
     gossip_result
-}
-
-/// Set (or clear) the local user's focused channel for `community_id`
-/// and republish presence so peers see the move within one write.
-///
-/// `channel_id == None` clears the location (left all channels).
-/// `kind` is "voice" for voice channels, anything else → text. The
-/// new location rides in `MemberSession.location` on the next write
-/// (plaintext in Layer 1; MEK-encrypted extras in Layer 2).
-pub async fn set_active_channel_inner(
-    state: &SharedState,
-    community_id: String,
-    channel_id: Option<String>,
-    kind: String,
-) -> Result<(), String> {
-    let location = channel_id.map(|cid| {
-        if kind == "voice" {
-            rekindle_types::presence::SessionLocation::Voice { channel_id: cid }
-        } else {
-            rekindle_types::presence::SessionLocation::Text { channel_id: cid }
-        }
-    });
-    {
-        let mut communities = state.communities.write();
-        let community = communities
-            .get_mut(&community_id)
-            .ok_or_else(|| "unknown community".to_string())?;
-        community.my_session_location = location;
-    }
-    // Republish immediately so the roster reflects the move now rather
-    // than on the next heartbeat tick.
-    crate::services::community::write_our_presence(state, &community_id).await;
-    Ok(())
 }
 
 /// Update the local presence sharing consent (default-deny), persist it

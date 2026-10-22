@@ -1,8 +1,7 @@
 use tauri::State;
 
 use crate::services::community_presence_runtime::{
-    get_presence_policy_inner, send_channel_typing_inner, set_active_channel_inner,
-    set_presence_policy_inner, update_community_presence_inner,
+    get_presence_policy_inner, set_presence_policy_inner, update_community_presence_inner,
 };
 use crate::state::SharedState;
 
@@ -10,13 +9,18 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::{CommandError, Done};
 
+/// Tell the community we are typing (`CommunityRequest::ChannelTyping`).
 #[tauri::command]
 pub async fn send_channel_typing(
     community_id: String,
     channel_id: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    send_channel_typing_inner(state.inner(), &community_id, channel_id)
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelTyping {
+        community: community_id,
+        channel: channel_id,
+    });
+    crate::host_call::call(&state, request).await
 }
 
 #[tauri::command]
@@ -41,14 +45,20 @@ pub async fn update_community_presence(
     .await
 }
 
+/// The channel we are in, or none (`CommunityRequest::ChannelSetActive`).
 #[tauri::command]
 pub async fn set_active_channel(
     community_id: String,
     channel_id: Option<String>,
     kind: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    set_active_channel_inner(state.inner(), community_id, channel_id, kind).await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelSetActive {
+        community: community_id,
+        channel: channel_id,
+        kind,
+    });
+    crate::host_call::call(&state, request).await
 }
 
 #[tauri::command]

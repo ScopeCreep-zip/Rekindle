@@ -12,7 +12,6 @@ pub mod community_diagnostics_runtime; // Phase 23.C — debug_gossip_state body
 pub mod community_files_runtime; // Phase 23.C — Lost Cargo file-handler orchestration lifted from commands/community/files.rs.
 pub mod community_link_previews_runtime; // Phase 23.C — link-preview settings SQLite ops lifted from commands/community/link_previews.rs.
 pub mod community_mek_local_rotate; // Phase 23.C — `rotate_mek_local` lifted from legacy/control.rs.
-pub mod community_moderation_bulk; // Phase 23.D.4 — bulk channel-message delete extracted from community_moderation_runtime.
 pub mod community_moderation_runtime; // Phase 23.C — message-deletion runtime orchestration lifted from commands/community/moderation.rs.
 pub mod community_notifications_runtime; // Phase 23.C — quiet-hours wrappers lifted from commands/community/notifications.rs.
 pub mod community_pins_runtime; // Phase 23.C — pin/unpin/get_channel_pins orchestration lifted from commands/community/reactions_pins.rs.

@@ -15,13 +15,6 @@ use crate::state_helpers;
 use rekindle_db::Db;
 use rekindle_types::permissions;
 
-#[derive(Debug, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct SendChannelMessageResponse {
-    pub status: String,
-    pub message_id: String,
-}
-
 pub async fn get_channel_messages_inner(
     state: Arc<AppState>,
     pool: Db,
@@ -73,31 +66,6 @@ pub async fn get_channel_messages_inner(
     }
 
     Ok(messages)
-}
-
-pub async fn forward_channel_message_inner(
-    state: &Arc<AppState>,
-    pool: &Db,
-    source_community_id: String,
-    source_channel_id: String,
-    source_message_id: String,
-    dest_community_id: String,
-    dest_channel_id: String,
-) -> Result<SendChannelMessageResponse, String> {
-    let sent = crate::services::community::channel_messages::forward_message(
-        state,
-        pool,
-        &source_community_id,
-        &source_channel_id,
-        &source_message_id,
-        &dest_community_id,
-        &dest_channel_id,
-    )
-    .await?;
-    Ok(SendChannelMessageResponse {
-        status: sent.status,
-        message_id: sent.message_id,
-    })
 }
 
 pub async fn get_older_channel_messages_inner(

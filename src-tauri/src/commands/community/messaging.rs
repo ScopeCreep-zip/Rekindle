@@ -3,15 +3,11 @@ use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
 use crate::commands::chat::Message;
-use crate::services::messaging_runtime::SendChannelMessageResponse;
 use crate::state::SharedState;
 
-/// Forward a previously-cached channel message to another channel.
-///
-/// `source_*` and `dest_*` may identify the same community or different
-/// communities. The source must already be cached locally (no DHT refetch).
-/// Re-encrypts content with the destination MEK and writes a
-/// `ChannelEntry::Forward` entry plus a gossip notification.
+/// Forward our stored copy of a channel message into another channel
+/// (`CommunityRequest::ChannelMessageForward`); the source and destination
+/// may be in different communities.
 #[tauri::command]
 pub async fn forward_channel_message(
     source_community_id: String,
@@ -20,18 +16,15 @@ pub async fn forward_channel_message(
     dest_community_id: String,
     dest_channel_id: String,
     state: State<'_, SharedState>,
-) -> Result<SendChannelMessageResponse, String> {
-    let pool = state.db.current()?;
-    crate::services::messaging_runtime::forward_channel_message_inner(
-        state.inner(),
-        &pool,
-        source_community_id,
-        source_channel_id,
-        source_message_id,
-        dest_community_id,
-        dest_channel_id,
-    )
-    .await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelMessageForward {
+        source_community: source_community_id,
+        source_channel: source_channel_id,
+        source_message: source_message_id,
+        dest_community: dest_community_id,
+        dest_channel: dest_channel_id,
+    });
+    crate::host_call::call(&state, request).await
 }
 
 /// Post a message in a community channel
