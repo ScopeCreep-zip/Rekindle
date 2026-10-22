@@ -21,6 +21,7 @@ mod internet_flap;
 mod invite_expiry;
 mod invite_join_leave;
 mod logs;
+mod mod_report;
 mod moderation;
 mod no_timed_inspect;
 mod offline_day;

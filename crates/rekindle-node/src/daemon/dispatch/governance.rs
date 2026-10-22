@@ -266,7 +266,7 @@ pub(crate) async fn handle_ban_list(
 }
 
 /// The moderator queue, for a member holding `MANAGE_MESSAGES`.
-pub(crate) async fn handle_mod_report_list(
+pub(crate) fn handle_mod_report_list(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
