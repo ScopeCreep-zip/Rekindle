@@ -13,7 +13,7 @@ use anyhow::{anyhow, Context, Result};
 const INVOKE: &str = "src-tauri/src/invoke.rs";
 const IPC_PROTOCOL: &str = "crates/rekindle-ipc/src/protocol/mod.rs";
 const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community.rs";
-const TABLE: &str = "crates/rekindle-types/src/intent/table.rs";
+const TABLE: &str = "crates/rekindle-types/src/intent/table";
 
 /// The command names in `invoke.rs`'s `generate_handler!` list.
 fn tauri_commands(src: &str) -> Vec<String> {
@@ -59,36 +59,58 @@ fn ipc_requests(protocol: &str, community: &str) -> Result<Vec<String>> {
         .collect())
 }
 
-/// The first element of every `(name, kind)` row of `COMMAND_TABLE`.
+/// The first element of every `(name, kind)` row of one part of
+/// `COMMAND_TABLE`: each `const …_ROWS: &[…] = &[…]` in a file of `intent/table/`.
 fn table_names(src: &str) -> Result<Vec<String>> {
     let file = syn::parse_file(src).context("parsing the intent table")?;
-    let table = file
-        .items
-        .iter()
-        .find_map(|item| match item {
-            syn::Item::Const(c) if c.ident == "COMMAND_TABLE" => Some(c),
-            _ => None,
-        })
-        .ok_or_else(|| anyhow!("no `const COMMAND_TABLE` in {TABLE}"))?;
-    let syn::Expr::Reference(reference) = &*table.expr else {
-        return Err(anyhow!("COMMAND_TABLE is not `&[…]`"));
-    };
-    let syn::Expr::Array(rows) = &*reference.expr else {
-        return Err(anyhow!("COMMAND_TABLE is not `&[…]`"));
-    };
-    rows.elems
-        .iter()
-        .map(|row| match row {
-            syn::Expr::Tuple(t) => match t.elems.first() {
-                Some(syn::Expr::Lit(syn::ExprLit {
-                    lit: syn::Lit::Str(s),
-                    ..
-                })) => Ok(s.value()),
-                _ => Err(anyhow!("a COMMAND_TABLE row does not start with a name")),
-            },
-            _ => Err(anyhow!("a COMMAND_TABLE row is not a tuple")),
-        })
-        .collect()
+    let mut names = Vec::new();
+    for part in file.items.iter().filter_map(|item| match item {
+        syn::Item::Const(c) if c.ident.to_string().ends_with("_ROWS") => Some(c),
+        _ => None,
+    }) {
+        let syn::Expr::Reference(reference) = &*part.expr else {
+            return Err(anyhow!("{} is not `&[…]`", part.ident));
+        };
+        let syn::Expr::Array(rows) = &*reference.expr else {
+            return Err(anyhow!("{} is not `&[…]`", part.ident));
+        };
+        for row in &rows.elems {
+            let syn::Expr::Tuple(t) = row else {
+                return Err(anyhow!("a {} row is not a tuple", part.ident));
+            };
+            let Some(syn::Expr::Lit(syn::ExprLit {
+                lit: syn::Lit::Str(s),
+                ..
+            })) = t.elems.first()
+            else {
+                return Err(anyhow!("a {} row does not start with a name", part.ident));
+            };
+            names.push(s.value());
+        }
+    }
+    Ok(names)
+}
+
+/// The names of every part of the table, the files read in name order.
+fn table_parts(root: &Path) -> Result<Vec<String>> {
+    let dir = root.join(TABLE);
+    let mut files: Vec<_> = std::fs::read_dir(&dir)
+        .with_context(|| format!("listing {TABLE}"))?
+        .map(|entry| entry.map(|e| e.path()))
+        .collect::<std::io::Result<_>>()
+        .with_context(|| format!("listing {TABLE}"))?;
+    files.retain(|p| p.extension().is_some_and(|x| x == "rs"));
+    files.sort();
+    let mut names = Vec::new();
+    for path in files {
+        let src = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        names.extend(table_names(&src)?);
+    }
+    if names.is_empty() {
+        return Err(anyhow!("no `const …_ROWS` table part in {TABLE}"));
+    }
+    Ok(names)
 }
 
 /// Every mismatch between the code's names and the table's.
@@ -129,7 +151,7 @@ pub(crate) fn check_intent_table(root: &Path) -> Result<()> {
     let problems = compare(
         &tauri_commands(&read(INVOKE)?),
         &ipc_requests(&read(IPC_PROTOCOL)?, &read(IPC_COMMUNITY)?)?,
-        &table_names(&read(TABLE)?)?,
+        &table_parts(root)?,
     );
     if problems.is_empty() {
         return Ok(());
@@ -165,7 +187,7 @@ mod tests {
             ipc_requests(ipc, community).unwrap(),
             names(&["Unlock", "Lock", "Kick", "BanList"])
         );
-        let table = r#"pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[("login", Some(IntentKind::Login)), ("Lock", None)];"#;
+        let table = r#"pub(crate) const CORE_ROWS: &[(&str, Option<IntentKind>)] = &[("login", Some(IntentKind::Login)), ("Lock", None)]; pub const COMMAND_TABLE: &[&[(&str, Option<IntentKind>)]] = &[CORE_ROWS];"#;
         assert_eq!(table_names(table).unwrap(), names(&["login", "Lock"]));
     }
 

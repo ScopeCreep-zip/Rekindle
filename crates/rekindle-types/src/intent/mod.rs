@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
 pub use kind::IntentKind;
-pub use table::{kind_of, Classified, COMMAND_TABLE};
+pub use table::{command_rows, kind_of, Classified, COMMAND_TABLE};
 
 /// A held action's id: UUID v7, minted by the gate, and the key a repeated
 /// commit of it is answered from (plan U1.9). Serializes as the UUID string.

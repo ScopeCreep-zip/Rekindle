@@ -127,7 +127,7 @@ fn a_person_is_typed_by_local_nickname_then_fingerprint() {
 #[test]
 fn the_table_names_each_command_once_and_classifies_the_self_proving() {
     let mut seen = HashSet::new();
-    for (name, _) in COMMAND_TABLE {
+    for (name, _) in command_rows() {
         assert!(seen.insert(*name), "{name} listed twice");
     }
     assert_eq!(

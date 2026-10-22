@@ -1,0 +1,61 @@
+//! The Tauri commands for identity, the gate, 1:1 messaging and friends.
+
+use crate::intent::IntentKind;
+
+/// `(command or request name, kind)`.
+pub(crate) const TAURI_CORE_ROWS: &[(&str, Option<IntentKind>)] = &[
+    ("create_identity", Some(IntentKind::CreateIdentity)),
+    ("login", Some(IntentKind::Login)),
+    ("get_identity", None),
+    ("logout", Some(IntentKind::Logout)),
+    ("list_identities", None),
+    ("delete_identity", Some(IntentKind::DeleteIdentity)),
+    ("pqxdh_bundle_info", None),
+    ("audit_verify", None),
+    ("audit_export", Some(IntentKind::AuditExport)),
+    ("lifecycle_current", None),
+    // The gate's own: a commit runs the action it held, an undo the inverse
+    // it stored, each classified there.
+    ("intent_commit", None),
+    ("intent_cancel", None),
+    ("undo", None),
+    ("subscribe_events", None),
+    ("send_message", Some(IntentKind::SendMessage)),
+    ("outbox_retry", Some(IntentKind::RetrySend)),
+    ("outbox_discard", Some(IntentKind::DiscardSend)),
+    ("send_typing", None),
+    ("get_message_history", None),
+    ("mark_read", None),
+    ("add_friend_from_code", Some(IntentKind::AddFriend)),
+    ("get_friend_code", None),
+    ("rotate_friend_token", Some(IntentKind::RotateFriendToken)),
+    ("remove_friend", Some(IntentKind::RemoveFriend)),
+    ("accept_request", Some(IntentKind::AcceptRequest)),
+    ("get_friends", None),
+    ("reject_request", Some(IntentKind::RejectRequest)),
+    ("get_pending_requests", None),
+    ("create_friend_group", Some(IntentKind::CreateFriendGroup)),
+    ("rename_friend_group", Some(IntentKind::RenameFriendGroup)),
+    ("delete_friend_group", Some(IntentKind::DeleteFriendGroup)),
+    ("set_friend_nickname", Some(IntentKind::SetFriendNickname)),
+    ("move_friend_to_group", Some(IntentKind::MoveFriendToGroup)),
+    ("generate_invite", Some(IntentKind::GenerateInvite)),
+    (
+        "add_friend_from_invite",
+        Some(IntentKind::AddFriendFromInvite),
+    ),
+    ("block_user", Some(IntentKind::BlockUser)),
+    ("unblock_user", Some(IntentKind::UnblockUser)),
+    ("get_blocked_users", None),
+    ("get_safety_number", None),
+    ("mark_identity_verified", Some(IntentKind::MarkVerified)),
+    (
+        "clear_identity_verification",
+        Some(IntentKind::ClearVerification),
+    ),
+    ("cancel_request", Some(IntentKind::CancelRequest)),
+    ("retry_handshake", Some(IntentKind::AcceptRequest)),
+    ("cancel_invite", Some(IntentKind::CancelInvite)),
+    ("get_outgoing_invites", None),
+    ("reset_signal_session", Some(IntentKind::ResetSignalSession)),
+];
