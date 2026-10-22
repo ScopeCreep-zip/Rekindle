@@ -58,10 +58,8 @@ pub use rekindle_ipc::Caller;
 /// One definition rather than one per dispatch module: the body is
 /// three tokens, which is exactly the size at which copies stop looking
 /// worth converging and start drifting.
-pub(crate) fn adapter(
-    ctx: &DaemonContext,
-) -> crate::daemon::governance_adapter::DaemonGovernanceAdapter<'_> {
-    crate::daemon::governance_adapter::DaemonGovernanceAdapter::new(ctx)
+pub(crate) fn adapter(ctx: &DaemonContext) -> crate::host::adapters::governance::HostGovernance {
+    crate::host::adapters::governance::HostGovernance::of(ctx)
 }
 
 /// Shared daemon context accessible by all dispatch handlers.

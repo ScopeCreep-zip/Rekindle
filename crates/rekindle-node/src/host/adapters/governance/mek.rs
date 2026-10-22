@@ -10,14 +10,14 @@ use rekindle_transport::crypto::mek::Mek;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::ChannelId;
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
 /// A channel id as the governance runtime passes it (32 hex), as a scope.
 fn channel_scope(channel_id: &str) -> Option<KeyScope> {
     ChannelId::from_hex(channel_id).map(KeyScope::Channel)
 }
 
-impl DaemonGovernanceAdapter<'_> {
+impl HostGovernance {
     /// Cache the key and, when the cache takes it (the convergence rule may
     /// refuse a stale or outranked one), store it in the vault, so the next
     /// unlock reloads it.

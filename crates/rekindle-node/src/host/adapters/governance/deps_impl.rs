@@ -19,10 +19,10 @@ use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
 #[async_trait]
-impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
+impl GovernanceRuntimeDeps for HostGovernance {
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         self.ctx.unlock_scope_or_closed()
     }
@@ -168,7 +168,7 @@ impl GovernanceRuntimeDeps for DaemonGovernanceAdapter<'_> {
     // ---------- MEK cache ----------
 
     fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
-        crate::daemon::mek_rotation::key_provider(self.ctx)
+        crate::daemon::mek_rotation::key_provider(&self.ctx)
     }
 
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot) {

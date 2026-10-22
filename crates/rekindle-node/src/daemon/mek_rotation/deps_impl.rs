@@ -1,6 +1,6 @@
 //! `MekDistributeDeps` for the daemon.
 //!
-//! Most methods delegate to `DaemonGovernanceAdapter` through
+//! Most methods delegate to `HostGovernance` through
 //! `GovernanceRuntimeDeps` rather than reaching into `DaemonContext`
 //! themselves. Identity, Lamport counter, membership and the online
 //! roster are all questions that adapter already answers, and answering
@@ -24,12 +24,12 @@ use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{CryptoEvent, SubscriptionEvent};
 
 use super::DaemonMekAdapter;
-use crate::daemon::governance_adapter::DaemonGovernanceAdapter;
+use crate::host::adapters::governance::HostGovernance;
 
 impl DaemonMekAdapter {
-    /// A short-lived governance adapter borrowed from our own `Arc`.
-    fn governance(&self) -> DaemonGovernanceAdapter<'_> {
-        DaemonGovernanceAdapter::new(&self.ctx)
+    /// The Host's governance adapter.
+    fn governance(&self) -> HostGovernance {
+        HostGovernance::of(&self.ctx)
     }
 
     fn transport(&self) -> Option<Arc<rekindle_transport::TransportNode>> {

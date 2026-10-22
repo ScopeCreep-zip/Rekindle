@@ -16,7 +16,7 @@ use rekindle_governance_runtime::deps::DhtRecordInfo;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_transport::broadcast::dht_writes::{self, LeaseId};
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
 /// Map a transport failure into the trait's error type.
 ///
@@ -27,7 +27,7 @@ fn dht_err(context: &str, e: impl std::fmt::Display) -> GovernanceRuntimeError {
     GovernanceRuntimeError::Adapter(format!("{context}: {e}"))
 }
 
-impl DaemonGovernanceAdapter<'_> {
+impl HostGovernance {
     /// Create the universal v2.0 community SMPL record (`o_cnt: 0`), held
     /// writable under its creator lease.
     pub(super) async fn create_smpl_record_impl(
@@ -124,7 +124,7 @@ impl DaemonGovernanceAdapter<'_> {
             dht_writes::release(&node, lease).await;
         }
         self.watch_community_records_impl(community_id).await;
-        crate::daemon::keepalive::start(self.ctx, community_id);
+        crate::daemon::keepalive::start(&self.ctx, community_id);
     }
 
     pub(super) async fn get_dht_value_impl(

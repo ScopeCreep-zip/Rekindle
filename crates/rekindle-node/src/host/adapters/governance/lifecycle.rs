@@ -10,9 +10,9 @@ use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
-impl DaemonGovernanceAdapter<'_> {
+impl HostGovernance {
     // ---------- Gossip ----------
 
     /// Fan a governance envelope out over the community mesh.

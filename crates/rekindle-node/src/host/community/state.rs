@@ -48,7 +48,7 @@ pub struct CommunityState {
     /// Plate Gate (architecture §15): every expansion segment merged from
     /// governance state (segment 0 is implicit, not included here).
     /// Populated on community load and kept current by the governance
-    /// adapter's `SegmentAdded` handler — see `governance_adapter::segments`.
+    /// adapter's `SegmentAdded` handler — see `rekindle_governance_runtime::segments`.
     #[serde(default)]
     pub segments: Vec<rekindle_types::presence::SegmentDescriptor>,
     // ── v2.0 flat governance fields ──

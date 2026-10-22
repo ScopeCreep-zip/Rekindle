@@ -64,8 +64,8 @@ use crate::daemon::dispatch::DaemonContext;
 ///
 /// Owned rather than borrowed: the presence poll is a long-lived
 /// spawned loop, so it needs `'static` state — the same reason
-/// `DaemonMekAdapter` holds an `Arc`, and unlike the short-lived
-/// `DaemonGovernanceAdapter` which lives for one request.
+/// `DaemonMekAdapter` and
+/// `HostGovernance` hold an `Arc`.
 pub struct DaemonPresenceAdapter {
     pub(super) ctx: Arc<DaemonContext>,
 }

@@ -11,11 +11,11 @@ use rekindle_governance_runtime::deps::{
 
 use rekindle_transport::session::CommunityMembership as SessionMembership;
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
 use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
 
-impl DaemonGovernanceAdapter<'_> {
+impl HostGovernance {
     /// Ed25519 identity secret, or `None` while the daemon is locked.
     pub(super) fn identity_secret_impl(&self) -> Option<[u8; 32]> {
         self.ctx.identity_secret()

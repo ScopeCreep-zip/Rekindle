@@ -3,6 +3,7 @@
 //! operations' Host (plan E2.1).
 
 pub mod friends;
+pub mod governance;
 pub mod group_dm;
 pub mod mek;
 pub mod outbox;

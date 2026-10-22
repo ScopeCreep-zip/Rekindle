@@ -17,9 +17,9 @@ use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
 use rekindle_types::display::CategoryDisplay;
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
-impl DaemonGovernanceAdapter<'_> {
+impl HostGovernance {
     /// Translate and publish one runtime event.
     ///
     /// Events with no `SubscriptionEvent` counterpart are traced rather
@@ -40,7 +40,7 @@ impl DaemonGovernanceAdapter<'_> {
                 Some(GovernanceEvent::RolesChanged {
                     community: community_id.clone(),
                     roles: crate::daemon::dispatch::governance::role_displays(
-                        self.ctx,
+                        &self.ctx,
                         community_id,
                     ),
                 })
@@ -49,7 +49,7 @@ impl DaemonGovernanceAdapter<'_> {
                 Some(GovernanceEvent::ChannelsChanged {
                     community: community_id.clone(),
                     channels: crate::daemon::dispatch::channel::channel_overviews(
-                        self.ctx,
+                        &self.ctx,
                         community_id,
                     ),
                     categories: self.category_displays(community_id),

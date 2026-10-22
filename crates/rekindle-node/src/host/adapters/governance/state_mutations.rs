@@ -13,9 +13,9 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::CommunityInsert;
 use rekindle_transport::session::CommunityMembership as SessionMembership;
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
-impl DaemonGovernanceAdapter<'_> {
+impl HostGovernance {
     pub(super) fn set_governance_state_impl(&self, community_id: &str, state: GovernanceState) {
         // Record each channel's record key before the state lands.
         // `ChannelCreated.record_key` is the canonical location, but the

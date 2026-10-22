@@ -18,9 +18,9 @@ use rekindle_governance_runtime::roles::RoleSnapshotInsert;
 
 use rekindle_types::id::RoleId;
 
-use super::DaemonGovernanceAdapter;
+use super::HostGovernance;
 
-impl DaemonGovernanceAdapter<'_> {
+impl HostGovernance {
     /// A role's current definition, read from the merged CRDT state.
     pub(super) fn role_current_definition_impl(
         &self,
