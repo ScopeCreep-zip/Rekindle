@@ -76,6 +76,7 @@ async fn main() {
         serve_bus: false,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
+        idle: std::sync::Arc::new(rekindle_idle::OsIdle),
         shell: Some(rekindle_lib::ShellSession::new(Arc::clone(&state), None) as _),
     })
     .await

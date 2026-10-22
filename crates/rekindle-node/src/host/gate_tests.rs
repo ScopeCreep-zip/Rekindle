@@ -27,6 +27,7 @@ async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, S
         serve_bus: false,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
+        idle: std::sync::Arc::new(rekindle_idle::OsIdle),
         shell: None,
     })
     .await

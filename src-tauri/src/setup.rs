@@ -227,6 +227,7 @@ async fn start_host(
         serve_bus: true,
         clock: Arc::clone(&state.clock),
         rng: Arc::clone(&state.rng),
+        idle: Arc::new(rekindle_idle::OsIdle),
         shell: Some(shell),
     })
     .await

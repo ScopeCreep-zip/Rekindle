@@ -137,6 +137,9 @@ pub struct HostConfig {
     /// The generator the host and its engines mint ids, keys and jitter
     /// from (plan C9.2): `OsRandom`, or the simulator's seeded one.
     pub rng: Arc<dyn rekindle_utils::RandomSource>,
+    /// The user's input idle time the idle stage reads (plan E2.B):
+    /// `rekindle_idle::OsIdle`, or the simulator's.
+    pub idle: Arc<dyn rekindle_utils::IdleSource>,
     /// The GUI's side of an unlock (`ShellHooks`); `None` for `rekindled`,
     /// the E2E server and the simulator.
     pub shell: Option<Arc<dyn super::shell_hooks::ShellHooks>>,
@@ -175,6 +178,7 @@ impl Host {
             serve_bus,
             clock,
             rng,
+            idle,
             shell,
         } = config;
         let root = claimed.root().clone();
@@ -307,6 +311,7 @@ impl Host {
             journal: Arc::clone(&journal),
             clock: Arc::clone(&clock),
             rng,
+            idle,
             intents: Arc::new(super::gate::HostGate::new(Arc::clone(&stores.attempts))),
             undo: super::undo::UndoCache::default(),
             event_watch_tx,

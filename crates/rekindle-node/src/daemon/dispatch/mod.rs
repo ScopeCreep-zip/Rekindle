@@ -146,6 +146,9 @@ pub struct DaemonContext {
     /// mint (plan C9.2). `OsRandom` in production; AEAD nonces never come
     /// from it.
     pub rng: Arc<dyn rekindle_utils::RandomSource>,
+    /// The user's input idle time (plan E2.B): `rekindle_idle::OsIdle` in
+    /// production.
+    pub idle: Arc<dyn rekindle_utils::IdleSource>,
     /// The transport's subscription event source while unlocked: the
     /// forwarder (`daemon::event_forward`) journals what it carries.
     pub event_watch_tx: tokio::sync::watch::Sender<

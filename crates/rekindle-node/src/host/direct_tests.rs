@@ -34,6 +34,7 @@ pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
         serve_bus: false,
         clock: Arc::new(rekindle_utils::SystemClock),
         rng: Arc::new(rekindle_utils::OsRandom),
+        idle: Arc::new(rekindle_idle::OsIdle),
         shell: None,
     })
     .await

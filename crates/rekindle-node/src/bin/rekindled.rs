@@ -42,6 +42,7 @@ async fn run() -> anyhow::Result<rekindle_node::daemon::shutdown::ExitReason> {
         serve_bus: true,
         clock: std::sync::Arc::new(rekindle_utils::SystemClock),
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
+        idle: std::sync::Arc::new(rekindle_idle::OsIdle),
         shell: None,
     })
     .await?;

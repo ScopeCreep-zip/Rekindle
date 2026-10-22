@@ -20,3 +20,14 @@ mod platform;
 pub fn get_idle_seconds() -> Option<u64> {
     platform::get_idle_seconds()
 }
+
+/// The operating system's idle time, as the Host's idle port (both hosts
+/// in production; the network simulator drives its own).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OsIdle;
+
+impl rekindle_utils::IdleSource for OsIdle {
+    fn idle_seconds(&self) -> Option<u64> {
+        get_idle_seconds()
+    }
+}

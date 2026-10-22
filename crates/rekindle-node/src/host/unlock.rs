@@ -119,13 +119,13 @@ pub(crate) async fn run(
             .await;
         }
         // 3b. Idle and game.
-        let (presence, db, owner) = (
-            ctx.own_presence.clone(),
-            Arc::clone(&ctx.db),
-            installed.public_key.clone(),
-        );
-        let idle =
-            scope.spawn_with_token("idle", |stop| super::idle::run(presence, db, owner, stop));
+        let stage = super::idle::IdleStage {
+            presence: ctx.own_presence.clone(),
+            db: Arc::clone(&ctx.db),
+            source: Arc::clone(&ctx.idle),
+            owner: installed.public_key.clone(),
+        };
+        let idle = scope.spawn_with_token("idle", |stop| stage.run(stop));
         let presence = ctx.own_presence.clone();
         let game =
             scope.spawn_with_token("game detection", |stop| super::game::run(presence, stop));

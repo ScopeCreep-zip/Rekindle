@@ -33,6 +33,7 @@ async fn test_env(dir: &std::path::Path) -> (DataRoot, SharedState) {
         serve_bus: false,
         clock: Arc::new(rekindle_utils::SystemClock),
         rng: Arc::new(rekindle_utils::OsRandom),
+        idle: Arc::new(rekindle_idle::OsIdle),
         shell: Some(rekindle_lib::ShellSession::new(Arc::clone(&state), None) as _),
     })
     .await

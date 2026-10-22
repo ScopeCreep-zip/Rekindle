@@ -1,7 +1,7 @@
 //! `rekindle-netsim` (plan C9.3): a seeded, deterministic simulation of the
 //! Veilid network behind the record, route and message ports of
 //! `rekindle_records::port`. Each simulated node gets a `PortSet`, its event
-//! stream, a [`SimClock`] and a [`SimRandom`]; a real Host runs on them
+//! stream, a [`SimClock`], a [`SimRandom`] and a [`SimIdle`]; a real Host runs on them
 //! (`TransportSource::Ports`), so the Host's adapters and engines run as in
 //! production.
 //!
@@ -22,6 +22,7 @@
 mod attach;
 mod busy;
 mod clock;
+mod idle;
 pub mod latency;
 mod messages;
 mod network;
@@ -46,6 +47,7 @@ use tokio::sync::{mpsc, watch};
 pub use attach::ATTACH_STEP;
 pub use busy::{db_call, db_queued, on_sim_thread, DbCall};
 pub use clock::{SimClock, SimRandom, SIM_EPOCH_MS};
+pub use idle::SimIdle;
 pub use messages::{call_timeout, FakeMessages, RPC_TIMEOUT};
 pub use network::Network;
 pub use records::FakeRecords;
@@ -115,14 +117,16 @@ pub struct Node {
     pub events: mpsc::Receiver<PortEvent>,
     pub clock: Arc<SimClock>,
     pub rng: Arc<SimRandom>,
+    pub idle: Arc<SimIdle>,
 }
 
-/// The simulation: its network, seed, and nodes' clocks.
+/// The simulation: its network, seed, and nodes' clocks and idle ports.
 pub struct Netsim {
     net: Arc<Network>,
     seed: u64,
     start: tokio::time::Instant,
     clocks: parking_lot::Mutex<Vec<Arc<SimClock>>>,
+    idles: parking_lot::Mutex<Vec<Arc<SimIdle>>>,
 }
 
 impl Netsim {
@@ -138,6 +142,7 @@ impl Netsim {
             seed,
             start: tokio::time::Instant::now(),
             clocks: parking_lot::Mutex::new(Vec::new()),
+            idles: parking_lot::Mutex::new(Vec::new()),
         }
     }
 
@@ -162,6 +167,8 @@ impl Netsim {
         let rng = Arc::new(SimRandom::new(self.seed, index));
         let clock = Arc::new(SimClock::new(self.start));
         self.clocks.lock().push(Arc::clone(&clock));
+        let idle = Arc::new(SimIdle::new(Arc::clone(&clock)));
+        self.idles.lock().push(Arc::clone(&idle));
         let ports = PortSet {
             records: Arc::new(FakeRecords::new(
                 index,
@@ -178,6 +185,20 @@ impl Netsim {
             events,
             clock,
             rng,
+            idle,
+        }
+    }
+
+    /// The user of `node` stops (`idle`, from now on the simulated clock)
+    /// or resumes giving input; the node's Host reads it on its next idle
+    /// tick.
+    pub fn set_idle(&self, node: usize, idle: bool) {
+        if let Some(port) = self.idles.lock().get(node) {
+            if idle {
+                port.set_idle();
+            } else {
+                port.set_active();
+            }
         }
     }
 

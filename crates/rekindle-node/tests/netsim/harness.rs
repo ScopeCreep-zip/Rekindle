@@ -87,6 +87,7 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
             serve_bus: false,
             clock: Arc::clone(&node.clock) as Arc<dyn rekindle_utils::Clock>,
             rng: Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>,
+            idle: Arc::clone(&node.idle) as Arc<dyn rekindle_utils::IdleSource>,
             shell: None,
         })
         .instrument(node_span(node.index))

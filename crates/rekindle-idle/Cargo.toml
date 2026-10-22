@@ -8,6 +8,7 @@ description = "Cross-platform OS idle-time detection for Rekindle (auto-away)"
 workspace = true
 
 [dependencies]
+rekindle-utils = { path = "../rekindle-utils" }
 tracing = { workspace = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

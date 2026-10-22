@@ -7471,6 +7471,7 @@ dependencies = [
  "axum",
  "rekindle-db",
  "rekindle-desktop",
+ "rekindle-idle",
  "rekindle-ipc",
  "rekindle-node",
  "rekindle-types",
@@ -7625,6 +7626,7 @@ dependencies = [
 name = "rekindle-idle"
 version = "0.1.0"
 dependencies = [
+ "rekindle-utils",
  "tracing",
  "wayland-client",
  "wayland-protocols",
