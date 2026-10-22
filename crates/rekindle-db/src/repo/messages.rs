@@ -612,7 +612,9 @@ pub fn channel_bundle_messages(
     )?;
     let rows = stmt.query_map(params![owner_key, community_id, channel_id, limit], |row| {
         let message_id = row.get::<_, Option<String>>(0)?;
-        let mek_generation = row.get::<_, Option<u64>>(4)?;
+        let mek_generation = row
+            .get::<_, Option<i64>>(4)?
+            .and_then(|g| u64::try_from(g).ok());
         let (Some(message_id), Some(mek_generation)) = (message_id, mek_generation) else {
             return Ok(None);
         };
