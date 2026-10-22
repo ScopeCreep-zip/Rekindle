@@ -336,6 +336,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
         IpcRequest::CommunityList
+        | IpcRequest::CommunityViews
+        | IpcRequest::CommunityMembers { .. }
         | IpcRequest::CommunityCreate { .. }
         | IpcRequest::CommunityJoin { .. }
         | IpcRequest::CommunityLeave { .. }

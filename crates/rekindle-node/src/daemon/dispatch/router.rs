@@ -88,6 +88,8 @@ async fn route(
         | IpcRequest::CommunityJoin { .. }
         | IpcRequest::CommunityLeave { .. }
         | IpcRequest::CommunityList
+        | IpcRequest::CommunityViews
+        | IpcRequest::CommunityMembers { .. }
         | IpcRequest::CommunityInfo { .. }
         | IpcRequest::CommunityUpdateInfo { .. }
         | IpcRequest::CommunityApprove { .. }

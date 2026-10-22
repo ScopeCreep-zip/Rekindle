@@ -136,3 +136,33 @@ pub(crate) fn handle_info(
         meta,
     ))
 }
+
+/// Every joined community as its window renders it (plan E3.1 D1b).
+pub(crate) fn handle_views(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    IpcResponse::ok(&crate::daemon::dispatch::adapter(ctx).community_views())
+}
+
+/// A community's member list (plan E3.1 D1b).
+pub(crate) async fn handle_members(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    governance_key: &str,
+) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let membership = match ctx.resolve_community(governance_key) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match crate::daemon::dispatch::adapter(ctx)
+        .community_members(&membership.governance_key)
+        .await
+    {
+        Ok(members) => IpcResponse::ok(&members),
+        Err(e) => IpcResponse::error(500, e),
+    }
+}

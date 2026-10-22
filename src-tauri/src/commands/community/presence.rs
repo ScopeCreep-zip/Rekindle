@@ -1,13 +1,14 @@
 use tauri::State;
 
 use crate::services::community_presence_runtime::{
-    get_community_members_inner, get_presence_policy_inner, send_channel_typing_inner,
-    set_active_channel_inner, set_presence_policy_inner, update_community_presence_inner,
-    update_community_profile_inner,
+    get_presence_policy_inner, send_channel_typing_inner, set_active_channel_inner,
+    set_presence_policy_inner, update_community_presence_inner, update_community_profile_inner,
 };
 use crate::state::SharedState;
 
-use crate::services::community_presence_runtime::MemberDto;
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::community::CommunityMemberView;
+use rekindle_types::dto::{CommandError, Done};
 
 #[tauri::command]
 pub async fn send_channel_typing(
@@ -68,13 +69,16 @@ pub async fn get_presence_policy(
     Ok(get_presence_policy_inner(state.inner(), &community_id))
 }
 
+/// A community's member list (`IpcRequest::CommunityMembers`).
 #[tauri::command]
 pub async fn get_community_members(
     community_id: String,
     state: State<'_, SharedState>,
-) -> Result<Vec<MemberDto>, String> {
-    let pool = state.db.current()?;
-    get_community_members_inner(state.inner(), &pool, community_id).await
+) -> Result<Done<Vec<CommunityMemberView>>, CommandError> {
+    let request = IpcRequest::CommunityMembers {
+        governance_key: community_id,
+    };
+    crate::host_call::call(&state, request).await
 }
 
 #[tauri::command]

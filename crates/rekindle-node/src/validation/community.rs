@@ -19,7 +19,7 @@ use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 /// A community request's fields.
 pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
-        IpcRequest::CommunityList => Ok(()),
+        IpcRequest::CommunityList | IpcRequest::CommunityViews => Ok(()),
         IpcRequest::GameServerList { community: key } => community(key),
         IpcRequest::GameServerAdd {
             community: key,
@@ -68,6 +68,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         }),
         IpcRequest::CommunityLeave { governance_key }
         | IpcRequest::CommunityInfo { governance_key }
+        | IpcRequest::CommunityMembers { governance_key }
         | IpcRequest::CommunityPendingMembers { governance_key } => community(governance_key),
         IpcRequest::CommunityUpdateInfo {
             governance_key,

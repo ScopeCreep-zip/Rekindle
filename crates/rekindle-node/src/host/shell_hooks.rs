@@ -85,6 +85,10 @@ pub trait ShellHooks: Send + Sync {
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<(), String>;
 
+    /// We left the community: drop the shell's own copies of its keys,
+    /// until the MEK adapters move at E3.5.
+    fn community_left(&self, community_id: &str);
+
     /// Open the community's Lost Cargo chunk cache. Ported with the files
     /// domain at E3.1 E3.
     fn ensure_files_cache_open(&self, community_id: &str);

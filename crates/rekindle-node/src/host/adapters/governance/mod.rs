@@ -15,7 +15,8 @@
 //! (B2d); `membership` / `membership_route` the membership control
 //! messages and `state_builder` a created community's state (B2e); `mek` the key installs, which move to the MEK
 //! adapters at E3.5; `community_sync` the sync loop's community phase, `invite_expiry` the
-//! invite expiry timer and `mek_recovery` the key catch-up (C2b); `game_servers` a community's game servers (H1); `deps_impl` is the single trait impl and delegates.
+//! invite expiry timer and `mek_recovery` the key catch-up (C2b); `game_servers` a community's game servers (H1); `deps_impl` is the single trait impl and delegates; `create_leave` and `views` the
+//! community window's create, leave and reads (E3.1 D1b).
 
 use std::sync::Arc;
 
@@ -30,6 +31,7 @@ mod dht;
 pub use dht::recent_channel_messages;
 mod catchup;
 mod community_info;
+mod create_leave;
 pub(crate) use community_info::InfoEdit;
 pub(crate) mod channel_admin;
 mod events;
@@ -51,6 +53,7 @@ mod roles;
 mod state_builder;
 mod state_mutations;
 mod state_reads;
+mod views;
 mod watch;
 
 /// The Host, as the governance runtime sees it.

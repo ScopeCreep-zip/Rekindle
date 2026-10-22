@@ -60,23 +60,6 @@ pub(crate) async fn records_ready(
     }
 }
 
-/// Release every lease the community holds (leave). The pool closes a
-/// record when its last borrower releases it.
-pub(crate) async fn release_all(state: &Arc<AppState>, community_id: &str) {
-    let held = {
-        let mut communities = state.communities.write();
-        communities
-            .get_mut(community_id)
-            .map(|cs| std::mem::take(&mut cs.leases))
-    };
-    let (Some(held), Ok(pool)) = (held, state_helpers::record_pool(state)) else {
-        return;
-    };
-    for lease in held.all() {
-        pool.release(lease).await;
-    }
-}
-
 /// Fold `incoming` into the community's leases
 /// ([`CommunityLeases::merge`]), recording each newly held record's key in
 /// its key inventory (`open_community_records`, which the watch and inspect

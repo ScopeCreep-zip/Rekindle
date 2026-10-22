@@ -188,6 +188,11 @@ pub enum IpcRequest {
     CommunityLeave { governance_key: String },
     /// List all joined communities.
     CommunityList,
+    /// Every joined community as its window renders it (channels,
+    /// categories, roles, our standing).
+    CommunityViews,
+    /// A community's member list.
+    CommunityMembers { governance_key: String },
     /// Get detailed community info (channels, roles, members).
     CommunityInfo { governance_key: String },
     /// Edit a community's name, description, icon or banner; `None` keeps

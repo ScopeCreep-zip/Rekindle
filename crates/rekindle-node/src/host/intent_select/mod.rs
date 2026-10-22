@@ -217,6 +217,8 @@ pub(crate) async fn select(
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. }
         | IpcRequest::CommunityList
+        | IpcRequest::CommunityViews
+        | IpcRequest::CommunityMembers { .. }
         | IpcRequest::CommunityInfo { .. }
         | IpcRequest::CommunityUpdateInfo { .. }
         | IpcRequest::CommunityPendingMembers { .. }

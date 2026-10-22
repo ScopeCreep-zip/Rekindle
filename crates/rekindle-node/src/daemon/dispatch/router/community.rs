@@ -25,6 +25,10 @@ pub(super) async fn route(
             community::handle_leave(ctx, state, &governance_key).await
         }
         IpcRequest::CommunityList => community::handle_list(ctx, state),
+        IpcRequest::CommunityViews => community::handle_views(ctx, state),
+        IpcRequest::CommunityMembers { governance_key } => {
+            community::handle_members(ctx, state, &governance_key).await
+        }
         IpcRequest::CommunityInfo { governance_key } => {
             community::handle_info(ctx, state, &governance_key)
         }

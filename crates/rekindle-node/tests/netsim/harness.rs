@@ -349,7 +349,7 @@ impl Community {
                 approval_required: false,
             })
             .await;
-        let governance_key = created["governance_key"]
+        let governance_key = created["governanceKey"]
             .as_str()
             .expect("a governance key")
             .to_string();

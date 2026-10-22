@@ -128,6 +128,8 @@ impl IpcRequest {
             | Self::IdentityRotationDecline { .. }
             | Self::SessionResetDecline { .. } => Some(C::FriendsWrite),
             Self::CommunityList
+            | Self::CommunityViews
+            | Self::CommunityMembers { .. }
             | Self::CommunityInfo { .. }
             | Self::CommunityPendingMembers { .. }
             | Self::ChannelList { .. }

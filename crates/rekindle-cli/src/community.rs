@@ -67,14 +67,14 @@ pub async fn dispatch(
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("?")
                                     .to_string(),
-                                c.get("member_count")
+                                c.get("memberCount")
                                     .and_then(serde_json::Value::as_u64)
                                     .map_or("?".into(), |n| n.to_string()),
-                                c.get("channel_count")
+                                c.get("channelCount")
                                     .and_then(serde_json::Value::as_u64)
                                     .map_or("?".into(), |n| n.to_string()),
                                 rekindle_client::fmt::abbreviate_key(
-                                    c.get("governance_key")
+                                    c.get("governanceKey")
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("?"),
                                 ),

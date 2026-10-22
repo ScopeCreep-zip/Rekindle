@@ -7,9 +7,9 @@ import type {
 export const communityCommands = {
   // Community
   getCommunities: () =>
-    invoke<{ id: string; name: string; channelCount: number }[]>("get_communities"),
+    hostInvoke<{ governanceKey: string; name: string; description: string; memberCount: number; channelCount: number; ourPseudonym: string }[]>("get_communities"),
   getCommunityDetails: () =>
-    invoke<{
+    hostInvoke<{
       id: string;
       name: string;
       description: string | null;
@@ -29,7 +29,7 @@ export const communityCommands = {
       myBadges?: string[];
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
-    invoke<{
+    hostInvoke<{
       pseudonymKey: string;
       displayName: string;
       roleIds: number[];
@@ -40,6 +40,10 @@ export const communityCommands = {
       pronouns?: string | null;
       themeColor?: number | null;
       badges?: string[];
+      avatarRef?: string | null;
+      bannerRef?: string | null;
+      location?: { kind: string; channelId?: string } | null;
+      lastActive: number;
     }[]>(
       "get_community_members", { communityId },
     ),
@@ -80,7 +84,9 @@ export const communityCommands = {
     bannerRef,
   }),
   createCommunity: (name: string) =>
-    invoke<string>("create_community", { name }),
+    hostInvoke<{ governanceKey: string; registryKey: string; name: string }>(
+      "create_community", { name },
+    ).then((created) => created.governanceKey),
   /// Returns the joined community's id.
   joinCommunity: (inviteUrl: string) => invoke<string>("join_community", { inviteUrl }),
   createChannel: (
@@ -308,7 +314,7 @@ export const communityCommands = {
       idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
     }),
   leaveCommunity: (communityId: string) =>
-    invoke<void>("leave_community", { communityId }),
+    hostInvoke<unknown>("leave_community", { communityId }).then(() => undefined),
   deleteChannel: (communityId: string, channelId: string) =>
     hostInvoke<unknown>("delete_channel", { communityId, channelId }).then(() => undefined),
   renameChannel: (communityId: string, channelId: string, newName: string) =>

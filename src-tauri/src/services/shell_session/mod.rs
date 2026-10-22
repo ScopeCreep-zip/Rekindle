@@ -68,6 +68,10 @@ impl ShellHooks for ShellSession {
         crate::services::community::send_to_mesh(&self.state, community_id, envelope)
     }
 
+    fn community_left(&self, community_id: &str) {
+        crate::state_helpers::forget_community_keys(&self.state, community_id);
+    }
+
     fn ensure_files_cache_open(&self, community_id: &str) {
         open_files_cache(&self.state, community_id);
     }

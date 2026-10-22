@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Overview of a joined community for list display.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommunityOverview {
     pub governance_key: String,
     pub name: String,

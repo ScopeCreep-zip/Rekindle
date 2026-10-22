@@ -38,6 +38,11 @@ impl IpcRequest {
                 .field("governance_key", governance_key)
                 .finish(),
             Self::CommunityList => write!(f, "CommunityList"),
+            Self::CommunityViews => write!(f, "CommunityViews"),
+            Self::CommunityMembers { governance_key } => f
+                .debug_struct("CommunityMembers")
+                .field("governance_key", governance_key)
+                .finish(),
             Self::CommunityUpdateInfo {
                 governance_key,
                 name,

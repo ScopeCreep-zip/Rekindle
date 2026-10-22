@@ -29,7 +29,7 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
             approval_required: false,
         })
         .await;
-    let second = created["governance_key"]
+    let second = created["governanceKey"]
         .as_str()
         .expect("a governance key")
         .to_string();

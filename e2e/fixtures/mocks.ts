@@ -6,6 +6,11 @@ import type { Page } from "@playwright/test";
  * build from a handler's plain value.
  */
 const HOST_CALLS = [
+  "create_community",
+  "leave_community",
+  "get_communities",
+  "get_community_details",
+  "get_community_members",
   "create_identity", "login", "get_identity", "pqxdh_bundle_info", "logout", "list_identities",
   "delete_identity", "audit_verify", "audit_export", "lifecycle_current",
   "intent_commit", "intent_cancel", "undo", "set_status", "set_status_message",

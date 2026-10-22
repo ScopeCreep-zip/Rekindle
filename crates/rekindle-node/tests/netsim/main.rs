@@ -14,6 +14,7 @@ mod group_dm;
 mod harness;
 mod internet_flap;
 mod invite_expiry;
+mod invite_join_leave;
 mod logs;
 mod no_timed_inspect;
 mod offline_day;
