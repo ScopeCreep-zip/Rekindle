@@ -19,6 +19,7 @@ const MAX_DELETE_REASON_LEN: usize = 512;
 /// A community's channels: their names, kinds, topics and bodies.
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
+        request if super::rich_messaging::is_rich(request) => super::rich_messaging::check(request),
         CommunityRequest::ChannelCreate {
             community: c,
             name: channel_name,
