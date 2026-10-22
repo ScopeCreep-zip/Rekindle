@@ -7,7 +7,6 @@
 //! change after that is written to the store that holds it, then applied
 //! to the projection; nothing writes the projection back as a whole.
 
-
 use rekindle_db::repo;
 use rekindle_db::Db;
 use rekindle_secrets::friend_presence::PresenceKey;

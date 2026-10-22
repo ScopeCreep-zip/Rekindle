@@ -164,6 +164,15 @@ impl SimNode {
         }
     }
 
+    /// The host's first answer to `request`, unproven: an intent the gate
+    /// holds answers `IntentRequired` with its review.
+    pub async fn answer(&self, request: IpcRequest) -> IpcResponse {
+        self.host
+            .call(caller(), request)
+            .instrument(node_span(self.index))
+            .await
+    }
+
     /// Send `request`, which the gate must hold for the user's review
     /// (`IntentRequired`); prove and commit it as [`call`](Self::call)
     /// does.
