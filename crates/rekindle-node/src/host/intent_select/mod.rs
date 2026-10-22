@@ -15,6 +15,7 @@ use crate::daemon::dispatch::DaemonContext;
 
 mod community;
 mod friends;
+mod game_servers;
 mod group_dm;
 
 /// The selection for `request`, an intent of `kind`.
@@ -144,6 +145,9 @@ pub(crate) async fn select(
         | IpcRequest::Timeout { .. }
         | IpcRequest::InviteCreate { .. }
         | IpcRequest::InviteRevoke { .. } => community::selection(ctx, request, &mut s).await?,
+        IpcRequest::GameServerAdd { .. } | IpcRequest::GameServerRemove { .. } => {
+            game_servers::selection(ctx, request, &mut s).await?;
+        }
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::ProfileSetNickname { .. }
@@ -229,6 +233,7 @@ pub(crate) async fn select(
         | IpcRequest::MekList { .. }
         | IpcRequest::MekRequest { .. }
         | IpcRequest::RoleList { .. }
+        | IpcRequest::GameServerList { .. }
         | IpcRequest::BanList { .. }
         | IpcRequest::InviteList { .. }
         | IpcRequest::NetworkStatus

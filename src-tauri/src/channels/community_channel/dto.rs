@@ -1,6 +1,6 @@
 //! Data-transfer types carried inside [`super::CommunityEvent`] variants:
 //! channel/category snapshots, role DTOs, and the `rekindle-types` aliases
-//! for events/threads/game-servers, plus the `From` conversions that build
+//! for events/threads, plus the `From` conversions that build
 //! a `RoleDto` from the various in-crate and protocol role shapes.
 
 use serde::{Deserialize, Serialize};
@@ -52,10 +52,6 @@ impl From<&rekindle_codec::message::RoleDto> for RoleDto {
 /// Thread info DTO for frontend consumption.
 /// Thread info DTO — alias for `rekindle-types::thread::ThreadInfo`.
 pub type ThreadInfoDto = rekindle_types::thread::ThreadInfo;
-
-/// Game server info DTO — alias for
-/// `rekindle-types::game_server::GameServerInfo`.
-pub type GameServerInfoDto = rekindle_types::game_server::GameServerInfo;
 
 impl From<&crate::state::RoleDefinition> for RoleDto {
     fn from(def: &crate::state::RoleDefinition) -> Self {

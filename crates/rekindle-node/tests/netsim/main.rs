@@ -8,6 +8,7 @@ mod first_contact_retry;
 mod first_login;
 mod friend_watch;
 mod friends;
+mod game_servers;
 mod governance_warm_restore;
 mod group_dm;
 mod harness;

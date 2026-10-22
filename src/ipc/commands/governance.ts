@@ -208,11 +208,11 @@ export const governanceCommands = {
 
   // Game Servers
   addGameServer: (communityId: string, gameId: string, label: string, address: string) =>
-    invoke<string>("add_game_server", { communityId, gameId, label, address }),
+    hostInvoke<string>("add_game_server", { communityId, gameId, label, address }),
   removeGameServer: (communityId: string, serverId: string) =>
-    invoke<void>("remove_game_server", { communityId, serverId }),
+    hostInvoke<null>("remove_game_server", { communityId, serverId }),
   getGameServers: (communityId: string) =>
-    invoke<{ id: string; gameId: string; label: string; address: string; addedBy: string; createdAt: number }[]>(
+    hostInvoke<{ id: string; gameId: string; label: string; address: string; addedBy: string; createdAt: number }[]>(
       "get_game_servers", { communityId }),
 
   // Unread tracking

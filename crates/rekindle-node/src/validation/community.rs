@@ -5,6 +5,7 @@
 use rekindle_governance::validate::bounds;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::governance::ExclusionGroupEdit;
+use rekindle_types::game_server;
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{self, MAX_NOTE_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
@@ -19,6 +20,33 @@ use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
         IpcRequest::CommunityList => Ok(()),
+        IpcRequest::GameServerList { community: key } => community(key),
+        IpcRequest::GameServerAdd {
+            community: key,
+            game_id,
+            label,
+            address,
+        } => {
+            community(key)?;
+            name(game_id, "game id")?;
+            text(game_id, game_server::MAX_GAME_ID_LEN, "game id")?;
+            name(label, "server label")?;
+            text(label, game_server::MAX_GAME_SERVER_LABEL_LEN, "server label")?;
+            game_server::ServerAddress::parse(address)
+                .map(drop)
+                .map_err(|e| IpcResponse::error(400, format!("server address: {e}")))
+        }
+        IpcRequest::GameServerRemove {
+            community: key,
+            server_id,
+        } => {
+            community(key)?;
+            if game_server::is_server_id(server_id) {
+                Ok(())
+            } else {
+                Err(IpcResponse::error(400, "server id must be gs_ and 16 hex digits"))
+            }
+        }
         IpcRequest::CommunityCreate {
             name: community_name,
             description,

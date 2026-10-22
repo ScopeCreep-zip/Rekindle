@@ -132,6 +132,7 @@ impl IpcRequest {
             | Self::CommunityPendingMembers { .. }
             | Self::ChannelList { .. }
             | Self::RoleList { .. }
+            | Self::GameServerList { .. }
             | Self::BanList { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
@@ -157,6 +158,8 @@ impl IpcRequest {
             | Self::RoleDelete { .. }
             | Self::RoleSelfAssign { .. }
             | Self::RoleSelfUnassign { .. }
+            | Self::GameServerAdd { .. }
+            | Self::GameServerRemove { .. }
             | Self::InviteCreate { .. }
             | Self::InviteRevoke { .. } => Some(C::CommunitiesWrite),
             Self::CommunityApprove { .. }

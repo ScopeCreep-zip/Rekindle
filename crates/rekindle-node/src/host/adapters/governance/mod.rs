@@ -15,7 +15,7 @@
 //! (B2d); `membership` / `membership_route` the membership control
 //! messages and `state_builder` a created community's state (B2e); `mek` the key installs, which move to the MEK
 //! adapters at E3.5; `community_sync` the sync loop's community phase, `invite_expiry` the
-//! invite expiry timer and `mek_recovery` the key catch-up (C2b); `deps_impl` is the single trait impl and delegates.
+//! invite expiry timer and `mek_recovery` the key catch-up (C2b); `game_servers` a community's game servers (H1); `deps_impl` is the single trait impl and delegates.
 
 use std::sync::Arc;
 
@@ -33,6 +33,7 @@ mod community_info;
 pub(crate) use community_info::InfoEdit;
 pub(crate) mod channel_admin;
 mod events;
+pub(crate) mod game_servers;
 mod invite_expiry;
 mod invites;
 mod lifecycle;

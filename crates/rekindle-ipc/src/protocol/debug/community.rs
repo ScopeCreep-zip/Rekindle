@@ -223,6 +223,30 @@ impl IpcRequest {
                 .field("community", community)
                 .field("role_id", role_id)
                 .finish(),
+            Self::GameServerList { community } => f
+                .debug_struct("GameServerList")
+                .field("community", community)
+                .finish(),
+            Self::GameServerAdd {
+                community,
+                game_id,
+                label,
+                address,
+            } => f
+                .debug_struct("GameServerAdd")
+                .field("community", community)
+                .field("game_id", game_id)
+                .field("label", label)
+                .field("address", address)
+                .finish(),
+            Self::GameServerRemove {
+                community,
+                server_id,
+            } => f
+                .debug_struct("GameServerRemove")
+                .field("community", community)
+                .field("server_id", server_id)
+                .finish(),
             Self::RoleAssign {
                 community,
                 member_pseudonym,

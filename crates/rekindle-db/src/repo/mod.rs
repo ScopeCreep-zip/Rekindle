@@ -17,6 +17,7 @@ pub mod communities;
 pub mod community_invites;
 pub mod friend_groups;
 pub mod friends;
+pub mod game_servers;
 pub mod governance_cache;
 pub mod group_dm_invites;
 pub mod group_dm_messages;

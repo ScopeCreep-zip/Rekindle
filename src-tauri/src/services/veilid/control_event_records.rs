@@ -91,75 +91,42 @@ pub(super) fn handle_event_payload(
     }
 }
 
-pub(super) fn handle_game_server_payload(
+/// A game-server control message, stored by the Host's governance adapter
+/// (plan E3.1 H1) and shown when it accepted it.
+pub(super) async fn handle_game_server_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &Db,
     community_id: &str,
+    sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     use rekindle_codec::community::envelope::ControlPayload;
     use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
-    match payload {
-        ControlPayload::GameServerAdded { server } => {
-            // A launcher substitutes this address into a URI the OS opens:
-            // an entry whose address is not `host:port` is dropped on
-            // ingest (plan E1.1).
-            if let Err(e) = rekindle_types::game_server::ServerAddress::parse(&server.address) {
-                tracing::warn!(community = %community_id, error = %e, "game server entry dropped");
-                return;
-            }
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let persisted = server.clone();
-            crate::db_helpers::db_fire(pool, "persist game server", move |conn| {
-                conn.execute(
-                    "INSERT OR REPLACE INTO game_servers \
-                     (owner_key, community_id, id, game_id, label, address, added_by, created_at) \
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8)",
-                    rusqlite::params![
-                        owner_key,
-                        cid,
-                        persisted.id,
-                        persisted.game_id,
-                        persisted.label,
-                        persisted.address,
-                        persisted.added_by,
-                        persisted.created_at,
-                    ],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &SubscriptionEvent::Social(SocialEvent::GameServerAdded {
-                    community: community_id.to_string(),
-                    server: Box::new(server),
-                }),
-            );
-        }
-        ControlPayload::GameServerRemoved { server_id } => {
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let sid = server_id.clone();
-            crate::db_helpers::db_fire(pool, "remove game server", move |conn| {
-                conn.execute(
-                    "DELETE FROM game_servers WHERE owner_key = ?1 AND community_id = ?2 AND id = ?3",
-                    rusqlite::params![owner_key, cid, sid],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &SubscriptionEvent::Social(SocialEvent::GameServerRemoved {
-                    community: community_id.to_string(),
-                    server_id,
-                }),
-            );
-        }
-        _ => {}
+    let Some(host) = state.host.current() else {
+        tracing::debug!(community = %community_id, "game server change before the Host is up — dropped");
+        return;
+    };
+    if !host
+        .governance()
+        .on_game_server_control(community_id, sender_pseudonym, &payload)
+        .await
+    {
+        return;
     }
+    let community = community_id.to_string();
+    let event = match payload {
+        ControlPayload::GameServerAdded { server } => SocialEvent::GameServerAdded {
+            community,
+            server: Box::new(server),
+        },
+        ControlPayload::GameServerRemoved { server_id } => SocialEvent::GameServerRemoved {
+            community,
+            server_id,
+        },
+        _ => return,
+    };
+    crate::event_dispatch::emit_subscription(app_handle, &SubscriptionEvent::Social(event));
 }
 
 fn handle_event_upsert(

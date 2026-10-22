@@ -115,6 +115,9 @@ async fn route(
         | IpcRequest::RoleCreate { .. }
         | IpcRequest::RoleUpdate { .. }
         | IpcRequest::RoleDelete { .. }
+        | IpcRequest::GameServerList { .. }
+        | IpcRequest::GameServerAdd { .. }
+        | IpcRequest::GameServerRemove { .. }
         | IpcRequest::RoleAssign { .. }
         | IpcRequest::RoleUnassign { .. }
         | IpcRequest::RoleSelfAssign { .. }

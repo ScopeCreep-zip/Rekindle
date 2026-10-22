@@ -115,6 +115,24 @@ impl From<ServerAddress> for String {
     }
 }
 
+/// Longest label a game server carries (plan E3.1 H1).
+pub const MAX_GAME_SERVER_LABEL_LEN: usize = 100;
+/// Longest game identifier a game server carries (plan E3.1 H1).
+pub const MAX_GAME_ID_LEN: usize = 64;
+/// Random bytes in a game server's id.
+pub const GAME_SERVER_ID_BYTES: usize = 8;
+
+/// Whether `id` is a game server id: `gs_` and 16 lowercase hex digits.
+#[must_use]
+pub fn is_server_id(id: &str) -> bool {
+    id.strip_prefix("gs_").is_some_and(|hex| {
+        hex.len() == GAME_SERVER_ID_BYTES * 2
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,6 +176,20 @@ mod tests {
     fn a_server_address_decodes_only_when_valid() {
         assert!(serde_json::from_str::<ServerAddress>("\"1.2.3.4:1\"").is_ok());
         assert!(serde_json::from_str::<ServerAddress>("\"1.2.3.4:1 x\"").is_err());
+    }
+
+    #[test]
+    fn server_ids_are_gs_and_sixteen_hex() {
+        assert!(is_server_id("gs_0123456789abcdef"));
+        for bad in [
+            "gs_0123",
+            "0123456789abcdef",
+            "gs_0123456789ABCDEF",
+            "gs_0123456789abcdeg",
+            "",
+        ] {
+            assert!(!is_server_id(bad), "{bad} was accepted");
+        }
     }
 
     #[test]

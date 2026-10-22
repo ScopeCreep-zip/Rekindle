@@ -396,3 +396,42 @@ fn profile_links_and_game_servers_are_checked() {
     assert!(!rejected(&game("1.2.3.4:27015")));
     assert!(rejected(&game("1.2.3.4:27015 +exec x")));
 }
+
+#[test]
+fn game_server_requests_take_a_label_an_address_and_an_id() {
+    let add = |label: &str, address: &str, game_id: &str| IpcRequest::GameServerAdd {
+        community: "My Community".into(),
+        game_id: game_id.into(),
+        label: label.into(),
+        address: address.into(),
+    };
+    assert!(!rejected(&add("Friday CTF", "10.0.0.1:27015", "4100")));
+    assert!(!rejected(&add("Friday CTF", "[::1]:27015", "4100")));
+    assert!(rejected(&add(
+        "Friday CTF",
+        "steam://connect/1.2.3.4:1",
+        "4100"
+    )));
+    assert!(rejected(&add(
+        "Friday CTF",
+        "1.2.3.4:27015 +exec x",
+        "4100"
+    )));
+    assert!(rejected(&add("", "10.0.0.1:27015", "4100")));
+    assert!(rejected(&add(&"l".repeat(101), "10.0.0.1:27015", "4100")));
+    assert!(rejected(&add(
+        "Friday CTF",
+        "10.0.0.1:27015",
+        &"9".repeat(65)
+    )));
+    let remove = |server_id: &str| IpcRequest::GameServerRemove {
+        community: "My Community".into(),
+        server_id: server_id.into(),
+    };
+    assert!(!rejected(&remove("gs_0123456789abcdef")));
+    assert!(rejected(&remove("gs_0123")));
+    assert!(rejected(&remove("0123456789abcdef")));
+    assert!(!rejected(&IpcRequest::GameServerList {
+        community: format!("VLD0:{B64}")
+    }));
+}

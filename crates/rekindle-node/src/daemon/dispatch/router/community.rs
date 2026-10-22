@@ -4,7 +4,7 @@
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
-use crate::daemon::dispatch::{channel, community, governance, keys, DaemonContext};
+use crate::daemon::dispatch::{channel, community, game_servers, governance, keys, DaemonContext};
 use crate::daemon::DaemonState;
 
 /// Route a community request: one arm per variant.
@@ -90,6 +90,28 @@ pub(super) async fn route(
         | IpcRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
 
         // ── Governance (roles, moderation, invites) ──────────────
+        // ── Game servers (plan E3.1 H1) ──────────────────────────
+        IpcRequest::GameServerList { community } => {
+            game_servers::handle_list(ctx, state, &community).await
+        }
+        IpcRequest::GameServerAdd {
+            community,
+            game_id,
+            label,
+            address,
+        } => {
+            let server = game_servers::NewGameServer {
+                game_id,
+                label,
+                address,
+            };
+            game_servers::handle_add(ctx, state, &community, server).await
+        }
+        IpcRequest::GameServerRemove {
+            community,
+            server_id,
+        } => game_servers::handle_remove(ctx, state, &community, &server_id).await,
+
         IpcRequest::RoleList { community } => governance::handle_role_list(ctx, state, &community),
         IpcRequest::RoleCreate {
             community,

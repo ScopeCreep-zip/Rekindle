@@ -351,6 +351,9 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::BanList { .. }
         | IpcRequest::InviteList { .. }
         | IpcRequest::RoleDelete { .. }
+        | IpcRequest::GameServerList { .. }
+        | IpcRequest::GameServerAdd { .. }
+        | IpcRequest::GameServerRemove { .. }
         | IpcRequest::InviteCreate { .. }
         | IpcRequest::ChannelCreate { .. }
         | IpcRequest::ChannelDelete { .. }

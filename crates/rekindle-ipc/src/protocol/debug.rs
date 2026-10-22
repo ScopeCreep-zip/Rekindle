@@ -147,6 +147,9 @@ impl std::fmt::Debug for IpcRequest {
             | Self::RoleCreate { .. }
             | Self::RoleUpdate { .. }
             | Self::RoleDelete { .. }
+            | Self::GameServerList { .. }
+            | Self::GameServerAdd { .. }
+            | Self::GameServerRemove { .. }
             | Self::RoleAssign { .. }
             | Self::RoleUnassign { .. }
             | Self::RoleSelfAssign { .. }

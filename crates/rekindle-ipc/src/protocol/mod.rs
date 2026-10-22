@@ -477,6 +477,22 @@ pub enum IpcRequest {
     /// normalized URL, which the shell opens.
     LinkOpen { url: String },
 
+    // ── Game servers (plan E3.1 H1) ───────────────────────────────
+    /// A community's game servers, newest first.
+    GameServerList { community: String },
+    /// Add a game server to a community; answered with its id.
+    GameServerAdd {
+        community: String,
+        game_id: String,
+        label: String,
+        address: String,
+    },
+    /// Remove a community's game server.
+    GameServerRemove {
+        community: String,
+        server_id: String,
+    },
+
     // ── Roles ─────────────────────────────────────────────────────
     /// List all roles in a community.
     RoleList { community: String },

@@ -83,6 +83,9 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("cancel_request", HostCall::Request("FriendCancelRequest")),
     ("retry_handshake", HostCall::Request("FriendRetryHandshake")),
     ("get_friends", HostCall::Request("FriendList")),
+    ("add_game_server", HostCall::Request("GameServerAdd")),
+    ("remove_game_server", HostCall::Request("GameServerRemove")),
+    ("get_game_servers", HostCall::Request("GameServerList")),
     ("get_pending_requests", HostCall::Request("FriendRequests")),
     ("get_roles", HostCall::Request("RoleList")),
     ("create_role", HostCall::Request("RoleCreate")),
@@ -182,9 +185,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     // E2.6 — the SMPL group-DM path (E2.3 deleted its 1:1 half) is replaced
     // by the group DM requests.
     // E3.1 — communities.
-    ("add_game_server", "E3.1"),
-    ("remove_game_server", "E3.1"),
-    ("get_game_servers", "E3.1"),
     ("add_reaction", "E3.1"),
     ("remove_reaction", "E3.1"),
     ("admin_delete_channel_message", "E3.1"),

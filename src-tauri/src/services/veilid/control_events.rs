@@ -44,7 +44,8 @@ pub(crate) async fn handle_control_events_and_threads(
         }
         payload @ (ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }) => {
-            handle_game_server_payload(app_handle, state, pool, community_id, payload);
+            handle_game_server_payload(app_handle, state, community_id, sender_pseudonym, payload)
+                .await;
         }
         ControlPayload::MEKRotated {
             channel_id,
