@@ -82,7 +82,13 @@ pub(super) fn emit_delivery_succeeded_impl(
     channel_id: &str,
     message_id: &str,
 ) {
-    post_settled(&adapter.app_handle, community_id, channel_id, message_id, true);
+    post_settled(
+        &adapter.app_handle,
+        community_id,
+        channel_id,
+        message_id,
+        true,
+    );
 }
 
 pub(super) fn emit_delivery_failed_impl(
@@ -91,7 +97,13 @@ pub(super) fn emit_delivery_failed_impl(
     channel_id: &str,
     message_id: &str,
 ) {
-    post_settled(&adapter.app_handle, community_id, channel_id, message_id, false);
+    post_settled(
+        &adapter.app_handle,
+        community_id,
+        channel_id,
+        message_id,
+        false,
+    );
 }
 
 /// The echo of our own channel post, in the windows' legacy shape (the

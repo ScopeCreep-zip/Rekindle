@@ -25,7 +25,9 @@ impl HostChannel {
     }
 
     pub(super) fn my_pseudonym_impl(&self, community_id: &str) -> Option<String> {
-        self.gov.community_membership(community_id)?.my_pseudonym_hex
+        self.gov
+            .community_membership(community_id)?
+            .my_pseudonym_hex
     }
 
     /// Our community pseudonym and its signing key, derived from the
@@ -104,7 +106,10 @@ impl HostChannel {
         community_id: &str,
         channel_id: &str,
     ) -> Option<String> {
-        (self.gov.community_membership(community_id)?.channel_log_keys)
+        (self
+            .gov
+            .community_membership(community_id)?
+            .channel_log_keys)
             .get(channel_id)
             .cloned()
     }

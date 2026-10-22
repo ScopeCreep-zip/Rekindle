@@ -52,11 +52,17 @@ pub(crate) async fn handle_post(
 }
 
 /// The Host's channel send, on both modes: the post's state and id.
-async fn post(ctx: &DaemonContext, community_id: &str, channel_id: &str, body: &str) -> IpcResponse {
+async fn post(
+    ctx: &DaemonContext,
+    community_id: &str,
+    channel_id: &str,
+    body: &str,
+) -> IpcResponse {
     let channel = crate::host::adapters::channel::HostChannel::new(ctx);
     match channel.send(community_id, channel_id, body).await {
         Ok(sent) => {
-            ctx.communities.mark_channel_synced(community_id, channel_id);
+            ctx.communities
+                .mark_channel_synced(community_id, channel_id);
             IpcResponse::ok(&serde_json::json!({
                 "status": sent.status,
                 "messageId": sent.message_id,

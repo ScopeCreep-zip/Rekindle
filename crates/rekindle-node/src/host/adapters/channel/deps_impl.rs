@@ -455,7 +455,9 @@ impl ChannelMessagingDeps for HostChannel {
         community_id: &str,
         envelope: &CommunityEnvelope,
     ) -> Result<(), ChannelError> {
-        self.gov.send_to_mesh(community_id, envelope).map_err(adapter)
+        self.gov
+            .send_to_mesh(community_id, envelope)
+            .map_err(adapter)
     }
 
     async fn write_governance_entry(

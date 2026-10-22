@@ -20,8 +20,8 @@ impl HostChannel {
             shell.channel_echo(echo);
             return;
         }
-        self.ctx()
-            .publish_event(SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
+        self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::New {
                 community: echo.community_id.clone(),
                 channel: echo.channel_id.clone(),
                 message_id: echo.message_id.clone(),
@@ -30,7 +30,8 @@ impl HostChannel {
                 timestamp: echo.timestamp_ms,
                 body: Some(echo.body.clone()),
                 reply_to_sequence: None,
-            }));
+            },
+        ));
     }
 
     pub(super) fn delivery_impl(

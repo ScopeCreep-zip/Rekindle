@@ -80,8 +80,8 @@ async fn a_send_inside_the_slowmode_is_refused() {
     let now = host.ctx.clock.now_ms_i64();
     add_channel(&host, Some(30), Some(now - 1_000));
     let channel = HostChannel::new(&host.ctx);
-    let refused = rekindle_channel::enforce_slowmode_with_bypass(&channel, "c1", CHANNEL, now)
-        .unwrap_err();
+    let refused =
+        rekindle_channel::enforce_slowmode_with_bypass(&channel, "c1", CHANNEL, now).unwrap_err();
     assert!(refused.to_string().contains("slowmode active"), "{refused}");
     assert_eq!(code(&refusal(&refused)), 429);
     let later = now + 31_000;

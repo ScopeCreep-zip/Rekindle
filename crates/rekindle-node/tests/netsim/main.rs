@@ -4,6 +4,7 @@
 mod audit;
 mod auto_away;
 mod channel_delete_container_not_empty;
+mod channel_post_both_ways;
 mod community_policy;
 mod dm_hint_loss;
 mod events;
