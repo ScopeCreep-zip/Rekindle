@@ -131,6 +131,29 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "clear_identity_verification",
         HostCall::Request("IdentityClearVerification"),
     ),
+    // Channel and category administration (plan E3.1).
+    ("create_channel", HostCall::Request("ChannelCreate")),
+    ("delete_channel", HostCall::Request("ChannelDelete")),
+    ("rename_channel", HostCall::Request("ChannelRename")),
+    ("move_channel", HostCall::Request("ChannelMove")),
+    ("reorder_channels", HostCall::Request("ChannelReorder")),
+    ("set_channel_topic", HostCall::Request("ChannelSetTopic")),
+    (
+        "set_channel_forum_tags",
+        HostCall::Request("ChannelSetForumTags"),
+    ),
+    (
+        "set_channel_overwrite",
+        HostCall::Request("ChannelOverwriteSet"),
+    ),
+    (
+        "delete_channel_overwrite",
+        HostCall::Request("ChannelOverwriteDelete"),
+    ),
+    ("create_category", HostCall::Request("CategoryCreate")),
+    ("delete_category", HostCall::Request("CategoryDelete")),
+    ("rename_category", HostCall::Request("CategoryRename")),
+    ("reorder_categories", HostCall::Request("CategoryReorder")),
 ];
 
 /// The shell's own commands.

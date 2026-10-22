@@ -115,13 +115,13 @@ impl HostGovernance {
         match op {
             ChannelAdminOp::Rename { channel, name } => (
                 vec![channel_update(channel, move |e| {
-                    set_channel(e, |f| *f.name = Some(name))
+                    set_channel(e, ChannelChange::Name(name));
                 })],
                 null,
             ),
             ChannelAdminOp::Move { channel, category } => (
                 vec![channel_update(channel, move |e| {
-                    set_channel(e, |f| *f.category_id = Some(category));
+                    set_channel(e, ChannelChange::Category(category));
                 })],
                 null,
             ),
@@ -131,7 +131,7 @@ impl HostGovernance {
                     .enumerate()
                     .map(|(i, channel)| {
                         channel_update(channel, move |e| {
-                            set_channel(e, |f| *f.position = Some(position(i)));
+                            set_channel(e, ChannelChange::Position(position(i)));
                         })
                     })
                     .collect(),
@@ -139,13 +139,13 @@ impl HostGovernance {
             ),
             ChannelAdminOp::SetTopic { channel, topic } => (
                 vec![channel_update(channel, move |e| {
-                    set_channel(e, |f| *f.topic = Some(topic))
+                    set_channel(e, ChannelChange::Topic(topic));
                 })],
                 null,
             ),
             ChannelAdminOp::SetForumTags { channel, tags } => (
                 vec![channel_update(channel, move |e| {
-                    set_channel(e, |f| *f.forum_tags = Some(tags));
+                    set_channel(e, ChannelChange::ForumTags(tags));
                 })],
                 null,
             ),
@@ -214,16 +214,17 @@ impl HostGovernance {
     }
 }
 
-/// The mutable fields of a `ChannelUpdated`.
-struct ChannelFields<'a> {
-    name: &'a mut Option<String>,
-    topic: &'a mut Option<String>,
-    forum_tags: &'a mut Option<Vec<String>>,
-    position: &'a mut Option<u32>,
-    category_id: &'a mut Option<Option<CategoryId>>,
+/// The one field of a `ChannelUpdated` an admin op sets.
+enum ChannelChange {
+    Name(String),
+    Topic(String),
+    ForumTags(Vec<String>),
+    Position(u32),
+    /// The category to move into; `None` is uncategorised.
+    Category(Option<CategoryId>),
 }
 
-fn set_channel(entry: &mut GovernanceEntry, set: impl FnOnce(ChannelFields<'_>)) {
+fn set_channel(entry: &mut GovernanceEntry, change: ChannelChange) {
     if let GovernanceEntry::ChannelUpdated {
         name,
         topic,
@@ -233,13 +234,13 @@ fn set_channel(entry: &mut GovernanceEntry, set: impl FnOnce(ChannelFields<'_>))
         ..
     } = entry
     {
-        set(ChannelFields {
-            name,
-            topic,
-            forum_tags,
-            position,
-            category_id,
-        });
+        match change {
+            ChannelChange::Name(v) => *name = Some(v),
+            ChannelChange::Topic(v) => *topic = Some(v),
+            ChannelChange::ForumTags(v) => *forum_tags = Some(v),
+            ChannelChange::Position(v) => *position = Some(v),
+            ChannelChange::Category(v) => *category_id = Some(v),
+        }
     }
 }
 

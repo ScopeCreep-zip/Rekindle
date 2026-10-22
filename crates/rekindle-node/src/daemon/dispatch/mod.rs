@@ -22,6 +22,7 @@
 mod admin;
 pub(crate) mod channel;
 mod channel_admin;
+mod channel_message;
 pub(crate) mod community;
 mod context;
 mod friends;
