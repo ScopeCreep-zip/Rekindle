@@ -474,6 +474,8 @@ pub enum CommunityRequest {
     },
     /// Turn a rule off for good.
     AutomodRuleDelete { community: String, rule_id: String },
+    /// The community's moderator queue (`MANAGE_MESSAGES`).
+    ModReportList { community: String },
 
     // ── Invites ───────────────────────────────────────────────────
     /// Create a community invite.

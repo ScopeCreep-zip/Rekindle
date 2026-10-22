@@ -10,8 +10,11 @@ use rekindle_channel::ingest::{self, BlockList, GateItem, GateReason, Verdict};
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
+use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
+use rekindle_types::id::ChannelId;
 use rekindle_types::message::SendState;
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+use rekindle_types::permissions::MANAGE_MESSAGES;
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, SystemEvent};
 
 use super::HostChannel;
 
@@ -46,13 +49,8 @@ struct Row {
 /// What the ingest did with a post.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Ingested {
-    /// The row was stored and published; `blurred` when the gate hid it,
-    /// and `report` the automod rule that asks the moderators to look.
-    Stored {
-        body: String,
-        blurred: bool,
-        report: Option<String>,
-    },
+    /// The row was stored and published; `blurred` when the gate hid it.
+    Stored { body: String, blurred: bool },
     /// We already hold it.
     Duplicate,
     /// No key we hold opens it: it is not stored, so its row never keeps an
@@ -184,11 +182,78 @@ impl HostChannel {
         {
             tracing::warn!(error = %e, "channel unread count not published");
         }
-        Ok(Ingested::Stored {
-            body,
-            blurred,
-            report,
-        })
+        if let Some(reason) = report {
+            self.report_to_moderators(&post, &reason).await;
+        }
+        Ok(Ingested::Stored { body, blurred })
+    }
+
+    /// An `alert_moderators` match (plan E3.1, D26): a moderator's ingest
+    /// writes the post's `ModReport` and raises `AutoModAlert`. The report
+    /// id is derived from the post, so every moderator's write is one
+    /// queue row.
+    async fn report_to_moderators(&self, post: &ReceivedPost, reason: &str) {
+        let community = post.community_id.as_str();
+        let moderator = self
+            .require_channel_permission(community, Some(&post.channel_id), MANAGE_MESSAGES)
+            .is_ok();
+        let (Some(message_id), Some(channel_id), true) = (
+            post.message.message_id.clone(),
+            ChannelId::from_hex(&post.channel_id),
+            moderator,
+        ) else {
+            return;
+        };
+        let mut hasher = blake3::Hasher::new_derive_key("rekindle 2026-10 mod report id");
+        hasher.update(community.as_bytes());
+        hasher.update(&channel_id.0);
+        hasher.update(message_id.as_bytes());
+        let mut report_id = [0u8; 16];
+        report_id.copy_from_slice(&hasher.finalize().as_bytes()[..16]);
+        let held = self
+            .governance_state(community)
+            .is_some_and(|g| g.mod_reports.contains_key(&report_id));
+        if !held {
+            if let Err(e) = self
+                .write_report(community, report_id, channel_id, &message_id, reason)
+                .await
+            {
+                tracing::warn!(error = %e, community, "moderator report not written");
+            }
+        }
+        self.ctx()
+            .publish_event(SubscriptionEvent::System(SystemEvent::AutoModAlert {
+                community: post.community_id.clone(),
+                channel: post.channel_id.clone(),
+                message_id,
+                rule_name: reason.to_owned(),
+            }));
+    }
+
+    async fn write_report(
+        &self,
+        community: &str,
+        report_id: [u8; 16],
+        channel_id: ChannelId,
+        message_id: &str,
+        reason: &str,
+    ) -> Result<(), ChannelError> {
+        let lamport = self
+            .next_governance_lamport(community)
+            .map_err(|e| ChannelError::Adapter(e.to_string()))?;
+        self.write_governance_entry(
+            community,
+            GovernanceEntry::ModReport {
+                report_id,
+                target: ModReportTarget::Message {
+                    channel_id,
+                    message_id: message_id.to_owned(),
+                },
+                reason: reason.to_owned(),
+                lamport,
+            },
+        )
+        .await
     }
 
     /// The gate's verdict on `post`, against the merged state, our block

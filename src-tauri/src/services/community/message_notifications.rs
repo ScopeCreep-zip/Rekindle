@@ -194,32 +194,6 @@ pub(super) fn update_peer_sequence(
     }
 }
 
-pub(super) fn emit_automod_alert(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    channel_id: &str,
-    message_id: &str,
-    rule_name: &str,
-) {
-    let can_moderate = rekindle_governance::permissions::has_moderation_capability(
-        state_helpers::my_permissions(state, community_id, None),
-    );
-    if can_moderate {
-        crate::event_dispatch::emit_subscription(
-            app_handle,
-            &rekindle_types::subscription_events::SubscriptionEvent::System(
-                rekindle_types::subscription_events::SystemEvent::AutoModAlert {
-                    community: community_id.to_string(),
-                    channel: channel_id.to_string(),
-                    message_id: message_id.to_string(),
-                    rule_name: rule_name.to_string(),
-                },
-            ),
-        );
-    }
-}
-
 pub fn queue_message_fetch_retry(state: Arc<AppState>, pending: PendingMessageFetch) {
     crate::state_helpers::spawn_in_login_with_token(
         &state.clone(),

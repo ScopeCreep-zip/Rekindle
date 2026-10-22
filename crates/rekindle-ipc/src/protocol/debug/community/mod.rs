@@ -104,7 +104,8 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::BanList { .. }
             | Self::AutomodRules { .. }
             | Self::AutomodRuleSet { .. }
-            | Self::AutomodRuleDelete { .. } => self.fmt_moderation(f),
+            | Self::AutomodRuleDelete { .. }
+            | Self::ModReportList { .. } => self.fmt_moderation(f),
         }
     }
 }

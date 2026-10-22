@@ -210,6 +210,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("AutomodRules", None),
     ("AutomodRuleSet", Some(IntentKind::SetAutomodRule)),
     ("AutomodRuleDelete", Some(IntentKind::DeleteAutomodRule)),
+    ("ModReportList", None),
     ("InviteCreate", Some(IntentKind::CreateCommunityInvite)),
     ("InviteList", None),
     ("InviteRevoke", Some(IntentKind::RevokeCommunityInvite)),

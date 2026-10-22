@@ -281,6 +281,7 @@ pub(crate) async fn select(
             | CommunityRequest::EventAttendees { .. }
             | CommunityRequest::BanList { .. }
             | CommunityRequest::AutomodRules { .. }
+            | CommunityRequest::ModReportList { .. }
             | CommunityRequest::InviteList { .. },
         )
         | IpcRequest::DmTyping { .. }

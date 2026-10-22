@@ -18,12 +18,13 @@ use std::fmt;
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::state::GovernanceState;
+use rekindle_governance::state::ModReportState;
 use rekindle_governance::validate::validate_write;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_governance_runtime::moderation;
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_types::dto::community::CommunityBanView;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::dto::community::{CommunityBanView, ModReportView};
+use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::KICK_MEMBERS;
 
@@ -308,6 +309,45 @@ impl HostGovernance {
                 }
             })
             .collect())
+    }
+
+    /// The community's moderator queue (plan E3.1, D26), in report-id
+    /// order.
+    ///
+    /// # Errors
+    /// We lack `MANAGE_MESSAGES`.
+    pub fn mod_reports(
+        &self,
+        community_id: &str,
+    ) -> Result<Vec<ModReportView>, GovernanceRuntimeError> {
+        self.require_permission(community_id, rekindle_types::permissions::MANAGE_MESSAGES)?;
+        let Some(gov) = self.governance_state_impl(community_id) else {
+            return Ok(Vec::new());
+        };
+        Ok(gov.mod_reports.iter().map(mod_report_view).collect())
+    }
+}
+
+fn mod_report_view((id, r): (&[u8; 16], &ModReportState)) -> ModReportView {
+    let (channel_id, message_id, member) = match &r.target {
+        ModReportTarget::Message {
+            channel_id,
+            message_id,
+        } => (
+            Some(hex::encode(channel_id.0)),
+            Some(message_id.clone()),
+            None,
+        ),
+        ModReportTarget::Member { pseudonym } => (None, None, Some(hex::encode(pseudonym.0))),
+    };
+    ModReportView {
+        report_id: hex::encode(id),
+        reporter: hex::encode(r.reporter.0),
+        channel_id,
+        message_id,
+        member,
+        reason: r.reason.clone(),
+        lamport: r.lamport,
     }
 }
 

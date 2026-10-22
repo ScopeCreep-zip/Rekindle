@@ -275,6 +275,9 @@ pub(super) async fn route(
         CommunityRequest::BanList { community } => {
             governance::handle_ban_list(ctx, state, &community).await
         }
+        CommunityRequest::ModReportList { community } => {
+            governance::handle_mod_report_list(ctx, state, &community).await
+        }
         CommunityRequest::InviteCreate {
             community,
             max_uses,

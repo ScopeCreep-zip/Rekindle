@@ -83,6 +83,10 @@ impl CommunityRequest {
                 .field("community", community)
                 .field("rule_id", rule_id)
                 .finish(),
+            Self::ModReportList { community } => f
+                .debug_struct("ModReportList")
+                .field("community", community)
+                .finish(),
             other => unreachable!("{} is not a moderation request", other.name()),
         }
     }

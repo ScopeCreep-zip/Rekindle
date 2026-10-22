@@ -213,6 +213,7 @@ impl CommunityRequest {
             | Self::EventAttendees { .. }
             | Self::BanList { .. }
             | Self::AutomodRules { .. }
+            | Self::ModReportList { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
             | Self::CommunityJoin { .. }

@@ -212,6 +212,23 @@ pub struct CommunityBanView {
     pub display_name: String,
 }
 
+/// One report in a community's moderator queue (plan E3.1, D26), from
+/// merged governance: a reported message (`channel_id` and `message_id`)
+/// or a reported member (`member`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModReportView {
+    /// 32 lowercase hex.
+    pub report_id: String,
+    /// The reporter's pseudonym, 64 lowercase hex.
+    pub reporter: String,
+    pub channel_id: Option<String>,
+    pub message_id: Option<String>,
+    pub member: Option<String>,
+    pub reason: String,
+    pub lamport: u64,
+}
+
 /// One row of a community's audit log: a verified governance entry, by its
 /// author (plan E3.1 F4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

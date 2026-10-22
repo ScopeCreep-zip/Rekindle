@@ -13,9 +13,8 @@ use crate::state::AppState;
 use crate::state_helpers;
 
 use super::message_notifications::{
-    emit_automod_alert, emit_message_received, fetch_channel_message, message_exists,
-    queue_message_fetch_retry, update_peer_sequence, verify_notification_message,
-    PendingMessageFetch,
+    emit_message_received, fetch_channel_message, message_exists, queue_message_fetch_retry,
+    update_peer_sequence, verify_notification_message, PendingMessageFetch,
 };
 
 pub async fn handle_message_notification(
@@ -101,12 +100,8 @@ pub async fn handle_message_notification(
         &pending.channel_id,
         pending.sequence,
     );
-    let (body, blurred, report) = match ingested {
-        Ingested::Stored {
-            body,
-            blurred,
-            report,
-        } => (body, blurred, report),
+    let (body, blurred) = match ingested {
+        Ingested::Stored { body, blurred } => (body, blurred),
         Ingested::Undecryptable => {
             request_text_key(state, &pending, message.mek_generation);
             emit_message_received(
@@ -132,16 +127,8 @@ pub async fn handle_message_notification(
         false,
         blurred,
     );
-    if let Some(rule_name) = report {
-        emit_automod_alert(
-            app_handle,
-            state,
-            &pending.community_id,
-            &pending.channel_id,
-            &pending.message_id,
-            &rule_name,
-        );
-    }
+    // An `alert_moderators` match is the Host ingest's `ModReport` and
+    // its `AutoModAlert`, which reaches the windows through the journal.
 
     // Architecture §28.5 line 3120 — pre-decryption notification
     // routing uses the cleartext mention metadata the sender stamped

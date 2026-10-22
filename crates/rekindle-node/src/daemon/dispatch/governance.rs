@@ -265,6 +265,25 @@ pub(crate) async fn handle_ban_list(
     }
 }
 
+/// The moderator queue, for a member holding `MANAGE_MESSAGES`.
+pub(crate) async fn handle_mod_report_list(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    community: &str,
+) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let membership = match ctx.resolve_community(community) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match adapter(ctx).mod_reports(&membership.governance_key) {
+        Ok(reports) => IpcResponse::ok(&reports),
+        Err(e) => IpcResponse::error(403, e.to_string()),
+    }
+}
+
 pub(crate) async fn handle_invite_create(
     ctx: &DaemonContext,
     state: DaemonState,

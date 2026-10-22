@@ -226,7 +226,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             pseudonym(new_owner_pseudonym, "new owner pseudonym")
         }
 
-        CommunityRequest::ChannelList { community: c } | CommunityRequest::MekList { community: c } | CommunityRequest::RoleList { community: c } | CommunityRequest::BanList { community: c } | CommunityRequest::InviteList { community: c }
+        CommunityRequest::ChannelList { community: c } | CommunityRequest::MekList { community: c } | CommunityRequest::RoleList { community: c } | CommunityRequest::BanList { community: c } | CommunityRequest::ModReportList { community: c } | CommunityRequest::InviteList { community: c }
         // Role ids, invite use counts and expiries are governance rules,
         // checked where the op is validated.
         | CommunityRequest::RoleDelete {

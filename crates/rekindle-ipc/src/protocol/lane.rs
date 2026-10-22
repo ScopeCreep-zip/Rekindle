@@ -256,6 +256,7 @@ impl CommunityRequest {
             Self::AutomodRules { .. } => ("AutomodRules", Query, Authenticated),
             Self::AutomodRuleSet { .. } => ("AutomodRuleSet", Write, Authenticated),
             Self::AutomodRuleDelete { .. } => ("AutomodRuleDelete", Write, Authenticated),
+            Self::ModReportList { .. } => ("ModReportList", Query, Authenticated),
             Self::InviteCreate { .. } => ("InviteCreate", Write, Authenticated),
             Self::InviteList { .. } => ("InviteList", Query, Authenticated),
             Self::InviteRevoke { .. } => ("InviteRevoke", Write, Authenticated),
