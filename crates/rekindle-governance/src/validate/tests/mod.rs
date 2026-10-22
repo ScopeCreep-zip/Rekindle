@@ -478,4 +478,5 @@ fn onboarding_rejects_unknown_mode() {
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
 
+mod admin_delete;
 mod hierarchy;

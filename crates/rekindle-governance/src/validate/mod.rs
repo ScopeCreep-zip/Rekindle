@@ -277,7 +277,14 @@ pub fn validate_write(
 
         GovernanceEntry::WelcomeScreen { .. } => has(perms, MANAGE_COMMUNITY),
 
-        GovernanceEntry::AdminDelete { .. } => has(perms, MANAGE_MESSAGES),
+        // A moderator deletes in a channel they can read, with the channel's
+        // overwrites applied (Discord's MANAGE_MESSAGES is channel-scoped):
+        // an overwrite that hides the channel or denies MANAGE_MESSAGES
+        // there refuses the delete.
+        GovernanceEntry::AdminDelete { channel_id, .. } => has(
+            compute_permissions(writer, Some(channel_id), state, 0),
+            MANAGE_MESSAGES,
+        ),
 
         // Lost Cargo: pinning a file requires MANAGE_COMMUNITY (admin-only)
         // per architecture §28.9 line 3283.
