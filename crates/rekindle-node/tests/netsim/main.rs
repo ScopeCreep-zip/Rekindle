@@ -2,6 +2,7 @@
 //! the network. Each runs on a single-threaded, paused runtime.
 
 mod auto_away;
+mod channel_delete_container_not_empty;
 mod dm_hint_loss;
 mod first_contact_retry;
 mod first_login;

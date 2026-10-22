@@ -1,12 +1,15 @@
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
+
+use crate::host_call;
 
 use crate::state::SharedState;
 
 use crate::services::community_audit_runtime::BannedMemberInfo;
 use crate::services::community_moderation_runtime::{
-    admin_delete_channel_message_inner, ban_member_inner, delete_channel_overwrite_inner,
-    remove_community_member_inner, remove_timeout_inner, set_channel_overwrite_inner,
-    set_slowmode_inner, timeout_member_inner, unban_member_inner,
+    admin_delete_channel_message_inner, ban_member_inner, remove_community_member_inner,
+    remove_timeout_inner, set_slowmode_inner, timeout_member_inner, unban_member_inner,
 };
 
 /// Remove a member from a community.
@@ -74,17 +77,17 @@ pub async fn set_channel_overwrite(
     allow: u64,
     deny: u64,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    set_channel_overwrite_inner(
-        state.inner(),
-        &pool,
-        community_id,
-        channel_id,
-        target_type,
-        target_id,
-        allow,
-        deny,
+) -> Result<Done<()>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::ChannelOverwriteSet {
+            community: community_id,
+            channel_id,
+            target_type,
+            target_id,
+            allow,
+            deny,
+        },
     )
     .await
 }
@@ -96,15 +99,15 @@ pub async fn delete_channel_overwrite(
     target_type: String,
     target_id: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    delete_channel_overwrite_inner(
-        state.inner(),
-        &pool,
-        community_id,
-        channel_id,
-        target_type,
-        target_id,
+) -> Result<Done<()>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::ChannelOverwriteDelete {
+            community: community_id,
+            channel_id,
+            target_type,
+            target_id,
+        },
     )
     .await
 }

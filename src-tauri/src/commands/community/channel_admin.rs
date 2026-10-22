@@ -1,32 +1,27 @@
+//! Channel delete and rename (plan E3.1 E1): Host calls.
+
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::services::community_channel_admin_runtime::{
-    delete_channel_inner, rename_channel_inner,
-};
+use crate::host_call;
 use crate::state::SharedState;
 
-/// Phase 8 — `idempotency_key` (UUID v7) dedupes click-spam. Without
-/// it, two rapid clicks each write a `ChannelArchived` lamport entry;
-/// the second is a no-op locally but still consumes a lamport tick
-/// (governance-state divergence vs. peers).
+/// Delete a channel; the Host holds it for review when it has history or readers (`ContainerNotEmpty`).
 #[tauri::command]
 pub async fn delete_channel(
     community_id: String,
     channel_id: String,
-    idempotency_key: uuid::Uuid,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    let s = state.inner().clone();
-    let p = pool.clone();
-    state
-        .idempotency
-        .wrap(idempotency_key, || async move {
-            delete_channel_inner(&s, &p, community_id, channel_id).await
-        })
-        .await
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::ChannelDelete {
+            community: community_id,
+            channel_id,
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -35,7 +30,14 @@ pub async fn rename_channel(
     channel_id: String,
     new_name: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    rename_channel_inner(state.inner(), &pool, community_id, channel_id, new_name).await
+) -> Result<Done<()>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::ChannelRename {
+            community: community_id,
+            channel_id,
+            name: new_name,
+        },
+    )
+    .await
 }

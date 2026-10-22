@@ -48,21 +48,21 @@ export const governanceCommands = {
 
   // Categories
   createCategory: (communityId: string, name: string) =>
-    invoke<{ categoryId: string }>("create_category", { communityId, name }),
+    hostInvoke<{ categoryId: string }>("create_category", { communityId, name }),
   deleteCategory: (communityId: string, categoryId: string) =>
-    invoke<void>("delete_category", { communityId, categoryId }),
+    hostInvoke<void>("delete_category", { communityId, categoryId }),
   renameCategory: (communityId: string, categoryId: string, newName: string) =>
-    invoke<void>("rename_category", { communityId, categoryId, newName }),
+    hostInvoke<void>("rename_category", { communityId, categoryId, newName }),
   moveChannel: (communityId: string, channelId: string, categoryId: string | null) =>
-    invoke<void>("move_channel", { communityId, channelId, categoryId }),
+    hostInvoke<void>("move_channel", { communityId, channelId, categoryId }),
   reorderCategories: (communityId: string, categoryIds: string[]) =>
-    invoke<void>("reorder_categories", { communityId, categoryIds }),
+    hostInvoke<void>("reorder_categories", { communityId, categoryIds }),
   setChannelTopic: (communityId: string, channelId: string, topic: string) =>
-    invoke<void>("set_channel_topic", { communityId, channelId, topic }),
+    hostInvoke<void>("set_channel_topic", { communityId, channelId, topic }),
   setChannelForumTags: (communityId: string, channelId: string, forumTags: string[]) =>
-    invoke<void>("set_channel_forum_tags", { communityId, channelId, forumTags }),
+    hostInvoke<void>("set_channel_forum_tags", { communityId, channelId, forumTags }),
   reorderChannels: (communityId: string, channelIds: string[]) =>
-    invoke<void>("reorder_channels", { communityId, channelIds }),
+    hostInvoke<void>("reorder_channels", { communityId, channelIds }),
 
   // Community invites
   createCommunityInvite: (communityId: string, maxUses?: number, expiresInSeconds?: number) =>
@@ -143,9 +143,9 @@ export const governanceCommands = {
   removeTimeout: (communityId: string, pseudonymKey: string) =>
     invoke<void>("remove_timeout", { communityId, pseudonymKey }),
   setChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string, allow: number, deny: number) =>
-    invoke<void>("set_channel_overwrite", { communityId, channelId, targetType, targetId, allow, deny }),
+    hostInvoke<void>("set_channel_overwrite", { communityId, channelId, targetType, targetId, allow, deny }),
   deleteChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string) =>
-    invoke<void>("delete_channel_overwrite", { communityId, channelId, targetType, targetId }),
+    hostInvoke<void>("delete_channel_overwrite", { communityId, channelId, targetType, targetId }),
   setSlowmode: (communityId: string, channelId: string, seconds: number) =>
     invoke<void>("set_slowmode", { communityId, channelId, seconds }),
 

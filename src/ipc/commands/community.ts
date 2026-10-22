@@ -89,19 +89,14 @@ export const communityCommands = {
     channelType: string,
     categoryId?: string,
     parentVoiceChannelId?: string,
-    idempotencyKey?: string,
   ) =>
-    invoke<string>("create_channel", {
+    hostInvoke<{ id: string }>("create_channel", {
       communityId,
       name,
       channelType,
       categoryId: categoryId ?? null,
       parentVoiceChannelId: parentVoiceChannelId ?? null,
-      // Phase 8 — idempotency key dedupes click-spam. Channel creation
-      // allocates a fresh DHT record + writes a unique ChannelCreated
-      // entry, so double-click without idempotency creates duplicates.
-      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
-    }),
+    }).then((created) => created.id),
   sendChannelMessage: (channelId: string, body: string, replyToId?: string) =>
     invoke<SendChannelMessageResult>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
   editChannelMessage: (channelId: string, messageId: string, newBody: string) =>
@@ -314,15 +309,10 @@ export const communityCommands = {
     }),
   leaveCommunity: (communityId: string) =>
     invoke<void>("leave_community", { communityId }),
-  deleteChannel: (communityId: string, channelId: string, idempotencyKey?: string) =>
-    invoke<void>("delete_channel", {
-      communityId,
-      channelId,
-      // Phase 8 — idempotency key dedupes click-spam.
-      idempotencyKey: idempotencyKey ?? crypto.randomUUID(),
-    }),
+  deleteChannel: (communityId: string, channelId: string) =>
+    hostInvoke<unknown>("delete_channel", { communityId, channelId }).then(() => undefined),
   renameChannel: (communityId: string, channelId: string, newName: string) =>
-    invoke<void>("rename_channel", { communityId, channelId, newName }),
+    hostInvoke<void>("rename_channel", { communityId, channelId, newName }),
   /**
    * Architecture §32 Phase 5 Week 15 — community info edit. Each
    * argument is null to leave the field unchanged. Backend reads

@@ -9,8 +9,6 @@ pub mod channel_adapter; // Phase 19.h-REDO — ChannelMessagingDeps impl for ch
 pub mod community;
 pub mod community_audit_runtime; // Phase 23.C — audit-log read + ban-list runtime orchestration lifted from commands/community/{audit,moderation}.rs.
 pub mod community_automod_runtime; // Phase 23.C — automod rule list/set/delete orchestration lifted from commands/community/automod.rs.
-pub mod community_channel_admin_runtime; // Phase 23.C — channel delete/rename orchestration lifted from commands/community/channel_admin.rs.
-pub mod community_channel_runtime; // Phase 23.C — channel creation runtime orchestration lifted from commands/community/channels.rs.
 #[cfg(debug_assertions)]
 pub mod community_diagnostics_runtime; // Phase 23.C — debug_gossip_state body lifted from commands/community/diagnostics.rs.
 pub mod community_event_runtime; // Phase 23.C — event creation orchestration lifted from commands/community/events.rs.
