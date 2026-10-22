@@ -89,6 +89,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("ChannelMove", Some(IntentKind::MoveChannel)),
     ("ChannelReorder", Some(IntentKind::ReorderChannels)),
     ("ChannelSetTopic", Some(IntentKind::SetChannelTopic)),
+    ("ChannelSetSlowmode", Some(IntentKind::SetSlowmode)),
     ("ChannelSetForumTags", Some(IntentKind::SetChannelForumTags)),
     ("ChannelOverwriteSet", Some(IntentKind::SetChannelOverwrite)),
     (
@@ -206,6 +207,9 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("Timeout", Some(IntentKind::TimeoutMember)),
     ("TimeoutRemove", Some(IntentKind::RemoveTimeout)),
     ("BanList", None),
+    ("AutomodRules", None),
+    ("AutomodRuleSet", Some(IntentKind::SetAutomodRule)),
+    ("AutomodRuleDelete", Some(IntentKind::DeleteAutomodRule)),
     ("InviteCreate", Some(IntentKind::CreateCommunityInvite)),
     ("InviteList", None),
     ("InviteRevoke", Some(IntentKind::RevokeCommunityInvite)),

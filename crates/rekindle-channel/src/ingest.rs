@@ -15,7 +15,9 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::permissions::BYPASS_SLOWMODE;
 
-use crate::automod::{compile_rules, rule_fingerprint, rule_matches};
+use rekindle_types::governance::AutoModAction;
+
+use crate::automod::{rule_matches, AutoModCompiledCache};
 use crate::deps::ChannelMessagingDeps;
 use crate::send::BodyPosition;
 
@@ -89,12 +91,14 @@ pub struct RateLimits {
     last: BTreeMap<(String, String, String), u64>,
 }
 
-/// Judge `item` against the community's merged state `gov`, the block list
-/// and the slowmode windows; an admitted or hidden post starts its author's
-/// next window.
+/// Judge `item` against the community's merged state `gov`, its compiled
+/// automod rules (`crate::automod::compiled_rules`), the block list and the
+/// slowmode windows; an admitted or hidden post starts its author's next
+/// window.
 pub fn gate(
     item: &GateItem<'_>,
     gov: &GovernanceState,
+    rules: &AutoModCompiledCache,
     blocked: &BlockList,
     limits: &mut RateLimits,
 ) -> Verdict {
@@ -118,7 +122,7 @@ pub fn gate(
             return Verdict::Drop(GateReason::Slowmode { seconds });
         }
     }
-    let verdict = automod(gov, item.body);
+    let verdict = automod(rules, item.body);
     if !matches!(verdict, Verdict::Drop(_)) {
         limits.last.insert(window_key(item), item.sent_at_secs);
     }
@@ -147,34 +151,29 @@ fn within_window(item: &GateItem<'_>, limits: &RateLimits, seconds: u32) -> bool
         .is_some_and(|last| item.sent_at_secs.saturating_sub(*last) < u64::from(seconds))
 }
 
-/// The automod verdict: a matching `block_locally` rule drops, then
-/// `blur_content` hides, then `alert_moderators` admits with a report. Rules are taken in
-/// rule-id order, so the rule named is the same on every peer.
-fn automod(gov: &GovernanceState, body: &str) -> Verdict {
-    let compiled = match compile_rules(gov, &rule_fingerprint(gov)) {
-        Ok(compiled) => compiled,
-        Err(e) => return Verdict::Drop(GateReason::AutoModError(e.to_string())),
+/// The automod verdict: a matching `BlockLocally` rule drops, then
+/// `BlurContent` hides, then `AlertModerators` admits with a report. The
+/// compiled rules are in rule-id order, so the rule named is the same on
+/// every peer.
+fn automod(rules: &AutoModCompiledCache, body: &str) -> Verdict {
+    let rules = match &rules.rules {
+        Ok(rules) => rules,
+        Err(e) => return Verdict::Drop(GateReason::AutoModError(e.clone())),
     };
-    let mut rules = compiled.rules;
-    rules.sort_by_key(|rule| rule.rule_id);
     let mut verdict = Verdict::Admit;
     for rule in rules.iter().filter(|rule| rule_matches(rule, body)) {
         let reason = GateReason::AutoMod {
             rule: rule.name.clone(),
         };
-        match rule.action.as_str() {
-            "block_locally" => return Verdict::Drop(reason),
-            "blur_content" if !matches!(verdict, Verdict::Hide(_)) => {
+        match rule.action {
+            AutoModAction::BlockLocally => return Verdict::Drop(reason),
+            AutoModAction::BlurContent if !matches!(verdict, Verdict::Hide(_)) => {
                 verdict = Verdict::Hide(reason);
             }
-            "alert_moderators" if verdict == Verdict::Admit => verdict = Verdict::Report(reason),
-            "blur_content" | "alert_moderators" => {}
-            other => {
-                return Verdict::Drop(GateReason::AutoModError(format!(
-                    "rule {:?} has the unknown action {other:?}",
-                    rule.name
-                )))
+            AutoModAction::AlertModerators if verdict == Verdict::Admit => {
+                verdict = Verdict::Report(reason);
             }
+            AutoModAction::BlurContent | AutoModAction::AlertModerators => {}
         }
     }
     verdict

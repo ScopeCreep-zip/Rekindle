@@ -382,7 +382,7 @@ pub struct AutoModRuleState {
     pub name: String,
     pub enabled: bool,
     pub trigger_json: String,
-    pub action: String,
+    pub action: rekindle_types::governance::AutoModAction,
     pub lamport: u64,
 }
 

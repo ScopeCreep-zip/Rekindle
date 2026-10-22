@@ -192,7 +192,7 @@ export async function handleSetAutoModRule(
     enabled: boolean;
     keywords: string[];
     regexPatterns: string[];
-    action: "block_locally" | "blur_content" | "alert_moderators";
+    action: "blockLocally" | "blurContent" | "alertModerators";
   },
 ): Promise<void> {
   try {

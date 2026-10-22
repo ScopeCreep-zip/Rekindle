@@ -78,7 +78,7 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, state: &mut GovernanceSt
                         name: name.clone(),
                         enabled: *enabled,
                         trigger_json: trigger_json.clone(),
-                        action: action.clone(),
+                        action: *action,
                         lamport: *lamport,
                     },
                 );

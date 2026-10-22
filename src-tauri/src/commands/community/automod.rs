@@ -1,28 +1,26 @@
+//! A community's automod rules (plan E3.1 F3), answered by the Host.
+
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::community::AutoModRuleView;
+use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::governance::AutoModAction;
 use tauri::State;
 
-use crate::services::community_automod_runtime::{
-    delete_automod_rule_inner, list_automod_rules_inner, set_automod_rule_inner,
-};
+use crate::host_call;
 use crate::state::SharedState;
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AutoModRuleDto {
-    pub rule_id: String,
-    pub name: String,
-    pub enabled: bool,
-    pub keywords: Vec<String>,
-    pub regex_patterns: Vec<String>,
-    pub action: String,
-    pub lamport: u64,
-}
 
 #[tauri::command]
 pub async fn list_automod_rules(
     state: State<'_, SharedState>,
     community_id: String,
-) -> Result<Vec<AutoModRuleDto>, String> {
-    list_automod_rules_inner(state.inner(), &community_id)
+) -> Result<Done<Vec<AutoModRuleView>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::AutomodRules {
+            community: community_id,
+        }),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -34,17 +32,19 @@ pub async fn set_automod_rule(
     enabled: bool,
     keywords: Vec<String>,
     regex_patterns: Vec<String>,
-    action: String,
-) -> Result<String, String> {
-    set_automod_rule_inner(
-        state.inner(),
-        community_id,
-        rule_id,
-        name,
-        enabled,
-        keywords,
-        regex_patterns,
-        action,
+    action: AutoModAction,
+) -> Result<Done<String>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::AutomodRuleSet {
+            community: community_id,
+            rule_id,
+            name,
+            enabled,
+            keywords,
+            regex_patterns,
+            action,
+        }),
     )
     .await
 }
@@ -54,6 +54,13 @@ pub async fn delete_automod_rule(
     state: State<'_, SharedState>,
     community_id: String,
     rule_id: String,
-) -> Result<(), String> {
-    delete_automod_rule_inner(state.inner(), community_id, rule_id).await
+) -> Result<Done<()>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::AutomodRuleDelete {
+            community: community_id,
+            rule_id,
+        }),
+    )
+    .await
 }

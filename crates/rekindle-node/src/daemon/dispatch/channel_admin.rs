@@ -37,6 +37,7 @@ fn community_of(request: &CommunityRequest) -> &str {
         | CommunityRequest::ChannelMove { community, .. }
         | CommunityRequest::ChannelReorder { community, .. }
         | CommunityRequest::ChannelSetTopic { community, .. }
+        | CommunityRequest::ChannelSetSlowmode { community, .. }
         | CommunityRequest::ChannelSetForumTags { community, .. }
         | CommunityRequest::ChannelOverwriteSet { community, .. }
         | CommunityRequest::ChannelOverwriteDelete { community, .. }
@@ -79,6 +80,14 @@ fn op(
                 .iter()
                 .map(|id| channel(id))
                 .collect::<Result<_, _>>()?,
+        },
+        CommunityRequest::ChannelSetSlowmode {
+            channel_id,
+            seconds,
+            ..
+        } => ChannelAdminOp::SetSlowmode {
+            channel: channel(&channel_id)?,
+            seconds,
         },
         CommunityRequest::ChannelSetTopic {
             channel_id, topic, ..

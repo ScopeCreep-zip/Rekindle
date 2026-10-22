@@ -33,6 +33,10 @@ pub(crate) enum ChannelAdminOp {
         channel: ChannelId,
         tags: Vec<String>,
     },
+    SetSlowmode {
+        channel: ChannelId,
+        seconds: u32,
+    },
     OverwriteSet {
         channel: ChannelId,
         target_type: String,
@@ -149,6 +153,12 @@ impl HostGovernance {
                 })],
                 null,
             ),
+            ChannelAdminOp::SetSlowmode { channel, seconds } => (
+                vec![channel_update(channel, move |e| {
+                    set_channel(e, ChannelChange::Slowmode(seconds));
+                })],
+                null,
+            ),
             ChannelAdminOp::OverwriteSet {
                 channel,
                 target_type,
@@ -220,6 +230,7 @@ enum ChannelChange {
     Topic(String),
     ForumTags(Vec<String>),
     Position(u32),
+    Slowmode(u32),
     /// The category to move into; `None` is uncategorised.
     Category(Option<CategoryId>),
 }
@@ -230,6 +241,7 @@ fn set_channel(entry: &mut GovernanceEntry, change: ChannelChange) {
         topic,
         forum_tags,
         position,
+        slowmode_seconds,
         category_id,
         ..
     } = entry
@@ -239,6 +251,7 @@ fn set_channel(entry: &mut GovernanceEntry, change: ChannelChange) {
             ChannelChange::Topic(v) => *topic = Some(v),
             ChannelChange::ForumTags(v) => *forum_tags = Some(v),
             ChannelChange::Position(v) => *position = Some(v),
+            ChannelChange::Slowmode(v) => *slowmode_seconds = Some(v),
             ChannelChange::Category(v) => *category_id = Some(v),
         }
     }

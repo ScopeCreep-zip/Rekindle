@@ -219,6 +219,16 @@ impl CommunityRequest {
                 .field("channel_id", channel_id)
                 .field("topic", topic)
                 .finish(),
+            Self::ChannelSetSlowmode {
+                community,
+                channel_id,
+                seconds,
+            } => f
+                .debug_struct("ChannelSetSlowmode")
+                .field("community", community)
+                .field("channel_id", channel_id)
+                .field("seconds", seconds)
+                .finish(),
             Self::ChannelSetForumTags {
                 community,
                 channel_id,

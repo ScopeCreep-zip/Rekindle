@@ -212,6 +212,7 @@ impl CommunityRequest {
             | Self::EventList { .. }
             | Self::EventAttendees { .. }
             | Self::BanList { .. }
+            | Self::AutomodRules { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
             | Self::CommunityJoin { .. }
@@ -228,6 +229,7 @@ impl CommunityRequest {
             | Self::ChannelMove { .. }
             | Self::ChannelReorder { .. }
             | Self::ChannelSetTopic { .. }
+            | Self::ChannelSetSlowmode { .. }
             | Self::ChannelSetForumTags { .. }
             | Self::ChannelOverwriteSet { .. }
             | Self::ChannelOverwriteDelete { .. }
@@ -262,7 +264,9 @@ impl CommunityRequest {
             | Self::Ban { .. }
             | Self::Unban { .. }
             | Self::Timeout { .. }
-            | Self::TimeoutRemove { .. } => Some(C::ModerationWrite),
+            | Self::TimeoutRemove { .. }
+            | Self::AutomodRuleSet { .. }
+            | Self::AutomodRuleDelete { .. } => Some(C::ModerationWrite),
             Self::ChannelMessages { .. } | Self::ChannelMessagesBefore { .. } => {
                 Some(C::ChannelsHistory)
             }

@@ -117,6 +117,11 @@ pub(super) async fn selection(
             channel_id: channel,
             ..
         }
+        | CommunityRequest::ChannelSetSlowmode {
+            community: target,
+            channel_id: channel,
+            ..
+        }
         | CommunityRequest::ChannelSetForumTags {
             community: target,
             channel_id: channel,
@@ -262,6 +267,12 @@ pub(super) async fn selection(
             community: target, ..
         }
         | CommunityRequest::NotificationDefaultSet {
+            community: target, ..
+        }
+        | CommunityRequest::AutomodRuleSet {
+            community: target, ..
+        }
+        | CommunityRequest::AutomodRuleDelete {
             community: target, ..
         } => {
             let (id, name) = community(ctx, target)?;

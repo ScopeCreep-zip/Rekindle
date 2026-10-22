@@ -162,6 +162,13 @@ pub enum CommunityRequest {
         channel_id: String,
         forum_tags: Vec<String>,
     },
+    /// Set a channel's slowmode: the seconds a member waits between posts
+    /// (0 turns it off).
+    ChannelSetSlowmode {
+        community: String,
+        channel_id: String,
+        seconds: u32,
+    },
     /// Set a channel's permission overwrite for a role or member.
     ChannelOverwriteSet {
         community: String,
@@ -453,6 +460,20 @@ pub enum CommunityRequest {
     },
     /// List all active bans in a community.
     BanList { community: String },
+    /// The community's enabled automod rules.
+    AutomodRules { community: String },
+    /// Create a rule (no `rule_id`) or replace one; answered with its id.
+    AutomodRuleSet {
+        community: String,
+        rule_id: Option<String>,
+        name: String,
+        enabled: bool,
+        keywords: Vec<String>,
+        regex_patterns: Vec<String>,
+        action: rekindle_types::governance::AutoModAction,
+    },
+    /// Turn a rule off for good.
+    AutomodRuleDelete { community: String, rule_id: String },
 
     // ── Invites ───────────────────────────────────────────────────
     /// Create a community invite.

@@ -87,6 +87,7 @@ pub(crate) async fn route(
         | CommunityRequest::ChannelMove { .. }
         | CommunityRequest::ChannelReorder { .. }
         | CommunityRequest::ChannelSetTopic { .. }
+        | CommunityRequest::ChannelSetSlowmode { .. }
         | CommunityRequest::ChannelSetForumTags { .. }
         | CommunityRequest::ChannelOverwriteSet { .. }
         | CommunityRequest::ChannelOverwriteDelete { .. }

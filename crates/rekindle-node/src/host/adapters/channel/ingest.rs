@@ -217,9 +217,11 @@ impl HostChannel {
             sent_at_secs: post.message.timestamp / 1000,
             now_secs: self.ctx().clock.now_secs(),
         };
+        let rules = rekindle_channel::compiled_automod_rules(self, &post.community_id, &gov);
         Ok(ingest::gate(
             &item,
             &gov,
+            &rules,
             &blocked,
             &mut self.ctx().channel_rate_limits.lock(),
         ))

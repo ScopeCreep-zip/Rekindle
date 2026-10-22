@@ -1,12 +1,16 @@
-//! Phase 23.D.6 — automod compile + evaluate logic ported from
-//! `src-tauri/services/community/automod.rs`. Pure protocol logic that
-//! reads governance.automod_rules and matches incoming channel-message
-//! bodies against compiled regexes + lowercased keywords. The compiled
-//! cache (regex JIT state) lives on the deps adapter; this module
-//! provides the rebuild-on-fingerprint-mismatch shape.
+//! Automod rules (plan E3.1 D26): read from the merged
+//! `GovernanceState.automod_rules`, compiled once per rule set (regexes and
+//! lowercased keywords) and matched against received post bodies by the
+//! ingest gate. The compiled set is cached on the adapter per community and
+//! keyed by the rules' version fingerprint, so a projection that changes a
+//! rule (every change is a new LWW lamport) recompiles it, and nothing else
+//! does.
 
 use regex::Regex;
+use std::sync::Arc;
+
 use rekindle_governance::state::GovernanceState;
+use rekindle_types::governance::AutoModAction;
 use serde::Deserialize;
 
 use crate::deps::ChannelMessagingDeps;
@@ -28,7 +32,7 @@ pub struct AutoModRuleInfo {
     pub enabled: bool,
     pub keywords: Vec<String>,
     pub regex_patterns: Vec<String>,
-    pub action: String,
+    pub action: AutoModAction,
     pub lamport: u64,
 }
 
@@ -40,15 +44,47 @@ pub struct CompiledAutoModRule {
     pub name: String,
     pub keywords_lower: Vec<String>,
     pub regexes: Vec<Regex>,
-    pub action: String,
+    pub action: AutoModAction,
 }
 
-/// Cache snapshot — `fingerprint` is the (rule_id, lamport) tuple set
-/// at compile time; rebuild trigger is fingerprint mismatch.
+/// One community's compiled rule set. `fingerprint` is the sorted
+/// `(rule_id, lamport)` set it was compiled from; `rules` holds the enabled
+/// rules in rule-id order, or why they could not be compiled (the gate drops
+/// every post while that holds, and the error is cached like a success, so
+/// a broken rule is not recompiled per post either).
 #[derive(Debug, Clone)]
 pub struct AutoModCompiledCache {
     pub fingerprint: Vec<([u8; 16], u64)>,
-    pub rules: Vec<CompiledAutoModRule>,
+    pub rules: Result<Vec<CompiledAutoModRule>, String>,
+}
+
+impl AutoModCompiledCache {
+    /// Compile `governance`'s rules.
+    #[must_use]
+    pub fn compile(governance: &GovernanceState) -> Self {
+        Self {
+            fingerprint: rule_fingerprint(governance),
+            rules: compile_rules(governance).map_err(|e| e.to_string()),
+        }
+    }
+}
+
+/// `community_id`'s compiled rules: the adapter's cached set while its
+/// fingerprint matches `governance`, else a fresh compile, cached.
+pub fn compiled_rules<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    governance: &GovernanceState,
+) -> Arc<AutoModCompiledCache> {
+    let fingerprint = rule_fingerprint(governance);
+    if let Some(cached) = deps.automod_compiled_cache_get(community_id) {
+        if cached.fingerprint == fingerprint {
+            return cached;
+        }
+    }
+    let compiled = Arc::new(AutoModCompiledCache::compile(governance));
+    deps.automod_compiled_cache_set(community_id, Arc::clone(&compiled));
+    compiled
 }
 
 pub fn list_rules<D: ChannelMessagingDeps>(
@@ -58,7 +94,7 @@ pub fn list_rules<D: ChannelMessagingDeps>(
     let governance = deps
         .governance_state(community_id)
         .ok_or_else(|| ChannelError::Adapter("governance state not loaded".into()))?;
-    Ok(rules_from_governance(&governance))
+    Ok(rules_of(&governance))
 }
 
 pub fn get_rule<D: ChannelMessagingDeps>(
@@ -81,15 +117,12 @@ pub fn get_rule<D: ChannelMessagingDeps>(
         enabled: rule.enabled,
         keywords: trigger.keywords,
         regex_patterns: trigger.regex_patterns,
-        action: rule.action.clone(),
+        action: rule.action,
         lamport: rule.lamport,
     })
 }
 
-pub(crate) fn compile_rules(
-    governance: &GovernanceState,
-    fingerprint: &[([u8; 16], u64)],
-) -> Result<AutoModCompiledCache, ChannelError> {
+fn compile_rules(governance: &GovernanceState) -> Result<Vec<CompiledAutoModRule>, ChannelError> {
     let mut rules = Vec::new();
     for (rule_id, rule) in &governance.automod_rules {
         if !rule.enabled {
@@ -122,16 +155,14 @@ pub(crate) fn compile_rules(
                 .filter(|keyword| !keyword.is_empty())
                 .collect(),
             regexes,
-            action: rule.action.clone(),
+            action: rule.action,
         });
     }
-    Ok(AutoModCompiledCache {
-        fingerprint: fingerprint.to_vec(),
-        rules,
-    })
+    rules.sort_by_key(|rule| rule.rule_id);
+    Ok(rules)
 }
 
-pub(crate) fn rule_fingerprint(governance: &GovernanceState) -> Vec<([u8; 16], u64)> {
+fn rule_fingerprint(governance: &GovernanceState) -> Vec<([u8; 16], u64)> {
     let mut fingerprint = governance
         .automod_rules
         .iter()
@@ -149,7 +180,9 @@ pub(crate) fn rule_matches(rule: &CompiledAutoModRule, body: &str) -> bool {
         || rule.regexes.iter().any(|regex| regex.is_match(body))
 }
 
-fn rules_from_governance(governance: &GovernanceState) -> Vec<AutoModRuleInfo> {
+/// `governance`'s enabled rules, by name then id.
+#[must_use]
+pub fn rules_of(governance: &GovernanceState) -> Vec<AutoModRuleInfo> {
     let mut rules = governance
         .automod_rules
         .iter()
@@ -162,7 +195,7 @@ fn rules_from_governance(governance: &GovernanceState) -> Vec<AutoModRuleInfo> {
                 enabled: rule.enabled,
                 keywords: trigger.keywords,
                 regex_patterns: trigger.regex_patterns,
-                action: rule.action.clone(),
+                action: rule.action,
                 lamport: rule.lamport,
             })
         })
@@ -175,19 +208,19 @@ fn rules_from_governance(governance: &GovernanceState) -> Vec<AutoModRuleInfo> {
 mod tests {
     use super::*;
 
-    fn keyword_rule(name: &str, kw: &str, action: &str) -> CompiledAutoModRule {
+    fn keyword_rule(name: &str, kw: &str, action: AutoModAction) -> CompiledAutoModRule {
         CompiledAutoModRule {
             rule_id: [0u8; 16],
             name: name.into(),
             keywords_lower: vec![kw.into()],
             regexes: vec![],
-            action: action.into(),
+            action,
         }
     }
 
     #[test]
     fn rule_matches_lowercase_keyword_in_mixed_case_body() {
-        let rule = keyword_rule("test", "foo", "block_locally");
+        let rule = keyword_rule("test", "foo", AutoModAction::BlockLocally);
         assert!(rule_matches(&rule, "Hello FOO world"));
         assert!(!rule_matches(&rule, "Hello bar world"));
     }
@@ -199,7 +232,7 @@ mod tests {
             name: "regex test".into(),
             keywords_lower: vec![],
             regexes: vec![regex::Regex::new(r"\d{3}-\d{4}").unwrap()],
-            action: "blur_content".into(),
+            action: AutoModAction::BlurContent,
         };
         assert!(rule_matches(&rule, "Call 555-1234 now"));
         assert!(!rule_matches(&rule, "Call me later"));
@@ -207,7 +240,7 @@ mod tests {
 
     #[test]
     fn rule_does_not_match_empty_body() {
-        let rule = keyword_rule("test", "foo", "block_locally");
+        let rule = keyword_rule("test", "foo", AutoModAction::BlockLocally);
         assert!(!rule_matches(&rule, ""));
     }
 }

@@ -228,3 +228,16 @@ pub struct CommunityAuditEntry {
     /// The entry's Lamport time.
     pub timestamp: u64,
 }
+
+/// One automod rule, as the moderators' settings list it (plan E3.1 D26).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutoModRuleView {
+    pub rule_id: String,
+    pub name: String,
+    pub enabled: bool,
+    pub keywords: Vec<String>,
+    pub regex_patterns: Vec<String>,
+    pub action: crate::governance::AutoModAction,
+    pub lamport: u64,
+}

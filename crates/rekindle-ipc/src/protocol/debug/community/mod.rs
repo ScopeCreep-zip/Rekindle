@@ -59,6 +59,7 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::ChannelMove { .. }
             | Self::ChannelReorder { .. }
             | Self::ChannelSetTopic { .. }
+            | Self::ChannelSetSlowmode { .. }
             | Self::ChannelSetForumTags { .. }
             | Self::ChannelOverwriteSet { .. }
             | Self::ChannelOverwriteDelete { .. }
@@ -100,7 +101,10 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::Unban { .. }
             | Self::Timeout { .. }
             | Self::TimeoutRemove { .. }
-            | Self::BanList { .. } => self.fmt_moderation(f),
+            | Self::BanList { .. }
+            | Self::AutomodRules { .. }
+            | Self::AutomodRuleSet { .. }
+            | Self::AutomodRuleDelete { .. } => self.fmt_moderation(f),
         }
     }
 }

@@ -7,7 +7,7 @@ use super::super::sub_types::{
 use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::CodecError;
-use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
+use rekindle_types::governance::{AdmissionMode, AutoModAction, GovernanceEntry};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
 pub(super) fn write_ban_entry(
@@ -101,7 +101,11 @@ pub(super) fn write_auto_mod_rule(
     p.set_name(name);
     p.set_enabled(*enabled);
     p.set_trigger_json(trigger_json);
-    p.set_action(action);
+    p.set_action_kind(match action {
+        AutoModAction::BlockLocally => schema_pkg::AutoModActionKind::BlockLocally,
+        AutoModAction::BlurContent => schema_pkg::AutoModActionKind::BlurContent,
+        AutoModAction::AlertModerators => schema_pkg::AutoModActionKind::AlertModerators,
+    });
     p.set_lamport(*lamport);
 }
 
@@ -176,7 +180,11 @@ pub(super) fn read_auto_mod_rule(
         name: text_to_string(p.get_name().map_err(|e| capnp_err(&e))?)?,
         enabled: p.get_enabled(),
         trigger_json: text_to_string(p.get_trigger_json().map_err(|e| capnp_err(&e))?)?,
-        action: text_to_string(p.get_action().map_err(|e| capnp_err(&e))?)?,
+        action: match p.get_action_kind().map_err(not_in_schema)? {
+            schema_pkg::AutoModActionKind::BlockLocally => AutoModAction::BlockLocally,
+            schema_pkg::AutoModActionKind::BlurContent => AutoModAction::BlurContent,
+            schema_pkg::AutoModActionKind::AlertModerators => AutoModAction::AlertModerators,
+        },
         lamport: p.get_lamport(),
     })
 }

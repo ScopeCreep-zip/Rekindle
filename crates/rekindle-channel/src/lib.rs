@@ -34,8 +34,8 @@ mod text_keys;
 pub mod threads;
 
 pub use automod::{
-    get_rule as get_automod_rule, list_rules as list_automod_rules, AutoModCompiledCache,
-    AutoModRuleInfo, CompiledAutoModRule,
+    compiled_rules as compiled_automod_rules, get_rule as get_automod_rule,
+    list_rules as list_automod_rules, AutoModCompiledCache, AutoModRuleInfo, CompiledAutoModRule,
 };
 pub use deps::{ChannelInfoSnapshot, ChannelMessagingDeps, ChannelSendOutcome};
 pub use error::ChannelError;

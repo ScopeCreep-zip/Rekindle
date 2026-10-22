@@ -286,7 +286,7 @@ export const communityCommands = {
   listExpressions: (communityId: string) =>
     invoke<ExpressionInfo[]>("list_expressions", { communityId }),
   listAutoModRules: (communityId: string) =>
-    invoke<AutoModRuleInfo[]>("list_automod_rules", { communityId }),
+    hostInvoke<AutoModRuleInfo[]>("list_automod_rules", { communityId }),
   setAutoModRule: (
     communityId: string,
     ruleId: string | null,
@@ -294,8 +294,8 @@ export const communityCommands = {
     enabled: boolean,
     keywords: string[],
     regexPatterns: string[],
-    action: "block_locally" | "blur_content" | "alert_moderators",
-  ) => invoke<string>("set_automod_rule", {
+    action: "blockLocally" | "blurContent" | "alertModerators",
+  ) => hostInvoke<string>("set_automod_rule", {
     communityId,
     ruleId,
     name,
@@ -305,7 +305,7 @@ export const communityCommands = {
     action,
   }),
   deleteAutoModRule: (communityId: string, ruleId: string) =>
-    invoke<void>("delete_automod_rule", { communityId, ruleId }),
+    hostInvoke<unknown>("delete_automod_rule", { communityId, ruleId }).then(() => undefined),
   removeCommunityMember: (communityId: string, pseudonymKey: string) =>
     hostInvoke<unknown>("remove_community_member", { communityId, pseudonymKey }).then(() => undefined),
   leaveCommunity: (communityId: string) =>

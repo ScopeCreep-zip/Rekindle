@@ -410,9 +410,17 @@ struct AutoModRuleEntry @0xd2d4eb16e9bf1c2f {
     name                 @1 :Text;
     enabled              @2 :Bool;
     triggerJson          @3 :Text;
-    # `block_locally` / `blur_content` / `alert_moderators`.
-    action               @4 :Text;
+    # The free-text action this field carried; never written or read
+    # (D26: no ordinal reuse). `actionKind` carries the action.
+    obsoleteAction       @4 :Text;
     lamport              @5 :UInt64;
+    actionKind           @6 :AutoModActionKind;
+}
+
+enum AutoModActionKind {
+    blockLocally         @0;
+    blurContent          @1;
+    alertModerators      @2;
 }
 
 struct RoleArchivedEntry @0xd3d4eb16e9bf1c2e {

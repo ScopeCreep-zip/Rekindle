@@ -149,7 +149,7 @@ export const governanceCommands = {
   deleteChannelOverwrite: (communityId: string, channelId: string, targetType: string, targetId: string) =>
     hostInvoke<void>("delete_channel_overwrite", { communityId, channelId, targetType, targetId }),
   setSlowmode: (communityId: string, channelId: string, seconds: number) =>
-    invoke<void>("set_slowmode", { communityId, channelId, seconds }),
+    hostInvoke<unknown>("set_slowmode", { communityId, channelId, seconds }).then(() => undefined),
 
   // Threads
   /**

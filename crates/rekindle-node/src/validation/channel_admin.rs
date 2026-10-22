@@ -2,7 +2,7 @@
 
 use rekindle_ipc::protocol::CommunityRequest;
 
-use super::{channel, community, hex16, name, text, Checked, MAX_TOPIC_LEN};
+use super::{channel, community, hex16, name, slowmode, text, Checked, MAX_TOPIC_LEN};
 
 /// Most channels or categories one reorder names.
 const MAX_ORDERED: usize = 1024;
@@ -67,6 +67,15 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         } => {
             community(c)?;
             ordered(channel_ids, channel)
+        }
+        CommunityRequest::ChannelSetSlowmode {
+            community: c,
+            channel_id,
+            seconds,
+        } => {
+            community(c)?;
+            channel(channel_id)?;
+            slowmode(*seconds)
         }
         CommunityRequest::ChannelSetTopic {
             community: c,

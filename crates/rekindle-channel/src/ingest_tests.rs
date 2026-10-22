@@ -1,5 +1,7 @@
 use rekindle_governance::state::{AutoModRuleState, ChannelState, TimeoutState};
 
+use rekindle_types::governance::AutoModAction;
+
 use super::*;
 
 const GATE_CHANNEL: &str = "00112233445566778899aabbccddeeff";
@@ -37,21 +39,27 @@ fn state() -> GovernanceState {
     gov
 }
 
-fn rule(gov: &mut GovernanceState, id: u8, trigger_json: &str, action: &str) {
+fn rule(gov: &mut GovernanceState, id: u8, trigger_json: &str, action: AutoModAction) {
     gov.automod_rules.insert(
         [id; 16],
         AutoModRuleState {
             name: format!("rule {id}"),
             enabled: true,
             trigger_json: trigger_json.into(),
-            action: action.into(),
+            action,
             lamport: 1,
         },
     );
 }
 
 fn judge(gov: &GovernanceState, item: &GateItem<'_>) -> Verdict {
-    gate(item, gov, &BlockList::default(), &mut RateLimits::default())
+    gate(
+        item,
+        gov,
+        &AutoModCompiledCache::compile(gov),
+        &BlockList::default(),
+        &mut RateLimits::default(),
+    )
 }
 
 #[test]
@@ -65,6 +73,7 @@ fn drops_a_blocked_author() {
     let verdict = gate(
         &item("hi", 10, 10),
         &state(),
+        &AutoModCompiledCache::compile(&state()),
         &blocked,
         &mut RateLimits::default(),
     );
@@ -106,16 +115,23 @@ fn drops_a_post_within_slowmode_and_admits_after_it() {
         channel.slowmode_seconds = Some(30);
     }
     let (blocked, mut limits) = (BlockList::default(), RateLimits::default());
+    let rules = AutoModCompiledCache::compile(&gov);
     assert_eq!(
-        gate(&item("one", 100, 100), &gov, &blocked, &mut limits),
+        gate(&item("one", 100, 100), &gov, &rules, &blocked, &mut limits),
         Verdict::Admit
     );
     assert_eq!(
-        gate(&item("two", 110, 110), &gov, &blocked, &mut limits),
+        gate(&item("two", 110, 110), &gov, &rules, &blocked, &mut limits),
         Verdict::Drop(GateReason::Slowmode { seconds: 30 })
     );
     assert_eq!(
-        gate(&item("three", 130, 130), &gov, &blocked, &mut limits),
+        gate(
+            &item("three", 130, 130),
+            &gov,
+            &rules,
+            &blocked,
+            &mut limits
+        ),
         Verdict::Admit
     );
 }
@@ -123,9 +139,24 @@ fn drops_a_post_within_slowmode_and_admits_after_it() {
 #[test]
 fn automod_blocks_blurs_and_alerts() {
     let mut gov = state();
-    rule(&mut gov, 1, r#"{"keywords":["spam"]}"#, "block_locally");
-    rule(&mut gov, 2, r#"{"keywords":["rude"]}"#, "blur_content");
-    rule(&mut gov, 3, r#"{"keywords":["help"]}"#, "alert_moderators");
+    rule(
+        &mut gov,
+        1,
+        r#"{"keywords":["spam"]}"#,
+        AutoModAction::BlockLocally,
+    );
+    rule(
+        &mut gov,
+        2,
+        r#"{"keywords":["rude"]}"#,
+        AutoModAction::BlurContent,
+    );
+    rule(
+        &mut gov,
+        3,
+        r#"{"keywords":["help"]}"#,
+        AutoModAction::AlertModerators,
+    );
     let named = |id: u8| GateReason::AutoMod {
         rule: format!("rule {id}"),
     };
@@ -143,15 +174,14 @@ fn automod_blocks_blurs_and_alerts() {
 #[test]
 fn an_automod_rule_that_cannot_be_evaluated_drops() {
     let mut gov = state();
-    rule(&mut gov, 1, r#"{"regexPatterns":["("]}"#, "blur_content");
+    rule(
+        &mut gov,
+        1,
+        r#"{"regexPatterns":["("]}"#,
+        AutoModAction::BlurContent,
+    );
     assert!(matches!(
         judge(&gov, &item("anything", 1, 1)),
-        Verdict::Drop(GateReason::AutoModError(_))
-    ));
-    let mut gov = state();
-    rule(&mut gov, 1, r#"{"keywords":["x"]}"#, "shout");
-    assert!(matches!(
-        judge(&gov, &item("x", 1, 1)),
         Verdict::Drop(GateReason::AutoModError(_))
     ));
 }

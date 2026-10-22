@@ -16,7 +16,7 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
   const [name, setName] = createSignal("");
   const [keywords, setKeywords] = createSignal("");
   const [regexPatterns, setRegexPatterns] = createSignal("");
-  const [action, setAction] = createSignal<"block_locally" | "blur_content" | "alert_moderators">("block_locally");
+  const [action, setAction] = createSignal<"blockLocally" | "blurContent" | "alertModerators">("blockLocally");
   const [enabled, setEnabled] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
 
@@ -25,7 +25,7 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
     setName("");
     setKeywords("");
     setRegexPatterns("");
-    setAction("block_locally");
+    setAction("blockLocally");
     setEnabled(true);
   });
 
@@ -45,7 +45,7 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
     setName("");
     setKeywords("");
     setRegexPatterns("");
-    setAction("block_locally");
+    setAction("blockLocally");
     setEnabled(true);
   }
 
@@ -126,10 +126,10 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
         />
       </FormField>
       <FormField label="Action">
-        <select class="form-select" value={action()} onChange={(e) => setAction(e.currentTarget.value as "block_locally" | "blur_content" | "alert_moderators")}>
-          <option value="block_locally">Block locally</option>
-          <option value="blur_content">Blur content</option>
-          <option value="alert_moderators">Alert moderators</option>
+        <select class="form-select" value={action()} onChange={(e) => setAction(e.currentTarget.value as "blockLocally" | "blurContent" | "alertModerators")}>
+          <option value="blockLocally">Block locally</option>
+          <option value="blurContent">Blur content</option>
+          <option value="alertModerators">Alert moderators</option>
         </select>
       </FormField>
       <label class="automod-enabled-toggle">

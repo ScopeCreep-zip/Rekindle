@@ -311,11 +311,10 @@ pub fn validate_write(
             rule_id,
             enabled,
             trigger_json,
-            action,
             ..
         } => {
             has(perms, MANAGE_COMMUNITY)
-                && validate_automod_rule(rule_id, *enabled, trigger_json, action, state)
+                && validate_automod_rule(rule_id, *enabled, trigger_json, state)
         }
 
         GovernanceEntry::RoleArchived { .. } => has(perms, MANAGE_ROLES),

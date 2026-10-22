@@ -15,6 +15,8 @@ mod role_edit;
 #[cfg(test)]
 mod tests;
 
+mod automod;
+pub use automod::AutoModAction;
 pub use entry::{AdmissionMode, GovernanceEntry};
 pub use onboarding::{
     GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel, MAX_ONBOARDING_GUIDE_STEPS,

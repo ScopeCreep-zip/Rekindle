@@ -126,6 +126,7 @@ pub(crate) async fn select(
             | CommunityRequest::ChannelMove { .. }
             | CommunityRequest::ChannelReorder { .. }
             | CommunityRequest::ChannelSetTopic { .. }
+            | CommunityRequest::ChannelSetSlowmode { .. }
             | CommunityRequest::ChannelSetForumTags { .. }
             | CommunityRequest::ChannelOverwriteSet { .. }
             | CommunityRequest::ChannelOverwriteDelete { .. }
@@ -155,7 +156,9 @@ pub(crate) async fn select(
             | CommunityRequest::TimeoutRemove { .. }
             | CommunityRequest::InviteCreate { .. }
             | CommunityRequest::InviteRevoke { .. }
-            | CommunityRequest::NotificationDefaultSet { .. }),
+            | CommunityRequest::NotificationDefaultSet { .. }
+            | CommunityRequest::AutomodRuleSet { .. }
+            | CommunityRequest::AutomodRuleDelete { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
             request @ (CommunityRequest::CommunityUpdateProfile { .. }
@@ -277,6 +280,7 @@ pub(crate) async fn select(
             | CommunityRequest::EventList { .. }
             | CommunityRequest::EventAttendees { .. }
             | CommunityRequest::BanList { .. }
+            | CommunityRequest::AutomodRules { .. }
             | CommunityRequest::InviteList { .. },
         )
         | IpcRequest::DmTyping { .. }

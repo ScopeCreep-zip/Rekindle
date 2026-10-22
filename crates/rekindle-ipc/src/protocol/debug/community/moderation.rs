@@ -56,6 +56,33 @@ impl CommunityRequest {
                 .debug_struct("BanList")
                 .field("community", community)
                 .finish(),
+            Self::AutomodRules { community } => f
+                .debug_struct("AutomodRules")
+                .field("community", community)
+                .finish(),
+            // The rule's words are what it was written to catch: never logged.
+            Self::AutomodRuleSet {
+                community,
+                rule_id,
+                enabled,
+                keywords,
+                regex_patterns,
+                action,
+                ..
+            } => f
+                .debug_struct("AutomodRuleSet")
+                .field("community", community)
+                .field("rule_id", rule_id)
+                .field("enabled", enabled)
+                .field("keywords", &keywords.len())
+                .field("regex_patterns", &regex_patterns.len())
+                .field("action", action)
+                .finish_non_exhaustive(),
+            Self::AutomodRuleDelete { community, rule_id } => f
+                .debug_struct("AutomodRuleDelete")
+                .field("community", community)
+                .field("rule_id", rule_id)
+                .finish(),
             other => unreachable!("{} is not a moderation request", other.name()),
         }
     }

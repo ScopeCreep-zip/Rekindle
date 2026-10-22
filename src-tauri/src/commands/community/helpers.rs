@@ -1,11 +1,5 @@
 use crate::state::SharedState;
 
-pub(crate) use crate::state_helpers::hex_to_id_16;
-
-pub(crate) fn random_16_bytes() -> [u8; 16] {
-    rekindle_utils::random::id_bytes_16()
-}
-
 pub(crate) fn require_permission(
     state: &SharedState,
     community_id: &str,

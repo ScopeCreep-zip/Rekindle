@@ -21,6 +21,7 @@
 
 mod admin;
 mod audit;
+mod automod;
 pub(crate) mod channel;
 mod channel_admin;
 mod channel_message;

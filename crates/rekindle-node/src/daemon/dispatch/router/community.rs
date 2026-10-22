@@ -5,8 +5,8 @@
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
-    audit, channel, channel_message, channel_message_ops, community, community_profile, events,
-    game_servers, governance, keys, onboarding, unread, DaemonContext,
+    audit, automod, channel, channel_message, channel_message_ops, community, community_profile,
+    events, game_servers, governance, keys, onboarding, unread, DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -88,6 +88,7 @@ pub(super) async fn route(
         | CommunityRequest::ChannelMove { .. }
         | CommunityRequest::ChannelReorder { .. }
         | CommunityRequest::ChannelSetTopic { .. }
+        | CommunityRequest::ChannelSetSlowmode { .. }
         | CommunityRequest::ChannelSetForumTags { .. }
         | CommunityRequest::ChannelOverwriteSet { .. }
         | CommunityRequest::ChannelOverwriteDelete { .. }
@@ -143,6 +144,9 @@ pub(super) async fn route(
         | CommunityRequest::GameServerRemove { .. }) => {
             game_servers::handle(ctx, state, request).await
         }
+        request @ (CommunityRequest::AutomodRules { .. }
+        | CommunityRequest::AutomodRuleSet { .. }
+        | CommunityRequest::AutomodRuleDelete { .. }) => automod::handle(ctx, state, request).await,
         request @ (CommunityRequest::AuditLog { .. }
         | CommunityRequest::NotificationDefaultGet { .. }
         | CommunityRequest::NotificationDefaultSet { .. }) => {

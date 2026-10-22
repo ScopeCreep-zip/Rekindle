@@ -28,6 +28,7 @@ use crate::daemon::dispatch::DaemonContext;
 
 pub mod audit;
 mod audit_rows;
+pub(crate) mod automod_rules;
 pub(crate) mod community_pictures;
 pub(crate) mod community_profile;
 pub(crate) mod community_sync;

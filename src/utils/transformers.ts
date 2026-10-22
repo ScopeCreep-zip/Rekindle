@@ -136,7 +136,7 @@ export function transformAutoModRule(rule: {
   enabled: boolean;
   keywords: string[];
   regexPatterns: string[];
-  action: "block_locally" | "blur_content" | "alert_moderators";
+  action: "blockLocally" | "blurContent" | "alertModerators";
   lamport: number;
 }): AutoModRule {
   return {

@@ -1,5 +1,4 @@
 pub mod analytics;
-pub mod automod;
 pub mod background_sync;
 pub mod bootstrap;
 pub mod channel_messages;

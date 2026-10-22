@@ -52,10 +52,13 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         request @ (CommunityRequest::ChannelMarkRead { .. }
         | CommunityRequest::UnreadCounts { .. }) => unread_fields(request),
         CommunityRequest::GameServerList { community: key }
+        | CommunityRequest::AutomodRules { community: key }
         | CommunityRequest::NotificationDefaultGet { community: key }
         | CommunityRequest::CommunityPolicyGet { community: key } => community(key),
         request @ (CommunityRequest::AuditLog { .. }
         | CommunityRequest::NotificationDefaultSet { .. }) => audit_fields(request),
+        request @ (CommunityRequest::AutomodRuleSet { .. }
+        | CommunityRequest::AutomodRuleDelete { .. }) => automod_fields(request),
         CommunityRequest::CommunityUpdateProfile {
             community: key,
             bio,
@@ -240,7 +243,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             max_uses: _,
             expires_seconds: _,
         } => community(c),
-        CommunityRequest::ChannelCreate { .. } | CommunityRequest::ChannelDelete { .. } | CommunityRequest::ChannelUpdate { .. } | CommunityRequest::ChannelRename { .. } | CommunityRequest::ChannelMove { .. } | CommunityRequest::ChannelReorder { .. } | CommunityRequest::ChannelSetTopic { .. } | CommunityRequest::ChannelSetForumTags { .. } | CommunityRequest::ChannelOverwriteSet { .. } | CommunityRequest::ChannelOverwriteDelete { .. } | CommunityRequest::CategoryCreate { .. } | CommunityRequest::CategoryDelete { .. } | CommunityRequest::CategoryRename { .. } | CommunityRequest::CategoryReorder { .. } | CommunityRequest::ChannelSend { .. } | CommunityRequest::ChannelMessages { .. } | CommunityRequest::ChannelMessagesBefore { .. } | CommunityRequest::ChannelMessageEdit { .. } | CommunityRequest::ChannelMessageDelete { .. } | CommunityRequest::ChannelMessageSend { .. } | CommunityRequest::ChannelMessageForward { .. } | CommunityRequest::ChannelMessageAdminDelete { .. } | CommunityRequest::ChannelMessageBulkDelete { .. } | CommunityRequest::ChannelTyping { .. } | CommunityRequest::ChannelSetActive { .. } => super::channels::check(request),
+        CommunityRequest::ChannelCreate { .. } | CommunityRequest::ChannelDelete { .. } | CommunityRequest::ChannelUpdate { .. } | CommunityRequest::ChannelRename { .. } | CommunityRequest::ChannelMove { .. } | CommunityRequest::ChannelReorder { .. } | CommunityRequest::ChannelSetTopic { .. } | CommunityRequest::ChannelSetSlowmode { .. } | CommunityRequest::ChannelSetForumTags { .. } | CommunityRequest::ChannelOverwriteSet { .. } | CommunityRequest::ChannelOverwriteDelete { .. } | CommunityRequest::CategoryCreate { .. } | CommunityRequest::CategoryDelete { .. } | CommunityRequest::CategoryRename { .. } | CommunityRequest::CategoryReorder { .. } | CommunityRequest::ChannelSend { .. } | CommunityRequest::ChannelMessages { .. } | CommunityRequest::ChannelMessagesBefore { .. } | CommunityRequest::ChannelMessageEdit { .. } | CommunityRequest::ChannelMessageDelete { .. } | CommunityRequest::ChannelMessageSend { .. } | CommunityRequest::ChannelMessageForward { .. } | CommunityRequest::ChannelMessageAdminDelete { .. } | CommunityRequest::ChannelMessageBulkDelete { .. } | CommunityRequest::ChannelTyping { .. } | CommunityRequest::ChannelSetActive { .. } => super::channels::check(request),
 
         CommunityRequest::MekRotate {
             community: c,
@@ -399,5 +402,45 @@ fn audit_fields(request: &CommunityRequest) -> Checked {
             Ok(())
         }
         _ => Ok(()),
+    }
+}
+
+/// An automod rule set's or delete's fields.
+fn automod_fields(request: &CommunityRequest) -> Checked {
+    match request {
+        CommunityRequest::AutomodRuleSet {
+            community: key,
+            rule_id,
+            name,
+            ..
+        } => {
+            community(key)?;
+            if let Some(id) = rule_id {
+                rule_id_field(id)?;
+            }
+            if name.trim().is_empty() {
+                return Err(IpcResponse::error(400, "an automod rule needs a name"));
+            }
+            Ok(())
+        }
+        CommunityRequest::AutomodRuleDelete {
+            community: key,
+            rule_id,
+        } => {
+            community(key)?;
+            rule_id_field(rule_id)
+        }
+        _ => Ok(()),
+    }
+}
+
+/// An automod rule id: 16 bytes of hex.
+fn rule_id_field(id: &str) -> Result<(), IpcResponse> {
+    match hex::decode(id) {
+        Ok(bytes) if bytes.len() == 16 => Ok(()),
+        _ => Err(IpcResponse::error(
+            400,
+            "invalid rule id: must be 32 hex characters",
+        )),
     }
 }

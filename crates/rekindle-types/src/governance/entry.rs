@@ -447,8 +447,7 @@ pub enum GovernanceEntry {
         enabled: bool,
         /// JSON-encoded trigger config (keyword list, regex patterns)
         trigger_json: String,
-        /// "block_locally", "blur_content", "alert_moderators"
-        action: String,
+        action: super::AutoModAction,
         lamport: u64,
     },
 

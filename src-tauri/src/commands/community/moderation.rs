@@ -8,8 +8,6 @@ use crate::state::SharedState;
 
 use rekindle_types::dto::community::CommunityBanView;
 
-use crate::services::community_moderation_runtime::set_slowmode_inner;
-
 /// Remove a member from a community without barring return.
 #[tauri::command]
 pub async fn remove_community_member(
@@ -113,8 +111,16 @@ pub async fn set_slowmode(
     channel_id: String,
     seconds: u32,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    set_slowmode_inner(state.inner(), community_id, channel_id, seconds).await
+) -> Result<Done<()>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ChannelSetSlowmode {
+            community: community_id,
+            channel_id,
+            seconds,
+        }),
+    )
+    .await
 }
 
 #[tauri::command]

@@ -2,16 +2,12 @@
 //! plan C8): envelopes, governance and record layouts, with no Veilid.
 
 pub mod audit_log;
-pub mod automod;
 pub mod channel_record;
 pub mod envelope;
 pub mod types;
 
 // Re-export types for convenient access via `dht::community::*`
 pub use audit_log::{AuditAction, AuditChange, AuditLogEntry, AuditTarget};
-pub use automod::{
-    AutoModAction, AutoModConfig, AutoModRule, AutoModTrigger, RaidAction, RaidProtection,
-};
 pub use envelope::{
     sign_envelope, verify_envelope, CommunityEnvelope, ControlPayload, OnboardingAnswer,
     PresenceGameInfo, SignedEnvelope,

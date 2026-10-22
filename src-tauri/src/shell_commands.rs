@@ -272,6 +272,13 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("timeout_member", HostCall::Request("Timeout")),
     ("remove_timeout", HostCall::Request("TimeoutRemove")),
     ("remove_community_member", HostCall::Request("Kick")),
+    ("set_slowmode", HostCall::Request("ChannelSetSlowmode")),
+    ("list_automod_rules", HostCall::Request("AutomodRules")),
+    ("set_automod_rule", HostCall::Request("AutomodRuleSet")),
+    (
+        "delete_automod_rule",
+        HostCall::Request("AutomodRuleDelete"),
+    ),
 ];
 
 /// The shell's own commands.
@@ -305,11 +312,7 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("create_poll", "E3.1"),
     ("get_poll_results", "E3.1"),
     ("vote_poll", "E3.1"),
-    ("set_slowmode", "E3.1"),
     ("update_community_presence", "E3.1"),
-    ("delete_automod_rule", "E3.1"),
-    ("list_automod_rules", "E3.1"),
-    ("set_automod_rule", "E3.1"),
     ("delete_emoji", "E3.1"),
     ("upload_emoji", "E3.1"),
     ("upload_sticker", "E3.1"),
