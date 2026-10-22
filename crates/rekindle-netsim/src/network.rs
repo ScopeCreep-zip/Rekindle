@@ -110,6 +110,9 @@ pub(crate) struct NodeSlot {
     /// The node's queued change inspections: record key → not before (µs)
     /// (Veilid's `needs_change_inspection`, [`crate::records`]' catch-up).
     pub inspects: HashMap<String, u64>,
+    /// The inspects the node's app asked for (`DhtPort::inspect`), by
+    /// record key, for a scenario that a record is never polled.
+    pub app_inspects: HashMap<String, u64>,
     /// Whether the node's DHT was online at the last watch tick.
     pub was_online: bool,
     /// When a tick lag last inspected every watch (µs).
@@ -151,6 +154,7 @@ impl NodeSlot {
             opened: HashMap::new(),
             watches: HashMap::new(),
             inspects: HashMap::new(),
+            app_inspects: HashMap::new(),
             was_online: true,
             last_lag_inspect: None,
             pools: Vec::new(),

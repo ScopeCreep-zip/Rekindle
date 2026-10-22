@@ -1,6 +1,7 @@
 //! Tier 3 periodic DHT poll — guaranteed fallback for missed watches and gossip.
 //!
-//! Sweeps all watched DHT records at a configurable interval (default 60s).
+//! Sweeps the watched DHT records but governance records at a configurable
+//! interval (default 60s).
 //! Uses `inspect()` to identify populated subkeys in one network call per record,
 //! then reads only those subkeys with `force_refresh=true`. This avoids the
 //! 32 × 10s sequential read penalty for empty subkeys.
@@ -54,9 +55,14 @@ pub async fn run_poll_loop(
 
                 let entries: Vec<(String, Vec<u32>, crate::broadcast::dht_writes::LeaseId)> = {
                     let reg = watches.read();
-                    reg.entries.iter().map(|(k, e)| {
-                        (k.clone(), e.subkeys.clone(), e.lease)
-                    }).collect()
+                    // A governance record is never polled (D4, plan E3.1
+                    // C1): its watch rebuilds the community, and a member
+                    // without a watch slot hears of a write by its
+                    // GovernanceUpdated gossip and the watch relay.
+                    reg.entries.iter()
+                        .filter(|(_, e)| !matches!(e.kind, super::watches::WatchKind::GovernanceRecord { .. }))
+                        .map(|(k, e)| (k.clone(), e.subkeys.clone(), e.lease))
+                        .collect()
                 };
 
                 if entries.is_empty() {

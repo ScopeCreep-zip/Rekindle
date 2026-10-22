@@ -439,6 +439,10 @@ impl DhtBackend for SimDht {
         subkeys: Option<&[u32]>,
         scope: ReportScope,
     ) -> Result<RecordReport, DhtCallError> {
+        *self.net.inner.lock().nodes[self.node]
+            .app_inspects
+            .entry(key.to_string())
+            .or_default() += 1;
         self.opened(key)?;
         let _slot = if scope == ReportScope::Local {
             None

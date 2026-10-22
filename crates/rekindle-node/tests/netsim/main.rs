@@ -11,6 +11,7 @@ mod group_dm;
 mod harness;
 mod internet_flap;
 mod logs;
+mod no_timed_inspect;
 mod offline_day;
 mod one_community_rebuild;
 mod outbox_handshake;

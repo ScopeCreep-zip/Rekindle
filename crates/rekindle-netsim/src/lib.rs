@@ -479,6 +479,17 @@ impl Netsim {
         records::get_from(record, &all, subkey)
     }
 
+    /// How many inspects of `key` node `node`'s app has asked for, of any
+    /// scope.
+    #[must_use]
+    pub fn app_inspects(&self, node: usize, key: &str) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .app_inspects
+            .get(key)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Each replica's value at `key`/`subkey`, in placement order.
     #[must_use]
     pub fn replica_values(&self, key: &str, subkey: u32) -> Vec<Option<RecordValue>> {
