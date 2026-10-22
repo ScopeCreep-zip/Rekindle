@@ -105,6 +105,31 @@ impl HostGovernance {
                 route_blob.as_deref(),
                 invite_code.as_deref(),
             ),
+            ControlPayload::MemberJoined {
+                pseudonym_key,
+                display_name,
+                role_ids,
+                status,
+                route_blob,
+            } if pseudonym_key == sender_pseudonym => self.on_member_joined(
+                community_id,
+                pseudonym_key,
+                display_name,
+                role_ids,
+                status,
+                route_blob.as_deref(),
+            ),
+            ControlPayload::MemberLeave { pseudonym_key }
+            | ControlPayload::MemberRemoved { pseudonym_key }
+                if pseudonym_key == sender_pseudonym =>
+            {
+                self.forget_member(community_id, pseudonym_key);
+            }
+            ControlPayload::MemberJoined { .. }
+            | ControlPayload::MemberLeave { .. }
+            | ControlPayload::MemberRemoved { .. } => {
+                tracing::debug!(community = %community_id, sender = %sender_pseudonym, "membership announcement about another member dropped");
+            }
             _ => return false,
         }
         true

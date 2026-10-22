@@ -44,6 +44,7 @@ pub(crate) mod login_stage;
 mod mek;
 mod mek_recovery;
 mod membership;
+mod membership_roster;
 mod membership_route;
 pub mod projection;
 mod registry;

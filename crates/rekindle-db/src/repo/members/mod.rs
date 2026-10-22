@@ -285,6 +285,28 @@ pub fn delete(
     Ok(())
 }
 
+/// Record a member's departure (a leave, kick or ban) at `left_at` (unix
+/// ms) for the community's analytics (`rekindle_analytics` member and
+/// growth metrics).
+///
+/// # Errors
+/// The write failed.
+pub fn record_leave(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    pseudonym_key: &str,
+    left_at: i64,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO community_member_leaves \
+         (owner_key, community_id, pseudonym_key, left_at) \
+         VALUES (?1, ?2, ?3, ?4)",
+        params![owner_key, community_id, pseudonym_key, left_at],
+    )?;
+    Ok(())
+}
+
 /// Set (unix seconds) or clear (`None`) the member's timeout.
 ///
 /// # Errors

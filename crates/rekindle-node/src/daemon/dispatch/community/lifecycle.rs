@@ -178,6 +178,10 @@ pub(crate) async fn handle_join(
     if let Some(membership) = membership {
         activate_community(ctx, &membership).await;
     }
+    if let Some(host) = ctx.this.upgrade() {
+        crate::host::adapters::governance::HostGovernance::new(host)
+            .announce_join(link.governance_key.as_str());
+    }
 
     IpcResponse::ok(&serde_json::json!({
         "community_name": outcome.invite.community_name,

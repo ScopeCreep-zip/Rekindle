@@ -73,8 +73,9 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
     }
 }
 
-/// The wire form of our status in a community `PresenceUpdate`.
-fn status_str(status: SessionStatus) -> &'static str {
+/// The wire form of our status in a community `PresenceUpdate` or
+/// `MemberJoined`.
+pub(super) fn status_str(status: SessionStatus) -> &'static str {
     match status {
         SessionStatus::Online => "online",
         SessionStatus::Away => "away",

@@ -23,6 +23,7 @@ pub(crate) async fn handle_relayed_control(
         | ControlPayload::MemberRemoved { .. }
         | ControlPayload::MemberLeave { .. }
         | ControlPayload::MemberTimedOut { .. }) => {
+            host_membership(state, community_id, sender_pseudonym, &payload).await;
             super::control_membership::handle_membership_payload(
                 app_handle,
                 state,

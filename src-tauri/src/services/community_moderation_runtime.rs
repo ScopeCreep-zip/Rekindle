@@ -148,13 +148,11 @@ pub async fn remove_community_member_inner(
     pseudonym_key: String,
 ) -> Result<(), String> {
     use crate::commands::community::helpers::require_permission;
-    use crate::db_helpers::db_call;
     use crate::services::community_registry_slot::clear_registry_presence_slot;
     use crate::state_helpers;
     use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
     use rekindle_types::permissions;
 
-    let owner_key = state_helpers::current_owner_key(&state)?;
     require_permission(&state, &community_id, permissions::KICK_MEMBERS)?;
 
     crate::services::community::send_to_mesh(
@@ -175,24 +173,12 @@ pub async fn remove_community_member_inner(
         );
     }
 
-    crate::services::community::analytics::log_member_leave(
-        &pool,
-        &owner_key,
-        &community_id,
-        &pseudonym_key,
-    );
-
-    let community_id_clone = community_id.clone();
-    let pseudonym_key_clone = pseudonym_key.clone();
-    db_call(&pool, move |conn| {
-        rekindle_db::repo::members::delete(
-            conn,
-            &owner_key,
-            &community_id_clone,
-            &pseudonym_key_clone,
-        )
-    })
-    .await?;
+    state
+        .host
+        .current()
+        .ok_or_else(|| "the Host is not up".to_string())?
+        .governance()
+        .forget_member(&community_id, &pseudonym_key);
 
     // The kicked member still holds the current keys (plan D20).
     if let Some(app_handle) = state_helpers::app_handle(&state) {

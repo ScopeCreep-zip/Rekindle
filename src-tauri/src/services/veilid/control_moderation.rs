@@ -164,9 +164,7 @@ fn handle_gossip_moderation(
             remove_member_from_local_state(
                 app_handle,
                 state,
-                pool,
                 community_id,
-                owner_key,
                 target_pseudonym.clone(),
                 "kick_member_remove",
             );
@@ -184,9 +182,7 @@ fn handle_gossip_moderation(
             remove_member_from_local_state(
                 app_handle,
                 state,
-                pool,
                 community_id,
-                owner_key,
                 target_pseudonym.clone(),
                 "ban_member_remove",
             );
@@ -248,9 +244,7 @@ fn handle_gossip_moderation(
 fn remove_member_from_local_state(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &Db,
     community_id: &str,
-    owner_key: String,
     target_pseudonym: String,
     label: &'static str,
 ) {
@@ -283,17 +277,14 @@ fn remove_member_from_local_state(
             }
         }
     }
-    crate::services::community::analytics::log_member_leave(
-        pool,
-        &owner_key,
-        community_id,
-        &target_pseudonym,
-    );
-    let cid = community_id.to_string();
-    let tp = target_pseudonym.clone();
-    db_fire(pool, label, move |conn| {
-        rekindle_db::repo::members::delete(conn, &owner_key, &cid, &tp)
-    });
+    match state.host.current() {
+        Some(host) => host
+            .governance()
+            .forget_member(community_id, &target_pseudonym),
+        None => {
+            tracing::debug!(community = %community_id, "{label}: the Host is not up, the roster row stays");
+        }
+    }
     crate::event_dispatch::emit_membership(
         app_handle,
         rekindle_types::subscription_events::MembershipEvent::Removed {

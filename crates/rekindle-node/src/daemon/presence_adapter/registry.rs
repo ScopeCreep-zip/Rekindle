@@ -113,13 +113,17 @@ impl DaemonPresenceAdapter {
         rows: Vec<DiscoveredMemberRow>,
         banned_pseudonyms: &[String],
     ) {
-        let members: HashMap<String, MemberRecord> = rows
+        let rows: Vec<DiscoveredMemberRow> = rows
             .into_iter()
             // Defence in depth: the orchestrator already drops banned
             // rows, but the roster is what every downstream count and
             // lookup reads, so it filters again rather than trusting an
             // upstream pass.
             .filter(|row| !banned_pseudonyms.contains(&row.pseudonym_key))
+            .collect();
+        self.store_roster_rows(community_id, rows.clone());
+        let members: HashMap<String, MemberRecord> = rows
+            .into_iter()
             .map(|row| {
                 let record = MemberRecord {
                     display_name: row.display_name,
@@ -142,6 +146,38 @@ impl DaemonPresenceAdapter {
             "presence poll: roster refreshed"
         );
         self.ctx.communities.set_members(community_id, members);
+    }
+
+    /// Upsert the validated registry rows into the identity's
+    /// `community_members` (plan E3.1 D1b): the registry is the durable
+    /// path (PATH 1), so a member the poll sees is on the stored roster
+    /// even when no gossip announcement reached us.
+    fn store_roster_rows(&self, community_id: &str, rows: Vec<DiscoveredMemberRow>) {
+        if rows.is_empty() {
+            return;
+        }
+        let Some(owner) = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone())
+        else {
+            return;
+        };
+        let Ok(db) = self.ctx.db.current() else {
+            return;
+        };
+        let community = community_id.to_string();
+        let joined_at = self.ctx.clock.now_secs().cast_signed();
+        db.fire("presence poll roster", move |conn| {
+            for row in &rows {
+                rekindle_db::repo::members::upsert_discovered(
+                    conn, &owner, &community, row, joined_at,
+                )?;
+            }
+            Ok(())
+        });
     }
 
     /// Pseudonyms in `candidates` not already in the roster.

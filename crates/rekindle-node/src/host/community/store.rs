@@ -236,6 +236,19 @@ impl CommunityStore {
             .collect()
     }
 
+    /// Forget a departed member: off the known members, the roster and the
+    /// gossip overlay.
+    pub fn forget_member(&self, community_id: &str, pseudonym_hex: &str) {
+        self.update(community_id, |c| {
+            c.known_members.remove(pseudonym_hex);
+            c.members.remove(pseudonym_hex);
+            if let Some(gossip) = c.gossip.as_mut() {
+                gossip.online_members.remove(pseudonym_hex);
+                gossip.peers.remove(pseudonym_hex);
+            }
+        });
+    }
+
     /// The communities with a member registry but no registry owner
     /// keypair in memory: the ones hydration recovers from the vault.
     #[must_use]

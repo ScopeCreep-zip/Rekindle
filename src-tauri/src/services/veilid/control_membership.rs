@@ -1,8 +1,8 @@
-//! Phase 23.D.4 — `handle_membership_payload` extracted from
-//! `services/veilid/control.rs` to keep that file under the 500-LoC
-//! cap (Invariant 1). Dispatches four Member* ControlPayload
-//! variants — MemberJoined / MemberRemoved /
-//! MemberLeave / MemberTimedOut — to their per-variant handlers.
+//! The desktop's half of the four Member* control messages (MemberJoined /
+//! MemberRemoved / MemberLeave / MemberTimedOut): its in-memory community
+//! state, events, raid alert and departure rotations. The roster rows are
+//! the Host's (`host/adapters/governance/membership_roster.rs`, plan E3.1
+//! D1b), which handles each message first.
 
 use std::sync::Arc;
 
@@ -59,27 +59,6 @@ pub(super) fn handle_membership_payload(
                     }
                 }
             }
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("membership event: no identity database — dropped");
-                return;
-            };
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let pk = pseudonym_key.clone();
-            let dn = display_name.clone();
-            let rids = role_ids.clone();
-            crate::db_helpers::db_fire(&pool, "persist MemberJoined", move |conn| {
-                rekindle_db::repo::members::insert_if_absent(
-                    conn,
-                    &owner_key,
-                    &cid,
-                    &pk,
-                    &dn,
-                    &rids,
-                    crate::db::timestamp_now(),
-                )
-            });
-
             crate::event_dispatch::emit_membership(
                 app_handle,
                 rekindle_types::subscription_events::MembershipEvent::Joined {
@@ -135,23 +114,6 @@ pub(super) fn handle_membership_payload(
         ControlPayload::MemberRemoved { pseudonym_key }
         | ControlPayload::MemberLeave { pseudonym_key } => {
             let departed_pseudonym = pseudonym_key.clone();
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("membership event: no identity database — dropped");
-                return;
-            };
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            crate::services::community::analytics::log_member_leave(
-                &pool,
-                &owner_key,
-                community_id,
-                &pseudonym_key,
-            );
-            let cid = community_id.to_string();
-            let pk = pseudonym_key.clone();
-            crate::db_helpers::db_fire(&pool, "persist MemberRemoved/Leave", move |conn| {
-                rekindle_db::repo::members::delete(conn, &owner_key, &cid, &pk)
-            });
-
             {
                 let mut communities = state.communities.write();
                 if let Some(cs) = communities.get_mut(community_id) {
