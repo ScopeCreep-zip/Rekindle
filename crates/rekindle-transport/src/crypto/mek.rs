@@ -7,7 +7,7 @@
 //! persistence to `rekindle-secrets`.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use tokio::time::Instant;
 
 use ed25519_dalek::SigningKey;
 use rekindle_types::channel_keys::KeyScope;

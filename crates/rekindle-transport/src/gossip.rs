@@ -102,7 +102,7 @@ impl RateLimiter {
 
     /// [`Self::check_at`] against the current instant.
     pub fn check(&mut self, sender: &str) -> bool {
-        self.check_at(sender, Instant::now())
+        self.check_at(sender, tokio::time::Instant::now().into_std())
     }
 
     /// Drop buckets idle longer than [`RATE_LIMIT_IDLE_TTL`], so a burst
@@ -243,7 +243,7 @@ impl GossipMesh {
 
     /// [`Self::admit_gossip_at`] against the current instant.
     pub fn admit_gossip(&mut self, sender: &str, lamport_ts: u64) -> GossipAdmission {
-        self.admit_gossip_at(sender, lamport_ts, Instant::now())
+        self.admit_gossip_at(sender, lamport_ts, tokio::time::Instant::now().into_std())
     }
 
     /// Evict members not seen within `ttl_secs` seconds.

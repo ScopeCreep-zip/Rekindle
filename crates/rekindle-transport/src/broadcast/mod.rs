@@ -42,12 +42,12 @@ use node::TransportNode;
 /// Rate limiter for outbound gossip, keyed by a string identifier.
 #[derive(Debug, Default)]
 pub struct OutboundRateLimiter {
-    last_sent: HashMap<String, std::time::Instant>,
+    last_sent: HashMap<String, tokio::time::Instant>,
 }
 
 impl OutboundRateLimiter {
     pub fn check(&mut self, key: &str, min_interval: std::time::Duration) -> bool {
-        let now = std::time::Instant::now();
+        let now = tokio::time::Instant::now();
         if let Some(last) = self.last_sent.get(key) {
             if now.duration_since(*last) < min_interval {
                 return false;
@@ -76,16 +76,21 @@ pub struct BroadcastManager {
 }
 
 impl BroadcastManager {
+    /// `meshes` is the subscription manager's map
+    /// (`SubscriptionManager::meshes`): the presence poll writes each
+    /// community's overlay there, and a broadcast picks its peers from
+    /// the same map, so the two can never disagree about who is online.
     pub fn new(
         node: Arc<TransportNode>,
         session: Arc<RwLock<Option<Session>>>,
         mek_cache: Arc<RwLock<MekCache>>,
+        meshes: Arc<RwLock<HashMap<String, GossipMesh>>>,
     ) -> Self {
         Self {
             node,
             session,
             mek_cache,
-            meshes: Arc::new(RwLock::new(HashMap::new())),
+            meshes,
             rate_limiter: Arc::new(RwLock::new(OutboundRateLimiter::default())),
             // 1024 entries — the architecture's stated mesh dedup size
             // (§3.1, "1024-entry FIFO cache").

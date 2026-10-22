@@ -92,6 +92,7 @@ pub(crate) async fn daemon_stages(
     );
     // The bus server's delivery task forwards what the manager publishes.
     let event_sender = sub_mgr.event_sender().clone();
+    let meshes = Arc::clone(sub_mgr.meshes());
     *ctx.subscriptions.write() = Some(sub_mgr);
     ctx.event_watch_tx.send_replace(Some(event_sender));
 
@@ -100,6 +101,7 @@ pub(crate) async fn daemon_stages(
         Arc::clone(&transport),
         Arc::clone(&ctx.session),
         Arc::clone(&ctx.mek_cache),
+        meshes,
     );
     for membership in session.communities.values() {
         bcast_mgr.register_mesh(&membership.governance_key);
