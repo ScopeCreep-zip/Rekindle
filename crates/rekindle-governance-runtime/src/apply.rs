@@ -160,6 +160,7 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     // re-paging (the genesis guard + create/archive lifecycle pairing require the
     // full set). Dead lifecycles and superseded single-key metadata are dropped.
     let my_entries = compact::compact_author_entries(my_entries, deps.clock().now_secs());
+    let cached_entries = my_entries.clone();
 
     let identity_secret = deps
         .identity_secret()
@@ -305,6 +306,9 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
         subkey_index: my_slot,
         lamport_ts: entry.lamport(),
     });
+    // The entry landed: the warm cache holds our new author set now, not
+    // only after the next rebuild.
+    deps.persist_own_governance_entries(community_id, &pseudo, &cached_entries);
     deps.send_to_mesh(community_id, &notification)?;
 
     // Local CRDT merge after the network confirms the entry landed.

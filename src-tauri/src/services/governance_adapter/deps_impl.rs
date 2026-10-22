@@ -313,6 +313,24 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         state_mutations::persist_governance_entries_cache_impl(self, community_id, entries);
     }
 
+    fn persist_own_governance_entries(
+        &self,
+        community_id: &str,
+        author: &PseudonymKey,
+        entries: &[GovernanceEntry],
+    ) {
+        let Ok(owner_key) = state_helpers::current_owner_key(&self.state) else {
+            return;
+        };
+        let (cid, author, entries) = (community_id.to_string(), author.clone(), entries.to_vec());
+        let now = rekindle_utils::timestamp_secs().cast_signed();
+        crate::db_helpers::db_fire(&self.pool, "own governance entries cache", move |conn| {
+            rekindle_db::repo::governance_cache::replace_author(
+                conn, &owner_key, &cid, &author, &entries, now,
+            )
+        });
+    }
+
     fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)> {
         let communities = self.state.communities.read();
         communities

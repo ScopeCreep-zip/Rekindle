@@ -224,6 +224,35 @@ impl HostGovernance {
         });
     }
 
+    /// Our new author set into the warm cache, the other authors kept.
+    pub(super) fn persist_own_governance_entries_impl(
+        &self,
+        community_id: &str,
+        author: &PseudonymKey,
+        entries: &[GovernanceEntry],
+    ) {
+        let Some(owner) = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone())
+        else {
+            return;
+        };
+        let Ok(db) = self.ctx.db.current() else {
+            return;
+        };
+        let (community, author, entries) =
+            (community_id.to_string(), author.clone(), entries.to_vec());
+        let now = self.ctx.clock.now_ms_i64();
+        db.fire("own governance entries cache", move |conn| {
+            rekindle_db::repo::governance_cache::replace_author(
+                conn, &owner, &community, &author, &entries, now,
+            )
+        });
+    }
+
     pub(super) fn persist_discovered_registry_members_impl(
         community_id: &str,
         members: &[DiscoveredMember],

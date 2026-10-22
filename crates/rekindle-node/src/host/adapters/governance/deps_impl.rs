@@ -339,6 +339,15 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.persist_governance_entries_cache_impl(community_id, entries);
     }
 
+    fn persist_own_governance_entries(
+        &self,
+        community_id: &str,
+        author: &PseudonymKey,
+        entries: &[GovernanceEntry],
+    ) {
+        self.persist_own_governance_entries_impl(community_id, author, entries);
+    }
+
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str) {
         self.spawn_text_mek_rotation_for_ban_impl(community_id, banned_pseudonym_hex);
     }

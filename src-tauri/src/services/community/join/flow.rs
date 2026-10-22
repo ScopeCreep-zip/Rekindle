@@ -51,7 +51,7 @@ fn to_online_members(
 pub async fn join_community(
     state: &Arc<AppState>,
     link: &rekindle_types::invite::InviteLink,
-) -> Result<(), String> {
+) -> Result<rekindle_db::repo::governance_cache::Entries, String> {
     let governance_key_str = link.governance_key.as_str();
 
     let app_handle = state
@@ -89,6 +89,8 @@ pub async fn join_community(
         .ok_or("identity secret not available")?;
     let identity = gov_rt::derive_join_identity(&identity_secret, governance_key_str);
 
+    // The merge input, for the warm cache once the community's row exists.
+    let merge_input = snapshot.all_entries.clone();
     if snapshot.gov_state.bans.contains(&identity.pseudo) {
         return Err("You are banned from this community".into());
     }
@@ -360,7 +362,7 @@ pub async fn join_community(
         "self-sovereign join complete — SMPL slot claimed, gossip peers bootstrapped"
     );
 
-    Ok(())
+    Ok(merge_input)
 }
 
 async fn decode_invite_context(

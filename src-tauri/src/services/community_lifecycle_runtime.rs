@@ -244,7 +244,7 @@ pub async fn join_community_inner(
     use crate::services;
 
     let owner_key = state_helpers::current_owner_key(state)?;
-    services::community::join_community(state, link).await?;
+    let merge_input = services::community::join_community(state, link).await?;
     let community_id = link.governance_key.as_str().to_owned();
 
     let (
@@ -321,6 +321,9 @@ pub async fn join_community_inner(
                 governance_key: governance_key_db.as_deref(),
             },
         )?;
+        // The join's merge input into the warm cache (plan E3.1 B2), after
+        // the community's row, which the cache row references.
+        rekindle_db::repo::governance_cache::save(conn, &ok, &community_id_clone, &merge_input, now)?;
         rekindle_db::repo::members::insert_if_absent(
             conn,
             &ok,

@@ -220,3 +220,44 @@ async fn a_held_root_cannot_be_claimed_again() {
     let _host = offline_host(&dir).await;
     assert!(claim(temp_root(&dir)).is_err());
 }
+
+/// An own governance write updates the warm cache at once (plan E3.1 B2):
+/// our author set replaces the cached one and the other authors stay.
+#[tokio::test]
+async fn an_own_governance_write_updates_the_warm_cache() {
+    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_types::id::PseudonymKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    let db = host.ctx.db.current().unwrap();
+    let other = PseudonymKey([1; 32]);
+    let me = PseudonymKey([2; 32]);
+    let seeded = owner.clone();
+    db.call(move |conn| {
+        conn.execute(
+            "INSERT INTO communities (owner_key, id, name, joined_at) VALUES (?1, 'c1', 'C', 1)",
+            [&seeded],
+        )?;
+        rekindle_db::repo::governance_cache::save(
+            conn,
+            &seeded,
+            "c1",
+            &[(PseudonymKey([1; 32]), Vec::new())],
+            1,
+        )
+    })
+    .await
+    .unwrap();
+
+    host.governance()
+        .persist_own_governance_entries("c1", &me, &[]);
+    let loaded = db
+        .call(move |conn| rekindle_db::repo::governance_cache::load(conn, &owner))
+        .await
+        .unwrap();
+    let authors: Vec<_> = loaded[0].1.iter().map(|(pk, _)| pk.clone()).collect();
+    assert_eq!(authors, vec![other, me]);
+    host.shutdown().await.unwrap();
+}

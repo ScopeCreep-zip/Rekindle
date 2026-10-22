@@ -402,6 +402,16 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         entries: &[(rekindle_types::id::PseudonymKey, Vec<GovernanceEntry>)],
     );
 
+    /// Replace our own author set in the community's warm cache after an
+    /// own governance write landed, so a restart before the next rebuild
+    /// re-merges it (plan E3.1 B2). Fire-and-forget like the full save.
+    fn persist_own_governance_entries(
+        &self,
+        community_id: &str,
+        author: &rekindle_types::id::PseudonymKey,
+        entries: &[GovernanceEntry],
+    );
+
     /// Fire-and-forget spawn of a text-MEK rotation task for a newly
     /// observed ban. Delegates to the existing
     /// `services::community::rotate_text_mek_for_departure`. The

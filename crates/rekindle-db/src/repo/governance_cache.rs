@@ -65,6 +65,46 @@ pub fn save(
     Ok(())
 }
 
+/// Replace one author's entry set in `community_id`'s cached merge input,
+/// keeping every other author's: an own governance write updates the warm
+/// cache at once instead of at the next rebuild. A community with no row yet
+/// gets one holding this author alone.
+///
+/// # Errors
+/// The row could not be read or written.
+pub fn replace_author(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    author: &PseudonymKey,
+    entries: &[GovernanceEntry],
+    updated_at: i64,
+) -> rusqlite::Result<()> {
+    let json: Option<String> = conn
+        .query_row(
+            "SELECT entries_json FROM governance_entries_cache \
+             WHERE owner_key = ?1 AND community_id = ?2",
+            params![owner_key, community_id],
+            |row| row.get(0),
+        )
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })?;
+    let mut all: Entries = match json {
+        Some(json) => serde_json::from_str(&json).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?,
+        None => Vec::new(),
+    };
+    match all.iter_mut().find(|(pk, _)| pk == author) {
+        Some((_, set)) => *set = entries.to_vec(),
+        None => all.push((author.clone(), entries.to_vec())),
+    }
+    save(conn, owner_key, community_id, &all, updated_at)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -82,6 +122,18 @@ mod tests {
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].0, "c1");
         assert_eq!(loaded[0].1[0].0, PseudonymKey([2; 32]));
+    }
+
+    #[test]
+    fn replace_author_keeps_the_other_authors() {
+        let conn = fixture::conn();
+        fixture::community(&conn, "c1");
+        let others = vec![(PseudonymKey([1; 32]), Vec::new())];
+        save(&conn, OWNER, "c1", &others, 1).unwrap();
+        replace_author(&conn, OWNER, "c1", &PseudonymKey([2; 32]), &[], 2).unwrap();
+        let loaded = load(&conn, OWNER).unwrap();
+        let authors: Vec<_> = loaded[0].1.iter().map(|(pk, _)| pk.clone()).collect();
+        assert_eq!(authors, vec![PseudonymKey([1; 32]), PseudonymKey([2; 32])]);
     }
 
     #[test]
