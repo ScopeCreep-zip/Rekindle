@@ -11,7 +11,6 @@
 //! - [`node`] — node / network / routing-context accessors.
 //! - [`friends`] — friend-state accessors.
 //! - [`routes`] — peer routes through the Host, route imports and deaths.
-//! - [`circuit_breaker`] — per-community RPC circuit breaker.
 //! - [`communities`] — community channel-list write helpers.
 //! - [`governance`] — v2.0 CRDT governance state read/write.
 //! - [`governance_persist`] — SQLite snapshot of merged governance.
@@ -19,7 +18,6 @@
 //! - [`owner_keys`] — the identity's record owner keypairs in the vault.
 //! - [`voice`] — running voice-engine accessors.
 
-mod circuit_breaker;
 mod communities;
 mod friends;
 mod governance;
@@ -31,7 +29,6 @@ mod owner_keys;
 mod routes;
 mod voice;
 
-pub use circuit_breaker::{is_circuit_open, reset_circuit_breaker, trip_circuit_breaker};
 pub use communities::{
     channel_is_stage, communities_with_governance_keys, community_scope, my_pseudonym_key,
     push_community_channel, set_community_channels, spawn_in_community,

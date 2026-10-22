@@ -25,8 +25,6 @@
 //! including the per-segment governance and registry keys a Plate Gate
 //! expansion adds. Keying it by channel id could not represent those.
 
-use std::collections::HashMap;
-
 /// The record keys of a single community session.
 ///
 /// Created on community join/create, dropped on leave/logout. The records
@@ -50,10 +48,6 @@ pub struct CommunityRecords {
     /// *watched*, because the primary subkey's watch already re-follows
     /// the chain on change.
     pub governance_overflow_keys: Vec<String>,
-
-    /// Fingerprints of the last inspected channel record state, by
-    /// channel id.
-    pub channel_report_fingerprints: HashMap<String, u64>,
 }
 
 impl CommunityRecords {

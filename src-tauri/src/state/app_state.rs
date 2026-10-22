@@ -11,7 +11,6 @@ use rekindle_gossip::dedup::DedupCache;
 use rekindle_types::channel_keys::KeyScope;
 use tokio::sync::mpsc;
 
-use super::circuit::CircuitBreakerState;
 use super::community::CommunityMap;
 use super::friend::IdentityState;
 use super::runtime::{NodeHandle, VoiceEngineHandle};
@@ -138,8 +137,6 @@ pub struct AppState {
     /// newer link replaces it), submitted for review by the unlock and
     /// cleared at logout (plan E2.1).
     pub held_friend_invite: Mutex<Option<String>>,
-    /// Per-community circuit breaker for remote Veilid RPCs.
-    pub community_circuit_breakers: RwLock<HashMap<String, CircuitBreakerState>>,
     /// Tauri app handle — set during `.setup()`.
     pub app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Global dedup cache for gossip mesh message deduplication.
@@ -286,7 +283,6 @@ impl Default for AppState {
             pending_link_opens: Mutex::new(HashSet::new()),
             pending_deep_link: Mutex::new(None),
             held_friend_invite: Mutex::new(None),
-            community_circuit_breakers: RwLock::new(HashMap::new()),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
             voice_sender_keys:

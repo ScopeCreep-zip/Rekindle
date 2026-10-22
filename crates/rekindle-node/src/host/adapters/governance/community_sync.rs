@@ -84,16 +84,21 @@ fn status_str(status: SessionStatus) -> &'static str {
 }
 
 impl HostGovernance {
-    /// The communities we hold governance for, with a pseudonym in each.
+    /// The communities we hold governance for, with a pseudonym in each, in
+    /// id order (the store's map has no order; the phase's sends must not
+    /// depend on it).
     fn sync_targets(&self) -> Vec<String> {
-        self.ctx
+        let mut targets: Vec<String> = self
+            .ctx
             .communities
             .map()
             .read()
             .values()
             .filter(|c| c.governance_state.is_some() && c.my_pseudonym_key.is_some())
             .map(|c| c.id.clone())
-            .collect()
+            .collect();
+        targets.sort_unstable();
+        targets
     }
 
     /// One community's phase: our presence and route, then a `SyncRequest`
@@ -104,10 +109,12 @@ impl HostGovernance {
             let Some(c) = map.get(community_id) else {
                 return;
             };
-            (
-                c.my_pseudonym_key.clone().unwrap_or_default(),
-                c.channel_log_keys.keys().cloned().collect::<Vec<_>>(),
-            )
+            let Some(pseudonym) = c.my_pseudonym_key.clone() else {
+                return;
+            };
+            let mut channels: Vec<String> = c.channel_log_keys.keys().cloned().collect();
+            channels.sort_unstable();
+            (pseudonym, channels)
         };
         let presence = CommunityEnvelope::PresenceUpdate {
             pseudonym_key: pseudonym,
