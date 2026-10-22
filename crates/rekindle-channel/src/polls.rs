@@ -189,7 +189,7 @@ async fn ensure_poll_author<D: ChannelMessagingDeps>(
     if snapshot.author_subkey == slot_index {
         Ok(())
     } else {
-        Err(ChannelError::Adapter(
+        Err(ChannelError::PermissionDenied(
             "only the poll author or a moderator can close this poll".to_string(),
         ))
     }

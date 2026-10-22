@@ -41,6 +41,7 @@ mod member_block;
 mod onboarding;
 mod own;
 mod pins;
+mod rich_messaging;
 mod router;
 pub(crate) mod shell;
 mod status;

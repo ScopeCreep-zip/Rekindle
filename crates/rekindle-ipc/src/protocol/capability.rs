@@ -276,16 +276,28 @@ impl CommunityRequest {
             | Self::TimeoutRemove { .. }
             | Self::AutomodRuleSet { .. }
             | Self::AutomodRuleDelete { .. } => Some(C::ModerationWrite),
-            Self::ChannelMessages { .. } | Self::ChannelMessagesBefore { .. } => {
-                Some(C::ChannelsHistory)
-            }
+            Self::ChannelMessages { .. }
+            | Self::ChannelMessagesBefore { .. }
+            | Self::ThreadList { .. }
+            | Self::ThreadListActive { .. }
+            | Self::ThreadMessages { .. }
+            | Self::PollResults { .. } => Some(C::ChannelsHistory),
             Self::ChannelSend { .. }
             | Self::ChannelMessageEdit { .. }
             | Self::ChannelMessageDelete { .. }
             | Self::ChannelMessageSend { .. }
             | Self::ChannelMessageForward { .. }
             | Self::ChannelTyping { .. }
-            | Self::ChannelSetActive { .. } => Some(C::ChatWrite),
+            | Self::ChannelSetActive { .. }
+            | Self::ReactionAdd { .. }
+            | Self::ReactionRemove { .. }
+            | Self::ThreadCreate { .. }
+            | Self::ThreadArchive { .. }
+            | Self::ThreadUnarchive { .. }
+            | Self::ThreadSend { .. }
+            | Self::PollCreate { .. }
+            | Self::PollVote { .. }
+            | Self::PollClose { .. } => Some(C::ChatWrite),
             Self::ChannelMessageAdminDelete { .. } | Self::ChannelMessageBulkDelete { .. } => {
                 Some(C::ModerationWrite)
             }

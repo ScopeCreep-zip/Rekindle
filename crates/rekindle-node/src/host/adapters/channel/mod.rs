@@ -33,6 +33,7 @@ mod events;
 mod history;
 pub mod ingest;
 mod persist;
+pub(crate) mod rich;
 mod state;
 mod thread_refusal;
 

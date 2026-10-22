@@ -520,6 +520,94 @@ pub enum CommunityRequest {
         request: rekindle_types::search::MessageSearch,
     },
 
+    // ── Reactions, threads and polls (plan E3.1 E3) ──────────────
+    /// React to a channel message with an expression.
+    ReactionAdd {
+        community: String,
+        channel_id: String,
+        message_id: String,
+        emoji: String,
+    },
+    /// Take our reaction off a channel message.
+    ReactionRemove {
+        community: String,
+        channel_id: String,
+        message_id: String,
+        emoji: String,
+    },
+    /// Open a thread off a channel message; answered with its id.
+    ThreadCreate {
+        community: String,
+        channel_id: String,
+        name: String,
+        starter_message_id: String,
+        forum_tag: Option<String>,
+        auto_archive_seconds: Option<u64>,
+    },
+    /// Archive a thread.
+    ThreadArchive {
+        community: String,
+        thread_id: String,
+    },
+    /// Reopen an archived thread.
+    ThreadUnarchive {
+        community: String,
+        thread_id: String,
+    },
+    /// A channel's threads, the most recently active first.
+    ThreadList {
+        community: String,
+        channel_id: String,
+    },
+    /// A channel's threads that are not archived.
+    ThreadListActive {
+        community: String,
+        channel_id: String,
+    },
+    /// A page of a thread's messages, oldest first, before
+    /// `before_timestamp` (seconds) when given.
+    ThreadMessages {
+        community: String,
+        thread_id: String,
+        limit: u32,
+        before_timestamp: Option<u64>,
+    },
+    /// Post `body` to a thread.
+    ThreadSend {
+        community: String,
+        thread_id: String,
+        body: String,
+    },
+    /// Attach a poll to our message; answered with the poll's id.
+    PollCreate {
+        community: String,
+        channel_id: String,
+        message_id: String,
+        question: String,
+        answers: Vec<String>,
+        multi_select: bool,
+        duration_seconds: Option<u64>,
+    },
+    /// Vote in a poll (our latest vote counts).
+    PollVote {
+        community: String,
+        channel_id: String,
+        poll_id: String,
+        selected_answers: Vec<u8>,
+    },
+    /// Close a poll (its author, or a member who manages messages).
+    PollClose {
+        community: String,
+        channel_id: String,
+        poll_id: String,
+    },
+    /// A poll's vote count per answer.
+    PollResults {
+        community: String,
+        channel_id: String,
+        poll_id: String,
+    },
+
     // ── Invites ───────────────────────────────────────────────────
     /// Create a community invite.
     InviteCreate {

@@ -420,18 +420,32 @@ impl ChannelMessagingDeps for HostChannel {
 
     async fn persist_thread_row(
         &self,
-        _community_id: &str,
-        _thread: &ThreadInfoSnapshot,
+        community_id: &str,
+        thread: &ThreadInfoSnapshot,
     ) -> Result<(), ChannelError> {
-        Err(not_ported("thread rows"))
+        let (owner, db) = self.owner_and_db()?;
+        let (community, row) = (
+            community_id.to_string(),
+            super::rich::thread_info(thread.clone()),
+        );
+        db.call(move |conn| rekindle_db::repo::threads::upsert(conn, &owner, &community, &row))
+            .await
+            .map_err(adapter)
     }
 
     async fn load_thread_metadata(
         &self,
-        _community_id: &str,
-        _thread_id: &str,
+        community_id: &str,
+        thread_id: &str,
     ) -> Option<ThreadInfoSnapshot> {
-        None
+        let (owner, db) = self.owner_and_db().ok()?;
+        let (community, thread) = (community_id.to_string(), thread_id.to_string());
+        db.call(move |conn| rekindle_db::repo::threads::get(conn, &owner, &community, &thread))
+            .await
+            .inspect_err(|e| tracing::warn!(error = %e, "thread row read failed"))
+            .ok()
+            .flatten()
+            .map(super::rich::thread_snapshot)
     }
 
     // ---------- Expressions / Mesh / Governance / Permissions ----------
@@ -483,7 +497,12 @@ impl ChannelMessagingDeps for HostChannel {
         }
         rekindle_governance_runtime::apply::write_entry(&self.gov, community_id, entry)
             .await
-            .map_err(adapter)
+            .map_err(|e| match e {
+                rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied => {
+                    ChannelError::PermissionDenied(e.to_string())
+                }
+                other => adapter(other),
+            })
     }
 
     fn require_channel_permission(

@@ -6,7 +6,8 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
     audit, automod, channel, channel_message, channel_message_ops, community, community_profile,
-    events, game_servers, governance, keys, member_block, onboarding, pins, unread, DaemonContext,
+    events, game_servers, governance, keys, member_block, onboarding, pins, rich_messaging, unread,
+    DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -149,6 +150,21 @@ pub(super) async fn route(
         | CommunityRequest::MessageUnpin { .. }
         | CommunityRequest::AttachmentPin { .. }
         | CommunityRequest::MessageSearch { .. }) => pins::handle(ctx, state, request).await,
+        request @ (CommunityRequest::ReactionAdd { .. }
+        | CommunityRequest::ReactionRemove { .. }
+        | CommunityRequest::ThreadCreate { .. }
+        | CommunityRequest::ThreadArchive { .. }
+        | CommunityRequest::ThreadUnarchive { .. }
+        | CommunityRequest::ThreadList { .. }
+        | CommunityRequest::ThreadListActive { .. }
+        | CommunityRequest::ThreadMessages { .. }
+        | CommunityRequest::ThreadSend { .. }
+        | CommunityRequest::PollCreate { .. }
+        | CommunityRequest::PollVote { .. }
+        | CommunityRequest::PollClose { .. }
+        | CommunityRequest::PollResults { .. }) => {
+            rich_messaging::handle(ctx, state, request).await
+        }
         request @ (CommunityRequest::AutomodRules { .. }
         | CommunityRequest::AutomodRuleSet { .. }
         | CommunityRequest::AutomodRuleDelete { .. }) => automod::handle(ctx, state, request).await,

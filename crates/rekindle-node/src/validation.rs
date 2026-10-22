@@ -387,5 +387,6 @@ mod community_onboarding;
 mod friends;
 mod group_dm;
 mod pins;
+mod rich_messaging;
 #[cfg(test)]
 mod tests;

@@ -19,6 +19,7 @@ mod events;
 mod friends;
 mod game_servers;
 mod group_dm;
+mod rich_messaging;
 
 /// The selection for `request`, an intent of `kind`.
 ///
@@ -166,6 +167,17 @@ pub(crate) async fn select(
             | CommunityRequest::AttachmentPin { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
+            request @ (CommunityRequest::ReactionAdd { .. }
+            | CommunityRequest::ReactionRemove { .. }
+            | CommunityRequest::ThreadCreate { .. }
+            | CommunityRequest::ThreadArchive { .. }
+            | CommunityRequest::ThreadUnarchive { .. }
+            | CommunityRequest::ThreadSend { .. }
+            | CommunityRequest::PollCreate { .. }
+            | CommunityRequest::PollVote { .. }
+            | CommunityRequest::PollClose { .. }),
+        ) => rich_messaging::selection(ctx, request, &mut s)?,
+        IpcRequest::Community(
             request @ (CommunityRequest::CommunityUpdateProfile { .. }
             | CommunityRequest::CommunitySetAvatar { .. }
             | CommunityRequest::CommunitySetBanner { .. }
@@ -290,6 +302,10 @@ pub(crate) async fn select(
             | CommunityRequest::ModReportList { .. }
             | CommunityRequest::ChannelPins { .. }
             | CommunityRequest::MessageSearch { .. }
+            | CommunityRequest::ThreadList { .. }
+            | CommunityRequest::ThreadListActive { .. }
+            | CommunityRequest::ThreadMessages { .. }
+            | CommunityRequest::PollResults { .. }
             | CommunityRequest::InviteList { .. },
         )
         | IpcRequest::DmTyping { .. }

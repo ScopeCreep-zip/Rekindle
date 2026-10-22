@@ -10,6 +10,7 @@ mod moderation;
 mod onboarding;
 mod pins;
 mod profile;
+mod rich;
 mod roles;
 
 use super::super::CommunityRequest;
@@ -43,6 +44,19 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::CommunityAvatarGet { .. }
             | Self::CommunityPolicyGet { .. }
             | Self::CommunityPolicySet { .. } => self.fmt_profile(f),
+            Self::ReactionAdd { .. }
+            | Self::ReactionRemove { .. }
+            | Self::ThreadCreate { .. }
+            | Self::ThreadArchive { .. }
+            | Self::ThreadUnarchive { .. }
+            | Self::ThreadList { .. }
+            | Self::ThreadListActive { .. }
+            | Self::ThreadMessages { .. }
+            | Self::ThreadSend { .. }
+            | Self::PollCreate { .. }
+            | Self::PollVote { .. }
+            | Self::PollClose { .. }
+            | Self::PollResults { .. } => self.fmt_rich(f),
             Self::ChannelSend { .. }
             | Self::ChannelList { .. }
             | Self::ChannelCreate { .. }

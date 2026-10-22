@@ -63,7 +63,8 @@ pub use pipeline::{
     ChannelSendResult, ForwardChannelMessageParams,
 };
 pub use polls::{
-    get_poll_results, persist_poll_close, persist_poll_create, persist_poll_vote, PollSnapshot,
+    get_poll_results, persist_poll_close, persist_poll_create, persist_poll_vote,
+    validate_poll_create, PollSnapshot,
 };
 pub use reactions::{build_reaction, build_reaction_envelope, persist_reaction};
 pub use receive::{extract_mention_signals, MentionSignals};
