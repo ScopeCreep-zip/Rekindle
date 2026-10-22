@@ -5,7 +5,7 @@
 
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
-use rekindle_governance_runtime::deps::{CommunityDhtOpenSetup, DiscoveredMember};
+use rekindle_governance_runtime::deps::CommunityDhtOpenSetup;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
@@ -247,21 +247,6 @@ impl HostGovernance {
                 conn, &owner, &community, &author, &entries, now,
             )
         });
-    }
-
-    pub(super) fn persist_discovered_registry_members_impl(
-        community_id: &str,
-        members: &[DiscoveredMember],
-    ) {
-        // The daemon keeps no member mirror (see roles.rs): membership
-        // is read from the registry and the CRDT on demand. What matters
-        // locally is recovering OUR row, which the orchestrator does via
-        // apply_recovered_member_state.
-        tracing::debug!(
-            community_id,
-            discovered = members.len(),
-            "governance adapter: registry members discovered"
-        );
     }
 
     // ---------- Background tasks ----------

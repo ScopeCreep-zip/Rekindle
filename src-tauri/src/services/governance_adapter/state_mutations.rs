@@ -2,13 +2,9 @@
 //! `deps_impl.rs`. Each writes back to `state.communities` (parking_lot)
 //! and/or queues a SQLite `db_fire` to persist the change.
 
-use std::collections::HashMap;
-
 use rekindle_governance::state::GovernanceState;
-use rekindle_governance_runtime::DiscoveredMember;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::presence::MemberPresence;
 
 use crate::state_helpers;
 
@@ -105,27 +101,6 @@ pub(super) fn apply_recovered_member_state_impl(
     );
 }
 
-pub(super) fn persist_discovered_registry_members_impl(
-    adapter: &GovernanceAdapter,
-    community_id: &str,
-    members: Vec<DiscoveredMember>,
-) {
-    let mut member_roles: HashMap<String, Vec<u32>> = HashMap::new();
-    let mut rows: Vec<(u32, u32, MemberPresence)> = Vec::with_capacity(members.len());
-    for m in members {
-        let pseudonym_hex = hex::encode(m.presence.pseudonym_key.0);
-        member_roles.insert(pseudonym_hex, m.role_ids.clone());
-        rows.push((m.segment_index, m.slot_index, m.presence));
-    }
-    crate::services::community::presence::registry::persist_discovered_registry_members(
-        &adapter.state,
-        community_id,
-        &rows,
-        &member_roles,
-        &std::collections::HashSet::new(),
-    );
-}
-
 pub(super) fn try_derive_slot_keypair_if_ready_impl(
     adapter: &GovernanceAdapter,
     community_id: &str,
@@ -149,25 +124,6 @@ pub(super) fn try_derive_slot_keypair_if_ready_impl(
             &seed,
             idx,
         );
-    }
-}
-
-pub(super) fn recover_registry_keypair_from_keystore_impl(
-    adapter: &GovernanceAdapter,
-    community_id: &str,
-) {
-    let ks_guard = adapter.state.keystore.lock();
-    let Some(ref ks) = *ks_guard else { return };
-    let Some(rkp) = crate::keystore::load_registry_keypair(ks, community_id) else {
-        return;
-    };
-    tracing::info!(
-        community = %community_id,
-        "recovered registry_owner_keypair from Stronghold during hydrate",
-    );
-    let mut communities = adapter.state.communities.write();
-    if let Some(cs) = communities.get_mut(community_id) {
-        cs.registry_owner_keypair = Some(rkp);
     }
 }
 

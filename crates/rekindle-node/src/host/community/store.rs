@@ -197,6 +197,39 @@ impl CommunityStore {
             .unwrap_or_default()
     }
 
+    /// Add `candidates` to a joined community's known members and return
+    /// the ones it did not know: a community not in the store learns none.
+    pub fn extend_known_members(&self, community_id: &str, candidates: Vec<String>) -> Vec<String> {
+        let mut map = self.map.write();
+        let Some(c) = map.get_mut(community_id) else {
+            return Vec::new();
+        };
+        candidates
+            .into_iter()
+            .filter(|key| c.known_members.insert(key.clone()))
+            .collect()
+    }
+
+    /// The communities with a member registry but no registry owner
+    /// keypair in memory: the ones hydration recovers from the vault.
+    #[must_use]
+    pub fn missing_registry_keypairs(&self) -> Vec<String> {
+        self.map
+            .read()
+            .iter()
+            .filter(|(_, c)| c.member_registry_key.is_some() && c.registry_owner_keypair.is_none())
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    /// Set a joined community's registry owner keypair; a community not in
+    /// the store is left absent.
+    pub fn set_registry_owner_keypair(&self, community_id: &str, keypair: String) {
+        if let Some(c) = self.map.write().get_mut(community_id) {
+            c.registry_owner_keypair = Some(keypair);
+        }
+    }
+
     /// How many members the community knows.
     #[must_use]
     pub fn member_count(&self, community_id: &str) -> usize {

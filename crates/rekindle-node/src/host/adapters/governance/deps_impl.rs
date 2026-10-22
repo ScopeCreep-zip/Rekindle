@@ -255,7 +255,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         members: Vec<DiscoveredMember>,
     ) {
-        Self::persist_discovered_registry_members_impl(community_id, &members);
+        self.persist_discovered_registry_members_impl(community_id, members);
     }
 
     // ---------- Join flow ----------
@@ -303,15 +303,11 @@ impl GovernanceRuntimeDeps for HostGovernance {
     }
 
     fn list_missing_registry_keypairs(&self) -> Vec<String> {
-        // The daemon holds no registry owner keypair in memory to go
-        // missing: a creator's is in the vault (`RegistryKeypair`), and
-        // under `o_cnt: 0` it grants no write — member slots use the
-        // derived slot keypair. So there is nothing to recover into.
-        Vec::new()
+        self.ctx.communities.missing_registry_keypairs()
     }
 
     fn recover_registry_keypair_from_keystore(&self, community_id: &str) {
-        let _ = community_id;
+        self.recover_registry_keypair_impl(community_id);
     }
 
     fn list_communities_for_dht_open(&self) -> Vec<CommunityDhtOpenSetup> {

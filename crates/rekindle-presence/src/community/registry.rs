@@ -371,7 +371,7 @@ pub fn persist_discovered_registry_members<D, S1, S2>(
     let rows: Vec<DiscoveredMemberRow> = discovered_members
         .iter()
         .map(|(segment_index, subkey, presence)| {
-            build_member_row(presence, *segment_index, *subkey, member_roles)
+            discovered_member_row(presence, *segment_index, *subkey, member_roles)
         })
         .collect();
 
@@ -402,7 +402,10 @@ pub fn persist_discovered_registry_members<D, S1, S2>(
     deps.persist_discovered_member_rows(community_id, rows, banned, joined_at_secs);
 }
 
-fn build_member_row<S: BuildHasher>(
+/// The roster row for one registry `presence` at `segment_index`/`subkey`,
+/// with its roles from `member_roles` (the base role `0` when absent).
+#[must_use]
+pub fn discovered_member_row<S: BuildHasher>(
     presence: &MemberPresence,
     segment_index: u32,
     subkey: u32,

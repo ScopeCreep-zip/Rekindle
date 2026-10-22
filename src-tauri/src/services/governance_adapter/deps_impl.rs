@@ -260,7 +260,11 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         community_id: &str,
         members: Vec<DiscoveredMember>,
     ) {
-        state_mutations::persist_discovered_registry_members_impl(self, community_id, members);
+        // The Host owns the registry facts (plan E3.1 B2d).
+        if let Some(host) = self.state.host.current() {
+            host.governance()
+                .persist_discovered_registry_members(community_id, members);
+        }
     }
 
     // ---------- Join-flow specific ----------
@@ -357,18 +361,18 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn list_missing_registry_keypairs(&self) -> Vec<String> {
-        let communities = self.state.communities.read();
-        communities
-            .iter()
-            .filter(|(_, cs)| {
-                cs.member_registry_key.is_some() && cs.registry_owner_keypair.is_none()
-            })
-            .map(|(cid, _)| cid.clone())
-            .collect()
+        self.state
+            .host
+            .current()
+            .map(|host| host.governance().list_missing_registry_keypairs())
+            .unwrap_or_default()
     }
 
     fn recover_registry_keypair_from_keystore(&self, community_id: &str) {
-        state_mutations::recover_registry_keypair_from_keystore_impl(self, community_id);
+        if let Some(host) = self.state.host.current() {
+            host.governance()
+                .recover_registry_keypair_from_keystore(community_id);
+        }
     }
 
     fn list_communities_for_dht_open(&self) -> Vec<CommunityDhtOpenSetup> {

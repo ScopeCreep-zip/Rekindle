@@ -1,17 +1,11 @@
 //! Phase 21 REDO — thin facade.
 //!
-//! `write_our_presence` + `persist_discovered_registry_members` +
-//! `decrypt_history_ranges` bodies live in
+//! `write_our_presence` + `decrypt_history_ranges` bodies live in
 //! `rekindle_presence::community::{...}` parameterised over
 //! `CommunityPresenceDeps`. `ensure_registry_open` stays src-tauri
 //! because it mutates `community.open_community_records` (an
 //! AppState-specific bookkeeping field) and the surrounding lock
 //! ordering is intricate.
-//!
-//! Re-exports `DiscoveredRow` (the per-row scan tuple) for the
-//! still-src-tauri-side `poll.rs::presence_poll_tick` orchestrator.
-//! When 21.i-REDO ports `presence_poll_tick`, this file collapses
-//! further (or disappears entirely).
 
 use std::sync::Arc;
 
@@ -20,10 +14,6 @@ use crate::state::AppState;
 use crate::state_helpers;
 
 use rekindle_presence::CommunityPresenceDeps;
-/// Per-row tuple yielded by the per-segment registry scan. Re-exported
-/// from the crate so callers in the still-src-tauri-side
-/// `poll.rs::presence_poll_tick` keep compiling.
-pub(crate) use rekindle_presence::DiscoveredRow;
 
 /// Ensure the community holds its member-registry record, **writable** when we
 /// hold a writer keypair.
@@ -118,29 +108,6 @@ pub async fn write_our_presence(state: &Arc<AppState>, community_id: &str) {
         },
     )
     .await;
-}
-
-pub(crate) fn persist_discovered_registry_members(
-    state: &Arc<AppState>,
-    community_id: &str,
-    discovered_members: &[DiscoveredRow],
-    member_roles: &std::collections::HashMap<String, Vec<u32>>,
-    banned_members: &std::collections::HashSet<String>,
-) {
-    let Some(adapter) = build_adapter(state) else {
-        tracing::debug!(
-            community = %community_id,
-            "persist_discovered_registry_members: adapter unavailable",
-        );
-        return;
-    };
-    rekindle_presence::persist_discovered_registry_members(
-        &adapter,
-        community_id,
-        discovered_members,
-        member_roles,
-        banned_members,
-    );
 }
 
 /// W11.2 — decrypt history ranges from a peer's presence row using

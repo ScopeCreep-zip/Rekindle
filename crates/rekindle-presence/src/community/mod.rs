@@ -36,7 +36,8 @@ pub use poll::{
 };
 pub use profile_diff::{compute_profile_diff, MemberProfileSnapshot, ProfileDiffOutcome};
 pub use registry::{
-    persist_discovered_registry_members, write_our_presence, DiscoveredRow, PresenceWrite,
+    discovered_member_row, persist_discovered_registry_members, write_our_presence, DiscoveredRow,
+    PresenceWrite,
 };
 pub use role_merge::compute_merged_roles;
 pub use scan_row::{

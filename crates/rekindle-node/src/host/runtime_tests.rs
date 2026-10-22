@@ -299,3 +299,111 @@ async fn an_own_governance_write_updates_the_warm_cache() {
     assert_eq!(authors, vec![other, me]);
     host.shutdown().await.unwrap();
 }
+
+/// Ann's community `c1` in the store with a member registry, and its row.
+async fn seed_registry_community(host: &Host, owner: &str) {
+    host.ctx.communities.map().write().insert(
+        "c1".into(),
+        crate::host::community::CommunityState {
+            member_registry_key: Some("registry".into()),
+            ..crate::host::community::CommunityState::new("c1")
+        },
+    );
+    let owner = owner.to_string();
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            rekindle_db::repo::communities::insert_if_absent(
+                conn,
+                &owner,
+                &rekindle_db::repo::communities::NewCommunity {
+                    id: "c1",
+                    name: "C",
+                    my_role_ids: &[],
+                    joined_at: 1,
+                    dht_owner_keypair: None,
+                    my_pseudonym_key: "",
+                    mek_generation: 0,
+                    member_registry_key: Some("registry"),
+                    my_subkey_index: None,
+                    governance_key: None,
+                },
+            )
+        })
+        .await
+        .unwrap();
+}
+
+/// Hydration recovers the stored registry owner keypair (plan E3.1 B2d):
+/// a community whose store entry lacks it gets the vault's.
+#[tokio::test]
+async fn hydration_recovers_the_stored_registry_keypair() {
+    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    rekindle_vault::typed::community_keys::persist_registry_keypair(
+        host.ctx.vault.lock().as_ref().unwrap(),
+        "c1",
+        "registry-keypair",
+    );
+
+    let governance = host.governance();
+    assert_eq!(
+        governance.list_missing_registry_keypairs(),
+        vec!["c1".to_string()]
+    );
+    governance.recover_registry_keypair_from_keystore("c1");
+    let stored = host.ctx.communities.map().read()["c1"]
+        .registry_owner_keypair
+        .clone();
+    assert_eq!(stored.as_deref(), Some("registry-keypair"));
+    assert!(governance.list_missing_registry_keypairs().is_empty());
+    host.shutdown().await.unwrap();
+}
+
+/// The members a join discovered are stored (plan E3.1 B2d): known to the
+/// community and in its `community_members` rows with their roles.
+#[tokio::test]
+async fn discovered_registry_members_are_persisted() {
+    use rekindle_governance_runtime::{DiscoveredMember, GovernanceRuntimeDeps};
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let bea = rekindle_types::presence::MemberPresence {
+        pseudonym_key: rekindle_types::id::PseudonymKey([7; 32]),
+        display_name: Some("Bea".into()),
+        ..Default::default()
+    };
+    host.governance().persist_discovered_registry_members(
+        "c1",
+        vec![DiscoveredMember {
+            segment_index: 0,
+            slot_index: 3,
+            presence: bea,
+            role_ids: vec![0, 2],
+        }],
+    );
+
+    let bea_hex = hex::encode([7; 32]);
+    assert!(host.ctx.communities.known_members("c1").contains(&bea_hex));
+    let roster = host
+        .ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::members::roster(conn, &owner, "c1"))
+        .await
+        .unwrap();
+    assert_eq!(roster.len(), 1);
+    assert_eq!(roster[0].pseudonym_key, bea_hex);
+    assert_eq!(roster[0].display_name.as_deref(), Some("Bea"));
+    assert_eq!(roster[0].role_ids, vec![0, 2]);
+    host.shutdown().await.unwrap();
+}
