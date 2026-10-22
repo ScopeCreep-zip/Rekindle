@@ -307,7 +307,16 @@ export type ChannelMessageEvent =
         body: string;
       };
     }
-  | { deleted: { community: string; channel: string; messageId: string } };
+  | { deleted: { community: string; channel: string; messageId: string } }
+  /** Our own post settled at consensus (`sent`) or was superseded (`failed`). */
+  | {
+      channelSendStatus: {
+        community: string;
+        channel: string;
+        messageId: string;
+        state: "queued" | "sent" | "delivered" | "read" | "failed";
+      };
+    };
 
 export type CommunitySubscriptionEvent =
   | { membership: MembershipEvent }

@@ -180,6 +180,22 @@ function applyChannelUnread(u: UnreadChanged): void {
 }
 
 /// Channel-message and social events on the daemon vocabulary.
+/// Our post's delivery state from the Host (`ChannelSendStatus`): `sent` once
+/// its slot settled, `failed` when the network superseded our page without it
+/// (plan C7.13); a resend merges it back.
+function applySendStatus(channel: string, messageId: string, state: string): void {
+  const msgs = communityState.channelMessages[channel];
+  if (!msgs) return;
+  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
+  if (idx < 0) return;
+  if (state === "failed") {
+    setCommunityState("channelMessages", channel, idx, "status", "failed");
+    addToast("Message not delivered. Resend it.", "error");
+  } else if (state === "sent") {
+    setCommunityState("channelMessages", channel, idx, "status", "sent");
+  }
+}
+
 export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {
   if ("unreadChanged" in event) {
     applyChannelUnread(event.unreadChanged);
@@ -191,6 +207,8 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
       applyEdit(m.edited.channel, m.edited.messageId, m.edited.body, m.edited.editedAt);
     } else if ("deleted" in m) {
       applyDelete(m.deleted.channel, m.deleted.messageId);
+    } else if ("channelSendStatus" in m) {
+      applySendStatus(m.channelSendStatus.channel, m.channelSendStatus.messageId, m.channelSendStatus.state);
     }
     return;
   }

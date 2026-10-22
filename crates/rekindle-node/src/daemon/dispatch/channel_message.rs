@@ -241,7 +241,12 @@ pub(crate) async fn handle_read(
             before_timestamp,
             limit,
         } => match ctx.resolve_community(&community) {
-            Ok(membership) => (membership.governance_key, channel, Some(before_timestamp), limit),
+            Ok(membership) => (
+                membership.governance_key,
+                channel,
+                Some(before_timestamp),
+                limit,
+            ),
             Err(e) => return e,
         },
         _ => return IpcResponse::error(400, "not a channel history request"),

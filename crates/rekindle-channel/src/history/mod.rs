@@ -27,6 +27,9 @@ pub struct RecordMessage {
     pub reply_to: Option<String>,
     pub mek_generation: u64,
     pub lamport_ts: u64,
+    /// Whether it mentions us (an `@` of our pseudonym, `@everyone` or
+    /// `@here`), for the unread mention count (plan E3.1 G1).
+    pub mentions_me: bool,
 }
 
 /// The latest `limit` messages of `channel_id`'s record (only those older
@@ -87,6 +90,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 &message.ciphertext,
             );
             let is_own = message.sender_pseudonym == me;
+            let mentions_me = crate::mentions::message_mentions_me(deps, community_id, &message);
             let id = message.message_id.as_ref();
             RecordMessage {
                 view: ChannelMessage {
@@ -115,6 +119,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 reply_to: message.reply_to.clone(),
                 mek_generation: message.mek_generation,
                 lamport_ts: message.lamport_ts,
+                mentions_me,
             }
         })
         .collect())
@@ -170,7 +175,11 @@ fn merge_reactions(
     incoming: Option<Vec<ReactionGroup>>,
 ) -> Option<Vec<ReactionGroup>> {
     let mut groups: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for reaction in existing.into_iter().flatten().chain(incoming.into_iter().flatten()) {
+    for reaction in existing
+        .into_iter()
+        .flatten()
+        .chain(incoming.into_iter().flatten())
+    {
         groups
             .entry(reaction.emoji)
             .or_default()

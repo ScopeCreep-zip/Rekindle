@@ -75,22 +75,23 @@ pub async fn delete_channel_message(
     crate::host_call::call(&state, request).await
 }
 
+/// The latest `limit` messages of a channel, our rows merged with the
+/// channel record's (`CommunityRequest::ChannelMessages`).
 #[tauri::command]
 pub async fn get_channel_messages(
     channel_id: String,
     limit: u32,
     state: State<'_, SharedState>,
-) -> Result<Vec<Message>, String> {
-    let pool = state.db.current()?;
-    crate::services::messaging_runtime::get_channel_messages_inner(
-        state.inner().clone(),
-        pool.clone(),
-        channel_id,
+) -> Result<Done<Vec<Message>>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelMessages {
+        channel: channel_id,
         limit,
-    )
-    .await
+    });
+    crate::host_call::call(&state, request).await
 }
 
+/// A page of a channel's messages older than `before_timestamp`
+/// (`CommunityRequest::ChannelMessagesBefore`).
 #[tauri::command]
 pub async fn get_older_channel_messages(
     community_id: String,
@@ -98,15 +99,12 @@ pub async fn get_older_channel_messages(
     before_timestamp: u64,
     limit: u32,
     state: State<'_, SharedState>,
-) -> Result<Vec<Message>, String> {
-    let pool = state.db.current()?;
-    crate::services::messaging_runtime::get_older_channel_messages_inner(
-        state.inner().clone(),
-        pool.clone(),
-        community_id,
-        channel_id,
+) -> Result<Done<Vec<Message>>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelMessagesBefore {
+        community: community_id,
+        channel: channel_id,
         before_timestamp,
         limit,
-    )
-    .await
+    });
+    crate::host_call::call(&state, request).await
 }

@@ -106,9 +106,9 @@ pub(super) fn emit_delivery_failed_impl(
     );
 }
 
-/// The echo of our own channel post, in the windows' legacy shape (the
-/// Host's `ShellHooks::channel_echo`, until E3.1 E2c).
-pub fn echo(app: &AppHandle, echo: &SentChannelMessageEcho) {
+/// The echo of our own forwarded post, in the windows' legacy shape, until
+/// E3.1 E2d ports the forward to the Host.
+fn echo(app: &AppHandle, echo: &SentChannelMessageEcho) {
     let event = ChatEvent::MessageReceived {
         from: echo.sender_pseudonym.clone(),
         body: echo.body.clone(),
@@ -129,9 +129,9 @@ pub fn echo(app: &AppHandle, echo: &SentChannelMessageEcho) {
     );
 }
 
-/// Our post settled (`landed`, else failed), in the windows' legacy shape
-/// (`ShellHooks::channel_post_settled`, until E3.1 E2c).
-pub fn post_settled(
+/// Our forwarded post settled (`landed`, else failed), in the windows'
+/// legacy shape, until E3.1 E2d ports the forward to the Host.
+fn post_settled(
     app: &AppHandle,
     community_id: &str,
     channel_id: &str,

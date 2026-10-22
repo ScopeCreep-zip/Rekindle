@@ -431,6 +431,53 @@ impl Community {
             .await
     }
 
+    /// The general channel's id as node `i` lists it.
+    pub async fn general_id(&self, i: usize) -> String {
+        let channels = self.nodes[i]
+            .call(IpcRequest::Community(CommunityRequest::ChannelList {
+                community: self.governance_key.clone(),
+            }))
+            .await
+            .expect("channel list");
+        (channels.as_array().into_iter().flatten())
+            .find(|c| c["name"] == "general")
+            .and_then(|c| c["id"].as_str().map(str::to_owned))
+            .expect("a general channel")
+    }
+
+    /// Node `i`'s page of the general channel (`get_channel_messages`, or
+    /// `get_older_channel_messages` with `before`).
+    pub async fn history(
+        &self,
+        i: usize,
+        before: Option<u64>,
+        limit: u32,
+    ) -> Result<Vec<serde_json::Value>, Refused> {
+        let channel = self.general_id(i).await;
+        let request = match before {
+            None => CommunityRequest::ChannelMessages { channel, limit },
+            Some(before_timestamp) => CommunityRequest::ChannelMessagesBefore {
+                community: self.governance_key.clone(),
+                channel,
+                before_timestamp,
+                limit,
+            },
+        };
+        let page = self.nodes[i].call(IpcRequest::Community(request)).await?;
+        Ok(page.as_array().cloned().unwrap_or_default())
+    }
+
+    /// Whether node `i`'s `get_channel_messages` page holds `body` within
+    /// `limit`.
+    pub async fn history_holds(&self, i: usize, body: &str, limit: Duration) -> bool {
+        eventually(&self.sim, limit, || async {
+            self.history(i, None, 100)
+                .await
+                .is_ok_and(|page| page.iter().any(|m| m["body"] == body))
+        })
+        .await
+    }
+
     /// Whether node `i` reads `body` in the general channel within `limit`.
     pub async fn reads(&self, i: usize, body: &str, limit: Duration) -> bool {
         eventually(&self.sim, limit, || async {

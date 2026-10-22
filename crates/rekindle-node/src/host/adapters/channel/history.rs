@@ -6,7 +6,9 @@
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::history::{self, RecordMessage};
 use rekindle_channel::ChannelMessagingDeps;
-use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert, StoredChannelMessage};
+use rekindle_db::repo::messages::channel::{
+    self as rows, ChannelMessageInsert, StoredChannelMessage,
+};
 use rekindle_types::dto::channel_message::{ChannelMessage, MessageAttachment};
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
@@ -47,7 +49,8 @@ impl HostChannel {
             .collect();
         let record =
             history::read_channel_record(self, community_id, channel_id, before, limit).await?;
-        self.store_record_messages(&owner, channel_id, &record).await?;
+        self.store_record_messages(&owner, channel_id, &record)
+            .await?;
         let incoming = record.into_iter().map(|message| message.view).collect();
         history::merge_message_lists(&mut messages, incoming, limit);
         Ok(messages)
@@ -97,6 +100,7 @@ impl HostChannel {
                         flags: 0,
                         attachment_json: None,
                         send_state: SendState::Delivered,
+                        mentions_me: message.mentions_me,
                     },
                 )?;
             }

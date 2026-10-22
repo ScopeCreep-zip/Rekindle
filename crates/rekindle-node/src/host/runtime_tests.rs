@@ -146,8 +146,6 @@ impl shell_hooks::ShellHooks for Recorder {
     }
     fn spawn_presence_poll_tick(&self, _community_id: &str) {}
 
-
-
     fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
 
     fn push_onboarding_complete_to_sync(&self, _community_id: &str) {}
@@ -245,8 +243,6 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
             Ok(())
         }
         fn spawn_presence_poll_tick(&self, _community_id: &str) {}
-
-
 
         fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
 

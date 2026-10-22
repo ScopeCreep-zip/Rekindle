@@ -14,7 +14,6 @@ pub mod event_router;
 pub mod host_call;
 mod invoke;
 pub mod keystore;
-pub mod message_view;
 mod os_notify;
 mod platform;
 pub mod serde_helpers;

@@ -194,7 +194,8 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::New { .. }
             | ChannelMessageEvent::Edited { .. }
-            | ChannelMessageEvent::Deleted { .. },
+            | ChannelMessageEvent::Deleted { .. }
+            | ChannelMessageEvent::ChannelSendStatus { .. },
         )
         | SubscriptionEvent::Typing(
             TypingEvent::Started {
