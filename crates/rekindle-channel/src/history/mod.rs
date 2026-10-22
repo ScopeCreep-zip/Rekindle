@@ -90,7 +90,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 &message.ciphertext,
             );
             let is_own = message.sender_pseudonym == me;
-            let mentions_me = crate::mentions::message_mentions_me(deps, community_id, &message);
+            let mentions_me = crate::mentions::message_mentions_me(deps, community_id, message);
             let id = message.message_id.as_ref();
             RecordMessage {
                 view: ChannelMessageView {
