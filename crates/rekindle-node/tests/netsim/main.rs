@@ -9,6 +9,7 @@ mod community_block_drops;
 mod community_policy;
 mod dm_hint_loss;
 mod events;
+mod expressions;
 mod first_contact_retry;
 mod first_login;
 mod forward_cross_audience;

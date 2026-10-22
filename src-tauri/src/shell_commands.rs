@@ -306,6 +306,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("unpin_message", HostCall::Request("MessageUnpin")),
     ("pin_attachment", HostCall::Request("AttachmentPin")),
     ("search_messages", HostCall::Request("MessageSearch")),
+    ("upload_emoji", HostCall::Request("EmojiUpload")),
+    ("upload_sticker", HostCall::Request("StickerUpload")),
+    ("delete_emoji", HostCall::Request("ExpressionDelete")),
+    ("list_expressions", HostCall::Request("Expressions")),
 ];
 
 /// The shell's own commands.
@@ -327,10 +331,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     // by the group DM requests.
     // E3.1 — communities.
     ("update_community_presence", "E3.1"),
-    ("delete_emoji", "E3.1"),
-    ("upload_emoji", "E3.1"),
-    ("upload_sticker", "E3.1"),
-    ("list_expressions", "E3.1"),
     ("get_presence_policy", "E3.1"),
     ("set_presence_policy", "E3.1"),
     ("rotate_mek", "E3.1"),

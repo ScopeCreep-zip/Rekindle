@@ -259,6 +259,35 @@ pub struct AutoModRuleView {
     pub lamport: u64,
 }
 
+/// One custom expression of a community (architecture §18, plan E3.1
+/// E3c), its picture or sound inline when cached and re-checked.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExpressionInfo {
+    /// 16 bytes of hex.
+    pub expression_id: String,
+    pub name: String,
+    /// `emoji`, `sticker` or `soundboard`.
+    pub kind: String,
+    pub content_hash: String,
+    /// A `data:` URL built from an allowlisted, decoded media type.
+    pub inline_data_url: Option<String>,
+    pub media_type: Option<String>,
+    pub animated: bool,
+    pub tags: Vec<String>,
+    /// Present only on a soundboard sound.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub sound_meta: Option<crate::expression::SoundboardMeta>,
+    /// The uploader's pseudonym (hex).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub creator_pseudonym: Option<String>,
+    /// Seconds at upload.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub created_at: Option<u64>,
+    /// Gates `USE_EXTERNAL_EMOJIS`.
+    pub available_to_peers: bool,
+}
+
 /// One pinned channel message (architecture §16.4, plan E3.1 E3b).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -14,6 +14,8 @@ mod channel_ingest_tests;
 mod channel_send_tests;
 #[path = "community_info_tests.rs"]
 mod community_info;
+#[path = "expression_upload_tests.rs"]
+mod expression_upload_tests;
 #[path = "login_stage_tests.rs"]
 mod login_stage;
 #[path = "membership_tests.rs"]

@@ -384,6 +384,7 @@ mod channels;
 mod community;
 mod community_events;
 mod community_onboarding;
+mod expressions;
 mod friends;
 mod group_dm;
 mod pins;

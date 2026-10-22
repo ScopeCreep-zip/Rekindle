@@ -84,6 +84,10 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         | CommunityRequest::MessageUnpin { .. }
         | CommunityRequest::AttachmentPin { .. }
         | CommunityRequest::MessageSearch { .. }) => super::pins::check(request),
+        request @ (CommunityRequest::EmojiUpload { .. }
+        | CommunityRequest::StickerUpload { .. }
+        | CommunityRequest::ExpressionDelete { .. }
+        | CommunityRequest::Expressions { .. }) => super::expressions::check(request),
         CommunityRequest::CommunityUpdateProfile {
             community: key,
             bio,

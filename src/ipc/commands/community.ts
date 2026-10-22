@@ -235,7 +235,7 @@ export const communityCommands = {
   /// `kind` is the picked file's MIME type; the Host decodes it as that
   /// kind only and re-encodes it without metadata (`rekindle_types::ImageKind`).
   uploadEmoji: (communityId: string, name: string, bytes: number[], kind: ImageKind) =>
-    invoke<string>("upload_emoji", { communityId, name, bytes, kind }),
+    hostInvoke<string>("upload_emoji", { communityId, name, bytes, kind }),
   uploadSticker: (
     communityId: string,
     name: string,
@@ -243,7 +243,7 @@ export const communityCommands = {
     kind: ImageKind,
     tags?: string[],
   ) =>
-    invoke<string>("upload_sticker", {
+    hostInvoke<string>("upload_sticker", {
       communityId,
       name,
       bytes,
@@ -284,9 +284,9 @@ export const communityCommands = {
   playSoundboard: (communityId: string, channelId: string, expressionId: string) =>
     invoke<void>("play_soundboard", { communityId, channelId, expressionId }),
   deleteEmoji: (communityId: string, expressionId: string) =>
-    invoke<void>("delete_emoji", { communityId, expressionId }),
+    hostInvoke<unknown>("delete_emoji", { communityId, expressionId }).then(() => undefined),
   listExpressions: (communityId: string) =>
-    invoke<ExpressionInfo[]>("list_expressions", { communityId }),
+    hostInvoke<ExpressionInfo[]>("list_expressions", { communityId }),
   listAutoModRules: (communityId: string) =>
     hostInvoke<AutoModRuleInfo[]>("list_automod_rules", { communityId }),
   setAutoModRule: (

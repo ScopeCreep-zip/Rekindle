@@ -164,7 +164,10 @@ pub(crate) async fn select(
             | CommunityRequest::AutomodRuleDelete { .. }
             | CommunityRequest::MessagePin { .. }
             | CommunityRequest::MessageUnpin { .. }
-            | CommunityRequest::AttachmentPin { .. }),
+            | CommunityRequest::AttachmentPin { .. }
+            | CommunityRequest::EmojiUpload { .. }
+            | CommunityRequest::StickerUpload { .. }
+            | CommunityRequest::ExpressionDelete { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
             request @ (CommunityRequest::ReactionAdd { .. }
@@ -306,6 +309,7 @@ pub(crate) async fn select(
             | CommunityRequest::ThreadListActive { .. }
             | CommunityRequest::ThreadMessages { .. }
             | CommunityRequest::PollResults { .. }
+            | CommunityRequest::Expressions { .. }
             | CommunityRequest::InviteList { .. },
         )
         | IpcRequest::DmTyping { .. }

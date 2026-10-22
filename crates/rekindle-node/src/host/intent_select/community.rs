@@ -295,6 +295,15 @@ pub(super) async fn selection(
         }
         | CommunityRequest::AttachmentPin {
             community: target, ..
+        }
+        | CommunityRequest::EmojiUpload {
+            community: target, ..
+        }
+        | CommunityRequest::StickerUpload {
+            community: target, ..
+        }
+        | CommunityRequest::ExpressionDelete {
+            community: target, ..
         } => {
             let (id, name) = community(ctx, target)?;
             if matches!(request, CommunityRequest::InviteCreate { .. }) {

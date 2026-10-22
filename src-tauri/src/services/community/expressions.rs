@@ -5,75 +5,12 @@
 //! module constructs a `ChannelAdapter` per call and maps the crate's
 //! `ExpressionView` ↔ src-tauri `ExpressionInfo`.
 
-use rekindle_types::expression::SoundboardMeta;
-use rekindle_types::image_kind::ImageKind;
-
 use crate::state::SharedState;
-
-#[derive(Debug, Clone)]
-pub struct ExpressionInfo {
-    pub expression_id: String,
-    pub name: String,
-    pub kind: String,
-    pub content_hash: String,
-    pub inline_data_url: Option<String>,
-    pub media_type: Option<String>,
-    pub animated: bool,
-    pub tags: Vec<String>,
-    pub sound_meta: Option<SoundboardMeta>,
-    pub creator_pseudonym: Option<String>,
-    pub created_at: Option<u64>,
-    pub available_to_peers: bool,
-}
 
 fn build_adapter(
     state: &SharedState,
 ) -> Result<crate::services::channel_adapter::ChannelAdapter, String> {
     crate::services::build_adapter(state, crate::services::channel_adapter::ChannelAdapter::new)
-}
-
-fn view_to_info(view: rekindle_channel::deps::ExpressionView) -> ExpressionInfo {
-    ExpressionInfo {
-        expression_id: view.expression_id,
-        name: view.name,
-        kind: view.kind,
-        content_hash: view.content_hash,
-        inline_data_url: view.inline_data_url,
-        media_type: view.media_type,
-        animated: view.animated,
-        tags: view.tags,
-        sound_meta: view.sound_meta,
-        creator_pseudonym: view.creator_pseudonym,
-        created_at: view.created_at,
-        available_to_peers: view.available_to_peers,
-    }
-}
-
-pub async fn upload_emoji(
-    state: &SharedState,
-    community_id: &str,
-    name: &str,
-    bytes: Vec<u8>,
-    kind: ImageKind,
-) -> Result<String, String> {
-    let adapter = build_adapter(state)?;
-    rekindle_channel::upload_emoji(&adapter, community_id, name, bytes, kind)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-pub async fn upload_sticker(
-    state: &SharedState,
-    community_id: &str,
-    name: &str,
-    bytes: Vec<u8>,
-    kind: ImageKind,
-    tags: Vec<String>,
-) -> Result<String, String> {
-    let adapter = build_adapter(state)?;
-    rekindle_channel::upload_sticker(&adapter, community_id, name, bytes, kind, tags)
-        .await
-        .map_err(|e| e.to_string())
 }
 
 pub async fn upload_soundboard_sound(
@@ -112,25 +49,4 @@ pub fn play_soundboard(
     let adapter = build_adapter(state)?;
     rekindle_channel::play_soundboard(&adapter, community_id, channel_id, expression_id_hex)
         .map_err(|e| e.to_string())
-}
-
-pub async fn delete_expression(
-    state: &SharedState,
-    community_id: &str,
-    expression_id_hex: &str,
-) -> Result<(), String> {
-    let adapter = build_adapter(state)?;
-    rekindle_channel::delete_expression(&adapter, community_id, expression_id_hex)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-pub fn list_expressions(
-    state: &SharedState,
-    community_id: &str,
-) -> Result<Vec<ExpressionInfo>, String> {
-    let adapter = build_adapter(state)?;
-    let views =
-        rekindle_channel::list_expressions(&adapter, community_id).map_err(|e| e.to_string())?;
-    Ok(views.into_iter().map(view_to_info).collect())
 }

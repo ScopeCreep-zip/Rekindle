@@ -5,6 +5,7 @@
 mod audit;
 mod channels;
 mod events;
+mod expressions;
 mod lifecycle;
 mod moderation;
 mod onboarding;
@@ -38,6 +39,10 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::MessageUnpin { .. }
             | Self::AttachmentPin { .. }
             | Self::MessageSearch { .. } => self.fmt_pins(f),
+            Self::EmojiUpload { .. }
+            | Self::StickerUpload { .. }
+            | Self::ExpressionDelete { .. }
+            | Self::Expressions { .. } => self.fmt_expressions(f),
             Self::CommunityUpdateProfile { .. }
             | Self::CommunitySetAvatar { .. }
             | Self::CommunitySetBanner { .. }

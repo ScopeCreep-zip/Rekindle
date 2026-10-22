@@ -33,10 +33,7 @@ pub(crate) mod writers;
 // Re-export public API (callers use services::community::function_name)
 pub use bootstrap::build_bootstrap_response;
 
-pub use expressions::{
-    delete_expression, list_expressions, play_soundboard, upload_emoji, upload_soundboard_sound,
-    upload_sticker,
-};
+pub use expressions::{play_soundboard, upload_soundboard_sound};
 pub use gossip::{
     flush_peer_reliability, hydrate_peer_reliability, record_peer_reliability,
     send_to_channel_peers, send_to_channel_peers_now, send_to_mesh, start_peer_reliability_flush,

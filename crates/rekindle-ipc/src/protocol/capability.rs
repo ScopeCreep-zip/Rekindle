@@ -217,6 +217,7 @@ impl CommunityRequest {
             | Self::ModReportList { .. }
             | Self::ChannelPins { .. }
             | Self::MessageSearch { .. }
+            | Self::Expressions { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
             | Self::CommunityJoin { .. }
@@ -237,6 +238,9 @@ impl CommunityRequest {
             | Self::ChannelSetTopic { .. }
             | Self::ChannelSetSlowmode { .. }
             | Self::MessagePin { .. }
+            | Self::EmojiUpload { .. }
+            | Self::StickerUpload { .. }
+            | Self::ExpressionDelete { .. }
             | Self::MessageUnpin { .. }
             | Self::AttachmentPin { .. }
             | Self::ChannelSetForumTags { .. }

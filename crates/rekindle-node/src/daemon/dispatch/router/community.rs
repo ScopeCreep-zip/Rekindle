@@ -6,8 +6,8 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
     audit, automod, channel, channel_message, channel_message_ops, community, community_profile,
-    events, game_servers, governance, keys, member_block, onboarding, pins, rich_messaging, unread,
-    DaemonContext,
+    events, expressions, game_servers, governance, keys, member_block, onboarding, pins,
+    rich_messaging, unread, DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -165,6 +165,10 @@ pub(super) async fn route(
         | CommunityRequest::PollResults { .. }) => {
             rich_messaging::handle(ctx, state, request).await
         }
+        request @ (CommunityRequest::EmojiUpload { .. }
+        | CommunityRequest::StickerUpload { .. }
+        | CommunityRequest::ExpressionDelete { .. }
+        | CommunityRequest::Expressions { .. }) => expressions::handle(ctx, state, request).await,
         request @ (CommunityRequest::AutomodRules { .. }
         | CommunityRequest::AutomodRuleSet { .. }
         | CommunityRequest::AutomodRuleDelete { .. }) => automod::handle(ctx, state, request).await,

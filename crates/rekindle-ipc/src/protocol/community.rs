@@ -607,6 +607,30 @@ pub enum CommunityRequest {
         channel_id: String,
         poll_id: String,
     },
+    // ── Expressions (E3.1 E3c) ─────────────────────────────────────
+    /// Upload a custom emoji (`MANAGE_EXPRESSIONS`): `kind` is what the
+    /// picker declared, and the picture is decoded as that kind only.
+    EmojiUpload {
+        community: String,
+        name: String,
+        bytes: Vec<u8>,
+        kind: rekindle_types::image_kind::ImageKind,
+    },
+    /// Upload a custom sticker (`MANAGE_EXPRESSIONS`).
+    StickerUpload {
+        community: String,
+        name: String,
+        bytes: Vec<u8>,
+        kind: rekindle_types::image_kind::ImageKind,
+        tags: Vec<String>,
+    },
+    /// Delete a custom expression (`MANAGE_EXPRESSIONS`).
+    ExpressionDelete {
+        community: String,
+        expression_id: String,
+    },
+    /// The community's expressions, with the cached pictures inline.
+    Expressions { community: String },
 
     // ── Invites ───────────────────────────────────────────────────
     /// Create a community invite.
