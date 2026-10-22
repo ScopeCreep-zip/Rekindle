@@ -19,12 +19,15 @@ use crate::host::community::state::{
 };
 
 /// What a projection changed that the shell acts on.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GovernanceProjected {
     /// The merge named a record to watch (a channel log, a Plate Gate
     /// segment's records, a channel-segment record) that the previous state
     /// did not.
     pub new_watch_targets: bool,
+    /// Our role ids as the merged role assignments name them (empty when
+    /// they name none for us), which the session's membership adopts.
+    pub my_role_ids: Vec<u32>,
 }
 
 /// Every record the community's state names to watch: channel logs,
@@ -143,14 +146,17 @@ fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
         .and_then(|hex| hex::decode(hex).ok())
         .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
         .map(PseudonymKey);
-    if let Some(role_ids) = me.and_then(|me| gov.role_assignments.get(&me)) {
-        cs.my_role_ids = role_ids
-            .iter()
-            .copied()
-            .map(RoleId::to_legacy_u32)
-            .collect();
-        cs.my_role_ids.sort_unstable();
-    }
+    cs.my_role_ids = me
+        .and_then(|me| gov.role_assignments.get(&me))
+        .map(|role_ids| {
+            role_ids
+                .iter()
+                .copied()
+                .map(RoleId::to_legacy_u32)
+                .collect()
+        })
+        .unwrap_or_default();
+    cs.my_role_ids.sort_unstable();
 }
 
 /// A banned member stops receiving our gossip and leaves the member lists
@@ -196,7 +202,10 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
         .collect();
     cs.governance_state = Some(gov);
     let new_watch_targets = !watch_targets(cs).is_subset(&prior);
-    GovernanceProjected { new_watch_targets }
+    GovernanceProjected {
+        new_watch_targets,
+        my_role_ids: cs.my_role_ids.clone(),
+    }
 }
 
 /// The SQLite snapshot of a projected community at `lamport_clock`; `None`

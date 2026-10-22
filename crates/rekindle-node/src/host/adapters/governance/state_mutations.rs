@@ -30,6 +30,18 @@ impl HostGovernance {
             &state,
         );
         let projected = self.ctx.communities.project_governance(community_id, state);
+        // The merged role assignments are authoritative for our own role
+        // list: the session's membership (which `CommunityInfo` and the
+        // permission checks read) and its stored row adopt them, so a role
+        // another member grants or revokes reaches us through the watch.
+        let roles = projected.my_role_ids.clone();
+        crate::host::session::update_roles(
+            &self.ctx.session,
+            &self.ctx.db,
+            &self.ctx.communities,
+            community_id,
+            move |mine| *mine = roles,
+        );
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
         }

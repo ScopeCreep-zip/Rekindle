@@ -12,7 +12,7 @@ use crate::state::SharedState;
 pub(super) fn on_projected(
     state: &SharedState,
     community_id: &str,
-    projected: GovernanceProjected,
+    projected: &GovernanceProjected,
 ) {
     // Event RSVP lists from the merged events (events domain, E3.1 E3).
     {

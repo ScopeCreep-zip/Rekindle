@@ -89,7 +89,7 @@ impl ShellHooks for ShellSession {
     }
 
     fn on_governance_projected(&self, community_id: &str, projected: &GovernanceProjected) {
-        governance::on_projected(&self.state, community_id, *projected);
+        governance::on_projected(&self.state, community_id, projected);
     }
 
     fn spawn_community_mek_recovery(&self, community_id: &str, requester_pseudonym: &str) {
