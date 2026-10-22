@@ -87,8 +87,11 @@ export const communityCommands = {
     hostInvoke<{ governanceKey: string; registryKey: string; name: string }>(
       "create_community", { name },
     ).then((created) => created.governanceKey),
-  /// Returns the joined community's id.
-  joinCommunity: (inviteUrl: string) => invoke<string>("join_community", { inviteUrl }),
+  /// Joins through the Host's review of the invite (its record-key
+  /// fingerprint); returns the joined community's id.
+  joinCommunity: (inviteUrl: string) =>
+    hostInvoke<{ governanceKey: string; name: string }>("join_community", { inviteUrl })
+      .then((joined) => joined.governanceKey),
   createChannel: (
     communityId: string,
     name: string,

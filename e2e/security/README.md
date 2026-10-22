@@ -12,7 +12,6 @@ defences are actually in place at runtime.
 |------|---------------|
 | [`xss.spec.ts`](xss.spec.ts) | Inject XSS payloads into every peer-content render path; assert no script execution. |
 | [`csp.spec.ts`](csp.spec.ts) | Assert the CSP declared in `src-tauri/tauri.conf.json` is actually enforced (script-src, frame-ancestors, eval, mixed content). |
-| [`deep-link.spec.ts`](deep-link.spec.ts) | Hostile `rekindle://` payload corpus — empty, garbage, XSS-in-URL, huge-payload, null-bytes, RTL override. |
 
 ## Running
 

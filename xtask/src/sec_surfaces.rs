@@ -62,15 +62,8 @@ pub(crate) const SURFACES: &[(&str, &[&str])] = &[
         ],
     ),
     (
-        "src/components/buddy-list/DeepLinkConsentDialog.tsx",
-        &[
-            "sec-review",
-            "sec-review-fact",
-            "sec-fingerprint",
-            "sec-fingerprint-value",
-            "sec-btn-commit",
-            "sec-btn-secondary",
-        ],
+        "src/components/buddy-list/PairingLinkNotice.tsx",
+        &["sec-review", "sec-review-fact", "sec-btn-secondary"],
     ),
     (
         "src/components/settings/AddDeviceModal.tsx",

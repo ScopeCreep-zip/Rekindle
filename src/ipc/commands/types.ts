@@ -334,18 +334,6 @@ export type SettingsTab =
   | "mobile"
   | "about";
 
-/// An OS deep link awaiting the user's consent. Mirrors
-/// `DeepLinkRequest` in `src-tauri/src/deep_links.rs`; the invite secrets
-/// stay in the backend.
-export type DeepLinkRequest =
-  | { kind: "joinCommunity"; requestId: string; keyFingerprint: string }
-  | { kind: "pairingRefused"; requestId: string };
-
-/// What a confirmed deep link did.
-export type DeepLinkOutcome =
-  | { kind: "joinedCommunity"; communityId: string }
-  | { kind: "dismissed" };
-
 /// A live 1:1 call (`get_active_call`).
 export interface ActiveCall {
   callId: string;

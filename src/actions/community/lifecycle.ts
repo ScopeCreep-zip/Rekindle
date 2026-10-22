@@ -2,6 +2,7 @@ import { commands } from "../../ipc/commands";
 import { asImageKind } from "../../ipc/commands/system";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 import {
   transformAutoModRule,
   transformCommunityDetail,
@@ -62,14 +63,14 @@ export async function handleJoinCommunity(inviteUrl: string): Promise<void> {
     // the user can't act on a message that hides the cause. Re-throw so the join modal stays open and
     // shows the failure inline next to the dial-in stepper's failed phase.
     console.error("Failed to join community:", e);
-    const msg = typeof e === "string" ? e : "Failed to join community";
+    const msg = errorMessage(e);
     addToast(msg, "error");
     throw e instanceof Error ? e : new Error(msg);
   }
 }
 
 /// Load a community the backend has just joined into the stores and
-/// select it. Shared by the join modal and the deep-link consent dialog.
+/// select it (the join modal).
 export async function loadJoinedCommunity(communityId: string): Promise<void> {
   // Re-fetch community details to get name, channels, pseudonym key, MEK generation, roles
   const details = await commands.getCommunityDetails();

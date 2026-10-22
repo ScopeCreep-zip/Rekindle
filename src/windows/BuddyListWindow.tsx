@@ -12,7 +12,7 @@ import CommunityListCompact from "../components/buddy-list/CommunityListCompact"
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
 import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
-import DeepLinkConsentDialog from "../components/buddy-list/DeepLinkConsentDialog";
+import PairingLinkNotice from "../components/buddy-list/PairingLinkNotice";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
@@ -30,7 +30,7 @@ import { handleGetGameStatus } from "../actions/settings.actions";
 import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
 import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
-import { loadPendingDeepLink, subscribeDeepLinkHandler } from "../handlers/deep-link.handler";
+import { subscribePairingLinkHandler } from "../handlers/pairing-link.handler";
 import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import CallController from "../components/voice/CallController";
@@ -85,7 +85,7 @@ const BuddyListWindow: Component = () => {
       setNetworkAttached(event.isAttached);
     }));
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
-    unlisteners.push(subscribeDeepLinkHandler());
+    unlisteners.push(subscribePairingLinkHandler());
     // Reviews of actions the backend began, in the router root's dialog.
     unlisteners.push(subscribeBackendIntents());
     void startEventStream(() => void hydrateState());
@@ -93,8 +93,6 @@ const BuddyListWindow: Component = () => {
 
     // Await hydration so store is populated before subsequent commands
     await hydrateState();
-    // A deep link that arrived before login waits in the backend for consent.
-    void loadPendingDeepLink();
     handleHydrateRelayState();
 
     // Load persisted pending friend requests from SQLite
@@ -135,6 +133,7 @@ const BuddyListWindow: Component = () => {
       <UserIdentityBar />
       <TabBar />
       <SearchBar />
+      <PairingLinkNotice />
       <div id="main-content" tabindex="-1" class="window-main">
         <Show when={buddyListUI.activeTab === "friends"}>
           <PendingRequests />
@@ -161,7 +160,6 @@ const BuddyListWindow: Component = () => {
         onClose={() => setBuddyListUI("showJoinCommunity", false)}
       />
       <CallController />
-      <DeepLinkConsentDialog />
       <NewGroupModal />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}

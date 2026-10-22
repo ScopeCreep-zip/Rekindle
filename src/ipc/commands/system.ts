@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  DeepLinkOutcome, DeepLinkRequest, NetworkStatus, Preferences, SettingsTab,
+  NetworkStatus, Preferences, SettingsTab,
 } from "./types";
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
@@ -74,11 +74,6 @@ export const systemCommands = {
   /// Open an https link: the Host's review says the site will see our IP
   /// address; its commit opens the link. Resolves with the normalized URL.
   openExternalUrl: (url: string) => hostInvoke<string>("open_external_url", { url }),
-  // OS deep links — consent flow (src-tauri/src/deep_links.rs)
-  getPendingDeepLink: () => invoke<DeepLinkRequest | null>("get_pending_deep_link"),
-  confirmDeepLink: (requestId: string) =>
-    invoke<DeepLinkOutcome>("confirm_deep_link", { requestId }),
-  dismissDeepLink: (requestId: string) => invoke<void>("dismiss_deep_link", { requestId }),
   // Lifecycle — current FSM state, used to seed the derived lifecycle store.
   lifecycleCurrent: () => hostInvoke<LifecycleState>("lifecycle_current"),
 

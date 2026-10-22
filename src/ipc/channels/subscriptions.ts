@@ -18,7 +18,7 @@ import type {
   NotificationSubscriptionEvent,
 } from "./notification_events";
 import type { IntentReview, LifecycleState } from "../commands/dto";
-import type { DeepLinkRequest, SettingsTab } from "../commands/types";
+import type { SettingsTab } from "../commands/types";
 
 /// Where this window is in the host's event stream
 /// (`rekindle_types::subscription_events::Cursor`, plan D3.2).
@@ -268,13 +268,11 @@ export function subscribeIntentEvents(
   });
 }
 
-/// Fires when an OS deep link is held for consent. The payload is the
-/// same `DeepLinkRequest` that `getPendingDeepLink` returns.
-export function subscribeDeepLinkEvents(
-  onEvent: (event: DeepLinkRequest) => void,
-): Promise<UnlistenFn> {
-  return on<DeepLinkRequest>("deep-link-action", (payload) => {
-    onEvent(payload);
+/// A pairing link arrived from the OS and was refused
+/// (`WebviewEvent::PairingLinkRefused`): pairing codes are entered in Settings.
+export function subscribePairingLinkRefused(onRefused: () => void): Promise<UnlistenFn> {
+  return on<null>("pairing-link-refused", () => {
+    onRefused();
   });
 }
 
