@@ -118,7 +118,7 @@ impl DaemonGovernanceAdapter<'_> {
         };
         let merged = self
             .ctx
-            .community_runtime
+            .communities
             .hold_leases(community_id, leases, |l| dht_writes::key_of(&node, l));
         for lease in merged.surplus {
             dht_writes::release(&node, lease).await;
@@ -207,7 +207,7 @@ impl DaemonGovernanceAdapter<'_> {
             return;
         };
         let scope = self.ctx.unlock_scope_or_closed();
-        for lease in self.ctx.community_runtime.held_leases(community_id) {
+        for lease in self.ctx.communities.held_leases(community_id) {
             // Before each watch call: the unlock is ending, or the join
             // phase this runs in is out of budget (plan C4.L1b).
             if scope.is_closed() || rekindle_governance_runtime::phase_expired() {

@@ -216,7 +216,7 @@ pub(crate) async fn handle_join(
 
     // Seed the runtime cache with the state the join already merged, so
     // the first read afterwards does not go back to the DHT.
-    ctx.community_runtime
+    ctx.communities
         .set_governance_state(link.governance_key.as_str(), outcome.snapshot.gov_state);
     let membership = ctx
         .session
@@ -291,9 +291,7 @@ pub(crate) async fn handle_leave(
             );
             // The community's records go back to the pool; the last
             // borrower's release closes each one (plan C7.5).
-            let leases = ctx
-                .community_runtime
-                .take_leases(&membership.governance_key);
+            let leases = ctx.communities.take_leases(&membership.governance_key);
             // The subscription watches on the community's records go too.
             let watch_leases = ctx
                 .subscriptions
@@ -306,7 +304,7 @@ pub(crate) async fn handle_leave(
             }
             // The community's runtime state goes with it (its keepalive
             // stopped with the community scope above).
-            ctx.community_runtime.remove(&membership.governance_key);
+            ctx.communities.remove(&membership.governance_key);
             if let Err(e) = crate::host::session::forget_membership(
                 &ctx.session,
                 &ctx.db,

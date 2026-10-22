@@ -64,7 +64,7 @@ impl DaemonGovernanceAdapter<'_> {
                 // flattens rather than nesting two `Option`s.
                 let meta = self
                     .ctx
-                    .community_runtime
+                    .communities
                     .governance_state(community_id)
                     .and_then(|gov| gov.metadata.clone());
                 Some(GovernanceEvent::MetadataChanged {
@@ -107,7 +107,7 @@ impl DaemonGovernanceAdapter<'_> {
     /// `category_id` is meaningless to a client that has not seen the
     /// categories.
     fn category_displays(&self, community_id: &str) -> Vec<CategoryDisplay> {
-        let Some(gov) = self.ctx.community_runtime.governance_state(community_id) else {
+        let Some(gov) = self.ctx.communities.governance_state(community_id) else {
             return Vec::new();
         };
         let mut out: Vec<CategoryDisplay> = gov

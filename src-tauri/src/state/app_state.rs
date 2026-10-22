@@ -12,7 +12,7 @@ use rekindle_types::channel_keys::KeyScope;
 use tokio::sync::mpsc;
 
 use super::circuit::CircuitBreakerState;
-use super::community::CommunityState;
+use super::community::CommunityMap;
 use super::friend::IdentityState;
 use super::runtime::{NodeHandle, VoiceEngineHandle};
 use rekindle_channel::AutoModCompiledCache;
@@ -30,8 +30,9 @@ pub struct AppState {
         Arc<RwLock<Option<mpsc::Sender<rekindle_voice::receiver_report::VoiceReceiverReport>>>>,
     /// Identity (loaded after Stronghold unlock).
     pub identity: Arc<RwLock<Option<IdentityState>>>,
-    /// Joined communities.
-    pub communities: Arc<RwLock<HashMap<String, CommunityState>>>,
+    /// Joined communities: the Host's one store (`HostStores::communities`,
+    /// plan E3.1), shared through [`Self::host_stores`].
+    pub communities: CommunityMap,
     /// Veilid node handle (set after login/attach).
     pub node: Arc<RwLock<Option<NodeHandle>>>,
     /// W16.9b — outbound-only `TransportNode` adopted against the host's
@@ -247,7 +248,7 @@ impl Default for AppState {
             voice_packet_tx: Arc::new(RwLock::new(None)),
             voice_report_tx: Arc::new(RwLock::new(None)),
             identity: Arc::new(RwLock::new(None)),
-            communities: Arc::new(RwLock::new(HashMap::new())),
+            communities: rekindle_node::host::community::new_map(),
             node: Arc::new(RwLock::new(None)),
             transport: Arc::new(RwLock::new(None)),
             transport_session: Arc::new(parking_lot::RwLock::new(None)),
@@ -344,6 +345,7 @@ impl AppState {
             audit_chain: Arc::clone(&self.audit_chain),
             session: Arc::clone(&self.transport_session),
             lifecycle: Arc::clone(&self.lifecycle),
+            communities: Arc::clone(&self.communities),
         }
     }
 

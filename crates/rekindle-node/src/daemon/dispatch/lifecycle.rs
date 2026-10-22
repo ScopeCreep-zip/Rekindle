@@ -72,11 +72,9 @@ pub(crate) async fn daemon_stages(
     // The communities' governance and registry leases are held for the
     // session (plan C7.7c); a lease the community already holds goes back.
     for (community_id, leases) in resumed {
-        let merged = ctx
-            .community_runtime
-            .hold_leases(&community_id, leases, |l| {
-                rekindle_transport::broadcast::dht_writes::key_of(&transport, l)
-            });
+        let merged = ctx.communities.hold_leases(&community_id, leases, |l| {
+            rekindle_transport::broadcast::dht_writes::key_of(&transport, l)
+        });
         for lease in merged.surplus {
             rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
         }
@@ -155,7 +153,7 @@ pub(crate) async fn daemon_teardown(ctx: &DaemonContext) {
     if let Some(subscriptions) = subscriptions {
         subscriptions.shutdown().await;
     }
-    ctx.community_runtime.clear();
+    ctx.communities.clear();
     drop(ctx.broadcast_mgr.write().take());
     ctx.event_watch_tx.send_replace(None);
 }

@@ -130,6 +130,9 @@ pub(super) fn insert_community_into_state(state: &Arc<AppState>, community: Comm
         recent_member_joins: std::collections::VecDeque::new(),
         my_session_location: None,
         presence_policy: rekindle_types::presence::PresenceSharingPolicy::default(),
+        members: std::collections::HashMap::new(),
+        overflow_keys: Vec::new(),
+        synced_channels: std::collections::BTreeSet::new(),
     };
 
     // Centralized resolver: a hydrated snapshot must not downgrade a newer

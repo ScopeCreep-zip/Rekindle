@@ -27,7 +27,7 @@
 //! a validly-signed `MemberPresence` whose author is neither banned nor
 //! departed — evaluated once per poll tick by
 //! `parse_and_classify_row`, with the answer left in
-//! [`crate::daemon::community_runtime`].
+//! [`crate::host::community::store`].
 //!
 //! Everything downstream reads that materialised roster. Re-deriving it
 //! per request would verify every signature again to answer a question

@@ -74,6 +74,9 @@ pub struct HostStores {
     /// The one lifecycle FSM (plan E1.1): the Host makes every identity
     /// transition on it, and the GUI's login button reads it.
     pub lifecycle: Arc<DaemonLifecycle>,
+    /// The one community store (plan E3.1): the GUI's `AppState.communities`
+    /// is this `Arc` in Shell mode.
+    pub communities: super::community::CommunityMap,
 }
 
 impl Default for HostStores {
@@ -85,6 +88,7 @@ impl Default for HostStores {
             audit_chain: Arc::new(super::audit::ChainSlot::new(None)),
             session: Arc::new(RwLock::new(None)),
             lifecycle: Arc::new(DaemonLifecycle::new()),
+            communities: super::community::new_map(),
         }
     }
 }
@@ -274,9 +278,9 @@ impl Host {
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
             mode,
-            community_runtime: Arc::new(
-                crate::daemon::community_runtime::CommunityRuntimeMap::new(),
-            ),
+            communities: Arc::new(super::community::CommunityStore::new(Arc::clone(
+                &stores.communities,
+            ))),
             transport: RwLock::new(node.clone()),
             session: Arc::clone(&stores.session),
             root: root.clone(),

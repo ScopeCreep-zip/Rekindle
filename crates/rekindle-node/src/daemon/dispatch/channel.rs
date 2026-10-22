@@ -103,7 +103,7 @@ pub(crate) fn channel_overviews(
     ctx: &DaemonContext,
     community_id: &str,
 ) -> Vec<ChannelOverviewDisplay> {
-    let Some(gov) = ctx.community_runtime.governance_state(community_id) else {
+    let Some(gov) = ctx.communities.governance_state(community_id) else {
         return Vec::new();
     };
     let mut out: Vec<ChannelOverviewDisplay> = gov
@@ -141,7 +141,7 @@ fn resolve_channel(
     community_id: &str,
     needle: &str,
 ) -> Option<(rekindle_types::id::ChannelId, String)> {
-    let gov = ctx.community_runtime.governance_state(community_id)?;
+    let gov = ctx.communities.governance_state(community_id)?;
     gov.channels.iter().find_map(|(channel_id, channel)| {
         let hex_id = hex::encode(channel_id.0);
         (channel.name == needle || hex_id == needle).then_some((*channel_id, hex_id))
@@ -168,7 +168,7 @@ pub(crate) async fn handle_create(
     };
 
     let position = ctx
-        .community_runtime
+        .communities
         .governance_state(&membership.governance_key)
         .map_or(0, |gov| {
             gov.channels
@@ -461,7 +461,7 @@ pub(crate) async fn handle_send(
     .await
     {
         Ok(sent) => {
-            ctx.community_runtime
+            ctx.communities
                 .mark_channel_synced(&membership.governance_key, &channel_id);
 
             // PATH 2 — gossip the notification. The SMPL write above is
@@ -537,7 +537,7 @@ pub(crate) async fn handle_history(
     );
     // Author names come from the roster the presence poll materialised.
     let display_names: HashMap<String, String> = ctx
-        .community_runtime
+        .communities
         .members(&membership.governance_key)
         .into_iter()
         // A member who never set a name has no row to contribute; the
@@ -573,7 +573,7 @@ pub(crate) fn writer_slots(
     membership: &rekindle_transport::session::CommunityMembership,
 ) -> Vec<(u32, u32)> {
     let mut writers: Vec<(u32, u32)> = ctx
-        .community_runtime
+        .communities
         .members(&membership.governance_key)
         .into_values()
         .map(|member| (member.segment_index, member.subkey_index))

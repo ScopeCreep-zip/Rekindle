@@ -2,7 +2,7 @@
 //!
 //! The overlay is the daemon's live view of who is reachable right now,
 //! maintained by `SubscriptionManager`'s meshes. It is deliberately
-//! distinct from the roster in `community_runtime`: the roster answers
+//! distinct from the roster in the community store: the roster answers
 //! "who is a member" (registry rows, changes on join/leave/ban), the
 //! overlay answers "who can I reach" (gossip heartbeats, changes by the
 //! second). Conflating them is how an offline member gets treated as

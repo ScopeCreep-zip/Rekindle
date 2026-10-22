@@ -3,7 +3,7 @@
 //! Split by where the write lands:
 //!
 //! - Runtime-only (cached governance state, open records, overflow
-//!   chain) goes to [`crate::daemon::community_runtime`] and is not
+//!   chain) goes to [`crate::host::community::store`] and is not
 //!   persisted — it is rebuilt from the DHT.
 //! - Membership changes go to the identity's stores and its session
 //!   projection through `host::session` (plan D1), because losing them
@@ -29,7 +29,7 @@ impl DaemonGovernanceAdapter<'_> {
             &state,
         );
         self.ctx
-            .community_runtime
+            .communities
             .set_governance_state(community_id, state);
     }
 
@@ -103,7 +103,7 @@ impl DaemonGovernanceAdapter<'_> {
         keys: &[String],
     ) {
         self.ctx
-            .community_runtime
+            .communities
             .register_overflow_keys(community_id, keys);
     }
 

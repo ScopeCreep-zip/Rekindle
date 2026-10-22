@@ -90,7 +90,7 @@ impl DaemonGovernanceAdapter<'_> {
     }
 
     pub(super) fn governance_state_impl(&self, community_id: &str) -> Option<GovernanceState> {
-        self.ctx.community_runtime.governance_state(community_id)
+        self.ctx.communities.governance_state(community_id)
     }
 
     /// Channel-id → segment-0 record key, from merged governance.
@@ -109,7 +109,7 @@ impl DaemonGovernanceAdapter<'_> {
         membership: &SessionMembership,
     ) -> std::collections::HashMap<String, String> {
         let mut out = membership.channel_record_keys.clone();
-        if let Some(state) = self.ctx.community_runtime.governance_state(community_id) {
+        if let Some(state) = self.ctx.communities.governance_state(community_id) {
             for (channel_id, channel) in &state.channels {
                 if channel.record_key.is_empty() {
                     continue;
@@ -207,6 +207,6 @@ impl DaemonGovernanceAdapter<'_> {
     }
 
     pub(super) fn governance_overflow_keys_impl(&self, community_id: &str) -> Vec<String> {
-        self.ctx.community_runtime.overflow_keys(community_id)
+        self.ctx.communities.overflow_keys(community_id)
     }
 }

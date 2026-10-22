@@ -69,7 +69,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
 
     fn may_rotate(&self, community_id: &str, member: &PseudonymKey) -> bool {
         self.ctx
-            .community_runtime
+            .communities
             .governance_state(community_id)
             .is_some_and(|state| rekindle_governance::permissions::may_rotate_mek(member, &state))
     }

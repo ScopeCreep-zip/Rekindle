@@ -89,7 +89,7 @@ impl DaemonGossipAdapter {
     ) -> Option<Vec<u8>> {
         let node = self.transport()?;
         let (registry_key, subkey) = {
-            let members = self.ctx.community_runtime.members(community_id);
+            let members = self.ctx.communities.members(community_id);
             let record = members.get(peer_pseudonym)?;
             let registry_key = self.segment_registry_key(community_id, record.segment_index)?;
             (registry_key, record.subkey_index)
@@ -107,7 +107,7 @@ impl DaemonGossipAdapter {
 
         let banned: HashSet<String> = self
             .ctx
-            .community_runtime
+            .communities
             .governance_state(community_id)
             .map(|s| s.bans.iter().map(|p| hex::encode(p.0)).collect())
             .unwrap_or_default();
@@ -138,7 +138,7 @@ impl DaemonGossipAdapter {
                 .map(|m| m.registry_key.clone());
         }
         self.ctx
-            .community_runtime
+            .communities
             .governance_state(community_id)?
             .segments
             .iter()

@@ -81,7 +81,7 @@ impl DaemonPresenceAdapter {
         };
         let mut slots: Vec<u32> = self
             .ctx
-            .community_runtime
+            .communities
             .members(community_id)
             .into_values()
             .filter(|member| member.segment_index == segment)
@@ -135,7 +135,7 @@ impl DaemonPresenceAdapter {
                 slot_range_end: rekindle_types::dht_layout::SLOTS_PER_SEGMENT,
             });
         }
-        if let Some(state) = self.ctx.community_runtime.governance_state(community_id) {
+        if let Some(state) = self.ctx.communities.governance_state(community_id) {
             for seg in &state.segments {
                 if seg.segment_index == 0 {
                     continue;
@@ -159,14 +159,14 @@ impl DaemonPresenceAdapter {
     /// authority, so this is a local read, not a DHT one.
     pub(super) fn governance_bans_impl(&self, community_id: &str) -> HashSet<String> {
         self.ctx
-            .community_runtime
+            .communities
             .governance_state(community_id)
             .map(|s| s.bans.iter().map(|p| hex::encode(p.0)).collect())
             .unwrap_or_default()
     }
 
     pub(super) fn member_roles_impl(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
-        self.ctx.community_runtime.member_roles(community_id)
+        self.ctx.communities.member_roles(community_id)
     }
 
     pub(super) fn governance_role_assignments_impl(
@@ -174,7 +174,7 @@ impl DaemonPresenceAdapter {
         community_id: &str,
     ) -> HashMap<PseudonymKey, HashSet<RoleId>> {
         self.ctx
-            .community_runtime
+            .communities
             .governance_state(community_id)
             .map(|s| s.role_assignments.clone())
             .unwrap_or_default()

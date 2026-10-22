@@ -134,7 +134,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         // held, the record is open with its sticky writer. Otherwise borrow
         // it and hand the lease to the community. A raw re-open here would
         // replace the held record's writer and safety selection (V5).
-        if self.ctx.community_runtime.holds_registry(community_id) {
+        if self.ctx.communities.holds_registry(community_id) {
             return Ok(Some(descriptor.registry_key));
         }
         let lease = rekindle_transport::broadcast::dht_writes::acquire_str(
@@ -144,7 +144,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         )
         .await
         .map_err(|e| format!("open registry: {e}"))?;
-        let merged = self.ctx.community_runtime.hold_leases(
+        let merged = self.ctx.communities.hold_leases(
             community_id,
             rekindle_records::lease::CommunityLeases {
                 registry: Some(lease),
@@ -187,7 +187,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         // `persist_discovered_member_rows`, and bans come from the
         // governance CRDT rather than a second local copy.
         self.ctx
-            .community_runtime
+            .communities
             .set_member_roles(community_id, merged_member_roles);
     }
 
@@ -352,9 +352,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
     }
 
     fn mark_initial_sync_done(&self, community_id: &str) {
-        self.ctx
-            .community_runtime
-            .mark_channel_synced(community_id, "");
+        self.ctx.communities.mark_channel_synced(community_id, "");
     }
 
     fn mark_pending_sync(&self, _community_id: &str, _channel_id: &str, _attempt: u32) {}

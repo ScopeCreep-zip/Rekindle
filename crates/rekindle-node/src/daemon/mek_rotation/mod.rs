@@ -195,7 +195,7 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
                     let kicker =
                         rekindle_types::id::PseudonymKey::from_hex_lossy(kicker_pseudonym_hex);
                     let authorized = ctx
-                        .community_runtime
+                        .communities
                         .governance_state(&request.community_id)
                         .is_some_and(|state| {
                             rekindle_types::permissions::Permissions(

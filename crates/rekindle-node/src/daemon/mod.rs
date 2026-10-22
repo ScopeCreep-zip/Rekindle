@@ -14,7 +14,6 @@
 
 pub mod clients;
 pub mod community_rpc;
-pub mod community_runtime;
 pub mod dispatch;
 pub mod event_forward;
 pub mod gossip;

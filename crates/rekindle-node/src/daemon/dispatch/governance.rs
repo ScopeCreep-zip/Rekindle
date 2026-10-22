@@ -18,7 +18,7 @@ pub(crate) fn role_displays(
     ctx: &DaemonContext,
     community_id: &str,
 ) -> Vec<rekindle_types::display::RoleDisplay> {
-    let Some(gov) = ctx.community_runtime.governance_state(community_id) else {
+    let Some(gov) = ctx.communities.governance_state(community_id) else {
         return Vec::new();
     };
     let mut out: Vec<rekindle_types::display::RoleDisplay> = gov
@@ -376,7 +376,7 @@ pub(crate) fn handle_ban_list(
         return e;
     }
     let bans: Vec<String> = ctx
-        .community_runtime
+        .communities
         .governance_state(community)
         .map(|s| s.bans.iter().map(|p| hex::encode(p.0)).collect())
         .unwrap_or_default();
@@ -471,7 +471,7 @@ pub(crate) fn handle_invite_list(
     // revoked — the manifest list could not say that.
     let now = ctx.clock.now_secs();
     let invites: Vec<serde_json::Value> = ctx
-        .community_runtime
+        .communities
         .governance_state(&membership.governance_key)
         .map(|gov| {
             gov.invites

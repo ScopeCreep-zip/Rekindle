@@ -40,8 +40,7 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         .map(|m| {
             (
                 m.governance_key.clone(),
-                u32::try_from(ctx.community_runtime.member_count(&m.governance_key))
-                    .unwrap_or(u32::MAX),
+                u32::try_from(ctx.communities.member_count(&m.governance_key)).unwrap_or(u32::MAX),
             )
         })
         .collect();
@@ -53,7 +52,7 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         .iter()
         .map(|m| {
             let n = ctx
-                .community_runtime
+                .communities
                 .governance_state(&m.governance_key)
                 .map_or(0, |gov| {
                     u32::try_from(gov.channels.len()).unwrap_or(u32::MAX)
@@ -65,7 +64,7 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
     let metadata: HashMap<String, rekindle_transport::CommunityMetaSummary> = memberships
         .iter()
         .filter_map(|m| {
-            let gov = ctx.community_runtime.governance_state(&m.governance_key)?;
+            let gov = ctx.communities.governance_state(&m.governance_key)?;
             let meta = gov.metadata.as_ref()?;
             Some((
                 m.governance_key.clone(),
@@ -103,16 +102,11 @@ pub(crate) fn handle_info(
         Ok(m) => m,
         Err(e) => return e,
     };
-    let member_count = u32::try_from(
-        ctx.community_runtime
-            .member_count(&membership.governance_key),
-    )
-    .unwrap_or(u32::MAX);
+    let member_count =
+        u32::try_from(ctx.communities.member_count(&membership.governance_key)).unwrap_or(u32::MAX);
     let channels = super::super::channel::channel_overviews(ctx, &membership.governance_key);
     let roles = super::super::governance::role_displays(ctx, &membership.governance_key);
-    let gov = ctx
-        .community_runtime
-        .governance_state(&membership.governance_key);
+    let gov = ctx.communities.governance_state(&membership.governance_key);
     let meta = gov
         .as_ref()
         .map(|gov| rekindle_transport::CommunityMetaSummary {

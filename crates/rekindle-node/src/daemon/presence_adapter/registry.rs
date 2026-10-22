@@ -12,7 +12,7 @@ use std::collections::HashMap;
 
 use rekindle_presence::deps::{DiscoveredMemberRow, PresenceError, RowWrite};
 
-use crate::daemon::community_runtime::MemberRecord;
+use crate::host::community::MemberRecord;
 
 use super::DaemonPresenceAdapter;
 
@@ -141,9 +141,7 @@ impl DaemonPresenceAdapter {
             members = members.len(),
             "presence poll: roster refreshed"
         );
-        self.ctx
-            .community_runtime
-            .set_members(community_id, members);
+        self.ctx.communities.set_members(community_id, members);
     }
 
     /// Pseudonyms in `candidates` not already in the roster.
@@ -156,7 +154,7 @@ impl DaemonPresenceAdapter {
         community_id: &str,
         candidates: Vec<String>,
     ) -> Vec<String> {
-        let known = self.ctx.community_runtime.members(community_id);
+        let known = self.ctx.communities.members(community_id);
         candidates
             .into_iter()
             .filter(|pseudonym| !known.contains_key(pseudonym))

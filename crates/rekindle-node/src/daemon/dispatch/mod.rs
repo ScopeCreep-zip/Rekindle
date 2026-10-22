@@ -165,10 +165,10 @@ pub struct DaemonContext {
             >,
         >,
     >,
-    /// Per-community runtime state backing the governance adapter —
-    /// cached CRDT `GovernanceState` and open-record tracking. Not
-    /// persisted; see `daemon::community_runtime`.
-    pub community_runtime: Arc<crate::daemon::community_runtime::CommunityRuntimeMap>,
+    /// The Host's one community store (plan E3.1, `host::community`): the
+    /// cached CRDT `GovernanceState`, leases, roster and roles, over the
+    /// map the GUI's `AppState.communities` shares in Shell mode.
+    pub communities: Arc<crate::host::community::CommunityStore>,
     /// Departure-triggered MEK rotations, queued for the worker that
     /// owns the daemon's `Arc<DaemonContext>`.
     ///

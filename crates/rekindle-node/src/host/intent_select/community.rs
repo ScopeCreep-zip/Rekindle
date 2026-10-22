@@ -216,11 +216,10 @@ fn community(ctx: &DaemonContext, target: &str) -> Result<(String, String), IpcR
         .map(|m| (m.governance_key, m.community_name))
 }
 
-/// The members a community action reaches (its validated roster).
+/// The members a community action reaches (its known members, the
+/// validated roster in the daemon).
 fn members(ctx: &DaemonContext, community_id: &str) -> Notifies {
-    Notifies::Members(
-        u32::try_from(ctx.community_runtime.member_count(community_id)).unwrap_or(u32::MAX),
-    )
+    Notifies::Members(u32::try_from(ctx.communities.member_count(community_id)).unwrap_or(u32::MAX))
 }
 
 fn channel_name(ctx: &DaemonContext, community_id: &str, channel_id: &str) -> String {
@@ -230,7 +229,7 @@ fn channel_name(ctx: &DaemonContext, community_id: &str, channel_id: &str) -> St
         .map(rekindle_types::id::ChannelId);
     parsed
         .and_then(|id| {
-            ctx.community_runtime
+            ctx.communities
                 .governance_state(community_id)
                 .and_then(|state| state.channels.get(&id).map(|c| c.name.clone()))
         })
@@ -244,7 +243,7 @@ fn role(
     role_id: u32,
 ) -> Result<(String, u32), IpcResponse> {
     let state = ctx
-        .community_runtime
+        .communities
         .governance_state(community_id)
         .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
     let id = rekindle_types::id::RoleId::from_legacy_u32(role_id);
@@ -264,15 +263,15 @@ fn leave_escalations(
     community_id: &str,
 ) -> Result<Vec<Escalation>, IpcResponse> {
     let state = ctx
-        .community_runtime
+        .communities
         .governance_state(community_id)
         .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
     let me = pseudonym(&ctx.my_pseudonym(community_id))
         .ok_or_else(|| unavailable("our pseudonym", "not in the community"))?;
     let members: Vec<_> = ctx
-        .community_runtime
-        .members(community_id)
-        .keys()
+        .communities
+        .known_members(community_id)
+        .iter()
         .filter_map(|key| pseudonym(key))
         .collect();
     Ok(rekindle_governance::intent_facts::leave_escalations(

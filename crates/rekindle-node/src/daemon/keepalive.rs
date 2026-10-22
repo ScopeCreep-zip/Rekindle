@@ -9,13 +9,13 @@ use super::dispatch::DaemonContext;
 
 /// Start the community's keepalive, once per community per unlock.
 pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
-    if !ctx.community_runtime.start_keepalive_once(community_id) {
+    if !ctx.communities.start_keepalive_once(community_id) {
         return;
     }
     let Some(node) = ctx.transport.read().clone() else {
         return;
     };
-    let runtime = Arc::clone(&ctx.community_runtime);
+    let runtime = Arc::clone(&ctx.communities);
     let rng = Arc::clone(&ctx.rng);
     let id = community_id.to_string();
     ctx.community_scope(community_id).spawn_with_token_or_drop(
