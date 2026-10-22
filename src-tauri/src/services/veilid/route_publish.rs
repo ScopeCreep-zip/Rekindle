@@ -56,14 +56,14 @@ pub(crate) async fn run(
         super::emit_network_status(&app_handle, &state);
         if let RouteState::Available { blob } = route {
             match class {
-                RouteClass::General => republish_general(&app_handle, &state, &blob).await,
+                RouteClass::General => republish_general(&state, &blob).await,
                 RouteClass::Media => republish_media(&state),
             }
         }
     }
 }
 
-async fn republish_general(app_handle: &tauri::AppHandle, state: &Arc<AppState>, blob: &[u8]) {
+async fn republish_general(state: &Arc<AppState>, blob: &[u8]) {
     // Gossip peers re-learn our route from the presence rows and the next
     // PresenceUpdate, which the initial-sync flag re-broadcasts.
     {
@@ -77,7 +77,9 @@ async fn republish_general(app_handle: &tauri::AppHandle, state: &Arc<AppState>,
     rewrite_presence_rows(state).await;
     crate::services::voice_adapter::reannounce_voice_route(state);
     // A key request sent while routeless had no way back to us.
-    crate::services::community::mek_rotation::recover_behind_meks(app_handle, state);
+    if let Ok(governance) = crate::state_helpers::host_governance(state) {
+        governance.recover_behind_meks();
+    }
     tracing::info!(blob_len = blob.len(), "own route republished");
 }
 

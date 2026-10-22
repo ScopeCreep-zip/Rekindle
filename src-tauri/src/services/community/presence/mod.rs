@@ -1,6 +1,5 @@
 mod poll;
 pub(crate) mod registry;
-mod sync;
 
 use std::sync::Arc;
 
@@ -28,4 +27,3 @@ pub fn current_presence_status(state: &Arc<AppState>, _community_id: &str) -> &'
 
 pub use poll::{nudge_presence_poll, presence_poll_tick_public, start_presence_poll};
 pub use registry::write_our_presence;
-pub use sync::run_initial_sync;

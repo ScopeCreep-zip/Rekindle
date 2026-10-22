@@ -1,11 +1,8 @@
-//! Phase 23.D.4 — community-side sync helpers extracted from
-//! `sync_service.rs` to keep that file under the 500-LoC cap.
-//! Mesh-presence re-announce + per-channel watermark sync. Governance is
-//! never polled (D4): a governance record's ValueChange rebuilds that one
-//! community (plan E3.1 C1).
+//! A watched community record's change. Nothing here polls (D4): the
+//! periodic re-announce and sync requests are the Host's
+//! (`adapters::governance::community_sync`, plan E3.1 C2b), and a governance
+//! record's ValueChange rebuilds that one community (plan E3.1 C1).
 
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 
 use crate::state::AppState;
@@ -13,37 +10,6 @@ use crate::state_helpers;
 use rekindle_db::Db;
 
 use super::sync_service::request_channel_sync;
-
-/// Sync communities by re-announcing our mesh presence.
-pub(super) async fn sync_communities(
-    state: &Arc<AppState>,
-    pool: &Db,
-    stop: &tokio_util::sync::CancellationToken,
-) -> Result<(), String> {
-    if state_helpers::safe_routing_context(state).is_none() {
-        return Ok(()); // Not connected yet
-    }
-
-    let communities_with_governance = state_helpers::communities_with_governance_keys(state);
-    for (community_id, _) in &communities_with_governance {
-        if stop.is_cancelled() {
-            return Ok(());
-        }
-        sync_community_channels(state, pool, community_id, stop).await;
-        if stop.is_cancelled() {
-            return Ok(());
-        }
-        if let Err(e) = crate::services::community::rejoin_community(state, community_id).await {
-            tracing::trace!(community = %community_id, error = %e, "community rejoin failed");
-        }
-    }
-
-    tracing::debug!(
-        communities = communities_with_governance.len(),
-        "community sync complete"
-    );
-    Ok(())
-}
 
 /// Route a watched record's change: a governance record (or a Plate Gate
 /// segment's) to the Host's governance arm, which rebuilds that community
@@ -131,72 +97,5 @@ pub(crate) async fn handle_community_record_change(
             Ok(true)
         }
         None => Ok(false),
-    }
-}
-
-fn report_fingerprint(seqs: &[Option<u32>]) -> u64 {
-    let mut hasher = DefaultHasher::new();
-    seqs.hash(&mut hasher);
-    hasher.finish()
-}
-
-async fn sync_community_channels(
-    state: &Arc<AppState>,
-    pool: &Db,
-    community_id: &str,
-    stop: &tokio_util::sync::CancellationToken,
-) {
-    let Ok(record_pool) = state_helpers::record_pool(state) else {
-        return;
-    };
-    let channel_pairs = {
-        let communities = state.communities.read();
-        let Some(cs) = communities.get(community_id) else {
-            return;
-        };
-        cs.channel_log_keys
-            .iter()
-            .map(|(channel_id, record_key)| (channel_id.clone(), record_key.clone()))
-            .collect::<Vec<_>>()
-    };
-
-    for (channel_id, record_key) in channel_pairs {
-        if stop.is_cancelled() {
-            return;
-        }
-        let report = match record_pool
-            .inspect_once(
-                &record_key,
-                None,
-                rekindle_records::port::ReportScope::UpdateGet,
-            )
-            .await
-        {
-            Ok(report) => report,
-            Err(e) => {
-                tracing::trace!(
-                    community = %community_id,
-                    channel = %channel_id,
-                    error = %e,
-                    "channel record inspect failed"
-                );
-                continue;
-            }
-        };
-        let fingerprint = report_fingerprint(&report.network_seqs);
-        let should_request_sync = {
-            let mut communities = state.communities.write();
-            let Some(cs) = communities.get_mut(community_id) else {
-                return;
-            };
-            let previous = cs
-                .open_community_records
-                .channel_report_fingerprints
-                .insert(channel_id.clone(), fingerprint);
-            previous.is_some_and(|prev| prev != fingerprint)
-        };
-        if should_request_sync {
-            request_channel_sync(state, pool, community_id, &channel_id).await;
-        }
     }
 }

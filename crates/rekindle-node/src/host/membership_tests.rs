@@ -121,3 +121,66 @@ async fn a_peer_join_is_known_and_counts_our_invite() {
     assert_eq!(uses, Some(1));
     host.shutdown().await.unwrap();
 }
+
+/// The key catch-up (plan E3.1 C2b): a community whose key is absent or
+/// behind governance's generation is asked for; once the key at that
+/// generation is held, nothing is.
+#[tokio::test]
+async fn recover_behind_meks_asks_only_for_an_absent_or_behind_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        c.mek_generation = 3;
+        c.my_pseudonym_key = Some("me".into());
+    }
+    let governance = host.governance();
+    assert_eq!(governance.behind_meks(), vec![("c1".into(), "me".into())]);
+
+    let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
+        &host.ctx.mek_cache,
+    ));
+    let at = |generation| rekindle_transport::crypto::mek::Mek::from_bytes([7; 32], generation);
+    rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(2));
+    assert_eq!(
+        governance.behind_meks().len(),
+        1,
+        "generation 2 is behind 3"
+    );
+    rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(3));
+    assert!(
+        governance.behind_meks().is_empty(),
+        "the current key is held"
+    );
+    governance.recover_behind_meks();
+    host.shutdown().await.unwrap();
+}
+
+/// The sync loop's community phase (plan E3.1 C2b): one pass asks for
+/// every channel of the community since our newest message, and marks
+/// each request pending.
+#[tokio::test]
+async fn the_community_phase_requests_every_channel() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        c.my_pseudonym_key = Some("me".into());
+        c.channel_log_keys.insert("ch-a".into(), "rec-a".into());
+        c.channel_log_keys.insert("ch-b".into(), "rec-b".into());
+    }
+    host.governance().sync_community("c1", &[1, 2, 3]).await;
+    let pending: std::collections::BTreeSet<String> = host.ctx.communities.map().read()["c1"]
+        .pending_syncs
+        .keys()
+        .cloned()
+        .collect();
+    assert_eq!(pending, ["ch-a".to_string(), "ch-b".to_string()].into());
+    host.shutdown().await.unwrap();
+}

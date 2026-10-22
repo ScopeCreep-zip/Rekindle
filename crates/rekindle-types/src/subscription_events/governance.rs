@@ -96,6 +96,12 @@ pub enum GovernanceEvent {
         code_hash: String,
     },
 
+    /// An invite we created reached its expiry (the Host's timer).
+    InviteExpired {
+        community: String,
+        code_hash: String,
+    },
+
     /// A channel's permission overwrites changed.
     ChannelPermissionsChanged { community: String, channel: String },
 
@@ -127,6 +133,7 @@ impl GovernanceEvent {
             | Self::InviteCreated { community, .. }
             | Self::InviteUsed { community, .. }
             | Self::InviteRevoked { community, .. }
+            | Self::InviteExpired { community, .. }
             | Self::ChannelPermissionsChanged { community, .. }
             | Self::GovernanceSubkeyUpdated { community, .. }
             | Self::GovernanceRebuilt { community } => community,

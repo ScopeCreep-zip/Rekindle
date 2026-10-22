@@ -13,7 +13,8 @@
 //! restore reads back); `registry` the discovered members and the stored registry keypair
 //! (B2d); `membership` / `membership_route` the membership control
 //! messages and `state_builder` a created community's state (B2e); `mek` the key installs, which move to the MEK
-//! adapters at E3.5; `deps_impl` is the single trait impl and delegates.
+//! adapters at E3.5; `community_sync` the sync loop's community phase, `invite_expiry` the
+//! invite expiry timer and `mek_recovery` the key catch-up (C2b); `deps_impl` is the single trait impl and delegates.
 
 use std::sync::Arc;
 
@@ -22,13 +23,16 @@ use rekindle_transport::TransportNode;
 
 use crate::daemon::dispatch::DaemonContext;
 
+pub(crate) mod community_sync;
 pub mod deps_impl;
 mod dht;
 pub use dht::recent_channel_messages;
 mod events;
+mod invite_expiry;
 mod lifecycle;
 pub(crate) mod loader;
 mod mek;
+mod mek_recovery;
 mod membership;
 mod membership_route;
 pub mod projection;

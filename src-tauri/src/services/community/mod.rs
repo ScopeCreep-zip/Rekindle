@@ -56,13 +56,11 @@ pub use gossip::{
     send_to_channel_peers, send_to_channel_peers_now, send_to_mesh, start_peer_reliability_flush,
 };
 pub use governance::write_entry;
-pub use join::{join_community, rejoin_community};
+pub use join::join_community;
 pub use mek_rotation::{handle_incoming_mek_transfer, spawn_mek_request_with_retry};
 pub use mek_rotation_orchestrators::{handle_request_mek, spawn_departure_rotations};
 pub use message_notifications_handle::handle_message_notification;
 pub use notifications::{emit_message_notification, should_emit_message_notification};
-pub use presence::{
-    current_presence_status, presence_poll_tick_public, run_initial_sync, write_our_presence,
-};
+pub use presence::{current_presence_status, presence_poll_tick_public, write_our_presence};
 pub use stage::{list_hand_raises, persist_hand_raise};
 pub use watch::mark_watch_inactive;

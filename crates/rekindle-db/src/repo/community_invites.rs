@@ -62,6 +62,23 @@ pub fn uses(
     .optional()
 }
 
+/// Delete our invite whose code hashes to `code_hash` (it expired).
+///
+/// # Errors
+/// The delete failed.
+pub fn delete(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    code_hash: &str,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM community_invites \
+         WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3",
+        params![owner_key, community_id, code_hash],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

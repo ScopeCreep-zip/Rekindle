@@ -78,7 +78,7 @@ pub fn install_mek(
 /// Load every joined community's latest community and channel keys from
 /// the vault through [`install_mek`] (the convergence rule, so a restore
 /// racing a live rotation cannot clobber it). A key the vault lacks stays
-/// absent: `mek_rotation::recover_behind_meks` re-acquires it from a peer;
+/// absent: `HostGovernance::recover_behind_meks` re-acquires it from a peer;
 /// minting one here would fork the community.
 pub fn restore_meks_from_vault(state: &Arc<AppState>) {
     let scopes: Vec<(String, KeyScope)> = state

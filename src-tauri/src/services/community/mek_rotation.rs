@@ -316,42 +316,6 @@ pub fn handle_incoming_mek_transfer(
     .map_err(|e| e.to_string())
 }
 
-/// Architecture §7.3 login catch-up: re-acquire any community MEK that is
-/// ABSENT or BEHIND the governance generation, rather than waiting for
-/// incidental incoming traffic to trigger acquisition. A no-op when every
-/// key is current, so it runs whenever our general route is (re)published:
-/// the request's replies need a route to reach us. `c.mek_generation` is the
-/// authoritative target (restored from SQLite at login, never clobbered).
-///
-/// Every member takes the same path: `spawn_community_mek_recovery`
-/// requests first regardless and mints only if the deterministic election
-/// picks this node (under `o_cnt: 0` a creator-only recovery could never
-/// recover a community whose creator never returns).
-pub(crate) fn recover_behind_meks(app_handle: &tauri::AppHandle, state: &Arc<AppState>) {
-    let behind: Vec<(String, String)> = {
-        let communities = state.communities.read();
-        communities
-            .values()
-            .filter_map(|c| {
-                let cached_gen = crate::state_helpers::current_mek(
-                    state,
-                    &c.id,
-                    rekindle_types::channel_keys::KeyScope::Community,
-                )
-                .map(|mek| mek.generation());
-                let is_behind = cached_gen.is_none_or(|g| g < c.mek_generation);
-                if !is_behind {
-                    return None;
-                }
-                c.my_pseudonym_key.clone().map(|p| (c.id.clone(), p))
-            })
-            .collect()
-    };
-    for (cid, pseudonym) in behind {
-        spawn_community_mek_recovery(app_handle.clone(), state.clone(), cid, pseudonym);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{cascade_cache_hit, should_last_resort_mint};

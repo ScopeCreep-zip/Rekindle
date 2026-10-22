@@ -49,7 +49,7 @@ impl ShellHooks for ShellSession {
     }
 
     fn own_records(&self, keys: &OwnRecordKeys) {
-        unlocked::own_records(&self.state, self.app.as_ref(), keys);
+        unlocked::own_records(&self.state, keys);
     }
 
     async fn ending(&self) {
@@ -97,6 +97,18 @@ impl ShellHooks for ShellSession {
 
     fn on_governance_projected(&self, community_id: &str, projected: &GovernanceProjected) {
         governance::on_projected(&self.state, community_id, *projected);
+    }
+
+    fn spawn_community_mek_recovery(&self, community_id: &str, requester_pseudonym: &str) {
+        let Some(app) = &self.app else {
+            return;
+        };
+        crate::services::community::mek_rotation::spawn_community_mek_recovery(
+            app.clone(),
+            self.state.clone(),
+            community_id.to_string(),
+            requester_pseudonym.to_string(),
+        );
     }
 
     fn spawn_presence_poll_tick(&self, community_id: &str) {

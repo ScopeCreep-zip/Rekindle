@@ -1,45 +1,13 @@
 use std::sync::Arc;
 
-use tokio_util::sync::CancellationToken;
-
 use crate::db_helpers::db_call;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
 
-/// Start the periodic community sync (→ E3.1). A friend's presence and
-/// chain arrive by their watches (plan E2.5, D23): nothing here reads them.
-pub async fn start_sync_loop(state: Arc<AppState>, pool: Db, stop: CancellationToken) {
-    tracing::info!("sync service started");
-
-    // Start at 10s to give gossip overlay setup a chance to complete before
-    // the first rejoin attempt. This ensures peers are discovered via presence
-    // scanning before we try to broadcast MemberJoinRequest.
-    let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
-    let mut tick_count: u32 = 0;
-
-    // The tick's phase runs outside the `select!` and checks the token
-    // between items: it is a series of Veilid calls, which are never
-    // dropped mid-flight (plan C4.L1). A phase waiting on a record-pool call
-    // is released by the pool's drain at logout (C7.6g).
-    while stop.run_until_cancelled(interval.tick()).await.is_some() {
-        tick_count += 1;
-        // After the first 3 rapid ticks, switch to the normal 30s cadence
-        if tick_count == 3 {
-            interval = tokio::time::interval(std::time::Duration::from_secs(30));
-        }
-        if let Err(e) =
-            crate::services::sync_communities::sync_communities(&state, &pool, &stop).await
-        {
-            tracing::warn!(error = %e, "community sync failed");
-        }
-        if stop.is_cancelled() {
-            break;
-        }
-    }
-    tracing::info!("sync service shutting down");
-}
-
+/// Ask the mesh for a channel's messages since our newest (a watched
+/// channel record changed). The periodic community phase is the Host's
+/// (`adapters::governance::community_sync`, plan E3.1 C2b).
 pub(super) async fn request_channel_sync(
     state: &Arc<AppState>,
     pool: &Db,

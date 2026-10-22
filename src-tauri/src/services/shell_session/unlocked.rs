@@ -106,12 +106,6 @@ fn network_stages(
     services::community::start_delivery_settle(Arc::clone(state), scope)?;
     services::community::start_event_reminders(Arc::clone(state), pool.clone(), scope)?;
 
-    // The sync loop: its community phase (→ E3.1).
-    let (sync_state, sync_pool) = (Arc::clone(state), pool.clone());
-    scope.spawn_with_token("sync service", |stop| {
-        services::sync_service::start_sync_loop(sync_state, sync_pool, stop)
-    })?;
-
     // The desktop's reaction to our routes (→ E3.1/E3.4/E4.1).
     let (route_app, route_state) = (app.clone(), Arc::clone(state));
     scope.spawn_with_token("route reaction", |stop| {
@@ -175,20 +169,15 @@ async fn wait_for_network_ready(state: &SharedState) -> bool {
 
 /// The Host's own records are up: the keys into the `NodeHandle` projection
 /// its readers use and the community keys we are behind on (→ E3.1).
-pub(super) fn own_records(
-    state: &SharedState,
-    app: Option<&tauri::AppHandle>,
-    keys: &OwnRecordKeys,
-) {
+pub(super) fn own_records(state: &SharedState, keys: &OwnRecordKeys) {
     if let Some(nh) = state.node.write().as_mut() {
         nh.profile_dht_key.clone_from(&keys.profile);
         nh.friend_list_dht_key.clone_from(&keys.friend_list);
         nh.mailbox_dht_key.clone_from(&keys.mailbox);
     }
-    let Some(app) = app else {
-        return;
-    };
     if state_helpers::our_route_blob(state).is_some() {
-        services::community::mek_rotation::recover_behind_meks(app, state);
+        if let Ok(governance) = state_helpers::host_governance(state) {
+            governance.recover_behind_meks();
+        }
     }
 }

@@ -94,6 +94,10 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(b"invite_rev|");
             h.update(code_hash.as_bytes());
         }
+        GovernanceEvent::InviteExpired { code_hash, .. } => {
+            h.update(b"invite_exp|");
+            h.update(code_hash.as_bytes());
+        }
         GovernanceEvent::GovernanceRebuilt { .. } => {
             h.update(b"rebuilt");
         }

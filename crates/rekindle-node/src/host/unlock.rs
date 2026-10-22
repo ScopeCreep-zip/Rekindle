@@ -183,6 +183,15 @@ pub(crate) async fn run(
         return fail(ctx, IpcResponse::error(500, e)).await;
     }
 
+    // 3f. The community sync and invite expiry timer (plan E3.1 C2b).
+    if let Err(e) = super::adapters::governance::community_sync::start(ctx, &scope) {
+        return fail(
+            ctx,
+            IpcResponse::error(500, format!("unlock interrupted: {e}")),
+        )
+        .await;
+    }
+
     // 4. Daemon-only stages.
     if ctx.mode == HostMode::Daemon {
         if let Err(refused) = crate::daemon::dispatch::daemon_stages(ctx, &scope).await {

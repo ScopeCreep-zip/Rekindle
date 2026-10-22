@@ -199,6 +199,7 @@ export type GovernanceEvent =
     }
   | { inviteUsed: { community: string; codeHash: string; uses: number } }
   | { inviteRevoked: { community: string; codeHash: string } }
+  | { inviteExpired: { community: string; codeHash: string } }
   | { channelPermissionsChanged: { community: string; channel: string } }
   | {
       governanceSubkeyUpdated: {

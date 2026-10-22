@@ -300,8 +300,8 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
     return;
   }
 
-  if ("inviteRevoked" in g) {
-    const { community, codeHash } = g.inviteRevoked;
+  if ("inviteRevoked" in g || "inviteExpired" in g) {
+    const { community, codeHash } = "inviteRevoked" in g ? g.inviteRevoked : g.inviteExpired;
     setCommunityState("communityInvites", community, (prev) =>
       (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
     );
