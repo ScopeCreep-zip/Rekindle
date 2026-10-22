@@ -15,6 +15,7 @@ use rekindle_netsim::Netsim;
 use rekindle_node::host::{claim, Host, HostConfig, HostStores, TransportSource};
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
 use rekindle_types::subscription_events::{FriendEvent, StreamFrame, SubscriptionEvent};
+use tracing::Instrument;
 
 /// Every simulated identity's passphrase.
 pub const PASSPHRASE: &str = "netsim passphrase";
@@ -59,11 +60,9 @@ fn caller() -> Caller {
 /// `n` nodes on one network for run `seed`, each running a Host; the pump
 /// is started (every node attached).
 pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
-    // `RUST_LOG` shows a scenario's Host logs (`--nocapture`).
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_test_writer()
-        .try_init();
+    // `RUST_LOG` shows a scenario's Host logs (`--nocapture`); the run's
+    // WARN and ERROR events are counted per node ([`crate::logs`]).
+    crate::logs::install();
     // A Host's database thread is work the paused clock waits for (S8).
     let _ = rekindle_db::watch_calls(&SimDb);
     let (sim, nodes) = Netsim::nodes(n, seed);
@@ -88,6 +87,7 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
             rng: Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>,
             shell: None,
         })
+        .instrument(node_span(node.index))
         .await
         .expect("host starts");
         hosts.push(SimNode {
@@ -100,6 +100,11 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
     let _pump = sim.start();
     sim.quiesce().await;
     (sim, hosts)
+}
+
+/// The span a node's Host work runs in ([`crate::logs::NODE_SPAN`]).
+fn node_span(node: usize) -> tracing::Span {
+    tracing::info_span!(target: "netsim", "netsim_node", node = node as u64)
 }
 
 /// The database calls the simulation counts ([`rekindle_netsim::db_call`]).
@@ -125,6 +130,12 @@ fn prove(review: &IntentReview) -> IntentProof {
 impl SimNode {
     /// Send `request`; prove and commit it whenever the gate holds it.
     pub async fn call(&self, request: IpcRequest) -> Result<serde_json::Value, Refused> {
+        self.call_inner(request)
+            .instrument(node_span(self.index))
+            .await
+    }
+
+    async fn call_inner(&self, request: IpcRequest) -> Result<serde_json::Value, Refused> {
         let mut answer = self.host.call(caller(), request).await;
         loop {
             match answer {
@@ -146,7 +157,11 @@ impl SimNode {
     /// does.
     pub async fn call_held(&self, request: IpcRequest) -> Result<serde_json::Value, Refused> {
         let name = format!("{request:?}");
-        let IpcResponse::IntentRequired(review) = self.host.call(caller(), request).await else {
+        let held = self
+            .host
+            .call(caller(), request)
+            .instrument(node_span(self.index));
+        let IpcResponse::IntentRequired(review) = held.await else {
             panic!("node {}: {name} was not held for review", self.index);
         };
         self.call(IpcRequest::IntentCommit {

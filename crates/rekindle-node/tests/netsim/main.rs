@@ -9,6 +9,7 @@ mod friends;
 mod group_dm;
 mod harness;
 mod internet_flap;
+mod logs;
 mod offline_day;
 mod outbox_handshake;
 mod pair;
