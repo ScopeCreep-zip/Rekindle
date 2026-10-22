@@ -276,8 +276,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::sync::accept_pairing_code,
         commands::sync::read_sync_manifest,
         commands::sync::write_sync_manifest,
-        commands::sync::read_sync_read_state,
-        commands::sync::write_sync_read_state,
         commands::sync::read_sync_preferences,
         commands::sync::write_sync_preferences,
         commands::sync::read_paired_devices,

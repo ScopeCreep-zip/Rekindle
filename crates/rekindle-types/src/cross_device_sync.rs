@@ -53,12 +53,26 @@ pub struct ReadState {
     pub onboarding_complete: std::collections::HashMap<String, bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadStateEntry {
-    pub community_id: String,
-    pub channel_id: String,
-    pub last_read_lamport: u64,
+    pub scope: ReadScope,
+    /// The position read up to: a channel message's lamport, a DM peer
+    /// stream's seq (plan E3.1, D25). Merged by max.
+    pub last_read_seq: u64,
+}
+
+/// What a read marker is a position in (plan E3.1, D25).
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum ReadScope {
+    #[serde(rename_all = "camelCase")]
+    Channel {
+        community_id: String,
+        channel_id: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Dm { peer_key: String },
 }
 
 /// Subkey 2 — UI / notification preferences. CRDT merge: latest-Lamport

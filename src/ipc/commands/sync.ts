@@ -1,7 +1,7 @@
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "../invoke";
 import type {
-  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, SyncReadState, VideoTopologyReason, VideoTrackLabel,
+  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, VideoTopologyReason, VideoTrackLabel,
 } from "./types_sync";
 
 export const syncCommands = {
@@ -54,9 +54,6 @@ export const syncCommands = {
   readSyncManifest: () => invoke<SyncManifest | null>("read_sync_manifest"),
   writeSyncManifest: (manifest: SyncManifest) =>
     invoke<void>("write_sync_manifest", { manifest }),
-  readSyncReadState: () => invoke<SyncReadState>("read_sync_read_state"),
-  writeSyncReadState: (readState: SyncReadState) =>
-    invoke<SyncReadState>("write_sync_read_state", { readState }),
   readSyncPreferences: () => invoke<SyncPreferences>("read_sync_preferences"),
   writeSyncPreferences: (preferences: SyncPreferences) =>
     invoke<SyncPreferences>("write_sync_preferences", { preferences }),

@@ -46,7 +46,7 @@ pub fn compute(conn: &Connection, owner_key: &str, community_id: &str) -> Storag
     );
     let read_state_bytes = sum_table_bytes(
         conn,
-        "channel_read_state",
+        "read_markers",
         "owner_key = ?1 AND community_id = ?2",
         &["channel_id"],
         owner_key,

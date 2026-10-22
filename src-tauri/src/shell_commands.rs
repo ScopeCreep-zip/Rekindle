@@ -393,8 +393,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("write_sync_manifest", "E5.2"),
     ("read_sync_preferences", "E5.2"),
     ("write_sync_preferences", "E5.2"),
-    ("read_sync_read_state", "E5.2"),
-    ("write_sync_read_state", "E5.2"),
     ("run_background_sync", "E5.2"),
     ("list_received_relay_offers", "E5.2"),
     ("list_volunteered_relay_friends", "E5.2"),

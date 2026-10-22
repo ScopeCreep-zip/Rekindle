@@ -34,6 +34,7 @@ pub mod peer_rekey;
 pub mod pending_requests;
 pub mod preferences;
 pub mod presence_keys;
+pub mod read_markers;
 pub mod received_dm;
 pub mod retry_requests;
 mod role_ids;

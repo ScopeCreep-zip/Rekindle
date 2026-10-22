@@ -10,7 +10,9 @@
 use std::sync::Arc;
 
 use rekindle_secrets::sync_key::{decrypt_subkey, SyncKey};
-use rekindle_types::cross_device_sync::{ReadState, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST};
+use rekindle_types::cross_device_sync::{
+    ReadScope, ReadState, SUBKEY_DEVICE_LIST, SUBKEY_MANIFEST,
+};
 
 use super::record::{open_personal_sync_record, PersonalSyncRecordHandle};
 use crate::db_helpers::db_fire;
@@ -141,23 +143,15 @@ fn merge_read_state_into_db(pool: &Db, owner_key: &str, _device_id: &str, remote
     let owner_key = owner_key.to_string();
     db_fire(pool, "merge remote read state", move |conn| {
         let tx = conn.transaction()?;
-        // A community the other device holds and this one does not has
-        // no read state here (its rows belong to the `communities` row).
+        // A community or friend the other device holds and this one does
+        // not has no marker here (its rows belong to the parent row).
         for entry in &remote.entries {
-            tx.execute(
-                "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
-                 SELECT ?1, ?2, ?3, ?4, ?5 \
-                 WHERE EXISTS (SELECT 1 FROM communities WHERE owner_key = ?1 AND id = ?2) \
-                 ON CONFLICT(owner_key, community_id, channel_id) DO UPDATE SET \
-                   last_read_lamport = MAX(last_read_lamport, excluded.last_read_lamport), \
-                   updated_at = excluded.updated_at",
-                rusqlite::params![
-                    owner_key,
-                    entry.community_id,
-                    entry.channel_id,
-                    i64::try_from(entry.last_read_lamport).unwrap_or(i64::MAX),
-                    now
-                ],
+            rekindle_db::repo::read_markers::advance(
+                &tx,
+                &owner_key,
+                &read_marker_scope(&entry.scope),
+                entry.last_read_seq,
+                now,
             )?;
         }
         // Architecture §28.4: the per-community pseudonym is deterministic
@@ -176,4 +170,21 @@ fn merge_read_state_into_db(pool: &Db, owner_key: &str, _device_id: &str, remote
         tx.commit()?;
         Ok(())
     });
+}
+
+/// The marker scope a personal-sync read-state entry names.
+fn read_marker_scope(scope: &ReadScope) -> rekindle_db::repo::read_markers::Scope {
+    use rekindle_db::repo::read_markers::Scope;
+    match scope {
+        ReadScope::Channel {
+            community_id,
+            channel_id,
+        } => Scope::Channel {
+            community_id: community_id.clone(),
+            channel_id: channel_id.clone(),
+        },
+        ReadScope::Dm { peer_key } => Scope::Dm {
+            peer_key: peer_key.clone(),
+        },
+    }
 }

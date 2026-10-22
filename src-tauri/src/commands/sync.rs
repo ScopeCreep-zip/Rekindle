@@ -2,7 +2,7 @@
 //! (architecture §28.4). Thin adapters over `services::cross_device_sync`.
 
 use rekindle_secrets::sync_key::SyncKey;
-use rekindle_types::cross_device_sync::{DeviceList, ReadState, SyncManifest, SyncPreferences};
+use rekindle_types::cross_device_sync::{DeviceList, SyncManifest, SyncPreferences};
 use std::sync::Arc;
 use tauri::State;
 
@@ -44,23 +44,6 @@ pub async fn write_sync_manifest(
     let pool = state.db.current()?;
     let (handle, sync_key) = setup(state.inner(), &pool).await?;
     cross_device_sync::write_sync_manifest(state.inner(), &handle, &sync_key, &manifest).await
-}
-
-#[tauri::command]
-pub async fn read_sync_read_state(state: State<'_, SharedState>) -> Result<ReadState, String> {
-    let pool = state.db.current()?;
-    let (handle, sync_key) = setup(state.inner(), &pool).await?;
-    cross_device_sync::read_read_state(state.inner(), &handle, &sync_key).await
-}
-
-#[tauri::command]
-pub async fn write_sync_read_state(
-    read_state: ReadState,
-    state: State<'_, SharedState>,
-) -> Result<ReadState, String> {
-    let pool = state.db.current()?;
-    let (handle, sync_key) = setup(state.inner(), &pool).await?;
-    cross_device_sync::write_read_state(state.inner(), &handle, &sync_key, read_state).await
 }
 
 #[tauri::command]

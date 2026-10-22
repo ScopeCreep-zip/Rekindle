@@ -177,7 +177,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 109 (plan E2.6, G4): the SMPL group DM tables `dms`, `dm_messages` and
 /// `dm_messages_fts` are gone; a group DM is `group_dms`.
-pub const SCHEMA_VERSION: i64 = 110;
+///
+/// 111 (plan E3.1, G1): `read_markers` (D25) replaces
+/// `channel_read_state`; `messages.mentions_me`.
+pub const SCHEMA_VERSION: i64 = 111;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

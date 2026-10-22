@@ -170,7 +170,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- The peer's chain entries up to this seq were retired before we
     -- fetched them; body empty, sender the peer. NULL for a message.
     history_gap_through INTEGER
-        CHECK(history_gap_through IS NULL OR history_gap_through >= 1)
+        CHECK(history_gap_through IS NULL OR history_gap_through >= 1),
+    -- The message mentions us (plan E3.1, D25): written by the receive
+    -- pipeline from `rekindle_channel::mentions`; counts unread mentions.
+    mentions_me INTEGER NOT NULL DEFAULT 0 CHECK(mentions_me IN (0, 1))
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
@@ -735,17 +738,30 @@ CREATE TABLE IF NOT EXISTS paired_devices (
     PRIMARY KEY (owner_key, device_id)
 );
 
--- Read-state mirror — this device's view of "last read Lamport per
--- channel". Reconciled into subkey 1 of the personal DFLT record.
-CREATE TABLE IF NOT EXISTS channel_read_state (
+-- Read markers (plan E3.1, D25; `rekindle_db::repo::read_markers`): per
+-- channel or DM, the device-independent position read up to — a channel
+-- message's `lamport_ts`, a DM peer stream's `stream_seq`. A marker only
+-- advances. Private: synced only through the personal-sync record, never
+-- sent to other members. Unread counts are messages after the marker.
+CREATE TABLE IF NOT EXISTS read_markers (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    community_id TEXT NOT NULL,
-    channel_id TEXT NOT NULL,
-    last_read_lamport INTEGER NOT NULL DEFAULT 0,
+    scope_kind TEXT NOT NULL CHECK(scope_kind IN ('channel', 'dm')),
+    community_id TEXT,
+    channel_id TEXT,
+    peer_key TEXT,
+    last_read_seq INTEGER NOT NULL CHECK(last_read_seq >= 0),
     updated_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, community_id, channel_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    CHECK((scope_kind = 'channel' AND community_id IS NOT NULL AND channel_id IS NOT NULL
+           AND peer_key IS NULL)
+       OR (scope_kind = 'dm' AND peer_key IS NOT NULL AND community_id IS NULL
+           AND channel_id IS NULL)),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE,
+    FOREIGN KEY (owner_key, peer_key) REFERENCES friends(owner_key, public_key) ON DELETE CASCADE
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_read_markers_channel
+  ON read_markers(owner_key, community_id, channel_id) WHERE scope_kind = 'channel';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_read_markers_dm
+  ON read_markers(owner_key, peer_key) WHERE scope_kind = 'dm';
 
 -- Pending pairing sessions — short-lived rows the existing device
 -- writes when generating a code, the new device drops as it accepts.

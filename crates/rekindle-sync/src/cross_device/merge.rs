@@ -18,33 +18,27 @@
 //! mechanical port under Invariant 7 (every CRDT decision lives in
 //! the crate).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use rekindle_types::cross_device_sync::{
-    DeviceList, DeviceListEntry, ReadState, ReadStateEntry, SyncCommunityRef, SyncManifest,
-    SyncPreferences,
+    DeviceList, DeviceListEntry, ReadScope, ReadState, ReadStateEntry, SyncCommunityRef,
+    SyncManifest, SyncPreferences,
 };
 
 #[must_use]
 pub fn merge_read_state(local: ReadState, remote: ReadState) -> ReadState {
-    let mut by_key: HashMap<(String, String), ReadStateEntry> = HashMap::new();
+    let mut by_scope: BTreeMap<ReadScope, u64> = BTreeMap::new();
     for entry in local.entries.into_iter().chain(remote.entries) {
-        let key = (entry.community_id.clone(), entry.channel_id.clone());
-        by_key
-            .entry(key)
-            .and_modify(|e| {
-                if entry.last_read_lamport > e.last_read_lamport {
-                    e.last_read_lamport = entry.last_read_lamport;
-                }
-            })
-            .or_insert(entry);
+        let seq = by_scope.entry(entry.scope).or_insert(0);
+        *seq = (*seq).max(entry.last_read_seq);
     }
-    let mut entries: Vec<ReadStateEntry> = by_key.into_values().collect();
-    entries.sort_by(|a, b| {
-        a.community_id
-            .cmp(&b.community_id)
-            .then(a.channel_id.cmp(&b.channel_id))
-    });
+    let entries: Vec<ReadStateEntry> = by_scope
+        .into_iter()
+        .map(|(scope, last_read_seq)| ReadStateEntry {
+            scope,
+            last_read_seq,
+        })
+        .collect();
 
     // Architecture §28.4 — `onboarding_complete` is monotonic OR.
     // Once any paired device flips a community's flag to `true`,
@@ -124,9 +118,11 @@ mod tests {
 
     fn entry(community: &str, channel: &str, lamport: u64) -> ReadStateEntry {
         ReadStateEntry {
-            community_id: community.to_string(),
-            channel_id: channel.to_string(),
-            last_read_lamport: lamport,
+            scope: ReadScope::Channel {
+                community_id: community.to_string(),
+                channel_id: channel.to_string(),
+            },
+            last_read_seq: lamport,
         }
     }
 
@@ -137,17 +133,28 @@ mod tests {
             onboarding_complete: HashMap::new(),
         };
         let remote = ReadState {
-            entries: vec![entry("c1", "ch1", 10), entry("c2", "ch1", 1)],
+            entries: vec![
+                entry("c1", "ch1", 10),
+                entry("c2", "ch1", 1),
+                ReadStateEntry {
+                    scope: ReadScope::Dm {
+                        peer_key: "p".to_string(),
+                    },
+                    last_read_seq: 4,
+                },
+            ],
             onboarding_complete: HashMap::new(),
         };
         let merged = merge_read_state(local, remote);
-        assert_eq!(merged.entries.len(), 3);
-        let ch1 = merged
-            .entries
-            .iter()
-            .find(|e| e.community_id == "c1" && e.channel_id == "ch1")
-            .unwrap();
-        assert_eq!(ch1.last_read_lamport, 10, "max wins");
+        assert_eq!(merged.entries.len(), 4);
+        assert_eq!(merged.entries[0], entry("c1", "ch1", 10), "max wins");
+        assert_eq!(
+            merged.entries[3].scope,
+            ReadScope::Dm {
+                peer_key: "p".to_string()
+            },
+            "scopes in key order, DMs after channels"
+        );
     }
 
     #[test]

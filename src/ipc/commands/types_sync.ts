@@ -132,16 +132,6 @@ export interface SyncManifest {
   lamport: number;
 }
 
-export interface SyncReadStateEntry {
-  communityId: string;
-  channelId: string;
-  lastReadLamport: number;
-}
-
-export interface SyncReadState {
-  entries: SyncReadStateEntry[];
-}
-
 export interface SyncPreferences {
   notificationDefaultLevel?: number;
   theme?: string;

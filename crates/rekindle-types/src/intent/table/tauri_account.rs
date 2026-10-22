@@ -35,8 +35,6 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("accept_pairing_code", Some(IntentKind::AcceptPairingCode)),
     ("read_sync_manifest", None),
     ("write_sync_manifest", None),
-    ("read_sync_read_state", None),
-    ("write_sync_read_state", None),
     ("read_sync_preferences", None),
     (
         "write_sync_preferences",

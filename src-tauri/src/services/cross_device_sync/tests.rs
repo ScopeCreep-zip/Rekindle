@@ -42,31 +42,6 @@ fn paired_devices_table_round_trips() {
 }
 
 #[test]
-fn channel_read_state_row_writes_and_reads() {
-    let conn = open_seeded_db();
-    conn.execute(
-        "INSERT INTO communities (owner_key, id, name, joined_at) VALUES ('owner_pk', 'c1', 'C1', 0)",
-        [],
-    )
-    .expect("community");
-    conn.execute(
-        "INSERT INTO channel_read_state (owner_key, community_id, channel_id, last_read_lamport, updated_at) \
-         VALUES ('owner_pk', 'c1', 'ch1', 42, 100)",
-        [],
-    )
-    .expect("insert");
-    let lamport: i64 = conn
-        .query_row(
-            "SELECT last_read_lamport FROM channel_read_state \
-              WHERE owner_key = 'owner_pk' AND community_id = 'c1' AND channel_id = 'ch1'",
-            [],
-            |r| r.get(0),
-        )
-        .unwrap();
-    assert_eq!(lamport, 42);
-}
-
-#[test]
 fn pending_pairings_table_with_blob_salt() {
     let conn = open_seeded_db();
     let salt = vec![0xAAu8; 16];

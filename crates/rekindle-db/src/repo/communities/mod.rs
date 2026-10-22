@@ -401,7 +401,7 @@ mod tests {
             "INSERT INTO community_roles (owner_key, community_id, role_id, name) VALUES (?1, ?2, 1, 'r')",
             "INSERT INTO community_members (owner_key, community_id, pseudonym_key, joined_at) VALUES (?1, ?2, 'p', 0)",
             "INSERT INTO event_rsvps (owner_key, community_id, event_id, pseudonym_key, status) VALUES (?1, ?2, 'e', 'p', 'going')",
-            "INSERT INTO channel_read_state (owner_key, community_id, channel_id, updated_at) VALUES (?1, ?2, 'ch', 0)",
+            "INSERT INTO read_markers (owner_key, scope_kind, community_id, channel_id, last_read_seq, updated_at) VALUES (?1, 'channel', ?2, 'ch', 0, 0)",
             "INSERT INTO governance_entries_cache (owner_key, community_id, entries_json, updated_at) VALUES (?1, ?2, '[]', 0)",
             "INSERT INTO message_delivery (owner_key, message_id, community_id, recipient_pseudonym) VALUES (?1, ?2 || '-m', ?2, 'p')",
         ];
@@ -415,7 +415,7 @@ mod tests {
             "community_roles",
             "community_members",
             "event_rsvps",
-            "channel_read_state",
+            "read_markers",
             "governance_entries_cache",
             "message_delivery",
         ] {

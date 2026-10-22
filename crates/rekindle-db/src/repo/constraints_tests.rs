@@ -55,6 +55,10 @@ fn seeded() -> Connection {
          VALUES (?1, 'p', zeroblob(32))",
         "INSERT INTO unprocessed (owner_key, peer_identity, header_dh, header_n, type_id, \
          plaintext, received_at) VALUES (?1, 'p', zeroblob(32), 0, 256, x'00', 0)",
+        "INSERT INTO read_markers (owner_key, scope_kind, community_id, channel_id, \
+         last_read_seq, updated_at) VALUES (?1, 'channel', 'c', 'ch', 0, 0)",
+        "INSERT INTO read_markers (owner_key, scope_kind, peer_key, last_read_seq, updated_at) \
+         VALUES (?1, 'dm', 'f', 0, 0)",
     ] {
         conn.execute(sql, params![OWNER]).unwrap_or_else(|e| panic!("{sql}: {e}"));
     }
@@ -118,6 +122,12 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
         "'0123456789ABCDEF0123456789ABCDEF'",
     ),
     ("identity", "device_id", "'0123456789abcdef'"),
+    ("messages", "mentions_me", "2"),
+    ("read_markers", "scope_kind", "'group'"),
+    ("read_markers", "last_read_seq", "-1"),
+    ("read_markers", "peer_key", "'f'"),
+    ("read_markers", "community_id", "'c'"),
+    ("read_markers", "channel_id", "NULL"),
 ];
 
 #[test]

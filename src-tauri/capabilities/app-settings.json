@@ -27,7 +27,6 @@
     "allow-read-paired-devices",
     "allow-read-sync-manifest",
     "allow-read-sync-preferences",
-    "allow-read-sync-read-state",
     "allow-register-with-push-relay",
     "allow-report-media-capture-error",
     "allow-revoke-relay",
@@ -49,7 +48,6 @@
     "allow-volunteer-relay",
     "allow-write-paired-devices",
     "allow-write-sync-manifest",
-    "allow-write-sync-preferences",
-    "allow-write-sync-read-state"
+    "allow-write-sync-preferences"
   ]
 }
