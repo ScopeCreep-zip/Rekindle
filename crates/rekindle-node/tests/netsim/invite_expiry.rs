@@ -25,10 +25,7 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
             expires_seconds: Some(TTL),
         })
         .await;
-    let link = invite["url"]
-        .as_str()
-        .expect("an invite link")
-        .to_string();
+    let link = invite["url"].as_str().expect("an invite link").to_string();
     let listed = |v: &serde_json::Value| v.as_array().is_some_and(|a| !a.is_empty());
     let list = IpcRequest::InviteList {
         community: community.governance_key.clone(),

@@ -4,8 +4,8 @@
 
 use rekindle_governance::validate::bounds;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
-use rekindle_types::governance::ExclusionGroupEdit;
 use rekindle_types::game_server;
+use rekindle_types::governance::ExclusionGroupEdit;
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{self, MAX_NOTE_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;

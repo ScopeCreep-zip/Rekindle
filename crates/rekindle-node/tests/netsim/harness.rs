@@ -370,10 +370,7 @@ impl Community {
                 expires_seconds: None,
             })
             .await;
-        self.link = invite["url"]
-            .as_str()
-            .expect("an invite link")
-            .to_string();
+        self.link = invite["url"].as_str().expect("an invite link").to_string();
         self.link.clone()
     }
 
