@@ -100,20 +100,6 @@ pub async fn forward_channel_message_inner(
     })
 }
 
-pub async fn send_channel_message_inner(
-    state: &Arc<AppState>,
-    pool: &Db,
-    channel_id: String,
-    body: String,
-) -> Result<SendChannelMessageResponse, String> {
-    let sent = crate::services::community::send_message(state, pool, &channel_id, &body).await?;
-    tracing::info!(status = %sent.status, message_id = %sent.message_id, "channel message sent");
-    Ok(SendChannelMessageResponse {
-        status: sent.status,
-        message_id: sent.message_id,
-    })
-}
-
 pub async fn get_older_channel_messages_inner(
     state: Arc<AppState>,
     pool: Db,

@@ -23,38 +23,9 @@
 //! still cannot forge another member's authorship.
 
 use rekindle_protocol::dht::community::channel_record;
-use rekindle_types::id::PseudonymKey;
 
-use crate::broadcast::node::TransportNode;
 use crate::error::{Result, TransportError};
 use crate::payload::dht_types::ChannelMessage;
-
-/// Append a message to our own slot in a channel segment record: `Stored`
-/// at consensus, or `Held` by the record pool, which re-pushes it until it
-/// lands (plan C7.13).
-pub async fn write_message(
-    node: &TransportNode,
-    channel_key: &str,
-    slot_index: u32,
-    writer_keypair_str: &str,
-    author_pseudonym: PseudonymKey,
-    signing_key: &ed25519_dalek::SigningKey,
-    message: &ChannelMessage,
-) -> Result<channel_record::AppendOutcome> {
-    channel_record::write_member_message(
-        &*node.require_records()?,
-        channel_key,
-        slot_index,
-        writer_keypair_str,
-        author_pseudonym,
-        signing_key,
-        message,
-    )
-    .await
-    .map_err(|e| TransportError::DhtError {
-        reason: format!("channel SMPL write: {e}"),
-    })
-}
 
 /// Read every member's messages from one channel segment record, each
 /// with the subkey it was written to — the subkey is part of the body's

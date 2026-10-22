@@ -34,23 +34,19 @@ pub async fn forward_channel_message(
     .await
 }
 
-/// Send a message in a community channel.
+/// Post a message in a community channel
+/// (`CommunityRequest::ChannelMessageSend`).
 #[tauri::command]
 pub async fn send_channel_message(
     channel_id: String,
     body: String,
-    reply_to_id: Option<String>,
     state: State<'_, SharedState>,
-) -> Result<SendChannelMessageResponse, String> {
-    let pool = state.db.current()?;
-    let _ = reply_to_id;
-    crate::services::messaging_runtime::send_channel_message_inner(
-        state.inner(),
-        &pool,
-        channel_id,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelMessageSend {
+        channel: channel_id,
         body,
-    )
-    .await
+    });
+    crate::host_call::call(&state, request).await
 }
 
 /// Replace the body of our message in a channel

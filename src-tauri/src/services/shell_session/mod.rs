@@ -126,6 +126,30 @@ impl ShellHooks for ShellSession {
         governance::install_mek(&self.state, community_id, scope, key_bytes, generation);
     }
 
+    fn channel_echo(&self, echo: &rekindle_channel::deps::SentChannelMessageEcho) {
+        if let Some(app) = self.app.as_ref() {
+            crate::services::channel_adapter::echo(app, echo);
+        }
+    }
+
+    fn channel_post_settled(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        landed: bool,
+    ) {
+        if let Some(app) = self.app.as_ref() {
+            crate::services::channel_adapter::post_settled(
+                app,
+                community_id,
+                channel_id,
+                message_id,
+                landed,
+            );
+        }
+    }
+
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
         crate::state_helpers::key_provider(&self.state)
     }

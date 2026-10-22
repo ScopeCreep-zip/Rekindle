@@ -37,7 +37,7 @@ pub(crate) mod writers;
 
 // Re-export public API (callers use services::community::function_name)
 pub use bootstrap::build_bootstrap_response;
-pub use channel_messages::{send_message, start_delivery_settle};
+
 pub use channel_polls::{persist_poll_close, persist_poll_create, persist_poll_vote};
 pub use channel_reactions::persist_reaction;
 pub use expressions::{

@@ -1,22 +1,15 @@
 //! Phase 19.i-REDO — thin facade.
 //!
-//! `send_message` + `forward_message` live in `rekindle_channel::pipeline`.
+//! `forward_message` lives in `rekindle_channel::pipeline`.
 //! This module constructs a `ChannelAdapter` per call and:
 //! - re-exports `SendChannelMessageResult` for the command callers
-//! - hosts the delivery-settle task (`start_delivery_settle`): a channel
-//!   write that missed consensus is held by the record pool, and when its
-//!   slot settles the messages waiting on it are delivered or failed
-//!   (plan C7.13; the record pool is the one retry layer)
+//! - (a send, and every post's settle and Retry, are the Host's:
+//!   `rekindle_node::host::adapters::channel`, plan E3.1 E2b)
 //! - (the local echo of a sent message is emitted by `rekindle_channel`)
 //! - delegates `enforce_slowmode` + `resolve_outbound_mentions` to
 //!   crate primitives via the adapter (files_adapter still calls these)
 
-use std::sync::Arc;
-
-use rekindle_lifecycle::{ScopeClosed, SessionScope};
-
-use crate::state::{AppState, SharedState};
-use crate::state_helpers;
+use crate::state::SharedState;
 use rekindle_db::Db;
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -37,33 +30,6 @@ fn map_result(result: rekindle_channel::ChannelSendResult) -> SendChannelMessage
         status: result.status,
         message_id: result.message_id,
     }
-}
-
-pub async fn send_message(
-    state: &SharedState,
-    _pool: &Db,
-    channel_id: &str,
-    body: &str,
-) -> Result<SendChannelMessageResult, String> {
-    let adapter = build_adapter(state)?;
-    // Find the community by walking communities for one that owns this channel.
-    let community_id = {
-        let communities = state.communities.read();
-        communities
-            .iter()
-            .find_map(|(id, community)| {
-                if community.channels.iter().any(|ch| ch.id == channel_id) {
-                    Some(id.clone())
-                } else {
-                    None
-                }
-            })
-            .ok_or_else(|| "channel not found in any community".to_string())?
-    };
-    let result = rekindle_channel::send_channel_message(&adapter, &community_id, channel_id, body)
-        .await
-        .map_err(|e| e.to_string())?;
-    Ok(map_result(result))
 }
 
 pub async fn forward_message(
@@ -117,51 +83,4 @@ pub(crate) fn resolve_outbound_mentions(
         return (Vec::new(), Vec::new(), 0);
     };
     rekindle_channel::resolve_outbound_mentions(&adapter, community_id, sender_pseudonym_hex, body)
-}
-
-/// Follow the session's record pool for settled writes (plan C7.13): a
-/// channel write that missed consensus is held and re-pushed by the pool,
-/// and when its slot settles, the messages waiting on it are delivered, or
-/// failed when the network superseded our page. Runs on the login scope.
-/// The outbox's Retry of a failed post is installed to rewrite it through
-/// the same pipeline.
-///
-/// # Errors
-/// [`ScopeClosed`] when the session already ended.
-pub fn start_delivery_settle(
-    state: Arc<AppState>,
-    scope: &Arc<SessionScope>,
-) -> Result<(), ScopeClosed> {
-    let Ok(pool) = state_helpers::record_pool(&state) else {
-        return Ok(());
-    };
-    let mut settled = pool.settled();
-    if let Some(posts) = state.host.current().and_then(|host| host.channel_posts()) {
-        posts.install_reissuer(Arc::new(crate::services::channel_adapter::PostReissuer(
-            Arc::clone(&state),
-        )));
-    }
-    scope.spawn_with_token("channel delivery settle", |stop| async move {
-        loop {
-            let event = match stop.run_until_cancelled(settled.recv()).await {
-                None | Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return,
-                Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(missed))) => {
-                    // Their slots settle again on their next write.
-                    tracing::warn!(missed, "channel delivery settle lagged");
-                    continue;
-                }
-                Some(Ok(event)) => event,
-            };
-            let Ok(adapter) = build_adapter(&state) else {
-                continue;
-            };
-            rekindle_channel::on_write_settled(
-                &adapter,
-                &event.record_key,
-                event.subkey,
-                event.landed,
-            )
-            .await;
-        }
-    })
 }

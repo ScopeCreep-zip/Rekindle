@@ -81,6 +81,10 @@ impl CommunityRequest {
                 .field("channel", channel)
                 .field("message_id", message_id)
                 .finish(),
+            Self::ChannelMessageSend { channel, .. } => f
+                .debug_struct("ChannelMessageSend")
+                .field("channel", channel)
+                .finish_non_exhaustive(),
             Self::ChannelHistory {
                 community,
                 channel,

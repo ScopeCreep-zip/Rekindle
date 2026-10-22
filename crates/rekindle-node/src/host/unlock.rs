@@ -81,7 +81,13 @@ pub(crate) async fn run(
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {
         match transport.start_records() {
-            Ok(pool) => ctx.outbox.restore_unsent(pool).await,
+            Ok(pool) => {
+                // The channel posts' settle and Retry (plan E3.1 E2b).
+                if let Err(e) = super::adapters::channel::start_settle(ctx, &scope, &pool) {
+                    tracing::warn!(error = %e, "channel delivery settle not started");
+                }
+                ctx.outbox.restore_unsent(pool).await;
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "record pool not started — staying locked");
                 return fail(

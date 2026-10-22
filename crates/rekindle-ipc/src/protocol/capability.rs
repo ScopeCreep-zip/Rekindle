@@ -264,7 +264,8 @@ impl CommunityRequest {
             Self::ChannelHistory { .. } => Some(C::ChannelsHistory),
             Self::ChannelSend { .. }
             | Self::ChannelMessageEdit { .. }
-            | Self::ChannelMessageDelete { .. } => Some(C::ChatWrite),
+            | Self::ChannelMessageDelete { .. }
+            | Self::ChannelMessageSend { .. } => Some(C::ChatWrite),
             // Channel keys are key material; ownership is the owner's own.
             Self::MekList { .. }
             | Self::MekRotate { .. }

@@ -8,6 +8,8 @@ use crate::host::fixture::temp_root;
 use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
 
+#[path = "channel_send_tests.rs"]
+mod channel_send_tests;
 #[path = "community_info_tests.rs"]
 mod community_info;
 #[path = "login_stage_tests.rs"]
@@ -144,6 +146,10 @@ impl shell_hooks::ShellHooks for Recorder {
     }
     fn spawn_presence_poll_tick(&self, _community_id: &str) {}
 
+    fn channel_echo(&self, _echo: &rekindle_channel::deps::SentChannelMessageEcho) {}
+
+    fn channel_post_settled(&self, _: &str, _: &str, _: &str, _: bool) {}
+
     fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
 
     fn push_onboarding_complete_to_sync(&self, _community_id: &str) {}
@@ -241,6 +247,10 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
             Ok(())
         }
         fn spawn_presence_poll_tick(&self, _community_id: &str) {}
+
+        fn channel_echo(&self, _echo: &rekindle_channel::deps::SentChannelMessageEcho) {}
+
+        fn channel_post_settled(&self, _: &str, _: &str, _: &str, _: bool) {}
 
         fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
 

@@ -151,7 +151,8 @@ pub(super) async fn selection(
             }
         }
         CommunityRequest::ChannelMessageEdit { channel, .. }
-        | CommunityRequest::ChannelMessageDelete { channel, .. } => {
+        | CommunityRequest::ChannelMessageDelete { channel, .. }
+        | CommunityRequest::ChannelMessageSend { channel, .. } => {
             let target = crate::host::adapters::governance::channel_messages::community_of_channel(
                 ctx, channel,
             )

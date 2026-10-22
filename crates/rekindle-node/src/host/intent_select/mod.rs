@@ -135,6 +135,7 @@ pub(crate) async fn select(
             | CommunityRequest::ChannelSend { .. }
             | CommunityRequest::ChannelMessageEdit { .. }
             | CommunityRequest::ChannelMessageDelete { .. }
+            | CommunityRequest::ChannelMessageSend { .. }
             | CommunityRequest::MekRotate { .. }
             | CommunityRequest::RoleCreate { .. }
             | CommunityRequest::RoleUpdate { .. }

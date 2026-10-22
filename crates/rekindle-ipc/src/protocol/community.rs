@@ -216,6 +216,8 @@ pub enum CommunityRequest {
         message_id: String,
         body: String,
     },
+    /// Post `body` to `channel` (a channel id; the Host finds its community).
+    ChannelMessageSend { channel: String, body: String },
     /// Delete our message `message_id` in `channel` (a channel id).
     ChannelMessageDelete { channel: String, message_id: String },
 

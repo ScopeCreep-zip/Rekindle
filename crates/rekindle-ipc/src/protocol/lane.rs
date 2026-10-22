@@ -203,6 +203,7 @@ impl CommunityRequest {
             Self::ChannelHistory { .. } => ("ChannelHistory", Query, Authenticated),
             Self::ChannelMessageEdit { .. } => ("ChannelMessageEdit", Write, Authenticated),
             Self::ChannelMessageDelete { .. } => ("ChannelMessageDelete", Write, Authenticated),
+            Self::ChannelMessageSend { .. } => ("ChannelMessageSend", Write, Authenticated),
             Self::MekList { .. } => ("MekList", Query, Authenticated),
             Self::MekRotate { .. } => ("MekRotate", Write, Authenticated),
             Self::MekRequest { .. } => ("MekRequest", Write, Authenticated),

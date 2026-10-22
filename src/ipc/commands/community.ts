@@ -108,7 +108,7 @@ export const communityCommands = {
       parentVoiceChannelId: parentVoiceChannelId ?? null,
     }).then((created) => created.id),
   sendChannelMessage: (channelId: string, body: string, replyToId?: string) =>
-    invoke<SendChannelMessageResult>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
+    hostInvoke<SendChannelMessageResult>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
   editChannelMessage: (channelId: string, messageId: string, newBody: string) =>
     invoke<void>("edit_channel_message", { channelId, messageId, newBody }),
   deleteChannelMessage: (channelId: string, messageId: string) =>

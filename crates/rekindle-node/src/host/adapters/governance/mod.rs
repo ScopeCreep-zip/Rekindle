@@ -83,6 +83,11 @@ impl HostGovernance {
         Self { ctx }
     }
 
+    /// The context this adapter runs over.
+    pub(crate) fn context(&self) -> &DaemonContext {
+        &self.ctx
+    }
+
     /// The transport node, or a typed error when Veilid has not started.
     ///
     /// Every DHT-facing trait method needs this, and the failure is

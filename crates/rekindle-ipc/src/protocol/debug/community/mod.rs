@@ -44,6 +44,7 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::ChannelUpdate { .. }
             | Self::ChannelMessageEdit { .. }
             | Self::ChannelMessageDelete { .. }
+            | Self::ChannelMessageSend { .. }
             | Self::ChannelHistory { .. }
             | Self::MekList { .. }
             | Self::MekRotate { .. }

@@ -107,6 +107,9 @@ pub(super) async fn route(
             let change = MessageChange::Edit { body };
             channel_message::handle_change(ctx, state, &channel, &message_id, change).await
         }
+        CommunityRequest::ChannelMessageSend { channel, body } => {
+            channel_message::handle_post(ctx, state, &channel, &body).await
+        }
         CommunityRequest::ChannelMessageDelete {
             channel,
             message_id,

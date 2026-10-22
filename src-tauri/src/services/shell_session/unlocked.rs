@@ -77,7 +77,6 @@ fn network_stages(
     // keepalive and inspect loop start when it hands the records over
     // (`ShellHooks::community_records_ready`).
     services::community::start_peer_reliability_flush(Arc::clone(state), pool.clone());
-    services::community::start_delivery_settle(Arc::clone(state), scope)?;
 
     // The desktop's reaction to our routes (→ E3.1/E3.4/E4.1).
     let (route_app, route_state) = (app.clone(), Arc::clone(state));

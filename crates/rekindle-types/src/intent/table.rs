@@ -477,6 +477,7 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("CategoryRename", Some(IntentKind::RenameCategory)),
     ("CategoryReorder", Some(IntentKind::ReorderCategories)),
     ("ChannelSend", Some(IntentKind::SendChannelMessage)),
+    ("ChannelMessageSend", Some(IntentKind::SendChannelMessage)),
     ("ChannelHistory", None),
     ("ChannelMessageEdit", Some(IntentKind::EditChannelMessage)),
     (

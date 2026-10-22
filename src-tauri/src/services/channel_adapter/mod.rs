@@ -32,11 +32,11 @@ use rekindle_db::Db;
 pub mod deps_impl;
 mod dht;
 mod events;
+pub use events::{echo, post_settled};
 mod misc;
 mod persist;
 mod posts;
 
-pub use posts::PostReissuer;
 mod state_mutations;
 mod state_reads;
 

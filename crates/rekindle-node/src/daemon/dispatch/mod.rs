@@ -175,6 +175,11 @@ pub struct DaemonContext {
             >,
         >,
     >,
+    /// Each community's compiled automod rules, which the channel pipeline
+    /// rebuilds when the rules' fingerprint changes (`rekindle_channel::automod`).
+    pub automod_rules: parking_lot::RwLock<
+        std::collections::HashMap<String, Arc<rekindle_channel::AutoModCompiledCache>>,
+    >,
     /// The Host's one community store (plan E3.1, `host::community`): the
     /// cached CRDT `GovernanceState`, leases, roster and roles, over the
     /// map the GUI's `AppState.communities` shares in Shell mode.

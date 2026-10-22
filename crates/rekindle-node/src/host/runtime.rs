@@ -316,6 +316,7 @@ impl Host {
             undo: super::undo::UndoCache::default(),
             event_watch_tx,
             pending_joins,
+            automod_rules: parking_lot::RwLock::default(),
             gossip_tx,
             mek_rotation_tx,
             unlock_scope: RwLock::new(None),

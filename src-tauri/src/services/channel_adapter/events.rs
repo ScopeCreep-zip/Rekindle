@@ -7,6 +7,8 @@ use rekindle_channel::event::ChannelEvent;
 use crate::channels::{ChatEvent, CommunityEvent};
 use crate::event_dispatch::{emit, WebviewEvent};
 
+use tauri::AppHandle;
+
 use super::ChannelAdapter;
 
 pub(super) fn emit_event_impl(_adapter: &ChannelAdapter, event: ChannelEvent) {
@@ -70,7 +72,31 @@ pub(super) fn emit_event_impl(_adapter: &ChannelAdapter, event: ChannelEvent) {
     }
 }
 
-pub(super) fn emit_chat_event_local_impl(adapter: &ChannelAdapter, echo: &SentChannelMessageEcho) {
+pub(super) fn emit_chat_event_local_impl(adapter: &ChannelAdapter, sent: &SentChannelMessageEcho) {
+    echo(&adapter.app_handle, sent);
+}
+
+pub(super) fn emit_delivery_succeeded_impl(
+    adapter: &ChannelAdapter,
+    community_id: &str,
+    channel_id: &str,
+    message_id: &str,
+) {
+    post_settled(&adapter.app_handle, community_id, channel_id, message_id, true);
+}
+
+pub(super) fn emit_delivery_failed_impl(
+    adapter: &ChannelAdapter,
+    community_id: &str,
+    channel_id: &str,
+    message_id: &str,
+) {
+    post_settled(&adapter.app_handle, community_id, channel_id, message_id, false);
+}
+
+/// The echo of our own channel post, in the windows' legacy shape (the
+/// Host's `ShellHooks::channel_echo`, until E3.1 E2c).
+pub fn echo(app: &AppHandle, echo: &SentChannelMessageEcho) {
     let event = ChatEvent::MessageReceived {
         from: echo.sender_pseudonym.clone(),
         body: echo.body.clone(),
@@ -83,7 +109,7 @@ pub(super) fn emit_chat_event_local_impl(adapter: &ChannelAdapter, echo: &SentCh
         sender_display_name: None,
     };
     emit(
-        &adapter.app_handle,
+        app,
         WebviewEvent::ChannelChat {
             community_id: Some(echo.community_id.clone()),
             event,
@@ -91,30 +117,32 @@ pub(super) fn emit_chat_event_local_impl(adapter: &ChannelAdapter, echo: &SentCh
     );
 }
 
-pub(super) fn emit_delivery_succeeded_impl(
-    adapter: &ChannelAdapter,
+/// Our post settled (`landed`, else failed), in the windows' legacy shape
+/// (`ShellHooks::channel_post_settled`, until E3.1 E2c).
+pub fn post_settled(
+    app: &AppHandle,
     community_id: &str,
     channel_id: &str,
     message_id: &str,
+    landed: bool,
 ) {
-    let event = CommunityEvent::ChannelMessageDelivered {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
-        message_id: message_id.to_string(),
+    let (community_id, channel_id, message_id) = (
+        community_id.to_string(),
+        channel_id.to_string(),
+        message_id.to_string(),
+    );
+    let event = if landed {
+        CommunityEvent::ChannelMessageDelivered {
+            community_id,
+            channel_id,
+            message_id,
+        }
+    } else {
+        CommunityEvent::ChannelMessageDeliveryFailed {
+            community_id,
+            channel_id,
+            message_id,
+        }
     };
-    emit(&adapter.app_handle, WebviewEvent::Community(event));
-}
-
-pub(super) fn emit_delivery_failed_impl(
-    adapter: &ChannelAdapter,
-    community_id: &str,
-    channel_id: &str,
-    message_id: &str,
-) {
-    let event = CommunityEvent::ChannelMessageDeliveryFailed {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
-        message_id: message_id.to_string(),
-    };
-    emit(&adapter.app_handle, WebviewEvent::Community(event));
+    emit(app, WebviewEvent::Community(event));
 }

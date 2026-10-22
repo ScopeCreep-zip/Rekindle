@@ -28,6 +28,10 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("audit_verify", HostCall::Request("AuditVerify")),
     ("audit_export", HostCall::Request("AuditExport")),
     ("lifecycle_current", HostCall::Request("Status")),
+    (
+        "send_channel_message",
+        HostCall::Request("ChannelMessageSend"),
+    ),
     ("intent_commit", HostCall::Request("IntentCommit")),
     ("intent_cancel", HostCall::Request("IntentCancel")),
     ("undo", HostCall::Request("Undo")),
@@ -286,7 +290,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("list_expressions", "E3.1"),
     ("get_channel_messages", "E3.1"),
     ("get_older_channel_messages", "E3.1"),
-    ("send_channel_message", "E3.1"),
     ("send_channel_typing", "E3.1"),
     ("get_channel_pins", "E3.1"),
     ("pin_message", "E3.1"),

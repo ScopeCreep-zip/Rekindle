@@ -218,7 +218,7 @@ impl App {
             {
                 Ok(value) => {
                     let msg_id = value
-                        .get("message_id")
+                        .get("messageId")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
                         .to_string();

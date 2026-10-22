@@ -80,6 +80,10 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             text(message_id, MAX_MESSAGE_ID_LEN, "message id")?;
             message_body(body)
         }
+        CommunityRequest::ChannelMessageSend { channel: ch, body } => {
+            channel(ch)?;
+            message_body(body)
+        }
         CommunityRequest::ChannelMessageDelete {
             channel: ch,
             message_id,

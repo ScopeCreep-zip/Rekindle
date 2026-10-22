@@ -34,6 +34,7 @@ rekindle-db = { path = "../rekindle-db" }
 rekindle-events = { path = "../rekindle-events" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-codec = { path = "../rekindle-codec" }
+rekindle-channel = { path = "../rekindle-channel" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-records = { path = "../rekindle-records" }
 # Tier 5. The shared gossip stack — Cap'n Proto `CommunityEnvelope`
