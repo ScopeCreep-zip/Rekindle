@@ -22,7 +22,10 @@ fn message_id(posted: &serde_json::Value) -> String {
 /// Ann posts `body`, and Bea reads it; its message id.
 async fn delivered(community: &Community, body: &str) -> String {
     let posted = community.post(0, body).await.expect("ann posts");
-    assert!(community.reads(BEA, body, LIMIT).await, "bea reads {body:?}");
+    assert!(
+        community.reads(BEA, body, LIMIT).await,
+        "bea reads {body:?}"
+    );
     message_id(&posted)
 }
 
@@ -78,10 +81,18 @@ async fn read_marker_only_advances() {
     assert_eq!(unread(&community, &channel).await, 3, "nothing is read yet");
 
     mark_read(&community, &channel, &second).await;
-    assert_eq!(unread(&community, &channel).await, 1, "only the post after the marker counts");
+    assert_eq!(
+        unread(&community, &channel).await,
+        1,
+        "only the post after the marker counts"
+    );
 
     mark_read(&community, &channel, &first).await;
-    assert_eq!(unread(&community, &channel).await, 1, "an older message leaves the marker unmoved");
+    assert_eq!(
+        unread(&community, &channel).await,
+        1,
+        "an older message leaves the marker unmoved"
+    );
 
     delivered(&community, "four").await;
     assert_eq!(unread(&community, &channel).await, 2, "a later post counts");
