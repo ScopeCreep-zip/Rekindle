@@ -25,6 +25,19 @@ fn saw(events: &Events, peer: &str, status: &str) -> bool {
 /// further (a row counts as sent once its append lands).
 async fn on_chain(node: &crate::harness::SimNode, peer: &str, body: &str) -> bool {
     use rekindle_types::message::SendState;
+    own_state(node, peer, body, |s| {
+        matches!(s, SendState::Sent | SendState::Delivered | SendState::Read)
+    })
+    .await
+}
+
+/// Whether `node`'s own message `body` to `peer` is in a state `ok` takes.
+async fn own_state(
+    node: &crate::harness::SimNode,
+    peer: &str,
+    body: &str,
+    ok: impl Fn(rekindle_types::message::SendState) -> bool,
+) -> bool {
     let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
         node.ok(IpcRequest::DmHistory {
             peer_key: peer.to_string(),
@@ -34,14 +47,9 @@ async fn on_chain(node: &crate::harness::SimNode, peer: &str, body: &str) -> boo
         .await,
     )
     .expect("the history");
-    history.iter().any(|m| {
-        m.is_own
-            && m.body == body
-            && matches!(
-                m.send_state,
-                SendState::Sent | SendState::Delivered | SendState::Read
-            )
-    })
+    history
+        .iter()
+        .any(|m| m.is_own && m.body == body && ok(m.send_state))
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -213,5 +221,63 @@ async fn missed_while_shut(cut: Fault) {
     assert!(
         eventually(&sim, LIMIT, || holds_message(&nodes[1], &kim, missed)).await,
         "Lev's retried watch opens and its diff reads the message"
+    );
+}
+
+/// Plan E2.6: Lev's DHT is off when Kim's first message announces her
+/// participant record, a record he has never opened, so its open fails
+/// (an unknown record offline is `TryAgain`) and no watch of it exists.
+/// With every app message then dropped (no hint or resend reaches him),
+/// Kim's next message is on her chain only; once his DHT is back, nothing
+/// but the maintenance tick's retry places its watch (log: "a failed watch
+/// opened on retry"), and that watch delivers her next message.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_participant_record_learned_offline_opens_on_a_later_tick() {
+    use rekindle_types::message::SendState;
+    let (sim, mut nodes) = start(2, 91).await;
+    for (node, name) in nodes.iter_mut().zip(["Kim", "Lev"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    let (kim, lev) = (key(&nodes[0]), key(&nodes[1]));
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: true,
+    });
+    send(&nodes[0], &lev, "first").await;
+    assert!(
+        eventually(&sim, LIMIT, || own_state(&nodes[0], &lev, "first", |s| {
+            matches!(s, SendState::Delivered | SendState::Read)
+        }))
+        .await,
+        "Lev acknowledged the first message (her record announced before it)"
+    );
+    sim.fault(Fault::DropMessages { per_mille: 1000 });
+    let missed = "while the record was not open";
+    send(&nodes[0], &lev, missed).await;
+    assert!(
+        eventually(&sim, LIMIT, || on_chain(&nodes[0], &lev, missed)).await,
+        "Kim's message is on her chain"
+    );
+    assert!(
+        !holds_message(&nodes[1], &kim, missed).await,
+        "nothing Lev reads reaches the network"
+    );
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: false,
+    });
+    assert!(
+        eventually(&sim, LIMIT, || holds_message(&nodes[1], &kim, missed)).await,
+        "Lev's retried open watches the record and its diff reads the message"
+    );
+    // The read above may also come from the first hint's diff, whose open
+    // the pool retried until the DHT was back; this one only the watch the
+    // retry opened delivers.
+    let watched = "by the retried watch";
+    send(&nodes[0], &lev, watched).await;
+    assert!(
+        eventually(&sim, LIMIT, || holds_message(&nodes[1], &kim, watched)).await,
+        "the retried watch delivers Kim's next message"
     );
 }
