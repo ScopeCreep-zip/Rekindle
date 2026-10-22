@@ -6,7 +6,7 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
     audit, channel, channel_message, channel_message_ops, community, community_profile, events,
-    game_servers, governance, keys, onboarding, DaemonContext,
+    game_servers, governance, keys, onboarding, unread, DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -129,6 +129,10 @@ pub(super) async fn route(
         | CommunityRequest::EventCancel { .. }
         | CommunityRequest::EventDelete { .. }
         | CommunityRequest::EventRsvp { .. }) => events::handle(ctx, state, request).await,
+
+        // ── Unread (plan E3.1 G1) ────────────────────────────────
+        request @ (CommunityRequest::ChannelMarkRead { .. }
+        | CommunityRequest::UnreadCounts { .. }) => unread::handle(ctx, state, request).await,
 
         // ── Game servers (plan E3.1 H1) ──────────────────────────
         request @ (CommunityRequest::GameServerList { .. }

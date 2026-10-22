@@ -97,6 +97,16 @@ pub struct CommunityView {
     pub my_badges: Vec<String>,
 }
 
+/// One channel's unread messages and mentions after our read marker
+/// (plan E3.1, D25; `UnreadCounts`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelUnreadView {
+    pub channel_id: String,
+    pub unread_count: u32,
+    pub mention_count: u32,
+}
+
 /// A channel of a [`CommunityView`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -104,7 +114,6 @@ pub struct CommunityChannelView {
     pub id: String,
     pub name: String,
     pub channel_type: String,
-    pub unread_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category_id: Option<String>,
     #[serde(default, skip_serializing_if = "String::is_empty")]

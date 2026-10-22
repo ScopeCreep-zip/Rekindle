@@ -201,6 +201,8 @@ impl CommunityRequest {
             | Self::ChannelList { .. }
             | Self::RoleList { .. }
             | Self::GameServerList { .. }
+            | Self::ChannelMarkRead { .. }
+            | Self::UnreadCounts { .. }
             | Self::OnboardingConfigGet { .. }
             | Self::WelcomeScreenGet { .. }
             | Self::AuditLog { .. }

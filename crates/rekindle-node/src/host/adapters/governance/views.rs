@@ -41,7 +41,6 @@ fn community_view(c: &CommunityState) -> CommunityView {
                 id: channel.id.clone(),
                 name: channel.name.clone(),
                 channel_type: channel.channel_type.to_string(),
-                unread_count: channel.unread_count,
                 category_id: channel.category_id.clone(),
                 topic: channel.topic.clone(),
                 forum_tags: channel.forum_tags.clone(),

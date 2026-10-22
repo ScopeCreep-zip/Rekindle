@@ -121,6 +121,8 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("add_game_server", HostCall::Request("GameServerAdd")),
     ("remove_game_server", HostCall::Request("GameServerRemove")),
     ("get_game_servers", HostCall::Request("GameServerList")),
+    ("mark_channel_read", HostCall::Request("ChannelMarkRead")),
+    ("get_unread_counts", HostCall::Request("UnreadCounts")),
     ("get_audit_log", HostCall::Request("AuditLog")),
     (
         "get_community_default_notification_level",
@@ -313,8 +315,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("pin_message", "E3.1"),
     ("unpin_message", "E3.1"),
     ("pin_attachment", "E3.1"),
-    ("mark_channel_read", "E3.1"),
-    ("get_unread_counts", "E3.1"),
     ("get_presence_policy", "E3.1"),
     ("set_presence_policy", "E3.1"),
     ("rotate_mek", "E3.1"),

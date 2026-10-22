@@ -81,7 +81,6 @@ fn project_channels(cs: &mut CommunityState, gov: &GovernanceState) {
             }
             let local = existing.get(&id);
             let info = ChannelInfo {
-                unread_count: local.map_or(0, |c| c.unread_count),
                 message_record_key: local
                     .and_then(|c| c.message_record_key.clone())
                     .or(record_key),

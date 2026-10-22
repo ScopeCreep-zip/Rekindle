@@ -1,30 +1,35 @@
+//! Read markers and unread counts (plan E3.1 G1, D25): Host calls.
+
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::community::ChannelUnreadView;
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
+use crate::host_call;
 use crate::state::SharedState;
-
-use crate::services::community_unread_runtime::UnreadCountEntry;
 
 #[tauri::command]
 pub async fn mark_channel_read(
+    state: State<'_, SharedState>,
     community_id: String,
     channel_id: String,
     last_message_id: String,
-    state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _ = (pool, last_message_id);
-    crate::services::community_unread_runtime::mark_channel_read_inner(
-        state.inner(),
-        &community_id,
-        &channel_id,
-    );
-    Ok(())
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelMarkRead {
+        community: community_id,
+        channel: channel_id,
+        up_to: last_message_id,
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
 pub async fn get_unread_counts(
-    community_id: String,
     state: State<'_, SharedState>,
-) -> Result<Vec<UnreadCountEntry>, String> {
-    crate::services::community_unread_runtime::get_unread_counts_inner(state.inner(), &community_id)
+    community_id: String,
+) -> Result<Done<Vec<ChannelUnreadView>>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::UnreadCounts {
+        community: community_id,
+    });
+    host_call::call(&state, request).await
 }

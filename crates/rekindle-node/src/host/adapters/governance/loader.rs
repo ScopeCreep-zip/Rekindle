@@ -223,7 +223,6 @@ fn channels_of(community_id: &str, rows: &[ChannelRow]) -> Channels {
                 id: r.id.clone(),
                 name: r.name.clone(),
                 channel_type: r.channel_type,
-                unread_count: 0,
                 category_id: r.category_id.clone(),
                 topic: r.topic.clone(),
                 forum_tags: None,

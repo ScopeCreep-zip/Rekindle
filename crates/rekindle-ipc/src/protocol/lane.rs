@@ -221,6 +221,8 @@ impl CommunityRequest {
             Self::RoleUpdate { .. } => ("RoleUpdate", Write, Authenticated),
             Self::RoleDelete { .. } => ("RoleDelete", Write, Authenticated),
             Self::GameServerList { .. } => ("GameServerList", Query, Authenticated),
+            Self::ChannelMarkRead { .. } => ("ChannelMarkRead", Query, Authenticated),
+            Self::UnreadCounts { .. } => ("UnreadCounts", Query, Authenticated),
             Self::AuditLog { .. } => ("AuditLog", Query, Authenticated),
             Self::NotificationDefaultGet { .. } => ("NotificationDefaultGet", Query, Authenticated),
             Self::NotificationDefaultSet { .. } => ("NotificationDefaultSet", Write, Authenticated),

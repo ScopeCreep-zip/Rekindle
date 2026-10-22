@@ -217,11 +217,16 @@ pub async fn handle_message_notification(
         false,
         automod_blurred,
     );
-    crate::services::community_unread_runtime::count_channel_unread(
-        state,
-        &pending.community_id,
-        &pending.channel_id,
-    );
+    if let Err(e) = state
+        .host
+        .get()
+        .await
+        .governance()
+        .publish_channel_unread(&pending.community_id, &pending.channel_id)
+        .await
+    {
+        tracing::warn!(error = %e, "channel unread count not published");
+    }
 
     if automod_action == crate::services::community::automod::AutoModAction::AlertModerators {
         let rule_name =

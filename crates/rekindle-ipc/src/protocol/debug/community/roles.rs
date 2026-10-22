@@ -62,6 +62,20 @@ impl CommunityRequest {
                 .field("community", community)
                 .field("role_id", role_id)
                 .finish(),
+            Self::ChannelMarkRead {
+                community,
+                channel,
+                up_to,
+            } => f
+                .debug_struct("ChannelMarkRead")
+                .field("community", community)
+                .field("channel", channel)
+                .field("up_to", up_to)
+                .finish(),
+            Self::UnreadCounts { community } => f
+                .debug_struct("UnreadCounts")
+                .field("community", community)
+                .finish(),
             Self::GameServerList { community } => f
                 .debug_struct("GameServerList")
                 .field("community", community)

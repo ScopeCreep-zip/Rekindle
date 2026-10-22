@@ -286,6 +286,7 @@ impl Host {
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
             mode,
+            read_markers: super::read_markers::PendingMarkers::default(),
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(
                 &stores.communities,
             ))),

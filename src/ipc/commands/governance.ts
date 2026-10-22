@@ -217,7 +217,8 @@ export const governanceCommands = {
 
   // Unread tracking
   markChannelRead: (communityId: string, channelId: string, lastMessageId: string) =>
-    invoke<void>("mark_channel_read", { communityId, channelId, lastMessageId }),
+    hostInvoke<void>("mark_channel_read", { communityId, channelId, lastMessageId }),
   getUnreadCounts: (communityId: string) =>
-    invoke<{ channelId: string; unreadCount: number }[]>("get_unread_counts", { communityId }),
+    hostInvoke<{ channelId: string; unreadCount: number; mentionCount: number }[]>(
+      "get_unread_counts", { communityId }),
 };

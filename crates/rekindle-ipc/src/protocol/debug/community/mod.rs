@@ -74,6 +74,8 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::RoleSelfAssign { .. }
             | Self::RoleSelfUnassign { .. }
             | Self::GameServerList { .. }
+            | Self::ChannelMarkRead { .. }
+            | Self::UnreadCounts { .. }
             | Self::GameServerAdd { .. }
             | Self::GameServerRemove { .. } => self.fmt_roles_and_servers(f),
             Self::EventList { .. }

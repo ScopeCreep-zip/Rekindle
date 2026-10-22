@@ -109,8 +109,8 @@ export function transformMessages(msgs: IpcMessage[]): Message[] {
 }
 
 /** Backend channel DTO → store Channel (handles the channelType→type rename+cast). */
-export function transformChannel(ch: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }): Channel {
-  return { id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: ch.unreadCount, categoryId: ch.categoryId, topic: ch.topic ?? "", forumTags: ch.forumTags ?? undefined, stageSpeakers: ch.stageSpeakers ?? undefined, stageModerator: ch.stageModerator ?? null, slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all", notificationSoundRef: ch.notificationSoundRef ?? null };
+export function transformChannel(ch: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }): Channel {
+  return { id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: 0, categoryId: ch.categoryId, topic: ch.topic ?? "", forumTags: ch.forumTags ?? undefined, stageSpeakers: ch.stageSpeakers ?? undefined, stageModerator: ch.stageModerator ?? null, slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all", notificationSoundRef: ch.notificationSoundRef ?? null };
 }
 
 export function transformExpression(expression: ExpressionInfo): Expression {
@@ -155,7 +155,7 @@ export function transformCommunityDetail(c: {
   id: string; name: string; description: string | null;
   iconHash?: string | null;
   bannerHash?: string | null;
-  channels: { id: string; name: string; channelType: string; unreadCount: number; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
+  channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
   categories?: { id: string; name: string; sortOrder: number }[];
   roles?: { id: number; name: string; color: number; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
   myRoleIds?: number[]; myPseudonymKey?: string | null; mekGeneration?: number;

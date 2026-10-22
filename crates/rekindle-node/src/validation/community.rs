@@ -18,6 +18,9 @@ const MAX_EXCLUSION_GROUP_LEN: usize = 32;
 /// The longest community policy text, in characters (architecture §10.7).
 const MAX_POLICY_TEXT_CHARS: usize = 4096;
 
+/// The longest channel or message id a read marker names.
+const MAX_UNREAD_ID_LEN: usize = 128;
+
 use crate::host::adapters::governance::audit::MAX_AUDIT_PAGE;
 use crate::host::adapters::governance::community_pictures::{
     is_picture_hash, MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
@@ -26,9 +29,28 @@ use crate::host::adapters::governance::community_pictures::{
 use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 
 /// A community request's fields.
+/// A read-marker or unread-count request (plan E3.1 G1).
+fn unread_fields(request: &CommunityRequest) -> Checked {
+    match request {
+        CommunityRequest::ChannelMarkRead {
+            community: key,
+            channel,
+            up_to,
+        } => {
+            community(key)?;
+            text(channel, MAX_UNREAD_ID_LEN, "channel")?;
+            text(up_to, MAX_UNREAD_ID_LEN, "message id")
+        }
+        CommunityRequest::UnreadCounts { community: key } => community(key),
+        _ => Ok(()),
+    }
+}
+
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
+        request @ (CommunityRequest::ChannelMarkRead { .. }
+        | CommunityRequest::UnreadCounts { .. }) => unread_fields(request),
         CommunityRequest::GameServerList { community: key }
         | CommunityRequest::NotificationDefaultGet { community: key }
         | CommunityRequest::CommunityPolicyGet { community: key } => community(key),

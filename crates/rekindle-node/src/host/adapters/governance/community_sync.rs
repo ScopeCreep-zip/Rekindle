@@ -42,6 +42,10 @@ pub(crate) fn start(
     let host = HostGovernance::new(ctx.this.upgrade().expect("a context in use is alive"));
     let expiry = host.clone();
     let reminders = host.clone();
+    let markers = host.clone();
+    scope.spawn_with_token("read marker write-behind", move |stop| {
+        super::unread::write_behind(markers, stop)
+    })?;
     scope.spawn_with_token("community sync", move |stop| run(host, stop))?;
     scope.spawn_with_token("community invite expiry", move |stop| {
         super::invite_expiry::run(expiry, stop)

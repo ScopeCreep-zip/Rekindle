@@ -16,7 +16,6 @@ pub mod community_moderation_runtime; // Phase 23.C — message-deletion runtime
 pub mod community_notifications_runtime; // Phase 23.C — quiet-hours wrappers lifted from commands/community/notifications.rs.
 pub mod community_pins_runtime; // Phase 23.C — pin/unpin/get_channel_pins orchestration lifted from commands/community/reactions_pins.rs.
 pub mod community_presence_runtime; // Phase 23.C — presence-handler runtime orchestration lifted from commands/community/presence.rs.
-pub mod community_unread_runtime; // Phase 23.C — unread mark/get bodies lifted from commands/community/unread.rs.
 pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchestration lifted from commands/community/video.rs.
 pub mod community_views_runtime; // Phase 23.C — community list/detail DTO mappers lifted from commands/community/crud.rs.
 pub mod cross_device_sync;

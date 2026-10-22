@@ -273,6 +273,18 @@ pub enum CommunityRequest {
         generation: u64,
     },
 
+    // ── Unread (plan E3.1 G1, D25) ────────────────────────────────
+    /// Advance our read marker on `channel` to the message `up_to` (its
+    /// lamport); a marker never moves back.
+    ChannelMarkRead {
+        community: String,
+        channel: String,
+        up_to: String,
+    },
+    /// Each channel's unread messages and mentions, counted after our read
+    /// markers.
+    UnreadCounts { community: String },
+
     // ── Game servers (plan E3.1 H1) ───────────────────────────────
     /// A community's game servers, newest first.
     GameServerList { community: String },

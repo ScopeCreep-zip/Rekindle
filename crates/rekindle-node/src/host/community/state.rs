@@ -379,7 +379,6 @@ pub struct ChannelInfo {
     pub id: String,
     pub name: String,
     pub channel_type: ChannelType,
-    pub unread_count: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category_id: Option<String>,
     #[serde(default)]

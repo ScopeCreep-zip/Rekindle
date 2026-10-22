@@ -265,6 +265,8 @@ pub(crate) async fn select(
             | CommunityRequest::MekRequest { .. }
             | CommunityRequest::RoleList { .. }
             | CommunityRequest::GameServerList { .. }
+            | CommunityRequest::ChannelMarkRead { .. }
+            | CommunityRequest::UnreadCounts { .. }
             | CommunityRequest::OnboardingConfigGet { .. }
             | CommunityRequest::WelcomeScreenGet { .. }
             | CommunityRequest::AuditLog { .. }

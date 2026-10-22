@@ -41,6 +41,7 @@ mod own;
 mod router;
 pub(crate) mod shell;
 mod status;
+mod unread;
 mod voice;
 
 use std::sync::Arc;
@@ -187,6 +188,9 @@ pub struct DaemonContext {
     /// cached CRDT `GovernanceState`, leases, roster and roles, over the
     /// map the GUI's `AppState.communities` shares in Shell mode.
     pub communities: Arc<crate::host::community::CommunityStore>,
+    /// Read markers advanced but not yet written (plan E3.1, D25: ≤ 30 s
+    /// write-behind; `host::read_markers`).
+    pub read_markers: crate::host::read_markers::PendingMarkers,
     /// Departure-triggered MEK rotations, queued for the worker that
     /// owns the daemon's `Arc<DaemonContext>`.
     ///
