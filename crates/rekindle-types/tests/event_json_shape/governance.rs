@@ -134,6 +134,7 @@ fn invites_and_subkeys() -> Vec<Sample> {
             "inviteCreated",
             GovernanceEvent::InviteCreated {
                 community: community(),
+                invite_id: "0a".repeat(16),
                 code_hash: invite_hash(),
                 created_by: pk('a'),
                 max_uses: Some(10),

@@ -105,6 +105,7 @@ impl IpcRequest {
             Self::CommunityLeave { .. } => ("CommunityLeave", Write, Authenticated),
             Self::CommunityList => ("CommunityList", Query, Authenticated),
             Self::CommunityInfo { .. } => ("CommunityInfo", Query, Authenticated),
+            Self::CommunityUpdateInfo { .. } => ("CommunityUpdateInfo", Write, Authenticated),
             Self::CommunityApprove { .. } => ("CommunityApprove", Write, Authenticated),
             Self::CommunityReject { .. } => ("CommunityReject", Write, Authenticated),
             Self::CommunityPendingMembers { .. } => {

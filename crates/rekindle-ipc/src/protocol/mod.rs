@@ -190,6 +190,15 @@ pub enum IpcRequest {
     CommunityList,
     /// Get detailed community info (channels, roles, members).
     CommunityInfo { governance_key: String },
+    /// Edit a community's name, description, icon or banner; `None` keeps
+    /// the merged value.
+    CommunityUpdateInfo {
+        governance_key: String,
+        name: Option<String>,
+        description: Option<String>,
+        icon_hash: Option<String>,
+        banner_hash: Option<String>,
+    },
     /// Approve a pending member from the waiting room.
     CommunityApprove {
         governance_key: String,

@@ -1,4 +1,8 @@
+use rekindle_ipc::protocol::IpcRequest;
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
+
+use crate::host_call;
 
 use crate::services::community_views_runtime::{
     list_communities_inner, list_community_details_inner,
@@ -91,6 +95,8 @@ pub async fn leave_community(
     .await
 }
 
+/// Edit the community's name, description, icon or banner; `None` keeps
+/// the merged value (`IpcRequest::CommunityUpdateInfo`).
 #[tauri::command]
 pub async fn update_community_info(
     community_id: String,
@@ -99,18 +105,13 @@ pub async fn update_community_info(
     icon_hash: Option<String>,
     banner_hash: Option<String>,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    crate::services::community_lifecycle_runtime::update_community_info_inner(
-        state.inner(),
-        &pool,
-        community_id,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::CommunityUpdateInfo {
+        governance_key: community_id,
         name,
         description,
         icon_hash,
         banner_hash,
-    )
-    .await
+    };
+    host_call::call(&state, request).await
 }

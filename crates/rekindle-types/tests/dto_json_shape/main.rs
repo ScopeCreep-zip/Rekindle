@@ -10,6 +10,7 @@ mod json;
 use std::path::PathBuf;
 
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
+use rekindle_types::dto::community::{CommunityInviteCreated, CommunityInviteView};
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
@@ -329,6 +330,28 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             ],
             epoch: 0,
             pending: true,
+        }),
+    );
+    add(
+        "community.inviteCreated",
+        to(CommunityInviteCreated {
+            invite_id: "0a".repeat(16),
+            code_hash: "ab".repeat(32),
+            url: "rekindle://invite/VLD0:g/VLD0:s/0b0b".into(),
+            expires_at: Some(1_700_604_800),
+        }),
+    );
+    add(
+        "community.inviteView.ours",
+        to(CommunityInviteView {
+            invite_id: "0a".repeat(16),
+            code_hash: "ab".repeat(32),
+            created_by: pk('a'),
+            max_uses: Some(5),
+            uses: 2,
+            expires_at: None,
+            created_at: Some(1_700_000_000_000),
+            url: Some("rekindle://invite/VLD0:g/VLD0:s/0b0b".into()),
         }),
     );
 }

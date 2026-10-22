@@ -1,4 +1,4 @@
-import { invoke } from "../invoke";
+import { hostInvoke, invoke } from "../invoke";
 import type {
   CreateEventRequest, EventInfo, ExclusionGroupEdit, Message, PresenceSharingPolicy,
 } from "./types";
@@ -66,11 +66,11 @@ export const governanceCommands = {
 
   // Community invites
   createCommunityInvite: (communityId: string, maxUses?: number, expiresInSeconds?: number) =>
-    invoke<InviteCreated>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
-  revokeCommunityInvite: (communityId: string, codeHash: string) =>
-    invoke<void>("revoke_community_invite", { communityId, codeHash }),
+    hostInvoke<InviteCreated>("create_community_invite", { communityId, maxUses: maxUses ?? null, expiresInSeconds: expiresInSeconds ?? null }),
+  revokeCommunityInvite: (communityId: string, inviteId: string) =>
+    hostInvoke<unknown>("revoke_community_invite", { communityId, inviteId }),
   listCommunityInvites: (communityId: string) =>
-    invoke<InviteDto[]>(
+    hostInvoke<InviteDto[]>(
       "list_community_invites", { communityId }
     ),
 

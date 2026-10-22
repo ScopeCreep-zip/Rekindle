@@ -28,15 +28,21 @@ export interface AuditLogEntryDto {
   timestamp: number;
 }
 
+/** A live community invite (`rekindle_types::dto::community::CommunityInviteView`). */
 export interface InviteDto {
+  /** What a revoke names. */
+  inviteId: string;
   codeHash: string;
   createdBy: string;
   maxUses: number | null;
+  /** Counted only by the minter. */
   uses: number;
+  /** Unix seconds. */
   expiresAt: number | null;
-  createdAt: number;
-  /** The invite link, built by the backend — only for invites this node created. */
-  url?: string;
+  /** Milliseconds; null for another member's invite. */
+  createdAt: number | null;
+  /** The invite link, only for invites this identity minted. */
+  url: string | null;
 }
 
 // ── Friends and direct messages (plan E2.1; `rekindle_types::dto::{friends, dm}`) ──
@@ -122,8 +128,11 @@ export interface FriendInviteCreated {
 
 /** A freshly minted invite. */
 export interface InviteCreated {
+  inviteId: string;
   codeHash: string;
   url: string;
+  /** Unix seconds. */
+  expiresAt: number | null;
 }
 
 // ── Onboarding ──

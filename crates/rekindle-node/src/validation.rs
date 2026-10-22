@@ -340,6 +340,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::CommunityJoin { .. }
         | IpcRequest::CommunityLeave { .. }
         | IpcRequest::CommunityInfo { .. }
+        | IpcRequest::CommunityUpdateInfo { .. }
         | IpcRequest::CommunityPendingMembers { .. }
         | IpcRequest::CommunityApprove { .. }
         | IpcRequest::CommunityReject { .. }

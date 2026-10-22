@@ -28,6 +28,26 @@ pub(super) async fn route(
         IpcRequest::CommunityInfo { governance_key } => {
             community::handle_info(ctx, state, &governance_key)
         }
+        IpcRequest::CommunityUpdateInfo {
+            governance_key,
+            name,
+            description,
+            icon_hash,
+            banner_hash,
+        } => {
+            community::handle_update_info(
+                ctx,
+                state,
+                &governance_key,
+                crate::host::adapters::governance::InfoEdit {
+                    name,
+                    description,
+                    icon_hash,
+                    banner_hash,
+                },
+            )
+            .await
+        }
         IpcRequest::CommunityApprove {
             governance_key,
             member_pseudonym,
@@ -158,7 +178,7 @@ pub(super) async fn route(
                 .await
         }
         IpcRequest::InviteList { community } => {
-            governance::handle_invite_list(ctx, state, &community)
+            governance::handle_invite_list(ctx, state, &community).await
         }
         IpcRequest::InviteRevoke {
             community,

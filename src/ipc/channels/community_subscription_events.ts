@@ -189,6 +189,7 @@ export type GovernanceEvent =
   | {
       inviteCreated: {
         community: string;
+        inviteId: string;
         codeHash: string;
         createdBy: string;
         maxUses: number | null;

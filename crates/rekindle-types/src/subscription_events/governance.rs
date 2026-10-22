@@ -75,6 +75,8 @@ pub enum GovernanceEvent {
     /// An invite was created.
     InviteCreated {
         community: String,
+        /// The governance invite id, 32 lowercase hex: what a revoke names.
+        invite_id: String,
         code_hash: String,
         created_by: String,
         max_uses: Option<u32>,
@@ -225,6 +227,7 @@ mod tests {
             },
             GovernanceEvent::InviteCreated {
                 community: "c".into(),
+                invite_id: "0a".repeat(16),
                 code_hash: "hash".into(),
                 created_by: "pk".into(),
                 max_uses: Some(5),

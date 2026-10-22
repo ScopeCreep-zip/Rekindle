@@ -467,6 +467,7 @@
         "createdAt": 1760000000000,
         "createdBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "expiresAt": 1760086400000,
+        "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
         "maxUses": 10,
         "uses": 0
       }

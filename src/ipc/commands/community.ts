@@ -1,4 +1,4 @@
-import { invoke } from "../invoke";
+import { hostInvoke, invoke } from "../invoke";
 import type { ImageKind } from "./system";
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
@@ -339,7 +339,7 @@ export const communityCommands = {
     iconHash: string | null = null,
     bannerHash: string | null = null,
   ) =>
-    invoke<void>("update_community_info", {
+    hostInvoke<unknown>("update_community_info", {
       communityId,
       name,
       description,

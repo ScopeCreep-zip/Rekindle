@@ -89,6 +89,7 @@ async fn route(
         | IpcRequest::CommunityLeave { .. }
         | IpcRequest::CommunityList
         | IpcRequest::CommunityInfo { .. }
+        | IpcRequest::CommunityUpdateInfo { .. }
         | IpcRequest::CommunityApprove { .. }
         | IpcRequest::CommunityReject { .. }
         | IpcRequest::CommunityPendingMembers { .. }

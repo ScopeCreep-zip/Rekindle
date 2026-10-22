@@ -42,6 +42,12 @@ pub(super) fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
+        IpcRequest::CommunityUpdateInfo { governance_key, .. } => {
+            let (id, name) = community(ctx, governance_key)?;
+            s.reversibility = Reversibility::Undoable;
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
+        }
         IpcRequest::CommunityApprove {
             governance_key,
             member_pseudonym,

@@ -119,6 +119,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::CommunityLeave { .. }
             | Self::CommunityList
             | Self::CommunityInfo { .. }
+            | Self::CommunityUpdateInfo { .. }
             | Self::CommunityApprove { .. }
             | Self::CommunityReject { .. }
             | Self::CommunityPendingMembers { .. }

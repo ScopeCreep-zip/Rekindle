@@ -12,14 +12,14 @@ export async function handleCreateCommunityInvite(
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
     // Optimistic store update — the raw code is only available to the creator
-    const now = Math.floor(Date.now() / 1000);
     const newInvite: InviteDto = {
+      inviteId: result.inviteId,
       codeHash: result.codeHash,
       createdBy: authState.publicKey ?? "",
       maxUses: maxUses ?? null,
       uses: 0,
-      expiresAt: expiresInSeconds ? now + expiresInSeconds : null,
-      createdAt: now,
+      expiresAt: result.expiresAt,
+      createdAt: Date.now(),
       url: result.url,
     };
     setCommunityState("communityInvites", communityId, (prev) => [newInvite, ...(prev ?? [])]);
@@ -33,13 +33,13 @@ export async function handleCreateCommunityInvite(
 
 export async function handleRevokeCommunityInvite(
   communityId: string,
-  codeHash: string,
+  inviteId: string,
 ): Promise<boolean> {
   try {
-    await commands.revokeCommunityInvite(communityId, codeHash);
+    await commands.revokeCommunityInvite(communityId, inviteId);
     // Optimistic store removal
     setCommunityState("communityInvites", communityId, (prev) =>
-      (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
+      (prev ?? []).filter((inv) => inv.inviteId !== inviteId),
     );
     return true;
   } catch (err) {

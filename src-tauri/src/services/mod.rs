@@ -16,7 +16,6 @@ pub mod community_diagnostics_runtime; // Phase 23.C — debug_gossip_state body
 pub mod community_event_runtime; // Phase 23.C — event creation orchestration lifted from commands/community/events.rs.
 pub mod community_files_runtime; // Phase 23.C — Lost Cargo file-handler orchestration lifted from commands/community/files.rs.
 pub mod community_game_servers_runtime; // Phase 23.C — game-server add/list orchestration lifted from commands/community/game_servers.rs.
-pub mod community_invite_runtime; // Phase 23.C — invite-handler runtime orchestration lifted from commands/community/invites.rs.
 pub mod community_lifecycle_runtime; // Phase 23.C — community-leave teardown orchestration lifted from commands/community/crud.rs.
 pub mod community_link_previews_runtime; // Phase 23.C — link-preview settings SQLite ops lifted from commands/community/link_previews.rs.
 pub mod community_mek_local_rotate; // Phase 23.C — `rotate_mek_local` lifted from legacy/control.rs.

@@ -36,6 +36,23 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         IpcRequest::CommunityLeave { governance_key }
         | IpcRequest::CommunityInfo { governance_key }
         | IpcRequest::CommunityPendingMembers { governance_key } => community(governance_key),
+        IpcRequest::CommunityUpdateInfo {
+            governance_key,
+            name: community_name,
+            description,
+            icon_hash,
+            banner_hash,
+        } => {
+            community(governance_key)?;
+            opt(community_name.as_deref(), |n| name(n, "community"))?;
+            opt(description.as_deref(), |d| {
+                bounds::description(d)
+                    .map(drop)
+                    .map_err(|e| reject("description", &e))
+            })?;
+            opt(icon_hash.as_deref(), |h| blob_hash(h, "icon hash"))?;
+            opt(banner_hash.as_deref(), |h| blob_hash(h, "banner hash"))
+        }
         IpcRequest::CommunityApprove {
             governance_key,
             member_pseudonym,
@@ -184,5 +201,21 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             })
         }
         other => unreachable!("{} is not a community request", other.name()),
+    }
+}
+
+/// A BLAKE3 content hash: 64 lowercase hex.
+fn blob_hash(hash: &str, what: &str) -> Checked {
+    if hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        Ok(())
+    } else {
+        Err(IpcResponse::error(
+            400,
+            format!("invalid {what}: 64 lowercase hex"),
+        ))
     }
 }

@@ -68,6 +68,22 @@
     },
     "type": "intentRequired"
   },
+  "community.inviteCreated": {
+    "codeHash": "abababababababababababababababababababababababababababababababab",
+    "expiresAt": 1700604800,
+    "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "url": "rekindle://invite/VLD0:g/VLD0:s/0b0b"
+  },
+  "community.inviteView.ours": {
+    "codeHash": "abababababababababababababababababababababababababababababababab",
+    "createdAt": 1700000000000,
+    "createdBy": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "expiresAt": null,
+    "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "maxUses": 5,
+    "url": "rekindle://invite/VLD0:g/VLD0:s/0b0b",
+    "uses": 2
+  },
   "dm.historyGap": {
     "body": "",
     "historyGapThrough": 4,

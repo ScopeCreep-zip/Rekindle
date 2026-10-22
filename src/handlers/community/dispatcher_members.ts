@@ -281,12 +281,14 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
   if ("inviteCreated" in g) {
     const inv = g.inviteCreated;
     const invite: InviteDto = {
+      inviteId: inv.inviteId,
       codeHash: inv.codeHash,
       createdBy: inv.createdBy,
       maxUses: inv.maxUses,
       uses: inv.uses,
       expiresAt: inv.expiresAt,
       createdAt: inv.createdAt,
+      url: null,
     };
     // Deduplicate: the optimistic insert from handleCreateCommunityInvite
     // may already be present.

@@ -402,59 +402,16 @@ pub(crate) async fn handle_invite_create(
         Ok(m) => m,
         Err(e) => return e,
     };
-    // Mints the encrypted secrets record and writes `InviteCreated`.
-    // The previous path appended an `InviteEntry` to the v1.0 manifest
-    // with `encrypted_secrets: None`, so the invite carried no slot seed
-    // and the join failed with "invite has no secrets pointer" — and
-    // with no governance entry, revocation, expiry and the per-inviter
-    // quota never applied to it either.
-    match rekindle_governance_runtime::invites::create_invite(
-        &adapter(ctx),
-        &membership.governance_key,
-        max_uses,
-        expires_seconds,
-    )
-    .await
+    match adapter(ctx)
+        .create_invite(&membership.governance_key, max_uses, expires_seconds)
+        .await
     {
-        Ok(invite) => {
-            // The joiner needs all three parts, so hand back the link
-            // rather than making every frontend assemble it.
-            let link = match invite_link(
-                &membership.governance_key,
-                &invite.secrets_record_key,
-                &invite.code,
-            ) {
-                Ok(link) => link,
-                Err(e) => return IpcResponse::error(500, format!("invite link: {e}")),
-            };
-            IpcResponse::ok(&serde_json::json!({
-                "invite_code": invite.code,
-                "code_hash": invite.code_hash,
-                "secrets_record_key": invite.secrets_record_key,
-                "invite_id": hex::encode(invite.invite_id),
-                "expires_at": invite.expires_at,
-                "invite_link": link.to_url(),
-            }))
-        }
-        Err(e) => IpcResponse::error(500, format!("invite create: {e}")),
+        Ok(created) => IpcResponse::ok(&created),
+        Err(e) => IpcResponse::error(500, e),
     }
 }
 
-/// The canonical invite link for a freshly minted invite.
-fn invite_link(
-    governance_key: &str,
-    secrets_record_key: &str,
-    code: &str,
-) -> Result<rekindle_types::invite::InviteLink, rekindle_types::key_format::KeyFormatError> {
-    use rekindle_types::key_format;
-    Ok(rekindle_types::invite::InviteLink {
-        governance_key: key_format::record_key(governance_key)?,
-        secrets_record_key: key_format::record_key(secrets_record_key)?,
-        invite_code: key_format::hex16_id(code)?,
-    })
-}
-
-pub(crate) fn handle_invite_list(
+pub(crate) async fn handle_invite_list(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -466,44 +423,21 @@ pub(crate) fn handle_invite_list(
         Ok(m) => m,
         Err(e) => return e,
     };
-    // From merged governance. Revocation is a `InviteRevoked` tombstone
-    // the merge applies, so an entry present here is one no peer has
-    // revoked — the manifest list could not say that.
-    let now = ctx.clock.now_secs();
-    let invites: Vec<serde_json::Value> = ctx
-        .communities
-        .governance_state(&membership.governance_key)
-        .map(|gov| {
-            gov.invites
-                .iter()
-                .filter(|(_, inv)| inv.expires_at.is_none_or(|exp| exp > now))
-                .map(|(invite_id, inv)| {
-                    serde_json::json!({
-                        "invite_id": hex::encode(invite_id),
-                        "code_hash": inv.code_hash,
-                        "max_uses": inv.max_uses,
-                        "expires_at": inv.expires_at,
-                        "secrets_record_key": inv.secrets_record_key,
-                        "created_by": hex::encode(inv.creator_pseudonym.0),
-                    })
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    IpcResponse::ok(&invites)
+    match adapter(ctx).list_invites(&membership.governance_key).await {
+        Ok(invites) => IpcResponse::ok(&invites),
+        Err(e) => IpcResponse::error(500, e),
+    }
 }
 
 pub(crate) async fn handle_invite_revoke(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    invite_code: &str,
+    invite_id: &str,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    // Still gated on being attached: the entry write goes to the DHT,
-    // and failing here is a clearer answer than a deep write error.
     if let Err(e) = ctx.require_transport() {
         return e;
     }
@@ -514,24 +448,17 @@ pub(crate) async fn handle_invite_revoke(
     // Identified by invite id, not by the raw code: the code is never
     // published (only its hash is), so a revoker who was not the minter
     // has no way to supply it. `InviteList` returns the ids.
-    let Some(invite_id) = hex::decode(invite_code)
+    let Some(id) = hex::decode(invite_id)
         .ok()
         .and_then(|b| <[u8; 16]>::try_from(b).ok())
     else {
-        return IpcResponse::error(
-            400,
-            "revoke takes the 16-byte invite id from `invite list`, not the raw code — \
-             the code is never published, only its hash",
-        );
+        return IpcResponse::error(400, "revoke takes the 16-byte invite id from `invite list`");
     };
-    match rekindle_governance_runtime::invites::revoke_invite(
-        &adapter(ctx),
-        &membership.governance_key,
-        invite_id,
-    )
-    .await
+    match adapter(ctx)
+        .revoke_invite(&membership.governance_key, id)
+        .await
     {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "revoked": hex::encode(invite_id) })),
-        Err(e) => IpcResponse::error(500, format!("invite revoke: {e}")),
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "revoked": invite_id })),
+        Err(e) => IpcResponse::error(500, e),
     }
 }

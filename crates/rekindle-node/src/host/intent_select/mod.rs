@@ -201,6 +201,7 @@ pub(crate) async fn select(
         | IpcRequest::GroupDmMessages { .. }
         | IpcRequest::CommunityList
         | IpcRequest::CommunityInfo { .. }
+        | IpcRequest::CommunityUpdateInfo { .. }
         | IpcRequest::CommunityPendingMembers { .. }
         | IpcRequest::ChannelList { .. }
         | IpcRequest::ChannelHistory { .. }

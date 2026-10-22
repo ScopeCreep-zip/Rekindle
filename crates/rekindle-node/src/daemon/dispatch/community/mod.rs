@@ -9,7 +9,7 @@ mod membership;
 mod ownership;
 mod query;
 
-pub(crate) use lifecycle::{handle_create, handle_join, handle_leave};
+pub(crate) use lifecycle::{handle_create, handle_join, handle_leave, handle_update_info};
 pub(crate) use membership::{handle_approve, handle_pending_members, handle_reject};
 pub(crate) use ownership::handle_transfer_ownership;
 pub(crate) use query::{handle_info, handle_list};

@@ -442,6 +442,7 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("CommunityLeave", Some(IntentKind::LeaveCommunity)),
     ("CommunityList", None),
     ("CommunityInfo", None),
+    ("CommunityUpdateInfo", Some(IntentKind::UpdateCommunityInfo)),
     ("CommunityApprove", Some(IntentKind::ApproveJoinRequest)),
     ("CommunityReject", Some(IntentKind::RejectJoinRequest)),
     ("CommunityPendingMembers", None),

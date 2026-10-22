@@ -137,6 +137,7 @@ impl IpcRequest {
             Self::CommunityCreate { .. }
             | Self::CommunityJoin { .. }
             | Self::CommunityLeave { .. }
+            | Self::CommunityUpdateInfo { .. }
             | Self::ChannelCreate { .. }
             | Self::ChannelDelete { .. }
             | Self::ChannelUpdate { .. }

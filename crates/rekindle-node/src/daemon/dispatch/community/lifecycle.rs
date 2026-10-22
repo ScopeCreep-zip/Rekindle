@@ -331,3 +331,28 @@ pub(crate) async fn handle_leave(
         Err(e) => IpcResponse::error(500, format!("community leave failed: {e}")),
     }
 }
+
+pub(crate) async fn handle_update_info(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    governance_key: &str,
+    edit: crate::host::adapters::governance::InfoEdit,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    if let Err(e) = ctx.require_transport() {
+        return e;
+    }
+    let membership = match ctx.resolve_community(governance_key) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match adapter(ctx)
+        .update_info(&membership.governance_key, edit)
+        .await
+    {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "updated": membership.governance_key })),
+        Err(e) => IpcResponse::error(500, e),
+    }
+}

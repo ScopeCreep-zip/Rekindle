@@ -98,3 +98,36 @@ mod tests {
         assert_eq!(uses(&conn, "me", "c", "h").unwrap(), Some(2));
     }
 }
+
+/// An invite this identity minted, as stored.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnInvite {
+    pub code: String,
+    pub code_hash: String,
+    pub uses: u32,
+    pub created_at: i64,
+}
+
+/// Every invite this identity minted for `community_id`, by code hash.
+///
+/// # Errors
+/// The read failed.
+pub fn list(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+) -> rusqlite::Result<Vec<OwnInvite>> {
+    let mut stmt = conn.prepare(
+        "SELECT code, code_hash, uses, created_at FROM community_invites \
+         WHERE owner_key = ?1 AND community_id = ?2 ORDER BY code_hash",
+    )?;
+    let rows = stmt.query_map(params![owner_key, community_id], |row| {
+        Ok(OwnInvite {
+            code: row.get(0)?,
+            code_hash: row.get(1)?,
+            uses: row.get(2)?,
+            created_at: row.get(3)?,
+        })
+    })?;
+    rows.collect()
+}

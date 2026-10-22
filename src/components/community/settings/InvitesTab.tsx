@@ -63,10 +63,10 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
     }
   }
 
-  async function revokeInvite(codeHash: string): Promise<void> {
-    setRevokingHash(codeHash);
+  async function revokeInvite(inviteId: string): Promise<void> {
+    setRevokingHash(inviteId);
     try {
-      const ok = await handleRevokeCommunityInvite(props.communityId, codeHash);
+      const ok = await handleRevokeCommunityInvite(props.communityId, inviteId);
       if (ok) addToast("Invite revoked", "success");
     } finally {
       setRevokingHash(null);
@@ -184,10 +184,10 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 <Show when={props.canManage}>
                   <button
                     class="form-btn-secondary"
-                    onClick={() => revokeInvite(invite.codeHash)}
-                    disabled={revokingHash() === invite.codeHash}
+                    onClick={() => revokeInvite(invite.inviteId)}
+                    disabled={revokingHash() === invite.inviteId}
                   >
-                    {revokingHash() === invite.codeHash ? "Revoking..." : "Revoke"}
+                    {revokingHash() === invite.inviteId ? "Revoking..." : "Revoke"}
                   </button>
                 </Show>
               </div>
