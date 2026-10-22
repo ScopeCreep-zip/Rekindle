@@ -103,4 +103,18 @@ pub trait ShellHooks: Send + Sync {
     /// # Errors
     /// We lack the permission, or the community is unknown.
     fn require_permission(&self, community_id: &str, perm_bits: u64) -> Result<(), String>;
+
+    /// The Host projected merged governance onto the community
+    /// (`adapters::governance::projection`): the shell's effects of a merge
+    /// that the Host cannot run yet. Each names its owner step: the Lost
+    /// Cargo cache and pinned set, and the eager expression fetch (the files
+    /// domain, E3.1 E3); opening new Plate Gate segment records and the
+    /// watch refresh when `projected.new_watch_targets` (the watch path,
+    /// E3.1 C1); the event RSVP lists, the `community_events` rows and the
+    /// reminder wake (the events domain, E3.1 E3).
+    fn on_governance_projected(
+        &self,
+        community_id: &str,
+        projected: &crate::host::adapters::governance::projection::GovernanceProjected,
+    );
 }

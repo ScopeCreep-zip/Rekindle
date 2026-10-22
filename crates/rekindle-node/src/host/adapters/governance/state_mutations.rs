@@ -29,9 +29,10 @@ impl HostGovernance {
             community_id,
             &state,
         );
-        self.ctx
-            .communities
-            .set_governance_state(community_id, state);
+        let projected = self.ctx.communities.project_governance(community_id, state);
+        if let Some(shell) = &self.ctx.shell {
+            shell.on_governance_projected(community_id, &projected);
+        }
     }
 
     /// Advance the community's **governance** Lamport counter and return

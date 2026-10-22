@@ -5,8 +5,8 @@
 //! `GovernanceEntry::ExpressionAdded` as an `AttachmentOffer`. Every
 //! member eager-caches the chunks so the picker can render the
 //! resolved bytes without a per-render fetch round-trip. This module
-//! holds the eager-fetch loop the src-tauri side runs from
-//! `set_governance_state` after a CRDT merge.
+//! holds the eager-fetch loop the src-tauri side runs from its
+//! `on_governance_projected` hook after a CRDT merge.
 //!
 //! Parameterised over `FilesDeps` — receives the per-community
 //! governance-expression snapshot via `deps.governance_expressions_with_attachments`,

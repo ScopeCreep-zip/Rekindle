@@ -10,11 +10,13 @@
 //! loaders run, the network stages do not.
 
 mod ended;
+mod governance;
 mod unlocked;
 
 use std::sync::Arc;
 
 use rekindle_lifecycle::SessionScope;
+use rekindle_node::host::adapters::governance::projection::GovernanceProjected;
 use rekindle_node::host::{EndReason, OwnRecordKeys, ShellHooks, UnlockedView};
 
 use crate::state::SharedState;
@@ -91,5 +93,9 @@ impl ShellHooks for ShellSession {
 
     fn require_permission(&self, community_id: &str, perm_bits: u64) -> Result<(), String> {
         crate::commands::community::require_permission(&self.state, community_id, perm_bits)
+    }
+
+    fn on_governance_projected(&self, community_id: &str, projected: &GovernanceProjected) {
+        governance::on_projected(&self.state, community_id, *projected);
     }
 }

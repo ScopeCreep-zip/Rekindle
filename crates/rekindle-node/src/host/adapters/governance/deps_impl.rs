@@ -336,7 +336,8 @@ impl GovernanceRuntimeDeps for HostGovernance {
         gov_state: GovernanceState,
         accepted_clock: u64,
     ) {
-        self.apply_governance_rebuild_result_impl(community_id, gov_state, accepted_clock);
+        self.apply_governance_rebuild_result_impl(community_id, gov_state, accepted_clock)
+            .await;
     }
 
     fn persist_governance_entries_cache(

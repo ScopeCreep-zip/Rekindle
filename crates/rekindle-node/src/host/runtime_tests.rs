@@ -122,6 +122,12 @@ impl shell_hooks::ShellHooks for Recorder {
     fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
         Ok(())
     }
+    fn on_governance_projected(
+        &self,
+        _community_id: &str,
+        _projected: &crate::host::adapters::governance::projection::GovernanceProjected,
+    ) {
+    }
 }
 
 /// The Host calls the shell at its fixed points: after its own stages,
@@ -187,6 +193,12 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
         fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
             Ok(())
+        }
+        fn on_governance_projected(
+            &self,
+            _community_id: &str,
+            _projected: &crate::host::adapters::governance::projection::GovernanceProjected,
+        ) {
         }
     }
     let dir = tempfile::tempdir().unwrap();

@@ -16,7 +16,10 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
 use rekindle_transport::session::CommunityMembership;
 
+use rekindle_db::repo::communities::snapshot::GovernanceSnapshot;
+
 use super::state::{CommunityState, MemberRecord};
+use crate::host::adapters::governance::projection::{self, GovernanceProjected};
 
 /// Every joined community, keyed by governance key.
 pub type CommunityMap = Arc<RwLock<HashMap<String, CommunityState>>>;
@@ -69,6 +72,29 @@ impl CommunityStore {
     /// the first merge for the community.
     pub fn set_governance_state(&self, community_id: &str, state: GovernanceState) {
         self.write(community_id, |c| c.governance_state = Some(state));
+    }
+
+    /// Project merged governance onto the community (channels, roles,
+    /// categories, our role ids, segments; plan E3.1 B2c) and install it,
+    /// creating the entry if this is the first merge for the community.
+    pub fn project_governance(
+        &self,
+        community_id: &str,
+        state: GovernanceState,
+    ) -> GovernanceProjected {
+        self.write(community_id, |c| projection::project(c, state))
+    }
+
+    /// The community's merged governance as SQLite stores it, at our
+    /// governance clock; `None` before its governance has merged or when
+    /// the clock is beyond what SQLite holds.
+    #[must_use]
+    pub fn governance_snapshot(&self, community_id: &str) -> Option<GovernanceSnapshot> {
+        self.read(community_id, |c| {
+            let clock = i64::try_from(c.governance_clock).ok()?;
+            projection::snapshot(c, clock)
+        })
+        .flatten()
     }
 
     /// Fold `incoming` into the community's leases

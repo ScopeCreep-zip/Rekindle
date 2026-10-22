@@ -173,8 +173,9 @@ impl HostGovernance {
         keys
     }
 
-    /// Raise the Lamport counter and install the merged state.
-    pub(super) fn apply_governance_rebuild_result_impl(
+    /// Raise the Lamport counter, project the merged state, and save its
+    /// snapshot for the next login's restore.
+    pub(super) async fn apply_governance_rebuild_result_impl(
         &self,
         community_id: &str,
         gov_state: GovernanceState,
@@ -190,6 +191,39 @@ impl HostGovernance {
             accepted_clock,
         );
         self.set_governance_state_impl(community_id, gov_state);
+        self.persist_governance_snapshot(community_id).await;
+    }
+
+    /// The community's projected governance into SQLite
+    /// (`repo::communities::snapshot`), awaited so a restart restores it.
+    async fn persist_governance_snapshot(&self, community_id: &str) {
+        let Some(owner) = self
+            .ctx
+            .session
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone())
+        else {
+            return;
+        };
+        let Ok(db) = self.ctx.db.current() else {
+            return;
+        };
+        let Some(snapshot) = self.ctx.communities.governance_snapshot(community_id) else {
+            tracing::warn!(community_id, "no governance snapshot to persist");
+            return;
+        };
+        let community = community_id.to_string();
+        let saved = db
+            .call(move |conn| {
+                rekindle_db::repo::communities::snapshot::replace(
+                    conn, &owner, &community, &snapshot,
+                )
+            })
+            .await;
+        if let Err(error) = saved {
+            tracing::warn!(community_id, %error, "rebuilt governance snapshot not persisted");
+        }
     }
 
     /// Warm cache of the raw per-author entry sets, so the next start can

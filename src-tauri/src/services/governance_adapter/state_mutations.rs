@@ -10,29 +10,49 @@ use crate::state_helpers;
 
 use super::GovernanceAdapter;
 
+/// The Host's governance adapter, which projects merged state for both
+/// hosts (plan E3.1 B2c); `None` before the Host is up.
+fn host_governance(
+    adapter: &GovernanceAdapter,
+) -> Option<rekindle_node::host::adapters::governance::HostGovernance> {
+    let governance = adapter.state.host.current().map(|host| host.governance());
+    if governance.is_none() {
+        tracing::warn!("governance state arrived before the Host is up");
+    }
+    governance
+}
+
+/// Install merged governance through the Host's projection.
+pub(super) fn set_governance_state_impl(
+    adapter: &GovernanceAdapter,
+    community_id: &str,
+    gov_state: GovernanceState,
+) {
+    if let Some(governance) = host_governance(adapter) {
+        rekindle_governance_runtime::GovernanceRuntimeDeps::set_governance_state(
+            &governance,
+            community_id,
+            gov_state,
+        );
+    }
+}
+
+/// The Host's rebuild result: the clock raised, the state projected and
+/// its snapshot saved.
 pub(super) async fn apply_governance_rebuild_result_impl(
     adapter: &GovernanceAdapter,
     community_id: &str,
     gov_state: GovernanceState,
     accepted_clock: u64,
 ) {
-    state_helpers::observe_governance_lamport(&adapter.state, community_id, accepted_clock);
-    state_helpers::set_governance_state(&adapter.state, community_id, gov_state);
-    let clock =
-        state_helpers::governance_clock(&adapter.state, community_id).unwrap_or(accepted_clock);
-    if let Err(error) = state_helpers::persist_governance_snapshot_to_sqlite(
-        &adapter.state,
-        &adapter.pool,
-        community_id,
-        clock,
-    )
-    .await
-    {
-        tracing::warn!(
-            community = %community_id,
-            %error,
-            "failed to persist rebuilt governance snapshot",
-        );
+    if let Some(governance) = host_governance(adapter) {
+        rekindle_governance_runtime::GovernanceRuntimeDeps::apply_governance_rebuild_result(
+            &governance,
+            community_id,
+            gov_state,
+            accepted_clock,
+        )
+        .await;
     }
 }
 

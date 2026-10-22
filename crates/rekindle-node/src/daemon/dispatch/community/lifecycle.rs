@@ -224,8 +224,11 @@ pub(crate) async fn handle_join(
     );
     // Seed the runtime cache with the state the join already merged, so
     // the first read afterwards does not go back to the DHT.
-    ctx.communities
-        .set_governance_state(link.governance_key.as_str(), outcome.snapshot.gov_state);
+    rekindle_governance_runtime::GovernanceRuntimeDeps::set_governance_state(
+        &adapter,
+        link.governance_key.as_str(),
+        outcome.snapshot.gov_state,
+    );
     let membership = ctx
         .session
         .read()

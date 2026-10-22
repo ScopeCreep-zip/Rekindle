@@ -11,8 +11,8 @@
 //! `event_reminders`, and the calendar UI all see nothing despite the
 //! events being durably present in governance.
 //!
-//! Called from `state_helpers::set_governance_state` after every CRDT
-//! merge. `INSERT OR IGNORE` so this never clobbers richer fast-path
+//! Called from the shell's `on_governance_projected` hook
+//! (`services::shell_session::governance`) after every CRDT merge. `INSERT OR IGNORE` so this never clobbers richer fast-path
 //! rows (e.g. `max_attendees` lives only in the gossip DTO and isn't
 //! carried by the governance entry).
 

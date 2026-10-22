@@ -27,6 +27,7 @@ mod events;
 mod lifecycle;
 pub(crate) mod loader;
 mod mek;
+pub mod projection;
 mod registry;
 
 mod roles;

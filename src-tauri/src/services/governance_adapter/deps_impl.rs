@@ -70,7 +70,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     // ---------- Community state (mutation) ----------
 
     fn set_governance_state(&self, community_id: &str, state: GovernanceState) {
-        state_helpers::set_governance_state(&self.state, community_id, state);
+        state_mutations::set_governance_state_impl(self, community_id, state);
     }
 
     fn next_governance_lamport(

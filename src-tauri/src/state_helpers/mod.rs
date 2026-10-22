@@ -39,11 +39,9 @@ pub use communities::{
 };
 pub use friends::{friend_display_name, friend_field, friend_presence_change, is_friend};
 pub use governance::{
-    governance_clock, governance_key, governance_state, merge_message_lamport, my_permissions,
-    next_governance_lamport, next_message_lamport, observe_governance_lamport, permissions_for,
-    permissions_for_pseudonym, set_governance_state,
+    governance_key, governance_state, merge_message_lamport, my_permissions,
+    next_governance_lamport, next_message_lamport, permissions_for, permissions_for_pseudonym,
 };
-pub use governance_persist::persist_governance_snapshot_to_sqlite;
 pub use identity::{
     current_identity, current_owner_key, identity_display_name, identity_secret, identity_status,
     owner_key_or_default, project_own, pseudonym_credentials, voice_self_identity,
