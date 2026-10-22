@@ -19,7 +19,7 @@ impl HostGovernance {
     pub(super) fn persist_discovered_registry_members_impl(
         &self,
         community_id: &str,
-        members: Vec<DiscoveredMember>,
+        members: &[DiscoveredMember],
     ) {
         let roles: HashMap<String, Vec<u32>> = members
             .iter()

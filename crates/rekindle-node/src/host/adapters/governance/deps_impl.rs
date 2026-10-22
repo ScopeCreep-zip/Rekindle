@@ -255,7 +255,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         members: Vec<DiscoveredMember>,
     ) {
-        self.persist_discovered_registry_members_impl(community_id, members);
+        self.persist_discovered_registry_members_impl(community_id, &members);
     }
 
     // ---------- Join flow ----------
