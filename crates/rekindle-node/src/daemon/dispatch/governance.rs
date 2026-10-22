@@ -28,7 +28,7 @@ fn refused(refusal: &RoleRefusal) -> IpcResponse {
 
 /// The community a role write is about, once we may write and are attached
 /// (the entry goes to the DHT).
-fn writable(
+pub(super) fn writable(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,

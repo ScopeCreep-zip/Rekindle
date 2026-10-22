@@ -53,6 +53,8 @@ mod mek_recovery;
 mod membership;
 mod membership_roster;
 mod membership_route;
+pub(crate) mod onboarding;
+pub(crate) mod onboarding_map;
 pub mod projection;
 mod registry;
 

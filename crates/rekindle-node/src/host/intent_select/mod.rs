@@ -154,6 +154,12 @@ pub(crate) async fn select(
             | CommunityRequest::CommunityPolicySet { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
+            request @ (CommunityRequest::OnboardingConfigSet { .. }
+            | CommunityRequest::WelcomeScreenSet { .. }
+            | CommunityRequest::OnboardingSubmit { .. }
+            | CommunityRequest::OnboardingComplete { .. }),
+        ) => community::selection(ctx, request, &mut s).await?,
+        IpcRequest::Community(
             request @ (CommunityRequest::GameServerAdd { .. }
             | CommunityRequest::GameServerRemove { .. }),
         ) => {
@@ -249,6 +255,8 @@ pub(crate) async fn select(
             | CommunityRequest::MekRequest { .. }
             | CommunityRequest::RoleList { .. }
             | CommunityRequest::GameServerList { .. }
+            | CommunityRequest::OnboardingConfigGet { .. }
+            | CommunityRequest::WelcomeScreenGet { .. }
             | CommunityRequest::CommunityAvatarGet { .. }
             | CommunityRequest::CommunityPolicyGet { .. }
             | CommunityRequest::EventList { .. }

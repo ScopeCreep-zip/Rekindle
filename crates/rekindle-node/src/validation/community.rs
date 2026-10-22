@@ -6,9 +6,14 @@ use rekindle_governance::validate::bounds;
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::game_server;
 use rekindle_types::governance::ExclusionGroupEdit;
+use rekindle_types::governance::{
+    GovernanceEntry, MAX_ONBOARDING_ID_CHARS, MAX_ONBOARDING_OPTIONS_PER_QUESTION,
+    MAX_ONBOARDING_QUESTIONS,
+};
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{self, MAX_NOTE_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
+use rekindle_types::presence::OnboardingAnswer;
 
 /// The longest exclusion-group slug in bytes (the Host normalizes it to at
 /// most 32 characters of ASCII).
@@ -20,6 +25,7 @@ const MAX_POLICY_TEXT_CHARS: usize = 4096;
 use crate::host::adapters::governance::community_pictures::{
     is_picture_hash, MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
 };
+use crate::host::adapters::governance::onboarding_map;
 
 use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 
@@ -103,6 +109,31 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         | CommunityRequest::EventCancel { .. }
         | CommunityRequest::EventDelete { .. }
         | CommunityRequest::EventRsvp { .. } => super::community_events::check(request),
+        CommunityRequest::OnboardingConfigGet { community: key }
+        | CommunityRequest::WelcomeScreenGet { community: key }
+        | CommunityRequest::OnboardingComplete { community: key } => community(key),
+        CommunityRequest::OnboardingConfigSet {
+            community: key,
+            config,
+        } => {
+            community(key)?;
+            within_bounds(onboarding_map::config_entry(config, 0))
+        }
+        CommunityRequest::WelcomeScreenSet {
+            community: key,
+            screen,
+        } => {
+            community(key)?;
+            within_bounds(onboarding_map::welcome_entry(screen, 0))
+        }
+        CommunityRequest::OnboardingSubmit {
+            community: key,
+            answers,
+            ..
+        } => {
+            community(key)?;
+            onboarding_answers(answers)
+        }
         CommunityRequest::GameServerAdd {
             community: key,
             game_id,
@@ -333,4 +364,38 @@ fn blob_hash(hash: &str, what: &str) -> Checked {
             format!("invalid {what}: 64 lowercase hex"),
         ))
     }
+}
+
+/// An onboarding flow or welcome screen whose channel ids parse and whose
+/// every field is within the bound readers apply (`bounds`).
+fn within_bounds(entry: Result<GovernanceEntry, String>) -> Checked {
+    let entry = entry.map_err(|e| IpcResponse::error(400, e))?;
+    match bounds::out_of_bounds_field(&entry) {
+        Some(field) => Err(IpcResponse::error(400, format!("{field} is out of bounds"))),
+        None => Ok(()),
+    }
+}
+
+/// Onboarding answers: at most one per question the flow may ask, each
+/// naming at most as many options as a question offers.
+fn onboarding_answers(answers: &[OnboardingAnswer]) -> Checked {
+    if answers.len() > MAX_ONBOARDING_QUESTIONS {
+        return Err(IpcResponse::error(
+            400,
+            "onboarding answers: more answers than questions",
+        ));
+    }
+    for answer in answers {
+        text(&answer.question_id, MAX_ONBOARDING_ID_CHARS, "question id")?;
+        if answer.selected_options.len() > MAX_ONBOARDING_OPTIONS_PER_QUESTION {
+            return Err(IpcResponse::error(
+                400,
+                "onboarding answer: more options than a question offers",
+            ));
+        }
+        for option in &answer.selected_options {
+            text(option, MAX_ONBOARDING_ID_CHARS, "option id")?;
+        }
+    }
+    Ok(())
 }

@@ -40,3 +40,22 @@ pub struct WelcomeChannel {
     pub description: String,
     pub emoji: Option<String>,
 }
+
+// The bounds an onboarding flow and a welcome screen respect, whoever wrote
+// them (architecture §19.1, §19.3); `rekindle_governance::validate::bounds`
+// applies them at the merge, at the write and at the IPC boundary.
+
+/// The most questions an onboarding flow asks.
+pub const MAX_ONBOARDING_QUESTIONS: usize = 5;
+/// The most options one question offers.
+pub const MAX_ONBOARDING_OPTIONS_PER_QUESTION: usize = 10;
+/// The most guide steps after the questions.
+pub const MAX_ONBOARDING_GUIDE_STEPS: usize = 10;
+/// The longest welcome message, in chars.
+pub const MAX_ONBOARDING_WELCOME_CHARS: usize = 500;
+/// The longest question, option or guide-step title, in chars.
+pub const MAX_ONBOARDING_TITLE_CHARS: usize = 100;
+/// The longest question or option id, in chars.
+pub const MAX_ONBOARDING_ID_CHARS: usize = 64;
+/// The most channels a welcome screen features.
+pub const MAX_WELCOME_SCREEN_CHANNELS: usize = 5;

@@ -6,6 +6,7 @@ mod channels;
 mod events;
 mod lifecycle;
 mod moderation;
+mod onboarding;
 mod profile;
 mod roles;
 
@@ -73,6 +74,12 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::EventCancel { .. }
             | Self::EventDelete { .. }
             | Self::EventRsvp { .. } => self.fmt_events(f),
+            Self::OnboardingConfigGet { .. }
+            | Self::OnboardingConfigSet { .. }
+            | Self::WelcomeScreenGet { .. }
+            | Self::WelcomeScreenSet { .. }
+            | Self::OnboardingSubmit { .. }
+            | Self::OnboardingComplete { .. } => self.fmt_onboarding(f),
             Self::Kick { .. }
             | Self::Ban { .. }
             | Self::Unban { .. }

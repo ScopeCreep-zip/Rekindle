@@ -76,6 +76,23 @@ pub(super) async fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
+        CommunityRequest::OnboardingConfigSet {
+            community: target, ..
+        }
+        | CommunityRequest::WelcomeScreenSet {
+            community: target, ..
+        } => {
+            let (id, name) = community(ctx, target)?;
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
+        }
+        CommunityRequest::OnboardingSubmit {
+            community: target, ..
+        }
+        | CommunityRequest::OnboardingComplete { community: target } => {
+            let (id, name) = community(ctx, target)?;
+            s.subject = Subject::Community { id, name };
+        }
         CommunityRequest::CommunityApprove {
             governance_key,
             member_pseudonym,

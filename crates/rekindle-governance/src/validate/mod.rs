@@ -28,11 +28,8 @@ mod limits;
 mod threads;
 
 use automod::validate_automod_rule;
-use limits::{expression_within_limits, onboarding_within_limits, soundboard_meta_valid};
+use limits::{expression_within_limits, onboarding_mode_valid, soundboard_meta_valid};
 use threads::validate_thread_create;
-
-// Architecture §19.3 — welcome screen featured channels max 5.
-const MAX_WELCOME_SCREEN_CHANNELS: usize = 5;
 
 pub fn validate_write(
     writer: &PseudonymKey,
@@ -272,25 +269,13 @@ pub fn validate_write(
 
         GovernanceEntry::ExpressionRemoved { .. } => has(perms, MANAGE_EXPRESSIONS),
 
-        GovernanceEntry::OnboardingConfig {
-            mode,
-            questions,
-            welcome_message,
-            guide_steps,
-            ..
-        } => {
-            has(perms, MANAGE_COMMUNITY)
-                && onboarding_within_limits(
-                    mode,
-                    questions,
-                    welcome_message.as_deref(),
-                    guide_steps,
-                )
+        // The counts and texts are bounds (`bounds::out_of_bounds_field`),
+        // refused before the creator bypass.
+        GovernanceEntry::OnboardingConfig { mode, .. } => {
+            has(perms, MANAGE_COMMUNITY) && onboarding_mode_valid(mode)
         }
 
-        GovernanceEntry::WelcomeScreen { channels, .. } => {
-            has(perms, MANAGE_COMMUNITY) && channels.len() <= MAX_WELCOME_SCREEN_CHANNELS
-        }
+        GovernanceEntry::WelcomeScreen { .. } => has(perms, MANAGE_COMMUNITY),
 
         GovernanceEntry::AdminDelete { .. } => has(perms, MANAGE_MESSAGES),
 

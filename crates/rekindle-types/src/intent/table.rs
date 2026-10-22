@@ -532,6 +532,18 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("EventCancel", Some(IntentKind::CancelEvent)),
     ("EventDelete", Some(IntentKind::DeleteEvent)),
     ("EventRsvp", Some(IntentKind::SetEventRsvp)),
+    ("OnboardingConfigGet", None),
+    ("OnboardingConfigSet", Some(IntentKind::SetOnboardingConfig)),
+    ("WelcomeScreenGet", None),
+    ("WelcomeScreenSet", Some(IntentKind::SetWelcomeScreen)),
+    (
+        "OnboardingSubmit",
+        Some(IntentKind::SubmitOnboardingAnswers),
+    ),
+    (
+        "OnboardingComplete",
+        Some(IntentKind::MarkOnboardingComplete),
+    ),
     ("RoleAssign", Some(IntentKind::AssignRole)),
     ("RoleUnassign", Some(IntentKind::UnassignRole)),
     ("RoleSelfAssign", Some(IntentKind::SelfAssignRole)),

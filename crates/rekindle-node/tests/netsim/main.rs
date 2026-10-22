@@ -21,6 +21,7 @@ mod logs;
 mod moderation;
 mod no_timed_inspect;
 mod offline_day;
+mod onboarding;
 mod one_community_rebuild;
 mod outbox_handshake;
 mod pair;

@@ -34,6 +34,7 @@ mod identity;
 mod in_flight;
 mod keys;
 mod lifecycle;
+mod onboarding;
 mod own;
 mod router;
 pub(crate) mod shell;

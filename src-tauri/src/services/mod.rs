@@ -16,9 +16,6 @@ pub mod community_mek_local_rotate; // Phase 23.C — `rotate_mek_local` lifted 
 pub mod community_moderation_bulk; // Phase 23.D.4 — bulk channel-message delete extracted from community_moderation_runtime.
 pub mod community_moderation_runtime; // Phase 23.C — message-deletion runtime orchestration lifted from commands/community/moderation.rs.
 pub mod community_notifications_runtime; // Phase 23.C — quiet-hours wrappers lifted from commands/community/notifications.rs.
-pub mod community_onboarding_mappers; // Phase 23.C — pure protocol↔governance onboarding DTO converters lifted from legacy/onboarding.rs.
-pub mod community_onboarding_runtime; // Phase 23.C — onboarding-handler runtime orchestration lifted from commands/community/onboarding.rs.
-pub mod community_onboarding_validation; // Phase 23.C — pure onboarding validator lifted from commands/community/onboarding.rs.
 pub mod community_pins_runtime; // Phase 23.C — pin/unpin/get_channel_pins orchestration lifted from commands/community/reactions_pins.rs.
 pub mod community_presence_runtime; // Phase 23.C — presence-handler runtime orchestration lifted from commands/community/presence.rs.
 pub mod community_unread_runtime; // Phase 23.C — unread mark/get bodies lifted from commands/community/unread.rs.

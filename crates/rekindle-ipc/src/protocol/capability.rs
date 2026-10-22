@@ -201,6 +201,8 @@ impl CommunityRequest {
             | Self::ChannelList { .. }
             | Self::RoleList { .. }
             | Self::GameServerList { .. }
+            | Self::OnboardingConfigGet { .. }
+            | Self::WelcomeScreenGet { .. }
             | Self::CommunityAvatarGet { .. }
             | Self::CommunityPolicyGet { .. }
             | Self::EventList { .. }
@@ -241,6 +243,10 @@ impl CommunityRequest {
             | Self::EventCancel { .. }
             | Self::EventDelete { .. }
             | Self::EventRsvp { .. }
+            | Self::OnboardingConfigSet { .. }
+            | Self::WelcomeScreenSet { .. }
+            | Self::OnboardingSubmit { .. }
+            | Self::OnboardingComplete { .. }
             | Self::InviteCreate { .. }
             | Self::InviteRevoke { .. } => Some(C::CommunitiesWrite),
             Self::CommunityApprove { .. }

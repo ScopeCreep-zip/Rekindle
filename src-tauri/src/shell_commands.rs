@@ -96,6 +96,24 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("remove_game_server", HostCall::Request("GameServerRemove")),
     ("get_game_servers", HostCall::Request("GameServerList")),
     (
+        "get_onboarding_config",
+        HostCall::Request("OnboardingConfigGet"),
+    ),
+    (
+        "set_onboarding_config",
+        HostCall::Request("OnboardingConfigSet"),
+    ),
+    ("get_welcome_screen", HostCall::Request("WelcomeScreenGet")),
+    ("set_welcome_screen", HostCall::Request("WelcomeScreenSet")),
+    (
+        "submit_onboarding_answers",
+        HostCall::Request("OnboardingSubmit"),
+    ),
+    (
+        "mark_onboarding_complete",
+        HostCall::Request("OnboardingComplete"),
+    ),
+    (
         "update_community_profile",
         HostCall::Request("CommunityUpdateProfile"),
     ),
@@ -271,12 +289,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("mark_channel_read", "E3.1"),
     ("get_unread_counts", "E3.1"),
     ("set_active_channel", "E3.1"),
-    ("get_onboarding_config", "E3.1"),
-    ("set_onboarding_config", "E3.1"),
-    ("submit_onboarding_answers", "E3.1"),
-    ("mark_onboarding_complete", "E3.1"),
-    ("get_welcome_screen", "E3.1"),
-    ("set_welcome_screen", "E3.1"),
     ("get_presence_policy", "E3.1"),
     ("set_presence_policy", "E3.1"),
     ("rotate_mek", "E3.1"),

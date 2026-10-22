@@ -5,7 +5,8 @@
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
-    channel, community, community_profile, events, game_servers, governance, keys, DaemonContext,
+    channel, community, community_profile, events, game_servers, governance, keys, onboarding,
+    DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -181,6 +182,28 @@ pub(super) async fn route(
             community,
             server_id,
         } => game_servers::handle_remove(ctx, state, &community, &server_id).await,
+
+        // ── Onboarding (plan E3.1 D3) ────────────────────────────
+        CommunityRequest::OnboardingConfigGet { community } => {
+            onboarding::handle_config_get(ctx, state, &community)
+        }
+        CommunityRequest::OnboardingConfigSet { community, config } => {
+            onboarding::handle_config_set(ctx, state, &community, &config).await
+        }
+        CommunityRequest::WelcomeScreenGet { community } => {
+            onboarding::handle_welcome_get(ctx, state, &community)
+        }
+        CommunityRequest::WelcomeScreenSet { community, screen } => {
+            onboarding::handle_welcome_set(ctx, state, &community, &screen).await
+        }
+        CommunityRequest::OnboardingSubmit {
+            community,
+            answers,
+            acknowledged_rules,
+        } => onboarding::handle_submit(ctx, state, &community, answers, acknowledged_rules).await,
+        CommunityRequest::OnboardingComplete { community } => {
+            onboarding::handle_complete(ctx, state, &community).await
+        }
 
         CommunityRequest::RoleList { community } => {
             governance::handle_role_list(ctx, state, &community)

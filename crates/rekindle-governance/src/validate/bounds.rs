@@ -11,6 +11,11 @@
 
 use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
 use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{
+    GuideStep, OnboardingQuestion, WelcomeChannel, MAX_ONBOARDING_GUIDE_STEPS,
+    MAX_ONBOARDING_ID_CHARS, MAX_ONBOARDING_OPTIONS_PER_QUESTION, MAX_ONBOARDING_QUESTIONS,
+    MAX_ONBOARDING_TITLE_CHARS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
+};
 use rekindle_types::key_format::{self, KeyFormatError, MAX_DESCRIPTION_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
@@ -37,9 +42,10 @@ pub fn description_ok(s: &str) -> bool {
 }
 
 /// The field of `entry` that is out of bounds, or `None` when every bounded
-/// field is within its bound. Only `ChannelUpdated.slowmode_seconds`,
-/// `TimeoutEntry.duration_seconds` and `CommunityMeta.description` are
-/// bounded; every other variant passes.
+/// field is within its bound. `ChannelUpdated.slowmode_seconds`,
+/// `TimeoutEntry.duration_seconds`, `CommunityMeta.description`, the
+/// onboarding flow and the welcome screen are bounded; every other variant
+/// passes.
 pub fn out_of_bounds_field(entry: &GovernanceEntry) -> Option<&'static str> {
     match entry {
         GovernanceEntry::ChannelUpdated {
@@ -53,8 +59,95 @@ pub fn out_of_bounds_field(entry: &GovernanceEntry) -> Option<&'static str> {
             description: Some(text),
             ..
         } if !description_ok(text) => Some("description"),
+        GovernanceEntry::OnboardingConfig {
+            questions,
+            welcome_message,
+            guide_steps,
+            ..
+        } => onboarding_field(questions, welcome_message.as_deref(), guide_steps),
+        GovernanceEntry::WelcomeScreen {
+            description,
+            channels,
+            ..
+        } => welcome_screen_field(description, channels),
         _ => None,
     }
+}
+
+/// Whether `s` is [`key_format::text`] within `max` chars.
+fn text_ok(s: &str, max: usize) -> bool {
+    key_format::text(s, max).is_ok()
+}
+
+/// Whether the optional `s` is absent or [`text_ok`].
+fn opt_text_ok(s: Option<&str>, max: usize) -> bool {
+    s.is_none_or(|s| text_ok(s, max))
+}
+
+/// The out-of-bounds field of an onboarding flow: the counts, the ids, and
+/// every text within its length with no control or hidden characters.
+fn onboarding_field(
+    questions: &[OnboardingQuestion],
+    welcome_message: Option<&str>,
+    guide_steps: &[GuideStep],
+) -> Option<&'static str> {
+    if questions.len() > MAX_ONBOARDING_QUESTIONS {
+        return Some("questions");
+    }
+    if guide_steps.len() > MAX_ONBOARDING_GUIDE_STEPS {
+        return Some("guide_steps");
+    }
+    if !opt_text_ok(welcome_message, MAX_ONBOARDING_WELCOME_CHARS) {
+        return Some("welcome_message");
+    }
+    for q in questions {
+        if !text_ok(&q.question_id, MAX_ONBOARDING_ID_CHARS) {
+            return Some("question_id");
+        }
+        if !text_ok(&q.title, MAX_ONBOARDING_TITLE_CHARS) {
+            return Some("question_title");
+        }
+        if !opt_text_ok(q.description.as_deref(), MAX_DESCRIPTION_LEN) {
+            return Some("question_description");
+        }
+        if q.options.len() > MAX_ONBOARDING_OPTIONS_PER_QUESTION {
+            return Some("options");
+        }
+        for o in &q.options {
+            if !text_ok(&o.option_id, MAX_ONBOARDING_ID_CHARS) {
+                return Some("option_id");
+            }
+            if !text_ok(&o.title, MAX_ONBOARDING_TITLE_CHARS) {
+                return Some("option_title");
+            }
+            if !opt_text_ok(o.description.as_deref(), MAX_DESCRIPTION_LEN) {
+                return Some("option_description");
+            }
+        }
+    }
+    for step in guide_steps {
+        if !text_ok(&step.title, MAX_ONBOARDING_TITLE_CHARS) {
+            return Some("guide_step_title");
+        }
+        if !description_ok(&step.description) {
+            return Some("guide_step_description");
+        }
+    }
+    None
+}
+
+/// The out-of-bounds field of a welcome screen.
+fn welcome_screen_field(description: &str, channels: &[WelcomeChannel]) -> Option<&'static str> {
+    if channels.len() > MAX_WELCOME_SCREEN_CHANNELS {
+        return Some("channels");
+    }
+    if !description_ok(description) {
+        return Some("description");
+    }
+    if channels.iter().any(|c| !description_ok(&c.description)) {
+        return Some("channel_description");
+    }
+    None
 }
 
 /// Whether every bounded field of `entry` is within its bound.

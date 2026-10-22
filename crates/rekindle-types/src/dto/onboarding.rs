@@ -1,24 +1,13 @@
-//! Frontend-facing onboarding DTOs.
-//!
-//! These lived in `rekindle-protocol::dht::community::onboarding` and
-//! duplicated three Tier-1 type names — `OnboardingQuestion`,
-//! `OnboardingOption`, `GuideStep` — against
-//! `rekindle_types::governance::onboarding`. They are not the same
-//! types: the Tier-1 ones carry newtype IDs (`RoleId`, `ChannelId`) and
-//! are what `rekindle-governance` merges and what the Cap'n Proto codec
-//! encodes; these carry hex strings and `u32`s because that is what
-//! crosses IPC to the webview.
-//!
-//! So the shape is right and the *home* was wrong: a frontend DTO
-//! belongs beside the other frontend DTOs, not in the v1.0 protocol
-//! crate. The `Dto` suffix follows this module's existing convention
-//! (`RoleDto`, `ThreadInfoDto`) and removes the name collision that
-//! made two different things look like one.
+//! The onboarding flow and welcome screen as they cross IPC (plan E3.1 D3):
+//! hex channel ids and legacy `u32` role ids, where the governance structs
+//! (`crate::governance::onboarding`) carry the newtype ids the merge and the
+//! codec use. The Host maps one to the other
+//! (`rekindle-node`'s `host/adapters/governance/onboarding_map.rs`).
 
 use serde::{Deserialize, Serialize};
 
-/// Onboarding configuration stored in manifest subkey 10.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// A community's onboarding flow.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingConfigDto {
     /// Whether onboarding is enabled for new members.
@@ -65,7 +54,7 @@ pub enum OnboardingModeDto {
 }
 
 /// A question presented during onboarding.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingQuestionDto {
     pub question_id: String,
@@ -80,7 +69,7 @@ pub struct OnboardingQuestionDto {
 }
 
 /// An option for an onboarding question.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OnboardingOptionDto {
     pub option_id: String,
@@ -96,7 +85,7 @@ pub struct OnboardingOptionDto {
 }
 
 /// A guided step shown after onboarding questions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuideStepDto {
     pub title: String,
@@ -109,8 +98,8 @@ pub struct GuideStepDto {
     pub emoji: Option<String>,
 }
 
-/// Welcome screen stored in manifest subkey 11.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+/// A community's welcome screen.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WelcomeScreenDto {
     /// Community description shown on the welcome screen.
@@ -120,7 +109,7 @@ pub struct WelcomeScreenDto {
 }
 
 /// A channel featured on the welcome screen.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WelcomeChannelEntryDto {
     pub channel_id: String,

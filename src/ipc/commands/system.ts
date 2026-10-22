@@ -79,17 +79,17 @@ export const systemCommands = {
 
   // Onboarding & Welcome Screen
   getOnboardingConfig: (communityId: string) =>
-    invoke<OnboardingConfig>("get_onboarding_config", { communityId }),
+    hostInvoke<OnboardingConfig>("get_onboarding_config", { communityId }),
   setOnboardingConfig: (communityId: string, config: OnboardingConfig) =>
-    invoke<void>("set_onboarding_config", { communityId, config }),
+    hostInvoke<void>("set_onboarding_config", { communityId, config }),
   getWelcomeScreen: (communityId: string) =>
-    invoke<WelcomeScreen>("get_welcome_screen", { communityId }),
+    hostInvoke<WelcomeScreen>("get_welcome_screen", { communityId }),
   setWelcomeScreen: (communityId: string, screen: WelcomeScreen) =>
-    invoke<void>("set_welcome_screen", { communityId, screen }),
+    hostInvoke<void>("set_welcome_screen", { communityId, screen }),
   /**
    * Architecture §19.2 step 3 — `acknowledgedRules` must be `true`
    * when the merged `OnboardingConfig.mode === "gated"`, otherwise the
-   * backend rejects the submission with a clear error. For
+   * Host refuses the submission (400). For
    * `default` / `guided` modes the flag is ignored.
    */
   submitOnboardingAnswers: (
@@ -97,15 +97,15 @@ export const systemCommands = {
     answers: OnboardingAnswer[],
     acknowledgedRules?: boolean,
   ) =>
-    invoke<void>("submit_onboarding_answers", {
+    hostInvoke<void>("submit_onboarding_answers", {
       communityId,
       answers,
-      acknowledgedRules: acknowledgedRules ?? null,
+      acknowledgedRules: acknowledgedRules ?? false,
     }),
   /** Plan §Failure 8 — persist `community_members.onboarding_complete = 1` for
    *  the local user so the wizard does not re-show on next launch. */
   markOnboardingComplete: (communityId: string) =>
-    invoke<void>("mark_onboarding_complete", { communityId }),
+    hostInvoke<void>("mark_onboarding_complete", { communityId }),
   debugGossipState: (communityId: string) =>
     invoke<GossipDiagnostics>("debug_gossip_state", { communityId }),
 };

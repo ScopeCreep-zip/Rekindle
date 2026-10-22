@@ -16,6 +16,10 @@ mod role_edit;
 mod tests;
 
 pub use entry::{AdmissionMode, GovernanceEntry};
-pub use onboarding::{GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel};
+pub use onboarding::{
+    GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel, MAX_ONBOARDING_GUIDE_STEPS,
+    MAX_ONBOARDING_ID_CHARS, MAX_ONBOARDING_OPTIONS_PER_QUESTION, MAX_ONBOARDING_QUESTIONS,
+    MAX_ONBOARDING_TITLE_CHARS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
+};
 pub use payload::GovernanceSubkeyPayload;
 pub use role_edit::ExclusionGroupEdit;

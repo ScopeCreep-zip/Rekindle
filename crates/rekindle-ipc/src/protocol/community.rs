@@ -4,6 +4,8 @@
 //! `IpcRequest::name` answers the leaf, so the intent table, the lanes and
 //! the audit log name it as before.
 
+use rekindle_types::dto::onboarding::{OnboardingConfigDto, WelcomeScreenDto};
+use rekindle_types::presence::OnboardingAnswer;
 use serde::{Deserialize, Serialize};
 
 /// A community-domain request. Every variant is matched in the daemon's
@@ -262,6 +264,30 @@ pub enum CommunityRequest {
         event_id: String,
         status: String,
     },
+    // ── Onboarding (plan E3.1 D3) ─────────────────────────────────
+    /// A community's onboarding flow (the empty default when none is set).
+    OnboardingConfigGet { community: String },
+    /// Set a community's onboarding flow (`MANAGE_COMMUNITY`).
+    OnboardingConfigSet {
+        community: String,
+        config: OnboardingConfigDto,
+    },
+    /// A community's welcome screen (the empty default when none is set).
+    WelcomeScreenGet { community: String },
+    /// Set a community's welcome screen (`MANAGE_COMMUNITY`).
+    WelcomeScreenSet {
+        community: String,
+        screen: WelcomeScreenDto,
+    },
+    /// Answer a community's onboarding questions; a gated community needs
+    /// `acknowledged_rules`.
+    OnboardingSubmit {
+        community: String,
+        answers: Vec<OnboardingAnswer>,
+        acknowledged_rules: bool,
+    },
+    /// Our onboarding of a community is done.
+    OnboardingComplete { community: String },
 
     // ── Roles ─────────────────────────────────────────────────────
     /// List all roles in a community.
