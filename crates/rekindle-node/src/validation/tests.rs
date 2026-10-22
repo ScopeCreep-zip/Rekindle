@@ -1,6 +1,7 @@
 //! `validate_request` against every rule it enforces.
 
 use super::*;
+use rekindle_types::key_format::MAX_DESCRIPTION_LEN;
 
 const B64: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
 const HEX64: &str = "3f1a9c0b7e2d4f6a8b1c3e5d7f9a0b2c4d6e8f0a1b3c5d7e9f1a2b4c6d8e0f1a";
@@ -218,6 +219,50 @@ fn status_and_description_caps() {
     };
     assert!(!rejected(&create("a".repeat(MAX_DESCRIPTION_LEN))));
     assert!(rejected(&create("a".repeat(MAX_DESCRIPTION_LEN + 1))));
+}
+
+fn message_of(request: &IpcRequest) -> String {
+    match validate_request(request) {
+        Err(IpcResponse::Error { message, .. }) => message,
+        other => panic!("validation answered {other:?}"),
+    }
+}
+
+/// The governance bounds come from `rekindle_governance::validate::bounds`
+/// (plan E3.0), the error texts stay the boundary's own.
+#[test]
+fn governance_bounds_keep_their_error_texts() {
+    let timeout = IpcRequest::Timeout {
+        community: "c".into(),
+        target_pseudonym: HEX64.into(),
+        duration_seconds: 0,
+        reason: None,
+    };
+    assert_eq!(
+        message_of(&timeout),
+        format!("timeout must be 1-{MAX_TIMEOUT_SECONDS} seconds, got 0")
+    );
+    let channel = IpcRequest::ChannelCreate {
+        community: "c".into(),
+        name: "general".into(),
+        kind: "text".into(),
+        category: None,
+        topic: None,
+        slowmode_seconds: MAX_SLOWMODE_SECONDS + 1,
+    };
+    assert_eq!(
+        message_of(&channel),
+        format!(
+            "slowmode must be 0-{MAX_SLOWMODE_SECONDS} seconds, got {}",
+            MAX_SLOWMODE_SECONDS + 1
+        )
+    );
+    let community = IpcRequest::CommunityCreate {
+        name: "Rekindle".into(),
+        description: "bell\u{7}".into(),
+        approval_required: false,
+    };
+    assert!(message_of(&community).starts_with("invalid description: "));
 }
 
 #[test]

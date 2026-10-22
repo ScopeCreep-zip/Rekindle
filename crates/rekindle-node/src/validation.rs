@@ -7,11 +7,11 @@
 //! new variant cannot reach a handler unvalidated. The CLI may also
 //! validate for UX; the daemon enforces.
 
+use rekindle_governance::validate::bounds;
 use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{
-    self, KeyFormatError, MAX_DESCRIPTION_LEN, MAX_NAME_LEN, MAX_NOTE_LEN, MAX_STATUS_LEN,
-    MAX_TOPIC_LEN,
+    self, KeyFormatError, MAX_NAME_LEN, MAX_NOTE_LEN, MAX_STATUS_LEN, MAX_TOPIC_LEN,
 };
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
@@ -107,8 +107,10 @@ fn page(limit: u32) -> Checked {
     }
 }
 
+/// A slowmode interval: the bound every governance reader applies
+/// ([`bounds::slowmode_ok`]).
 fn slowmode(seconds: u32) -> Checked {
-    if seconds <= MAX_SLOWMODE_SECONDS {
+    if bounds::slowmode_ok(seconds) {
         Ok(())
     } else {
         Err(IpcResponse::error(
@@ -342,7 +344,9 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
             approval_required: _,
         } => {
             name(community_name, "community")?;
-            text(description, MAX_DESCRIPTION_LEN, "description")
+            bounds::description(description)
+                .map(drop)
+                .map_err(|e| reject("description", &e))
         }
         IpcRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
             IpcResponse::error(
@@ -497,7 +501,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         } => {
             community(c)?;
             pseudonym(target_pseudonym, "target pseudonym")?;
-            if !(1..=MAX_TIMEOUT_SECONDS).contains(duration_seconds) {
+            if !bounds::timeout_ok(*duration_seconds) {
                 return Err(IpcResponse::error(
                     400,
                     format!(
