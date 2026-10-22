@@ -5,18 +5,9 @@ use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::intent::{IntentClass, IntentProof, IntentReview, ProofRequired};
 
+use crate::host::fixture::temp_root;
 use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource};
 use rekindle_ipc::{Caller, ConnId, HostApi};
-
-fn temp_root(dir: &tempfile::TempDir) -> rekindle_db::paths::DataRoot {
-    let data = dir.path().join("data");
-    rekindle_db::paths::DataRoot {
-        config: dir.path().join("config"),
-        logs: dir.path().join("logs"),
-        state: data.join("state"),
-        data,
-    }
-}
 
 fn bus(conn: u64) -> Caller {
     Caller {

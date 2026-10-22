@@ -4,18 +4,9 @@ use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 
 use super::*;
+use crate::host::fixture::temp_root;
 use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
-
-fn temp_root(dir: &tempfile::TempDir) -> DataRoot {
-    let data = dir.path().join("data");
-    DataRoot {
-        config: dir.path().join("config"),
-        logs: dir.path().join("logs"),
-        state: data.join("state"),
-        data,
-    }
-}
 
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     offline_host_with(dir, None).await

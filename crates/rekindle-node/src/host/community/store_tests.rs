@@ -11,6 +11,7 @@ use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::intent::{Fact, IntentKind, Notifies, Subject};
 
 use super::{new_map, CommunityState, CommunityStore, MemberRecord};
+use crate::host::fixture::temp_root;
 use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource};
 
 /// The keepalive starts once per community per session; lock (`clear`)
@@ -72,16 +73,6 @@ fn set_members_replaces_the_roster_and_the_known_members() {
     assert_eq!(store.member_roles("c1")["bb"], vec![3]);
     store.mark_channel_synced("c1", "ch");
     assert!(store.map().read()["c1"].synced_channels.contains("ch"));
-}
-
-fn temp_root(dir: &tempfile::TempDir) -> rekindle_db::paths::DataRoot {
-    let data = dir.path().join("data");
-    rekindle_db::paths::DataRoot {
-        config: dir.path().join("config"),
-        logs: dir.path().join("logs"),
-        state: data.join("state"),
-        data,
-    }
 }
 
 fn membership(me: &PseudonymKey) -> CommunityMembership {

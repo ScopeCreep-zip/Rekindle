@@ -17,16 +17,21 @@ pub struct Fixture {
     pub attempts: AttemptLimiter<String>,
 }
 
+/// A data root laid out under `dir` (nothing created).
+pub fn temp_root(dir: &tempfile::TempDir) -> DataRoot {
+    let data = dir.path().join("data");
+    DataRoot {
+        config: dir.path().join("config"),
+        logs: dir.path().join("logs"),
+        state: data.join("state"),
+        data,
+    }
+}
+
 impl Fixture {
     pub fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let data = dir.path().join("data");
-        let root = DataRoot {
-            config: dir.path().join("config"),
-            logs: dir.path().join("logs"),
-            state: data.join("state"),
-            data,
-        };
+        let root = temp_root(&dir);
         std::fs::create_dir_all(&root.state).unwrap();
         Self {
             _dir: dir,

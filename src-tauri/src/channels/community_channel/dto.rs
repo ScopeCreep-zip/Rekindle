@@ -45,17 +45,7 @@ pub struct RoleDto {
 
 impl From<&rekindle_codec::message::RoleDto> for RoleDto {
     fn from(dto: &rekindle_codec::message::RoleDto) -> Self {
-        Self {
-            id: dto.id,
-            name: dto.name.clone(),
-            color: dto.color,
-            permissions: dto.permissions,
-            position: dto.position,
-            hoist: dto.hoist,
-            mentionable: dto.mentionable,
-            self_assignable: dto.self_assignable,
-            exclusion_group: None,
-        }
+        Self::from(&crate::state::RoleDefinition::from_dto(dto))
     }
 }
 
