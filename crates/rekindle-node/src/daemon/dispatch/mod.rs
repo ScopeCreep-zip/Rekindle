@@ -59,7 +59,9 @@ pub use rekindle_ipc::Caller;
 /// three tokens, which is exactly the size at which copies stop looking
 /// worth converging and start drifting.
 pub(crate) fn adapter(ctx: &DaemonContext) -> crate::host::adapters::governance::HostGovernance {
-    crate::host::adapters::governance::HostGovernance::of(ctx)
+    crate::host::adapters::governance::HostGovernance::new(
+        ctx.this.upgrade().expect("a context in use is alive"),
+    )
 }
 
 /// Shared daemon context accessible by all dispatch handlers.

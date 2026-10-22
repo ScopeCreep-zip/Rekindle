@@ -243,7 +243,7 @@ pub async fn recent_channel_messages(
     );
     let rows = db
         .call(move |conn| {
-            rekindle_db::repo::messages::channel_bundle_messages(
+            rekindle_db::repo::channel_bundle::channel_bundle_messages(
                 conn, &owner, &community, &channel, limit,
             )
         })

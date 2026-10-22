@@ -38,10 +38,8 @@ pub struct HostGovernance {
 
 impl HostGovernance {
     /// The Host over `ctx`.
-    pub(crate) fn of(ctx: &DaemonContext) -> Self {
-        Self {
-            ctx: ctx.this.upgrade().expect("a context in use is alive"),
-        }
+    pub(crate) fn new(ctx: Arc<DaemonContext>) -> Self {
+        Self { ctx }
     }
 
     /// The transport node, or a typed error when Veilid has not started.
@@ -63,6 +61,6 @@ impl crate::host::Host {
     /// The governance runtime's deps over this Host.
     #[must_use]
     pub fn governance(&self) -> HostGovernance {
-        HostGovernance::of(&self.ctx)
+        HostGovernance::new(Arc::clone(&self.ctx))
     }
 }

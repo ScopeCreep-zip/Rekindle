@@ -29,7 +29,7 @@ use crate::host::adapters::governance::HostGovernance;
 impl DaemonMekAdapter {
     /// The Host's governance adapter.
     fn governance(&self) -> HostGovernance {
-        HostGovernance::of(&self.ctx)
+        HostGovernance::new(Arc::clone(&self.ctx))
     }
 
     fn transport(&self) -> Option<Arc<rekindle_transport::TransportNode>> {
