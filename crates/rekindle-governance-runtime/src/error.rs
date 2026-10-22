@@ -46,6 +46,12 @@ pub enum GovernanceRuntimeError {
     #[error("insufficient permission for this governance operation")]
     PermissionDenied,
 
+    /// The entry carries a value outside its reader-validated bound
+    /// (`rekindle_governance::validate::bounds`, plan E3.0): every reader
+    /// would drop it, so it is never written. `field` names the entry field.
+    #[error("governance entry out of bounds: {field}")]
+    OutOfBounds { field: &'static str },
+
     #[error("governance write conflicted with newer network state ({0} bytes)")]
     WriteConflict(usize),
 

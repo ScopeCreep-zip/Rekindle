@@ -112,6 +112,8 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     community_id: &str,
     entry: GovernanceEntry,
 ) -> Result<(), GovernanceRuntimeError> {
+    refuse_out_of_bounds(&entry)?;
+
     let gov_state = deps
         .governance_state(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string()))?;
@@ -331,6 +333,16 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     Ok(())
 }
 
+/// Every reader drops an entry outside its value bounds (plan E3.0), so the
+/// writer refuses it by name before validating permission, instead of
+/// writing what no peer applies or reporting `PermissionDenied`.
+fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntimeError> {
+    match validate::bounds::out_of_bounds_field(entry) {
+        Some(field) => Err(GovernanceRuntimeError::OutOfBounds { field }),
+        None => Ok(()),
+    }
+}
+
 /// M9.5: set the primary subkey, surfacing a newer network value as
 /// `WriteConflict` so the caller does not emit `GovernanceUpdated` for a
 /// write that did not land; then force a fresh read, since even a local
@@ -416,6 +428,78 @@ mod tests {
         let affects = classify_entry(&entry);
         assert!(!affects.roles);
         assert!(affects.channels_or_categories);
+    }
+
+    #[test]
+    fn out_of_bounds_entries_are_refused_by_field() {
+        use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
+        use rekindle_types::key_format::MAX_DESCRIPTION_LEN;
+        use rekindle_types::member::MAX_TIMEOUT_SECONDS;
+        let slowmode = |seconds| GovernanceEntry::ChannelUpdated {
+            channel_id: ChannelId([0u8; 16]),
+            name: None,
+            topic: None,
+            forum_tags: None,
+            position: None,
+            slowmode_seconds: Some(seconds),
+            nsfw: None,
+            category_id: None,
+            lamport: 1,
+        };
+        let timeout = |duration_seconds| GovernanceEntry::TimeoutEntry {
+            target: PseudonymKey([0u8; 32]),
+            duration_seconds,
+            reason: None,
+            started_at: 0,
+            lamport: 1,
+        };
+        let meta = |description: String| GovernanceEntry::CommunityMeta {
+            name: None,
+            description: Some(description),
+            icon_hash: None,
+            banner_hash: None,
+            lamport: 1,
+        };
+        let field = |entry: &GovernanceEntry| match refuse_out_of_bounds(entry) {
+            Err(GovernanceRuntimeError::OutOfBounds { field }) => Some(field),
+            Err(other) => panic!("unexpected {other}"),
+            Ok(()) => None,
+        };
+        assert_eq!(
+            field(&slowmode(MAX_SLOWMODE_SECONDS + 1)),
+            Some("slowmode_seconds")
+        );
+        assert_eq!(field(&slowmode(MAX_SLOWMODE_SECONDS)), None);
+        assert_eq!(field(&timeout(0)), Some("duration_seconds"));
+        assert_eq!(
+            field(&timeout(MAX_TIMEOUT_SECONDS + 1)),
+            Some("duration_seconds")
+        );
+        assert_eq!(field(&timeout(MAX_TIMEOUT_SECONDS)), None);
+        let long = "x".repeat(MAX_DESCRIPTION_LEN + 1);
+        assert_eq!(field(&meta(long)), Some("description"));
+        assert_eq!(field(&meta("ok\n".into())), None);
+    }
+
+    /// `write_entry` refuses before touching anything: the mock has no
+    /// expectations, so any state lookup or DHT call would panic.
+    #[tokio::test]
+    async fn write_entry_returns_out_of_bounds_before_any_io() {
+        let deps = crate::deps::MockGovernanceRuntimeDeps::new();
+        let entry = GovernanceEntry::TimeoutEntry {
+            target: PseudonymKey([0u8; 32]),
+            duration_seconds: 0,
+            reason: None,
+            started_at: 0,
+            lamport: 1,
+        };
+        let refused = write_entry(&deps, "community", entry).await;
+        assert!(matches!(
+            refused,
+            Err(GovernanceRuntimeError::OutOfBounds {
+                field: "duration_seconds"
+            })
+        ));
     }
 
     #[test]
