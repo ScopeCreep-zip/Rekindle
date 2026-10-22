@@ -25,6 +25,8 @@ use rekindle_transport::TransportNode;
 
 use crate::daemon::dispatch::DaemonContext;
 
+pub(crate) mod community_pictures;
+pub(crate) mod community_profile;
 pub(crate) mod community_sync;
 pub mod deps_impl;
 mod dht;

@@ -28,7 +28,7 @@ mod error;
 mod kind;
 
 pub use decode::{decode_limited, DecodeLimits, Decoded, Frames};
-pub use encode::{encode_gif, encode_png, encode_webp, fit_within};
+pub use encode::{encode_gif, encode_png, encode_webp, fit_within, fit_within_box};
 pub use error::{ImageError, TooLarge};
 pub use image::{DynamicImage, Frame, RgbaImage};
 pub use kind::kind_of;

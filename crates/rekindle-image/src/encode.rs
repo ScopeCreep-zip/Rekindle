@@ -20,6 +20,17 @@ pub fn fit_within(image: DynamicImage, max_side: u32) -> DynamicImage {
     }
 }
 
+/// `image` scaled down (Lanczos3, aspect kept) to fit a `max_width` ×
+/// `max_height` box; unchanged when it already fits.
+#[must_use]
+pub fn fit_within_box(image: DynamicImage, max_width: u32, max_height: u32) -> DynamicImage {
+    if image.width() > max_width || image.height() > max_height {
+        image.resize(max_width, max_height, FilterType::Lanczos3)
+    } else {
+        image
+    }
+}
+
 /// `image` as a PNG.
 ///
 /// # Errors

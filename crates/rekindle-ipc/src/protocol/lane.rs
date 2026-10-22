@@ -170,6 +170,12 @@ impl CommunityRequest {
             Self::CommunityMembers { .. } => ("CommunityMembers", Query, Authenticated),
             Self::CommunityInfo { .. } => ("CommunityInfo", Query, Authenticated),
             Self::CommunityUpdateInfo { .. } => ("CommunityUpdateInfo", Write, Authenticated),
+            Self::CommunityUpdateProfile { .. } => ("CommunityUpdateProfile", Write, Authenticated),
+            Self::CommunitySetAvatar { .. } => ("CommunitySetAvatar", Write, Authenticated),
+            Self::CommunitySetBanner { .. } => ("CommunitySetBanner", Write, Authenticated),
+            Self::CommunityAvatarGet { .. } => ("CommunityAvatarGet", Query, Authenticated),
+            Self::CommunityPolicyGet { .. } => ("CommunityPolicyGet", Query, Authenticated),
+            Self::CommunityPolicySet { .. } => ("CommunityPolicySet", Write, Authenticated),
             Self::CommunityApprove { .. } => ("CommunityApprove", Write, Authenticated),
             Self::CommunityReject { .. } => ("CommunityReject", Write, Authenticated),
             Self::CommunityPendingMembers { .. } => {

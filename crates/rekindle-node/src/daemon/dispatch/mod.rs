@@ -26,6 +26,7 @@ mod channel_message;
 pub(crate) mod community;
 mod context;
 mod friends;
+mod community_profile;
 mod game_servers;
 pub(crate) mod governance;
 mod identity;

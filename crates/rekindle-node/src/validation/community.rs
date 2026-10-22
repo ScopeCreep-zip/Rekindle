@@ -14,6 +14,13 @@ use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 /// most 32 characters of ASCII).
 const MAX_EXCLUSION_GROUP_LEN: usize = 32;
 
+/// The longest community policy text, in characters (architecture §10.7).
+const MAX_POLICY_TEXT_CHARS: usize = 4096;
+
+use crate::host::adapters::governance::community_pictures::{
+    is_picture_hash, MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
+};
+
 use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 
 /// A community request's fields.
@@ -21,6 +28,74 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
         CommunityRequest::GameServerList { community: key } => community(key),
+        CommunityRequest::CommunityUpdateProfile {
+            community: key,
+            bio,
+            pronouns,
+            badges,
+            avatar_ref,
+            banner_ref,
+            theme_color: _,
+        } => {
+            community(key)?;
+            rekindle_types::presence::limits::validate_profile(
+                bio.as_deref(),
+                pronouns.as_deref(),
+                badges,
+                avatar_ref.as_deref(),
+                banner_ref.as_deref(),
+            )
+            .map_err(|e| IpcResponse::error(400, e))
+        }
+        CommunityRequest::CommunitySetAvatar {
+            community: key,
+            image,
+            kind: _,
+        }
+        | CommunityRequest::CommunitySetBanner {
+            community: key,
+            image,
+            kind: _,
+        } => {
+            community(key)?;
+            if image.is_empty() || image.len() > MAX_PICTURE_UPLOAD_BYTES {
+                return Err(IpcResponse::error(
+                    400,
+                    format!("a picture is 1 to {MAX_PICTURE_UPLOAD_BYTES} bytes"),
+                ));
+            }
+            Ok(())
+        }
+        CommunityRequest::CommunityAvatarGet { community: key, hash } => {
+            community(key)?;
+            if is_picture_hash(hash) {
+                Ok(())
+            } else {
+                Err(IpcResponse::error(400, "a picture hash is 64 lowercase hex digits"))
+            }
+        }
+        CommunityRequest::CommunityPolicyGet { community: key } => community(key),
+        CommunityRequest::CommunityPolicySet {
+            community: key,
+            policy_text,
+            max_joins_per_interval,
+            join_interval_seconds,
+        } => {
+            community(key)?;
+            if *max_joins_per_interval == 0 || *join_interval_seconds == 0 {
+                return Err(IpcResponse::error(400, "the raid thresholds must be above 0"));
+            }
+            opt(policy_text.as_deref(), |t| {
+                if t.chars().count() > MAX_POLICY_TEXT_CHARS {
+                    Err(IpcResponse::error(
+                        400,
+                        format!("policy text exceeds {MAX_POLICY_TEXT_CHARS} characters"),
+                    ))
+                } else {
+                    Ok(())
+                }
+            })
+        }
         CommunityRequest::GameServerAdd {
             community: key,
             game_id,

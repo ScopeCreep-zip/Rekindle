@@ -66,6 +66,44 @@ pub enum CommunityRequest {
         new_owner_pseudonym: String,
     },
 
+    // ── Profile, pictures and policy (plan E3.1 D4) ──────────────
+    /// Our per-community profile: bio, pronouns, theme color, badges and
+    /// the avatar and banner hashes. Published with our presence.
+    CommunityUpdateProfile {
+        community: String,
+        bio: Option<String>,
+        pronouns: Option<String>,
+        theme_color: Option<u32>,
+        badges: Vec<String>,
+        avatar_ref: Option<String>,
+        banner_ref: Option<String>,
+    },
+    /// Cache `image`, declared to be `kind`, as a community avatar (a WebP
+    /// of at most 128 px a side); answered with its BLAKE3 hex hash.
+    CommunitySetAvatar {
+        community: String,
+        image: Vec<u8>,
+        kind: rekindle_types::image_kind::ImageKind,
+    },
+    /// The same for a banner (at most 600 × 200 px).
+    CommunitySetBanner {
+        community: String,
+        image: Vec<u8>,
+        kind: rekindle_types::image_kind::ImageKind,
+    },
+    /// A cached avatar or banner by its hash, as a `data:image/webp` URL;
+    /// `None` when it is not cached.
+    CommunityAvatarGet { community: String, hash: String },
+    /// The community's policy text and raid thresholds.
+    CommunityPolicyGet { community: String },
+    /// Write a new community policy (`MANAGE_COMMUNITY`).
+    CommunityPolicySet {
+        community: String,
+        policy_text: Option<String>,
+        max_joins_per_interval: u32,
+        join_interval_seconds: u32,
+    },
+
     // ── Channels ──────────────────────────────────────────────────
     /// List channels in a community.
     ChannelList { community: String },

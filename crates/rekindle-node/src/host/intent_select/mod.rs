@@ -145,7 +145,11 @@ pub(crate) async fn select(
             | CommunityRequest::Unban { .. }
             | CommunityRequest::Timeout { .. }
             | CommunityRequest::InviteCreate { .. }
-            | CommunityRequest::InviteRevoke { .. }),
+            | CommunityRequest::InviteRevoke { .. }
+            | CommunityRequest::CommunityUpdateProfile { .. }
+            | CommunityRequest::CommunitySetAvatar { .. }
+            | CommunityRequest::CommunitySetBanner { .. }
+            | CommunityRequest::CommunityPolicySet { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
             request @ (CommunityRequest::GameServerAdd { .. }
@@ -234,6 +238,8 @@ pub(crate) async fn select(
             | CommunityRequest::MekRequest { .. }
             | CommunityRequest::RoleList { .. }
             | CommunityRequest::GameServerList { .. }
+            | CommunityRequest::CommunityAvatarGet { .. }
+            | CommunityRequest::CommunityPolicyGet { .. }
             | CommunityRequest::BanList { .. }
             | CommunityRequest::InviteList { .. },
         )

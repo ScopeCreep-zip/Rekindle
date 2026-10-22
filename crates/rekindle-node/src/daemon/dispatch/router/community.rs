@@ -4,7 +4,8 @@
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
-use crate::daemon::dispatch::{channel, community, game_servers, governance, keys, DaemonContext};
+use crate::daemon::dispatch::{
+    channel, community, community_profile, game_servers, governance, keys, DaemonContext};
 use crate::daemon::DaemonState;
 
 /// Route a community request: one arm per variant.
@@ -96,6 +97,61 @@ pub(super) async fn route(
         | CommunityRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
 
         // ── Governance (roles, moderation, invites) ──────────────
+        // ── Profile, pictures and policy (plan E3.1 D4) ──────────
+        CommunityRequest::CommunityUpdateProfile {
+            community,
+            bio,
+            pronouns,
+            theme_color,
+            badges,
+            avatar_ref,
+            banner_ref,
+        } => {
+            let edit = community_profile::ProfileEdit {
+                bio,
+                pronouns,
+                theme_color,
+                badges,
+                avatar_ref,
+                banner_ref,
+            };
+            community_profile::handle_update_profile(ctx, state, &community, edit)
+        }
+        CommunityRequest::CommunitySetAvatar {
+            community,
+            image,
+            kind,
+        } => {
+            let slot = community_profile::PictureSlot::Avatar;
+            community_profile::handle_set_picture(ctx, state, &community, image, kind, slot).await
+        }
+        CommunityRequest::CommunitySetBanner {
+            community,
+            image,
+            kind,
+        } => {
+            let slot = community_profile::PictureSlot::Banner;
+            community_profile::handle_set_picture(ctx, state, &community, image, kind, slot).await
+        }
+        CommunityRequest::CommunityAvatarGet { community, hash } => {
+            community_profile::handle_picture(ctx, state, &community, &hash).await
+        }
+        CommunityRequest::CommunityPolicyGet { community } => {
+            community_profile::handle_policy(ctx, state, &community)
+        }
+        CommunityRequest::CommunityPolicySet {
+            community,
+            policy_text,
+            max_joins_per_interval,
+            join_interval_seconds,
+        } => {
+            let edit = community_profile::PolicyEdit {
+                policy_text,
+                max_joins_per_interval,
+                join_interval_seconds,
+            };
+            community_profile::handle_set_policy(ctx, state, &community, edit).await
+        }
         // ── Game servers (plan E3.1 H1) ──────────────────────────
         CommunityRequest::GameServerList { community } => {
             game_servers::handle_list(ctx, state, &community).await

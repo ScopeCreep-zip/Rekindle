@@ -181,3 +181,14 @@ pub struct CommunityMemberView {
     #[serde(default)]
     pub last_active: u64,
 }
+
+/// A community's policy (architecture §10.7, §20.6): the rules text and the
+/// raid thresholds, the defaults until a `CommunityPolicy` entry merges.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityPolicyView {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub policy_text: Option<String>,
+    pub max_joins_per_interval: u32,
+    pub join_interval_seconds: u32,
+}

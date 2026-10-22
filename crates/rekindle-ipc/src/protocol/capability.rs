@@ -201,12 +201,18 @@ impl CommunityRequest {
             | Self::ChannelList { .. }
             | Self::RoleList { .. }
             | Self::GameServerList { .. }
+            | Self::CommunityAvatarGet { .. }
+            | Self::CommunityPolicyGet { .. }
             | Self::BanList { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
             | Self::CommunityJoin { .. }
             | Self::CommunityLeave { .. }
             | Self::CommunityUpdateInfo { .. }
+            | Self::CommunityUpdateProfile { .. }
+            | Self::CommunitySetAvatar { .. }
+            | Self::CommunitySetBanner { .. }
+            | Self::CommunityPolicySet { .. }
             | Self::ChannelCreate { .. }
             | Self::ChannelDelete { .. }
             | Self::ChannelUpdate { .. }

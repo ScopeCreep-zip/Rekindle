@@ -66,6 +66,7 @@ rekindle-link-preview = { path = "../rekindle-link-preview" }
 # Avatars: decoded as their declared kind under limits, made a 128 px
 # WebP (plans E1.1, E7.11).
 rekindle-image = { path = "../rekindle-image" }
+rekindle-files = { path = "../rekindle-files" }
 
 # Async runtime
 futures = { workspace = true }
