@@ -415,18 +415,26 @@ pub(crate) async fn load_channel_messages_from_smpl(
                         lamport_ts: message.lamport_ts,
                     },
                 );
-                let _ = crate::message_repo::insert_channel_message_with_protocol_metadata(
+                let _ = rekindle_db::repo::messages::channel::insert(
                     conn,
-                    &owner_key_for_db,
-                    &chid,
-                    &message.sender_pseudonym,
-                    &decrypted.body,
-                    i64::try_from(message.timestamp).unwrap_or(i64::MAX),
-                    true,
-                    Some(i64::try_from(message.mek_generation).unwrap_or(i64::MAX)),
-                    message_id,
-                    message.lamport_ts,
-                    false,
+                    &rekindle_db::repo::messages::channel::ChannelMessageInsert {
+                        owner_key: &owner_key_for_db,
+                        channel_id: &chid,
+                        sender_key: &message.sender_pseudonym,
+                        body: &decrypted.body,
+                        timestamp: i64::try_from(message.timestamp).unwrap_or(i64::MAX),
+                        is_read: true,
+                        mek_generation: Some(
+                            i64::try_from(message.mek_generation).unwrap_or(i64::MAX),
+                        ),
+                        message_id,
+                        lamport_ts: message.lamport_ts,
+                        automod_blurred: false,
+                        forwarded_from_author: None,
+                        flags: 0,
+                        attachment_json: None,
+                        send_state: rekindle_types::message::SendState::Delivered,
+                    },
                 );
             }
             Ok(())

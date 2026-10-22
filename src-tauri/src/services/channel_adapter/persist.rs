@@ -1,6 +1,6 @@
 //! Phase 23.D.4 — SQLite persist + retry-queue bodies extracted from
 //! `deps_impl.rs`. Each helper resolves the current owner_key and
-//! delegates to `crate::message_repo` or executes the
+//! delegates to `rekindle_db::repo::messages::channel` or executes the
 //! channel_slowmode_state / channels SQL directly via the Db.
 
 use rekindle_channel::deps::{ChannelMessageRow, ChannelSendOutcome, ThreadInfoSnapshot};
@@ -30,9 +30,9 @@ async fn persist_own_post(
         forwarded_from_author.map(str::to_string),
     );
     db_call(&adapter.pool, move |conn| {
-        crate::message_repo::insert_channel_message_full(
+        rekindle_db::repo::messages::channel::insert(
             conn,
-            &crate::message_repo::ChannelMessageInsert {
+            &rekindle_db::repo::messages::channel::ChannelMessageInsert {
                 owner_key: &owner_key,
                 channel_id: &channel_id,
                 sender_key: &outcome.sender_pseudonym_hex,
@@ -138,7 +138,12 @@ pub(super) async fn find_channel_message_by_id_impl(
     let channel_id = channel_id.to_string();
     let message_id = message_id.to_string();
     let row = db_call(&adapter.pool, move |conn| {
-        crate::message_repo::find_channel_message_by_id(conn, &owner_key, &channel_id, &message_id)
+        rekindle_db::repo::messages::channel::find_by_message_id(
+            conn,
+            &owner_key,
+            &channel_id,
+            &message_id,
+        )
     })
     .await
     .inspect_err(|e| tracing::warn!(error = %e, "channel message lookup failed"))

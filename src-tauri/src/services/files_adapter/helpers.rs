@@ -159,9 +159,9 @@ pub(super) async fn insert_channel_message_full_impl(
     let lamport_ts = row.lamport_ts;
     let flags = row.flags;
     crate::db_helpers::db_call(pool, move |conn| {
-        crate::message_repo::insert_channel_message_full(
+        rekindle_db::repo::messages::channel::insert(
             conn,
-            &crate::message_repo::ChannelMessageInsert {
+            &rekindle_db::repo::messages::channel::ChannelMessageInsert {
                 owner_key: &owner,
                 channel_id: &chan,
                 sender_key: &sender,

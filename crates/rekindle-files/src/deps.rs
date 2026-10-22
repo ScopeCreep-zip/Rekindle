@@ -58,7 +58,7 @@ pub enum FilesEvent {
 }
 
 /// Column set for [`FilesDeps::insert_channel_message_full`]. Mirrors
-/// `message_repo::insert_channel_message_full`'s SQL shape; grouping the
+/// `rekindle_db::repo::messages::channel::insert`'s SQL shape; grouping the
 /// fields keeps the trait method under the argument-count budget while
 /// each field stays explicit at the construction site.
 pub struct InsertChannelMessage<'a> {

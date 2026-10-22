@@ -13,7 +13,6 @@ use crate::message_view::merge_message_lists;
 use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_db::row::{get, get_json_opt};
 use rekindle_db::Db;
 use rekindle_types::permissions;
 
@@ -54,26 +53,12 @@ pub async fn get_channel_messages_inner(
     let ok = our_key.clone();
     let mpk = my_pseudonym_key.clone();
     let mut messages: Vec<Message> = db_call(&pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags, send_state \
-                 FROM messages \
-                 WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
-                 ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?",
-        )?;
-
-        let rows = stmt.query_map(rusqlite::params![ok, channel_id_clone, limit], |row| {
-            channel_message_from_row(row, &ok, &mpk)
-        })?;
-
-        let mut messages = Vec::new();
-        for row in rows {
-            messages.push(row?);
-        }
-        Ok(messages)
+        rekindle_db::repo::messages::channel::page(conn, &ok, &channel_id_clone, None, limit)
     })
-    .await?;
-
-    messages.reverse();
+    .await?
+    .into_iter()
+    .map(|row| channel_message(row, &our_key, &mpk))
+    .collect();
 
     tracing::debug!(
         owner_key = %our_key,
@@ -216,26 +201,18 @@ pub async fn get_older_channel_messages_inner(
     let mpk = my_pseudonym_key.clone();
     let before_ts = before_timestamp.cast_signed();
     let mut messages: Vec<Message> = db_call(&pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, attachment_json, flags, send_state \
-             FROM messages \
-             WHERE owner_key = ? AND conversation_id = ? AND conversation_type = 'channel' \
-             AND timestamp < ? \
-             ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?",
-        )?;
-        let rows = stmt.query_map(
-            rusqlite::params![ok, channel_id_clone, before_ts, limit],
-            |row| channel_message_from_row(row, &ok, &mpk),
-        )?;
-        let mut msgs = Vec::new();
-        for row in rows {
-            msgs.push(row?);
-        }
-        Ok(msgs)
+        rekindle_db::repo::messages::channel::page(
+            conn,
+            &ok,
+            &channel_id_clone,
+            Some(before_ts),
+            limit,
+        )
     })
-    .await?;
-
-    messages.reverse();
+    .await?
+    .into_iter()
+    .map(|row| channel_message(row, &our_key, &mpk))
+    .collect();
     let smpl_messages = load_channel_messages_from_smpl(
         &state,
         &pool,
@@ -249,32 +226,34 @@ pub async fn get_older_channel_messages_inner(
     Ok(messages)
 }
 
-/// One `messages` row of a channel, read strictly (plan D2). `own_key` and
+/// One stored channel message as the window renders it. `own_key` and
 /// `pseudonym_key` mark which senders are us.
-fn channel_message_from_row(
-    row: &rusqlite::Row<'_>,
+fn channel_message(
+    row: rekindle_db::repo::messages::channel::StoredChannelMessage,
     own_key: &str,
     pseudonym_key: &str,
-) -> rusqlite::Result<Message> {
-    let sender: String = get(row, "sender_key")?;
-    let is_own = sender == own_key || sender == pseudonym_key;
-    let attachment = get_json_opt::<rekindle_files::AttachmentRecordJson>(row, "attachment_json")?
+) -> Message {
+    let is_own = row.sender_key == own_key || row.sender_key == pseudonym_key;
+    let attachment = row
+        .attachment_json
+        .as_deref()
+        .and_then(|json| serde_json::from_str::<rekindle_files::AttachmentRecordJson>(json).ok())
         .map(crate::commands::chat::MessageAttachmentDto::from_record);
-    Ok(Message {
-        id: get(row, "id")?,
-        sender_id: sender,
-        body: get(row, "body")?,
+    Message {
+        id: row.id,
+        sender_id: row.sender_key,
+        body: row.body,
         decryption_failed: false,
-        automod_blurred: get::<i64>(row, "automod_blurred")? != 0,
-        timestamp: get(row, "timestamp")?,
+        automod_blurred: row.automod_blurred,
+        timestamp: row.timestamp,
         is_own,
-        server_message_id: get(row, "message_id")?,
+        server_message_id: row.message_id,
         reactions: None,
         pinned: None,
         poll: None,
-        forwarded_from_author: get(row, "forwarded_from_author")?,
+        forwarded_from_author: row.forwarded_from_author,
         attachment,
-        flags: get(row, "flags")?,
-        send_state: crate::commands::chat::stored_send_state(row)?,
-    })
+        flags: row.flags,
+        send_state: row.send_state,
+    }
 }

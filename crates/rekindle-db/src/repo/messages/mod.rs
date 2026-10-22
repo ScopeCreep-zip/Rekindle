@@ -1,7 +1,8 @@
 //! `messages`: direct messages (plan E2.1) and the delivery state of our
 //! own sent messages (plan D1, C7.14), which the outbox's rows project
-//! (`repo::outbox`, plan E2.5). The channel inserts are still the
-//! desktop's (`message_repo`, until E3.1).
+//! (`repo::outbox`, plan E2.5); channel messages are [`channel`] (E3.1 E2).
+
+pub mod channel;
 
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection};

@@ -176,9 +176,9 @@ pub async fn handle_message_notification(
     });
     let flags_for_db = message.flags;
     db_fire(&pool, "store notified channel message", move |conn| {
-        crate::message_repo::insert_channel_message_full(
+        rekindle_db::repo::messages::channel::insert(
             conn,
-            &crate::message_repo::ChannelMessageInsert {
+            &rekindle_db::repo::messages::channel::ChannelMessageInsert {
                 owner_key: &owner_key,
                 channel_id: &channel_id,
                 sender_key: &sender,
