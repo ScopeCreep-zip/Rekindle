@@ -12,6 +12,7 @@ use anyhow::{anyhow, Context, Result};
 
 const INVOKE: &str = "src-tauri/src/invoke.rs";
 const IPC_PROTOCOL: &str = "crates/rekindle-ipc/src/protocol/mod.rs";
+const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community.rs";
 const TABLE: &str = "crates/rekindle-types/src/intent/table.rs";
 
 /// The command names in `invoke.rs`'s `generate_handler!` list.
@@ -29,18 +30,33 @@ fn tauri_commands(src: &str) -> Vec<String> {
         .collect()
 }
 
-/// The variant names of `pub enum IpcRequest`.
-fn ipc_requests(src: &str) -> Result<Vec<String>> {
-    let file = syn::parse_file(src).context("parsing the IPC protocol")?;
+/// The variant names of `pub enum {name}` in `src`.
+fn enum_variants(src: &str, name: &str, path: &str) -> Result<Vec<String>> {
+    let file = syn::parse_file(src).with_context(|| format!("parsing {path}"))?;
     file.items
         .iter()
         .find_map(|item| match item {
-            syn::Item::Enum(e) if e.ident == "IpcRequest" => {
+            syn::Item::Enum(e) if e.ident == name => {
                 Some(e.variants.iter().map(|v| v.ident.to_string()).collect())
             }
             _ => None,
         })
-        .ok_or_else(|| anyhow!("no `enum IpcRequest` in {IPC_PROTOCOL}"))
+        .ok_or_else(|| anyhow!("no `enum {name}` in {path}"))
+}
+
+/// The leaf names of `pub enum IpcRequest`: its `Community` variant stands
+/// for every `CommunityRequest` variant, which `IpcRequest::name` answers.
+fn ipc_requests(protocol: &str, community: &str) -> Result<Vec<String>> {
+    let top = enum_variants(protocol, "IpcRequest", IPC_PROTOCOL)?;
+    if !top.iter().any(|v| v == "Community") {
+        return Err(anyhow!("no `IpcRequest::Community` in {IPC_PROTOCOL}"));
+    }
+    let nested = enum_variants(community, "CommunityRequest", IPC_COMMUNITY)?;
+    Ok(top
+        .into_iter()
+        .filter(|v| v != "Community")
+        .chain(nested)
+        .collect())
 }
 
 /// The first element of every `(name, kind)` row of `COMMAND_TABLE`.
@@ -112,7 +128,7 @@ pub(crate) fn check_intent_table(root: &Path) -> Result<()> {
     };
     let problems = compare(
         &tauri_commands(&read(INVOKE)?),
-        &ipc_requests(&read(IPC_PROTOCOL)?)?,
+        &ipc_requests(&read(IPC_PROTOCOL)?, &read(IPC_COMMUNITY)?)?,
         &table_names(&read(TABLE)?)?,
     );
     if problems.is_empty() {
@@ -142,8 +158,13 @@ mod tests {
             tauri_commands(invoke),
             names(&["login", "pqxdh_bundle_info"])
         );
-        let ipc = "pub enum IpcRequest { Unlock { passphrase: String }, Lock }";
-        assert_eq!(ipc_requests(ipc).unwrap(), names(&["Unlock", "Lock"]));
+        let ipc =
+            "pub enum IpcRequest { Unlock { passphrase: String }, Community(CommunityRequest), Lock }";
+        let community = "pub enum CommunityRequest { Kick { target: String }, BanList }";
+        assert_eq!(
+            ipc_requests(ipc, community).unwrap(),
+            names(&["Unlock", "Lock", "Kick", "BanList"])
+        );
         let table = r#"pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[("login", Some(IntentKind::Login)), ("Lock", None)];"#;
         assert_eq!(table_names(table).unwrap(), names(&["login", "Lock"]));
     }
