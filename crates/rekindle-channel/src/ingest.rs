@@ -8,6 +8,7 @@
 //! never admits what it was written to stop.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::hash::BuildHasher;
 
 use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_governance::permissions::{compute_permissions, has_capability};
@@ -110,9 +111,9 @@ pub fn timed_out_until(gov: &GovernanceState, member: &PseudonymKey, now_secs: u
 /// moment we receive it is the only time we can judge. Replies are not
 /// judged by their thread's creator: each post passes [`gate`] on its own
 /// author.
-pub fn hold_timed_out_threads(
+pub fn hold_timed_out_threads<S: BuildHasher>(
     previous: Option<&GovernanceState>,
-    held: &mut HashSet<ThreadId>,
+    held: &mut HashSet<ThreadId, S>,
     state: &mut GovernanceState,
     now_secs: u64,
 ) {

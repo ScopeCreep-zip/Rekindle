@@ -16,13 +16,13 @@ use crate::host::adapters::channel::ingest::ReceivedPost;
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
-const CHANNEL: &str = "0123456789abcdef0123456789abcdef";
+const INGEST_CHANNEL: &str = "0123456789abcdef0123456789abcdef";
 const BEA: [u8; 32] = [0xbe; 32];
 
 fn governance(slowmode_seconds: Option<u32>) -> GovernanceState {
     let mut gov = GovernanceState::default();
     gov.channels.insert(
-        ChannelId::from_hex(CHANNEL).expect("channel id"),
+        ChannelId::from_hex(INGEST_CHANNEL).expect("channel id"),
         ChannelState {
             name: "general".into(),
             channel_type: "text".into(),
@@ -56,7 +56,7 @@ fn rule(gov: &mut GovernanceState, trigger_json: &str) {
 fn post(timestamp_secs: u64) -> ReceivedPost {
     ReceivedPost {
         community_id: "c1".into(),
-        channel_id: CHANNEL.into(),
+        channel_id: INGEST_CHANNEL.into(),
         record_key: "VLD0:channel".into(),
         subkey_index: 1,
         sequence: 1,

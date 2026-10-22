@@ -109,6 +109,7 @@ mod tests {
         let mut channel_log_keys = HashMap::new();
         channel_log_keys.insert("c1".to_string(), "chan-key-1".to_string());
         CommunityState {
+            held_threads: std::collections::HashSet::new(),
             id: "gov-id".to_string(),
             name: "T".to_string(),
             description: None,

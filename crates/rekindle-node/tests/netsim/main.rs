@@ -15,6 +15,7 @@ mod forward_cross_audience;
 mod friend_watch;
 mod friends;
 mod game_servers;
+mod gate;
 mod governance_warm_restore;
 mod group_dm;
 mod harness;
