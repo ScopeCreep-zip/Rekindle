@@ -14,6 +14,11 @@
 //! spawn fails the gate too, so the list cannot rot. Test code (`#[cfg(test)]` modules,
 //! `#[test]`/`#[tokio::test]` functions, `tests/` and `*_tests.rs` files)
 //! is not scanned.
+//!
+//! In the Host's trees ([`HOST`]) blocking work goes through
+//! `rekindle_lifecycle::run_blocking` too: a bare `spawn_blocking` or
+//! `thread::spawn` there would finish in wall time, which the network
+//! simulator cannot order (plan E2.B F11).
 
 use std::path::Path;
 
@@ -71,6 +76,21 @@ const ALLOWED: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// The trees of the Host, whose blocking work runs through
+/// `rekindle_lifecycle::run_blocking`.
+const HOST: &[&str] = &[
+    "crates/rekindle-node/src/",
+    "crates/rekindle-transport/src/",
+];
+
+/// The free functions that start blocking work outside `run_blocking`.
+const BLOCKING: &[&[&str]] = &[
+    &["tokio", "task", "spawn_blocking"],
+    &["tokio", "spawn_blocking"],
+    &["task", "spawn_blocking"],
+    &["thread", "spawn"],
+];
+
 /// The free functions that spawn an unowned task.
 const BARE: &[&[&str]] = &[
     &["tokio", "spawn"],
@@ -116,7 +136,7 @@ impl Finder<'_> {
         entry.is_some()
     }
 
-    fn hit(&mut self, needle: &str) {
+    fn hit(&mut self, needle: &str, fix: &str) {
         let line = match self.src[self.cursor..].find(needle) {
             Some(at) => {
                 let abs = self.cursor + at;
@@ -127,7 +147,7 @@ impl Finder<'_> {
         };
         let function = self.fns.last().map_or("<top>", String::as_str);
         self.hits.push(format!(
-            "{}:{line}  {needle}(…) in `{function}` — spawn on a SessionScope",
+            "{}:{line}  {needle}(…) in `{function}` — {fix}",
             self.rel
         ));
     }
@@ -170,7 +190,16 @@ impl<'ast> Visit<'ast> for Finder<'_> {
                 .iter()
                 .any(|b| segments.len() >= b.len() && segments[segments.len() - b.len()..] == **b);
             if bare && !self.allowed() {
-                self.hit(&segments.join("::"));
+                self.hit(&segments.join("::"), "spawn on a SessionScope");
+            }
+            let ends_with = |b: &&[&str]| {
+                segments.len() >= b.len() && segments[segments.len() - b.len()..] == **b
+            };
+            if HOST.iter().any(|h| self.rel.starts_with(h)) && BLOCKING.iter().any(ends_with) {
+                self.hit(
+                    &segments.join("::"),
+                    "run it through rekindle_lifecycle::run_blocking",
+                );
             }
         }
         syn::visit::visit_expr_call(self, call);
@@ -234,7 +263,7 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
         eprintln!("    {h}");
     }
     Err(anyhow!(
-        "{} bare spawn(s) outside a SessionScope (plan C4, rule B20)",
+        "{} bare spawn(s) outside a SessionScope or run_blocking (plan C4, rule B20; F11)",
         hits.len()
     ))
 }
@@ -242,6 +271,16 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn flags_bare_blocking_work_in_the_host_only() {
+        let src = "fn work() { tokio::task::spawn_blocking(|| ()); std::thread::spawn(|| ()); }";
+        let (hits, _) = scan("crates/rekindle-node/src/host/a.rs", src);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+        assert!(hits[0].contains("run_blocking"), "{hits:?}");
+        let (hits, _) = scan("src-tauri/src/a.rs", src);
+        assert!(hits.is_empty(), "{hits:?}");
+    }
 
     #[test]
     fn flags_bare_spawns_and_names_the_function() {

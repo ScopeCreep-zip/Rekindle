@@ -78,7 +78,7 @@ pub(crate) async fn set_avatar(
     let owner = ctx
         .require_owner()
         .map_err(|_| "not unlocked".to_string())?;
-    let webp = tokio::task::spawn_blocking(move || compress_avatar(&image, kind))
+    let webp = rekindle_lifecycle::run_blocking(move || compress_avatar(&image, kind))
         .await
         .map_err(|e| e.to_string())??;
     if webp.len() > PROFILE_SUBKEY_CAP {

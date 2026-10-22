@@ -280,7 +280,7 @@ async fn passphrase_opens(
             vec![identity.to_string()]
         };
     let passphrase = zeroize::Zeroizing::new(passphrase.to_string());
-    let checked = tokio::task::spawn_blocking(move || {
+    let checked = rekindle_lifecycle::run_blocking(move || {
         candidates.iter().any(|candidate| {
             super::identity::passphrase_matches(&root, candidate, &passphrase).unwrap_or(false)
         })

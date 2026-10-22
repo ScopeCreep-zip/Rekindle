@@ -28,17 +28,18 @@ pub(crate) async fn run(
             _ = interval.tick() => {}
             () = stop.cancelled() => return,
         }
-        let idle_secs = match tokio::task::spawn_blocking(rekindle_idle::get_idle_seconds).await {
-            Ok(Some(secs)) => secs,
-            Ok(None) => {
-                presence.idle_unavailable();
-                continue;
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "idle time read failed");
-                continue;
-            }
-        };
+        let idle_secs =
+            match rekindle_lifecycle::run_blocking(rekindle_idle::get_idle_seconds).await {
+                Ok(Some(secs)) => secs,
+                Ok(None) => {
+                    presence.idle_unavailable();
+                    continue;
+                }
+                Err(e) => {
+                    tracing::warn!(error = %e, "idle time read failed");
+                    continue;
+                }
+            };
         let Some(minutes) = auto_away_minutes(&db, &owner).await else {
             continue;
         };

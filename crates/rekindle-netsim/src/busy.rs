@@ -86,6 +86,13 @@ pub fn db_call() -> Option<DbCall> {
     CURRENT.with(|current| current.borrow().as_ref().map(Busy::begin))
 }
 
+/// This thread runs a simulation ([`crate::Netsim::new`]): blocking work
+/// queued on it runs inline (`rekindle_lifecycle::BlockingWatch`).
+#[must_use]
+pub fn on_sim_thread() -> bool {
+    CURRENT.with(|current| current.borrow().is_some())
+}
+
 /// A database call this thread began is queued: on a simulation's thread,
 /// block until it (and any call before it) has run and sent its result.
 /// The database thread needs nothing from the runtime, so this ends.

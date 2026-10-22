@@ -65,6 +65,8 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
     crate::logs::install();
     // A Host's database thread is work the paused clock waits for (S8).
     let _ = rekindle_db::watch_calls(&SimDb);
+    // So is the blocking work a Host starts: it runs inline (F11).
+    let _ = rekindle_lifecycle::watch_blocking(&SimDb);
     let (sim, nodes) = Netsim::nodes(n, seed);
     let mut hosts = Vec::with_capacity(n);
     for node in nodes {
@@ -117,6 +119,12 @@ impl rekindle_db::CallWatch for SimDb {
 
     fn queued(&self) {
         rekindle_netsim::db_queued();
+    }
+}
+
+impl rekindle_lifecycle::BlockingWatch for SimDb {
+    fn inline(&self) -> bool {
+        rekindle_netsim::on_sim_thread()
     }
 }
 

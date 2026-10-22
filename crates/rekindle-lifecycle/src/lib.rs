@@ -15,11 +15,13 @@
 //!
 //! Plan reference: `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 5.
 
+pub mod blocking;
 pub mod error;
 pub mod guard;
 pub mod scope;
 pub mod state;
 
+pub use blocking::{run_blocking, watch_blocking, BlockingWatch};
 pub use error::LifecycleError;
 pub use guard::TransportGuard;
 pub use scope::{OnPanic, ScopeClosed, SessionScope, StuckTasks};

@@ -215,7 +215,7 @@ async fn attach_client(
         zeroize::Zeroizing::new(passphrase.to_string()),
         ctx.clock.now_ms(),
     );
-    let verified = tokio::task::spawn_blocking(move || {
+    let verified = rekindle_lifecycle::run_blocking(move || {
         crate::host::identity::verify_passphrase(&root, &attempts, &pk, &pass, now_ms)
     })
     .await;

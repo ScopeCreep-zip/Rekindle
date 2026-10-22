@@ -317,6 +317,7 @@ async fn the_call_watch_spans_each_call() {
     let conn = Connection::open_in_memory().await.unwrap();
     let begun = BEGUN.load(Ordering::SeqCst);
     assert!(begun >= 1, "the open is a call");
+    let queued = QUEUED.load(Ordering::SeqCst);
     let seen = conn
         .call(|_| Ok::<_, rusqlite::Error>(ENDED.load(Ordering::SeqCst)))
         .await
@@ -327,7 +328,7 @@ async fn the_call_watch_spans_each_call() {
     assert!(BEGUN.load(Ordering::SeqCst) >= begun + 3);
     assert!(ENDED.load(Ordering::SeqCst) >= begun + 2);
     assert!(
-        QUEUED.load(Ordering::SeqCst) >= begun + 3,
-        "each queued call"
+        QUEUED.load(Ordering::SeqCst) >= queued + 3,
+        "the call, the detached call and the close were each queued"
     );
 }
