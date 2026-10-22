@@ -96,20 +96,21 @@ pub(super) async fn route(
             name,
             permissions,
             color,
-            position,
+            hoist,
+            mentionable,
+            self_assignable,
+            exclusion_group,
         } => {
-            governance::handle_role_create(
-                ctx,
-                state,
-                &community,
-                governance::RoleSpec {
-                    name: &name,
-                    permissions,
-                    color,
-                    position,
-                },
-            )
-            .await
+            let role = governance::NewRole {
+                name,
+                color,
+                permissions,
+                hoist,
+                mentionable,
+                self_assignable,
+                exclusion_group,
+            };
+            governance::handle_role_create(ctx, state, &community, role).await
         }
         IpcRequest::RoleUpdate {
             community,
@@ -117,17 +118,23 @@ pub(super) async fn route(
             name,
             permissions,
             color,
+            position,
+            hoist,
+            mentionable,
+            self_assignable,
+            exclusion_group,
         } => {
-            governance::handle_role_update(
-                ctx,
-                state,
-                &community,
-                role_id,
-                name.as_deref(),
-                permissions,
+            let patch = governance::RoleSnapshotPatch {
+                name,
                 color,
-            )
-            .await
+                permissions,
+                position,
+                hoist,
+                mentionable,
+                self_assignable,
+                exclusion_group,
+            };
+            governance::handle_role_update(ctx, state, &community, role_id, patch).await
         }
         IpcRequest::RoleDelete { community, role_id } => {
             governance::handle_role_delete(ctx, state, &community, role_id).await
@@ -137,15 +144,22 @@ pub(super) async fn route(
             member_pseudonym,
             role_id,
         } => {
-            governance::handle_role_assign(ctx, state, &community, &member_pseudonym, role_id).await
+            governance::handle_role_grant(ctx, state, &community, &member_pseudonym, role_id, true)
+                .await
         }
         IpcRequest::RoleUnassign {
             community,
             member_pseudonym,
             role_id,
         } => {
-            governance::handle_role_unassign(ctx, state, &community, &member_pseudonym, role_id)
+            governance::handle_role_grant(ctx, state, &community, &member_pseudonym, role_id, false)
                 .await
+        }
+        IpcRequest::RoleSelfAssign { community, role_id } => {
+            governance::handle_role_self(ctx, state, &community, role_id, true).await
+        }
+        IpcRequest::RoleSelfUnassign { community, role_id } => {
+            governance::handle_role_self(ctx, state, &community, role_id, false).await
         }
         IpcRequest::Kick {
             community,

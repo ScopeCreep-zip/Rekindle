@@ -4,9 +4,14 @@
 
 use rekindle_governance::validate::bounds;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_types::governance::ExclusionGroupEdit;
 use rekindle_types::invite::InviteLink;
 use rekindle_types::key_format::{self, MAX_NOTE_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
+
+/// The longest exclusion-group slug in bytes (the Host normalizes it to at
+/// most 32 characters of ASCII).
+const MAX_EXCLUSION_GROUP_LEN: usize = 32;
 
 use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 
@@ -88,6 +93,14 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             community: c,
             role_id: _,
         }
+        | IpcRequest::RoleSelfAssign {
+            community: c,
+            role_id: _,
+        }
+        | IpcRequest::RoleSelfUnassign {
+            community: c,
+            role_id: _,
+        }
         | IpcRequest::InviteCreate {
             community: c,
             max_uses: _,
@@ -126,22 +139,28 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         IpcRequest::RoleCreate {
             community: c,
             name: role_name,
-            permissions: _,
-            color: _,
-            position: _,
+            exclusion_group,
+            ..
         } => {
             community(c)?;
-            name(role_name, "role")
+            name(role_name, "role")?;
+            opt(exclusion_group.as_deref(), |g| {
+                text(g, MAX_EXCLUSION_GROUP_LEN, "exclusion group")
+            })
         }
         IpcRequest::RoleUpdate {
             community: c,
             role_id: _,
             name: new_name,
-            permissions: _,
-            color: _,
+            exclusion_group,
+            ..
         } => {
             community(c)?;
-            opt(new_name.as_deref(), |n| name(n, "role"))
+            opt(new_name.as_deref(), |n| name(n, "role"))?;
+            match exclusion_group {
+                ExclusionGroupEdit::Set(g) => text(g, MAX_EXCLUSION_GROUP_LEN, "exclusion group"),
+                ExclusionGroupEdit::Unchanged | ExclusionGroupEdit::Clear => Ok(()),
+            }
         }
         IpcRequest::RoleAssign {
             community: c,

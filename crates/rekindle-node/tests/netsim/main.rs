@@ -22,6 +22,7 @@ mod pair;
 mod prekey_collision;
 mod prekeys;
 mod resume_after_restart;
+mod role_assign;
 mod rotation;
 mod route_link_failure;
 mod scenarios;

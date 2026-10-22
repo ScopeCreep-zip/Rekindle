@@ -422,8 +422,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     // ---------- Role mutations (Phase 23.D.15) ----------
 
     /// Snapshot of an existing role's current definition. Used by
-    /// `edit_role` to compute the merged-update RoleDefinition and by
-    /// `resolve_self_assignable_pseudonym` to check `self_assignable`.
+    /// `edit_role` to compute the merged-update RoleDefinition.
     fn role_current_definition(
         &self,
         community_id: &str,

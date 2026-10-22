@@ -486,7 +486,14 @@ pub enum IpcRequest {
         name: String,
         permissions: u64,
         color: u32,
-        position: i32,
+        /// Members with it are listed in their own sidebar group.
+        hoist: bool,
+        /// `@role` reaches everyone holding it.
+        mentionable: bool,
+        /// Members may take it themselves.
+        self_assignable: bool,
+        /// At most one role of a group per member (architecture §19.4).
+        exclusion_group: Option<String>,
     },
     /// Update a role's properties.
     RoleUpdate {
@@ -495,6 +502,11 @@ pub enum IpcRequest {
         name: Option<String>,
         permissions: Option<u64>,
         color: Option<u32>,
+        position: Option<i32>,
+        hoist: Option<bool>,
+        mentionable: Option<bool>,
+        self_assignable: Option<bool>,
+        exclusion_group: rekindle_types::governance::ExclusionGroupEdit,
     },
     /// Delete a role.
     RoleDelete { community: String, role_id: u32 },
@@ -510,6 +522,10 @@ pub enum IpcRequest {
         member_pseudonym: String,
         role_id: u32,
     },
+    /// Take a self-assignable role ourselves.
+    RoleSelfAssign { community: String, role_id: u32 },
+    /// Drop a self-assignable role we hold.
+    RoleSelfUnassign { community: String, role_id: u32 },
 
     // ── Moderation ────────────────────────────────────────────────
     /// Kick a member (sync gossip broadcast).

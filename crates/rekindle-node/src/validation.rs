@@ -374,6 +374,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::RoleUpdate { .. }
         | IpcRequest::RoleAssign { .. }
         | IpcRequest::RoleUnassign { .. }
+        | IpcRequest::RoleSelfAssign { .. }
+        | IpcRequest::RoleSelfUnassign { .. }
         | IpcRequest::Kick { .. }
         | IpcRequest::Unban { .. }
         | IpcRequest::Ban { .. }

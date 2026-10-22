@@ -58,6 +58,11 @@ async fn reviewed_from_cache(node: &crate::harness::SimNode, governance_key: &st
             name: Some("Everyone".into()),
             permissions: None,
             color: None,
+            position: None,
+            hoist: None,
+            mentionable: None,
+            self_assignable: None,
+            exclusion_group: rekindle_types::governance::ExclusionGroupEdit::Unchanged,
         })
         .await;
     assert!(

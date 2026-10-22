@@ -117,6 +117,8 @@ async fn route(
         | IpcRequest::RoleDelete { .. }
         | IpcRequest::RoleAssign { .. }
         | IpcRequest::RoleUnassign { .. }
+        | IpcRequest::RoleSelfAssign { .. }
+        | IpcRequest::RoleSelfUnassign { .. }
         | IpcRequest::Kick { .. }
         | IpcRequest::Ban { .. }
         | IpcRequest::Unban { .. }

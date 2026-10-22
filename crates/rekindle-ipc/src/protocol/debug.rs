@@ -149,6 +149,8 @@ impl std::fmt::Debug for IpcRequest {
             | Self::RoleDelete { .. }
             | Self::RoleAssign { .. }
             | Self::RoleUnassign { .. }
+            | Self::RoleSelfAssign { .. }
+            | Self::RoleSelfUnassign { .. }
             | Self::Kick { .. }
             | Self::Ban { .. }
             | Self::Unban { .. }

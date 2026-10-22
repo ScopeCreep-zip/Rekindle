@@ -28,8 +28,6 @@ pub mod community_policy_runtime; // Phase 23.C — community policy get/set bod
 pub mod community_presence_runtime; // Phase 23.C — presence-handler runtime orchestration lifted from commands/community/presence.rs.
 pub mod community_profile_blobs_runtime; // Phase 23.C — community avatar/banner blob compression + content-addressed cache lifted from commands/community/profile_blobs.rs.
 pub mod community_registry_slot; // Phase 23.C — `clear_registry_presence_slot` helper lifted from legacy/messages.rs.
-pub mod community_role_handlers_runtime; // Phase 23.C — role-command Tauri handler wrappers (parse + permission + delegate) lifted from commands/community/roles.rs.
-pub mod community_role_runtime; // Phase 23.C — role-mutation runtime orchestration lifted from commands/community/roles.rs.
 pub mod community_unread_runtime; // Phase 23.C — unread mark/get bodies lifted from commands/community/unread.rs.
 pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchestration lifted from commands/community/video.rs.
 pub mod community_views_runtime; // Phase 23.C — community list/detail DTO mappers lifted from commands/community/crud.rs.

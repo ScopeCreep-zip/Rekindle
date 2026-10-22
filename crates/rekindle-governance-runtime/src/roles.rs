@@ -32,23 +32,9 @@ pub struct RoleSnapshotInsert {
     pub exclusion_group: Option<String>,
 }
 
-/// Three-state edit for the exclusion-group slug. `Unchanged` is the
-/// default (caller doesn't want to touch the field); `Clear` removes
-/// the existing exclusion group; `Set` overwrites with a new slug.
-///
-/// Carries the IPC wire contract because it *is* the IPC type — the
-/// `edit_role` command deserialises straight into it. src-tauri used to
-/// declare a two-case copy (`Set`/`Clear`) with these attributes and
-/// express `Unchanged` by passing `Option::None` beside it, which is
-/// the same three states in two encodings.
-#[derive(Debug, Clone, Default, serde::Deserialize)]
-#[serde(tag = "kind", content = "value", rename_all = "lowercase")]
-pub enum ExclusionGroupEdit {
-    #[default]
-    Unchanged,
-    Clear,
-    Set(String),
-}
+/// The exclusion-group edit `RoleUpdate` carries (one enum, declared
+/// with the request in `rekindle-types`).
+pub use rekindle_types::governance::ExclusionGroupEdit;
 
 /// Partial-update payload for `edit_role`. `None` fields are unchanged
 /// — except `exclusion_group` which uses the three-state
@@ -241,29 +227,6 @@ pub async fn delete_role<D: GovernanceRuntimeDeps>(
     .await?;
 
     deps.apply_role_delete(community_id, role_id).await
-}
-
-/// Resolve the local member's pseudonym key for `community_id`, but
-/// only if `role_id` exists and is marked `self_assignable`. Used by
-/// the self-assign / self-unassign command paths.
-pub fn resolve_self_assignable_pseudonym<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    role_id: u32,
-) -> Result<String, GovernanceRuntimeError> {
-    let current = deps
-        .role_current_definition(community_id, role_id)
-        .ok_or_else(|| GovernanceRuntimeError::Adapter(format!("role not found: {role_id}")))?;
-    if !current.self_assignable {
-        return Err(GovernanceRuntimeError::Adapter(
-            "role is not self-assignable".into(),
-        ));
-    }
-    deps.community_membership(community_id)
-        .and_then(|m| m.my_pseudonym_hex)
-        .ok_or_else(|| {
-            GovernanceRuntimeError::Adapter("no pseudonym key for this community".into())
-        })
 }
 
 #[cfg(test)]

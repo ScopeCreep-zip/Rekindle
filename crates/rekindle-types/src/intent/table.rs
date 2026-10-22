@@ -516,6 +516,8 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("RoleDelete", Some(IntentKind::DeleteRole)),
     ("RoleAssign", Some(IntentKind::AssignRole)),
     ("RoleUnassign", Some(IntentKind::UnassignRole)),
+    ("RoleSelfAssign", Some(IntentKind::SelfAssignRole)),
+    ("RoleSelfUnassign", Some(IntentKind::SelfUnassignRole)),
     ("Kick", Some(IntentKind::RemoveCommunityMember)),
     ("Ban", Some(IntentKind::BanMember)),
     ("Unban", Some(IntentKind::UnbanMember)),

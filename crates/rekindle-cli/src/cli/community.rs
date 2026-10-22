@@ -164,9 +164,6 @@ pub enum RoleCmd {
         /// Role color (hex, e.g., "FF5733").
         #[arg(long)]
         color: Option<String>,
-        /// Position in role hierarchy.
-        #[arg(long)]
-        position: Option<u32>,
     },
 
     /// Update a role.

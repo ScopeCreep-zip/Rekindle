@@ -68,7 +68,6 @@ pub async fn dispatch_role(
             name,
             permissions,
             color,
-            position,
         } => {
             let perms = permissions
                 .as_deref()
@@ -76,7 +75,6 @@ pub async fn dispatch_role(
                 .transpose()?
                 .unwrap_or(0);
             let col = color.as_deref().map(parse_color).transpose()?.unwrap_or(0);
-            let pos = position.map_or(0, |p| i32::try_from(p).unwrap_or(i32::MAX));
             let value = helpers::send(
                 client,
                 IpcRequest::RoleCreate {
@@ -84,7 +82,10 @@ pub async fn dispatch_role(
                     name: name.clone(),
                     permissions: perms,
                     color: col,
-                    position: pos,
+                    hoist: false,
+                    mentionable: false,
+                    self_assignable: false,
+                    exclusion_group: None,
                 },
             )
             .await?;
@@ -108,6 +109,11 @@ pub async fn dispatch_role(
                     name: name.clone(),
                     permissions: perms,
                     color: col,
+                    position: None,
+                    hoist: None,
+                    mentionable: None,
+                    self_assignable: None,
+                    exclusion_group: rekindle_types::governance::ExclusionGroupEdit::Unchanged,
                 },
             )
             .await?;

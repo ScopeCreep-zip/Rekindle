@@ -179,14 +179,20 @@ impl IpcRequest {
                 name,
                 permissions,
                 color,
-                position,
+                hoist,
+                mentionable,
+                self_assignable,
+                exclusion_group,
             } => f
                 .debug_struct("RoleCreate")
                 .field("community", community)
                 .field("name", name)
                 .field("permissions", permissions)
                 .field("color", color)
-                .field("position", position)
+                .field("hoist", hoist)
+                .field("mentionable", mentionable)
+                .field("self_assignable", self_assignable)
+                .field("exclusion_group", exclusion_group)
                 .finish(),
             Self::RoleUpdate {
                 community,
@@ -194,6 +200,11 @@ impl IpcRequest {
                 name,
                 permissions,
                 color,
+                position,
+                hoist,
+                mentionable,
+                self_assignable,
+                exclusion_group,
             } => f
                 .debug_struct("RoleUpdate")
                 .field("community", community)
@@ -201,6 +212,11 @@ impl IpcRequest {
                 .field("name", name)
                 .field("permissions", permissions)
                 .field("color", color)
+                .field("position", position)
+                .field("hoist", hoist)
+                .field("mentionable", mentionable)
+                .field("self_assignable", self_assignable)
+                .field("exclusion_group", exclusion_group)
                 .finish(),
             Self::RoleDelete { community, role_id } => f
                 .debug_struct("RoleDelete")
@@ -225,6 +241,16 @@ impl IpcRequest {
                 .debug_struct("RoleUnassign")
                 .field("community", community)
                 .field("member_pseudonym", member_pseudonym)
+                .field("role_id", role_id)
+                .finish(),
+            Self::RoleSelfAssign { community, role_id } => f
+                .debug_struct("RoleSelfAssign")
+                .field("community", community)
+                .field("role_id", role_id)
+                .finish(),
+            Self::RoleSelfUnassign { community, role_id } => f
+                .debug_struct("RoleSelfUnassign")
+                .field("community", community)
                 .field("role_id", role_id)
                 .finish(),
             Self::Kick {

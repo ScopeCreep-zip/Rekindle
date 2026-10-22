@@ -178,6 +178,8 @@ impl IpcRequest {
             Self::RoleDelete { .. } => ("RoleDelete", Write, Authenticated),
             Self::RoleAssign { .. } => ("RoleAssign", Write, Authenticated),
             Self::RoleUnassign { .. } => ("RoleUnassign", Write, Authenticated),
+            Self::RoleSelfAssign { .. } => ("RoleSelfAssign", Write, Authenticated),
+            Self::RoleSelfUnassign { .. } => ("RoleSelfUnassign", Write, Authenticated),
 
             Self::Kick { .. } => ("Kick", Write, Authenticated),
             Self::Ban { .. } => ("Ban", Write, Authenticated),

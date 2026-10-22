@@ -182,8 +182,9 @@ export interface Preferences {
 }
 
 export type ExclusionGroupEdit =
-  | { kind: "set"; value: string }
-  | { kind: "clear" };
+  | { set: string }
+  | "clear"
+  | "unchanged";
 
 export interface CommunityPolicy {
   /** Optional Markdown rules text (architecture §10.7 line 724). */

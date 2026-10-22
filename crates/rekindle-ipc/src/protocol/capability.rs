@@ -155,6 +155,8 @@ impl IpcRequest {
             | Self::RoleCreate { .. }
             | Self::RoleUpdate { .. }
             | Self::RoleDelete { .. }
+            | Self::RoleSelfAssign { .. }
+            | Self::RoleSelfUnassign { .. }
             | Self::InviteCreate { .. }
             | Self::InviteRevoke { .. } => Some(C::CommunitiesWrite),
             Self::CommunityApprove { .. }

@@ -200,6 +200,27 @@ pub(super) async fn selection(
             };
             s.notifies = members(ctx, &id);
         }
+        IpcRequest::RoleSelfAssign {
+            community: target,
+            role_id,
+        }
+        | IpcRequest::RoleSelfUnassign {
+            community: target,
+            role_id,
+        } => {
+            let (id, _) = community(ctx, target)?;
+            let (name, _) = role(ctx, &id, *role_id)?;
+            s.subject = Subject::Role {
+                id: role_id.to_string(),
+                name,
+            };
+            s.reversibility = if matches!(request, IpcRequest::RoleSelfAssign { .. }) {
+                Reversibility::ReversibleByInverse(IntentKind::SelfUnassignRole)
+            } else {
+                Reversibility::ReversibleByInverse(IntentKind::SelfAssignRole)
+            };
+            s.notifies = members(ctx, &id);
+        }
         IpcRequest::RoleAssign {
             community: target,
             member_pseudonym,

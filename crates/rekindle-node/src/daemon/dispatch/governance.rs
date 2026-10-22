@@ -5,42 +5,39 @@ use rekindle_ipc::protocol::IpcResponse;
 
 use super::{adapter, state_error, DaemonContext};
 
-// ── Roles ───────────────────────────────────────────────────────────────
+// ── Roles (the Host's, `host/adapters/governance/role_ops.rs`) ─────────
+
+pub(crate) use crate::host::adapters::governance::role_ops::NewRole;
+use crate::host::adapters::governance::role_ops::RoleRefusal;
+pub(crate) use rekindle_governance_runtime::roles::RoleSnapshotPatch;
 
 /// Every live role, from merged governance.
-///
-/// The v1.0 manifest roles subkey is gone: `RoleAssign` always wrote
-/// `RoleAssignment` entries while create/update/delete wrote the
-/// manifest, so a daemon-created role had no `RoleDefinition` for
-/// `compute_permissions` to find and the assignment conferred nothing —
-/// on either track.
 pub(crate) fn role_displays(
     ctx: &DaemonContext,
     community_id: &str,
 ) -> Vec<rekindle_types::display::RoleDisplay> {
-    let Some(gov) = ctx.communities.governance_state(community_id) else {
-        return Vec::new();
-    };
-    let mut out: Vec<rekindle_types::display::RoleDisplay> = gov
-        .roles
-        .iter()
-        .map(|(id, role)| rekindle_types::display::RoleDisplay {
-            id: id.to_legacy_u32(),
-            name: role.name.clone(),
-            color: role.color,
-            permissions: role.permissions,
-            position: i32::try_from(role.position).unwrap_or(i32::MAX),
-            // All four live in the merged CRDT state and were simply
-            // not being read, so the CLI rendered every role as
-            // non-hoisted, non-mentionable and ungrouped.
-            hoist: role.hoist,
-            mentionable: role.mentionable,
-            self_assignable: role.self_assignable,
-            exclusion_group: role.exclusion_group.clone(),
-        })
-        .collect();
-    out.sort_by_key(|r| r.id);
-    out
+    ctx.communities
+        .governance_state(community_id)
+        .map(|g| crate::host::adapters::governance::role_ops::role_displays(&g))
+        .unwrap_or_default()
+}
+
+fn refused(refusal: &RoleRefusal) -> IpcResponse {
+    IpcResponse::error(u32::from(refusal.code()), refusal.to_string())
+}
+
+/// The community a role write is about, once we may write and are attached
+/// (the entry goes to the DHT).
+fn writable(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    community: &str,
+) -> Result<String, IpcResponse> {
+    if !state.can_write() {
+        return Err(state_error(state, "write"));
+    }
+    ctx.require_transport()?;
+    Ok(ctx.resolve_community(community)?.governance_key)
 }
 
 pub(crate) fn handle_role_list(
@@ -51,67 +48,26 @@ pub(crate) fn handle_role_list(
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
-        Err(e) => return e,
-    };
-    // From merged governance, not the v1.0 manifest roles subkey.
-    // `RoleAssign` has always written `RoleAssignment` entries while
-    // create/update/delete wrote the manifest, so a daemon-created role
-    // had no `RoleDefinition` for `compute_permissions` to find and the
-    // assignment conferred nothing — on either track.
-    IpcResponse::ok(&role_displays(ctx, &membership.governance_key))
+    match ctx.resolve_community(community) {
+        Ok(m) => IpcResponse::ok(&adapter(ctx).role_list(&m.governance_key)),
+        Err(e) => e,
+    }
 }
 
-/// Attributes for a new role, grouped so the dispatch handler threads a single
-/// spec instead of four independent scalars.
-pub(crate) struct RoleSpec<'a> {
-    pub name: &'a str,
-    pub permissions: u64,
-    pub color: u32,
-    pub position: i32,
-}
-
+/// Create a role; answers its id.
 pub(crate) async fn handle_role_create(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    spec: RoleSpec<'_>,
+    role: NewRole,
 ) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-    let name = spec.name.trim().to_owned();
-    // Still gated on being attached: the entry write goes to the DHT,
-    // and failing here is a clearer answer than a deep write error.
-    if let Err(e) = ctx.require_transport() {
-        return e;
-    }
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
+    let key = match writable(ctx, state, community) {
+        Ok(k) => k,
         Err(e) => return e,
     };
-    // `position` is allocated by the runtime from the merged role table
-    // so two peers creating concurrently do not collide; the caller's
-    // hint is ignored rather than silently honoured on one track only.
-    let _ = spec.position;
-    match rekindle_governance_runtime::roles::create_role(
-        &adapter(ctx),
-        &membership.governance_key,
-        name.clone(),
-        spec.color,
-        spec.permissions,
-        false,
-        false,
-        false,
-        None,
-    )
-    .await
-    {
-        Ok(role_id) => IpcResponse::ok(&serde_json::json!({
-            "id": role_id, "name": name, "permissions": spec.permissions,
-        })),
-        Err(e) => IpcResponse::error(500, format!("role create: {e}")),
+    match adapter(ctx).role_create(&key, role).await {
+        Ok(role_id) => IpcResponse::ok(&role_id),
+        Err(r) => refused(&r),
     }
 }
 
@@ -120,137 +76,76 @@ pub(crate) async fn handle_role_update(
     state: DaemonState,
     community: &str,
     role_id: u32,
-    name: Option<&str>,
-    permissions: Option<u64>,
-    color: Option<u32>,
+    patch: RoleSnapshotPatch,
 ) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-    // Still gated on being attached: the entry write goes to the DHT,
-    // and failing here is a clearer answer than a deep write error.
-    if let Err(e) = ctx.require_transport() {
-        return e;
-    }
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
+    let key = match writable(ctx, state, community) {
+        Ok(k) => k,
         Err(e) => return e,
     };
-    let patch = rekindle_governance_runtime::roles::RoleSnapshotPatch {
-        name: name.map(ToOwned::to_owned),
-        permissions,
-        color,
-        position: None,
-        hoist: None,
-        mentionable: None,
-        self_assignable: None,
-        exclusion_group: rekindle_governance_runtime::roles::ExclusionGroupEdit::Unchanged,
-    };
-    match rekindle_governance_runtime::roles::edit_role(
-        &adapter(ctx),
-        &membership.governance_key,
-        role_id,
-        patch,
-    )
-    .await
-    {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "id": role_id, "name": name })),
-        Err(e) => IpcResponse::error(500, format!("role update: {e}")),
+    match adapter(ctx).role_edit(&key, role_id, patch).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "id": role_id })),
+        Err(r) => refused(&r),
     }
 }
 
+/// Archived, not deleted: `RoleArchived` is the CRDT's tombstone.
 pub(crate) async fn handle_role_delete(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
     role_id: u32,
 ) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-    // Still gated on being attached: the entry write goes to the DHT,
-    // and failing here is a clearer answer than a deep write error.
-    if let Err(e) = ctx.require_transport() {
-        return e;
-    }
-    let membership = match ctx.resolve_community(community) {
-        Ok(m) => m,
+    let key = match writable(ctx, state, community) {
+        Ok(k) => k,
         Err(e) => return e,
     };
-    // Archived, not deleted: `RoleArchived` is the CRDT's tombstone, so
-    // a peer that had merged the definition drops it on the next merge
-    // rather than keeping a role nobody else can see.
-    match rekindle_governance_runtime::roles::delete_role(
-        &adapter(ctx),
-        &membership.governance_key,
-        role_id,
-    )
-    .await
-    {
+    match adapter(ctx).role_delete(&key, role_id).await {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "deleted": role_id })),
-        Err(e) => IpcResponse::error(500, format!("role delete: {e}")),
+        Err(r) => refused(&r),
     }
 }
 
-/// Grant a role.
-///
-/// Writes a `RoleAssignment` governance entry, which every peer merges
-/// and validates. The previous path rewrote the *shared* registry
-/// member index — one member editing another's row in a record whose
-/// `o_cnt: 0` schema gives nobody a writer credential for it, and a
-/// second source of truth against the CRDT the desktop already used
-/// (`community_role_runtime.rs`). Two stores for one rule, and only one
-/// of them was v2.0.
-pub(crate) async fn handle_role_assign(
+/// Grant (`grant`) or revoke a member's role: a `RoleAssignment` or
+/// `RoleUnassignment` entry every peer merges and validates.
+pub(crate) async fn handle_role_grant(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
     member_pseudonym: &str,
     role_id: u32,
+    grant: bool,
 ) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-    if let Err(e) = ctx.resolve_community(community) {
-        return e;
-    }
-    match rekindle_governance_runtime::roles::assign_role(
-        &adapter(ctx),
-        community,
-        member_pseudonym,
-        role_id,
-    )
-    .await
-    {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "assigned": true, "role_id": role_id })),
-        Err(e) => IpcResponse::error(500, format!("role assign: {e}")),
+    let key = match writable(ctx, state, community) {
+        Ok(k) => k,
+        Err(e) => return e,
+    };
+    let host = adapter(ctx);
+    let done = if grant {
+        host.role_assign(&key, member_pseudonym, role_id).await
+    } else {
+        host.role_unassign(&key, member_pseudonym, role_id).await
+    };
+    match done {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "assigned": grant, "role_id": role_id })),
+        Err(r) => refused(&r),
     }
 }
 
-/// Revoke a role. Same reasoning as [`handle_role_assign`].
-pub(crate) async fn handle_role_unassign(
+/// Take (`take`) or drop a self-assignable role ourselves.
+pub(crate) async fn handle_role_self(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
-    member_pseudonym: &str,
     role_id: u32,
+    take: bool,
 ) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
-    }
-    if let Err(e) = ctx.resolve_community(community) {
-        return e;
-    }
-    match rekindle_governance_runtime::roles::unassign_role(
-        &adapter(ctx),
-        community,
-        member_pseudonym,
-        role_id,
-    )
-    .await
-    {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "unassigned": true, "role_id": role_id })),
-        Err(e) => IpcResponse::error(500, format!("role unassign: {e}")),
+    let key = match writable(ctx, state, community) {
+        Ok(k) => k,
+        Err(e) => return e,
+    };
+    match adapter(ctx).role_self(&key, role_id, take).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "assigned": take, "role_id": role_id })),
+        Err(r) => refused(&r),
     }
 }
 

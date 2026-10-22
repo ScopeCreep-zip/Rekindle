@@ -10,6 +10,7 @@
 mod entry;
 mod onboarding;
 mod payload;
+mod role_edit;
 
 #[cfg(test)]
 mod tests;
@@ -17,3 +18,4 @@ mod tests;
 pub use entry::{AdmissionMode, GovernanceEntry};
 pub use onboarding::{GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel};
 pub use payload::GovernanceSubkeyPayload;
+pub use role_edit::ExclusionGroupEdit;

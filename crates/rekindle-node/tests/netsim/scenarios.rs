@@ -99,10 +99,13 @@ async fn a_concurrent_mutual_kick_removes_both_everywhere() {
             name: "mod".into(),
             permissions: KICK_MEMBERS,
             color: 0,
-            position: 1,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
         })
         .await;
-    let role_id = u32::try_from(role["id"].as_u64().expect("a role id")).unwrap();
+    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
         .ok(IpcRequest::RoleAssign {
             community: community.governance_key.clone(),
@@ -145,10 +148,13 @@ async fn concurrent_rotations_converge_on_one_generation() {
             name: "admin".into(),
             permissions: ADMINISTRATOR,
             color: 0,
-            position: 1,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
         })
         .await;
-    let role_id = u32::try_from(role["id"].as_u64().expect("a role id")).unwrap();
+    let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
         .ok(IpcRequest::RoleAssign {
             community: community.governance_key.clone(),

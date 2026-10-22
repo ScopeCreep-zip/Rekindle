@@ -45,6 +45,7 @@ mod membership_route;
 pub mod projection;
 mod registry;
 
+pub mod role_ops;
 mod roles;
 mod state_builder;
 mod state_mutations;

@@ -136,6 +136,8 @@ pub(crate) async fn select(
         | IpcRequest::RoleDelete { .. }
         | IpcRequest::RoleAssign { .. }
         | IpcRequest::RoleUnassign { .. }
+        | IpcRequest::RoleSelfAssign { .. }
+        | IpcRequest::RoleSelfUnassign { .. }
         | IpcRequest::Kick { .. }
         | IpcRequest::Ban { .. }
         | IpcRequest::Unban { .. }

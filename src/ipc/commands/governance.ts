@@ -76,7 +76,7 @@ export const governanceCommands = {
 
   // Roles
   getRoles: (communityId: string) =>
-    invoke<{ id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean; exclusionGroup?: string }[]>(
+    hostInvoke<{ id: number; name: string; color: number; permissions: number; position: number; hoist: boolean; mentionable: boolean; selfAssignable: boolean; exclusionGroup: string | null }[]>(
       "get_roles", { communityId },
     ),
   createRole: (
@@ -90,11 +90,13 @@ export const governanceCommands = {
     /** Architecture §19.4 — when set, the member can hold at most one role per group. */
     exclusionGroup?: string,
   ) =>
-    invoke<number>("create_role", {
+    hostInvoke<number>("create_role", {
       communityId,
       name,
       color,
-      permissions,
+      // Every permission bit is below 2^53 (`permissions::ALL` is
+      // `(1 << 51) - 1`), so the number is exact.
+      permissions: Number(permissions),
       hoist,
       mentionable,
       selfAssignable,
@@ -111,33 +113,33 @@ export const governanceCommands = {
     mentionable: boolean | null,
     selfAssignable: boolean | null,
     /**
-     * Architecture §19.4 — pass `{ kind: "set", value: "..." }` to set,
-     * `{ kind: "clear" }` to clear, or omit to leave unchanged.
+     * Architecture §19.4 — pass `{ set: "..." }` to set, `"clear"` to
+     * clear, or omit to leave unchanged.
      */
     exclusionGroup?: ExclusionGroupEdit,
   ) =>
-    invoke<void>("edit_role", {
+    hostInvoke<unknown>("edit_role", {
       communityId,
       roleId,
       name,
       color,
-      permissions,
+      permissions: permissions === null ? null : Number(permissions),
       position,
       hoist,
       mentionable,
       selfAssignable,
-      exclusionGroup: exclusionGroup ?? null,
+      exclusionGroup: exclusionGroup ?? "unchanged",
     }),
   deleteRole: (communityId: string, roleId: number) =>
-    invoke<void>("delete_role", { communityId, roleId }),
+    hostInvoke<unknown>("delete_role", { communityId, roleId }),
   assignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
-    invoke<void>("assign_role", { communityId, pseudonymKey, roleId }),
+    hostInvoke<unknown>("assign_role", { communityId, pseudonymKey, roleId }),
   unassignRole: (communityId: string, pseudonymKey: string, roleId: number) =>
-    invoke<void>("unassign_role", { communityId, pseudonymKey, roleId }),
+    hostInvoke<unknown>("unassign_role", { communityId, pseudonymKey, roleId }),
   selfAssignRole: (communityId: string, roleId: number) =>
-    invoke<void>("self_assign_role", { communityId, roleId }),
+    hostInvoke<unknown>("self_assign_role", { communityId, roleId }),
   selfUnassignRole: (communityId: string, roleId: number) =>
-    invoke<void>("self_unassign_role", { communityId, roleId }),
+    hostInvoke<unknown>("self_unassign_role", { communityId, roleId }),
   timeoutMember: (communityId: string, pseudonymKey: string, durationSeconds: number, reason: string | null) =>
     invoke<void>("timeout_member", { communityId, pseudonymKey, durationSeconds, reason }),
   removeTimeout: (communityId: string, pseudonymKey: string) =>
