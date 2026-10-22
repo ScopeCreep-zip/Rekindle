@@ -425,6 +425,19 @@ impl Netsim {
         }
     }
 
+    /// A stray app message reaches `to` from `from` (any node may send
+    /// any bytes to a route it holds): what the receiver makes of bytes
+    /// no Rekindle node sends.
+    pub fn stray_message(&self, from: usize, to: usize, message: Vec<u8>) {
+        self.net.send(
+            from,
+            to,
+            "AppMessage",
+            PortEvent::AppMessage { message },
+            true,
+        );
+    }
+
     /// The blobs of `node`'s live general routes, as a peer who reached
     /// it would hold them (for an outsider in a scenario).
     #[must_use]

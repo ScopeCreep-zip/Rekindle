@@ -16,5 +16,6 @@ mod pair;
 mod prekey_collision;
 mod prekeys;
 mod rotation;
+mod route_link_failure;
 mod scenarios;
 mod smoke;
