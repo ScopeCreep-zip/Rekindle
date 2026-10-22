@@ -233,7 +233,6 @@ async fn a_group_of_non_friends_talks_and_a_leave_and_a_block_rotate() {
 /// her chain past it (age only, no acks), and Bea's diff stores the gap row
 /// and publishes it.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E2.B finding F10: under the timed fanout and latent value changes Bea never stores the gap marker for Ann's retired group stretch within 2 LIMIT (group_dm.rs:280); unclassified"]
 async fn a_retired_group_stretch_is_a_stored_history_gap() {
     let (sim, mut nodes) = start(3, 93).await;
     let gid = three_members(&sim, &mut nodes).await;
@@ -251,6 +250,20 @@ async fn a_retired_group_stretch_is_a_stored_history_gap() {
             "unread on the chain"
         ))
         .await
+    );
+    // Finding F10: Cid reads the entry once its page and `HEAD` are on
+    // replicas, while Ann's append is still in its set fanout (S11); Ann
+    // notes the entry's age only when the append returns, so a skew before
+    // that dates it 31 days on and her retire stops below it. Her row
+    // settles sent once the entry is noted.
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            history(&nodes[0], &gid).await.iter().any(|m| {
+                m.is_own && m.body == "unread on the chain" && m.send_state == SendState::Sent
+            })
+        })
+        .await,
+        "Ann's entry is noted on her chain"
     );
     let keys = unretired(&sim, 2);
     sim.fault(Fault::ClockSkew {
