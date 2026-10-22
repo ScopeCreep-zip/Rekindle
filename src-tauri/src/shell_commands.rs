@@ -288,6 +288,11 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         "list_community_blocks",
         HostCall::Request("MemberBlockList"),
     ),
+    ("get_channel_pins", HostCall::Request("ChannelPins")),
+    ("pin_message", HostCall::Request("MessagePin")),
+    ("unpin_message", HostCall::Request("MessageUnpin")),
+    ("pin_attachment", HostCall::Request("AttachmentPin")),
+    ("search_messages", HostCall::Request("MessageSearch")),
 ];
 
 /// The shell's own commands.
@@ -326,15 +331,10 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("upload_emoji", "E3.1"),
     ("upload_sticker", "E3.1"),
     ("list_expressions", "E3.1"),
-    ("get_channel_pins", "E3.1"),
-    ("pin_message", "E3.1"),
-    ("unpin_message", "E3.1"),
-    ("pin_attachment", "E3.1"),
     ("get_presence_policy", "E3.1"),
     ("set_presence_policy", "E3.1"),
     ("rotate_mek", "E3.1"),
     // Search reads both histories: it moves with the last of them.
-    ("search_messages", "E3.1"),
     // E3.2 — plate gates.
     ("expand_community_segment", "E3.2"),
     // E4.1 — voice, calls, video.

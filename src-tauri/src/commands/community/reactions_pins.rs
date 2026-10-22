@@ -1,13 +1,14 @@
 use tauri::State;
 
-use crate::services::community_pins_runtime::{
-    get_channel_pins_inner, pin_message_inner, unpin_message_inner,
-};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::community::PinnedMessageView;
+use rekindle_types::dto::{CommandError, Done};
+
+use crate::host_call;
 use crate::state::SharedState;
 use rekindle_types::permissions;
 
 use super::helpers::require_permission;
-use crate::services::community_pins_runtime::PinnedMessageInfoDto;
 
 /// Add a reaction to a community channel message.
 #[tauri::command]
@@ -55,15 +56,23 @@ pub async fn remove_reaction(
     .await
 }
 
-/// Pin a message in a community channel.
+/// Pin a message in a community channel (the Host's, plan E3.1 E3b).
 #[tauri::command]
 pub async fn pin_message(
     state: State<'_, SharedState>,
     community_id: String,
     channel_id: String,
     message_id: String,
-) -> Result<(), String> {
-    pin_message_inner(state.inner(), &community_id, channel_id, message_id)
+) -> Result<Done<()>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::MessagePin {
+            community: community_id,
+            channel_id,
+            message_id,
+        }),
+    )
+    .await
 }
 
 /// Unpin a message from a community channel.
@@ -73,17 +82,31 @@ pub async fn unpin_message(
     community_id: String,
     channel_id: String,
     message_id: String,
-) -> Result<(), String> {
-    unpin_message_inner(state.inner(), &community_id, channel_id, message_id)
+) -> Result<Done<()>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::MessageUnpin {
+            community: community_id,
+            channel_id,
+            message_id,
+        }),
+    )
+    .await
 }
 
-/// Get pinned messages for a community channel.
+/// A community channel's pinned messages.
 #[tauri::command]
 pub async fn get_channel_pins(
     state: State<'_, SharedState>,
     community_id: String,
     channel_id: String,
-) -> Result<Vec<PinnedMessageInfoDto>, String> {
-    let pool = state.db.current()?;
-    get_channel_pins_inner(state.inner(), &pool, community_id, channel_id).await
+) -> Result<Done<Vec<PinnedMessageView>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::ChannelPins {
+            community: community_id,
+            channel_id,
+        }),
+    )
+    .await
 }

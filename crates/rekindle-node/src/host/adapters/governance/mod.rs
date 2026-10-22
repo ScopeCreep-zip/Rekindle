@@ -61,8 +61,10 @@ mod membership_roster;
 mod membership_route;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_map;
+pub(crate) mod pins;
 pub mod projection;
 mod registry;
+pub(crate) mod search;
 
 pub mod moderation;
 pub mod role_ops;

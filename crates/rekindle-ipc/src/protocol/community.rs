@@ -490,6 +490,36 @@ pub enum CommunityRequest {
     /// The community's moderator queue (`MANAGE_MESSAGES`).
     ModReportList { community: String },
 
+    // ── Pins and search (E3.1 E3b) ────────────── ───────────────────
+    /// A channel's pinned messages.
+    ChannelPins {
+        community: String,
+        channel_id: String,
+    },
+    /// Pin a channel message (`MANAGE_MESSAGES`).
+    MessagePin {
+        community: String,
+        channel_id: String,
+        message_id: String,
+    },
+    /// Unpin a channel message (`MANAGE_MESSAGES`).
+    MessageUnpin {
+        community: String,
+        channel_id: String,
+        message_id: String,
+    },
+    /// Pin or unpin an attachment, exempting it from cache eviction
+    /// (`MANAGE_COMMUNITY`).
+    AttachmentPin {
+        community: String,
+        attachment_id: String,
+        pinned: bool,
+    },
+    /// Full-text search over the stored messages.
+    MessageSearch {
+        request: rekindle_types::search::MessageSearch,
+    },
+
     // ── Invites ───────────────────────────────────────────────────
     /// Create a community invite.
     InviteCreate {

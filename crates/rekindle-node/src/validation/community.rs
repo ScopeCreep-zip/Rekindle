@@ -79,6 +79,11 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         request @ (CommunityRequest::MemberBlock { .. } | CommunityRequest::MemberUnblock { .. } | CommunityRequest::MemberBlockList { .. }) => block_fields(request),
         request @ (CommunityRequest::AutomodRuleSet { .. }
         | CommunityRequest::AutomodRuleDelete { .. }) => automod_fields(request),
+        request @ (CommunityRequest::ChannelPins { .. }
+        | CommunityRequest::MessagePin { .. }
+        | CommunityRequest::MessageUnpin { .. }
+        | CommunityRequest::AttachmentPin { .. }
+        | CommunityRequest::MessageSearch { .. }) => super::pins::check(request),
         CommunityRequest::CommunityUpdateProfile {
             community: key,
             bio,

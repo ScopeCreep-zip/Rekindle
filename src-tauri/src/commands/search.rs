@@ -1,16 +1,22 @@
-//! Tauri commands for local FTS5 message search (architecture §23).
+//! Local FTS5 message search (architecture §23), answered by the Host
+//! (plan E3.1 E3b).
 
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::search::{MessageSearch, SearchResult};
 use tauri::State;
 
-use crate::services::search;
+use crate::host_call;
 use crate::state::SharedState;
-use rekindle_types::search::{MessageSearch, SearchResult};
 
 #[tauri::command]
 pub async fn search_messages(
     request: MessageSearch,
     state: State<'_, SharedState>,
-) -> Result<SearchResult, String> {
-    let pool = state.db.current()?;
-    search::search_messages(state.inner(), &pool, request).await
+) -> Result<Done<SearchResult>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::MessageSearch { request }),
+    )
+    .await
 }

@@ -386,5 +386,6 @@ mod community_events;
 mod community_onboarding;
 mod friends;
 mod group_dm;
+mod pins;
 #[cfg(test)]
 mod tests;

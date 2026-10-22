@@ -30,6 +30,7 @@ mod onboarding;
 mod one_community_rebuild;
 mod outbox_handshake;
 mod pair;
+mod pins;
 mod prekey_collision;
 mod prekeys;
 mod read_marker_only_advances;

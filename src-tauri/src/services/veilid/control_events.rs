@@ -4,7 +4,9 @@ use crate::state::AppState;
 use crate::state_helpers;
 use rekindle_db::Db;
 
-use super::control_event_records::{handle_event_payload, handle_game_server_payload};
+use super::control_event_records::{
+    handle_event_payload, handle_game_server_payload, handle_pin_payload,
+};
 use super::control_moderation::handle_gossip_control_payloads;
 
 pub(crate) async fn handle_control_events_and_threads(
@@ -29,7 +31,7 @@ pub(crate) async fn handle_control_events_and_threads(
         }
         payload @ (ControlPayload::MessagePinned { .. }
         | ControlPayload::MessageUnpinned { .. }) => {
-            handle_pin_payload(app_handle, state, pool, community_id, payload);
+            handle_pin_payload(app_handle, state, community_id, sender_pseudonym, payload).await;
         }
         payload @ (ControlPayload::EventCreated { .. }
         | ControlPayload::EventUpdated { .. }
@@ -157,78 +159,6 @@ pub(crate) async fn handle_control_events_and_threads(
                 other,
             );
         }
-    }
-}
-
-fn handle_pin_payload(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    pool: &Db,
-    community_id: &str,
-    payload: rekindle_codec::community::envelope::ControlPayload,
-) {
-    use rekindle_codec::community::envelope::ControlPayload;
-
-    match payload {
-        ControlPayload::MessagePinned {
-            channel_id,
-            message_id,
-            pinned_by,
-        } => {
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let ch = channel_id.clone();
-            let mid = message_id.clone();
-            let pb = pinned_by.clone();
-            let now = rekindle_utils::timestamp_secs();
-            crate::db_helpers::db_fire(pool, "persist pin", move |conn| {
-                conn.execute(
-                    "INSERT OR IGNORE INTO channel_pins (owner_key, community_id, channel_id, message_id, pinned_by, pinned_at) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    rusqlite::params![owner_key, cid, ch, mid, pb, now],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Social(
-                    rekindle_types::subscription_events::SocialEvent::MessagePinned {
-                        community: community_id.to_string(),
-                        channel: channel_id,
-                        message_id,
-                        pinned_by,
-                    },
-                ),
-            );
-        }
-        ControlPayload::MessageUnpinned {
-            channel_id,
-            message_id,
-        } => {
-            let owner_key = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let ch = channel_id.clone();
-            let mid = message_id.clone();
-            crate::db_helpers::db_fire(pool, "remove pin", move |conn| {
-                conn.execute(
-                    "DELETE FROM channel_pins WHERE owner_key = ?1 AND community_id = ?2 \
-                     AND channel_id = ?3 AND message_id = ?4",
-                    rusqlite::params![owner_key, cid, ch, mid],
-                )?;
-                Ok(())
-            });
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Social(
-                    rekindle_types::subscription_events::SocialEvent::MessageUnpinned {
-                        community: community_id.to_string(),
-                        channel: channel_id,
-                        message_id,
-                    },
-                ),
-            );
-        }
-        _ => {}
     }
 }
 

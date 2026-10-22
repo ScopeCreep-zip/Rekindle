@@ -258,3 +258,15 @@ pub struct AutoModRuleView {
     pub action: crate::governance::AutoModAction,
     pub lamport: u64,
 }
+
+/// One pinned channel message (architecture §16.4, plan E3.1 E3b).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PinnedMessageView {
+    pub message_id: String,
+    pub channel_id: String,
+    /// The pinner's pseudonym (hex).
+    pub pinned_by: String,
+    /// Seconds, as the receiving peer stored the pin.
+    pub pinned_at: u64,
+}

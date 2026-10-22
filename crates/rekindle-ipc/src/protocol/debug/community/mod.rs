@@ -8,6 +8,7 @@ mod events;
 mod lifecycle;
 mod moderation;
 mod onboarding;
+mod pins;
 mod profile;
 mod roles;
 
@@ -31,6 +32,11 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::InviteCreate { .. }
             | Self::InviteList { .. }
             | Self::InviteRevoke { .. } => self.fmt_lifecycle(f),
+            Self::ChannelPins { .. }
+            | Self::MessagePin { .. }
+            | Self::MessageUnpin { .. }
+            | Self::AttachmentPin { .. }
+            | Self::MessageSearch { .. } => self.fmt_pins(f),
             Self::CommunityUpdateProfile { .. }
             | Self::CommunitySetAvatar { .. }
             | Self::CommunitySetBanner { .. }

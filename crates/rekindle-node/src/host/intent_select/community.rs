@@ -140,6 +140,16 @@ pub(super) async fn selection(
         | CommunityRequest::MekRotate {
             community: target,
             channel,
+        }
+        | CommunityRequest::MessagePin {
+            community: target,
+            channel_id: channel,
+            ..
+        }
+        | CommunityRequest::MessageUnpin {
+            community: target,
+            channel_id: channel,
+            ..
         } => {
             let (id, community_name) = community(ctx, target)?;
             s.subject = Subject::Channel {
@@ -150,6 +160,12 @@ pub(super) async fn selection(
             s.notifies = members(ctx, &id);
             if matches!(request, CommunityRequest::ChannelUpdate { .. }) {
                 s.reversibility = Reversibility::Undoable;
+            }
+            if matches!(request, CommunityRequest::MessagePin { .. }) {
+                s.reversibility = Reversibility::ReversibleByInverse(IntentKind::UnpinMessage);
+            }
+            if matches!(request, CommunityRequest::MessageUnpin { .. }) {
+                s.reversibility = Reversibility::ReversibleByInverse(IntentKind::PinMessage);
             }
             if matches!(request, CommunityRequest::ChannelDelete { .. }) {
                 s.escalations = channel_delete_escalations(ctx, &id, channel).await?;
@@ -275,6 +291,9 @@ pub(super) async fn selection(
             community: target, ..
         }
         | CommunityRequest::AutomodRuleDelete {
+            community: target, ..
+        }
+        | CommunityRequest::AttachmentPin {
             community: target, ..
         } => {
             let (id, name) = community(ctx, target)?;

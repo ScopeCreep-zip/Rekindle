@@ -1,5 +1,5 @@
 import { Channel } from "@tauri-apps/api/core";
-import { invoke } from "../invoke";
+import { hostInvoke, invoke } from "../invoke";
 import type {
   BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, VideoTopologyReason, VideoTrackLabel,
 } from "./types_sync";
@@ -33,7 +33,7 @@ export const syncCommands = {
   listPushRelayRegistrations: () =>
     invoke<[string, string, string][]>("list_push_relay_registrations"),
   searchMessages: (request: MessageSearch) =>
-    invoke<SearchResult>("search_messages", { request }),
+    hostInvoke<SearchResult>("search_messages", { request }),
   getCommunityAnalytics: (communityId: string) =>
     invoke<CommunityAnalytics>("get_community_analytics", { communityId }),
   ensurePersonalSyncRecord: () => invoke<string>("ensure_personal_sync_record"),

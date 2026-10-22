@@ -101,19 +101,23 @@ pub async fn send_voice_message(
     .await
 }
 
-/// Pin or unpin an attachment (admin-only).
+/// Pin or unpin an attachment (admin-only; the Host's, plan E3.1 E3b).
 #[tauri::command]
 pub async fn pin_attachment(
     community_id: String,
     attachment_id: String,
     pinned: bool,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    crate::services::community::files::set_attachment_pinned(
-        state.inner(),
-        &community_id,
-        &attachment_id,
-        pinned,
+) -> Result<rekindle_types::dto::Done<()>, rekindle_types::dto::CommandError> {
+    crate::host_call::call(
+        &state,
+        rekindle_ipc::protocol::IpcRequest::Community(
+            rekindle_ipc::protocol::CommunityRequest::AttachmentPin {
+                community: community_id,
+                attachment_id,
+                pinned,
+            },
+        ),
     )
     .await
 }

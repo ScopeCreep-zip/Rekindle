@@ -162,7 +162,9 @@ export const communityCommands = {
   revealDownloadedAttachment: (communityId: string, channelId: string, attachmentId: string) =>
     invoke<void>("reveal_downloaded_attachment", { communityId, channelId, attachmentId }),
   pinAttachment: (communityId: string, attachmentId: string, pinned: boolean) =>
-    invoke<void>("pin_attachment", { communityId, attachmentId, pinned }),
+    hostInvoke<unknown>("pin_attachment", { communityId, attachmentId, pinned }).then(
+      () => undefined,
+    ),
   sendVoiceMessage: (
     communityId: string,
     channelId: string,

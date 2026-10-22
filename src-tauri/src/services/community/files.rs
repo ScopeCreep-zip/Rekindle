@@ -299,18 +299,3 @@ pub async fn attachment_record(
     })
     .await
 }
-
-// ─── Phase 4: pin / unpin command body ─────────────────────────────────
-
-/// Phase 23.D.8 — orchestration ported into `rekindle_files::set_attachment_pinned`.
-pub async fn set_attachment_pinned(
-    state: &SharedState,
-    community_id: &str,
-    attachment_id_hex: &str,
-    pinned: bool,
-) -> Result<(), String> {
-    let adapter = pinned_adapter(state)?;
-    rekindle_files::set_attachment_pinned(adapter.as_ref(), community_id, attachment_id_hex, pinned)
-        .await
-        .map_err(|e| e.to_string())
-}

@@ -215,6 +215,8 @@ impl CommunityRequest {
             | Self::MemberBlockList { .. }
             | Self::AutomodRules { .. }
             | Self::ModReportList { .. }
+            | Self::ChannelPins { .. }
+            | Self::MessageSearch { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
             | Self::CommunityJoin { .. }
@@ -234,6 +236,9 @@ impl CommunityRequest {
             | Self::ChannelReorder { .. }
             | Self::ChannelSetTopic { .. }
             | Self::ChannelSetSlowmode { .. }
+            | Self::MessagePin { .. }
+            | Self::MessageUnpin { .. }
+            | Self::AttachmentPin { .. }
             | Self::ChannelSetForumTags { .. }
             | Self::ChannelOverwriteSet { .. }
             | Self::ChannelOverwriteDelete { .. }

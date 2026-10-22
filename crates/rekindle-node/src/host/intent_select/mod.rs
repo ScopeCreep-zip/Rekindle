@@ -160,7 +160,10 @@ pub(crate) async fn select(
             | CommunityRequest::InviteRevoke { .. }
             | CommunityRequest::NotificationDefaultSet { .. }
             | CommunityRequest::AutomodRuleSet { .. }
-            | CommunityRequest::AutomodRuleDelete { .. }),
+            | CommunityRequest::AutomodRuleDelete { .. }
+            | CommunityRequest::MessagePin { .. }
+            | CommunityRequest::MessageUnpin { .. }
+            | CommunityRequest::AttachmentPin { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
             request @ (CommunityRequest::CommunityUpdateProfile { .. }
@@ -285,6 +288,8 @@ pub(crate) async fn select(
             | CommunityRequest::MemberBlockList { .. }
             | CommunityRequest::AutomodRules { .. }
             | CommunityRequest::ModReportList { .. }
+            | CommunityRequest::ChannelPins { .. }
+            | CommunityRequest::MessageSearch { .. }
             | CommunityRequest::InviteList { .. },
         )
         | IpcRequest::DmTyping { .. }

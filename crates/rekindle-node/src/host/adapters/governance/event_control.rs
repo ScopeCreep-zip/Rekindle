@@ -92,7 +92,12 @@ impl HostGovernance {
     }
 
     /// Whether `sender_pseudonym` holds `perm` in the merged state.
-    fn sender_holds(&self, community_id: &str, sender_pseudonym: &str, perm: u64) -> bool {
+    pub(super) fn sender_holds(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        perm: u64,
+    ) -> bool {
         let Some(state) = self.governance_state_impl(community_id) else {
             return false;
         };

@@ -12,7 +12,6 @@ pub mod community_files_runtime; // Phase 23.C — Lost Cargo file-handler orche
 pub mod community_link_previews_runtime; // Phase 23.C — link-preview settings SQLite ops lifted from commands/community/link_previews.rs.
 pub mod community_mek_local_rotate; // Phase 23.C — `rotate_mek_local` lifted from legacy/control.rs.
 pub mod community_notifications_runtime; // Phase 23.C — quiet-hours wrappers lifted from commands/community/notifications.rs.
-pub mod community_pins_runtime; // Phase 23.C — pin/unpin/get_channel_pins orchestration lifted from commands/community/reactions_pins.rs.
 pub mod community_presence_runtime; // Phase 23.C — presence-handler runtime orchestration lifted from commands/community/presence.rs.
 pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchestration lifted from commands/community/video.rs.
 pub mod community_views_runtime; // Phase 23.C — community list/detail DTO mappers lifted from commands/community/crud.rs.
@@ -28,7 +27,6 @@ pub mod preferences; // Plan D1 — the unlocked identity's preferences.
 pub mod presence_adapter; // Phase 21.e-REDO — FriendPresenceDeps impl for friend presence.
 pub mod push_relay;
 pub mod relay;
-pub mod search;
 pub mod shell_session; // Plan E1.1 — the GUI's ShellHooks: its unported unlock stages.
 pub mod sync_communities;
 pub mod sync_runtime; // Phase 23.C — sync-handler runtime orchestration lifted from commands/sync.rs.

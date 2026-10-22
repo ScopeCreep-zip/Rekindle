@@ -13,11 +13,13 @@ export const governanceCommands = {
 
   // Pins
   pinMessage: (communityId: string, channelId: string, messageId: string) =>
-    invoke<void>("pin_message", { communityId, channelId, messageId }),
+    hostInvoke<unknown>("pin_message", { communityId, channelId, messageId }).then(() => undefined),
   unpinMessage: (communityId: string, channelId: string, messageId: string) =>
-    invoke<void>("unpin_message", { communityId, channelId, messageId }),
+    hostInvoke<unknown>("unpin_message", { communityId, channelId, messageId }).then(
+      () => undefined,
+    ),
   getChannelPins: (communityId: string, channelId: string) =>
-    invoke<{ messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]>(
+    hostInvoke<{ messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]>(
       "get_channel_pins",
       { communityId, channelId },
     ),

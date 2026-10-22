@@ -40,6 +40,7 @@ mod lifecycle;
 mod member_block;
 mod onboarding;
 mod own;
+mod pins;
 mod router;
 pub(crate) mod shell;
 mod status;

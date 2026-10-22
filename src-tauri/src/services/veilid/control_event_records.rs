@@ -91,3 +91,51 @@ pub(super) async fn handle_game_server_payload(
     };
     crate::event_dispatch::emit_subscription(app_handle, &SubscriptionEvent::Social(event));
 }
+
+/// A message pin or unpin, stored by the Host's governance adapter (plan
+/// E3.1 E3b) and shown when it accepted it.
+pub(super) async fn handle_pin_payload(
+    app_handle: &tauri::AppHandle,
+    state: &Arc<AppState>,
+    community_id: &str,
+    sender_pseudonym: &str,
+    payload: rekindle_codec::community::envelope::ControlPayload,
+) {
+    use rekindle_codec::community::envelope::ControlPayload;
+    use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
+
+    let Some(host) = state.host.current() else {
+        tracing::debug!(community = %community_id, "pin change before the Host is up — dropped");
+        return;
+    };
+    if !host
+        .governance()
+        .on_pin_control(community_id, sender_pseudonym, &payload)
+        .await
+    {
+        return;
+    }
+    let community = community_id.to_string();
+    let event = match payload {
+        ControlPayload::MessagePinned {
+            channel_id,
+            message_id,
+            pinned_by,
+        } => SocialEvent::MessagePinned {
+            community,
+            channel: channel_id,
+            message_id,
+            pinned_by,
+        },
+        ControlPayload::MessageUnpinned {
+            channel_id,
+            message_id,
+        } => SocialEvent::MessageUnpinned {
+            community,
+            channel: channel_id,
+            message_id,
+        },
+        _ => return,
+    };
+    crate::event_dispatch::emit_subscription(app_handle, &SubscriptionEvent::Social(event));
+}

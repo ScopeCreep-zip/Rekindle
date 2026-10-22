@@ -224,6 +224,20 @@ impl InboundHandler for DaemonHandler {
             }
         }
 
+        // A message pinned or unpinned (plan E3.1 E3b): stored when the
+        // Host's adapter accepts it.
+        if let CommunityEnvelope::Control(
+            ref payload @ (ControlPayload::MessagePinned { .. }
+            | ControlPayload::MessageUnpinned { .. }),
+        ) = envelope
+        {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .on_pin_control(community_id, sender_pseudonym, payload)
+                    .await;
+            }
+        }
+
         // An event created, updated, deleted or answered (plan E3.1 E4):
         // stored when the Host's adapter accepts it.
         if let CommunityEnvelope::Control(
