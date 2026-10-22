@@ -2,12 +2,9 @@
 //! moves on without it (a new channel), and it unlocks again with the
 //! network up. The Host's login network stage reopens, hydrates, rebuilds
 //! (`GovernanceRebuilt`, with the new channel) and republishes its
-//! communities and schedules their history catch-up.
-//!
-//! Finding (2026-10-22): after the restart the member's MEK is not cached
-//! (`ChannelSend` → "MEK generation 0 not cached"), so its posts and reads
-//! of what it missed are asserted with the MEK restore (C2b
-//! `recover_behind_meks`, E3.5).
+//! communities and schedules their history catch-up; the unlock's MEK
+//! stage (plan E3.1 C2c) reloads the stored keys, so the member posts
+//! again and reads the message it missed.
 
 use std::time::Duration;
 
@@ -37,6 +34,10 @@ async fn a_member_resumes_its_community_after_a_restart() {
             slowmode_seconds: 0,
         })
         .await;
+    community
+        .post(0, "while you were away")
+        .await
+        .expect("the creator posts");
 
     member
         .ok(IpcRequest::Unlock {
@@ -59,5 +60,17 @@ async fn a_member_resumes_its_community_after_a_restart() {
     assert!(
         rebuilt,
         "the community is rebuilt from the DHT, with the new channel"
+    );
+    assert!(
+        community.reads(1, "while you were away", LIMIT).await,
+        "the member reads the message it missed"
+    );
+    community
+        .post(1, "back again")
+        .await
+        .expect("the member posts after the restart");
+    assert!(
+        community.reads(0, "back again", LIMIT).await,
+        "the creator reads the member's post"
     );
 }

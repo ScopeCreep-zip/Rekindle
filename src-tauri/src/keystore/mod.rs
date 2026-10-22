@@ -7,6 +7,4 @@ pub use rekindle_vault::typed::community_keys::{
     load_slot_keypair, load_slot_seed, persist_registry_keypair, persist_slot_keypair,
     persist_slot_seed,
 };
-pub use rekindle_vault::typed::mek::{
-    delete_scope_meks, load_latest_mek, load_mek_generation, persist_mek,
-};
+pub use rekindle_vault::typed::mek::{delete_scope_meks, load_mek_generation, persist_mek};

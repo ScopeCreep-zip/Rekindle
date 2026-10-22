@@ -8,8 +8,8 @@
 //! [`rekindle_governance::merge::merge_with_accepted`] reproduces the state
 //! the last session merged (merge is reader-validates; a merged view would
 //! not). The keys are the vault's: the derived pseudonym, the slot keypair
-//! and seed, the registry keypair; the channel keys are the MEK cache's
-//! (`mek_rotation::restore_from_vault`). A key the vault lacks is left absent
+//! and seed, the registry keypair; the channel keys are the MEK stage's
+//! (`HostGovernance::restore_stored_meks`, run right after this one). A key the vault lacks is left absent
 //! and re-acquired from a peer, never minted (that forks the community).
 
 use std::collections::{HashMap, HashSet};

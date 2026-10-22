@@ -37,11 +37,11 @@ pub(super) async fn run(
 
     // Loaders: preferences (→ E4.1, E5.5). Friends are the Host's (plan
     // E2.1), and so are the communities and their governance (the Host's
-    // warm-cache stage, plan E3.1 C1); this shell's live channel keys come
-    // from the vault until E3.5 makes the Host's MEK cache the one.
+    // warm-cache stage, plan E3.1 C1); this shell's live channel keys are
+    // the Host's MEK stage's, through `ShellHooks::on_mek_installed` (plan
+    // E3.1 C2c) until E3.5 makes the Host's MEK cache the one.
     services::preferences::load(state, &pool, owner).await?;
     services::community::hydrate_peer_reliability(state, &pool).await;
-    crate::state_helpers::restore_meks_from_vault(state);
 
     // The network stages need a window to report to and a node.
     let staged = match app {

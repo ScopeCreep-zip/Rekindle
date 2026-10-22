@@ -126,46 +126,6 @@ impl rekindle_mek_rotation::MekHistory for MekCacheAdapter {
     }
 }
 
-/// Reload the vault's latest MEK of every scope the unlocked session knows
-/// (each community, and each of its channels with a record) into the
-/// cache, through the convergence rule (plan D1: the keys outlive a
-/// restart).
-pub fn restore_from_vault(ctx: &crate::daemon::dispatch::DaemonContext) {
-    let scopes: Vec<(String, KeyScope)> = ctx
-        .session
-        .read()
-        .as_ref()
-        .map(|session| {
-            session
-                .communities
-                .values()
-                .flat_map(|m| {
-                    std::iter::once((m.governance_key.clone(), KeyScope::Community)).chain(
-                        m.channel_record_keys.keys().filter_map(|channel| {
-                            rekindle_types::id::ChannelId::from_hex(channel)
-                                .map(|id| (m.governance_key.clone(), KeyScope::Channel(id)))
-                        }),
-                    )
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    let guard = ctx.vault.lock();
-    let Some(vault) = guard.as_ref() else {
-        return;
-    };
-    let cache = MekCacheAdapter::new(Arc::clone(&ctx.mek_cache));
-    let mut restored = 0usize;
-    for (community, scope) in scopes {
-        if let Some(mek) = rekindle_vault::typed::mek::load_latest_mek(vault, &community, scope) {
-            if cache.insert(&community, scope, mek) {
-                restored += 1;
-            }
-        }
-    }
-    tracing::info!(restored, "MEKs reloaded from the vault");
-}
-
 /// The key provider every daemon key consumer reads through (plan D6).
 pub fn key_provider(
     ctx: &crate::daemon::dispatch::DaemonContext,

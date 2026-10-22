@@ -59,7 +59,6 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
         }
     };
     *ctx.session.write() = Some(session);
-    crate::daemon::mek_rotation::restore_from_vault(ctx);
     let audit = restore_audit(ctx, &public_key, failed_attempts).await;
     // The identity's trusted clients get their clearance back (plan D1).
     crate::daemon::clients::load(ctx).await;

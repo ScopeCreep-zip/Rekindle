@@ -184,6 +184,9 @@ pub(crate) async fn run(
     {
         return fail(ctx, IpcResponse::error(500, e)).await;
     }
+    // 3e'. The stored MEKs of those communities and their channels (plan
+    // E3.1 C2c), so a post or a read after a restart has its key.
+    crate::daemon::dispatch::adapter(ctx).restore_stored_meks();
 
     // 3f. The communities' network stage (plan E3.1 C2a), after attach.
     if let Some(transport) = &transport {

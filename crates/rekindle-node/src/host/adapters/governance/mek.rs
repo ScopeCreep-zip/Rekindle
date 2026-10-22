@@ -18,6 +18,66 @@ fn channel_scope(channel_id: &str) -> Option<KeyScope> {
 }
 
 impl HostGovernance {
+    /// The unlock's MEK stage (plan E3.1 C2c), on both modes, after the
+    /// warm-cache stage filled the store: the vault's latest key of every
+    /// joined community and of each of its channels, into the cache through
+    /// the convergence rule (a restore racing a live rotation cannot clobber
+    /// it), and the shell's cache told of each one taken
+    /// (`ShellHooks::on_mek_installed`, until E3.5). A key the vault lacks
+    /// stays absent: `recover_behind_meks` re-acquires it from a peer;
+    /// minting one here would fork the community.
+    pub(crate) fn restore_stored_meks(&self) {
+        let mut scopes: Vec<(String, KeyScope)> = self
+            .ctx
+            .communities
+            .map()
+            .read()
+            .values()
+            .flat_map(|community| {
+                std::iter::once((community.id.clone(), KeyScope::Community)).chain(
+                    community
+                        .channels
+                        .iter()
+                        .filter_map(|channel| channel_scope(&channel.id))
+                        .map(|scope| (community.id.clone(), scope)),
+                )
+            })
+            .collect();
+        // The store is a HashMap: a defined order for the shell's hooks.
+        scopes.sort_by_cached_key(|(community, scope)| (community.clone(), scope.to_string()));
+        let stored: Vec<(String, KeyScope, Mek)> = {
+            let guard = self.ctx.vault.lock();
+            let Some(vault) = guard.as_ref() else {
+                return;
+            };
+            scopes
+                .into_iter()
+                .filter_map(|(community, scope)| {
+                    let mek = rekindle_vault::typed::mek::load_latest_mek(vault, &community, scope);
+                    if mek.is_none() && scope == KeyScope::Community {
+                        tracing::warn!(%community, "community key not in the vault — re-acquired from a peer");
+                    }
+                    Some((community, scope, mek?))
+                })
+                .collect()
+        };
+        let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
+            &self.ctx.mek_cache,
+        ));
+        let mut restored = 0usize;
+        for (community, scope, mek) in stored {
+            let (key_bytes, generation) = (*mek.as_bytes(), mek.generation());
+            if !rekindle_mek_rotation::ChannelMekCache::insert(&cache, &community, scope, mek) {
+                continue;
+            }
+            restored += 1;
+            if let Some(shell) = &self.ctx.shell {
+                shell.on_mek_installed(&community, scope, key_bytes, generation);
+            }
+        }
+        tracing::info!(restored, "MEKs reloaded from the vault");
+    }
+
     /// Cache the key and, when the cache takes it (the convergence rule may
     /// refuse a stale or outranked one), store it in the vault, so the next
     /// unlock reloads it.
