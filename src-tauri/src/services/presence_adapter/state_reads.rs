@@ -9,8 +9,8 @@ use std::collections::HashSet;
 use std::sync::Arc;
 
 use rekindle_presence::{PresenceCredentials, SegmentDescriptor};
+use rekindle_secrets::derive;
 
-use crate::services::community::join::try_derive_slot_keypair;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -144,6 +144,34 @@ pub(super) fn mark_initial_sync_done(state: &Arc<AppState>, community_id: &str) 
     if let Some(c) = state.communities.write().get_mut(community_id) {
         if let Some(ref mut g) = c.gossip {
             g.needs_initial_sync = false;
+        }
+    }
+}
+
+/// Our slot keypair in `community_id`, derived from its slot seed and
+/// cached on the community.
+fn try_derive_slot_keypair(
+    state: &Arc<AppState>,
+    community_id: &str,
+    seed_hex: &str,
+    subkey_idx: u32,
+) -> Option<String> {
+    let seed_bytes = hex::decode(seed_hex).ok()?;
+    let seed_array: [u8; 32] = seed_bytes.as_slice().try_into().ok()?;
+    match derive::derive_slot_keypair(&seed_array, subkey_idx) {
+        Ok(sk) => {
+            let kp_str = rekindle_crypto::keypair_text::keypair_text_from_signing(&sk);
+            {
+                let mut communities = state.communities.write();
+                if let Some(c) = communities.get_mut(community_id) {
+                    c.slot_keypair = Some(kp_str.clone());
+                }
+            }
+            Some(kp_str)
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to derive slot keypair from seed");
+            None
         }
     }
 }

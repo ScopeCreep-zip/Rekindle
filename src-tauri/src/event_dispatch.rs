@@ -17,7 +17,7 @@
 //! D3.2), which gives it a cursor; [`spawn_host_stream`] delivers the
 //! host's stream to the windows, and a window that reloads asks the host
 //! for what followed its last cursor (`subscribe_events`). The shell-only
-//! variants (`Lifecycle`, `DeepLink`, `SettingsSwitchTab`)
+//! variants (`Lifecycle`, `PairingLinkRefused`, `SettingsSwitchTab`)
 //! and the legacy `ChannelChat`/`Community` shapes are delivered live from
 //! the local queue and never replayed; a reloading window reads that
 //! history through `hydrateState()`.
@@ -32,7 +32,6 @@ use tauri::{AppHandle, Manager};
 use tokio::sync::mpsc;
 
 use crate::channels::{ChatEvent, CommunityEvent};
-use crate::deep_links::DeepLinkRequest;
 use crate::event_router::{Audience, OutboundEnvelope};
 use crate::state::{AppState, SharedState};
 use crate::window_labels::{self as labels, WindowKind};
@@ -48,8 +47,9 @@ pub enum WebviewEvent {
         state: rekindle_lifecycle::LifecycleState,
         at_ms: i64,
     },
-    /// An OS deep link is waiting for the user's consent.
-    DeepLink(DeepLinkRequest),
+    /// A pairing link arrived from the OS and was refused: pairing codes
+    /// are accepted only in Settings (plan E3.1, U1).
+    PairingLinkRefused,
     /// Switch the open settings window to a tab.
     SettingsSwitchTab(SettingsTab),
     /// A community channel message in the desktop's legacy shape, with the
@@ -77,7 +77,7 @@ impl WebviewEvent {
         match self {
             Self::Subscription(e) => subscription_channel(e),
             Self::Lifecycle { .. } => "lifecycle-event",
-            Self::DeepLink(_) => "deep-link-action",
+            Self::PairingLinkRefused => "pairing-link-refused",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
             Self::ChannelChat { .. } => "chat-event",
             Self::Community(_) => "community-event",
@@ -91,7 +91,7 @@ impl WebviewEvent {
                 state: *state,
                 at_ms: *at_ms,
             }),
-            Self::DeepLink(r) => serde_json::to_value(r),
+            Self::PairingLinkRefused => Ok(serde_json::Value::Null),
             Self::SettingsSwitchTab(tab) => serde_json::to_value(tab),
             Self::ChannelChat { event, .. } => serde_json::to_value(event),
             Self::Community(e) => serde_json::to_value(e),
@@ -104,7 +104,7 @@ impl WebviewEvent {
         match self {
             Self::Subscription(e) => subscription_audience(e),
             Self::Lifecycle { .. } => Audience::kinds(&WindowKind::ALL),
-            Self::DeepLink(_) => Audience::labels([labels::BUDDY_LIST.to_owned()]),
+            Self::PairingLinkRefused => Audience::labels([labels::BUDDY_LIST.to_owned()]),
             Self::SettingsSwitchTab(_) => Audience::labels([labels::SETTINGS.to_owned()]),
             // Community windows switch between communities in place, so a
             // community's events go to every one of them (each filters by

@@ -26,10 +26,17 @@ pub(super) async fn selection(
             };
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
         }
-        CommunityRequest::CommunityJoin { .. } => {
-            s.subject = Subject::Named {
-                name: "the community this invite opens".into(),
-            };
+        CommunityRequest::CommunityJoin { invite } => {
+            // The invite names a record key, not a community we know: the
+            // review shows its fingerprint (`deep_links` in the shell).
+            let link = rekindle_types::invite::InviteLink::parse(invite)
+                .map_err(|e| IpcResponse::error(400, format!("community invite: {e}")))?;
+            let fingerprint =
+                rekindle_crypto::identity::record_key_fingerprint(link.governance_key.as_str())
+                    .ok_or_else(|| {
+                        IpcResponse::error(400, "community invite key is not a record key")
+                    })?;
+            s.subject = Subject::Named { name: fingerprint };
             s.facts.push(Fact::PresenceVisible);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
             s.notifies = Notifies::Subject;

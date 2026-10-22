@@ -226,7 +226,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("get_poll_results", "E3.1"),
     ("vote_poll", "E3.1"),
     ("set_slowmode", "E3.1"),
-    ("join_community", "E3.1"),
     ("update_community_presence", "E3.1"),
     ("update_community_profile", "E3.1"),
     ("get_community_avatar_data_url", "E3.1"),
@@ -262,9 +261,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("get_presence_policy", "E3.1"),
     ("set_presence_policy", "E3.1"),
     ("rotate_mek", "E3.1"),
-    ("get_pending_deep_link", "E3.1"),
-    ("confirm_deep_link", "E3.1"),
-    ("dismiss_deep_link", "E3.1"),
     // Search reads both histories: it moves with the last of them.
     ("search_messages", "E3.1"),
     // E3.2 — plate gates.

@@ -2,7 +2,6 @@ pub mod auth;
 pub mod calls;
 pub mod chat;
 pub mod community;
-pub mod deep_link;
 pub mod dm;
 pub mod event;
 pub mod friends;

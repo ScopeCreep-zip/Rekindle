@@ -14,7 +14,6 @@ pub mod files;
 pub mod gossip;
 pub mod governance;
 pub mod inspect;
-pub mod join;
 pub mod keepalive;
 pub(crate) mod leases;
 pub mod link_previews;
@@ -54,7 +53,6 @@ pub use gossip::{
     send_to_channel_peers, send_to_channel_peers_now, send_to_mesh, start_peer_reliability_flush,
 };
 pub use governance::write_entry;
-pub use join::join_community;
 pub use mek_rotation::{handle_incoming_mek_transfer, spawn_mek_request_with_retry};
 pub use mek_rotation_orchestrators::{handle_request_mek, spawn_departure_rotations};
 pub use message_notifications_handle::handle_message_notification;

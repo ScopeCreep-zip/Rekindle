@@ -38,6 +38,7 @@ mod events;
 pub(crate) mod game_servers;
 mod invite_expiry;
 mod invites;
+mod join;
 mod lifecycle;
 pub(crate) mod loader;
 pub(crate) mod login_stage;

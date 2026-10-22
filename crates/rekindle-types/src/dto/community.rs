@@ -49,6 +49,20 @@ pub struct CommunityCreated {
     pub name: String,
 }
 
+/// A community this identity just joined from an invite (plan E3.1 D2).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityJoined {
+    pub governance_key: String,
+    pub name: String,
+    /// The registry segment our claimed slot is in.
+    pub segment: u32,
+    /// Our slot in that segment.
+    pub slot: u32,
+    /// The members the join's registry scan found.
+    pub known_members: u32,
+}
+
 /// A joined community as its window renders it: channels, categories,
 /// roles and our own standing in it.
 #[derive(Debug, Clone, Serialize, Deserialize)]

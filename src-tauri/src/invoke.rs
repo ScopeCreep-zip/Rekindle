@@ -296,9 +296,6 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::window::show_buddy_list,
         commands::window::open_external_url,
         // deep links (consent flow)
-        commands::deep_link::get_pending_deep_link,
-        commands::deep_link::confirm_deep_link,
-        commands::deep_link::dismiss_deep_link,
         commands::window::open_chat_window,
         commands::window::open_settings_window,
         commands::window::open_community_window,

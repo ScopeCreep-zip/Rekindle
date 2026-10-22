@@ -75,8 +75,7 @@ fn clear(state: &AppState) {
     services::preferences::reset(state);
     // A deep link belongs to the user it reached (the Host's teardown
     // cleared the identity's friend state, plan E2.1).
-    *state.pending_deep_link.lock() = None;
-    *state.held_friend_invite.lock() = None;
+    *state.held_deep_link.lock() = None;
     state.pending_link_opens.lock().clear();
     if let Some(nh) = state.node.write().as_mut() {
         nh.profile_dht_key = None;

@@ -90,106 +90,32 @@ pub(crate) async fn handle_join(
     if !state.can_write() {
         return state_error(state, "write");
     }
-
-    // v2.0 self-sovereign join. The previous flow submitted a request to
-    // an inbox and waited for an operator to *assign* a slot, then
-    // derived its slot seed from its own identity key — which can never
-    // match the registry's member keys, since those come from the
-    // creator's shared seed. The seed rides in the invite, so a full
-    // invite link is now required rather than a bare governance key.
+    // The seed rides in the invite, so a full link is required (checked by
+    // `validation::community` before the gate).
     let link = match rekindle_types::invite::InviteLink::parse(invite) {
         Ok(link) => link,
-        Err(e) => {
-            return IpcResponse::error(
-                400,
-                format!(
-                    "join requires a full invite link \
-                     (rekindle://invite/{{governance_key}}/{{secrets_record_key}}/{{invite_code}}): {e}"
-                ),
-            )
-        }
+        Err(e) => return IpcResponse::error(400, format!("community invite: {e}")),
     };
-
     if let Err(e) = ctx.require_session(|_| ()) {
         return e;
     }
-
-    let adapter = adapter(ctx);
-    let outcome =
-        match rekindle_governance_runtime::join_flow::run_join_stages(&adapter, &link).await {
-            Ok(o) => o,
-            Err(e) => return IpcResponse::error(500, format!("community join failed: {e}")),
-        };
-
-    // The claim reports which segment it landed in, so unlike the old
-    // flow this is a fact rather than a guess.
-    let slot_seed = hex::decode(&outcome.invite.slot_seed_hex)
-        .ok()
-        .and_then(|b| <[u8; 32]>::try_from(b).ok());
-    let membership = rekindle_transport::session::CommunityMembership {
-        governance_key: link.governance_key.as_str().to_owned(),
-        pseudonym_key: outcome.identity.pseudo_hex.clone(),
-        role_ids: Vec::new(),
-        slot_index: outcome.claimed.local_subkey,
-        registry_key: outcome.claimed.registry_key.clone(),
-        community_name: outcome.invite.community_name.clone(),
-        slot_seed,
-        channel_record_keys: std::collections::HashMap::new(),
-        segment_index: Some(outcome.claimed.segment_index),
-        lamport_counter: 0,
-        mek_generation: 0,
+    let joined = match adapter(ctx).join(&link).await {
+        Ok(joined) => joined,
+        Err(e) => return IpcResponse::error(500, e),
     };
-    // A joined community has no owner keypairs of ours: admission is
-    // self-sovereign, so there is nothing to petition or be approved from.
-    if let Err(e) = crate::host::session::record_membership(
-        &ctx.session,
-        &ctx.db,
-        &ctx.vault,
-        &ctx.communities,
-        crate::host::session::NewMembership {
-            membership,
-            dht_owner_keypair: None,
-            registry_keypair: None,
-            joined_at: ctx.clock.now_ms_i64(),
-        },
-    ) {
-        return IpcResponse::error(500, format!("community joined but not recorded: {e}"));
+    // The shell starts its own community services when the runtime hands
+    // the records over (`ShellHooks::community_records_ready`).
+    if ctx.shell.is_none() {
+        let membership = ctx
+            .session
+            .read()
+            .as_ref()
+            .and_then(|s| s.community(&joined.governance_key).cloned());
+        if let Some(membership) = membership {
+            activate_community(ctx, &membership).await;
+        }
     }
-
-    // The join's merge input into the warm cache (plan E3.1 C1), after
-    // the membership's row, which the cache row references.
-    rekindle_governance_runtime::GovernanceRuntimeDeps::persist_governance_entries_cache(
-        &adapter,
-        link.governance_key.as_str(),
-        &outcome.snapshot.all_entries,
-    );
-    // Seed the runtime cache with the state the join already merged, so
-    // the first read afterwards does not go back to the DHT.
-    rekindle_governance_runtime::GovernanceRuntimeDeps::set_governance_state(
-        &adapter,
-        link.governance_key.as_str(),
-        outcome.snapshot.gov_state,
-    );
-    let membership = ctx
-        .session
-        .read()
-        .as_ref()
-        .and_then(|s| s.community(link.governance_key.as_str()).cloned());
-    if let Some(membership) = membership {
-        activate_community(ctx, &membership).await;
-    }
-    if let Some(host) = ctx.this.upgrade() {
-        crate::host::adapters::governance::HostGovernance::new(host)
-            .announce_join(link.governance_key.as_str());
-    }
-
-    IpcResponse::ok(&serde_json::json!({
-        "community_name": outcome.invite.community_name,
-        "governance_key": link.governance_key.as_str(),
-        "segment": outcome.claimed.segment_index,
-        "slot": outcome.claimed.local_subkey,
-        "known_members": outcome.initial_presence.known_members.len(),
-    }))
+    IpcResponse::ok(&joined)
 }
 
 pub(crate) async fn handle_leave(

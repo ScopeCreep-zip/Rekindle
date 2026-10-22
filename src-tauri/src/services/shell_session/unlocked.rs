@@ -50,13 +50,13 @@ pub(super) async fn run(
         }
         _ => Ok(()),
     };
-    // The last stage: a friend invite link that arrived before the unlock
-    // is reviewed once the unlock is done (plan E2.1).
-    let held_invite = state.held_friend_invite.lock().take();
-    if let Some(invite) = held_invite {
+    // The last stage: a deep link that arrived before the unlock is
+    // submitted for review once the unlock is done (plans E2.1, E3.1 D2).
+    let held_link = state.held_deep_link.lock().take();
+    if let Some(url) = held_link {
         let task_state = Arc::clone(state);
-        scope.spawn_or_drop("held friend invite", async move {
-            crate::deep_links::review_friend_invite(&task_state, invite).await;
+        scope.spawn_or_drop("held deep link", async move {
+            crate::deep_links::submit(&task_state, &url).await;
         });
     }
     staged

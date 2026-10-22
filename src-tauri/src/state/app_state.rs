@@ -127,12 +127,10 @@ pub struct AppState {
     /// `LinkOpen` reviews this shell asked for: their commit opens the URL
     /// the Host answers (`commands::intent::intent_commit`).
     pub pending_link_opens: Mutex<HashSet<rekindle_types::intent::IntentId>>,
-    /// OS deep link awaiting the user's consent (`deep_links`).
-    pub pending_deep_link: Mutex<Option<crate::deep_links::PendingDeepLink>>,
-    /// A friend invite link the OS handed us before unlock (unparsed; a
-    /// newer link replaces it), submitted for review by the unlock and
-    /// cleared at logout (plan E2.1).
-    pub held_friend_invite: Mutex<Option<String>>,
+    /// An OS deep link that arrived before unlock (raw input; a newer link
+    /// replaces it), submitted to the Host by the unlock and cleared at
+    /// logout (`deep_links`, plans E2.1, E3.1 D2).
+    pub held_deep_link: Mutex<Option<String>>,
     /// Tauri app handle — set during `.setup()`.
     pub app_handle: RwLock<Option<tauri::AppHandle>>,
     /// Global dedup cache for gossip mesh message deduplication.
@@ -274,8 +272,7 @@ impl Default for AppState {
             meks: Mutex::new(HashMap::new()),
             dispatch_loop_handle: RwLock::new(None),
             pending_link_opens: Mutex::new(HashSet::new()),
-            pending_deep_link: Mutex::new(None),
-            held_friend_invite: Mutex::new(None),
+            held_deep_link: Mutex::new(None),
             app_handle: RwLock::new(None),
             dedup_cache: Mutex::new(DedupCache::new(1024)),
             voice_sender_keys:

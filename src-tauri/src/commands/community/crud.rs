@@ -5,8 +5,7 @@ use tauri::State;
 use crate::host_call;
 
 use crate::state::SharedState;
-use rekindle_types::dto::community::{CommunityCreated, CommunityView};
-use rekindle_vault::VaultHandle;
+use rekindle_types::dto::community::{CommunityCreated, CommunityJoined, CommunityView};
 
 /// The joined communities (`IpcRequest::Community(CommunityRequest::CommunityList)`).
 #[tauri::command]
@@ -52,25 +51,16 @@ pub async fn create_community(
     host_call::call(&state, request).await
 }
 
-/// Join a community from its invite link. Returns the community id.
+/// Join a community from its invite link
+/// (`IpcRequest::Community(CommunityRequest::CommunityJoin)`), reviewed with
+/// the fingerprint of the invite's record key.
 #[tauri::command]
 pub async fn join_community(
     invite_url: String,
     state: State<'_, SharedState>,
-    keystore_handle: State<'_, VaultHandle>,
-) -> Result<String, String> {
-    let pool = state.db.current()?;
-    let link = rekindle_types::invite::InviteLink::parse(&invite_url).map_err(|e| e.to_string())?;
-    let _g =
-        rekindle_lifecycle::TransportGuard::write(&state.lifecycle).map_err(|e| e.to_string())?;
-    crate::services::community_lifecycle_runtime::join_community_inner(
-        state.inner(),
-        &pool,
-        keystore_handle.inner(),
-        &link,
-    )
-    .await?;
-    Ok(link.governance_key.into_string())
+) -> Result<Done<CommunityJoined>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::CommunityJoin { invite: invite_url });
+    host_call::call(&state, request).await
 }
 
 /// Leave a community (`IpcRequest::Community(CommunityRequest::CommunityLeave)`), reviewed with its
