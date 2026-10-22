@@ -248,6 +248,9 @@ impl Netsim {
                 if let Some(clock) = self.clocks.lock().get(node) {
                     clock.set_skew_ms(ms);
                 }
+                if let Some(slot) = self.net.inner.lock().nodes.get_mut(node) {
+                    slot.skew_ms = ms;
+                }
             }
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),

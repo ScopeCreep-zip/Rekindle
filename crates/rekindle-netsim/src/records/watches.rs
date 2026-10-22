@@ -300,6 +300,15 @@ impl Network {
             .saturating_add(micros(self.epoch.elapsed()))
     }
 
+    /// What `node`'s own clock reads (µs): true time plus its skew. A
+    /// watch's expiration is absolute: the node checks it on this clock,
+    /// each replica on its own (true time, [`place`]).
+    pub(crate) fn node_now_us(&self, node: usize) -> u64 {
+        let skew = self.inner.lock().nodes.get(node).map_or(0, |s| s.skew_ms);
+        self.now_us()
+            .saturating_add_signed(skew.saturating_mul(1000))
+    }
+
     /// The `WatchDeath` fault: the node's watch on `key` dies now.
     pub(crate) fn kill_watch(&self, node: usize, key: &str) {
         {

@@ -119,6 +119,10 @@ pub(crate) struct NodeSlot {
     pub attach_next: tokio::time::Instant,
     /// The node's remote route cache ([`crate::routes`]).
     pub imported: HashMap<String, crate::routes::CacheEntry>,
+    /// The node's sets in flight, by record key and subkey.
+    pub setting: HashMap<(String, u32), u32>,
+    /// The node's clock skew (ms): what its Veilid's own clock reads.
+    pub skew_ms: i64,
     /// Per own route: the destinations of questions lost on it.
     pub lost: HashMap<String, HashSet<String>>,
     /// The node's queued rehydrations, by record key (Veilid's
@@ -147,6 +151,8 @@ impl NodeSlot {
             attach_next: tokio::time::Instant::now(),
             imported: HashMap::new(),
             lost: HashMap::new(),
+            setting: HashMap::new(),
+            skew_ms: 0,
             rehydrations: BTreeSet::new(),
             pushes: BTreeMap::new(),
         }

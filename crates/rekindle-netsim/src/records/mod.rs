@@ -53,6 +53,8 @@ mod rehydrate;
 #[cfg(test)]
 mod rehydrate_tests;
 mod replicas;
+#[cfg(test)]
+mod report_tests;
 mod stores;
 #[cfg(test)]
 mod watch_tests;
@@ -166,4 +168,71 @@ pub(crate) fn admits(record: &NetRecord, subkey: u32, writer: &[u8; 32]) -> bool
 
 fn subkey_count(schema: &RecordSchema) -> u32 {
     u32::try_from(schema.subkey_count()).unwrap_or(u32::MAX)
+}
+
+/// Veilid's schema checks (`schema/mod.rs:22-24`, `schema/dflt.rs:30-35`,
+/// `schema/smpl.rs:31,49-90`): 1 to 1024 subkeys, DFLT `o_cnt > 0`; SMPL at
+/// most 256 members and 256 writers (the owner when it has subkeys, and
+/// each member with subkeys).
+pub(crate) fn validate_schema(schema: &RecordSchema) -> Result<(), String> {
+    const MAX_SUBKEYS: usize = 1024;
+    const MAX_MEMBERS: usize = 256;
+    const MAX_WRITERS: usize = 256;
+    match schema {
+        RecordSchema::Dflt { owner_subkeys: 0 } => return Err("o_cnt is 0".into()),
+        RecordSchema::Dflt { .. } => {}
+        RecordSchema::Smpl {
+            owner_subkeys,
+            members,
+        } => {
+            if members.len() > MAX_MEMBERS {
+                return Err(format!("{} members", members.len()));
+            }
+            let writers: std::collections::HashSet<[u8; 32]> = members
+                .iter()
+                .filter(|m| m.subkeys > 0)
+                .map(|m| m.key)
+                .collect();
+            let writers = writers.len() + usize::from(*owner_subkeys > 0);
+            if writers > MAX_WRITERS {
+                return Err(format!("{writers} writers"));
+            }
+        }
+    }
+    let count = schema.subkey_count();
+    if count == 0 || count > MAX_SUBKEYS {
+        return Err(format!("{count} subkeys"));
+    }
+    Ok(())
+}
+
+/// A set in flight on a node, until dropped.
+pub(crate) struct Setting<'a> {
+    net: &'a Network,
+    node: usize,
+    at: (String, u32),
+}
+
+impl<'a> Setting<'a> {
+    pub(crate) fn new(net: &'a Network, node: usize, key: &str, subkey: u32) -> Self {
+        let at = (key.to_string(), subkey);
+        *net.inner.lock().nodes[node]
+            .setting
+            .entry(at.clone())
+            .or_default() += 1;
+        Self { net, node, at }
+    }
+}
+
+impl Drop for Setting<'_> {
+    fn drop(&mut self) {
+        let mut inner = self.net.inner.lock();
+        let setting = &mut inner.nodes[self.node].setting;
+        if let Some(n) = setting.get_mut(&self.at) {
+            *n -= 1;
+            if *n == 0 {
+                setting.remove(&self.at);
+            }
+        }
+    }
 }

@@ -32,10 +32,14 @@
 //!   hold and stores it locally when its seq moved
 //!   (`get_value.rs:538-567`);
 //! - an inspect in the local scope never leaves the node; any other is
-//!   `TryAgain` offline (`inspect_record.rs:205-206`) and reports the
-//!   newest seq of the replicas the node reaches; with
-//!   `allow_offline` false no write is ever queued, so `offline_subkeys`
-//!   is empty;
+//!   `TryAgain` offline (`inspect_record.rs:205-206`); UpdateSet reports
+//!   each local seq + 1, and the Update scopes' network seqs start from the
+//!   local result, the Sync ones' from nothing (`:208-228`), then take the
+//!   newest seq of the replicas the node reaches; `offline_subkeys` is the
+//!   node's own push queue plus its sets in flight (`:174-181`);
+//! - a create checks the schema as Veilid ([`super::validate_schema`]);
+//! - a watch's expiration is absolute: too soon on the node's own clock
+//!   (its skew), clamped by each replica on true time;
 //! - an open of a locally held record queues a rehydration
 //!   ([`super::rehydrate`]); a call that reads or writes replicas uses the
 //!   record on their stores ([`super::stores`]);
@@ -297,13 +301,9 @@ impl DhtBackend for SimDht {
             .latency
             .dht(self.node, latency::CREATE, "", &[])
             .await;
+        super::validate_schema(schema)
+            .map_err(|m| error(DhtErrorKind::InvalidArgument, format!("schema: {m}")))?;
         let count = schema.subkey_count();
-        if count == 0 || count > 1024 {
-            return Err(error(
-                DhtErrorKind::InvalidArgument,
-                format!("schema: {count} subkeys"),
-            ));
-        }
         let owner = owner.map_or_else(
             || {
                 let mut secret = [0u8; 32];
@@ -412,6 +412,8 @@ impl DhtBackend for SimDht {
         let public =
             writer_public(&writer).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
         self.validate(key, subkey, &public)?;
+        // In flight until it returns (`inspect_record.rs:169-171`).
+        let _setting = super::Setting::new(&self.net, self.node, key, subkey);
         let _slot = self.network(latency::SET, key, &[subkey]).await?;
         Ok(self.land(key, subkey, data, &public))
     }
@@ -443,25 +445,50 @@ impl DhtBackend for SimDht {
             Some(s) => s.to_vec(),
             None => (0..subkey_count(&record.schema)).collect(),
         };
-        let local = &inner.nodes[self.node].local;
-        let local_seqs = subkeys
+        let slot = &inner.nodes[self.node];
+        // UpdateSet simulates a set: each local seq + 1
+        // (`inspect_record.rs:208-215`).
+        let bump = u32::from(scope == ReportScope::UpdateSet);
+        let local_seqs: Vec<Option<u32>> = subkeys
             .iter()
-            .map(|s| local.get(&(key.to_string(), *s)).map(|v| v.seq))
+            .map(|s| {
+                slot.local
+                    .get(&(key.to_string(), *s))
+                    .map(|v| v.seq.saturating_add(bump))
+            })
             .collect();
         let reach = if scope == ReportScope::Local {
             Vec::new()
         } else {
             reachable(&record.replicas, &inner.faults.partitions, self.node)
         };
+        // The fanout starts from the local result for the Update scopes,
+        // from nothing for the Sync ones (`:217-228`); Local reports none.
+        let from_local = matches!(scope, ReportScope::UpdateGet | ReportScope::UpdateSet);
         let network_seqs = subkeys
             .iter()
-            .map(|s| replicas::newest_seq(&record.replicas, &reach, *s as usize))
+            .zip(&local_seqs)
+            .map(|(s, l)| match scope {
+                ReportScope::Local => None,
+                _ => replicas::newest_seq(&record.replicas, &reach, *s as usize)
+                    .max(l.filter(|_| from_local)),
+            })
+            .collect();
+        // Its own offline queue, queued or in flight, and the sets in
+        // flight (`inspect_record.rs:174-181`).
+        let offline_subkeys = subkeys
+            .iter()
+            .copied()
+            .filter(|s| {
+                let at = (key.to_string(), *s);
+                slot.pushes.contains_key(&at) || slot.setting.contains_key(&at)
+            })
             .collect();
         Ok(RecordReport {
             subkeys,
             local_seqs,
             network_seqs,
-            offline_subkeys: Vec::new(),
+            offline_subkeys,
         })
     }
 
@@ -473,7 +500,8 @@ impl DhtBackend for SimDht {
         count: Option<u32>,
     ) -> Result<bool, DhtCallError> {
         let writer = self.opened(key)?;
-        if watches::too_soon(expiration_us, self.net.now_us()) {
+        // Checked on the node's own clock (`watch_value.rs:224-300`).
+        if watches::too_soon(expiration_us, self.net.node_now_us(self.node)) {
             return Err(error(
                 DhtErrorKind::InvalidArgument,
                 format!("expiration is too soon: {key}"),
