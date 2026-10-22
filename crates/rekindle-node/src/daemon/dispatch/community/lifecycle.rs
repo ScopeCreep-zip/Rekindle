@@ -214,6 +214,13 @@ pub(crate) async fn handle_join(
         return IpcResponse::error(500, format!("community joined but not recorded: {e}"));
     }
 
+    // The join's merge input into the warm cache (plan E3.1 C1), after
+    // the membership's row, which the cache row references.
+    rekindle_governance_runtime::GovernanceRuntimeDeps::persist_governance_entries_cache(
+        &adapter,
+        link.governance_key.as_str(),
+        &outcome.snapshot.all_entries,
+    );
     // Seed the runtime cache with the state the join already merged, so
     // the first read afterwards does not go back to the DHT.
     ctx.communities

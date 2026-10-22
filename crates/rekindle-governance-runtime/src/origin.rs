@@ -276,7 +276,8 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
 
     // 10. Merge genesis entries into a fresh GovernanceState — joiners
     //     re-merge from DHT reads; we precompute locally for the creator.
-    let gov_state = merge::merge(&[(my_pseudo.clone(), genesis_entries)]);
+    let merge_input = vec![(my_pseudo.clone(), genesis_entries)];
+    let gov_state = merge::merge(&merge_input);
 
     // 11. Build the CommunityInsert and hand it to the adapter to
     //     install into AppState.communities.
@@ -300,6 +301,10 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         creator_role_ids: creator_role_ids.clone(),
     };
     deps.insert_community(insert);
+    // The merge input into the warm cache, after the community's row (the
+    // cache row references it): the next unlock re-merges it at once
+    // (plan E3.1 C1), network or not.
+    deps.persist_governance_entries_cache(&gov_key, &merge_input);
 
     // 12. Lost Cargo file cache + creator member row (so the Members panel
     //     populates immediately instead of waiting for the 30s presence

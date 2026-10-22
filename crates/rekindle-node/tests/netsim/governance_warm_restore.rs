@@ -15,13 +15,21 @@ use crate::harness::{Community, PASSPHRASE};
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn an_unlock_with_the_network_cut_answers_from_the_cache() {
     let community = Community::of(2, 131).await;
-    let node = &community.nodes[1];
-    let key = node.public_key.clone().expect("an identity");
-    // The joiner's merge input lands in the cache before the lock.
+    // The creator's genesis and the joiner's snapshot land in the cache.
     tokio::time::sleep(Duration::from_secs(60)).await;
+    for i in [1, 0] {
+        relock_offline(&community, i).await;
+        reviewed_from_cache(&community.nodes[i], &community.governance_key).await;
+    }
+}
+
+/// Lock node `i`, cut it off the DHT, unlock it again.
+async fn relock_offline(community: &Community, i: usize) {
+    let node = &community.nodes[i];
+    let key = node.public_key.clone().expect("an identity");
     node.ok(IpcRequest::Lock).await;
     community.sim.fault(Fault::DhtOffline {
-        node: 1,
+        node: i,
         offline: true,
     });
     node.ok(IpcRequest::Unlock {
@@ -29,7 +37,11 @@ async fn an_unlock_with_the_network_cut_answers_from_the_cache() {
         passphrase: PASSPHRASE.into(),
     })
     .await;
-    let governance_key = community.governance_key.clone();
+}
+
+/// `CommunityLeave` is held for review; `RoleUpdate` is not refused 503.
+async fn reviewed_from_cache(node: &crate::harness::SimNode, governance_key: &str) {
+    let governance_key = governance_key.to_string();
     let leave = node
         .answer(IpcRequest::CommunityLeave {
             governance_key: governance_key.clone(),
