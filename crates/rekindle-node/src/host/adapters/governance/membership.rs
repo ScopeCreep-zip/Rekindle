@@ -252,12 +252,13 @@ impl MembershipEventDeps for HostGovernance {
     }
 
     fn push_onboarding_complete_to_sync(&self, community_id: &str) {
-        match &self.ctx.shell {
-            Some(shell) => shell.push_onboarding_complete_to_sync(community_id),
-            None => tracing::debug!(
+        if let Some(shell) = &self.ctx.shell {
+            shell.push_onboarding_complete_to_sync(community_id);
+        } else {
+            tracing::debug!(
                 community_id,
                 "onboarding completion: no personal sync record on the daemon track (E5.2)"
-            ),
+            );
         }
     }
 

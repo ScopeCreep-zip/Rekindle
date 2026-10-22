@@ -84,7 +84,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
         match self.state.host.current() {
             Some(host) => host.governance().insert_community(community),
             None => {
-                tracing::warn!(community = %community.id, "created community arrived before the Host is up")
+                tracing::warn!(community = %community.id, "created community arrived before the Host is up");
             }
         }
     }
