@@ -297,9 +297,8 @@ pub fn handle_attachment(
     // implies bootstrap contact, so this rarely differs — but when it
     // does (domain flagged ready before any peer entry lands), DHT and
     // route work issued in that window fails with transient KeyNotFound,
-    // which is exactly what `wait_for_network_ready` exists to prevent.
+    // so the friends' trigger below waits for both.
     let ready = public_internet_ready && attachment.live_peer_count.as_u64() >= 1;
-    let _ = state.network_ready_tx.send(ready);
     // The friends' network-ready trigger (plan E2.5): re-open their
     // watches and catch every chain up once the network is back.
     if let Some(host) = state.host.current() {

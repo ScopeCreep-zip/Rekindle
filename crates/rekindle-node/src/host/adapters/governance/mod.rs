@@ -3,8 +3,9 @@
 //! [`DaemonContext`] — its community store (`host::community::store`),
 //! database, vault, transport and journal — used by both hosts. It replaces
 //! the daemon's `daemon/governance_adapter/` and the desktop's (B1/B2; the
-//! desktop's copy deleted at B2f), and the login stage that drives hydration
-//! over it is C1.
+//! desktop's copy deleted at B2f), and the login stages that drive hydration
+//! over it are C1 (`loader`, the warm cache) and C2a (`login_stage`, the
+//! network part; `catchup` the history catch-up it schedules).
 //!
 //! File split: this module holds the struct, constructor and shared
 //! helpers; `state_reads` / `state_mutations` / `dht` / `roles` / `events`
@@ -27,10 +28,12 @@ pub(crate) mod community_sync;
 pub mod deps_impl;
 mod dht;
 pub use dht::recent_channel_messages;
+mod catchup;
 mod events;
 mod invite_expiry;
 mod lifecycle;
 pub(crate) mod loader;
+pub(crate) mod login_stage;
 mod mek;
 mod mek_recovery;
 mod membership;

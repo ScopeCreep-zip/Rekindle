@@ -10,10 +10,6 @@ use crate::services;
 use crate::state::{IdentityState, SharedState, UserStatus};
 use crate::state_helpers;
 
-/// How long a community stage waits for the network before it runs
-/// best-effort, and the friend sync before it gives up.
-const NETWORK_READY_WAIT_SECS: u64 = 60;
-
 /// The unlock's keys and projection into `AppState`, the loaders, and, with
 /// a window and a node, the network stages.
 ///
@@ -76,32 +72,10 @@ fn network_stages(
     // Voice drop telemetry (→ E4.1).
     services::voice_adapter::spawn_drop_telemetry(state, app, scope)?;
 
-    // Community DHT hydration, then a governance rebuild (→ E3.1).
-    let task_state = Arc::clone(state);
-    scope.spawn_with_token("community DHT hydration", |stop| async move {
-        // On a sparse cold-start routing table the opens fail; past the
-        // wait hydration runs anyway, and the keepalive recovers the rest.
-        let ready = stop
-            .run_until_cancelled(wait_for_network_ready(&task_state))
-            .await;
-        let Some(ready) = ready else {
-            return;
-        };
-        if !ready {
-            tracing::warn!("network not ready — running community DHT hydration best-effort");
-        }
-        if let Err(e) = hydrate_communities(&task_state, &stop).await {
-            tracing::debug!(error = %e, "locked before the community hydration ran");
-        }
-    })?;
-
-    // History catch-up per community (→ E3.1). Each community's presence
-    // poll, keepalive and inspect loop start when hydration hands its
-    // records over (`leases::records_ready`).
-    let community_ids: Vec<String> = state.communities.read().keys().cloned().collect();
-    for community_id in community_ids {
-        services::community::join::schedule_history_catchup(Arc::clone(state), community_id);
-    }
+    // Community hydration, rebuild, republish and history catch-up are the
+    // Host's network stage (plan E3.1 C2a); each community's presence poll,
+    // keepalive and inspect loop start when it hands the records over
+    // (`ShellHooks::community_records_ready`).
     services::community::start_peer_reliability_flush(Arc::clone(state), pool.clone());
     services::community::start_delivery_settle(Arc::clone(state), scope)?;
     services::community::start_event_reminders(Arc::clone(state), pool.clone(), scope)?;
@@ -122,49 +96,6 @@ fn network_stages(
         })?;
     }
     Ok(())
-}
-
-/// Open, hydrate, rebuild and republish every community's records, then
-/// each rebuilt community tells the windows to refresh. Its DHT work is record-pool calls, which the
-/// lock's drain releases (plan C7.6g).
-async fn hydrate_communities(
-    state: &SharedState,
-    stop: &tokio_util::sync::CancellationToken,
-) -> Result<(), rekindle_db::NotLoggedIn> {
-    use rekindle_governance_runtime::dht_hydration;
-    let governance = crate::state_helpers::host_governance(state)?;
-    dht_hydration::open_community_dht_records(&governance).await;
-    dht_hydration::hydrate_community_state_from_dht(&governance).await;
-    dht_hydration::rebuild_governance_from_dht(&governance).await;
-    dht_hydration::republish_active_records(&governance).await;
-    if stop.is_cancelled() {
-        return Ok(());
-    }
-    // Each rebuilt community's GovernanceRebuilt and MembersRefreshed
-    // come from the rebuild itself (plan E3.1 C1).
-    tracing::info!("background DHT hydration complete — governance state rebuilt");
-    Ok(())
-}
-
-/// Wait for `public_internet_ready` with a live peer, up to
-/// [`NETWORK_READY_WAIT_SECS`]: `true` once ready.
-async fn wait_for_network_ready(state: &SharedState) -> bool {
-    let mut rx = state.network_ready_rx.clone();
-    tokio::time::timeout(
-        std::time::Duration::from_secs(NETWORK_READY_WAIT_SECS),
-        async {
-            loop {
-                if *rx.borrow_and_update() {
-                    return true;
-                }
-                if rx.changed().await.is_err() {
-                    return false;
-                }
-            }
-        },
-    )
-    .await
-    .unwrap_or(false)
 }
 
 /// The Host's own records are up: the keys into the `NodeHandle` projection

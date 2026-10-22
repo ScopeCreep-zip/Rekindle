@@ -130,7 +130,6 @@ impl shell_hooks::ShellHooks for Recorder {
     ) -> Result<(), String> {
         Ok(())
     }
-    fn spawn_history_catchup(&self, _community_id: &str) {}
     fn ensure_files_cache_open(&self, _community_id: &str) {}
     fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
     fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
@@ -228,7 +227,6 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         ) -> Result<(), String> {
             Ok(())
         }
-        fn spawn_history_catchup(&self, _community_id: &str) {}
         fn ensure_files_cache_open(&self, _community_id: &str) {}
         fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
         fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {

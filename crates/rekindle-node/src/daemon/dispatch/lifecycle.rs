@@ -47,12 +47,11 @@ pub(crate) async fn handle_unlock(
 }
 
 /// The daemon's stages of an unlock (`host::unlock` stage 4), until their
-/// ports: community resume and its leases, keepalive (E3.1), the
-/// subscription manager (E2.1/E3.1), the broadcast mesh (E3.1) and the
+/// ports: the subscription manager (E2.1/E3.1), the broadcast mesh (E3.1) and the
 /// presence polls (E3.4).
 ///
 /// # Errors
-/// The community resume or the subscription loops could not start.
+/// The subscription loops could not start.
 pub(crate) async fn daemon_stages(
     ctx: &DaemonContext,
     unlock_scope: &Arc<rekindle_lifecycle::SessionScope>,
@@ -62,28 +61,8 @@ pub(crate) async fn daemon_stages(
     let (Some(transport), Some(session)) = (transport, session) else {
         return Ok(());
     };
-    let resumed = transport.resume_communities(&session).await.map_err(|e| {
-        IpcResponse::error_with_remediation(
-            503,
-            format!("resume failed: {e}"),
-            "check the network attachment, then unlock again",
-        )
-    })?;
-    // The communities' governance and registry leases are held for the
-    // session (plan C7.7c); a lease the community already holds goes back.
-    for (community_id, leases) in resumed {
-        let merged = ctx.communities.hold_leases(&community_id, leases, |l| {
-            rekindle_transport::broadcast::dht_writes::key_of(&transport, l)
-        });
-        for lease in merged.surplus {
-            rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
-        }
-    }
-
-    // The resumed communities' record keepalive, in their scopes (C7.8b).
-    for membership in session.communities.values() {
-        crate::daemon::keepalive::start(ctx, &membership.governance_key);
-    }
+    // The communities' records, leases and keepalive are the Host's
+    // network stage (plan E3.1 C2a, `host::adapters::governance::login_stage`).
 
     // The subscription manager (three-tier inbound: watch + gossip + poll).
     let sub_mgr = rekindle_transport::SubscriptionManager::new(

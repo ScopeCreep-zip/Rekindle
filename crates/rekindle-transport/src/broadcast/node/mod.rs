@@ -16,7 +16,6 @@ use crate::error::{Result, TransportError};
 use crate::shared::{SharedState, TransportNotification, TransportSnapshot};
 
 mod lifecycle;
-mod resume;
 mod routes;
 
 /// The top-level transport node. Holds the ports and all subsystems. There

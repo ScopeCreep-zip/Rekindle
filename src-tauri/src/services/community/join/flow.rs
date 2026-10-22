@@ -322,8 +322,9 @@ pub async fn join_community(
     }
 
     // The community's inspect, presence and keepalive loops started when
-    // OpenRecords handed its leases to the host (`leases::records_ready`).
-    super::history::schedule_history_catchup(state.clone(), governance_key_str.to_string());
+    // OpenRecords handed its leases to the host (`leases::records_ready`);
+    // its history catch-up is the Host's (plan E3.1 C2a).
+    adapter.spawn_history_catchup(governance_key_str);
 
     if let Some(ref bundle) = invite.bootstrap_bundle {
         tracing::info!(

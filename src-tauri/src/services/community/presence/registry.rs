@@ -109,25 +109,3 @@ pub async fn write_our_presence(state: &Arc<AppState>, community_id: &str) {
     )
     .await;
 }
-
-/// W11.2 — decrypt history ranges from a peer's presence row using
-/// the MEK generation declared by the sender. Stays src-tauri because
-/// the only caller is the still-src-tauri-side message-receive path
-/// in `super::super`; lifting it would force a trivial trait method
-/// for a 12-LoC body.
-pub(in crate::services::community) fn decrypt_history_ranges(
-    state: &Arc<AppState>,
-    community_id: &str,
-    encrypted: &rekindle_types::presence::EncryptedHistoryRanges,
-) -> Option<Vec<rekindle_types::presence::HistoryRange>> {
-    // Current generation only: a member the last rotation removed holds
-    // only the replaced key, and its presence must not read.
-    let mek = state_helpers::current_mek(
-        state,
-        community_id,
-        rekindle_types::channel_keys::KeyScope::Community,
-    )
-    .filter(|mek| mek.generation() == encrypted.mek_generation)?;
-    let plaintext = mek.decrypt(&encrypted.ciphertext).ok()?;
-    serde_json::from_slice(&plaintext).ok()
-}

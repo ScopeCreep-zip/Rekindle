@@ -85,10 +85,6 @@ pub trait ShellHooks: Send + Sync {
         envelope: &rekindle_codec::community::envelope::CommunityEnvelope,
     ) -> Result<(), String>;
 
-    /// Start the shell's history catch-up for a community. Ported with the
-    /// catch-up at E3.1 C2.
-    fn spawn_history_catchup(&self, community_id: &str);
-
     /// Open the community's Lost Cargo chunk cache. Ported with the files
     /// domain at E3.1 E3.
     fn ensure_files_cache_open(&self, community_id: &str);

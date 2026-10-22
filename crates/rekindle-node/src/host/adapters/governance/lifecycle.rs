@@ -284,17 +284,6 @@ impl HostGovernance {
     }
 
     // ---------- Background tasks ----------
-    //
-    // The Tauri host spawns per-community loops here. On the daemon the
-    // `SubscriptionManager` runs the watch/poll tiers for every joined
-    // community, so a second set would double the DHT traffic against the
-    // same records. The record keepalive (`RecordPool::rehydrate`) has no
-    // daemon equivalent yet: plan item C7.8b. Traced so the coverage
-    // decision is visible.
-
-    pub(super) fn spawn_history_catchup_impl(community_id: &str) {
-        tracing::debug!(community_id, "history catchup: covered by SMPL catchup");
-    }
 
     /// Queue the forward-secrecy rotation that a ban requires.
     ///

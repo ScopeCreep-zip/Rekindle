@@ -61,10 +61,6 @@ pub struct AppState {
     pub(crate) voice_engine: Arc<Mutex<Option<VoiceEngineHandle>>>,
     /// Channel for sending shutdown signals to background services.
     pub shutdown_tx: Arc<RwLock<Option<mpsc::Sender<()>>>>,
-    /// Sender half of the watch channel that tracks Veilid public internet readiness.
-    pub network_ready_tx: Arc<tokio::sync::watch::Sender<bool>>,
-    /// Receiver half — clone and `.changed().await` to wait for readiness.
-    pub network_ready_rx: tokio::sync::watch::Receiver<bool>,
     /// The identity's Ed25519 secret, stored at unlock for the unported
     /// paths that sign or derive from it (communities, voice, sync).
     pub identity_secret: Mutex<Option<[u8; 32]>>,
@@ -240,7 +236,6 @@ pub struct AppState {
 
 impl Default for AppState {
     fn default() -> Self {
-        let (network_ready_tx, network_ready_rx) = tokio::sync::watch::channel(false);
         Self {
             voice_packet_tx: Arc::new(RwLock::new(None)),
             voice_report_tx: Arc::new(RwLock::new(None)),
@@ -254,8 +249,6 @@ impl Default for AppState {
             preferences: RwLock::new(rekindle_types::preferences::Preferences::default()),
             voice_engine: Arc::new(Mutex::new(None)),
             shutdown_tx: Arc::new(RwLock::new(None)),
-            network_ready_tx: Arc::new(network_ready_tx),
-            network_ready_rx,
             identity_secret: Mutex::new(None),
             audit_chain: Arc::new(Mutex::new(None)),
             keystore: rekindle_vault::new_handle(),

@@ -238,10 +238,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
     // ---------- Background lifecycle ----------
 
     fn spawn_history_catchup(&self, community_id: &str) {
-        match &self.ctx.shell {
-            Some(shell) => shell.spawn_history_catchup(community_id),
-            None => Self::spawn_history_catchup_impl(community_id),
-        }
+        self.spawn_history_catchup_impl(community_id);
     }
 
     /// The shell opens its Lost Cargo chunk cache; the daemon has no

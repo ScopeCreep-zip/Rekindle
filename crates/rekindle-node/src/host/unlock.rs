@@ -10,9 +10,11 @@
 //!    unsent (both modes, when the host has a transport);
 //! 3. the Host's own stages in the unlock scope: own records, own presence
 //!    (the STATUS publisher), idle, game, the audit check, the communities'
-//!    warm cache (both modes);
-//! 4. community resume, keepalive, subscriptions, the broadcast mesh and the
-//!    presence polls (daemon only, until E2.1/E3.1/E3.4 port them);
+//!    warm cache, then, once the network is ready, their network stage
+//!    (open, hydrate, rebuild, republish, history catch-up; both modes, when
+//!    the host has a transport);
+//! 4. subscriptions, the broadcast mesh and the presence polls (daemon
+//!    only, until E3.4 ports them);
 //! 5. the shell's unported stages (`ShellHooks::unlocked`, shell only);
 //! 6. Operational.
 
@@ -183,7 +185,20 @@ pub(crate) async fn run(
         return fail(ctx, IpcResponse::error(500, e)).await;
     }
 
-    // 3f. The community sync and invite expiry timer (plan E3.1 C2b).
+    // 3f. The communities' network stage (plan E3.1 C2a), after attach.
+    if let Some(transport) = &transport {
+        let ready = transport.shared().subscribe_ready();
+        let governance = crate::daemon::dispatch::adapter(ctx);
+        if let Err(e) = super::adapters::governance::login_stage::start(governance, ready, &scope) {
+            return fail(
+                ctx,
+                IpcResponse::error(500, format!("unlock interrupted: {e}")),
+            )
+            .await;
+        }
+    }
+
+    // 3g. The community sync and invite expiry timer (plan E3.1 C2b).
     if let Err(e) = super::adapters::governance::community_sync::start(ctx, &scope) {
         return fail(
             ctx,

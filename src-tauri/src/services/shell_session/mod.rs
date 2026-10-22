@@ -68,13 +68,6 @@ impl ShellHooks for ShellSession {
         crate::services::community::send_to_mesh(&self.state, community_id, envelope)
     }
 
-    fn spawn_history_catchup(&self, community_id: &str) {
-        crate::services::community::join::schedule_history_catchup(
-            self.state.clone(),
-            community_id.to_string(),
-        );
-    }
-
     fn ensure_files_cache_open(&self, community_id: &str) {
         open_files_cache(&self.state, community_id);
     }
