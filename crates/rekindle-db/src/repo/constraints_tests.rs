@@ -59,6 +59,8 @@ fn seeded() -> Connection {
          last_read_seq, updated_at) VALUES (?1, 'channel', 'c', 'ch', 0, 0)",
         "INSERT INTO read_markers (owner_key, scope_kind, peer_key, last_read_seq, updated_at) \
          VALUES (?1, 'dm', 'f', 0, 0)",
+        "INSERT INTO community_blocks (owner_key, community_id, pseudonym, blocked_at) \
+         VALUES (?1, 'c', 'p', 0)",
     ] {
         conn.execute(sql, params![OWNER]).unwrap_or_else(|e| panic!("{sql}: {e}"));
     }
@@ -128,6 +130,9 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("read_markers", "peer_key", "'f'"),
     ("read_markers", "community_id", "'c'"),
     ("read_markers", "channel_id", "NULL"),
+    ("community_blocks", "pseudonym", "''"),
+    ("community_blocks", "pseudonym", "'P'"),
+    ("community_blocks", "blocked_at", "-1"),
 ];
 
 #[test]

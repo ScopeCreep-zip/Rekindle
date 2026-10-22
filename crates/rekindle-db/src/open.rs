@@ -180,7 +180,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 111 (plan E3.1, G1): `read_markers` (D25) replaces
 /// `channel_read_state`; `messages.mentions_me`.
-pub const SCHEMA_VERSION: i64 = 111;
+pub const SCHEMA_VERSION: i64 = 112;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

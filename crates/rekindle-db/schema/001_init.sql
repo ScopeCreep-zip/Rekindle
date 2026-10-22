@@ -478,6 +478,19 @@ CREATE TABLE IF NOT EXISTS channel_slowmode_state (
 CREATE INDEX IF NOT EXISTS idx_channel_slowmode_state_owner
     ON channel_slowmode_state(owner_key, community_id);
 
+-- The community members we block, by pseudonym (plan E3.1 F3, D26). An
+-- identity-key block cannot match a community post without linking the
+-- author's pseudonyms (threat model I8, L1, L3), so a community block names
+-- the pseudonym the member posts under there; the ingest gate drops its posts.
+CREATE TABLE IF NOT EXISTS community_blocks (
+    owner_key TEXT NOT NULL,
+    community_id TEXT NOT NULL,
+    pseudonym TEXT NOT NULL CHECK (pseudonym <> '' AND pseudonym = lower(pseudonym)),
+    blocked_at INTEGER NOT NULL CHECK (blocked_at >= 0),
+    PRIMARY KEY (owner_key, community_id, pseudonym),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS outgoing_invites (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     invite_id TEXT NOT NULL,

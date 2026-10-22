@@ -10,6 +10,7 @@
 
 pub mod audit;
 pub mod blocked;
+pub mod community_blocks;
 pub mod chain_entries;
 pub mod channel_bundle;
 pub mod channels;
