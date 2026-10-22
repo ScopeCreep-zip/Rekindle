@@ -5,6 +5,7 @@ mod auto_away;
 mod channel_delete_container_not_empty;
 mod community_policy;
 mod dm_hint_loss;
+mod events;
 mod first_contact_retry;
 mod first_login;
 mod friend_watch;

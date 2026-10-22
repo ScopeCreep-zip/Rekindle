@@ -1,51 +1,24 @@
+//! A community's scheduled events and RSVPs (plan E3.1 E4): Host calls.
+
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::event::{EventEdit, EventInfo, EventRsvp, NewEvent};
 use tauri::State;
 
-use crate::services::community_event_runtime::{
-    cancel_event_inner, delete_event_inner, edit_event_inner, get_events_inner,
-    set_event_rsvp_inner,
-};
+use crate::host_call;
 use crate::state::SharedState;
-
-pub use crate::channels::community_channel::EventInfoDto;
-pub use crate::channels::community_channel::EventRsvpInfoDto;
 
 #[tauri::command]
 pub async fn create_event(
     state: State<'_, SharedState>,
     community_id: String,
-    request: CreateEventRequest,
-) -> Result<String, String> {
-    crate::services::community_event_runtime::create_event_inner(
-        state.inner(),
-        &community_id,
-        request.title,
-        request.description,
-        request.start_time,
-        request.end_time,
-        request.channel_id,
-        request.max_attendees,
-        request.cover_image_ref,
-        request.recurrence,
-        request.location,
-    )
-    .await
-}
-
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CreateEventRequest {
-    pub title: String,
-    pub description: String,
-    pub start_time: u64,
-    pub end_time: Option<u64>,
-    pub channel_id: Option<String>,
-    pub max_attendees: Option<u32>,
-    /// Architecture §21 line 2624 — peer-cached cover image hex hash.
-    pub cover_image_ref: Option<String>,
-    /// Architecture §21 line 2628 — recurrence rule (None = one-off).
-    pub recurrence: Option<rekindle_types::event::RecurrenceRule>,
-    /// Architecture §21 line 2629 — event location.
-    pub location: Option<rekindle_types::event::EventLocation>,
+    request: NewEvent,
+) -> Result<Done<String>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::EventCreate {
+        community: community_id,
+        event: request,
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
@@ -59,21 +32,20 @@ pub async fn edit_event(
     end_time: Option<u64>,
     channel_id: Option<String>,
     max_attendees: Option<u32>,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    edit_event_inner(
-        state.inner(),
-        &pool,
-        community_id,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::EventEdit {
+        community: community_id,
         event_id,
-        title,
-        description,
-        start_time,
-        end_time,
-        channel_id,
-        max_attendees,
-    )
-    .await
+        edit: EventEdit {
+            title,
+            description,
+            start_time,
+            end_time,
+            channel_id,
+            max_attendees,
+        },
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
@@ -81,8 +53,12 @@ pub async fn delete_event(
     state: State<'_, SharedState>,
     community_id: String,
     event_id: String,
-) -> Result<(), String> {
-    delete_event_inner(state.inner(), &community_id, event_id)
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::EventDelete {
+        community: community_id,
+        event_id,
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
@@ -90,9 +66,12 @@ pub async fn cancel_event(
     state: State<'_, SharedState>,
     community_id: String,
     event_id: String,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    cancel_event_inner(state.inner(), &pool, community_id, event_id).await
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::EventCancel {
+        community: community_id,
+        event_id,
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
@@ -101,7 +80,7 @@ pub async fn rsvp_event(
     community_id: String,
     event_id: String,
     status: String,
-) -> Result<(), String> {
+) -> Result<Done<()>, CommandError> {
     set_event_rsvp(state, community_id, event_id, status).await
 }
 
@@ -111,9 +90,13 @@ pub async fn set_event_rsvp(
     community_id: String,
     event_id: String,
     status: String,
-) -> Result<(), String> {
-    let pool = state.db.current()?;
-    set_event_rsvp_inner(state.inner(), &pool, community_id, event_id, status).await
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::EventRsvp {
+        community: community_id,
+        event_id,
+        status,
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
@@ -121,19 +104,21 @@ pub async fn list_event_attendees(
     state: State<'_, SharedState>,
     community_id: String,
     event_id: String,
-) -> Result<Vec<EventRsvpInfoDto>, String> {
-    crate::services::community_event_runtime::list_event_attendees_inner(
-        state.inner(),
-        &community_id,
-        &event_id,
-    )
+) -> Result<Done<Vec<EventRsvp>>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::EventAttendees {
+        community: community_id,
+        event_id,
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
 pub async fn get_events(
     state: State<'_, SharedState>,
     community_id: String,
-) -> Result<Vec<EventInfoDto>, String> {
-    let pool = state.db.current()?;
-    get_events_inner(state.inner(), &pool, community_id).await
+) -> Result<Done<Vec<EventInfo>>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::EventList {
+        community: community_id,
+    });
+    host_call::call(&state, request).await
 }

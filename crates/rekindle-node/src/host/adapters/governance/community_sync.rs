@@ -41,9 +41,13 @@ pub(crate) fn start(
 ) -> Result<(), rekindle_lifecycle::ScopeClosed> {
     let host = HostGovernance::new(ctx.this.upgrade().expect("a context in use is alive"));
     let expiry = host.clone();
+    let reminders = host.clone();
     scope.spawn_with_token("community sync", move |stop| run(host, stop))?;
     scope.spawn_with_token("community invite expiry", move |stop| {
         super::invite_expiry::run(expiry, stop)
+    })?;
+    scope.spawn_with_token("community event reminders", move |stop| {
+        super::event_reminders::run(reminders, stop)
     })
 }
 

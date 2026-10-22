@@ -78,7 +78,6 @@ fn network_stages(
     // (`ShellHooks::community_records_ready`).
     services::community::start_peer_reliability_flush(Arc::clone(state), pool.clone());
     services::community::start_delivery_settle(Arc::clone(state), scope)?;
-    services::community::start_event_reminders(Arc::clone(state), pool.clone(), scope)?;
 
     // The desktop's reaction to our routes (→ E3.1/E3.4/E4.1).
     let (route_app, route_state) = (app.clone(), Arc::clone(state));

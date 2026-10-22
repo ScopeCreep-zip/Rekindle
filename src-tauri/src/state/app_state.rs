@@ -148,8 +148,6 @@ pub struct AppState {
     pub channel_last_received: Mutex<HashMap<(String, String, String), u64>>,
     /// Per-community compiled AutoMod cache.
     pub automod_cache: Arc<RwLock<HashMap<String, Arc<AutoModCompiledCache>>>>,
-    /// Wake-up signal for the event reminder scheduler.
-    pub event_reminder_wake_tx: Arc<RwLock<Option<tokio::sync::watch::Sender<u64>>>>,
     /// Per-community Lost Cargo chunk caches.
     pub file_caches: RwLock<HashMap<String, rekindle_files::ChunkCache>>,
     /// Pinned-attachment IDs per community.
@@ -278,7 +276,6 @@ impl Default for AppState {
             gossip_rate_limits: Mutex::new(HashMap::new()),
             channel_last_received: Mutex::new(HashMap::new()),
             automod_cache: Arc::new(RwLock::new(HashMap::new())),
-            event_reminder_wake_tx: Arc::new(RwLock::new(None)),
             file_caches: RwLock::new(HashMap::new()),
             pinned_attachments: RwLock::new(HashMap::new()),
             relay_reliability_dirty: Mutex::new(HashSet::new()),

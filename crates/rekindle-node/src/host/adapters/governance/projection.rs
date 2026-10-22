@@ -187,6 +187,7 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
     }
     cs.mek_generation = gov.mek_generation;
     prune_banned(cs, &gov);
+    super::event_rsvps::project(cs, &gov);
     // Segment 0 stays implicit (`rekindle_governance_runtime::segments`).
     cs.segments = gov
         .segments

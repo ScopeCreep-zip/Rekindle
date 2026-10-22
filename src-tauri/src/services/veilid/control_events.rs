@@ -35,7 +35,7 @@ pub(crate) async fn handle_control_events_and_threads(
         | ControlPayload::EventUpdated { .. }
         | ControlPayload::EventDeleted { .. }
         | ControlPayload::EventRsvpChanged { .. }) => {
-            handle_event_payload(app_handle, state, pool, community_id, payload);
+            handle_event_payload(app_handle, state, community_id, sender_pseudonym, payload).await;
         }
         payload @ (ControlPayload::ThreadCreated { .. }
         | ControlPayload::ThreadArchived { .. }

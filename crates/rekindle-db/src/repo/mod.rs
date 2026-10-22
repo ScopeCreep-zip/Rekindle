@@ -14,6 +14,7 @@ pub mod chain_entries;
 pub mod channel_bundle;
 pub mod channels;
 pub mod communities;
+pub mod community_events;
 pub mod community_invites;
 pub mod friend_groups;
 pub mod friends;

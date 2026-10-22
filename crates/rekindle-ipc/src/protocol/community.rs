@@ -236,6 +236,33 @@ pub enum CommunityRequest {
         server_id: String,
     },
 
+    // ── Events (plan E3.1 E4) ─────────────────────────────────────
+    /// A community's events, by start time, with their attendees.
+    EventList { community: String },
+    /// One event's attendees.
+    EventAttendees { community: String, event_id: String },
+    /// Schedule an event; answered with its id.
+    EventCreate {
+        community: String,
+        event: rekindle_types::event::NewEvent,
+    },
+    /// Change an event's fields.
+    EventEdit {
+        community: String,
+        event_id: String,
+        edit: rekindle_types::event::EventEdit,
+    },
+    /// Cancel an event (kept, marked cancelled).
+    EventCancel { community: String, event_id: String },
+    /// Delete an event.
+    EventDelete { community: String, event_id: String },
+    /// Our answer to an event: `going`, `interested` (or `maybe`), `declined`.
+    EventRsvp {
+        community: String,
+        event_id: String,
+        status: String,
+    },
+
     // ── Roles ─────────────────────────────────────────────────────
     /// List all roles in a community.
     RoleList { community: String },

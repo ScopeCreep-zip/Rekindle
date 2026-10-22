@@ -122,6 +122,50 @@ impl RsvpStatus {
 }
 
 /// Maximum lengths from spec §21 line 2622-2623.
+/// An event as its creator enters it (plan E3.1 E4): `create_event`'s
+/// `request` and `CommunityRequest::EventCreate`'s body.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NewEvent {
+    pub title: String,
+    pub description: String,
+    pub start_time: u64,
+    pub end_time: Option<u64>,
+    pub channel_id: Option<String>,
+    pub max_attendees: Option<u32>,
+    /// Architecture §21: the peer-cached cover image's hash.
+    pub cover_image_ref: Option<String>,
+    /// Architecture §21: the recurrence rule (`None` for a one-off).
+    pub recurrence: Option<RecurrenceRule>,
+    /// Architecture §21: where it happens.
+    pub location: Option<EventLocation>,
+}
+
+/// The fields an event edit sets; `None` keeps the stored value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EventEdit {
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub start_time: Option<u64>,
+    pub end_time: Option<u64>,
+    pub channel_id: Option<String>,
+    pub max_attendees: Option<u32>,
+}
+
+/// An event id: `evt_` and 32 lowercase hex digits (an `EventId`'s 16
+/// bytes), so the id a command mints and the one merged governance names
+/// are the same string.
+#[must_use]
+pub fn is_event_id(id: &str) -> bool {
+    id.strip_prefix("evt_").is_some_and(|hex| {
+        hex.len() == 32
+            && hex
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    })
+}
+
 pub const MAX_EVENT_NAME_CHARS: usize = 100;
 pub const MAX_EVENT_DESCRIPTION_CHARS: usize = 1000;
 

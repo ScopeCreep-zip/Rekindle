@@ -96,6 +96,13 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 }
             })
         }
+        CommunityRequest::EventList { .. }
+        | CommunityRequest::EventAttendees { .. }
+        | CommunityRequest::EventCreate { .. }
+        | CommunityRequest::EventEdit { .. }
+        | CommunityRequest::EventCancel { .. }
+        | CommunityRequest::EventDelete { .. }
+        | CommunityRequest::EventRsvp { .. } => super::community_events::check(request),
         CommunityRequest::GameServerAdd {
             community: key,
             game_id,

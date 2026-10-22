@@ -14,6 +14,7 @@ use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibili
 use crate::daemon::dispatch::DaemonContext;
 
 mod community;
+mod events;
 mod friends;
 mod game_servers;
 mod group_dm;
@@ -158,6 +159,15 @@ pub(crate) async fn select(
         ) => {
             game_servers::selection(ctx, request, &mut s).await?;
         }
+        IpcRequest::Community(
+            request @ (CommunityRequest::EventCreate { .. }
+            | CommunityRequest::EventEdit { .. }
+            | CommunityRequest::EventCancel { .. }
+            | CommunityRequest::EventDelete { .. }
+            | CommunityRequest::EventRsvp { .. }),
+        ) => {
+            events::selection(ctx, request, &mut s).await?;
+        }
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
         | IpcRequest::ProfileSetNickname { .. }
@@ -241,6 +251,8 @@ pub(crate) async fn select(
             | CommunityRequest::GameServerList { .. }
             | CommunityRequest::CommunityAvatarGet { .. }
             | CommunityRequest::CommunityPolicyGet { .. }
+            | CommunityRequest::EventList { .. }
+            | CommunityRequest::EventAttendees { .. }
             | CommunityRequest::BanList { .. }
             | CommunityRequest::InviteList { .. },
         )

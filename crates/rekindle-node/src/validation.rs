@@ -382,6 +382,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
 mod channel_admin;
 mod channels;
 mod community;
+mod community_events;
 mod friends;
 mod group_dm;
 #[cfg(test)]

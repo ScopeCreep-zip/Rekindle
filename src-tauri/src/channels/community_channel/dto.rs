@@ -7,16 +7,6 @@ use serde::{Deserialize, Serialize};
 
 /// Event info DTO for frontend consumption (architecture §21).
 ///
-/// Type alias for the canonical wire/in-memory shape defined in
-/// `rekindle-types::event::EventInfo`. The DTO name is preserved so
-/// existing call sites and IPC consumers don't need to be renamed
-/// during the typed-envelope migration (plan:
-/// `.claude/plans/community-envelope-capnp-migration.md`).
-pub type EventInfoDto = rekindle_types::event::EventInfo;
-
-/// RSVP entry DTO — alias for `rekindle-types::event::EventRsvp`.
-pub type EventRsvpInfoDto = rekindle_types::event::EventRsvp;
-
 /// Role DTO for frontend consumption (mirrors protocol's `RoleDto`).
 ///
 /// `permissions` is serialized as a string to avoid JavaScript `Number` precision

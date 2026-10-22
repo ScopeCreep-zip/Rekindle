@@ -12,10 +12,6 @@ pub(crate) fn random_16_bytes() -> [u8; 16] {
     rekindle_utils::random::id_bytes_16()
 }
 
-pub(crate) fn random_nonce(bytes_len: usize) -> Vec<u8> {
-    rekindle_utils::random::bytes(bytes_len)
-}
-
 pub(crate) fn require_permission(
     state: &SharedState,
     community_id: &str,

@@ -203,6 +203,8 @@ impl CommunityRequest {
             | Self::GameServerList { .. }
             | Self::CommunityAvatarGet { .. }
             | Self::CommunityPolicyGet { .. }
+            | Self::EventList { .. }
+            | Self::EventAttendees { .. }
             | Self::BanList { .. }
             | Self::InviteList { .. } => Some(C::CommunitiesRead),
             Self::CommunityCreate { .. }
@@ -234,6 +236,11 @@ impl CommunityRequest {
             | Self::RoleSelfUnassign { .. }
             | Self::GameServerAdd { .. }
             | Self::GameServerRemove { .. }
+            | Self::EventCreate { .. }
+            | Self::EventEdit { .. }
+            | Self::EventCancel { .. }
+            | Self::EventDelete { .. }
+            | Self::EventRsvp { .. }
             | Self::InviteCreate { .. }
             | Self::InviteRevoke { .. } => Some(C::CommunitiesWrite),
             Self::CommunityApprove { .. }

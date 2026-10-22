@@ -224,6 +224,22 @@ impl InboundHandler for DaemonHandler {
             }
         }
 
+        // An event created, updated, deleted or answered (plan E3.1 E4):
+        // stored when the Host's adapter accepts it.
+        if let CommunityEnvelope::Control(
+            ref payload @ (ControlPayload::EventCreated { .. }
+            | ControlPayload::EventUpdated { .. }
+            | ControlPayload::EventDeleted { .. }
+            | ControlPayload::EventRsvpChanged { .. }),
+        ) = envelope
+        {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .on_event_control(community_id, sender_pseudonym, payload)
+                    .await;
+            }
+        }
+
         // Tier 2: If this is a JoinAccepted for a pending join, complete oneshot.
         // Check BEFORE forwarding to SubscriptionManager (which takes ownership).
         if let CommunityEnvelope::Control(ControlPayload::JoinAccepted {

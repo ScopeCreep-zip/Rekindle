@@ -10,7 +10,6 @@ pub mod community_audit_runtime; // Phase 23.C — audit-log read + ban-list run
 pub mod community_automod_runtime; // Phase 23.C — automod rule list/set/delete orchestration lifted from commands/community/automod.rs.
 #[cfg(debug_assertions)]
 pub mod community_diagnostics_runtime; // Phase 23.C — debug_gossip_state body lifted from commands/community/diagnostics.rs.
-pub mod community_event_runtime; // Phase 23.C — event creation orchestration lifted from commands/community/events.rs.
 pub mod community_files_runtime; // Phase 23.C — Lost Cargo file-handler orchestration lifted from commands/community/files.rs.
 pub mod community_link_previews_runtime; // Phase 23.C — link-preview settings SQLite ops lifted from commands/community/link_previews.rs.
 pub mod community_mek_local_rotate; // Phase 23.C — `rotate_mek_local` lifted from legacy/control.rs.

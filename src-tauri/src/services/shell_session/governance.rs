@@ -14,16 +14,6 @@ pub(super) fn on_projected(
     community_id: &str,
     projected: &GovernanceProjected,
 ) {
-    // Event RSVP lists from the merged events (events domain, E3.1 E3).
-    {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            if let Some(gov) = cs.governance_state.clone() {
-                crate::services::community::event_rsvps::rebuild_from_governance(cs, &gov);
-            }
-        }
-    }
-
     // The Lost Cargo cache and its pinned set (files domain, E3.1 E3).
     super::open_files_cache(state, community_id);
     crate::services::community::files::sync_pinned_from_governance(state, community_id);
@@ -49,17 +39,6 @@ pub(super) fn on_projected(
     scope.spawn_or_drop("eager expression cache", async move {
         crate::services::community::expression_assets::eager_fetch_missing(&s, &c).await;
     });
-
-    // Merged events into `community_events` and the reminders woken
-    // (events domain, E3.1 E3).
-    if let Ok(pool) = state.db.current() {
-        crate::services::community::events_hydration::hydrate_events_from_governance(
-            state,
-            &pool,
-            community_id,
-        );
-        crate::services::community::wake_event_reminders(state);
-    }
 }
 
 /// One presence poll right after a slot grant (presence, E3.4).

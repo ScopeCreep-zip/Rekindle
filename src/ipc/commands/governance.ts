@@ -190,21 +190,21 @@ export const governanceCommands = {
 
   // Community Events (architecture §21)
   createEvent: (communityId: string, request: CreateEventRequest) =>
-    invoke<string>("create_event", { communityId, request }),
+    hostInvoke<string>("create_event", { communityId, request }),
   editEvent: (communityId: string, eventId: string, title?: string, description?: string, startTime?: number, endTime?: number, channelId?: string, maxAttendees?: number) =>
-    invoke<void>("edit_event", { communityId, eventId, title: title ?? null, description: description ?? null, startTime: startTime ?? null, endTime: endTime ?? null, channelId: channelId ?? null, maxAttendees: maxAttendees ?? null }),
+    hostInvoke<null>("edit_event", { communityId, eventId, title: title ?? null, description: description ?? null, startTime: startTime ?? null, endTime: endTime ?? null, channelId: channelId ?? null, maxAttendees: maxAttendees ?? null }),
   deleteEvent: (communityId: string, eventId: string) =>
-    invoke<void>("delete_event", { communityId, eventId }),
+    hostInvoke<null>("delete_event", { communityId, eventId }),
   cancelEvent: (communityId: string, eventId: string) =>
-    invoke<void>("cancel_event", { communityId, eventId }),
+    hostInvoke<null>("cancel_event", { communityId, eventId }),
   rsvpEvent: (communityId: string, eventId: string, status: string) =>
-    invoke<void>("rsvp_event", { communityId, eventId, status }),
+    hostInvoke<null>("rsvp_event", { communityId, eventId, status }),
   setEventRsvp: (communityId: string, eventId: string, status: string) =>
-    invoke<void>("set_event_rsvp", { communityId, eventId, status }),
+    hostInvoke<null>("set_event_rsvp", { communityId, eventId, status }),
   listEventAttendees: (communityId: string, eventId: string) =>
-    invoke<{ pseudonymKey: string; status: string }[]>("list_event_attendees", { communityId, eventId }),
+    hostInvoke<{ pseudonymKey: string; status: string }[]>("list_event_attendees", { communityId, eventId }),
   getEvents: (communityId: string) =>
-    invoke<EventInfo[]>("get_events", { communityId }),
+    hostInvoke<EventInfo[]>("get_events", { communityId }),
 
   // Game Servers
   addGameServer: (communityId: string, gameId: string, label: string, address: string) =>
