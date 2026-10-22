@@ -20,6 +20,7 @@ pub mod error;
 pub mod event;
 pub mod expressions;
 pub mod history;
+pub mod ingest;
 pub mod mentions;
 pub mod notifications;
 pub mod pipeline;

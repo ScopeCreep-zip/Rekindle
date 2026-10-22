@@ -146,7 +146,7 @@ fn compiled_rules<D: ChannelMessagingDeps>(
     Ok(rules)
 }
 
-fn compile_rules(
+pub(crate) fn compile_rules(
     governance: &GovernanceState,
     fingerprint: &[([u8; 16], u64)],
 ) -> Result<AutoModCompiledCache, ChannelError> {
@@ -191,7 +191,7 @@ fn compile_rules(
     })
 }
 
-fn rule_fingerprint(governance: &GovernanceState) -> Vec<([u8; 16], u64)> {
+pub(crate) fn rule_fingerprint(governance: &GovernanceState) -> Vec<([u8; 16], u64)> {
     let mut fingerprint = governance
         .automod_rules
         .iter()
@@ -201,7 +201,7 @@ fn rule_fingerprint(governance: &GovernanceState) -> Vec<([u8; 16], u64)> {
     fingerprint
 }
 
-fn rule_matches(rule: &CompiledAutoModRule, body: &str) -> bool {
+pub(crate) fn rule_matches(rule: &CompiledAutoModRule, body: &str) -> bool {
     let lower_body = body.to_lowercase();
     rule.keywords_lower
         .iter()
