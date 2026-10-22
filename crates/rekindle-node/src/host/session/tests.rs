@@ -43,10 +43,13 @@ async fn writes_come_back_in_the_next_projection() {
         "Ann"
     );
 
+    let communities =
+        crate::host::community::CommunityStore::new(crate::host::community::store::new_map());
     record_membership(
         &session,
         &f.db,
         &f.vault,
+        &communities,
         NewMembership {
             membership: membership(),
             dht_owner_keypair: None,
@@ -55,8 +58,28 @@ async fn writes_come_back_in_the_next_projection() {
         },
     )
     .unwrap();
-    assert_eq!(next_clock(&session, &f.db, "gov-key").unwrap(), 13);
-    update_roles(&session, &f.db, "gov-key", |roles| roles.push(9));
+    assert_eq!(
+        next_clock(&session, &f.db, &communities, "gov-key").unwrap(),
+        13
+    );
+    update_roles(&session, &f.db, &communities, "gov-key", |roles| {
+        roles.push(9);
+    });
+    // The community store holds what the governance adapter reads (B2b).
+    {
+        let map = communities.map().read();
+        let stored = map.get("gov-key").expect("the membership is in the store");
+        assert_eq!(
+            stored.my_pseudonym_key.as_deref(),
+            Some("cd".repeat(32).as_str())
+        );
+        assert_eq!(stored.governance_clock, 13);
+        assert_eq!(stored.my_role_ids, vec![0, 7, 9]);
+        assert_eq!(stored.my_subkey_index, Some(3));
+        assert_eq!(stored.my_segment_index, Some(1));
+        assert_eq!(stored.slot_seed.as_deref(), Some("09".repeat(32).as_str()));
+        assert_eq!(stored.registry_owner_keypair.as_deref(), Some("reg-kp"));
+    }
     let o = owner.clone();
     db.call(move |conn| {
         rekindle_db::repo::friends::replace_with_invited(

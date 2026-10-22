@@ -25,6 +25,7 @@ impl HostGovernance {
         crate::host::session::record_channels(
             &self.ctx.session,
             &self.ctx.db,
+            &self.ctx.communities,
             community_id,
             &state,
         );
@@ -47,7 +48,12 @@ impl HostGovernance {
         &self,
         community_id: &str,
     ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        crate::host::session::next_clock(&self.ctx.session, &self.ctx.db, community_id)
+        crate::host::session::next_clock(
+            &self.ctx.session,
+            &self.ctx.db,
+            &self.ctx.communities,
+            community_id,
+        )
     }
 
     /// Record a freshly created community (origin flow).
@@ -81,6 +87,7 @@ impl HostGovernance {
             &self.ctx.session,
             &self.ctx.db,
             &self.ctx.vault,
+            &self.ctx.communities,
             crate::host::session::NewMembership {
                 membership,
                 dht_owner_keypair: community.dht_owner_keypair,
@@ -118,6 +125,7 @@ impl HostGovernance {
         crate::host::session::update_slot_and_roles(
             &self.ctx.session,
             &self.ctx.db,
+            &self.ctx.communities,
             community_id,
             subkey_index,
             role_ids,

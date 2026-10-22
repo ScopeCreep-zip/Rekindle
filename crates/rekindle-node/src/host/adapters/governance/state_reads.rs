@@ -45,15 +45,14 @@ impl HostGovernance {
     /// snapshot the runtime crate consumes.
     ///
     /// The two `CommunityMembership` types are deliberately distinct:
-    /// this one is the session projection's record with non-optional fields, the
+    /// this one is the membership record (read from the store) with non-optional fields, the
     /// other is the all-`Option` runtime view. Converting here is the
     /// adapter doing its job, not duplication to collapse.
     pub(super) fn community_membership_impl(
         &self,
         community_id: &str,
     ) -> Option<CommunityMembership> {
-        let guard = self.ctx.session.read();
-        let membership = guard.as_ref()?.communities.get(community_id)?;
+        let membership = &self.store_membership(community_id)?;
 
         // The slot keypair is derived, not stored: the seed plus our
         // global slot index reproduce it, and the seed is what lives in
@@ -97,11 +96,11 @@ impl HostGovernance {
     ///
     /// `ChannelCreated.record_key` is the canonical location: it is CRDT
     /// state every peer merged, so a joiner has it the moment the merge
-    /// lands. The session copy is a cache that only the creator's own
+    /// lands. The store's channel keys are a cache that only the creator's own
     /// `insert_community` seeds, which is why a joined community used to
     /// have an empty map and no way to send.
     ///
-    /// Session entries are folded in underneath rather than ignored —
+    /// Store entries are folded in underneath rather than ignored —
     /// they cover the window before the first merge completes.
     fn channel_record_keys_impl(
         &self,
@@ -158,14 +157,33 @@ impl HostGovernance {
     /// record and doubles as the map key, so unlike the desktop adapter
     /// there is no v1.0-legacy row to skip.
     pub(super) fn list_community_governance_targets_impl(&self) -> Vec<(String, String)> {
-        let guard = self.ctx.session.read();
-        let Some(session) = guard.as_ref() else {
-            return Vec::new();
-        };
-        session
+        self.store_memberships()
+            .into_iter()
+            .map(|m| (m.governance_key.clone(), m.governance_key))
+            .collect()
+    }
+
+    /// The membership of a joined community, read from the community store
+    /// (plan E3.1 B2: the store is authoritative on both modes).
+    pub(super) fn store_membership(&self, community_id: &str) -> Option<SessionMembership> {
+        self.ctx
             .communities
+            .map()
+            .read()
+            .get(community_id)
+            .filter(|c| c.my_pseudonym_key.is_some())
+            .map(super::loader::membership)
+    }
+
+    /// Every joined community's membership, from the store.
+    pub(super) fn store_memberships(&self) -> Vec<SessionMembership> {
+        self.ctx
+            .communities
+            .map()
+            .read()
             .values()
-            .map(|m| (m.governance_key.clone(), m.governance_key.clone()))
+            .filter(|c| c.my_pseudonym_key.is_some())
+            .map(super::loader::membership)
             .collect()
     }
 

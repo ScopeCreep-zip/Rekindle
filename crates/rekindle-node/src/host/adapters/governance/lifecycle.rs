@@ -118,13 +118,8 @@ impl HostGovernance {
     // ---------- Hydration ----------
 
     pub(super) fn list_communities_for_dht_open_impl(&self) -> Vec<CommunityDhtOpenSetup> {
-        let guard = self.ctx.session.read();
-        let Some(session) = guard.as_ref() else {
-            return Vec::new();
-        };
-        session
-            .communities
-            .values()
+        self.store_memberships()
+            .iter()
             .map(|m| {
                 // Under `o_cnt: 0` there is no registry owner; a member
                 // writes the registry and its channel slots with its derived
@@ -190,6 +185,7 @@ impl HostGovernance {
         crate::host::session::raise_clock(
             &self.ctx.session,
             &self.ctx.db,
+            &self.ctx.communities,
             community_id,
             accepted_clock,
         );

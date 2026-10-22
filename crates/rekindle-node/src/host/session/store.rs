@@ -4,7 +4,9 @@
 //! The governance adapter's trait methods are synchronous, so their
 //! database writes are queued in order on the database thread
 //! (`Db::fire`; a failure is logged). The vault is written directly, under
-//! its lock. Nothing is written while locked.
+//! its lock. Nothing is written while locked. Each change is mirrored into
+//! the Host community store, which the governance adapter reads (plan E3.1
+//! B2b).
 
 use parking_lot::RwLock;
 use rekindle_db::repo;
@@ -13,6 +15,8 @@ use rekindle_governance::state::{ChannelState, GovernanceState};
 use rekindle_transport::session::{CommunityMembership, Session};
 use rekindle_types::channel::ChannelKind;
 use rekindle_vault::{VaultHandle, VaultKey};
+
+use crate::host::community::CommunityStore;
 
 /// The unlocked identity's key and database, or `None` while locked.
 fn owner_and_db(
@@ -83,6 +87,7 @@ impl OwnedChannel {
 pub fn record_channels(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
+    communities: &CommunityStore,
     community_id: &str,
     state: &GovernanceState,
 ) -> bool {
@@ -111,6 +116,9 @@ pub fn record_channels(
                     .insert(channel.id.clone(), channel.record_key.clone());
                 changed = true;
             }
+        }
+        for channel in &channels {
+            communities.note_channel_record_key(community_id, &channel.id, &channel.record_key);
         }
         (changed, membership.mek_generation)
     };
@@ -148,6 +156,7 @@ pub fn record_channels(
 pub fn next_clock(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
+    communities: &CommunityStore,
     community_id: &str,
 ) -> Result<u64, rekindle_types::lamport::LamportError> {
     let next = {
@@ -161,6 +170,7 @@ pub fn next_clock(
         membership.lamport_counter = next;
         next
     };
+    communities.set_governance_clock(community_id, next);
     store_clock(session, db, community_id, next);
     Ok(next)
 }
@@ -169,6 +179,7 @@ pub fn next_clock(
 pub fn raise_clock(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
+    communities: &CommunityStore,
     community_id: &str,
     accepted: u64,
 ) {
@@ -186,6 +197,7 @@ pub fn raise_clock(
         }
     };
     if raised {
+        communities.set_governance_clock(community_id, accepted);
         store_clock(session, db, community_id, accepted);
     }
 }
@@ -205,6 +217,7 @@ fn store_clock(session: &RwLock<Option<Session>>, db: &DbHandle, community_id: &
 pub fn update_roles(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
+    communities: &CommunityStore,
     community_id: &str,
     f: impl FnOnce(&mut Vec<u32>),
 ) {
@@ -223,6 +236,7 @@ pub fn update_roles(
         }
         membership.role_ids.clone()
     };
+    communities.set_my_role_ids(community_id, &roles);
     if let Some((owner, db)) = owner_and_db(session, db) {
         let community = community_id.to_string();
         db.fire("my role ids", move |conn| {
@@ -235,6 +249,7 @@ pub fn update_roles(
 pub fn update_slot_and_roles(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
+    communities: &CommunityStore,
     community_id: &str,
     slot_index: u32,
     role_ids: &[u32],
@@ -255,6 +270,7 @@ pub fn update_slot_and_roles(
     if !changed {
         return;
     }
+    communities.set_slot_and_roles(community_id, slot_index, role_ids);
     if let Some((owner, db)) = owner_and_db(session, db) {
         let (community, roles) = (community_id.to_string(), role_ids.to_vec());
         db.fire("slot and roles", move |conn| {
@@ -292,6 +308,7 @@ pub fn record_membership(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
     vault: &VaultHandle,
+    communities: &CommunityStore,
     new: NewMembership,
 ) -> Result<(), String> {
     let (owner, db) = owner_and_db(session, db).ok_or("no identity is unlocked")?;
@@ -326,6 +343,11 @@ pub fn record_membership(
                 .map_err(|e| format!("registry keypair: {e}"))?;
         }
     }
+    communities.install_membership(
+        &membership,
+        dht_owner_keypair.as_deref(),
+        registry_keypair.as_deref(),
+    );
     let row = membership.clone();
     db.fire("community membership", move |conn| {
         repo::communities::insert(

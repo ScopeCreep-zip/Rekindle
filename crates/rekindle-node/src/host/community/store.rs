@@ -14,6 +14,7 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
+use rekindle_transport::session::CommunityMembership;
 
 use super::state::{CommunityState, MemberRecord};
 
@@ -222,6 +223,73 @@ impl CommunityStore {
         });
     }
 
+    /// Apply `f` to a joined community's entry; nothing when it is not in
+    /// the store (a membership change for a community we left).
+    fn update(&self, community_id: &str, f: impl FnOnce(&mut CommunityState)) {
+        if let Some(entry) = self.map.write().get_mut(community_id) {
+            f(entry);
+        }
+    }
+
+    /// Install a recorded membership (plan E3.1 B2b): our pseudonym, slot,
+    /// segment, slot seed, registry, roles, clock and MEK generation, and
+    /// the owner keypairs a created community has, so the governance
+    /// adapter's readers find the community in the store the moment the
+    /// create or join records it. Merges into an entry an earlier write
+    /// (the governance cache) made.
+    pub fn install_membership(
+        &self,
+        membership: &CommunityMembership,
+        dht_owner_keypair: Option<&str>,
+        registry_owner_keypair: Option<&str>,
+    ) {
+        self.write(&membership.governance_key, |c| {
+            c.name.clone_from(&membership.community_name);
+            c.my_pseudonym_key = Some(membership.pseudonym_key.clone());
+            c.my_role_ids.clone_from(&membership.role_ids);
+            c.member_registry_key =
+                (!membership.registry_key.is_empty()).then(|| membership.registry_key.clone());
+            c.my_subkey_index = Some(membership.slot_index);
+            c.my_segment_index = membership.segment_index;
+            c.slot_seed = membership.slot_seed.as_ref().map(hex::encode);
+            c.governance_clock = c.governance_clock.max(membership.lamport_counter);
+            c.mek_generation = membership.mek_generation;
+            if let Some(keypair) = dht_owner_keypair {
+                c.dht_owner_keypair = Some(keypair.to_string());
+            }
+            if let Some(keypair) = registry_owner_keypair {
+                c.registry_owner_keypair = Some(keypair.to_string());
+            }
+            for (channel_id, record_key) in &membership.channel_record_keys {
+                note_record_key(c, channel_id, record_key);
+            }
+        });
+    }
+
+    /// Our governance clock, as the session advanced or raised it.
+    pub fn set_governance_clock(&self, community_id: &str, clock: u64) {
+        self.update(community_id, |c| c.governance_clock = clock);
+    }
+
+    /// Our role ids, as the session changed them.
+    pub fn set_my_role_ids(&self, community_id: &str, role_ids: &[u32]) {
+        self.update(community_id, |c| c.my_role_ids = role_ids.to_vec());
+    }
+
+    /// The slot index and role ids the registry knows for us.
+    pub fn set_slot_and_roles(&self, community_id: &str, slot_index: u32, role_ids: &[u32]) {
+        self.update(community_id, |c| {
+            c.my_subkey_index = Some(slot_index);
+            c.my_role_ids = role_ids.to_vec();
+        });
+    }
+
+    /// A channel's record key merged governance gave it, onto the channel
+    /// the store holds (insert-only, as the session records it).
+    pub fn note_channel_record_key(&self, community_id: &str, channel_id: &str, record_key: &str) {
+        self.update(community_id, |c| note_record_key(c, channel_id, record_key));
+    }
+
     /// Drop a community — on leave.
     pub fn remove(&self, community_id: &str) {
         self.map.write().remove(community_id);
@@ -230,5 +298,14 @@ impl CommunityStore {
     /// Drop every community. Called when the session ends.
     pub fn clear(&self) {
         self.map.write().clear();
+    }
+}
+
+/// Set a channel's record key when the store holds the channel without one.
+fn note_record_key(state: &mut CommunityState, channel_id: &str, record_key: &str) {
+    if let Some(channel) = state.channels.iter_mut().find(|c| c.id == channel_id) {
+        if channel.message_record_key.is_none() {
+            channel.message_record_key = Some(record_key.to_string());
+        }
     }
 }

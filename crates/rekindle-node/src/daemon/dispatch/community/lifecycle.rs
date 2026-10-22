@@ -204,6 +204,7 @@ pub(crate) async fn handle_join(
         &ctx.session,
         &ctx.db,
         &ctx.vault,
+        &ctx.communities,
         crate::host::session::NewMembership {
             membership,
             dht_owner_keypair: None,

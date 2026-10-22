@@ -107,6 +107,12 @@ impl HostGovernance {
 
     /// Apply `f` to our stored role list.
     fn mutate_my_roles(&self, community_id: &str, f: impl FnOnce(&mut Vec<u32>)) {
-        crate::host::session::update_roles(&self.ctx.session, &self.ctx.db, community_id, f);
+        crate::host::session::update_roles(
+            &self.ctx.session,
+            &self.ctx.db,
+            &self.ctx.communities,
+            community_id,
+            f,
+        );
     }
 }
