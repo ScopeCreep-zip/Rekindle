@@ -20,9 +20,6 @@ pub(crate) async fn handle_send(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    if reply_to.is_some() {
-        return IpcResponse::error(400, "replies are sent with threads (plan E3.1 E3)");
-    }
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
@@ -30,7 +27,7 @@ pub(crate) async fn handle_send(
     let Some((_, channel_id)) = resolve_channel(ctx, &membership.governance_key, channel) else {
         return IpcResponse::error(404, format!("channel '{channel}' not found"));
     };
-    post(ctx, &membership.governance_key, &channel_id, body).await
+    post(ctx, &membership.governance_key, &channel_id, body, reply_to).await
 }
 
 /// Post `body` to `channel` (a channel id; plan E3.1 E2b).
@@ -48,18 +45,20 @@ pub(crate) async fn handle_post(
     else {
         return IpcResponse::error(404, format!("channel '{channel}' not found"));
     };
-    post(ctx, &community_id, channel, body).await
+    post(ctx, &community_id, channel, body, None).await
 }
 
-/// The Host's channel send, on both modes: the post's state and id.
+/// The Host's channel send, on both modes, as a reply to the message at
+/// sequence `reply_to` when given: the post's state and id.
 async fn post(
     ctx: &DaemonContext,
     community_id: &str,
     channel_id: &str,
     body: &str,
+    reply_to: Option<u64>,
 ) -> IpcResponse {
     let channel = crate::host::adapters::channel::HostChannel::new(ctx);
-    match channel.send(community_id, channel_id, body).await {
+    match channel.send(community_id, channel_id, body, reply_to).await {
         Ok(sent) => {
             ctx.communities
                 .mark_channel_synced(community_id, channel_id);

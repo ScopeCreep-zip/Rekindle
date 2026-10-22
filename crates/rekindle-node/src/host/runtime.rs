@@ -210,10 +210,14 @@ impl Host {
 
         let friend_host: Arc<std::sync::OnceLock<std::sync::Weak<DaemonContext>>> =
             Arc::new(std::sync::OnceLock::new());
+        // One subscription-manager slot for the context and the inbound
+        // handler: the handler routes what the transport receives to the
+        // manager the unlock installs in the context.
+        let subscriptions = Arc::new(RwLock::new(None));
         let daemon_handler = || {
             let handler_transport = Arc::new(RwLock::new(None));
             let handler = Arc::new(DaemonHandler::new(
-                Arc::new(RwLock::new(None)),
+                Arc::clone(&subscriptions),
                 Arc::clone(&stores.session),
                 Arc::clone(&mek_cache),
                 Arc::clone(&signing_key),
@@ -301,7 +305,7 @@ impl Host {
             policy: RwLock::new(policy),
             config_dir: root.config.clone(),
             audit_chain: Arc::clone(&stores.audit_chain),
-            subscriptions: RwLock::new(None),
+            subscriptions,
             broadcast_mgr: RwLock::new(None),
             write_lane: tokio::sync::RwLock::new(()),
             subscriber_heartbeat: crate::daemon::heartbeat::Heartbeat::new(

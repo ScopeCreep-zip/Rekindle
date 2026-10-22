@@ -131,6 +131,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
     community_id: &str,
     channel_id: &str,
     body: &str,
+    reply_to: Option<u64>,
 ) -> Result<ChannelSendResult, ChannelError> {
     let timestamp_ms = i64::try_from(rekindle_utils::timestamp_secs() * 1000).unwrap_or(i64::MAX);
 
@@ -194,6 +195,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         timestamp_ms,
         lamport_ts,
         message_id: message_id.clone(),
+        reply_to,
         mention_flag_bits: mention_flags,
         mentioned_pseudonyms,
         mentioned_roles,

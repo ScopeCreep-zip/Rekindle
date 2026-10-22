@@ -74,6 +74,7 @@ pub async fn reissue_channel_post<D: ChannelMessagingDeps>(
         timestamp_ms,
         lamport_ts,
         message_id: post.message.clone(),
+        reply_to: None,
         mention_flag_bits: mention_flags,
         mentioned_pseudonyms,
         mentioned_roles,

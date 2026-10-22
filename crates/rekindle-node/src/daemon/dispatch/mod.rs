@@ -133,8 +133,10 @@ pub struct DaemonContext {
     /// (`host::audit`); `None` while locked, when nothing is written.
     pub audit_chain: std::sync::Arc<crate::host::audit::ChainSlot>,
     /// Consolidated inbound event manager (watch + gossip + poll → dedup → emit).
-    /// None before unlock/resume. Created during Resuming transition.
-    pub subscriptions: RwLock<Option<rekindle_transport::SubscriptionManager>>,
+    /// None before unlock/resume. Created during Resuming transition. The
+    /// transport's inbound handler holds the same slot, so the gossip and
+    /// value changes it receives reach the manager installed here.
+    pub subscriptions: std::sync::Arc<RwLock<Option<rekindle_transport::SubscriptionManager>>>,
     /// Consolidated outbound broadcast manager (gossip mesh + rate limiting).
     /// None before unlock/resume. Created during Resuming transition.
     pub broadcast_mgr: RwLock<Option<rekindle_transport::BroadcastManager>>,

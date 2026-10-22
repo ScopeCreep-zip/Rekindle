@@ -255,7 +255,13 @@ pub fn resolve_to_wire<D: ChannelMessagingDeps>(
     community_id: &str,
     matches: &MentionMatches,
 ) -> (Vec<String>, Vec<String>, bool, bool) {
-    let profiles = deps.list_member_profiles(community_id);
+    // In pseudonym order, so a display name two members share resolves to
+    // the same member on every send (the map's order is not defined).
+    let mut profiles: Vec<_> = deps
+        .list_member_profiles(community_id)
+        .into_iter()
+        .collect();
+    profiles.sort_unstable_by(|a, b| a.0.cmp(&b.0));
     let mut pseudonyms: Vec<String> = Vec::new();
     for member_name in &matches.members {
         for (pseudonym_hex, profile) in &profiles {

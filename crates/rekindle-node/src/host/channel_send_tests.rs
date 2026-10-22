@@ -7,31 +7,51 @@ use rekindle_governance::state::GovernanceState;
 
 use super::{create_ann, offline_host, seed_registry_community};
 use crate::host::adapters::channel::{refusal, HostChannel};
-use crate::host::community::state::ChannelInfo;
 use crate::host::Host;
 
 const CHANNEL: &str = "0123456789abcdef0123456789abcdef";
 
 /// A text channel in Ann's `c1`, with its record key, its slowmode and our
-/// last send in it; the merged governance grants nobody anything.
-fn add_channel(host: &Host, slowmode_seconds: Option<u32>, last_send_ms: Option<i64>) {
-    let channel: ChannelInfo = serde_json::from_value(serde_json::json!({
-        "id": CHANNEL,
-        "name": "general",
-        "channelType": "text",
-        "unreadCount": 0,
-        "slowmodeSeconds": slowmode_seconds,
-    }))
-    .expect("a channel");
-    {
-        let mut map = host.ctx.communities.map().write();
-        let community = map.get_mut("c1").expect("the community");
-        community.channels.push(channel);
-        (community.channel_log_keys).insert(CHANNEL.into(), "VLD0:channel".into());
-        if let Some(at) = last_send_ms {
-            community.channel_last_send_at.insert(CHANNEL.into(), at);
-        }
-    }
+/// last send in it, stored as a join stores them and loaded into the
+/// community store by the unlock's restore (which derives our pseudonym);
+/// the merged governance grants nobody anything.
+async fn add_channel(
+    host: &Host,
+    owner: &str,
+    slowmode_seconds: Option<u32>,
+    last_send_ms: Option<i64>,
+) {
+    let o = owner.to_string();
+    (host.ctx.db.current().unwrap())
+        .call(move |conn| {
+            rekindle_db::repo::channels::insert(
+                conn,
+                &o,
+                "c1",
+                &rekindle_db::repo::channels::StoredChannel {
+                    id: CHANNEL,
+                    name: "general",
+                    channel_type: "text",
+                    category_id: None,
+                    topic: "",
+                    slowmode_seconds: slowmode_seconds.unwrap_or(0),
+                    nsfw: false,
+                    message_record_key: Some("VLD0:channel"),
+                    mek_generation: 0,
+                    parent_voice_channel_id: None,
+                },
+            )?;
+            match last_send_ms {
+                Some(at) => rekindle_db::repo::channels::set_last_send(conn, &o, "c1", CHANNEL, at),
+                None => Ok(()),
+            }
+        })
+        .await
+        .unwrap();
+    let secret = host.ctx.identity_secret().expect("an unlocked identity");
+    crate::host::adapters::governance::loader::restore(&host.ctx, owner, &secret)
+        .await
+        .unwrap();
     (host.ctx.communities).set_governance_state("c1", GovernanceState::default());
 }
 
@@ -57,9 +77,9 @@ async fn a_send_without_send_messages_is_refused() {
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
-    add_channel(&host, None, None);
+    add_channel(&host, &owner, None, None).await;
     let refused = HostChannel::new(&host.ctx)
-        .send("c1", CHANNEL, "hello")
+        .send("c1", CHANNEL, "hello", None)
         .await
         .unwrap_err();
     assert!(
@@ -78,7 +98,7 @@ async fn a_send_inside_the_slowmode_is_refused() {
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
     let now = host.ctx.clock.now_ms_i64();
-    add_channel(&host, Some(30), Some(now - 1_000));
+    add_channel(&host, &owner, Some(30), Some(now - 1_000)).await;
     let channel = HostChannel::new(&host.ctx);
     let refused =
         rekindle_channel::enforce_slowmode_with_bypass(&channel, "c1", CHANNEL, now).unwrap_err();

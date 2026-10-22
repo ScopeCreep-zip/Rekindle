@@ -68,7 +68,8 @@ impl HostChannel {
         Ok((owner, db))
     }
 
-    /// Send `body` to `channel_id` of `community_id`: the pipeline seals it,
+    /// Send `body` to `channel_id` of `community_id`, as a reply to the
+    /// message at sequence `reply_to` when given: the pipeline seals it,
     /// stores our row, writes our slot of the channel record, gossips the
     /// notification and queues the post on the outbox.
     ///
@@ -79,8 +80,9 @@ impl HostChannel {
         community_id: &str,
         channel_id: &str,
         body: &str,
+        reply_to: Option<u64>,
     ) -> Result<ChannelSendResult, ChannelError> {
-        rekindle_channel::send_channel_message(self, community_id, channel_id, body).await
+        rekindle_channel::send_channel_message(self, community_id, channel_id, body, reply_to).await
     }
 }
 

@@ -80,6 +80,7 @@ mod tests {
             timestamp_ms: 0,
             lamport_ts: 0,
             message_id: "msg".into(),
+            reply_to: None,
             mention_flag_bits: flags,
             mentioned_pseudonyms: pseudos,
             mentioned_roles: roles,

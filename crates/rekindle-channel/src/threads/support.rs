@@ -150,6 +150,7 @@ pub(super) fn build_thread_message<D: ChannelMessagingDeps>(
         timestamp_ms: i64::try_from(timestamp_ms).unwrap_or(i64::MAX),
         lamport_ts,
         message_id: format!("tmsg_{}", uuid_simple()),
+        reply_to: None,
         mention_flag_bits: mention_flags,
         mentioned_pseudonyms,
         mentioned_roles,
