@@ -34,7 +34,10 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
         CommunityRequest::GameServerList { community: key }
-        | CommunityRequest::CommunityPolicyGet { community: key } => community(key),
+        | CommunityRequest::CommunityPolicyGet { community: key }
+        | CommunityRequest::OnboardingConfigGet { community: key }
+        | CommunityRequest::WelcomeScreenGet { community: key }
+        | CommunityRequest::OnboardingComplete { community: key } => community(key),
         CommunityRequest::CommunityUpdateProfile {
             community: key,
             bio,
@@ -109,31 +112,19 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
         | CommunityRequest::EventCancel { .. }
         | CommunityRequest::EventDelete { .. }
         | CommunityRequest::EventRsvp { .. } => super::community_events::check(request),
-        CommunityRequest::OnboardingConfigGet { community: key }
-        | CommunityRequest::WelcomeScreenGet { community: key }
-        | CommunityRequest::OnboardingComplete { community: key } => community(key),
         CommunityRequest::OnboardingConfigSet {
             community: key,
             config,
-        } => {
-            community(key)?;
-            within_bounds(onboarding_map::config_entry(config, 0))
-        }
+        } => community(key).and_then(|()| within_bounds(onboarding_map::config_entry(config, 0))),
         CommunityRequest::WelcomeScreenSet {
             community: key,
             screen,
-        } => {
-            community(key)?;
-            within_bounds(onboarding_map::welcome_entry(screen, 0))
-        }
+        } => community(key).and_then(|()| within_bounds(onboarding_map::welcome_entry(screen, 0))),
         CommunityRequest::OnboardingSubmit {
             community: key,
             answers,
             ..
-        } => {
-            community(key)?;
-            onboarding_answers(answers)
-        }
+        } => community(key).and_then(|()| onboarding_answers(answers)),
         CommunityRequest::GameServerAdd {
             community: key,
             game_id,

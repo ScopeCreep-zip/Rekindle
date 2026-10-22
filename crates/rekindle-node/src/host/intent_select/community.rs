@@ -55,44 +55,6 @@ pub(super) async fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        CommunityRequest::CommunityUpdateProfile {
-            community: target, ..
-        }
-        | CommunityRequest::CommunitySetAvatar {
-            community: target, ..
-        }
-        | CommunityRequest::CommunitySetBanner {
-            community: target, ..
-        } => {
-            let (id, name) = community(ctx, target)?;
-            s.reversibility = Reversibility::Undoable;
-            s.subject = Subject::Community { id, name };
-        }
-        CommunityRequest::CommunityPolicySet {
-            community: target, ..
-        } => {
-            let (id, name) = community(ctx, target)?;
-            s.reversibility = Reversibility::Undoable;
-            s.notifies = members(ctx, &id);
-            s.subject = Subject::Community { id, name };
-        }
-        CommunityRequest::OnboardingConfigSet {
-            community: target, ..
-        }
-        | CommunityRequest::WelcomeScreenSet {
-            community: target, ..
-        } => {
-            let (id, name) = community(ctx, target)?;
-            s.notifies = members(ctx, &id);
-            s.subject = Subject::Community { id, name };
-        }
-        CommunityRequest::OnboardingSubmit {
-            community: target, ..
-        }
-        | CommunityRequest::OnboardingComplete { community: target } => {
-            let (id, name) = community(ctx, target)?;
-            s.subject = Subject::Community { id, name };
-        }
         CommunityRequest::CommunityApprove {
             governance_key,
             member_pseudonym,
@@ -482,4 +444,58 @@ fn pseudonym(hex_key: &str) -> Option<rekindle_types::id::PseudonymKey> {
         .ok()
         .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
         .map(rekindle_types::id::PseudonymKey)
+}
+
+/// Fill `s` for a community settings request: its profile, pictures,
+/// policy, onboarding flow, welcome screen and our onboarding.
+///
+/// # Errors
+/// The community is not joined.
+pub(super) fn settings_selection(
+    ctx: &DaemonContext,
+    request: &CommunityRequest,
+    s: &mut Selection,
+) -> Result<(), IpcResponse> {
+    match request {
+        CommunityRequest::CommunityUpdateProfile {
+            community: target, ..
+        }
+        | CommunityRequest::CommunitySetAvatar {
+            community: target, ..
+        }
+        | CommunityRequest::CommunitySetBanner {
+            community: target, ..
+        } => {
+            let (id, name) = community(ctx, target)?;
+            s.reversibility = Reversibility::Undoable;
+            s.subject = Subject::Community { id, name };
+        }
+        CommunityRequest::CommunityPolicySet {
+            community: target, ..
+        } => {
+            let (id, name) = community(ctx, target)?;
+            s.reversibility = Reversibility::Undoable;
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
+        }
+        CommunityRequest::OnboardingConfigSet {
+            community: target, ..
+        }
+        | CommunityRequest::WelcomeScreenSet {
+            community: target, ..
+        } => {
+            let (id, name) = community(ctx, target)?;
+            s.notifies = members(ctx, &id);
+            s.subject = Subject::Community { id, name };
+        }
+        CommunityRequest::OnboardingSubmit {
+            community: target, ..
+        }
+        | CommunityRequest::OnboardingComplete { community: target } => {
+            let (id, name) = community(ctx, target)?;
+            s.subject = Subject::Community { id, name };
+        }
+        _ => {}
+    }
+    Ok(())
 }

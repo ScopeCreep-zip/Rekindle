@@ -1,7 +1,7 @@
 //! A community's onboarding and welcome-screen requests (plan E3.1 D3),
 //! answered by the Host's governance adapter on both hosts.
 
-use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::dto::onboarding::{OnboardingConfigDto, WelcomeScreenDto};
 use rekindle_types::presence::OnboardingAnswer;
 
@@ -113,5 +113,37 @@ pub(crate) async fn handle_complete(
                 .await,
         ),
         Err(e) => e,
+    }
+}
+
+/// Route an onboarding or welcome-screen request (the community router's
+/// onboarding arm) to its handler.
+pub(crate) async fn route(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: CommunityRequest,
+) -> IpcResponse {
+    match request {
+        CommunityRequest::OnboardingConfigGet { community } => {
+            handle_config_get(ctx, state, &community)
+        }
+        CommunityRequest::OnboardingConfigSet { community, config } => {
+            handle_config_set(ctx, state, &community, &config).await
+        }
+        CommunityRequest::WelcomeScreenGet { community } => {
+            handle_welcome_get(ctx, state, &community)
+        }
+        CommunityRequest::WelcomeScreenSet { community, screen } => {
+            handle_welcome_set(ctx, state, &community, &screen).await
+        }
+        CommunityRequest::OnboardingSubmit {
+            community,
+            answers,
+            acknowledged_rules,
+        } => handle_submit(ctx, state, &community, answers, acknowledged_rules).await,
+        CommunityRequest::OnboardingComplete { community } => {
+            handle_complete(ctx, state, &community).await
+        }
+        _ => IpcResponse::error(400, "not an onboarding request"),
     }
 }

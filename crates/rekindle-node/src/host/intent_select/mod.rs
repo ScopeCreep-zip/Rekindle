@@ -147,18 +147,18 @@ pub(crate) async fn select(
             | CommunityRequest::Timeout { .. }
             | CommunityRequest::TimeoutRemove { .. }
             | CommunityRequest::InviteCreate { .. }
-            | CommunityRequest::InviteRevoke { .. }
-            | CommunityRequest::CommunityUpdateProfile { .. }
-            | CommunityRequest::CommunitySetAvatar { .. }
-            | CommunityRequest::CommunitySetBanner { .. }
-            | CommunityRequest::CommunityPolicySet { .. }),
+            | CommunityRequest::InviteRevoke { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
-            request @ (CommunityRequest::OnboardingConfigSet { .. }
+            request @ (CommunityRequest::CommunityUpdateProfile { .. }
+            | CommunityRequest::CommunitySetAvatar { .. }
+            | CommunityRequest::CommunitySetBanner { .. }
+            | CommunityRequest::CommunityPolicySet { .. }
+            | CommunityRequest::OnboardingConfigSet { .. }
             | CommunityRequest::WelcomeScreenSet { .. }
             | CommunityRequest::OnboardingSubmit { .. }
             | CommunityRequest::OnboardingComplete { .. }),
-        ) => community::selection(ctx, request, &mut s).await?,
+        ) => community::settings_selection(ctx, request, &mut s)?,
         IpcRequest::Community(
             request @ (CommunityRequest::GameServerAdd { .. }
             | CommunityRequest::GameServerRemove { .. }),
