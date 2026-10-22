@@ -109,6 +109,10 @@ pub(super) async fn route(
         | CommunityRequest::ChannelSetActive { .. }) => {
             channel_message_ops::handle(ctx, state, request).await
         }
+        request @ (CommunityRequest::ChannelMessages { .. }
+        | CommunityRequest::ChannelMessagesBefore { .. }) => {
+            channel_message::handle_read(ctx, state, request).await
+        }
 
         // ── Governance (roles, moderation, invites) ──────────────
         // ── Profile, pictures and policy (plan E3.1 D4) ──────────

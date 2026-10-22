@@ -261,6 +261,8 @@ pub(crate) async fn select(
             | CommunityRequest::ChannelHistory { .. }
             | CommunityRequest::ChannelTyping { .. }
             | CommunityRequest::ChannelSetActive { .. }
+            | CommunityRequest::ChannelMessages { .. }
+            | CommunityRequest::ChannelMessagesBefore { .. }
             | CommunityRequest::MekList { .. }
             | CommunityRequest::MekRequest { .. }
             | CommunityRequest::RoleList { .. }

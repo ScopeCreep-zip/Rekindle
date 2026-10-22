@@ -148,6 +148,23 @@ impl CommunityRequest {
                 .field("channel", channel)
                 .field("limit", limit)
                 .finish(),
+            Self::ChannelMessages { channel, limit } => f
+                .debug_struct("ChannelMessages")
+                .field("channel", channel)
+                .field("limit", limit)
+                .finish(),
+            Self::ChannelMessagesBefore {
+                community,
+                channel,
+                before_timestamp,
+                limit,
+            } => f
+                .debug_struct("ChannelMessagesBefore")
+                .field("community", community)
+                .field("channel", channel)
+                .field("before_timestamp", before_timestamp)
+                .field("limit", limit)
+                .finish(),
             Self::MekList { community } => f
                 .debug_struct("MekList")
                 .field("community", community)

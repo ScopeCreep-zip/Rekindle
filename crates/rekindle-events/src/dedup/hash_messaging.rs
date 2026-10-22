@@ -44,6 +44,21 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(b"|");
             h.update(message_id.as_bytes());
         }
+        ChannelMessageEvent::ChannelSendStatus {
+            community,
+            channel,
+            message_id,
+            state,
+        } => {
+            h.update(b"channel_send_status|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(message_id.as_bytes());
+            h.update(b"|");
+            h.update(state.as_str().as_bytes());
+        }
         ChannelMessageEvent::DirectMessageReceived {
             peer_key,
             timestamp,

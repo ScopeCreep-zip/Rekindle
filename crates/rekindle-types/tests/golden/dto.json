@@ -20,6 +20,52 @@
     "length": 12,
     "state": "intact"
   },
+  "channel.message": {
+    "attachment": {
+      "attachmentId": "att_1",
+      "chunkCount": 1,
+      "downloaded": false,
+      "filename": "a.png",
+      "mimeType": "image/png",
+      "totalSize": 10
+    },
+    "automodBlurred": false,
+    "body": "hello channel",
+    "decryptionFailed": false,
+    "flags": 0,
+    "id": 7,
+    "isOwn": false,
+    "poll": {
+      "answers": [
+        {
+          "index": 0,
+          "text": "A",
+          "voteCount": 1,
+          "voters": [
+            "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          ]
+        }
+      ],
+      "closed": false,
+      "multiSelect": false,
+      "pollId": "00000000000000000000000000000000",
+      "question": "Pick one",
+      "selectedAnswers": []
+    },
+    "reactions": [
+      {
+        "count": 1,
+        "emoji": "+1",
+        "reactors": [
+          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        ]
+      }
+    ],
+    "sendState": "delivered",
+    "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "serverMessageId": "msg_1",
+    "timestamp": 1760000000
+  },
   "command.done": {
     "undo": null,
     "value": null

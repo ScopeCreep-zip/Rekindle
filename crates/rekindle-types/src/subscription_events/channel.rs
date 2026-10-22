@@ -46,6 +46,17 @@ pub enum ChannelMessageEvent {
         channel: String,
         message_id: String,
     },
+    /// Our own post changed delivery state (plan E3.1 E2c): `sent` when
+    /// its slot of the channel record settled at consensus, `failed` when
+    /// the network superseded our page without it (a resend merges it
+    /// back). Every window renders the state it names.
+    /// Triggered by: the record pool settling the post's write.
+    ChannelSendStatus {
+        community: String,
+        channel: String,
+        message_id: String,
+        state: crate::message::SendState,
+    },
     /// A new DM was received from a peer.
     ///
     /// Triggered by: an inbound 1:1 `DirectMessage` via `InboundHandler::on_direct`.

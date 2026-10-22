@@ -2,6 +2,7 @@
 //! frontend renders, in one camelCase shape, pinned by the DTO golden test.
 
 pub mod audit;
+pub mod channel_message;
 pub mod command;
 pub mod community;
 pub mod dm;

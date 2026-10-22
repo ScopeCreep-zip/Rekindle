@@ -146,9 +146,7 @@ impl shell_hooks::ShellHooks for Recorder {
     }
     fn spawn_presence_poll_tick(&self, _community_id: &str) {}
 
-    fn channel_echo(&self, _echo: &rekindle_channel::deps::SentChannelMessageEcho) {}
 
-    fn channel_post_settled(&self, _: &str, _: &str, _: &str, _: bool) {}
 
     fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
 
@@ -248,9 +246,7 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
         }
         fn spawn_presence_poll_tick(&self, _community_id: &str) {}
 
-        fn channel_echo(&self, _echo: &rekindle_channel::deps::SentChannelMessageEcho) {}
 
-        fn channel_post_settled(&self, _: &str, _: &str, _: &str, _: bool) {}
 
         fn spawn_community_mek_recovery(&self, _community_id: &str, _requester_pseudonym: &str) {}
 

@@ -123,6 +123,16 @@
       }
     }
   },
+  "channelMessage.channelSendStatus": {
+    "channelMessage": {
+      "channelSendStatus": {
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_11111111111111111111111111111111",
+        "state": "sent"
+      }
+    }
+  },
   "channelMessage.conversationFocusRequested": {
     "channelMessage": {
       "conversationFocusRequested": {

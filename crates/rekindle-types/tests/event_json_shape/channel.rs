@@ -8,6 +8,7 @@ pub const NAMES: &[&str] = &[
     "new",
     "edited",
     "deleted",
+    "channelSendStatus",
     "directMessageReceived",
     "dmSendStatus",
     "dmHistoryGap",
@@ -19,6 +20,7 @@ pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
         ChannelMessageEvent::New { .. } => "new",
         ChannelMessageEvent::Edited { .. } => "edited",
         ChannelMessageEvent::Deleted { .. } => "deleted",
+        ChannelMessageEvent::ChannelSendStatus { .. } => "channelSendStatus",
         ChannelMessageEvent::DirectMessageReceived { .. } => "directMessageReceived",
         ChannelMessageEvent::DmSendStatus { .. } => "dmSendStatus",
         ChannelMessageEvent::DmHistoryGap { .. } => "dmHistoryGap",
@@ -79,6 +81,15 @@ pub fn samples() -> Vec<Sample> {
                 server_message_id: Some(id("dm_", '2')),
                 reply_to_id: Some(id("dm_", '3')),
                 is_own: false,
+            },
+        ),
+        ev(
+            "channelSendStatus",
+            ChannelMessageEvent::ChannelSendStatus {
+                community: community(),
+                channel: channel(),
+                message_id: id("msg_", '1'),
+                state: rekindle_types::message::SendState::Sent,
             },
         ),
         ev(

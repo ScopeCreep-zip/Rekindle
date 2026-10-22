@@ -81,6 +81,50 @@ fn samples() -> Map<String, Value> {
         assert!(out.insert(id.to_owned(), value).is_none(), "duplicate {id}");
     };
     add(
+        "channel.message",
+        to(rekindle_types::dto::channel_message::ChannelMessage {
+            id: 7,
+            sender_id: pk('b'),
+            body: "hello channel".into(),
+            decryption_failed: false,
+            automod_blurred: false,
+            timestamp: 1_760_000_000,
+            is_own: false,
+            server_message_id: Some("msg_1".into()),
+            reactions: Some(vec![rekindle_types::dto::channel_message::ReactionGroup {
+                emoji: "+1".into(),
+                count: 1,
+                reactors: vec![pk('c')],
+            }]),
+            pinned: None,
+            poll: Some(rekindle_types::dto::channel_message::MessagePoll {
+                poll_id: "00".repeat(16),
+                question: "Pick one".into(),
+                answers: vec![rekindle_types::dto::channel_message::MessagePollAnswer {
+                    index: 0,
+                    text: "A".into(),
+                    vote_count: 1,
+                    voters: vec![pk('c')],
+                }],
+                multi_select: false,
+                expires_at: None,
+                closed: false,
+                selected_answers: vec![],
+            }),
+            forwarded_from_author: None,
+            attachment: Some(rekindle_types::dto::channel_message::MessageAttachment {
+                attachment_id: "att_1".into(),
+                filename: "a.png".into(),
+                mime_type: "image/png".into(),
+                total_size: 10,
+                chunk_count: 1,
+                downloaded: false,
+            }),
+            flags: 0,
+            send_state: rekindle_types::message::SendState::Delivered,
+        }),
+    );
+    add(
         "identity.summary",
         to(IdentitySummary {
             public_key: pk('a'),

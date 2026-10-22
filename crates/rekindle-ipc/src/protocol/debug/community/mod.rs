@@ -51,6 +51,8 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::ChannelSetActive { .. }
             | Self::ChannelMessageSend { .. }
             | Self::ChannelHistory { .. }
+            | Self::ChannelMessages { .. }
+            | Self::ChannelMessagesBefore { .. }
             | Self::MekList { .. }
             | Self::MekRotate { .. }
             | Self::MekRequest { .. } => self.fmt_channels(f),

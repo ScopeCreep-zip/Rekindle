@@ -1,4 +1,5 @@
-//! Channel message handlers: Send, History, and the writer slots a read covers.
+//! Channel message handlers: Send, History, the history reads, and the
+//! writer slots a read covers.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -210,5 +211,55 @@ pub(crate) async fn handle(
             message_id,
         } => handle_change(ctx, state, &channel, &message_id, MessageChange::Delete).await,
         _ => IpcResponse::error(400, "not a channel message request"),
+    }
+}
+
+/// Read a page of a channel's history (plan E3.1 E2c): the router's arm
+/// for `ChannelMessages` and `ChannelMessagesBefore`.
+pub(crate) async fn handle_read(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: CommunityRequest,
+) -> IpcResponse {
+    if !state.can_query() {
+        return state_error(state, "query");
+    }
+    let (community_id, channel, before, limit) = match request {
+        CommunityRequest::ChannelMessages { channel, limit } => {
+            let Some(community_id) =
+                crate::host::adapters::governance::channel_messages::community_of_channel(
+                    ctx, &channel,
+                )
+            else {
+                return IpcResponse::error(404, format!("channel '{channel}' not found"));
+            };
+            (community_id, channel, None, limit)
+        }
+        CommunityRequest::ChannelMessagesBefore {
+            community,
+            channel,
+            before_timestamp,
+            limit,
+        } => match ctx.resolve_community(&community) {
+            Ok(membership) => (membership.governance_key, channel, Some(before_timestamp), limit),
+            Err(e) => return e,
+        },
+        _ => return IpcResponse::error(400, "not a channel history request"),
+    };
+    let channel_adapter = crate::host::adapters::channel::HostChannel::new(ctx);
+    match channel_adapter
+        .history(&community_id, &channel, before, limit)
+        .await
+    {
+        Ok(messages) => IpcResponse::ok(&messages),
+        Err(e) => {
+            let code = match e {
+                rekindle_channel::error::ChannelError::PermissionDenied(_) => 403,
+                rekindle_channel::error::ChannelError::ChannelNotFound(_)
+                | rekindle_channel::error::ChannelError::CommunityNotFound(_) => 404,
+                _ => 500,
+            };
+            IpcResponse::error(code, format!("channel history: {e}"))
+        }
     }
 }

@@ -150,21 +150,6 @@ pub trait ShellHooks: Send + Sync {
     /// adapters move at E3.5.
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
 
-    /// The echo of our own channel post, in the shape the GUI's windows
-    /// read (`ChatEvent`) until they read the Host's `ChannelMessageEvent`
-    /// at E3.1 E2c.
-    fn channel_echo(&self, echo: &rekindle_channel::deps::SentChannelMessageEcho);
-
-    /// Our channel post `message_id` settled (`landed`, else failed), in
-    /// the shape the GUI's windows read until E3.1 E2c.
-    fn channel_post_settled(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        message_id: &str,
-        landed: bool,
-    );
-
     /// The governance runtime handed over a community's session leases:
     /// the shell holds them, watches the records and starts the community's
     /// inspect, presence and keepalive loops once. Ported when the leases

@@ -1,11 +1,11 @@
-//! The pipeline's events: the echo of our own post and its delivery state.
-//! The GUI's windows still read its legacy shapes, so the shell gets them
-//! through [`ShellHooks`](crate::host::shell_hooks::ShellHooks) until E2c;
-//! `rekindled` publishes the echo on the Host bus, and a post's delivery
-//! state is its outbox row's.
+//! The pipeline's events on the Host bus (plan E3.1 E2c): the echo of our
+//! own post as a `ChannelMessageEvent::New`, and its delivery state as a
+//! `ChannelMessageEvent::ChannelSendStatus`, which every frontend's windows
+//! read on both modes.
 
 use rekindle_channel::deps::SentChannelMessageEcho;
 use rekindle_channel::event::ChannelEvent;
+use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use super::HostChannel;
@@ -16,10 +16,6 @@ impl HostChannel {
     }
 
     pub(super) fn echo_impl(&self, echo: &SentChannelMessageEcho) {
-        if let Some(shell) = &self.ctx().shell {
-            shell.channel_echo(echo);
-            return;
-        }
         self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::New {
                 community: echo.community_id.clone(),
@@ -41,10 +37,17 @@ impl HostChannel {
         message_id: &str,
         landed: bool,
     ) {
-        if let Some(shell) = &self.ctx().shell {
-            shell.channel_post_settled(community_id, channel_id, message_id, landed);
-        } else {
-            tracing::info!(community_id, channel_id, message_id, landed, "post settled");
-        }
+        self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::ChannelSendStatus {
+                community: community_id.to_string(),
+                channel: channel_id.to_string(),
+                message_id: message_id.to_string(),
+                state: if landed {
+                    SendState::Sent
+                } else {
+                    SendState::Failed
+                },
+            },
+        ));
     }
 }

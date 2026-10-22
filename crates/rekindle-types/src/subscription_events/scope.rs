@@ -161,7 +161,8 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
     match e {
         ChannelMessageEvent::New { community, .. }
         | ChannelMessageEvent::Edited { community, .. }
-        | ChannelMessageEvent::Deleted { community, .. } => {
+        | ChannelMessageEvent::Deleted { community, .. }
+        | ChannelMessageEvent::ChannelSendStatus { community, .. } => {
             EventScope::Community(community.clone())
         }
         ChannelMessageEvent::DirectMessageReceived {

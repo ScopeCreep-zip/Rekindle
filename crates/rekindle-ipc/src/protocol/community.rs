@@ -260,6 +260,18 @@ pub enum CommunityRequest {
         channel: Option<String>,
         kind: String,
     },
+    /// The latest `limit` messages of `channel` (a channel id; the Host
+    /// finds its community): our stored rows merged with the channel
+    /// record's (plan E3.1 E2c).
+    ChannelMessages { channel: String, limit: u32 },
+    /// Up to `limit` messages of `channel` in `community` older than
+    /// `before_timestamp`, merged the same way (a page further back).
+    ChannelMessagesBefore {
+        community: String,
+        channel: String,
+        before_timestamp: u64,
+        limit: u32,
+    },
 
     // ── Channel keys (MEK) ─────────────────────────────────────
     /// List cached MEKs for a community.
