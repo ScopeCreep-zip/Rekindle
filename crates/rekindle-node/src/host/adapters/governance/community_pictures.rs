@@ -162,7 +162,8 @@ fn compress(raw: &[u8], kind: ImageKind, slot: PictureSlot) -> Result<Vec<u8>, S
         .map_err(|e| e.to_string())?
         .into_first();
     let (max_w, max_h) = slot.bounds();
-    rekindle_image::encode_webp(&rekindle_image::fit_within_box(picture, max_w, max_h)).map_err(|e| e.to_string())
+    rekindle_image::encode_webp(&rekindle_image::fit_within_box(picture, max_w, max_h))
+        .map_err(|e| e.to_string())
 }
 
 #[cfg(test)]

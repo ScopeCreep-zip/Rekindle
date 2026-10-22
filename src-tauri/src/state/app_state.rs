@@ -154,8 +154,6 @@ pub struct AppState {
     pub file_caches: RwLock<HashMap<String, rekindle_files::ChunkCache>>,
     /// Pinned-attachment IDs per community.
     pub pinned_attachments: RwLock<HashMap<String, rekindle_files::PinnedSet>>,
-    /// Root directory for all per-community Lost Cargo caches.
-    pub file_cache_root: RwLock<Option<std::path::PathBuf>>,
     /// Mutual Aid §14.5 dirty set for per-peer reliability counters.
     pub relay_reliability_dirty: Mutex<HashSet<(String, String)>>,
     /// Push relay (architecture §17.3 Tier 3) wake-notify debounce.
@@ -283,7 +281,6 @@ impl Default for AppState {
             event_reminder_wake_tx: Arc::new(RwLock::new(None)),
             file_caches: RwLock::new(HashMap::new()),
             pinned_attachments: RwLock::new(HashMap::new()),
-            file_cache_root: RwLock::new(None),
             relay_reliability_dirty: Mutex::new(HashSet::new()),
             last_wake_notify_secs: Mutex::new(0),
             video_reassembly: rekindle_video::VideoReassemblyState::new(),

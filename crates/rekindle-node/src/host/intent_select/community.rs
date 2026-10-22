@@ -55,14 +55,22 @@ pub(super) async fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        CommunityRequest::CommunityUpdateProfile { community: target, .. }
-        | CommunityRequest::CommunitySetAvatar { community: target, .. }
-        | CommunityRequest::CommunitySetBanner { community: target, .. } => {
+        CommunityRequest::CommunityUpdateProfile {
+            community: target, ..
+        }
+        | CommunityRequest::CommunitySetAvatar {
+            community: target, ..
+        }
+        | CommunityRequest::CommunitySetBanner {
+            community: target, ..
+        } => {
             let (id, name) = community(ctx, target)?;
             s.reversibility = Reversibility::Undoable;
             s.subject = Subject::Community { id, name };
         }
-        CommunityRequest::CommunityPolicySet { community: target, .. } => {
+        CommunityRequest::CommunityPolicySet {
+            community: target, ..
+        } => {
             let (id, name) = community(ctx, target)?;
             s.reversibility = Reversibility::Undoable;
             s.notifies = members(ctx, &id);

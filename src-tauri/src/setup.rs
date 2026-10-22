@@ -94,16 +94,6 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // Register global keyboard shortcuts (plugin registered here for state access)
     shortcuts::register(app, state)?;
 
-    // The old cache root, now only for the community avatars (until plan
-    // E3.1; the chunk caches live under `state/{pk}.files/`). Stays None
-    // if it cannot be created — avatar uploads fail clearly then.
-    let cache_root = root.file_cache();
-    if let Err(e) = std::fs::create_dir_all(&cache_root) {
-        tracing::warn!(error = %e, path = %cache_root.display(), "failed to create file_cache dir");
-    } else {
-        *state.file_cache_root.write() = Some(cache_root);
-    }
-
     app.manage(root);
 
     // The identity's vault handle, filled at unlock and emptied at lock

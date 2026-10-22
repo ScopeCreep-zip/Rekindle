@@ -5,7 +5,8 @@
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
-    channel, community, community_profile, game_servers, governance, keys, DaemonContext};
+    channel, community, community_profile, game_servers, governance, keys, DaemonContext,
+};
 use crate::daemon::DaemonState;
 
 /// Route a community request: one arm per variant.

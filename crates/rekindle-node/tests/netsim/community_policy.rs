@@ -14,9 +14,11 @@ const LIMIT: Duration = Duration::from_secs(180);
 
 async fn policy(node: &SimNode, community: &str) -> CommunityPolicyView {
     let read = node
-        .ok(IpcRequest::Community(CommunityRequest::CommunityPolicyGet {
-            community: community.into(),
-        }))
+        .ok(IpcRequest::Community(
+            CommunityRequest::CommunityPolicyGet {
+                community: community.into(),
+            },
+        ))
         .await;
     serde_json::from_value(read).expect("a policy")
 }
@@ -38,9 +40,7 @@ async fn a_policy_one_member_sets_is_seen_by_another() {
     let before = policy(&community.nodes[1], &key).await;
     assert_eq!(before.policy_text, None, "the defaults before any policy");
 
-    community.nodes[0]
-        .ok(set_policy(&key, "Be kind.", 5))
-        .await;
+    community.nodes[0].ok(set_policy(&key, "Be kind.", 5)).await;
     let expected = CommunityPolicyView {
         policy_text: Some("Be kind.".into()),
         max_joins_per_interval: 5,
@@ -69,31 +69,38 @@ async fn a_community_picture_is_cached_and_a_webp_is_refused() {
     let png = rekindle_image::encode_png(&rekindle_image::DynamicImage::ImageRgba8(picture))
         .expect("a png");
     let hash = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::CommunitySetAvatar {
-            community: key.clone(),
-            image: png,
-            kind: ImageKind::Png,
-        }))
+        .ok(IpcRequest::Community(
+            CommunityRequest::CommunitySetAvatar {
+                community: key.clone(),
+                image: png,
+                kind: ImageKind::Png,
+            },
+        ))
         .await;
     let hash = hash.as_str().expect("the picture's hash").to_owned();
     let url = community.nodes[0]
-        .ok(IpcRequest::Community(CommunityRequest::CommunityAvatarGet {
-            community: key.clone(),
-            hash,
-        }))
+        .ok(IpcRequest::Community(
+            CommunityRequest::CommunityAvatarGet {
+                community: key.clone(),
+                hash,
+            },
+        ))
         .await;
     assert!(
-        url.as_str().is_some_and(|u| u.starts_with("data:image/webp;base64,")),
+        url.as_str()
+            .is_some_and(|u| u.starts_with("data:image/webp;base64,")),
         "the cached picture reads back as a WebP data URL"
     );
 
     let webp = b"RIFF\x10\0\0\0WEBPVP8L\x04\0\0\0\x2f\0\0\0".to_vec();
     let refused = community.nodes[0]
-        .call(IpcRequest::Community(CommunityRequest::CommunitySetBanner {
-            community: key,
-            image: webp,
-            kind: ImageKind::Png,
-        }))
+        .call(IpcRequest::Community(
+            CommunityRequest::CommunitySetBanner {
+                community: key,
+                image: webp,
+                kind: ImageKind::Png,
+            },
+        ))
         .await
         .expect_err("a WebP upload is refused");
     assert_eq!(refused.code, 400, "{}", refused.message);

@@ -1,33 +1,22 @@
-//! Architecture §10.7 + §20.6 — `CommunityPolicy` Tauri commands.
-//!
-//! Read accessors fall back to architecture defaults when no
-//! `CommunityPolicy` entry has been merged yet. Writes require
-//! `MANAGE_COMMUNITY` (enforced by `rekindle_governance::validate`
-//! reader-side; we also pre-flight here so the user gets a fast error
-//! instead of a silent rejection).
+//! A community's policy (architecture §10.7, §20.6; plan E3.1 D4): Host calls.
 
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::community::CommunityPolicyView;
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
+use crate::host_call;
 use crate::state::SharedState;
-
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CommunityPolicyDto {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub policy_text: Option<String>,
-    pub max_joins_per_interval: u32,
-    pub join_interval_seconds: u32,
-}
 
 #[tauri::command]
 pub async fn get_community_policy(
     state: State<'_, SharedState>,
     community_id: String,
-) -> Result<CommunityPolicyDto, String> {
-    crate::services::community_policy_runtime::get_community_policy_inner(
-        state.inner(),
-        &community_id,
-    )
+) -> Result<Done<CommunityPolicyView>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::CommunityPolicyGet {
+        community: community_id,
+    });
+    host_call::call(&state, request).await
 }
 
 #[tauri::command]
@@ -37,13 +26,12 @@ pub async fn set_community_policy(
     policy_text: Option<String>,
     max_joins_per_interval: u32,
     join_interval_seconds: u32,
-) -> Result<(), String> {
-    crate::services::community_policy_runtime::set_community_policy_inner(
-        state.inner(),
-        &community_id,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::CommunityPolicySet {
+        community: community_id,
         policy_text,
         max_joins_per_interval,
         join_interval_seconds,
-    )
-    .await
+    });
+    host_call::call(&state, request).await
 }

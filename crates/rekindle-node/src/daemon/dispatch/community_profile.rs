@@ -80,7 +80,11 @@ pub(crate) async fn handle_picture(
 }
 
 /// The community's policy.
-pub(crate) fn handle_policy(ctx: &DaemonContext, state: DaemonState, community: &str) -> IpcResponse {
+pub(crate) fn handle_policy(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    community: &str,
+) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }

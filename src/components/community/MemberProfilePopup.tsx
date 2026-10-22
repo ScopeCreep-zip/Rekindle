@@ -1,3 +1,4 @@
+import { asImageKind } from "../../ipc/commands/system";
 import { Component, Show, For, createEffect, createSignal } from "solid-js";
 import { colorIntToHex, parseColorHex } from "../../utils/color";
 import { Popover } from "@kobalte/core/popover";
@@ -111,21 +112,26 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   async function pickImage(kind: "avatar" | "banner"): Promise<void> {
     const input = document.createElement("input");
     input.type = "file";
-    input.accept = "image/png,image/jpeg,image/webp,image/gif";
+    input.accept = "image/png,image/jpeg,image/gif";
     input.style.display = "none";
     document.body.appendChild(input);
     input.onchange = async () => {
       const file = input.files?.[0];
       document.body.removeChild(input);
       if (!file) return;
+      const imageKind = asImageKind(file.type);
+      if (!imageKind) {
+        addToast("That picture can't be used: choose a PNG, JPEG, or GIF.", "error");
+        return;
+      }
       const buffer = await file.arrayBuffer();
       const bytes = Array.from(new Uint8Array(buffer));
       setUploadingImage(kind);
       try {
         const hash =
           kind === "avatar"
-            ? await commands.setCommunityAvatar(props.communityId, bytes)
-            : await commands.setCommunityBanner(props.communityId, bytes);
+            ? await commands.setCommunityAvatar(props.communityId, bytes, imageKind)
+            : await commands.setCommunityBanner(props.communityId, bytes, imageKind);
         if (kind === "avatar") setAvatarRefDraft(hash);
         else setBannerRefDraft(hash);
       } catch (e) {

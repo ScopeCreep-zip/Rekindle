@@ -9,7 +9,6 @@ use crate::db_helpers::db_call;
 use crate::state::SharedState;
 use crate::state_helpers;
 use rekindle_db::Db;
-use rekindle_types::presence::limits::validate_profile;
 
 pub fn send_channel_typing_inner(
     state: &SharedState,
@@ -141,40 +140,6 @@ pub fn get_presence_policy_inner(
         .get(community_id)
         .map(|c| c.presence_policy.clone())
         .unwrap_or_default()
-}
-
-pub async fn update_community_profile_inner(
-    state: &SharedState,
-    community_id: String,
-    bio: Option<String>,
-    pronouns: Option<String>,
-    theme_color: Option<u32>,
-    badges: Vec<String>,
-    avatar_ref: Option<String>,
-    banner_ref: Option<String>,
-) -> Result<(), String> {
-    validate_profile(
-        bio.as_deref(),
-        pronouns.as_deref(),
-        &badges,
-        avatar_ref.as_deref(),
-        banner_ref.as_deref(),
-    )?;
-    {
-        let mut communities = state.communities.write();
-        let community = communities
-            .get_mut(&community_id)
-            .ok_or_else(|| "unknown community".to_string())?;
-        community.my_bio = bio;
-        community.my_pronouns = pronouns;
-        community.my_theme_color = theme_color;
-        community.my_badges = badges;
-        community.my_avatar_ref = avatar_ref;
-        community.my_banner_ref = banner_ref;
-    }
-
-    crate::services::community::presence::nudge_presence_poll(state, &community_id);
-    Ok(())
 }
 
 /// Our own presence changed (the Host's `SelfChanged`): broadcast a

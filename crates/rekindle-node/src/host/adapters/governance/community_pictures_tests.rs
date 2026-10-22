@@ -23,7 +23,10 @@ fn a_banner_is_a_webp_within_its_box() {
 fn a_webp_upload_is_refused() {
     let webp = compress(&png(16, 16), ImageKind::Png, PictureSlot::Avatar).unwrap();
     for kind in ImageKind::ALL {
-        assert!(compress(&webp, kind, PictureSlot::Avatar).is_err(), "{kind:?}");
+        assert!(
+            compress(&webp, kind, PictureSlot::Avatar).is_err(),
+            "{kind:?}"
+        );
     }
     assert!(compress(&png(8, 8), ImageKind::Jpeg, PictureSlot::Avatar).is_err());
 }

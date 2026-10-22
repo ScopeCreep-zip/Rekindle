@@ -27,7 +27,8 @@ use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
-        CommunityRequest::GameServerList { community: key } => community(key),
+        CommunityRequest::GameServerList { community: key }
+        | CommunityRequest::CommunityPolicyGet { community: key } => community(key),
         CommunityRequest::CommunityUpdateProfile {
             community: key,
             bio,
@@ -74,7 +75,6 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
                 Err(IpcResponse::error(400, "a picture hash is 64 lowercase hex digits"))
             }
         }
-        CommunityRequest::CommunityPolicyGet { community: key } => community(key),
         CommunityRequest::CommunityPolicySet {
             community: key,
             policy_text,

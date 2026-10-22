@@ -53,11 +53,11 @@ export const communityCommands = {
    * and returns the BLAKE3 hex hash of the compressed bytes; pass the
    * hash to `updateCommunityProfile` as `avatarRef`.
    */
-  setCommunityAvatar: (communityId: string, bytes: number[]) =>
-    invoke<string>("set_community_avatar", { communityId, bytes }),
+  setCommunityAvatar: (communityId: string, bytes: number[], kind: ImageKind) =>
+    hostInvoke<string>("set_community_avatar", { communityId, bytes, kind }),
   /** Same as above for banner (compressed to 600×200). */
-  setCommunityBanner: (communityId: string, bytes: number[]) =>
-    invoke<string>("set_community_banner", { communityId, bytes }),
+  setCommunityBanner: (communityId: string, bytes: number[], kind: ImageKind) =>
+    hostInvoke<string>("set_community_banner", { communityId, bytes, kind }),
   /**
    * Resolve a stored avatar/banner blob to a `data:image/webp;base64,…`
    * URL ready to drop into an `<img src=…>`. Returns `null` if the
@@ -65,7 +65,7 @@ export const communityCommands = {
    * isn't part of this command).
    */
   getCommunityAvatarDataUrl: (communityId: string, hash: string) =>
-    invoke<string | null>("get_community_avatar_data_url", { communityId, hash }),
+    hostInvoke<string | null>("get_community_avatar_data_url", { communityId, hash }),
   updateCommunityProfile: (
     communityId: string,
     bio: string | null,
@@ -74,7 +74,7 @@ export const communityCommands = {
     badges: string[],
     avatarRef: string | null,
     bannerRef: string | null,
-  ) => invoke<void>("update_community_profile", {
+  ) => hostInvoke<void>("update_community_profile", {
     communityId,
     bio,
     pronouns,
@@ -184,7 +184,7 @@ export const communityCommands = {
    * been merged yet.
    */
   getCommunityPolicy: (communityId: string) =>
-    invoke<CommunityPolicy>("get_community_policy", { communityId }),
+    hostInvoke<CommunityPolicy>("get_community_policy", { communityId }),
   /**
    * Architecture §10.7 + §20.6 — write a new `CommunityPolicy`
    * governance entry (admin-only). `policyText = null` clears the
@@ -196,7 +196,7 @@ export const communityCommands = {
     maxJoinsPerInterval: number,
     joinIntervalSeconds: number,
   ) =>
-    invoke<void>("set_community_policy", {
+    hostInvoke<void>("set_community_policy", {
       communityId,
       policyText,
       maxJoinsPerInterval,

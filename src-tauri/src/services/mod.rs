@@ -21,9 +21,7 @@ pub mod community_onboarding_mappers; // Phase 23.C — pure protocol↔governan
 pub mod community_onboarding_runtime; // Phase 23.C — onboarding-handler runtime orchestration lifted from commands/community/onboarding.rs.
 pub mod community_onboarding_validation; // Phase 23.C — pure onboarding validator lifted from commands/community/onboarding.rs.
 pub mod community_pins_runtime; // Phase 23.C — pin/unpin/get_channel_pins orchestration lifted from commands/community/reactions_pins.rs.
-pub mod community_policy_runtime; // Phase 23.C — community policy get/set bodies lifted from commands/community/policy.rs.
 pub mod community_presence_runtime; // Phase 23.C — presence-handler runtime orchestration lifted from commands/community/presence.rs.
-pub mod community_profile_blobs_runtime; // Phase 23.C — community avatar/banner blob compression + content-addressed cache lifted from commands/community/profile_blobs.rs.
 pub mod community_registry_slot; // Phase 23.C — `clear_registry_presence_slot` helper lifted from legacy/messages.rs.
 pub mod community_unread_runtime; // Phase 23.C — unread mark/get bodies lifted from commands/community/unread.rs.
 pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchestration lifted from commands/community/video.rs.

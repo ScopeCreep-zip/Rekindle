@@ -2,7 +2,7 @@ use tauri::State;
 
 use crate::services::community_presence_runtime::{
     get_presence_policy_inner, send_channel_typing_inner, set_active_channel_inner,
-    set_presence_policy_inner, update_community_presence_inner, update_community_profile_inner,
+    set_presence_policy_inner, update_community_presence_inner,
 };
 use crate::state::SharedState;
 
@@ -91,16 +91,15 @@ pub async fn update_community_profile(
     avatar_ref: Option<String>,
     banner_ref: Option<String>,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    update_community_profile_inner(
-        state.inner(),
-        community_id,
+) -> Result<Done<()>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::CommunityUpdateProfile {
+        community: community_id,
         bio,
         pronouns,
         theme_color,
         badges,
         avatar_ref,
         banner_ref,
-    )
-    .await
+    });
+    crate::host_call::call(&state, request).await
 }
