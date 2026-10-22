@@ -43,6 +43,10 @@ impl MockCommunityDeps {
 
 #[async_trait]
 impl CommunityPresenceDeps for MockCommunityDeps {
+    /// A fixed clock: the fixture's runs are reproducible.
+    fn now_secs(&self) -> u64 {
+        1_700_000_000
+    }
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         std::sync::Arc::clone(&self.scope)
     }

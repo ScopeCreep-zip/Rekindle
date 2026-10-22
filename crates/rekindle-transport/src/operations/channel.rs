@@ -63,6 +63,7 @@ pub async fn send_message(
     keys: &dyn ChannelKeyProvider,
     target: &ChannelWriteTarget,
     signing_key: &ed25519_dalek::SigningKey,
+    now_ms: u64,
 ) -> Result<MessageSent> {
     // Step 1: Encrypt under the community key (plan D6: channel text uses
     // the community scope), bound to the record, subkey and Lamport
@@ -93,7 +94,7 @@ pub async fn send_message(
 
     // Step 2: Build message
     let message_id = uuid::Uuid::new_v4().to_string();
-    let timestamp = rekindle_utils::timestamp_ms();
+    let timestamp = now_ms;
     let channel_msg = ChannelMessage {
         sequence: 0,
         sender_pseudonym: membership.pseudonym_key.clone(),

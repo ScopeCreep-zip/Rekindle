@@ -197,9 +197,9 @@ impl GossipMesh {
     ///
     /// The `last_seen` timestamp is clamped to the current time to prevent
     /// malicious peers from claiming future timestamps to dominate peer
-    /// selection in `refresh_peer_set`.
-    pub fn upsert_member(&mut self, pseudonym: String, mut member: OnlineMember) {
-        let now = rekindle_utils::timestamp_secs();
+    /// selection in `refresh_peer_set`. `now` is the caller's clock
+    /// reading in seconds.
+    pub fn upsert_member(&mut self, pseudonym: String, mut member: OnlineMember, now: u64) {
         if member.last_seen > now {
             member.last_seen = now;
         }

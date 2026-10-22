@@ -14,7 +14,10 @@
 //!   timestamp that goes on the wire or into the database comes from the
 //!   clock port (`rekindle_utils::time::Clock`, `ctx.clock`), because
 //!   paused tokio time has no epoch;
-//! - `std::thread::sleep` — use `tokio::time::sleep`.
+//! - `std::thread::sleep` — use `tokio::time::sleep`;
+//! - `rekindle_utils::{timestamp_ms, timestamp_secs, …}` — the free
+//!   wall-clock helpers `SystemClock` is built on; pure code takes a `now`
+//!   from its caller, everything else reads `ctx.clock`.
 //!
 //! The scanned crates are not a hand list: they are every workspace crate
 //! that `rekindle-node` and `rekindle-netsim` reach through their normal
@@ -52,6 +55,22 @@ const OUTSIDE_THE_SIM: &[(&str, &str)] = &[
         "the frontends' Unix-socket client; the netsim calls each Host in process, never over IPC",
     ),
     (
+        "crates/rekindle-ipc/src/message.rs",
+        "the IPC wire envelope's timestamp, built only by the excluded client and server",
+    ),
+    (
+        "crates/rekindle-link-preview/src/lib.rs",
+        "the fetched_at of an HTTPS preview fetch; the netsim makes no HTTP requests",
+    ),
+    (
+        "crates/rekindle-files/src/upload.rs",
+        "the upload pipeline, driven only by the desktop's FilesDeps; the Host never uploads",
+    ),
+    (
+        "crates/rekindle-game-detect/src/scanner.rs",
+        "the sysinfo process scanner, an OS adapter like the idle readers; it stamps a game's start off the host machine",
+    ),
+    (
         "crates/rekindle-ipc/src/server/",
         "the daemon's Unix-socket server and its connections; the netsim never binds a socket",
     ),
@@ -64,6 +83,16 @@ const FORBIDDEN: &[(&[&str], &str)] = &[
         "use tokio::time::Instant",
     ),
     (&["std", "thread", "sleep"], "use tokio::time::sleep"),
+];
+
+/// The `rekindle_utils` wall-clock helpers (`SystemClock` reads through
+/// them). Inside the sim a timestamp comes from the clock port, or from a
+/// `now` the caller passes down to pure code.
+const UTILS_WALL_CLOCK: &[&str] = &[
+    "timestamp_ms",
+    "timestamp_ms_i64",
+    "timestamp_secs",
+    "timestamp_secs_i64",
 ];
 
 /// Suffixes forbidden whatever they resolve to (no async-clock twin exists).
@@ -194,11 +223,16 @@ impl<'ast> Visit<'ast> for Finder<'_> {
             .collect();
         let full = self.resolve(&segments);
         let ends = |s: &[&str]| full.len() >= s.len() && full[full.len() - s.len()..] == *s;
+        let utils_helper = full.first().is_some_and(|c| c == "rekindle_utils")
+            && full
+                .last()
+                .is_some_and(|f| UTILS_WALL_CLOCK.contains(&f.as_str()));
         let fix = FORBIDDEN
             .iter()
             .find(|(p, _)| full == *p)
             .or_else(|| FORBIDDEN_SUFFIX.iter().find(|(s, _)| ends(s)))
-            .map(|(_, fix)| *fix);
+            .map(|(_, fix)| *fix)
+            .or_else(|| utils_helper.then_some("take the timestamp from the clock port"));
         if let Some(fix) = fix {
             self.hit(&segments.join("::"), fix);
         }
@@ -323,6 +357,16 @@ mod tests {
         let hits = scan("crates/x/src/a.rs", src);
         assert_eq!(hits.len(), 4, "{hits:?}");
         assert!(hits.iter().all(|h| !h.contains("  tokio")), "{hits:?}");
+    }
+
+    #[test]
+    fn flags_the_utils_wall_clock_helpers() {
+        let src = "use rekindle_utils::timestamp_ms;
+                   use rekindle_utils::time;
+                   fn a() { timestamp_ms(); rekindle_utils::timestamp_secs(); time::timestamp_ms_i64();
+                            clock.now_ms(); }";
+        let hits = scan("crates/x/src/a.rs", src);
+        assert_eq!(hits.len(), 3, "{hits:?}");
     }
 
     #[test]

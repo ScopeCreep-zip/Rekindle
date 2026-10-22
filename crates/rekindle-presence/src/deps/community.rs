@@ -16,6 +16,10 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// before its next Veilid call once it is closed (plan C4.L1).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;
 
+    /// The host's clock port in seconds (plan C9.2): heartbeats, join
+    /// times and the poll's freshness checks read it, never the wall clock.
+    fn now_secs(&self) -> u64;
+
     // === Initial-sync handshake surface (21.k-REDO) ===
 
     /// Pseudonym key (hex) the local user holds in `community_id`,

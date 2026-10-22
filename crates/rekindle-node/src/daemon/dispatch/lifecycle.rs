@@ -69,6 +69,7 @@ pub(crate) async fn daemon_stages(
         Arc::clone(&transport),
         Arc::clone(&ctx.session),
         unlock_scope.child("subscriptions"),
+        Arc::clone(&ctx.clock),
     );
     for membership in session.communities.values() {
         sub_mgr.setup_community(membership).await;

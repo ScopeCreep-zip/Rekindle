@@ -51,8 +51,8 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
     }
 }
 
-pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 10; // 10-second bucketing
+pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) {
+    let now_bucket = now_ms / 1000 / 10; // 10-second bucketing
     match s {
         SystemEvent::Announcement {
             community, body, ..

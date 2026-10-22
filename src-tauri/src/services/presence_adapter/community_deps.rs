@@ -22,6 +22,10 @@ use crate::state_helpers;
 
 #[async_trait]
 impl CommunityPresenceDeps for PresenceAdapter {
+    fn now_secs(&self) -> u64 {
+        rekindle_utils::timestamp_secs()
+    }
+
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         state_helpers::login_scope_or_closed(&self.state)
     }

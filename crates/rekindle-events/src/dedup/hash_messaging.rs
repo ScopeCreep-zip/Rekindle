@@ -87,8 +87,8 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
     }
 }
 
-pub(super) fn hash_typing(h: &mut blake3::Hasher, t: &TypingEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 5; // 5-second bucketing
+pub(super) fn hash_typing(h: &mut blake3::Hasher, t: &TypingEvent, now_ms: u64) {
+    let now_bucket = now_ms / 1000 / 5; // 5-second bucketing
     match t {
         TypingEvent::Started { context, who } => {
             h.update(b"start|");
@@ -128,13 +128,13 @@ fn hash_typing_context(h: &mut blake3::Hasher, ctx: &TypingContext) {
     }
 }
 
-pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 30; // 30-second bucketing
-                                                            // Every variant hashes subject + status + game identity + bucket.
-                                                            // `elapsed_seconds` is deliberately excluded: it advances on every
-                                                            // scan, so folding it in would give each tick a distinct hash and
-                                                            // dedup would never fire. Game *identity* is what makes a new
-                                                            // event; the elapsed count rides along on whichever emission wins.
+pub(super) fn hash_presence(h: &mut blake3::Hasher, p: &PresenceEvent, now_ms: u64) {
+    let now_bucket = now_ms / 1000 / 30; // 30-second bucketing
+                                         // Every variant hashes subject + status + game identity + bucket.
+                                         // `elapsed_seconds` is deliberately excluded: it advances on every
+                                         // scan, so folding it in would give each tick a distinct hash and
+                                         // dedup would never fire. Game *identity* is what makes a new
+                                         // event; the elapsed count rides along on whichever emission wins.
     let snapshot = match p {
         // Our own profile change is published once, by the host, and never
         // arrives over a peer path, so nothing repeats it to dedup.

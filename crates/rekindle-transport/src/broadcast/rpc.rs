@@ -31,6 +31,7 @@ pub async fn community_leave(
     leaving_pseudonym: &str,
     signing_key: &[u8; 32],
     sender_public_hex: &str,
+    now_ms: u64,
 ) -> Result<CallResponse> {
     debug!(
         governance = governance_key,
@@ -55,6 +56,7 @@ pub async fn community_leave(
             signing_key,
             sender_public_hex,
             &payload,
+            now_ms,
         )
         .await?;
 
@@ -84,6 +86,7 @@ pub async fn sync_request(
     since_timestamp: u64,
     signing_key: &[u8; 32],
     sender_hex: &str,
+    now_ms: u64,
 ) -> Result<SyncResponse> {
     debug!(
         channel = channel_id,
@@ -108,6 +111,7 @@ pub async fn sync_request(
             signing_key,
             sender_hex,
             &payload,
+            now_ms,
         )
         .await?;
 

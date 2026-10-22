@@ -38,16 +38,16 @@ pub struct Addressing<'a> {
     pub type_id: TypeId,
 }
 
-/// Sign a payload with the sender's Ed25519 secret key, timestamped now,
-/// for `to.recipient` under frame type `to.type_id`.
+/// Sign a payload with the sender's Ed25519 secret key, timestamped
+/// `timestamp` (ms, from the caller's clock port), for `to.recipient` under frame type `to.type_id`.
 pub fn sign_payload(
     sender_secret: &[u8; 32],
     sender_public_hex: &str,
     to: Addressing<'_>,
     payload: &[u8],
+    timestamp: u64,
 ) -> SignedPayload {
     let signing_key = SigningKey::from_bytes(sender_secret);
-    let timestamp = rekindle_utils::timestamp_ms();
 
     let signed_data = build_signed_data(to, timestamp, payload);
     let signature = signing_key.sign(&signed_data);
@@ -76,8 +76,8 @@ fn build_signed_data(to: Addressing<'_>, timestamp: u64, payload: &[u8]) -> Vec<
 
 /// Verify a [`SignedPayload`] received as frame `to.type_id` by
 /// `to.recipient` (our identity key): the signature, then the timestamp
-/// against the shared freshness window.
-pub fn verify_signed_payload(signed: &SignedPayload, to: Addressing<'_>) -> Result<()> {
+/// against the shared freshness window at `now` (ms, the caller's clock).
+pub fn verify_signed_payload(signed: &SignedPayload, to: Addressing<'_>, now: u64) -> Result<()> {
     let verifying_key = parse_verifying_key(&signed.sender_key_hex)?;
 
     let signed_data = build_signed_data(to, signed.timestamp, &signed.payload);
@@ -90,7 +90,6 @@ pub fn verify_signed_payload(signed: &SignedPayload, to: Addressing<'_>) -> Resu
             sender: signed.sender_key_hex.clone(),
         })?;
 
-    let now = rekindle_utils::timestamp_ms();
     let age_ms = now.saturating_sub(signed.timestamp);
     if age_ms > ENVELOPE_FRESHNESS_WINDOW_MS {
         return Err(TransportError::SignatureVerificationFailed {
@@ -162,6 +161,9 @@ mod tests {
         }
     }
 
+    /// A fixed clock reading for the signer and the verifier.
+    const NOW_MS: u64 = 1_700_000_000_000;
+
     fn signer_hex() -> String {
         hex::encode(SigningKey::from_bytes(&SECRET).verifying_key().to_bytes())
     }
@@ -172,13 +174,14 @@ mod tests {
             &signer_hex(),
             to_bob(TypeId::CommunityLeave),
             payload,
+            NOW_MS,
         )
     }
 
     #[test]
     fn sign_verify_roundtrip() {
         let s = signed(b"test payload");
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_ok());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_ok());
     }
 
     /// A captured frame replayed to a third identity fails there.
@@ -189,14 +192,14 @@ mod tests {
             recipient: &CAROL,
             type_id: TypeId::CommunityLeave,
         };
-        assert!(verify_signed_payload(&s, to_carol).is_err());
+        assert!(verify_signed_payload(&s, to_carol, NOW_MS).is_err());
     }
 
     /// Signed bytes re-framed under another `TypeId` fail.
     #[test]
     fn reframed_type_id_rejected() {
         let s = signed(b"payload");
-        assert!(verify_signed_payload(&s, to_bob(TypeId::SyncRequest)).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::SyncRequest), NOW_MS).is_err());
     }
 
     /// A signature over the v2 field layout (`seq` and a correlation-id
@@ -216,13 +219,13 @@ mod tests {
             .sign(&v2)
             .to_bytes()
             .to_vec();
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
     }
 
     #[test]
     fn stale_timestamp_rejected() {
         let to = to_bob(TypeId::CommunityLeave);
-        let timestamp = rekindle_utils::timestamp_ms() - ENVELOPE_FRESHNESS_WINDOW_MS - 1_000;
+        let timestamp = NOW_MS - ENVELOPE_FRESHNESS_WINDOW_MS - 1_000;
         let signature = SigningKey::from_bytes(&SECRET)
             .sign(&build_signed_data(to, timestamp, b"old"))
             .to_bytes()
@@ -233,21 +236,21 @@ mod tests {
             payload: b"old".to_vec(),
             signature,
         };
-        assert!(verify_signed_payload(&s, to).is_err());
+        assert!(verify_signed_payload(&s, to, NOW_MS).is_err());
     }
 
     #[test]
     fn tampered_payload_rejected() {
         let mut s = signed(b"original");
         s.payload = b"tampered".to_vec();
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
     }
 
     #[test]
     fn tampered_timestamp_rejected() {
         let mut s = signed(b"original");
         s.timestamp -= 1;
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
     }
 
     #[test]
@@ -258,6 +261,6 @@ mod tests {
                 .verifying_key()
                 .to_bytes(),
         );
-        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave)).is_err());
+        assert!(verify_signed_payload(&s, to_bob(TypeId::CommunityLeave), NOW_MS).is_err());
     }
 }

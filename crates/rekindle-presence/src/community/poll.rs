@@ -95,7 +95,7 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     // is its own SMPL record carrying ≤255 LOCAL subkeys; we skip
     // our own subkey on our own segment.
     let banned = deps.governance_bans(community_id);
-    let now_secs = rekindle_utils::timestamp_secs();
+    let now_secs = deps.now_secs();
     let descriptors = deps.segment_descriptors(community_id);
     let my_subkey = creds.my_subkey_index.unwrap_or(u32::MAX);
 

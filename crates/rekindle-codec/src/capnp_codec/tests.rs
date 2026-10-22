@@ -12,7 +12,7 @@ fn round_trip_presence_update() {
         server_address: Some("192.168.1.1:27015".to_string()),
     };
 
-    let encoded = presence::encode_update(1, Some(&game));
+    let encoded = presence::encode_update(1, Some(&game), 1_700_000_000_000);
     let (status, game_opt) = presence::decode_update(&encoded).unwrap();
     assert_eq!(status, 1);
     let g = game_opt.unwrap();
@@ -26,7 +26,7 @@ fn round_trip_presence_update() {
     assert_eq!(g.server_address, Some("192.168.1.1:27015".to_string()));
 
     // Without game
-    let encoded2 = presence::encode_update(3, None);
+    let encoded2 = presence::encode_update(3, None, 1_700_000_000_000);
     let (status2, game2) = presence::decode_update(&encoded2).unwrap();
     assert_eq!(status2, 3);
     assert!(game2.is_none());

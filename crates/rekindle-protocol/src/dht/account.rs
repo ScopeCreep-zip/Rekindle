@@ -34,11 +34,13 @@ impl AccountRecord {
     ///
     /// # Errors
     /// The record could not be created, or the header could not be written.
+    /// `now` (ms) is the caller's clock reading for the header.
     pub async fn create(
         pool: &dyn RecordPort,
         encryption_key: DhtRecordKey,
         display_name: &str,
         status_message: &str,
+        now: u64,
     ) -> Result<(Self, String, SetOutcome), ProtocolError> {
         let (lease, record_key, keypair) = pool
             .create(&rekindle_records::schema::single(), None)
@@ -48,7 +50,6 @@ impl AccountRecord {
             record_key,
             encryption_key,
         };
-        let now = rekindle_utils::timestamp_ms();
         let outcome = record
             .write_header(
                 pool,

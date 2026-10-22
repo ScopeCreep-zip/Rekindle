@@ -74,8 +74,8 @@ pub(super) fn hash_crypto(h: &mut blake3::Hasher, c: &CryptoEvent) {
     }
 }
 
-pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
-    let now_bucket = rekindle_utils::timestamp_secs() / 5;
+pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent, now_ms: u64) {
+    let now_bucket = now_ms / 1000 / 5;
 
     // Scope first, so every variant is keyed to its call without each
     // one restating community + channel — and so a DM call, which has
@@ -196,7 +196,7 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent) {
             h.update(b"|");
             h.update(actor_pseudonym.as_bytes());
             h.update(b"|");
-            h.update(&rekindle_utils::timestamp_ms().to_le_bytes());
+            h.update(&now_ms.to_le_bytes());
         }
         VoiceEvent::SpeakResponded {
             requester_pseudonym,

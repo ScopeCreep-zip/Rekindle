@@ -138,6 +138,7 @@ impl HostGovernance {
             membership,
             &self.ctx.mek_cache,
             &signing_key,
+            self.ctx.clock.now_secs(),
         )
         .await
         .map_err(|e| format!("community leave failed: {e}"))?;

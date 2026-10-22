@@ -340,6 +340,7 @@ impl OwnRecords {
     }
 
     async fn account(&self, pool: &dyn RecordPort, stored: &Stored) {
+        let now_ms = self.presence.clock().now_ms();
         let secret = &self.secret;
         let display_name = self.display_name.as_str();
         self.owner()
@@ -355,9 +356,14 @@ impl OwnRecords {
                 },
                 || async move {
                     let encryption_key = rekindle_crypto::DhtRecordKey::derive_account_key(secret);
-                    let (record, owner, outcome) =
-                        account::AccountRecord::create(pool, encryption_key, display_name, "")
-                            .await?;
+                    let (record, owner, outcome) = account::AccountRecord::create(
+                        pool,
+                        encryption_key,
+                        display_name,
+                        "",
+                        now_ms,
+                    )
+                    .await?;
                     if outcome.missed() {
                         tracing::warn!(?outcome, "own records: account header not stored");
                     }

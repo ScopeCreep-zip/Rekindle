@@ -83,12 +83,13 @@ impl SubscriptionManager {
     pub(super) fn process_event(&self, mut event: SubscriptionEvent) {
         // Enrich: decrypt message bodies if MEK available, resolve display names
         self.enrich(&mut event);
+        let now_ms = self.clock.now_ms();
 
         // Apply state side-effects (unread, typing, presence, voice)
-        let extra_events = state_effects::apply(&mut self.state.write(), &event);
+        let extra_events = state_effects::apply(&mut self.state.write(), &event, now_ms);
 
         // Dedup gate: suppress duplicates from parallel tiers
-        if self.dedup.write().check(&event) {
+        if self.dedup.write().check(&event, now_ms) {
             let _ = self.event_tx.send(event);
         }
 
@@ -215,7 +216,7 @@ impl SubscriptionManager {
                                 segment_index * SLOTS_PER_SEGMENT + subkey
                             ),
                             sequence: 0,
-                            timestamp: rekindle_utils::timestamp_ms(),
+                            timestamp: self.clock.now_ms(),
                             body: None,
                             reply_to_sequence: None,
                         },

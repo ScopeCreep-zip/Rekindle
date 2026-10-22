@@ -23,7 +23,6 @@ pub mod spawn;
 pub mod sync;
 #[cfg(test)]
 pub(crate) mod test_fixture;
-mod time;
 pub mod util;
 
 pub use overlay_rebuild::{

@@ -104,12 +104,14 @@ impl AppCaller {
         sender_secret: &[u8; 32],
         sender_public_hex: &str,
         request_payload: &[u8],
+        now_ms: u64,
     ) -> Result<Vec<u8>> {
         let signed = sign_payload(
             sender_secret,
             sender_public_hex,
             Addressing { recipient, type_id },
             request_payload,
+            now_ms,
         );
         let signed_bytes =
             postcard::to_stdvec(&signed).map_err(|e| TransportError::SerializationFailed {

@@ -92,6 +92,12 @@ impl OwnPresence {
         }
     }
 
+    /// The Host's clock port (plan C9.2), for the records published
+    /// beside our presence.
+    pub(crate) fn clock(&self) -> &dyn rekindle_utils::Clock {
+        &*self.clock
+    }
+
     /// Start the unlock Online, with no message or game, and run the STATUS
     /// publisher in `scope`.
     pub(crate) fn start(&self, scope: &Arc<rekindle_lifecycle::SessionScope>) {

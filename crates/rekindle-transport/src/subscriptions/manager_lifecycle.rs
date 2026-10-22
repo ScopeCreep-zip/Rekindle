@@ -42,6 +42,7 @@ impl SubscriptionManager {
         // Spawn the change consumer (routes poll signals into the event pipeline)
         let event_tx = self.event_tx.clone();
         let dedup = Arc::clone(&self.dedup);
+        let clock = Arc::clone(&self.clock);
         self.scope.spawn("subscription poll consumer", async move {
             while let Some((record_key, changed_subkeys)) = change_rx.recv().await {
                 let event = SubscriptionEvent::Network(events::NetworkEvent::ValueChanged {
@@ -49,7 +50,7 @@ impl SubscriptionManager {
                     changed_subkeys,
                 });
                 // Dedup gate — suppresses if this change was already seen via watch
-                if dedup.write().check(&event) {
+                if dedup.write().check(&event, clock.now_ms()) {
                     let _ = event_tx.send(event);
                 }
             }

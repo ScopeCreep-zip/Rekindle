@@ -15,7 +15,11 @@ use crate::state::SubscriptionState;
 
 /// Apply state side-effects for an event. Returns additional events to emit
 /// (e.g., `UnreadChanged` after incrementing a counter).
-pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<SubscriptionEvent> {
+pub fn apply(
+    state: &mut SubscriptionState,
+    event: &SubscriptionEvent,
+    now_ms: u64,
+) -> Vec<SubscriptionEvent> {
     let mut extra = Vec::new();
 
     match event {
@@ -88,12 +92,7 @@ pub fn apply(state: &mut SubscriptionState, event: &SubscriptionEvent) -> Vec<Su
             pseudonym,
             ..
         }) => {
-            state.voice.join(
-                community,
-                channel,
-                pseudonym,
-                rekindle_utils::timestamp_ms(),
-            );
+            state.voice.join(community, channel, pseudonym, now_ms);
         }
 
         // ── Voice: leave ────────────────────────────────────────

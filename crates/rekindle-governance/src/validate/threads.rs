@@ -16,12 +16,11 @@ pub(super) fn validate_thread_create(
     forum_tag: Option<&str>,
     state: &GovernanceState,
 ) -> bool {
-    let channel_perms = compute_permissions(
-        writer,
-        Some(&parent_channel_id),
-        state,
-        rekindle_utils::time::timestamp_secs(),
-    );
+    // Time 0, like the server-wide check in `validate_write`: the reader
+    // rule is a pure function of the merged state, so every peer (and
+    // every netsim run) reaches the same verdict. A wall-clock read here
+    // made the merge depend on when each reader ran it.
+    let channel_perms = compute_permissions(writer, Some(&parent_channel_id), state, 0);
 
     match thread_type {
         "public" => has(channel_perms, SEND_MESSAGES),

@@ -15,13 +15,14 @@ pub struct GameInfo {
     pub server_address: Option<String>,
 }
 
-/// Encode a presence update (status byte + optional game info).
-pub fn encode_update(status: u8, game: Option<&GameInfo>) -> Vec<u8> {
+/// Encode a presence update (status byte + optional game info), stamped
+/// `timestamp_ms` from the caller's clock.
+pub fn encode_update(status: u8, game: Option<&GameInfo>, timestamp_ms: u64) -> Vec<u8> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<presence_capnp::presence_update::Builder<'_>>();
         root.set_status(status);
-        root.set_timestamp(rekindle_utils::timestamp_ms());
+        root.set_timestamp(timestamp_ms);
         if let Some(g) = game {
             write_game_status(root.init_game_status(), g);
         }

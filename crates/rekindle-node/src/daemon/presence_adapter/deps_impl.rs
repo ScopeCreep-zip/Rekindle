@@ -28,6 +28,10 @@ use super::DaemonPresenceAdapter;
 
 #[async_trait]
 impl CommunityPresenceDeps for DaemonPresenceAdapter {
+    fn now_secs(&self) -> u64 {
+        self.ctx.clock.now_secs()
+    }
+
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         self.ctx.unlock_scope_or_closed()
     }

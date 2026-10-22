@@ -13,7 +13,6 @@ use rekindle_records::lease::{max_subkey_bytes, SchemaShape};
 use rekindle_types::presence::{EncryptedHistoryRanges, HistoryRange, MemberPresence};
 
 use crate::community::scan_row::SUBKEYS_PER_SEGMENT;
-use crate::community::time::now_secs;
 use crate::deps::{CommunityPresenceDeps, DiscoveredMemberRow, RowWrite};
 use rekindle_codec::presence_row::{classify_superseding_row, SupersedingRow};
 
@@ -140,7 +139,7 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
         display_name: Some(deps.identity_display_name()),
         status,
         route_blob: our_route_blob.unwrap_or_default(),
-        last_heartbeat: now_secs(),
+        last_heartbeat: deps.now_secs(),
         bio: snapshot.bio,
         pronouns: snapshot.pronouns,
         theme_color: snapshot.theme_color,
@@ -398,7 +397,7 @@ pub fn persist_discovered_registry_members<D, S1, S2>(
     }
 
     let banned: Vec<String> = banned_members.iter().cloned().collect();
-    let joined_at_secs = i64::try_from(now_secs()).unwrap_or(0);
+    let joined_at_secs = i64::try_from(deps.now_secs()).unwrap_or(0);
     deps.persist_discovered_member_rows(community_id, rows, banned, joined_at_secs);
 }
 

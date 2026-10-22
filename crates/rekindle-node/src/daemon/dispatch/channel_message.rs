@@ -110,6 +110,7 @@ pub(crate) async fn handle_send(
         &*crate::daemon::mek_rotation::key_provider(ctx),
         &target,
         &pseudonym_signing_key,
+        ctx.clock.now_ms(),
     )
     .await
     {

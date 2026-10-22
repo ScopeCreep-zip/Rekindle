@@ -66,6 +66,9 @@ pub struct SubscriptionManager {
     state: Arc<RwLock<SubscriptionState>>,
     /// Active DHT watches registry.
     watches: Arc<RwLock<WatchRegistry>>,
+    /// The host's clock port (plan C9.2): dedup buckets, voice join times
+    /// and synthesized message timestamps read it, never the wall clock.
+    clock: Arc<dyn rekindle_utils::Clock>,
     /// Cross-tier Blake3 content deduplication.
     dedup: Arc<RwLock<dedup::EventDedup>>,
     /// Per-community gossip mesh (shared with BroadcastManager).
@@ -87,6 +90,7 @@ impl SubscriptionManager {
         node: Arc<TransportNode>,
         session: Arc<RwLock<Option<Session>>>,
         scope: Arc<SessionScope>,
+        clock: Arc<dyn rekindle_utils::Clock>,
     ) -> Self {
         let (event_tx, _) = broadcast::channel(EVENT_CHANNEL_CAPACITY);
         Self {
@@ -94,6 +98,7 @@ impl SubscriptionManager {
             session,
             state: Arc::new(RwLock::new(SubscriptionState::default())),
             watches: Arc::new(RwLock::new(WatchRegistry::new())),
+            clock,
             dedup: Arc::new(RwLock::new(dedup::EventDedup::default())),
             meshes: Arc::new(RwLock::new(HashMap::new())),
             event_tx,

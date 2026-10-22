@@ -148,12 +148,13 @@ pub async fn read_profile_subkey(
         .map(|v| v.data))
 }
 
-/// The status subkey's payload: the status byte, then the time in ms.
+/// The status subkey's payload: the status byte, then `now_ms` (the
+/// caller's clock).
 #[must_use]
-pub fn status_payload(status: u8) -> Vec<u8> {
+pub fn status_payload(status: u8, now_ms: i64) -> Vec<u8> {
     let mut payload = Vec::with_capacity(9);
     payload.push(status);
-    payload.extend_from_slice(&rekindle_utils::timestamp_ms_i64().to_be_bytes());
+    payload.extend_from_slice(&now_ms.to_be_bytes());
     payload
 }
 

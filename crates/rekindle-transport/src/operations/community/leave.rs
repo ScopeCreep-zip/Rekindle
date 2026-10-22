@@ -27,6 +27,7 @@ pub async fn leave_community(
     membership: &crate::session::CommunityMembership,
     mek_cache: &Arc<RwLock<MekCache>>,
     signing_key_bytes: &[u8; 32],
+    now_secs: u64,
 ) -> Result<LeaveResult> {
     info!(community = %membership.community_name, "leaving community via DHT");
 
@@ -48,7 +49,7 @@ pub async fn leave_community(
     // and a slot that fails to release is the status quo, not a
     // regression. `rekindle-mek-rotation` handles the half that does
     // need the remaining members — rotating the key we still hold.
-    if let Err(e) = release_registry_slot(node, membership, signing_key_bytes).await {
+    if let Err(e) = release_registry_slot(node, membership, signing_key_bytes, now_secs).await {
         tracing::warn!(
             community = %membership.community_name,
             error = %e,
@@ -131,6 +132,7 @@ async fn release_registry_slot(
     node: &TransportNode,
     membership: &crate::session::CommunityMembership,
     signing_key_bytes: &[u8; 32],
+    now_secs: u64,
 ) -> Result<()> {
     let Some(slot_seed) = membership.slot_seed else {
         return Err(TransportError::Internal(
@@ -148,8 +150,7 @@ async fn release_registry_slot(
         signing_key_bytes,
         &membership.governance_key,
     );
-    let bytes =
-        rekindle_codec::presence_row::departure_row(&pseudonym, rekindle_utils::timestamp_secs());
+    let bytes = rekindle_codec::presence_row::departure_row(&pseudonym, now_secs);
     let my_pseudonym_hex = hex::encode(pseudonym.verifying_key().to_bytes());
 
     // A table hit while the community holds its registry (the slot writer

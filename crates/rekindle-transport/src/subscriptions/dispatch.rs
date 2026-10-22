@@ -209,7 +209,9 @@ async fn dispatch_app_call<H: InboundHandler>(
         recipient: &me,
         type_id,
     };
-    if let Err(e) = crate::crypto::envelope::verify_signed_payload(&signed, to_me) {
+    if let Err(e) =
+        crate::crypto::envelope::verify_signed_payload(&signed, to_me, handler.clock().now_ms())
+    {
         warn!(error = %e, sender = %signed.sender_key_hex, "dropping app_call: bad signature");
         reply_nak(messages, call_id).await;
         return;
