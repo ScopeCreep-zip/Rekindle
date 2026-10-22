@@ -103,7 +103,135 @@ fn arb_entry() -> impl Strategy<Value = GovernanceEntry> {
     ]
 }
 
+/// A slowmode, timeout or description entry over the whole value range of
+/// its bounded field, edges and both sides of each bound included (plan
+/// E3.0). Targets the channel `[7; 16]` and the members `[1..=3; 32]`.
+fn arb_bounded_entry() -> impl Strategy<Value = GovernanceEntry> {
+    use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
+    use rekindle_types::key_format::MAX_DESCRIPTION_LEN;
+    use rekindle_types::member::MAX_TIMEOUT_SECONDS;
+    let slowmode = prop_oneof![
+        Just(MAX_SLOWMODE_SECONDS),
+        Just(MAX_SLOWMODE_SECONDS + 1),
+        0..=MAX_SLOWMODE_SECONDS,
+        any::<u32>(),
+    ];
+    let duration = prop_oneof![
+        Just(0),
+        Just(MAX_TIMEOUT_SECONDS),
+        Just(MAX_TIMEOUT_SECONDS + 1),
+        1..=MAX_TIMEOUT_SECONDS,
+        any::<u64>(),
+    ];
+    let description = (
+        MAX_DESCRIPTION_LEN - 2..=MAX_DESCRIPTION_LEN + 2,
+        any::<bool>(),
+    )
+        .prop_map(|(len, bell)| {
+            let text = "é".repeat(len);
+            if bell {
+                format!("{text}\u{7}")
+            } else {
+                text
+            }
+        });
+    prop_oneof![
+        (slowmode, 0u64..64).prop_map(|(seconds, lamport)| GovernanceEntry::ChannelUpdated {
+            channel_id: ChannelId([7; 16]),
+            name: None,
+            topic: None,
+            forum_tags: None,
+            position: None,
+            slowmode_seconds: Some(seconds),
+            nsfw: None,
+            category_id: None,
+            lamport,
+        }),
+        (duration, 1u8..=3, 0u64..64).prop_map(|(duration_seconds, t, lamport)| {
+            GovernanceEntry::TimeoutEntry {
+                target: PseudonymKey([t; 32]),
+                duration_seconds,
+                reason: None,
+                started_at: 0,
+                lamport,
+            }
+        }),
+        (description, 0u64..64).prop_map(|(text, lamport)| GovernanceEntry::CommunityMeta {
+            name: Some("C".into()),
+            description: Some(text),
+            icon_hash: None,
+            banner_hash: None,
+            lamport,
+        }),
+    ]
+}
+
+/// The creator `[0; 32]`'s log at lamport 1: an everyone-ALL role and the
+/// channel `[7; 16]`. An entry at lamport 0 sorts before it and is the
+/// genesis if it is within bounds.
+fn bounded_base() -> Vec<GovernanceEntry> {
+    let role = |id: u8, position: u32| GovernanceEntry::RoleDefinition {
+        role_id: RoleId([id; 16]),
+        name: "all".into(),
+        permissions: rekindle_types::permissions::ALL,
+        position,
+        color: 0,
+        hoist: false,
+        mentionable: false,
+        self_assignable: false,
+        exclusion_group: None,
+        lamport: 1,
+    };
+    vec![
+        role(0, 0),
+        GovernanceEntry::ChannelCreated {
+            channel_id: ChannelId([7; 16]),
+            name: "ch".into(),
+            channel_type: "text".into(),
+            record_key: "k".into(),
+            category_id: None,
+            position: 0,
+            parent_voice_channel_id: None,
+            lamport: 1,
+        },
+    ]
+}
+
 proptest! {
+    /// **Bounds (plan E3.0):** whoever writes them (the creator `[0; 32]`
+    /// included), at whatever lamport (a would-be genesis at 0 included), out-of-bounds entries never change the
+    /// merged state: merging with them equals merging without them, and
+    /// every applied slowmode, timeout and description is within its bound.
+    #[test]
+    fn out_of_bounds_entries_never_change_the_merge(
+        logs in prop::collection::vec(
+            (0u8..=3, prop::collection::vec(arb_bounded_entry(), 0..8)),
+            1..4,
+        ),
+    ) {
+        use crate::validate::bounds;
+        let creator = PseudonymKey([0; 32]);
+        let mut raw = vec![(creator.clone(), bounded_base())];
+        let mut kept = raw.clone();
+        for (author, entries) in logs {
+            let author = PseudonymKey([author; 32]);
+            let within = entries.iter().filter(|e| bounds::entry_within_bounds(e)).cloned();
+            kept.push((author.clone(), within.collect()));
+            raw.push((author, entries));
+        }
+        let state = merge(&raw);
+        prop_assert_eq!(&state, &merge(&kept));
+        for ch in state.channels.values() {
+            prop_assert!(ch.slowmode_seconds.is_none_or(bounds::slowmode_ok));
+        }
+        for t in state.timeouts.values() {
+            prop_assert!(bounds::timeout_ok(t.duration_seconds));
+        }
+        if let Some(m) = &state.metadata {
+            prop_assert!(m.description.as_deref().is_none_or(bounds::description_ok));
+        }
+    }
+
     /// **CRDT convergence:** Two subkey orderings produce identical state.
     #[test]
     fn merge_is_order_independent(

@@ -23,6 +23,7 @@ use crate::permissions::compute_permissions;
 use crate::state::GovernanceState;
 
 mod automod;
+pub mod bounds;
 mod limits;
 mod threads;
 
@@ -78,6 +79,9 @@ pub fn validate_write(
         {
             return false;
         }
+        // Value bounds (plan E3.0): an out-of-range slowmode, timeout or
+        // description is malformed whoever wrote it, the creator included.
+        _ if !bounds::entry_within_bounds(entry) => return false,
         _ => {}
     }
 

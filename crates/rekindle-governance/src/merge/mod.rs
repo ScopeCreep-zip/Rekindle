@@ -7,8 +7,12 @@
 //! `merge()` always produces an identical `GovernanceState`. This is verified
 //! by property-based tests.
 //!
-//! **Genesis bypass:** The first entry (lowest lamport) is always accepted
-//! regardless of permissions — this bootstraps the community before any
+//! **Bounds first:** an entry outside its value bounds
+//! ([`crate::validate::bounds`]) is dropped before ordering, from any
+//! writer, so it can neither apply nor become the genesis.
+//!
+//! **Genesis bypass:** The first in-bounds entry (lowest lamport) is always
+//! accepted regardless of permissions — this bootstraps the community before any
 //! role structure exists.
 //!
 //! **Reader-validates:** After genesis, each entry is checked against the
@@ -25,7 +29,7 @@ use crate::state::{
     OverwriteState, PendingMemberState, RoleState, SegmentState, ThreadState, TimeoutState,
     WelcomeScreenState,
 };
-use crate::validate::validate_write;
+use crate::validate::{bounds, validate_write};
 
 /// A single entry tagged with its author's pseudonym.
 #[derive(Debug, Clone)]
@@ -58,10 +62,13 @@ pub fn merge(subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)]) -> GovernanceStat
 pub fn merge_with_accepted(
     subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
 ) -> (GovernanceState, u64) {
-    // 1. Collect all entries with their author
+    // 1. Collect all entries with their author, dropping every entry out of
+    //    its value bounds (plan E3.0) before the sort: the genesis branch
+    //    below applies the lowest entry unvalidated, so an out-of-bounds
+    //    entry must not reach it, identically on every reader.
     let mut all: Vec<AuthoredEntry> = Vec::new();
     for (author, entries) in subkeys {
-        for entry in entries {
+        for entry in entries.iter().filter(|e| bounds::entry_within_bounds(e)) {
             all.push(AuthoredEntry {
                 author: author.clone(),
                 entry: entry.clone(),

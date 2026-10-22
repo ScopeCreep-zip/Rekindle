@@ -16,6 +16,7 @@ pub(super) fn channel_id(b: u8) -> ChannelId {
 }
 
 mod admission;
+mod bounds;
 mod channels;
 mod community;
 mod events;

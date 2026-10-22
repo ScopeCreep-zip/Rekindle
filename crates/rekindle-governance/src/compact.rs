@@ -78,6 +78,14 @@ pub fn compact_author_entries(
     entries: Vec<GovernanceEntry>,
     now_secs: u64,
 ) -> Vec<GovernanceEntry> {
+    // The merge drops an out-of-bounds entry before anything else (plan
+    // E3.0), so compaction does too: otherwise one could supersede an
+    // in-bounds LWW survivor or take the genesis guard, and the compacted
+    // log would merge differently from the raw one.
+    let entries: Vec<GovernanceEntry> = entries
+        .into_iter()
+        .filter(crate::validate::bounds::entry_within_bounds)
+        .collect();
     if entries.len() <= 1 {
         return entries;
     }
