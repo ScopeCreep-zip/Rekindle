@@ -25,6 +25,7 @@
 
 pub mod admission;
 pub mod apply;
+pub mod audit;
 pub mod bootstrap;
 pub mod channels;
 pub mod deps;

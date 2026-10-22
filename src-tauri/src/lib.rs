@@ -3,7 +3,6 @@
 // `rekindle_utils::text::{prefix, abbreviate}` instead (plan C2).
 #![deny(clippy::string_slice)]
 
-pub mod audit_view;
 pub mod channel_materialize;
 mod channels;
 pub mod commands;

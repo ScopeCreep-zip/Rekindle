@@ -1,6 +1,7 @@
 //! Netsim scenarios (plan C9.3, C9.4): real Hosts on a seeded simulation of
 //! the network. Each runs on a single-threaded, paused runtime.
 
+mod audit;
 mod auto_away;
 mod channel_delete_container_not_empty;
 mod community_policy;

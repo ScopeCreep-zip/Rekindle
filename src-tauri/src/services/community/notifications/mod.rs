@@ -20,10 +20,7 @@ mod sound;
 mod types;
 
 pub use emit::{emit_message_notification, should_emit_message_notification};
-pub use level::{
-    get_community_default_notification_level, parse_notification_level,
-    set_channel_notification_level, set_community_default_notification_level,
-};
+pub use level::{parse_notification_level, set_channel_notification_level};
 pub use quiet_hours::{
     get_quiet_hours, is_do_not_disturb_active, is_quiet_hours_active, set_do_not_disturb,
     set_quiet_hours,

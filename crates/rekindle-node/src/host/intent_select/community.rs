@@ -240,11 +240,17 @@ pub(super) async fn selection(
         }
         | CommunityRequest::InviteRevoke {
             community: target, ..
+        }
+        | CommunityRequest::NotificationDefaultSet {
+            community: target, ..
         } => {
             let (id, name) = community(ctx, target)?;
             if matches!(request, CommunityRequest::InviteCreate { .. }) {
                 s.reversibility =
                     Reversibility::ReversibleByInverse(IntentKind::RevokeCommunityInvite);
+            }
+            if matches!(request, CommunityRequest::NotificationDefaultSet { .. }) {
+                s.notifies = members(ctx, &id);
             }
             s.subject = Subject::Community { id, name };
         }

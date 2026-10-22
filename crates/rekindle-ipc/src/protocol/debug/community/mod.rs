@@ -2,6 +2,7 @@
 //! domain file formats its own requests, and a message body, free text or
 //! picture shows its length only.
 
+mod audit;
 mod channels;
 mod events;
 mod lifecycle;
@@ -80,6 +81,9 @@ impl std::fmt::Debug for CommunityRequest {
             | Self::WelcomeScreenSet { .. }
             | Self::OnboardingSubmit { .. }
             | Self::OnboardingComplete { .. } => self.fmt_onboarding(f),
+            Self::AuditLog { .. }
+            | Self::NotificationDefaultGet { .. }
+            | Self::NotificationDefaultSet { .. } => self.fmt_audit(f),
             Self::Kick { .. }
             | Self::Ban { .. }
             | Self::Unban { .. }

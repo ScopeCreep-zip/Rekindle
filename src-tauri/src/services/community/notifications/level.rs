@@ -56,40 +56,6 @@ pub fn resolve_notification_level(
     NotificationLevel::All
 }
 
-/// Architecture §17.1 tier 1: write a `CommunityNotificationDefault`
-/// governance entry so every member learns the community-wide
-/// notification default. Per-channel overrides remain local-only and
-/// continue to win in `resolve_notification_level`.
-pub async fn set_community_default_notification_level(
-    state: &Arc<AppState>,
-    community_id: &str,
-    level: NotificationLevel,
-) -> Result<(), String> {
-    let lamport =
-        state_helpers::next_governance_lamport(state, community_id).map_err(|e| e.to_string())?;
-    super::super::governance::write_entry(
-        state,
-        community_id,
-        rekindle_types::governance::GovernanceEntry::CommunityNotificationDefault {
-            level: level.as_str().to_string(),
-            lamport,
-        },
-    )
-    .await
-}
-
-pub fn get_community_default_notification_level(
-    state: &Arc<AppState>,
-    community_id: &str,
-) -> Option<NotificationLevel> {
-    let communities = state.communities.read();
-    communities
-        .get(community_id)
-        .and_then(|c| c.governance_state.as_ref())
-        .and_then(|gov| gov.notification_default.as_ref())
-        .and_then(|d| d.level.parse::<NotificationLevel>().ok())
-}
-
 pub async fn set_channel_notification_level(
     state: &Arc<AppState>,
     pool: &Db,

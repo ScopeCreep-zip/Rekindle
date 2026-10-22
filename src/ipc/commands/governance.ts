@@ -2,7 +2,7 @@ import { hostInvoke, invoke } from "../invoke";
 import type {
   CreateEventRequest, EventInfo, ExclusionGroupEdit, Message, PresenceSharingPolicy,
 } from "./types";
-import type { InviteCreated, InviteDto } from "./dto";
+import type { CommunityAuditEntry, InviteCreated, InviteDto } from "./dto";
 
 export const governanceCommands = {
   // Reactions
@@ -41,7 +41,7 @@ export const governanceCommands = {
 
   // Audit log
   getAuditLog: (communityId: string, beforeTimestamp?: number, limit: number = 50) =>
-    invoke<{ action: string; actorPseudonym: string; target: string | null; details: string | null; timestamp: number }[]>(
+    hostInvoke<CommunityAuditEntry[]>(
       "get_audit_log",
       { communityId, beforeTimestamp, limit },
     ),

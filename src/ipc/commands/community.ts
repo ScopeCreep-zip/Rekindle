@@ -363,10 +363,13 @@ export const communityCommands = {
   setCommunityDefaultNotificationLevel: (
     communityId: string,
     level: "all" | "mentions" | "nothing",
-  ) => invoke<void>("set_community_default_notification_level", { communityId, level }),
+  ) =>
+    hostInvoke<unknown>("set_community_default_notification_level", { communityId, level }).then(
+      () => undefined,
+    ),
   /** Read the current community default notification level (or `null`). */
   getCommunityDefaultNotificationLevel: (communityId: string) =>
-    invoke<"all" | "mentions" | "nothing" | null>(
+    hostInvoke<"all" | "mentions" | "nothing" | null>(
       "get_community_default_notification_level",
       { communityId },
     ),

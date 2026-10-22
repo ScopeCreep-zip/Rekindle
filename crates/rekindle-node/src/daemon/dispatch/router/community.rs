@@ -5,8 +5,8 @@
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{
-    channel, community, community_profile, events, game_servers, governance, keys, onboarding,
-    DaemonContext,
+    audit, channel, community, community_profile, events, game_servers, governance, keys,
+    onboarding, DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -119,26 +119,16 @@ pub(super) async fn route(
         | CommunityRequest::EventRsvp { .. }) => events::handle(ctx, state, request).await,
 
         // ── Game servers (plan E3.1 H1) ──────────────────────────
-        CommunityRequest::GameServerList { community } => {
-            game_servers::handle_list(ctx, state, &community).await
+        request @ (CommunityRequest::GameServerList { .. }
+        | CommunityRequest::GameServerAdd { .. }
+        | CommunityRequest::GameServerRemove { .. }) => {
+            game_servers::handle(ctx, state, request).await
         }
-        CommunityRequest::GameServerAdd {
-            community,
-            game_id,
-            label,
-            address,
-        } => {
-            let server = game_servers::NewGameServer {
-                game_id,
-                label,
-                address,
-            };
-            game_servers::handle_add(ctx, state, &community, server).await
+        request @ (CommunityRequest::AuditLog { .. }
+        | CommunityRequest::NotificationDefaultGet { .. }
+        | CommunityRequest::NotificationDefaultSet { .. }) => {
+            audit::handle(ctx, state, request).await
         }
-        CommunityRequest::GameServerRemove {
-            community,
-            server_id,
-        } => game_servers::handle_remove(ctx, state, &community, &server_id).await,
 
         // ── Onboarding (plan E3.1 D3) ────────────────────────────
         request @ (CommunityRequest::OnboardingConfigGet { .. }

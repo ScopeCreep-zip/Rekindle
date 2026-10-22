@@ -238,6 +238,20 @@ pub enum CommunityRequest {
         server_id: String,
     },
 
+    // ── Audit log and notification default (plan E3.1 F4) ─────────
+    /// A page of the community's audit log, newest first: the rows older
+    /// than `before_timestamp` (a Lamport time) when given, at most `limit`.
+    AuditLog {
+        community: String,
+        before_timestamp: Option<u64>,
+        limit: u32,
+    },
+    /// The community's default notification level, if one is set.
+    NotificationDefaultGet { community: String },
+    /// Set the community's default notification level (`all`, `mentions`
+    /// or `nothing`).
+    NotificationDefaultSet { community: String, level: String },
+
     // ── Events (plan E3.1 E4) ─────────────────────────────────────
     /// A community's events, by start time, with their attendees.
     EventList { community: String },

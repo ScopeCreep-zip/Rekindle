@@ -68,6 +68,13 @@
     },
     "type": "intentRequired"
   },
+  "community.auditEntry": {
+    "action": "member_banned",
+    "actorPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "details": "spam",
+    "target": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "timestamp": 7
+  },
   "community.banView": {
     "displayName": "Bea",
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"

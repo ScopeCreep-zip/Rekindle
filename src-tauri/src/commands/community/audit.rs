@@ -1,17 +1,26 @@
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::community::CommunityAuditEntry;
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::services::community_audit_runtime::get_audit_log_inner;
+use crate::host_call;
 use crate::state::SharedState;
 
-use super::types::AuditLogEntryInfoDto;
-
-/// Get paginated audit log entries for a community.
+/// A page of a community's audit log, newest first (plan E3.1 F4).
 #[tauri::command]
 pub async fn get_audit_log(
     state: State<'_, SharedState>,
     community_id: String,
     before_timestamp: Option<u64>,
     limit: u32,
-) -> Result<Vec<AuditLogEntryInfoDto>, String> {
-    get_audit_log_inner(state.inner(), community_id, before_timestamp, limit).await
+) -> Result<Done<Vec<CommunityAuditEntry>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::AuditLog {
+            community: community_id,
+            before_timestamp,
+            limit,
+        }),
+    )
+    .await
 }

@@ -1,21 +1,13 @@
-//! Phase 23.C — pure DTO projection for the audit log.
-//!
-//! Maps `GovernanceEntry` enum variants → `AuditLogEntryInfoDto`. Pure
-//! functions — no AppState, no Veilid, no SQLite, no Stronghold. Lives
-//! at `src-tauri/` root so the Tauri
-//! command handler in `commands/community/audit.rs` can stay focused
-//! on the Veilid IO + sig-verify + pagination orchestration.
-//!
-//! NB: this is view-layer projection (already-merged enum → Tauri DTO),
-//! NOT protocol logic per Invariant 7. Lives in src-tauri because the
-//! `AuditLogEntryInfoDto` is itself a Tauri-bound IPC type.
+//! The audit log's rows (plan E3.1 F4): each governance entry projected
+//! onto a [`CommunityAuditEntry`] by its author. Pure, so both hosts and the
+//! tests project the same way.
 
-use crate::commands::community::types::AuditLogEntryInfoDto;
+use rekindle_types::dto::community::CommunityAuditEntry;
 
-pub fn governance_entry_to_audit_row(
+pub(super) fn governance_entry_to_audit_row(
     actor_pseudonym: &str,
     entry: rekindle_types::governance::GovernanceEntry,
-) -> AuditLogEntryInfoDto {
+) -> CommunityAuditEntry {
     use rekindle_types::governance::GovernanceEntry;
 
     let actor_pseudonym = actor_pseudonym.to_string();
@@ -26,14 +18,14 @@ pub fn governance_entry_to_audit_row(
             name,
             record_key,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "channel_created".into(),
             actor_pseudonym,
             target: Some(hex::encode(channel_id.0)),
             details: Some(format!("{name} ({record_key})")),
             timestamp,
         },
-        GovernanceEntry::ChannelArchived { channel_id, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::ChannelArchived { channel_id, .. } => CommunityAuditEntry {
             action: "channel_archived".into(),
             actor_pseudonym,
             target: Some(hex::encode(channel_id.0)),
@@ -46,7 +38,7 @@ pub fn governance_entry_to_audit_row(
             topic,
             position,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "channel_updated".into(),
             actor_pseudonym,
             target: Some(hex::encode(channel_id.0)),
@@ -70,7 +62,7 @@ pub fn governance_entry_to_audit_row(
             permissions,
             position,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "role_defined".into(),
             actor_pseudonym,
             target: Some(hex::encode(role_id.0)),
@@ -79,7 +71,7 @@ pub fn governance_entry_to_audit_row(
         },
         GovernanceEntry::RoleAssignment {
             target, role_id, ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "role_assigned".into(),
             actor_pseudonym,
             target: Some(hex::encode(target.0)),
@@ -88,21 +80,21 @@ pub fn governance_entry_to_audit_row(
         },
         GovernanceEntry::RoleUnassignment {
             target, role_id, ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "role_unassigned".into(),
             actor_pseudonym,
             target: Some(hex::encode(target.0)),
             details: Some(format!("role={}", hex::encode(role_id.0))),
             timestamp,
         },
-        GovernanceEntry::BanEntry { target, reason, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::BanEntry { target, reason, .. } => CommunityAuditEntry {
             action: "member_banned".into(),
             actor_pseudonym,
             target: Some(hex::encode(target.0)),
             details: reason,
             timestamp,
         },
-        GovernanceEntry::UnbanEntry { target, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::UnbanEntry { target, .. } => CommunityAuditEntry {
             action: "member_unbanned".into(),
             actor_pseudonym,
             target: Some(hex::encode(target.0)),
@@ -114,7 +106,7 @@ pub fn governance_entry_to_audit_row(
             duration_seconds,
             reason,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "member_timed_out".into(),
             actor_pseudonym,
             target: Some(hex::encode(target.0)),
@@ -127,7 +119,7 @@ pub fn governance_entry_to_audit_row(
             ),
             timestamp,
         },
-        GovernanceEntry::RemoveTimeoutEntry { target, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::RemoveTimeoutEntry { target, .. } => CommunityAuditEntry {
             action: "timeout_removed".into(),
             actor_pseudonym,
             target: Some(hex::encode(target.0)),
@@ -136,7 +128,7 @@ pub fn governance_entry_to_audit_row(
         },
         GovernanceEntry::CommunityMeta {
             name, description, ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "community_updated".into(),
             actor_pseudonym,
             target: None,
@@ -155,14 +147,14 @@ pub fn governance_entry_to_audit_row(
         },
         GovernanceEntry::CategoryCreated {
             category_id, name, ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "category_created".into(),
             actor_pseudonym,
             target: Some(hex::encode(category_id.0)),
             details: Some(name),
             timestamp,
         },
-        GovernanceEntry::CategoryArchived { category_id, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::CategoryArchived { category_id, .. } => CommunityAuditEntry {
             action: "category_archived".into(),
             actor_pseudonym,
             target: Some(hex::encode(category_id.0)),
@@ -174,7 +166,7 @@ pub fn governance_entry_to_audit_row(
             name,
             position,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "category_updated".into(),
             actor_pseudonym,
             target: Some(hex::encode(category_id.0)),
@@ -198,7 +190,7 @@ pub fn governance_entry_to_audit_row(
             allow,
             deny,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "permission_overwrite_set".into(),
             actor_pseudonym,
             target: Some(hex::encode(channel_id.0)),
@@ -209,28 +201,28 @@ pub fn governance_entry_to_audit_row(
         },
         GovernanceEntry::ThreadCreated {
             thread_id, name, ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "thread_created".into(),
             actor_pseudonym,
             target: Some(hex::encode(thread_id.0)),
             details: Some(name),
             timestamp,
         },
-        GovernanceEntry::ThreadArchived { thread_id, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::ThreadArchived { thread_id, .. } => CommunityAuditEntry {
             action: "thread_archived".into(),
             actor_pseudonym,
             target: Some(hex::encode(thread_id.0)),
             details: None,
             timestamp,
         },
-        GovernanceEntry::EventCreated { event_id, name, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::EventCreated { event_id, name, .. } => CommunityAuditEntry {
             action: "event_created".into(),
             actor_pseudonym,
             target: Some(hex::encode(event_id.0)),
             details: Some(name),
             timestamp,
         },
-        GovernanceEntry::EventArchived { event_id, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::EventArchived { event_id, .. } => CommunityAuditEntry {
             action: "event_archived".into(),
             actor_pseudonym,
             target: Some(hex::encode(event_id.0)),
@@ -245,7 +237,7 @@ fn governance_tail_audit_row(
     actor_pseudonym: String,
     timestamp: u64,
     entry: rekindle_types::governance::GovernanceEntry,
-) -> AuditLogEntryInfoDto {
+) -> CommunityAuditEntry {
     use rekindle_types::governance::GovernanceEntry;
 
     match entry {
@@ -255,28 +247,28 @@ fn governance_tail_audit_row(
             kind,
             animated,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "expression_added".into(),
             actor_pseudonym,
             target: Some(hex::encode(expression_id)),
             details: Some(format!("name={name}, kind={kind}, animated={animated}")),
             timestamp,
         },
-        GovernanceEntry::ExpressionRemoved { expression_id, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::ExpressionRemoved { expression_id, .. } => CommunityAuditEntry {
             action: "expression_removed".into(),
             actor_pseudonym,
             target: Some(hex::encode(expression_id)),
             details: None,
             timestamp,
         },
-        GovernanceEntry::OnboardingConfig { .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::OnboardingConfig { .. } => CommunityAuditEntry {
             action: "onboarding_config_updated".into(),
             actor_pseudonym,
             target: None,
             details: None,
             timestamp,
         },
-        GovernanceEntry::WelcomeScreen { .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::WelcomeScreen { .. } => CommunityAuditEntry {
             action: "welcome_screen_updated".into(),
             actor_pseudonym,
             target: None,
@@ -285,7 +277,7 @@ fn governance_tail_audit_row(
         },
         GovernanceEntry::AdminDelete {
             message_id, reason, ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "message_deleted".into(),
             actor_pseudonym,
             target: Some(hex::encode(message_id)),
@@ -297,7 +289,7 @@ fn governance_tail_audit_row(
             registry_key,
             governance_key,
             ..
-        } => AuditLogEntryInfoDto {
+        } => CommunityAuditEntry {
             action: "segment_added".into(),
             actor_pseudonym,
             target: Some(segment_index.to_string()),
@@ -306,14 +298,14 @@ fn governance_tail_audit_row(
             )),
             timestamp,
         },
-        GovernanceEntry::AutoModRule { rule_id, name, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::AutoModRule { rule_id, name, .. } => CommunityAuditEntry {
             action: "automod_rule_updated".into(),
             actor_pseudonym,
             target: Some(hex::encode(rule_id)),
             details: Some(name),
             timestamp,
         },
-        GovernanceEntry::RoleArchived { role_id, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::RoleArchived { role_id, .. } => CommunityAuditEntry {
             action: "role_archived".into(),
             actor_pseudonym,
             target: Some(hex::encode(role_id.0)),
@@ -334,21 +326,21 @@ fn governance_tail_audit_row(
             expires_at,
             timestamp,
         ),
-        GovernanceEntry::InviteRevoked { invite_id, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::InviteRevoked { invite_id, .. } => CommunityAuditEntry {
             action: "invite_revoked".into(),
             actor_pseudonym,
             target: Some(hex::encode(invite_id)),
             details: None,
             timestamp,
         },
-        GovernanceEntry::MEKGenerationBump { generation, .. } => AuditLogEntryInfoDto {
+        GovernanceEntry::MEKGenerationBump { generation, .. } => CommunityAuditEntry {
             action: "mek_rotated".into(),
             actor_pseudonym,
             target: None,
             details: Some(format!("generation={generation}")),
             timestamp,
         },
-        _ => AuditLogEntryInfoDto {
+        _ => CommunityAuditEntry {
             action: "unknown".into(),
             actor_pseudonym,
             target: None,
@@ -365,8 +357,8 @@ fn invite_created_audit_row(
     max_uses: Option<u32>,
     expires_at: Option<u64>,
     timestamp: u64,
-) -> AuditLogEntryInfoDto {
-    AuditLogEntryInfoDto {
+) -> CommunityAuditEntry {
+    CommunityAuditEntry {
         action: "invite_created".into(),
         actor_pseudonym,
         target: Some(hex::encode(invite_id)),

@@ -523,6 +523,12 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("RoleUpdate", Some(IntentKind::EditRole)),
     ("RoleDelete", Some(IntentKind::DeleteRole)),
     ("GameServerList", None),
+    ("AuditLog", None),
+    ("NotificationDefaultGet", None),
+    (
+        "NotificationDefaultSet",
+        Some(IntentKind::SetCommunityDefaultNotificationLevel),
+    ),
     ("GameServerAdd", Some(IntentKind::AddGameServer)),
     ("GameServerRemove", Some(IntentKind::RemoveGameServer)),
     ("EventList", None),

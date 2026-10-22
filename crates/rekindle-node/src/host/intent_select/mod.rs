@@ -147,7 +147,8 @@ pub(crate) async fn select(
             | CommunityRequest::Timeout { .. }
             | CommunityRequest::TimeoutRemove { .. }
             | CommunityRequest::InviteCreate { .. }
-            | CommunityRequest::InviteRevoke { .. }),
+            | CommunityRequest::InviteRevoke { .. }
+            | CommunityRequest::NotificationDefaultSet { .. }),
         ) => community::selection(ctx, request, &mut s).await?,
         IpcRequest::Community(
             request @ (CommunityRequest::CommunityUpdateProfile { .. }
@@ -257,6 +258,8 @@ pub(crate) async fn select(
             | CommunityRequest::GameServerList { .. }
             | CommunityRequest::OnboardingConfigGet { .. }
             | CommunityRequest::WelcomeScreenGet { .. }
+            | CommunityRequest::AuditLog { .. }
+            | CommunityRequest::NotificationDefaultGet { .. }
             | CommunityRequest::CommunityAvatarGet { .. }
             | CommunityRequest::CommunityPolicyGet { .. }
             | CommunityRequest::EventList { .. }

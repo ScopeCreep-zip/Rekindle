@@ -1,4 +1,8 @@
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
+
+use crate::host_call;
 
 use crate::services::community_notifications_runtime::QuietHoursSettingsDto;
 use crate::state::SharedState;
@@ -21,29 +25,37 @@ pub async fn set_channel_notification_level(
     .await
 }
 
+/// Set the community-wide default notification level, a governance
+/// entry every member merges (plan E3.1 F4).
 #[tauri::command]
 pub async fn set_community_default_notification_level(
     state: State<'_, SharedState>,
     community_id: String,
     level: String,
-) -> Result<(), String> {
-    crate::services::community_notifications_runtime::set_community_default_notification_level_inner(
-        state.inner(),
-        &community_id,
-        &level,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::NotificationDefaultSet {
+            community: community_id,
+            level,
+        }),
     )
     .await
 }
 
+/// The community's merged default notification level, or `null`.
 #[tauri::command]
 pub async fn get_community_default_notification_level(
     state: State<'_, SharedState>,
     community_id: String,
-) -> Result<Option<String>, String> {
-    Ok(crate::services::community_notifications_runtime::get_community_default_notification_level_inner(
-        state.inner(),
-        &community_id,
-    ))
+) -> Result<Done<Option<String>>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::NotificationDefaultGet {
+            community: community_id,
+        }),
+    )
+    .await
 }
 
 /// Architecture §32 Phase 7 Week 25 — set the notification sound for

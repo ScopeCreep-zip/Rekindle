@@ -1,19 +1,47 @@
 //! A community's game-server requests (plan E3.1 H1), answered by the
 //! Host's governance adapter on both hosts.
 
-use rekindle_ipc::protocol::IpcResponse;
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
-pub(crate) use crate::host::adapters::governance::game_servers::NewGameServer;
+use crate::host::adapters::governance::game_servers::NewGameServer;
 
 use super::{adapter, runtime_refused, state_error, DaemonContext};
 use crate::daemon::DaemonState;
 
-/// The community's game servers.
-pub(crate) async fn handle_list(
+/// A game-server request.
+pub(crate) async fn handle(
     ctx: &DaemonContext,
     state: DaemonState,
-    community: &str,
+    request: CommunityRequest,
 ) -> IpcResponse {
+    match request {
+        CommunityRequest::GameServerList { community } => handle_list(ctx, state, &community).await,
+        CommunityRequest::GameServerAdd {
+            community,
+            game_id,
+            label,
+            address,
+        } => {
+            let server = NewGameServer {
+                game_id,
+                label,
+                address,
+            };
+            handle_add(ctx, state, &community, server).await
+        }
+        CommunityRequest::GameServerRemove {
+            community,
+            server_id,
+        } => handle_remove(ctx, state, &community, &server_id).await,
+        other => IpcResponse::error(
+            500,
+            format!("{} is not a game-server request", other.name()),
+        ),
+    }
+}
+
+/// The community's game servers.
+async fn handle_list(ctx: &DaemonContext, state: DaemonState, community: &str) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
@@ -28,7 +56,7 @@ pub(crate) async fn handle_list(
 }
 
 /// Add `server`; answered with its id.
-pub(crate) async fn handle_add(
+async fn handle_add(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -51,7 +79,7 @@ pub(crate) async fn handle_add(
 }
 
 /// Remove the server `server_id`.
-pub(crate) async fn handle_remove(
+async fn handle_remove(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,

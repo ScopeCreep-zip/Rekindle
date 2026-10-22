@@ -6,7 +6,6 @@ pub mod call_runtime; // Phase 23.C — mid-call signaling orchestration lifted 
 pub mod calls_adapter; // Phase 14 — CallSignalingDeps impl + calls free-fn facades.
 pub mod channel_adapter; // Phase 19.h-REDO — ChannelMessagingDeps impl for channel messaging ops.
 pub mod community;
-pub mod community_audit_runtime; // Phase 23.C — audit-log read + ban-list runtime orchestration lifted from commands/community/{audit,moderation}.rs.
 pub mod community_automod_runtime; // Phase 23.C — automod rule list/set/delete orchestration lifted from commands/community/automod.rs.
 #[cfg(debug_assertions)]
 pub mod community_diagnostics_runtime; // Phase 23.C — debug_gossip_state body lifted from commands/community/diagnostics.rs.

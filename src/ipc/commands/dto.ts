@@ -20,7 +20,8 @@ export interface GameInfo {
   serverAddress: string | null;
 }
 
-export interface AuditLogEntryDto {
+/** One audit-log row (`rekindle_types::dto::community::CommunityAuditEntry`). */
+export interface CommunityAuditEntry {
   action: string;
   actorPseudonym: string;
   target: string | null;

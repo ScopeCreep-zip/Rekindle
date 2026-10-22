@@ -202,3 +202,20 @@ pub struct CommunityBanView {
     /// The roster's name, or a short form of the key.
     pub display_name: String,
 }
+
+/// One row of a community's audit log: a verified governance entry, by its
+/// author (plan E3.1 F4).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityAuditEntry {
+    /// What the entry did, in snake case (`member_banned`, `role_assigned`, …).
+    pub action: String,
+    /// The author's pseudonym, 64 lowercase hex.
+    pub actor_pseudonym: String,
+    /// The subject of the entry (a member, channel, role, …), when it has one.
+    pub target: Option<String>,
+    /// The entry's other fields, when it carries any.
+    pub details: Option<String>,
+    /// The entry's Lamport time.
+    pub timestamp: u64,
+}

@@ -95,6 +95,15 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("add_game_server", HostCall::Request("GameServerAdd")),
     ("remove_game_server", HostCall::Request("GameServerRemove")),
     ("get_game_servers", HostCall::Request("GameServerList")),
+    ("get_audit_log", HostCall::Request("AuditLog")),
+    (
+        "get_community_default_notification_level",
+        HostCall::Request("NotificationDefaultGet"),
+    ),
+    (
+        "set_community_default_notification_level",
+        HostCall::Request("NotificationDefaultSet"),
+    ),
     (
         "get_onboarding_config",
         HostCall::Request("OnboardingConfigGet"),
@@ -277,7 +286,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("upload_emoji", "E3.1"),
     ("upload_sticker", "E3.1"),
     ("list_expressions", "E3.1"),
-    ("get_audit_log", "E3.1"),
     ("get_channel_messages", "E3.1"),
     ("get_older_channel_messages", "E3.1"),
     ("send_channel_message", "E3.1"),
@@ -377,8 +385,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("list_push_relay_registrations", "E5.2"),
     ("register_with_push_relay", "E5.2"),
     ("unregister_with_push_relay", "E5.2"),
-    ("get_community_default_notification_level", "E5.2"),
-    ("set_community_default_notification_level", "E5.2"),
     ("set_channel_notification_level", "E5.2"),
     ("get_do_not_disturb", "E5.2"),
     ("set_do_not_disturb", "E5.2"),

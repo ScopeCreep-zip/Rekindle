@@ -66,31 +66,6 @@ pub async fn set_channel_notification_level_inner(
     .await
 }
 
-pub async fn set_community_default_notification_level_inner(
-    state: &SharedState,
-    community_id: &str,
-    level: &str,
-) -> Result<(), String> {
-    let parsed = crate::services::community::notifications::parse_notification_level(level)?;
-    crate::services::community::notifications::set_community_default_notification_level(
-        state,
-        community_id,
-        parsed,
-    )
-    .await
-}
-
-pub fn get_community_default_notification_level_inner(
-    state: &SharedState,
-    community_id: &str,
-) -> Option<String> {
-    crate::services::community::notifications::get_community_default_notification_level(
-        state,
-        community_id,
-    )
-    .map(|level| level.as_str().to_string())
-}
-
 pub async fn get_notification_sound_inner(
     state: &SharedState,
     pool: &Db,

@@ -3,6 +3,7 @@
 //! `channels`'.
 
 use rekindle_governance::validate::bounds;
+use rekindle_governance_runtime::audit::NOTIFICATION_LEVELS;
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::game_server;
 use rekindle_types::governance::ExclusionGroupEdit;
@@ -17,6 +18,7 @@ const MAX_EXCLUSION_GROUP_LEN: usize = 32;
 /// The longest community policy text, in characters (architecture §10.7).
 const MAX_POLICY_TEXT_CHARS: usize = 4096;
 
+use crate::host::adapters::governance::audit::MAX_AUDIT_PAGE;
 use crate::host::adapters::governance::community_pictures::{
     is_picture_hash, MAX_UPLOAD_BYTES as MAX_PICTURE_UPLOAD_BYTES,
 };
@@ -28,8 +30,10 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
         CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
         CommunityRequest::GameServerList { community: key }
-        | CommunityRequest::CommunityPolicyGet { community: key }
- => community(key),
+        | CommunityRequest::NotificationDefaultGet { community: key }
+        | CommunityRequest::CommunityPolicyGet { community: key } => community(key),
+        request @ (CommunityRequest::AuditLog { .. }
+        | CommunityRequest::NotificationDefaultSet { .. }) => audit_fields(request),
         CommunityRequest::CommunityUpdateProfile {
             community: key,
             bio,
@@ -339,5 +343,39 @@ fn blob_hash(hash: &str, what: &str) -> Checked {
             400,
             format!("invalid {what}: 64 lowercase hex"),
         ))
+    }
+}
+
+/// The audit-log page bound and the notification level (plan E3.1 F4).
+fn audit_fields(request: &CommunityRequest) -> Checked {
+    match request {
+        CommunityRequest::AuditLog {
+            community: key,
+            before_timestamp: _,
+            limit,
+        } => {
+            community(key)?;
+            if *limit == 0 || *limit > MAX_AUDIT_PAGE {
+                return Err(IpcResponse::error(
+                    400,
+                    format!("invalid limit: must be 1..={MAX_AUDIT_PAGE}"),
+                ));
+            }
+            Ok(())
+        }
+        CommunityRequest::NotificationDefaultSet {
+            community: key,
+            level,
+        } => {
+            community(key)?;
+            if !NOTIFICATION_LEVELS.contains(&level.as_str()) {
+                return Err(IpcResponse::error(
+                    400,
+                    format!("invalid level: must be one of {NOTIFICATION_LEVELS:?}"),
+                ));
+            }
+            Ok(())
+        }
+        _ => Ok(()),
     }
 }

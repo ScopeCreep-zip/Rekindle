@@ -11,7 +11,8 @@ use std::path::PathBuf;
 
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::community::{
-    CommunityBanView, CommunityInviteCreated, CommunityInviteView, CommunityMemberView,
+    CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
+    CommunityMemberView,
 };
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
@@ -406,6 +407,16 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             ],
             epoch: 0,
             pending: true,
+        }),
+    );
+    add(
+        "community.auditEntry",
+        to(CommunityAuditEntry {
+            action: "member_banned".into(),
+            actor_pseudonym: pk('a'),
+            target: Some(pk('b')),
+            details: Some("spam".into()),
+            timestamp: 7,
         }),
     );
     add(

@@ -203,6 +203,8 @@ impl CommunityRequest {
             | Self::GameServerList { .. }
             | Self::OnboardingConfigGet { .. }
             | Self::WelcomeScreenGet { .. }
+            | Self::AuditLog { .. }
+            | Self::NotificationDefaultGet { .. }
             | Self::CommunityAvatarGet { .. }
             | Self::CommunityPolicyGet { .. }
             | Self::EventList { .. }
@@ -237,6 +239,7 @@ impl CommunityRequest {
             | Self::RoleSelfAssign { .. }
             | Self::RoleSelfUnassign { .. }
             | Self::GameServerAdd { .. }
+            | Self::NotificationDefaultSet { .. }
             | Self::GameServerRemove { .. }
             | Self::EventCreate { .. }
             | Self::EventEdit { .. }

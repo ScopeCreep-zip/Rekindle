@@ -16,7 +16,8 @@
 //! messages and `state_builder` a created community's state (B2e); `mek` the key installs, which move to the MEK
 //! adapters at E3.5; `community_sync` the sync loop's community phase, `invite_expiry` the
 //! invite expiry timer and `mek_recovery` the key catch-up (C2b); `game_servers` a community's game servers (H1); `deps_impl` is the single trait impl and delegates; `create_leave` and `views` the
-//! community window's create, leave and reads (E3.1 D1b).
+//! community window's create, leave and reads (E3.1 D1b); `audit` / `audit_rows` the audit log
+//! and the notification default (F4).
 
 use std::sync::Arc;
 
@@ -25,6 +26,8 @@ use rekindle_transport::TransportNode;
 
 use crate::daemon::dispatch::DaemonContext;
 
+pub mod audit;
+mod audit_rows;
 pub(crate) mod community_pictures;
 pub(crate) mod community_profile;
 pub(crate) mod community_sync;
