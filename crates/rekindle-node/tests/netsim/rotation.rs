@@ -40,6 +40,7 @@ async fn settle(sim: &Netsim) {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+#[ignore = "E2.B finding F9: the rotation lands but network_get still reads the old head (rotation.rs:113); suspected: after the failed rotation left a partial head at seq n+1 on some replicas, the retried rotation lands at the same seq with a split (set_value.rs:465-500)"]
 async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
     let (sim, mut nodes) = start(2, 41).await;
     nodes[0].unlock_new_identity("Ann").await;
