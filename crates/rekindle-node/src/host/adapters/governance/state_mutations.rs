@@ -29,7 +29,10 @@ impl HostGovernance {
             community_id,
             &state,
         );
-        let projected = self.ctx.communities.project_governance(community_id, state);
+        let projected =
+            self.ctx
+                .communities
+                .project_governance(community_id, state, self.ctx.clock.now_secs());
         // The merged role assignments are authoritative for our own role
         // list: the session's membership (which `CommunityInfo` and the
         // permission checks read) and its stored row adopt them, so a role

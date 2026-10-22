@@ -186,36 +186,65 @@ fn an_automod_rule_that_cannot_be_evaluated_drops() {
     ));
 }
 
-#[test]
-fn drops_a_post_in_a_thread_whose_creator_is_timed_out() {
-    let mut gov = state();
-    let creator = PseudonymKey([0xbb; 32]);
-    gov.threads.insert(
-        ThreadId(ChannelId::from_hex(GATE_CHANNEL).expect("thread id").0),
-        rekindle_governance::state::ThreadState {
-            parent_channel_id: ChannelId([1; 16]),
-            name: "side".into(),
-            thread_type: "public".into(),
-            record_key: None,
-            invited: Vec::new(),
-            forum_tag: None,
-            auto_archive_seconds: 3600,
-            creator: creator.clone(),
-            created_lamport: 2,
-            archived_lamport: None,
-        },
-    );
+fn thread_by(creator: &PseudonymKey) -> rekindle_governance::state::ThreadState {
+    rekindle_governance::state::ThreadState {
+        parent_channel_id: ChannelId([1; 16]),
+        name: "side".into(),
+        thread_type: "public".into(),
+        record_key: None,
+        invited: Vec::new(),
+        forum_tag: None,
+        auto_archive_seconds: 3600,
+        creator: creator.clone(),
+        created_lamport: 2,
+        archived_lamport: None,
+    }
+}
+
+fn time_out(gov: &mut GovernanceState, member: &PseudonymKey) {
     gov.timeouts.insert(
-        creator,
+        member.clone(),
         TimeoutState {
             duration_seconds: 60,
             started_at: 100,
             lamport: 1,
         },
     );
-    assert_eq!(
-        judge(&gov, &item("hi", 120, 120)),
-        Verdict::Drop(GateReason::TimedOut { until_secs: 160 })
+}
+
+/// Another member's reply in a thread whose creator is timed out is
+/// judged on its own author and admitted.
+#[test]
+fn a_reply_in_a_timed_out_creators_thread_is_admitted() {
+    let mut gov = state();
+    let creator = PseudonymKey([0xbb; 32]);
+    gov.threads.insert(
+        ThreadId(ChannelId::from_hex(GATE_CHANNEL).expect("thread id").0),
+        thread_by(&creator),
     );
-    assert_eq!(judge(&gov, &item("hi", 160, 160)), Verdict::Admit);
+    time_out(&mut gov, &creator);
+    assert_eq!(judge(&gov, &item("hi", 120, 120)), Verdict::Admit);
+}
+
+/// A thread received while its creator is timed out is held, and stays
+/// held after the timeout ends; one already known, or by another member,
+/// is kept.
+#[test]
+fn a_thread_received_while_its_creator_is_timed_out_is_held() {
+    let (late, other) = (PseudonymKey([0xbb; 32]), PseudonymKey([0xcc; 32]));
+    let mut known = state();
+    known.threads.insert(ThreadId([1; 16]), thread_by(&late));
+    let mut merged = known.clone();
+    merged.threads.insert(ThreadId([2; 16]), thread_by(&late));
+    merged.threads.insert(ThreadId([3; 16]), thread_by(&other));
+    time_out(&mut merged, &late);
+    let mut held = HashSet::new();
+    hold_timed_out_threads(Some(&known), &mut held, &mut merged, 120);
+    assert_eq!(held, HashSet::from([ThreadId([2; 16])]));
+    let mut kept: Vec<_> = merged.threads.keys().map(|id| id.0[0]).collect();
+    kept.sort_unstable();
+    assert_eq!(kept, vec![1, 3]);
+    merged.threads.insert(ThreadId([2; 16]), thread_by(&late));
+    hold_timed_out_threads(Some(&known), &mut held, &mut merged, 500);
+    assert!(!merged.threads.contains_key(&ThreadId([2; 16])));
 }

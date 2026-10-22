@@ -1,8 +1,9 @@
 //! A timed-out member's thread is refused at the Host's send path (plan
 //! E3.1 F3c). Governance validates `ThreadCreated` at time 0, since a CRDT
 //! merge reads no clock, so the timeout is checked here by the clock port;
-//! ingest refuses the posts in such a thread by the same rule
-//! (`rekindle_channel::ingest::timed_out_until`).
+//! a peer's such thread is held at receipt by the same rule
+//! (`rekindle_channel::ingest::hold_timed_out_threads`, from
+//! `CommunityStore::project_governance`).
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::timed_out_until;

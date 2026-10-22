@@ -77,12 +77,23 @@ impl CommunityStore {
     /// Project merged governance onto the community (channels, roles,
     /// categories, our role ids, segments; plan E3.1 B2c) and install it,
     /// creating the entry if this is the first merge for the community.
+    /// A thread new to us whose creator is timed out at `now_secs` (the
+    /// clock port) is held from the state first, and stays held.
     pub fn project_governance(
         &self,
         community_id: &str,
-        state: GovernanceState,
+        mut state: GovernanceState,
+        now_secs: u64,
     ) -> GovernanceProjected {
-        self.write(community_id, |c| projection::project(c, state))
+        self.write(community_id, |c| {
+            rekindle_channel::ingest::hold_timed_out_threads(
+                c.governance_state.as_ref(),
+                &mut c.held_threads,
+                &mut state,
+                now_secs,
+            );
+            projection::project(c, state)
+        })
     }
 
     /// The community's merged governance as SQLite stores it, at our

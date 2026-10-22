@@ -173,3 +173,69 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
         .contains(&Fact::MembersAffected { count: 1 }));
     assert_eq!(selection.notifies, Notifies::Members(2));
 }
+
+fn thread_by(creator: &PseudonymKey) -> rekindle_governance::state::ThreadState {
+    rekindle_governance::state::ThreadState {
+        parent_channel_id: rekindle_types::id::ChannelId([1; 16]),
+        name: "side".into(),
+        thread_type: "public".into(),
+        record_key: None,
+        invited: Vec::new(),
+        forum_tag: None,
+        auto_archive_seconds: 3600,
+        creator: creator.clone(),
+        created_lamport: 2,
+        archived_lamport: None,
+    }
+}
+
+/// A timed-out member's `ThreadCreated` received by the store is held from
+/// the projection, and stays held once the timeout ends; another member's
+/// post in another thread passes the ingest gate.
+#[test]
+fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
+    use rekindle_channel::automod::AutoModCompiledCache;
+    use rekindle_channel::ingest::{gate, BlockList, GateItem, RateLimits, Verdict};
+    use rekindle_types::id::ThreadId;
+
+    let (late, other) = (PseudonymKey([0xbb; 32]), PseudonymKey([0xcc; 32]));
+    let store = CommunityStore::new(new_map());
+    store.project_governance("c1", GovernanceState::default(), 100);
+    let mut merged = GovernanceState::default();
+    merged.timeouts.insert(
+        late.clone(),
+        rekindle_governance::state::TimeoutState {
+            duration_seconds: 60,
+            started_at: 100,
+            lamport: 1,
+        },
+    );
+    merged.threads.insert(ThreadId([2; 16]), thread_by(&late));
+    merged.threads.insert(ThreadId([3; 16]), thread_by(&other));
+    store.project_governance("c1", merged.clone(), 120);
+    let gov = store.governance_state("c1").expect("merged");
+    assert!(!gov.threads.contains_key(&ThreadId([2; 16])), "held");
+    assert!(gov.threads.contains_key(&ThreadId([3; 16])));
+
+    store.project_governance("c1", merged, 500);
+    let gov = store.governance_state("c1").expect("merged");
+    assert!(!gov.threads.contains_key(&ThreadId([2; 16])), "stays held");
+
+    let (thread, sender) = (hex::encode([3u8; 16]), hex::encode(other.0));
+    let item = GateItem {
+        community_id: "c1",
+        channel_id: &thread,
+        sender_pseudonym: &sender,
+        body: "reply",
+        sent_at_secs: 120,
+        now_secs: 120,
+    };
+    let verdict = gate(
+        &item,
+        &gov,
+        &AutoModCompiledCache::compile(&gov),
+        &BlockList::default(),
+        &mut RateLimits::default(),
+    );
+    assert_eq!(verdict, Verdict::Admit);
+}

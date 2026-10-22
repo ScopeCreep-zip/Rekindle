@@ -7,7 +7,7 @@
 //! An automod rule that cannot be evaluated drops the post: a broken rule
 //! never admits what it was written to stop.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_governance::permissions::{compute_permissions, has_capability};
@@ -95,7 +95,7 @@ pub struct RateLimits {
 /// When `member`'s timeout ends, while it lasts at `now_secs` (the
 /// caller's clock port). The merge never reads a clock (thread validation
 /// runs at time 0), so the Host refuses a timed-out member's thread at its
-/// send path and at ingest by this.
+/// send path and holds one it receives ([`hold_timed_out_threads`]) by this.
 #[must_use]
 pub fn timed_out_until(gov: &GovernanceState, member: &PseudonymKey, now_secs: u64) -> Option<u64> {
     let timeout = gov.timeouts.get(member)?;
@@ -103,13 +103,29 @@ pub fn timed_out_until(gov: &GovernanceState, member: &PseudonymKey, now_secs: u
     (now_secs < until_secs).then_some(until_secs)
 }
 
-/// A post in a thread whose creator is timed out at `now_secs`: the thread
-/// was created by a member the merge could not refuse by time, so ingest
-/// refuses what is posted in it while the timeout lasts.
-fn thread_creator_timed_out(gov: &GovernanceState, channel_id: &str, now_secs: u64) -> Option<u64> {
-    let id: [u8; 16] = hex::decode(channel_id).ok()?.try_into().ok()?;
-    let thread = gov.threads.get(&ThreadId(id))?;
-    timed_out_until(gov, &thread.creator, now_secs)
+/// Hold, at receipt, every thread of the merged `state` that is new to us
+/// (in neither `previous` nor `held`) and whose creator is timed out at
+/// `now_secs`; a held thread stays out of `state` for the session. A
+/// `ThreadCreated` carries no time and the merge reads no clock, so the
+/// moment we receive it is the only time we can judge. Replies are not
+/// judged by their thread's creator: each post passes [`gate`] on its own
+/// author.
+pub fn hold_timed_out_threads(
+    previous: Option<&GovernanceState>,
+    held: &mut HashSet<ThreadId>,
+    state: &mut GovernanceState,
+    now_secs: u64,
+) {
+    let fresh: Vec<ThreadId> = state
+        .threads
+        .iter()
+        .filter(|(id, _)| !held.contains(*id))
+        .filter(|(id, _)| !previous.is_some_and(|p| p.threads.contains_key(*id)))
+        .filter(|(_, t)| timed_out_until(state, &t.creator, now_secs).is_some())
+        .map(|(id, _)| *id)
+        .collect();
+    held.extend(fresh);
+    state.threads.retain(|id, _| !held.contains(id));
 }
 
 /// Judge `item` against the community's merged state `gov`, its compiled
@@ -131,9 +147,6 @@ pub fn gate(
         return Verdict::Drop(GateReason::Banned);
     }
     if let Some(until_secs) = timed_out_until(gov, &sender, item.now_secs) {
-        return Verdict::Drop(GateReason::TimedOut { until_secs });
-    }
-    if let Some(until_secs) = thread_creator_timed_out(gov, item.channel_id, item.now_secs) {
         return Verdict::Drop(GateReason::TimedOut { until_secs });
     }
     let channel = ChannelId::from_hex(item.channel_id);

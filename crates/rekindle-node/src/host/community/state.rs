@@ -62,6 +62,12 @@ pub struct CommunityState {
     #[serde(skip)]
     pub governance_state: Option<rekindle_governance::state::GovernanceState>,
 
+    /// Threads held at receipt because their creator was timed out then
+    /// (`rekindle_channel::ingest::hold_timed_out_threads`): kept out of
+    /// `governance_state` for the session.
+    #[serde(skip)]
+    pub held_threads: HashSet<rekindle_types::id::ThreadId>,
+
     /// Lamport clock for channel and control messages (text, polls,
     /// stage, files, video topology). Ticked on every send, merged
     /// (drift-clamped) on every received message. Loaded at login from
