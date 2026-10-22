@@ -322,6 +322,10 @@ async fn a_group_backlog_lands_in_as_few_pages_as_hold_it() {
     // Every chain page is a sealed single-subkey record.
     let pages_before = sim.single_subkey_values().len();
     send(&nodes[0], &gid, "in flight").await;
+    // Every task runs until it waits, so the outbox takes the first row
+    // alone before the backlog is written (F11: a database call no longer
+    // lets it in between two sends).
+    sim.quiesce().await;
     let backlog: Vec<String> = (0..8).map(|i| format!("backlog {i}")).collect();
     for body in &backlog {
         send(&nodes[0], &gid, body).await;
