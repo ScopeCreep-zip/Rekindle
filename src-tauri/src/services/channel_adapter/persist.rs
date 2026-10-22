@@ -48,6 +48,7 @@ async fn persist_own_post(
                 flags: 0,
                 attachment_json: None,
                 send_state: rekindle_types::message::SendState::Queued,
+                mentions_me: false,
             },
         )
     })

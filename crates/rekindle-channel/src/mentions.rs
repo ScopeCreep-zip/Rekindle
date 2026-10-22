@@ -312,6 +312,33 @@ pub fn resolve_outbound_mentions<D: ChannelMessagingDeps>(
     (pseudonyms, roles, flag_bits)
 }
 
+/// Whether the received wire `message` mentions the local member — by
+/// pseudonym, by one of its roles, or by `@everyone`/`@here` — the
+/// `messages.mentions_me` the receive pipeline stores (plan E3.1, D25).
+/// Our own message never mentions us.
+pub fn message_mentions_me<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    message: &rekindle_codec::community::channel_record::ChannelMessage,
+) -> bool {
+    use rekindle_types::channel::flags::{MENTION_EVERYONE, MENTION_HERE};
+    if deps
+        .my_pseudonym_hex(community_id)
+        .is_some_and(|me| me.eq_ignore_ascii_case(&message.sender_pseudonym))
+    {
+        return false;
+    }
+    let matches = matches_from_cleartext(
+        deps,
+        community_id,
+        &message.mentioned_pseudonyms,
+        &message.mentioned_roles,
+        message.flags & MENTION_EVERYONE == MENTION_EVERYONE,
+        message.flags & MENTION_HERE == MENTION_HERE,
+    );
+    local_member_is_mentioned(deps, community_id, &matches)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

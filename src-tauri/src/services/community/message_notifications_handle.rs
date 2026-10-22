@@ -175,6 +175,11 @@ pub async fn handle_message_notification(
         .unwrap_or_default()
     });
     let flags_for_db = message.flags;
+    let mentions_me = crate::services::community::mentions::message_mentions_me(
+        state,
+        &pending.community_id,
+        &message,
+    );
     let reply_to_for_db = message.reply_to.clone();
     db_fire(&pool, "store notified channel message", move |conn| {
         rekindle_db::repo::messages::channel::insert(
@@ -195,6 +200,7 @@ pub async fn handle_message_notification(
                 flags: flags_for_db,
                 attachment_json: attachment_json_for_db.as_deref(),
                 send_state: rekindle_types::message::SendState::Delivered,
+                mentions_me,
             },
         )
     });

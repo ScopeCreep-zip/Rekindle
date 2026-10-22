@@ -30,6 +30,9 @@ pub struct ChannelMessageInsert<'a> {
     /// The message id of the message this one replies to; stored as its
     /// local row (`reply_to_id`) when we hold that parent.
     pub reply_to: Option<&'a str>,
+    /// A received message that mentions us (plan E3.1, D25), from
+    /// `rekindle_channel::mentions`; never set on our own post.
+    pub mentions_me: bool,
 }
 
 /// Insert one channel message row.
@@ -46,8 +49,8 @@ pub fn insert(conn: &Connection, msg: &ChannelMessageInsert<'_>) -> rusqlite::Re
         "INSERT INTO messages \
          (owner_key, conversation_id, conversation_type, sender_key, body, automod_blurred, timestamp, is_read, \
           mek_generation, message_id, lamport_ts, forwarded_from_author, flags, attachment_json, \
-          send_state, reply_to_id) \
-         VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          send_state, reply_to_id, mentions_me) \
+         VALUES (?, ?, 'channel', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         params![
             msg.owner_key,
             msg.channel_id,
@@ -64,6 +67,7 @@ pub fn insert(conn: &Connection, msg: &ChannelMessageInsert<'_>) -> rusqlite::Re
             msg.attachment_json,
             msg.send_state.as_str(),
             reply_to_id,
+            i32::from(msg.mentions_me),
         ],
     )?;
     Ok(())
@@ -251,6 +255,7 @@ mod tests {
             flags: 0,
             attachment_json: None,
             send_state: SendState::Delivered,
+            mentions_me: false,
             reply_to: None,
         }
     }

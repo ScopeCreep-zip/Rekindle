@@ -435,6 +435,11 @@ pub(crate) async fn load_channel_messages_from_smpl(
                         flags: 0,
                         attachment_json: None,
                         send_state: rekindle_types::message::SendState::Delivered,
+                        mentions_me: crate::services::community::mentions::message_mentions_me(
+                            &state_for_db,
+                            &community_id_for_db,
+                            message,
+                        ),
                     },
                 );
             }

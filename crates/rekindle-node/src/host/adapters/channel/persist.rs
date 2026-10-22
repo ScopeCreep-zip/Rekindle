@@ -51,6 +51,7 @@ impl HostChannel {
                     flags: 0,
                     attachment_json: None,
                     send_state: SendState::Queued,
+                    mentions_me: false,
                 },
             )
         })

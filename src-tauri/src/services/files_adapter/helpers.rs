@@ -179,6 +179,7 @@ pub(super) async fn insert_channel_message_full_impl(
                 // Queued: its outbox `channel_post` row's settle raises it
                 // (plan E2.5).
                 send_state: rekindle_types::message::SendState::Queued,
+                mentions_me: false,
             },
         )
     })
