@@ -75,22 +75,18 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             community: c,
             channel: ch,
             limit,
+        }
+        | CommunityRequest::ChannelMessagesBefore {
+            community: c,
+            channel: ch,
+            limit,
+            ..
         } => {
             community(c)?;
             channel(ch)?;
             page(*limit)
         }
         CommunityRequest::ChannelMessages { channel: ch, limit } => {
-            channel(ch)?;
-            page(*limit)
-        }
-        CommunityRequest::ChannelMessagesBefore {
-            community: c,
-            channel: ch,
-            before_timestamp: _,
-            limit,
-        } => {
-            community(c)?;
             channel(ch)?;
             page(*limit)
         }
