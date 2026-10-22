@@ -262,9 +262,21 @@ async fn an_own_governance_write_updates_the_warm_cache() {
     let me = PseudonymKey([2; 32]);
     let seeded = owner.clone();
     db.call(move |conn| {
-        conn.execute(
-            "INSERT INTO communities (owner_key, id, name, joined_at) VALUES (?1, 'c1', 'C', 1)",
-            [&seeded],
+        rekindle_db::repo::communities::insert_if_absent(
+            conn,
+            &seeded,
+            &rekindle_db::repo::communities::NewCommunity {
+                id: "c1",
+                name: "C",
+                my_role_ids: &[],
+                joined_at: 1,
+                dht_owner_keypair: None,
+                my_pseudonym_key: "",
+                mek_generation: 0,
+                member_registry_key: None,
+                my_subkey_index: None,
+                governance_key: None,
+            },
         )?;
         rekindle_db::repo::governance_cache::save(
             conn,

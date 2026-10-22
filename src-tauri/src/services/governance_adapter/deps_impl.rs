@@ -252,11 +252,7 @@ impl GovernanceRuntimeDeps for GovernanceAdapter {
     }
 
     fn ensure_files_cache_open(&self, community_id: &str) {
-        if let Err(e) =
-            crate::services::community::files::ensure_cache_open(&self.state, community_id)
-        {
-            tracing::warn!(community = %community_id, error = %e, "Lost Cargo cache unavailable");
-        }
+        crate::services::shell_session::open_files_cache(&self.state, community_id);
     }
 
     fn persist_discovered_registry_members(
