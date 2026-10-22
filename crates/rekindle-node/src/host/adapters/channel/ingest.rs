@@ -279,7 +279,7 @@ impl HostChannel {
 
     /// The gate's verdict on `post`, against the merged state, our block
     /// list and the Host's slowmode windows.
-    async fn judge(
+    pub(crate) async fn judge(
         &self,
         owner: &str,
         db: &rekindle_db::Db,
