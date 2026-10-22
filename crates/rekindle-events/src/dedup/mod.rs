@@ -9,7 +9,7 @@
 //! At 100K+ agent scale, this ensures the IPC bus carries only unique events.
 
 use std::collections::{HashSet, VecDeque};
-use std::time::Instant;
+use tokio::time::Instant;
 
 use tracing::{debug, trace};
 

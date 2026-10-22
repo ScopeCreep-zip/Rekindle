@@ -21,7 +21,8 @@
 
 use std::collections::HashMap;
 use std::hash::BuildHasher;
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 
 const FAILURE_THRESHOLD: u32 = 3;
 const BREAKER_COOLDOWN: Duration = Duration::from_secs(60);

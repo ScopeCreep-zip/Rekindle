@@ -6,7 +6,7 @@
 //! on read — no background cleanup task needed.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use tokio::time::Instant;
 
 use rekindle_types::subscription_events::PresenceSnapshot;
 

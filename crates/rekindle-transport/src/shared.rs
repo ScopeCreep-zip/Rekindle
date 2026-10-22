@@ -12,7 +12,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use tokio::time::Instant;
 
 use parking_lot::RwLock;
 use rekindle_records::port::RecordPort;

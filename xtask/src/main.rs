@@ -79,6 +79,7 @@ mod sqlite;
 mod theme_literals;
 mod veilid_boundary;
 mod veilid_dht_calls;
+mod wall_clock;
 
 #[derive(Parser)]
 #[command(
@@ -118,6 +119,8 @@ enum Command {
     CheckNoManagedDb,
     /// Verify session work spawns through a `SessionScope`, not bare `tokio::spawn`.
     CheckBareSpawn,
+    /// Verify code the netsim runs reads no wall clock (`Instant::now`, `SystemTime::now`, …).
+    CheckWallClock,
     /// Verify every command and IPC request is classified in the intent table.
     CheckIntentTable,
     /// Verify every colour under src/styles is a token (no hex, colour-function or named literal).
@@ -215,6 +218,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| bare_spawn::check_bare_spawn(&root)),
                 ),
                 (
+                    "wall-clock",
+                    Box::new(|| wall_clock::check_wall_clock(&root)),
+                ),
+                (
                     "intent-table",
                     Box::new(|| intent_table::check_intent_table(&root)),
                 ),
@@ -284,6 +291,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckSqlite => sqlite::check_sqlite(&root),
         Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),
         Command::CheckBareSpawn => bare_spawn::check_bare_spawn(&root),
+        Command::CheckWallClock => wall_clock::check_wall_clock(&root),
         Command::CheckIntentTable => intent_table::check_intent_table(&root),
         Command::CheckThemeLiterals => theme_literals::check_theme_literals(&root),
         Command::CheckSecSurfaces => sec_surfaces::check_sec_surfaces(&root),

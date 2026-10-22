@@ -416,7 +416,7 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
 ) -> InitialPresence {
     use futures::stream::{FuturesUnordered, StreamExt};
 
-    let started = std::time::Instant::now();
+    let started = tokio::time::Instant::now();
     let mut presence = InitialPresence::default();
     presence.known_members.insert(my_pseudo_hex.to_string());
 

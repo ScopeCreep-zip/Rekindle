@@ -62,7 +62,7 @@ const BACKOFF_MAX: Duration = Duration::from_secs(15);
 struct Live<Id> {
     id: Id,
     blob: Vec<u8>,
-    at: std::time::Instant,
+    at: tokio::time::Instant,
 }
 
 struct Slot<Id> {
@@ -321,7 +321,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                     let replaced = slot.current.lock().replace(Live {
                         id,
                         blob: blob.clone(),
-                        at: std::time::Instant::now(),
+                        at: tokio::time::Instant::now(),
                     });
                     if let Some(old) = replaced {
                         self.alloc.release(&old.id);

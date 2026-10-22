@@ -5,7 +5,7 @@
 //! routes with repeated timeout failures.
 
 use std::collections::HashMap;
-use std::time::Instant;
+use tokio::time::Instant;
 
 use tokio::sync::broadcast;
 

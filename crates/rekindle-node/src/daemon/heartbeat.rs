@@ -8,7 +8,8 @@
 //! forever.
 
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Duration;
+use tokio::time::Instant;
 
 /// The beat interval outside a systemd watchdog, where only the subscriber
 /// loop itself reads it.
