@@ -114,6 +114,34 @@ impl CommunityStore {
             .unwrap_or_default()
     }
 
+    /// The channel records the community holds open this session, and our
+    /// slot writer for opening more.
+    #[must_use]
+    pub fn channel_records(&self, community_id: &str) -> (HashSet<String>, Option<String>) {
+        self.read(community_id, |c| {
+            (
+                c.open_community_records
+                    .channel_keys
+                    .iter()
+                    .cloned()
+                    .collect(),
+                c.slot_keypair.clone(),
+            )
+        })
+        .unwrap_or_default()
+    }
+
+    /// Record channel records opened this session.
+    pub fn note_channel_records(&self, community_id: &str, keys: Vec<String>) {
+        self.write(community_id, |c| {
+            for key in keys {
+                if !c.open_community_records.channel_keys.contains(&key) {
+                    c.open_community_records.channel_keys.push(key);
+                }
+            }
+        });
+    }
+
     /// The community's segment descriptors (empty for an unknown one).
     #[must_use]
     pub fn segments(&self, community_id: &str) -> Vec<rekindle_types::presence::SegmentDescriptor> {

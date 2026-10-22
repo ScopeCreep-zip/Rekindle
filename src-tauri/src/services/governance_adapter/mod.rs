@@ -123,6 +123,19 @@ pub async fn rebuild_governance_from_dht(state: &Arc<AppState>) {
     rekindle_governance_runtime::dht_hydration::rebuild_governance_from_dht(&adapter).await;
 }
 
+/// Rebuild one community's governance from its record (plan E3.1 C1): the
+/// watch path passes the community whose governance record changed.
+pub async fn rebuild_governance(state: &Arc<AppState>, community_id: &str) {
+    let Some(app_handle) = state.app_handle.read().clone() else {
+        return;
+    };
+    let Ok(pool) = state.db.current() else {
+        return;
+    };
+    let adapter = GovernanceAdapter::new(Arc::clone(state), app_handle, pool);
+    rekindle_governance_runtime::dht_hydration::rebuild_governance(&adapter, community_id).await;
+}
+
 // ---------- Phase 23.E membership-event entry points ----------
 
 /// Build an adapter from the live AppState + AppHandle. Shared by the

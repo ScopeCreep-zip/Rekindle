@@ -51,9 +51,6 @@ pub struct CommunityRecords {
     /// the chain on change.
     pub governance_overflow_keys: Vec<String>,
 
-    /// Fingerprint of the last inspected governance record state.
-    pub governance_report_fingerprint: Option<u64>,
-
     /// Fingerprints of the last inspected channel record state, by
     /// channel id.
     pub channel_report_fingerprints: HashMap<String, u64>,

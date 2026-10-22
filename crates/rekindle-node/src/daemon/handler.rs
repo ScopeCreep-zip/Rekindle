@@ -300,9 +300,24 @@ impl InboundHandler for DaemonHandler {
 
         // An invite's inbox, a friend's participant record or a friend's
         // profile: the Host reads every changed subkey (plan E2.5).
-        if let Some(host) = self.friends() {
-            host.on_watched_change(record_key, &changed_subkeys, first_value.as_deref())
-                .await;
+        // A community's governance record: that community is rebuilt (plan
+        // E3.1 C1); otherwise an invite's inbox, a friend's participant
+        // record or a friend's profile: the Host reads every changed subkey
+        // (plan E2.5).
+        let governance = self
+            .host
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .map(|ctx| crate::host::adapters::governance::HostGovernance::new(ctx));
+        let rebuilt = match governance {
+            Some(governance) => governance.on_watched_change(record_key).await,
+            None => false,
+        };
+        if !rebuilt {
+            if let Some(host) = self.friends() {
+                host.on_watched_change(record_key, &changed_subkeys, first_value.as_deref())
+                    .await;
+            }
         }
 
         // Forward to SubscriptionManager for event emission

@@ -30,6 +30,7 @@ mod mek;
 mod roles;
 mod state_mutations;
 mod state_reads;
+mod watch;
 
 /// The Host, as the governance runtime sees it.
 #[derive(Clone)]

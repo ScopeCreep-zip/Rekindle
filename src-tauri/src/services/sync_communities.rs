@@ -1,7 +1,8 @@
 //! Phase 23.D.4 — community-side sync helpers extracted from
 //! `sync_service.rs` to keep that file under the 500-LoC cap.
-//! Mesh-presence re-announce + governance pull + channel-record
-//! discovery + per-channel watermark sync.
+//! Mesh-presence re-announce + per-channel watermark sync. Governance is
+//! never polled (D4): a governance record's ValueChange rebuilds that one
+//! community (plan E3.1 C1).
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
@@ -24,11 +25,7 @@ pub(super) async fn sync_communities(
     }
 
     let communities_with_governance = state_helpers::communities_with_governance_keys(state);
-    for (community_id, governance_key) in &communities_with_governance {
-        if stop.is_cancelled() {
-            return Ok(());
-        }
-        sync_community_governance(state, community_id, governance_key).await;
+    for (community_id, _) in &communities_with_governance {
         if stop.is_cancelled() {
             return Ok(());
         }
@@ -56,7 +53,6 @@ pub(crate) async fn handle_community_record_change(
     enum ChangedRecord {
         Governance {
             community_id: String,
-            governance_key: String,
         },
         Registry {
             community_id: String,
@@ -71,11 +67,8 @@ pub(crate) async fn handle_community_record_change(
         let communities = state.communities.read();
         communities.values().find_map(|community| {
             if community.governance_key.as_deref() == Some(dht_key) {
-                return community.governance_key.as_ref().map(|governance_key| {
-                    ChangedRecord::Governance {
-                        community_id: community.id.clone(),
-                        governance_key: governance_key.clone(),
-                    }
+                return Some(ChangedRecord::Governance {
+                    community_id: community.id.clone(),
                 });
             }
             if community.member_registry_key.as_deref() == Some(dht_key) {
@@ -112,7 +105,6 @@ pub(crate) async fn handle_community_record_change(
             if gov.segments.iter().any(|s| s.governance_key == dht_key) {
                 return Some(ChangedRecord::Governance {
                     community_id: community.id.clone(),
-                    governance_key: dht_key.to_string(),
                 });
             }
             gov.channel_segment_records
@@ -127,11 +119,11 @@ pub(crate) async fn handle_community_record_change(
     };
 
     match changed {
-        Some(ChangedRecord::Governance {
-            community_id,
-            governance_key,
-        }) => {
-            sync_community_governance(state, &community_id, &governance_key).await;
+        Some(ChangedRecord::Governance { community_id }) => {
+            // That community alone is rebuilt (plan E3.1 C1); the Host's
+            // governance arm once B2 makes the desktop's adapter the Host's.
+            crate::services::governance_adapter::rebuild_governance(state, &community_id).await;
+            open_new_channel_records(state, &community_id).await;
             true
         }
         Some(ChangedRecord::Registry { community_id }) => {
@@ -154,47 +146,6 @@ fn report_fingerprint(seqs: &[Option<u32>]) -> u64 {
     let mut hasher = DefaultHasher::new();
     seqs.hash(&mut hasher);
     hasher.finish()
-}
-
-async fn sync_community_governance(
-    state: &Arc<AppState>,
-    community_id: &str,
-    governance_key: &str,
-) {
-    let Ok(pool) = state_helpers::record_pool(state) else {
-        return;
-    };
-    let report = match pool
-        .inspect_once(
-            governance_key,
-            None,
-            rekindle_records::port::ReportScope::UpdateGet,
-        )
-        .await
-    {
-        Ok(report) => report,
-        Err(e) => {
-            tracing::trace!(community = %community_id, error = %e, "governance inspect failed");
-            return;
-        }
-    };
-    let fingerprint = report_fingerprint(&report.network_seqs);
-    let needs_rebuild = {
-        let mut communities = state.communities.write();
-        let Some(cs) = communities.get_mut(community_id) else {
-            return;
-        };
-        let previous = cs
-            .open_community_records
-            .governance_report_fingerprint
-            .replace(fingerprint);
-        previous.is_some_and(|prev| prev != fingerprint) || cs.governance_state.is_none()
-    };
-    if needs_rebuild {
-        tracing::info!(community = %community_id, "governance inspect changed — rebuilding merged state");
-        crate::services::governance_adapter::rebuild_governance_from_dht(state).await;
-        open_new_channel_records(state, community_id).await;
-    }
 }
 
 /// Borrow every channel record governance now names that the community does

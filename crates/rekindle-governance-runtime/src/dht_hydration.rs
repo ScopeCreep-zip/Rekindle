@@ -250,102 +250,117 @@ pub async fn hydrate_community_state_from_dht<D: GovernanceRuntimeDeps>(deps: &D
 }
 
 /// Rebuild governance state from SMPL governance records for every
-/// joined v2.0 community. Best-effort — per-community failures are
-/// logged but never stop the loop.
+/// joined v2.0 community, one [`rebuild_governance`] each (the unlock's
+/// hydration, a network reconnect, a wake: any community may have changed
+/// while we were away). Best-effort — per-community failures are logged
+/// but never stop the loop.
 pub async fn rebuild_governance_from_dht<D: GovernanceRuntimeDeps>(deps: &D) {
-    let communities = deps.list_community_governance_targets();
-
-    for (community_id, gov_key_str) in &communities {
+    for (community_id, _) in deps.list_community_governance_targets() {
         if crate::join_gate::should_stop(deps) {
             return;
         }
-        // Identify occupied subkeys via UpdateGet (network-authoritative
-        // — local seqs may be empty after a restart). A failed inspect skips
-        // the community on this pass: there is no blind 0..255 scan (plan
-        // C7.5, step 12e).
-        let occupied_subkeys: Vec<u32> =
-            match crate::records::inspect_update_get_seqs(deps, gov_key_str).await {
-                // `is_some()`, not `!= 0`. A subkey written exactly
-                // once sits at seq 0, so the old test skipped every
-                // author with a single governance entry — their write
-                // never merged on any peer that hydrated cold.
-                Ok(seqs) => seqs
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, seq)| seq.is_some())
-                    .map(|(idx, _)| u32::try_from(idx).unwrap_or(0))
-                    .collect(),
-                Err(error) => {
-                    tracing::warn!(
-                        community = %community_id,
-                        %error,
-                        "governance inspect failed — skipping this community until the next pass",
-                    );
-                    continue;
-                }
-            };
+        rebuild_governance(deps, &community_id).await;
+    }
+}
 
-        // Read each occupied subkey, W26-verify, and follow every author's
-        // `overflow_next` chain so an author whose log spilled past one subkey
-        // is reassembled in full before merge (architecture §"Follow
-        // GovernanceOverflow pointers", line 1609). Sequential — the
-        // chiral-split move intentionally simplifies the original
-        // FuturesUnordered+Semaphore pattern; per-login hydration runs once and
-        // the network read cost dominates anyway.
-        let readout =
-            crate::overflow::read_governance_with_overflow(deps, gov_key_str, &occupied_subkeys)
-                .await;
-        let all_entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)> = readout.authored;
+/// Rebuild one community's governance state from its SMPL governance
+/// record (plan E3.1 C1): the watch path passes the community whose record
+/// changed, so the others are not re-read. Best-effort — a failure is
+/// logged and the community keeps its state until its next change.
+pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &str) {
+    let Some((community_id, gov_key_str)) = deps
+        .list_community_governance_targets()
+        .into_iter()
+        .find(|(id, _)| id == community)
+    else {
+        tracing::debug!(community, "not a joined community — no governance rebuild");
+        return;
+    };
+    let (community_id, gov_key_str) = (&community_id, &gov_key_str);
+    // Identify occupied subkeys via UpdateGet (network-authoritative
+    // — local seqs may be empty after a restart). A failed inspect skips
+    // the community on this pass: there is no blind 0..255 scan (plan
+    // C7.5, step 12e).
+    let occupied_subkeys: Vec<u32> =
+        match crate::records::inspect_update_get_seqs(deps, gov_key_str).await {
+            // `is_some()`, not `!= 0`. A subkey written exactly
+            // once sits at seq 0, so the old test skipped every
+            // author with a single governance entry — their write
+            // never merged on any peer that hydrated cold.
+            Ok(seqs) => seqs
+                .iter()
+                .enumerate()
+                .filter(|(_, seq)| seq.is_some())
+                .map(|(idx, _)| u32::try_from(idx).unwrap_or(0))
+                .collect(),
+            Err(error) => {
+                tracing::warn!(
+                    community = %community_id,
+                    %error,
+                    "governance inspect failed — skipping this community until its next change",
+                );
+                return;
+            }
+        };
 
-        // Mutual Aid §14.1 — register every overflow record we just followed in
-        // the community's inventory so it is warmed + rehydrated (D5) by this
-        // node going forward. Reconstructs the inventory from the chain itself
-        // after a restart (the primary subkey + its `overflow_next` are
-        // local-store hits), with no SQLite column.
-        if !readout.overflow_keys.is_empty() {
-            deps.register_governance_overflow_keys(community_id, &readout.overflow_keys);
-        }
+    // Read each occupied subkey, W26-verify, and follow every author's
+    // `overflow_next` chain so an author whose log spilled past one subkey
+    // is reassembled in full before merge (architecture §"Follow
+    // GovernanceOverflow pointers", line 1609). Sequential — the
+    // chiral-split move intentionally simplifies the original
+    // FuturesUnordered+Semaphore pattern; per-login hydration runs once and
+    // the network read cost dominates anyway.
+    let readout =
+        crate::overflow::read_governance_with_overflow(deps, gov_key_str, &occupied_subkeys).await;
+    let all_entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)> = readout.authored;
 
-        if all_entries.is_empty() {
-            tracing::debug!(
-                community = %community_id,
-                "governance record empty — no entries to merge",
-            );
-            continue;
-        }
+    // Mutual Aid §14.1 — register every overflow record we just followed in
+    // the community's inventory so it is warmed + rehydrated (D5) by this
+    // node going forward. Reconstructs the inventory from the chain itself
+    // after a restart (the primary subkey + its `overflow_next` are
+    // local-store hits), with no SQLite column.
+    if !readout.overflow_keys.is_empty() {
+        deps.register_governance_overflow_keys(community_id, &readout.overflow_keys);
+    }
 
-        let previous_bans = deps
-            .governance_state(community_id)
-            .map(|gov| gov.bans)
-            .unwrap_or_default();
-
-        let (gov_state, accepted_clock) =
-            rekindle_governance::merge::merge_with_accepted(&all_entries);
-        let new_bans: Vec<String> = gov_state
-            .bans
-            .iter()
-            .filter(|pseudo| !previous_bans.contains(*pseudo))
-            .map(|pseudo| hex::encode(pseudo.0))
-            .collect();
-
-        // Persist the raw per-author entry set as a warm local cache so the
-        // next login can re-merge an identical GovernanceState immediately,
-        // instead of waiting on this (slow, best-effort) DHT pass. Done
-        // before apply so a crash mid-apply still leaves a usable cache.
-        deps.persist_governance_entries_cache(community_id, &all_entries);
-
-        deps.apply_governance_rebuild_result(community_id, gov_state, accepted_clock)
-            .await;
-
-        tracing::info!(
+    if all_entries.is_empty() {
+        tracing::debug!(
             community = %community_id,
-            accepted_clock,
-            "rebuilt governance state from DHT",
+            "governance record empty — no entries to merge",
         );
+        return;
+    }
 
-        for banned_pseudonym in new_bans {
-            deps.spawn_text_mek_rotation_for_ban(community_id, &banned_pseudonym);
-        }
+    let previous_bans = deps
+        .governance_state(community_id)
+        .map(|gov| gov.bans)
+        .unwrap_or_default();
+
+    let (gov_state, accepted_clock) = rekindle_governance::merge::merge_with_accepted(&all_entries);
+    let new_bans: Vec<String> = gov_state
+        .bans
+        .iter()
+        .filter(|pseudo| !previous_bans.contains(*pseudo))
+        .map(|pseudo| hex::encode(pseudo.0))
+        .collect();
+
+    // Persist the raw per-author entry set as a warm local cache so the
+    // next login can re-merge an identical GovernanceState immediately,
+    // instead of waiting on this (slow, best-effort) DHT pass. Done
+    // before apply so a crash mid-apply still leaves a usable cache.
+    deps.persist_governance_entries_cache(community_id, &all_entries);
+
+    deps.apply_governance_rebuild_result(community_id, gov_state, accepted_clock)
+        .await;
+
+    tracing::info!(
+        community = %community_id,
+        accepted_clock,
+        "rebuilt governance state from DHT",
+    );
+
+    for banned_pseudonym in new_bans {
+        deps.spawn_text_mek_rotation_for_ban(community_id, &banned_pseudonym);
     }
 }
 
