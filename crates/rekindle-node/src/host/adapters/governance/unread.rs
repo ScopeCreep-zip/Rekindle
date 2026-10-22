@@ -127,8 +127,8 @@ impl HostGovernance {
             .marker(&channel_scope(community_id, channel_id))
             .await?;
         let (owner, db) = self.marker_db()?;
-        let channel = channel_id.to_owned();
-        db.call(move |conn| read_markers::channel_unread(conn, &owner, &channel, after))
+        let (community, channel) = (community_id.to_owned(), channel_id.to_owned());
+        db.call(move |conn| read_markers::channel_unread(conn, &owner, &community, &channel, after))
             .await
             .map_err(stored)
     }

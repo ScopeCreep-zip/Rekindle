@@ -158,22 +158,27 @@ pub fn channel_position(
     Ok(lamport.map(|l| l.map_or(0, to_u64)))
 }
 
-/// The received messages of `channel_id` after `after` (a lamport). Our own
-/// posts (`queued`, `sent`, `failed`) never count.
+/// The messages of `channel_id` (in `community_id`) after `after` (a
+/// lamport) that another member wrote. Our own posts never count, whichever
+/// device wrote them: a row whose author (`sender_key`) is our pseudonym in
+/// the community is ours.
 ///
 /// # Errors
 /// The query failed.
 pub fn channel_unread(
     conn: &Connection,
     owner_key: &str,
+    community_id: &str,
     channel_id: &str,
     after: u64,
 ) -> rusqlite::Result<Unread> {
     let (messages, mentions): (i64, i64) = conn.query_row(
         "SELECT COUNT(*), COALESCE(SUM(mentions_me), 0) FROM messages \
-         WHERE owner_key = ?1 AND conversation_type = 'channel' AND conversation_id = ?2 \
-         AND send_state = 'delivered' AND COALESCE(lamport_ts, 0) > ?3",
-        params![owner_key, channel_id, to_i64(after)?],
+         WHERE owner_key = ?1 AND conversation_type = 'channel' AND conversation_id = ?3 \
+         AND sender_key IS NOT (SELECT my_pseudonym_key FROM communities \
+           WHERE owner_key = ?1 AND id = ?2) \
+         AND COALESCE(lamport_ts, 0) > ?4",
+        params![owner_key, community_id, channel_id, to_i64(after)?],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     Ok(Unread {
@@ -226,7 +231,8 @@ pub fn unread_scopes(conn: &Connection, owner_key: &str) -> rusqlite::Result<(us
     let channels: i64 = conn.query_row(
         "SELECT COUNT(*) FROM channels c WHERE c.owner_key = ?1 AND EXISTS ( \
            SELECT 1 FROM messages m WHERE m.owner_key = ?1 AND m.conversation_type = 'channel' \
-           AND m.conversation_id = c.id AND m.send_state = 'delivered' \
+           AND m.conversation_id = c.id AND m.sender_key IS NOT (SELECT co.my_pseudonym_key \
+             FROM communities co WHERE co.owner_key = ?1 AND co.id = c.community_id) \
            AND COALESCE(m.lamport_ts, 0) > COALESCE((SELECT r.last_read_seq FROM read_markers r \
              WHERE r.owner_key = ?1 AND r.scope_kind = 'channel' \
              AND r.community_id = c.community_id AND r.channel_id = c.id), 0))",

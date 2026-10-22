@@ -20,6 +20,11 @@ fn seeded() -> rusqlite::Connection {
     let conn = fixture::conn();
     fixture::community(&conn, "c");
     conn.execute(
+        "UPDATE communities SET my_pseudonym_key = 'me' WHERE owner_key = ?1 AND id = 'c'",
+        params![OWNER],
+    )
+    .unwrap();
+    conn.execute(
         "INSERT INTO friends (owner_key, public_key, added_at, friendship_state) \
          VALUES (?1, 'f', 0, 'accepted')",
         params![OWNER],
@@ -28,12 +33,14 @@ fn seeded() -> rusqlite::Connection {
     conn
 }
 
-fn channel_message(conn: &rusqlite::Connection, lamport: i64, state: &str, mentions: i64) {
+/// A channel row by `author`; `delivered` as a received row (or our own
+/// post synced from another device) is stored.
+fn channel_message(conn: &rusqlite::Connection, lamport: i64, author: &str, mentions: i64) {
     conn.execute(
         "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
          timestamp, lamport_ts, message_id, send_state, mentions_me) \
-         VALUES (?1, 'ch', 'channel', 's', 'b', ?2, ?2, 'm' || ?2, ?3, ?4)",
-        params![OWNER, lamport, state, mentions],
+         VALUES (?1, 'ch', 'channel', ?3, 'b', ?2, ?2, 'm' || ?2, 'delivered', ?4)",
+        params![OWNER, lamport, author, mentions],
     )
     .unwrap();
 }
@@ -71,21 +78,22 @@ fn a_marker_without_its_parent_row_is_skipped() {
 }
 
 #[test]
-fn counts_are_the_received_messages_after_the_marker() {
+fn counts_are_the_other_members_messages_after_the_marker() {
     let conn = seeded();
-    channel_message(&conn, 1, "delivered", 0);
-    channel_message(&conn, 2, "delivered", 1);
-    channel_message(&conn, 3, "sent", 1);
-    channel_message(&conn, 4, "delivered", 1);
+    channel_message(&conn, 1, "s", 0);
+    channel_message(&conn, 2, "s", 1);
+    // Our own post, stored `delivered` as another device's would be.
+    channel_message(&conn, 3, "me", 1);
+    channel_message(&conn, 4, "s", 1);
     assert_eq!(
-        channel_unread(&conn, OWNER, "ch", 0).unwrap(),
+        channel_unread(&conn, OWNER, "c", "ch", 0).unwrap(),
         Unread {
             messages: 3,
             mentions: 2
         }
     );
     assert_eq!(
-        channel_unread(&conn, OWNER, "ch", 2).unwrap(),
+        channel_unread(&conn, OWNER, "c", "ch", 2).unwrap(),
         Unread {
             messages: 1,
             mentions: 1
