@@ -8,6 +8,7 @@ mod friend_watch;
 mod friends;
 mod group_dm;
 mod harness;
+mod internet_flap;
 mod offline_day;
 mod outbox_handshake;
 mod pair;
