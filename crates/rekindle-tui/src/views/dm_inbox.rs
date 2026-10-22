@@ -23,7 +23,9 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::display::{DmMessageDisplay, DmThreadDisplay};
-use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    ChannelMessageEvent, SubscriptionEvent, UnreadContext,
+};
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -105,7 +107,7 @@ impl DmInboxView {
             .iter()
             .map(|thread| {
                 let name = helpers::sanitize_for_display(&thread.peer_name);
-                let unread = thread.messages.iter().filter(|m| !m.is_self).count();
+                let unread = thread.unread_count;
                 let time = if thread.last_message_at > 0 {
                     helpers::format_time_short(thread.last_message_at)
                 } else {
@@ -303,6 +305,17 @@ impl View for DmInboxView {
     }
 
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
+        // The count is the Host's, derived from the DM read marker (D25).
+        if let SubscriptionEvent::UnreadChanged {
+            context: UnreadContext::Dm { peer_key },
+            count,
+        } = event
+        {
+            if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
+                thread.unread_count = *count;
+            }
+            return Ok(());
+        }
         if let SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageReceived {
             peer_key,
             timestamp,
@@ -335,12 +348,9 @@ impl View for DmInboxView {
                 timestamp: *timestamp,
                 is_self: *is_own,
             };
-            let unread = u32::from(!*is_own);
-
             if let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == *peer_key) {
                 thread.messages.push(display_msg);
                 thread.last_message_at = *timestamp;
-                thread.unread_count += unread;
             } else {
                 self.threads.push(DmThreadDisplay {
                     peer_key: peer_key.clone(),
@@ -348,7 +358,7 @@ impl View for DmInboxView {
                         .clone()
                         .unwrap_or_else(|| helpers::abbreviate_key(peer_key)),
                     last_message_at: *timestamp,
-                    unread_count: unread,
+                    unread_count: 0,
                     messages: vec![display_msg],
                 });
             }

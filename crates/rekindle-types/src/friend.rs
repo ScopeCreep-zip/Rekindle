@@ -32,7 +32,6 @@ pub struct FriendState {
     pub status_message: Option<String>,
     pub game_info: Option<GameInfoState>,
     pub group: Option<String>,
-    pub unread_count: u32,
     /// The friend's profile record, which we watch for their presence.
     pub dht_record_key: Option<String>,
     /// When the friend was last seen online, ms since the epoch.
@@ -72,7 +71,6 @@ impl FriendState {
             status_message: None,
             game_info: None,
             group: None,
-            unread_count: 0,
             dht_record_key: None,
             last_seen_at: None,
             mailbox_dht_key: None,

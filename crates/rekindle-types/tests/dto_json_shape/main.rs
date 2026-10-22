@@ -278,7 +278,6 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
     accepted.status = SessionStatus::Busy;
     accepted.status_message = Some("raiding".into());
     accepted.group = Some("Raid team".into());
-    accepted.unread_count = 2;
     accepted.identity_pin_mismatch = true;
     accepted.last_seen_at = Some(1_700_000_000_000);
     accepted.game_info = Some(GameInfoState {

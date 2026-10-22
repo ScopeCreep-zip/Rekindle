@@ -31,7 +31,6 @@ pub struct Friend {
     /// The group the buddy list shows them under: `group`, or
     /// [`DEFAULT_FRIEND_GROUP`] for none.
     pub group_label: String,
-    pub unread_count: u32,
     pub last_seen_at: Option<i64>,
     pub friendship_state: FriendshipState,
     /// Why the secure session could not be set up, while it is failed.
@@ -61,7 +60,6 @@ impl Friend {
             game_info: friend.game_info.clone().filter(|_| accepted),
             group: friend.group.clone(),
             group_label: group_label(friend.group.as_deref()),
-            unread_count: friend.unread_count,
             last_seen_at: friend.last_seen_at,
             friendship_state: friend.friendship_state,
             handshake_error: friend.handshake_error.clone(),

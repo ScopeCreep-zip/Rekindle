@@ -269,41 +269,69 @@ pub async fn history(
         .collect())
 }
 
-/// Mark everything from `peer` read. `rendered_through` is the client id
-/// of the newest message of theirs the focused window rendered: our read
-/// marker for it goes to them when our receipts setting is on (plan E2.5,
-/// [`super::receipts`]).
+/// Mark `peer`'s messages read up to `up_to`, the client id of the newest
+/// message of theirs the focused window rendered (all of them when `None`).
+/// The DM read marker (plan E3.1, D25) advances to that message's
+/// `stream_seq`, the position `ReadUpTo` names; it never moves back. Our
+/// `ReadUpTo` for it goes to them when our receipts setting is on (plan
+/// E2.5, [`super::receipts`]), and the count derived from the marker is
+/// published.
 ///
 /// # Errors
-/// The marks could not be stored.
+/// The marker could not be stored.
 pub async fn mark_read(
     host: &dyn FriendHost,
     peer: &str,
-    rendered_through: Option<&str>,
+    up_to: Option<&str>,
 ) -> Result<(), FriendError> {
+    use rekindle_db::repo::{messages, read_markers};
     let owner = state::owner(host)?;
-    let pk = peer.to_string();
-    state::db_call!(host, "mark messages read", move |conn| {
-        rekindle_db::repo::messages::mark_dm_read(conn, &owner, &pk)
+    let (pk, through) = (peer.to_string(), up_to.map(str::to_owned));
+    let now = host.clock().now_ms_i64();
+    let count = state::db_call!(host, "advance the DM read marker", move |conn| {
+        messages::mark_dm_read(conn, &owner, &pk)?;
+        let position = match through {
+            Some(message_id) => messages::received_stream_seq(conn, &owner, &pk, &message_id)?
+                .and_then(|seq| u64::try_from(seq).ok()),
+            None => Some(read_markers::dm_latest(conn, &owner, &pk)?),
+        };
+        let scope = read_markers::Scope::Dm {
+            peer_key: pk.clone(),
+        };
+        if let Some(seq) = position {
+            read_markers::advance(conn, &owner, &scope, seq, now)?;
+        }
+        let after = read_markers::get(conn, &owner, &scope)?;
+        read_markers::dm_unread(conn, &owner, &pk, after)
     })
     .await?;
-    state::update(host, peer, |f| f.unread_count = 0);
-    publish_unread(host, peer, 0);
-    if let Some(message_id) = rendered_through {
+    publish_unread(host, peer, count);
+    if let Some(message_id) = up_to {
         super::receipts::rendered(host, peer, message_id).await?;
     }
     Ok(())
 }
 
-/// Count one more unread message from `peer` and tell the frontends the
-/// count, which they render as is.
-pub(crate) fn count_unread(host: &dyn FriendHost, peer: &str) {
-    let mut count = 0;
-    state::update(host, peer, |f| {
-        f.unread_count += 1;
-        count = f.unread_count;
-    });
-    publish_unread(host, peer, count);
+/// A message from `peer` was stored: publish the count derived from the DM
+/// read marker, which the frontends render as is.
+pub(crate) async fn publish_dm_unread(host: &dyn FriendHost, peer: &str) {
+    use rekindle_db::repo::read_markers;
+    let Ok(owner) = state::owner(host) else {
+        return;
+    };
+    let pk = peer.to_string();
+    let count = state::db_call!(host, "count the unread DMs", move |conn| {
+        let scope = read_markers::Scope::Dm {
+            peer_key: pk.clone(),
+        };
+        let after = read_markers::get(conn, &owner, &scope)?;
+        read_markers::dm_unread(conn, &owner, &pk, after)
+    })
+    .await;
+    match count {
+        Ok(count) => publish_unread(host, peer, count),
+        Err(e) => tracing::warn!(peer = %peer, error = %e, "DM unread count not published"),
+    }
 }
 
 fn publish_unread(host: &dyn FriendHost, peer: &str, count: u32) {

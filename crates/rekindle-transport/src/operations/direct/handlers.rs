@@ -245,6 +245,6 @@ async fn direct_message(
             is_own: false,
         },
     ));
-    crate::operations::dm::count_unread(host, sender);
+    crate::operations::dm::publish_dm_unread(host, sender).await;
     true
 }

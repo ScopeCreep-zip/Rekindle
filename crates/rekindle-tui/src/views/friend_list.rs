@@ -476,7 +476,6 @@ mod tests {
             game_info: None,
             group: None,
             group_label: rekindle_types::dto::friends::DEFAULT_FRIEND_GROUP.to_string(),
-            unread_count: 0,
             last_seen_at: None,
             friendship_state: FriendshipState::Accepted,
             handshake_error: None,

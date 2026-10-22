@@ -20,7 +20,7 @@ export function transformFriend(f: FriendInfo): Friend {
       : null,
     group: f.groupLabel,
     inDefaultGroup: f.group === null,
-    unreadCount: f.unreadCount,
+    unreadCount: 0,
     lastSeenAt: f.lastSeenAt ?? null,
     voiceChannel: null,
     friendshipState: (f.friendshipState as Friend["friendshipState"]) ?? "accepted",
