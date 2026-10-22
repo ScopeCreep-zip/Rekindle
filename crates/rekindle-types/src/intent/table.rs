@@ -478,6 +478,11 @@ pub const COMMAND_TABLE: &[(&str, Option<IntentKind>)] = &[
     ("CategoryReorder", Some(IntentKind::ReorderCategories)),
     ("ChannelSend", Some(IntentKind::SendChannelMessage)),
     ("ChannelHistory", None),
+    ("ChannelMessageEdit", Some(IntentKind::EditChannelMessage)),
+    (
+        "ChannelMessageDelete",
+        Some(IntentKind::DeleteChannelMessage),
+    ),
     ("DmSend", Some(IntentKind::SendDmMessage)),
     ("OutboxRetry", Some(IntentKind::RetrySend)),
     ("OutboxDiscard", Some(IntentKind::DiscardSend)),

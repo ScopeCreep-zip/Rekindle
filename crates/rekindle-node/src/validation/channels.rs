@@ -7,6 +7,9 @@ use super::{
     Checked, MAX_TOPIC_LEN,
 };
 
+/// A channel message id: a UUID, in either of the forms peers write.
+const MAX_MESSAGE_ID_LEN: usize = 64;
+
 /// A community's channels: their names, kinds, topics and bodies.
 pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
@@ -67,6 +70,22 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             community(c)?;
             channel(ch)?;
             page(*limit)
+        }
+        CommunityRequest::ChannelMessageEdit {
+            channel: ch,
+            message_id,
+            body,
+        } => {
+            channel(ch)?;
+            text(message_id, MAX_MESSAGE_ID_LEN, "message id")?;
+            message_body(body)
+        }
+        CommunityRequest::ChannelMessageDelete {
+            channel: ch,
+            message_id,
+        } => {
+            channel(ch)?;
+            text(message_id, MAX_MESSAGE_ID_LEN, "message id")
         }
         other => super::channel_admin::check(other),
     }

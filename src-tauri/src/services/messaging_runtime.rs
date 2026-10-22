@@ -12,7 +12,6 @@ use crate::db_helpers::db_call;
 use crate::message_view::merge_message_lists;
 use crate::state::AppState;
 use crate::state_helpers;
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_db::Db;
 use rekindle_types::permissions;
 
@@ -74,74 +73,6 @@ pub async fn get_channel_messages_inner(
     }
 
     Ok(messages)
-}
-
-pub fn edit_channel_message_inner(
-    state: &Arc<AppState>,
-    channel_id: String,
-    message_id: String,
-    new_body: &str,
-) -> Result<(), String> {
-    let community_id = {
-        let communities = state.communities.read();
-        communities
-            .values()
-            .find(|c| c.channels.iter().any(|ch| ch.id == channel_id))
-            .map(|c| c.id.clone())
-            .ok_or("channel not found in any community")?
-    };
-
-    // Sealed under the channel's current text key and stamped with that
-    // key's generation, which the receiver opens under exactly.
-    let scope =
-        state_helpers::text_scope(state, &community_id, &channel_id).ok_or("not a channel id")?;
-    let (epoch, key) = rekindle_types::channel_keys::current_key(
-        &*state_helpers::key_provider(state),
-        &community_id,
-        scope,
-    )
-    .ok_or("MEK not available")?;
-    let mek_generation = epoch.0;
-    let new_ciphertext =
-        rekindle_crypto::group::media_key::MediaEncryptionKey::from_bytes(*key, mek_generation)
-            .encrypt(new_body.as_bytes())
-            .map_err(|e| format!("MEK encryption failed: {e}"))?;
-
-    crate::services::community::send_to_mesh(
-        state,
-        &community_id,
-        &CommunityEnvelope::Control(ControlPayload::MessageEdited {
-            channel_id,
-            message_id,
-            new_ciphertext,
-            mek_generation,
-            edited_at: rekindle_utils::timestamp_secs(),
-        }),
-    )
-}
-
-pub fn delete_channel_message_inner(
-    state: &Arc<AppState>,
-    channel_id: String,
-    message_id: String,
-) -> Result<(), String> {
-    let community_id = {
-        let communities = state.communities.read();
-        communities
-            .values()
-            .find(|c| c.channels.iter().any(|ch| ch.id == channel_id))
-            .map(|c| c.id.clone())
-            .ok_or("channel not found in any community")?
-    };
-
-    crate::services::community::send_to_mesh(
-        state,
-        &community_id,
-        &CommunityEnvelope::Control(ControlPayload::MessageDeleted {
-            channel_id,
-            message_id,
-        }),
-    )
 }
 
 pub async fn forward_channel_message_inner(

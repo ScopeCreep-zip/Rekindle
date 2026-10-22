@@ -263,8 +263,6 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("remove_reaction", "E3.1"),
     ("admin_delete_channel_message", "E3.1"),
     ("bulk_delete_channel_messages", "E3.1"),
-    ("delete_channel_message", "E3.1"),
-    ("edit_channel_message", "E3.1"),
     ("forward_channel_message", "E3.1"),
     ("archive_thread", "E3.1"),
     ("unarchive_thread", "E3.1"),

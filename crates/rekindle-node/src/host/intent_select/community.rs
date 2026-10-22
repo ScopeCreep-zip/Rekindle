@@ -150,6 +150,20 @@ pub(super) async fn selection(
                 s.escalations = channel_delete_escalations(ctx, &id, channel).await?;
             }
         }
+        CommunityRequest::ChannelMessageEdit { channel, .. }
+        | CommunityRequest::ChannelMessageDelete { channel, .. } => {
+            let target = crate::host::adapters::governance::channel_messages::community_of_channel(
+                ctx, channel,
+            )
+            .ok_or_else(|| IpcResponse::error(404, format!("channel '{channel}' not found")))?;
+            let (id, community_name) = community(ctx, &target)?;
+            s.subject = Subject::Channel {
+                name: channel_name(ctx, &id, channel),
+                community_name,
+                id: channel.clone(),
+            };
+            s.notifies = members(ctx, &id);
+        }
         CommunityRequest::ChannelReorder {
             community: target, ..
         }

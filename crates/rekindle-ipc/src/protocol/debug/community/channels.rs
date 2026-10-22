@@ -63,6 +63,24 @@ impl CommunityRequest {
                 .field("topic", topic)
                 .field("slowmode_seconds", slowmode_seconds)
                 .finish(),
+            Self::ChannelMessageEdit {
+                channel,
+                message_id,
+                body,
+            } => f
+                .debug_struct("ChannelMessageEdit")
+                .field("channel", channel)
+                .field("message_id", message_id)
+                .field("body_len", &body.len())
+                .finish(),
+            Self::ChannelMessageDelete {
+                channel,
+                message_id,
+            } => f
+                .debug_struct("ChannelMessageDelete")
+                .field("channel", channel)
+                .field("message_id", message_id)
+                .finish(),
             Self::ChannelHistory {
                 community,
                 channel,

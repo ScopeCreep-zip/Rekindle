@@ -1,3 +1,5 @@
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
 use crate::commands::chat::Message;
@@ -51,32 +53,35 @@ pub async fn send_channel_message(
     .await
 }
 
+/// Replace the body of our message in a channel
+/// (`CommunityRequest::ChannelMessageEdit`).
 #[tauri::command]
 pub async fn edit_channel_message(
     channel_id: String,
     message_id: String,
     new_body: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    crate::services::messaging_runtime::edit_channel_message_inner(
-        state.inner(),
-        channel_id,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelMessageEdit {
+        channel: channel_id,
         message_id,
-        &new_body,
-    )
+        body: new_body,
+    });
+    crate::host_call::call(&state, request).await
 }
 
+/// Delete our message in a channel (`CommunityRequest::ChannelMessageDelete`).
 #[tauri::command]
 pub async fn delete_channel_message(
     channel_id: String,
     message_id: String,
     state: State<'_, SharedState>,
-) -> Result<(), String> {
-    crate::services::messaging_runtime::delete_channel_message_inner(
-        state.inner(),
-        channel_id,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    let request = IpcRequest::Community(CommunityRequest::ChannelMessageDelete {
+        channel: channel_id,
         message_id,
-    )
+    });
+    crate::host_call::call(&state, request).await
 }
 
 #[tauri::command]

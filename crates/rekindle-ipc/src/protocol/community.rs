@@ -209,6 +209,15 @@ pub enum CommunityRequest {
         channel: String,
         limit: u32,
     },
+    /// Replace the body of our message `message_id` in `channel` (a channel
+    /// id; the Host finds its community).
+    ChannelMessageEdit {
+        channel: String,
+        message_id: String,
+        body: String,
+    },
+    /// Delete our message `message_id` in `channel` (a channel id).
+    ChannelMessageDelete { channel: String, message_id: String },
 
     // ── Channel keys (MEK) ─────────────────────────────────────
     /// List cached MEKs for a community.

@@ -4,9 +4,11 @@
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
+use crate::host::adapters::governance::channel_messages::MessageChange;
+
 use crate::daemon::dispatch::{
-    audit, channel, community, community_profile, events, game_servers, governance, keys,
-    onboarding, DaemonContext,
+    audit, channel, channel_message, community, community_profile, events, game_servers,
+    governance, keys, onboarding, DaemonContext,
 };
 use crate::daemon::DaemonState;
 
@@ -97,6 +99,21 @@ pub(super) async fn route(
         | CommunityRequest::CategoryReorder { .. }
         | CommunityRequest::ChannelSend { .. }
         | CommunityRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
+        CommunityRequest::ChannelMessageEdit {
+            channel,
+            message_id,
+            body,
+        } => {
+            let change = MessageChange::Edit { body };
+            channel_message::handle_change(ctx, state, &channel, &message_id, change).await
+        }
+        CommunityRequest::ChannelMessageDelete {
+            channel,
+            message_id,
+        } => {
+            let change = MessageChange::Delete;
+            channel_message::handle_change(ctx, state, &channel, &message_id, change).await
+        }
 
         // ── Governance (roles, moderation, invites) ──────────────
         // ── Profile, pictures and policy (plan E3.1 D4) ──────────

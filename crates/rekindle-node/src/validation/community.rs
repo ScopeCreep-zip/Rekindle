@@ -218,7 +218,7 @@ pub(super) fn check(request: &CommunityRequest) -> Checked {
             max_uses: _,
             expires_seconds: _,
         } => community(c),
-        CommunityRequest::ChannelCreate { .. } | CommunityRequest::ChannelDelete { .. } | CommunityRequest::ChannelUpdate { .. } | CommunityRequest::ChannelRename { .. } | CommunityRequest::ChannelMove { .. } | CommunityRequest::ChannelReorder { .. } | CommunityRequest::ChannelSetTopic { .. } | CommunityRequest::ChannelSetForumTags { .. } | CommunityRequest::ChannelOverwriteSet { .. } | CommunityRequest::ChannelOverwriteDelete { .. } | CommunityRequest::CategoryCreate { .. } | CommunityRequest::CategoryDelete { .. } | CommunityRequest::CategoryRename { .. } | CommunityRequest::CategoryReorder { .. } | CommunityRequest::ChannelSend { .. } | CommunityRequest::ChannelHistory { .. } => super::channels::check(request),
+        CommunityRequest::ChannelCreate { .. } | CommunityRequest::ChannelDelete { .. } | CommunityRequest::ChannelUpdate { .. } | CommunityRequest::ChannelRename { .. } | CommunityRequest::ChannelMove { .. } | CommunityRequest::ChannelReorder { .. } | CommunityRequest::ChannelSetTopic { .. } | CommunityRequest::ChannelSetForumTags { .. } | CommunityRequest::ChannelOverwriteSet { .. } | CommunityRequest::ChannelOverwriteDelete { .. } | CommunityRequest::CategoryCreate { .. } | CommunityRequest::CategoryDelete { .. } | CommunityRequest::CategoryRename { .. } | CommunityRequest::CategoryReorder { .. } | CommunityRequest::ChannelSend { .. } | CommunityRequest::ChannelHistory { .. } | CommunityRequest::ChannelMessageEdit { .. } | CommunityRequest::ChannelMessageDelete { .. } => super::channels::check(request),
 
         CommunityRequest::MekRotate {
             community: c,

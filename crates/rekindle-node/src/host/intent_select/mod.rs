@@ -133,6 +133,8 @@ pub(crate) async fn select(
             | CommunityRequest::CategoryRename { .. }
             | CommunityRequest::CategoryReorder { .. }
             | CommunityRequest::ChannelSend { .. }
+            | CommunityRequest::ChannelMessageEdit { .. }
+            | CommunityRequest::ChannelMessageDelete { .. }
             | CommunityRequest::MekRotate { .. }
             | CommunityRequest::RoleCreate { .. }
             | CommunityRequest::RoleUpdate { .. }

@@ -262,7 +262,9 @@ impl CommunityRequest {
             | Self::Timeout { .. }
             | Self::TimeoutRemove { .. } => Some(C::ModerationWrite),
             Self::ChannelHistory { .. } => Some(C::ChannelsHistory),
-            Self::ChannelSend { .. } => Some(C::ChatWrite),
+            Self::ChannelSend { .. }
+            | Self::ChannelMessageEdit { .. }
+            | Self::ChannelMessageDelete { .. } => Some(C::ChatWrite),
             // Channel keys are key material; ownership is the owner's own.
             Self::MekList { .. }
             | Self::MekRotate { .. }

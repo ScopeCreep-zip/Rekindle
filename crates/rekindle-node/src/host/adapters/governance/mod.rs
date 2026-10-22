@@ -43,6 +43,7 @@ mod event_reminders;
 mod event_rsvps;
 pub(crate) use community_info::InfoEdit;
 pub(crate) mod channel_admin;
+pub(crate) mod channel_messages;
 mod events;
 pub(crate) mod game_servers;
 mod invite_expiry;

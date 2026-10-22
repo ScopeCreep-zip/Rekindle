@@ -201,6 +201,8 @@ impl CommunityRequest {
             Self::CategoryReorder { .. } => ("CategoryReorder", Write, Authenticated),
             Self::ChannelSend { .. } => ("ChannelSend", Write, Authenticated),
             Self::ChannelHistory { .. } => ("ChannelHistory", Query, Authenticated),
+            Self::ChannelMessageEdit { .. } => ("ChannelMessageEdit", Write, Authenticated),
+            Self::ChannelMessageDelete { .. } => ("ChannelMessageDelete", Write, Authenticated),
             Self::MekList { .. } => ("MekList", Query, Authenticated),
             Self::MekRotate { .. } => ("MekRotate", Write, Authenticated),
             Self::MekRequest { .. } => ("MekRequest", Write, Authenticated),

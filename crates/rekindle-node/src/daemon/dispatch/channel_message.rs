@@ -237,3 +237,28 @@ pub(crate) fn writer_slots(
     writers.dedup();
     writers
 }
+
+/// Edit or delete our message `message_id` in `channel` (plan E3.1 E2).
+pub(crate) async fn handle_change(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    channel: &str,
+    message_id: &str,
+    change: crate::host::adapters::governance::channel_messages::MessageChange,
+) -> IpcResponse {
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let Some(community_id) =
+        crate::host::adapters::governance::channel_messages::community_of_channel(ctx, channel)
+    else {
+        return IpcResponse::error(404, format!("channel '{channel}' not found"));
+    };
+    match super::adapter(ctx)
+        .change_channel_message(&community_id, channel, message_id, change)
+        .await
+    {
+        Ok(()) => IpcResponse::ok(&serde_json::Value::Null),
+        Err(e) => IpcResponse::error(500, format!("channel message change failed: {e}")),
+    }
+}
