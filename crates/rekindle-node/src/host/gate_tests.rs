@@ -19,7 +19,7 @@ fn bus(conn: u64) -> Caller {
 }
 
 /// A host with one identity, created and locked again.
-async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String) {
+pub(super) async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String) {
     let host = Host::start(HostConfig {
         root: claim(temp_root(dir)).unwrap(),
         stores: HostStores::default(),

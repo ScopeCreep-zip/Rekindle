@@ -99,7 +99,8 @@ pub(crate) async fn handle_join(
     if let Err(e) = ctx.require_session(|_| ()) {
         return e;
     }
-    let joined = match adapter(ctx).join(&link).await {
+    // The join's stages are a large future: boxed off the dispatch path.
+    let joined = match Box::pin(adapter(ctx).join(&link)).await {
         Ok(joined) => joined,
         Err(e) => return IpcResponse::error(500, e),
     };
