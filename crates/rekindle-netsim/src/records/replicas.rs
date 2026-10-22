@@ -14,25 +14,14 @@
 //!   nodes; a node added later has no replica of an earlier record beside
 //!   it. A replica is a DHT store, not that node's storage: the node going
 //!   offline does not take it down;
-//! - a replica keeps the first value it receives at a seq: an older or a
-//!   same-seq different value is answered with what it holds, the same
-//!   value is a success (`storage_manager/set_value.rs:700-719`);
-//! - a set fans out in placement order over the reachable replicas and is
-//!   done at [`SET_COUNT`] accepts (`set_value_count`,
-//!   `veilid_config.rs:914`). A replica answering a newer value, or a
-//!   same-seq different one while the fanout still carries the writer's own
-//!   value, restarts the fanout on that value and sends it again to the
-//!   replicas that had accepted (`set_value.rs:470-494`, `AcceptedNewerRestart`
-//!   and `all_accepted_to_queued`, `fanout_call.rs:438-442`). A same-seq
-//!   conflict after a restart is stale and does not restart again (the
-//!   model's bound on Veilid's conflict loop);
+//! - a set's fanout, and a replica's answer to it, are [`super::fanout`];
 //! - a get starts from the local value and takes a reachable replica's value
 //!   only when its seq is newer; a same-seq different value is stale
 //!   (`get_value.rs:275-276,405-426`); it is done at [`GET_COUNT`] matching
 //!   replicas (`get_value_count`, `veilid_config.rs:911`) and otherwise
 //!   answers the newest it saw (`get_value.rs:538-567`).
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 use rekindle_records::port::{RecordSchema, RecordValue};
 
@@ -40,7 +29,8 @@ use crate::network::pair;
 
 /// Replicas per record: Veilid's `consensus_width` (`veilid_config.rs:916`).
 pub(crate) const REPLICAS: usize = 10;
-/// Accepts a set needs: Veilid's `set_value_count` (`veilid_config.rs:914`).
+/// Accepts a set needs: Veilid's `set_value_count` (`veilid_config.rs:914`),
+/// used by [`super::fanout`].
 pub(crate) const SET_COUNT: usize = 5;
 /// Matching replicas a get stops at: `get_value_count` (`veilid_config.rs:911`).
 pub(crate) const GET_COUNT: usize = 3;
@@ -97,90 +87,6 @@ pub(crate) fn reachable(
         .filter(|(_, r)| reaches(partitions, node, r.home))
         .map(|(i, _)| i)
         .collect()
-}
-
-/// A replica's answer to a set (`set_value.rs:700-719`).
-enum Offer {
-    Stored,
-    Same,
-    Ignored(RecordValue),
-}
-
-fn offer(slot: &mut Option<RecordValue>, value: &RecordValue) -> Offer {
-    match slot {
-        Some(held) if held == value => Offer::Same,
-        Some(held) if held.seq >= value.seq => Offer::Ignored(held.clone()),
-        _ => {
-            *slot = Some(value.clone());
-            Offer::Stored
-        }
-    }
-}
-
-/// What a set's fanout did.
-pub(crate) struct SetFanout {
-    /// The value the fanout ended on: the writer's own, or the newer one a
-    /// replica restarted it on.
-    pub value: RecordValue,
-    /// Whether [`SET_COUNT`] replicas accepted `value`.
-    pub consensus: bool,
-    /// How many replicas accepted `value`.
-    pub accepted: usize,
-    /// The replicas that stored a value in this fanout, in order (one may
-    /// appear twice: a restart sent it the newer value).
-    pub stored: Vec<usize>,
-}
-
-/// Fan `ours` out to the `reach` replicas at `subkey`.
-pub(crate) fn set(
-    schema: &RecordSchema,
-    replicas: &mut [Replica],
-    reach: &[usize],
-    subkey: usize,
-    ours: &RecordValue,
-) -> SetFanout {
-    let mut ctx = ours.clone();
-    let mut queue: VecDeque<usize> = reach.iter().copied().collect();
-    let mut accepted: Vec<usize> = Vec::new();
-    let mut stored = Vec::new();
-    while accepted.len() < SET_COUNT {
-        let Some(r) = queue.pop_front() else {
-            break;
-        };
-        // A value past the size rule is an invalid message: the replica
-        // stores nothing and its answer is skipped (`set_value.rs:759`).
-        let Some(replica) = replicas
-            .get_mut(r)
-            .filter(|x| super::size::admits(schema, &x.values, subkey, &ctx))
-        else {
-            continue;
-        };
-        let Some(slot) = replica.values.get_mut(subkey) else {
-            continue;
-        };
-        match offer(slot, &ctx) {
-            Offer::Stored => {
-                stored.push(r);
-                accepted.push(r);
-            }
-            Offer::Same => accepted.push(r),
-            Offer::Ignored(held) => {
-                if held.seq > ctx.seq || ctx == *ours {
-                    ctx = held;
-                    for a in accepted.drain(..).rev() {
-                        queue.push_front(a);
-                    }
-                    accepted.push(r);
-                }
-            }
-        }
-    }
-    SetFanout {
-        consensus: accepted.len() >= SET_COUNT,
-        accepted: accepted.len(),
-        value: ctx,
-        stored,
-    }
 }
 
 /// A get's answer at `subkey` over the `reach` replicas, from `local`.

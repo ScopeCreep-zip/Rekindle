@@ -38,8 +38,11 @@ async fn seeded(sim: &Netsim, nodes: &[Node]) -> (String, SimDht, SimDht) {
 }
 
 /// Run the next watch tick and deliver; what node `i` heard.
-fn tick(sim: &Netsim, nodes: &mut [Node], i: usize) -> Vec<ValueChange> {
+async fn tick(sim: &Netsim, nodes: &mut [Node], i: usize) -> Vec<ValueChange> {
     sim.net.inner.lock().next_tick = Some(tokio::time::Instant::now());
+    sim.net.deliver();
+    // A change reaches the watcher one message latency later.
+    tokio::time::sleep(crate::latency::MESSAGE.max).await;
     sim.net.deliver();
     let mut heard = Vec::new();
     while let Ok(PortEvent::ValueChange(change)) = nodes[i].events.try_recv() {
@@ -59,9 +62,9 @@ async fn one_changed_subkey_carries_its_value_stored_before_the_report() {
     assert!(b.watch(&key, None, None, None).await.unwrap());
     // The establishing inspection runs at the watch's first tick (it finds
     // nothing newer), before the writes land.
-    assert!(tick(&sim, &mut nodes, 1).is_empty());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
     a.set(&key, 2, b"news".to_vec(), None).await.unwrap();
-    let heard = tick(&sim, &mut nodes, 1);
+    let heard = tick(&sim, &mut nodes, 1).await;
     let first = heard.first().expect("a change");
     assert_eq!(first.subkeys, vec![2]);
     let value = first.value.clone().expect("the value inline");
@@ -72,7 +75,7 @@ async fn one_changed_subkey_carries_its_value_stored_before_the_report() {
     assert_eq!(heard.len(), 1, "{heard:?}");
     // A same-data re-push stores nothing and marks nothing.
     a.set(&key, 2, b"news".to_vec(), None).await.unwrap();
-    assert!(tick(&sim, &mut nodes, 1).is_empty());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -82,10 +85,10 @@ async fn several_changed_subkeys_are_a_range_with_no_value() {
     b.watch(&key, None, None, None).await.unwrap();
     // The establishing inspection runs at the watch's first tick (it finds
     // nothing newer), before the writes land.
-    assert!(tick(&sim, &mut nodes, 1).is_empty());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
     a.set(&key, 1, b"x".to_vec(), None).await.unwrap();
     a.set(&key, 3, b"y".to_vec(), None).await.unwrap();
-    let heard = tick(&sim, &mut nodes, 1);
+    let heard = tick(&sim, &mut nodes, 1).await;
     assert!(!heard.is_empty());
     for change in &heard {
         assert_eq!(
@@ -191,9 +194,9 @@ async fn expiration_is_checked_clamped_and_ends_the_watch() {
     assert_eq!(err.unwrap_err().kind, DhtErrorKind::InvalidArgument);
     let at = sim.net.now_us() + 20_000_000;
     assert!(b.watch(&key, None, Some(at), None).await.unwrap());
-    assert!(tick(&sim, &mut nodes, 1).is_empty());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
     tokio::time::advance(Duration::from_secs(20)).await;
-    let heard = tick(&sim, &mut nodes, 1);
+    let heard = tick(&sim, &mut nodes, 1).await;
     assert!(heard.len() == 1 && dead(&heard[0]), "{heard:?}");
     assert_eq!(watches::held(&sim.net.inner.lock(), 1, &key), 0);
     // With no expiration the replicas clamp to the max and the node renews;
@@ -201,10 +204,10 @@ async fn expiration_is_checked_clamped_and_ends_the_watch() {
     b.watch(&key, None, None, None).await.unwrap();
     sim.net.inner.lock().faults.dht_offline.insert(1);
     tokio::time::advance(watches::MAX_WATCH_EXPIRATION + WATCH_TICK).await;
-    tick(&sim, &mut nodes, 1);
+    tick(&sim, &mut nodes, 1).await;
     assert_eq!(watches::held(&sim.net.inner.lock(), 1, &key), 0);
     sim.net.inner.lock().faults.dht_offline.remove(&1);
-    tick(&sim, &mut nodes, 1);
+    tick(&sim, &mut nodes, 1).await;
     assert_eq!(watches::held(&sim.net.inner.lock(), 1, &key), 3);
 }
 
@@ -222,11 +225,11 @@ async fn death_is_empty_subkeys_count_zero_no_value() {
     // A cancel ends it at the next tick, the same way.
     b.watch(&key, Some(&[1]), None, None).await.unwrap();
     assert!(!b.cancel_watch(&key, Some(&[1])).await.unwrap());
-    let heard = tick(&sim, &mut nodes, 1);
+    let heard = tick(&sim, &mut nodes, 1).await;
     assert!(heard.len() == 1 && dead(&heard[0]), "{heard:?}");
     // A detached node hears nothing of a change.
     b.watch(&key, None, None, None).await.unwrap();
     sim.net.inner.lock().faults.detached.insert(1);
     a.set(&key, 1, b"z".to_vec(), None).await.unwrap();
-    assert!(tick(&sim, &mut nodes, 1).is_empty());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
 }

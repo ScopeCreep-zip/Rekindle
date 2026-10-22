@@ -25,7 +25,7 @@
 //!   `inspect_record.rs:486-522`);
 //! - **the push:** a queued subkey is sent as a set of its local copy
 //!   (`offline_subkey_writes.rs:47-74`); a replica holding a newer value
-//!   restarts the fanout on it ([`super::replicas::set`]), and a value the
+//!   restarts the fanout on it ([`super::fanout`]), and a value the
 //!   fanout ended on that is not ours becomes the local copy (`:84-93`).
 //!   Fewer than [`GET_COUNT`] accepts keeps the subkey queued
 //!   (`check_fanout_finished_without_consensus`, `mod.rs:781-820`), else it
@@ -106,7 +106,7 @@ fn push(inner: &mut Inner, node: usize, key: &str, subkey: u32) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
-    let fanout = replicas::set(
+    let fanout = super::fanout::set_now(
         &record.schema,
         &mut record.replicas,
         &reach,

@@ -31,8 +31,8 @@
 //!   Veilid); each DHT store keeps at most Veilid's remote record count and
 //!   evicts the least recently used record ([`stores`]);
 //! - every call that reaches the network costs Veilid's latency
-//!   ([`crate::latency`]) before its effect lands, under the per-subkey
-//!   locks and the node's DHT cap;
+//!   ([`crate::latency`]) under the per-subkey locks and the node's DHT
+//!   cap; a set lands on each replica as its RPC arrives ([`fanout`]);
 //! - a value is within Veilid's size rule at every hop ([`size`]).
 
 use std::sync::Arc;
@@ -50,6 +50,9 @@ mod catchup;
 #[cfg(test)]
 mod catchup_tests;
 mod dht;
+mod fanout;
+#[cfg(test)]
+mod fanout_tests;
 mod rehydrate;
 #[cfg(test)]
 mod rehydrate_tests;

@@ -415,7 +415,13 @@ impl Network {
             }
         }
         for (from, to, label, event) in out {
-            self.send(from, to, label, event, false);
+            // A change is an RPC to the watcher; a death is the node's own.
+            let delay = if from == to {
+                Duration::ZERO
+            } else {
+                self.latency.draw(to, crate::latency::MESSAGE)
+            };
+            self.send_after(from, to, label, event, false, delay);
         }
         self.send_inspected(inspected);
     }

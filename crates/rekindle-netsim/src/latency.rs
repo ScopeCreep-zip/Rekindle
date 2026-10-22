@@ -14,6 +14,7 @@
 //! | Call | Span | Source |
 //! |------|------|--------|
 //! | set (`set`, `set_durable`) | [`SET`] 9–18 s | measured: 11 serial prekey sets 18:19:01.290 → 18:21:29.194 = 13.4 s each; the creates' first sets 9–11 s apart (18:18:40 → :51, 18:21:29 → :38). Derived shape: consensus needs `set_value_count` 5 accepts of `set_value_fanout` 6 within `set_value_timeout_ms` 10 000 (`veilid_config.rs:913-915`), and the deadline stays a full timeout past the last accept (`rpc_processor/fanout/fanout_call.rs:642-656`) |
+//! | one set RPC (lands on its replica) | [`SET_RPC`] 1–3 s | derived: the RPC path of a get's wave; the set's replicas take its value this far in, while the call itself returns at the end of its [`SET`] draw (`records/fanout.rs`) |
 //! | get, inspect, open of a value the network holds | [`GET`] 1–3 s | derived: one fanout wave of `get_value_fanout` 5, consensus at `get_value_count` 3 (`veilid_config.rs:910-912`), each RPC far below `rpc.timeout_ms` 5 000 (`:852`) |
 //! | get, inspect, open finding no value | [`DEADLINE`] 10.0–10.3 s | measured: the fresh prekey record's inspect 18:18:51.272 → 18:19:01.287 (`present=[]`); derived: no consensus is possible, so the fanout runs to `get_value_timeout_ms` 10 000 |
 //! | watch | [`WATCH`] 1–3 s | derived: a watch is one fanout to the record's nodes (`storage_manager/watch_value.rs`), as a get |
@@ -32,7 +33,9 @@
 //! checks `dht_is_online()` before any fanout (`set_value.rs:109`,
 //! `open_record.rs:48`, `watch_value.rs:716`); a "try again" answer costs
 //! the call's latency first, as a fanout that failed ran to its end.
-//! Watch notifications and attachment events carry no latency yet.
+//! A watch change is an RPC from the replica to the watcher: it arrives one
+//! [`MESSAGE`] after the replica's tick sends it. Attachment events carry
+//! no latency.
 //!
 //! # Recalibrating from a live log
 //!
@@ -77,6 +80,10 @@ impl Span {
 
 /// A set reaching consensus (see the table).
 pub const SET: Span = Span::ms(9_000, 18_000);
+/// One set RPC, from the node to a replica and its answer back: derived as
+/// [`GET`]'s wave (the same RPC path), so a set's value is on its first
+/// replicas 1–3 s in, as a reader sees it (`fanout_call.rs:630-656`).
+pub const SET_RPC: Span = Span::ms(1_000, 3_000);
 /// A get, inspect or open of a value the network holds.
 pub const GET: Span = Span::ms(1_000, 3_000);
 /// A get, inspect or open finding no value: the fanout's deadline.
@@ -137,6 +144,14 @@ impl Latency {
     /// then the call's latency. The caller applies its effect while it
     /// holds the returned slot.
     pub(crate) async fn dht(&self, node: usize, span: Span, key: &str, subkeys: &[u32]) -> Slot {
+        let slot = self.slot(node, key, subkeys).await;
+        tokio::time::sleep(self.draw(node, span)).await;
+        slot
+    }
+
+    /// Wait for `subkeys` of `key` on `node`, then a slot under the cap; the
+    /// caller spends the call's latency itself.
+    pub(crate) async fn slot(&self, node: usize, key: &str, subkeys: &[u32]) -> Slot {
         let mut sorted = subkeys.to_vec();
         sorted.sort_unstable();
         sorted.dedup();
@@ -160,7 +175,6 @@ impl Latency {
             .acquire_owned()
             .await
             .unwrap_or_else(|_| unreachable!("the cap's semaphore is never closed"));
-        tokio::time::sleep(self.draw(node, span)).await;
         Slot {
             _locks: locks,
             _permit: permit,

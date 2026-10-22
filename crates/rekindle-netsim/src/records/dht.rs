@@ -23,7 +23,8 @@
 //!   nothing (`set_value.rs:109-115`,
 //!   `local_record_store_interface.rs:61-62`); a fanout below consensus is
 //!   `Ok(None)` with the local copy untouched while the replicas that took
-//!   the value keep it (`set_value.rs:170-171,596-623`,
+//!   the value keep it (each takes it as its RPC arrives, [`super::fanout`];
+//!   `set_value.rs:170-171,596-623`,
 //!   `local_record_store_interface.rs:61-62`); at consensus the fanout's
 //!   value becomes the local copy and is returned when it is not the one
 //!   asked for (a newer value a replica held, `set_value.rs:620-645`), an
@@ -64,8 +65,8 @@ use rekindle_records::port::{
 use rekindle_utils::RandomSource;
 
 use super::{
-    admits, new_key_text, public_text, reachable, rehydrate, replicas, size, stores, subkey_count,
-    watches, writer_public,
+    admits, fanout, new_key_text, public_text, reachable, rehydrate, replicas, size, stores,
+    subkey_count, watches, writer_public,
 };
 use crate::clock::SimRandom;
 use crate::latency::{self, Slot, Span};
@@ -121,17 +122,27 @@ impl SimDht {
             return Err(try_again());
         }
         let slot = self.net.latency.dht(self.node, span, key, subkeys).await;
-        let mut inner = self.net.inner.lock();
+        let inner = self.net.inner.lock();
         if offline(&inner.faults, self.node) {
             return Err(try_again());
         }
-        if let Some(left) = inner.faults.try_again.get_mut(&self.node) {
-            if *left > 0 {
-                *left -= 1;
-                return Err(try_again());
-            }
+        drop(inner);
+        if self.fault_try_again() {
+            return Err(try_again());
         }
         Ok(slot)
+    }
+
+    /// Whether a "try again" fault answers this call (one fewer left).
+    fn fault_try_again(&self) -> bool {
+        let mut inner = self.net.inner.lock();
+        match inner.faults.try_again.get_mut(&self.node) {
+            Some(left) if *left > 0 => {
+                *left -= 1;
+                true
+            }
+            _ => false,
+        }
     }
 
     /// Whether a replica the node reaches holds a value at any of
@@ -242,52 +253,22 @@ impl SimDht {
         Ok(())
     }
 
-    /// The write's fanout over the reached replicas: `Some` is the value
-    /// the fanout ended on when it is not ours, now the local copy.
-    fn land(
-        &self,
-        key: &str,
-        subkey: u32,
-        data: Vec<u8>,
-        public: &[u8; 32],
-    ) -> Option<RecordValue> {
+    /// The value a write sends: the same data and writer keep the seq and
+    /// re-push the copy (`set_value.rs:205-222`), else local seq + 1.
+    fn ours(&self, key: &str, subkey: u32, data: Vec<u8>, public: &[u8; 32]) -> RecordValue {
         let writer = public_text(public);
-        let mut guard = self.net.inner.lock();
-        let inner = &mut *guard;
-        let local = inner.nodes[self.node]
+        let local = self.net.inner.lock().nodes[self.node]
             .local
             .get(&(key.to_string(), subkey))
             .cloned();
-        let ours = match local {
-            // Same data and writer: the seq stays and the copy is re-pushed
-            // (`set_value.rs:205-222`).
+        match local {
             Some(l) if l.data == data && l.writer == writer => l,
             local => RecordValue {
                 seq: local.map_or(0, |l| l.seq.saturating_add(1)),
                 data,
                 writer,
             },
-        };
-        let record = inner.records.get_mut(key)?;
-        let reach = reachable(&record.replicas, &inner.faults.partitions, self.node);
-        let fanout = replicas::set(
-            &record.schema,
-            &mut record.replicas,
-            &reach,
-            subkey as usize,
-            &ours,
-        );
-        watches::mark(record, &fanout.stored, subkey, self.node);
-        stores::touch(inner, key, &reach);
-        stores::admit(inner, key, &fanout.stored);
-        let answer = fanout.consensus.then(|| {
-            inner.nodes[self.node]
-                .local
-                .insert((key.to_string(), subkey), fanout.value.clone());
-            fanout.value.clone()
-        });
-        drop(guard);
-        answer.filter(|value| *value != ours)
+        }
     }
 }
 
@@ -435,8 +416,21 @@ impl DhtBackend for SimDht {
         self.validate(key, subkey, &public, data.len())?;
         // In flight until it returns (`inspect_record.rs:169-171`).
         let _setting = super::Setting::new(&self.net, self.node, key, subkey);
-        let _slot = self.network(latency::SET, key, &[subkey]).await?;
-        Ok(self.land(key, subkey, data, &public))
+        if self.offline() {
+            return Err(try_again());
+        }
+        let _slot = self.net.latency.slot(self.node, key, &[subkey]).await;
+        let span = self.net.latency.draw(self.node, latency::SET);
+        if self.fault_try_again() {
+            tokio::time::sleep(span).await;
+            return Err(try_again());
+        }
+        let ours = self.ours(key, subkey, data, &public);
+        let fanout = fanout::run(&self.net, self.node, (key, subkey), &ours, span).await;
+        if self.offline() {
+            return Err(try_again());
+        }
+        fanout::commit(&self.net, self.node, (key, subkey), &ours, &fanout)
     }
 
     async fn inspect(

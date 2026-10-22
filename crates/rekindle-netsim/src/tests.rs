@@ -412,7 +412,14 @@ async fn outside_writes_check_the_writer_and_a_conflict_keeps_its_seq() {
         .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
         .await
         .unwrap();
+    // Cut off, node 0 reaches only the 5 replicas beside it: "first" lands
+    // on exactly those, the rest stay empty.
+    sim.fault(Fault::Partition {
+        a: vec![0],
+        b: vec![1],
+    });
     a.set(lease, 0, b"first".to_vec(), None).await.unwrap();
+    sim.fault(Fault::Heal);
     let theirs = b.acquire(&key, None).await.unwrap();
     assert_eq!(
         b.get(theirs, 0, true).await.unwrap().unwrap().data,

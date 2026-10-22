@@ -46,15 +46,35 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
     assert!((1..5).contains(&partial), "{partial} replicas took it");
 
     sim.fault(Fault::Heal);
-    let SetOutcome::Superseded(newer) = pool.set(lease, 0, b"next".to_vec(), None).await.unwrap()
-    else {
-        panic!("our own partial value supersedes the retry");
+    // The retry goes out at seq 1 again and meets the partial value; its six
+    // lanes race it (`records/fanout.rs`), so Veilid's three outcomes are
+    // all possible, and the seed fixes which.
+    let at_one = |data: &[u8]| {
+        sim.replica_values(&key, 0)
+            .into_iter()
+            .flatten()
+            .filter(|v| v.seq == 1 && v.data == data)
+            .count()
     };
-    assert_eq!((newer.seq, newer.data.as_slice()), (1, &b"partial"[..]));
-    assert_eq!(
-        pool.get(lease, 0, false).await.unwrap().unwrap().data,
-        b"partial"
-    );
+    match pool.set(lease, 0, b"next".to_vec(), None).await.unwrap() {
+        // A partial holder answered first: the fanout restarted on it.
+        SetOutcome::Superseded(newer) => {
+            assert_eq!((newer.seq, newer.data.as_slice()), (1, &b"partial"[..]));
+            assert_eq!(
+                pool.get(lease, 0, false).await.unwrap().unwrap().data,
+                b"partial"
+            );
+        }
+        // The two values at seq 1 restarted each other until the span ended.
+        SetOutcome::BelowConsensus => {
+            assert!(at_one(b"next") > 0 && at_one(b"partial") > 0);
+        }
+        // Five replicas took "next" first: seq 1 stays split.
+        SetOutcome::Landed => {
+            assert!(at_one(b"next") >= 5 && at_one(b"partial") > 0);
+        }
+        other => panic!("unexpected {other:?}"),
+    }
 }
 
 /// H2: re-pushing the local copy unchanged while a replica holds a newer
