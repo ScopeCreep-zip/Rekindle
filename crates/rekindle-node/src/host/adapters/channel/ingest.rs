@@ -10,6 +10,7 @@ use rekindle_channel::ingest::{self, BlockList, GateItem, GateReason, Verdict};
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
+use rekindle_records::port::RecordPort;
 use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
 use rekindle_types::id::ChannelId;
 use rekindle_types::message::SendState;
@@ -62,12 +63,15 @@ pub enum Ingested {
 
 impl HostChannel {
     /// Fetch the post `message_id` by `author` from `subkey_index` of
-    /// `channel_id`'s record (a gossip notification names all three) and
-    /// ingest it.
+    /// `channel_id`'s records (a gossip notification names all three) and
+    /// ingest it. The post is in the genesis channel record or in the
+    /// record of the author's segment (Plate Gates, architecture §15.4), so
+    /// every one is read, genesis first and then by segment index; each
+    /// read retries through the record pool's one retry layer.
     ///
     /// # Errors
-    /// No identity is unlocked, the channel has no record, the read failed
-    /// or the slot does not hold the message.
+    /// No identity is unlocked, the channel has no record, or no record's
+    /// slot holds the message.
     pub async fn ingest_notified(
         &self,
         community_id: &str,
@@ -77,41 +81,58 @@ impl HostChannel {
         author: &str,
         sequence: u64,
     ) -> Result<Ingested, ChannelError> {
-        let record_key = self
+        let records = self.channel_records(community_id, channel_id)?;
+        let pool = self.records()?;
+        let mut missed = Vec::new();
+        for record_key in records {
+            match find_post(&*pool, &record_key, subkey_index, message_id, author).await {
+                Ok(message) => {
+                    return self
+                        .ingest(ReceivedPost {
+                            community_id: community_id.to_owned(),
+                            channel_id: channel_id.to_owned(),
+                            record_key,
+                            subkey_index,
+                            sequence,
+                            message,
+                            forwarded_from_author: None,
+                            attachment_json: None,
+                        })
+                        .await;
+                }
+                Err(e) => missed.push(e),
+            }
+        }
+        Err(ChannelError::Adapter(format!(
+            "no record of channel {channel_id} holds message {message_id}: {}",
+            missed.join("; ")
+        )))
+    }
+
+    /// The genesis channel record, then each segment's, by segment index.
+    fn channel_records(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Result<Vec<String>, ChannelError> {
+        let genesis = self
             .channel_record_key(community_id, channel_id)
             .ok_or_else(|| ChannelError::Adapter(format!("channel {channel_id} has no record")))?;
-        let value = (self
-            .records()?
-            .read_once(&record_key, subkey_index, true)
-            .await)
-            .map_err(|e| ChannelError::Adapter(format!("read channel slot: {e}")))?
-            .ok_or_else(|| ChannelError::Adapter("channel slot is empty".into()))?;
-        let entries =
-            rekindle_codec::community::channel_record::decode_channel_entries(&value.data)
-                .map_err(|e| ChannelError::Adapter(format!("channel slot: {e}")))?;
-        let message = entries
-            .into_iter()
-            .find_map(|entry| match entry {
-                ChannelRecordEntry::Message(m)
-                    if m.message_id.as_deref() == Some(message_id)
-                        && m.sender_pseudonym.eq_ignore_ascii_case(author) =>
-                {
-                    Some(m)
-                }
-                _ => None,
-            })
-            .ok_or_else(|| ChannelError::Adapter(format!("slot holds no message {message_id}")))?;
-        self.ingest(ReceivedPost {
-            community_id: community_id.to_owned(),
-            channel_id: channel_id.to_owned(),
-            record_key,
-            subkey_index,
-            sequence,
-            message,
-            forwarded_from_author: None,
-            attachment_json: None,
-        })
-        .await
+        let mut segments: Vec<(u32, String)> = match (
+            ChannelId::from_hex(channel_id),
+            self.governance_state(community_id),
+        ) {
+            (Some(channel), Some(gov)) => (gov.channel_segment_records.iter())
+                .filter(|((id, _), _)| *id == channel)
+                .map(|((_, segment), record)| (*segment, record.record_key.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        segments.retain(|(_, key)| *key != genesis);
+        segments.sort_unstable_by_key(|(segment, _)| *segment);
+        Ok(std::iter::once(genesis)
+            .chain(segments.into_iter().map(|(_, key)| key))
+            .collect())
     }
 
     /// Ingest one received post: open, gate, store, publish.
@@ -326,4 +347,31 @@ impl HostChannel {
         .await
         .map_err(stored)
     }
+}
+
+/// The post `message_id` by `author` in `subkey_index` of `record_key`.
+async fn find_post(
+    pool: &dyn RecordPort,
+    record_key: &str,
+    subkey_index: u32,
+    message_id: &str,
+    author: &str,
+) -> Result<ChannelMessage, String> {
+    let value = (pool.read_once(record_key, subkey_index, true).await)
+        .map_err(|e| format!("{record_key}: {e}"))?
+        .ok_or_else(|| format!("{record_key}: slot is empty"))?;
+    let entries = rekindle_codec::community::channel_record::decode_channel_entries(&value.data)
+        .map_err(|e| format!("{record_key}: {e}"))?;
+    entries
+        .into_iter()
+        .find_map(|entry| match entry {
+            ChannelRecordEntry::Message(m)
+                if m.message_id.as_deref() == Some(message_id)
+                    && m.sender_pseudonym.eq_ignore_ascii_case(author) =>
+            {
+                Some(m)
+            }
+            _ => None,
+        })
+        .ok_or_else(|| format!("{record_key}: no message {message_id}"))
 }
