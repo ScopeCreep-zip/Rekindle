@@ -4,9 +4,8 @@
 
 use std::time::Duration;
 
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::AutoModAction;
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use crate::harness::{eventually, Community, SimNode};
@@ -18,24 +17,17 @@ async fn mod_report_reaches_moderators() {
     let community = Community::of(2, 231).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
     let owner = &community.nodes[0];
-    let gov = owner.host.governance();
-    let lamport = gov
-        .next_governance_lamport(&community.governance_key)
-        .expect("a lamport");
-    rekindle_governance_runtime::apply::write_entry(
-        &gov,
-        &community.governance_key,
-        GovernanceEntry::AutoModRule {
-            rule_id: [7; 16],
+    owner
+        .ok(IpcRequest::Community(CommunityRequest::AutomodRuleSet {
+            community: community.governance_key.clone(),
+            rule_id: None,
             name: "asks for help".into(),
             enabled: true,
-            trigger_json: r#"{"keywords":["help"]}"#.into(),
-            action: "alert_moderators".into(),
-            lamport,
-        },
-    )
-    .await
-    .expect("the owner writes the rule");
+            keywords: vec!["help".into()],
+            regex_patterns: Vec::new(),
+            action: AutoModAction::AlertModerators,
+        }))
+        .await;
     let alerts = owner.events().await;
 
     let posted = community
