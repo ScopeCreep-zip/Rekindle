@@ -23,9 +23,7 @@ use ratatui::widgets::{Block, List, ListItem, ListState, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::display::{DmMessageDisplay, DmThreadDisplay};
-use rekindle_types::subscription_events::{
-    ChannelMessageEvent, SubscriptionEvent, UnreadContext,
-};
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, UnreadContext};
 
 use super::View;
 use crate::action::{Action, CommandResult};

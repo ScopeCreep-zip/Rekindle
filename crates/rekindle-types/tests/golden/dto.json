@@ -158,8 +158,7 @@
     "nickname": "Bobby",
     "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "status": "busy",
-    "statusMessage": "raiding",
-    "unreadCount": 2
+    "statusMessage": "raiding"
   },
   "friends.friend.pendingOut": {
     "displayName": "Cy",
@@ -174,8 +173,7 @@
     "nickname": null,
     "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
     "status": "offline",
-    "statusMessage": null,
-    "unreadCount": 0
+    "statusMessage": null
   },
   "friends.friendCode": {
     "profileKey": "VLD0:abc",
