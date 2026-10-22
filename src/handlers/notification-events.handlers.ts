@@ -69,7 +69,6 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           read: false,
         },
       ]);
-      setNotificationState("unreadCount", (c) => c + 1);
     } else if ("systemAlert" in event) {
       const data = event.systemAlert;
       setNotificationState("notifications", (prev) => [
@@ -83,7 +82,6 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           read: false,
         },
       ]);
-      setNotificationState("unreadCount", (c) => c + 1);
     } else if ("updateAvailable" in event) {
       const { version } = event.updateAvailable;
       setNotificationState("notifications", (prev) => [
@@ -97,7 +95,6 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
           read: false,
         },
       ]);
-      setNotificationState("unreadCount", (c) => c + 1);
     }
     // `callIncoming` needs nothing here: the backend shows the OS
     // notification, and the call handler drives the ring and modal.

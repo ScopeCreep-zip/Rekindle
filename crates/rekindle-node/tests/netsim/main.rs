@@ -30,6 +30,7 @@ mod outbox_handshake;
 mod pair;
 mod prekey_collision;
 mod prekeys;
+mod read_marker_only_advances;
 mod resume_after_restart;
 mod role_assign;
 mod rotation;

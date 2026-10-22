@@ -37,7 +37,6 @@ function pushMissedCallNotification(
       callKind: kind,
     },
   ]);
-  setNotificationState("unreadCount", (c) => c + 1);
 }
 
 /// Wires the call-signalling family into `calls.store`. Components read

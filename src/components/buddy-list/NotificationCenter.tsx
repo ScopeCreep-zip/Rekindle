@@ -1,6 +1,7 @@
 import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import {
   notificationState,
+  unreadNotifications,
   markNotificationRead,
   markAllNotificationsRead,
 } from "../../stores/notification.store";
@@ -38,18 +39,18 @@ const NotificationCenter: Component = () => {
         onClick={toggle}
         title="Notifications"
         aria-label={
-          notificationState.unreadCount > 0
-            ? `Notifications, ${notificationState.unreadCount} unread`
+          unreadNotifications() > 0
+            ? `Notifications, ${unreadNotifications()} unread`
             : "Notifications"
         }
         aria-expanded={open()}
       >
         <span class="nf-icon nf-icon-md" aria-hidden="true">{ICON_BELL}</span>
-        <Show when={notificationState.unreadCount > 0}>
+        <Show when={unreadNotifications() > 0}>
           <span class="notification-badge">
-            {notificationState.unreadCount > 99
+            {unreadNotifications() > 99
               ? "99+"
-              : notificationState.unreadCount}
+              : unreadNotifications()}
           </span>
         </Show>
       </button>
@@ -58,7 +59,7 @@ const NotificationCenter: Component = () => {
         <div class="notification-panel">
           <div class="notification-panel-header">
             <span class="notification-panel-title">Notifications</span>
-            <Show when={notificationState.unreadCount > 0}>
+            <Show when={unreadNotifications() > 0}>
               <button
                 class="notification-mark-all"
                 onClick={markAllNotificationsRead}

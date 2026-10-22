@@ -45,20 +45,23 @@ export interface Notification {
 
 export interface NotificationState {
   notifications: Notification[];
-  unreadCount: number;
 }
 
 const [notificationState, setNotificationState] =
   createStore<NotificationState>({
     notifications: [],
-    unreadCount: 0,
   });
+
+/// The inbox rows not yet read. Message, channel and DM counts are the
+/// Host's (`UnreadChanged`, plan E3.1 D25); this store keeps no counter.
+export function unreadNotifications(): number {
+  return notificationState.notifications.filter((n) => !n.read).length;
+}
 
 export function markNotificationRead(id: string): void {
   const idx = notificationState.notifications.findIndex((n) => n.id === id);
   if (idx >= 0 && !notificationState.notifications[idx].read) {
     setNotificationState("notifications", idx, "read", true);
-    setNotificationState("unreadCount", (c) => Math.max(0, c - 1));
   }
 }
 
@@ -69,7 +72,6 @@ export function markAllNotificationsRead(): void {
     "read",
     true,
   );
-  setNotificationState("unreadCount", 0);
 }
 
 export { notificationState, setNotificationState };
