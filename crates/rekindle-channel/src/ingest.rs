@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_governance::permissions::{compute_permissions, has_capability};
 use rekindle_governance::state::GovernanceState;
-use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::id::{ChannelId, PseudonymKey, ThreadId};
 use rekindle_types::permissions::BYPASS_SLOWMODE;
 
 use rekindle_types::governance::AutoModAction;
@@ -91,6 +91,26 @@ pub struct RateLimits {
     last: BTreeMap<(String, String, String), u64>,
 }
 
+/// When `member`'s timeout ends, while it lasts at `now_secs` (the
+/// caller's clock port). The merge never reads a clock (thread validation
+/// runs at time 0), so the Host refuses a timed-out member's thread at its
+/// send path and at ingest by this.
+#[must_use]
+pub fn timed_out_until(gov: &GovernanceState, member: &PseudonymKey, now_secs: u64) -> Option<u64> {
+    let timeout = gov.timeouts.get(member)?;
+    let until_secs = timeout.started_at.saturating_add(timeout.duration_seconds);
+    (now_secs < until_secs).then_some(until_secs)
+}
+
+/// A post in a thread whose creator is timed out at `now_secs`: the thread
+/// was created by a member the merge could not refuse by time, so ingest
+/// refuses what is posted in it while the timeout lasts.
+fn thread_creator_timed_out(gov: &GovernanceState, channel_id: &str, now_secs: u64) -> Option<u64> {
+    let id: [u8; 16] = hex::decode(channel_id).ok()?.try_into().ok()?;
+    let thread = gov.threads.get(&ThreadId(id))?;
+    timed_out_until(gov, &thread.creator, now_secs)
+}
+
 /// Judge `item` against the community's merged state `gov`, its compiled
 /// automod rules (`crate::automod::compiled_rules`), the block list and the
 /// slowmode windows; an admitted or hidden post starts its author's next
@@ -109,11 +129,11 @@ pub fn gate(
     if gov.bans.contains(&sender) {
         return Verdict::Drop(GateReason::Banned);
     }
-    if let Some(timeout) = gov.timeouts.get(&sender) {
-        let until_secs = timeout.started_at.saturating_add(timeout.duration_seconds);
-        if item.now_secs < until_secs {
-            return Verdict::Drop(GateReason::TimedOut { until_secs });
-        }
+    if let Some(until_secs) = timed_out_until(gov, &sender, item.now_secs) {
+        return Verdict::Drop(GateReason::TimedOut { until_secs });
+    }
+    if let Some(until_secs) = thread_creator_timed_out(gov, item.channel_id, item.now_secs) {
+        return Verdict::Drop(GateReason::TimedOut { until_secs });
     }
     let channel = ChannelId::from_hex(item.channel_id);
     if let Some(seconds) = slowmode_seconds(gov, channel.as_ref()) {

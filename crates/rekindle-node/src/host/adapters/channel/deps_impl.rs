@@ -23,6 +23,7 @@ use rekindle_protocol::dht::community::channel_record as record;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::id::PseudonymKey;
 
 use super::dht::delivery;
 use super::HostChannel;
@@ -469,6 +470,17 @@ impl ChannelMessagingDeps for HostChannel {
         community_id: &str,
         entry: GovernanceEntry,
     ) -> Result<(), ChannelError> {
+        if let (Some(gov), Some(me)) = (
+            self.gov.governance_state(community_id),
+            self.my_pseudonym_impl(community_id),
+        ) {
+            super::thread_refusal::refuse_timed_out_thread(
+                &entry,
+                &gov,
+                &PseudonymKey::from_hex_lossy(&me),
+                self.ctx().clock.now_secs(),
+            )?;
+        }
         rekindle_governance_runtime::apply::write_entry(&self.gov, community_id, entry)
             .await
             .map_err(adapter)

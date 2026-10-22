@@ -33,6 +33,7 @@ mod history;
 pub mod ingest;
 mod persist;
 mod state;
+mod thread_refusal;
 
 pub use dht::delivery;
 
