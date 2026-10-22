@@ -34,11 +34,6 @@ pub(crate) struct NewPoll<'a> {
     pub duration_seconds: Option<u64>,
 }
 
-/// Why a thread cannot be unarchived by request: archive state is the
-/// governance `ThreadArchived` entry against the thread's last message,
-/// so the thread reopens when a member posts to it.
-pub(crate) const UNARCHIVE_BY_POST: &str = "archived threads reactivate when a new message is sent";
-
 pub(crate) fn thread_info(snapshot: ThreadInfoSnapshot) -> ThreadInfo {
     ThreadInfo {
         id: snapshot.id,
@@ -161,18 +156,18 @@ impl HostChannel {
         rekindle_channel::archive_thread(self, community_id, thread_id).await
     }
 
-    /// Reopening a thread is a post to it ([`UNARCHIVE_BY_POST`]).
+    /// Reopen `thread_id`: the governance validation admits a writer who
+    /// manages threads or created this one, as every reader does.
     ///
     /// # Errors
-    /// Always: the thread is unknown, or it reopens by a post.
-    pub(crate) fn unarchive_thread(
+    /// The thread is unknown, we may do neither, or the entry failed.
+    pub(crate) async fn unarchive_thread(
         &self,
         community_id: &str,
         thread_id: &str,
     ) -> Result<(), ChannelError> {
-        let channel = self.thread_parent(community_id, thread_id)?;
-        self.require(community_id, &channel, permissions::MANAGE_THREADS)?;
-        Err(ChannelError::Adapter(UNARCHIVE_BY_POST.into()))
+        self.thread_parent(community_id, thread_id)?;
+        rekindle_channel::unarchive_thread(self, community_id, thread_id).await
     }
 
     /// `channel_id`'s threads (only the open ones when `active_only`).

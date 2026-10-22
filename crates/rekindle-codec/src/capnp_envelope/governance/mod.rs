@@ -34,7 +34,7 @@ use community::{
 pub(super) use dispatch_write::write_governance_entry;
 use events::{
     read_event_archived, read_event_created, read_event_rsvp, read_thread_archived,
-    read_thread_created,
+    read_thread_created, read_thread_unarchived,
 };
 use expression::{read_attachment_pinned, read_expression_added, read_expression_removed};
 use moderation::{
@@ -92,6 +92,7 @@ pub(super) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::PermissionOverwrite(p) => read_permission_overwrite(p.map_err(|e| capnp_err(&e))?),
         Which::ThreadCreated(p) => read_thread_created(p.map_err(|e| capnp_err(&e))?),
         Which::ThreadArchived(p) => read_thread_archived(p.map_err(|e| capnp_err(&e))?),
+        Which::ThreadUnarchived(p) => read_thread_unarchived(p.map_err(|e| capnp_err(&e))?),
         Which::EventCreated(p) => read_event_created(p.map_err(|e| capnp_err(&e))?),
         Which::ExpressionAdded(p) => read_expression_added(p.map_err(|e| capnp_err(&e))?),
         Which::ExpressionRemoved(p) => read_expression_removed(p.map_err(|e| capnp_err(&e))?),

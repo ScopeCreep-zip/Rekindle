@@ -247,6 +247,9 @@ pub struct ThreadState {
     pub creator: PseudonymKey,
     pub created_lamport: u64,
     pub archived_lamport: Option<u64>,
+    /// The newest `ThreadUnarchived` lamport: an archive at or below it
+    /// is older than the reopening and does not apply.
+    pub unarchived_lamport: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

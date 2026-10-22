@@ -271,6 +271,10 @@ pub enum GovernanceEntry {
     /// Archive a thread. CRDT: tombstone (archived threads excluded from merged state).
     ThreadArchived { thread_id: ThreadId, lamport: u64 },
 
+    /// Reopen an archived thread. CRDT: LWW against `ThreadArchived` by
+    /// lamport, so the later of the two decides.
+    ThreadUnarchived { thread_id: ThreadId, lamport: u64 },
+
     /// Create or update a scheduled event (architecture §21).
     /// RSVPs are their own member-authored [`Self::EventRsvp`] entries.
     /// CRDT: LWW per `event_id` — bumping `lamport` re-publishes any field
@@ -550,6 +554,7 @@ impl GovernanceEntry {
             | Self::PermissionOverwrite { lamport, .. }
             | Self::ThreadCreated { lamport, .. }
             | Self::ThreadArchived { lamport, .. }
+            | Self::ThreadUnarchived { lamport, .. }
             | Self::EventCreated { lamport, .. }
             | Self::ExpressionAdded { lamport, .. }
             | Self::ExpressionRemoved { lamport, .. }

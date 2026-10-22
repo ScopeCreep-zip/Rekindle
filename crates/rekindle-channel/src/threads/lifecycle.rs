@@ -86,4 +86,24 @@ pub async fn archive_thread<D: ChannelMessagingDeps>(
     .await
 }
 
+/// Reopen `thread_id`: a `ThreadUnarchived` entry, later than its archive.
+///
+/// # Errors
+/// We may neither manage threads nor be its creator, or the entry failed.
+pub async fn unarchive_thread<D: ChannelMessagingDeps>(
+    deps: &D,
+    community_id: &str,
+    thread_id: &str,
+) -> Result<(), ChannelError> {
+    let lamport = deps.next_governance_lamport(community_id)?;
+    deps.write_governance_entry(
+        community_id,
+        GovernanceEntry::ThreadUnarchived {
+            thread_id: ThreadId(hex_to_id_16(thread_id)),
+            lamport,
+        },
+    )
+    .await
+}
+
 // ---------- private helpers ----------

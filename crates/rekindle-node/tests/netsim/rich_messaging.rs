@@ -69,6 +69,41 @@ async fn thread_reply_both_ways() {
         "a member who does not manage threads cannot archive one"
     );
 
+    let active_for_bea = || async {
+        community.nodes[1]
+            .call(IpcRequest::Community(CommunityRequest::ThreadListActive {
+                community: key.clone(),
+                channel_id: channel.clone(),
+            }))
+            .await
+            .is_ok_and(|v| v.to_string().contains(&thread))
+    };
+    ask(
+        &community,
+        0,
+        CommunityRequest::ThreadArchive {
+            community: key.clone(),
+            thread_id: thread.clone(),
+        },
+    )
+    .await;
+    let archived = eventually(&community.sim, LIMIT, || async { !active_for_bea().await }).await;
+    assert!(archived, "bea sees ann's archive");
+    ask(
+        &community,
+        0,
+        CommunityRequest::ThreadUnarchive {
+            community: key.clone(),
+            thread_id: thread.clone(),
+        },
+    )
+    .await;
+    let reopened = eventually(&community.sim, LIMIT, active_for_bea).await;
+    assert!(
+        reopened,
+        "bea sees the thread open again after ann's unarchive"
+    );
+
     ask(
         &community,
         1,

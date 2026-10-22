@@ -215,6 +215,13 @@ pub(super) fn governance_entry_to_audit_row(
             details: None,
             timestamp,
         },
+        GovernanceEntry::ThreadUnarchived { thread_id, .. } => CommunityAuditEntry {
+            action: "thread_unarchived".into(),
+            actor_pseudonym,
+            target: Some(hex::encode(thread_id.0)),
+            details: None,
+            timestamp,
+        },
         GovernanceEntry::EventCreated { event_id, name, .. } => CommunityAuditEntry {
             action: "event_created".into(),
             actor_pseudonym,

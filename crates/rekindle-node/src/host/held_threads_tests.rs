@@ -81,6 +81,7 @@ async fn a_held_thread_stays_held_across_a_lock_and_unlock() {
             creator: late,
             created_lamport: 2,
             archived_lamport: None,
+            unarchived_lamport: None,
         },
     );
     host.governance().set_governance_state("c1", merged);

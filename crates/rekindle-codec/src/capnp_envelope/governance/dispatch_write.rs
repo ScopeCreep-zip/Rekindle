@@ -18,7 +18,7 @@ use super::community::{
 };
 use super::events::{
     write_event_archived, write_event_created, write_event_rsvp, write_thread_archived,
-    write_thread_created,
+    write_thread_created, write_thread_unarchived,
 };
 use super::expression::{
     write_attachment_pinned, write_expression_added, write_expression_removed,
@@ -242,6 +242,9 @@ pub(in crate::capnp_envelope) fn write_governance_entry(
         }
         GovernanceEntry::ThreadArchived { thread_id, lamport } => {
             write_thread_archived(b.reborrow().init_thread_archived(), *thread_id, *lamport);
+        }
+        GovernanceEntry::ThreadUnarchived { thread_id, lamport } => {
+            write_thread_unarchived(b.reborrow().init_thread_unarchived(), *thread_id, *lamport);
         }
         GovernanceEntry::ThreadCreated { .. } => {
             write_thread_created(b.reborrow().init_thread_created(), e);

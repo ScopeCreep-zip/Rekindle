@@ -38,6 +38,11 @@ pub(super) fn apply_events(
                     .get(thread_id)
                     .and_then(|existing| existing.archived_lamport)
                     .filter(|archived| *archived > *lamport);
+                let unarchived_lamport = state
+                    .threads
+                    .get(thread_id)
+                    .and_then(|existing| existing.unarchived_lamport)
+                    .filter(|unarchived| *unarchived > *lamport);
                 state.threads.insert(
                     *thread_id,
                     ThreadState {
@@ -51,6 +56,7 @@ pub(super) fn apply_events(
                         creator: author.clone(),
                         created_lamport: *lamport,
                         archived_lamport,
+                        unarchived_lamport,
                     },
                 );
             }
@@ -63,8 +69,30 @@ pub(super) fn apply_events(
                     && thread
                         .archived_lamport
                         .is_none_or(|current| *lamport > current)
+                    && thread
+                        .unarchived_lamport
+                        .is_none_or(|reopened| *lamport > reopened)
                 {
                     thread.archived_lamport = Some(*lamport);
+                }
+            }
+        }
+
+        // ── Thread unarchived: the later of archive and reopen wins ──
+        GovernanceEntry::ThreadUnarchived { thread_id, lamport } => {
+            if let Some(thread) = state.threads.get_mut(thread_id) {
+                if *lamport > thread.created_lamport
+                    && thread
+                        .unarchived_lamport
+                        .is_none_or(|current| *lamport > current)
+                {
+                    thread.unarchived_lamport = Some(*lamport);
+                    if thread
+                        .archived_lamport
+                        .is_some_and(|archived| *lamport > archived)
+                    {
+                        thread.archived_lamport = None;
+                    }
                 }
             }
         }

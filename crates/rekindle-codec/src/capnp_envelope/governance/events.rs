@@ -67,6 +67,15 @@ pub(super) fn write_thread_archived(
     p.set_lamport(lamport);
 }
 
+pub(super) fn write_thread_unarchived(
+    mut p: schema_pkg::thread_unarchived_entry::Builder<'_>,
+    thread_id: ThreadId,
+    lamport: u64,
+) {
+    uuid16_to_capnp(p.reborrow().init_thread_id(), &thread_id.0);
+    p.set_lamport(lamport);
+}
+
 // `write_event_created` and `write_expression_added` re-extract their
 // fields via `let ... else { unreachable!() }` so the helper signature
 // stays under the `too_many_arguments` threshold without needing
@@ -200,6 +209,15 @@ pub(super) fn read_thread_archived(
     p: schema_pkg::thread_archived_entry::Reader<'_>,
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::ThreadArchived {
+        thread_id: thread_id_from_capnp(p.get_thread_id().map_err(|e| capnp_err(&e))?)?,
+        lamport: p.get_lamport(),
+    })
+}
+
+pub(super) fn read_thread_unarchived(
+    p: schema_pkg::thread_unarchived_entry::Reader<'_>,
+) -> Result<GovernanceEntry, CodecError> {
+    Ok(GovernanceEntry::ThreadUnarchived {
         thread_id: thread_id_from_capnp(p.get_thread_id().map_err(|e| capnp_err(&e))?)?,
         lamport: p.get_lamport(),
     })

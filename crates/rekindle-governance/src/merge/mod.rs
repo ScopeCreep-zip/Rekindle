@@ -143,6 +143,7 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         | G::InviteRevoked { .. } => apply_community(author, entry, state),
         G::ThreadCreated { .. }
         | G::ThreadArchived { .. }
+        | G::ThreadUnarchived { .. }
         | G::EventCreated { .. }
         | G::EventArchived { .. }
         | G::EventRsvp { .. } => apply_events(author, entry, state),

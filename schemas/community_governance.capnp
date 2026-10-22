@@ -285,6 +285,11 @@ struct ThreadArchivedEntry @0xc7d4eb16e9bf1c2e {
     lamport              @1 :UInt64;
 }
 
+struct ThreadUnarchivedEntry @0xaf718751aeb31c5b {
+    threadId             @0 :Uuid16;
+    lamport              @1 :UInt64;
+}
+
 struct EventCreatedEntry @0xc8d4eb16e9bf1c2e {
     eventId              @0 :Uuid16;
     name                 @1 :Text;
@@ -523,5 +528,6 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         admissionPolicy               @37 :AdmissionPolicyPayload;
         eventRsvp                     @38 :EventRsvpEntry;
         modReport                     @39 :ModReportEntry;
+        threadUnarchived              @40 :ThreadUnarchivedEntry;
     }
 }

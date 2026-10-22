@@ -277,6 +277,16 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
 
         GovernanceEntry::ThreadArchived { .. } => has(perms, MANAGE_THREADS),
 
+        // Reopening mirrors archiving, and the thread's creator may reopen
+        // its own thread.
+        GovernanceEntry::ThreadUnarchived { thread_id, .. } => {
+            has(perms, MANAGE_THREADS)
+                || state
+                    .threads
+                    .get(thread_id)
+                    .is_some_and(|thread| &thread.creator == writer)
+        }
+
         GovernanceEntry::EventCreated { .. } => has(perms, CREATE_EVENTS),
 
         GovernanceEntry::EventArchived { .. } => has(perms, MANAGE_EVENTS),

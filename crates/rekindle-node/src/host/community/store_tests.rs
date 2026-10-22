@@ -186,6 +186,7 @@ fn thread_by(creator: &PseudonymKey) -> rekindle_governance::state::ThreadState 
         creator: creator.clone(),
         created_lamport: 2,
         archived_lamport: None,
+        unarchived_lamport: None,
     }
 }
 

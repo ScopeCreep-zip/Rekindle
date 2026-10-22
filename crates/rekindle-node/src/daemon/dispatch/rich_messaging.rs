@@ -114,12 +114,10 @@ pub(crate) async fn handle(
             host.archive_thread(&key, &thread_id).await,
             "thread archive",
         ),
-        CommunityRequest::ThreadUnarchive { thread_id, .. } => {
-            match host.unarchive_thread(&key, &thread_id) {
-                Err(ChannelError::Adapter(message)) => IpcResponse::error(409, message),
-                result => answer(result, "thread unarchive"),
-            }
-        }
+        CommunityRequest::ThreadUnarchive { thread_id, .. } => answer(
+            host.unarchive_thread(&key, &thread_id).await,
+            "thread unarchive",
+        ),
         CommunityRequest::ThreadList { channel_id, .. } => {
             answer(host.threads(&key, &channel_id, false).await, "thread list")
         }
