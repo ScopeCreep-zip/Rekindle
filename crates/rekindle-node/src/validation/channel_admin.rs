@@ -1,6 +1,6 @@
 //! A community's channel and category administration (plan E3.1 E1).
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::CommunityRequest;
 
 use super::{channel, community, hex16, name, text, Checked, MAX_TOPIC_LEN};
 
@@ -39,9 +39,9 @@ fn target(target_type: &str, target_id: &str) -> Checked {
 }
 
 /// Channel and category administration: names, ids, tags and targets.
-pub(super) fn check(request: &IpcRequest) -> Checked {
+pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
-        IpcRequest::ChannelRename {
+        CommunityRequest::ChannelRename {
             community: c,
             channel_id,
             name: n,
@@ -50,7 +50,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             channel(channel_id)?;
             name(n, "channel")
         }
-        IpcRequest::ChannelMove {
+        CommunityRequest::ChannelMove {
             community: c,
             channel_id,
             category,
@@ -61,14 +61,14 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 .as_deref()
                 .map_or(Ok(()), |id| hex16(id, "category"))
         }
-        IpcRequest::ChannelReorder {
+        CommunityRequest::ChannelReorder {
             community: c,
             channel_ids,
         } => {
             community(c)?;
             ordered(channel_ids, channel)
         }
-        IpcRequest::ChannelSetTopic {
+        CommunityRequest::ChannelSetTopic {
             community: c,
             channel_id,
             topic,
@@ -77,7 +77,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             channel(channel_id)?;
             text(topic, MAX_TOPIC_LEN, "topic")
         }
-        IpcRequest::ChannelSetForumTags {
+        CommunityRequest::ChannelSetForumTags {
             community: c,
             channel_id,
             forum_tags,
@@ -92,7 +92,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             }
             forum_tags.iter().try_for_each(|tag| name(tag, "forum tag"))
         }
-        IpcRequest::ChannelOverwriteSet {
+        CommunityRequest::ChannelOverwriteSet {
             community: c,
             channel_id,
             target_type,
@@ -100,7 +100,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             allow: _,
             deny: _,
         }
-        | IpcRequest::ChannelOverwriteDelete {
+        | CommunityRequest::ChannelOverwriteDelete {
             community: c,
             channel_id,
             target_type,
@@ -110,21 +110,21 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             channel(channel_id)?;
             target(target_type, target_id)
         }
-        IpcRequest::CategoryCreate {
+        CommunityRequest::CategoryCreate {
             community: c,
             name: n,
         } => {
             community(c)?;
             name(n, "category")
         }
-        IpcRequest::CategoryDelete {
+        CommunityRequest::CategoryDelete {
             community: c,
             category_id,
         } => {
             community(c)?;
             hex16(category_id, "category")
         }
-        IpcRequest::CategoryRename {
+        CommunityRequest::CategoryRename {
             community: c,
             category_id,
             name: n,
@@ -133,7 +133,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             hex16(category_id, "category")?;
             name(n, "category")
         }
-        IpcRequest::CategoryReorder {
+        CommunityRequest::CategoryReorder {
             community: c,
             category_ids,
         } => {

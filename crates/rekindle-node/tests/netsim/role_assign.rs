@@ -3,16 +3,16 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::harness::{eventually, Community};
 
 /// The role ids node `i` lists for the community.
 async fn listed_roles(community: &Community, i: usize) -> Vec<u64> {
     community.nodes[i]
-        .ok(IpcRequest::RoleList {
+        .ok(IpcRequest::Community(CommunityRequest::RoleList {
             community: community.governance_key.clone(),
-        })
+        }))
         .await
         .as_array()
         .map(|roles| roles.iter().filter_map(|r| r["id"].as_u64()).collect())
@@ -29,7 +29,7 @@ async fn role_assign_converges() {
     let bea = community.pseudonym(1).await;
     let cat = community.pseudonym(2).await;
     let role = community.nodes[0]
-        .ok(IpcRequest::RoleCreate {
+        .ok(IpcRequest::Community(CommunityRequest::RoleCreate {
             community: community.governance_key.clone(),
             name: "raiders".into(),
             permissions: 0,
@@ -38,15 +38,15 @@ async fn role_assign_converges() {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-        })
+        }))
         .await;
     let role_id = u32::try_from(role.as_u64().expect("a role id")).unwrap();
     community.nodes[0]
-        .ok(IpcRequest::RoleAssign {
+        .ok(IpcRequest::Community(CommunityRequest::RoleAssign {
             community: community.governance_key.clone(),
             member_pseudonym: bea,
             role_id,
-        })
+        }))
         .await;
 
     assert!(
@@ -64,11 +64,11 @@ async fn role_assign_converges() {
     );
 
     let refused = community.nodes[2]
-        .call(IpcRequest::RoleAssign {
+        .call(IpcRequest::Community(CommunityRequest::RoleAssign {
             community: community.governance_key.clone(),
             member_pseudonym: cat,
             role_id,
-        })
+        }))
         .await
         .expect_err("a member without MANAGE_ROLES is refused");
     assert_eq!(refused.code, 403, "{}", refused.message);

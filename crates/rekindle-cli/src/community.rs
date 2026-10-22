@@ -1,6 +1,6 @@
 //! Community commands: create, join, leave, list, info.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::cli::CommunityCmd;
 use crate::helpers;
@@ -23,11 +23,11 @@ pub async fn dispatch(
             let validated_name = helpers::validate_name(name, "Community")?;
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityCreate {
+                IpcRequest::Community(CommunityRequest::CommunityCreate {
                     name: validated_name,
                     description: description.clone().unwrap_or_default(),
                     approval_required: *approval_required,
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -35,9 +35,9 @@ pub async fn dispatch(
         CommunityCmd::Join { invite, .. } => {
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityJoin {
+                IpcRequest::Community(CommunityRequest::CommunityJoin {
                     invite: invite.clone(),
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -45,15 +45,19 @@ pub async fn dispatch(
         CommunityCmd::Leave { community } => {
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityLeave {
+                IpcRequest::Community(CommunityRequest::CommunityLeave {
                     governance_key: community.clone(),
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
         }
         CommunityCmd::List { .. } => {
-            let value = helpers::send(client, IpcRequest::CommunityList).await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::CommunityList),
+            )
+            .await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);
             }
@@ -88,9 +92,9 @@ pub async fn dispatch(
         CommunityCmd::Info { community, .. } => {
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityInfo {
+                IpcRequest::Community(CommunityRequest::CommunityInfo {
                     governance_key: community.clone(),
-                },
+                }),
             )
             .await?;
             if mode.is_structured() {
@@ -149,10 +153,10 @@ pub async fn dispatch(
         CommunityCmd::Approve { community, member } => {
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityApprove {
+                IpcRequest::Community(CommunityRequest::CommunityApprove {
                     governance_key: community.clone(),
                     member_pseudonym: member.clone(),
-                },
+                }),
             )
             .await?;
             if mode.is_structured() {
@@ -171,11 +175,11 @@ pub async fn dispatch(
         } => {
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityReject {
+                IpcRequest::Community(CommunityRequest::CommunityReject {
                     governance_key: community.clone(),
                     member_pseudonym: member.clone(),
                     reason: reason.clone().unwrap_or_default(),
-                },
+                }),
             )
             .await?;
             if mode.is_structured() {
@@ -186,9 +190,9 @@ pub async fn dispatch(
         CommunityCmd::Pending { community } => {
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityPendingMembers {
+                IpcRequest::Community(CommunityRequest::CommunityPendingMembers {
                     governance_key: community.clone(),
-                },
+                }),
             )
             .await?;
             if mode.is_structured() {
@@ -226,10 +230,10 @@ pub async fn dispatch(
         } => {
             let value = helpers::send(
                 client,
-                IpcRequest::CommunityTransferOwnership {
+                IpcRequest::Community(CommunityRequest::CommunityTransferOwnership {
                     governance_key: community.clone(),
                     new_owner_pseudonym: new_owner.clone(),
-                },
+                }),
             )
             .await?;
             if mode.is_structured() {

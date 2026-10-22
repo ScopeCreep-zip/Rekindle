@@ -84,57 +84,7 @@ async fn route(
         ),
 
         // ── Community, channels, governance and channel keys (plan E3.1) ──
-        request @ (IpcRequest::CommunityCreate { .. }
-        | IpcRequest::CommunityJoin { .. }
-        | IpcRequest::CommunityLeave { .. }
-        | IpcRequest::CommunityList
-        | IpcRequest::CommunityViews
-        | IpcRequest::CommunityMembers { .. }
-        | IpcRequest::CommunityInfo { .. }
-        | IpcRequest::CommunityUpdateInfo { .. }
-        | IpcRequest::CommunityApprove { .. }
-        | IpcRequest::CommunityReject { .. }
-        | IpcRequest::CommunityPendingMembers { .. }
-        | IpcRequest::CommunityTransferOwnership { .. }
-        | IpcRequest::ChannelList { .. }
-        | IpcRequest::ChannelCreate { .. }
-        | IpcRequest::ChannelDelete { .. }
-        | IpcRequest::ChannelUpdate { .. }
-        | IpcRequest::ChannelRename { .. }
-        | IpcRequest::ChannelMove { .. }
-        | IpcRequest::ChannelReorder { .. }
-        | IpcRequest::ChannelSetTopic { .. }
-        | IpcRequest::ChannelSetForumTags { .. }
-        | IpcRequest::ChannelOverwriteSet { .. }
-        | IpcRequest::ChannelOverwriteDelete { .. }
-        | IpcRequest::CategoryCreate { .. }
-        | IpcRequest::CategoryDelete { .. }
-        | IpcRequest::CategoryRename { .. }
-        | IpcRequest::CategoryReorder { .. }
-        | IpcRequest::ChannelSend { .. }
-        | IpcRequest::ChannelHistory { .. }
-        | IpcRequest::RoleList { .. }
-        | IpcRequest::RoleCreate { .. }
-        | IpcRequest::RoleUpdate { .. }
-        | IpcRequest::RoleDelete { .. }
-        | IpcRequest::GameServerList { .. }
-        | IpcRequest::GameServerAdd { .. }
-        | IpcRequest::GameServerRemove { .. }
-        | IpcRequest::RoleAssign { .. }
-        | IpcRequest::RoleUnassign { .. }
-        | IpcRequest::RoleSelfAssign { .. }
-        | IpcRequest::RoleSelfUnassign { .. }
-        | IpcRequest::Kick { .. }
-        | IpcRequest::Ban { .. }
-        | IpcRequest::Unban { .. }
-        | IpcRequest::Timeout { .. }
-        | IpcRequest::BanList { .. }
-        | IpcRequest::InviteCreate { .. }
-        | IpcRequest::InviteList { .. }
-        | IpcRequest::InviteRevoke { .. }
-        | IpcRequest::MekList { .. }
-        | IpcRequest::MekRotate { .. }
-        | IpcRequest::MekRequest { .. }) => community::route(ctx, state, request).await,
+        IpcRequest::Community(request) => community::route(ctx, state, request).await,
 
         // ── Friends, DMs and session resets (plan E2.1) ─────────
         request @ (IpcRequest::FriendAddFromCode { .. }

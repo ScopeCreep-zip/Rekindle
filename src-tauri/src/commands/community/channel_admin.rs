@@ -1,6 +1,6 @@
 //! Channel delete and rename (plan E3.1 E1): Host calls.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -16,10 +16,10 @@ pub async fn delete_channel(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelDelete {
+        IpcRequest::Community(CommunityRequest::ChannelDelete {
             community: community_id,
             channel_id,
-        },
+        }),
     )
     .await
 }
@@ -33,11 +33,11 @@ pub async fn rename_channel(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelRename {
+        IpcRequest::Community(CommunityRequest::ChannelRename {
             community: community_id,
             channel_id,
             name: new_name,
-        },
+        }),
     )
     .await
 }

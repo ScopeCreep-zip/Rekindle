@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use rekindle_ipc::client::BusClient;
 use rekindle_ipc::message::SecurityLevel;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::IpcError;
 use rekindle_types::intent::{IntentId, IntentProof, Reversibility};
 use rekindle_types::subscription_events::{Cursor, StreamFrame, SubscriptionFilter};
@@ -226,20 +226,22 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::IdentityWipe
         | IpcRequest::IntentCommit { .. }
         | IpcRequest::Logout
-        | IpcRequest::CommunityCreate { .. }
-        | IpcRequest::CommunityJoin { .. }
+        | IpcRequest::Community(
+            CommunityRequest::CommunityCreate { .. }
+            | CommunityRequest::CommunityJoin { .. }
+            | CommunityRequest::ChannelSend { .. }
+            | CommunityRequest::ChannelHistory { .. },
+        )
         | IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }
         | IpcRequest::FriendRetryHandshake { .. }
         | IpcRequest::Unlock { .. }
-        | IpcRequest::ChannelSend { .. }
         | IpcRequest::DmSend { .. }
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::GroupDmCreate { .. }
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmSend { .. }
-        | IpcRequest::DmInbox { .. }
-        | IpcRequest::ChannelHistory { .. } => LONG_TIMEOUT,
+        | IpcRequest::DmInbox { .. } => LONG_TIMEOUT,
         _ => DEFAULT_TIMEOUT,
     }
 }

@@ -1,7 +1,7 @@
 //! Request classification: each `IpcRequest`'s stable name (for the audit
 //! log), the dispatch lane it runs in, and the clearance it requires.
 
-use super::IpcRequest;
+use super::{CommunityRequest, IpcRequest};
 use crate::message::SecurityLevel;
 
 /// How a request may overlap the requests in flight with it.
@@ -100,40 +100,7 @@ impl IpcRequest {
                 ("IdentityRotationDecline", Write, Authenticated)
             }
 
-            Self::CommunityCreate { .. } => ("CommunityCreate", Write, Authenticated),
-            Self::CommunityJoin { .. } => ("CommunityJoin", Write, Authenticated),
-            Self::CommunityLeave { .. } => ("CommunityLeave", Write, Authenticated),
-            Self::CommunityList => ("CommunityList", Query, Authenticated),
-            Self::CommunityViews => ("CommunityViews", Query, Authenticated),
-            Self::CommunityMembers { .. } => ("CommunityMembers", Query, Authenticated),
-            Self::CommunityInfo { .. } => ("CommunityInfo", Query, Authenticated),
-            Self::CommunityUpdateInfo { .. } => ("CommunityUpdateInfo", Write, Authenticated),
-            Self::CommunityApprove { .. } => ("CommunityApprove", Write, Authenticated),
-            Self::CommunityReject { .. } => ("CommunityReject", Write, Authenticated),
-            Self::CommunityPendingMembers { .. } => {
-                ("CommunityPendingMembers", Query, Authenticated)
-            }
-            Self::CommunityTransferOwnership { .. } => {
-                ("CommunityTransferOwnership", Write, Authenticated)
-            }
-
-            Self::ChannelList { .. } => ("ChannelList", Query, Authenticated),
-            Self::ChannelCreate { .. } => ("ChannelCreate", Write, Authenticated),
-            Self::ChannelDelete { .. } => ("ChannelDelete", Write, Authenticated),
-            Self::ChannelUpdate { .. } => ("ChannelUpdate", Write, Authenticated),
-            Self::ChannelRename { .. } => ("ChannelRename", Write, Authenticated),
-            Self::ChannelMove { .. } => ("ChannelMove", Write, Authenticated),
-            Self::ChannelReorder { .. } => ("ChannelReorder", Write, Authenticated),
-            Self::ChannelSetTopic { .. } => ("ChannelSetTopic", Write, Authenticated),
-            Self::ChannelSetForumTags { .. } => ("ChannelSetForumTags", Write, Authenticated),
-            Self::ChannelOverwriteSet { .. } => ("ChannelOverwriteSet", Write, Authenticated),
-            Self::ChannelOverwriteDelete { .. } => ("ChannelOverwriteDelete", Write, Authenticated),
-            Self::CategoryCreate { .. } => ("CategoryCreate", Write, Authenticated),
-            Self::CategoryDelete { .. } => ("CategoryDelete", Write, Authenticated),
-            Self::CategoryRename { .. } => ("CategoryRename", Write, Authenticated),
-            Self::CategoryReorder { .. } => ("CategoryReorder", Write, Authenticated),
-            Self::ChannelSend { .. } => ("ChannelSend", Write, Authenticated),
-            Self::ChannelHistory { .. } => ("ChannelHistory", Query, Authenticated),
+            Self::Community(request) => request.class(),
 
             Self::DmSend { .. } => ("DmSend", Write, Authenticated),
             Self::DmTyping { .. } => ("DmTyping", Write, Authenticated),
@@ -156,9 +123,6 @@ impl IpcRequest {
             Self::Unsubscribe { .. } => ("Unsubscribe", Query, Authenticated),
 
             Self::PrekeyStatus => ("PrekeyStatus", Query, Authenticated),
-            Self::MekList { .. } => ("MekList", Query, Authenticated),
-            Self::MekRotate { .. } => ("MekRotate", Write, Authenticated),
-            Self::MekRequest { .. } => ("MekRequest", Write, Authenticated),
 
             Self::PresenceSet { .. } => ("PresenceSet", Write, Authenticated),
             Self::PresenceSetMessage { .. } => ("PresenceSetMessage", Write, Authenticated),
@@ -174,6 +138,66 @@ impl IpcRequest {
             Self::AuditExport { .. } => ("AuditExport", Query, Authenticated),
             Self::LinkOpen { .. } => ("LinkOpen", Query, Authenticated),
 
+            Self::VoiceJoin { .. } => ("VoiceJoin", Write, Authenticated),
+            Self::VoiceLeave => ("VoiceLeave", Write, Authenticated),
+
+            Self::NetworkStatus => ("NetworkStatus", Query, Authenticated),
+            Self::NetworkPeers => ("NetworkPeers", Query, Authenticated),
+
+            Self::AgentRegister { .. } => ("AgentRegister", Write, Admin),
+            Self::AgentRevoke { .. } => ("AgentRevoke", Write, Admin),
+            Self::PolicyReload => ("PolicyReload", Write, Admin),
+        }
+    }
+}
+
+impl CommunityRequest {
+    /// The variant name, without its fields.
+    #[must_use]
+    pub fn name(&self) -> &'static str {
+        self.class().0
+    }
+
+    pub(super) fn class(&self) -> (&'static str, Lane, SecurityLevel) {
+        use Lane::{Query, Write};
+        use SecurityLevel::Authenticated;
+        match self {
+            Self::CommunityCreate { .. } => ("CommunityCreate", Write, Authenticated),
+            Self::CommunityJoin { .. } => ("CommunityJoin", Write, Authenticated),
+            Self::CommunityLeave { .. } => ("CommunityLeave", Write, Authenticated),
+            Self::CommunityList => ("CommunityList", Query, Authenticated),
+            Self::CommunityViews => ("CommunityViews", Query, Authenticated),
+            Self::CommunityMembers { .. } => ("CommunityMembers", Query, Authenticated),
+            Self::CommunityInfo { .. } => ("CommunityInfo", Query, Authenticated),
+            Self::CommunityUpdateInfo { .. } => ("CommunityUpdateInfo", Write, Authenticated),
+            Self::CommunityApprove { .. } => ("CommunityApprove", Write, Authenticated),
+            Self::CommunityReject { .. } => ("CommunityReject", Write, Authenticated),
+            Self::CommunityPendingMembers { .. } => {
+                ("CommunityPendingMembers", Query, Authenticated)
+            }
+            Self::CommunityTransferOwnership { .. } => {
+                ("CommunityTransferOwnership", Write, Authenticated)
+            }
+            Self::ChannelList { .. } => ("ChannelList", Query, Authenticated),
+            Self::ChannelCreate { .. } => ("ChannelCreate", Write, Authenticated),
+            Self::ChannelDelete { .. } => ("ChannelDelete", Write, Authenticated),
+            Self::ChannelUpdate { .. } => ("ChannelUpdate", Write, Authenticated),
+            Self::ChannelRename { .. } => ("ChannelRename", Write, Authenticated),
+            Self::ChannelMove { .. } => ("ChannelMove", Write, Authenticated),
+            Self::ChannelReorder { .. } => ("ChannelReorder", Write, Authenticated),
+            Self::ChannelSetTopic { .. } => ("ChannelSetTopic", Write, Authenticated),
+            Self::ChannelSetForumTags { .. } => ("ChannelSetForumTags", Write, Authenticated),
+            Self::ChannelOverwriteSet { .. } => ("ChannelOverwriteSet", Write, Authenticated),
+            Self::ChannelOverwriteDelete { .. } => ("ChannelOverwriteDelete", Write, Authenticated),
+            Self::CategoryCreate { .. } => ("CategoryCreate", Write, Authenticated),
+            Self::CategoryDelete { .. } => ("CategoryDelete", Write, Authenticated),
+            Self::CategoryRename { .. } => ("CategoryRename", Write, Authenticated),
+            Self::CategoryReorder { .. } => ("CategoryReorder", Write, Authenticated),
+            Self::ChannelSend { .. } => ("ChannelSend", Write, Authenticated),
+            Self::ChannelHistory { .. } => ("ChannelHistory", Query, Authenticated),
+            Self::MekList { .. } => ("MekList", Query, Authenticated),
+            Self::MekRotate { .. } => ("MekRotate", Write, Authenticated),
+            Self::MekRequest { .. } => ("MekRequest", Write, Authenticated),
             Self::RoleList { .. } => ("RoleList", Query, Authenticated),
             Self::RoleCreate { .. } => ("RoleCreate", Write, Authenticated),
             Self::RoleUpdate { .. } => ("RoleUpdate", Write, Authenticated),
@@ -185,26 +209,14 @@ impl IpcRequest {
             Self::RoleUnassign { .. } => ("RoleUnassign", Write, Authenticated),
             Self::RoleSelfAssign { .. } => ("RoleSelfAssign", Write, Authenticated),
             Self::RoleSelfUnassign { .. } => ("RoleSelfUnassign", Write, Authenticated),
-
             Self::Kick { .. } => ("Kick", Write, Authenticated),
             Self::Ban { .. } => ("Ban", Write, Authenticated),
             Self::Unban { .. } => ("Unban", Write, Authenticated),
             Self::Timeout { .. } => ("Timeout", Write, Authenticated),
             Self::BanList { .. } => ("BanList", Query, Authenticated),
-
             Self::InviteCreate { .. } => ("InviteCreate", Write, Authenticated),
             Self::InviteList { .. } => ("InviteList", Query, Authenticated),
             Self::InviteRevoke { .. } => ("InviteRevoke", Write, Authenticated),
-
-            Self::VoiceJoin { .. } => ("VoiceJoin", Write, Authenticated),
-            Self::VoiceLeave => ("VoiceLeave", Write, Authenticated),
-
-            Self::NetworkStatus => ("NetworkStatus", Query, Authenticated),
-            Self::NetworkPeers => ("NetworkPeers", Query, Authenticated),
-
-            Self::AgentRegister { .. } => ("AgentRegister", Write, Admin),
-            Self::AgentRevoke { .. } => ("AgentRevoke", Write, Admin),
-            Self::PolicyReload => ("PolicyReload", Write, Admin),
         }
     }
 }

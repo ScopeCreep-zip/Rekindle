@@ -1,6 +1,6 @@
 //! A community's game servers (plan E3.1 H1): Host calls.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::game_server::GameServerInfo;
 use tauri::State;
@@ -16,12 +16,12 @@ pub async fn add_game_server(
     label: String,
     address: String,
 ) -> Result<Done<String>, CommandError> {
-    let request = IpcRequest::GameServerAdd {
+    let request = IpcRequest::Community(CommunityRequest::GameServerAdd {
         community: community_id,
         game_id,
         label,
         address,
-    };
+    });
     host_call::call(&state, request).await
 }
 
@@ -31,10 +31,10 @@ pub async fn remove_game_server(
     community_id: String,
     server_id: String,
 ) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::GameServerRemove {
+    let request = IpcRequest::Community(CommunityRequest::GameServerRemove {
         community: community_id,
         server_id,
-    };
+    });
     host_call::call(&state, request).await
 }
 
@@ -43,8 +43,8 @@ pub async fn get_game_servers(
     state: State<'_, SharedState>,
     community_id: String,
 ) -> Result<Done<Vec<GameServerInfo>>, CommandError> {
-    let request = IpcRequest::GameServerList {
+    let request = IpcRequest::Community(CommunityRequest::GameServerList {
         community: community_id,
-    };
+    });
     host_call::call(&state, request).await
 }

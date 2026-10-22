@@ -5,7 +5,7 @@
 //! and ids.
 
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::id::{CategoryId, ChannelId};
 
 use super::channel::resolve_channel;
@@ -31,19 +31,19 @@ fn category(hex_id: &str) -> Result<CategoryId, IpcResponse> {
 }
 
 /// The request's community.
-fn community_of(request: &IpcRequest) -> &str {
+fn community_of(request: &CommunityRequest) -> &str {
     match request {
-        IpcRequest::ChannelRename { community, .. }
-        | IpcRequest::ChannelMove { community, .. }
-        | IpcRequest::ChannelReorder { community, .. }
-        | IpcRequest::ChannelSetTopic { community, .. }
-        | IpcRequest::ChannelSetForumTags { community, .. }
-        | IpcRequest::ChannelOverwriteSet { community, .. }
-        | IpcRequest::ChannelOverwriteDelete { community, .. }
-        | IpcRequest::CategoryCreate { community, .. }
-        | IpcRequest::CategoryDelete { community, .. }
-        | IpcRequest::CategoryRename { community, .. }
-        | IpcRequest::CategoryReorder { community, .. } => community,
+        CommunityRequest::ChannelRename { community, .. }
+        | CommunityRequest::ChannelMove { community, .. }
+        | CommunityRequest::ChannelReorder { community, .. }
+        | CommunityRequest::ChannelSetTopic { community, .. }
+        | CommunityRequest::ChannelSetForumTags { community, .. }
+        | CommunityRequest::ChannelOverwriteSet { community, .. }
+        | CommunityRequest::ChannelOverwriteDelete { community, .. }
+        | CommunityRequest::CategoryCreate { community, .. }
+        | CommunityRequest::CategoryDelete { community, .. }
+        | CommunityRequest::CategoryRename { community, .. }
+        | CommunityRequest::CategoryReorder { community, .. } => community,
         other => unreachable!("{} is not a channel admin request", other.name()),
     }
 }
@@ -52,7 +52,7 @@ fn community_of(request: &IpcRequest) -> &str {
 fn op(
     ctx: &DaemonContext,
     community_id: &str,
-    request: IpcRequest,
+    request: CommunityRequest,
 ) -> Result<ChannelAdminOp, IpcResponse> {
     let channel = |needle: &str| {
         resolve_channel(ctx, community_id, needle)
@@ -60,13 +60,13 @@ fn op(
             .ok_or_else(|| IpcResponse::error(404, format!("channel '{needle}' not found")))
     };
     Ok(match request {
-        IpcRequest::ChannelRename {
+        CommunityRequest::ChannelRename {
             channel_id, name, ..
         } => ChannelAdminOp::Rename {
             channel: channel(&channel_id)?,
             name: name.trim().to_owned(),
         },
-        IpcRequest::ChannelMove {
+        CommunityRequest::ChannelMove {
             channel_id,
             category: target,
             ..
@@ -74,19 +74,19 @@ fn op(
             channel: channel(&channel_id)?,
             category: target.as_deref().map(category).transpose()?,
         },
-        IpcRequest::ChannelReorder { channel_ids, .. } => ChannelAdminOp::Reorder {
+        CommunityRequest::ChannelReorder { channel_ids, .. } => ChannelAdminOp::Reorder {
             channels: channel_ids
                 .iter()
                 .map(|id| channel(id))
                 .collect::<Result<_, _>>()?,
         },
-        IpcRequest::ChannelSetTopic {
+        CommunityRequest::ChannelSetTopic {
             channel_id, topic, ..
         } => ChannelAdminOp::SetTopic {
             channel: channel(&channel_id)?,
             topic,
         },
-        IpcRequest::ChannelSetForumTags {
+        CommunityRequest::ChannelSetForumTags {
             channel_id,
             forum_tags,
             ..
@@ -94,7 +94,7 @@ fn op(
             channel: channel(&channel_id)?,
             tags: forum_tags.iter().map(|t| t.trim().to_owned()).collect(),
         },
-        IpcRequest::ChannelOverwriteSet {
+        CommunityRequest::ChannelOverwriteSet {
             channel_id,
             target_type,
             target_id,
@@ -108,7 +108,7 @@ fn op(
             allow,
             deny,
         },
-        IpcRequest::ChannelOverwriteDelete {
+        CommunityRequest::ChannelOverwriteDelete {
             channel_id,
             target_type,
             target_id,
@@ -118,19 +118,19 @@ fn op(
             target_type,
             target_id,
         },
-        IpcRequest::CategoryCreate { name, .. } => ChannelAdminOp::CategoryCreate {
+        CommunityRequest::CategoryCreate { name, .. } => ChannelAdminOp::CategoryCreate {
             name: name.trim().to_owned(),
         },
-        IpcRequest::CategoryDelete { category_id, .. } => ChannelAdminOp::CategoryDelete {
+        CommunityRequest::CategoryDelete { category_id, .. } => ChannelAdminOp::CategoryDelete {
             category: category(&category_id)?,
         },
-        IpcRequest::CategoryRename {
+        CommunityRequest::CategoryRename {
             category_id, name, ..
         } => ChannelAdminOp::CategoryRename {
             category: category(&category_id)?,
             name: name.trim().to_owned(),
         },
-        IpcRequest::CategoryReorder { category_ids, .. } => ChannelAdminOp::CategoryReorder {
+        CommunityRequest::CategoryReorder { category_ids, .. } => ChannelAdminOp::CategoryReorder {
             categories: category_ids
                 .iter()
                 .map(|id| category(id))
@@ -144,7 +144,7 @@ fn op(
 pub(super) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: IpcRequest,
+    request: CommunityRequest,
 ) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");

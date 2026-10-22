@@ -1,11 +1,17 @@
 //! The community, channel, MEK, role, moderation and invite requests'
 //! `Debug` (plan E3.1): a message body shows its length only.
 
-use super::super::IpcRequest;
+use super::super::CommunityRequest;
 
-impl IpcRequest {
+impl std::fmt::Debug for CommunityRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.fmt_community(f)
+    }
+}
+
+impl CommunityRequest {
     /// The community requests' `Debug`.
-    pub(super) fn fmt_community(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt_community(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::ChannelSend {
                 community,
@@ -250,7 +256,6 @@ impl IpcRequest {
                 .field("community", community)
                 .field("invite_code", invite_code)
                 .finish(),
-            other => unreachable!("{} is not a community request", other.name()),
         }
     }
 

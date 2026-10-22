@@ -6,7 +6,7 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_types::display::ChannelOverviewDisplay;
 
 use crate::daemon::DaemonState;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use super::{state_error, DaemonContext};
 
@@ -14,11 +14,11 @@ use super::{state_error, DaemonContext};
 pub(crate) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: IpcRequest,
+    request: CommunityRequest,
 ) -> IpcResponse {
     match request {
-        IpcRequest::ChannelList { community } => handle_list(ctx, state, &community),
-        IpcRequest::ChannelCreate {
+        CommunityRequest::ChannelList { community } => handle_list(ctx, state, &community),
+        CommunityRequest::ChannelCreate {
             community,
             name,
             kind,
@@ -50,11 +50,11 @@ pub(crate) async fn route(
             )
             .await
         }
-        IpcRequest::ChannelDelete {
+        CommunityRequest::ChannelDelete {
             community,
             channel_id,
         } => handle_delete(ctx, state, &community, &channel_id).await,
-        IpcRequest::ChannelUpdate {
+        CommunityRequest::ChannelUpdate {
             community,
             channel_id,
             name,
@@ -74,7 +74,7 @@ pub(crate) async fn route(
             )
             .await
         }
-        IpcRequest::ChannelSend {
+        CommunityRequest::ChannelSend {
             community,
             channel,
             body,
@@ -83,22 +83,22 @@ pub(crate) async fn route(
             super::channel_message::handle_send(ctx, state, &community, &channel, &body, reply_to)
                 .await
         }
-        IpcRequest::ChannelHistory {
+        CommunityRequest::ChannelHistory {
             community,
             channel,
             limit,
         } => super::channel_message::handle_history(ctx, state, &community, &channel, limit).await,
-        request @ (IpcRequest::ChannelRename { .. }
-        | IpcRequest::ChannelMove { .. }
-        | IpcRequest::ChannelReorder { .. }
-        | IpcRequest::ChannelSetTopic { .. }
-        | IpcRequest::ChannelSetForumTags { .. }
-        | IpcRequest::ChannelOverwriteSet { .. }
-        | IpcRequest::ChannelOverwriteDelete { .. }
-        | IpcRequest::CategoryCreate { .. }
-        | IpcRequest::CategoryDelete { .. }
-        | IpcRequest::CategoryRename { .. }
-        | IpcRequest::CategoryReorder { .. }) => {
+        request @ (CommunityRequest::ChannelRename { .. }
+        | CommunityRequest::ChannelMove { .. }
+        | CommunityRequest::ChannelReorder { .. }
+        | CommunityRequest::ChannelSetTopic { .. }
+        | CommunityRequest::ChannelSetForumTags { .. }
+        | CommunityRequest::ChannelOverwriteSet { .. }
+        | CommunityRequest::ChannelOverwriteDelete { .. }
+        | CommunityRequest::CategoryCreate { .. }
+        | CommunityRequest::CategoryDelete { .. }
+        | CommunityRequest::CategoryRename { .. }
+        | CommunityRequest::CategoryReorder { .. }) => {
             super::channel_admin::route(ctx, state, request).await
         }
         other => unreachable!("{} is not a channel request", other.name()),

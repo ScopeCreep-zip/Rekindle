@@ -1,6 +1,6 @@
 //! A community's channels.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::CommunityRequest;
 
 use super::{
     channel, channel_kind, community, hex16, message_body, name, opt, page, slowmode, text,
@@ -8,9 +8,9 @@ use super::{
 };
 
 /// A community's channels: their names, kinds, topics and bodies.
-pub(super) fn check(request: &IpcRequest) -> Checked {
+pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
-        IpcRequest::ChannelCreate {
+        CommunityRequest::ChannelCreate {
             community: c,
             name: channel_name,
             kind,
@@ -29,14 +29,14 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
             slowmode(*slowmode_seconds)
         }
-        IpcRequest::ChannelDelete {
+        CommunityRequest::ChannelDelete {
             community: c,
             channel_id,
         } => {
             community(c)?;
             channel(channel_id)
         }
-        IpcRequest::ChannelUpdate {
+        CommunityRequest::ChannelUpdate {
             community: c,
             channel_id,
             name: new_name,
@@ -49,7 +49,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             opt(topic.as_deref(), |t| text(t, MAX_TOPIC_LEN, "topic"))?;
             opt(slowmode_seconds.as_ref(), |s| slowmode(*s))
         }
-        IpcRequest::ChannelSend {
+        CommunityRequest::ChannelSend {
             community: c,
             channel: ch,
             body,
@@ -59,7 +59,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             channel(ch)?;
             message_body(body)
         }
-        IpcRequest::ChannelHistory {
+        CommunityRequest::ChannelHistory {
             community: c,
             channel: ch,
             limit,

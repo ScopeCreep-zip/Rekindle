@@ -6,7 +6,7 @@ use crate::services::community_presence_runtime::{
 };
 use crate::state::SharedState;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::{CommandError, Done};
 
@@ -69,15 +69,15 @@ pub async fn get_presence_policy(
     Ok(get_presence_policy_inner(state.inner(), &community_id))
 }
 
-/// A community's member list (`IpcRequest::CommunityMembers`).
+/// A community's member list (`IpcRequest::Community(CommunityRequest::CommunityMembers)`).
 #[tauri::command]
 pub async fn get_community_members(
     community_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<CommunityMemberView>>, CommandError> {
-    let request = IpcRequest::CommunityMembers {
+    let request = IpcRequest::Community(CommunityRequest::CommunityMembers {
         governance_key: community_id,
-    };
+    });
     crate::host_call::call(&state, request).await
 }
 

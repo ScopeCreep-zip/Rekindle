@@ -1,4 +1,4 @@
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -80,14 +80,14 @@ pub async fn set_channel_overwrite(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelOverwriteSet {
+        IpcRequest::Community(CommunityRequest::ChannelOverwriteSet {
             community: community_id,
             channel_id,
             target_type,
             target_id,
             allow,
             deny,
-        },
+        }),
     )
     .await
 }
@@ -102,12 +102,12 @@ pub async fn delete_channel_overwrite(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelOverwriteDelete {
+        IpcRequest::Community(CommunityRequest::ChannelOverwriteDelete {
             community: community_id,
             channel_id,
             target_type,
             target_id,
-        },
+        }),
     )
     .await
 }

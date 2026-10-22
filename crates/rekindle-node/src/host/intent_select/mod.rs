@@ -8,7 +8,7 @@
 //! E4.1/E5.1): none is a placeholder.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibility, Subject};
 
 use crate::daemon::dispatch::DaemonContext;
@@ -110,42 +110,47 @@ pub(crate) async fn select(
         | IpcRequest::GroupDmSend { .. } => {
             group_dm::selection(ctx, request, &mut s).await?;
         }
-        IpcRequest::CommunityCreate { .. }
-        | IpcRequest::CommunityJoin { .. }
-        | IpcRequest::CommunityLeave { .. }
-        | IpcRequest::CommunityApprove { .. }
-        | IpcRequest::CommunityReject { .. }
-        | IpcRequest::CommunityTransferOwnership { .. }
-        | IpcRequest::ChannelCreate { .. }
-        | IpcRequest::ChannelDelete { .. }
-        | IpcRequest::ChannelUpdate { .. }
-        | IpcRequest::ChannelRename { .. }
-        | IpcRequest::ChannelMove { .. }
-        | IpcRequest::ChannelReorder { .. }
-        | IpcRequest::ChannelSetTopic { .. }
-        | IpcRequest::ChannelSetForumTags { .. }
-        | IpcRequest::ChannelOverwriteSet { .. }
-        | IpcRequest::ChannelOverwriteDelete { .. }
-        | IpcRequest::CategoryCreate { .. }
-        | IpcRequest::CategoryDelete { .. }
-        | IpcRequest::CategoryRename { .. }
-        | IpcRequest::CategoryReorder { .. }
-        | IpcRequest::ChannelSend { .. }
-        | IpcRequest::MekRotate { .. }
-        | IpcRequest::RoleCreate { .. }
-        | IpcRequest::RoleUpdate { .. }
-        | IpcRequest::RoleDelete { .. }
-        | IpcRequest::RoleAssign { .. }
-        | IpcRequest::RoleUnassign { .. }
-        | IpcRequest::RoleSelfAssign { .. }
-        | IpcRequest::RoleSelfUnassign { .. }
-        | IpcRequest::Kick { .. }
-        | IpcRequest::Ban { .. }
-        | IpcRequest::Unban { .. }
-        | IpcRequest::Timeout { .. }
-        | IpcRequest::InviteCreate { .. }
-        | IpcRequest::InviteRevoke { .. } => community::selection(ctx, request, &mut s).await?,
-        IpcRequest::GameServerAdd { .. } | IpcRequest::GameServerRemove { .. } => {
+        IpcRequest::Community(
+            request @ (CommunityRequest::CommunityCreate { .. }
+            | CommunityRequest::CommunityJoin { .. }
+            | CommunityRequest::CommunityLeave { .. }
+            | CommunityRequest::CommunityApprove { .. }
+            | CommunityRequest::CommunityReject { .. }
+            | CommunityRequest::CommunityTransferOwnership { .. }
+            | CommunityRequest::ChannelCreate { .. }
+            | CommunityRequest::ChannelDelete { .. }
+            | CommunityRequest::ChannelUpdate { .. }
+            | CommunityRequest::ChannelRename { .. }
+            | CommunityRequest::ChannelMove { .. }
+            | CommunityRequest::ChannelReorder { .. }
+            | CommunityRequest::ChannelSetTopic { .. }
+            | CommunityRequest::ChannelSetForumTags { .. }
+            | CommunityRequest::ChannelOverwriteSet { .. }
+            | CommunityRequest::ChannelOverwriteDelete { .. }
+            | CommunityRequest::CategoryCreate { .. }
+            | CommunityRequest::CategoryDelete { .. }
+            | CommunityRequest::CategoryRename { .. }
+            | CommunityRequest::CategoryReorder { .. }
+            | CommunityRequest::ChannelSend { .. }
+            | CommunityRequest::MekRotate { .. }
+            | CommunityRequest::RoleCreate { .. }
+            | CommunityRequest::RoleUpdate { .. }
+            | CommunityRequest::RoleDelete { .. }
+            | CommunityRequest::RoleAssign { .. }
+            | CommunityRequest::RoleUnassign { .. }
+            | CommunityRequest::RoleSelfAssign { .. }
+            | CommunityRequest::RoleSelfUnassign { .. }
+            | CommunityRequest::Kick { .. }
+            | CommunityRequest::Ban { .. }
+            | CommunityRequest::Unban { .. }
+            | CommunityRequest::Timeout { .. }
+            | CommunityRequest::InviteCreate { .. }
+            | CommunityRequest::InviteRevoke { .. }),
+        ) => community::selection(ctx, request, &mut s).await?,
+        IpcRequest::Community(
+            request @ (CommunityRequest::GameServerAdd { .. }
+            | CommunityRequest::GameServerRemove { .. }),
+        ) => {
             game_servers::selection(ctx, request, &mut s).await?;
         }
         IpcRequest::PresenceSet { .. }
@@ -216,14 +221,22 @@ pub(crate) async fn select(
         | IpcRequest::DmMarkRead { .. }
         | IpcRequest::GroupDmList
         | IpcRequest::GroupDmMessages { .. }
-        | IpcRequest::CommunityList
-        | IpcRequest::CommunityViews
-        | IpcRequest::CommunityMembers { .. }
-        | IpcRequest::CommunityInfo { .. }
-        | IpcRequest::CommunityUpdateInfo { .. }
-        | IpcRequest::CommunityPendingMembers { .. }
-        | IpcRequest::ChannelList { .. }
-        | IpcRequest::ChannelHistory { .. }
+        | IpcRequest::Community(
+            CommunityRequest::CommunityList
+            | CommunityRequest::CommunityViews
+            | CommunityRequest::CommunityMembers { .. }
+            | CommunityRequest::CommunityInfo { .. }
+            | CommunityRequest::CommunityUpdateInfo { .. }
+            | CommunityRequest::CommunityPendingMembers { .. }
+            | CommunityRequest::ChannelList { .. }
+            | CommunityRequest::ChannelHistory { .. }
+            | CommunityRequest::MekList { .. }
+            | CommunityRequest::MekRequest { .. }
+            | CommunityRequest::RoleList { .. }
+            | CommunityRequest::GameServerList { .. }
+            | CommunityRequest::BanList { .. }
+            | CommunityRequest::InviteList { .. },
+        )
         | IpcRequest::DmTyping { .. }
         | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::DmInbox { .. }
@@ -232,12 +245,6 @@ pub(crate) async fn select(
         | IpcRequest::Undo { .. }
         | IpcRequest::Subscribe { .. }
         | IpcRequest::Unsubscribe { .. }
-        | IpcRequest::MekList { .. }
-        | IpcRequest::MekRequest { .. }
-        | IpcRequest::RoleList { .. }
-        | IpcRequest::GameServerList { .. }
-        | IpcRequest::BanList { .. }
-        | IpcRequest::InviteList { .. }
         | IpcRequest::NetworkStatus
         | IpcRequest::NetworkPeers => {}
     }

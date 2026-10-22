@@ -113,57 +113,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::IdentitySafetyNumber { .. }
             | Self::IdentityMarkVerified { .. }
             | Self::IdentityClearVerification { .. } => self.fmt_friend(f),
-            Self::ChannelSend { .. }
-            | Self::CommunityCreate { .. }
-            | Self::CommunityJoin { .. }
-            | Self::CommunityLeave { .. }
-            | Self::CommunityList
-            | Self::CommunityViews
-            | Self::CommunityMembers { .. }
-            | Self::CommunityInfo { .. }
-            | Self::CommunityUpdateInfo { .. }
-            | Self::CommunityApprove { .. }
-            | Self::CommunityReject { .. }
-            | Self::CommunityPendingMembers { .. }
-            | Self::CommunityTransferOwnership { .. }
-            | Self::ChannelList { .. }
-            | Self::ChannelCreate { .. }
-            | Self::ChannelDelete { .. }
-            | Self::ChannelUpdate { .. }
-            | Self::ChannelRename { .. }
-            | Self::ChannelMove { .. }
-            | Self::ChannelReorder { .. }
-            | Self::ChannelSetTopic { .. }
-            | Self::ChannelSetForumTags { .. }
-            | Self::ChannelOverwriteSet { .. }
-            | Self::ChannelOverwriteDelete { .. }
-            | Self::CategoryCreate { .. }
-            | Self::CategoryDelete { .. }
-            | Self::CategoryRename { .. }
-            | Self::CategoryReorder { .. }
-            | Self::ChannelHistory { .. }
-            | Self::MekList { .. }
-            | Self::MekRotate { .. }
-            | Self::MekRequest { .. }
-            | Self::RoleList { .. }
-            | Self::RoleCreate { .. }
-            | Self::RoleUpdate { .. }
-            | Self::RoleDelete { .. }
-            | Self::GameServerList { .. }
-            | Self::GameServerAdd { .. }
-            | Self::GameServerRemove { .. }
-            | Self::RoleAssign { .. }
-            | Self::RoleUnassign { .. }
-            | Self::RoleSelfAssign { .. }
-            | Self::RoleSelfUnassign { .. }
-            | Self::Kick { .. }
-            | Self::Ban { .. }
-            | Self::Unban { .. }
-            | Self::Timeout { .. }
-            | Self::BanList { .. }
-            | Self::InviteCreate { .. }
-            | Self::InviteList { .. }
-            | Self::InviteRevoke { .. } => self.fmt_community(f),
+            Self::Community(request) => std::fmt::Debug::fmt(request, f),
             Self::DmTyping { .. }
             | Self::DmInbox { .. }
             | Self::DmHistory { .. }

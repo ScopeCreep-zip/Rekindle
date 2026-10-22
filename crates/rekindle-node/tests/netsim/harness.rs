@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_ipc::message::SecurityLevel;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_netsim::Netsim;
 use rekindle_node::host::{claim, Host, HostConfig, HostStores, TransportSource};
@@ -343,11 +343,11 @@ impl Community {
             node.unlock_new_identity(&format!("member{i}")).await;
         }
         let created = nodes[0]
-            .ok(IpcRequest::CommunityCreate {
+            .ok(IpcRequest::Community(CommunityRequest::CommunityCreate {
                 name: "Netsim".into(),
                 description: String::new(),
                 approval_required: false,
-            })
+            }))
             .await;
         let governance_key = created["governanceKey"]
             .as_str()
@@ -364,11 +364,11 @@ impl Community {
     /// A one-use invite from node 0; kept as [`link`](Self::link).
     pub async fn invite(&mut self) -> String {
         let invite = self.nodes[0]
-            .ok(IpcRequest::InviteCreate {
+            .ok(IpcRequest::Community(CommunityRequest::InviteCreate {
                 community: self.governance_key.clone(),
                 max_uses: 1,
                 expires_seconds: None,
-            })
+            }))
             .await;
         self.link = invite["url"].as_str().expect("an invite link").to_string();
         self.link.clone()
@@ -378,11 +378,13 @@ impl Community {
     pub async fn join(&mut self, i: usize) {
         let link = self.invite().await;
         self.nodes[i]
-            .ok(IpcRequest::CommunityJoin { invite: link })
+            .ok(IpcRequest::Community(CommunityRequest::CommunityJoin {
+                invite: link,
+            }))
             .await;
         let listed = eventually(&self.sim, Duration::from_secs(60), || async {
             self.nodes[i]
-                .call(IpcRequest::CommunityList)
+                .call(IpcRequest::Community(CommunityRequest::CommunityList))
                 .await
                 .is_ok_and(|v| v.to_string().contains(&self.governance_key))
         })
@@ -393,9 +395,9 @@ impl Community {
     /// Node `i`'s community info.
     pub async fn info(&self, i: usize) -> serde_json::Value {
         self.nodes[i]
-            .ok(IpcRequest::CommunityInfo {
+            .ok(IpcRequest::Community(CommunityRequest::CommunityInfo {
                 governance_key: self.governance_key.clone(),
-            })
+            }))
             .await
     }
 
@@ -420,12 +422,12 @@ impl Community {
     /// Post `body` from node `i` to the general channel.
     pub async fn post(&self, i: usize, body: &str) -> Result<serde_json::Value, Refused> {
         self.nodes[i]
-            .call(IpcRequest::ChannelSend {
+            .call(IpcRequest::Community(CommunityRequest::ChannelSend {
                 community: self.governance_key.clone(),
                 channel: "general".into(),
                 body: body.into(),
                 reply_to: None,
-            })
+            }))
             .await
     }
 
@@ -433,11 +435,11 @@ impl Community {
     pub async fn reads(&self, i: usize, body: &str, limit: Duration) -> bool {
         eventually(&self.sim, limit, || async {
             self.nodes[i]
-                .call(IpcRequest::ChannelHistory {
+                .call(IpcRequest::Community(CommunityRequest::ChannelHistory {
                     community: self.governance_key.clone(),
                     channel: "general".into(),
                     limit: 100,
-                })
+                }))
                 .await
                 .is_ok_and(|v| v.to_string().contains(body))
         })

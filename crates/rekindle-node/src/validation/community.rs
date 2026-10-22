@@ -3,7 +3,7 @@
 //! `channels`'.
 
 use rekindle_governance::validate::bounds;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::game_server;
 use rekindle_types::governance::ExclusionGroupEdit;
 use rekindle_types::invite::InviteLink;
@@ -17,11 +17,11 @@ const MAX_EXCLUSION_GROUP_LEN: usize = 32;
 use super::{community, key_scope, name, opt, pseudonym, reject, text, Checked};
 
 /// A community request's fields.
-pub(super) fn check(request: &IpcRequest) -> Checked {
+pub(super) fn check(request: &CommunityRequest) -> Checked {
     match request {
-        IpcRequest::CommunityList | IpcRequest::CommunityViews => Ok(()),
-        IpcRequest::GameServerList { community: key } => community(key),
-        IpcRequest::GameServerAdd {
+        CommunityRequest::CommunityList | CommunityRequest::CommunityViews => Ok(()),
+        CommunityRequest::GameServerList { community: key } => community(key),
+        CommunityRequest::GameServerAdd {
             community: key,
             game_id,
             label,
@@ -36,7 +36,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 .map(drop)
                 .map_err(|e| IpcResponse::error(400, format!("server address: {e}")))
         }
-        IpcRequest::GameServerRemove {
+        CommunityRequest::GameServerRemove {
             community: key,
             server_id,
         } => {
@@ -47,7 +47,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 Err(IpcResponse::error(400, "server id must be gs_ and 16 hex digits"))
             }
         }
-        IpcRequest::CommunityCreate {
+        CommunityRequest::CommunityCreate {
             name: community_name,
             description,
             approval_required: _,
@@ -57,7 +57,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 .map(drop)
                 .map_err(|e| reject("description", &e))
         }
-        IpcRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
+        CommunityRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop).map_err(|e| {
             IpcResponse::error(
                 400,
                 format!(
@@ -66,11 +66,8 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 ),
             )
         }),
-        IpcRequest::CommunityLeave { governance_key }
-        | IpcRequest::CommunityInfo { governance_key }
-        | IpcRequest::CommunityMembers { governance_key }
-        | IpcRequest::CommunityPendingMembers { governance_key } => community(governance_key),
-        IpcRequest::CommunityUpdateInfo {
+        CommunityRequest::CommunityLeave { governance_key } | CommunityRequest::CommunityInfo { governance_key } | CommunityRequest::CommunityMembers { governance_key } | CommunityRequest::CommunityPendingMembers { governance_key } => community(governance_key),
+        CommunityRequest::CommunityUpdateInfo {
             governance_key,
             name: community_name,
             description,
@@ -87,14 +84,14 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             opt(icon_hash.as_deref(), |h| blob_hash(h, "icon hash"))?;
             opt(banner_hash.as_deref(), |h| blob_hash(h, "banner hash"))
         }
-        IpcRequest::CommunityApprove {
+        CommunityRequest::CommunityApprove {
             governance_key,
             member_pseudonym,
         } => {
             community(governance_key)?;
             pseudonym(member_pseudonym, "member pseudonym")
         }
-        IpcRequest::CommunityReject {
+        CommunityRequest::CommunityReject {
             governance_key,
             member_pseudonym,
             reason,
@@ -103,7 +100,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             pseudonym(member_pseudonym, "member pseudonym")?;
             text(reason, MAX_NOTE_LEN, "reason")
         }
-        IpcRequest::CommunityTransferOwnership {
+        CommunityRequest::CommunityTransferOwnership {
             governance_key,
             new_owner_pseudonym,
         } => {
@@ -111,52 +108,29 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             pseudonym(new_owner_pseudonym, "new owner pseudonym")
         }
 
-        IpcRequest::ChannelList { community: c }
-        | IpcRequest::MekList { community: c }
-        | IpcRequest::RoleList { community: c }
-        | IpcRequest::BanList { community: c }
-        | IpcRequest::InviteList { community: c }
+        CommunityRequest::ChannelList { community: c } | CommunityRequest::MekList { community: c } | CommunityRequest::RoleList { community: c } | CommunityRequest::BanList { community: c } | CommunityRequest::InviteList { community: c }
         // Role ids, invite use counts and expiries are governance rules,
         // checked where the op is validated.
-        | IpcRequest::RoleDelete {
+        | CommunityRequest::RoleDelete {
             community: c,
             role_id: _,
-        }
-        | IpcRequest::RoleSelfAssign {
+        } | CommunityRequest::RoleSelfAssign {
             community: c,
             role_id: _,
-        }
-        | IpcRequest::RoleSelfUnassign {
+        } | CommunityRequest::RoleSelfUnassign {
             community: c,
             role_id: _,
-        }
-        | IpcRequest::InviteCreate {
+        } | CommunityRequest::InviteCreate {
             community: c,
             max_uses: _,
             expires_seconds: _,
         } => community(c),
-        IpcRequest::ChannelCreate { .. }
-        | IpcRequest::ChannelDelete { .. }
-        | IpcRequest::ChannelUpdate { .. }
-        | IpcRequest::ChannelRename { .. }
-        | IpcRequest::ChannelMove { .. }
-        | IpcRequest::ChannelReorder { .. }
-        | IpcRequest::ChannelSetTopic { .. }
-        | IpcRequest::ChannelSetForumTags { .. }
-        | IpcRequest::ChannelOverwriteSet { .. }
-        | IpcRequest::ChannelOverwriteDelete { .. }
-        | IpcRequest::CategoryCreate { .. }
-        | IpcRequest::CategoryDelete { .. }
-        | IpcRequest::CategoryRename { .. }
-        | IpcRequest::CategoryReorder { .. }
-        | IpcRequest::ChannelSend { .. }
-        | IpcRequest::ChannelHistory { .. } => super::channels::check(request),
+        CommunityRequest::ChannelCreate { .. } | CommunityRequest::ChannelDelete { .. } | CommunityRequest::ChannelUpdate { .. } | CommunityRequest::ChannelRename { .. } | CommunityRequest::ChannelMove { .. } | CommunityRequest::ChannelReorder { .. } | CommunityRequest::ChannelSetTopic { .. } | CommunityRequest::ChannelSetForumTags { .. } | CommunityRequest::ChannelOverwriteSet { .. } | CommunityRequest::ChannelOverwriteDelete { .. } | CommunityRequest::CategoryCreate { .. } | CommunityRequest::CategoryDelete { .. } | CommunityRequest::CategoryRename { .. } | CommunityRequest::CategoryReorder { .. } | CommunityRequest::ChannelSend { .. } | CommunityRequest::ChannelHistory { .. } => super::channels::check(request),
 
-        IpcRequest::MekRotate {
+        CommunityRequest::MekRotate {
             community: c,
             channel: ch,
-        }
-        | IpcRequest::MekRequest {
+        } | CommunityRequest::MekRequest {
             community: c,
             channel: ch,
             generation: _,
@@ -165,7 +139,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             key_scope(ch)
         }
 
-        IpcRequest::RoleCreate {
+        CommunityRequest::RoleCreate {
             community: c,
             name: role_name,
             exclusion_group,
@@ -177,7 +151,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 text(g, MAX_EXCLUSION_GROUP_LEN, "exclusion group")
             })
         }
-        IpcRequest::RoleUpdate {
+        CommunityRequest::RoleUpdate {
             community: c,
             role_id: _,
             name: new_name,
@@ -191,12 +165,11 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 ExclusionGroupEdit::Unchanged | ExclusionGroupEdit::Clear => Ok(()),
             }
         }
-        IpcRequest::RoleAssign {
+        CommunityRequest::RoleAssign {
             community: c,
             member_pseudonym,
             role_id: _,
-        }
-        | IpcRequest::RoleUnassign {
+        } | CommunityRequest::RoleUnassign {
             community: c,
             member_pseudonym,
             role_id: _,
@@ -205,18 +178,17 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             pseudonym(member_pseudonym, "member pseudonym")
         }
 
-        IpcRequest::Kick {
+        CommunityRequest::Kick {
             community: c,
             target_pseudonym,
-        }
-        | IpcRequest::Unban {
+        } | CommunityRequest::Unban {
             community: c,
             target_pseudonym,
         } => {
             community(c)?;
             pseudonym(target_pseudonym, "target pseudonym")
         }
-        IpcRequest::Ban {
+        CommunityRequest::Ban {
             community: c,
             target_pseudonym,
             reason,
@@ -225,7 +197,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             pseudonym(target_pseudonym, "target pseudonym")?;
             opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
         }
-        IpcRequest::Timeout {
+        CommunityRequest::Timeout {
             community: c,
             target_pseudonym,
             duration_seconds,
@@ -244,7 +216,7 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             opt(reason.as_deref(), |r| text(r, MAX_NOTE_LEN, "reason"))
         }
 
-        IpcRequest::InviteRevoke {
+        CommunityRequest::InviteRevoke {
             community: c,
             invite_code,
         } => {
@@ -259,7 +231,6 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
                 )
             })
         }
-        other => unreachable!("{} is not a community request", other.name()),
     }
 }
 

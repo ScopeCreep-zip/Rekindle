@@ -1,6 +1,6 @@
 //! Key management commands: MEK list/rotate/request, prekey status, inspect.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::cli::KeyCmd;
 use crate::helpers;
@@ -14,9 +14,9 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
             crate::cli::MekCmd::List { community } => {
                 let value = helpers::send(
                     client,
-                    IpcRequest::MekList {
+                    IpcRequest::Community(CommunityRequest::MekList {
                         community: community.clone(),
-                    },
+                    }),
                 )
                 .await?;
                 format::print_structured(&value, mode)
@@ -24,10 +24,10 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
             crate::cli::MekCmd::Rotate { community, channel } => {
                 let value = helpers::send(
                     client,
-                    IpcRequest::MekRotate {
+                    IpcRequest::Community(CommunityRequest::MekRotate {
                         community: community.clone(),
                         channel: channel.clone(),
-                    },
+                    }),
                 )
                 .await?;
                 format::print_structured(&value, mode)
@@ -35,11 +35,11 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
             crate::cli::MekCmd::Request { community, channel } => {
                 let value = helpers::send(
                     client,
-                    IpcRequest::MekRequest {
+                    IpcRequest::Community(CommunityRequest::MekRequest {
                         community: community.clone(),
                         channel: channel.clone(),
                         generation: 0, // daemon resolves latest needed generation
-                    },
+                    }),
                 )
                 .await?;
                 format::print_structured(&value, mode)
@@ -56,9 +56,9 @@ pub async fn dispatch(cmd: &KeyCmd, client: &DaemonClient, mode: OutputMode) -> 
         KeyCmd::Inspect { community } => {
             let value = helpers::send(
                 client,
-                IpcRequest::MekList {
+                IpcRequest::Community(CommunityRequest::MekList {
                     community: community.clone(),
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)

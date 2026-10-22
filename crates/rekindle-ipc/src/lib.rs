@@ -71,7 +71,7 @@ pub use media_channel::{media_channel, MediaReceiver, MediaSender};
 pub use message::{AgentType, Message, MessageContext, SecurityLevel, Timestamp, WIRE_VERSION};
 pub use noise::NoiseTransport;
 pub use noise_keys::{generate_keypair, ZeroizingKeypair, NOISE_PARAMS};
-pub use protocol::{BusPayload, IpcRequest, IpcResponse, SubscriptionFilter};
+pub use protocol::{BusPayload, CommunityRequest, IpcRequest, IpcResponse, SubscriptionFilter};
 pub use registry::ClearanceRegistry;
 pub use server::BusServer;
 pub use transport::{runtime_dir, socket_path, PeerCredentials};

@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, Community};
@@ -23,11 +23,11 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
     let mut community = Community::of(2, 137).await;
     let first = community.governance_key.clone();
     let created = community.nodes[0]
-        .ok(IpcRequest::CommunityCreate {
+        .ok(IpcRequest::Community(CommunityRequest::CommunityCreate {
             name: "Second".into(),
             description: String::new(),
             approval_required: false,
-        })
+        }))
         .await;
     let second = created["governanceKey"]
         .as_str()
@@ -41,7 +41,7 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
 
     let events = community.nodes[1].events().await;
     community.nodes[0]
-        .ok(IpcRequest::ChannelCreate {
+        .ok(IpcRequest::Community(CommunityRequest::ChannelCreate {
             community: first.clone(),
             name: "announcements".into(),
             kind: "text".into(),
@@ -49,7 +49,7 @@ async fn a_change_in_one_of_two_communities_rebuilds_only_that_one() {
             topic: None,
             slowmode_seconds: 0,
             parent_voice_channel: None,
-        })
+        }))
         .await;
     let seen = eventually(&community.sim, Duration::from_secs(120), || async {
         events.any(|e| rebuilt(e, &first))

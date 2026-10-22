@@ -2,7 +2,7 @@
 //! channel, role, moderation, invite or channel-key request to its domain
 //! handler.
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 
 use crate::daemon::dispatch::{channel, community, game_servers, governance, keys, DaemonContext};
 use crate::daemon::DaemonState;
@@ -11,28 +11,30 @@ use crate::daemon::DaemonState;
 pub(super) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
-    request: IpcRequest,
+    request: CommunityRequest,
 ) -> IpcResponse {
     match request {
         // ── Community ────────────────────────────────────────────
-        IpcRequest::CommunityCreate {
+        CommunityRequest::CommunityCreate {
             name,
             description,
             approval_required,
         } => community::handle_create(ctx, state, &name, &description, approval_required).await,
-        IpcRequest::CommunityJoin { invite } => community::handle_join(ctx, state, &invite).await,
-        IpcRequest::CommunityLeave { governance_key } => {
+        CommunityRequest::CommunityJoin { invite } => {
+            community::handle_join(ctx, state, &invite).await
+        }
+        CommunityRequest::CommunityLeave { governance_key } => {
             community::handle_leave(ctx, state, &governance_key).await
         }
-        IpcRequest::CommunityList => community::handle_list(ctx, state),
-        IpcRequest::CommunityViews => community::handle_views(ctx, state),
-        IpcRequest::CommunityMembers { governance_key } => {
+        CommunityRequest::CommunityList => community::handle_list(ctx, state),
+        CommunityRequest::CommunityViews => community::handle_views(ctx, state),
+        CommunityRequest::CommunityMembers { governance_key } => {
             community::handle_members(ctx, state, &governance_key).await
         }
-        IpcRequest::CommunityInfo { governance_key } => {
+        CommunityRequest::CommunityInfo { governance_key } => {
             community::handle_info(ctx, state, &governance_key)
         }
-        IpcRequest::CommunityUpdateInfo {
+        CommunityRequest::CommunityUpdateInfo {
             governance_key,
             name,
             description,
@@ -52,21 +54,21 @@ pub(super) async fn route(
             )
             .await
         }
-        IpcRequest::CommunityApprove {
+        CommunityRequest::CommunityApprove {
             governance_key,
             member_pseudonym,
         } => community::handle_approve(ctx, state, &governance_key, &member_pseudonym).await,
-        IpcRequest::CommunityReject {
+        CommunityRequest::CommunityReject {
             governance_key,
             member_pseudonym,
             reason,
         } => {
             community::handle_reject(ctx, state, &governance_key, &member_pseudonym, &reason).await
         }
-        IpcRequest::CommunityPendingMembers { governance_key } => {
+        CommunityRequest::CommunityPendingMembers { governance_key } => {
             community::handle_pending_members(ctx, state, &governance_key)
         }
-        IpcRequest::CommunityTransferOwnership {
+        CommunityRequest::CommunityTransferOwnership {
             governance_key,
             new_owner_pseudonym,
         } => {
@@ -75,30 +77,30 @@ pub(super) async fn route(
         }
 
         // ── Channel ──────────────────────────────────────────────
-        request @ (IpcRequest::ChannelList { .. }
-        | IpcRequest::ChannelCreate { .. }
-        | IpcRequest::ChannelDelete { .. }
-        | IpcRequest::ChannelUpdate { .. }
-        | IpcRequest::ChannelRename { .. }
-        | IpcRequest::ChannelMove { .. }
-        | IpcRequest::ChannelReorder { .. }
-        | IpcRequest::ChannelSetTopic { .. }
-        | IpcRequest::ChannelSetForumTags { .. }
-        | IpcRequest::ChannelOverwriteSet { .. }
-        | IpcRequest::ChannelOverwriteDelete { .. }
-        | IpcRequest::CategoryCreate { .. }
-        | IpcRequest::CategoryDelete { .. }
-        | IpcRequest::CategoryRename { .. }
-        | IpcRequest::CategoryReorder { .. }
-        | IpcRequest::ChannelSend { .. }
-        | IpcRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
+        request @ (CommunityRequest::ChannelList { .. }
+        | CommunityRequest::ChannelCreate { .. }
+        | CommunityRequest::ChannelDelete { .. }
+        | CommunityRequest::ChannelUpdate { .. }
+        | CommunityRequest::ChannelRename { .. }
+        | CommunityRequest::ChannelMove { .. }
+        | CommunityRequest::ChannelReorder { .. }
+        | CommunityRequest::ChannelSetTopic { .. }
+        | CommunityRequest::ChannelSetForumTags { .. }
+        | CommunityRequest::ChannelOverwriteSet { .. }
+        | CommunityRequest::ChannelOverwriteDelete { .. }
+        | CommunityRequest::CategoryCreate { .. }
+        | CommunityRequest::CategoryDelete { .. }
+        | CommunityRequest::CategoryRename { .. }
+        | CommunityRequest::CategoryReorder { .. }
+        | CommunityRequest::ChannelSend { .. }
+        | CommunityRequest::ChannelHistory { .. }) => channel::route(ctx, state, request).await,
 
         // ── Governance (roles, moderation, invites) ──────────────
         // ── Game servers (plan E3.1 H1) ──────────────────────────
-        IpcRequest::GameServerList { community } => {
+        CommunityRequest::GameServerList { community } => {
             game_servers::handle_list(ctx, state, &community).await
         }
-        IpcRequest::GameServerAdd {
+        CommunityRequest::GameServerAdd {
             community,
             game_id,
             label,
@@ -111,13 +113,15 @@ pub(super) async fn route(
             };
             game_servers::handle_add(ctx, state, &community, server).await
         }
-        IpcRequest::GameServerRemove {
+        CommunityRequest::GameServerRemove {
             community,
             server_id,
         } => game_servers::handle_remove(ctx, state, &community, &server_id).await,
 
-        IpcRequest::RoleList { community } => governance::handle_role_list(ctx, state, &community),
-        IpcRequest::RoleCreate {
+        CommunityRequest::RoleList { community } => {
+            governance::handle_role_list(ctx, state, &community)
+        }
+        CommunityRequest::RoleCreate {
             community,
             name,
             permissions,
@@ -138,7 +142,7 @@ pub(super) async fn route(
             };
             governance::handle_role_create(ctx, state, &community, role).await
         }
-        IpcRequest::RoleUpdate {
+        CommunityRequest::RoleUpdate {
             community,
             role_id,
             name,
@@ -162,10 +166,10 @@ pub(super) async fn route(
             };
             governance::handle_role_update(ctx, state, &community, role_id, patch).await
         }
-        IpcRequest::RoleDelete { community, role_id } => {
+        CommunityRequest::RoleDelete { community, role_id } => {
             governance::handle_role_delete(ctx, state, &community, role_id).await
         }
-        IpcRequest::RoleAssign {
+        CommunityRequest::RoleAssign {
             community,
             member_pseudonym,
             role_id,
@@ -173,7 +177,7 @@ pub(super) async fn route(
             governance::handle_role_grant(ctx, state, &community, &member_pseudonym, role_id, true)
                 .await
         }
-        IpcRequest::RoleUnassign {
+        CommunityRequest::RoleUnassign {
             community,
             member_pseudonym,
             role_id,
@@ -181,17 +185,17 @@ pub(super) async fn route(
             governance::handle_role_grant(ctx, state, &community, &member_pseudonym, role_id, false)
                 .await
         }
-        IpcRequest::RoleSelfAssign { community, role_id } => {
+        CommunityRequest::RoleSelfAssign { community, role_id } => {
             governance::handle_role_self(ctx, state, &community, role_id, true).await
         }
-        IpcRequest::RoleSelfUnassign { community, role_id } => {
+        CommunityRequest::RoleSelfUnassign { community, role_id } => {
             governance::handle_role_self(ctx, state, &community, role_id, false).await
         }
-        IpcRequest::Kick {
+        CommunityRequest::Kick {
             community,
             target_pseudonym,
         } => governance::handle_kick(ctx, state, &community, &target_pseudonym).await,
-        IpcRequest::Ban {
+        CommunityRequest::Ban {
             community,
             target_pseudonym,
             reason,
@@ -199,11 +203,11 @@ pub(super) async fn route(
             governance::handle_ban(ctx, state, &community, &target_pseudonym, reason.as_deref())
                 .await
         }
-        IpcRequest::Unban {
+        CommunityRequest::Unban {
             community,
             target_pseudonym,
         } => governance::handle_unban(ctx, state, &community, &target_pseudonym).await,
-        IpcRequest::Timeout {
+        CommunityRequest::Timeout {
             community,
             target_pseudonym,
             duration_seconds,
@@ -219,8 +223,10 @@ pub(super) async fn route(
             )
             .await
         }
-        IpcRequest::BanList { community } => governance::handle_ban_list(ctx, state, &community),
-        IpcRequest::InviteCreate {
+        CommunityRequest::BanList { community } => {
+            governance::handle_ban_list(ctx, state, &community)
+        }
+        CommunityRequest::InviteCreate {
             community,
             max_uses,
             expires_seconds,
@@ -228,24 +234,23 @@ pub(super) async fn route(
             governance::handle_invite_create(ctx, state, &community, max_uses, expires_seconds)
                 .await
         }
-        IpcRequest::InviteList { community } => {
+        CommunityRequest::InviteList { community } => {
             governance::handle_invite_list(ctx, state, &community).await
         }
-        IpcRequest::InviteRevoke {
+        CommunityRequest::InviteRevoke {
             community,
             invite_code,
         } => governance::handle_invite_revoke(ctx, state, &community, &invite_code).await,
 
         // ── Channel keys ─────────────────────────────────────────
-        IpcRequest::MekList { community } => keys::handle_mek_list(ctx, state, &community),
-        IpcRequest::MekRotate { community, channel } => {
+        CommunityRequest::MekList { community } => keys::handle_mek_list(ctx, state, &community),
+        CommunityRequest::MekRotate { community, channel } => {
             keys::handle_mek_rotate(ctx, state, &community, &channel)
         }
-        IpcRequest::MekRequest {
+        CommunityRequest::MekRequest {
             community,
             channel,
             generation,
         } => keys::handle_mek_request(ctx, state, &community, &channel, generation),
-        other => unreachable!("{} is not a community request", other.name()),
     }
 }

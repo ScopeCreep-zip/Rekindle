@@ -1,4 +1,4 @@
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -8,24 +8,32 @@ use crate::state::SharedState;
 use rekindle_types::dto::community::{CommunityCreated, CommunityView};
 use rekindle_vault::VaultHandle;
 
-/// The joined communities (`IpcRequest::CommunityList`).
+/// The joined communities (`IpcRequest::Community(CommunityRequest::CommunityList)`).
 #[tauri::command]
 pub async fn get_communities(
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<rekindle_types::display::CommunityOverview>>, CommandError> {
-    host_call::call(&state, IpcRequest::CommunityList).await
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::CommunityList),
+    )
+    .await
 }
 
 /// Every joined community as its window renders it
-/// (`IpcRequest::CommunityViews`).
+/// (`IpcRequest::Community(CommunityRequest::CommunityViews)`).
 #[tauri::command]
 pub async fn get_community_details(
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<CommunityView>>, CommandError> {
-    host_call::call(&state, IpcRequest::CommunityViews).await
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::CommunityViews),
+    )
+    .await
 }
 
-/// Create a community (`IpcRequest::CommunityCreate`).
+/// Create a community (`IpcRequest::Community(CommunityRequest::CommunityCreate)`).
 ///
 /// `approval_required` picks the genesis admission mode and is
 /// immutable afterwards: the CRDT honours `AdmissionPolicy` only as the
@@ -36,11 +44,11 @@ pub async fn create_community(
     approval_required: Option<bool>,
     state: State<'_, SharedState>,
 ) -> Result<Done<CommunityCreated>, CommandError> {
-    let request = IpcRequest::CommunityCreate {
+    let request = IpcRequest::Community(CommunityRequest::CommunityCreate {
         name,
         description: String::new(),
         approval_required: approval_required.unwrap_or(false),
-    };
+    });
     host_call::call(&state, request).await
 }
 
@@ -65,21 +73,21 @@ pub async fn join_community(
     Ok(link.governance_key.into_string())
 }
 
-/// Leave a community (`IpcRequest::CommunityLeave`), reviewed with its
+/// Leave a community (`IpcRequest::Community(CommunityRequest::CommunityLeave)`), reviewed with its
 /// leave escalations.
 #[tauri::command]
 pub async fn leave_community(
     community_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::CommunityLeave {
+    let request = IpcRequest::Community(CommunityRequest::CommunityLeave {
         governance_key: community_id,
-    };
+    });
     host_call::call(&state, request).await
 }
 
 /// Edit the community's name, description, icon or banner; `None` keeps
-/// the merged value (`IpcRequest::CommunityUpdateInfo`).
+/// the merged value (`IpcRequest::Community(CommunityRequest::CommunityUpdateInfo)`).
 #[tauri::command]
 pub async fn update_community_info(
     community_id: String,
@@ -89,12 +97,12 @@ pub async fn update_community_info(
     banner_hash: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::CommunityUpdateInfo {
+    let request = IpcRequest::Community(CommunityRequest::CommunityUpdateInfo {
         governance_key: community_id,
         name,
         description,
         icon_hash,
         banner_hash,
-    };
+    });
     host_call::call(&state, request).await
 }

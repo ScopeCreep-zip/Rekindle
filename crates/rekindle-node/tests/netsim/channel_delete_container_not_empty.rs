@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
 use rekindle_types::intent::Escalation;
 
 use crate::harness::{eventually, Community};
@@ -19,7 +19,7 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
 
     let creator = &community.nodes[0];
     let created = creator
-        .ok(IpcRequest::ChannelCreate {
+        .ok(IpcRequest::Community(CommunityRequest::ChannelCreate {
             community: community.governance_key.clone(),
             name: "doomed".into(),
             kind: "text".into(),
@@ -27,7 +27,7 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
             topic: None,
             slowmode_seconds: 0,
             parent_voice_channel: None,
-        })
+        }))
         .await;
     let channel = created["id"].as_str().expect("a channel id").to_owned();
     assert!(
@@ -38,9 +38,11 @@ async fn deleting_a_read_channel_is_held_then_deletes_on_both_members() {
         "the member sees the new channel"
     );
 
-    let delete = || IpcRequest::ChannelDelete {
-        community: community.governance_key.clone(),
-        channel_id: channel.clone(),
+    let delete = || {
+        IpcRequest::Community(CommunityRequest::ChannelDelete {
+            community: community.governance_key.clone(),
+            channel_id: channel.clone(),
+        })
     };
     let IpcResponse::IntentRequired(review) = creator.answer(delete()).await else {
         panic!("deleting a channel two members read is not held");

@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, Community, PASSPHRASE};
@@ -25,7 +25,7 @@ async fn a_member_resumes_its_community_after_a_restart() {
     let key = member.public_key.clone().expect("an identity");
     member.ok(IpcRequest::Lock).await;
     community.nodes[0]
-        .ok(IpcRequest::ChannelCreate {
+        .ok(IpcRequest::Community(CommunityRequest::ChannelCreate {
             community: community.governance_key.clone(),
             name: "news".into(),
             kind: "text".into(),
@@ -33,7 +33,7 @@ async fn a_member_resumes_its_community_after_a_restart() {
             topic: None,
             slowmode_seconds: 0,
             parent_voice_channel: None,
-        })
+        }))
         .await;
     community
         .post(0, "while you were away")

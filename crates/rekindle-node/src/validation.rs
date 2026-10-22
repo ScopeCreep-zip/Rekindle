@@ -335,57 +335,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityMarkVerified { peer: key }
         | IpcRequest::IdentityClearVerification { peer: key } => public_key(key, "public key"),
 
-        IpcRequest::CommunityList
-        | IpcRequest::CommunityViews
-        | IpcRequest::CommunityMembers { .. }
-        | IpcRequest::CommunityCreate { .. }
-        | IpcRequest::CommunityJoin { .. }
-        | IpcRequest::CommunityLeave { .. }
-        | IpcRequest::CommunityInfo { .. }
-        | IpcRequest::CommunityUpdateInfo { .. }
-        | IpcRequest::CommunityPendingMembers { .. }
-        | IpcRequest::CommunityApprove { .. }
-        | IpcRequest::CommunityReject { .. }
-        | IpcRequest::CommunityTransferOwnership { .. }
-        | IpcRequest::ChannelList { .. }
-        | IpcRequest::MekList { .. }
-        | IpcRequest::RoleList { .. }
-        | IpcRequest::BanList { .. }
-        | IpcRequest::InviteList { .. }
-        | IpcRequest::RoleDelete { .. }
-        | IpcRequest::GameServerList { .. }
-        | IpcRequest::GameServerAdd { .. }
-        | IpcRequest::GameServerRemove { .. }
-        | IpcRequest::InviteCreate { .. }
-        | IpcRequest::ChannelCreate { .. }
-        | IpcRequest::ChannelDelete { .. }
-        | IpcRequest::ChannelUpdate { .. }
-        | IpcRequest::ChannelRename { .. }
-        | IpcRequest::ChannelMove { .. }
-        | IpcRequest::ChannelReorder { .. }
-        | IpcRequest::ChannelSetTopic { .. }
-        | IpcRequest::ChannelSetForumTags { .. }
-        | IpcRequest::ChannelOverwriteSet { .. }
-        | IpcRequest::ChannelOverwriteDelete { .. }
-        | IpcRequest::CategoryCreate { .. }
-        | IpcRequest::CategoryDelete { .. }
-        | IpcRequest::CategoryRename { .. }
-        | IpcRequest::CategoryReorder { .. }
-        | IpcRequest::ChannelSend { .. }
-        | IpcRequest::ChannelHistory { .. }
-        | IpcRequest::MekRotate { .. }
-        | IpcRequest::MekRequest { .. }
-        | IpcRequest::RoleCreate { .. }
-        | IpcRequest::RoleUpdate { .. }
-        | IpcRequest::RoleAssign { .. }
-        | IpcRequest::RoleUnassign { .. }
-        | IpcRequest::RoleSelfAssign { .. }
-        | IpcRequest::RoleSelfUnassign { .. }
-        | IpcRequest::Kick { .. }
-        | IpcRequest::Unban { .. }
-        | IpcRequest::Ban { .. }
-        | IpcRequest::Timeout { .. }
-        | IpcRequest::InviteRevoke { .. } => community::check(request),
+        IpcRequest::Community(request) => community::check(request),
 
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }

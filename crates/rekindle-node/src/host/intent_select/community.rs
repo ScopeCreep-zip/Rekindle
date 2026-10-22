@@ -3,7 +3,7 @@
 //! and the members it reaches.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibility, Subject};
 
 use super::unavailable;
@@ -15,18 +15,18 @@ use crate::daemon::dispatch::DaemonContext;
 /// The community is not joined, or its governance is not loaded.
 pub(super) async fn selection(
     ctx: &DaemonContext,
-    request: &IpcRequest,
+    request: &CommunityRequest,
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     match request {
-        IpcRequest::CommunityCreate { name, .. } => {
+        CommunityRequest::CommunityCreate { name, .. } => {
             s.subject = Subject::Community {
                 id: String::new(),
                 name: name.clone(),
             };
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
         }
-        IpcRequest::CommunityJoin { .. } => {
+        CommunityRequest::CommunityJoin { .. } => {
             s.subject = Subject::Named {
                 name: "the community this invite opens".into(),
             };
@@ -34,7 +34,7 @@ pub(super) async fn selection(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveCommunity);
             s.notifies = Notifies::Subject;
         }
-        IpcRequest::CommunityLeave { governance_key } => {
+        CommunityRequest::CommunityLeave { governance_key } => {
             let (id, name) = community(ctx, governance_key)?;
             s.escalations = leave_escalations(ctx, &id)?;
             s.facts.push(Fact::RejoinNeedsInvite);
@@ -42,22 +42,22 @@ pub(super) async fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        IpcRequest::CommunityUpdateInfo { governance_key, .. } => {
+        CommunityRequest::CommunityUpdateInfo { governance_key, .. } => {
             let (id, name) = community(ctx, governance_key)?;
             s.reversibility = Reversibility::Undoable;
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        IpcRequest::CommunityApprove {
+        CommunityRequest::CommunityApprove {
             governance_key,
             member_pseudonym,
         }
-        | IpcRequest::CommunityReject {
+        | CommunityRequest::CommunityReject {
             governance_key,
             member_pseudonym,
             ..
         }
-        | IpcRequest::CommunityTransferOwnership {
+        | CommunityRequest::CommunityTransferOwnership {
             governance_key,
             new_owner_pseudonym: member_pseudonym,
         } => {
@@ -67,7 +67,7 @@ pub(super) async fn selection(
             };
             s.notifies = members(ctx, &id);
         }
-        IpcRequest::ChannelCreate {
+        CommunityRequest::ChannelCreate {
             community: target,
             name,
             ..
@@ -81,51 +81,51 @@ pub(super) async fn selection(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::DeleteChannel);
             s.notifies = members(ctx, &id);
         }
-        IpcRequest::ChannelDelete {
+        CommunityRequest::ChannelDelete {
             community: target,
             channel_id: channel,
         }
-        | IpcRequest::ChannelUpdate {
+        | CommunityRequest::ChannelUpdate {
             community: target,
             channel_id: channel,
             ..
         }
-        | IpcRequest::ChannelSend {
+        | CommunityRequest::ChannelSend {
             community: target,
             channel,
             ..
         }
-        | IpcRequest::ChannelRename {
+        | CommunityRequest::ChannelRename {
             community: target,
             channel_id: channel,
             ..
         }
-        | IpcRequest::ChannelMove {
+        | CommunityRequest::ChannelMove {
             community: target,
             channel_id: channel,
             ..
         }
-        | IpcRequest::ChannelSetTopic {
+        | CommunityRequest::ChannelSetTopic {
             community: target,
             channel_id: channel,
             ..
         }
-        | IpcRequest::ChannelSetForumTags {
+        | CommunityRequest::ChannelSetForumTags {
             community: target,
             channel_id: channel,
             ..
         }
-        | IpcRequest::ChannelOverwriteSet {
+        | CommunityRequest::ChannelOverwriteSet {
             community: target,
             channel_id: channel,
             ..
         }
-        | IpcRequest::ChannelOverwriteDelete {
+        | CommunityRequest::ChannelOverwriteDelete {
             community: target,
             channel_id: channel,
             ..
         }
-        | IpcRequest::MekRotate {
+        | CommunityRequest::MekRotate {
             community: target,
             channel,
         } => {
@@ -136,36 +136,36 @@ pub(super) async fn selection(
                 id: channel.clone(),
             };
             s.notifies = members(ctx, &id);
-            if matches!(request, IpcRequest::ChannelUpdate { .. }) {
+            if matches!(request, CommunityRequest::ChannelUpdate { .. }) {
                 s.reversibility = Reversibility::Undoable;
             }
-            if matches!(request, IpcRequest::ChannelDelete { .. }) {
+            if matches!(request, CommunityRequest::ChannelDelete { .. }) {
                 s.escalations = channel_delete_escalations(ctx, &id, channel).await?;
             }
         }
-        IpcRequest::ChannelReorder {
+        CommunityRequest::ChannelReorder {
             community: target, ..
         }
-        | IpcRequest::CategoryCreate {
+        | CommunityRequest::CategoryCreate {
             community: target, ..
         }
-        | IpcRequest::CategoryDelete {
+        | CommunityRequest::CategoryDelete {
             community: target, ..
         }
-        | IpcRequest::CategoryRename {
+        | CommunityRequest::CategoryRename {
             community: target, ..
         }
-        | IpcRequest::CategoryReorder {
+        | CommunityRequest::CategoryReorder {
             community: target, ..
         } => {
             let (id, name) = community(ctx, target)?;
-            if matches!(request, IpcRequest::CategoryCreate { .. }) {
+            if matches!(request, CommunityRequest::CategoryCreate { .. }) {
                 s.reversibility = Reversibility::ReversibleByInverse(IntentKind::DeleteCategory);
             }
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        IpcRequest::RoleCreate {
+        CommunityRequest::RoleCreate {
             community: target,
             name,
             ..
@@ -178,18 +178,18 @@ pub(super) async fn selection(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::DeleteRole);
             s.notifies = members(ctx, &id);
         }
-        IpcRequest::RoleUpdate {
+        CommunityRequest::RoleUpdate {
             community: target,
             role_id,
             ..
         }
-        | IpcRequest::RoleDelete {
+        | CommunityRequest::RoleDelete {
             community: target,
             role_id,
         } => {
             let (id, _) = community(ctx, target)?;
             let (name, holders) = role(ctx, &id, *role_id)?;
-            if matches!(request, IpcRequest::RoleDelete { .. }) {
+            if matches!(request, CommunityRequest::RoleDelete { .. }) {
                 s.facts.push(Fact::MembersAffected { count: holders });
             } else {
                 s.reversibility = Reversibility::Undoable;
@@ -200,11 +200,11 @@ pub(super) async fn selection(
             };
             s.notifies = members(ctx, &id);
         }
-        IpcRequest::RoleSelfAssign {
+        CommunityRequest::RoleSelfAssign {
             community: target,
             role_id,
         }
-        | IpcRequest::RoleSelfUnassign {
+        | CommunityRequest::RoleSelfUnassign {
             community: target,
             role_id,
         } => {
@@ -214,37 +214,37 @@ pub(super) async fn selection(
                 id: role_id.to_string(),
                 name,
             };
-            s.reversibility = if matches!(request, IpcRequest::RoleSelfAssign { .. }) {
+            s.reversibility = if matches!(request, CommunityRequest::RoleSelfAssign { .. }) {
                 Reversibility::ReversibleByInverse(IntentKind::SelfUnassignRole)
             } else {
                 Reversibility::ReversibleByInverse(IntentKind::SelfAssignRole)
             };
             s.notifies = members(ctx, &id);
         }
-        IpcRequest::RoleAssign {
+        CommunityRequest::RoleAssign {
             community: target,
             member_pseudonym,
             ..
         }
-        | IpcRequest::RoleUnassign {
+        | CommunityRequest::RoleUnassign {
             community: target,
             member_pseudonym,
             ..
         }
-        | IpcRequest::Kick {
+        | CommunityRequest::Kick {
             community: target,
             target_pseudonym: member_pseudonym,
         }
-        | IpcRequest::Ban {
+        | CommunityRequest::Ban {
             community: target,
             target_pseudonym: member_pseudonym,
             ..
         }
-        | IpcRequest::Unban {
+        | CommunityRequest::Unban {
             community: target,
             target_pseudonym: member_pseudonym,
         }
-        | IpcRequest::Timeout {
+        | CommunityRequest::Timeout {
             community: target,
             target_pseudonym: member_pseudonym,
             ..
@@ -254,19 +254,19 @@ pub(super) async fn selection(
                 name: member_pseudonym.clone(),
             };
             s.reversibility = match request {
-                IpcRequest::RoleAssign { .. } => {
+                CommunityRequest::RoleAssign { .. } => {
                     Reversibility::ReversibleByInverse(IntentKind::UnassignRole)
                 }
-                IpcRequest::RoleUnassign { .. } => {
+                CommunityRequest::RoleUnassign { .. } => {
                     Reversibility::ReversibleByInverse(IntentKind::AssignRole)
                 }
-                IpcRequest::Ban { .. } => {
+                CommunityRequest::Ban { .. } => {
                     Reversibility::ReversibleByInverse(IntentKind::UnbanMember)
                 }
-                IpcRequest::Unban { .. } => {
+                CommunityRequest::Unban { .. } => {
                     Reversibility::ReversibleByInverse(IntentKind::BanMember)
                 }
-                IpcRequest::Kick { .. } => {
+                CommunityRequest::Kick { .. } => {
                     s.facts.push(Fact::RejoinNeedsInvite);
                     Reversibility::NeedsOthers
                 }
@@ -274,14 +274,14 @@ pub(super) async fn selection(
             };
             s.notifies = members(ctx, &id);
         }
-        IpcRequest::InviteCreate {
+        CommunityRequest::InviteCreate {
             community: target, ..
         }
-        | IpcRequest::InviteRevoke {
+        | CommunityRequest::InviteRevoke {
             community: target, ..
         } => {
             let (id, name) = community(ctx, target)?;
-            if matches!(request, IpcRequest::InviteCreate { .. }) {
+            if matches!(request, CommunityRequest::InviteCreate { .. }) {
                 s.reversibility =
                     Reversibility::ReversibleByInverse(IntentKind::RevokeCommunityInvite);
             }

@@ -6,7 +6,7 @@
 //! with none (key material, identity moves, shutdown, administration) is
 //! never delegated to an agent.
 
-use super::IpcRequest;
+use super::{CommunityRequest, IpcRequest};
 
 /// One agent capability.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -127,6 +127,72 @@ impl IpcRequest {
             | Self::IdentityRotationAccept { .. }
             | Self::IdentityRotationDecline { .. }
             | Self::SessionResetDecline { .. } => Some(C::FriendsWrite),
+            Self::Community(request) => request.agent_capability(),
+            Self::DmInbox { .. }
+            | Self::DmHistory { .. }
+            | Self::GroupDmList
+            | Self::GroupDmMessages { .. } => Some(C::ImHistory),
+            Self::DmSend { .. }
+            | Self::OutboxRetry { .. }
+            | Self::OutboxDiscard { .. }
+            | Self::GroupDmCreate { .. }
+            | Self::GroupDmAccept { .. }
+            | Self::GroupDmDecline { .. }
+            | Self::GroupDmLeave { .. }
+            | Self::GroupDmSend { .. }
+            | Self::GroupDmTyping { .. }
+            | Self::DmTyping { .. }
+            | Self::DmMarkRead { .. } => Some(C::ImWrite),
+            Self::PresenceSet { .. }
+            | Self::PresenceSetMessage { .. }
+            | Self::GamePresenceSet { .. }
+            | Self::GamePresenceClear => Some(C::PresenceWrite),
+            Self::VoiceJoin { .. } | Self::VoiceLeave => Some(C::VoiceWrite),
+            Self::Unlock { .. }
+            | Self::Lock
+            | Self::Logout
+            | Self::Status
+            | Self::Shutdown
+            | Self::IdentityCreate { .. }
+            | Self::IdentityList
+            | Self::IdentityExport { .. }
+            | Self::IdentityImport { .. }
+            | Self::IdentityRotate { .. }
+            | Self::IdentityDelete { .. }
+            | Self::IdentityWipe
+            // Which keys the user trusts is the user's own decision.
+            | Self::IdentityMarkVerified { .. }
+            | Self::IdentityClearVerification { .. }
+            // A commit runs the request the gate held, which passed this
+            // caller's capability check when it was selected.
+            | Self::IntentCommit { .. }
+            | Self::IntentCancel { .. }
+            // An undo's inverse passes this check on its own at the gate.
+            | Self::Undo { .. }
+            | Self::PrekeyStatus
+            // Our name, our picture, the audit log and the system browser
+            // are the user's own, never an agent's.
+            | Self::ProfileSetNickname { .. }
+            // Whether we tell friends what we read is the user's own.
+            | Self::SetReadReceiptsEnabled { .. }
+            | Self::ProfileSetAvatar { .. }
+            | Self::AuditVerify
+            | Self::AuditExport { .. }
+            | Self::LinkOpen { .. }
+            | Self::AgentRegister { .. }
+            | Self::AgentRevoke { .. }
+            | Self::PolicyReload => None,
+        }
+    }
+}
+
+impl CommunityRequest {
+    /// The capability an `Agent`-level sender needs for this request, or
+    /// `None` when no agent may send it.
+    #[must_use]
+    pub fn agent_capability(&self) -> Option<AgentCapability> {
+        use AgentCapability as C;
+        match self {
             Self::CommunityList
             | Self::CommunityViews
             | Self::CommunityMembers { .. }
@@ -174,64 +240,11 @@ impl IpcRequest {
             | Self::Timeout { .. } => Some(C::ModerationWrite),
             Self::ChannelHistory { .. } => Some(C::ChannelsHistory),
             Self::ChannelSend { .. } => Some(C::ChatWrite),
-            Self::DmInbox { .. }
-            | Self::DmHistory { .. }
-            | Self::GroupDmList
-            | Self::GroupDmMessages { .. } => Some(C::ImHistory),
-            Self::DmSend { .. }
-            | Self::OutboxRetry { .. }
-            | Self::OutboxDiscard { .. }
-            | Self::GroupDmCreate { .. }
-            | Self::GroupDmAccept { .. }
-            | Self::GroupDmDecline { .. }
-            | Self::GroupDmLeave { .. }
-            | Self::GroupDmSend { .. }
-            | Self::GroupDmTyping { .. }
-            | Self::DmTyping { .. }
-            | Self::DmMarkRead { .. } => Some(C::ImWrite),
-            Self::PresenceSet { .. }
-            | Self::PresenceSetMessage { .. }
-            | Self::GamePresenceSet { .. }
-            | Self::GamePresenceClear => Some(C::PresenceWrite),
-            Self::VoiceJoin { .. } | Self::VoiceLeave => Some(C::VoiceWrite),
-            Self::Unlock { .. }
-            | Self::Lock
-            | Self::Logout
-            | Self::Status
-            | Self::Shutdown
-            | Self::IdentityCreate { .. }
-            | Self::IdentityList
-            | Self::IdentityExport { .. }
-            | Self::IdentityImport { .. }
-            | Self::IdentityRotate { .. }
-            | Self::IdentityDelete { .. }
-            | Self::IdentityWipe
-            // Which keys the user trusts is the user's own decision.
-            | Self::IdentityMarkVerified { .. }
-            | Self::IdentityClearVerification { .. }
-            // A commit runs the request the gate held, which passed this
-            // caller's capability check when it was selected.
-            | Self::IntentCommit { .. }
-            | Self::IntentCancel { .. }
-            // An undo's inverse passes this check on its own at the gate.
-            | Self::Undo { .. }
-            | Self::PrekeyStatus
-            | Self::MekList { .. }
+            // Channel keys are key material; ownership is the owner's own.
+            Self::MekList { .. }
             | Self::MekRotate { .. }
             | Self::MekRequest { .. }
-            // Our name, our picture, the audit log and the system browser
-            // are the user's own, never an agent's.
-            | Self::ProfileSetNickname { .. }
-            // Whether we tell friends what we read is the user's own.
-            | Self::SetReadReceiptsEnabled { .. }
-            | Self::ProfileSetAvatar { .. }
-            | Self::AuditVerify
-            | Self::AuditExport { .. }
-            | Self::LinkOpen { .. }
-            | Self::CommunityTransferOwnership { .. }
-            | Self::AgentRegister { .. }
-            | Self::AgentRevoke { .. }
-            | Self::PolicyReload => None,
+            | Self::CommunityTransferOwnership { .. } => None,
         }
     }
 }
@@ -254,10 +267,10 @@ mod tests {
     #[test]
     fn key_material_is_never_delegated() {
         assert_eq!(
-            IpcRequest::MekRotate {
+            IpcRequest::Community(CommunityRequest::MekRotate {
                 community: String::new(),
                 channel: String::new()
-            }
+            })
             .agent_capability(),
             None
         );

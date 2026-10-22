@@ -5,7 +5,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, Community};
@@ -19,17 +19,17 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
     // Before the request: the invite's expiry is minted inside it.
     let asked = tokio::time::Instant::now();
     let invite = community.nodes[0]
-        .ok(IpcRequest::InviteCreate {
+        .ok(IpcRequest::Community(CommunityRequest::InviteCreate {
             community: community.governance_key.clone(),
             max_uses: 1,
             expires_seconds: Some(TTL),
-        })
+        }))
         .await;
     let link = invite["url"].as_str().expect("an invite link").to_string();
     let listed = |v: &serde_json::Value| v.as_array().is_some_and(|a| !a.is_empty());
-    let list = IpcRequest::InviteList {
+    let list = IpcRequest::Community(CommunityRequest::InviteList {
         community: community.governance_key.clone(),
-    };
+    });
     assert!(
         listed(&community.nodes[0].ok(list.clone()).await),
         "listed while live"
@@ -57,7 +57,9 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
     );
 
     let joined = community.nodes[1]
-        .call(IpcRequest::CommunityJoin { invite: link })
+        .call(IpcRequest::Community(CommunityRequest::CommunityJoin {
+            invite: link,
+        }))
         .await;
     let refused = format!("{joined:?}");
     assert!(

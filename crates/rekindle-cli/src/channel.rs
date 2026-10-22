@@ -1,6 +1,6 @@
 //! Channel commands.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 
 use crate::cli::ChannelCmd;
 use crate::helpers;
@@ -17,9 +17,9 @@ pub async fn dispatch(
         ChannelCmd::List { community, .. } => {
             let value = helpers::send(
                 client,
-                IpcRequest::ChannelList {
+                IpcRequest::Community(CommunityRequest::ChannelList {
                     community: community.clone(),
-                },
+                }),
             )
             .await?;
             if mode.is_structured() {
@@ -61,7 +61,7 @@ pub async fn dispatch(
             let validated_name = helpers::validate_name(name, "Channel")?;
             let value = helpers::send(
                 client,
-                IpcRequest::ChannelCreate {
+                IpcRequest::Community(CommunityRequest::ChannelCreate {
                     community: community.clone(),
                     name: validated_name,
                     kind: kind.clone(),
@@ -69,7 +69,7 @@ pub async fn dispatch(
                     topic: topic.clone(),
                     slowmode_seconds: slowmode.unwrap_or(0),
                     parent_voice_channel: None,
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -78,10 +78,10 @@ pub async fn dispatch(
             let channel_id = channel.clone();
             let value = helpers::send(
                 client,
-                IpcRequest::ChannelDelete {
+                IpcRequest::Community(CommunityRequest::ChannelDelete {
                     community: community.clone(),
                     channel_id,
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -100,13 +100,13 @@ pub async fn dispatch(
                 .transpose()?;
             let value = helpers::send(
                 client,
-                IpcRequest::ChannelUpdate {
+                IpcRequest::Community(CommunityRequest::ChannelUpdate {
                     community: community.clone(),
                     channel_id,
                     name: validated_name,
                     topic: topic.clone(),
                     slowmode_seconds: *slowmode,
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -120,12 +120,12 @@ pub async fn dispatch(
             let reply = reply_to.as_ref().and_then(|s| s.parse::<u64>().ok());
             let value = helpers::send(
                 client,
-                IpcRequest::ChannelSend {
+                IpcRequest::Community(CommunityRequest::ChannelSend {
                     community: community.clone(),
                     channel: channel.clone(),
                     body: message.clone(),
                     reply_to: reply,
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -138,11 +138,11 @@ pub async fn dispatch(
         } => {
             let value = helpers::send(
                 client,
-                IpcRequest::ChannelHistory {
+                IpcRequest::Community(CommunityRequest::ChannelHistory {
                     community: community.clone(),
                     channel: channel.clone(),
                     limit: u32::try_from(*limit).unwrap_or(u32::MAX),
-                },
+                }),
             )
             .await?;
             format::print_structured(&value, mode)
@@ -171,9 +171,9 @@ async fn watch_channel(
     let detail: rekindle_types::display::CommunityDetail = serde_json::from_value(
         helpers::send(
             client,
-            IpcRequest::CommunityInfo {
+            IpcRequest::Community(CommunityRequest::CommunityInfo {
                 governance_key: community.to_owned(),
-            },
+            }),
         )
         .await?,
     )?;

@@ -1,6 +1,6 @@
 //! Channel and category administration (plan E3.1 E1): Host calls.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -19,7 +19,7 @@ pub async fn create_channel(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelCreate {
+        IpcRequest::Community(CommunityRequest::ChannelCreate {
             community: community_id,
             name,
             kind: channel_type,
@@ -27,7 +27,7 @@ pub async fn create_channel(
             topic: None,
             slowmode_seconds: 0,
             parent_voice_channel: parent_voice_channel_id,
-        },
+        }),
     )
     .await
 }
@@ -40,10 +40,10 @@ pub async fn create_category(
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::CategoryCreate {
+        IpcRequest::Community(CommunityRequest::CategoryCreate {
             community: community_id,
             name,
-        },
+        }),
     )
     .await
 }
@@ -56,10 +56,10 @@ pub async fn delete_category(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::CategoryDelete {
+        IpcRequest::Community(CommunityRequest::CategoryDelete {
             community: community_id,
             category_id,
-        },
+        }),
     )
     .await
 }
@@ -73,11 +73,11 @@ pub async fn rename_category(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::CategoryRename {
+        IpcRequest::Community(CommunityRequest::CategoryRename {
             community: community_id,
             category_id,
             name: new_name,
-        },
+        }),
     )
     .await
 }
@@ -91,11 +91,11 @@ pub async fn move_channel(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelMove {
+        IpcRequest::Community(CommunityRequest::ChannelMove {
             community: community_id,
             channel_id,
             category: category_id,
-        },
+        }),
     )
     .await
 }
@@ -108,10 +108,10 @@ pub async fn reorder_categories(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::CategoryReorder {
+        IpcRequest::Community(CommunityRequest::CategoryReorder {
             community: community_id,
             category_ids,
-        },
+        }),
     )
     .await
 }
@@ -125,11 +125,11 @@ pub async fn set_channel_topic(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelSetTopic {
+        IpcRequest::Community(CommunityRequest::ChannelSetTopic {
             community: community_id,
             channel_id,
             topic,
-        },
+        }),
     )
     .await
 }
@@ -143,11 +143,11 @@ pub async fn set_channel_forum_tags(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelSetForumTags {
+        IpcRequest::Community(CommunityRequest::ChannelSetForumTags {
             community: community_id,
             channel_id,
             forum_tags,
-        },
+        }),
     )
     .await
 }
@@ -160,10 +160,10 @@ pub async fn reorder_channels(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::ChannelReorder {
+        IpcRequest::Community(CommunityRequest::ChannelReorder {
             community: community_id,
             channel_ids,
-        },
+        }),
     )
     .await
 }
