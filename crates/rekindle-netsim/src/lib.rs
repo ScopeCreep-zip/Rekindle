@@ -38,6 +38,7 @@ use std::sync::Arc;
 use rekindle_records::port::{PortEvent, PortSet, RecordValue};
 use tokio::sync::{mpsc, watch};
 
+pub use busy::{db_call, DbCall};
 pub use clock::{SimClock, SimRandom, SIM_EPOCH_MS};
 pub use messages::{FakeMessages, CALL_TIMEOUT};
 pub use network::Network;

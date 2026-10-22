@@ -30,3 +30,6 @@ pub use db::Db;
 pub use friend_store::SqliteFriendStore;
 pub use handle::{DbHandle, DbStillHeld, NotLoggedIn};
 pub use open::{open, DbError, SCHEMA, SCHEMA_VERSION};
+/// The database thread's call watch (`rekindle-asql`): a simulator
+/// installs one so its paused clock sees database work (plan E2.B S8).
+pub use rekindle_asql::{watch_calls, CallToken, CallWatch};

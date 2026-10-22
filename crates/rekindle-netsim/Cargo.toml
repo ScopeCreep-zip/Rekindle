@@ -15,7 +15,6 @@ base64 = "0.22"
 blake3 = "1"
 parking_lot = { workspace = true }
 rand = { workspace = true }
-rekindle-asql = { path = "../rekindle-asql" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-record-pool = { path = "../rekindle-record-pool" }

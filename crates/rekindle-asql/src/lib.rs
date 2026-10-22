@@ -148,16 +148,16 @@ pub trait CallWatch: Send + Sync {
 /// What a [`CallWatch`] holds for one call; dropping it ends the call.
 pub type CallToken = Option<Box<dyn Send>>;
 
-static WATCH: OnceLock<&'static dyn CallWatch> = OnceLock::new();
+static CALL_WATCH: OnceLock<&'static dyn CallWatch> = OnceLock::new();
 
 /// Install the process-wide [`CallWatch`]. Returns `false` if one is
 /// already installed (the first stays).
 pub fn watch_calls(watch: &'static dyn CallWatch) -> bool {
-    WATCH.set(watch).is_ok()
+    CALL_WATCH.set(watch).is_ok()
 }
 
 fn begin() -> CallToken {
-    WATCH.get().and_then(|watch| watch.begin())
+    CALL_WATCH.get().and_then(|watch| watch.begin())
 }
 
 #[derive(Debug)]

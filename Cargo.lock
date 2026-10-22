@@ -7738,7 +7738,6 @@ dependencies = [
  "blake3",
  "parking_lot 0.12.5",
  "rand 0.8.5",
- "rekindle-asql",
  "rekindle-crypto",
  "rekindle-lifecycle",
  "rekindle-record-pool",

@@ -3,9 +3,10 @@
 //! A Host's database runs on a `rekindle-asql` thread, outside tokio, so a
 //! Host awaiting a call looks idle: tokio would auto-advance the paused
 //! clock to the next timer while the thread works, and the pump would
-//! deliver before the Host's answer is in. [`DbWatch`] is the asql
-//! [`CallWatch`] the simulator installs. A call queued from a simulation's
-//! runtime thread counts in that simulation's [`Busy`]; while any is in
+//! deliver before the Host's answer is in. The harness installs an asql
+//! call watch (`rekindle_db::watch_calls`) that takes a [`db_call`] for each
+//! call. A call queued from a simulation's runtime thread counts in that
+//! simulation's [`Busy`]; while any is in
 //! flight one blocking task waits for them, and tokio does not auto-advance
 //! a current-thread runtime while a blocking task runs
 //! (`runtime/blocking/schedule.rs`: `inhibit_auto_advance` at spawn,
@@ -17,7 +18,6 @@ use std::cell::RefCell;
 use std::sync::Arc;
 
 use parking_lot::{Condvar, Mutex};
-use rekindle_asql::{CallToken, CallWatch};
 use tokio::sync::Notify;
 
 /// The database calls in flight from one simulation's runtime.
@@ -49,7 +49,7 @@ impl Busy {
         }
     }
 
-    fn begin(self: &Arc<Self>) -> Box<dyn Send> {
+    fn begin(self: &Arc<Self>) -> DbCall {
         let first = {
             let mut state = self.state.lock();
             state.0 += 1;
@@ -69,14 +69,16 @@ impl Busy {
                 }));
             }
         }
-        Box::new(Call(Arc::clone(self)))
+        DbCall(Arc::clone(self))
     }
 }
 
-/// One call in flight; dropped on the database thread when it ends.
-struct Call(Arc<Busy>);
+/// One database call in flight; drop it on the database thread once the
+/// call has run and its result is sent.
+#[derive(Debug)]
+pub struct DbCall(Arc<Busy>);
 
-impl Drop for Call {
+impl Drop for DbCall {
     fn drop(&mut self) {
         let drained = {
             let mut state = self.0.state.lock();
@@ -98,17 +100,12 @@ thread_local! {
 /// Count this thread's database calls in `busy` (a simulation's runtime
 /// thread: a current-thread runtime polls every task on it).
 pub(crate) fn install(busy: &Arc<Busy>) {
-    static WATCH: DbWatch = DbWatch;
-    // A second install keeps the first watch: it is the same one.
-    let _ = rekindle_asql::watch_calls(&WATCH);
     CURRENT.with(|current| *current.borrow_mut() = Some(Arc::clone(busy)));
 }
 
-/// The simulator's asql [`CallWatch`].
-struct DbWatch;
-
-impl CallWatch for DbWatch {
-    fn begin(&self) -> CallToken {
-        CURRENT.with(|current| current.borrow().as_ref().map(Busy::begin))
-    }
+/// A database call queued on this thread begins: `None` unless the thread
+/// runs a simulation ([`crate::Netsim::new`]).
+#[must_use]
+pub fn db_call() -> Option<DbCall> {
+    CURRENT.with(|current| current.borrow().as_ref().map(Busy::begin))
 }

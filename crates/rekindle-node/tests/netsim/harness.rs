@@ -64,6 +64,8 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_test_writer()
         .try_init();
+    // A Host's database thread is work the paused clock waits for (S8).
+    let _ = rekindle_db::watch_calls(&SimDb);
     let (sim, nodes) = Netsim::nodes(n, seed);
     let mut hosts = Vec::with_capacity(n);
     for node in nodes {
@@ -98,6 +100,15 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
     let _pump = sim.start();
     sim.quiesce().await;
     (sim, hosts)
+}
+
+/// The database calls the simulation counts ([`rekindle_netsim::db_call`]).
+struct SimDb;
+
+impl rekindle_db::CallWatch for SimDb {
+    fn begin(&self) -> rekindle_db::CallToken {
+        rekindle_netsim::db_call().map(|call| Box::new(call) as Box<dyn Send>)
+    }
 }
 
 /// The proof `review` asks for, as the CLI gives it with `--yes`,
