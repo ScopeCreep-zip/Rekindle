@@ -75,7 +75,11 @@ async fn writes_come_back_in_the_next_projection() {
     let reloaded: Session = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
         .await
         .unwrap();
-    let m = reloaded.community("gov-key").unwrap();
+    // The memberships are the community store's projection (plan E3.1 C1).
+    let stored = crate::host::adapters::governance::loader::load(&db, &f.vault, &owner, &[1; 32])
+        .await
+        .unwrap();
+    let m = crate::host::adapters::governance::loader::membership(&stored["gov-key"]);
     assert_eq!(m.slot_seed, Some([9; 32]));
     assert_eq!(m.slot_index, 3);
     assert_eq!(m.segment_index, Some(1));
@@ -100,6 +104,9 @@ async fn writes_come_back_in_the_next_projection() {
     let after = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
         .await
         .unwrap();
-    assert!(after.communities.is_empty());
+    let stored = crate::host::adapters::governance::loader::load(&db, &f.vault, &owner, &[1; 32])
+        .await
+        .unwrap();
+    assert!(stored.is_empty());
     assert_eq!(after.presence_key, Some(minted));
 }

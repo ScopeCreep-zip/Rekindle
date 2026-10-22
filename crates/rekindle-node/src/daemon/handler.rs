@@ -308,7 +308,7 @@ impl InboundHandler for DaemonHandler {
             .host
             .get()
             .and_then(std::sync::Weak::upgrade)
-            .map(|ctx| crate::host::adapters::governance::HostGovernance::new(ctx));
+            .map(crate::host::adapters::governance::HostGovernance::new);
         let rebuilt = match governance {
             Some(governance) => governance.on_watched_change(record_key).await,
             None => false,

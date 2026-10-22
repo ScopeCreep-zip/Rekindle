@@ -38,6 +38,29 @@ pub(crate) async fn restore(
     secret: &[u8; 32],
 ) -> Result<(), String> {
     let db = ctx.db.current().map_err(|e| e.to_string())?;
+    let states = load(&db, &ctx.vault, owner, secret).await?;
+    let memberships: HashMap<String, CommunityMembership> = states
+        .values()
+        .map(|state| (state.id.clone(), membership(state)))
+        .collect();
+    *ctx.communities.map().write() = states;
+    if let Some(session) = ctx.session.write().as_mut() {
+        session.communities = memberships;
+    }
+    Ok(())
+}
+
+/// Every joined community of `owner` as the store holds it: the rows, the
+/// keys, and the cached governance re-merged.
+///
+/// # Errors
+/// The identity's database cannot be read.
+pub(crate) async fn load(
+    db: &rekindle_db::Db,
+    vault: &rekindle_vault::VaultHandle,
+    owner: &str,
+    secret: &[u8; 32],
+) -> Result<HashMap<String, CommunityState>, String> {
     let o = owner.to_string();
     let load = db
         .call(move |conn| rekindle_db::repo::communities::load::load(conn, &o))
@@ -48,7 +71,7 @@ pub(crate) async fn restore(
         .iter()
         .map(|row| (row.id.clone(), assemble(row, &load)))
         .collect();
-    restore_keys(ctx, &mut states, secret);
+    restore_keys(vault, &mut states, secret);
     for (community_id, entries) in &load.governance {
         let Some(state) = states.get_mut(community_id) else {
             continue;
@@ -61,15 +84,7 @@ pub(crate) async fn restore(
         sync_my_roles(state, &governance);
         state.governance_state = Some(governance);
     }
-    let memberships: HashMap<String, CommunityMembership> = states
-        .values()
-        .map(|state| (state.id.clone(), membership(state)))
-        .collect();
-    *ctx.communities.map().write() = states;
-    if let Some(session) = ctx.session.write().as_mut() {
-        session.communities = memberships;
-    }
-    Ok(())
+    Ok(states)
 }
 
 /// Our role ids from the merged role assignments.
@@ -125,12 +140,12 @@ pub(crate) fn membership(state: &CommunityState) -> CommunityMembership {
 /// The pseudonym (derived, deterministic from the identity secret and the
 /// community id) and the vault's slot and registry keys.
 fn restore_keys(
-    ctx: &DaemonContext,
+    vault: &rekindle_vault::VaultHandle,
     states: &mut HashMap<String, CommunityState>,
     secret: &[u8; 32],
 ) {
     use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
-    let guard = ctx.vault.lock();
+    let guard = vault.lock();
     for (community_id, state) in states.iter_mut() {
         if state.my_pseudonym_key.is_none() {
             let signing = derive_community_pseudonym(secret, community_id);
