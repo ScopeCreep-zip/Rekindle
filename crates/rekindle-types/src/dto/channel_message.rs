@@ -60,7 +60,7 @@ pub struct MessageAttachment {
 /// One channel message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ChannelMessage {
+pub struct ChannelMessageView {
     /// Our stored row's id; 0 for a message read from the network only.
     pub id: i64,
     /// The sender's pseudonym.

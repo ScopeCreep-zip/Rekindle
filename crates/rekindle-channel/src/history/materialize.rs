@@ -4,6 +4,7 @@
 //! before it closed. Pure: the entries come from the host's record read.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::hash::BuildHasher;
 
 use rekindle_codec::community::channel_record::ChannelRecordEntry;
 use rekindle_types::dto::channel_message::{MessagePoll, MessagePollAnswer, ReactionGroup};
@@ -29,9 +30,9 @@ struct PollCreateState {
     closed_at: Option<EntryOrder>,
 }
 
-pub fn build_reaction_groups(
+pub fn build_reaction_groups<S: BuildHasher>(
     channel_entries: &[ChannelEntryItem],
-    subkey_pseudonyms: &HashMap<u32, String>,
+    subkey_pseudonyms: &HashMap<u32, String, S>,
 ) -> HashMap<String, Vec<ReactionGroup>> {
     let mut latest_by_reactor: HashMap<(String, String, String), (u64, bool)> = HashMap::new();
     for item in channel_entries {
@@ -79,9 +80,9 @@ pub fn build_reaction_groups(
     by_message
 }
 
-pub fn build_poll_states(
+pub fn build_poll_states<S: BuildHasher>(
     channel_entries: &[ChannelEntryItem],
-    subkey_pseudonyms: &HashMap<u32, String>,
+    subkey_pseudonyms: &HashMap<u32, String, S>,
     my_pseudonym: &str,
 ) -> HashMap<String, MessagePoll> {
     let mut creates: BTreeMap<[u8; 16], PollCreateState> = BTreeMap::new();

@@ -9,7 +9,7 @@ use crate::state::SharedState;
 
 /// A channel message and its parts, in the Host's DTO shape (plan E3.1 E2c).
 pub use rekindle_types::dto::channel_message::{
-    ChannelMessage as Message, MessageAttachment as MessageAttachmentDto, MessagePoll,
+    ChannelMessageView as Message, MessageAttachment as MessageAttachmentDto, MessagePoll,
     MessagePollAnswer, ReactionGroup,
 };
 
