@@ -10,7 +10,6 @@ use rekindle_governance_runtime::{DhtRecordInfo, GovernanceRuntimeError, RecentM
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{RecordPort, RecordSchema, ReportScope, SetOutcome};
 
-use crate::db_helpers::db_call;
 use crate::state_helpers;
 
 use super::GovernanceAdapter;
@@ -185,46 +184,17 @@ pub(super) async fn recent_channel_messages_impl(
     channel_id: &str,
     limit: i64,
 ) -> Vec<RecentMessageRow> {
-    let _ = super::RECENT_MESSAGES_LIMIT;
     let Ok(owner_key) = state_helpers::current_owner_key(&adapter.state) else {
         return Vec::new();
     };
-    let cid = community_id.to_string();
-    let chan = channel_id.to_string();
-    let rows = db_call(&adapter.pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT message_id, sender_key, body, timestamp, mek_generation \
-             FROM messages \
-             WHERE owner_key = ?1 \
-               AND conversation_id IN (SELECT id FROM channels WHERE owner_key = ?1 AND community_id = ?2) \
-               AND conversation_type = 'channel' AND conversation_id = ?3 \
-             ORDER BY timestamp DESC LIMIT ?4",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![owner_key, cid, chan, limit], |row| {
-            // A row with no network message id or no stored generation
-            // cannot go into a bundle (the joiner dedupes on the id and
-            // decrypts under the generation), so it is left out.
-            let message_id = row.get::<_, Option<String>>(0)?;
-            let mek_generation = row.get::<_, Option<u64>>(4)?;
-            let (Some(message_id), Some(mek_generation)) = (message_id, mek_generation) else {
-                return Ok(None);
-            };
-            Ok(Some(RecentMessageRow {
-                message_id,
-                sender_pseudonym: row.get::<_, String>(1)?,
-                body: row.get::<_, String>(2)?,
-                timestamp: row.get::<_, i64>(3)?,
-                mek_generation,
-            }))
-        })?;
-        rows.filter_map(Result::transpose)
-            .collect::<rusqlite::Result<Vec<_>>>()
-    })
-    .await;
-    rows.unwrap_or_else(|e| {
-        tracing::warn!(error = %e, "reading recent channel messages for a bootstrap bundle failed");
-        Vec::new()
-    })
+    rekindle_node::host::adapters::governance::recent_channel_messages(
+        &adapter.pool,
+        &owner_key,
+        community_id,
+        channel_id,
+        limit,
+    )
+    .await
 }
 
 pub(super) async fn app_call_peer_impl(

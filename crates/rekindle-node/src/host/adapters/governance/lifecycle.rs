@@ -143,15 +143,39 @@ impl HostGovernance {
             .collect()
     }
 
-    /// Invite records this identity published and must keep warm.
-    ///
-    /// The daemon does not yet persist an invite-secrets inventory —
-    /// `InviteCreate` publishes the DFLT record and discards the owner
-    /// keypair. Returning empty means our own invites are not
-    /// republished by this track and will decay from the DHT when no
-    /// reader refreshes them; recorded as a gap rather than papered over.
-    pub(super) fn list_my_active_invite_secret_keys_impl() -> Vec<String> {
-        Vec::new()
+    /// Invite records this identity published and must keep warm: the
+    /// `secrets_record_key` of every unexpired invite we created, from the
+    /// merged governance state. Only invites we authored are in our local
+    /// record store, so re-opening them is a local hit that rehydrates them.
+    pub(super) fn list_my_active_invite_secret_keys_impl(&self) -> Vec<String> {
+        let now = self.ctx.clock.now_secs();
+        let governed: Vec<(String, GovernanceState)> = self
+            .ctx
+            .communities
+            .map()
+            .read()
+            .iter()
+            .filter_map(|(id, c)| Some((id.clone(), c.governance_state.clone()?)))
+            .collect();
+        let mut keys = Vec::new();
+        for (community_id, gov) in governed {
+            let Some(mine) = self
+                .community_membership_impl(&community_id)
+                .and_then(|m| m.my_pseudonym_hex)
+            else {
+                continue;
+            };
+            for invite in gov.invites.values() {
+                if hex::encode(invite.creator_pseudonym.0) != mine
+                    || invite.expires_at.is_some_and(|exp| exp <= now)
+                    || invite.secrets_record_key.is_empty()
+                {
+                    continue;
+                }
+                keys.push(invite.secrets_record_key.clone());
+            }
+        }
+        keys
     }
 
     /// Raise the Lamport counter and install the merged state.

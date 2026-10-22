@@ -21,6 +21,7 @@ use crate::daemon::dispatch::DaemonContext;
 
 pub mod deps_impl;
 mod dht;
+pub use dht::recent_channel_messages;
 mod events;
 mod lifecycle;
 mod mek;

@@ -32,8 +32,6 @@ mod state_builder;
 mod state_mutations;
 mod state_reads;
 
-pub(super) const RECENT_MESSAGES_LIMIT: i64 = 50;
-
 /// Adapter — holds the three things every trait method needs: the
 /// shared `AppState`, the Tauri `AppHandle` (for event emit + Db
 /// lookup), and the `Db` clone (for bootstrap SQL queries).

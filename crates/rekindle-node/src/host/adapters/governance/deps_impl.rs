@@ -181,23 +181,14 @@ impl GovernanceRuntimeDeps for HostGovernance {
 
     // ---------- Bootstrap ----------
 
-    /// The daemon has no message store, so a daemon-served bundle
-    /// carries no backlog.
-    ///
-    /// This is correct rather than a shortfall: the architecture calls
-    /// the BootstrapBundle "convenience, not trust" with the DHT
-    /// authoritative, and join step 15 is a full SMPL catchup that
-    /// rebuilds history from the channel records regardless. A joiner
-    /// bootstrapped by a daemon waits longer for backlog; it does not
-    /// lose any. Inventing a message store to fill this would add a
-    /// second source of truth for content the DHT already holds.
     async fn recent_channel_messages(
         &self,
-        _community_id: &str,
-        _channel_id: &str,
-        _limit: i64,
+        community_id: &str,
+        channel_id: &str,
+        limit: i64,
     ) -> Vec<RecentMessageRow> {
-        Vec::new()
+        self.recent_channel_messages_impl(community_id, channel_id, limit)
+            .await
     }
 
     // ---------- Gossip ----------
@@ -320,7 +311,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
     }
 
     fn list_my_active_invite_secret_keys(&self) -> Vec<String> {
-        Self::list_my_active_invite_secret_keys_impl()
+        self.list_my_active_invite_secret_keys_impl()
     }
 
     fn register_governance_overflow_keys(&self, community_id: &str, keys: &[String]) {

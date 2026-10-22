@@ -117,17 +117,20 @@ impl CommunityStore {
     /// Governance overflow chain for the community, in order.
     #[must_use]
     pub fn overflow_keys(&self, community_id: &str) -> Vec<String> {
-        self.read(community_id, |c| c.overflow_keys.clone())
-            .unwrap_or_default()
+        self.read(community_id, |c| {
+            c.open_community_records.governance_overflow_keys.clone()
+        })
+        .unwrap_or_default()
     }
 
     /// Append to the overflow chain, skipping keys already present so a
     /// repeated discovery pass does not grow the chain.
     pub fn register_overflow_keys(&self, community_id: &str, keys: &[String]) {
         self.write(community_id, |c| {
+            let chain = &mut c.open_community_records.governance_overflow_keys;
             for key in keys {
-                if !c.overflow_keys.contains(key) {
-                    c.overflow_keys.push(key.clone());
+                if !chain.contains(key) {
+                    chain.push(key.clone());
                 }
             }
         });

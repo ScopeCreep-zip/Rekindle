@@ -269,11 +269,6 @@ pub struct CommunityState {
     #[serde(skip)]
     pub members: HashMap<String, MemberRecord>,
 
-    /// Governance overflow record keys (the `overflow_next` chain), in
-    /// chain order.
-    #[serde(skip)]
-    pub overflow_keys: Vec<String>,
-
     /// Channels whose initial history catch-up has completed.
     #[serde(skip)]
     pub synced_channels: BTreeSet<String>,
