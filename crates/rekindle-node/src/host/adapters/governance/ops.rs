@@ -253,9 +253,15 @@ impl HostGovernance {
             .outbox
             .governance_ops()
             .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
-        ops.publish(community_id, &record, encoded.clone())
+        let published = ops
+            .publish(community_id, &record, encoded.clone())
             .await
             .map_err(|e| adapter("publish op", e))?;
+        // A first attempt that did not land leaves the op queued: it is in
+        // our state and the outbox lands it, so the action stands.
+        if let crate::host::adapters::outbox::Published::Queued(reason) = published {
+            tracing::warn!(community = %community_id, %reason, "governance op queued for retry, not yet on the DHT");
+        }
         // The fast path: every member hears the op before its watch fires.
         self.send_to_mesh_impl(
             community_id,

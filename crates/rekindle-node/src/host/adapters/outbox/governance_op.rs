@@ -3,8 +3,10 @@
 //! member record's op log (`M`/2, `rekindle_records::chain::append_at`
 //! with `K_M(p)`). One stream per community keeps the chain in op order.
 //! [`GovernanceOps::publish`] returns when the op's first attempt landed
-//! on `M`/2 and `M`/3, or with the reason it did not (the row stays and
-//! the outbox retries it): a joiner's walk reads what is on the DHT.
+//! on `M`/2 and `M`/3 ([`Published::Landed`]), or with the reason it did
+//! not ([`Published::Queued`]: the row stays and the outbox retries it, so
+//! the op is ours and the action stands): a joiner's walk reads what is on
+//! the DHT.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -100,6 +102,15 @@ impl OpWaiters {
 }
 
 /// The unlocked identity's `governance_op` streams.
+/// What became of a published op's first attempt.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Published {
+    /// On `M`/2, with our `Frontier` on `M`/3.
+    Landed,
+    /// Not on the DHT yet, for the reason given; the outbox retries it.
+    Queued(String),
+}
+
 pub struct GovernanceOps {
     outbox: Arc<Outbox<HostOutbox>>,
     waiters: Arc<OpWaiters>,
@@ -107,13 +118,19 @@ pub struct GovernanceOps {
 
 impl GovernanceOps {
     /// Queue `op` (encoded) for `record`'s op log in `community`, and wait
-    /// for its first attempt: `Ok` when it is on `M`/2 and our `Frontier`
-    /// on `M`/3. On `Err` the row stays queued and the outbox retries it.
+    /// for its first attempt: [`Published::Landed`] when it is on `M`/2
+    /// and our `Frontier` on `M`/3, [`Published::Queued`] when it is not
+    /// there yet (the row stays queued and the outbox retries it).
     ///
     /// # Errors
     /// The op does not decode, a key is too long, the storage failed, or
-    /// the op did not land (the reason).
-    pub async fn publish(&self, community: &str, record: &str, op: Vec<u8>) -> Result<(), String> {
+    /// the outbox stopped before the first attempt.
+    pub async fn publish(
+        &self,
+        community: &str,
+        record: &str,
+        op: Vec<u8>,
+    ) -> Result<Published, String> {
         let decoded = rekindle_codec::governance_op::decode_op(&op)
             .map_err(|e| format!("governance op: {e}"))?;
         let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
@@ -131,10 +148,10 @@ impl GovernanceOps {
             self.waiters.forget(community, &client_id);
             return Err(error.to_string());
         }
-        landed
+        let first = landed
             .await
-            .map_err(|_| "the outbox stopped before the op landed".to_owned())?
-            .map_err(|reason| format!("queued for retry, not yet on the DHT: {reason}"))
+            .map_err(|_| "the outbox stopped before the op landed".to_owned())?;
+        Ok(first.map_or_else(Published::Queued, |()| Published::Landed))
     }
 }
 
