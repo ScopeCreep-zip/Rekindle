@@ -92,6 +92,7 @@ impl RouteAllocator for FakeAllocator {
         let tag = match class {
             RouteClass::General => "g",
             RouteClass::Media => "m",
+            RouteClass::Sending => "s",
         };
         let id = format!("n{}-{tag}{n}", self.node);
         let blob = blob_of(&id);
@@ -125,8 +126,7 @@ pub struct FakeRoutes {
 }
 
 impl FakeRoutes {
-    pub(crate) fn new(node: usize, net: Arc<Network>, ready: watch::Receiver<bool>) -> Self {
-        let own = OwnRoutes::new(FakeAllocator::new(node, Arc::clone(&net)), ready);
+    pub(crate) fn new(node: usize, net: Arc<Network>, own: Arc<OwnRoutes<FakeAllocator>>) -> Self {
         Self {
             node,
             net,
@@ -191,6 +191,14 @@ impl RoutePort for FakeRoutes {
 
     fn want_own(&self) {
         self.own.want_all();
+    }
+
+    fn want_own_class(&self, class: RouteClass) {
+        self.own.want(class);
+    }
+
+    fn release_own_class(&self, class: RouteClass) {
+        self.own.release(class);
     }
 
     fn on_dead_own(&self, dead: &[String]) {
@@ -277,13 +285,15 @@ impl Network {
     }
 
     /// A question `node` asked of `destination` was lost: counted on its
-    /// own general routes (its reply private route); the fifth distinct
-    /// destination kills a route, reported to `node` as `dead_routes`.
-    pub(crate) fn lost_question(&self, node: usize, destination: &str) {
+    /// reply private route, the `pinned` route when the call was pinned
+    /// (`rpc_processor/destination.rs:477-497`), else its own general
+    /// routes; the fifth distinct destination kills a route, reported to
+    /// `node` as `dead_routes`.
+    pub(crate) fn lost_question(&self, node: usize, destination: &str, pinned: Option<&str>) {
         let dead: Vec<String> = {
             let mut guard = self.inner.lock();
             let inner = &mut *guard;
-            let own: Vec<String> = own_general(&inner.routes, node);
+            let own: Vec<String> = sent_over(&inner.routes, node, pinned);
             let Some(slot) = inner.nodes.get_mut(node) else {
                 return;
             };
@@ -317,16 +327,17 @@ impl Network {
 
     /// Whether `node`'s send fails at its own route's first hop
     /// ([`crate::Fault::RouteLinkFailure`]): the fault is spent, and the
-    /// route it went out on (the first live general route) dies after this
-    /// one failure, reported to `node` as `dead_routes`.
-    pub(crate) fn first_hop_failed(&self, node: usize) -> bool {
+    /// route it went out on (the `pinned` route, else the first live
+    /// general route) dies after this one failure, reported to `node` as
+    /// `dead_routes`.
+    pub(crate) fn first_hop_failed(&self, node: usize, pinned: Option<&str>) -> bool {
         let dead: Vec<String> = {
             let mut guard = self.inner.lock();
             let inner = &mut *guard;
             if !inner.faults.link_failure.remove(&node) {
                 return false;
             }
-            let dead: Vec<String> = own_general(&inner.routes, node)
+            let dead: Vec<String> = sent_over(&inner.routes, node, pinned)
                 .into_iter()
                 .take(1)
                 .collect();
@@ -358,6 +369,23 @@ impl Network {
         if let Some(slot) = self.inner.lock().nodes.get_mut(node) {
             slot.lost.clear();
         }
+    }
+}
+
+/// The live route a send of `node`'s went out on: `pinned` while live,
+/// else its general routes.
+fn sent_over(
+    routes: &HashMap<String, RouteEntry>,
+    node: usize,
+    pinned: Option<&str>,
+) -> Vec<String> {
+    match pinned {
+        Some(id) => routes
+            .get(id)
+            .filter(|r| r.node == node)
+            .map(|_| vec![id.to_string()])
+            .unwrap_or_default(),
+        None => own_general(routes, node),
     }
 }
 

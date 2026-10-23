@@ -134,6 +134,14 @@ impl RoutePort for VeilidRoutes {
         self.own.want_all();
     }
 
+    fn want_own_class(&self, class: RouteClass) {
+        self.own.want(class);
+    }
+
+    fn release_own_class(&self, class: RouteClass) {
+        self.own.release(class);
+    }
+
     fn on_dead_own(&self, dead: &[String]) {
         // Veilid names every route it reports by the id it issued.
         let ids: Vec<RouteId> = dead.iter().filter_map(|t| route_id(t).ok()).collect();
@@ -154,22 +162,51 @@ impl RoutePort for VeilidRoutes {
 }
 
 /// App messages and calls over Safe routes (never `Unsafe`: it leaks the
-/// sender to the first relay), the hop count floor-clamped.
+/// sender to the first relay), the hop count floor-clamped. Built from the
+/// same `OwnRoutes` as [`VeilidRoutes`], whose live routes a pinned send
+/// takes as its safety route.
 pub struct VeilidMessages {
     api: VeilidAPI,
+    own: Arc<OwnRoutes<VeilidRouteAllocator>>,
 }
 
 impl VeilidMessages {
     #[must_use]
-    pub fn new(api: VeilidAPI) -> Self {
-        Self { api }
+    pub fn new(api: VeilidAPI, own: Arc<OwnRoutes<VeilidRouteAllocator>>) -> Self {
+        Self { api, own }
     }
 
     fn context(&self, profile: &SafetyProfile) -> Result<RoutingContext, PortError> {
+        self.with_safety(safety_selection(profile))
+    }
+
+    /// The context of a send pinned to our live route of `class`
+    /// (`SafetySpec.preferred_route`, `safety.rs:273`); `Routing` while
+    /// none is live, never a pool route in its place.
+    fn pinned(
+        &self,
+        profile: &SafetyProfile,
+        class: RouteClass,
+    ) -> Result<RoutingContext, PortError> {
+        let id = self
+            .own
+            .id(class)
+            .ok_or_else(|| PortError::Routing(format!("our {class:?} route is not available")))?;
+        let veilid_core::SafetySelection::Safe(mut spec) = safety_selection(profile) else {
+            return Err(PortError::Routing("safety selection is not Safe".into()));
+        };
+        spec.preferred_route = Some(id);
+        self.with_safety(veilid_core::SafetySelection::Safe(spec))
+    }
+
+    fn with_safety(
+        &self,
+        safety: veilid_core::SafetySelection,
+    ) -> Result<RoutingContext, PortError> {
         self.api
             .routing_context()
             .map_err(|e| PortError::Node(format!("routing context: {e}")))?
-            .with_safety(safety_selection(profile))
+            .with_safety(safety)
             .map_err(|e| PortError::Routing(format!("safety: {e}")))
     }
 }
@@ -206,6 +243,34 @@ impl AppMessagePort for VeilidMessages {
     ) -> Result<Vec<u8>, PortError> {
         check_message_len(&message)?;
         self.context(profile)?
+            .app_call(Target::RouteId(route_id(target.as_str())?), message)
+            .await
+            .map_err(|e| send_error(&e))
+    }
+
+    async fn send_pinned(
+        &self,
+        target: &PeerTarget,
+        profile: &SafetyProfile,
+        class: RouteClass,
+        message: Vec<u8>,
+    ) -> Result<(), PortError> {
+        check_message_len(&message)?;
+        self.pinned(profile, class)?
+            .app_message(Target::RouteId(route_id(target.as_str())?), message)
+            .await
+            .map_err(|e| send_error(&e))
+    }
+
+    async fn call_pinned(
+        &self,
+        target: &PeerTarget,
+        profile: &SafetyProfile,
+        class: RouteClass,
+        message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError> {
+        check_message_len(&message)?;
+        self.pinned(profile, class)?
             .app_call(Target::RouteId(route_id(target.as_str())?), message)
             .await
             .map_err(|e| send_error(&e))
@@ -324,9 +389,9 @@ impl VeilidPorts {
             )),
             routes: Arc::new(VeilidRoutes::new(
                 Arc::new(RouteImports::new(api.clone())),
-                own,
+                Arc::clone(&own),
             )),
-            messages: Arc::new(VeilidMessages::new(api.clone())),
+            messages: Arc::new(VeilidMessages::new(api.clone(), own)),
             lifecycle: Some(Arc::new(VeilidLifecycle::new(api))),
         };
         Ok((ports, event_rx))

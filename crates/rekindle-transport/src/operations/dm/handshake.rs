@@ -292,6 +292,10 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
                 tracing::debug!(to = %to, ?kind, "friend request refused by app_call — attempted again");
                 return Attempt::Deferred;
             }
+            Err(e @ FriendError::NotReady(_)) => {
+                tracing::debug!(to = %to, ?kind, reason = %e, "handshake row deferred");
+                return Attempt::Deferred;
+            }
             Err(e) => {
                 tracing::debug!(to = %to, ?kind, error = %e,
                     "handshake frame not receipted by app_call — attempted again");

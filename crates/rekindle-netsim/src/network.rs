@@ -248,16 +248,8 @@ impl Network {
         delay: Duration,
     ) -> bool {
         let mut inner = self.inner.lock();
-        if droppable && from != to {
-            if inner.faults.partitions.contains(&pair(from, to))
-                || inner.faults.detached.contains(&to)
-            {
-                return false;
-            }
-            let per_mille = inner.faults.drop_per_mille;
-            if per_mille > 0 && self.order.lock().gen_range(0..1000) < per_mille {
-                return false;
-            }
+        if droppable && self.lost_in_transit(&inner, from, to) {
+            return false;
         }
         let rank = {
             let next = inner.ranks.entry((from, to)).or_default();
@@ -276,6 +268,20 @@ impl Network {
         drop(inner);
         self.wake.notify_one();
         true
+    }
+
+    /// Whether a message from `from` to `to` is lost on the way: a
+    /// partition between them, `to` detached, or the drop fault's draw.
+    pub(crate) fn lost_in_transit(&self, inner: &Inner, from: usize, to: usize) -> bool {
+        if from == to {
+            return false;
+        }
+        if inner.faults.partitions.contains(&pair(from, to)) || inner.faults.detached.contains(&to)
+        {
+            return true;
+        }
+        let per_mille = inner.faults.drop_per_mille;
+        per_mille > 0 && self.order.lock().gen_range(0..1000) < per_mille
     }
 
     /// Deliver what is in flight, in an order drawn from the seed. The

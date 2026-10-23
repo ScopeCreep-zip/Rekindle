@@ -1,6 +1,6 @@
 //! App messages and calls to peers' private routes.
 
-use super::{PeerTarget, PortError};
+use super::{PeerTarget, PortError, RouteClass};
 
 use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
 
@@ -48,6 +48,35 @@ pub trait AppMessagePort: Send + Sync {
         &self,
         target: &PeerTarget,
         profile: &rekindle_types::config::SafetyProfile,
+        message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError>;
+
+    /// [`send`](Self::send) with our live route of `class` as the safety
+    /// route (Veilid's `SafetySpec.preferred_route`).
+    ///
+    /// # Errors
+    /// `Routing` while our route of `class` is not live: there is no pool
+    /// route fallback; otherwise as for `send`.
+    async fn send_pinned(
+        &self,
+        target: &PeerTarget,
+        profile: &rekindle_types::config::SafetyProfile,
+        class: RouteClass,
+        message: Vec<u8>,
+    ) -> Result<(), PortError>;
+
+    /// [`call`](Self::call) with our live route of `class` as the safety
+    /// route, so the answer comes back over it too (veilid
+    /// `rpc_processor/destination.rs:467-508`).
+    ///
+    /// # Errors
+    /// `Routing` while our route of `class` is not live: there is no pool
+    /// route fallback; otherwise as for `call`.
+    async fn call_pinned(
+        &self,
+        target: &PeerTarget,
+        profile: &rekindle_types::config::SafetyProfile,
+        class: RouteClass,
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError>;
 

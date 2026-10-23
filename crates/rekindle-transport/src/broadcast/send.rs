@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use rekindle_records::port::{AppMessagePort, PeerTarget, PortError, RoutePort};
+use rekindle_records::port::{AppMessagePort, PeerTarget, PortError, RouteClass, RoutePort};
 use tracing::debug;
 
 use crate::config::TransportConfig;
@@ -33,13 +33,13 @@ fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> Tr
     }
 }
 
-/// The route an `app_call`'s answer comes back over, for the trace. It is
-/// none of our `OwnRoutes` classes: Veilid picks the question's reply
-/// private route itself, an unpublished automatic pool route of the safety
-/// hop count, `Direction::In` (veilid `rpc_processor/destination.rs:467-508`;
-/// published routes, General and Media, are never chosen,
-/// `routing_table/route_spec_store/route_select.rs:283`).
-const REPLY_ROUTE: &str = "veilid pool route (unpublished, safety hop count)";
+/// The route a 1:1 `app_call`'s answer comes back over, for the trace: the
+/// call is pinned to our `Sending` route (`SafetySpec.preferred_route`), and
+/// Veilid names the preferred route as the question's reply private route
+/// (veilid `rpc_processor/destination.rs:477-497`, `route_select.rs:124-152`).
+/// Unpinned, Veilid would pick an untested automatic pool route instead
+/// (`route_select.rs:283`), so a 1:1 call is never sent unpinned.
+const REPLY_ROUTE: &str = "our Sending route (pinned)";
 
 /// Report of a broadcast operation.
 #[derive(Debug, Default)]
@@ -150,10 +150,14 @@ impl AppCaller {
     }
 
     /// `app_call` an already-built 1:1 wire message (`operations::dm::wire`)
-    /// and await the reply, as [`Sender::send_direct`] sends one.
+    /// and await the reply, as [`Sender::send_direct`] sends one, pinned to
+    /// our `Sending` route, over which the answer comes back (plan E4.3 RH2,
+    /// built at RH1r).
     ///
     /// # Errors
-    /// The call failed or timed out; an unusable route is forgotten first.
+    /// `OwnRouteUnavailable` while our `Sending` route is not live (there is no
+    /// pool route fallback); the call failed or timed out; an unusable
+    /// route is forgotten first.
     pub async fn call_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<Vec<u8>> {
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
         debug!(
@@ -164,9 +168,17 @@ impl AppCaller {
             "1:1 app_call sent"
         );
         self.messages
-            .call(target, &profile, message)
+            .call_pinned(target, &profile, RouteClass::Sending, message)
             .await
-            .map_err(|e| send_failure(self.routes.as_ref(), target, e))
+            .map_err(|e| match e {
+                PortError::Routing(reason) => {
+                    debug!(%reason, "1:1 app_call not sent: no Sending route");
+                    TransportError::OwnRouteUnavailable {
+                        class: format!("{:?}", RouteClass::Sending),
+                    }
+                }
+                e => send_failure(self.routes.as_ref(), target, e),
+            })
     }
 
     /// `app_call` a bare, unframed Cap'n Proto `CommunityEnvelope`.

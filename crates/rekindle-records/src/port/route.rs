@@ -27,11 +27,15 @@ impl PeerTarget {
 
 /// A class of our own private route: `General` for messages, calls and the
 /// published profile/mailbox route; `Media` for realtime media, relays
-/// chosen for latency, never substituted by the general route (r6 R-NET2).
+/// chosen for latency, never substituted by the general route (r6 R-NET2);
+/// `Sending` the safety route our 1:1 calls are pinned to, which is also
+/// their answers' reply route (plan E4.3 RH2, built at RH1r). Its blob is
+/// never handed to a peer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RouteClass {
     General,
     Media,
+    Sending,
 }
 
 /// A class's route, as hosts see it.
@@ -94,8 +98,15 @@ pub trait RoutePort: Send + Sync {
     /// How long our live route of `class` has been up, if one is.
     fn own_age(&self, class: RouteClass) -> Option<Duration>;
 
-    /// Want both route classes: allocate each unless live or allocating.
+    /// Want the General and Media classes: allocate each unless live or
+    /// allocating.
     fn want_own(&self);
+
+    /// Want our route of `class`: allocate it unless live or allocating.
+    fn want_own_class(&self, class: RouteClass);
+
+    /// Release our route of `class` and stop wanting it.
+    fn release_own_class(&self, class: RouteClass);
 
     /// Our routes the network reported dead, by id text: forget them
     /// without releasing, and allocate replacements.
@@ -105,7 +116,7 @@ pub trait RoutePort: Send + Sync {
     /// no route is shared by two identities.
     fn renew_own(&self);
 
-    /// Release our routes and stop wanting them (lock).
+    /// Release our routes of every class and stop wanting them (lock).
     fn release_own(&self);
 
     /// Node shutdown: stop allocating, release, and wait for allocations in

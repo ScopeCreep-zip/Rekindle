@@ -57,6 +57,7 @@ pub use routes::{FakeAllocator, FakeRoutes};
 pub use trace::Trace;
 
 use network::{pair, NodeSlot, EVENT_QUEUE};
+use rekindle_route::own_routes::OwnRoutes;
 
 /// A fault to put in force (plan C9.3).
 #[derive(Debug, Clone)]
@@ -175,14 +176,19 @@ impl Netsim {
         self.clocks.lock().push(Arc::clone(&clock));
         let idle = Arc::new(SimIdle::new(Arc::clone(&clock)));
         self.idles.lock().push(Arc::clone(&idle));
+        let own = OwnRoutes::new(FakeAllocator::new(index, Arc::clone(&self.net)), ready_rx);
         let ports = PortSet {
             records: Arc::new(FakeRecords::new(
                 index,
                 Arc::clone(&self.net),
                 Arc::clone(&rng),
             )),
-            routes: Arc::new(FakeRoutes::new(index, Arc::clone(&self.net), ready_rx)),
-            messages: Arc::new(FakeMessages::new(index, Arc::clone(&self.net))),
+            routes: Arc::new(FakeRoutes::new(
+                index,
+                Arc::clone(&self.net),
+                Arc::clone(&own),
+            )),
+            messages: Arc::new(FakeMessages::new(index, Arc::clone(&self.net), own)),
             lifecycle: None,
         };
         Node {

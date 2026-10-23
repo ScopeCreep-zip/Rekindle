@@ -58,6 +58,8 @@ pub(crate) async fn run(
             match class {
                 RouteClass::General => republish_general(&state, &blob).await,
                 RouteClass::Media => republish_media(&state),
+                // Never handed to a peer: nothing to republish.
+                RouteClass::Sending => {}
             }
         }
     }

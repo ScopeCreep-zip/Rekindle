@@ -96,13 +96,18 @@ pub struct OwnRoutes<A: RouteAllocator> {
     backoff_min: Duration,
     general: Slot<A::Id>,
     media: Slot<A::Id>,
+    sending: Slot<A::Id>,
 }
+
+/// Every class, in the order a pass over them takes.
+const CLASSES: [RouteClass; 3] = [RouteClass::General, RouteClass::Media, RouteClass::Sending];
 
 impl<A: RouteAllocator> std::fmt::Debug for OwnRoutes<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OwnRoutes")
             .field("general", &*self.general.state.borrow())
             .field("media", &*self.media.state.borrow())
+            .field("sending", &*self.sending.state.borrow())
             .finish_non_exhaustive()
     }
 }
@@ -126,6 +131,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             backoff_min,
             general: Slot::new(RouteClass::General),
             media: Slot::new(RouteClass::Media),
+            sending: Slot::new(RouteClass::Sending),
         })
     }
 
@@ -133,6 +139,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         match class {
             RouteClass::General => &self.general,
             RouteClass::Media => &self.media,
+            RouteClass::Sending => &self.sending,
         }
     }
 
@@ -196,7 +203,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     /// Veilid reported these routes dead (`RouteChange.dead_routes`): forget
     /// ours among them, without releasing, and allocate a replacement.
     pub fn on_dead(self: &Arc<Self>, dead: &[A::Id]) {
-        for class in [RouteClass::General, RouteClass::Media] {
+        for class in CLASSES {
             let slot = self.slot(class);
             let died = {
                 let mut current = slot.current.lock();
@@ -217,14 +224,20 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     /// Release every live route and stop wanting them (logout, exit). An
     /// allocation in flight releases its route when it lands.
     pub fn release_all(&self) {
-        for class in [RouteClass::General, RouteClass::Media] {
-            let slot = self.slot(class);
-            slot.wanted.store(false, Ordering::SeqCst);
-            if let Some(live) = slot.current.lock().take() {
-                self.alloc.release(&live.id);
-            }
-            slot.state.send_replace(RouteState::Idle);
+        for class in CLASSES {
+            self.release(class);
         }
+    }
+
+    /// Release the class's live route and stop wanting it. An allocation in
+    /// flight releases its route when it lands.
+    pub fn release(&self, class: RouteClass) {
+        let slot = self.slot(class);
+        slot.wanted.store(false, Ordering::SeqCst);
+        if let Some(live) = slot.current.lock().take() {
+            self.alloc.release(&live.id);
+        }
+        slot.state.send_replace(RouteState::Idle);
     }
 
     /// Node shutdown (app exit): stop allocating and release every route.
@@ -241,7 +254,9 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         self.want_all();
     }
 
-    /// Want both classes: the general route and the media route.
+    /// Want the classes every node holds from node-ready: the general route
+    /// and the media route (`Sending` is wanted by the session that sends
+    /// over it, [`want`](Self::want)).
     pub fn want_all(self: &Arc<Self>) {
         self.want(RouteClass::General);
         self.want(RouteClass::Media);

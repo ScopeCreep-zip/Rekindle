@@ -84,6 +84,9 @@ pub(crate) async fn run(
     // 2. The session's one record pool, with what the last lock left unsent.
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {
+        // The route our 1:1 calls are pinned to, from unlock to lock (plan
+        // E4.3 RH2, built at RH1r); the teardown's `release_routes` ends it.
+        transport.want_sending_route();
         match transport.start_records() {
             Ok(pool) => {
                 // The channel posts' settle and Retry (plan E3.1 E2b).

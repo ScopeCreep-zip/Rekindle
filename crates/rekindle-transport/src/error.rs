@@ -31,6 +31,10 @@ pub enum TransportError {
     NetworkNotReady,
 
     // ── Routing ──────────────────────────────────────────────────────
+    /// Our own route a send is pinned to is not live (plan E4.3 RH2): the
+    /// send waits for it; no pool route stands in.
+    #[error("our {class} route is not available")]
+    OwnRouteUnavailable { class: String },
     /// No route available for the target peer.
     #[error("no route for peer {peer}")]
     NoRoute { peer: String },

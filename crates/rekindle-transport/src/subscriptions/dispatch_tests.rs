@@ -104,6 +104,26 @@ impl AppMessagePort for Replies {
         Ok(Vec::new())
     }
 
+    async fn send_pinned(
+        &self,
+        _target: &PeerTarget,
+        _profile: &rekindle_types::config::SafetyProfile,
+        _class: rekindle_records::port::RouteClass,
+        _message: Vec<u8>,
+    ) -> Result<(), PortError> {
+        Ok(())
+    }
+
+    async fn call_pinned(
+        &self,
+        _target: &PeerTarget,
+        _profile: &rekindle_types::config::SafetyProfile,
+        _class: rekindle_records::port::RouteClass,
+        _message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError> {
+        Ok(Vec::new())
+    }
+
     async fn reply(&self, _call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
         self.0.lock().push(message);
         Ok(())

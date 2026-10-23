@@ -173,3 +173,39 @@ async fn wanting_twice_allocates_once() {
     );
     assert!(fake.released.lock().is_empty());
 }
+
+#[tokio::test]
+async fn sending_is_wanted_alone_and_released_alone() {
+    let fake = Arc::new(Fake::new(vec![
+        Ok((1, b"g".to_vec())),
+        Ok((2, b"m".to_vec())),
+        Ok((3, b"s".to_vec())),
+    ]));
+    let (routes, _ready) = owner(&fake, true);
+    routes.want_all();
+    settle().await;
+    assert_eq!(
+        routes.id(RouteClass::Sending),
+        None,
+        "node-ready wants General and Media only"
+    );
+    routes.want(RouteClass::Sending);
+    settle().await;
+    assert_eq!(routes.id(RouteClass::Sending), Some(3));
+    routes.on_dead(&[3]);
+    settle().await;
+    assert!(
+        fake.released.lock().is_empty(),
+        "a dead route is forgotten, not released"
+    );
+    routes.release(RouteClass::Sending);
+    assert_eq!(
+        *routes.state(RouteClass::Sending).borrow(),
+        RouteState::Idle
+    );
+    assert_eq!(
+        routes.id(RouteClass::General),
+        Some(1),
+        "the other classes stay"
+    );
+}

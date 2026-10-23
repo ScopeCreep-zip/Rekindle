@@ -25,10 +25,32 @@
 use async_trait::async_trait;
 use rekindle_records::port::RouteClass;
 use rekindle_route::own_routes::{AllocError, RouteAllocator};
+use rekindle_types::config::ANONYMITY_HOP_FLOOR;
+
+/// The spec of our `Sending` route (plan E4.3 RH2, built at RH1r): 3 hops
+/// ([`ANONYMITY_HOP_FLOOR`], the depth RH1a gives every inbound route),
+/// LowLatency, PreferUnordered. `new_custom_private_route` allocates it
+/// `DirectionSet::all()` and marks it published (`api.rs:437-467`), so it
+/// serves as a safety route and Veilid retests it
+/// (`private_route_management.rs:105-107`); its blob is never handed to a
+/// peer. A call pinned to it (`SafetySpec.preferred_route`) takes it first
+/// (`route_select.rs:124-152`), and its answer comes back over it
+/// (`rpc_processor/destination.rs:477-497`).
+#[must_use]
+pub fn sending_private_spec() -> veilid_core::PrivateSpec {
+    veilid_core::PrivateSpec {
+        // Empty = all available crypto kinds, as the default does.
+        crypto_kinds: Vec::new(),
+        hop_count: usize::from(ANONYMITY_HOP_FLOOR),
+        stability: veilid_core::Stability::LowLatency,
+        sequencing: veilid_core::Sequencing::PreferUnordered,
+    }
+}
 
 /// The Veilid allocator: `new_private_route` for General, a LowLatency /
 /// PreferUnordered custom route for Media (same hop count, so anonymity is
-/// unchanged; only relay selection differs).
+/// unchanged; only relay selection differs), and [`sending_private_spec`]
+/// for Sending.
 pub struct VeilidRouteAllocator {
     api: veilid_core::VeilidAPI,
 }
@@ -57,6 +79,11 @@ impl RouteAllocator for VeilidRouteAllocator {
                         stability: veilid_core::Stability::LowLatency,
                         sequencing: veilid_core::Sequencing::PreferUnordered,
                     })
+                    .await
+            }
+            RouteClass::Sending => {
+                self.api
+                    .new_custom_private_route(sending_private_spec())
                     .await
             }
         };

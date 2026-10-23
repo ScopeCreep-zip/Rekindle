@@ -84,7 +84,10 @@ pub async fn initialize_node(
             Arc::clone(&route_imports),
             Arc::clone(&own_routes),
         )),
-        messages: Arc::new(rekindle_protocol::ports::VeilidMessages::new(api.clone())),
+        messages: Arc::new(rekindle_protocol::ports::VeilidMessages::new(
+            api.clone(),
+            Arc::clone(&own_routes),
+        )),
         lifecycle: None,
     };
     *state.own_routes.write() = Some(own_routes);
