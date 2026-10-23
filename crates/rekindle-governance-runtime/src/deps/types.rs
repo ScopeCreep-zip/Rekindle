@@ -78,17 +78,6 @@ pub struct DhtRecordInfo {
     pub lease: rekindle_records::lease::LeaseId,
 }
 
-/// One row from the `messages` table used to build a bootstrap bundle.
-#[derive(Debug, Clone)]
-pub struct RecentMessageRow {
-    pub message_id: String,
-    pub sender_pseudonym: String,
-    pub body: String,
-    pub timestamp: i64,
-    /// Original generation the message was stored under (architecture §5.2).
-    pub mek_generation: u64,
-}
-
 /// Snapshot of the per-community DHT-records info the
 /// per-community open (`open_and_track_one_community`) needs. The adapter
 /// builds this from a single `state.communities.read()` so the lock

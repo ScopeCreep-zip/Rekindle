@@ -34,7 +34,6 @@ pub mod invite;
 pub mod key_format;
 pub mod lamport;
 pub mod link_preview;
-pub mod mek;
 pub mod member;
 pub mod message;
 pub mod notification;

@@ -10,7 +10,7 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
+    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
 use rekindle_governance_runtime::op_log::{HeldOp, OpFate};
@@ -193,16 +193,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
     }
 
     // ---------- Bootstrap ----------
-
-    async fn recent_channel_messages(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        limit: i64,
-    ) -> Vec<RecentMessageRow> {
-        self.recent_channel_messages_impl(community_id, channel_id, limit)
-            .await
-    }
 
     // ---------- Gossip ----------
 

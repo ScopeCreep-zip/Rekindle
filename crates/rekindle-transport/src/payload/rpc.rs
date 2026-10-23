@@ -73,23 +73,6 @@ pub struct CommunityLeaveNotification {
 
 // ── Legacy types (sync/bootstrap) ───────────────────────────────────────
 
-/// Bootstrap request.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BootstrapRequest {
-    pub joiner_pseudonym: String,
-    pub governance_key: String,
-}
-
-/// Bootstrap response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BootstrapResponse {
-    pub governance_entries: Vec<Vec<u8>>,
-    pub member_list: Vec<Vec<u8>>,
-    pub channel_meks: Vec<Vec<u8>>,
-    pub recent_messages: Vec<Vec<u8>>,
-    pub wrapped_owner_keypair: Vec<u8>,
-}
-
 /// Sync request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncRequest {
@@ -144,6 +127,16 @@ pub enum InboundCall {
         attachment_id: [u8; 16],
         /// The chunk indices asked for.
         requested_chunks: Vec<u32>,
+    },
+    /// A joiner's bootstrap request (plan E3.2), bare like the MEK
+    /// transfer; its authority is the joiner's signed `MemberJoined`,
+    /// which the handler fetches and verifies by `member_joined`. The
+    /// handler answers `CallResponse::Ok` with the encoded
+    /// `bootstrapResponseV2` envelope; anything else is a NAK.
+    BootstrapRequest {
+        joiner_pseudonym: String,
+        anchor: String,
+        member_joined: rekindle_types::governance::OpRef,
     },
 }
 

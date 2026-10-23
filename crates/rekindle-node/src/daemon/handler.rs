@@ -391,6 +391,32 @@ impl InboundHandler for DaemonHandler {
                 )
             }
             InboundCall::Sync(_) => CallResponse::Ack,
+            InboundCall::BootstrapRequest {
+                joiner_pseudonym,
+                anchor,
+                member_joined,
+            } => {
+                let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+                    return CallResponse::Rejected {
+                        reason: "no host".into(),
+                    };
+                };
+                let joiner = rekindle_governance_runtime::BootstrapJoiner {
+                    pseudonym: joiner_pseudonym,
+                    member_joined,
+                };
+                let host = crate::host::adapters::governance::HostGovernance::new(ctx);
+                match rekindle_governance_runtime::build_bootstrap_response_v2(
+                    &host, &anchor, &joiner,
+                )
+                .await
+                {
+                    Ok(bytes) => CallResponse::Ok(bytes),
+                    Err(e) => CallResponse::Rejected {
+                        reason: e.to_string(),
+                    },
+                }
+            }
             InboundCall::RequestAttachment {
                 attachment_id,
                 requested_chunks,

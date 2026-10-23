@@ -54,10 +54,8 @@ capnp_module!(media_feedback_capnp);
 capnp_module!(account_capnp);
 
 // Typed community-envelope schemas.
-capnp_module!(community_member_capnp);
 capnp_module!(community_thread_capnp);
 capnp_module!(community_game_server_capnp);
-capnp_module!(community_mek_capnp);
 capnp_module!(community_message_capnp);
 capnp_module!(community_event_capnp);
 capnp_module!(community_governance_capnp);

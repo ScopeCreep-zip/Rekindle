@@ -71,6 +71,9 @@ impl HostGovernance {
         self.store_own_member_row(&id, &pseudonym, joined_at)
             .await?;
         self.announce_join(&id);
+        // Our `MemberJoined` is durable on `M`: tell the inviter (it
+        // verifies and merges it), then continue the walk from its frontier.
+        self.bootstrap_from_inviter(&id, &outcome).await;
         // The invite carries no community key (D11): ask for it.
         self.recover_behind_meks();
         self.audit_joined(&id, &outcome.invite.community_name);
@@ -101,6 +104,47 @@ impl HostGovernance {
                 .map_err(|e| format!("community joined, op not stored: {e}"))?;
         }
         Ok(())
+    }
+
+    /// The bootstrap exchange (plan E3.2). The join already stands from
+    /// the DHT; an inviter that is not online leaves it as it is.
+    async fn bootstrap_from_inviter(
+        &self,
+        community: &str,
+        outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
+    ) {
+        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        let joined = &outcome.joined;
+        let joiner = rekindle_governance_runtime::BootstrapJoiner {
+            pseudonym: outcome.identity.pseudo_hex.clone(),
+            member_joined: rekindle_types::governance::OpRef {
+                op_hash: joined.hash,
+                author: joined.author.clone(),
+                author_record: joined.author_record.clone(),
+                author_seq: joined.seq,
+            },
+        };
+        let walked = match rekindle_governance_runtime::request_bootstrap(
+            self,
+            &outcome.invite.inviter_route_blob,
+            community,
+            &joiner,
+        )
+        .await
+        {
+            Ok(walked) => walked,
+            Err(e) => {
+                tracing::info!(community, error = %e, "bootstrap exchange not completed");
+                return;
+            }
+        };
+        for op in &walked {
+            if let Err(e) = self.store_governance_op(community, op).await {
+                tracing::warn!(community, error = %e, "bootstrap op not stored");
+                return;
+            }
+        }
+        rekindle_governance_runtime::rebuild_governance(self, community).await;
     }
 
     async fn store_own_member_row(

@@ -12,12 +12,14 @@ use crate::id::{PseudonymKey, RoleId};
 use super::{AdmissionMode, GovernanceEntry};
 
 /// BLAKE3 hash of an op's signed bytes (`domains::GOV_OP_HASH`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct OpHash(pub [u8; 32]);
 
 /// A locator for an op: enough to fetch it from its author's member
 /// record (`authorRecord`, at `authorSeq`) and to check what came back.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct OpRef {
     pub op_hash: OpHash,
     pub author: PseudonymKey,

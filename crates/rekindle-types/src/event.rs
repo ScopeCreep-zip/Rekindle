@@ -170,8 +170,7 @@ pub const MAX_EVENT_NAME_CHARS: usize = 100;
 pub const MAX_EVENT_DESCRIPTION_CHARS: usize = 1000;
 
 /// One RSVP entry attached to an `EventInfo`. String fields preserve
-/// the existing on-the-wire shape used by `EventRsvpChanged` and the
-/// `BootstrapResponse` event broadcasts.
+/// the existing on-the-wire shape used by `EventRsvpChanged`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EventRsvp {

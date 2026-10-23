@@ -226,7 +226,7 @@ pub fn control_into_event_rest(
             community: c(),
             joiner_pseudonym,
         }),
-        ControlPayload::BootstrapResponse { .. } => {
+        ControlPayload::BootstrapResponseV2 { .. } => {
             SubscriptionEvent::System(SystemEvent::BootstrapReceived { community: c() })
         }
 

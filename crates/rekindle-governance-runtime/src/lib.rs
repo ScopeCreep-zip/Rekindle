@@ -17,7 +17,7 @@
 //! Modules land in subsequent Phase 18 tasks (#152-#156):
 //! - `apply` (task #152) — write_entry pipeline
 //! - `origin` (task #153) — community creation
-//! - `bootstrap` (task #154) — build bootstrap response
+//! - `bootstrap` — the join's bootstrap exchange (`bootstrapResponseV2`)
 //! - `segments` (task #155) — Plate Gate
 //! - `join` + `join_stages` (task #156) — joiner flow
 
@@ -51,10 +51,10 @@ pub mod roster;
 pub mod segments;
 
 pub use apply::write_entry;
-pub use bootstrap::build_bootstrap_response;
+pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};
 pub use deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
+    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, UserStatusKind,
 };
 pub use dht_hydration::{
     hydrate_one_community, open_and_track_one_community, rebuild_governance,

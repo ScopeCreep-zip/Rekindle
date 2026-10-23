@@ -1,390 +1,202 @@
-//! Phase 18.e — bootstrap pipeline.
+//! The bootstrap exchange of the self-sovereign join (plan E3.2, ADR 0011).
 //!
-//! Ported from `src-tauri/src/services/community/bootstrap.rs`.
-//! Builds the `ControlPayload::BootstrapResponse` envelope that a joiner
-//! receives during community join: snapshot governance entries + online
-//! member list + wrapped owner keypair + wrapped per-channel MEKs +
-//! re-encrypted recent messages.
-//!
-//! No DHT writes, no mesh broadcast — purely a read-side assembly task.
-
-use std::collections::HashMap;
+//! The join works from the DHT with nobody online; when the inviter is
+//! online, this exchange is how it learns of the joiner. The joiner sends
+//! `BootstrapRequest{joinerPseudonym, anchor, memberJoined}` as a bare
+//! `app_call` to `InviteSecrets.inviter_route_blob` once its `MemberJoined`
+//! is durable on its member record. The request carries no authority of
+//! its own: the inviter fetches that op by its `OpRef`, verifies it,
+//! stores and merges it, and only a joiner who is then a member of the
+//! merged state is answered, with `bootstrapResponseV2{anchor,
+//! checkpointRef, frontier, directoryPages}`: where the joiner's walk of
+//! the op DAG continues. It ships no keys (D11; the joiner asks for the
+//! community key by `RequestMEK`) and no messages.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_governance::state::GovernanceState;
-use rekindle_secrets::derive;
-use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_secrets::keys::MediaEncryptionKey;
-use rekindle_secrets::mek::wrap_mek;
-use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::mek::ChannelMekDelivery;
-use rekindle_types::member::MemberInfo;
-use rekindle_types::message::{BootstrapChannelMessages, BootstrapMessage};
+use rekindle_types::governance::OpRef;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
+use crate::op_log::{self, HeldOp};
 
-const RECENT_MESSAGES_PER_CHANNEL: i64 = 50;
+/// The `app_call` reply cap a response stays under (Veilid's
+/// `MAX_APP_CALL_Q_MESSAGE_LEN`).
+pub const MAX_BOOTSTRAP_RESPONSE_LEN: usize = 32_768;
 
-/// Architecture §13.4 — synthesize a typed `GovernanceEntry` snapshot
-/// from the merged `GovernanceState` for a bootstrap response. The
-/// joiner re-merges these entries; CRDT idempotence (Almeida 2016 §3)
-/// makes a snapshot indistinguishable from the live DHT reads they'll
-/// also perform.
-fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEntry> {
-    let mut entries: Vec<GovernanceEntry> = Vec::new();
-
-    if let Some(metadata) = &governance.metadata {
-        entries.push(GovernanceEntry::CommunityMeta {
-            name: Some(metadata.name.clone()),
-            description: metadata.description.clone(),
-            icon_hash: metadata.icon_hash.clone(),
-            banner_hash: metadata.banner_hash.clone(),
-        });
-    }
-
-    for (channel_id, channel) in &governance.channels {
-        entries.push(GovernanceEntry::ChannelCreated {
-            channel_id: *channel_id,
-            name: channel.name.clone(),
-            channel_type: channel.channel_type.clone(),
-            record_key: channel.record_key.clone(),
-            category_id: channel.category_id,
-            position: channel.position,
-            parent_voice_channel_id: channel.parent_voice_channel_id,
-        });
-    }
-
-    for (role_id, role) in &governance.roles {
-        entries.push(GovernanceEntry::RoleDefinition {
-            role_id: *role_id,
-            name: role.name.clone(),
-            permissions: role.permissions,
-            position: role.position,
-            color: role.color,
-            hoist: role.hoist,
-            mentionable: role.mentionable,
-            self_assignable: role.self_assignable,
-            exclusion_group: role.exclusion_group.clone(),
-        });
-    }
-
-    for (member, role_ids) in &governance.role_assignments {
-        for role_id in role_ids {
-            entries.push(GovernanceEntry::RoleAssignment {
-                target: member.clone(),
-                role_id: *role_id,
-            });
-        }
-    }
-
-    for banned in &governance.bans {
-        entries.push(GovernanceEntry::BanEntry {
-            target: banned.clone(),
-            reason: None,
-        });
-    }
-
-    for (member, timeout) in &governance.timeouts {
-        entries.push(GovernanceEntry::TimeoutEntry {
-            target: member.clone(),
-            duration_seconds: timeout.duration_seconds,
-            reason: None,
-            started_at: timeout.started_at,
-        });
-    }
-
-    for (category_id, category) in &governance.categories {
-        entries.push(GovernanceEntry::CategoryCreated {
-            category_id: *category_id,
-            name: category.name.clone(),
-            position: category.position,
-        });
-    }
-
-    if let Some(onboarding) = &governance.onboarding {
-        entries.push(GovernanceEntry::OnboardingConfig {
-            enabled: onboarding.enabled,
-            mode: onboarding.mode.clone(),
-            default_channels: onboarding.default_channels.clone(),
-            questions: onboarding.questions.clone(),
-            welcome_message: onboarding.welcome_message.clone(),
-            guide_steps: onboarding.guide_steps.clone(),
-        });
-    }
-
-    if let Some(welcome_screen) = &governance.welcome_screen {
-        entries.push(GovernanceEntry::WelcomeScreen {
-            description: welcome_screen.description.clone(),
-            channels: welcome_screen.channels.clone(),
-        });
-    }
-
-    for (invite_id, invite) in &governance.invites {
-        entries.push(GovernanceEntry::InviteCreated {
-            invite_id: *invite_id,
-            code_hash: invite.code_hash.clone(),
-            max_uses: invite.max_uses,
-            expires_at: invite.expires_at,
-            secrets_record_key: invite.secrets_record_key.clone(),
-        });
-    }
-
-    entries
+/// Who asks: the joiner's pseudonym and its op #0, `MemberJoined`.
+#[derive(Debug, Clone)]
+pub struct BootstrapJoiner {
+    /// Hex of the joiner's community pseudonym.
+    pub pseudonym: String,
+    pub member_joined: OpRef,
 }
 
-fn wrap_key_material(
-    sender_signing_key: &SigningKey,
-    joiner_pseudonym: &[u8; 32],
-    key_material: &[u8],
-) -> Result<Vec<u8>, GovernanceRuntimeError> {
-    wrap_mek(sender_signing_key, joiner_pseudonym, key_material)
-        .map_err(|e| GovernanceRuntimeError::Crypto(format!("wrap bootstrap key material: {e}")))
+fn adapter(msg: impl Into<String>) -> GovernanceRuntimeError {
+    GovernanceRuntimeError::Adapter(msg.into())
 }
 
-/// Build the encoded bytes of `ControlPayload::BootstrapResponse` for a
-/// joiner. Returns the Cap'n Proto-encoded envelope ready for transport.
-pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
+/// Answer a joiner's `BootstrapRequest`: fetch its `MemberJoined` from its
+/// member record, verify, store and merge it, then encode
+/// `bootstrapResponseV2` with our frontier.
+///
+/// # Errors
+/// We are not in the community, the op is not the joiner's op #0 or is not
+/// on its record, the merged state does not hold the joiner as a member,
+/// or the store or the encode failed. The caller NAKs.
+pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     deps: &D,
-    community_id: &str,
-    governance_key: &str,
-    joiner_pseudonym_hex: &str,
+    anchor: &str,
+    joiner: &BootstrapJoiner,
 ) -> Result<Vec<u8>, GovernanceRuntimeError> {
-    let joiner_pseudonym: [u8; 32] = hex::decode(joiner_pseudonym_hex)
-        .map_err(|e| GovernanceRuntimeError::InvalidPseudonymHex(e.to_string()))?
-        .try_into()
-        .map_err(|_| {
-            GovernanceRuntimeError::InvalidPseudonymHex("joiner pseudonym must be 32 bytes".into())
-        })?;
-
-    let identity_secret = deps
-        .identity_secret()
-        .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
-    let bootstrap_signing_key =
-        derive::derive_community_pseudonym(&identity_secret, governance_key);
-
-    let gov_state = deps
-        .governance_state(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string()))?;
-    let membership = deps
-        .community_membership(community_id)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
-
-    let governance_entries = snapshot_governance_entries(&gov_state);
-
-    let online = deps.online_members(community_id);
-    let member_list: Vec<MemberInfo> = online
-        .into_iter()
-        .map(|m| MemberInfo {
-            pseudonym_key: m.pseudonym_hex,
-            display_name: String::new(),
-            role_ids: Vec::new(),
-            status: m.status,
-            route_blob: Some(m.route_blob),
-            bio: None,
-            pronouns: None,
-            theme_color: None,
-            badges: Vec::new(),
-            last_seen: m.last_seen,
-        })
-        .collect();
-
-    let wrapped_owner_keypair = match membership.dht_owner_keypair.as_ref() {
-        Some(keypair_str) => wrap_key_material(
-            &bootstrap_signing_key,
-            &joiner_pseudonym,
-            keypair_str.as_bytes(),
-        )?,
-        None => Vec::new(),
+    deps.community_membership(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(anchor.to_owned()))?;
+    let author = &joiner.member_joined.author;
+    if hex::encode(author.0) != joiner.pseudonym || joiner.member_joined.author_seq != 0 {
+        return Err(adapter("bootstrap: the OpRef is not the joiner's op #0"));
+    }
+    let op = op_log::fetch_held(deps, &joiner.member_joined)
+        .await?
+        .ok_or_else(|| adapter("bootstrap: the joiner's MemberJoined is not on its record"))?;
+    if op.seq != 0 || op.author != *author {
+        return Err(adapter(
+            "bootstrap: the fetched op is not the joiner's op #0",
+        ));
+    }
+    op_log::receive_op(deps, anchor, op.encoded).await?;
+    let state = deps
+        .governance_state(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
+    if !state.members.contains_key(author) || state.bans.contains(author) {
+        return Err(adapter(
+            "bootstrap: the joiner is not a member of the merged state",
+        ));
+    }
+    let cert = deps
+        .genesis_cert(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
+    let set = op_log::verify_held(anchor, &deps.governance_ops(anchor).await?);
+    let payload = ControlPayload::BootstrapResponseV2 {
+        anchor: anchor.to_owned(),
+        checkpoint_ref: None,
+        frontier: op_log::frontier_refs(&cert, &state, &set),
+        directory_pages: Vec::new(),
     };
-
-    // The community key — the text plane's scope (plan D6). A voice
-    // channel's own key reaches the joiner when it joins that channel
-    // (architecture §10.5); nothing here substitutes one scope's key for
-    // another's.
-    let channel_meks: Vec<ChannelMekDelivery> = match rekindle_types::channel_keys::current_key(
-        &*deps.keys(),
-        community_id,
-        rekindle_types::channel_keys::KeyScope::Community,
-    ) {
-        Some((epoch, key)) => vec![ChannelMekDelivery {
-            channel_id: None,
-            generation: epoch.0,
-            wrapped_mek: wrap_key_material(
-                &bootstrap_signing_key,
-                &joiner_pseudonym,
-                &MediaEncryptionKey::from_bytes(*key, epoch.0).to_wire_bytes(),
-            )?,
-        }],
-        None => Vec::new(),
-    };
-
-    // Architecture §14.4 — recent messages snapshot per channel, each
-    // message re-encrypted under the historical MEK generation it was
-    // stored with.
-    let recent_messages = build_recent_messages(deps, community_id, &membership.channel_ids).await;
-
-    let payload = ControlPayload::BootstrapResponse {
-        governance_entries,
-        member_list,
-        channel_meks,
-        recent_messages,
-        wrapped_owner_keypair,
-    };
-    let envelope = CommunityEnvelope::Control(payload);
-    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&envelope)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap response: {e}")))?;
-
+    let bytes = encode_response(payload)?;
     deps.emit_event(GovernanceRuntimeEvent::BootstrapResponseBuilt {
-        community_id: community_id.to_string(),
-        joiner_pseudonym_hex: joiner_pseudonym_hex.to_string(),
+        community_id: anchor.to_owned(),
+        joiner_pseudonym_hex: joiner.pseudonym.clone(),
         bytes: bytes.len(),
     });
-
     Ok(bytes)
 }
 
-async fn build_recent_messages<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    community_id: &str,
-    channel_ids: &[String],
-) -> Vec<BootstrapChannelMessages> {
-    let mut out: Vec<BootstrapChannelMessages> = Vec::new();
-    for channel_id in channel_ids {
-        let rows = deps
-            .recent_channel_messages(community_id, channel_id, RECENT_MESSAGES_PER_CHANNEL)
-            .await;
-        if rows.is_empty() {
-            continue;
-        }
-        if let Some(group) = build_channel_envelope(deps, community_id, channel_id, &rows) {
-            out.push(group);
-        }
+fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(
+        &CommunityEnvelope::Control(payload),
+    )
+    .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap response: {e}")))?;
+    if bytes.len() > MAX_BOOTSTRAP_RESPONSE_LEN {
+        return Err(GovernanceRuntimeError::Encoding(format!(
+            "bootstrap response is {} B, over the {MAX_BOOTSTRAP_RESPONSE_LEN} B app_call cap",
+            bytes.len()
+        )));
     }
-    out
+    Ok(bytes)
 }
 
-/// Re-encrypt each row under exactly the generation of the channel's text
-/// key it was originally stored with (architecture §5.2 line 1100), current
-/// or historical. A row whose generation is not held is left out. The
-/// per-call HashMap caches each generation for the rest of the build.
-fn build_channel_envelope<D: GovernanceRuntimeDeps>(
+/// Ask the inviter at `inviter_route` for its frontier once our
+/// `MemberJoined` is durable, and walk the op DAG from it: the ops the
+/// walk found (the caller stores the new ones and rebuilds).
+///
+/// # Errors
+/// The `app_call` failed or was refused, the reply is not a
+/// `bootstrapResponseV2` for `anchor`, or the walk failed.
+pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
     deps: &D,
-    community_id: &str,
-    channel_id: &str,
-    rows: &[crate::deps::RecentMessageRow],
-) -> Option<BootstrapChannelMessages> {
-    let provider = deps.keys();
-    let scope = provider.scope_for_text(
-        community_id,
-        rekindle_types::id::ChannelId::from_hex(channel_id)?,
-    );
-    let mut mek_by_gen: HashMap<u64, MediaEncryptionKey> = HashMap::new();
-    let mut entries: Vec<BootstrapMessage> = Vec::with_capacity(rows.len());
-
-    // Iterate oldest→newest so the joiner sees lamport-monotonic order
-    // despite the underlying query returning DESC.
-    for row in rows.iter().rev() {
-        let mek = match mek_by_gen.entry(row.mek_generation) {
-            std::collections::hash_map::Entry::Occupied(o) => o.into_mut(),
-            std::collections::hash_map::Entry::Vacant(v) => {
-                let Some(key) = provider.key(
-                    community_id,
-                    scope,
-                    rekindle_types::channel_keys::KeyEpoch(row.mek_generation),
-                ) else {
-                    continue;
-                };
-                v.insert(MediaEncryptionKey::from_bytes(*key, row.mek_generation))
-            }
-        };
-        let Ok(ciphertext) = mek.encrypt(row.body.as_bytes()) else {
-            continue;
-        };
-        entries.push(BootstrapMessage {
-            message_id: row.message_id.clone(),
-            sender_pseudonym: row.sender_pseudonym.clone(),
-            ciphertext,
-            mek_generation: row.mek_generation,
-            timestamp: row.timestamp,
-        });
-    }
-
-    if entries.is_empty() {
-        return None;
-    }
-    Some(BootstrapChannelMessages {
-        channel_id: channel_id.to_string(),
-        messages: entries,
-    })
+    inviter_route: &[u8],
+    anchor: &str,
+    joiner: &BootstrapJoiner,
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+    let request = CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+        joiner_pseudonym: joiner.pseudonym.clone(),
+        anchor: anchor.to_owned(),
+        member_joined: joiner.member_joined.clone(),
+    });
+    let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&request)
+        .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap request: {e}")))?;
+    let reply = deps.app_call_peer(inviter_route, bytes).await?;
+    let frontier = match rekindle_codec::capnp_envelope::try_decode_community_envelope(&reply) {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapResponseV2 {
+            anchor: answered,
+            frontier,
+            ..
+        }))) if answered == anchor => frontier,
+        _ => return Err(adapter("bootstrap: the inviter refused the request")),
+    };
+    op_log::walk(deps, anchor, &frontier).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rekindle_governance::state::GovernanceState;
-    use rekindle_types::id::ChannelId;
+    use rekindle_types::dht_layout::member_record::MAX_FRONTIER_REFS;
+    use rekindle_types::governance::OpHash;
+    use rekindle_types::id::PseudonymKey;
 
-    #[test]
-    fn snapshot_empty_governance_state_produces_empty_entries() {
-        let gov = GovernanceState::default();
-        assert!(snapshot_governance_entries(&gov).is_empty());
+    /// A Veilid record key at its longest text form.
+    fn record_key(i: u8) -> String {
+        format!(
+            "VLD0:{}:{}",
+            "A".repeat(43),
+            char::from(b'a' + i % 26).to_string().repeat(43)
+        )
     }
 
-    #[test]
-    fn snapshot_includes_community_meta() {
-        let gov = GovernanceState {
-            metadata: Some(rekindle_governance::state::MetadataState {
-                name: "Test".into(),
-                description: Some("desc".into()),
-                icon_hash: None,
-                banner_hash: None,
-                stamp: rekindle_governance::op::OpStamp::MIN,
-            }),
-            ..Default::default()
-        };
-        let entries = snapshot_governance_entries(&gov);
-        assert_eq!(entries.len(), 1);
-        assert!(matches!(entries[0], GovernanceEntry::CommunityMeta { .. }));
-    }
-
-    #[test]
-    fn snapshot_channels_become_channel_created_entries() {
-        let channel_id = ChannelId([1u8; 16]);
-        let mut channels = std::collections::HashMap::new();
-        channels.insert(
-            channel_id,
-            rekindle_governance::state::ChannelState {
-                name: "general".into(),
-                channel_type: "text".into(),
-                record_key: "rk".into(),
-                category_id: None,
-                position: 0,
-                topic: None,
-                forum_tags: None,
-                slowmode_seconds: None,
-                nsfw: None,
-                parent_voice_channel_id: None,
-                created: rekindle_governance::op::OpStamp::MIN,
-            },
-        );
-        let gov = GovernanceState {
-            channels,
-            ..Default::default()
-        };
-        let entries = snapshot_governance_entries(&gov);
-        assert_eq!(entries.len(), 1);
-        match &entries[0] {
-            GovernanceEntry::ChannelCreated {
-                channel_id: cid,
-                name,
-                ..
-            } => {
-                assert_eq!(cid, &channel_id);
-                assert_eq!(name, "general");
-            }
-            other => panic!("expected ChannelCreated, got {other:?}"),
+    fn op_ref(i: u8) -> OpRef {
+        OpRef {
+            op_hash: OpHash([i; 32]),
+            author: PseudonymKey([i.wrapping_add(1); 32]),
+            author_record: record_key(i),
+            author_seq: u64::MAX,
         }
+    }
+
+    #[test]
+    fn the_largest_response_fits_the_app_call_cap() {
+        let max_frontier = u8::try_from(MAX_FRONTIER_REFS).unwrap();
+        let max_pages = u8::try_from(rekindle_codec::capnp_envelope::MAX_DIRECTORY_PAGES).unwrap();
+        let payload = ControlPayload::BootstrapResponseV2 {
+            anchor: record_key(200),
+            checkpoint_ref: Some(op_ref(255)),
+            frontier: (0..max_frontier).map(op_ref).collect(),
+            directory_pages: (0..max_pages).map(record_key).collect(),
+        };
+        let bytes = encode_response(payload.clone()).expect("fits");
+        assert!(
+            bytes.len() < MAX_BOOTSTRAP_RESPONSE_LEN,
+            "{} B",
+            bytes.len()
+        );
+        let back = rekindle_codec::capnp_envelope::try_decode_community_envelope(&bytes)
+            .unwrap()
+            .unwrap();
+        let CommunityEnvelope::Control(ControlPayload::BootstrapResponseV2 { frontier, .. }) = back
+        else {
+            panic!("not a bootstrapResponseV2");
+        };
+        assert_eq!(frontier.len(), MAX_FRONTIER_REFS);
+    }
+
+    #[test]
+    fn a_frontier_over_the_bound_is_refused() {
+        let over = u8::try_from(MAX_FRONTIER_REFS + 1).unwrap();
+        let payload = ControlPayload::BootstrapResponseV2 {
+            anchor: record_key(0),
+            checkpoint_ref: None,
+            frontier: (0..over).map(op_ref).collect(),
+            directory_pages: Vec::new(),
+        };
+        assert!(encode_response(payload).is_err());
     }
 }

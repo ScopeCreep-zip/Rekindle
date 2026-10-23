@@ -110,10 +110,8 @@ fn main() {
                 .file("../../schemas/account.capnp")
                 // Phase 2 of `.claude/plans/community-envelope-capnp-migration.md`:
                 // typed community envelope + governance + per-variant schemas.
-                .file("../../schemas/community_member.capnp")
                 .file("../../schemas/community_thread.capnp")
                 .file("../../schemas/community_game_server.capnp")
-                .file("../../schemas/community_mek.capnp")
                 .file("../../schemas/community_message.capnp")
                 .file("../../schemas/community_event.capnp")
                 .file("../../schemas/community_governance.capnp")

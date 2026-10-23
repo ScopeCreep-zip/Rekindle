@@ -113,7 +113,7 @@ impl CommunityEnvelope {
                 | ControlPayload::KickedNotification
                 // Answers to one peer's question.
                 | ControlPayload::SyncResponse { .. }
-                | ControlPayload::BootstrapResponse { .. }
+                | ControlPayload::BootstrapResponseV2 { .. }
                 // Media plane — §10.6. Directed to a call or channel
                 // roster; flooding it would multiply a video stream by
                 // the fan-out degree at every hop.

@@ -37,7 +37,7 @@ pub(super) fn len_u32(n: usize) -> u32 {
     u32::try_from(n).expect("Cap'n Proto list length must fit in u32")
 }
 
-pub use control::{decode_control_payload, encode_control_payload};
+pub use control::{decode_control_payload, encode_control_payload, MAX_DIRECTORY_PAGES};
 pub use governance::{decode_governance_entry, encode_governance_entry};
 pub(crate) use governance::{read_governance_entry, write_governance_entry};
 

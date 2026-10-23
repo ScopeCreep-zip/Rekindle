@@ -1,28 +1,18 @@
-//! Phase 18.h.2 — thin facade.
-//!
-//! The bootstrap-response assembly (governance snapshot + wrapped owner
-//! keypair + per-channel MEK wrap + recent message re-encrypt + capnp
-//! envelope encode) now lives in
-//! `rekindle_governance_runtime::bootstrap::build_bootstrap_response`.
-//! This module runs it over the Host's `HostGovernance` (plan E3.1 B2f).
+//! The inviter's side of the join's bootstrap exchange (plan E3.2):
+//! `rekindle_governance_runtime::build_bootstrap_response_v2` over the
+//! Host's `HostGovernance`, the same function the daemon runs.
 
 use std::sync::Arc;
 
 use crate::state::AppState;
 
-pub async fn build_bootstrap_response(
+pub async fn build_bootstrap_response_v2(
     state: &Arc<AppState>,
-    community_id: &str,
-    governance_key: &str,
-    joiner_pseudonym_hex: &str,
+    anchor: &str,
+    joiner: &rekindle_governance_runtime::BootstrapJoiner,
 ) -> Result<Vec<u8>, String> {
     let adapter = crate::state_helpers::host_governance(state)?;
-    rekindle_governance_runtime::build_bootstrap_response(
-        &adapter,
-        community_id,
-        governance_key,
-        joiner_pseudonym_hex,
-    )
-    .await
-    .map_err(|e| e.to_string())
+    rekindle_governance_runtime::build_bootstrap_response_v2(&adapter, anchor, joiner)
+        .await
+        .map_err(|e| e.to_string())
 }

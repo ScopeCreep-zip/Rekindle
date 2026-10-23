@@ -300,28 +300,30 @@ pub enum ControlPayload {
         subkey_index: u32,
         lamport_ts: u64,
     },
-    /// Request a BootstrapBundle from the inviter during community join.
-    /// Sent via app_call (request-response) to the inviter's route.
+    /// The joiner's bootstrap request (plan E3.2): a bare app_call to the
+    /// inviter's route. It carries no authority of its own: the inviter
+    /// fetches the joiner's signed `MemberJoined` by `member_joined` from
+    /// the joiner's member record and verifies it before answering.
     BootstrapRequest {
         /// Joiner's community pseudonym (hex-encoded Ed25519 public key).
         joiner_pseudonym: String,
-        /// Governance record key (proves invite validity).
-        governance_key: String,
+        /// The community anchor `A`'s record key.
+        anchor: String,
+        /// The joiner's op #0, `MemberJoined`.
+        member_joined: rekindle_types::governance::OpRef,
     },
-    /// Response with full community state for efficient bootstrapping.
-    /// Returned via app_call reply. Joiner independently verifies against DHT.
-    BootstrapResponse {
-        /// All governance entries from all occupied subkeys.
-        governance_entries: Vec<rekindle_types::governance::GovernanceEntry>,
-        /// Online members with presence data and route blobs.
-        member_list: Vec<rekindle_types::member::MemberInfo>,
-        /// Current MEK per channel, wrapped for the joiner's pseudonym.
-        channel_meks: Vec<rekindle_types::mek::ChannelMekDelivery>,
-        /// Last 50 messages per channel (MEK-encrypted ciphertext),
-        /// grouped by channel id (architecture §13.4 line 2068).
-        recent_messages: Vec<rekindle_types::message::BootstrapChannelMessages>,
-        /// Owner keypair wrapped for the joiner (shared infrastructure).
-        wrapped_owner_keypair: Vec<u8>,
+    /// The inviter's answer to a `BootstrapRequest` (plan E3.2): where the
+    /// joiner's walk of the op DAG continues, constant in N. No keys (D11)
+    /// and no messages.
+    BootstrapResponseV2 {
+        anchor: String,
+        /// The latest checkpoint op; `None` until a checkpoint exists.
+        checkpoint_ref: Option<rekindle_types::governance::OpRef>,
+        /// The inviter's frontier, at most `MAX_FRONTIER_REFS` heads.
+        frontier: Vec<rekindle_types::governance::OpRef>,
+        /// The checkpoint's directory page record keys, at most
+        /// `MAX_DIRECTORY_PAGES`.
+        directory_pages: Vec<String>,
     },
 
     // ── Sync protocol ──

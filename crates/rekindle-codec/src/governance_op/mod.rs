@@ -149,14 +149,14 @@ fn encode(op: &GovernanceOp, signed: bool) -> Vec<u8> {
     pack(&builder)
 }
 
-fn write_op_ref(mut b: op_ref::Builder<'_>, r: &OpRef) {
+pub(crate) fn write_op_ref(mut b: op_ref::Builder<'_>, r: &OpRef) {
     b.set_op_hash(&r.op_hash.0);
     b.set_author(&r.author.0);
     b.set_author_record(r.author_record.as_str());
     b.set_author_seq(r.author_seq);
 }
 
-fn read_op_ref(r: op_ref::Reader<'_>) -> Result<OpRef, CodecError> {
+pub(crate) fn read_op_ref(r: op_ref::Reader<'_>) -> Result<OpRef, CodecError> {
     Ok(OpRef {
         op_hash: OpHash(fixed(data_field(r.get_op_hash())?, "op ref hash")?),
         author: PseudonymKey(fixed(data_field(r.get_author())?, "op ref author")?),

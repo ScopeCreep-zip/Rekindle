@@ -1,6 +1,6 @@
 //! Architecture §4.3 — flat description of a community member used by
 //! gossip envelopes (`MemberJoined` broadcasts, `JoinAccepted` member
-//! list, `BootstrapResponse.member_list`). Mirrors the wire shape that
+//! list). Mirrors the wire shape that
 //! the gossip path serialized as untyped JSON before the v2.0 envelope
 //! migration; the typed form here is what `CommunityEnvelope` carries.
 
@@ -36,7 +36,6 @@ pub struct MemberInfo {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub badges: Vec<String>,
     /// Unix-seconds of the last presence heartbeat from this member.
-    /// Used by joiners to age out stale entries from `BootstrapResponse.member_list`.
     #[serde(default)]
     pub last_seen: u64,
 }

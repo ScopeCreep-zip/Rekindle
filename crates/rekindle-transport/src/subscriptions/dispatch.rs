@@ -176,6 +176,10 @@ async fn dispatch_app_call<H: InboundHandler>(
                 dispatch_bare_mek_transfer(handler, messages, call_id, transfer).await;
                 return;
             }
+            if let Some(request) = super::bare_envelope::decode_bare_bootstrap_request(raw) {
+                dispatch_bare_bootstrap_request(handler, messages, call_id, request).await;
+                return;
+            }
             if let Some((attachment_id, requested_chunks)) =
                 super::bare_envelope::decode_bare_attachment_request(raw)
             {
@@ -447,3 +451,28 @@ async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
 #[cfg(test)]
 #[path = "dispatch_tests.rs"]
 mod tests;
+
+/// Answer a joiner's bare `BootstrapRequest` (plan E3.2) with the
+/// handler's encoded `bootstrapResponseV2`; a refusal, or a handler past
+/// the deadline, is a NAK.
+async fn dispatch_bare_bootstrap_request<H: InboundHandler>(
+    handler: &Arc<H>,
+    messages: &dyn AppMessagePort,
+    call_id: AppCallId,
+    request: crate::payload::rpc::InboundCall,
+) {
+    let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
+        Ok(crate::payload::rpc::CallResponse::Ok(bytes)) => bytes,
+        Ok(other) => {
+            warn!(response = ?other, "bootstrap request refused");
+            NAK.to_vec()
+        }
+        Err(_) => {
+            warn!("bootstrap request exceeded the call deadline");
+            NAK.to_vec()
+        }
+    };
+    if let Err(e) = messages.reply(call_id, reply).await {
+        warn!(error = %e, "failed to send bootstrap reply");
+    }
+}

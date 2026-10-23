@@ -27,7 +27,7 @@ pub mod watch;
 pub(crate) mod writers;
 
 // Re-export public API (callers use services::community::function_name)
-pub use bootstrap::build_bootstrap_response;
+pub use bootstrap::build_bootstrap_response_v2;
 
 pub use expressions::{play_soundboard, upload_soundboard_sound};
 pub use gossip::{

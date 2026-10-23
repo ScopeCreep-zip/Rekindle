@@ -23,8 +23,15 @@
 //! ciphertext under the attachment's FEK, which only a member holding
 //! the channel key can unwrap.
 //!
-//! Those two arguments cover `MekTransfer` and `RequestAttachment` and
-//! nothing else. Every other
+//! The third is a joiner's `BootstrapRequest` (plan E3.2). Its fields
+//! claim nothing the handler believes: it names the joiner's op #0 by
+//! `OpRef`, and the handler fetches that op from the joiner's member
+//! record, checks its hash and signature, and merges it under the
+//! community's rules before it answers; the answer (a frontier of op
+//! locators) is what any member's `Frontier` subkey already publishes.
+//!
+//! Those three arguments cover `MekTransfer`, `RequestAttachment` and
+//! `BootstrapRequest` and nothing else. Every other
 //! control variant carries its authority in plaintext fields — a
 //! `MEKRotated` generation, a `GovernanceUpdated` subkey — and would be
 //! forgeable by anyone who can reach our route. Those must keep
@@ -145,5 +152,24 @@ mod tests {
                 "truncation at {cut} must not decode"
             );
         }
+    }
+}
+
+/// Recognise a bare `CommunityEnvelope` carrying a joiner's
+/// `BootstrapRequest`.
+pub(super) fn decode_bare_bootstrap_request(
+    raw: &[u8],
+) -> Option<crate::payload::rpc::InboundCall> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+            joiner_pseudonym,
+            anchor,
+            member_joined,
+        }))) => Some(crate::payload::rpc::InboundCall::BootstrapRequest {
+            joiner_pseudonym,
+            anchor,
+            member_joined,
+        }),
+        _ => None,
     }
 }

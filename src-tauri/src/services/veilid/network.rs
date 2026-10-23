@@ -11,14 +11,6 @@ use rekindle_codec::community::envelope::{
     CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
 };
 
-fn resolve_bootstrap_community_id(state: &Arc<AppState>, governance_key: &str) -> Option<String> {
-    let communities = state.communities.read();
-    communities
-        .values()
-        .find(|community| community.governance_key.as_deref() == Some(governance_key))
-        .map(|community| community.id.clone())
-}
-
 pub async fn handle_app_call(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
@@ -99,28 +91,19 @@ async fn community_call(
     match rekindle_codec::capnp_envelope::try_decode_community_envelope(message) {
         Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
             joiner_pseudonym,
-            governance_key,
+            anchor,
+            member_joined,
         }))) => {
-            if let Some(community_id) = resolve_bootstrap_community_id(state, &governance_key) {
-                crate::services::community::build_bootstrap_response(
-                    state,
-                    &community_id,
-                    &governance_key,
-                    &joiner_pseudonym,
-                )
+            let joiner = rekindle_governance_runtime::BootstrapJoiner {
+                pseudonym: joiner_pseudonym,
+                member_joined,
+            };
+            crate::services::community::build_bootstrap_response_v2(state, &anchor, &joiner)
                 .await
                 .unwrap_or_else(|e| {
-                    tracing::warn!(call_id = %call_id, error = %e, "failed to build bootstrap response");
-                    b"ACK".to_vec()
+                    tracing::warn!(call_id = %call_id, error = %e, "bootstrap request refused");
+                    NAK.to_vec()
                 })
-            } else {
-                tracing::warn!(
-                    call_id = %call_id,
-                    governance_key = %governance_key,
-                    "rejecting bootstrap request for unknown governance key"
-                );
-                b"ACK".to_vec()
-            }
         }
         Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
             community_id,

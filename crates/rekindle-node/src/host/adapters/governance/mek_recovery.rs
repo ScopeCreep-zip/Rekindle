@@ -41,7 +41,7 @@ impl HostGovernance {
     /// replies need it.
     pub fn recover_behind_meks(&self) {
         for (community_id, pseudonym) in self.behind_meks() {
-            self.request_mek(community_id, pseudonym);
+            self.request_mek(&community_id, pseudonym);
         }
     }
 
@@ -82,13 +82,13 @@ impl HostGovernance {
                     tracing::debug!(community = %community, %error, "catch-up: op store not read");
                 }
             }
-            host.request_mek(community, pseudonym);
+            host.request_mek(&community, pseudonym);
         });
     }
 
-    fn request_mek(&self, community_id: String, pseudonym: String) {
+    fn request_mek(&self, community_id: &str, pseudonym: String) {
         if let Some(shell) = &self.ctx.shell {
-            shell.spawn_community_mek_recovery(&community_id, &pseudonym);
+            shell.spawn_community_mek_recovery(community_id, &pseudonym);
             return;
         }
         let request = CommunityEnvelope::Control(ControlPayload::RequestMEK {
@@ -97,6 +97,6 @@ impl HostGovernance {
             requester_pseudonym: pseudonym,
             cascade_index: 0,
         });
-        self.send_to_mesh_impl(&community_id, &request);
+        self.send_to_mesh_impl(community_id, &request);
     }
 }

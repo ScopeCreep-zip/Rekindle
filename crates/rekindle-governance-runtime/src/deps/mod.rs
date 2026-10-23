@@ -7,9 +7,7 @@
 //!
 //! Schwarzschild boundary: all Veilid types (`RecordKey`, `KeyPair`,
 //! `RoutingContext`) are exchanged as opaque `String` / `Vec<u8>` here.
-//! The crate never imports `veilid-core`. Likewise the SQLite-backed
-//! recent-messages query is a single trait method returning a DTO
-//! (`RecentMessageRow`).
+//! The crate never imports `veilid-core`.
 
 use async_trait::async_trait;
 use rekindle_codec::community::envelope::CommunityEnvelope;
@@ -232,18 +230,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     fn keys(&self) -> std::sync::Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
     fn insert_community_mek(&self, community_id: &str, mek: MekSnapshot);
     fn insert_channel_mek(&self, community_id: &str, channel_id: &str, mek: MekSnapshot);
-
-    // ---------- Bootstrap (SQL) ----------
-
-    /// Pull the most recent `limit` messages for `(community, channel)`
-    /// from SQLite, oldest sort order in the result Vec (the adapter
-    /// reverses the `ORDER BY timestamp DESC` query).
-    async fn recent_channel_messages(
-        &self,
-        community_id: &str,
-        channel_id: &str,
-        limit: i64,
-    ) -> Vec<RecentMessageRow>;
 
     // ---------- Gossip ----------
 

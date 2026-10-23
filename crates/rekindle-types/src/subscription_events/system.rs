@@ -55,7 +55,7 @@ pub enum SystemEvent {
         joiner_pseudonym: String,
     },
     /// A bootstrap response was received (new joiner receiving initial state).
-    /// Triggered by: gossip `ControlPayload::BootstrapResponse`.
+    /// Triggered by: the inviter's `ControlPayload::BootstrapResponseV2`.
     BootstrapReceived { community: String },
     /// A sync request was received for a channel.
     /// Triggered by: gossip `ControlPayload::SyncRequest`.

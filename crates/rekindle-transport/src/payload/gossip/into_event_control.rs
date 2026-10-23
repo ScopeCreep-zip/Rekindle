@@ -288,7 +288,7 @@ pub fn control_into_event(
         | ControlPayload::AdminKeypairGrant { .. }
         | ControlPayload::SlotKeypairGrant { .. }
         | ControlPayload::BootstrapRequest { .. }
-        | ControlPayload::BootstrapResponse { .. }
+        | ControlPayload::BootstrapResponseV2 { .. }
         | ControlPayload::SyncRequest { .. }
         | ControlPayload::SyncResponse { .. }
         | ControlPayload::SystemMessage { .. }

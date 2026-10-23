@@ -20,9 +20,7 @@
 using import "community_event.capnp".EventInfo;
 using import "community_thread.capnp".ThreadInfo;
 using import "community_game_server.capnp".GameServerInfo;
-using import "community_member.capnp".MemberInfo;
-using import "community_mek.capnp".ChannelMekDelivery;
-using import "community_message.capnp".BootstrapChannelMessages;
+using import "governance_op.capnp".OpRef;
 using import "community_message.capnp".SyncedMessage;
 using import "community_governance.capnp".GovernanceEntry;
 
@@ -419,17 +417,24 @@ struct GovernanceUpdatedPayload @0xea0029000000a000 {
     lamportTs            @2 :UInt64;
 }
 
+# The joiner's bootstrap request (plan E3.2): a bare app_call to the
+# inviter's route (`InviteSecrets.inviterRouteBlob`). Its authority is the
+# joiner's signed `MemberJoined`, which the inviter fetches from the
+# joiner's member record by `memberJoined` and verifies before answering.
 struct BootstrapRequestPayload @0xea002a000000a000 {
     joinerPseudonym      @0 :Text;
-    governanceKey        @1 :Text;
+    anchor               @1 :Text;
+    memberJoined         @2 :OpRef;
 }
 
-struct BootstrapResponsePayload @0xea002b000000a000 {
-    governanceEntries     @0 :List(GovernanceEntry);
-    memberList            @1 :List(MemberInfo);
-    channelMeks           @2 :List(ChannelMekDelivery);
-    recentMessages        @3 :List(BootstrapChannelMessages);
-    wrappedOwnerKeypair   @4 :Data;
+# The inviter's answer (plan E3.2): where the joiner's walk of the op DAG
+# continues. Constant in N: at most 64 frontier heads and 16 directory
+# pages, under the 32,768 B app_call cap. No keys, no messages (D11).
+struct BootstrapResponseV2Payload @0xea0047000000a000 {
+    anchor               @0 :Text;
+    checkpointRef        @1 :OpRef;   # unset: no checkpoint yet
+    frontier             @2 :List(OpRef);
+    directoryPages       @3 :List(Text);
 }
 
 struct SyncRequestPayload @0xea002c000000a000 {
@@ -758,7 +763,7 @@ struct ControlPayload @0xeaffffff00000001 {
         slotKeypairGrant         @40 :SlotKeypairGrantPayload;
         governanceUpdated        @41 :GovernanceUpdatedPayload;
         bootstrapRequest         @42 :BootstrapRequestPayload;
-        bootstrapResponse        @43 :BootstrapResponsePayload;
+        obsolete43               @43 :Void;
         syncRequest              @44 :SyncRequestPayload;
         syncResponse             @45 :SyncResponsePayload;
         voiceJoin                @46 :VoiceJoinPayload;
@@ -793,5 +798,7 @@ struct ControlPayload @0xeaffffff00000001 {
         # encoded GovernanceOp (governance_op.capnp) a member published to
         # its M/2; a receiver verifies it and stores it like a fetched op.
         governanceOp             @74 :Data;
+        # The inviter's answer to a bootstrapRequest (plan E3.2).
+        bootstrapResponseV2      @75 :BootstrapResponseV2Payload;
     }
 }

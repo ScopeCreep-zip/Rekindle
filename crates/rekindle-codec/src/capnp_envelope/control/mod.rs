@@ -15,6 +15,7 @@ use crate::community_envelope_capnp::control_payload as schema;
 use crate::error::CodecError;
 
 mod bootstrap_sync;
+pub use bootstrap_sync::MAX_DIRECTORY_PAGES;
 mod events;
 mod keys;
 mod media;
@@ -24,8 +25,8 @@ mod moderation;
 mod voice;
 
 use bootstrap_sync::{
-    read_bootstrap_request, read_bootstrap_response, read_sync_request, read_sync_response,
-    write_bootstrap_request, write_bootstrap_response, write_sync_request, write_sync_response,
+    read_bootstrap_request, read_bootstrap_response_v2, read_sync_request, read_sync_response,
+    write_bootstrap_request, write_bootstrap_response_v2, write_sync_request, write_sync_response,
 };
 use events::{
     read_event_created, read_event_deleted, read_event_reminder, read_event_rsvp_changed,
@@ -193,8 +194,8 @@ pub fn encode_control_payload(
         CP::BootstrapRequest { .. } => {
             write_bootstrap_request(b.reborrow().init_bootstrap_request(), payload);
         }
-        CP::BootstrapResponse { .. } => {
-            write_bootstrap_response(b.reborrow().init_bootstrap_response(), payload);
+        CP::BootstrapResponseV2 { .. } => {
+            write_bootstrap_response_v2(b.reborrow().init_bootstrap_response_v2(), payload)?;
         }
         CP::SyncRequest { .. } => write_sync_request(b.reborrow().init_sync_request(), payload),
         CP::SyncResponse { .. } => write_sync_response(b.reborrow().init_sync_response(), payload),
@@ -315,7 +316,7 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::SlotKeypairGrant(p) => read_slot_keypair_grant(p.map_err(|e| capnp_err(&e))?),
         Which::GovernanceUpdated(p) => read_governance_updated(p.map_err(|e| capnp_err(&e))?),
         Which::BootstrapRequest(p) => read_bootstrap_request(p.map_err(|e| capnp_err(&e))?),
-        Which::BootstrapResponse(p) => read_bootstrap_response(p.map_err(|e| capnp_err(&e))?),
+        Which::BootstrapResponseV2(p) => read_bootstrap_response_v2(p.map_err(|e| capnp_err(&e))?),
         Which::SyncRequest(p) => read_sync_request(p.map_err(|e| capnp_err(&e))?),
         Which::SyncResponse(p) => read_sync_response(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceJoin(p) => read_voice_join(p.map_err(|e| capnp_err(&e))?),
@@ -347,9 +348,9 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::VideoParityFragment(p) => read_video_parity_fragment(p.map_err(|e| capnp_err(&e))?),
         Which::KeyframeRequest(p) => read_keyframe_request(p.map_err(|e| capnp_err(&e))?),
         // Removed variants (plan E4.3.3): skipped like an unknown one.
-        Which::Obsolete61(()) | Which::Obsolete63(()) => Err(CodecError::UnknownVariant(
-            "obsolete control payload".to_string(),
-        )),
+        Which::Obsolete43(()) | Which::Obsolete61(()) | Which::Obsolete63(()) => Err(
+            CodecError::UnknownVariant("obsolete control payload".to_string()),
+        ),
         Which::MediaCapabilities(p) => read_media_capabilities(p.map_err(|e| capnp_err(&e))?),
         Which::TopologyChange(p) => read_topology_change(p.map_err(|e| capnp_err(&e))?),
         Which::LinkPreview(p) => read_link_preview(p.map_err(|e| capnp_err(&e))?),

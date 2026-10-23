@@ -1,14 +1,11 @@
-//! Message-plane leaf codecs: presence game info, member info, thread
-//! info, game servers, MEK delivery, bootstrap + synced messages.
+//! Message-plane leaf codecs: presence game info, thread
+//! info, game servers, synced messages.
 
-use super::super::len_u32;
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community::envelope::PresenceGameInfo;
 use crate::error::CodecError;
 use rekindle_types::game_server::GameServerInfo;
-use rekindle_types::mek::ChannelMekDelivery;
-use rekindle_types::member::MemberInfo;
-use rekindle_types::message::{BootstrapChannelMessages, BootstrapMessage, SyncedMessage};
+use rekindle_types::message::SyncedMessage;
 use rekindle_types::thread::ThreadInfo;
 
 // ── PresenceGameInfo (envelope.PresenceUpdate.game_info) ─────────────
@@ -54,80 +51,6 @@ pub(crate) fn read_presence_game_info(
         } else {
             None
         },
-    })
-}
-
-// ── MemberInfo ───────────────────────────────────────────────────────
-
-pub(crate) fn write_member_info(
-    mut b: crate::community_member_capnp::member_info::Builder<'_>,
-    m: &MemberInfo,
-) {
-    b.set_pseudonym_key(&m.pseudonym_key);
-    b.set_display_name(&m.display_name);
-    let mut role_ids = b.reborrow().init_role_ids(len_u32(m.role_ids.len()));
-    for (i, id) in m.role_ids.iter().enumerate() {
-        role_ids.set(len_u32(i), *id);
-    }
-    b.set_status(&m.status);
-    if let Some(ref blob) = m.route_blob {
-        b.set_route_blob(blob);
-    }
-    if let Some(ref bio) = m.bio {
-        b.set_bio(bio);
-    }
-    if let Some(ref pr) = m.pronouns {
-        b.set_pronouns(pr);
-    }
-    b.set_theme_color(m.theme_color.unwrap_or(0));
-    let mut badges = b.reborrow().init_badges(len_u32(m.badges.len()));
-    for (i, badge) in m.badges.iter().enumerate() {
-        badges.set(len_u32(i), badge.as_str());
-    }
-    b.set_last_seen(m.last_seen);
-}
-
-pub(crate) fn read_member_info(
-    r: crate::community_member_capnp::member_info::Reader<'_>,
-) -> Result<MemberInfo, CodecError> {
-    let role_ids: Vec<u32> = r
-        .get_role_ids()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .collect();
-    let route_blob_bytes = r.get_route_blob().map_err(|e| capnp_err(&e))?;
-    let bio_text = text_to_string(r.get_bio().map_err(|e| capnp_err(&e))?)?;
-    let pronouns_text = text_to_string(r.get_pronouns().map_err(|e| capnp_err(&e))?)?;
-    let badges: Result<Vec<String>, CodecError> = r
-        .get_badges()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .map(|t| text_to_string(t.map_err(|e| capnp_err(&e))?))
-        .collect();
-    let theme = r.get_theme_color();
-    Ok(MemberInfo {
-        pseudonym_key: text_to_string(r.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
-        display_name: text_to_string(r.get_display_name().map_err(|e| capnp_err(&e))?)?,
-        role_ids,
-        status: text_to_string(r.get_status().map_err(|e| capnp_err(&e))?)?,
-        route_blob: if route_blob_bytes.is_empty() {
-            None
-        } else {
-            Some(route_blob_bytes.to_vec())
-        },
-        bio: if bio_text.is_empty() {
-            None
-        } else {
-            Some(bio_text)
-        },
-        pronouns: if pronouns_text.is_empty() {
-            None
-        } else {
-            Some(pronouns_text)
-        },
-        theme_color: if theme == 0 { None } else { Some(theme) },
-        badges: badges?,
-        last_seen: r.get_last_seen(),
     })
 }
 
@@ -199,85 +122,6 @@ pub(crate) fn read_game_server_info(
         address: text_to_string(r.get_address().map_err(|e| capnp_err(&e))?)?,
         added_by: text_to_string(r.get_added_by().map_err(|e| capnp_err(&e))?)?,
         created_at: r.get_created_at(),
-    })
-}
-
-// ── ChannelMekDelivery ───────────────────────────────────────────────
-
-pub(crate) fn write_channel_mek_delivery(
-    mut b: crate::community_mek_capnp::channel_mek_delivery::Builder<'_>,
-    d: &ChannelMekDelivery,
-) {
-    if let Some(ref id) = d.channel_id {
-        b.set_channel_id(id);
-    }
-    b.set_generation(d.generation);
-    b.set_wrapped_mek(&d.wrapped_mek);
-}
-
-pub(crate) fn read_channel_mek_delivery(
-    r: crate::community_mek_capnp::channel_mek_delivery::Reader<'_>,
-) -> Result<ChannelMekDelivery, CodecError> {
-    let channel_id_text = text_to_string(r.get_channel_id().map_err(|e| capnp_err(&e))?)?;
-    Ok(ChannelMekDelivery {
-        channel_id: if channel_id_text.is_empty() {
-            None
-        } else {
-            Some(channel_id_text)
-        },
-        generation: r.get_generation(),
-        wrapped_mek: r.get_wrapped_mek().map_err(|e| capnp_err(&e))?.to_vec(),
-    })
-}
-
-// ── BootstrapMessage / BootstrapChannelMessages ──────────────────────
-
-fn write_bootstrap_message(
-    mut b: crate::community_message_capnp::bootstrap_message::Builder<'_>,
-    m: &BootstrapMessage,
-) {
-    b.set_message_id(&m.message_id);
-    b.set_sender_pseudonym(&m.sender_pseudonym);
-    b.set_ciphertext(&m.ciphertext);
-    b.set_mek_generation(m.mek_generation);
-    b.set_timestamp(m.timestamp);
-}
-
-fn read_bootstrap_message(
-    r: crate::community_message_capnp::bootstrap_message::Reader<'_>,
-) -> Result<BootstrapMessage, CodecError> {
-    Ok(BootstrapMessage {
-        message_id: text_to_string(r.get_message_id().map_err(|e| capnp_err(&e))?)?,
-        sender_pseudonym: text_to_string(r.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
-        ciphertext: r.get_ciphertext().map_err(|e| capnp_err(&e))?.to_vec(),
-        mek_generation: r.get_mek_generation(),
-        timestamp: r.get_timestamp(),
-    })
-}
-
-pub(crate) fn write_bootstrap_channel_messages(
-    mut b: crate::community_message_capnp::bootstrap_channel_messages::Builder<'_>,
-    g: &BootstrapChannelMessages,
-) {
-    b.set_channel_id(&g.channel_id);
-    let mut list = b.reborrow().init_messages(len_u32(g.messages.len()));
-    for (i, msg) in g.messages.iter().enumerate() {
-        write_bootstrap_message(list.reborrow().get(len_u32(i)), msg);
-    }
-}
-
-pub(crate) fn read_bootstrap_channel_messages(
-    r: crate::community_message_capnp::bootstrap_channel_messages::Reader<'_>,
-) -> Result<BootstrapChannelMessages, CodecError> {
-    let messages: Result<Vec<BootstrapMessage>, CodecError> = r
-        .get_messages()
-        .map_err(|e| capnp_err(&e))?
-        .iter()
-        .map(read_bootstrap_message)
-        .collect();
-    Ok(BootstrapChannelMessages {
-        channel_id: text_to_string(r.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        messages: messages?,
     })
 }
 
