@@ -34,6 +34,14 @@ pub struct GateItem<'a> {
     /// The post's own timestamp, in seconds: slowmode compares a sender's
     /// posts by it, so every peer reaches the same verdict.
     pub sent_at_secs: u64,
+    /// The author's nearest post in this channel among the posts we hold
+    /// (stored, or admitted earlier in the same batch), at or before
+    /// `sent_at_secs`, in seconds; the post itself is not one. Slowmode
+    /// judges against it, never against the last post judged, so a
+    /// backfilled older post gets the verdict the live path gave it in
+    /// order (plan E3.1 FX2). A predecessor that arrives after its
+    /// successor does not drop the successor retroactively.
+    pub held_before_secs: Option<u64>,
     /// The receiver's clock, in seconds: a timeout ends by it.
     pub now_secs: u64,
 }
@@ -86,15 +94,35 @@ impl BlockList {
     }
 }
 
-/// The timestamps of the posts we hold that started a slowmode window (each
-/// admitted or hidden post), per community, channel and author. A post is
-/// judged against its author's nearest earlier-timestamped one here, never
-/// against the last one judged, so a backfilled older post gets the verdict
-/// the live path gave it in order (plan E3.1 FX2). A predecessor that
-/// arrives after its successor does not drop the successor retroactively.
+/// The posts one batch admitted or hid before they are stored, per
+/// author (lowercased), so a later post of the same batch is judged
+/// against them as it would be against stored ones. It lives for one
+/// batch and is discarded with it.
 #[derive(Debug, Default)]
-pub struct RateLimits {
-    held: BTreeMap<(String, String, String), BTreeSet<u64>>,
+pub struct BatchWindows {
+    held: BTreeMap<String, BTreeSet<u64>>,
+}
+
+impl BatchWindows {
+    /// The author's nearest post at or before `at_secs`: the later of
+    /// `stored` (the nearest stored one) and this batch's nearest.
+    #[must_use]
+    pub fn held_before(&self, author: &str, at_secs: u64, stored: Option<u64>) -> Option<u64> {
+        let batch = (self.held.get(&author.to_ascii_lowercase()))
+            .and_then(|times| times.range(..=at_secs).next_back().copied());
+        stored.max(batch)
+    }
+
+    /// Record `author`'s post at `at_secs` of the batch, judged `verdict`:
+    /// unless it was dropped it is held, so it starts a window of its
+    /// author's.
+    pub fn record(&mut self, author: &str, at_secs: u64, verdict: &Verdict) {
+        if !matches!(verdict, Verdict::Drop(_)) {
+            (self.held.entry(author.to_ascii_lowercase()))
+                .or_default()
+                .insert(at_secs);
+        }
+    }
 }
 
 /// When `member`'s timeout ends, while it lasts at `now_secs` (the
@@ -139,14 +167,12 @@ pub fn hold_timed_out_threads<S: BuildHasher>(
 
 /// Judge `item` against the community's merged state `gov`, its compiled
 /// automod rules (`crate::automod::compiled_rules`), the block list and the
-/// slowmode windows; an admitted or hidden post starts a window of its
-/// author's.
+/// channel's slowmode against `item.held_before_secs`.
 pub fn gate(
     item: &GateItem<'_>,
     gov: &GovernanceState,
     rules: &AutoModCompiledCache,
     blocked: &BlockList,
-    limits: &mut RateLimits,
 ) -> Verdict {
     if blocked.contains(item.sender_pseudonym) {
         return Verdict::Drop(GateReason::Blocked);
@@ -161,15 +187,11 @@ pub fn gate(
     let channel = ChannelId::from_hex(item.channel_id);
     if let Some(seconds) = slowmode_seconds(gov, channel.as_ref()) {
         let perms = compute_permissions(&sender, channel.as_ref(), gov, item.now_secs);
-        if !has_capability(perms, BYPASS_SLOWMODE) && within_window(item, limits, seconds) {
+        if !has_capability(perms, BYPASS_SLOWMODE) && within_window(item, seconds) {
             return Verdict::Drop(GateReason::Slowmode { seconds });
         }
     }
-    let verdict = automod(rules, item.body);
-    if !matches!(verdict, Verdict::Drop(_)) {
-        (limits.held.entry(window_key(item)).or_default()).insert(item.sent_at_secs);
-    }
-    verdict
+    automod(rules, item.body)
 }
 
 fn slowmode_seconds(gov: &GovernanceState, channel: Option<&ChannelId>) -> Option<u32> {
@@ -179,20 +201,13 @@ fn slowmode_seconds(gov: &GovernanceState, channel: Option<&ChannelId>) -> Optio
         .filter(|s| *s > 0)
 }
 
-fn window_key(item: &GateItem<'_>) -> (String, String, String) {
-    (
-        item.community_id.to_owned(),
-        item.channel_id.to_owned(),
-        item.sender_pseudonym.to_ascii_lowercase(),
-    )
-}
-
-/// Whether the author's nearest held post at or before `item`'s timestamp
-/// is less than `seconds` older than it.
-fn within_window(item: &GateItem<'_>, limits: &RateLimits, seconds: u32) -> bool {
-    (limits.held.get(&window_key(item)))
-        .and_then(|times| times.range(..=item.sent_at_secs).next_back())
-        .is_some_and(|earlier| item.sent_at_secs - earlier < u64::from(seconds))
+/// Whether the author's nearest held post at or before `item` is less than
+/// `seconds` older than it.
+fn within_window(item: &GateItem<'_>, seconds: u32) -> bool {
+    (item
+        .held_before_secs
+        .filter(|earlier| *earlier <= item.sent_at_secs))
+    .is_some_and(|earlier| item.sent_at_secs - earlier < u64::from(seconds))
 }
 
 /// The automod verdict: a matching `BlockLocally` rule drops, then

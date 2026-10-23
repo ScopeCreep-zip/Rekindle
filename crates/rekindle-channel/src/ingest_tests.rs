@@ -24,6 +24,7 @@ fn item(body: &str, sent_at_secs: u64, now_secs: u64) -> GateItem<'_> {
         sender_pseudonym: ANN,
         body,
         sent_at_secs,
+        held_before_secs: None,
         now_secs,
     }
 }
@@ -68,7 +69,6 @@ fn judge(gov: &GovernanceState, item: &GateItem<'_>) -> Verdict {
         gov,
         &AutoModCompiledCache::compile(gov),
         &BlockList::default(),
-        &mut RateLimits::default(),
     )
 }
 
@@ -85,7 +85,6 @@ fn drops_a_blocked_author() {
         &state(),
         &AutoModCompiledCache::compile(&state()),
         &blocked,
-        &mut RateLimits::default(),
     );
     assert_eq!(verdict, Verdict::Drop(GateReason::Blocked));
 }
@@ -118,32 +117,66 @@ fn drops_a_timed_out_author_until_the_timeout_ends() {
     assert_eq!(judge(&gov, &item("hi", 160, 160)), Verdict::Admit);
 }
 
-#[test]
-fn drops_a_post_within_slowmode_and_admits_after_it() {
+/// Judge `item` against the posts `held` holds, as the Host judges a
+/// batch, and hold it unless it is dropped.
+fn judge_held(gov: &GovernanceState, held: &mut BatchWindows, item: GateItem<'_>) -> Verdict {
+    let item = GateItem {
+        held_before_secs: held.held_before(item.sender_pseudonym, item.sent_at_secs, None),
+        ..item
+    };
+    let verdict = gate(
+        &item,
+        gov,
+        &AutoModCompiledCache::compile(gov),
+        &BlockList::default(),
+    );
+    held.record(item.sender_pseudonym, item.sent_at_secs, &verdict);
+    verdict
+}
+
+fn slowmode_state() -> GovernanceState {
     let mut gov = state();
     for channel in gov.channels.values_mut() {
         channel.slowmode_seconds = Some(30);
     }
-    let (blocked, mut limits) = (BlockList::default(), RateLimits::default());
-    let rules = AutoModCompiledCache::compile(&gov);
+    gov
+}
+
+#[test]
+fn drops_a_post_within_slowmode_and_admits_after_it() {
+    let gov = slowmode_state();
+    let mut held = BatchWindows::default();
     assert_eq!(
-        gate(&item("one", 100, 100), &gov, &rules, &blocked, &mut limits),
+        judge_held(&gov, &mut held, item("one", 100, 100)),
         Verdict::Admit
     );
     assert_eq!(
-        gate(&item("two", 110, 110), &gov, &rules, &blocked, &mut limits),
+        judge_held(&gov, &mut held, item("two", 110, 110)),
         Verdict::Drop(GateReason::Slowmode { seconds: 30 })
     );
     assert_eq!(
-        gate(
-            &item("three", 130, 130),
-            &gov,
-            &rules,
-            &blocked,
-            &mut limits
-        ),
+        judge_held(&gov, &mut held, item("three", 130, 130)),
         Verdict::Admit
     );
+}
+
+#[test]
+fn a_stored_post_is_the_window_when_it_is_the_nearest() {
+    let gov = slowmode_state();
+    let mut held = BatchWindows::default();
+    let item = GateItem {
+        held_before_secs: held.held_before(ANN, 110, Some(100)),
+        ..item("two", 110, 110)
+    };
+    let gated = gate(
+        &item,
+        &gov,
+        &AutoModCompiledCache::compile(&gov),
+        &BlockList::default(),
+    );
+    assert_eq!(gated, Verdict::Drop(GateReason::Slowmode { seconds: 30 }));
+    held.record(ANN, 110, &gated);
+    assert_eq!(held.held_before(ANN, 200, Some(100)), Some(100));
 }
 
 #[test]
@@ -263,17 +296,10 @@ fn a_thread_received_while_its_creator_is_timed_out_is_held() {
 /// Judge posts at `times` (seconds) in that order under a 30 s slowmode,
 /// answering each post's verdict by its timestamp.
 fn slowmode_verdicts(times: &[u64]) -> BTreeMap<u64, Verdict> {
-    let mut gov = state();
-    for channel in gov.channels.values_mut() {
-        channel.slowmode_seconds = Some(30);
-    }
-    let (blocked, mut limits) = (BlockList::default(), RateLimits::default());
-    let rules = AutoModCompiledCache::compile(&gov);
+    let gov = slowmode_state();
+    let mut held = BatchWindows::default();
     (times.iter())
-        .map(|t| {
-            let verdict = gate(&item("post", *t, 500), &gov, &rules, &blocked, &mut limits);
-            (*t, verdict)
-        })
+        .map(|t| (*t, judge_held(&gov, &mut held, item("post", *t, 500))))
         .collect()
 }
 

@@ -200,9 +200,6 @@ pub struct DaemonContext {
     /// Read markers advanced but not yet written (plan E3.1, D25: ≤ 30 s
     /// write-behind; `host::read_markers`).
     pub read_markers: crate::host::read_markers::PendingMarkers,
-    /// The received posts' slowmode windows, which the D26 gate keeps
-    /// (plan E3.1 F3, `host::adapters::channel::ingest`).
-    pub channel_rate_limits: parking_lot::Mutex<rekindle_channel::ingest::RateLimits>,
     /// Departure-triggered MEK rotations, queued for the worker that
     /// owns the daemon's `Arc<DaemonContext>`.
     ///

@@ -177,6 +177,10 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
+-- A sender's posts in a conversation by time: the slowmode gate's nearest
+-- earlier post (repo::messages::channel::latest_by_sender_at_or_before).
+CREATE INDEX IF NOT EXISTS idx_messages_sender_time
+  ON messages(owner_key, conversation_id, sender_key, timestamp);
 CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(owner_key, conversation_id, is_read) WHERE is_read = 0;
 CREATE INDEX IF NOT EXISTS idx_messages_stream_seq
   ON messages(owner_key, conversation_id, sender_key, stream_seq) WHERE stream_seq IS NOT NULL;

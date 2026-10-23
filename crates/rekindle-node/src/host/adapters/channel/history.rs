@@ -5,7 +5,7 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::history::{self, RecordMessage};
-use rekindle_channel::ingest::{GateReason, Verdict};
+use rekindle_channel::ingest::{BatchWindows, GateReason, Verdict};
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_db::repo::messages::channel::{
     self as rows, ChannelMessageInsert, StoredChannelMessage,
@@ -102,6 +102,9 @@ impl HostChannel {
             None
         };
         let (mut shown, mut fresh, mut reports) = (Vec::new(), Vec::new(), Vec::new());
+        // The posts this page admits or hides are stored after the loop,
+        // so a later post of the page is judged against them here.
+        let mut batch = BatchWindows::default();
         for (mut message, held) in record.into_iter().zip(held) {
             if let Some(blurred) = held {
                 message.view.automod_blurred = blurred;
@@ -112,16 +115,31 @@ impl HostChannel {
                 shown.push(message);
                 continue;
             };
+            let timestamp_ms = u64::try_from(message.view.timestamp).unwrap_or(0);
+            let sender = message.view.sender_id.as_str();
+            let stored = self
+                .stored_before_secs(
+                    owner,
+                    &db,
+                    channel_id,
+                    sender,
+                    timestamp_ms,
+                    message.view.server_message_id.as_deref(),
+                )
+                .await?;
+            let at_secs = timestamp_ms / 1000;
             let verdict = self.verdict(
                 inputs,
                 &GatedPost {
                     community_id,
                     channel_id,
-                    sender_pseudonym: &message.view.sender_id,
+                    sender_pseudonym: sender,
                     body: &message.view.body,
-                    timestamp_ms: u64::try_from(message.view.timestamp).unwrap_or(0),
+                    timestamp_ms,
+                    held_before_secs: batch.held_before(sender, at_secs, stored),
                 },
             );
+            batch.record(sender, at_secs, &verdict);
             let report = match verdict {
                 Verdict::Drop(reason) => {
                     tracing::debug!(community_id, channel_id, ?reason, "backfilled post dropped");

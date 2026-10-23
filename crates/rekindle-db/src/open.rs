@@ -189,7 +189,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// the outbox's `governance_op` stream kind.
 ///
 /// 116 (plan E3.2, S5): `communities.genesis_cert`, the pinned cert.
-pub const SCHEMA_VERSION: i64 = 116;
+///
+/// 117 (plan E3.1, FX2): `idx_messages_sender_time`, a sender's posts by
+/// time, for the slowmode gate's nearest earlier post.
+pub const SCHEMA_VERSION: i64 = 117;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

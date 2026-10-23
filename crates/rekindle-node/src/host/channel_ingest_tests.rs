@@ -15,6 +15,8 @@ use super::{create_ann, offline_host, seed_registry_community};
 use crate::host::adapters::channel::ingest::ReceivedPost;
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::{Caller, HostApi};
 
 const INGEST_CHANNEL: &str = "0123456789abcdef0123456789abcdef";
 const BEA: [u8; 32] = [0xbe; 32];
@@ -135,6 +137,38 @@ async fn a_timed_out_author_is_dropped_until_the_timeout_ends() {
     host.shutdown().await.unwrap();
 }
 
+/// Store `post` as the ingest stores an admitted one.
+async fn hold(host: &Host, owner: &str, post: &ReceivedPost) {
+    let (o, p) = (owner.to_owned(), post.clone());
+    (host.ctx.db.current().unwrap())
+        .call(move |conn| {
+            let m = &p.message;
+            rekindle_db::repo::messages::channel::insert(
+                conn,
+                &rekindle_db::repo::messages::channel::ChannelMessageInsert {
+                    owner_key: &o,
+                    channel_id: &p.channel_id,
+                    sender_key: &m.sender_pseudonym,
+                    body: "held",
+                    timestamp: i64::try_from(m.timestamp).unwrap(),
+                    is_read: false,
+                    mek_generation: Some(0),
+                    message_id: m.message_id.as_deref().unwrap(),
+                    lamport_ts: m.lamport_ts,
+                    automod_blurred: false,
+                    forwarded_from_author: None,
+                    flags: 0,
+                    attachment_json: None,
+                    send_state: rekindle_types::message::SendState::Delivered,
+                    reply_to: None,
+                    mentions_me: false,
+                },
+            )
+        })
+        .await
+        .unwrap();
+}
+
 #[tokio::test]
 async fn a_second_post_inside_the_slowmode_is_dropped() {
     let dir = tempfile::tempdir().unwrap();
@@ -144,13 +178,54 @@ async fn a_second_post_inside_the_slowmode_is_dropped() {
         judge(&host, &owner, &post(now), "one").await,
         Verdict::Admit
     );
+    hold(&host, &owner, &post(now)).await;
+    assert_eq!(
+        judge(&host, &owner, &post(now), "one again").await,
+        Verdict::Admit,
+        "the post is not its own window"
+    );
     assert_eq!(
         judge(&host, &owner, &post(now + 5), "two").await,
         Verdict::Drop(GateReason::Slowmode { seconds: 30 })
     );
     assert_eq!(
+        judge(&host, &owner, &post(now - 40), "older").await,
+        Verdict::Admit,
+        "a newer stored post is not an older one's window"
+    );
+    assert_eq!(
         judge(&host, &owner, &post(now + 30), "three").await,
         Verdict::Admit
+    );
+    host.shutdown().await.unwrap();
+}
+
+/// A post stored before a restart (here a lock and unlock, which ends the
+/// session) still puts a later post inside the window into slowmode: the
+/// stored rows are the held posts, whatever the session.
+#[tokio::test]
+async fn a_post_stored_before_a_restart_starts_the_window() {
+    let dir = tempfile::tempdir().unwrap();
+    let gov = governance(Some(30));
+    let (host, owner) = host_under(&dir, gov.clone()).await;
+    let now = host.ctx.clock.now_secs();
+    hold(&host, &owner, &post(now)).await;
+    let lock = host.call(Caller::shell(), IpcRequest::Lock).await;
+    assert!(matches!(lock, IpcResponse::Ok { .. }), "{lock:?}");
+    let unlock = host
+        .call(
+            Caller::shell(),
+            IpcRequest::Unlock {
+                identity: owner.clone(),
+                passphrase: "pass".into(),
+            },
+        )
+        .await;
+    assert!(matches!(unlock, IpcResponse::Ok { .. }), "{unlock:?}");
+    host.ctx.communities.set_governance_state("c1", gov);
+    assert_eq!(
+        judge(&host, &owner, &post(now + 5), "after").await,
+        Verdict::Drop(GateReason::Slowmode { seconds: 30 })
     );
     host.shutdown().await.unwrap();
 }

@@ -116,6 +116,39 @@ pub fn held_blurred(
     .optional()
 }
 
+/// The timestamp (ms) of `sender_key`'s latest stored post in `channel_id`
+/// at or before `at_or_before_ms`, other than the post `message_id` itself
+/// (when it has one): the
+/// post a received one's slowmode is judged against (plan E3.1 FX2). Every
+/// admitted or hidden post is stored and a dropped one is not, so the
+/// stored rows are the posts we hold.
+///
+/// # Errors
+/// The query failed.
+pub fn latest_by_sender_at_or_before(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    sender_key: &str,
+    at_or_before_ms: i64,
+    message_id: Option<&str>,
+) -> rusqlite::Result<Option<i64>> {
+    conn.query_row(
+        "SELECT MAX(timestamp) FROM messages \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND sender_key = ?3 AND timestamp <= ?4 \
+           AND (?5 IS NULL OR message_id IS NOT ?5)",
+        params![
+            owner_key,
+            channel_id,
+            sender_key,
+            at_or_before_ms,
+            message_id
+        ],
+        |row| row.get(0),
+    )
+}
+
 /// The local row (`reply_to_id`) that our stored channel message
 /// `message_id` replies to, or `None` when it is not a reply or not stored.
 pub fn reply_row_id(

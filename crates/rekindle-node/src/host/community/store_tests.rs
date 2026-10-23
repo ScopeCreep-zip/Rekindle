@@ -204,7 +204,7 @@ fn thread_by(creator: &PseudonymKey) -> rekindle_governance::state::ThreadState 
 #[test]
 fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
     use rekindle_channel::automod::AutoModCompiledCache;
-    use rekindle_channel::ingest::{gate, BlockList, GateItem, RateLimits, Verdict};
+    use rekindle_channel::ingest::{gate, BlockList, GateItem, Verdict};
     use rekindle_types::id::ThreadId;
 
     let (late, other) = (PseudonymKey([0xbb; 32]), PseudonymKey([0xcc; 32]));
@@ -237,6 +237,7 @@ fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
         sender_pseudonym: &sender,
         body: "reply",
         sent_at_secs: 120,
+        held_before_secs: None,
         now_secs: 120,
     };
     let verdict = gate(
@@ -244,7 +245,6 @@ fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
         &gov,
         &AutoModCompiledCache::compile(&gov),
         &BlockList::default(),
-        &mut RateLimits::default(),
     );
     assert_eq!(verdict, Verdict::Admit);
 }

@@ -56,6 +56,10 @@ pub(crate) struct GatedPost<'a> {
     pub body: &'a str,
     /// The post's own timestamp, in milliseconds.
     pub timestamp_ms: u64,
+    /// The author's nearest held post at or before it, in seconds
+    /// ([`HostChannel::stored_before_secs`], and in a batch
+    /// `ingest::BatchWindows`).
+    pub held_before_secs: Option<u64>,
 }
 
 /// The community state a batch of posts is judged against
@@ -296,7 +300,7 @@ impl HostChannel {
     }
 
     /// The gate's verdict on `post`, against the merged state, our block
-    /// list and the Host's slowmode windows.
+    /// list and the author's nearest stored post at or before it.
     pub(crate) async fn judge(
         &self,
         owner: &str,
@@ -305,6 +309,16 @@ impl HostChannel {
         body: &str,
     ) -> Result<Verdict, ChannelError> {
         let inputs = self.gate_inputs(owner, db, &post.community_id).await?;
+        let held_before_secs = self
+            .stored_before_secs(
+                owner,
+                db,
+                &post.channel_id,
+                &post.message.sender_pseudonym,
+                post.message.timestamp,
+                post.message.message_id.as_deref(),
+            )
+            .await?;
         Ok(self.verdict(
             &inputs,
             &GatedPost {
@@ -313,8 +327,48 @@ impl HostChannel {
                 sender_pseudonym: &post.message.sender_pseudonym,
                 body,
                 timestamp_ms: post.message.timestamp,
+                held_before_secs,
             },
         ))
+    }
+
+    /// The second of `sender`'s latest stored post in `channel_id` at or
+    /// before the second of `timestamp_ms`, other than the post
+    /// `message_id` itself: the post the slowmode judges against (plan
+    /// E3.1 FX2). Stored rows are exactly the admitted and hidden posts,
+    /// so the answer is the same in every session.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub(crate) async fn stored_before_secs(
+        &self,
+        owner: &str,
+        db: &rekindle_db::Db,
+        channel_id: &str,
+        sender: &str,
+        timestamp_ms: u64,
+        message_id: Option<&str>,
+    ) -> Result<Option<u64>, ChannelError> {
+        let last_ms_of_second = (timestamp_ms / 1000)
+            .saturating_mul(1000)
+            .saturating_add(999);
+        let bound = i64::try_from(last_ms_of_second).unwrap_or(i64::MAX);
+        let (key, channel, sender) = (owner.to_owned(), channel_id.to_owned(), sender.to_owned());
+        let id = message_id.map(str::to_owned);
+        let found = db
+            .call(move |conn| {
+                rows::latest_by_sender_at_or_before(
+                    conn,
+                    &key,
+                    &channel,
+                    &sender,
+                    bound,
+                    id.as_deref(),
+                )
+            })
+            .await
+            .map_err(stored)?;
+        Ok(found.map(|ms| u64::try_from(ms).unwrap_or(0) / 1000))
     }
 
     /// What the gate judges a community's posts against: its merged state,
@@ -346,8 +400,8 @@ impl HostChannel {
         })
     }
 
-    /// The gate's verdict on one post, against `inputs` and the Host's
-    /// slowmode windows: the one judgement every received post passes,
+    /// The gate's verdict on one post, against `inputs` and its
+    /// `held_before_secs`: the one judgement every received post passes,
     /// whatever path brought it in (live ingest, notified fetch or the
     /// history backfill).
     pub(crate) fn verdict(&self, inputs: &GateInputs, post: &GatedPost<'_>) -> Verdict {
@@ -357,15 +411,10 @@ impl HostChannel {
             sender_pseudonym: post.sender_pseudonym,
             body: post.body,
             sent_at_secs: post.timestamp_ms / 1000,
+            held_before_secs: post.held_before_secs,
             now_secs: self.ctx().clock.now_secs(),
         };
-        ingest::gate(
-            &item,
-            &inputs.gov,
-            &inputs.rules,
-            &inputs.blocked,
-            &mut self.ctx().channel_rate_limits.lock(),
-        )
+        ingest::gate(&item, &inputs.gov, &inputs.rules, &inputs.blocked)
     }
 
     async fn store_received(
