@@ -32,6 +32,17 @@ pub trait StreamSender: Send + Sync {
         }
         outcomes
     }
+
+    /// Append `frames`, the entries an attempt handed off
+    /// ([`AttemptOutcome::Appending`]), to `stream`'s chain: the outcomes
+    /// of a prefix. Only a chain sender hands appends off.
+    async fn append(&self, stream: &str, frames: &[(Vec<u8>, i64)]) -> Vec<AttemptOutcome> {
+        frames
+            .iter()
+            .take(1)
+            .map(|_| AttemptOutcome::Wedged(format!("{stream} has no chain appender")))
+            .collect()
+    }
 }
 
 /// Makes again the external write of a row the engine never attempts
@@ -96,6 +107,25 @@ impl Senders {
             }
         }
         outcomes
+    }
+
+    /// Append `frames` to `stream` through `kind`'s sender; the first
+    /// `Deferred` when none is installed (its owner stopped).
+    pub(super) async fn append(
+        &self,
+        kind: StreamKind,
+        stream: &str,
+        frames: &[(Vec<u8>, i64)],
+    ) -> Vec<AttemptOutcome> {
+        let sender = self.by_kind.read().get(&kind).cloned();
+        match sender {
+            Some(sender) => sender.append(stream, frames).await,
+            None => frames
+                .iter()
+                .take(1)
+                .map(|_| AttemptOutcome::Deferred)
+                .collect(),
+        }
     }
 
     /// Send `row` through its kind's sender; `Deferred` when none is

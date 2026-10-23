@@ -44,3 +44,19 @@ async fn an_offline_peer_keeps_a_dm_queued_past_twenty_attempts_until_the_deadli
     assert!(o.retry("a").await.unwrap());
     assert_eq!(state_of(&o, "a"), Some(SendState::Queued));
 }
+
+/// A DM is never sent again before the peer's delayed `DmAck` can come
+/// back (live A/B finding 49): every wait is the ack's longest delay plus
+/// one call timeout, then the step backs off as before.
+#[test]
+fn a_dm_retry_waits_for_the_longest_ack() {
+    let rng = CounterRng(AtomicU64::new(3));
+    let ms = |n| StreamKind::Dm.policy().delay(n, &rng).unwrap().as_millis();
+    assert_eq!(crate::stream::DM_RETRY_FLOOR.as_millis(), 15_000);
+    let first = ms(1);
+    assert!((15_500..=16_000).contains(&first), "{first}");
+    let sixth = ms(6);
+    assert!((31_000..=47_000).contains(&sixth), "{sixth}");
+    let late = ms(30);
+    assert!((165_000..=315_000).contains(&late), "{late}");
+}

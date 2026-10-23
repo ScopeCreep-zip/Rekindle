@@ -53,8 +53,9 @@ pub struct Enqueued {
 
 /// The outbox over its host `D`.
 pub struct Outbox<D> {
-    deps: D,
+    pub(crate) deps: D,
     wake: Notify,
+    pub(crate) appends: crate::appender::Appends,
 }
 
 fn horizon_ms() -> i64 {
@@ -67,6 +68,7 @@ impl<D: OutboxDeps> Outbox<D> {
         Self {
             deps,
             wake: Notify::new(),
+            appends: crate::appender::Appends::default(),
         }
     }
 
@@ -152,9 +154,38 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(())
     }
 
+    /// Attempt the rows due at `at` (of `kind` only, when given), selected
+    /// under the appenders' gate; how many.
+    async fn attempt_due(&self, at: i64, kind: Option<StreamKind>) -> Result<usize, OutboxError> {
+        let rows = {
+            let _gate = self.appends.gate.lock().await;
+            let mut due = self.deps.due(at).await?;
+            due.retain(|row| kind.is_none_or(|k| row.kind == k));
+            self.select_due(due, self.now()).await?
+        };
+        let attempted = rows.len();
+        self.attempt_all(rows).await?;
+        Ok(attempted)
+    }
+
+    /// `row`'s append is handed off: it stays `queued`, counted, and is due
+    /// again (if the append is cut off) after its backoff.
+    pub(crate) async fn hand_off(&self, row: &OutboxRow) -> Result<(), OutboxError> {
+        let attempts = row.attempts.saturating_add(1);
+        let update = RowUpdate {
+            state: row.state,
+            attempts,
+            next_at: self.next_due(row.kind, attempts, self.now(), row.deadline),
+            deadline: row.deadline,
+            wedge_reason: None,
+        };
+        self.deps.update(&row.client_id, &update).await.map(drop)
+    }
+
     /// Attempt `rows`, due rows in `due` order: each stream's run of due
     /// rows goes to the host together, in `stream_seq` order, so a send that carries
     /// several (the `dm` chain's page) makes one write for them (E2.B F2).
+    /// A run's chain appends go to its stream's appender, together.
     async fn attempt_all(&self, rows: Vec<OutboxRow>) -> Result<(), OutboxError> {
         let mut streams: Vec<Vec<OutboxRow>> = Vec::new();
         for row in rows {
@@ -171,14 +202,24 @@ impl<D: OutboxDeps> Outbox<D> {
             // A prefix: the rows past the first that stayed behind were not
             // attempted and keep their schedule.
             let outcomes = self.deps.attempt_stream(&stream).await;
+            let mut jobs = Vec::new();
             for (row, outcome) in stream.iter().zip(outcomes) {
+                if let AttemptOutcome::Appending(frame) = outcome {
+                    self.hand_off(row).await?;
+                    jobs.push(crate::appender::Job {
+                        row: row.clone(),
+                        frame,
+                    });
+                    continue;
+                }
                 self.settle_attempt(row, outcome).await?;
             }
+            self.appends.hand(jobs);
         }
         Ok(())
     }
 
-    async fn settle_attempt(
+    pub(crate) async fn settle_attempt(
         &self,
         row: &OutboxRow,
         outcome: AttemptOutcome,
@@ -197,8 +238,9 @@ impl<D: OutboxDeps> Outbox<D> {
             }
             outcome @ (AttemptOutcome::Sent
             | AttemptOutcome::Awaiting
-            | AttemptOutcome::Deferred) => {
-                let landed = outcome != AttemptOutcome::Deferred;
+            | AttemptOutcome::Deferred
+            | AttemptOutcome::Appending(_)) => {
+                let landed = matches!(outcome, AttemptOutcome::Sent | AttemptOutcome::Awaiting);
                 let state = if landed {
                     merge(row.state, StateInput::LocalSent)
                 } else {
@@ -248,7 +290,7 @@ impl<D: OutboxDeps> Outbox<D> {
         for row in self.deps.expired(now).await? {
             self.fail(&row, DEADLINE_REASON.to_owned()).await?;
         }
-        self.attempt_all(self.deps.due(now).await?).await?;
+        self.attempt_due(now, None).await?;
         self.deps.next_wake().await
     }
 
@@ -263,11 +305,7 @@ impl<D: OutboxDeps> Outbox<D> {
         if kind.policy() == OutboxRetry::SettledExternally {
             return Ok(0);
         }
-        let mut rows = self.deps.due(i64::MAX).await?;
-        rows.retain(|row| row.kind == kind);
-        let attempted = rows.len();
-        self.attempt_all(rows).await?;
-        Ok(attempted)
+        self.attempt_due(i64::MAX, Some(kind)).await
     }
 
     /// The write that carries every unsettled row of stream `kind:scope`
@@ -503,8 +541,18 @@ impl<D: OutboxDeps> Outbox<D> {
         self.deps.unsettled_count().await
     }
 
-    /// Pump whenever a row is due or the outbox is woken, until `stop`.
+    /// Pump whenever a row is due or the outbox is woken, and run the
+    /// streams' appenders, until `stop`; an append still in flight then is
+    /// cut off, and its row is attempted again by a later pass.
     pub async fn run(&self, stop: CancellationToken) {
+        tokio::select! {
+            () = self.pump_loop(&stop) => {}
+            () = self.append_loop() => {}
+        }
+        self.appends.clear();
+    }
+
+    async fn pump_loop(&self, stop: &CancellationToken) {
         loop {
             let wait = match self.pump().await {
                 Ok(Some(at)) => Some(Duration::from_millis(

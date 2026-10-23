@@ -198,6 +198,18 @@ impl StreamSender for DmSender {
             .map(outcome)
             .collect()
     }
+
+    /// The stream's appender: the handed-off entries go on the chain.
+    async fn append(&self, stream: &str, frames: &[(Vec<u8>, i64)]) -> Vec<AttemptOutcome> {
+        let Some(peer) = stream.strip_prefix("dm:") else {
+            return vec![AttemptOutcome::Wedged(format!("not a dm stream: {stream}"))];
+        };
+        dm_outbox::append(&self.0, peer, frames)
+            .await
+            .into_iter()
+            .map(outcome)
+            .collect()
+    }
 }
 
 /// The `group_dm` stream's sender: `group_dm::content::attempt` (plan
@@ -232,6 +244,19 @@ impl StreamSender for GroupSender {
         .map(outcome)
         .collect()
     }
+
+    async fn append(&self, stream: &str, frames: &[(Vec<u8>, i64)]) -> Vec<AttemptOutcome> {
+        let Some(group) = stream.strip_prefix("group_dm:") else {
+            return vec![AttemptOutcome::Wedged(format!(
+                "not a group stream: {stream}"
+            ))];
+        };
+        rekindle_transport::operations::group_dm::content::append_frames(&self.0, group, frames)
+            .await
+            .into_iter()
+            .map(outcome)
+            .collect()
+    }
 }
 
 /// `rows` as the chain senders take them.
@@ -262,6 +287,7 @@ impl StreamSender for HandshakeSender {
 fn outcome(attempt: Attempt) -> AttemptOutcome {
     match attempt {
         Attempt::Sent => AttemptOutcome::Sent,
+        Attempt::Appending(frame) => AttemptOutcome::Appending(frame),
         Attempt::Awaiting => AttemptOutcome::Awaiting,
         Attempt::Receipted => AttemptOutcome::Receipted,
         Attempt::Deferred => AttemptOutcome::Deferred,

@@ -75,6 +75,11 @@ pub enum AttemptOutcome {
     /// The peer's own reply received the frame (an `app_call`'s receipt):
     /// the row settles `delivered`.
     Receipted,
+    /// The frame left as the hint, and its chain append (`frame`, as
+    /// framed for this attempt) goes to its stream's appender (the DM
+    /// pump): the row stays `queued`, is not attempted again while the
+    /// append is in flight, and lands on [`OutboxDeps::append`]'s outcome.
+    Appending(Vec<u8>),
     /// It could not be sent now (no route, no sender yet); try again.
     Deferred,
     /// It can never be sent as it stands (`prekey_rejected`): the row
@@ -196,6 +201,16 @@ pub trait OutboxDeps: Send + Sync {
         }
         outcomes
     }
+    /// Append `frames` (rows handed off by [`AttemptOutcome::Appending`],
+    /// each its frame and `stream_seq`, in order) to `stream`'s chain: the
+    /// outcomes of a prefix, as [`Self::attempt_stream`]'s (`Sent` for
+    /// each landed). Only a host whose attempt hands appends off is asked.
+    async fn append(
+        &self,
+        kind: StreamKind,
+        stream: &str,
+        frames: &[(Vec<u8>, i64)],
+    ) -> Vec<AttemptOutcome>;
     /// Make again the external write that carries `row`, a row of a kind
     /// the engine never attempts (the user's Retry of a failed channel
     /// post, under its client id); the write's settle settles the row.

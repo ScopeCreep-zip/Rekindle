@@ -175,6 +175,9 @@ pub enum Attempt {
     Awaiting,
     /// The peer's `app_call` reply received it (a `FriendRequest`).
     Receipted,
+    /// The hint left, and the entry (this frame) goes to the stream's
+    /// appender; the append's outcome is its landing (the DM pump).
+    Appending(Vec<u8>),
     /// Not now: no route, no session yet, the node is not up, or the
     /// peer's changed key waits for the user's review.
     Deferred,
@@ -251,27 +254,32 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
             break;
         }
     }
-    if !chained.is_empty() {
-        let frames: Vec<(Vec<u8>, i64)> = chained
-            .iter()
-            .map(|(i, datagram, _)| (datagram.clone(), rows[*i].stream_seq))
-            .collect();
-        // The hints go while the append is in flight, so the peer has the
-        // message at once rather than after the DHT write (live A/B finding
-        // 42); an ack that beats the landing waits on the row for it.
-        let hints = async {
-            for (_, datagram, type_id) in &chained {
-                if let Err(e) = send::route_send_datagram(host, to, datagram, *type_id, true).await
-                {
-                    tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
-                }
-            }
-        };
-        let ((landed, appended), ()) =
-            tokio::join!(super::stream::append(host, to, &frames), hints);
-        let slots: Vec<usize> = chained.iter().map(|(i, _, _)| *i).collect();
-        settle_chained(&mut outcomes, &slots, landed, appended);
+    // The run's hints go at once, in order, and its appends to the
+    // stream's appender ([`append`]), so the peer has each message without
+    // waiting on a DHT write, its own or an earlier one's (live A/B finding
+    // 42, the DM pump); an ack that beats the landing waits on the row.
+    for (i, datagram, type_id) in chained {
+        if let Err(e) = send::route_send_datagram(host, to, &datagram, type_id, true).await {
+            tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
+        }
+        outcomes[i] = Some(Attempt::Appending(datagram));
     }
+    finish(outcomes)
+}
+
+/// Append `frames` (handed-off entries, each with its `stream_seq`, in
+/// order) to our chain to `to`: `Sent` for each landed, then the error that
+/// stopped the rest; the rows after it were not appended.
+pub async fn append(host: &dyn FriendHost, to: &str, frames: &[(Vec<u8>, i64)]) -> Vec<Attempt> {
+    let (landed, appended) = super::stream::append(host, to, frames).await;
+    landing(frames.len(), landed, appended)
+}
+
+/// The outcomes of a run append of `n` entries that landed `landed`.
+pub(crate) fn landing(n: usize, landed: usize, appended: Result<(), FriendError>) -> Vec<Attempt> {
+    let mut outcomes = vec![None; n];
+    let slots: Vec<usize> = (0..n).collect();
+    settle_chained(&mut outcomes, &slots, landed, appended);
     finish(outcomes)
 }
 

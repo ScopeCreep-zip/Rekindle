@@ -8,6 +8,7 @@
 //! Discard. The engine runs over [`OutboxDeps`]; it holds no SQL and no
 //! transport.
 
+mod appender;
 mod deps;
 mod engine;
 pub mod state;

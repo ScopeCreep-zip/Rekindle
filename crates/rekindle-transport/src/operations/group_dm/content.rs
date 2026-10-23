@@ -155,13 +155,29 @@ pub async fn attempt(
             }
         }
     }
-    if !frames.is_empty() {
-        let (landed, appended) = append(host, &id, group_id, &frames).await;
-        sealed.truncate(landed);
-        spawn_hints(host, &id, sealed);
-        dm_outbox::settle_chained(&mut outcomes, &slots, landed, appended);
+    // The hints go at once and the appends to the stream's appender
+    // ([`append_frames`], the DM pump).
+    spawn_hints(host, &id, sealed);
+    for (slot, (frame, _)) in slots.into_iter().zip(frames) {
+        outcomes[slot] = Some(Attempt::Appending(frame));
     }
     dm_outbox::finish(outcomes)
+}
+
+/// Append `frames` (handed-off sealed entries, each with its `stream_seq`,
+/// in order) to our chain for `group_id`: `Sent` for each landed, then the
+/// error that stopped the rest.
+pub async fn append_frames(
+    host: &dyn FriendHost,
+    group_id: &str,
+    frames: &[(Vec<u8>, i64)],
+) -> Vec<Attempt> {
+    let id = match parse_group_id(group_id) {
+        Ok(id) => id,
+        Err(e) => return vec![Attempt::Wedged(e.to_string())],
+    };
+    let (landed, appended) = append(host, &id, group_id, frames).await;
+    dm_outbox::landing(frames.len(), landed, appended)
 }
 
 /// Seal `row` under our current sending key for this attempt.

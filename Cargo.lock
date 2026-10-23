@@ -7826,6 +7826,7 @@ name = "rekindle-outbox"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "futures",
  "parking_lot 0.12.5",
  "rand 0.8.5",
  "rekindle-crypto",

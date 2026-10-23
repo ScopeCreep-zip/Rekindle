@@ -364,3 +364,58 @@ async fn a_message_arrives_before_its_append_lands() {
         "Ida's row settles delivered once its append landed"
     );
 }
+
+/// Live A/B finding 42 follow-up: a stream run's hints don't wait on one
+/// another's appends, so a DM sent while the one before it is still being
+/// appended reaches the peer as fast as the first.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn two_messages_back_to_back_both_arrive_before_their_appends_land() {
+    use rekindle_netsim::latency::SET;
+    let (sim, mut nodes) = start(2, 77).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    assert!(
+        eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "hello: 0 to 1")).await,
+        "hello settled"
+    );
+    let bound = SET.min / 2;
+    send(&nodes[0], &jon, "first").await;
+    let sent = tokio::time::Instant::now();
+    // "second" is sent once "first" reached Jon by its hint, while its
+    // append (a GET and two SETs) is still in flight.
+    assert!(
+        eventually(&sim, bound, || async {
+            received(&nodes[1], &ida)
+                .await
+                .contains(&"first".to_string())
+        })
+        .await,
+        "Jon has the first"
+    );
+    assert!(
+        !delivered(&nodes[0], &jon, "first").await,
+        "the first's append is still in flight"
+    );
+    send(&nodes[0], &jon, "second").await;
+    assert!(
+        eventually(&sim, bound, || async {
+            let got = received(&nodes[1], &ida).await;
+            ["first", "second"]
+                .iter()
+                .all(|b| got.contains(&(*b).to_string()))
+        })
+        .await,
+        "Jon has both within {bound:?} (after {:?})",
+        sent.elapsed()
+    );
+    for body in ["first", "second"] {
+        assert!(
+            eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, body)).await,
+            "{body} settles delivered once its append landed"
+        );
+    }
+}

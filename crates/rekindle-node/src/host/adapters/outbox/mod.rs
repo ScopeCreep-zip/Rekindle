@@ -329,6 +329,15 @@ impl OutboxDeps for HostOutbox {
         self.senders.send_stream(rows).await
     }
 
+    async fn append(
+        &self,
+        kind: StreamKind,
+        stream: &str,
+        frames: &[(Vec<u8>, i64)],
+    ) -> Vec<AttemptOutcome> {
+        self.senders.append(kind, stream, frames).await
+    }
+
     async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
         self.senders.reissue(row).await
     }

@@ -102,7 +102,8 @@ async fn a_send_commits_its_row_and_echo_and_waits_for_its_chain_entry() {
         .await
         .unwrap();
     assert_eq!(echo, Some((gid.clone(), ConversationType::GroupDm)));
-    // Offline: no chain entry lands, so the row is not sent.
+    // The attempt hands the sealed entry to the stream's appender (the DM
+    // pump); offline, no chain entry lands, so the row is not sent.
     let row = RowAttempt {
         stream_seq: rows[0].stream_seq,
         state: rows[0].state,
@@ -110,7 +111,11 @@ async fn a_send_commits_its_row_and_echo_and_waits_for_its_chain_entry() {
         payload: &rows[0].payload,
     };
     let tried = content::attempt(&friends, &gid, &[row]).await;
-    assert_eq!(tried, [Attempt::Deferred]);
+    let [Attempt::Appending(frame)] = tried.as_slice() else {
+        panic!("handed off: {tried:?}");
+    };
+    let landed = content::append_frames(&friends, &gid, &[(frame.clone(), row.stream_seq)]).await;
+    assert_eq!(landed, [Attempt::Deferred]);
     assert!(
         content::send(&friends, &"0".repeat(32), "x").await.is_err(),
         "not our group"
