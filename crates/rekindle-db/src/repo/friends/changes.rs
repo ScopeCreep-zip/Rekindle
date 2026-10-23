@@ -26,7 +26,11 @@ pub(crate) fn atomically<T>(
 
 /// Delete every ratchet session with `peer`: the friendship that carried
 /// them ended. The ratchet tables key both sides by lowercase hex.
-fn delete_sessions(conn: &Connection, owner_key: &str, peer: &str) -> rusqlite::Result<()> {
+pub(super) fn delete_sessions(
+    conn: &Connection,
+    owner_key: &str,
+    peer: &str,
+) -> rusqlite::Result<()> {
     conn.execute(
         "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
         params![owner_key.to_ascii_lowercase(), peer.to_ascii_lowercase()],
@@ -139,6 +143,24 @@ pub fn forget(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
     atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)
+    })
+}
+
+/// Our request to `public_key` was cancelled: their row and any session
+/// with them go. A pending request normally has none, but one kept from an
+/// ended friendship would refuse the next friendship's first contact (live
+/// A/B 2026-10-23).
+///
+/// # Errors
+/// A write failed; nothing is kept.
+pub fn cancel_request(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<()> {
+    atomically(conn, |conn| {
+        delete(conn, owner_key, public_key)?;
+        delete_sessions(conn, owner_key, public_key)
     })
 }
 

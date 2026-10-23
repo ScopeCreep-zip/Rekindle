@@ -10,8 +10,8 @@ mod changes;
 mod participant;
 mod presence;
 pub use changes::{
-    accept_request, accept_with_records, block, forget, forget_removed, mark_removing,
-    replace_with_invited, unfriended, RecordKeys,
+    accept_request, accept_with_records, block, cancel_request, forget, forget_removed,
+    mark_removing, replace_with_invited, unfriended, RecordKeys,
 };
 pub use participant::{
     participant_record_key, peer_participant_record_key, set_participant_record_key,
@@ -62,7 +62,10 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Frie
 
 /// A friend we are removing who is added again: the removal ends here.
 /// Its row goes, and so does what is still queued to them (the
-/// `Unfriended` notice must not follow the new request out).
+/// `Unfriended` notice must not follow the new request out), and so do the
+/// sessions the removal kept for that notice, as `forget_removed` deletes
+/// them when the removal ends on its ack: the new friendship opens its own,
+/// and a kept one refuses its first contact (live A/B 2026-10-23).
 fn end_removal(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
     let removing = conn
         .query_row(
@@ -76,6 +79,7 @@ fn end_removal(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite
     if removing {
         crate::repo::outbox::delete_to_peer(conn, owner_key, public_key)?;
         delete(conn, owner_key, public_key)?;
+        changes::delete_sessions(conn, owner_key, public_key)?;
     }
     Ok(())
 }
@@ -93,11 +97,17 @@ pub fn insert_pending_out(
     added_at: i64,
 ) -> rusqlite::Result<()> {
     end_removal(conn, owner_key, public_key)?;
-    conn.execute(
+    // A request to someone we hold no row for starts a new friendship: no
+    // session kept from an ended one may refuse its first contact (live
+    // A/B 2026-10-23).
+    let inserted = conn.execute(
         "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
          VALUES (?1, ?2, ?3, ?4, 'pending_out')",
         params![owner_key, public_key, display_name, added_at],
     )?;
+    if inserted == 1 {
+        changes::delete_sessions(conn, owner_key, public_key)?;
+    }
     Ok(())
 }
 
@@ -178,7 +188,7 @@ pub fn delete_pending_out_before(
         .query_map(params![owner_key, cutoff], |row| row.get(0))?
         .collect::<rusqlite::Result<Vec<String>>>()?;
     for public_key in &expired {
-        delete(conn, owner_key, public_key)?;
+        changes::cancel_request(conn, owner_key, public_key)?;
     }
     Ok(expired)
 }
@@ -480,6 +490,12 @@ mod tests {
             "unfriended:bob",
             b"{}",
         );
+        conn.execute(
+            "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
+             VALUES (?1, 'bob', 'd', x'00', 1)",
+            params![OWNER.to_ascii_lowercase()],
+        )
+        .unwrap();
         insert_pending_out(&conn, OWNER, "bob", "Bob", 2).unwrap();
         assert_eq!(
             load_all(&conn, OWNER).unwrap()[0].friendship_state,
@@ -489,6 +505,44 @@ mod tests {
             crate::repo::outbox::unsettled_count(&conn, OWNER).unwrap(),
             0
         );
+        let sessions: i64 = conn
+            .query_row("SELECT COUNT(*) FROM ratchet_sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sessions, 0, "the removal's kept session goes with it");
+    }
+
+    #[test]
+    fn cancelling_a_request_drops_a_session_kept_from_an_ended_friendship() {
+        let conn = fixture::conn();
+        insert_pending_out(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        conn.execute(
+            "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
+             VALUES (?1, 'bob', 'd', x'00', 1)",
+            params![OWNER.to_ascii_lowercase()],
+        )
+        .unwrap();
+        cancel_request(&conn, OWNER, "bob").unwrap();
+        assert!(load_all(&conn, OWNER).unwrap().is_empty());
+        let sessions: i64 = conn
+            .query_row("SELECT COUNT(*) FROM ratchet_sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sessions, 0);
+    }
+
+    #[test]
+    fn a_new_request_drops_a_session_kept_from_an_ended_friendship() {
+        let conn = fixture::conn();
+        conn.execute(
+            "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
+             VALUES (?1, 'bob', 'd', x'00', 1)",
+            params![OWNER.to_ascii_lowercase()],
+        )
+        .unwrap();
+        insert_pending_out(&conn, OWNER, "bob", "Bob", 1).unwrap();
+        let sessions: i64 = conn
+            .query_row("SELECT COUNT(*) FROM ratchet_sessions", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(sessions, 0);
     }
 
     #[test]

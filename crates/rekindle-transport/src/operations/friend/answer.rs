@@ -144,8 +144,8 @@ pub async fn cancel(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         ));
     }
     let pk = public_key.to_string();
-    state::db_call!(host, "remove friend", move |conn| {
-        rekindle_db::repo::friends::delete(conn, &owner, &pk)
+    state::db_call!(host, "cancel the request", move |conn| {
+        rekindle_db::repo::friends::cancel_request(conn, &owner, &pk)
     })
     .await?;
     state::take(host, public_key);
