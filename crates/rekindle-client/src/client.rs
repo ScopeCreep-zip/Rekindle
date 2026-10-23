@@ -25,7 +25,7 @@ use crate::ClientError;
 /// Default request timeout.
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
 /// Timeout for requests that wait on Veilid network I/O.
-const LONG_TIMEOUT: Duration = Duration::from_secs(180);
+const LONG_TIMEOUT: Duration = rekindle_types::config::NETWORK_COMMAND_DEADLINE;
 
 /// A request that ran: its answer, and for an intent how it can be taken
 /// back.
@@ -228,7 +228,9 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::Logout
         | IpcRequest::Community(
             CommunityRequest::Lifecycle(
-                LifecycleRequest::CommunityCreate { .. } | LifecycleRequest::CommunityJoin { .. },
+                LifecycleRequest::CommunityCreate { .. }
+                | LifecycleRequest::CommunityJoin { .. }
+                | LifecycleRequest::InviteCreate { .. },
             )
             | CommunityRequest::Messages(
                 ChannelMessageRequest::ChannelSend { .. }

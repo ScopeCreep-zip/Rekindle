@@ -415,10 +415,16 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// landed, so a joiner's walk from the DHT finds the op. `Err`: the row
     /// stays queued for the outbox's retry, and nothing that needs the op
     /// on the DHT (an invite link) may be handed out.
+    ///
+    /// With [`OpLanding::Landed`] it waits instead, through the outbox's
+    /// retries and up to the command's deadline, until the op landed, and
+    /// is an error if it has not (the row stays queued): an invite link is
+    /// handed out only once its `InviteCreated` is on `M` (plan E3.2 S6 (4)).
     async fn publish_governance_op(
         &self,
         community_id: &str,
         encoded: Vec<u8>,
+        landing: OpLanding,
     ) -> Result<(), GovernanceRuntimeError>;
 
     /// Fire-and-forget spawn of a text-MEK rotation task for a newly
@@ -489,4 +495,14 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         role_id: u32,
     ) -> Result<(), GovernanceRuntimeError>;
+}
+
+/// What the publisher of a governance op waits for
+/// ([`GovernanceRuntimeDeps::publish_governance_op`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpLanding {
+    /// The first attempt: a queued op stands, the outbox lands it.
+    FirstAttempt,
+    /// The op on `M`/2 and our frontier on `M`/3, through the retries.
+    Landed,
 }

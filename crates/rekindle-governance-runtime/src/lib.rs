@@ -51,11 +51,11 @@ pub mod roles;
 pub mod roster;
 pub mod segments;
 
-pub use apply::write_entry;
+pub use apply::{write_entry, write_entry_landed};
 pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};
 pub use deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, UserStatusKind,
+    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, OpLanding, UserStatusKind,
 };
 pub use dht_hydration::{
     hydrate_one_community, open_and_track_one_community, rebuild_governance,

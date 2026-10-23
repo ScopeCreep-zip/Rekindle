@@ -30,6 +30,7 @@ mod harness;
 mod internet_flap;
 mod invite_expiry;
 mod invite_join_leave;
+mod invite_unpublished;
 mod logs;
 mod mod_report;
 mod moderation;

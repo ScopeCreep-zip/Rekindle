@@ -109,9 +109,13 @@ impl HostGovernance {
             now_ms: self.ctx.clock.now_ms(),
         };
         let publish_ops = async {
-            self.publish_governance_op(community, outcome.joined.encoded.clone())
-                .await
-                .map_err(|e| format!("MemberJoined not published: {e}"))
+            self.publish_governance_op(
+                community,
+                outcome.joined.encoded.clone(),
+                rekindle_governance_runtime::OpLanding::FirstAttempt,
+            )
+            .await
+            .map_err(|e| format!("MemberJoined not published: {e}"))
         };
         publish_own_record(
             &*port,

@@ -136,7 +136,9 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
 
     let invite_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
     let expires_at = expires_in_seconds.map(|s| deps.clock().now_secs() + s);
-    apply::write_entry(
+    // The link is handed out only once its op and our frontier are on `M`
+    // (plan E3.2 S6 (4)): a joiner walks what is on the DHT.
+    apply::write_entry_landed(
         deps,
         community_id,
         GovernanceEntry::InviteCreated {

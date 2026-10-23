@@ -223,14 +223,15 @@ impl HostGovernance {
             .map(|entry| entry.ciphertext))
     }
 
-    /// Publish `encoded` on our member record's op log and wait until it
-    /// landed (`M`/2 and `M`/3): the record is the cert's for the creator,
-    /// else our `MemberJoined`'s. A failed attempt stays queued for the
-    /// outbox's retry and is an error here.
+    /// Publish `encoded` on our member record's op log (the cert's record
+    /// for the creator, else our `MemberJoined`'s) and wait for what
+    /// `landing` names: its first attempt (a queued op stands), or its
+    /// landing on `M`/2 and `M`/3 within the command's deadline.
     pub(super) async fn publish_governance_op_impl(
         &self,
         community_id: &str,
         encoded: Vec<u8>,
+        landing: rekindle_governance_runtime::OpLanding,
     ) -> Result<(), GovernanceRuntimeError> {
         let (cert, state, mine) = {
             let map = self.ctx.communities.map().read();
@@ -253,14 +254,29 @@ impl HostGovernance {
             .outbox
             .governance_ops()
             .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
-        let published = ops
-            .publish(community_id, &record, encoded.clone())
-            .await
-            .map_err(|e| adapter("publish op", e))?;
-        // A first attempt that did not land leaves the op queued: it is in
-        // our state and the outbox lands it, so the action stands.
-        if let crate::host::adapters::outbox::Published::Queued(reason) = published {
-            tracing::warn!(community = %community_id, %reason, "governance op queued for retry, not yet on the DHT");
+        match landing {
+            rekindle_governance_runtime::OpLanding::FirstAttempt => {
+                let published = ops
+                    .publish(community_id, &record, encoded.clone())
+                    .await
+                    .map_err(|e| adapter("publish op", e))?;
+                // A first attempt that did not land leaves the op queued: it
+                // is in our state and the outbox lands it, so the action stands.
+                if let crate::host::adapters::outbox::Published::Queued(reason) = published {
+                    tracing::warn!(community = %community_id, %reason, "governance op queued for retry, not yet on the DHT");
+                }
+            }
+            // Bounded by the command's deadline (the client's
+            // `NETWORK_COMMAND_DEADLINE`, answered before it).
+            rekindle_governance_runtime::OpLanding::Landed => ops
+                .publish_landed(
+                    community_id,
+                    &record,
+                    encoded.clone(),
+                    rekindle_types::config::NETWORK_ANSWER_DEADLINE,
+                )
+                .await
+                .map_err(|e| adapter("publish op", e))?,
         }
         // The fast path: every member hears the op before its watch fires.
         self.send_to_mesh_impl(

@@ -45,9 +45,13 @@ fn decode(payload: &[u8]) -> Option<(&str, &str, &[u8])> {
 type Landed = tokio::sync::oneshot::Sender<Result<(), String>>;
 
 /// The publishers waiting on an op's first attempt, by community and the
-/// op's client id (its hash).
+/// op's client id (its hash), and those waiting until it landed through
+/// the retries ([`GovernanceOps::publish_landed`]).
 #[derive(Default)]
-pub struct OpWaiters(parking_lot::Mutex<BTreeMap<(String, String), Landed>>);
+pub struct OpWaiters {
+    first: parking_lot::Mutex<BTreeMap<(String, String), Landed>>,
+    landing: parking_lot::Mutex<BTreeMap<(String, String), tokio::sync::oneshot::Sender<()>>>,
+}
 
 impl OpWaiters {
     fn wait(
@@ -56,25 +60,36 @@ impl OpWaiters {
         client_id: &str,
     ) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.0
+        self.first
+            .lock()
+            .insert((community.to_owned(), client_id.to_owned()), tx);
+        rx
+    }
+
+    fn wait_landed(&self, community: &str, client_id: &str) -> tokio::sync::oneshot::Receiver<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.landing
             .lock()
             .insert((community.to_owned(), client_id.to_owned()), tx);
         rx
     }
 
     fn forget(&self, community: &str, client_id: &str) {
-        self.0
-            .lock()
-            .remove(&(community.to_owned(), client_id.to_owned()));
+        let key = (community.to_owned(), client_id.to_owned());
+        self.first.lock().remove(&key);
+        self.landing.lock().remove(&key);
     }
 
     fn landed(&self, community: &str, client_id: &str) {
-        let waiter = self
-            .0
-            .lock()
-            .remove(&(community.to_owned(), client_id.to_owned()));
+        let key = (community.to_owned(), client_id.to_owned());
+        let waiter = self.first.lock().remove(&key);
         if let Some(waiter) = waiter {
             drop(waiter.send(Ok(())));
+        }
+        let waiter = self.landing.lock().remove(&key);
+        if let Some(waiter) = waiter {
+            // A publisher that stopped waiting (its deadline passed) is gone.
+            waiter.send(()).ok();
         }
     }
 
@@ -82,7 +97,7 @@ impl OpWaiters {
     /// `community` lands before it, so every publisher there hears why.
     fn failed(&self, community: &str, reason: &str) {
         let waiting: Vec<Landed> = {
-            let mut map = self.0.lock();
+            let mut map = self.first.lock();
             let keys: Vec<_> = map
                 .keys()
                 .filter(|(c, _)| c == community)
@@ -97,7 +112,8 @@ impl OpWaiters {
 
     /// The outbox stopped: every publisher hears it (the rows stay).
     pub(super) fn clear(&self) {
-        self.0.lock().clear();
+        self.first.lock().clear();
+        self.landing.lock().clear();
     }
 }
 
@@ -131,28 +147,68 @@ impl GovernanceOps {
         record: &str,
         op: Vec<u8>,
     ) -> Result<Published, String> {
-        let decoded = rekindle_codec::governance_op::decode_op(&op)
-            .map_err(|e| format!("governance op: {e}"))?;
-        let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
-        let payload = encode(community, record, &op).ok_or("governance op keys too long")?;
-        let client_id = hex::encode(hash.0);
-        let landed = self.waiters.wait(community, &client_id);
-        let entry = Entry {
-            kind: StreamKind::GovernanceOp,
-            scope: community.to_owned(),
-            client_id: client_id.clone(),
-            payload,
-            deadline: Deadline::Horizon,
-        };
-        if let Err(error) = self.outbox.enqueue(entry, None).await {
-            self.waiters.forget(community, &client_id);
-            return Err(error.to_string());
-        }
-        let first = landed
+        let (entry, client_id) = row(community, record, &op)?;
+        let first = self.waiters.wait(community, &client_id);
+        self.enqueue(entry, community, &client_id).await?;
+        let first = first
             .await
             .map_err(|_| "the outbox stopped before the op landed".to_owned())?;
         Ok(first.map_or_else(Published::Queued, |()| Published::Landed))
     }
+
+    /// Queue `op` as [`publish`](Self::publish) does, and wait until it
+    /// landed on `M`/2 with our `Frontier` on `M`/3, through the outbox's
+    /// retries, for at most `within` (plan E3.2 S6 (4)).
+    ///
+    /// # Errors
+    /// As [`publish`](Self::publish), or the op is not yet published after
+    /// `within`: its row stays queued and the outbox lands it later.
+    pub async fn publish_landed(
+        &self,
+        community: &str,
+        record: &str,
+        op: Vec<u8>,
+        within: std::time::Duration,
+    ) -> Result<(), String> {
+        let (entry, client_id) = row(community, record, &op)?;
+        let landed = self.waiters.wait_landed(community, &client_id);
+        self.enqueue(entry, community, &client_id).await?;
+        let waited = tokio::time::timeout(within, landed).await;
+        self.waiters.forget(community, &client_id);
+        match waited {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(_)) => Err("the outbox stopped before the op landed".to_owned()),
+            Err(_) => Err("not yet published: the op is queued until it lands".to_owned()),
+        }
+    }
+
+    async fn enqueue(&self, entry: Entry, community: &str, client_id: &str) -> Result<(), String> {
+        match self.outbox.enqueue(entry, None).await {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                self.waiters.forget(community, client_id);
+                Err(error.to_string())
+            }
+        }
+    }
+}
+
+/// `op`'s outbox entry for `record`'s op log in `community`, and its
+/// client id (the op's hash).
+fn row(community: &str, record: &str, op: &[u8]) -> Result<(Entry, String), String> {
+    let decoded =
+        rekindle_codec::governance_op::decode_op(op).map_err(|e| format!("governance op: {e}"))?;
+    let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
+    let payload = encode(community, record, op).ok_or("governance op keys too long")?;
+    let client_id = hex::encode(hash.0);
+    let entry = Entry {
+        kind: StreamKind::GovernanceOp,
+        scope: community.to_owned(),
+        client_id: client_id.clone(),
+        payload,
+        deadline: Deadline::Horizon,
+    };
+    Ok((entry, client_id))
 }
 
 /// The stream's sender: the op into our op log.

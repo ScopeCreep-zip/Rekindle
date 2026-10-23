@@ -389,9 +389,13 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
             deps.store_governance_op(&anchor_key, &op)
                 .await
                 .map_err(|e| e.to_string())?;
-            deps.publish_governance_op(&anchor_key, op.encoded)
-                .await
-                .map_err(|e| e.to_string())?;
+            deps.publish_governance_op(
+                &anchor_key,
+                op.encoded,
+                crate::deps::OpLanding::FirstAttempt,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
         }
         Ok(())
     };

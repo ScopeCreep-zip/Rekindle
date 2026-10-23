@@ -26,6 +26,17 @@ pub const ANONYMITY_HOP_FLOOR: u8 = 3;
 /// Veilid's record store; plan C7.6g, C7.6j).
 pub const SESSION_STOP_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
 
+/// How long a client waits for the answer to a request that waits on
+/// Veilid network I/O (a community create, a send, an invite create).
+pub const NETWORK_COMMAND_DEADLINE: std::time::Duration = std::time::Duration::from_secs(180);
+
+/// How long the Host waits on the network inside such a request before it
+/// answers: the client's deadline less a session's stop deadline, so the
+/// answer (a "not yet published" refusal included) reaches the client
+/// before it gives up.
+pub const NETWORK_ANSWER_DEADLINE: std::time::Duration =
+    NETWORK_COMMAND_DEADLINE.saturating_sub(SESSION_STOP_DEADLINE);
+
 /// Top-level transport configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

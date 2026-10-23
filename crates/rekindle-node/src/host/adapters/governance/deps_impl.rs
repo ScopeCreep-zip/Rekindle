@@ -385,8 +385,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
         &self,
         community_id: &str,
         encoded: Vec<u8>,
+        landing: rekindle_governance_runtime::OpLanding,
     ) -> Result<(), GovernanceRuntimeError> {
-        self.publish_governance_op_impl(community_id, encoded).await
+        self.publish_governance_op_impl(community_id, encoded, landing)
+            .await
     }
 
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str) {
