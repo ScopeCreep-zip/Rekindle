@@ -59,9 +59,6 @@ impl DaemonClient {
         if !socket.exists() {
             return Err(ClientError::NotRunning { socket });
         }
-        let server_pub = rekindle_ipc::noise_keys::read_bus_public_key()
-            .await
-            .map_err(|e| ClientError::Connect(format!("no bus public key: {e}")))?;
         // The client's persistent Noise key (plan D1): an unlock from it
         // registers it with the identity, so it keeps its clearance across
         // connections and reboots.
@@ -71,7 +68,9 @@ impl DaemonClient {
         let mut client = BusClient::connect_with_retry(
             Uuid::now_v7(),
             &socket,
-            &server_pub,
+            // Read at each attempt: a daemon that starts between two
+            // attempts publishes a new key.
+            rekindle_ipc::noise_keys::read_bus_public_key,
             keypair.as_inner(),
             3,
             Duration::from_millis(500),

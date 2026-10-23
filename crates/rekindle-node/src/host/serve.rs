@@ -94,14 +94,6 @@ fn spawn_bus_subscriber(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(
         async move {
-            let server_pub = match rekindle_ipc::noise_keys::read_bus_public_key().await {
-                Ok(k) => k,
-                Err(e) => {
-                    tracing::error!(error = %e, "host subscriber: cannot read bus public key");
-                    ctx.shutdown.request(ExitReason::SubscriberFailed);
-                    return;
-                }
-            };
             // The client id, from the clock and RNG ports (plan C9.2).
             let mut random = [0u8; 10];
             ctx.rng.fill(&mut random);
@@ -110,7 +102,7 @@ fn spawn_bus_subscriber(
             let client = match rekindle_ipc::BusClient::connect_with_retry(
                 client_id,
                 &socket,
-                &server_pub,
+                rekindle_ipc::noise_keys::read_bus_public_key,
                 keypair.as_inner(),
                 5,
                 std::time::Duration::from_millis(200),

@@ -54,6 +54,8 @@ pub mod server;
 pub mod transport;
 
 #[cfg(test)]
+mod connect_retry_tests;
+#[cfg(test)]
 mod intent_wire_tests;
 #[cfg(test)]
 mod media_transport_tests;

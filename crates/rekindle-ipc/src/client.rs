@@ -193,17 +193,29 @@ impl BusClient {
     }
 
     /// Connect with automatic retry and backoff.
+    ///
+    /// `server_key` is asked for the server's public key on every attempt:
+    /// each daemon start publishes a new bus key (`bus.pub`, rotated per run),
+    /// so a key read before an attempt refused by a socket that was not yet
+    /// bound may be the previous daemon's, and a retry with it fails the new
+    /// daemon's handshake.
     pub async fn connect_with_retry(
         sender_id: Uuid,
         path: &Path,
-        server_public_key: &[u8; 32],
+        server_key: impl AsyncFn() -> Result<[u8; 32]>,
         client_keypair: &snow::Keypair,
         max_attempts: u32,
         backoff: Duration,
     ) -> Result<Self> {
         let mut last_err = None;
         for attempt in 1..=max_attempts {
-            match Self::connect(sender_id, path, server_public_key, client_keypair).await {
+            let attempted = match server_key().await {
+                Ok(server_public_key) => {
+                    Self::connect(sender_id, path, &server_public_key, client_keypair).await
+                }
+                Err(e) => Err(e),
+            };
+            match attempted {
                 Ok(client) => return Ok(client),
                 // Another build will not become this one by retrying.
                 Err(e @ IpcError::BuildMismatch { .. }) => return Err(e),
