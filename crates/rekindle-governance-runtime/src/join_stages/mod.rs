@@ -257,7 +257,10 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
             pseudonym_key: ctx.my_pseudo.clone(),
             display_name: ctx.display_name.clone(),
             status: ctx.join_status_label.into(),
-            route_blob: vec![],
+            // The route we already publish, as every later presence write
+            // carries it: the inviter answers our `RequestMEK` only once
+            // its scan reads a route on this row.
+            route_blob: deps.our_route_blob(),
             last_heartbeat: deps.clock().now_secs(),
             ..Default::default()
         };

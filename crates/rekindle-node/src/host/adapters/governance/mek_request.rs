@@ -136,6 +136,11 @@ impl HostGovernance {
     /// Hold `request` until its requester's ops merge: one per requester,
     /// the oldest dropped past `PARKED_MEK_REQUESTS`.
     fn park_mek_request(&self, community_id: &str, request: &MekRequest) {
+        tracing::debug!(
+            community = community_id,
+            requester = %request.requester_pseudonym,
+            "RequestMEK parked",
+        );
         let mut map = self.ctx.communities.map().write();
         let Some(community) = map.get_mut(community_id) else {
             return;
