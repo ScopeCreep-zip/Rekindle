@@ -214,8 +214,9 @@ pub async fn create(
     display_name: Option<&str>,
     passphrase: &str,
     now_ms: i64,
+    rng: &dyn rekindle_utils::RandomSource,
 ) -> Result<Unlocked, IdentityError> {
-    let identity = rekindle_crypto::Identity::generate();
+    let identity = rekindle_crypto::Identity::generate_with(rng);
     let public_key = identity.public_key_hex();
     let secret = Zeroizing::new(*identity.secret_key_bytes());
     let display_name = match display_name.filter(|s| !s.trim().is_empty()) {

@@ -5,9 +5,16 @@ use crate::host::fixture::Fixture;
 #[tokio::test]
 async fn create_lock_unlock_round_trips_and_lists() {
     let f = Fixture::new();
-    let made = create(&f.root, &f.stores(), Some("Alice"), "pass", 1)
-        .await
-        .unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        Some("Alice"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     assert_eq!(made.display_name, "Alice");
     assert!(f.db.current().is_ok());
     assert!(f.vault.lock().is_some());
@@ -31,18 +38,32 @@ async fn create_lock_unlock_round_trips_and_lists() {
 #[tokio::test]
 async fn a_default_name_is_given_when_none_is() {
     let f = Fixture::new();
-    let made = create(&f.root, &f.stores(), Some("  "), "pass", 1)
-        .await
-        .unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        Some("  "),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     assert!(made.display_name.starts_with("User_"));
 }
 
 #[tokio::test]
 async fn wrong_passphrases_lock_the_identity() {
     let f = Fixture::new();
-    let made = create(&f.root, &f.stores(), None, "right", 1)
-        .await
-        .unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        None,
+        "right",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let pk = made.public_key.clone();
     drop(made);
     lock(&f.stores()).await;
@@ -68,7 +89,16 @@ async fn unknown_identities_are_not_found_and_delete_removes_everything() {
         unlock(&f.root, &f.stores(), &"ab".repeat(32), "p", 1).await,
         Err(IdentityError::NotFound)
     ));
-    let made = create(&f.root, &f.stores(), None, "pass", 1).await.unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        None,
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let pk = made.public_key.clone();
     drop(made);
     lock(&f.stores()).await;
@@ -100,9 +130,16 @@ async fn unknown_identities_are_not_found_and_delete_removes_everything() {
 #[tokio::test]
 async fn a_rename_reaches_the_registry() {
     let f = Fixture::new();
-    let made = create(&f.root, &f.stores(), Some("Old"), "pass", 1)
-        .await
-        .unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        Some("Old"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     rename(&f.root, &made.public_key, "New").unwrap();
     assert_eq!(list(&f.root).unwrap()[0].display_name, "New");
     assert!(matches!(
@@ -114,9 +151,16 @@ async fn a_rename_reaches_the_registry() {
 #[tokio::test]
 async fn an_exported_identity_imports_on_another_root_and_unlocks() {
     let a = Fixture::new();
-    let made = create(&a.root, &a.stores(), Some("Mover"), "pass", 1)
-        .await
-        .unwrap();
+    let made = create(
+        &a.root,
+        &a.stores(),
+        Some("Mover"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let pk = made.public_key.clone();
     drop(made);
     // Exported while unlocked: read through the live vault.
@@ -150,7 +194,16 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
 #[tokio::test]
 async fn an_archive_naming_a_path_is_refused() {
     let a = Fixture::new();
-    let made = create(&a.root, &a.stores(), None, "pass", 1).await.unwrap();
+    let made = create(
+        &a.root,
+        &a.stores(),
+        None,
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let pk = made.public_key.clone();
     drop(made);
     let bytes = export(&a.root, &a.stores(), &pk, "pass", 2).unwrap();
@@ -166,9 +219,16 @@ async fn an_archive_naming_a_path_is_refused() {
 #[tokio::test]
 async fn a_rotated_identity_unlocks_under_its_new_key_only() {
     let f = Fixture::new();
-    let made = create(&f.root, &f.stores(), Some("Turner"), "pass", 1)
-        .await
-        .unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        Some("Turner"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let old = made.public_key.clone();
     drop(made);
     lock(&f.stores()).await;
@@ -221,9 +281,16 @@ fn journal(secret: [u8; 32]) -> rekindle_vault::typed::pending_rotation::Pending
 #[tokio::test]
 async fn a_rotation_journalled_before_a_crash_completes_at_the_next_unlock() {
     let f = Fixture::new();
-    let made = create(&f.root, &f.stores(), Some("Turner"), "pass", 1)
-        .await
-        .unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        Some("Turner"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let old = made.public_key.clone();
     drop(made);
     let next = rekindle_crypto::Identity::generate();
@@ -264,7 +331,16 @@ async fn a_rotation_journalled_before_a_crash_completes_at_the_next_unlock() {
 #[tokio::test]
 async fn remove_needs_no_passphrase_and_a_missing_identity_is_not_found() {
     let f = Fixture::new();
-    let made = create(&f.root, &f.stores(), None, "pass", 1).await.unwrap();
+    let made = create(
+        &f.root,
+        &f.stores(),
+        None,
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let pk = made.public_key.clone();
     drop(made);
     lock(&f.stores()).await;

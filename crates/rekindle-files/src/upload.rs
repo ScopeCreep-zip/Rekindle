@@ -221,7 +221,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     deps.ensure_cache_open(community_id)?;
 
     // Per-file FEK (plan §1.J1): fresh AES-256 key, never reused.
-    let fek = MediaEncryptionKey::generate(0);
+    let fek = MediaEncryptionKey::generate_with(0, deps.rng().as_ref());
 
     // Chunk the plaintext + compute chunk_hashes + Merkle root.
     let chunked = Chunker::chunk(&bytes, *random_uuid(deps).as_bytes())

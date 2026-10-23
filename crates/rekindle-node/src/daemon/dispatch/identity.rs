@@ -65,6 +65,7 @@ pub(crate) async fn handle_create(
         display_name,
         passphrase,
         ctx.clock.now_ms_i64(),
+        ctx.rng.as_ref(),
     )
     .await
     {

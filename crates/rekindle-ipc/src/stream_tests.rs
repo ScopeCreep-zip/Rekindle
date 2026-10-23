@@ -98,7 +98,9 @@ fn seq(frame: &StreamFrame) -> Option<u64> {
 /// order, then `Resumed`, then live events.
 #[tokio::test]
 async fn a_returning_client_resumes_from_its_cursor() {
-    let journal = Arc::new(SessionJournal::default());
+    let journal = Arc::new(SessionJournal::with_rng(Arc::new(
+        rekindle_utils::random::OsRandom,
+    )));
     let seen = journal.publish(changed("a"));
     journal.publish(changed("b"));
     journal.publish(changed("c"));
@@ -130,7 +132,9 @@ async fn a_returning_client_resumes_from_its_cursor() {
 /// A cursor from another epoch cannot be served: `InvalidSession`.
 #[tokio::test]
 async fn a_stale_cursor_is_an_invalid_session() {
-    let journal = Arc::new(SessionJournal::default());
+    let journal = Arc::new(SessionJournal::with_rng(Arc::new(
+        rekindle_utils::random::OsRandom,
+    )));
     let stale = journal.publish(changed("a"));
     journal.begin();
     let mut f = fixture(journal, SecurityLevel::Authenticated).await;
@@ -148,7 +152,13 @@ async fn a_stale_cursor_is_an_invalid_session() {
 /// A client without `Authenticated` clearance cannot subscribe.
 #[tokio::test]
 async fn an_unauthenticated_client_cannot_subscribe() {
-    let f = fixture(Arc::new(SessionJournal::default()), SecurityLevel::Open).await;
+    let f = fixture(
+        Arc::new(SessionJournal::with_rng(Arc::new(
+            rekindle_utils::random::OsRandom,
+        ))),
+        SecurityLevel::Open,
+    )
+    .await;
     assert!(matches!(
         subscribe(&f.client, None).await,
         IpcResponse::Error { code: 403, .. }

@@ -161,9 +161,16 @@ mod tests {
     #[tokio::test]
     async fn appended_entries_verify_and_survive_a_relock() {
         let f = Fixture::new();
-        let made = crate::host::identity::create(&f.root, &f.stores(), None, "pass", 1)
-            .await
-            .unwrap();
+        let made = crate::host::identity::create(
+            &f.root,
+            &f.stores(),
+            None,
+            "pass",
+            1,
+            &rekindle_utils::random::OsRandom,
+        )
+        .await
+        .unwrap();
         let owner = made.public_key.clone();
         drop(made);
         let db = f.db.current().unwrap();

@@ -16,7 +16,7 @@ use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use uuid::Uuid;
 
 use crate::chunker::Chunker;
-use crate::deps::FileCacheDeps;
+use crate::deps::{FileCacheDeps, FilesDeps};
 use crate::error::FilesError;
 use crate::manifest::AttachmentOffer;
 use crate::CHUNK_SIZE_BYTES;
@@ -27,7 +27,7 @@ use crate::CHUNK_SIZE_BYTES;
 /// `expression_id` doubles as the cache attachment_id so the chunk
 /// directory layout stays stable across restarts and the eager-fetch
 /// loop can probe by expression_id alone.
-pub fn upload_expression_to_cache<D: FileCacheDeps + ?Sized>(
+pub fn upload_expression_to_cache<D: FilesDeps + ?Sized>(
     deps: &D,
     community_id: &str,
     expression_id: [u8; 16],
@@ -39,7 +39,7 @@ pub fn upload_expression_to_cache<D: FileCacheDeps + ?Sized>(
 
     let community_mek = crate::keys::current_community_key(deps, community_id)?;
 
-    let fek = MediaEncryptionKey::generate(0);
+    let fek = MediaEncryptionKey::generate_with(0, deps.rng().as_ref());
 
     deps.ensure_cache_open(community_id)?;
     let chunked = Chunker::chunk(bytes, expression_id)

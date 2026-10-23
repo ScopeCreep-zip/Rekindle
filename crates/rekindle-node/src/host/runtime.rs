@@ -278,7 +278,7 @@ impl Host {
         let keepalive = watchdog::keepalive_interval();
         let (event_watch_tx, _) = tokio::sync::watch::channel(None);
         let (unlock_panics, unlock_panics_rx) = tokio::sync::mpsc::unbounded_channel();
-        let journal = Arc::new(rekindle_events::SessionJournal::default());
+        let journal = Arc::new(rekindle_events::SessionJournal::with_rng(Arc::clone(&rng)));
         let ctx = Arc::new_cyclic(|this| DaemonContext {
             this: this.clone(),
             friend_store: RwLock::new(None),

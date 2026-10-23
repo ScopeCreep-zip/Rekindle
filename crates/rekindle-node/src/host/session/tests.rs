@@ -27,9 +27,16 @@ fn membership() -> CommunityMembership {
 #[tokio::test]
 async fn writes_come_back_in_the_next_projection() {
     let f = Fixture::new();
-    let made = identity::create(&f.root, &f.stores(), Some("Ann"), "pass", 1)
-        .await
-        .unwrap();
+    let made = identity::create(
+        &f.root,
+        &f.stores(),
+        Some("Ann"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let owner = made.public_key.clone();
     drop(made);
     let db = f.db.current().unwrap();

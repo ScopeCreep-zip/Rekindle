@@ -32,9 +32,16 @@ pub(super) async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::A
     })
     .await
     .unwrap();
-    let created = identity::create(host.root(), &host.identity_stores(), Some("Ann"), "pass", 1)
-        .await
-        .unwrap();
+    let created = identity::create(
+        host.root(),
+        &host.identity_stores(),
+        Some("Ann"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let public_key = created.public_key.clone();
     drop(created);
     identity::lock(&host.identity_stores()).await;

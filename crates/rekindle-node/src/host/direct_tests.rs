@@ -39,9 +39,16 @@ pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
     })
     .await
     .unwrap();
-    let created = identity::create(host.root(), &host.identity_stores(), Some("Ann"), "pass", 1)
-        .await
-        .unwrap();
+    let created = identity::create(
+        host.root(),
+        &host.identity_stores(),
+        Some("Ann"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let ann = created.public_key.clone();
     drop(created);
     identity::lock(&host.identity_stores()).await;

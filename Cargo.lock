@@ -7490,7 +7490,6 @@ version = "0.1.0"
 dependencies = [
  "blake3",
  "parking_lot 0.12.5",
- "rand 0.8.5",
  "rekindle-types",
  "rekindle-utils",
  "serde",

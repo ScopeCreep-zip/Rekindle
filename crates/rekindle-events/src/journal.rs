@@ -13,9 +13,11 @@
 //! stream ends, so it reloads instead of silently missing events.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 
 use parking_lot::RwLock;
 use rekindle_types::subscription_events::{Cursor, Sequenced, StreamFrame, SubscriptionEvent};
+use rekindle_utils::RandomSource;
 use tokio::sync::broadcast;
 
 /// How many events a reconnecting subscriber can catch up on.
@@ -36,32 +38,39 @@ pub struct SessionJournal {
     ring: RwLock<Ring>,
     live: broadcast::Sender<StreamFrame>,
     capacity: usize,
-}
-
-impl Default for SessionJournal {
-    fn default() -> Self {
-        Self::new(RING_CAPACITY, LIVE_CAPACITY)
-    }
+    /// The host's RNG (plan C9.2): each epoch is drawn from it.
+    rng: Arc<dyn RandomSource>,
 }
 
 /// A fresh random epoch below 2^53 (exact as a JavaScript number).
-fn new_epoch() -> u64 {
-    rand::random::<u64>() >> 11
+fn new_epoch(rng: &dyn RandomSource) -> u64 {
+    let mut bytes = [0u8; 8];
+    rng.fill(&mut bytes);
+    u64::from_le_bytes(bytes) >> 11
 }
 
 impl SessionJournal {
-    /// A journal keeping `capacity` events for replay, whose live
-    /// subscribers may fall `live_capacity` frames behind.
+    /// The host's journal at the standard capacities, its epochs drawn
+    /// from `rng`, the host's RandomSource.
     #[must_use]
-    pub fn new(capacity: usize, live_capacity: usize) -> Self {
+    pub fn with_rng(rng: Arc<dyn RandomSource>) -> Self {
+        Self::new(RING_CAPACITY, LIVE_CAPACITY, rng)
+    }
+
+    /// A journal keeping `capacity` events for replay, whose live
+    /// subscribers may fall `live_capacity` frames behind, its epochs
+    /// drawn from `rng`.
+    #[must_use]
+    pub fn new(capacity: usize, live_capacity: usize, rng: Arc<dyn RandomSource>) -> Self {
         Self {
             ring: RwLock::new(Ring {
-                epoch: new_epoch(),
+                epoch: new_epoch(rng.as_ref()),
                 next: 1,
                 events: VecDeque::with_capacity(capacity.min(1024)),
             }),
             live: broadcast::channel(live_capacity).0,
             capacity,
+            rng,
         }
     }
 
@@ -69,7 +78,7 @@ impl SessionJournal {
     /// live subscriber its cursor is no longer valid.
     pub fn begin(&self) {
         let mut ring = self.ring.write();
-        ring.epoch = new_epoch();
+        ring.epoch = new_epoch(self.rng.as_ref());
         ring.next = 1;
         ring.events.clear();
         // No subscriber is not an error.
@@ -241,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_resumed_subscriber_gets_what_it_missed_then_live_with_no_gap() {
-        let journal = SessionJournal::new(16, 16);
+        let journal = SessionJournal::new(16, 16, Arc::new(rekindle_utils::random::OsRandom));
         let first = journal.publish(ev("a"));
         journal.publish(ev("b"));
         journal.publish(ev("c"));
@@ -258,7 +267,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_evicted_or_foreign_cursor_is_an_invalid_session() {
-        let journal = SessionJournal::new(2, 16);
+        let journal = SessionJournal::new(2, 16, Arc::new(rekindle_utils::random::OsRandom));
         let gone = journal.publish(ev("a"));
         journal.publish(ev("b"));
         journal.publish(ev("c"));
@@ -279,7 +288,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_new_epoch_invalidates_live_subscribers_and_empties_the_ring() {
-        let journal = SessionJournal::new(16, 16);
+        let journal = SessionJournal::new(16, 16, Arc::new(rekindle_utils::random::OsRandom));
         let before = journal.publish(ev("a"));
         let mut live = journal.subscribe(None);
         journal.begin();
@@ -297,7 +306,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_subscriber_that_falls_behind_reloads_and_its_stream_ends() {
-        let journal = SessionJournal::new(64, 2);
+        let journal = SessionJournal::new(64, 2, Arc::new(rekindle_utils::random::OsRandom));
         let mut live = journal.subscribe(None);
         for i in 0..8 {
             journal.publish(ev(&i.to_string()));
@@ -312,7 +321,7 @@ mod tests {
     #[test]
     fn epochs_are_exact_in_javascript() {
         for _ in 0..64 {
-            assert!(new_epoch() < (1 << 53));
+            assert!(new_epoch(&rekindle_utils::random::OsRandom) < (1 << 53));
         }
     }
 }

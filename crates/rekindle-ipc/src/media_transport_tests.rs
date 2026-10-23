@@ -106,7 +106,9 @@ async fn push_route_receive_end_to_end() {
         )
         .unwrap(),
     );
-    server.start_event_delivery(Arc::new(rekindle_events::SessionJournal::default()));
+    server.start_event_delivery(Arc::new(rekindle_events::SessionJournal::with_rng(
+        Arc::new(rekindle_utils::random::OsRandom),
+    )));
     let srv = Arc::clone(&server);
     tokio::spawn(async move {
         let _ = srv.run().await;
@@ -172,7 +174,9 @@ async fn client_origin_media_is_rejected_by_server() {
         )
         .unwrap(),
     );
-    server.start_event_delivery(Arc::new(rekindle_events::SessionJournal::default()));
+    server.start_event_delivery(Arc::new(rekindle_events::SessionJournal::with_rng(
+        Arc::new(rekindle_utils::random::OsRandom),
+    )));
     let srv = Arc::clone(&server);
     tokio::spawn(async move {
         let _ = srv.run().await;
@@ -229,7 +233,9 @@ async fn an_unregistered_client_cannot_subscribe() {
         )
         .unwrap(),
     );
-    server.start_event_delivery(Arc::new(rekindle_events::SessionJournal::default()));
+    server.start_event_delivery(Arc::new(rekindle_events::SessionJournal::with_rng(
+        Arc::new(rekindle_utils::random::OsRandom),
+    )));
     let srv = Arc::clone(&server);
     tokio::spawn(async move {
         let _ = srv.run().await;

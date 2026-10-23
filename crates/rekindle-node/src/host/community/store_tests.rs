@@ -114,9 +114,16 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
     .await
     .unwrap();
     assert_eq!(host.mode(), crate::host::HostMode::Shell);
-    let made = identity::create(host.root(), &host.identity_stores(), Some("Ann"), "pass", 1)
-        .await
-        .unwrap();
+    let made = identity::create(
+        host.root(),
+        &host.identity_stores(),
+        Some("Ann"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     let owner = made.public_key.clone();
     drop(made);
     let me = PseudonymKey([1; 32]);

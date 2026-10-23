@@ -1,5 +1,4 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use rand::rngs::OsRng;
 use zeroize::ZeroizeOnDrop;
 
 use crate::error::CryptoError;
@@ -17,8 +16,16 @@ pub struct Identity {
 impl Identity {
     /// Generate a new random identity.
     pub fn generate() -> Self {
-        let signing_key = SigningKey::generate(&mut OsRng);
-        Self { signing_key }
+        Self::generate_with(&rekindle_utils::random::OsRandom)
+    }
+
+    /// A new random identity whose 32-byte secret is drawn from `rng`, the
+    /// host's injected generator (plan C9.2).
+    #[must_use]
+    pub fn generate_with(rng: &dyn rekindle_utils::RandomSource) -> Self {
+        let mut secret = zeroize::Zeroizing::new([0u8; 32]);
+        rng.fill(secret.as_mut());
+        Self::from_secret_bytes(&secret)
     }
 
     /// Restore an identity from a 32-byte secret key.
