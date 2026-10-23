@@ -84,7 +84,9 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
     let frame = match DmFrame::decode(bytes) {
         Ok(frame) => frame,
         Err(e) => {
-            tracing::debug!(error = %e, "dropping malformed 1:1 frame");
+            // Before admission, so the only trace of a frame lost here
+            // (live A/B finding 28).
+            tracing::warn!(len = bytes.len(), error = %e, "dropping a 1:1 frame that does not parse");
             return Err(Dropped::Refused);
         }
     };
@@ -93,8 +95,10 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
         FrameBody::PreKeyInit(init) => init.first_type_id,
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => frame.type_id,
     };
-    let status = admission::unblocked(host, &sender_hex).await.or_refused()?;
     let init = matches!(frame.body, FrameBody::PreKeyInit(_));
+    tracing::debug!(from = %sender_hex.get(..8).unwrap_or(&sender_hex), ?kind, init,
+        "1:1 frame received");
+    let status = admission::unblocked(host, &sender_hex).await.or_refused()?;
     if !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
         return Err(Dropped::Refused);
     }

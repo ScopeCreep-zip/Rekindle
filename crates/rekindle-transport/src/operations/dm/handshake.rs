@@ -4,9 +4,11 @@
 //! peer is framed once, committed as a row of `friend_handshake:<peer>`,
 //! and sent by the outbox until it settles. These are control frames no
 //! `DmAck` answers: a row settles `sent` when its frame leaves, a request
-//! only on its `app_call` receipt (`delivered`: an app message has no
-//! delivery guarantee, and a request lost on the way would leave the row
-//! settled and the peer never asked), and the `Unfriended` row waits
+//! and a first contact (the PreKeyInit carrying our `FriendAccept` or
+//! `SessionResetAccept`) only on its `app_call` receipt (`delivered`: an
+//! app message has no delivery guarantee, and a request or an accept lost
+//! on the way would leave the row settled and the peer never asked, or
+//! pending for ever; live A/B finding 27), and the `Unfriended` row waits
 //! for the peer's `UnfriendedAck` (or fails at its deadline), which ends
 //! the removal. An invite's redemption is a request row too, whose send
 //! is the write into the invite's inbox ([`enqueue_inbox`]).
@@ -178,10 +180,24 @@ async fn commit(
     Ok(client_id)
 }
 
-/// One attempt of a handshake row to `to`: a request goes by `app_call`
-/// only, over the cached route or one refreshed from their profile, and is
-/// attempted again until its empty return (the receipt) comes back; any
-/// other frame is sent once over the route.
+/// Whether a handshake row of `kind` goes by `app_call` and settles only
+/// on its receipt: a request, and a first contact. Every PreKeyInit on
+/// this stream is a first contact ([`enqueue_frame`]'s callers), and the
+/// receiver answers a re-sent one it already opened with the same receipt
+/// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
+#[must_use]
+pub fn receipted(kind: DmTypeId) -> bool {
+    matches!(
+        kind,
+        DmTypeId::FriendRequest | DmTypeId::FriendAccept | DmTypeId::SessionResetAccept
+    )
+}
+
+/// One attempt of a handshake row to `to`: a request or a first contact
+/// ([`receipted`]) goes by `app_call` only, over the cached route or one
+/// refreshed from their profile, and is attempted again until its empty
+/// return (the receipt) comes back or its deadline passes; any other frame
+/// is sent once over the route.
 pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt {
     let framed: Framed = match serde_json::from_slice(payload) {
         Ok(framed) => framed,
@@ -200,17 +216,19 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Err(FriendError::Locked | FriendError::NotReady(_)) => return Attempt::Deferred,
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
-    if kind == DmTypeId::FriendRequest {
+    if receipted(kind) {
         if let Err(e) = send::call_datagram(host, to, datagram).await {
-            tracing::debug!(to = %to, error = %e,
-                "friend request not receipted by app_call — attempted again");
+            tracing::debug!(to = %to, ?kind, error = %e,
+                "handshake frame not receipted by app_call — attempted again");
             return Attempt::Deferred;
         }
-        host.publish(SubscriptionEvent::Friend(
-            FriendEvent::RequestAcknowledged {
-                peer_key: to.to_string(),
-            },
-        ));
+        if kind == DmTypeId::FriendRequest {
+            host.publish(SubscriptionEvent::Friend(
+                FriendEvent::RequestAcknowledged {
+                    peer_key: to.to_string(),
+                },
+            ));
+        }
         return Attempt::Receipted;
     }
     match send::route_send_datagram(host, to, &datagram, kind, true).await {
@@ -236,6 +254,16 @@ mod tests {
         assert!(!refuses(&PortError::Closed));
         assert!(!refuses(&PortError::Node("not attached".into())));
         assert!(!refuses(&PortError::LeaseNotHeld(3)));
+    }
+
+    #[test]
+    fn requests_and_first_contacts_wait_for_their_receipt() {
+        assert!(receipted(DmTypeId::FriendRequest));
+        assert!(receipted(DmTypeId::FriendAccept));
+        assert!(receipted(DmTypeId::SessionResetAccept));
+        assert!(!receipted(DmTypeId::FriendReject));
+        assert!(!receipted(DmTypeId::Unfriended));
+        assert!(!receipted(DmTypeId::FriendsKey));
     }
 
     #[test]

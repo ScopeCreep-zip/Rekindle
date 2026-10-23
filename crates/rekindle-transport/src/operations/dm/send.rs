@@ -13,7 +13,9 @@
 //! body and nonce, re-sealed with a fresh `sent_at` per attempt (the replay
 //! guard drops a copy that already arrived).
 
-use rekindle_codec::capnp_codec::direct::{Carrier, ContentHint, DirectBody, DmFrame, DmTypeId};
+use rekindle_codec::capnp_codec::direct::{
+    Carrier, ContentHint, DirectBody, DmFrame, DmTypeId, FrameBody,
+};
 use serde::{Deserialize, Serialize};
 
 use super::frame::{self, Nonce};
@@ -347,7 +349,9 @@ pub(super) async fn call_datagram(
     Ok(Some(opened))
 }
 
-/// The datagram one attempt of a stored frame sends, and its kind.
+/// The datagram one attempt of a stored frame sends, and its kind: a
+/// PreKeyInit's is its first payload's (`FriendAccept`,
+/// `SessionResetAccept`), the frame's own for the rest.
 ///
 /// # Errors
 /// The stored frame does not decode, or the sealed kind does not re-seal.
@@ -361,7 +365,11 @@ pub(super) fn datagram_of(
             let frame = super::unwire(datagram)
                 .and_then(|bytes| DmFrame::decode(bytes).ok())
                 .ok_or_else(|| FriendError::Invalid("stored frame does not decode".into()))?;
-            Ok((datagram.clone(), frame.type_id))
+            let kind = match &frame.body {
+                FrameBody::PreKeyInit(init) => init.first_type_id,
+                FrameBody::Ratchet(_) | FrameBody::Sealed(_) => frame.type_id,
+            };
+            Ok((datagram.clone(), kind))
         }
         Framed::Sealed {
             type_id,

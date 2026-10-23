@@ -54,7 +54,7 @@ pub enum Called {
 /// is authoritative, is diffed for anything before it that was lost.
 pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     let Some(bytes) = dm::unwire(datagram) else {
-        tracing::debug!(len = datagram.len(), "dropping untagged 1:1 message");
+        tracing::warn!(len = datagram.len(), "dropping untagged 1:1 message");
         return Routed::Handled;
     };
     let Ok(opened) = frame::open(host, bytes).await else {
@@ -70,7 +70,7 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
 /// the receive path of [`receive`], for a frame by `writer` only.
 pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8]) -> Routed {
     let Some(bytes) = dm::unwire(datagram) else {
-        tracing::debug!(from = %writer, "dropping an untagged chain entry");
+        tracing::warn!(from = %writer, "dropping an untagged chain entry");
         return Routed::Handled;
     };
     let Ok(opened) = frame::open(host, bytes).await else {
@@ -94,7 +94,7 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
 /// apply follows the ack, the replay covers a crash between).
 pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     let Some(bytes) = dm::unwire(datagram) else {
-        tracing::debug!(len = datagram.len(), "dropping untagged 1:1 call");
+        tracing::warn!(len = datagram.len(), "dropping untagged 1:1 call");
         return Called::Answered(NAK.to_vec());
     };
     let opened = match frame::open(host, bytes).await {
