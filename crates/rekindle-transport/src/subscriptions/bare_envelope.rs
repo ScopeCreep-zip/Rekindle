@@ -68,6 +68,27 @@ pub(super) fn decode_bare_attachment_request(raw: &[u8]) -> Option<([u8; 16], Ve
     }
 }
 
+/// Recognise a bare `CommunityEnvelope` carrying a joiner's
+/// `BootstrapRequest`.
+pub(super) fn decode_bare_bootstrap_request(
+    raw: &[u8],
+) -> Option<crate::payload::rpc::InboundCall> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
+            joiner_pseudonym,
+            anchor,
+            member_joined,
+            member_joined_op,
+        }))) => Some(crate::payload::rpc::InboundCall::BootstrapRequest {
+            joiner_pseudonym,
+            anchor,
+            member_joined,
+            member_joined_op,
+        }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{decode_bare_attachment_request, decode_bare_mek_transfer};
@@ -152,26 +173,5 @@ mod tests {
                 "truncation at {cut} must not decode"
             );
         }
-    }
-}
-
-/// Recognise a bare `CommunityEnvelope` carrying a joiner's
-/// `BootstrapRequest`.
-pub(super) fn decode_bare_bootstrap_request(
-    raw: &[u8],
-) -> Option<crate::payload::rpc::InboundCall> {
-    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::BootstrapRequest {
-            joiner_pseudonym,
-            anchor,
-            member_joined,
-            member_joined_op,
-        }))) => Some(crate::payload::rpc::InboundCall::BootstrapRequest {
-            joiner_pseudonym,
-            anchor,
-            member_joined,
-            member_joined_op,
-        }),
-        _ => None,
     }
 }
