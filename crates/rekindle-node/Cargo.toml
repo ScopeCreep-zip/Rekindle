@@ -121,6 +121,8 @@ hex = "0.4"
 rekindle-secrets = { path = "../rekindle-secrets" }
 
 [dev-dependencies]
+# The unsigned op fixtures the governance tests merge (`merge_entries`, `at`, `stamp`).
+rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 # The network simulator the netsim scenarios run real Hosts on (plan C9.3).
 rekindle-netsim = { path = "../rekindle-netsim" }

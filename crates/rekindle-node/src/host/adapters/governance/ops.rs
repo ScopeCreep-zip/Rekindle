@@ -283,9 +283,43 @@ impl HostGovernance {
             .map_err(|e| e.to_string())?
             .require_records()
             .map_err(|e| format!("record pool: {e}"))?;
-        rekindle_records::chain::append_at(&*pool, record, GOV_HEAD, &writer, &[op])
-            .await
-            .map(|_| ())
-            .map_err(|e| format!("append op: {e}"))
+        append_op_once(&*pool, record, &writer, op).await.map(|_| ())
     }
 }
+
+/// Append the encoded `op` to `record`'s op log (`M`/2) once: an earlier
+/// attempt whose write landed but whose acknowledgement was lost left the op
+/// at chain seq `op.seq + 1` or later, so the log after `op.seq` is read
+/// first and an entry with this op's hash settles the attempt without a
+/// second append. `true`: this call appended it.
+///
+/// # Errors
+/// The op does not decode, or the read or the append failed.
+pub(crate) async fn append_op_once(
+    port: &dyn rekindle_records::port::RecordPort,
+    record: &str,
+    writer: &str,
+    op: Vec<u8>,
+) -> Result<bool, String> {
+    let decoded = rekindle_codec::governance_op::decode_op(&op)
+        .map_err(|e| format!("governance op: {e}"))?;
+    let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
+    let recent = rekindle_records::chain::read_log_after(port, record, GOV_HEAD, decoded.op.seq)
+        .await
+        .map_err(|e| format!("read op log: {e}"))?;
+    let logged = recent.entries.iter().any(|entry| {
+        rekindle_codec::governance_op::decode_op(&entry.ciphertext)
+            .is_ok_and(|d| rekindle_governance::op::op_hash(&d.unsigned, &d.op.sig) == hash)
+    });
+    if logged {
+        return Ok(false);
+    }
+    rekindle_records::chain::append_at(port, record, GOV_HEAD, writer, &[op])
+        .await
+        .map(|_| true)
+        .map_err(|e| format!("append op: {e}"))
+}
+
+#[cfg(test)]
+#[path = "ops_tests.rs"]
+mod tests;
