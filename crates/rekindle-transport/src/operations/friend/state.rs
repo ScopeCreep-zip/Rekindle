@@ -327,3 +327,24 @@ pub(crate) async fn settle_ended_handshakes(
     }
     Ok(())
 }
+
+/// The friendship with `peer`, whom we asked, opened (their `FriendAccept`,
+/// or their crossing request): the answer proves our request arrived, so
+/// our pending `FriendRequest` row to them settles `delivered` through the
+/// outbox even when every receipt of it was lost, and stops heading the
+/// handshake stream, so our `FriendsKey` behind it goes (live A/B findings
+/// 56, 60).
+pub(crate) async fn settle_answered_request(host: &dyn FriendHost, peer: &str) {
+    let prefix = crate::operations::dm::handshake::client_prefix(
+        rekindle_codec::capnp_codec::direct::DmTypeId::FriendRequest,
+    );
+    let settled = match host.outbox() {
+        Ok(outbox) => outbox.receipt_handshakes_to(peer, &prefix).await,
+        Err(e) => Err(e),
+    };
+    match settled {
+        Ok(0) => {}
+        Ok(settled) => tracing::info!(peer = %peer, settled, "our answered request settled"),
+        Err(e) => tracing::warn!(peer = %peer, error = %e, "our answered request not settled"),
+    }
+}

@@ -389,7 +389,11 @@ impl<D: OutboxDeps> Outbox<D> {
             .await
     }
 
-    async fn settle_at(&self, row: &OutboxRow, state: SendState) -> Result<(), OutboxError> {
+    pub(crate) async fn settle_at(
+        &self,
+        row: &OutboxRow,
+        state: SendState,
+    ) -> Result<(), OutboxError> {
         self.deps.settle(&row.client_id, state).await?;
         self.deps.publish(StateChange::of(row, state, None));
         self.wake.notify_one();

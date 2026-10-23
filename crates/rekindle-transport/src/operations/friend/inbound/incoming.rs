@@ -268,6 +268,7 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
         }
         f.friendship_state = FriendshipState::Accepted;
     });
+    state::settle_answered_request(host, a.sender_hex).await;
     if !a.profile_dht_key.is_empty() {
         host.watch_friend(a.sender_hex, a.profile_dht_key).await;
     }

@@ -36,11 +36,17 @@ pub fn unfriended_peer(client_id: &str) -> Option<&str> {
     client_id.strip_prefix("unfriended:")
 }
 
+/// The prefix every handshake row carrying `kind` has on its client id.
+#[must_use]
+pub fn client_prefix(kind: DmTypeId) -> String {
+    format!("{kind:?}:")
+}
+
 /// A fresh client id for a handshake row carrying `kind`.
 fn client_id(host: &dyn FriendHost, kind: DmTypeId) -> String {
     let mut id = [0u8; 16];
     host.rng().fill(&mut id);
-    format!("{kind:?}:{}", hex::encode(id))
+    format!("{}{}", client_prefix(kind), hex::encode(id))
 }
 
 fn encode(framed: &Framed) -> Result<Vec<u8>, FriendError> {

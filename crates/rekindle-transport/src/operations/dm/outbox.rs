@@ -105,6 +105,19 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn discard_handshakes_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError>;
+    /// `peer`'s answer proves our handshake rows to them whose client ids
+    /// start with `client_prefix` arrived (their `FriendAccept` answers our
+    /// `FriendRequest`, whose receipts may all have been lost): each
+    /// unsettled one settles `delivered`, as its receipt would have, so
+    /// the rows behind it go (live A/B findings 56, 60); how many.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn receipt_handshakes_to(
+        &self,
+        peer: &str,
+        client_prefix: &str,
+    ) -> Result<usize, FriendError>;
     /// The user's Retry under the same client id; `false` when no row waits.
     ///
     /// # Errors

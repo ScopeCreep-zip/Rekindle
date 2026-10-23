@@ -185,6 +185,7 @@ pub(super) async fn accept_crossing_request(
             f.mailbox_dht_key = Some(req.mailbox_dht_key.to_string());
         }
     });
+    state::settle_answered_request(host, req.sender_hex).await;
     // Exactly one side initiates: the lower identity opens the session with
     // its accept; the higher side's session opens when that arrives.
     if we_initiate_crossing(host, req.sender_hex) {

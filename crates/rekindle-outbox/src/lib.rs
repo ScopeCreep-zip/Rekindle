@@ -11,6 +11,7 @@
 mod appender;
 mod deps;
 mod engine;
+mod receipt;
 pub mod state;
 mod stream;
 

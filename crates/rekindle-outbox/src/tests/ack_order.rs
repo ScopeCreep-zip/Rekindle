@@ -142,3 +142,44 @@ async fn a_read_up_to_before_the_landing_waits_for_it() {
     o.pump().await.unwrap();
     assert_eq!(settled(&o), [("a".to_owned(), SendState::Read)]);
 }
+
+/// Live A/B finding 56: a request whose receipts were all lost, answered
+/// by the peer's accept, settles `delivered` as its receipt would, and the
+/// row it held back behind it goes.
+#[tokio::test]
+async fn an_answer_receipts_the_rows_it_proves_and_frees_the_stream() {
+    let o = outbox();
+    let kind = StreamKind::FriendHandshake;
+    let at = o
+        .enqueue(entry(kind, "bob", "FriendRequest:01"), ())
+        .await
+        .unwrap();
+    o.enqueue(entry(kind, "bob", "FriendsKey:02"), ())
+        .await
+        .unwrap();
+    // The request's receipt is lost: it stays at the head, the key behind.
+    script(&o, [AttemptOutcome::Deferred]);
+    o.pump().await.unwrap();
+    assert_eq!(state_of(&o, "FriendsKey:02"), Some(SendState::Queued));
+    assert!(settled(&o).is_empty(), "the head holds its stream");
+    assert_eq!(
+        o.receipt_rows(&at.stream, "FriendRequest:").await.unwrap(),
+        1
+    );
+    assert_eq!(
+        settled(&o),
+        [("FriendRequest:01".to_owned(), SendState::Delivered)]
+    );
+    assert_eq!(
+        o.receipt_rows(&at.stream, "FriendRequest:").await.unwrap(),
+        0
+    );
+    script(&o, [AttemptOutcome::Receipted]);
+    advance(&o, 600_000);
+    o.pump().await.unwrap();
+    assert_eq!(
+        settled(&o).last(),
+        Some(&("FriendsKey:02".to_owned(), SendState::Delivered)),
+        "the key behind the request left"
+    );
+}
