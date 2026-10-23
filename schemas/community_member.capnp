@@ -13,13 +13,16 @@ struct MemberInfo @0xa0d4eb16e9bf1c2e {
     roleIds        @2 :List(UInt32);
     # `online` / `away` / `busy` / `offline`.
     status         @3 :Text;
+    # Retired (plan E3.1 Z): timeouts come from merged governance. The
+    # ordinal stays reserved (no ordinal reuse).
+    obsoleteTimeoutUntil @4 :UInt64;
     # Empty when route is omitted (offline / private routes withheld).
-    routeBlob      @4 :Data;
-    bio            @5 :Text;
-    pronouns       @6 :Text;
+    routeBlob      @5 :Data;
+    bio            @6 :Text;
+    pronouns       @7 :Text;
     # 0 when no theme color set (caller treats 0 as "default").
-    themeColor     @7 :UInt32;
-    badges         @8 :List(Text);
+    themeColor     @8 :UInt32;
+    badges         @9 :List(Text);
     # Unix-seconds of the last presence heartbeat from this member.
-    lastSeen       @9 :UInt64;
+    lastSeen       @10 :UInt64;
 }

@@ -113,6 +113,10 @@ struct MemberSummary @0xe7d4eb16e9bf1c2e {
     joinedAt             @3 :UInt64;
     subkeyIndex          @4 :UInt32;
     onboardingComplete   @5 :Bool;
+    # Retired (plan E3.1 Z): timeouts come from merged governance; the
+    # ordinals stay reserved (no ordinal reuse).
+    obsoleteHasTimeoutUntil @6 :Bool;
+    obsoleteTimeoutUntil @7 :UInt64;
 }
 
 struct VoiceRosterEntry @0xe8d4eb16e9bf1c2e {
