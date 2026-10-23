@@ -67,10 +67,6 @@ const OUTSIDE_THE_SIM: &[(&str, &str)] = &[
         "the upload pipeline, driven only by the desktop's FilesDeps; the Host never uploads",
     ),
     (
-        "crates/rekindle-game-detect/src/scanner.rs",
-        "the sysinfo process scanner, an OS adapter like the idle readers; it stamps a game's start off the host machine",
-    ),
-    (
         "crates/rekindle-ipc/src/server/",
         "the daemon's Unix-socket server and its connections; the netsim never binds a socket",
     ),

@@ -101,6 +101,7 @@ mod tests {
         let detector = GameDetector::new(
             crate::database::GameDatabase::bundled(),
             Duration::from_millis(10),
+            Arc::new(rekindle_utils::SystemClock),
         );
         let publisher = Arc::new(CapturingPublisher {
             events: Mutex::new(Vec::new()),

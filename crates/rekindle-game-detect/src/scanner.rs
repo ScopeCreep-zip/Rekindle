@@ -1,5 +1,7 @@
+use std::sync::Arc;
 use std::time::Duration;
 
+use rekindle_utils::Clock;
 use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
@@ -13,6 +15,7 @@ pub struct DetectedGame {
     pub game_id: u32,
     pub game_name: String,
     pub process_name: String,
+    /// When the scan found it, on the detector's clock port.
     pub started_at_epoch_ms: u64,
     pub rich_presence: Option<RichPresence>,
 }
@@ -23,15 +26,18 @@ pub struct GameDetector {
     scan_interval: Duration,
     current_game: Option<DetectedGame>,
     system: sysinfo::System,
+    /// The Host's clock port (plan C9.2): it stamps a game's start.
+    clock: Arc<dyn Clock>,
 }
 
 impl GameDetector {
-    pub fn new(database: GameDatabase, scan_interval: Duration) -> Self {
+    pub fn new(database: GameDatabase, scan_interval: Duration, clock: Arc<dyn Clock>) -> Self {
         Self {
             database,
             scan_interval,
             current_game: None,
             system: sysinfo::System::new(),
+            clock,
         }
     }
 
@@ -90,7 +96,7 @@ impl GameDetector {
                 game_id: entry.id,
                 game_name: entry.name.clone(),
                 process_name: proc_name,
-                started_at_epoch_ms: rekindle_utils::timestamp_ms(),
+                started_at_epoch_ms: self.clock.now_ms(),
                 rich_presence: rp,
             };
             self.current_game = Some(game.clone());
@@ -149,7 +155,11 @@ mod tests {
     }
 
     fn detector(db: GameDatabase) -> GameDetector {
-        GameDetector::new(db, Duration::from_secs(30))
+        GameDetector::new(
+            db,
+            Duration::from_secs(30),
+            Arc::new(rekindle_utils::SystemClock),
+        )
     }
 
     #[test]

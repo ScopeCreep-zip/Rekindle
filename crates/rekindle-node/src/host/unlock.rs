@@ -139,8 +139,10 @@ pub(crate) async fn run(
         };
         let idle = scope.spawn_with_token("idle", |stop| stage.run(stop));
         let presence = ctx.own_presence.clone();
-        let game =
-            scope.spawn_with_token("game detection", |stop| super::game::run(presence, stop));
+        let clock = Arc::clone(&ctx.clock);
+        let game = scope.spawn_with_token("game detection", |stop| {
+            super::game::run(presence, clock, stop)
+        });
         if let Err(e) = idle.and(game) {
             return fail(
                 ctx,

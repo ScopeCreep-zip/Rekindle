@@ -36,11 +36,16 @@ impl GameDetectorPublisher for Publisher {
     }
 }
 
-/// Run the detector until `stop`.
-pub(crate) async fn run(presence: OwnPresence, stop: CancellationToken) {
+/// Run the detector until `stop`, stamping each game on the Host's `clock`.
+pub(crate) async fn run(
+    presence: OwnPresence,
+    clock: std::sync::Arc<dyn rekindle_utils::Clock>,
+    stop: CancellationToken,
+) {
     let detector = GameDetector::new(
         GameDatabase::bundled(),
         rekindle_game_detect::DEFAULT_POLL_INTERVAL,
+        clock,
     );
     rekindle_game_detect::run_runtime(
         detector,
