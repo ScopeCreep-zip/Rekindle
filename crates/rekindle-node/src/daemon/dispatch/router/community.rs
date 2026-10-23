@@ -359,7 +359,7 @@ pub(super) async fn route_members(
         MemberRequest::Kick {
             community,
             target_pseudonym,
-        } => governance::handle_kick(ctx, state, &community, &target_pseudonym),
+        } => governance::handle_kick(ctx, state, &community, &target_pseudonym).await,
         MemberRequest::Ban {
             community,
             target_pseudonym,

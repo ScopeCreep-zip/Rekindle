@@ -9,10 +9,11 @@
 //! peer. The entry is written by `rekindle_governance_runtime::moderation`
 //! and projected onto the store (`projection::prune_banned`).
 //!
-//! A removal writes no entry: nothing in the shared registry can evict a
-//! member, so it is the `Kick` notice to the mesh, the member forgotten in
-//! our store and roster, and the departure rotation (ADR 0018; the ballot
-//! itself is E3.5 behind `spawn_text_mek_rotation_for_ban`).
+//! A removal is the durable kick `MemberRemoved` (plan E3.2), which every
+//! reader's merge applies by dropping the target from `members`; then the
+//! `Kick` notice to the mesh, the member forgotten in our store and roster,
+//! and the departure rotation (ADR 0018; the ballot itself is E3.5 behind
+//! `spawn_text_mek_rotation_for_ban`, which the runtime's removal starts).
 
 use std::fmt;
 
@@ -248,19 +249,25 @@ impl HostGovernance {
         Ok(())
     }
 
-    /// Remove `target` without barring return: the `Kick` notice to the
-    /// mesh, the member forgotten here, and the departure rotation.
+    /// Remove `target` without barring return: the `MemberRemoved` op and
+    /// the departure rotation, the `Kick` notice to the mesh, and the
+    /// member forgotten here.
     ///
     /// # Errors
-    /// Not permitted, or the notice could not be queued.
-    pub fn remove_member(&self, community_id: &str, target: &str) -> Result<(), ModerationRefusal> {
+    /// Not permitted, the op could not be written, or the notice could not
+    /// be queued.
+    pub async fn remove_member(
+        &self,
+        community_id: &str,
+        target: &str,
+    ) -> Result<(), ModerationRefusal> {
         self.moderate(community_id, target, ModerationAction::Remove)?;
+        moderation::remove_member(self, community_id, target).await?;
         let notice = CommunityEnvelope::Control(ControlPayload::Kick {
             target_pseudonym: target.to_owned(),
         });
         self.send_to_mesh(community_id, &notice)?;
         self.forget_member(community_id, target);
-        self.spawn_text_mek_rotation_for_ban(community_id, target);
         tracing::info!(community = %community_id, member = %target, "removed community member");
         Ok(())
     }

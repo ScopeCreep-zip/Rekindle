@@ -1,6 +1,8 @@
-//! Moderation: ban, unban, timeout, lifting a timeout. A removal writes
-//! no entry (the Host's `remove_member`: the `Kick` notice, the member
-//! forgotten, the departure rotation).
+//! Moderation: ban, unban, timeout, lifting a timeout, the durable kick
+//! (`MemberRemoved`) and our own leave (`MemberLeft`), plan E3.2 and
+//! `evidence/slot-integrity.md` §4.4 ("Leave = `MemberLeft` op … Kick and
+//! ban are moderator ops"). The merge drops a removed or departed member
+//! from `members`, so no reader counts them as a key reader.
 //!
 //! Pure orchestration over `GovernanceRuntimeDeps`, so both tracks drive
 //! one implementation. The Tauri host already wrote these as governance
@@ -17,7 +19,7 @@
 
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::permissions::{BAN_MEMBERS, TIMEOUT_MEMBERS};
+use rekindle_types::permissions::{BAN_MEMBERS, KICK_MEMBERS, TIMEOUT_MEMBERS};
 
 use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
@@ -50,6 +52,38 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
     // has already landed and must not be undone by a rotation failure.
     deps.spawn_text_mek_rotation_for_ban(community_id, pseudonym_hex);
     Ok(())
+}
+
+/// Remove a member without barring return: the durable kick
+/// `MemberRemoved`, which readers accept from a `KICK_MEMBERS` holder who
+/// outranks the target, and the departure rotation (ADR 0018) that the
+/// removal drives.
+pub async fn remove_member<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    pseudonym_hex: &str,
+) -> Result<(), GovernanceRuntimeError> {
+    deps.require_permission(community_id, KICK_MEMBERS)?;
+    apply::write_entry(
+        deps,
+        community_id,
+        GovernanceEntry::MemberRemoved {
+            target: PseudonymKey::from_hex_lossy(pseudonym_hex),
+            reason: None,
+        },
+    )
+    .await?;
+    deps.spawn_text_mek_rotation_for_ban(community_id, pseudonym_hex);
+    Ok(())
+}
+
+/// Our own departure: the `MemberLeft` op on our member record, written
+/// before the community is forgotten here.
+pub async fn leave<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<(), GovernanceRuntimeError> {
+    apply::write_entry(deps, community_id, GovernanceEntry::MemberLeft {}).await
 }
 
 /// Lift a ban. Requires `BAN_MEMBERS`.

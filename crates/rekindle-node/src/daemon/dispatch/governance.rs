@@ -158,7 +158,7 @@ fn moderation_refused(refusal: &ModerationRefusal) -> IpcResponse {
 }
 
 /// Remove a member without barring return.
-pub(crate) fn handle_kick(
+pub(crate) async fn handle_kick(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -168,7 +168,7 @@ pub(crate) fn handle_kick(
         Ok(k) => k,
         Err(e) => return e,
     };
-    match adapter(ctx).remove_member(&key, target) {
+    match adapter(ctx).remove_member(&key, target).await {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "kicked": target })),
         Err(r) => moderation_refused(&r),
     }

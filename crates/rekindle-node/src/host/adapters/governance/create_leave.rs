@@ -106,6 +106,11 @@ impl HostGovernance {
     ) -> Result<(), String> {
         let id = membership.governance_key.clone();
         let transport = self.transport().map_err(|e| e.to_string())?;
+        // The `MemberLeft` op goes on our member record first, while the
+        // community's state and our pseudonym are still here (plan E3.2).
+        rekindle_governance_runtime::moderation::leave(self, &id)
+            .await
+            .map_err(|e| format!("community leave op: {e}"))?;
         let signing_key = self
             .ctx
             .signing_key
