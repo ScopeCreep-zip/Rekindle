@@ -36,6 +36,48 @@ pub enum PinRequest {
         pinned: bool,
     },
 
+    /// Upload the file at `path` (absolute, the shell's pick) to a channel:
+    /// the new attachment id. Never an agent's: the Host would read a local
+    /// file (plan E5.1).
+    AttachmentUpload {
+        community: String,
+        channel_id: String,
+        path: String,
+    },
+
+    /// Download an attachment to `path` (absolute, the shell's pick). Never
+    /// an agent's: the Host would write a local file (plan E5.1).
+    AttachmentDownload {
+        community: String,
+        channel_id: String,
+        attachment_id: String,
+        path: String,
+    },
+
+    /// The stored record of an attachment (its name, size, where it was
+    /// saved).
+    AttachmentInfo {
+        community: String,
+        channel_id: String,
+        attachment_id: String,
+    },
+
+    /// Send a recorded voice message: the new attachment id.
+    VoiceMessageSend {
+        community: String,
+        channel_id: String,
+        opus: Vec<u8>,
+        duration_ms: u32,
+        waveform: Vec<u8>,
+    },
+
+    /// A voice message's audio bytes, fetched into the chunk cache.
+    VoiceMessageAudio {
+        community: String,
+        channel_id: String,
+        attachment_id: String,
+    },
+
     /// Full-text search over the stored messages.
     MessageSearch {
         request: rekindle_types::search::MessageSearch,
@@ -57,20 +99,31 @@ impl PinRequest {
             Self::MessagePin { .. } => ("MessagePin", Write, Authenticated),
             Self::MessageUnpin { .. } => ("MessageUnpin", Write, Authenticated),
             Self::AttachmentPin { .. } => ("AttachmentPin", Write, Authenticated),
+            Self::AttachmentUpload { .. } => ("AttachmentUpload", Write, Authenticated),
+            Self::AttachmentDownload { .. } => ("AttachmentDownload", Write, Authenticated),
+            Self::AttachmentInfo { .. } => ("AttachmentInfo", Query, Authenticated),
+            Self::VoiceMessageSend { .. } => ("VoiceMessageSend", Write, Authenticated),
+            Self::VoiceMessageAudio { .. } => ("VoiceMessageAudio", Query, Authenticated),
             Self::MessageSearch { .. } => ("MessageSearch", Query, Authenticated),
         }
     }
 
-    /// The capability an `Agent`-level sender needs for this request, which every
-    /// request of this domain has.
+    /// The capability an `Agent`-level sender needs for this request, or
+    /// `None` when no agent may send it: an upload or a download names a
+    /// local file the Host would read or write, which is the user's own.
     #[must_use]
-    pub fn agent_capability(&self) -> AgentCapability {
+    pub fn agent_capability(&self) -> Option<AgentCapability> {
         use AgentCapability as C;
         match self {
-            Self::ChannelPins { .. } | Self::MessageSearch { .. } => C::CommunitiesRead,
-            Self::MessagePin { .. } | Self::MessageUnpin { .. } | Self::AttachmentPin { .. } => {
-                C::CommunitiesWrite
-            }
+            Self::ChannelPins { .. }
+            | Self::MessageSearch { .. }
+            | Self::AttachmentInfo { .. }
+            | Self::VoiceMessageAudio { .. } => Some(C::CommunitiesRead),
+            Self::MessagePin { .. }
+            | Self::MessageUnpin { .. }
+            | Self::AttachmentPin { .. }
+            | Self::VoiceMessageSend { .. } => Some(C::CommunitiesWrite),
+            Self::AttachmentUpload { .. } | Self::AttachmentDownload { .. } => None,
         }
     }
 }

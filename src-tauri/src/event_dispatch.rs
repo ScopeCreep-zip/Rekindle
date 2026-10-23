@@ -8,10 +8,8 @@
 //! `cargo xtask check-no-emitter`).
 //!
 //! The audience is an exhaustive match: a new event variant does not
-//! compile until it says which windows it is for. For a
-//! [`SubscriptionEvent`] the audience follows its Tier 1
-//! [`EventScope`], so the desktop routes the same way the daemon and the
-//! TUI do.
+//! compile until it says which windows it is for. A [`SubscriptionEvent`]'s
+//! audience follows its Tier 1 [`EventScope`], as on the daemon and TUI.
 //!
 //! A [`SubscriptionEvent`] is journaled by the in-process host (plan
 //! D3.2), which gives it a cursor; [`spawn_host_stream`] delivers the

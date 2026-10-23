@@ -1,4 +1,5 @@
-//! Pins and search (plan E3.1 E3b): a search query shows its length only.
+//! Pins, search and attachments (plan E3.1 E3b, E3d): a search query, a
+//! local path and a voice message's bytes show their length only.
 
 use crate::protocol::PinRequest;
 
@@ -37,6 +38,57 @@ impl std::fmt::Debug for PinRequest {
                 .field("community", community)
                 .field("attachment_id", attachment_id)
                 .field("pinned", pinned)
+                .finish(),
+            Self::AttachmentUpload {
+                community,
+                channel_id,
+                path,
+            } => f
+                .debug_struct("AttachmentUpload")
+                .field("community", community)
+                .field("channel_id", channel_id)
+                .field("path", &path.len())
+                .finish(),
+            Self::AttachmentDownload {
+                community,
+                channel_id,
+                attachment_id,
+                path,
+            } => f
+                .debug_struct("AttachmentDownload")
+                .field("community", community)
+                .field("channel_id", channel_id)
+                .field("attachment_id", attachment_id)
+                .field("path", &path.len())
+                .finish(),
+            Self::AttachmentInfo {
+                community,
+                channel_id,
+                attachment_id,
+            }
+            | Self::VoiceMessageAudio {
+                community,
+                channel_id,
+                attachment_id,
+            } => f
+                .debug_struct(self.name())
+                .field("community", community)
+                .field("channel_id", channel_id)
+                .field("attachment_id", attachment_id)
+                .finish(),
+            Self::VoiceMessageSend {
+                community,
+                channel_id,
+                opus,
+                duration_ms,
+                waveform,
+            } => f
+                .debug_struct("VoiceMessageSend")
+                .field("community", community)
+                .field("channel_id", channel_id)
+                .field("opus", &opus.len())
+                .field("duration_ms", duration_ms)
+                .field("waveform", &waveform.len())
                 .finish(),
             Self::MessageSearch { request } => f
                 .debug_struct("MessageSearch")

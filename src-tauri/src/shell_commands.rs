@@ -305,6 +305,20 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("pin_message", HostCall::Request("MessagePin")),
     ("unpin_message", HostCall::Request("MessageUnpin")),
     ("pin_attachment", HostCall::Request("AttachmentPin")),
+    ("upload_attachment", HostCall::Request("AttachmentUpload")),
+    (
+        "download_attachment",
+        HostCall::Request("AttachmentDownload"),
+    ),
+    (
+        "reveal_downloaded_attachment",
+        HostCall::Request("AttachmentInfo"),
+    ),
+    ("send_voice_message", HostCall::Request("VoiceMessageSend")),
+    (
+        "get_voice_message_audio",
+        HostCall::Request("VoiceMessageAudio"),
+    ),
     ("search_messages", HostCall::Request("MessageSearch")),
     ("upload_emoji", HostCall::Request("EmojiUpload")),
     ("upload_sticker", HostCall::Request("StickerUpload")),
@@ -391,12 +405,7 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("set_video_device", "E4.1"),
     ("start_native_video", "E4.1"),
     ("stop_native_video", "E4.1"),
-    // E5.1 — attachments, voice messages, link previews.
-    ("upload_attachment", "E5.1"),
-    ("download_attachment", "E5.1"),
-    ("reveal_downloaded_attachment", "E5.1"),
-    ("send_voice_message", "E5.1"),
-    ("get_voice_message_audio", "E5.1"),
+    // E5.1 — link previews.
     ("fetch_link_preview", "E5.1"),
     ("get_link_previews_enabled", "E5.1"),
     ("set_link_previews_enabled", "E5.1"),

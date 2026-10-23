@@ -151,16 +151,18 @@ export const communityCommands = {
   /// Opens a native file picker; resolves to the new attachment id, or
   /// null if the user cancelled.
   uploadAttachment: (communityId: string, channelId: string) =>
-    invoke<string | null>("upload_attachment", { communityId, channelId }),
+    hostInvoke<string | null>("upload_attachment", { communityId, channelId }),
   /// Opens a native save dialog; resolves to false if the user cancelled.
   downloadAttachment: (communityId: string, channelId: string, attachmentId: string) =>
-    invoke<boolean>("download_attachment", { communityId, channelId, attachmentId }),
+    hostInvoke<boolean>("download_attachment", { communityId, channelId, attachmentId }),
   /// A voice message's audio, fetched into the chunk cache if needed.
   getVoiceMessageAudio: (communityId: string, channelId: string, attachmentId: string) =>
     invoke<ArrayBuffer>("get_voice_message_audio", { communityId, channelId, attachmentId }),
   /// Show a downloaded attachment in the OS file manager.
   revealDownloadedAttachment: (communityId: string, channelId: string, attachmentId: string) =>
-    invoke<void>("reveal_downloaded_attachment", { communityId, channelId, attachmentId }),
+    hostInvoke<unknown>("reveal_downloaded_attachment", { communityId, channelId, attachmentId }).then(
+      () => undefined,
+    ),
   pinAttachment: (communityId: string, attachmentId: string, pinned: boolean) =>
     hostInvoke<unknown>("pin_attachment", { communityId, attachmentId, pinned }).then(
       () => undefined,
@@ -171,7 +173,7 @@ export const communityCommands = {
     opusBytesB64: string,
     durationMs: number,
     waveformB64: string,
-  ) => invoke<string>("send_voice_message", {
+  ) => hostInvoke<string>("send_voice_message", {
     communityId,
     channelId,
     opusBytesB64,

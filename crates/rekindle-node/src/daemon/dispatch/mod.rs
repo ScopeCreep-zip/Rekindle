@@ -20,6 +20,7 @@
 //! - `admin.rs`     — Agent*, Policy, Subscribe, Unsubscribe, Network*
 
 mod admin;
+mod attachments;
 mod audit;
 mod automod;
 pub(crate) mod channel;

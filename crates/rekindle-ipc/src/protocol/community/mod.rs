@@ -108,7 +108,7 @@ impl CommunityRequest {
             Self::Audit(request) => Some(request.agent_capability()),
             Self::Activities(request) => Some(request.agent_capability()),
             Self::Members(request) => Some(request.agent_capability()),
-            Self::Pins(request) => Some(request.agent_capability()),
+            Self::Pins(request) => request.agent_capability(),
             Self::Rich(request) => Some(request.agent_capability()),
             Self::Expressions(request) => Some(request.agent_capability()),
         }

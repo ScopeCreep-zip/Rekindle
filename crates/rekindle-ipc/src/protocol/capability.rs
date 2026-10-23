@@ -226,4 +226,23 @@ mod tests {
             Some(AgentCapability::ImHistory)
         );
     }
+
+    #[test]
+    fn a_local_file_is_never_delegated() {
+        use crate::protocol::PinRequest;
+        let pins = |request| IpcRequest::Community(CommunityRequest::Pins(request));
+        let upload = PinRequest::AttachmentUpload {
+            community: String::new(),
+            channel_id: String::new(),
+            path: "/a".into(),
+        };
+        let download = PinRequest::AttachmentDownload {
+            community: String::new(),
+            channel_id: String::new(),
+            attachment_id: String::new(),
+            path: "/a".into(),
+        };
+        assert_eq!(pins(upload).agent_capability(), None);
+        assert_eq!(pins(download).agent_capability(), None);
+    }
 }

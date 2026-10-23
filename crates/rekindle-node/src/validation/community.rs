@@ -467,6 +467,11 @@ pub(super) fn check_pins(request: &PinRequest) -> Checked {
         | PinRequest::MessagePin { .. }
         | PinRequest::MessageUnpin { .. }
         | PinRequest::AttachmentPin { .. }
+        | PinRequest::AttachmentUpload { .. }
+        | PinRequest::AttachmentDownload { .. }
+        | PinRequest::AttachmentInfo { .. }
+        | PinRequest::VoiceMessageSend { .. }
+        | PinRequest::VoiceMessageAudio { .. }
         | PinRequest::MessageSearch { .. }) => super::pins::check(request),
     }
 }

@@ -438,3 +438,64 @@ async fn a_logout_with_a_queued_message_reviews_its_pending_work() {
         held.escalations
     );
 }
+
+/// An agent holding every capability is still refused an upload and a
+/// download: the Host would read or write a local file for it (plan E5.1).
+/// An attachment's record passes the capability check.
+#[tokio::test]
+async fn an_agent_is_refused_a_local_file() {
+    use rekindle_ipc::message::AgentType;
+    use rekindle_ipc::protocol::{AgentCapability, CommunityRequest, PinRequest};
+
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _) = host_with_identity(&dir).await;
+    let key = [0x42; 32];
+    host.ctx.registry.write().await.register(
+        "bot".into(),
+        key,
+        SecurityLevel::Agent,
+        AgentType::Bot,
+        AgentCapability::ALL.to_vec(),
+    );
+    let agent = Caller {
+        conn: ConnId::Bus(9),
+        clearance: SecurityLevel::Agent,
+        verified_name: Some("bot".into()),
+        static_key: Some(key),
+    };
+    let community = "VLD0:".to_owned() + &"A".repeat(43);
+    let pins = |request| IpcRequest::Community(CommunityRequest::Pins(request));
+    for request in [
+        PinRequest::AttachmentUpload {
+            community: community.clone(),
+            channel_id: "c".into(),
+            path: "/etc/hosts".into(),
+        },
+        PinRequest::AttachmentDownload {
+            community: community.clone(),
+            channel_id: "c".into(),
+            attachment_id: "ab".repeat(16),
+            path: "/tmp/x".into(),
+        },
+    ] {
+        let answer = host.call(agent.clone(), pins(request)).await;
+        match &answer {
+            IpcResponse::Error {
+                code: 403, message, ..
+            } => {
+                assert!(message.contains("no agent may send it"), "{message}");
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+    let info = PinRequest::AttachmentInfo {
+        community,
+        channel_id: "c".into(),
+        attachment_id: "ab".repeat(16),
+    };
+    let answer = host.call(agent, pins(info)).await;
+    assert!(
+        !matches!(&answer, IpcResponse::Error { message, .. } if message.contains("capabilities")),
+        "{answer:?}"
+    );
+}

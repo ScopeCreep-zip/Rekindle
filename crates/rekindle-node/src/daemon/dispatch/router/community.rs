@@ -415,6 +415,11 @@ pub(super) async fn route_pins(
         | PinRequest::MessagePin { .. }
         | PinRequest::MessageUnpin { .. }
         | PinRequest::AttachmentPin { .. }
+        | PinRequest::AttachmentUpload { .. }
+        | PinRequest::AttachmentDownload { .. }
+        | PinRequest::AttachmentInfo { .. }
+        | PinRequest::VoiceMessageSend { .. }
+        | PinRequest::VoiceMessageAudio { .. }
         | PinRequest::MessageSearch { .. }) => pins::handle(ctx, state, request).await,
     }
 }
