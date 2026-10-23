@@ -125,6 +125,53 @@ fn a_join_without_a_live_invite_is_refused() {
     );
 }
 
+/// A join dated before its own deps is refused (register SEC-3): here
+/// before an `InviteCreated` that expires before the deps' latest time, so
+/// a backdated join can't slip under the expiry.
+#[test]
+fn a_join_backdated_before_its_deps_is_refused() {
+    let c0 = op(&pk(1), 0, &[], 0, joined(None));
+    let expiring = GovernanceEntry::InviteCreated {
+        invite_id: [7; 16],
+        code_hash: "code".into(),
+        max_uses: MAX_USES_PER_INVITE,
+        expires_at: Some(100),
+        secrets_record_key: "VLD0:s".into(),
+    };
+    let c1 = op(&pk(1), 1, &[&c0], 1, expiring);
+    let late = op(&pk(1), 2, &[&c1], 2, meta("after expiry"));
+    let late = VerifiedOp::assume_verified(
+        rekindle_types::governance::GovernanceOp {
+            issued_at: 500,
+            ..late.op().clone()
+        },
+        late.hash(),
+        late.lamport(),
+    );
+    let honest = op(&pk(2), 0, &[&c1], 3, joined(Some("code")));
+    let backdated = op(&pk(3), 0, &[&late], 4, joined(Some("code")));
+    let backdated = VerifiedOp::assume_verified(
+        rekindle_types::governance::GovernanceOp {
+            issued_at: 50,
+            ..backdated.op().clone()
+        },
+        backdated.hash(),
+        backdated.lamport(),
+    );
+    let state = merge(
+        &cert(&pk(1), AdmissionMode::Open),
+        &[c0, c1, late, honest, backdated],
+    );
+    assert!(
+        state.members.contains_key(&pk(2)),
+        "a join dated after its deps"
+    );
+    assert!(
+        !state.members.contains_key(&pk(3)),
+        "a join dated before its deps' latest time"
+    );
+}
+
 #[test]
 fn invite_max_uses_caps_joins() {
     let c0 = op(&pk(1), 0, &[], 0, joined(None));

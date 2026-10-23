@@ -1,9 +1,12 @@
 //! Invite expiry as a Host timer (plan E3.1 C2b), one per unlock on both
 //! modes. It sleeps until the soonest expiry among the invites we authored
-//! (on the Host clock, so the netsim drives it), then deletes each expired
-//! invite's row and journals `InviteExpired`, so every frontend drops it.
-//! A joiner refuses an expired invite on its own clock (`join_flow`); this
-//! timer is the inviter's side. It reads no record (D4): the invites come
+//! (on the Host clock, so the netsim drives it), then revokes each expired
+//! invite (`InviteRevoked` in governance, register SEC-3), deletes its row
+//! and journals `InviteExpired`, so every frontend drops it. Expiry is
+//! enforced by that revocation: a joiner finds the invite revoked, and
+//! every reader refuses a join citing it after the revocation (the merge's
+//! invite gate) or dated before its own deps (the backdated-join gate).
+//! A joiner also refuses an expired invite on its own clock (`join_flow`). It reads no record (D4): the invites come
 //! from merged governance, and an invite created later is planned at the
 //! next [`REPLAN`] at the latest.
 
@@ -22,6 +25,7 @@ const REPLAN: Duration = Duration::from_secs(60);
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct ExpiringInvite {
     pub community: String,
+    pub invite_id: [u8; 16],
     pub code_hash: String,
     pub expires_at: u64,
 }
@@ -60,13 +64,14 @@ impl HostGovernance {
             let (Some(gov), Some(mine)) = (&c.governance_state, &c.my_pseudonym_key) else {
                 continue;
             };
-            for invite in gov.invites.values() {
+            for (invite_id, invite) in &gov.invites {
                 let Some(expires_at) = invite.expires_at else {
                     continue;
                 };
                 if hex::encode(invite.creator_pseudonym.0) == *mine {
                     out.push(ExpiringInvite {
                         community: c.id.clone(),
+                        invite_id: *invite_id,
                         code_hash: invite.code_hash.clone(),
                         expires_at,
                     });
@@ -76,8 +81,12 @@ impl HostGovernance {
         out
     }
 
-    /// Delete the expired invite's row (the desktop lists that table) and
-    /// journal `InviteExpired`.
+    /// Delete the expired invite's row (the desktop lists that table),
+    /// journal `InviteExpired`, then revoke it in governance. The
+    /// revocation is stored and merged here before its DHT write, and a
+    /// failed write stays queued for the outbox's retry
+    /// (`apply::write_entry`), so the invite leaves the merged invites
+    /// either way and is not planned again.
     pub(crate) async fn expire_invite(&self, invite: &ExpiringInvite) {
         if let (Ok(owner), Ok(db)) = (self.ctx.require_owner(), self.ctx.db.current()) {
             let (cid, hash) = (invite.community.clone(), invite.code_hash.clone());
@@ -94,5 +103,14 @@ impl HostGovernance {
                 code_hash: invite.code_hash.clone(),
             },
         ));
+        if let Err(e) = rekindle_governance_runtime::invites::revoke_invite(
+            self,
+            &invite.community,
+            invite.invite_id,
+        )
+        .await
+        {
+            tracing::warn!(community = %invite.community, error = %e, "expired invite's revocation not written");
+        }
     }
 }

@@ -1,7 +1,9 @@
 //! Invite expiry is a Host timer on the Host clock (plan E3.1 C2b): an
 //! invite made to last two minutes is listed until then, expires at its
 //! time on the simulated clock (`InviteExpired` from the inviter's Host),
-//! and is then refused to a joiner.
+//! and is then refused to a joiner through the inviter's `InviteRevoked`
+//! (register SEC-3): the joiner's merged state no longer holds the invite,
+//! which it checks before its own clock's expiry.
 
 use std::time::Duration;
 
@@ -59,6 +61,8 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
         "no longer listed"
     );
 
+    // The inviter's `InviteRevoked` reaches its op log on the DHT.
+    community.sim.quiesce().await;
     let joined = community.nodes[1]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityJoin { invite: link },
@@ -66,7 +70,7 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
         .await;
     let refused = format!("{joined:?}");
     assert!(
-        joined.is_err() && refused.contains("expired"),
-        "an expired invite is refused: {refused}"
+        joined.is_err() && refused.contains("revoked"),
+        "an expired invite is refused as revoked: {refused}"
     );
 }

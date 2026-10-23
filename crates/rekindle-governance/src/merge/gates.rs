@@ -1,7 +1,8 @@
 //! The causal gates between resolution rounds (plan E3.2): strong removal
 //! (p2panda-auth), re-join after removal, approval under
-//! `ApprovalRequired` (Q6) and invite proofs against the `InviteCreated`
-//! set and its `max_uses` cap.
+//! `ApprovalRequired` (Q6), invite proofs against the `InviteCreated`
+//! set and its `max_uses` cap, and joins backdated before their own deps
+//! (SEC-3).
 
 use std::collections::BTreeMap;
 
@@ -49,8 +50,30 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
             }
         }
     }
+    backdated_join_gate(set, &mut invalid);
     invite_gate(set, round, &mut invalid);
     invalid
+}
+
+/// A `MemberJoined` whose `issued_at` is earlier than the latest
+/// `issued_at` among its deps is refused (register SEC-3): a join can't be
+/// dated before its own causal past, so it can't slip under the expiry of
+/// an invite revoked or expired by then.
+fn backdated_join_gate(set: &OpSet<'_>, invalid: &mut [bool]) {
+    for (o, op) in set.ops.iter().enumerate() {
+        if !matches!(op.body(), GovernanceEntry::MemberJoined { .. }) {
+            continue;
+        }
+        let latest_dep = set
+            .ops
+            .iter()
+            .filter(|d| op.op().deps.iter().any(|r| r.op_hash == d.hash()))
+            .map(|d| d.op().issued_at)
+            .max();
+        if latest_dep.is_some_and(|at| op.op().issued_at < at) {
+            invalid[o] = true;
+        }
+    }
 }
 
 /// Whether op `o` (by a member removed at `r`, with `r` in `o`'s past)
