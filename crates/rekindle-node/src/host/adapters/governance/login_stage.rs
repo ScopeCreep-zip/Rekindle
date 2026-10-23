@@ -2,8 +2,9 @@
 //! hosts: once the transport reports the public internet ready, each
 //! community, in id order, has its records opened and handed over (the
 //! leases, watches and keepalive; the shell's per-community loops through
-//! `ShellHooks::community_records_ready`), its member state hydrated, its
-//! governance rebuilt and its history catch-up scheduled; then our active
+//! `ShellHooks::community_records_ready`), its member state hydrated, the
+//! heads it lacks fetched from the members' frontiers, its governance
+//! rebuilt and its history catch-up scheduled; then our active
 //! records are republished. It is a task of the unlock's `SessionScope`, so
 //! a lock cancels it, and its DHT work is record-pool calls, which the
 //! lock's drain releases (plan C7.6g).
@@ -15,7 +16,7 @@
 use std::sync::Arc;
 
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
-use rekindle_governance_runtime::dht_hydration;
+use rekindle_governance_runtime::{dht_hydration, op_log};
 use rekindle_lifecycle::{ScopeClosed, SessionScope};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -114,6 +115,12 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
         return;
     }
     dht_hydration::hydrate_one_community(governance, community_id).await;
+    // The heads the community wrote while we were away, from the members'
+    // frontiers; the rebuild below fetches their deps and merges.
+    match op_log::catch_up_frontiers(governance, community_id).await {
+        Ok(stored) => tracing::debug!(community = community_id, stored, "frontier heads caught up"),
+        Err(error) => tracing::warn!(community = community_id, %error, "frontier catch-up failed"),
+    }
     dht_hydration::rebuild_governance(governance, community_id).await;
     if stop.is_cancelled() {
         return;

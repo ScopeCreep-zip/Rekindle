@@ -289,6 +289,58 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
     }
 }
 
+/// Fetch the heads we lack from the members' `Frontier`s (`M`/3): the
+/// login stage's read of what the community did while we were away. A new
+/// head is cited by no op we hold, so [`rebuild_ops`]'s walk of missing
+/// deps never reaches it; this reads the creator's and every member's
+/// frontier, in record order, and stores each unknown head it can fetch,
+/// whose own deps the rebuild that follows fetches. A member record with
+/// no readable frontier is skipped. Returns how many heads were stored.
+///
+/// # Errors
+/// No cert is pinned, or the op store failed.
+pub async fn catch_up_frontiers<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+) -> Result<usize, GovernanceRuntimeError> {
+    let cert = deps
+        .genesis_cert(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
+    let state = deps.governance_state(community_id).unwrap_or_default();
+    let mut records: BTreeSet<String> = state
+        .members
+        .values()
+        .map(|m| m.member_record.clone())
+        .collect();
+    records.insert(cert.creator_member_record.clone());
+    let mut known: BTreeSet<OpHash> = deps
+        .governance_ops(community_id)
+        .await?
+        .iter()
+        .map(|op| op.hash)
+        .collect();
+    let mut stored = 0;
+    for record in &records {
+        let heads = match crate::join_flow::read_frontier(deps, record).await {
+            Ok(heads) => heads,
+            Err(error) => {
+                tracing::debug!(community = community_id, record, %error, "no frontier read");
+                continue;
+            }
+        };
+        for op_ref in heads {
+            if !known.insert(op_ref.op_hash) {
+                continue;
+            }
+            if let Some(op) = fetch_held(deps, &op_ref).await? {
+                deps.store_governance_op(community_id, &op).await?;
+                stored += 1;
+            }
+        }
+    }
+    Ok(stored)
+}
+
 /// The op `op_ref` names, fetched from its author's op log and checked
 /// against the locator's hash; `None` when it is not there or does not
 /// match.
