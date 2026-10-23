@@ -123,6 +123,15 @@
       }
     }
   },
+  "channelMessage.attachmentDownloaded": {
+    "channelMessage": {
+      "attachmentDownloaded": {
+        "attachmentId": "att_11111111111111111111111111111111",
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
   "channelMessage.channelSendStatus": {
     "channelMessage": {
       "channelSendStatus": {
@@ -192,6 +201,14 @@
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "editedAt": 1760000001000,
         "messageId": "msg_11111111111111111111111111111111"
+      }
+    }
+  },
+  "channelMessage.expressionAssetReady": {
+    "channelMessage": {
+      "expressionAssetReady": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "expressionId": "exp_11111111111111111111111111111111"
       }
     }
   },

@@ -12,11 +12,9 @@
 //! `rekindle-protocol` (wire types + DHT helpers), and the Tauri command
 //! handlers in `commands/community/files.rs`.
 
-use std::path::Path;
-use std::sync::Arc;
-
-use crate::state::{AppState, SharedState};
+use crate::state::SharedState;
 use rekindle_db::Db;
+use std::path::Path;
 
 // ─── Phase 3: cache lifecycle ──────────────────────────────────────────
 
@@ -143,26 +141,6 @@ pub async fn send_voice_message_bytes(
 // The thin facades earlier in this file delegate via FilesAdapter.]
 
 // ─── Phase 4: serve chunks (responder side of app_call) ────────────────
-
-/// Handle an incoming `RequestAttachment` control payload — a peer wants
-/// chunks of an attachment we may have cached. We reply with a
-/// `MultiAttachmentChunk` envelope containing each chunk we hold from the
-/// requested set. Returns the serialized reply bytes (an
-/// `app_call_reply` payload) — `None` if we have nothing to offer.
-///
-/// Phase 15 — body extracted to `rekindle_files::serve::serve_attachment_request`
-/// (pure, takes `&mut ChunkCache`). This facade owns the AppState lock
-/// + per-community cache lookup.
-pub fn serve_attachment_request(
-    state: &Arc<AppState>,
-    community_id: &str,
-    attachment_id: [u8; 16],
-    requested_chunks: &[u32],
-) -> Option<Vec<u8>> {
-    state
-        .files
-        .serve(community_id, attachment_id, requested_chunks)
-}
 
 // ─── Phase 4: download (consumer side of app_call) ─────────────────────
 

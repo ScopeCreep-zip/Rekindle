@@ -179,7 +179,9 @@ impl SubscriptionEvent {
                 ChannelMessageEvent::New { community, .. }
                 | ChannelMessageEvent::Edited { community, .. }
                 | ChannelMessageEvent::Deleted { community, .. }
-                | ChannelMessageEvent::ChannelSendStatus { community, .. } => Some(community),
+                | ChannelMessageEvent::ChannelSendStatus { community, .. }
+                | ChannelMessageEvent::AttachmentDownloaded { community, .. }
+                | ChannelMessageEvent::ExpressionAssetReady { community, .. } => Some(community),
                 // Direct-conversation events belong to a peer, not a
                 // community.
                 ChannelMessageEvent::DirectMessageReceived { .. }

@@ -57,6 +57,20 @@ pub enum ChannelMessageEvent {
         message_id: String,
         state: crate::message::SendState,
     },
+    /// An attachment of a channel finished downloading to the place the
+    /// user chose; the row now reads `downloaded`.
+    /// Triggered by: the Host's `AttachmentDownload`.
+    AttachmentDownloaded {
+        community: String,
+        channel: String,
+        attachment_id: String,
+    },
+    /// A custom emoji's or sticker's bytes are in the chunk cache.
+    /// Triggered by: the Host's eager expression fetch.
+    ExpressionAssetReady {
+        community: String,
+        expression_id: String,
+    },
     /// A new DM was received from a peer.
     ///
     /// Triggered by: an inbound 1:1 `DirectMessage` via `InboundHandler::on_direct`.

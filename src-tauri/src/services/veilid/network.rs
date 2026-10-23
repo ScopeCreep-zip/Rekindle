@@ -213,18 +213,12 @@ async fn community_call(
             // is implicit in being able to decrypt the FEK (which only
             // community members can do).
             let _ = requester_pseudonym;
-            let attachment_uuid = uuid::Uuid::from_bytes(attachment_id);
-            let owning_community = state.files.holder_of(attachment_uuid);
-            match owning_community {
-                Some(cid) => crate::services::community::files::serve_attachment_request(
-                    state,
-                    &cid,
-                    attachment_id,
-                    &requested_chunks,
-                )
-                .unwrap_or_else(|| b"ACK".to_vec()),
-                None => b"ACK".to_vec(),
-            }
+            rekindle_node::host::adapters::files::ops::serve(
+                &state.files,
+                attachment_id,
+                &requested_chunks,
+            )
+            .unwrap_or_else(|| b"ACK".to_vec())
         }
         _ => {
             tracing::debug!(msg_len = message.len(), "untagged app_call — NAK");

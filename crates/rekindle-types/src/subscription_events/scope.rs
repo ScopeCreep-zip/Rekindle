@@ -162,7 +162,9 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
         ChannelMessageEvent::New { community, .. }
         | ChannelMessageEvent::Edited { community, .. }
         | ChannelMessageEvent::Deleted { community, .. }
-        | ChannelMessageEvent::ChannelSendStatus { community, .. } => {
+        | ChannelMessageEvent::ChannelSendStatus { community, .. }
+        | ChannelMessageEvent::AttachmentDownloaded { community, .. }
+        | ChannelMessageEvent::ExpressionAssetReady { community, .. } => {
             EventScope::Community(community.clone())
         }
         ChannelMessageEvent::DirectMessageReceived {

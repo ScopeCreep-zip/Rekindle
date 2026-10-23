@@ -48,13 +48,9 @@ pub fn read_bytes_from_cache(
 /// Architecture §18.4 line 2505 + §28.9 line 3286 — eager (automatic)
 /// caching with no user action.
 pub async fn eager_fetch_missing(state: &Arc<AppState>, community_id: &str) {
-    let Some(app_handle) = state.app_handle.read().clone() else {
-        tracing::debug!(community = %community_id, "eager expression fetch: no app handle yet");
+    // The Host's fetch (plan E3.1 E3d).
+    let Some(host) = state.host.current() else {
         return;
     };
-    let Ok(pool) = state.db.current() else {
-        return;
-    };
-    let adapter = FilesAdapter::new(state.clone(), app_handle, pool);
-    rekindle_files::eager_fetch_missing(adapter.as_ref(), community_id).await;
+    host.files().eager_fetch(community_id).await;
 }

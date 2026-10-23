@@ -59,6 +59,27 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(b"|");
             h.update(state.as_str().as_bytes());
         }
+        ChannelMessageEvent::AttachmentDownloaded {
+            community,
+            channel,
+            attachment_id,
+        } => {
+            h.update(b"attachment_downloaded|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(channel.as_bytes());
+            h.update(b"|");
+            h.update(attachment_id.as_bytes());
+        }
+        ChannelMessageEvent::ExpressionAssetReady {
+            community,
+            expression_id,
+        } => {
+            h.update(b"expression_asset_ready|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(expression_id.as_bytes());
+        }
         ChannelMessageEvent::DirectMessageReceived {
             peer_key,
             timestamp,

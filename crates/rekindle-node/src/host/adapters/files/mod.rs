@@ -3,7 +3,14 @@
 //! in Shell mode) is opened at unlock over the identity's keyed files
 //! directory (plan E3.0a: `DataRoot::identity_files` and the file-cache
 //! name key) and closed when the unlock scope has stopped. [`HostFiles`]
-//! is the `rekindle_files::FileCacheDeps` the expression store runs over.
+//! is the `rekindle_files::FileCacheDeps` the expression store runs over,
+//! and the full `FilesDeps` the attachment upload, download, serve and the
+//! eager expression fetch run over (plan E3.1 E3d; `deps_impl`, `rows`,
+//! `ops`).
+
+mod deps_impl;
+pub mod ops;
+mod rows;
 
 use std::sync::Arc;
 
@@ -43,13 +50,40 @@ pub(crate) fn close(ctx: &DaemonContext) {
 #[derive(Clone)]
 pub struct HostFiles {
     gov: HostGovernance,
+    channel: crate::host::adapters::channel::HostChannel,
     store: Arc<FileCacheStore>,
+}
+
+impl crate::host::Host {
+    /// The attachment and chunk-cache adapter over this Host.
+    #[must_use]
+    pub fn files(&self) -> HostFiles {
+        HostFiles::new(crate::daemon::dispatch::adapter(&self.ctx))
+    }
 }
 
 impl HostFiles {
     pub(crate) fn new(gov: HostGovernance) -> Self {
         let store = Arc::clone(&gov.context().files);
-        Self { gov, store }
+        let channel = crate::host::adapters::channel::HostChannel::new(gov.context());
+        Self {
+            gov,
+            channel,
+            store,
+        }
+    }
+
+    /// The record pool of the running transport.
+    fn records(&self) -> Result<Arc<dyn rekindle_records::port::RecordPort>, FilesError> {
+        let transport = (self.gov.context().transport.read().clone())
+            .ok_or_else(|| FilesError::Transport("transport not started".into()))?;
+        (transport.require_records())
+            .map_err(|e| FilesError::Transport(format!("record pool: {e}")))
+    }
+
+    /// The unlocked identity's database.
+    fn db(&self) -> Result<rekindle_db::Db, FilesError> {
+        (self.gov.context().db.current()).map_err(|e| FilesError::Db(e.to_string()))
     }
 }
 

@@ -2,6 +2,7 @@
 //! own sent messages (plan D1, C7.14), which the outbox's rows project
 //! (`repo::outbox`, plan E2.5); channel messages are [`channel`] (E3.1 E2).
 
+pub mod attachments;
 pub mod channel;
 
 use rekindle_types::message::SendState;
