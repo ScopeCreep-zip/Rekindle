@@ -22,4 +22,5 @@ fixture = []
 
 [dev-dependencies]
 rekindle-governance = { path = ".", features = ["fixture"] }
+rekindle-codec = { path = "../rekindle-codec" }
 proptest = "1"
