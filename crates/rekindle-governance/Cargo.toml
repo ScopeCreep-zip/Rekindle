@@ -17,5 +17,9 @@ rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
+[features]
+fixture = []
+
 [dev-dependencies]
+rekindle-governance = { path = ".", features = ["fixture"] }
 proptest = "1"

@@ -9,7 +9,8 @@ use super::{
 
 pub(super) fn apply_community(
     author: &PseudonymKey,
-    entry: &GovernanceEntry, stamp: OpStamp,
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
     state: &mut GovernanceState,
 ) {
     match entry {
@@ -33,7 +34,10 @@ pub(super) fn apply_community(
 
         // ── Notification default (architecture §17.1 tier 1): LWW ──
         GovernanceEntry::CommunityNotificationDefault { level } => {
-            let existing_stamp = state.notification_default.as_ref().map_or(OpStamp::MIN, |d| d.stamp);
+            let existing_stamp = state
+                .notification_default
+                .as_ref()
+                .map_or(OpStamp::MIN, |d| d.stamp);
             if stamp > existing_stamp {
                 state.notification_default = Some(crate::state::NotificationDefaultState {
                     level: level.clone(),
@@ -81,7 +85,10 @@ pub(super) fn apply_community(
             max_joins_per_interval,
             join_interval_seconds,
         } => {
-            let existing_stamp = state.community_policy.as_ref().map_or(OpStamp::MIN, |p| p.stamp);
+            let existing_stamp = state
+                .community_policy
+                .as_ref()
+                .map_or(OpStamp::MIN, |p| p.stamp);
             if stamp > existing_stamp {
                 state.community_policy = Some(CommunityPolicyState {
                     policy_text: policy_text.clone(),
@@ -113,9 +120,7 @@ pub(super) fn apply_community(
             );
         }
 
-        GovernanceEntry::InviteRevoked {
-            invite_id, ..
-        } => {
+        GovernanceEntry::InviteRevoked { invite_id, .. } => {
             // Only revoke if the revocation lamport > creation lamport
             if let Some(invite) = state.invites.get(invite_id) {
                 if stamp > invite.created {

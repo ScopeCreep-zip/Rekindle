@@ -147,7 +147,12 @@ pub fn apply_entry(
 }
 
 /// Route an entry to its category-specific CRDT apply rule.
-fn apply(author: &PseudonymKey, entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
+fn apply(
+    author: &PseudonymKey,
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
     use GovernanceEntry as G;
     match entry {
         G::ChannelCreated { .. }
@@ -192,7 +197,9 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, stamp: OpStamp, state: 
         | G::AdminDelete { .. }
         | G::AutoModRule { .. } => apply_moderation(entry, stamp, state),
         G::ModReport { .. } => apply_mod_report(author, entry, stamp, state),
-        G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => apply_onboarding(entry, stamp, state),
+        G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => {
+            apply_onboarding(entry, stamp, state)
+        }
         G::RoleDefinition { .. }
         | G::RoleAssignment { .. }
         | G::RoleUnassignment { .. }
@@ -211,6 +218,8 @@ mod onboarding;
 mod resolve;
 mod roles;
 
+#[cfg(test)]
+mod op_proptests;
 #[cfg(test)]
 mod proptests;
 #[cfg(test)]

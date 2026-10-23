@@ -6,81 +6,93 @@ use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
 use rekindle_types::key_format::MAX_DESCRIPTION_LEN;
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
-fn meta(description: Option<String>, lamport: u64) -> GovernanceEntry {
-    GovernanceEntry::CommunityMeta {
-        name: Some("C".into()),
-        description,
-        icon_hash: None,
-        banner_hash: None,
+fn meta(description: Option<String>, lamport: u64) -> Stamped {
+    at(
         lamport,
-    }
+        GovernanceEntry::CommunityMeta {
+            name: Some("C".into()),
+            description,
+            icon_hash: None,
+            banner_hash: None,
+        },
+    )
 }
 
-fn role_all(id: u8, position: u32, lamport: u64) -> GovernanceEntry {
-    GovernanceEntry::RoleDefinition {
-        role_id: role_id(id),
-        name: "all".into(),
-        permissions: rekindle_types::permissions::ALL,
-        position,
-        color: 0,
-        hoist: false,
-        mentionable: false,
-        self_assignable: false,
-        exclusion_group: None,
+fn role_all(id: u8, position: u32, lamport: u64) -> Stamped {
+    at(
         lamport,
-    }
+        GovernanceEntry::RoleDefinition {
+            role_id: role_id(id),
+            name: "all".into(),
+            permissions: rekindle_types::permissions::ALL,
+            position,
+            color: 0,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+        },
+    )
 }
 
-fn channel(lamport: u64) -> GovernanceEntry {
-    GovernanceEntry::ChannelCreated {
-        channel_id: channel_id(7),
-        name: "general".into(),
-        channel_type: "text".into(),
-        record_key: "k".into(),
-        category_id: None,
-        position: 0,
-        parent_voice_channel_id: None,
+fn channel(lamport: u64) -> Stamped {
+    at(
         lamport,
-    }
+        GovernanceEntry::ChannelCreated {
+            channel_id: channel_id(7),
+            name: "general".into(),
+            channel_type: "text".into(),
+            record_key: "k".into(),
+            category_id: None,
+            position: 0,
+            parent_voice_channel_id: None,
+        },
+    )
 }
 
-fn slowmode(seconds: u32, lamport: u64) -> GovernanceEntry {
-    GovernanceEntry::ChannelUpdated {
-        channel_id: channel_id(7),
-        name: None,
-        topic: None,
-        forum_tags: None,
-        position: None,
-        slowmode_seconds: Some(seconds),
-        nsfw: None,
-        category_id: None,
+fn slowmode(seconds: u32, lamport: u64) -> Stamped {
+    at(
         lamport,
-    }
+        GovernanceEntry::ChannelUpdated {
+            channel_id: channel_id(7),
+            name: None,
+            topic: None,
+            forum_tags: None,
+            position: None,
+            slowmode_seconds: Some(seconds),
+            nsfw: None,
+            category_id: None,
+        },
+    )
 }
 
-fn timeout(target: PseudonymKey, duration_seconds: u64, lamport: u64) -> GovernanceEntry {
-    GovernanceEntry::TimeoutEntry {
-        target,
-        duration_seconds,
-        reason: None,
-        started_at: 1_000,
+fn timeout(target: PseudonymKey, duration_seconds: u64, lamport: u64) -> Stamped {
+    at(
         lamport,
-    }
+        GovernanceEntry::TimeoutEntry {
+            target,
+            duration_seconds,
+            reason: None,
+            started_at: 1_000,
+        },
+    )
 }
 
 /// The creator's base: meta, an everyone-ALL role, a ranked ALL role held by
 /// the peer `pseudo(2)`, and one channel, so the peer passes every
 /// permission and rank check and only the bound decides.
-fn base() -> Vec<GovernanceEntry> {
+fn base() -> Vec<Stamped> {
     vec![
         meta(None, 1),
         role_all(0, 0, 2),
         role_all(1, 5, 3),
-        GovernanceEntry::RoleAssignment {
-            target: pseudo(2),
-            role_id: role_id(1),
-            lamport: 4,
-        },
+        at(
+            4,
+            GovernanceEntry::RoleAssignment {
+                target: pseudo(2),
+                role_id: role_id(1),
+            },
+        ),
         channel(5),
     ]
 }
@@ -100,9 +112,9 @@ fn slowmode_over_the_bound_is_dropped_from_peer_and_creator() {
         } else {
             subkeys.push((peer.clone(), vec![over]));
         }
-        assert_eq!(slowmode_of(&merge(&subkeys)), None);
+        assert_eq!(slowmode_of(&merge_entries(&subkeys)), None);
     }
-    let at_bound = merge(&[
+    let at_bound = merge_entries(&[
         (creator, base()),
         (peer, vec![slowmode(MAX_SLOWMODE_SECONDS, 10)]),
     ]);
@@ -113,7 +125,7 @@ fn slowmode_over_the_bound_is_dropped_from_peer_and_creator() {
 fn timeout_outside_the_range_is_dropped_from_peer_and_creator() {
     let (creator, peer, target) = (pseudo(1), pseudo(2), pseudo(3));
     for duration in [0, MAX_TIMEOUT_SECONDS + 1] {
-        let state = merge(&[
+        let state = merge_entries(&[
             (
                 creator.clone(),
                 [base(), vec![timeout(target.clone(), duration, 10)]].concat(),
@@ -122,7 +134,7 @@ fn timeout_outside_the_range_is_dropped_from_peer_and_creator() {
         ]);
         assert!(!state.timeouts.contains_key(&target), "{duration} s");
     }
-    let state = merge(&[
+    let state = merge_entries(&[
         (creator, base()),
         (peer, vec![timeout(target.clone(), MAX_TIMEOUT_SECONDS, 10)]),
     ]);
@@ -136,17 +148,17 @@ fn timeout_outside_the_range_is_dropped_from_peer_and_creator() {
 fn description_the_ipc_refuses_is_dropped_from_peer_and_creator() {
     let (creator, peer) = (pseudo(1), pseudo(2));
     for bad in ["x".repeat(MAX_DESCRIPTION_LEN + 1), "bell\u{7}".into()] {
-        let state = merge(&[
+        let state = merge_entries(&[
             (
                 creator.clone(),
                 [base(), vec![meta(Some(bad.clone()), 10)]].concat(),
             ),
             (peer.clone(), vec![meta(Some(bad), 11)]),
         ]);
-        assert_eq!(state.metadata.expect("base meta").lamport, 1);
+        assert_eq!(state.metadata.expect("base meta").stamp.lamport, 1);
     }
     let fits = "é".repeat(MAX_DESCRIPTION_LEN);
-    let state = merge(&[
+    let state = merge_entries(&[
         (creator, base()),
         (peer, vec![meta(Some(fits.clone()), 10)]),
     ]);
@@ -164,9 +176,9 @@ fn out_of_bounds_lowest_lamport_entry_is_not_the_genesis() {
         slowmode(u32::MAX, 0),
     ];
     for attempt in genesis_attempts {
-        let state = merge(&[(attacker.clone(), vec![attempt]), (creator.clone(), base())]);
+        let state = merge_entries(&[(attacker.clone(), vec![attempt]), (creator.clone(), base())]);
         assert_eq!(state.creator, Some(creator.clone()));
-        assert_eq!(state.metadata.as_ref().expect("meta").lamport, 1);
+        assert_eq!(state.metadata.as_ref().expect("meta").stamp.lamport, 1);
         assert!(state.timeouts.is_empty());
         assert_eq!(slowmode_of(&state), None);
     }

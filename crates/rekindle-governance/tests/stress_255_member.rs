@@ -24,7 +24,7 @@
 
 use std::time::{Duration, Instant};
 
-use rekindle_governance::merge::merge;
+use rekindle_governance::fixture::{at, merge_entries, Stamped};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions;
@@ -56,19 +56,18 @@ fn synth_round(
     authors: &[PseudonymKey],
     creator: &PseudonymKey,
     base_lamport: u64,
-) -> Vec<(PseudonymKey, Vec<GovernanceEntry>)> {
-    let mut by_author: std::collections::HashMap<PseudonymKey, Vec<GovernanceEntry>> =
+) -> Vec<(PseudonymKey, Vec<Stamped>)> {
+    let mut by_author: std::collections::HashMap<PseudonymKey, Vec<Stamped>> =
         std::collections::HashMap::new();
 
     let creator_entries = vec![
-        GovernanceEntry::CommunityMeta {
+        at(base_lamport, GovernanceEntry::CommunityMeta {
             name: Some("Stress Test Community".into()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: base_lamport,
-        },
-        GovernanceEntry::RoleDefinition {
+        }),
+        at(base_lamport + 1, GovernanceEntry::RoleDefinition {
             role_id: RoleId([0u8; 16]),
             name: "@everyone".into(),
             permissions: permissions::SEND_MESSAGES | permissions::READ_HISTORY,
@@ -78,8 +77,7 @@ fn synth_round(
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: base_lamport + 1,
-        },
+        }),
     ];
     by_author.insert(creator.clone(), creator_entries);
 
@@ -87,11 +85,10 @@ fn synth_round(
     for writer_idx in 0..CONCURRENT_WRITERS {
         let author = authors[writer_idx % authors.len()].clone();
         for _ in 0..ENTRIES_PER_WRITER {
-            let entry = GovernanceEntry::RoleAssignment {
+            let entry = at(lamport, GovernanceEntry::RoleAssignment {
                 target: author.clone(),
                 role_id: RoleId([0u8; 16]),
-                lamport,
-            };
+            });
             by_author.entry(author.clone()).or_default().push(entry);
             lamport += 1;
         }
@@ -114,7 +111,7 @@ fn stress_255_members_50_writers_merge_within_budget() {
         let subkeys = synth_round(&authors, &creator, base_lamport);
         let entries_this_round: usize = subkeys.iter().map(|(_, entries)| entries.len()).sum();
         let merge_started = Instant::now();
-        let state = merge(&subkeys);
+        let state = merge_entries(&subkeys);
         let round_ms = merge_started.elapsed().as_millis();
 
         // Sanity invariants — if any of these fail, the merge engine

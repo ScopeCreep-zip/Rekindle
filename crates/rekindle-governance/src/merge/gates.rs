@@ -80,8 +80,9 @@ fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
         else {
             continue;
         };
-        let invite = (0..o).filter(|&c| round.applied[c] && set.past.contains(o, c)).find_map(|c| {
-            match set.ops[c].body() {
+        let invite = (0..o)
+            .filter(|&c| round.applied[c] && set.past.contains(o, c))
+            .find_map(|c| match set.ops[c].body() {
                 GovernanceEntry::InviteCreated {
                     invite_id,
                     code_hash,
@@ -90,8 +91,7 @@ fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
                     ..
                 } if *code_hash == proof.code_hash => Some((*invite_id, *max_uses, *expires_at)),
                 _ => None,
-            }
-        });
+            });
         let Some((invite_id, max_uses, expires_at)) = invite else {
             invalid[o] = true;
             continue;

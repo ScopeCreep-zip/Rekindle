@@ -132,7 +132,7 @@ mod tests {
                 mentionable: false,
                 self_assignable: false,
                 exclusion_group: None,
-                lamport: 1,
+                stamp: crate::fixture::stamp(1),
             },
         );
         role

@@ -6,6 +6,7 @@
 //! Property-based convergence tests for the CRDT merge engine.
 
 use super::*;
+use crate::fixture::{at, merge_entries, Stamped};
 use proptest::prelude::*;
 use rekindle_types::id::{ChannelId, RoleId, ThreadId};
 
@@ -21,84 +22,96 @@ fn arb_role_id() -> impl Strategy<Value = RoleId> {
     prop::array::uniform16(any::<u8>()).prop_map(RoleId)
 }
 
-fn arb_entry() -> impl Strategy<Value = GovernanceEntry> {
+fn arb_entry() -> impl Strategy<Value = Stamped> {
     prop_oneof![
         // CommunityMeta
-        (any::<u64>()).prop_map(|lamport| GovernanceEntry::CommunityMeta {
-            name: Some("test".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
+        (any::<u64>()).prop_map(|lamport| at(
             lamport,
-        }),
+            GovernanceEntry::CommunityMeta {
+                name: Some("test".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            }
+        )),
         // ChannelCreated
         (arb_channel_id(), any::<u64>()).prop_map(|(ch, lamport)| {
-            GovernanceEntry::ChannelCreated {
-                channel_id: ch,
-                name: "ch".into(),
-                channel_type: "text".into(),
-                record_key: "k".into(),
-                category_id: None,
-                position: 0,
-                parent_voice_channel_id: None,
+            at(
                 lamport,
-            }
+                GovernanceEntry::ChannelCreated {
+                    channel_id: ch,
+                    name: "ch".into(),
+                    channel_type: "text".into(),
+                    record_key: "k".into(),
+                    category_id: None,
+                    position: 0,
+                    parent_voice_channel_id: None,
+                },
+            )
         }),
         // RoleDefinition
         (arb_role_id(), any::<u64>(), any::<u64>()).prop_map(|(rid, perms, lamport)| {
-            GovernanceEntry::RoleDefinition {
-                role_id: rid,
-                name: "role".into(),
-                permissions: perms,
-                position: 0,
-                color: 0,
-                hoist: false,
-                mentionable: false,
-                self_assignable: false,
-                exclusion_group: None,
+            at(
                 lamport,
-            }
+                GovernanceEntry::RoleDefinition {
+                    role_id: rid,
+                    name: "role".into(),
+                    permissions: perms,
+                    position: 0,
+                    color: 0,
+                    hoist: false,
+                    mentionable: false,
+                    self_assignable: false,
+                    exclusion_group: None,
+                },
+            )
         }),
         // ExpressionAdded
         (prop::array::uniform16(any::<u8>()), any::<u64>()).prop_map(|(expression_id, lamport)| {
-            GovernanceEntry::ExpressionAdded {
-                expression_id,
-                name: "emoji_name".into(),
-                kind: "emoji".into(),
-                content_hash: "hash".into(),
-                attachment: None,
-                animated: false,
-                tags: vec!["test".into()],
-                sound_meta: None,
-                creator_pseudonym: None,
-                created_at: None,
-                available_to_peers: Some(true),
+            at(
                 lamport,
-            }
+                GovernanceEntry::ExpressionAdded {
+                    expression_id,
+                    name: "emoji_name".into(),
+                    kind: "emoji".into(),
+                    content_hash: "hash".into(),
+                    attachment: None,
+                    animated: false,
+                    tags: vec!["test".into()],
+                    sound_meta: None,
+                    creator_pseudonym: None,
+                    created_at: None,
+                    available_to_peers: Some(true),
+                },
+            )
         }),
         // ExpressionRemoved
         (prop::array::uniform16(any::<u8>()), any::<u64>()).prop_map(|(expression_id, lamport)| {
-            GovernanceEntry::ExpressionRemoved {
-                expression_id,
+            at(
                 lamport,
-            }
+                GovernanceEntry::ExpressionRemoved { expression_id },
+            )
         }),
         // MEKGenerationBump
         (any::<u64>(), any::<u64>(), arb_pseudonym()).prop_map(|(gen, lamport, departed)| {
-            GovernanceEntry::MEKGenerationBump {
-                generation: gen,
-                trigger_departed: departed,
-                cascade_skipped: vec![],
+            at(
                 lamport,
-            }
+                GovernanceEntry::MEKGenerationBump {
+                    generation: gen,
+                    trigger_departed: departed,
+                    cascade_skipped: vec![],
+                },
+            )
         }),
         // BanEntry
         (arb_pseudonym(), any::<u64>()).prop_map(|(target, lamport)| {
-            GovernanceEntry::BanEntry {
-                target,
-                reason: None,
+            at(
                 lamport,
-            }
+                GovernanceEntry::BanEntry {
+                    target,
+                    reason: None,
+                },
+            )
         }),
     ]
 }
@@ -106,7 +119,7 @@ fn arb_entry() -> impl Strategy<Value = GovernanceEntry> {
 /// A slowmode, timeout or description entry over the whole value range of
 /// its bounded field, edges and both sides of each bound included (plan
 /// E3.0). Targets the channel `[7; 16]` and the members `[1..=3; 32]`.
-fn arb_bounded_entry() -> impl Strategy<Value = GovernanceEntry> {
+fn arb_bounded_entry() -> impl Strategy<Value = Stamped> {
     use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
     use rekindle_types::key_format::MAX_DESCRIPTION_LEN;
     use rekindle_types::member::MAX_TIMEOUT_SECONDS;
@@ -136,64 +149,76 @@ fn arb_bounded_entry() -> impl Strategy<Value = GovernanceEntry> {
             }
         });
     prop_oneof![
-        (slowmode, 0u64..64).prop_map(|(seconds, lamport)| GovernanceEntry::ChannelUpdated {
-            channel_id: ChannelId([7; 16]),
-            name: None,
-            topic: None,
-            forum_tags: None,
-            position: None,
-            slowmode_seconds: Some(seconds),
-            nsfw: None,
-            category_id: None,
+        (slowmode, 0u64..64).prop_map(|(seconds, lamport)| at(
             lamport,
-        }),
-        (duration, 1u8..=3, 0u64..64).prop_map(|(duration_seconds, t, lamport)| {
-            GovernanceEntry::TimeoutEntry {
-                target: PseudonymKey([t; 32]),
-                duration_seconds,
-                reason: None,
-                started_at: 0,
-                lamport,
+            GovernanceEntry::ChannelUpdated {
+                channel_id: ChannelId([7; 16]),
+                name: None,
+                topic: None,
+                forum_tags: None,
+                position: None,
+                slowmode_seconds: Some(seconds),
+                nsfw: None,
+                category_id: None,
             }
+        )),
+        (duration, 1u8..=3, 0u64..64).prop_map(|(duration_seconds, t, lamport)| {
+            at(
+                lamport,
+                GovernanceEntry::TimeoutEntry {
+                    target: PseudonymKey([t; 32]),
+                    duration_seconds,
+                    reason: None,
+                    started_at: 0,
+                },
+            )
         }),
-        (description, 0u64..64).prop_map(|(text, lamport)| GovernanceEntry::CommunityMeta {
-            name: Some("C".into()),
-            description: Some(text),
-            icon_hash: None,
-            banner_hash: None,
+        (description, 0u64..64).prop_map(|(text, lamport)| at(
             lamport,
-        }),
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: Some(text),
+                icon_hash: None,
+                banner_hash: None,
+            }
+        )),
     ]
 }
 
 /// The creator `[0; 32]`'s log at lamport 1: an everyone-ALL role and the
 /// channel `[7; 16]`. An entry at lamport 0 sorts before it and is the
 /// genesis if it is within bounds.
-fn bounded_base() -> Vec<GovernanceEntry> {
-    let role = |id: u8, position: u32| GovernanceEntry::RoleDefinition {
-        role_id: RoleId([id; 16]),
-        name: "all".into(),
-        permissions: rekindle_types::permissions::ALL,
-        position,
-        color: 0,
-        hoist: false,
-        mentionable: false,
-        self_assignable: false,
-        exclusion_group: None,
-        lamport: 1,
+fn bounded_base() -> Vec<Stamped> {
+    let role = |id: u8, position: u32| {
+        at(
+            1,
+            GovernanceEntry::RoleDefinition {
+                role_id: RoleId([id; 16]),
+                name: "all".into(),
+                permissions: rekindle_types::permissions::ALL,
+                position,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        )
     };
     vec![
         role(0, 0),
-        GovernanceEntry::ChannelCreated {
-            channel_id: ChannelId([7; 16]),
-            name: "ch".into(),
-            channel_type: "text".into(),
-            record_key: "k".into(),
-            category_id: None,
-            position: 0,
-            parent_voice_channel_id: None,
-            lamport: 1,
-        },
+        at(
+            1,
+            GovernanceEntry::ChannelCreated {
+                channel_id: ChannelId([7; 16]),
+                name: "ch".into(),
+                channel_type: "text".into(),
+                record_key: "k".into(),
+                category_id: None,
+                position: 0,
+                parent_voice_channel_id: None,
+            },
+        ),
     ]
 }
 
@@ -215,12 +240,12 @@ proptest! {
         let mut kept = raw.clone();
         for (author, entries) in logs {
             let author = PseudonymKey([author; 32]);
-            let within = entries.iter().filter(|e| bounds::entry_within_bounds(e)).cloned();
+            let within = entries.iter().filter(|e| bounds::entry_within_bounds(&e.1)).cloned();
             kept.push((author.clone(), within.collect()));
             raw.push((author, entries));
         }
-        let state = merge(&raw);
-        prop_assert_eq!(&state, &merge(&kept));
+        let state = merge_entries(&raw);
+        prop_assert_eq!(&state, &merge_entries(&kept));
         for ch in state.channels.values() {
             prop_assert!(ch.slowmode_seconds.is_none_or(bounds::slowmode_ok));
         }
@@ -240,11 +265,11 @@ proptest! {
         entries_a in prop::collection::vec(arb_entry(), 1..5),
         entries_b in prop::collection::vec(arb_entry(), 0..3),
     ) {
-        let state1 = merge(&[
+        let state1 = merge_entries(&[
             (author_a.clone(), entries_a.clone()),
             (author_b.clone(), entries_b.clone()),
         ]);
-        let state2 = merge(&[
+        let state2 = merge_entries(&[
             (author_b, entries_b),
             (author_a, entries_a),
         ]);
@@ -257,8 +282,8 @@ proptest! {
         author in arb_pseudonym(),
         entries in prop::collection::vec(arb_entry(), 1..5),
     ) {
-        let state1 = merge(&[(author.clone(), entries.clone())]);
-        let state2 = merge(&[
+        let state1 = merge_entries(&[(author.clone(), entries.clone())]);
+        let state2 = merge_entries(&[
             (author.clone(), entries.clone()),
             (author, entries),
         ]);
@@ -277,14 +302,13 @@ proptest! {
         let thread_id = ThreadId(thread_id_bytes);
         let parent_channel_id = ChannelId(parent_channel_bytes);
 
-        let community_meta = GovernanceEntry::CommunityMeta {
+        let community_meta = at(1, GovernanceEntry::CommunityMeta {
             name: Some("C".into()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 1,
-        };
-        let create_without_record = GovernanceEntry::ThreadCreated {
+        });
+        let create_without_record = at(create_lamport, GovernanceEntry::ThreadCreated {
             thread_id,
             parent_channel_id,
             name: "ops".into(),
@@ -293,9 +317,8 @@ proptest! {
             invited: Vec::new(),
             forum_tag: None,
             auto_archive_seconds: 86_400,
-            lamport: create_lamport,
-        };
-        let create_with_record = GovernanceEntry::ThreadCreated {
+        });
+        let create_with_record = at(create_lamport.saturating_add(record_delta), GovernanceEntry::ThreadCreated {
             thread_id,
             parent_channel_id,
             name: "ops".into(),
@@ -304,14 +327,12 @@ proptest! {
             invited: Vec::new(),
             forum_tag: None,
             auto_archive_seconds: 86_400,
-            lamport: create_lamport.saturating_add(record_delta),
-        };
-        let archive = GovernanceEntry::ThreadArchived {
+        });
+        let archive = at(create_lamport.saturating_add(archive_delta), GovernanceEntry::ThreadArchived {
             thread_id,
-            lamport: create_lamport.saturating_add(archive_delta),
-        };
+        });
 
-        let state1 = merge(&[(
+        let state1 = merge_entries(&[(
             creator.clone(),
             vec![
                 community_meta.clone(),
@@ -320,7 +341,7 @@ proptest! {
                 archive.clone(),
             ],
         )]);
-        let state2 = merge(&[(
+        let state2 = merge_entries(&[(
             creator,
             vec![
                 community_meta,
@@ -339,35 +360,9 @@ proptest! {
         prop_assert_eq!(thread.record_key.as_deref(), Some("VLD0:thread"));
 
         let expected_archived =
-            (create_lamport.saturating_add(archive_delta) > thread.created_lamport)
+            (create_lamport.saturating_add(archive_delta) > thread.created.lamport)
                 .then_some(create_lamport.saturating_add(archive_delta));
-        prop_assert_eq!(thread.archived_lamport, expected_archived);
-    }
-
-    /// **§4.2 compaction preserves merged state.** Compacting one author's
-    /// own subkey before it is signed and published must never change the
-    /// merged `GovernanceState`, for any other-author context. The families
-    /// `arb_entry` produces are either LWW-collapsed (`CommunityMeta`,
-    /// `MEKGenerationBump`) or kept verbatim, and none of them gate another
-    /// author's `validate_write`, so the merged state is identical whether the
-    /// author's log is raw or compacted. The author-level genesis guard keeps
-    /// creator assignment stable even when the global minimum lives in `ctx`.
-    #[test]
-    fn compaction_preserves_merge(
-        ctx in prop::collection::vec(
-            (arb_pseudonym(), prop::collection::vec(arb_entry(), 0..12)),
-            0..4,
-        ),
-        author in arb_pseudonym(),
-        e in prop::collection::vec(arb_entry(), 0..16),
-    ) {
-        let raw = [ctx.clone(), vec![(author.clone(), e.clone())]].concat();
-        let folded = [
-            ctx,
-            vec![(author, crate::compact::compact_author_entries(e, 0))],
-        ]
-        .concat();
-        prop_assert_eq!(merge(&raw), merge(&folded));
+        prop_assert_eq!(thread.archived.map(|s| s.lamport), expected_archived);
     }
 
     /// **Plate Gate (architecture §15) — segments converge under any
@@ -383,26 +378,24 @@ proptest! {
         base_lamport in 100u64..1_000,
     ) {
         let creator = PseudonymKey([1; 32]);
-        let community_meta = GovernanceEntry::CommunityMeta {
+        let community_meta = at(1, GovernanceEntry::CommunityMeta {
             name: Some("plate-gate".into()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 1,
-        };
+        });
 
         // Each segment uses an independent governance + registry key
         // and a contiguous slot range (255 slots per segment per the
         // architecture's universal SMPL schema).
-        let segment_entries: Vec<GovernanceEntry> = (1..=segment_count)
-            .map(|idx| GovernanceEntry::SegmentAdded {
+        let segment_entries: Vec<Stamped> = (1..=segment_count)
+            .map(|idx| at(base_lamport.saturating_add(u64::from(idx)), GovernanceEntry::SegmentAdded {
                 segment_index: idx,
                 registry_key: format!("REG{idx}"),
                 governance_key: format!("GOV{idx}"),
                 slot_range_start: idx * 255,
                 slot_range_end: idx * 255 + 255,
-                lamport: base_lamport.saturating_add(u64::from(idx)),
-            })
+            }))
             .collect();
 
         // Two orderings: forward and reverse. CRDT idempotence + commutativity
@@ -412,8 +405,8 @@ proptest! {
         let mut reverse = vec![community_meta];
         reverse.extend(segment_entries.iter().rev().cloned());
 
-        let state_forward = merge(&[(creator.clone(), forward)]);
-        let state_reverse = merge(&[(creator, reverse)]);
+        let state_forward = merge_entries(&[(creator.clone(), forward)]);
+        let state_reverse = merge_entries(&[(creator, reverse)]);
 
         prop_assert_eq!(&state_forward.segments, &state_reverse.segments);
         // Sorted by segment_index ascending (merge.rs:565).

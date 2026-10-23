@@ -20,7 +20,7 @@
 //! the 200 MB ceiling. Per-community SQLite + dedup + buffers add
 //! roughly 5–15 MB on top, all comfortably inside the budget.
 
-use rekindle_governance::merge::merge;
+use rekindle_governance::fixture::{at, merge_entries};
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{PseudonymKey, RoleId};
@@ -32,14 +32,13 @@ const BUDGET_MB: usize = 200;
 fn synthetic_state() -> GovernanceState {
     let creator = PseudonymKey([0x33u8; 32]);
     let mut entries = Vec::with_capacity(ENTRY_COUNT);
-    entries.push(GovernanceEntry::CommunityMeta {
+    entries.push(at(1, GovernanceEntry::CommunityMeta {
         name: Some("MemTest".into()),
         description: Some("memory budget regression target".repeat(8)),
         icon_hash: None,
         banner_hash: None,
-        lamport: 1,
-    });
-    entries.push(GovernanceEntry::RoleDefinition {
+    }));
+    entries.push(at(2, GovernanceEntry::RoleDefinition {
         role_id: RoleId([0u8; 16]),
         name: "@everyone".into(),
         permissions: permissions::SEND_MESSAGES | permissions::READ_HISTORY,
@@ -49,20 +48,18 @@ fn synthetic_state() -> GovernanceState {
         mentionable: false,
         self_assignable: false,
         exclusion_group: None,
-        lamport: 2,
-    });
+    }));
     let mut lamport: u64 = 3;
     for i in 0..(ENTRY_COUNT - 2) {
         let author_byte = u8::try_from(i % 50).unwrap_or(0).wrapping_add(1);
-        entries.push(GovernanceEntry::RoleAssignment {
+        entries.push(at(lamport, GovernanceEntry::RoleAssignment {
             target: PseudonymKey([author_byte; 32]),
             role_id: RoleId([0u8; 16]),
-            lamport,
-        });
+        }));
         lamport += 1;
     }
     let subkeys = vec![(creator, entries)];
-    merge(&subkeys)
+    merge_entries(&subkeys)
 }
 
 /// Conservative shallow estimate of the governance state size — not a

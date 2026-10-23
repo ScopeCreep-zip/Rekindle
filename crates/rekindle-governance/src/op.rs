@@ -156,7 +156,7 @@ impl VerifiedOp {
 
     /// A fixture op for this crate's tests, whose signature is not
     /// checked; `lamport` and `hash` are taken as given.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "fixture"))]
     pub(crate) fn assume_verified(op: GovernanceOp, hash: OpHash, lamport: u64) -> Self {
         Self { op, hash, lamport }
     }

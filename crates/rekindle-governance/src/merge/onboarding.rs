@@ -4,7 +4,11 @@ use crate::op::OpStamp;
 
 use super::{GovernanceEntry, GovernanceState, OnboardingState, WelcomeScreenState};
 
-pub(super) fn apply_onboarding(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
+pub(super) fn apply_onboarding(
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
     match entry {
         GovernanceEntry::OnboardingConfig {
             enabled,
@@ -32,7 +36,10 @@ pub(super) fn apply_onboarding(entry: &GovernanceEntry, stamp: OpStamp, state: &
             description,
             channels,
         } => {
-            let existing_stamp = state.welcome_screen.as_ref().map_or(OpStamp::MIN, |w| w.stamp);
+            let existing_stamp = state
+                .welcome_screen
+                .as_ref()
+                .map_or(OpStamp::MIN, |w| w.stamp);
             if stamp > existing_stamp {
                 state.welcome_screen = Some(WelcomeScreenState {
                     description: description.clone(),

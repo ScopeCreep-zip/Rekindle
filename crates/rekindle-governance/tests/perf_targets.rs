@@ -13,28 +13,27 @@
 //! 4× headroom (40ms) so debug-mode CI doesn't flake; opt into
 //! `--release` for the strict target.
 
-use rekindle_governance::merge::merge;
+use rekindle_governance::fixture::{at, merge_entries, Stamped};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions;
 
 const ENTRY_COUNT: usize = 10_000;
 
-fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<GovernanceEntry>)> {
-    let mut by_author: std::collections::HashMap<PseudonymKey, Vec<GovernanceEntry>> =
+fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<Stamped>)> {
+    let mut by_author: std::collections::HashMap<PseudonymKey, Vec<Stamped>> =
         std::collections::HashMap::new();
     let creator = PseudonymKey([0x42u8; 32]);
 
     // Genesis: creator at lamport 1, role at 2.
     let creator_entries = vec![
-        GovernanceEntry::CommunityMeta {
+        at(1, GovernanceEntry::CommunityMeta {
             name: Some("Perf Test Community".to_string()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 1,
-        },
-        GovernanceEntry::RoleDefinition {
+        }),
+        at(2, GovernanceEntry::RoleDefinition {
             role_id: RoleId([0u8; 16]),
             name: "@everyone".into(),
             permissions: permissions::SEND_MESSAGES | permissions::READ_HISTORY,
@@ -44,8 +43,7 @@ fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<GovernanceEntry>)> 
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 2,
-        },
+        }),
     ];
     by_author.insert(creator.clone(), creator_entries);
 
@@ -57,11 +55,10 @@ fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<GovernanceEntry>)> 
         let author = PseudonymKey([author_byte; 32]);
         let target = PseudonymKey([author_byte; 32]);
         let role = RoleId([0u8; 16]);
-        let entry = GovernanceEntry::RoleAssignment {
+        let entry = at(lamport, GovernanceEntry::RoleAssignment {
             target,
             role_id: role,
-            lamport,
-        };
+        });
         by_author.entry(author).or_default().push(entry);
         lamport += 1;
     }
@@ -73,7 +70,7 @@ fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<GovernanceEntry>)> 
 fn merge_10k_entries_completes_within_budget() {
     let subkeys = gen_synthetic_entries(ENTRY_COUNT);
     let started = std::time::Instant::now();
-    let _ = merge(&subkeys);
+    let _ = merge_entries(&subkeys);
     let elapsed = started.elapsed();
 
     // Spec target: <10ms in release. Debug-mode is ~5–10× slower; we

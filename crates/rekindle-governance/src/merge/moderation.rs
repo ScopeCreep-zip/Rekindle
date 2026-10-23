@@ -8,12 +8,18 @@ use super::{
 };
 use crate::state::ModReportState;
 
-pub(super) fn apply_moderation(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
+pub(super) fn apply_moderation(
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
     match entry {
-        GovernanceEntry::BanEntry {
-            target, ..
-        } => {
-            let prev = state.ban_stamps.get(target).copied().unwrap_or(OpStamp::MIN);
+        GovernanceEntry::BanEntry { target, .. } => {
+            let prev = state
+                .ban_stamps
+                .get(target)
+                .copied()
+                .unwrap_or(OpStamp::MIN);
             if stamp > prev {
                 state.bans.insert(target.clone());
                 state.ban_stamps.insert(target.clone(), stamp);
@@ -21,7 +27,11 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, stamp: OpStamp, state: &
         }
 
         GovernanceEntry::UnbanEntry { target } => {
-            let prev = state.ban_stamps.get(target).copied().unwrap_or(OpStamp::MIN);
+            let prev = state
+                .ban_stamps
+                .get(target)
+                .copied()
+                .unwrap_or(OpStamp::MIN);
             if stamp > prev {
                 state.bans.remove(target);
                 state.ban_stamps.insert(target.clone(), stamp);
@@ -71,7 +81,10 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, stamp: OpStamp, state: &
             trigger_json,
             action,
         } => {
-            let existing_stamp = state.automod_rules.get(rule_id).map_or(OpStamp::MIN, |r| r.stamp);
+            let existing_stamp = state
+                .automod_rules
+                .get(rule_id)
+                .map_or(OpStamp::MIN, |r| r.stamp);
             if stamp > existing_stamp {
                 state.automod_rules.insert(
                     *rule_id,
@@ -98,14 +111,16 @@ pub(super) fn apply_moderation(entry: &GovernanceEntry, stamp: OpStamp, state: &
 /// is idempotent and order-independent — replaying it, or seeing it
 /// before the request it answers, converges to the same state, which is
 /// what the merge property tests require.
-pub(super) fn apply_admission(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
+pub(super) fn apply_admission(
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
     match entry {
         GovernanceEntry::MemberApproved { target } => {
             record_decision(state, target, true, stamp);
         }
-        GovernanceEntry::MemberRejected {
-            target, ..
-        } => {
+        GovernanceEntry::MemberRejected { target, .. } => {
             record_decision(state, target, false, stamp);
         }
         _ => {}
@@ -149,7 +164,8 @@ fn record_decision(
 /// lowest `(lamport, reporter)`, so every peer's queue is the same.
 pub(super) fn apply_mod_report(
     author: &PseudonymKey,
-    entry: &GovernanceEntry, stamp: OpStamp,
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
     state: &mut GovernanceState,
 ) {
     let GovernanceEntry::ModReport {

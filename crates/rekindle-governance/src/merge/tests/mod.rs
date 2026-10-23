@@ -1,6 +1,7 @@
 //! Unit tests for the CRDT merge engine, grouped by entry category.
 
 use super::*;
+use crate::fixture::{at, merge_entries, Stamped};
 use rekindle_types::id::{ChannelId, RoleId, ThreadId};
 
 pub(super) fn pseudo(b: u8) -> PseudonymKey {
@@ -15,7 +16,6 @@ pub(super) fn channel_id(b: u8) -> ChannelId {
     ChannelId([b; 16])
 }
 
-mod admission;
 mod bounds;
 mod channels;
 mod community;

@@ -93,7 +93,7 @@ mod tests {
             policy_text: None,
             max_joins_per_interval: max,
             join_interval_seconds: interval,
-            lamport: 1,
+            stamp: crate::fixture::stamp(1),
         }
     }
 

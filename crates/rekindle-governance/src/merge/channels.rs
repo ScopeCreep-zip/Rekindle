@@ -33,9 +33,7 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, stamp: OpStamp, state: &mu
             );
         }
 
-        GovernanceEntry::ChannelArchived {
-            channel_id,
-        } => {
+        GovernanceEntry::ChannelArchived { channel_id } => {
             // Only archive if lamport > creation lamport
             if let Some(ch) = state.channels.get(channel_id) {
                 if stamp > ch.created {
@@ -96,9 +94,7 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, stamp: OpStamp, state: &mu
             );
         }
 
-        GovernanceEntry::CategoryArchived {
-            category_id,
-        } => {
+        GovernanceEntry::CategoryArchived { category_id } => {
             if let Some(cat) = state.categories.get(category_id) {
                 if stamp > cat.created {
                     state.categories.remove(category_id);

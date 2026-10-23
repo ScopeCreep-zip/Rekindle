@@ -91,7 +91,7 @@ mod tests {
             max_uses: 1,
             expires_at: None,
             secrets_record_key: String::new(),
-            created_lamport: lamport,
+            created: crate::fixture::stamp(lamport),
             creator_pseudonym: creator,
         }
     }
@@ -137,7 +137,7 @@ mod tests {
                 policy_text: None,
                 max_joins_per_interval: 1000,
                 join_interval_seconds: 600,
-                lamport: 1,
+                stamp: crate::fixture::stamp(1),
             }),
             ..Default::default()
         };

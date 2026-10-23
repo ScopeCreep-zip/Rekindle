@@ -59,7 +59,7 @@ mod tests {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 1,
+            stamp: crate::fixture::stamp(1),
         }
     }
 
@@ -89,7 +89,7 @@ mod tests {
                 target_type: "role".into(),
                 allow: 0,
                 deny: VIEW_CHANNELS,
-                lamport: 2,
+                stamp: crate::fixture::stamp(2),
             },
         );
         let reader = RoleId([5; 16]);
@@ -102,7 +102,7 @@ mod tests {
                 target_type: "role".into(),
                 allow: VIEW_CHANNELS,
                 deny: 0,
-                lamport: 2,
+                stamp: crate::fixture::stamp(2),
             },
         );
         state

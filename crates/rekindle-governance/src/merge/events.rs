@@ -7,7 +7,8 @@ use crate::state::RsvpState;
 
 pub(super) fn apply_events(
     author: &PseudonymKey,
-    entry: &GovernanceEntry, stamp: OpStamp,
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
     state: &mut GovernanceState,
 ) {
     match entry {
@@ -67,12 +68,8 @@ pub(super) fn apply_events(
         GovernanceEntry::ThreadArchived { thread_id } => {
             if let Some(thread) = state.threads.get_mut(thread_id) {
                 if stamp > thread.created
-                    && thread
-                        .archived
-                        .is_none_or(|current| stamp > current)
-                    && thread
-                        .unarchived
-                        .is_none_or(|reopened| stamp > reopened)
+                    && thread.archived.is_none_or(|current| stamp > current)
+                    && thread.unarchived.is_none_or(|reopened| stamp > reopened)
                 {
                     thread.archived = Some(stamp);
                 }
@@ -82,16 +79,10 @@ pub(super) fn apply_events(
         // ── Thread unarchived: the later of archive and reopen wins ──
         GovernanceEntry::ThreadUnarchived { thread_id } => {
             if let Some(thread) = state.threads.get_mut(thread_id) {
-                if stamp > thread.created
-                    && thread
-                        .unarchived
-                        .is_none_or(|current| stamp > current)
+                if stamp > thread.created && thread.unarchived.is_none_or(|current| stamp > current)
                 {
                     thread.unarchived = Some(stamp);
-                    if thread
-                        .archived
-                        .is_some_and(|archived| stamp > archived)
-                    {
+                    if thread.archived.is_some_and(|archived| stamp > archived) {
                         thread.archived = None;
                     }
                 }
@@ -134,9 +125,7 @@ pub(super) fn apply_events(
         }
 
         // ── Expressions: OR-Set by expression_id ──
-        GovernanceEntry::EventArchived {
-            event_id, ..
-        } => {
+        GovernanceEntry::EventArchived { event_id, .. } => {
             if let Some(event) = state.events.get(event_id) {
                 if stamp > event.stamp {
                     state.events.remove(event_id);
@@ -146,10 +135,7 @@ pub(super) fn apply_events(
         }
 
         // ── RSVPs: LWW per (event_id, author) ──
-        GovernanceEntry::EventRsvp {
-            event_id,
-            status,
-        } => {
+        GovernanceEntry::EventRsvp { event_id, status } => {
             let rsvps = state.event_rsvps.entry(*event_id).or_default();
             if rsvps
                 .get(author)

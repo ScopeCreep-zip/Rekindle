@@ -201,7 +201,7 @@ mod tests {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 1,
+            stamp: crate::fixture::stamp(1),
         };
         let mut roles = HashMap::new();
         roles.insert(rid(0), everyone_role);
@@ -256,7 +256,7 @@ mod tests {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 2,
+            stamp: crate::fixture::stamp(2),
         };
         state.roles.insert(rid(1), admin_role);
         let mut assignments = HashSet::new();
@@ -275,7 +275,7 @@ mod tests {
             TimeoutState {
                 duration_seconds: 3600,
                 started_at: 1000,
-                lamport: 5,
+                stamp: crate::fixture::stamp(5),
             },
         );
 
@@ -309,7 +309,7 @@ mod tests {
                 mentionable: false,
                 self_assignable: false,
                 exclusion_group: None,
-                lamport: 1,
+                stamp: crate::fixture::stamp(1),
             },
         );
 
@@ -331,7 +331,7 @@ mod tests {
                 mentionable: false,
                 self_assignable: false,
                 exclusion_group: None,
-                lamport: 1,
+                stamp: crate::fixture::stamp(1),
             },
         );
 

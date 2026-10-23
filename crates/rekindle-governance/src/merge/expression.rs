@@ -4,7 +4,11 @@ use crate::op::OpStamp;
 
 use super::{ExpressionState, GovernanceEntry, GovernanceState};
 
-pub(super) fn apply_expression(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
+pub(super) fn apply_expression(
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
     match entry {
         GovernanceEntry::ExpressionAdded {
             expression_id,
@@ -48,18 +52,14 @@ pub(super) fn apply_expression(entry: &GovernanceEntry, stamp: OpStamp, state: &
             }
         }
 
-        GovernanceEntry::ExpressionRemoved {
-            expression_id,
-        } => {
+        GovernanceEntry::ExpressionRemoved { expression_id } => {
             let removed_stamp = state
                 .expression_remove_stamps
                 .get(expression_id)
                 .copied()
                 .unwrap_or(OpStamp::MIN);
             if stamp > removed_stamp {
-                state
-                    .expression_remove_stamps
-                    .insert(*expression_id, stamp);
+                state.expression_remove_stamps.insert(*expression_id, stamp);
             }
             if let Some(expression) = state.expressions.get(expression_id) {
                 if stamp > expression.stamp {

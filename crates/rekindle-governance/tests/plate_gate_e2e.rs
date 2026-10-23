@@ -17,7 +17,8 @@
 //! `segments_converge_regardless_of_order` — that one fuzzes ordering;
 //! this one asserts the concrete fan-out shape Plate Gate must produce.
 
-use rekindle_governance::{merge::merge, validate::validate_write};
+use rekindle_governance::fixture::{at, merge_entries, Stamped};
+use rekindle_governance::{validate::validate_write};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::permissions::{ADMINISTRATOR, SEND_MESSAGES, VIEW_CHANNELS};
@@ -42,17 +43,16 @@ fn member_role_id() -> RoleId {
     RoleId([0x00; 16])
 }
 
-fn admin_entries() -> Vec<GovernanceEntry> {
+fn admin_entries() -> Vec<Stamped> {
     vec![
-        GovernanceEntry::CommunityMeta {
+        at(1, GovernanceEntry::CommunityMeta {
             name: Some("plate-gate-e2e".into()),
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 1,
-        },
+        }),
         // Two roles: admin (full perms) and everyone (send + view).
-        GovernanceEntry::RoleDefinition {
+        at(2, GovernanceEntry::RoleDefinition {
             role_id: admin_role_id(),
             name: "admin".into(),
             permissions: ADMINISTRATOR,
@@ -62,9 +62,8 @@ fn admin_entries() -> Vec<GovernanceEntry> {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 2,
-        },
-        GovernanceEntry::RoleDefinition {
+        }),
+        at(3, GovernanceEntry::RoleDefinition {
             role_id: member_role_id(),
             name: "everyone".into(),
             permissions: VIEW_CHANNELS | SEND_MESSAGES,
@@ -74,19 +73,16 @@ fn admin_entries() -> Vec<GovernanceEntry> {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 3,
-        },
-        GovernanceEntry::RoleAssignment {
+        }),
+        at(4, GovernanceEntry::RoleAssignment {
             target: admin_pseudonym(),
             role_id: admin_role_id(),
-            lamport: 4,
-        },
-        GovernanceEntry::RoleAssignment {
+        }),
+        at(5, GovernanceEntry::RoleAssignment {
             target: joiner_pseudonym(),
             role_id: member_role_id(),
-            lamport: 5,
-        },
-        GovernanceEntry::ChannelCreated {
+        }),
+        at(6, GovernanceEntry::ChannelCreated {
             channel_id: channel_id(),
             name: "general".into(),
             channel_type: "text".into(),
@@ -94,37 +90,34 @@ fn admin_entries() -> Vec<GovernanceEntry> {
             category_id: None,
             position: 0,
             parent_voice_channel_id: None,
-            lamport: 6,
-        },
+        }),
         // Architecture §15.2: admin writes the segment expansion entry.
-        GovernanceEntry::SegmentAdded {
+        at(7, GovernanceEntry::SegmentAdded {
             segment_index: 1,
             registry_key: "VLD0:REG-1".into(),
             governance_key: "VLD0:GOV-1".into(),
             slot_range_start: 255,
             slot_range_end: 510,
-            lamport: 7,
-        },
+        }),
     ]
 }
 
-fn joiner_entries() -> Vec<GovernanceEntry> {
+fn joiner_entries() -> Vec<Stamped> {
     vec![
         // Architecture §15.4: the first segment-N message in a channel
         // also emits a ChannelSegmentLinked governance entry so other
         // members open + watch the new SMPL record.
-        GovernanceEntry::ChannelSegmentLinked {
+        at(10, GovernanceEntry::ChannelSegmentLinked {
             channel_id: channel_id(),
             segment_index: 1,
             record_key: "VLD0:CH-SEGMENT-1".into(),
-            lamport: 10,
-        },
+        }),
     ]
 }
 
 #[test]
 fn segment1_record_appears_in_state_and_validates() {
-    let state = merge(&[
+    let state = merge_entries(&[
         (admin_pseudonym(), admin_entries()),
         (joiner_pseudonym(), joiner_entries()),
     ]);
@@ -154,12 +147,12 @@ fn segment1_record_appears_in_state_and_validates() {
     // via the everyone role (id 0) and the channel exists.
     assert!(validate_write(
         &admin_pseudonym(),
-        admin_entries().last().unwrap(),
+        &admin_entries().last().unwrap().1,
         &state
     ));
     assert!(validate_write(
         &joiner_pseudonym(),
-        joiner_entries().last().unwrap(),
+        &joiner_entries().last().unwrap().1,
         &state
     ));
 }
@@ -173,25 +166,23 @@ fn channel_segment_linked_lww_resolves_first_writer_race() {
     let racer_a = PseudonymKey([0xCA; 32]);
     let racer_b = PseudonymKey([0xCB; 32]);
     let mut a_entries = admin_entries();
-    a_entries.push(GovernanceEntry::ChannelSegmentLinked {
+    a_entries.push(at(11, GovernanceEntry::ChannelSegmentLinked {
         channel_id: channel_id(),
         segment_index: 1,
         record_key: "VLD0:RACER-A".into(),
-        lamport: 11,
-    });
-    let b_entries = vec![GovernanceEntry::ChannelSegmentLinked {
+    }));
+    let b_entries = vec![at(12, GovernanceEntry::ChannelSegmentLinked {
         channel_id: channel_id(),
         segment_index: 1,
         record_key: "VLD0:RACER-B".into(),
-        lamport: 12,
-    }];
+    })];
 
-    let state = merge(&[(admin_pseudonym(), a_entries), (racer_b.clone(), b_entries)]);
+    let state = merge_entries(&[(admin_pseudonym(), a_entries), (racer_b.clone(), b_entries)]);
     let _ = racer_a;
     let record = state
         .channel_segment_records
         .get(&(channel_id(), 1))
         .expect("LWW must materialize one record");
     assert_eq!(record.record_key, "VLD0:RACER-B", "higher lamport wins");
-    assert_eq!(record.linked_lamport, 12);
+    assert_eq!(record.linked.lamport, 12);
 }

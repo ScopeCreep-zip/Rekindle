@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 0c7a93f945988d9dc5e8a7a2f2bb2f92ef0ccb1a64a06524bc09aac3478b6df2 # shrinks to logs = [(0, [(0, TimeoutEntry { target: PseudonymKey([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]), duration_seconds: 2419201, reason: None, started_at: 0 }), (0, ChannelUpdated { channel_id: ChannelId([7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]), name: None, topic: None, forum_tags: None, position: None, slowmode_seconds: Some(21600), nsfw: None, category_id: None })])]
+cc fd527d63c5e0288ce1074edd792690f0290c801135b4148e8dcf013e5d44b843 # shrinks to thread_id_bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], parent_channel_bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], create_lamport = 2, record_delta = 1, archive_delta = 1
+cc 1adf3197a3abc5513c2662254397f698c716c9305236d015ae649db770f23dd6 # shrinks to author = PseudonymKey([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]), entries = [(0, CommunityMeta { name: Some("test"), description: None, icon_hash: None, banner_hash: None })]

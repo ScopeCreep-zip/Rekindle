@@ -30,7 +30,7 @@ fn role(name: &str, permissions: u64, position: u32) -> RoleState {
         mentionable: false,
         self_assignable: false,
         exclusion_group: None,
-        lamport: 1,
+        stamp: crate::fixture::stamp(1),
     }
 }
 
@@ -53,7 +53,6 @@ fn delete() -> GovernanceEntry {
         message_id: [7; 16],
         channel_id: DELETE_CHANNEL,
         reason: None,
-        lamport: 4,
     }
 }
 
@@ -76,7 +75,7 @@ fn deny_for_moderator(state: &mut GovernanceState, deny: u64) {
             target_type: "member".into(),
             allow: 0,
             deny,
-            lamport: 3,
+            stamp: crate::fixture::stamp(3),
         },
     );
 }

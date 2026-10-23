@@ -8,38 +8,44 @@ fn thread_prefers_populated_record_key() {
     let thread_id = ThreadId([9; 16]);
     let parent_channel_id = channel_id(1);
     let entries = vec![
-        GovernanceEntry::CommunityMeta {
-            name: Some("C".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-            lamport: 1,
-        },
-        GovernanceEntry::ThreadCreated {
-            thread_id,
-            parent_channel_id,
-            name: "ops".into(),
-            thread_type: "public".into(),
-            record_key: None,
-            invited: Vec::new(),
-            forum_tag: None,
-            auto_archive_seconds: 86_400,
-            lamport: 3,
-        },
-        GovernanceEntry::ThreadCreated {
-            thread_id,
-            parent_channel_id,
-            name: "ops".into(),
-            thread_type: "public".into(),
-            record_key: Some("VLD0:thread".into()),
-            invited: Vec::new(),
-            forum_tag: None,
-            auto_archive_seconds: 86_400,
-            lamport: 4,
-        },
+        at(
+            1,
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            },
+        ),
+        at(
+            3,
+            GovernanceEntry::ThreadCreated {
+                thread_id,
+                parent_channel_id,
+                name: "ops".into(),
+                thread_type: "public".into(),
+                record_key: None,
+                invited: Vec::new(),
+                forum_tag: None,
+                auto_archive_seconds: 86_400,
+            },
+        ),
+        at(
+            4,
+            GovernanceEntry::ThreadCreated {
+                thread_id,
+                parent_channel_id,
+                name: "ops".into(),
+                thread_type: "public".into(),
+                record_key: Some("VLD0:thread".into()),
+                invited: Vec::new(),
+                forum_tag: None,
+                auto_archive_seconds: 86_400,
+            },
+        ),
     ];
 
-    let state = merge(&[(creator, entries)]);
+    let state = merge_entries(&[(creator, entries)]);
     assert_eq!(
         state
             .threads
@@ -55,36 +61,37 @@ fn thread_archive_sets_tombstone_without_removing_thread() {
     let thread_id = ThreadId([7; 16]);
     let parent_channel_id = channel_id(1);
     let entries = vec![
-        GovernanceEntry::CommunityMeta {
-            name: Some("C".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-            lamport: 1,
-        },
-        GovernanceEntry::ThreadCreated {
-            thread_id,
-            parent_channel_id,
-            name: "ops".into(),
-            thread_type: "public".into(),
-            record_key: Some("VLD0:thread".into()),
-            invited: Vec::new(),
-            forum_tag: None,
-            auto_archive_seconds: 86_400,
-            lamport: 3,
-        },
-        GovernanceEntry::ThreadArchived {
-            thread_id,
-            lamport: 5,
-        },
+        at(
+            1,
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            },
+        ),
+        at(
+            3,
+            GovernanceEntry::ThreadCreated {
+                thread_id,
+                parent_channel_id,
+                name: "ops".into(),
+                thread_type: "public".into(),
+                record_key: Some("VLD0:thread".into()),
+                invited: Vec::new(),
+                forum_tag: None,
+                auto_archive_seconds: 86_400,
+            },
+        ),
+        at(5, GovernanceEntry::ThreadArchived { thread_id }),
     ];
 
-    let state = merge(&[(creator, entries)]);
+    let state = merge_entries(&[(creator, entries)]);
     let thread = state
         .threads
         .get(&thread_id)
         .expect("thread should remain materialized");
-    assert_eq!(thread.archived_lamport, Some(5));
+    assert_eq!(thread.archived.map(|s| s.lamport), Some(5));
 }
 
 #[test]
@@ -93,36 +100,37 @@ fn thread_archive_with_lower_lamport_is_ignored() {
     let thread_id = ThreadId([7; 16]);
     let parent_channel_id = channel_id(1);
     let entries = vec![
-        GovernanceEntry::CommunityMeta {
-            name: Some("C".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-            lamport: 1,
-        },
-        GovernanceEntry::ThreadCreated {
-            thread_id,
-            parent_channel_id,
-            name: "ops".into(),
-            thread_type: "public".into(),
-            record_key: Some("VLD0:thread".into()),
-            invited: Vec::new(),
-            forum_tag: None,
-            auto_archive_seconds: 86_400,
-            lamport: 5,
-        },
-        GovernanceEntry::ThreadArchived {
-            thread_id,
-            lamport: 4,
-        },
+        at(
+            1,
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            },
+        ),
+        at(
+            5,
+            GovernanceEntry::ThreadCreated {
+                thread_id,
+                parent_channel_id,
+                name: "ops".into(),
+                thread_type: "public".into(),
+                record_key: Some("VLD0:thread".into()),
+                invited: Vec::new(),
+                forum_tag: None,
+                auto_archive_seconds: 86_400,
+            },
+        ),
+        at(4, GovernanceEntry::ThreadArchived { thread_id }),
     ];
 
-    let state = merge(&[(creator, entries)]);
+    let state = merge_entries(&[(creator, entries)]);
     let thread = state
         .threads
         .get(&thread_id)
         .expect("thread should remain materialized");
-    assert_eq!(thread.archived_lamport, None);
+    assert_eq!(thread.archived, None);
 }
 
 mod rsvps {
@@ -132,39 +140,45 @@ mod rsvps {
 
     const EVENT: EventId = EventId([0xE1; 16]);
 
-    fn meta() -> GovernanceEntry {
-        GovernanceEntry::CommunityMeta {
-            name: Some("C".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-            lamport: 1,
-        }
+    fn meta() -> Stamped {
+        at(
+            1,
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            },
+        )
     }
 
-    fn created(lamport: u64) -> GovernanceEntry {
-        GovernanceEntry::EventCreated {
-            event_id: EVENT,
-            name: "raid night".into(),
-            description: None,
-            start_time: 1_800_000_000,
-            end_time: None,
-            channel_id: None,
-            cover_image_ref: None,
-            creator_pseudonym: None,
-            recurrence: None,
-            location: None,
-            status: None,
+    fn created(lamport: u64) -> Stamped {
+        at(
             lamport,
-        }
+            GovernanceEntry::EventCreated {
+                event_id: EVENT,
+                name: "raid night".into(),
+                description: None,
+                start_time: 1_800_000_000,
+                end_time: None,
+                channel_id: None,
+                cover_image_ref: None,
+                creator_pseudonym: None,
+                recurrence: None,
+                location: None,
+                status: None,
+            },
+        )
     }
 
-    fn rsvp(status: RsvpStatus, lamport: u64) -> GovernanceEntry {
-        GovernanceEntry::EventRsvp {
-            event_id: EVENT,
-            status,
+    fn rsvp(status: RsvpStatus, lamport: u64) -> Stamped {
+        at(
             lamport,
-        }
+            GovernanceEntry::EventRsvp {
+                event_id: EVENT,
+                status,
+            },
+        )
     }
 
     fn statuses(state: &GovernanceState) -> Vec<(PseudonymKey, RsvpStatus)> {
@@ -178,7 +192,7 @@ mod rsvps {
 
     #[test]
     fn each_member_keeps_their_latest_answer() {
-        let state = merge(&[
+        let state = merge_entries(&[
             (pseudo(1), vec![meta(), created(2)]),
             (
                 pseudo(2),
@@ -197,16 +211,13 @@ mod rsvps {
 
     #[test]
     fn archiving_the_event_clears_its_rsvps() {
-        let state = merge(&[
+        let state = merge_entries(&[
             (
                 pseudo(1),
                 vec![
                     meta(),
                     created(2),
-                    GovernanceEntry::EventArchived {
-                        event_id: EVENT,
-                        lamport: 6,
-                    },
+                    at(6, GovernanceEntry::EventArchived { event_id: EVENT }),
                 ],
             ),
             (pseudo(2), vec![rsvp(RsvpStatus::Going, 3)]),
@@ -220,7 +231,7 @@ mod rsvps {
     /// is live, on every peer alike.
     #[test]
     fn an_rsvp_merged_before_the_surviving_create_still_counts() {
-        let state = merge(&[
+        let state = merge_entries(&[
             (pseudo(1), vec![meta(), created(9)]),
             (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
         ]);
@@ -229,7 +240,7 @@ mod rsvps {
 
     #[test]
     fn rsvps_of_events_that_are_not_live_are_not_shown() {
-        let state = merge(&[
+        let state = merge_entries(&[
             (pseudo(1), vec![meta()]),
             (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
         ]);
@@ -239,17 +250,19 @@ mod rsvps {
 
     #[test]
     fn a_banned_member_cannot_rsvp() {
-        let state = merge(&[
+        let state = merge_entries(&[
             (
                 pseudo(1),
                 vec![
                     meta(),
                     created(2),
-                    GovernanceEntry::BanEntry {
-                        target: pseudo(2),
-                        reason: None,
-                        lamport: 3,
-                    },
+                    at(
+                        3,
+                        GovernanceEntry::BanEntry {
+                            target: pseudo(2),
+                            reason: None,
+                        },
+                    ),
                 ],
             ),
             (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),

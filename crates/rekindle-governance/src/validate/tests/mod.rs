@@ -26,7 +26,7 @@ fn state_with_creator_and_roles() -> GovernanceState {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 1,
+            stamp: crate::fixture::stamp(1),
         },
     );
     roles.insert(
@@ -40,7 +40,7 @@ fn state_with_creator_and_roles() -> GovernanceState {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 2,
+            stamp: crate::fixture::stamp(2),
         },
     );
 
@@ -68,7 +68,6 @@ fn creator_always_validates() {
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport: 10,
     };
     assert!(validate_write(&pseudo(1), &entry, &state));
 }
@@ -84,7 +83,6 @@ fn regular_member_cannot_manage_channels() {
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport: 10,
     };
     // pseudo(99) has only @everyone perms — no MANAGE_CHANNELS
     assert!(!validate_write(&pseudo(99), &entry, &state));
@@ -101,7 +99,6 @@ fn admin_can_manage_channels() {
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport: 10,
     };
     // pseudo(5) is admin
     assert!(validate_write(&pseudo(5), &entry, &state));
@@ -112,7 +109,6 @@ fn bump(generation: u64) -> GovernanceEntry {
         generation,
         trigger_departed: pseudo(10),
         cascade_skipped: vec![],
-        lamport: 10,
     }
 }
 
@@ -158,7 +154,6 @@ fn banned_member_cannot_write() {
         generation: 2,
         trigger_departed: pseudo(10),
         cascade_skipped: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(50), &entry, &state));
 }
@@ -175,7 +170,6 @@ fn regular_member_can_create_thread() {
         invited: Vec::new(),
         forum_tag: None,
         auto_archive_seconds: 86_400,
-        lamport: 10,
     };
     // @everyone has SEND_MESSAGES
     assert!(validate_write(&pseudo(99), &entry, &state));
@@ -196,14 +190,13 @@ fn self_assignable_role_allows_self_write() {
             mentionable: false,
             self_assignable: true,
             exclusion_group: None,
-            lamport: 3,
+            stamp: crate::fixture::stamp(3),
         },
     );
 
     let entry = GovernanceEntry::RoleAssignment {
         target: pseudo(99),
         role_id: self_role_id,
-        lamport: 10,
     };
     assert!(validate_write(&pseudo(99), &entry, &state));
 }
@@ -225,7 +218,7 @@ fn expression_limit_rejects_extra_static_emoji() {
                 creator_pseudonym: None,
                 created_at: None,
                 available_to_peers: true,
-                lamport: u64::from(index),
+                stamp: crate::fixture::stamp(u64::from(index)),
             },
         );
     }
@@ -242,7 +235,6 @@ fn expression_limit_rejects_extra_static_emoji() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 50,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -268,7 +260,7 @@ fn expression_limit_rejects_extra_animated_emoji() {
                 creator_pseudonym: None,
                 created_at: None,
                 available_to_peers: true,
-                lamport: u64::from(index),
+                stamp: crate::fixture::stamp(u64::from(index)),
             },
         );
     }
@@ -285,7 +277,6 @@ fn expression_limit_rejects_extra_animated_emoji() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 100,
     };
     assert!(
         !validate_write(&pseudo(5), &entry, &state),
@@ -306,7 +297,6 @@ fn expression_limit_rejects_extra_animated_emoji() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 101,
     };
     assert!(
         validate_write(&pseudo(5), &static_entry, &state),
@@ -334,7 +324,6 @@ fn soundboard_entry_with_valid_meta_accepted() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
@@ -359,7 +348,6 @@ fn soundboard_entry_rejects_overlong_duration() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -384,7 +372,6 @@ fn soundboard_entry_rejects_volume_outside_range() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -409,7 +396,6 @@ fn emoji_entry_rejects_smuggled_sound_meta() {
         creator_pseudonym: None,
         created_at: None,
         available_to_peers: Some(true),
-        lamport: 5,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -443,7 +429,6 @@ fn onboarding_rejects_too_many_questions() {
         questions,
         welcome_message: None,
         guide_steps: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -458,7 +443,6 @@ fn onboarding_rejects_overlong_welcome_message() {
         questions: vec![],
         welcome_message: Some("a".repeat(501)),
         guide_steps: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -473,7 +457,6 @@ fn onboarding_rejects_unknown_mode() {
         questions: vec![],
         welcome_message: None,
         guide_steps: vec![],
-        lamport: 10,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
