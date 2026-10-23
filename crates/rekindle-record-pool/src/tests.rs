@@ -218,3 +218,15 @@ async fn an_open_retries_transient_errors_one_second_apart_within_the_budget() {
         rekindle_records::port::PortError::Unreachable(_)
     ));
 }
+
+#[tokio::test(start_paused = true)]
+async fn owner_of_names_the_opened_descriptor_s_owner_while_the_lease_is_held() {
+    let pool = pool_on(Arc::new(TestDht::default()));
+    let lease = pool.acquire(LEASED_RECORD, None).await.unwrap();
+    assert_eq!(pool.owner_of(lease).unwrap(), "VLD0:test-owner");
+    pool.release(lease).await;
+    assert!(matches!(
+        pool.owner_of(lease),
+        Err(rekindle_records::port::PortError::LeaseNotHeld(_))
+    ));
+}
