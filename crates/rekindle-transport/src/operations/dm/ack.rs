@@ -20,8 +20,8 @@ use super::{client_id_text, receipts, send};
 use crate::operations::friend::{state, FriendHost};
 
 /// The coalescing delay's bounds, milliseconds.
-pub const ACK_DELAY_MIN_MS: u64 = 2_000;
-pub const ACK_DELAY_MAX_MS: u64 = 10_000;
+pub const ACK_DELAY_MIN_MS: u64 = rekindle_types::message::DM_ACK_DELAY_MIN_MS;
+pub const ACK_DELAY_MAX_MS: u64 = rekindle_types::message::DM_ACK_DELAY_MAX_MS;
 
 /// The delay for a uniform `draw` in `[0, MAX - MIN]`.
 fn delay_from(draw: u64) -> Duration {

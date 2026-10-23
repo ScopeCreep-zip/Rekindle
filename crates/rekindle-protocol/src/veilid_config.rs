@@ -103,6 +103,16 @@ pub fn build_veilid_config(
 mod tests {
     use super::*;
 
+    /// The outbox's DM retry floor counts one Veilid call (finding 49).
+    #[test]
+    fn the_call_timeout_is_veilids_rpc_timeout() {
+        let net = veilid_core::VeilidConfigInternal::default().network;
+        assert_eq!(
+            u64::from(net.rpc.timeout_ms),
+            rekindle_types::message::CALL_TIMEOUT_MS
+        );
+    }
+
     #[test]
     fn longest_call_matches_veilid_defaults() {
         let net = veilid_core::VeilidConfigInternal::default().network;

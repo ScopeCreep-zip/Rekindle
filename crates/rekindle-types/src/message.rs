@@ -76,6 +76,17 @@ mod tests {
 /// transit and clock skew; anything older is a replay.
 pub const ENVELOPE_FRESHNESS_WINDOW_MS: u64 = 300_000;
 
+/// The bounds of a `DmAck`'s coalescing delay, ms (plan E2.5, r10 Part A:
+/// "coalesced per peer and sent after a uniform random 2–10 s delay").
+pub const DM_ACK_DELAY_MIN_MS: u64 = 2_000;
+pub const DM_ACK_DELAY_MAX_MS: u64 = 10_000;
+
+/// Veilid's RPC round-trip timeout, ms (`network.rpc.timeout_ms`, default
+/// 5 000, `veilid-core/src/veilid_config.rs:852`): one call's longest wait,
+/// as an ack's send (an `app_message` after an inline route refresh) may
+/// take.
+pub const CALL_TIMEOUT_MS: u64 = 5_000;
+
 /// How far in the future a signed 1:1 envelope's timestamp may be (clock
 /// skew between the two peers).
 pub const ENVELOPE_MAX_FUTURE_SKEW_MS: u64 = 60_000;

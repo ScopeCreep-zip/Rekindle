@@ -470,26 +470,42 @@ async fn rows_outlive_the_engine_and_resends_are_received_once() {
     first.pump().await.unwrap();
     // A restart: a new engine over the same rows sends the same id.
     let again = Outbox::new(first.deps().clone());
-    advance(&again, 10_000);
+    advance(&again, 20_000);
     again.pump().await.unwrap();
     assert_eq!(again.deps().store.lock().attempted, ["a", "a"]);
     assert!(again.receive("dm:bob", "a").await.unwrap());
     assert!(!again.receive("dm:bob", "a").await.unwrap());
 }
 
+/// A DM is never sent again before the peer's delayed `DmAck` can come
+/// back (live A/B finding 49): every wait is the ack's longest delay plus
+/// one call timeout, then the step backs off as before.
+#[test]
+fn a_dm_retry_waits_for_the_longest_ack() {
+    let rng = CounterRng(AtomicU64::new(3));
+    let ms = |n| StreamKind::Dm.policy().delay(n, &rng).unwrap().as_millis();
+    assert_eq!(crate::stream::DM_RETRY_FLOOR.as_millis(), 15_000);
+    let first = ms(1);
+    assert!((15_500..=16_000).contains(&first), "{first}");
+    let sixth = ms(6);
+    assert!((31_000..=47_000).contains(&sixth), "{sixth}");
+    let late = ms(30);
+    assert!((165_000..=315_000).contains(&late), "{late}");
+}
+
 #[test]
 fn backoff_is_jittered_within_its_step_and_capped() {
     let rng = CounterRng(AtomicU64::new(3));
     let ms = |kind: StreamKind, n| kind.policy().delay(n, &rng).unwrap().as_millis();
-    let first = ms(StreamKind::Dm, 1);
+    let first = ms(StreamKind::GroupDm, 1);
     assert!((500..=1_000).contains(&first), "{first}");
-    let third = ms(StreamKind::Dm, 3);
+    let third = ms(StreamKind::GroupDm, 3);
     assert!((2_000..=4_000).contains(&third), "{third}");
     let late = ms(StreamKind::MediaKey, 30);
     assert!((7_500..=15_000).contains(&late), "{late}");
     let again = CounterRng(AtomicU64::new(3));
     assert_eq!(
-        StreamKind::Dm
+        StreamKind::GroupDm
             .policy()
             .delay(1, &again)
             .unwrap()

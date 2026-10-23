@@ -4,7 +4,12 @@
 
 use std::time::Duration;
 
+use rekindle_types::message::{CALL_TIMEOUT_MS, DM_ACK_DELAY_MAX_MS};
 use rekindle_utils::random::RandomSource;
+
+/// The shortest wait before a `dm` row is sent again: the longest a
+/// peer's `DmAck` may take to come back (live A/B finding 49).
+pub const DM_RETRY_FLOOR: Duration = Duration::from_millis(DM_ACK_DELAY_MAX_MS + CALL_TIMEOUT_MS);
 
 /// What a stream carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -95,7 +100,18 @@ impl StreamKind {
             Self::ChannelPost => return OutboxRetry::SettledExternally,
             // A group send and an op append are chain writes, retried
             // like a DM.
-            Self::Dm | Self::GroupDm | Self::GovernanceOp => (1, 300),
+            // A DM's retry never comes before its ack can (live A/B
+            // finding 49): the peer's `DmAck` leaves up to
+            // `DM_ACK_DELAY_MAX_MS` after the entry, and its send may take
+            // one call timeout.
+            Self::Dm => {
+                return OutboxRetry::Backoff {
+                    base: Duration::from_secs(1),
+                    cap: Duration::from_secs(300),
+                    floor: DM_RETRY_FLOOR,
+                }
+            }
+            Self::GroupDm | Self::GovernanceOp => (1, 300),
             Self::FriendHandshake => (2, 900),
             Self::DhtWrite => (1, 60),
             // C7.22's 1/2/4/8/15 s: a call key is useless late.
@@ -104,6 +120,7 @@ impl StreamKind {
         OutboxRetry::Backoff {
             base: Duration::from_secs(base),
             cap: Duration::from_secs(cap),
+            floor: Duration::ZERO,
         }
     }
 }
@@ -113,8 +130,12 @@ impl StreamKind {
 pub enum OutboxRetry {
     /// Exponential backoff from `base`, capped at `cap`, with equal jitter
     /// (half the step fixed, half uniform), so peers that failed together
-    /// do not retry together.
-    Backoff { base: Duration, cap: Duration },
+    /// do not retry together; each wait is that step after `floor`.
+    Backoff {
+        base: Duration,
+        cap: Duration,
+        floor: Duration,
+    },
     /// Never attempted by the engine: no sender, no attempt, no backoff
     /// pass. Only the host's settle of the stream
     /// ([`crate::Outbox::settle_stream`]) or the row's deadline settles it
@@ -129,13 +150,13 @@ impl OutboxRetry {
     pub fn delay(self, attempts: u32, rng: &dyn RandomSource) -> Option<Duration> {
         match self {
             Self::SettledExternally => None,
-            Self::Backoff { base, cap } => {
+            Self::Backoff { base, cap, floor } => {
                 let step = base
                     .saturating_mul(1u32 << attempts.saturating_sub(1).min(20))
                     .min(cap);
                 let step_ms = u64::try_from(step.as_millis()).unwrap_or(u64::MAX);
                 let half = step_ms / 2;
-                Some(Duration::from_millis(half + rng.below(step_ms - half + 1)))
+                Some(floor + Duration::from_millis(half + rng.below(step_ms - half + 1)))
             }
         }
     }
