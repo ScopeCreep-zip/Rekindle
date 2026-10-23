@@ -7969,6 +7969,7 @@ dependencies = [
  "rand 0.8.5",
  "rekindle-codec",
  "rekindle-records",
+ "rekindle-secrets",
  "rekindle-types",
  "rekindle-utils",
  "serde_json",

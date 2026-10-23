@@ -5,7 +5,9 @@
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::domains;
-use rekindle_types::presence::GameInfo;
+use rekindle_types::game_server::MAX_GAME_ID_LEN;
+use rekindle_types::key_format::{self, MAX_STATUS_LEN};
+use rekindle_types::presence::{limits, GameInfo};
 
 use super::{check_len, check_size, opt_text, put_lp, sign, verify, RecordScope};
 use crate::capnp_codec::{capnp_err, pack, text_to_string, unpack_bounded};
@@ -14,17 +16,11 @@ use crate::CodecError;
 
 /// The bound on an encoded card, proven at the maximum field sizes.
 pub const MEMBER_CARD_MAX_BYTES: usize = 8 * 1024;
-/// Field bounds, in UTF-8 bytes.
-pub const MAX_DISPLAY_NAME: usize = 256;
-pub const MAX_BIO: usize = 2048;
-pub const MAX_REF: usize = 512;
-pub const MAX_PRONOUNS: usize = 160;
-pub const MAX_CUSTOM_STATUS: usize = 512;
-pub const MAX_BADGES: usize = 16;
-pub const MAX_BADGE: usize = 64;
-pub const MAX_GAME_NAME: usize = 256;
-pub const MAX_GAME_ID: usize = 64;
-pub const MAX_SERVER_ADDRESS: usize = 256;
+/// The bounds of the fields no presence limit covers: free text in
+/// characters, as `rekindle_types::presence::limits` counts it.
+pub const MAX_GAME_NAME_LEN: usize = 128;
+/// Longest server address (`host:port`), ASCII.
+pub const MAX_SERVER_ADDRESS_LEN: usize = 255;
 
 const MAX_WORDS: usize = 4 * 1024;
 
@@ -76,38 +72,36 @@ pub fn verify_card_hpke(
     )
 }
 
-fn opt_len(v: Option<&String>) -> usize {
-    v.map_or(0, String::len)
-}
-
 impl MemberCard {
+    /// The profile bounds every track validates with
+    /// (`rekindle_types::presence::limits`), applied on encode and decode.
     fn check_bounds(&self) -> Result<(), CodecError> {
-        check_len(
-            "display name",
-            opt_len(self.display_name.as_ref()),
-            MAX_DISPLAY_NAME,
-        )?;
-        check_len("bio", opt_len(self.bio.as_ref()), MAX_BIO)?;
-        check_len("avatar ref", opt_len(self.avatar_ref.as_ref()), MAX_REF)?;
-        check_len("banner ref", opt_len(self.banner_ref.as_ref()), MAX_REF)?;
-        check_len("pronouns", opt_len(self.pronouns.as_ref()), MAX_PRONOUNS)?;
-        check_len(
-            "custom status",
-            opt_len(self.custom_status.as_ref()),
-            MAX_CUSTOM_STATUS,
-        )?;
-        check_len("badge count", self.badges.len(), MAX_BADGES)?;
-        for badge in &self.badges {
-            check_len("badge", badge.len(), MAX_BADGE)?;
+        let bound = |what: &str, e: &dyn std::fmt::Display| {
+            CodecError::Serialization(format!("card {what}: {e}"))
+        };
+        if let Some(name) = &self.display_name {
+            limits::peer_display_name(name).map_err(|e| bound("display name", &e))?;
+        }
+        limits::validate_profile(
+            self.bio.as_deref(),
+            self.pronouns.as_deref(),
+            &self.badges,
+            self.avatar_ref.as_deref(),
+            self.banner_ref.as_deref(),
+        )
+        .map_err(|e| bound("profile", &e))?;
+        if let Some(status) = &self.custom_status {
+            key_format::text(status, MAX_STATUS_LEN).map_err(|e| bound("custom status", &e))?;
         }
         if let Some(game) = &self.game {
-            check_len("game name", game.game_name.len(), MAX_GAME_NAME)?;
-            check_len("game id", opt_len(game.game_id.as_ref()), MAX_GAME_ID)?;
-            check_len(
-                "server address",
-                opt_len(game.server_address.as_ref()),
-                MAX_SERVER_ADDRESS,
-            )?;
+            key_format::text(&game.game_name, MAX_GAME_NAME_LEN)
+                .map_err(|e| bound("game name", &e))?;
+            if let Some(id) = &game.game_id {
+                key_format::text(id, MAX_GAME_ID_LEN).map_err(|e| bound("game id", &e))?;
+            }
+            if let Some(addr) = &game.server_address {
+                check_len("server address", addr.len(), MAX_SERVER_ADDRESS_LEN)?;
+            }
         }
         Ok(())
     }

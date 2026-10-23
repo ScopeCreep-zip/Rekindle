@@ -8,11 +8,16 @@ use rekindle_utils::random::OsRandom;
 
 use super::beat::{decode_presence_beat, MAX_ACTIVITY, MAX_CHANNEL_ID};
 use super::card::{
-    decode_member_card, verify_card_hpke, MAX_BADGE, MAX_BADGES, MAX_BIO, MAX_CUSTOM_STATUS,
-    MAX_DISPLAY_NAME, MAX_GAME_ID, MAX_GAME_NAME, MAX_PRONOUNS, MAX_REF, MAX_SERVER_ADDRESS,
+    decode_member_card, verify_card_hpke, MAX_GAME_NAME_LEN, MAX_SERVER_ADDRESS_LEN,
 };
 use super::history_ad::{decode_history_ad, encode_history_ad};
 use super::*;
+use rekindle_types::game_server::MAX_GAME_ID_LEN;
+use rekindle_types::key_format::MAX_STATUS_LEN;
+use rekindle_types::presence::limits::{
+    MAX_BADGES, MAX_BADGE_LEN, MAX_BIO_LEN, MAX_CONTENT_REF_LEN, MAX_DISPLAY_NAME_LEN,
+    MAX_PRONOUNS_LEN,
+};
 
 const AT: RecordScope<'static> = RecordScope {
     community_id: "community-0123456789abcdef0123456789abcdef",
@@ -35,21 +40,26 @@ fn s(n: usize) -> String {
     "z".repeat(n)
 }
 
+/// `n` characters of four UTF-8 bytes each: free text's worst case.
+fn wide(n: usize) -> String {
+    "\u{1F525}".repeat(n)
+}
+
 fn max_card() -> MemberCard {
     MemberCard {
-        display_name: Some(s(MAX_DISPLAY_NAME)),
-        bio: Some(s(MAX_BIO)),
-        avatar_ref: Some(s(MAX_REF)),
-        banner_ref: Some(s(MAX_REF)),
-        pronouns: Some(s(MAX_PRONOUNS)),
+        display_name: Some(wide(MAX_DISPLAY_NAME_LEN)),
+        bio: Some(wide(MAX_BIO_LEN)),
+        avatar_ref: Some(s(MAX_CONTENT_REF_LEN)),
+        banner_ref: Some(s(MAX_CONTENT_REF_LEN)),
+        pronouns: Some(wide(MAX_PRONOUNS_LEN)),
         theme_color: Some(u32::MAX),
-        badges: vec![s(MAX_BADGE); MAX_BADGES],
-        custom_status: Some(s(MAX_CUSTOM_STATUS)),
+        badges: vec![s(MAX_BADGE_LEN); MAX_BADGES],
+        custom_status: Some(wide(MAX_STATUS_LEN)),
         game: Some(GameInfo {
-            game_name: s(MAX_GAME_NAME),
-            game_id: Some(s(MAX_GAME_ID)),
+            game_name: wide(MAX_GAME_NAME_LEN),
+            game_id: Some(wide(MAX_GAME_ID_LEN)),
             elapsed_seconds: Some(u64::MAX),
-            server_address: Some(s(MAX_SERVER_ADDRESS)),
+            server_address: Some(s(MAX_SERVER_ADDRESS_LEN)),
         }),
         hpke_key: [0xAB; 32],
     }
@@ -95,7 +105,7 @@ fn a_minimal_card_round_trips_and_a_card_is_bound_to_its_record_and_signer() {
 #[test]
 fn a_card_field_over_its_bound_is_refused() {
     let mut card = max_card();
-    card.bio = Some(s(MAX_BIO + 1));
+    card.bio = Some(wide(MAX_BIO_LEN + 1));
     assert!(card.encode(AT, &key(1)).is_err());
     let mut card = max_card();
     card.badges.push(s(1));

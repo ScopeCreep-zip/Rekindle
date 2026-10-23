@@ -5,6 +5,11 @@
 //! or recovering peers can then target specific peers for message catchup
 //! instead of blind-fetching from the DHT.
 
+use rekindle_codec::member_record::history_ad::decode_history_ad;
+use rekindle_codec::member_record::RecordScope;
+use rekindle_codec::CodecError;
+use rekindle_secrets::keys::MediaEncryptionKey;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryAd {
     pub channel_id: String,
@@ -45,9 +50,63 @@ pub fn select_deepest_peer(ads: &[(usize, &HistoryAd)]) -> Option<usize> {
         .map(|(idx, _)| *idx)
 }
 
+/// Decode a member's `M`/5 history ad (plan E3.2) into the ads peer
+/// selection ranks. The codec verifies the pseudonym's signature for the
+/// record `at` and opens the ranges with `key`, the current
+/// `KeyScope::Community` key: a member without it reads no ads.
+pub fn decode_member_history_ads(
+    data: &[u8],
+    key: &MediaEncryptionKey,
+    at: RecordScope<'_>,
+    pseudonym: &[u8; 32],
+) -> Result<Vec<HistoryAd>, CodecError> {
+    Ok(decode_history_ad(data, key, at, pseudonym)?
+        .into_iter()
+        .map(|range| HistoryAd {
+            channel_id: hex::encode(range.channel_id.0),
+            oldest_lamport: range.oldest_lamport,
+            newest_lamport: range.newest_lamport,
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{select_best_peer, HistoryAd};
+    use super::{decode_member_history_ads, select_best_peer, HistoryAd};
+    use rekindle_codec::member_record::history_ad::encode_history_ad;
+    use rekindle_codec::member_record::RecordScope;
+    use rekindle_secrets::ed25519_dalek::SigningKey;
+    use rekindle_secrets::keys::MediaEncryptionKey;
+    use rekindle_types::id::ChannelId;
+    use rekindle_types::presence::HistoryRange;
+    use rekindle_utils::random::OsRandom;
+
+    #[test]
+    fn a_member_history_ad_decodes_into_ads() {
+        let at = RecordScope {
+            community_id: "community",
+            member_record: "VLD0:member",
+        };
+        let me = SigningKey::from_bytes(&[1; 32]);
+        let key = MediaEncryptionKey::from_bytes([2; 32], 4);
+        let range = HistoryRange {
+            channel_id: ChannelId([0xAB; 16]),
+            oldest_lamport: 3,
+            newest_lamport: 9,
+        };
+        let bytes = encode_history_ad(&[range], &key, at, &me, &OsRandom).unwrap();
+        let ads =
+            decode_member_history_ads(&bytes, &key, at, &me.verifying_key().to_bytes()).unwrap();
+        assert_eq!(
+            ads,
+            vec![HistoryAd {
+                channel_id: "ab".repeat(16),
+                oldest_lamport: 3,
+                newest_lamport: 9,
+            }]
+        );
+        assert_eq!(select_best_peer(&[(0, &ads[0])], 5), Some(0));
+    }
 
     #[test]
     fn range_contains_endpoints() {

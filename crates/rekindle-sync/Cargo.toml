@@ -13,11 +13,12 @@ blake3 = "1"
 hex = { workspace = true }
 parking_lot = { workspace = true }
 rand = { workspace = true }
+rekindle-codec = { path = "../rekindle-codec" }
 rekindle-records = { path = "../rekindle-records" }
+rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-rekindle-codec = { path = "../rekindle-codec" }
