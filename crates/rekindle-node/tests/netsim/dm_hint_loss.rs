@@ -257,6 +257,15 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
     }
     befriend(&sim, &nodes[0], &nodes[1]).await;
     talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    // The test finds Ida's chain by a watched change of it that reached
+    // Jon (finding F8, as above). The hint now leaves while the append is
+    // in flight (live A/B finding 42), so `talk` returns before the entry
+    // lands; Jon stays online until a change of the chain reached him.
+    talk(&sim, &nodes[0], &nodes[1], "watched").await;
+    assert!(
+        eventually(&sim, LIMIT, || async { !unretired(&sim, 1).is_empty() }).await,
+        "a change of Ida's chain reached Jon"
+    );
     let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
     sim.fault(Fault::DhtOffline {
         node: 1,
@@ -311,5 +320,47 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
     assert!(
         eventually(&sim, LIMIT, gap).await,
         "Jon's history holds the gap marker"
+    );
+}
+
+/// Live A/B finding 42: the hint leaves while the chain append is in
+/// flight, so a message reaches the peer within a few message latencies,
+/// well under one DHT set; Jon's ack, which beats the append, waits on
+/// Ida's row until the append lands, and the row then settles delivered.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_message_arrives_before_its_append_lands() {
+    use rekindle_netsim::latency::{MESSAGE, SET};
+    let (sim, mut nodes) = start(2, 75).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    // The outbox attempts one stream run at a time: "hello"'s append, still
+    // in flight after Jon read its hint, would hold the next send behind it.
+    assert!(
+        eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "hello: 0 to 1")).await,
+        "hello settled"
+    );
+    // The append is a `HEAD` read and two sets; the hint alone is a few
+    // message latencies.
+    let bound = SET.min / 2;
+    assert!(bound > MESSAGE.max * 4, "room for the hint and its framing");
+    send(&nodes[0], &jon, "fast").await;
+    let sent = tokio::time::Instant::now();
+    assert!(
+        eventually(&sim, bound, || async {
+            received(&nodes[1], &ida)
+                .await
+                .contains(&"fast".to_string())
+        })
+        .await,
+        "Jon has it within {bound:?} (after {:?})",
+        sent.elapsed()
+    );
+    assert!(
+        eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "fast")).await,
+        "Ida's row settles delivered once its append landed"
     );
 }

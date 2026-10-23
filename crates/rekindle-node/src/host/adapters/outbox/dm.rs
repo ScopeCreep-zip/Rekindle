@@ -239,6 +239,7 @@ fn row_attempts(rows: &[OutboxRow]) -> Vec<dm_outbox::RowAttempt<'_>> {
     rows.iter()
         .map(|r| dm_outbox::RowAttempt {
             stream_seq: r.stream_seq,
+            state: r.state,
             sent_at: r.sent_at,
             payload: &r.payload,
         })

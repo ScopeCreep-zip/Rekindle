@@ -38,6 +38,8 @@ struct Store {
     last_seq: HashMap<String, i64>,
     received: HashSet<(String, String)>,
     published: Vec<(String, SendState)>,
+    /// Acks noted on rows not yet landed, by client id.
+    acks: HashMap<String, PeerAck>,
     /// Settled entries as their echo keeps them: stream, seq, id, state.
     settled: Vec<(String, i64, String, SendState)>,
     attempted: Vec<String>,
@@ -156,13 +158,25 @@ impl OutboxDeps for Fake {
             .find(|r| r.stream == stream && r.stream_seq == seq)
             .cloned())
     }
-    async fn update(&self, client_id: &str, u: &RowUpdate) -> Result<(), OutboxError> {
+    async fn update(&self, client_id: &str, u: &RowUpdate) -> Result<Option<PeerAck>, OutboxError> {
         let mut s = self.store.lock();
         if let Some(r) = s.rows.iter_mut().find(|r| r.client_id == client_id) {
             (r.state, r.attempts, r.next_at) = (u.state, u.attempts, u.next_at);
             (r.deadline, r.wedge_reason) = (u.deadline, u.wedge_reason.clone());
         }
-        Ok(())
+        Ok(s.acks.get(client_id).copied())
+    }
+    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError> {
+        let mut s = self.store.lock();
+        let queued = s
+            .rows
+            .iter()
+            .any(|r| r.client_id == client_id && r.state == SendState::Queued);
+        if queued {
+            let kept = s.acks.entry(client_id.to_owned()).or_insert(ack);
+            *kept = (*kept).max(ack);
+        }
+        Ok(queued)
     }
     async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError> {
         let mut s = self.store.lock();
@@ -170,6 +184,7 @@ impl OutboxDeps for Fake {
             s.settled.push((r.stream, r.stream_seq, r.client_id, state));
         }
         s.rows.retain(|r| r.client_id != client_id);
+        s.acks.remove(client_id);
         Ok(())
     }
     async fn read_through(
@@ -480,46 +495,6 @@ fn backoff_is_jittered_within_its_step_and_capped() {
 }
 
 #[tokio::test]
-async fn a_handshake_frame_settles_sent_and_a_receipt_delivered() {
-    let o = outbox();
-    o.enqueue(entry(StreamKind::FriendHandshake, "bob", "accept"), ())
-        .await
-        .unwrap();
-    o.enqueue(entry(StreamKind::FriendHandshake, "bob", "request"), ())
-        .await
-        .unwrap();
-    script(&o, [AttemptOutcome::Sent, AttemptOutcome::Receipted]);
-    o.pump().await.unwrap();
-    o.pump().await.unwrap();
-    assert_eq!(state_of(&o, "accept"), None, "settled and gone");
-    assert_eq!(state_of(&o, "request"), None);
-    assert_eq!(o.unsettled().await.unwrap(), 0);
-}
-
-#[tokio::test]
-async fn an_awaiting_row_waits_for_its_ack_by_client_id() {
-    let o = outbox();
-    o.enqueue(
-        entry(StreamKind::FriendHandshake, "bob", "unfriended:bob"),
-        (),
-    )
-    .await
-    .unwrap();
-    script(&o, [AttemptOutcome::Awaiting]);
-    o.pump().await.unwrap();
-    assert_eq!(state_of(&o, "unfriended:bob"), Some(SendState::Sent));
-    assert!(o
-        .acknowledge_client("unfriended:bob", PeerAck::Delivered)
-        .await
-        .unwrap());
-    assert_eq!(state_of(&o, "unfriended:bob"), None);
-    assert!(!o
-        .acknowledge_client("unfriended:bob", PeerAck::Delivered)
-        .await
-        .unwrap());
-}
-
-#[tokio::test]
 async fn a_channel_post_stream_settles_from_its_write_settle() {
     let o = outbox();
     o.enqueue(entry(StreamKind::ChannelPost, "rk:4", "p1"), ())
@@ -590,3 +565,5 @@ async fn a_channel_post_gets_no_attempt_pass_and_fails_at_its_deadline() {
 mod media_key;
 
 mod deadline;
+
+mod ack_order;

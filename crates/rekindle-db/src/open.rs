@@ -192,7 +192,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 117 (plan E3.1, FX2): `idx_messages_sender_time`, a sender's posts by
 /// time, for the slowmode gate's nearest earlier post.
-pub const SCHEMA_VERSION: i64 = 117;
+///
+/// 118 (plan E2.5, live A/B finding 42): `outbox.peer_ack`, an ack that
+/// arrived before its row's send landed.
+pub const SCHEMA_VERSION: i64 = 118;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

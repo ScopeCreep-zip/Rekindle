@@ -119,7 +119,7 @@ fn expired_rows_and_lookups_by_seq() {
         "a"
     );
     assert!(get(&conn, OWNER, "zz").unwrap().is_none());
-    assert!(!update(&conn, OWNER, "zz", &sent(1, 0)).unwrap());
+    assert!(update(&conn, OWNER, "zz", &sent(1, 0)).unwrap().is_none());
 }
 
 #[test]
@@ -224,5 +224,28 @@ fn a_row_carries_when_its_echo_was_written_and_times_follow_the_stream() {
     assert_eq!(
         own_dm(&conn, OWNER, "b").unwrap().unwrap().row.timestamp,
         500
+    );
+}
+
+/// Live A/B finding 42: an ack before the landing is kept on the queued
+/// row (the higher one stays) and read back by the landing's update; a
+/// row past `queued` records none.
+#[test]
+fn an_ack_before_the_landing_is_kept_until_the_update_reads_it() {
+    let conn = fixture::conn();
+    enqueue_with_echo(&conn, &row("dm:bob", "a", 0), None).unwrap();
+    assert!(note_ack(&conn, OWNER, "a", SendState::Read).unwrap());
+    assert!(note_ack(&conn, OWNER, "a", SendState::Delivered).unwrap());
+    assert_eq!(
+        update(&conn, OWNER, "a", &sent(1, 0)).unwrap(),
+        Some(Updated {
+            peer_ack: Some(SendState::Read)
+        })
+    );
+    assert!(!note_ack(&conn, OWNER, "a", SendState::Delivered).unwrap());
+    enqueue_with_echo(&conn, &row("dm:bob", "b", 0), None).unwrap();
+    assert_eq!(
+        update(&conn, OWNER, "b", &sent(1, 0)).unwrap(),
+        Some(Updated { peer_ack: None })
     );
 }

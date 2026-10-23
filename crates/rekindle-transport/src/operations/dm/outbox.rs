@@ -9,6 +9,8 @@ use async_trait::async_trait;
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
 use serde::{Deserialize, Serialize};
 
+use rekindle_types::message::SendState;
+
 use super::send;
 use crate::operations::friend::{FriendError, FriendHost};
 
@@ -188,6 +190,10 @@ pub enum Attempt {
 #[derive(Debug, Clone, Copy)]
 pub struct RowAttempt<'a> {
     pub stream_seq: i64,
+    /// The row's state: `sent` for a chain entry means its append landed,
+    /// and a later attempt neither appends nor hints it again (live A/B
+    /// finding 42); it waits for the peer's ack.
+    pub state: SendState,
     /// When the entry was written (its echo's time; now for a row with
     /// none).
     pub sent_at: Option<i64>,
@@ -205,8 +211,9 @@ enum Framed {
 /// Frame `rows` (the due run of our stream to `to`, in `stream_seq`
 /// order), append the frames to our chain to them at once (plan E2.5,
 /// D23: the chain is authoritative; the run fills as few pages as hold it,
-/// E2.B F2), then send each once as the hint that makes the peer diff.
-/// Once on the chain a row counts as sent whether or not its hint left.
+/// E2.B F2) while each is sent once as the hint that makes the peer diff.
+/// Once on the chain a row counts as sent whether or not its hint left; a
+/// row already on it ([`landed`]) is neither appended nor hinted again.
 /// Every attempt's frame carries `sent_at`, so the peer orders it by that
 /// and not by the attempt that reached them (E2.B F3). The outcomes of a
 /// prefix of `rows`, in order: the rows after the first that stays behind
@@ -215,6 +222,10 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
     let mut chained: Vec<(usize, Vec<u8>, DmTypeId)> = Vec::new();
     for row in rows {
+        if landed(row) {
+            outcomes.push(Some(Attempt::Sent));
+            continue;
+        }
         let outcome = match frame_row(host, to, row).await {
             Err(outcome) => outcome,
             // A `StreamRecord` waits for the peer's `DmAck` (resent until
@@ -245,16 +256,29 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
             .iter()
             .map(|(i, datagram, _)| (datagram.clone(), rows[*i].stream_seq))
             .collect();
-        let (landed, appended) = super::stream::append(host, to, &frames).await;
-        for (_, datagram, type_id) in chained.iter().take(landed) {
-            if let Err(e) = send::route_send_datagram(host, to, datagram, *type_id, true).await {
-                tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
+        // The hints go while the append is in flight, so the peer has the
+        // message at once rather than after the DHT write (live A/B finding
+        // 42); an ack that beats the landing waits on the row for it.
+        let hints = async {
+            for (_, datagram, type_id) in &chained {
+                if let Err(e) = send::route_send_datagram(host, to, datagram, *type_id, true).await
+                {
+                    tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
+                }
             }
-        }
+        };
+        let ((landed, appended), ()) =
+            tokio::join!(super::stream::append(host, to, &frames), hints);
         let slots: Vec<usize> = chained.iter().map(|(i, _, _)| *i).collect();
         settle_chained(&mut outcomes, &slots, landed, appended);
     }
     finish(outcomes)
+}
+
+/// Whether `row` is a chain entry whose append already landed: a
+/// `StreamRecord` is not on the chain and is sent again until its ack.
+pub(crate) fn landed(row: &RowAttempt<'_>) -> bool {
+    row.state == SendState::Sent && !matches!(decode(row.payload), Ok(DirectBody::StreamRecord(_)))
 }
 
 /// How an attempt that failed with `e` ends: a locked, not-ready or

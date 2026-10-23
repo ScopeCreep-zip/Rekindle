@@ -190,14 +190,19 @@ impl<D: OutboxDeps> Outbox<D> {
                 self.deps
                     .publish(StateChange::of(row, SendState::Sent, None));
             }
-            AttemptOutcome::Receipted => self.settle_acked(row, PeerAck::Delivered).await?,
+            // The receipt is the landing and the ack at once.
+            AttemptOutcome::Receipted => {
+                let state = merge(row.state, StateInput::Peer(PeerAck::Delivered));
+                self.settle_at(row, state).await?;
+            }
             outcome @ (AttemptOutcome::Sent
             | AttemptOutcome::Awaiting
             | AttemptOutcome::Deferred) => {
-                let state = if outcome == AttemptOutcome::Deferred {
-                    row.state
-                } else {
+                let landed = outcome != AttemptOutcome::Deferred;
+                let state = if landed {
                     merge(row.state, StateInput::LocalSent)
+                } else {
+                    row.state
                 };
                 let update = RowUpdate {
                     state,
@@ -206,7 +211,14 @@ impl<D: OutboxDeps> Outbox<D> {
                     deadline: row.deadline,
                     wedge_reason: None,
                 };
-                self.deps.update(&row.client_id, &update).await?;
+                let acked = self.deps.update(&row.client_id, &update).await?;
+                // The peer's ack came before this landing: both are in now
+                // (live A/B finding 42).
+                if let (true, Some(ack)) = (landed, acked) {
+                    return self
+                        .settle_at(row, merge(state, StateInput::Peer(ack)))
+                        .await;
+                }
                 if state != row.state {
                     self.deps.publish(StateChange::of(row, state, None));
                 }
@@ -320,8 +332,19 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(true)
     }
 
+    /// The peer's `ack` of `row`. A row whose send has not landed (`queued`:
+    /// the peer read the hint before our chain append returned) keeps the
+    /// ack, durably, and settles when the landing comes; the landing and the
+    /// ack are two inputs to one row, in either order (live A/B finding 42).
     async fn settle_acked(&self, row: &OutboxRow, ack: PeerAck) -> Result<(), OutboxError> {
-        let state = merge(row.state, StateInput::Peer(ack));
+        if row.state == SendState::Queued && self.deps.note_ack(&row.client_id, ack).await? {
+            return Ok(());
+        }
+        self.settle_at(row, merge(row.state, StateInput::Peer(ack)))
+            .await
+    }
+
+    async fn settle_at(&self, row: &OutboxRow, state: SendState) -> Result<(), OutboxError> {
         self.deps.settle(&row.client_id, state).await?;
         self.deps.publish(StateChange::of(row, state, None));
         self.wake.notify_one();

@@ -6,8 +6,8 @@
 
 use rekindle_types::message::SendState;
 
-/// What the peer acknowledged (`DmAck`, `ReadUpTo`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What the peer acknowledged (`DmAck`, `ReadUpTo`), lowest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PeerAck {
     Delivered,
     Read,

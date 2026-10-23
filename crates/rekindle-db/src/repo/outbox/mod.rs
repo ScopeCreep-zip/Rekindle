@@ -266,15 +266,19 @@ const UNBLOCKED: &str = "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = 
                          AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
                          AND h.state IN ('queued', 'failed'))";
 
-fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
-    let stored: String = row.get(5)?;
-    let state = SendState::parse(&stored).ok_or_else(|| {
+fn parse_state(stored: &str, column: usize) -> rusqlite::Result<SendState> {
+    SendState::parse(stored).ok_or_else(|| {
         rusqlite::Error::FromSqlConversionFailure(
-            5,
+            column,
             rusqlite::types::Type::Text,
             format!("unknown send state {stored}").into(),
         )
-    })?;
+    })
+}
+
+fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
+    let stored: String = row.get(5)?;
+    let state = parse_state(&stored, 5)?;
     Ok(Row {
         stream: row.get(0)?,
         stream_seq: row.get(1)?,
@@ -429,8 +433,17 @@ fn project(
     Ok(())
 }
 
+/// A row [`update`] stored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Updated {
+    /// The peer's ack recorded before the row's send landed.
+    pub peer_ack: Option<SendState>,
+}
+
 /// Store the engine's decision for `client_id`, and project its state onto
-/// the local echo. Returns whether the row exists.
+/// the local echo. Returns `None` when no row is `client_id`, else the
+/// peer's ack [`note_ack`] recorded on it (`delivered` or `read`), read in
+/// the same statement, so a landing never misses an ack stored before it.
 ///
 /// # Errors
 /// The write failed; nothing changed.
@@ -439,26 +452,55 @@ pub fn update(
     owner_key: &str,
     client_id: &str,
     change: &Update<'_>,
-) -> rusqlite::Result<bool> {
+) -> rusqlite::Result<Option<Updated>> {
     let tx = conn.unchecked_transaction()?;
-    let found = tx.execute(
-        "UPDATE outbox SET state = ?3, attempts = ?4, next_at = ?5, deadline = ?6, \
-         wedge_reason = ?7 WHERE owner_key = ?1 AND client_id = ?2",
-        params![
-            owner_key,
-            client_id,
-            change.state.as_str(),
-            change.attempts,
-            change.next_at,
-            change.deadline,
-            change.wedge_reason
-        ],
-    )? > 0;
-    if found {
+    let acked: Option<Option<String>> = tx
+        .query_row(
+            "UPDATE outbox SET state = ?3, attempts = ?4, next_at = ?5, deadline = ?6, \
+             wedge_reason = ?7 WHERE owner_key = ?1 AND client_id = ?2 RETURNING peer_ack",
+            params![
+                owner_key,
+                client_id,
+                change.state.as_str(),
+                change.attempts,
+                change.next_at,
+                change.deadline,
+                change.wedge_reason
+            ],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if acked.is_some() {
         project(&tx, owner_key, client_id, change.state)?;
     }
     tx.commit()?;
-    Ok(found)
+    acked
+        .map(|ack| {
+            Ok(Updated {
+                peer_ack: ack.map(|a| parse_state(&a, 0)).transpose()?,
+            })
+        })
+        .transpose()
+}
+
+/// Record the peer's `ack` (`delivered` or `read`; the higher one stays) on
+/// `client_id` while its send has not landed (`queued`, live A/B finding
+/// 42). Returns whether it was recorded; `false` when the row is past
+/// `queued` or gone, and the ack settles it instead.
+///
+/// # Errors
+/// The write failed; nothing changed.
+pub fn note_ack(
+    conn: &Connection,
+    owner_key: &str,
+    client_id: &str,
+    ack: SendState,
+) -> rusqlite::Result<bool> {
+    Ok(conn.execute(
+        "UPDATE outbox SET peer_ack = CASE WHEN peer_ack = 'read' THEN 'read' ELSE ?3 END \
+         WHERE owner_key = ?1 AND client_id = ?2 AND state = 'queued'",
+        params![owner_key, client_id, ack.as_str()],
+    )? > 0)
 }
 
 /// Settle `client_id` at `state`: project it onto the local echo and

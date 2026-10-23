@@ -132,6 +132,12 @@ pub async fn attempt(
     let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
     let (mut slots, mut frames, mut sealed) = (Vec::new(), Vec::new(), Vec::new());
     for row in rows {
+        // On our chain already (live A/B finding 42): not sealed, appended
+        // or hinted again.
+        if dm_outbox::landed(row) {
+            outcomes.push(Some(Attempt::Sent));
+            continue;
+        }
         match seal_row(host, &id, row).await {
             Ok(content) => {
                 slots.push(outcomes.len());

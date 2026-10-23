@@ -105,6 +105,7 @@ async fn a_send_commits_its_row_and_echo_and_waits_for_its_chain_entry() {
     // Offline: no chain entry lands, so the row is not sent.
     let row = RowAttempt {
         stream_seq: rows[0].stream_seq,
+        state: rows[0].state,
         sent_at: rows[0].sent_at,
         payload: &rows[0].payload,
     };

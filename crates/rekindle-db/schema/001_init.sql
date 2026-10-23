@@ -859,6 +859,9 @@ CREATE TABLE IF NOT EXISTS outbox (
     next_at INTEGER NOT NULL,
     deadline INTEGER NOT NULL,
     wedge_reason TEXT,
+    -- The peer's ack that arrived before the row's send landed (its chain
+    -- append, live A/B finding 42): the row settles at it once it lands.
+    peer_ack TEXT CHECK(peer_ack IN ('delivered', 'read')),
     -- The local echo this row projects onto (`messages.send_state`);
     -- NULL for a send with no echo (a DHT write).
     echo_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,

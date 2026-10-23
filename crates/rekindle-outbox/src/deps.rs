@@ -8,6 +8,7 @@ use rekindle_types::message::SendState;
 use rekindle_utils::random::RandomSource;
 use rekindle_utils::time::Clock;
 
+use crate::state::PeerAck;
 use crate::stream::StreamKind;
 
 /// A storage failure.
@@ -147,8 +148,18 @@ pub trait OutboxDeps: Send + Sync {
     async fn row(&self, client_id: &str) -> Result<Option<OutboxRow>, OutboxError>;
     async fn row_at(&self, stream: &str, stream_seq: i64)
         -> Result<Option<OutboxRow>, OutboxError>;
-    /// Store `update` for `client_id` and project its state.
-    async fn update(&self, client_id: &str, update: &RowUpdate) -> Result<(), OutboxError>;
+    /// Store `update` for `client_id` and project its state; the peer's
+    /// ack [`Self::note_ack`] recorded on the row, read in the same write
+    /// (live A/B finding 42).
+    async fn update(
+        &self,
+        client_id: &str,
+        update: &RowUpdate,
+    ) -> Result<Option<PeerAck>, OutboxError>;
+    /// Record the peer's `ack` on `client_id` while its send has not landed
+    /// (`queued`; the higher ack stays), durably and atomically against
+    /// [`Self::update`]: `false` when the row is past `queued` or gone.
+    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError>;
     /// Project `state` and remove the row.
     async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError>;
     /// The peer read `stream` (scope `scope`) through `up_to`: raise every
