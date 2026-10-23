@@ -132,6 +132,10 @@ labels! {
     /// Ed25519 context: a joiner's invite proof over this label ‖ anchor ‖
     /// invite code hash ‖ member record key (plan E3.2).
     INVITE_PROOF = "rekindle-invite-proof-v1";
+    /// Ed25519 context: the community's `GenesisCert`, signed by the anchor
+    /// owner `K_A` and by the creator pseudonym over this label ‖ anchor ‖
+    /// the canonical unsigned cert bytes (plan E3.2).
+    GOV_GENESIS = "rekindle-gov-genesis-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// Ed25519 signature prefix: the daemon's framed community RPC

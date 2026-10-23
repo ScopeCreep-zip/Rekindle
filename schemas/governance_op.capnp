@@ -27,3 +27,21 @@ struct GovernanceOp {
   body @5 :Gov.GovernanceEntry;
   sig @6 :Data;                # Ed25519, 64 bytes; unset in the unsigned form
 }
+
+# The community's genesis certificate, the anchor's subkey 0 (plan E3.2,
+# ADR 0011), written once. Both `anchorSig` (by the anchor's owner `K_A`,
+# discarded after the write) and `creatorSig` (by the creator pseudonym) are
+# Ed25519 over `rekindle-gov-genesis-v1 ‖ anchor ‖ unsigned`, where
+# `unsigned` is this message re-encoded canonically with both sigs unset.
+struct GenesisCert {
+  name @0 :Text;
+  policy @1 :Gov.AdmissionMode;
+  initialRoles @2 :List(Data);         # 16-byte role ids
+  creatorPseudonym @3 :Data;           # 32 bytes
+  creatorMemberRecord @4 :Text;        # DHT key of the creator's M(p)
+  creatorMemberRecordOwner @5 :Text;   # K_M(p)'s public key text
+  createdAt @6 :UInt64;
+  anchorOwner @7 :Data;                # K_A's public key, 32 bytes
+  anchorSig @8 :Data;                  # 64 bytes; unset in the unsigned form
+  creatorSig @9 :Data;                 # 64 bytes; unset in the unsigned form
+}

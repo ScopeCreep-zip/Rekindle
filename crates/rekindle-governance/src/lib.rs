@@ -14,6 +14,7 @@
 
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
+pub mod genesis;
 pub mod intent_facts;
 pub mod invite_quota;
 pub mod merge;

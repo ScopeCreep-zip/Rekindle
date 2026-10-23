@@ -29,6 +29,13 @@ pub fn keypair_text(public: &[u8; 32], secret: &[u8; 32]) -> String {
     )
 }
 
+/// The text of a public key, as a record descriptor names its owner
+/// (`RecordPort::owner_of`): `KIND:<public>`.
+#[must_use]
+pub fn public_key_text(public: &[u8; 32]) -> String {
+    format!("{KIND}:{}", URL_SAFE_NO_PAD.encode(public))
+}
+
 /// The text of an Ed25519 signing key's keypair.
 #[must_use]
 pub fn keypair_text_from_signing(signing: &SigningKey) -> String {

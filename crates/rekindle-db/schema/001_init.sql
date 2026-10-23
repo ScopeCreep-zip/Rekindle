@@ -211,6 +211,8 @@ CREATE TABLE IF NOT EXISTS communities (
     my_segment_index INTEGER NOT NULL DEFAULT 0,
     governance_key TEXT,
     lamport_clock INTEGER NOT NULL DEFAULT 0,
+    -- The pinned GenesisCert (plan E3.2), as the anchor's subkey 0 holds it.
+    genesis_cert BLOB,
     -- Local-only presence sharing consent (default-deny). JSON-encoded
     -- PresenceSharingPolicy; NULL falls back to the default-deny policy.
     -- Never published to the registry — this is the user's private choice.

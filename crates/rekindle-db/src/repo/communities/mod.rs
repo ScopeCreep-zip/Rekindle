@@ -173,6 +173,9 @@ pub enum Column {
     MySubkeyIndex,
     MySegmentIndex,
     MekGeneration,
+    /// The pinned `GenesisCert` as the anchor holds it (plan E3.2):
+    /// `rekindle_codec::governance_op::genesis::encode_genesis`.
+    GenesisCert,
 }
 
 impl Column {
@@ -188,6 +191,7 @@ impl Column {
             Self::MySubkeyIndex => "my_subkey_index",
             Self::MySegmentIndex => "my_segment_index",
             Self::MekGeneration => "mek_generation",
+            Self::GenesisCert => "genesis_cert",
         }
     }
 }
@@ -211,6 +215,26 @@ pub fn set(
         params![value, owner_key, id],
     )?;
     Ok(())
+}
+
+/// The community's pinned `GenesisCert` bytes; `None` when the row or the
+/// cert is absent.
+///
+/// # Errors
+/// The query failed.
+pub fn genesis_cert(
+    conn: &Connection,
+    owner_key: &str,
+    id: &str,
+) -> rusqlite::Result<Option<Vec<u8>>> {
+    Ok(conn
+        .query_row(
+            "SELECT genesis_cert FROM communities WHERE owner_key = ?1 AND id = ?2",
+            params![owner_key, id],
+            |row| row.get::<_, Option<Vec<u8>>>(0),
+        )
+        .optional()?
+        .flatten())
 }
 
 /// Our role ids in the community; `None` when it is not stored.
@@ -335,6 +359,19 @@ mod tests {
         let row = &load_all(&conn, OWNER).unwrap()[0];
         assert_eq!(row.my_segment_index, Some(2));
         assert_eq!(row.mek_generation, 9);
+    }
+
+    #[test]
+    fn genesis_cert_is_stored_and_read() {
+        let conn = fixture::conn();
+        insert(&conn, OWNER, &community("c1", &[0])).unwrap();
+        assert_eq!(genesis_cert(&conn, OWNER, "c1").unwrap(), None);
+        set(&conn, OWNER, "c1", Column::GenesisCert, vec![1u8, 2, 3]).unwrap();
+        assert_eq!(
+            genesis_cert(&conn, OWNER, "c1").unwrap(),
+            Some(vec![1, 2, 3])
+        );
+        assert_eq!(genesis_cert(&conn, OWNER, "absent").unwrap(), None);
     }
 
     /// After a restart both clocks resume where they were: governance from

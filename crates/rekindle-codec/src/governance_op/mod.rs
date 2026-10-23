@@ -10,6 +10,7 @@
 //! message. An unknown or retired body arm is
 //! [`CodecError::UnknownGovernanceArm`], which the caller quarantines.
 
+pub mod genesis;
 #[cfg(test)]
 mod tests;
 

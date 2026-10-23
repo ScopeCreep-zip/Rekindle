@@ -187,7 +187,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 115 (plan E3.2, S4): `governance_ops` and `governance_heads`, the signed
 /// op set and each author's head, replace `governance_entries_cache`;
 /// the outbox's `governance_op` stream kind.
-pub const SCHEMA_VERSION: i64 = 115;
+///
+/// 116 (plan E3.2, S5): `communities.genesis_cert`, the pinned cert.
+pub const SCHEMA_VERSION: i64 = 116;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
