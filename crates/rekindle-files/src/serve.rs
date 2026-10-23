@@ -12,6 +12,7 @@
 //! delegates here.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
 use uuid::Uuid;
 
 use crate::cache::ChunkCache;
@@ -31,6 +32,7 @@ pub fn serve_attachment_request(
     let attachment_uuid = Uuid::from_bytes(attachment_id);
 
     let mut delivered: Vec<ControlPayload> = Vec::new();
+    let mut reply: Option<Vec<u8>> = None;
     for &idx in requested_chunks {
         match cache.get(attachment_uuid, idx) {
             Ok(Some(ciphertext)) => {
@@ -43,6 +45,13 @@ pub fn serve_attachment_request(
                     data: ciphertext,
                     plaintext_hash: [0u8; 32],
                 });
+                // The reply is one app-call answer, bounded by Veilid's
+                // message limit: it carries the chunks that fit, and the
+                // requester asks again for the rest.
+                match encode(&delivered) {
+                    Some(bytes) if bytes.len() <= MAX_APP_MESSAGE_LEN => reply = Some(bytes),
+                    _ => break,
+                }
             }
             Ok(None) => {}
             Err(e) => {
@@ -55,11 +64,15 @@ pub fn serve_attachment_request(
         }
     }
 
-    if delivered.is_empty() {
-        return None;
-    }
+    reply
+}
+
+/// The `MultiAttachmentChunk` envelope carrying `chunks`.
+fn encode(chunks: &[ControlPayload]) -> Option<Vec<u8>> {
     rekindle_codec::capnp_envelope::encode_community_envelope(&CommunityEnvelope::Control(
-        ControlPayload::MultiAttachmentChunk { chunks: delivered },
+        ControlPayload::MultiAttachmentChunk {
+            chunks: chunks.to_vec(),
+        },
     ))
     .ok()
 }
@@ -163,5 +176,26 @@ mod tests {
         let other_aid = [2u8; 16];
         let reply = serve_attachment_request(&mut cache, other_aid, &[0, 1]);
         assert!(reply.is_none());
+    }
+
+    /// Full chunks do not all fit one app-call answer: the reply carries
+    /// the chunks that fit under Veilid's message limit, in request order.
+    #[test]
+    fn a_reply_carries_only_the_chunks_that_fit_one_app_call() {
+        let temp = TempDir::new().unwrap();
+        let mut cache = open_cache(&temp);
+        let aid = [5u8; 16];
+        let attachment_uuid = Uuid::from_bytes(aid);
+        let pinned = PinnedSet::new();
+        let full = vec![7u8; crate::CHUNK_SIZE_BYTES + 28];
+        for i in 0..3u32 {
+            cache.insert(attachment_uuid, i, &full, &pinned).unwrap();
+        }
+
+        let reply = serve_attachment_request(&mut cache, aid, &[0, 1, 2]).expect("a reply");
+        assert!(reply.len() <= MAX_APP_MESSAGE_LEN, "{} B", reply.len());
+        let parsed = parse_reply(&reply);
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0], (0, full));
     }
 }

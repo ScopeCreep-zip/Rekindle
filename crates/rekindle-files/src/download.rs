@@ -99,47 +99,56 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     }
 
     // Walk sources in arrival order; for each, request the chunks they
-    // have that we still need.
+    // have that we still need. One reply carries only the chunks that fit
+    // Veilid's app-call limit (`serve_attachment_request`), so a source is
+    // asked again while it still delivers chunks we lack.
     for src in &sources {
-        let needed: Vec<u32> = src.bitmap.intersect(&inverse(&have));
-        if needed.is_empty() {
-            continue;
-        }
-        let response =
-            send_chunk_request(deps, community_id, channel_id, attachment_id, &needed, src).await?;
-        for chunk in response {
-            // Decrypt then verify against the offer's plaintext SHA-256.
-            let plaintext = fek.decrypt(&chunk.data).map_err(|e| {
-                FilesError::Decrypt(format!("chunk {} decrypt: {e}", chunk.chunk_index))
-            })?;
-            let expected = offer.chunk_hashes.get(chunk.chunk_index as usize).ok_or(
-                FilesError::ChunkIndexOutOfRange {
-                    index: chunk.chunk_index,
-                    chunk_count,
-                },
-            )?;
-            if let Err(e) = verify_chunk(&plaintext, expected) {
-                tracing::warn!(
-                    community = %community_id,
-                    peer = %src.pseudonym,
-                    chunk = chunk.chunk_index,
-                    error = %e,
-                    "dropping malformed chunk; will re-request"
-                );
-                continue;
+        loop {
+            let needed: Vec<u32> = src.bitmap.intersect(&inverse(&have));
+            if needed.is_empty() {
+                break;
             }
-            // Re-encrypt with FEK for cache storage (so we can serve the
-            // same wire format back to other peers without re-keying).
-            let stored = fek
-                .encrypt(&plaintext)
-                .map_err(|e| FilesError::Encrypt(format!("re-encrypt cache: {e}")))?;
-            let chunk_index = chunk.chunk_index;
-            deps.with_cache_mut(community_id, &mut |cache, pinned| {
-                cache
-                    .insert(attachment_uuid, chunk_index, &stored, pinned)
-                    .map_err(|e| FilesError::Db(format!("cache insert {chunk_index}: {e}")))
-            })?;
-            have.set(chunk.chunk_index);
+            let held_before = have.count();
+            let response =
+                send_chunk_request(deps, community_id, channel_id, attachment_id, &needed, src)
+                    .await?;
+            for chunk in response {
+                // Decrypt then verify against the offer's plaintext SHA-256.
+                let plaintext = fek.decrypt(&chunk.data).map_err(|e| {
+                    FilesError::Decrypt(format!("chunk {} decrypt: {e}", chunk.chunk_index))
+                })?;
+                let expected = offer.chunk_hashes.get(chunk.chunk_index as usize).ok_or(
+                    FilesError::ChunkIndexOutOfRange {
+                        index: chunk.chunk_index,
+                        chunk_count,
+                    },
+                )?;
+                if let Err(e) = verify_chunk(&plaintext, expected) {
+                    tracing::warn!(
+                        community = %community_id,
+                        peer = %src.pseudonym,
+                        chunk = chunk.chunk_index,
+                        error = %e,
+                        "dropping malformed chunk; will re-request"
+                    );
+                    continue;
+                }
+                // Re-encrypt with FEK for cache storage (so we can serve the
+                // same wire format back to other peers without re-keying).
+                let stored = fek
+                    .encrypt(&plaintext)
+                    .map_err(|e| FilesError::Encrypt(format!("re-encrypt cache: {e}")))?;
+                let chunk_index = chunk.chunk_index;
+                deps.with_cache_mut(community_id, &mut |cache, pinned| {
+                    cache
+                        .insert(attachment_uuid, chunk_index, &stored, pinned)
+                        .map_err(|e| FilesError::Db(format!("cache insert {chunk_index}: {e}")))
+                })?;
+                have.set(chunk.chunk_index);
+            }
+            if have.count() == held_before {
+                break;
+            }
         }
         if have.is_complete() {
             break;
