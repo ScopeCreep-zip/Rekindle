@@ -210,6 +210,32 @@ impl InboundHandler for DaemonHandler {
             }
         }
 
+        // A joiner's (or a member's missed) key request (plan E3.2 S6): the
+        // Host's responder answers members only.
+        if let CommunityEnvelope::Control(ControlPayload::RequestMEK {
+            ref channel_id,
+            needed_generation,
+            ref requester_pseudonym,
+            cascade_index,
+        }) = envelope
+        {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                let request = crate::host::adapters::governance::MekRequest {
+                    channel_id: channel_id.clone(),
+                    needed_generation,
+                    requester_pseudonym: requester_pseudonym.clone(),
+                    cascade_index,
+                };
+                let deps = super::mek_rotation::DaemonMekAdapter::new(Arc::clone(&ctx));
+                if let Err(error) = crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .answer_mek_request(&deps, community_id, &request)
+                    .await
+                {
+                    debug!(community = community_id, %error, "RequestMEK not answered");
+                }
+            }
+        }
+
         // A signed governance op (plan E3.2, `governanceOp @74`).
         if let CommunityEnvelope::Control(ControlPayload::GovernanceOp { ref op }) = envelope {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {

@@ -212,18 +212,34 @@ async fn handle_join_and_roles_payload(
             requester_pseudonym,
             cascade_index,
         } => {
-            if let Err(error) = crate::services::community::handle_request_mek(
-                app_handle,
-                state,
-                community_id,
-                &channel_id,
+            // The Host's responder (plan E3.2 S6) over the shell's key
+            // adapter, until E3.5 moves the MEK adapters.
+            let Some(host) = state.host.current() else {
+                return;
+            };
+            let deps = match state.db.current() {
+                Ok(pool) => crate::services::mek_adapter::MekAdapter::new(
+                    Arc::clone(state),
+                    app_handle.clone(),
+                    pool,
+                ),
+                Err(error) => {
+                    tracing::debug!(community = %community_id, %error, "RequestMEK ignored");
+                    return;
+                }
+            };
+            let request = rekindle_node::host::adapters::governance::MekRequest {
+                channel_id,
                 needed_generation,
-                &requester_pseudonym,
+                requester_pseudonym,
                 cascade_index,
-            )
-            .await
+            };
+            if let Err(error) = host
+                .governance()
+                .answer_mek_request(deps.as_ref(), community_id, &request)
+                .await
             {
-                tracing::debug!(community = %community_id, error = %error, "RequestMEK ignored");
+                tracing::debug!(community = %community_id, error = %error, "RequestMEK not answered");
             }
         }
         ControlPayload::RequestSegmentExpansion {

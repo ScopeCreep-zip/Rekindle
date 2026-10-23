@@ -56,6 +56,8 @@ pub(crate) mod loader;
 pub(crate) mod login_stage;
 mod mek;
 mod mek_recovery;
+mod mek_request;
+pub use mek_request::MekRequest;
 mod membership;
 mod membership_roster;
 mod membership_route;

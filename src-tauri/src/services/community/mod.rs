@@ -36,7 +36,7 @@ pub use gossip::{
 };
 pub use governance::write_entry;
 pub use mek_rotation::{handle_incoming_mek_transfer, spawn_mek_request_with_retry};
-pub use mek_rotation_orchestrators::{handle_request_mek, spawn_departure_rotations};
+pub use mek_rotation_orchestrators::spawn_departure_rotations;
 pub use message_notifications_handle::handle_message_notification;
 pub use notifications::{emit_message_notification, should_emit_message_notification};
 pub use presence::{current_presence_status, presence_poll_tick_public, write_our_presence};

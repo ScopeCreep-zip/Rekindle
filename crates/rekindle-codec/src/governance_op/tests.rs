@@ -502,3 +502,26 @@ fn a_full_frontier_round_trips_under_the_subkey_cap() {
     over.push(heads[0].clone());
     assert!(super::encode_frontier(&over).is_err());
 }
+
+/// The gossip fast path (`governanceOp @74`): a signed op rides a
+/// `ControlPayload::GovernanceOp` envelope byte for byte, and decodes
+/// back to the same op.
+#[test]
+fn an_op_round_trips_through_the_gossip_arm() {
+    use crate::capnp_envelope::{decode_community_envelope, encode_community_envelope};
+    use crate::community::envelope::{CommunityEnvelope, ControlPayload};
+
+    let original = op(GovernanceEntry::MemberLeft {}, vec![op_ref(3)]);
+    let encoded = encode_op(&original).unwrap();
+    let envelope = CommunityEnvelope::Control(ControlPayload::GovernanceOp {
+        op: encoded.clone(),
+    });
+    let wire = encode_community_envelope(&envelope).unwrap();
+    let CommunityEnvelope::Control(ControlPayload::GovernanceOp { op: carried }) =
+        decode_community_envelope(&wire).unwrap()
+    else {
+        panic!("not the governanceOp arm");
+    };
+    assert_eq!(carried, encoded);
+    assert_eq!(decode_op(&carried).unwrap().op, original);
+}

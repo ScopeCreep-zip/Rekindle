@@ -4,7 +4,6 @@
 //! `MekDistributeDeps` (impl in `crate::services::mek_adapter`).
 //!
 //! What stays:
-//! * `lookup_mek` — exact-scope, exact-generation key lookup (cache, then keystore history)
 //! * `current_generation` — read the current MEK generation from cache/state
 //! * `update_generation_state` — mirror the cache write into AppState.communities
 //! * `persist_mek` — Stronghold persistence wrapper
@@ -26,28 +25,6 @@ use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 
 use crate::state::AppState;
-
-/// The scope's full key (with provenance) at exactly `generation`: the
-/// live keys, then the vault's history for that same scope. Never another
-/// scope's key. Used to re-serve a key to a requester, where provenance
-/// must travel with it.
-pub(crate) fn lookup_mek(
-    state: &Arc<AppState>,
-    community_id: &str,
-    scope: KeyScope,
-    generation: u64,
-) -> Option<MediaEncryptionKey> {
-    use rekindle_mek_rotation::ChannelMekCache as _;
-    if let Some(mek) = crate::state_helpers::LiveMekCache::new(Arc::clone(state)).get(
-        community_id,
-        scope,
-        generation,
-    ) {
-        return Some(mek);
-    }
-    let guard = state.keystore.lock();
-    crate::keystore::load_mek_generation(guard.as_ref()?, community_id, scope, generation)
-}
 
 /// Mirror a key install into the scope's generation field: the
 /// community's for the community key, the channel's for a channel key.
