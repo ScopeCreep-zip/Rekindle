@@ -82,9 +82,6 @@ pub use query::{
 // Frame
 pub use frame::TypeId;
 
-// Time utilities
-pub use rekindle_utils::{timestamp_ms, timestamp_secs};
-
 // Crypto (for app-layer use)
 pub use crypto::envelope::{recipient_bytes, sign_payload, verify_signed_payload, Addressing};
 pub use crypto::mek::{unwrap_mek, wrap_mek, Mek, MekCache};

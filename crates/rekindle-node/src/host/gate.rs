@@ -306,7 +306,10 @@ fn ran(
                     let Some(Classified::Intent(kind)) = kind_of(inverse.name()) else {
                         return None;
                     };
-                    Some(ctx.undo.offer(owner, inverse, kind, ctx.clock.now_ms(), ctx.rng.as_ref()))
+                    Some(
+                        ctx.undo
+                            .offer(owner, inverse, kind, ctx.clock.now_ms(), ctx.rng.as_ref()),
+                    )
                 });
             IpcResponse::Ok {
                 data,

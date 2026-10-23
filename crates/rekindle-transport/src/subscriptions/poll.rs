@@ -11,7 +11,7 @@
 //! (process_inbox, friend inbox scan) and IPC clients (TUI rendering).
 
 use std::sync::Arc;
-use std::time::Instant;
+use tokio::time::Instant;
 
 use parking_lot::RwLock;
 use tokio::sync::mpsc;

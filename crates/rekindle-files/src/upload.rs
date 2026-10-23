@@ -224,8 +224,8 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     let fek = MediaEncryptionKey::generate(0);
 
     // Chunk the plaintext + compute chunk_hashes + Merkle root.
-    let chunked =
-        Chunker::chunk(&bytes, *random_uuid(deps).as_bytes()).map_err(|e| FilesError::InvalidManifest(format!("chunker: {e}")))?;
+    let chunked = Chunker::chunk(&bytes, *random_uuid(deps).as_bytes())
+        .map_err(|e| FilesError::InvalidManifest(format!("chunker: {e}")))?;
     let attachment_id = chunked.attachment_id;
     let attachment_uuid = Uuid::from_bytes(attachment_id);
     let chunk_count = u32::try_from(chunked.chunks.len())
@@ -455,7 +455,10 @@ fn timestamp_now<D: FilesDeps>(deps: &D) -> i64 {
 
 /// A random (v4-shaped) id from the host's RNG port (plan C9.2).
 fn random_uuid<D: FilesDeps>(deps: &D) -> Uuid {
-    uuid::Builder::from_random_bytes(rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref())).into_uuid()
+    uuid::Builder::from_random_bytes(rekindle_utils::random::id_bytes_16_from(
+        deps.rng().as_ref(),
+    ))
+    .into_uuid()
 }
 
 #[cfg(test)]

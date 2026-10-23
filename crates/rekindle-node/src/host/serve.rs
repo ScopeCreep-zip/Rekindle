@@ -102,8 +102,13 @@ fn spawn_bus_subscriber(
                     return;
                 }
             };
+            // The client id, from the clock and RNG ports (plan C9.2).
+            let mut random = [0u8; 10];
+            ctx.rng.fill(&mut random);
+            let client_id =
+                uuid::Builder::from_unix_timestamp_millis(ctx.clock.now_ms(), &random).into_uuid();
             let client = match rekindle_ipc::BusClient::connect_with_retry(
-                uuid::Uuid::now_v7(),
+                client_id,
                 &socket,
                 &server_pub,
                 keypair.as_inner(),

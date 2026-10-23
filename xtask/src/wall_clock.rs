@@ -17,7 +17,14 @@
 //! - `std::thread::sleep` — use `tokio::time::sleep`;
 //! - `rekindle_utils::{timestamp_ms, timestamp_secs, …}` — the free
 //!   wall-clock helpers `SystemClock` is built on; pure code takes a `now`
-//!   from its caller, everything else reads `ctx.clock`.
+//!   from its caller, everything else reads `ctx.clock`. A `pub use` of
+//!   one fails too, so no crate re-exports it under its own path or a
+//!   new name;
+//! - `Uuid::now_v7` / `Uuid::new_v7` — a v7 id reads the wall clock and
+//!   the OS RNG; mint it from the clock and RNG ports.
+//!
+//! Paths inside macro invocations (`tracing::info!`, `json!`, `select!`)
+//! are read from the macro's tokens, since syn leaves them unparsed.
 //!
 //! The scanned crates are not a hand list: they are every workspace crate
 //! that `rekindle-node` and `rekindle-netsim` reach through their normal
@@ -95,7 +102,54 @@ const FORBIDDEN_SUFFIX: &[(&[&str], &str)] = &[
     ),
     (&["Utc", "now"], "take the timestamp from the clock port"),
     (&["Local", "now"], "take the timestamp from the clock port"),
+    (
+        &["Uuid", "now_v7"],
+        "mint the id from the clock and RNG ports",
+    ),
+    (
+        &["Uuid", "new_v7"],
+        "mint the id from the clock and RNG ports",
+    ),
 ];
+
+/// Every `a::b::c` path in a macro's tokens, groups included.
+fn token_paths(tokens: proc_macro2::TokenStream, out: &mut Vec<Vec<String>>) {
+    use proc_macro2::{Spacing, TokenTree};
+    let mut current: Vec<String> = Vec::new();
+    // Whether the last tokens were `::`, so the next ident extends the path.
+    let mut colons = 0;
+    for tree in tokens {
+        match tree {
+            TokenTree::Ident(ident) => {
+                if colons != 2 && !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+                current.push(ident.to_string());
+                colons = 0;
+            }
+            TokenTree::Punct(p) if p.as_char() == ':' && !current.is_empty() => {
+                let joint_first = colons == 0 && p.spacing() == Spacing::Joint;
+                colons = if joint_first || colons == 1 {
+                    colons + 1
+                } else {
+                    0
+                };
+            }
+            other => {
+                if !current.is_empty() {
+                    out.push(std::mem::take(&mut current));
+                }
+                colons = 0;
+                if let TokenTree::Group(group) = other {
+                    token_paths(group.stream(), out);
+                }
+            }
+        }
+    }
+    if !current.is_empty() {
+        out.push(current);
+    }
+}
 
 struct Finder<'a> {
     rel: &'a str,
@@ -213,12 +267,45 @@ impl<'ast> Visit<'ast> for Finder<'_> {
             .iter()
             .map(|s| s.ident.to_string())
             .collect();
-        let full = self.resolve(&segments);
+        self.check_path(&segments);
+        syn::visit::visit_expr_path(self, expr);
+    }
+
+    fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+        let mut paths = Vec::new();
+        token_paths(mac.tokens.clone(), &mut paths);
+        for segments in &paths {
+            self.check_path(segments);
+        }
+        syn::visit::visit_macro(self, mac);
+    }
+
+    fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
+        if !matches!(item.vis, syn::Visibility::Inherited) {
+            let mut uses = BTreeMap::new();
+            collect_uses(&item.tree, &mut Vec::new(), &mut uses);
+            for full in uses.values() {
+                if is_utils_helper(full) {
+                    let needle = full.last().cloned().unwrap_or_default();
+                    self.hit(&needle, "do not re-export a wall-clock helper");
+                }
+            }
+        }
+    }
+}
+
+fn is_utils_helper(full: &[String]) -> bool {
+    full.first().is_some_and(|c| c == "rekindle_utils")
+        && full
+            .last()
+            .is_some_and(|f| UTILS_WALL_CLOCK.contains(&f.as_str()))
+}
+
+impl Finder<'_> {
+    fn check_path(&mut self, segments: &[String]) {
+        let full = self.resolve(segments);
         let ends = |s: &[&str]| full.len() >= s.len() && full[full.len() - s.len()..] == *s;
-        let utils_helper = full.first().is_some_and(|c| c == "rekindle_utils")
-            && full
-                .last()
-                .is_some_and(|f| UTILS_WALL_CLOCK.contains(&f.as_str()));
+        let utils_helper = is_utils_helper(&full);
         let fix = FORBIDDEN
             .iter()
             .find(|(p, _)| full == *p)
@@ -228,7 +315,6 @@ impl<'ast> Visit<'ast> for Finder<'_> {
         if let Some(fix) = fix {
             self.hit(&segments.join("::"), fix);
         }
-        syn::visit::visit_expr_path(self, expr);
     }
 }
 
@@ -357,6 +443,38 @@ mod tests {
                    use rekindle_utils::time;
                    fn a() { timestamp_ms(); rekindle_utils::timestamp_secs(); time::timestamp_ms_i64();
                             clock.now_ms(); }";
+        let hits = scan("crates/x/src/a.rs", src);
+        assert_eq!(hits.len(), 3, "{hits:?}");
+    }
+
+    #[test]
+    fn flags_v7_uuids() {
+        let src = "use uuid::Uuid;
+                   fn a() { Uuid::now_v7(); uuid::Uuid::new_v7(ts); Uuid::new_v4(); }";
+        let hits = scan("crates/x/src/a.rs", src);
+        assert_eq!(hits.len(), 2, "{hits:?}");
+    }
+
+    #[test]
+    fn flags_re_exports_of_the_helpers_under_any_name() {
+        let src = "pub use rekindle_utils::{timestamp_ms, timestamp_secs as now_secs};
+                   pub(crate) use rekindle_utils::timestamp_ms_i64;
+                   use rekindle_utils::Clock;
+                   pub use rekindle_utils::Clock as C;";
+        let hits = scan("crates/x/src/lib.rs", src);
+        assert_eq!(hits.len(), 3, "{hits:?}");
+    }
+
+    #[test]
+    fn flags_reads_inside_macro_bodies() {
+        let src = "use rekindle_utils::timestamp_ms;
+                   use std::time::Instant;
+                   fn a() {
+                       tracing::info!(at = timestamp_ms(), \"x\");
+                       let v = serde_json::json!({ \"t\": std::time::SystemTime::now() });
+                       tokio::select! { _ = f() => { Instant::now(); } }
+                       format!(\"{}\", tokio::time::Instant::now().elapsed().as_secs());
+                   }";
         let hits = scan("crates/x/src/a.rs", src);
         assert_eq!(hits.len(), 3, "{hits:?}");
     }
