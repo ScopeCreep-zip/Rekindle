@@ -62,7 +62,10 @@ pub fn well_formed(
         // Self-authored only. If the creator could forge a request in
         // someone else's name, "pending members" would stop meaning
         // "people who asked".
-        GovernanceEntry::JoinRequested { requester, .. } if requester != writer => {
+        // Only the `GenesisCert` creator joins without an invite proof.
+        GovernanceEntry::MemberJoined {
+            invite_proof: None, ..
+        } if state.creator.as_ref() != Some(writer) => {
             return false;
         }
         // Settable once. The creator is the only one who may set it at
@@ -134,7 +137,20 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         // every moderator's queue.
         //
         // Asking is not a permission — anyone reachable may ask.
-        GovernanceEntry::JoinRequested { requester, .. } => requester == writer,
+        // Self-authored by construction: the op's author is the member.
+        // Whether the invite proof names a live invite under its cap is a
+        // causal check in `merge` (`gates::invite_gate`).
+        GovernanceEntry::MemberJoined { .. }
+        | GovernanceEntry::MemberRecordMoved { .. }
+        | GovernanceEntry::MemberLeft {} => true,
+
+        // The durable kick: the same authority and hierarchy as a ban,
+        // and the creator cannot be removed (MSC4289).
+        GovernanceEntry::MemberRemoved { target, .. } => {
+            has(perms, KICK_MEMBERS)
+                && state.creator.as_ref() != Some(target)
+                && state.member_max_position(target) < state.member_max_position(writer)
+        }
 
         // Admitting and removing a member are the same authority, so
         // this reuses KICK_MEMBERS rather than minting a permission bit

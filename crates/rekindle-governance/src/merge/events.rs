@@ -1,11 +1,13 @@
 //! `merge` events CRDT apply rules.
 
+use crate::op::OpStamp;
+
 use super::{EventState, GovernanceEntry, GovernanceState, PseudonymKey, ThreadState};
 use crate::state::RsvpState;
 
 pub(super) fn apply_events(
     author: &PseudonymKey,
-    entry: &GovernanceEntry,
+    entry: &GovernanceEntry, stamp: OpStamp,
     state: &mut GovernanceState,
 ) {
     match entry {
@@ -18,7 +20,6 @@ pub(super) fn apply_events(
             invited,
             forum_tag,
             auto_archive_seconds,
-            lamport,
         } => {
             let should_replace = state.threads.get(thread_id).is_none_or(|existing| {
                 let existing_has_record = existing.record_key.is_some();
@@ -26,23 +27,23 @@ pub(super) fn apply_events(
                 if existing_has_record != next_has_record {
                     return next_has_record;
                 }
-                if *lamport != existing.created_lamport {
-                    return *lamport > existing.created_lamport;
+                if stamp != existing.created {
+                    return stamp > existing.created;
                 }
                 author.0 > existing.creator.0
             });
 
             if should_replace {
-                let archived_lamport = state
+                let archived = state
                     .threads
                     .get(thread_id)
-                    .and_then(|existing| existing.archived_lamport)
-                    .filter(|archived| *archived > *lamport);
-                let unarchived_lamport = state
+                    .and_then(|existing| existing.archived)
+                    .filter(|archived| *archived > stamp);
+                let unarchived = state
                     .threads
                     .get(thread_id)
-                    .and_then(|existing| existing.unarchived_lamport)
-                    .filter(|unarchived| *unarchived > *lamport);
+                    .and_then(|existing| existing.unarchived)
+                    .filter(|unarchived| *unarchived > stamp);
                 state.threads.insert(
                     *thread_id,
                     ThreadState {
@@ -54,44 +55,44 @@ pub(super) fn apply_events(
                         forum_tag: forum_tag.clone(),
                         auto_archive_seconds: *auto_archive_seconds,
                         creator: author.clone(),
-                        created_lamport: *lamport,
-                        archived_lamport,
-                        unarchived_lamport,
+                        created: stamp,
+                        archived,
+                        unarchived,
                     },
                 );
             }
         }
 
         // ── Thread archived (tombstone) ──
-        GovernanceEntry::ThreadArchived { thread_id, lamport } => {
+        GovernanceEntry::ThreadArchived { thread_id } => {
             if let Some(thread) = state.threads.get_mut(thread_id) {
-                if *lamport > thread.created_lamport
+                if stamp > thread.created
                     && thread
-                        .archived_lamport
-                        .is_none_or(|current| *lamport > current)
+                        .archived
+                        .is_none_or(|current| stamp > current)
                     && thread
-                        .unarchived_lamport
-                        .is_none_or(|reopened| *lamport > reopened)
+                        .unarchived
+                        .is_none_or(|reopened| stamp > reopened)
                 {
-                    thread.archived_lamport = Some(*lamport);
+                    thread.archived = Some(stamp);
                 }
             }
         }
 
         // ── Thread unarchived: the later of archive and reopen wins ──
-        GovernanceEntry::ThreadUnarchived { thread_id, lamport } => {
+        GovernanceEntry::ThreadUnarchived { thread_id } => {
             if let Some(thread) = state.threads.get_mut(thread_id) {
-                if *lamport > thread.created_lamport
+                if stamp > thread.created
                     && thread
-                        .unarchived_lamport
-                        .is_none_or(|current| *lamport > current)
+                        .unarchived
+                        .is_none_or(|current| stamp > current)
                 {
-                    thread.unarchived_lamport = Some(*lamport);
+                    thread.unarchived = Some(stamp);
                     if thread
-                        .archived_lamport
-                        .is_some_and(|archived| *lamport > archived)
+                        .archived
+                        .is_some_and(|archived| stamp > archived)
                     {
-                        thread.archived_lamport = None;
+                        thread.archived = None;
                     }
                 }
             }
@@ -110,10 +111,9 @@ pub(super) fn apply_events(
             recurrence,
             location,
             status,
-            lamport,
         } => {
-            let existing_lamport = state.events.get(event_id).map_or(0, |e| e.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state.events.get(event_id).map_or(OpStamp::MIN, |e| e.stamp);
+            if stamp > existing_stamp {
                 state.events.insert(
                     *event_id,
                     EventState {
@@ -127,7 +127,7 @@ pub(super) fn apply_events(
                         recurrence: recurrence.clone(),
                         location: location.clone(),
                         status: status.unwrap_or(rekindle_types::event::EventStatus::Scheduled),
-                        lamport: *lamport,
+                        stamp,
                     },
                 );
             }
@@ -135,10 +135,10 @@ pub(super) fn apply_events(
 
         // ── Expressions: OR-Set by expression_id ──
         GovernanceEntry::EventArchived {
-            event_id, lamport, ..
+            event_id, ..
         } => {
             if let Some(event) = state.events.get(event_id) {
-                if *lamport > event.lamport {
+                if stamp > event.stamp {
                     state.events.remove(event_id);
                     state.event_rsvps.remove(event_id);
                 }
@@ -149,18 +149,17 @@ pub(super) fn apply_events(
         GovernanceEntry::EventRsvp {
             event_id,
             status,
-            lamport,
         } => {
             let rsvps = state.event_rsvps.entry(*event_id).or_default();
             if rsvps
                 .get(author)
-                .is_none_or(|current| *lamport > current.lamport)
+                .is_none_or(|current| stamp > current.stamp)
             {
                 rsvps.insert(
                     author.clone(),
                     RsvpState {
                         status: *status,
-                        lamport: *lamport,
+                        stamp,
                     },
                 );
             }

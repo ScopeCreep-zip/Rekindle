@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::op::OpStamp;
 use rekindle_types::governance::{AdmissionMode, GuideStep, OnboardingQuestion, WelcomeChannel};
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
 
@@ -26,7 +27,14 @@ pub struct GovernanceState {
     /// Currently banned pseudonyms.
     pub bans: HashSet<PseudonymKey>,
 
-    /// Prospective members who wrote a `JoinRequested` and have not yet
+    /// Counted members, from their `MemberJoined` ops (plan E3.2).
+    pub members: HashMap<PseudonymKey, MemberState>,
+
+    /// Highest `MemberRemoved` stamp per removed member; a re-join must
+    /// come after it.
+    pub removed: HashMap<PseudonymKey, OpStamp>,
+
+    /// Prospective members who wrote a `MemberJoined` and have not yet
     /// been approved or rejected. Grow-Only Set, cleared per target by a
     /// decision entry.
     ///
@@ -100,10 +108,10 @@ pub struct GovernanceState {
 
     /// Highest lamport seen per attachment for `AttachmentPinned` LWW —
     /// later writes overwrite earlier ones for the same attachment_id.
-    pub attachment_pin_lamports: HashMap<[u8; 16], u64>,
+    pub attachment_pin_stamps: HashMap<[u8; 16], OpStamp>,
 
-    /// The pseudonym that wrote the genesis entries (seq 1 / lamport 1).
-    /// Used as the implicit community creator for "owner has all perms".
+    /// The `GenesisCert`'s `creator_pseudonym` (MSC4289): set from the
+    /// pinned cert, never from an op.
     pub creator: Option<PseudonymKey>,
 
     /// AutoMod rules (LWW per rule_id).
@@ -117,7 +125,7 @@ pub struct GovernanceState {
 
     /// Track the highest lamport seen per author for ban-entry ordering.
     /// Key: (target_pseudonym) → highest lamport of ban/unban for that target.
-    pub ban_lamports: HashMap<PseudonymKey, u64>,
+    pub ban_stamps: HashMap<PseudonymKey, OpStamp>,
 
     /// Segment expansions for communities >255 members (Plate Gates).
     /// Tracks additional governance and registry records.
@@ -135,7 +143,7 @@ pub struct GovernanceState {
     pub invites: HashMap<[u8; 16], InviteState>,
 
     /// Highest remove lamport seen per expression_id.
-    pub expression_remove_lamports: HashMap<[u8; 16], u64>,
+    pub expression_remove_stamps: HashMap<[u8; 16], OpStamp>,
 
     /// Architecture §17.1 + §20.6 — community-wide policy (default
     /// notification level + raid-protection thresholds). LWW; `None`
@@ -168,7 +176,7 @@ pub struct ChannelState {
     /// preserved across merges.
     pub parent_voice_channel_id: Option<ChannelId>,
     /// Lamport of the ChannelCreated entry (for archive comparison).
-    pub created_lamport: u64,
+    pub created: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -182,23 +190,31 @@ pub struct RoleState {
     pub self_assignable: bool,
     /// Architecture §19.4 — see `GovernanceEntry::RoleDefinition`.
     pub exclusion_group: Option<String>,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 /// The outcome of an admission decision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct AdmissionDecision {
     pub approved: bool,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 /// A pending admission request.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingMemberState {
-    /// Name the requester asked to be known by. Untrusted display data —
-    /// render it escaped, exactly like any other peer-supplied string.
-    pub display_name: String,
-    pub lamport: u64,
+    pub member_record: String,
+    pub member_record_owner: String,
+    pub stamp: OpStamp,
+}
+
+/// A counted member: its `MemberJoined` applied (and, under
+/// `ApprovalRequired`, approved), not since removed or left.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MemberState {
+    pub member_record: String,
+    pub member_record_owner: String,
+    pub joined: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -207,7 +223,7 @@ pub struct MetadataState {
     pub description: Option<String>,
     pub icon_hash: Option<String>,
     pub banner_hash: Option<String>,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 /// Architecture §17.1 tier-1 default notification level for a community.
@@ -217,14 +233,14 @@ pub struct MetadataState {
 #[derive(Debug, Clone, PartialEq)]
 pub struct NotificationDefaultState {
     pub level: String,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CategoryState {
     pub name: String,
     pub position: u32,
-    pub created_lamport: u64,
+    pub created: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -232,7 +248,7 @@ pub struct OverwriteState {
     pub target_type: String,
     pub allow: u64,
     pub deny: u64,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -245,11 +261,11 @@ pub struct ThreadState {
     pub forum_tag: Option<String>,
     pub auto_archive_seconds: u64,
     pub creator: PseudonymKey,
-    pub created_lamport: u64,
-    pub archived_lamport: Option<u64>,
+    pub created: OpStamp,
+    pub archived: Option<OpStamp>,
     /// The newest `ThreadUnarchived` lamport: an archive at or below it
     /// is older than the reopening and does not apply.
-    pub unarchived_lamport: Option<u64>,
+    pub unarchived: Option<OpStamp>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -264,7 +280,7 @@ pub struct EventState {
     pub recurrence: Option<rekindle_types::event::RecurrenceRule>,
     pub location: Option<rekindle_types::event::EventLocation>,
     pub status: rekindle_types::event::EventStatus,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 /// One merged moderator report.
@@ -273,14 +289,14 @@ pub struct ModReportState {
     pub reporter: PseudonymKey,
     pub target: rekindle_types::governance::ModReportTarget,
     pub reason: String,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 /// One member's answer to one event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RsvpState {
     pub status: rekindle_types::event::RsvpStatus,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 impl GovernanceState {
@@ -332,14 +348,14 @@ pub struct ExpressionState {
     pub created_at: Option<u64>,
     /// Architecture §18.1 line 2459 — gates `USE_EXTERNAL_EMOJIS`.
     pub available_to_peers: bool,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TimeoutState {
     pub duration_seconds: u64,
     pub started_at: u64,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 /// Architecture §10.7 + §20.6 — merged-state form of `CommunityPolicy`.
@@ -348,7 +364,7 @@ pub struct CommunityPolicyState {
     pub policy_text: Option<String>,
     pub max_joins_per_interval: u32,
     pub join_interval_seconds: u32,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 impl CommunityPolicyState {
@@ -400,7 +416,7 @@ pub struct AutoModRuleState {
     pub enabled: bool,
     pub trigger_json: String,
     pub action: rekindle_types::governance::AutoModAction,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -411,14 +427,14 @@ pub struct OnboardingState {
     pub questions: Vec<OnboardingQuestion>,
     pub welcome_message: Option<String>,
     pub guide_steps: Vec<GuideStep>,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct WelcomeScreenState {
     pub description: String,
     pub channels: Vec<WelcomeChannel>,
-    pub lamport: u64,
+    pub stamp: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -441,7 +457,7 @@ pub struct ChannelSegmentRecord {
     /// write the first message in a previously-empty (channel, segment)
     /// pair (architecture §6.4 slot collision pattern, repurposed for
     /// channel-segment creation).
-    pub linked_lamport: u64,
+    pub linked: OpStamp,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -450,7 +466,7 @@ pub struct InviteState {
     pub max_uses: u32,
     pub expires_at: Option<u64>,
     pub secrets_record_key: String,
-    pub created_lamport: u64,
+    pub created: OpStamp,
     /// M10.3 — the inviter's pseudonym, populated from the writing
     /// governance subkey at merge time. Used for the per-inviter
     /// active-invite quota in `invite_quota.rs` and for audit-log

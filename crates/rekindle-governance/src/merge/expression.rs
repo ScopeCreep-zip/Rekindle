@@ -1,8 +1,10 @@
 //! `merge` expression CRDT apply rules.
 
+use crate::op::OpStamp;
+
 use super::{ExpressionState, GovernanceEntry, GovernanceState};
 
-pub(super) fn apply_expression(entry: &GovernanceEntry, state: &mut GovernanceState) {
+pub(super) fn apply_expression(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
     match entry {
         GovernanceEntry::ExpressionAdded {
             expression_id,
@@ -16,18 +18,17 @@ pub(super) fn apply_expression(entry: &GovernanceEntry, state: &mut GovernanceSt
             creator_pseudonym,
             created_at,
             available_to_peers,
-            lamport,
         } => {
-            let removed_lamport = state
-                .expression_remove_lamports
+            let removed_stamp = state
+                .expression_remove_stamps
                 .get(expression_id)
                 .copied()
-                .unwrap_or(0);
-            let existing_lamport = state
+                .unwrap_or(OpStamp::MIN);
+            let existing_stamp = state
                 .expressions
                 .get(expression_id)
-                .map_or(0, |expr| expr.lamport);
-            if *lamport > removed_lamport && *lamport > existing_lamport {
+                .map_or(OpStamp::MIN, |expr| expr.stamp);
+            if stamp > removed_stamp && stamp > existing_stamp {
                 state.expressions.insert(
                     *expression_id,
                     ExpressionState {
@@ -41,7 +42,7 @@ pub(super) fn apply_expression(entry: &GovernanceEntry, state: &mut GovernanceSt
                         creator_pseudonym: creator_pseudonym.clone(),
                         created_at: *created_at,
                         available_to_peers: available_to_peers.unwrap_or(true),
-                        lamport: *lamport,
+                        stamp,
                     },
                 );
             }
@@ -49,20 +50,19 @@ pub(super) fn apply_expression(entry: &GovernanceEntry, state: &mut GovernanceSt
 
         GovernanceEntry::ExpressionRemoved {
             expression_id,
-            lamport,
         } => {
-            let removed_lamport = state
-                .expression_remove_lamports
+            let removed_stamp = state
+                .expression_remove_stamps
                 .get(expression_id)
                 .copied()
-                .unwrap_or(0);
-            if *lamport > removed_lamport {
+                .unwrap_or(OpStamp::MIN);
+            if stamp > removed_stamp {
                 state
-                    .expression_remove_lamports
-                    .insert(*expression_id, *lamport);
+                    .expression_remove_stamps
+                    .insert(*expression_id, stamp);
             }
             if let Some(expression) = state.expressions.get(expression_id) {
-                if *lamport > expression.lamport {
+                if stamp > expression.stamp {
                     state.expressions.remove(expression_id);
                 }
             }
@@ -72,18 +72,17 @@ pub(super) fn apply_expression(entry: &GovernanceEntry, state: &mut GovernanceSt
         GovernanceEntry::AttachmentPinned {
             attachment_id,
             pinned,
-            lamport,
         } => {
-            let entry_lamport = *lamport;
+            let entry_stamp = stamp;
             let prev = state
-                .attachment_pin_lamports
+                .attachment_pin_stamps
                 .get(attachment_id)
                 .copied()
-                .unwrap_or(0);
-            if entry_lamport >= prev {
+                .unwrap_or(OpStamp::MIN);
+            if entry_stamp >= prev {
                 state
-                    .attachment_pin_lamports
-                    .insert(*attachment_id, entry_lamport);
+                    .attachment_pin_stamps
+                    .insert(*attachment_id, entry_stamp);
                 if *pinned {
                     state.pinned_attachments.insert(*attachment_id);
                 } else {

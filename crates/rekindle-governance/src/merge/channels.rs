@@ -1,8 +1,10 @@
 //! `merge` channels CRDT apply rules.
 
+use crate::op::OpStamp;
+
 use super::{CategoryState, ChannelState, GovernanceEntry, GovernanceState, OverwriteState};
 
-pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceState) {
+pub(super) fn apply_channels(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
     match entry {
         GovernanceEntry::ChannelCreated {
             channel_id,
@@ -12,7 +14,6 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
             category_id,
             position,
             parent_voice_channel_id,
-            lamport,
         } => {
             state.channels.insert(
                 *channel_id,
@@ -27,18 +28,17 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
                     slowmode_seconds: None,
                     nsfw: None,
                     parent_voice_channel_id: *parent_voice_channel_id,
-                    created_lamport: *lamport,
+                    created: stamp,
                 },
             );
         }
 
         GovernanceEntry::ChannelArchived {
             channel_id,
-            lamport,
         } => {
             // Only archive if lamport > creation lamport
             if let Some(ch) = state.channels.get(channel_id) {
-                if *lamport > ch.created_lamport {
+                if stamp > ch.created {
                     state.channels.remove(channel_id);
                 }
             }
@@ -85,24 +85,22 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
             category_id,
             name,
             position,
-            lamport,
         } => {
             state.categories.insert(
                 *category_id,
                 CategoryState {
                     name: name.clone(),
                     position: *position,
-                    created_lamport: *lamport,
+                    created: stamp,
                 },
             );
         }
 
         GovernanceEntry::CategoryArchived {
             category_id,
-            lamport,
         } => {
             if let Some(cat) = state.categories.get(category_id) {
-                if *lamport > cat.created_lamport {
+                if stamp > cat.created {
                     state.categories.remove(category_id);
                 }
             }
@@ -115,18 +113,17 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
             target_id,
             allow,
             deny,
-            lamport,
         } => {
             let key = (*channel_id, target_id.clone());
-            let existing_lamport = state.overwrites.get(&key).map_or(0, |o| o.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state.overwrites.get(&key).map_or(OpStamp::MIN, |o| o.stamp);
+            if stamp > existing_stamp {
                 state.overwrites.insert(
                     key,
                     OverwriteState {
                         target_type: target_type.clone(),
                         allow: *allow,
                         deny: *deny,
-                        lamport: *lamport,
+                        stamp,
                     },
                 );
             }
@@ -137,20 +134,19 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
             channel_id,
             segment_index,
             record_key,
-            lamport,
         } => {
             let key = (*channel_id, *segment_index);
-            let entry_lamport = *lamport;
+            let entry_stamp = stamp;
             let prev = state
                 .channel_segment_records
                 .get(&key)
-                .map_or(0, |s| s.linked_lamport);
-            if entry_lamport >= prev {
+                .map_or(OpStamp::MIN, |s| s.linked);
+            if entry_stamp >= prev {
                 state.channel_segment_records.insert(
                     key,
                     crate::state::ChannelSegmentRecord {
                         record_key: record_key.clone(),
-                        linked_lamport: entry_lamport,
+                        linked: entry_stamp,
                     },
                 );
             }
@@ -161,10 +157,9 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, state: &mut GovernanceStat
             category_id,
             name,
             position,
-            lamport,
         } => {
             if let Some(cat) = state.categories.get_mut(category_id) {
-                if *lamport > cat.created_lamport {
+                if stamp > cat.created {
                     if let Some(n) = name {
                         cat.name.clone_from(n);
                     }

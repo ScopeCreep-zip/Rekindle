@@ -1,8 +1,10 @@
 //! `merge` onboarding CRDT apply rules.
 
+use crate::op::OpStamp;
+
 use super::{GovernanceEntry, GovernanceState, OnboardingState, WelcomeScreenState};
 
-pub(super) fn apply_onboarding(entry: &GovernanceEntry, state: &mut GovernanceState) {
+pub(super) fn apply_onboarding(entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
     match entry {
         GovernanceEntry::OnboardingConfig {
             enabled,
@@ -11,10 +13,9 @@ pub(super) fn apply_onboarding(entry: &GovernanceEntry, state: &mut GovernanceSt
             questions,
             welcome_message,
             guide_steps,
-            lamport,
         } => {
-            let existing_lamport = state.onboarding.as_ref().map_or(0, |o| o.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state.onboarding.as_ref().map_or(OpStamp::MIN, |o| o.stamp);
+            if stamp > existing_stamp {
                 state.onboarding = Some(OnboardingState {
                     enabled: *enabled,
                     mode: mode.clone(),
@@ -22,7 +23,7 @@ pub(super) fn apply_onboarding(entry: &GovernanceEntry, state: &mut GovernanceSt
                     questions: questions.clone(),
                     welcome_message: welcome_message.clone(),
                     guide_steps: guide_steps.clone(),
-                    lamport: *lamport,
+                    stamp,
                 });
             }
         }
@@ -30,14 +31,13 @@ pub(super) fn apply_onboarding(entry: &GovernanceEntry, state: &mut GovernanceSt
         GovernanceEntry::WelcomeScreen {
             description,
             channels,
-            lamport,
         } => {
-            let existing_lamport = state.welcome_screen.as_ref().map_or(0, |w| w.lamport);
-            if *lamport > existing_lamport {
+            let existing_stamp = state.welcome_screen.as_ref().map_or(OpStamp::MIN, |w| w.stamp);
+            if stamp > existing_stamp {
                 state.welcome_screen = Some(WelcomeScreenState {
                     description: description.clone(),
                     channels: channels.clone(),
-                    lamport: *lamport,
+                    stamp,
                 });
             }
         }

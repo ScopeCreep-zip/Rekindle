@@ -1,122 +1,153 @@
-//! CRDT merge engine — the core of flat governance.
+//! CRDT merge engine — the core of flat governance (plan E3.2).
 //!
-//! Takes all `GovernanceEntry` variants from all member subkeys,
-//! processes them in deterministic order, and produces a `GovernanceState`.
+//! Takes the community's verified op set and its pinned `GenesisCert` and
+//! produces a `GovernanceState`. **Convergence:** the same op set gives the
+//! same state on every reader, whatever order the ops arrived in.
 //!
-//! **Convergence guarantee:** Given the same set of entries (in any order),
-//! `merge()` always produces an identical `GovernanceState`. This is verified
-//! by property-based tests.
+//! **Resolution** follows Matrix state resolution v2: power ops
+//! ([`crate::power`]) are resolved first, in causal (stamp) order, each
+//! checked against the power state so far; every other op is then ordered
+//! by its mainline anchor (the latest resolved power op in its causal
+//! past), its `issued_at` and its hash, and checked in that order.
 //!
-//! **Bounds first:** an entry outside its value bounds
-//! ([`crate::validate::bounds`]) is dropped before ordering, from any
-//! writer, so it can neither apply nor become the genesis.
+//! **Strong removal** follows p2panda-auth: a removed or demoted member's
+//! ops concurrent with the removal are invalidated, mutual removals both
+//! apply, a re-join after a removal is allowed (its concurrent ops are
+//! still invalidated), and invalidation is transitive — resolution reruns
+//! until the invalidated set is stable.
 //!
-//! **Genesis bypass:** The first in-bounds entry (lowest lamport) is always
-//! accepted regardless of permissions — this bootstraps the community before any
-//! role structure exists.
-//!
-//! **Reader-validates:** After genesis, each entry is checked against the
-//! accumulated permission state. Entries from members without the required
-//! permission are silently excluded.
+//! **The creator** is the cert's `creator_pseudonym` (MSC4289): no op at
+//! any lamport becomes the creator.
 
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::lamport::LamportClock;
 
+use crate::op::{OpStamp, VerifiedOp};
+use crate::power::{class_of, OpClass};
 use crate::state::{
     AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
-    EventState, ExpressionState, GovernanceState, InviteState, MetadataState, OnboardingState,
-    OverwriteState, PendingMemberState, RoleState, SegmentState, ThreadState, TimeoutState,
+    EventState, ExpressionState, GovernanceState, InviteState, MemberState, MetadataState,
+    OnboardingState, OverwriteState, RoleState, SegmentState, ThreadState, TimeoutState,
     WelcomeScreenState,
 };
-use crate::validate::{bounds, validate_write};
+use crate::validate::validate_write;
 
-/// A single entry tagged with its author's pseudonym.
-#[derive(Debug, Clone)]
-pub struct AuthoredEntry {
-    pub author: PseudonymKey,
-    pub entry: GovernanceEntry,
+/// What `merge` decided about each op, besides the state.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MergeOutcome {
+    pub state: GovernanceState,
+    /// Applied ops, in the order they were applied.
+    pub applied: Vec<OpHash>,
+    /// Complete ops refused by validation or invalidated by resolution.
+    pub refused: Vec<OpHash>,
+    /// Ops whose deps are missing from the set.
+    pub pending: Vec<OpHash>,
+    /// Authors caught signing two ops at one seq.
+    pub equivocators: Vec<PseudonymKey>,
 }
 
-/// Merge governance entries from all member subkeys into a canonical state.
-///
-/// # Arguments
-/// * `subkeys` — One vec of entries per member subkey. Each tuple is
-///   `(author_pseudonym, entries_from_that_subkey)`.
-///
-/// # Returns
-/// A deterministic `GovernanceState` that all peers agree on.
-pub fn merge(subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)]) -> GovernanceState {
-    merge_with_accepted(subkeys).0
+/// Merge `ops` under the pinned `cert` into a canonical state.
+#[must_use]
+pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
+    merge_outcome(cert, ops).state
 }
 
-/// [`merge`], plus the Lamport clock value the accepted entries justify:
-/// their timestamps folded in order through [`LamportClock::merge`].
-///
-/// An honest history climbs in small steps, so this is the highest
-/// accepted timestamp + 1 — the floor for our next entry, so it wins
-/// last-writer-wins against everything already accepted. Rejected entries
-/// never count, and an accepted entry that jumps far ahead (an authorised
-/// member writing `u64::MAX`) advances it by at most
-/// `MAX_LAMPORT_DRIFT + 1`, so no single entry can pin the clock.
-pub fn merge_with_accepted(
-    subkeys: &[(PseudonymKey, Vec<GovernanceEntry>)],
-) -> (GovernanceState, u64) {
-    // 1. Collect all entries with their author, dropping every entry out of
-    //    its value bounds (plan E3.0) before the sort: the genesis branch
-    //    below applies the lowest entry unvalidated, so an out-of-bounds
-    //    entry must not reach it, identically on every reader.
-    let mut all: Vec<AuthoredEntry> = Vec::new();
-    for (author, entries) in subkeys {
-        for entry in entries.iter().filter(|e| bounds::entry_within_bounds(e)) {
-            all.push(AuthoredEntry {
-                author: author.clone(),
-                entry: entry.clone(),
-            });
+/// [`merge`], with the fate of every op.
+#[must_use]
+pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
+    let set = resolve::prepare(ops);
+    let mut invalid = vec![false; set.ops.len()];
+    let mut round = resolve_round(cert, &set, &invalid);
+    for _ in 0..=set.ops.len() {
+        let next = gates::invalidated(cert, &set, &round);
+        if next == invalid {
+            break;
+        }
+        invalid = next;
+        round = resolve_round(cert, &set, &invalid);
+    }
+    let applied = round.order.iter().map(|&i| set.ops[i].hash()).collect();
+    let refused = (0..set.ops.len())
+        .filter(|&i| !round.applied[i])
+        .map(|i| set.ops[i].hash())
+        .collect();
+    MergeOutcome {
+        state: round.state,
+        applied,
+        refused,
+        pending: set.pending,
+        equivocators: set.equivocators,
+    }
+}
+
+/// One resolution pass with the ops in `invalid` left out.
+pub(super) struct Round {
+    pub state: GovernanceState,
+    pub applied: Vec<bool>,
+    /// Applied ops in application order (power ops first).
+    pub order: Vec<usize>,
+}
+
+fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool]) -> Round {
+    let mut state = GovernanceState {
+        creator: Some(cert.creator_pseudonym.clone()),
+        admission_mode: Some(cert.policy),
+        ..GovernanceState::default()
+    };
+    let mut applied = vec![false; set.ops.len()];
+    let mut order = Vec::new();
+    let candidates = (0..set.ops.len()).filter(|&i| !invalid[i]);
+    let (power, rest): (Vec<usize>, Vec<usize>) =
+        candidates.partition(|&i| class_of(set.ops[i].body()) == OpClass::Power);
+    for i in power {
+        if try_apply(set.ops[i], &mut state) {
+            applied[i] = true;
+            order.push(i);
         }
     }
-
-    // 2. Sort by (lamport, author_pseudonym) for deterministic total order
-    all.sort_by(|a, b| {
-        a.entry
-            .lamport()
-            .cmp(&b.entry.lamport())
-            .then_with(|| a.author.0.cmp(&b.author.0))
-    });
-
-    // 3. Process in order, applying CRDT rules
-    let mut state = GovernanceState::default();
-    let mut clock = LamportClock::default();
-
-    for (idx, authored) in all.iter().enumerate() {
-        let is_genesis = idx == 0;
-
-        if is_genesis {
-            // Genesis entry always accepted — bootstraps the community
-            state.creator = Some(authored.author.clone());
-            apply(&authored.author, &authored.entry, &mut state);
-        } else if validate_write(&authored.author, &authored.entry, &state) {
-            apply(&authored.author, &authored.entry, &mut state);
-        } else {
-            // Silently excluded (reader-validates).
-            continue;
+    let power_order = order.clone();
+    let mut mainline: Vec<(Option<usize>, u64, OpHash, usize)> = rest
+        .into_iter()
+        .map(|i| {
+            let anchor = power_order.iter().rposition(|&p| set.past.contains(i, p));
+            (anchor, set.ops[i].op().issued_at, set.ops[i].hash(), i)
+        })
+        .collect();
+    mainline.sort();
+    for (_, _, _, i) in mainline {
+        if try_apply(set.ops[i], &mut state) {
+            applied[i] = true;
+            order.push(i);
         }
-        clock.merge(authored.entry.lamport());
     }
-
-    (state, clock.current())
+    Round {
+        state,
+        applied,
+        order,
+    }
 }
 
-/// Apply a single governance entry to the accumulated state.
-///
-/// Each entry type has its own CRDT merge rule (see architecture doc §4.4).
-/// Public as `apply_entry` for incremental local updates (after permission validation).
-pub fn apply_entry(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceState) {
-    apply(author, entry, state);
+fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
+    if !validate_write(op.author(), op.body(), state) {
+        return false;
+    }
+    apply(op.author(), op.body(), op.stamp(), state);
+    true
+}
+
+/// Apply a single governance entry, stamped by its op, to the state.
+/// Public for incremental local updates after validation.
+pub fn apply_entry(
+    author: &PseudonymKey,
+    entry: &GovernanceEntry,
+    stamp: OpStamp,
+    state: &mut GovernanceState,
+) {
+    apply(author, entry, stamp, state);
 }
 
 /// Route an entry to its category-specific CRDT apply rule.
-fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceState) {
+fn apply(author: &PseudonymKey, entry: &GovernanceEntry, stamp: OpStamp, state: &mut GovernanceState) {
     use GovernanceEntry as G;
     match entry {
         G::ChannelCreated { .. }
@@ -126,10 +157,14 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         | G::CategoryArchived { .. }
         | G::CategoryUpdated { .. }
         | G::PermissionOverwrite { .. }
-        | G::ChannelSegmentLinked { .. } => apply_channels(entry, state),
-        G::JoinRequested { .. } | G::MemberApproved { .. } | G::MemberRejected { .. } => {
-            apply_admission(entry, state);
+        | G::ChannelSegmentLinked { .. } => apply_channels(entry, stamp, state),
+        G::MemberApproved { .. } | G::MemberRejected { .. } => {
+            apply_admission(entry, stamp, state);
         }
+        G::MemberJoined { .. }
+        | G::MemberRecordMoved { .. }
+        | G::MemberLeft {}
+        | G::MemberRemoved { .. } => apply_membership(author, entry, stamp, state),
         // `validate_write` already refused any write after the first,
         // so reaching here means this is the creator's one-and-only
         // policy entry.
@@ -140,28 +175,28 @@ fn apply(author: &PseudonymKey, entry: &GovernanceEntry, state: &mut GovernanceS
         | G::SegmentAdded { .. }
         | G::CommunityPolicy { .. }
         | G::InviteCreated { .. }
-        | G::InviteRevoked { .. } => apply_community(author, entry, state),
+        | G::InviteRevoked { .. } => apply_community(author, entry, stamp, state),
         G::ThreadCreated { .. }
         | G::ThreadArchived { .. }
         | G::ThreadUnarchived { .. }
         | G::EventCreated { .. }
         | G::EventArchived { .. }
-        | G::EventRsvp { .. } => apply_events(author, entry, state),
+        | G::EventRsvp { .. } => apply_events(author, entry, stamp, state),
         G::ExpressionAdded { .. } | G::ExpressionRemoved { .. } | G::AttachmentPinned { .. } => {
-            apply_expression(entry, state);
+            apply_expression(entry, stamp, state);
         }
         G::BanEntry { .. }
         | G::UnbanEntry { .. }
         | G::TimeoutEntry { .. }
         | G::RemoveTimeoutEntry { .. }
         | G::AdminDelete { .. }
-        | G::AutoModRule { .. } => apply_moderation(entry, state),
-        G::ModReport { .. } => apply_mod_report(author, entry, state),
-        G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => apply_onboarding(entry, state),
+        | G::AutoModRule { .. } => apply_moderation(entry, stamp, state),
+        G::ModReport { .. } => apply_mod_report(author, entry, stamp, state),
+        G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => apply_onboarding(entry, stamp, state),
         G::RoleDefinition { .. }
         | G::RoleAssignment { .. }
         | G::RoleUnassignment { .. }
-        | G::RoleArchived { .. } => apply_roles(entry, state),
+        | G::RoleArchived { .. } => apply_roles(entry, stamp, state),
     }
 }
 
@@ -169,8 +204,11 @@ mod channels;
 mod community;
 mod events;
 mod expression;
+mod gates;
+mod membership;
 mod moderation;
 mod onboarding;
+mod resolve;
 mod roles;
 
 #[cfg(test)]
@@ -182,6 +220,7 @@ use channels::apply_channels;
 use community::apply_community;
 use events::apply_events;
 use expression::apply_expression;
+use membership::apply_membership;
 use moderation::{apply_admission, apply_mod_report, apply_moderation};
 use onboarding::apply_onboarding;
 use roles::apply_roles;

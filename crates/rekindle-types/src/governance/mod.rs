@@ -1,13 +1,14 @@
 //! v2.0 Governance entry types for flat SMPL CRDT.
 //!
 //! Each member writes GovernanceEntry variants to their own subkey in the
-//! governance SMPL record (o_cnt: 0). All entries carry a Lamport timestamp
+//! governance SMPL record (o_cnt: 0). Entries carry no clock: the op DAG orders them
 //! for deterministic CRDT merge ordering.
 //!
 //! See architecture doc §4.3 Record 1 and §4.4 for merge rules.
 //! See rekindle-architecture-v2.md §4 for field specifications.
 
 mod entry;
+mod op;
 mod mod_report;
 mod onboarding;
 mod payload;
@@ -19,6 +20,7 @@ mod tests;
 mod automod;
 pub use automod::AutoModAction;
 pub use entry::{AdmissionMode, GovernanceEntry};
+pub use op::{GenesisCert, GovernanceOp, InviteProof, OpHash, OpRef};
 pub use mod_report::ModReportTarget;
 pub use onboarding::{
     GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel, MAX_ONBOARDING_GUIDE_STEPS,

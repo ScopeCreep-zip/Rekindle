@@ -124,6 +124,14 @@ labels! {
     /// `code_hash` invite entries are stored under
     /// (`rekindle_secrets::invite::hash_invite_code`).
     INVITE_CODE_ID = "rekindle-invite-code-id-v1";
+    /// Ed25519 context: a governance op, signed by its author pseudonym over
+    /// this label ‖ community anchor ‖ the canonical unsigned op bytes (plan E3.2).
+    GOV_OP = "rekindle-gov-op-v1";
+    /// BLAKE3 `derive_key` context: a governance op's hash over its signed bytes.
+    GOV_OP_HASH = "rekindle-gov-op-hash-v1";
+    /// Ed25519 context: a joiner's invite proof over this label ‖ anchor ‖
+    /// invite code hash ‖ member record key (plan E3.2).
+    INVITE_PROOF = "rekindle-invite-proof-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
     /// Ed25519 signature prefix: the daemon's framed community RPC
