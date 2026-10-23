@@ -139,6 +139,7 @@ impl HostGovernance {
         .await
         .map_err(|e| format!("community leave failed: {e}"))?;
         self.send_departure(&id, &left.departure_notice).await;
+        self.release_watch_ring(&id).await;
         let leases = self.ctx.communities.take_leases(&id);
         let watch_leases = self
             .ctx

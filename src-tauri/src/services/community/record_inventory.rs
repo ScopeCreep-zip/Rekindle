@@ -75,6 +75,9 @@ pub fn warmable_record_keys(cs: &CommunityState) -> Vec<String> {
             .cloned(),
     );
 
+    // Our own member record and our watch ring's (plan E3.2 S7).
+    keys.extend(rekindle_node::host::adapters::governance::watch_ring::warm_member_records(cs));
+
     keys.sort();
     keys.dedup();
     keys
@@ -129,6 +132,7 @@ mod tests {
             my_segment_index: None,
             segments: Vec::new(),
             parked_mek_requests: Vec::new(),
+            watch_ring: std::collections::BTreeMap::new(),
             governance_key: Some("gov-key".to_string()),
             governance_state: gov,
             own_removal: None,

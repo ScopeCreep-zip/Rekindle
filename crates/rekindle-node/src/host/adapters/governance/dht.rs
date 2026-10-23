@@ -208,7 +208,7 @@ impl HostGovernance {
             return;
         };
         let scope = self.ctx.unlock_scope_or_closed();
-        for lease in self.ctx.communities.held_leases(community_id) {
+        for lease in self.ctx.communities.watched_leases(community_id) {
             // Before each watch call: the unlock is ending, or the join
             // phase this runs in is out of budget (plan C4.L1b).
             if scope.is_closed() || rekindle_governance_runtime::phase_expired() {

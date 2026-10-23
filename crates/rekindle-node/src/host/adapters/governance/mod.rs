@@ -26,6 +26,7 @@ use rekindle_transport::TransportNode;
 
 use crate::daemon::dispatch::DaemonContext;
 
+mod anti_entropy_loop;
 pub mod audit;
 mod audit_rows;
 pub(crate) mod automod_rules;
@@ -83,6 +84,7 @@ mod state_reads;
 pub(crate) mod unread;
 mod views;
 mod watch;
+pub mod watch_ring;
 
 /// The Host, as the governance runtime sees it.
 #[derive(Clone)]

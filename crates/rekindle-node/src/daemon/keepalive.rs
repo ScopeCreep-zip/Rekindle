@@ -25,15 +25,17 @@ pub(crate) fn start(ctx: &DaemonContext, community_id: &str) {
             rekindle_protocol::dht::pool::keepalive::run(
                 move || pool_node.records(),
                 move || {
-                    Some(
-                        runtime
-                            .held_leases(&id)
-                            .into_iter()
-                            .filter_map(|lease| {
-                                rekindle_transport::broadcast::dht_writes::key_of(&node, lease)
-                            })
-                            .collect(),
-                    )
+                    let mut keys: Vec<String> = runtime
+                        .held_leases(&id)
+                        .into_iter()
+                        .filter_map(|lease| {
+                            rekindle_transport::broadcast::dht_writes::key_of(&node, lease)
+                        })
+                        .collect();
+                    keys.extend(runtime.warm_member_records(&id));
+                    keys.sort_unstable();
+                    keys.dedup();
+                    Some(keys)
                 },
                 rng,
                 stop,

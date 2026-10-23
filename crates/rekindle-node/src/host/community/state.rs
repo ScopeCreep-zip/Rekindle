@@ -86,6 +86,10 @@ pub struct CommunityState {
     /// bounded by `PARKED_MEK_REQUESTS`, never persisted.
     #[serde(skip)]
     pub parked_mek_requests: Vec<crate::host::adapters::governance::MekRequest>,
+    /// The watch ring (plan E3.2 S7): our ring successors' member records,
+    /// each held read-only and watched, by record key.
+    #[serde(skip)]
+    pub watch_ring: std::collections::BTreeMap<String, rekindle_records::lease::LeaseId>,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.

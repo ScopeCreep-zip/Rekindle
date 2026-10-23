@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod anti_entropy;
 pub mod apply;
 pub mod audit;
 pub mod bootstrap;
@@ -50,6 +51,7 @@ pub(crate) mod records;
 pub mod roles;
 pub mod roster;
 pub mod segments;
+pub mod watch_ring;
 
 pub use apply::{write_entry, write_entry_queued, write_invite_created};
 pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};

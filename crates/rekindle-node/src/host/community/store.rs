@@ -178,6 +178,28 @@ impl CommunityStore {
             .unwrap_or_default()
     }
 
+    /// Our own member record and our watch ring's, kept warm (plan E3.2
+    /// S7 record warming).
+    pub fn warm_member_records(&self, community_id: &str) -> Vec<String> {
+        self.read(
+            community_id,
+            crate::host::adapters::governance::watch_ring::warm_member_records,
+        )
+        .unwrap_or_default()
+    }
+
+    /// The community's held leases but its anchor's, to watch: the anchor
+    /// is immutable (plan E3.2 S7).
+    pub fn watched_leases(&self, community_id: &str) -> Vec<LeaseId> {
+        self.read(community_id, |c| {
+            c.leases
+                .all()
+                .filter(|l| c.leases.governance != Some(*l))
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
     /// Take the community's leases, for release (leave).
     pub fn take_leases(&self, community_id: &str) -> CommunityLeases {
         self.map

@@ -164,28 +164,6 @@ impl SubscriptionManager {
         };
 
         match kind {
-            watches::WatchKind::GovernanceRecord { community } => {
-                // A governance subkey changing means the member holding
-                // that slot wrote entries. Which entries, and what they
-                // mean, is only knowable after a re-merge — the subkey
-                // index says who wrote, never what.
-                //
-                // This used to map subkey 0/1/3/4/7 onto
-                // `MetadataChanged` / `ChannelsChanged` / `RolesChanged`
-                // / `BansChanged` / `InvitesChanged`, reading the v1.0
-                // manifest's section layout into what are now member
-                // slots. Members 0, 1, 3, 4 and 7 produced five
-                // confidently wrong events; everyone else produced none.
-                for subkey in &changed_subkeys {
-                    self.process_event(SubscriptionEvent::Governance(
-                        events::GovernanceEvent::GovernanceSubkeyUpdated {
-                            community: community.clone(),
-                            subkey_index: *subkey,
-                            lamport_ts: 0,
-                        },
-                    ));
-                }
-            }
             // PATH 3: a channel segment record's slot changed. The Host
             // reads the slot and ingests each post through the D26 gate,
             // publishing `ChannelMessageEvent::New` for what it admits; an

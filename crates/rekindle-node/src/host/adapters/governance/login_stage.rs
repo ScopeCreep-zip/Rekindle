@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
-use rekindle_governance_runtime::{dht_hydration, op_log};
+use rekindle_governance_runtime::{anti_entropy, dht_hydration};
 use rekindle_lifecycle::{ScopeClosed, SessionScope};
 use tokio::sync::watch;
 use tokio_util::sync::CancellationToken;
@@ -124,9 +124,18 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
         return;
     }
     dht_hydration::hydrate_one_community(governance, community_id).await;
-    // The heads the community wrote while we were away, from the members'
-    // frontiers; the rebuild below fetches their deps and merges.
-    match op_log::catch_up_frontiers(governance, community_id).await {
+    // The heads the community wrote while we were away: the full
+    // anti-entropy sweep of the members' frontiers (plan E3.2 S7); the
+    // rebuild below fetches their deps and merges.
+    let mut seen = anti_entropy::SeenFrontiers::new();
+    match anti_entropy::sweep(
+        governance,
+        community_id,
+        anti_entropy::Sweep::Full,
+        &mut seen,
+    )
+    .await
+    {
         Ok(stored) => tracing::debug!(community = community_id, stored, "frontier heads caught up"),
         Err(error) => tracing::warn!(community = community_id, %error, "frontier catch-up failed"),
     }

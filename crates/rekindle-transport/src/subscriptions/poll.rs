@@ -55,12 +55,7 @@ pub async fn run_poll_loop(
 
                 let entries: Vec<(String, Vec<u32>, crate::broadcast::dht_writes::LeaseId)> = {
                     let reg = watches.read();
-                    // A governance record is never polled (D4, plan E3.1
-                    // C1): its watch rebuilds the community, and a member
-                    // without a watch slot hears of a write by its
-                    // GovernanceUpdated gossip and the watch relay.
                     reg.entries.iter()
-                        .filter(|(_, e)| !matches!(e.kind, super::watches::WatchKind::GovernanceRecord { .. }))
                         .map(|(k, e)| (k.clone(), e.subkeys.clone(), e.lease))
                         .collect()
                 };

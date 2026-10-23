@@ -1,9 +1,14 @@
-//! The governance arm of the Host's watch path (plan E3.1 C1, D4): a
-//! ValueChange on a community's governance record (or one of its Plate Gate
-//! segments' governance records) rebuilds that community alone, then
-//! borrows every channel record the new state names that we do not hold.
-//! Nothing polls a watched record: no timed inspect backs this up.
+//! The governance arm of the Host's watch path (plan E3.2 S7, D4), on both
+//! modes: a ValueChange on a member record our watch ring holds reads that
+//! record's frontier, stores the heads we lack, and rebuilds that community
+//! alone; then borrows every channel record the new state names that we do
+//! not hold. This (with a `HeadAdvanced` hint) is the only governance
+//! change trigger; the governance-record watch is gone.
 
+use std::collections::BTreeSet;
+
+use rekindle_governance_runtime::anti_entropy::{self, SeenFrontiers};
+use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::lease::CommunityLeases;
 use rekindle_records::port::OpenIntent;
 use rekindle_transport::broadcast::dht_writes;
@@ -12,26 +17,10 @@ use rekindle_types::id::ChannelId;
 use super::HostGovernance;
 
 impl HostGovernance {
-    /// The community whose governance record is `record`.
-    fn community_of_governance_record(&self, record: &str) -> Option<String> {
-        self.ctx
-            .communities
-            .map()
-            .read()
-            .values()
-            .find(|c| {
-                c.governance_key.as_deref() == Some(record)
-                    || c.governance_state
-                        .as_ref()
-                        .is_some_and(|g| g.segments.iter().any(|s| s.governance_key == record))
-            })
-            .map(|c| c.id.clone())
-    }
-
-    /// Handle a watched record's change when it is a governance record:
+    /// Handle a watched record's change when it is a ring member record:
     /// `true` when it was one (rebuilt), `false` for any other record.
     pub async fn on_watched_change(&self, record: &str) -> bool {
-        let Some(community) = self.community_of_governance_record(record) else {
+        let Some(community) = self.community_of_ring_record(record) else {
             return false;
         };
         // A community we were removed from is read-only history: a late
@@ -39,10 +28,32 @@ impl HostGovernance {
         if self.ctx.communities.own_removal(&community).is_some() {
             return true;
         }
-        tracing::info!(%community, "governance record changed — rebuilding that community");
+        tracing::info!(%community, record, "ring member record changed — rebuilding that community");
+        self.catch_up_record(&community, record).await;
         rekindle_governance_runtime::rebuild_governance(self, &community).await;
         self.open_new_channel_records(&community).await;
         true
+    }
+
+    /// Store the heads `record`'s frontier names that we do not hold.
+    async fn catch_up_record(&self, community: &str, record: &str) {
+        let known: Result<BTreeSet<_>, _> = self
+            .governance_ops(community)
+            .await
+            .map(|held| held.iter().map(|op| op.hash).collect());
+        let mut known = match known {
+            Ok(known) => known,
+            Err(error) => {
+                tracing::warn!(community, %error, "ring change: op store not read");
+                return;
+            }
+        };
+        let mut seen = SeenFrontiers::new();
+        if let Err(error) =
+            anti_entropy::inspect_one(self, community, record, &mut seen, &mut known).await
+        {
+            tracing::warn!(community, record, %error, "ring change: heads not stored");
+        }
     }
 
     /// Borrow every channel record the community's membership names that

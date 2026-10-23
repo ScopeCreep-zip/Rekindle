@@ -43,10 +43,14 @@ pub(crate) fn start(
     let expiry = host.clone();
     let reminders = host.clone();
     let markers = host.clone();
+    let sweeps = host.clone();
     scope.spawn_with_token("read marker write-behind", move |stop| {
         super::unread::write_behind(markers, stop)
     })?;
     scope.spawn_with_token("community sync", move |stop| run(host, stop))?;
+    scope.spawn_with_token("governance anti-entropy", move |stop| {
+        super::anti_entropy_loop::run(sweeps, stop)
+    })?;
     scope.spawn_with_token("community invite expiry", move |stop| {
         super::invite_expiry::run(expiry, stop)
     })?;
@@ -115,7 +119,7 @@ impl HostGovernance {
     /// not removed from (a removed member sends nothing, plan E3.2 S9), in
     /// id order (the store's map has no order; the phase's sends must not
     /// depend on it).
-    fn sync_targets(&self) -> Vec<String> {
+    pub(super) fn sync_targets(&self) -> Vec<String> {
         let mut targets: Vec<String> = self
             .ctx
             .communities

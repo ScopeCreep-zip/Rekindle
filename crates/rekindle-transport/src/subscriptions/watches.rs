@@ -23,13 +23,6 @@ use crate::session::CommunityMembership;
 /// What kind of record a watch is tracking.
 #[derive(Debug, Clone)]
 pub enum WatchKind {
-    /// A community's SMPL governance record.
-    ///
-    /// One member's signed entry history per subkey, so a change means
-    /// "that member wrote governance" — not "this section changed". The
-    /// reader re-merges; it cannot tell what changed from the subkey
-    /// index alone.
-    GovernanceRecord { community: String },
     /// A channel's SMPL segment record.
     ///
     /// PATH 3 of the three-path model. One record per
@@ -101,8 +94,7 @@ impl WatchRegistry {
     pub fn remove_community(&mut self, community: &str) -> Vec<LeaseId> {
         self.remove_where(|kind| {
             matches!(kind,
-                WatchKind::GovernanceRecord { community: c }
-                | WatchKind::ChannelRecord { community: c, .. }
+                WatchKind::ChannelRecord { community: c, .. }
                 if c == community
             )
         })
@@ -215,33 +207,8 @@ pub async fn setup_community_watches(
 ) {
     let community = &membership.governance_key;
 
-    // Watch the whole governance record.
-    //
-    // This used to watch subkeys 0, 1, 3, 4 and 7 — the v1.0 manifest's
-    // metadata / channels / roles / bans / invites sections. Under
-    // `o_cnt: 0` those are not sections, they are **member slots**: the
-    // governance record holds one member's signed `GovernanceEntry`
-    // history per subkey. So it watched five arbitrary members and was
-    // blind to everyone else's bans, role changes and channel creation.
-    //
-    // The whole range, because any member may write governance and the
-    // CRDT is only correct if we see all of it. Same slot addressing as
-    // the registry and channel records.
-    let gov_subkeys: Vec<u32> = (0..dht_types::SLOTS_PER_SEGMENT).collect();
-    let slot_writer = membership.slot_seed.and_then(|seed| {
-        rekindle_crypto::keypair_text::slot_keypair_text(&seed, membership.slot_index).ok()
-    });
-    establish_watch_as(
-        node,
-        registry,
-        &membership.governance_key,
-        &gov_subkeys,
-        WatchKind::GovernanceRecord {
-            community: community.clone(),
-        },
-        slot_writer.as_deref(),
-    )
-    .await;
+    // No governance-record watch (plan E3.2 S7): the anchor is immutable,
+    // and a governance change arrives through the Host's watch ring.
 
     // No member-registry watch. Its three subkeys were community-wide
     // v1.0 entries that no longer exist; under `o_cnt: 0` every subkey
