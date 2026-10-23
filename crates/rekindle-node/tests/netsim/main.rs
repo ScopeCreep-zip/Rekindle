@@ -52,5 +52,6 @@ mod role_assign;
 mod rotation;
 mod route_link_failure;
 mod scenarios;
+mod sending_route;
 mod smoke;
 mod stale_route_call;

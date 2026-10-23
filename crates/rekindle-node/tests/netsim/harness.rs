@@ -27,6 +27,8 @@ pub struct SimNode {
     pub host: Arc<Host>,
     /// The unlocked identity's public key, once [`unlock_new_identity`] ran.
     pub public_key: Option<String>,
+    /// The node's route port, the one its Host holds, to read our routes.
+    pub routes: Arc<dyn rekindle_records::port::RoutePort>,
     _dir: tempfile::TempDir,
 }
 
@@ -74,6 +76,7 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
         let dir = tempfile::tempdir().expect("temp dir");
         let root = temp_root(&dir);
         let storage_dir = root.data.join("veilid").display().to_string();
+        let routes = Arc::clone(&node.ports.routes);
         let host = Host::start(HostConfig {
             root: claim(root).expect("claim the temp root"),
             stores: HostStores::default(),
@@ -98,6 +101,7 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
             index: node.index,
             host,
             public_key: None,
+            routes,
             _dir: dir,
         });
     }

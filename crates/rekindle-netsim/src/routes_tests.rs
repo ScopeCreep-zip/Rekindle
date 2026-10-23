@@ -153,3 +153,60 @@ async fn one_first_hop_failure_kills_the_senders_route() {
         PortEvent::AppMessage { message } if message == vec![2]
     ));
 }
+
+/// A pinned call (RH1r): refused `Routing` while the caller's `Sending`
+/// route is not live; answered over it while it is; and its answer lost
+/// when the caller releases the route before the answer comes back
+/// (veilid `rpc_processor/destination.rs:477-497`: the reply private route
+/// is the preferred route).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_pinned_call_is_answered_over_its_sending_route() {
+    let (sim, mut nodes) = Netsim::nodes(2, 23);
+    let _pump = sim.start();
+    let blob = own_blob(&nodes[1]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    let profile = SafetyProfile::default_dht();
+    let refused = nodes[0]
+        .ports
+        .messages
+        .call_pinned(&target, &profile, RouteClass::Sending, b"q".to_vec())
+        .await;
+    assert!(matches!(refused, Err(PortError::Routing(_))), "{refused:?}");
+
+    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
+    nodes[0]
+        .ports
+        .routes
+        .available_own(RouteClass::Sending)
+        .await;
+    for (body, release) in [(b"kept".to_vec(), false), (b"gone".to_vec(), true)] {
+        let caller = nodes[0].ports.messages.clone();
+        let to = target.clone();
+        let profile = profile.clone();
+        let call = tokio::spawn(async move {
+            caller
+                .call_pinned(&to, &profile, RouteClass::Sending, body)
+                .await
+        });
+        let PortEvent::AppCall { call_id, .. } = recv(&mut nodes[1]).await else {
+            panic!("expected a call");
+        };
+        if release {
+            nodes[0].ports.routes.release_own_class(RouteClass::Sending);
+        }
+        nodes[1]
+            .ports
+            .messages
+            .reply(call_id, b"a".to_vec())
+            .await
+            .unwrap();
+        let answer = call.await.unwrap();
+        if release {
+            assert!(answer.is_err(), "the answer's reply route is gone");
+        } else {
+            assert_eq!(answer.unwrap(), b"a");
+        }
+    }
+}
