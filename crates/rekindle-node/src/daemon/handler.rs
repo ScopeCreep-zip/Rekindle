@@ -239,7 +239,9 @@ impl InboundHandler for DaemonHandler {
         }
 
         // A thread opened, archived or replied to (plan E3.1 E3f): stored by
-        // the Host's channel adapter; the subscription event follows below.
+        // the Host's channel adapter, which returns the event to publish (a
+        // reply's carries the body it read from the thread record; the
+        // transport maps no thread payload).
         if let CommunityEnvelope::Control(
             ref payload @ (ControlPayload::ThreadCreated { .. }
             | ControlPayload::ThreadArchived { .. }
@@ -254,9 +256,14 @@ impl InboundHandler for DaemonHandler {
                 let (community, payload, task_scope) =
                     (community_id.to_string(), payload.clone(), scope.clone());
                 scope.spawn_or_drop("thread control", async move {
-                    channel
+                    if let Some(event) = channel
                         .on_thread_control(&community, &payload, &task_scope)
-                        .await;
+                        .await
+                    {
+                        ctx.publish_event(
+                            rekindle_types::subscription_events::SubscriptionEvent::Social(event),
+                        );
+                    }
                 });
             }
         }

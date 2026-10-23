@@ -1,5 +1,5 @@
 //! Tail of [`ControlPayload::into_event`] — see `into_event_control.rs`
-//! for the split rationale. Handles events, threads, game servers,
+//! for the split rationale. Handles events, game servers,
 //! governance, voice signaling, admin delegation, bootstrap, sync, and
 //! system payloads.
 
@@ -17,7 +17,7 @@ fn scope(community: String, channel: String) -> VoiceScope {
 use rekindle_codec::community::envelope::ControlPayload;
 
 /// Tail of [`ControlPayload::into_event`] — see that method for the split
-/// rationale. Handles events, threads, game servers, governance, voice
+/// rationale. Handles events, game servers, governance, voice
 /// signaling, admin delegation, bootstrap, sync, and system payloads.
 /// Earlier variants are routed by `into_event` and never reach the
 /// `unreachable!` arm below.
@@ -68,41 +68,6 @@ pub fn control_into_event_rest(
             event_id,
             title,
             minutes_until_start,
-        }),
-
-        // ── Threads ─────────────────────────────────────────
-        ControlPayload::ThreadCreated { thread } => {
-            SubscriptionEvent::Social(SocialEvent::ThreadCreated {
-                community: c(),
-                thread: Box::new(thread),
-            })
-        }
-        ControlPayload::ThreadMessageReceived {
-            thread_id,
-            message_id,
-            sender_pseudonym,
-            timestamp,
-            reply_to_id,
-            ..
-        } => SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted {
-            community: c(),
-            thread_id,
-            message_id,
-            sender_pseudonym,
-            timestamp,
-            // The payload carries `ciphertext` and a `mek_generation`,
-            // not a plaintext body — decryption happens above this
-            // layer, so this decoder cannot fill it.
-            body: None,
-            reply_to_id,
-        }),
-        ControlPayload::ThreadArchived {
-            thread_id,
-            archived,
-        } => SubscriptionEvent::Social(SocialEvent::ThreadArchiveChanged {
-            community: c(),
-            thread_id,
-            archived,
         }),
 
         // ── Game servers ────────────────────────────────────

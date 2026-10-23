@@ -4,13 +4,6 @@
 
 use crate::state::SharedState;
 
-fn host(state: &SharedState) -> Result<std::sync::Arc<rekindle_node::host::Host>, String> {
-    state
-        .host
-        .current()
-        .ok_or_else(|| "not logged in".to_string())
-}
-
 pub async fn upload_soundboard_sound(
     state: &SharedState,
     community_id: &str,
@@ -21,8 +14,8 @@ pub async fn upload_soundboard_sound(
     volume: f32,
     emoji: Option<String>,
 ) -> Result<String, String> {
-    host(state)?
-        .channel()
+    crate::state_helpers::host_channel(state)
+        .map_err(|e| e.to_string())?
         .upload_soundboard_sound(rekindle_channel::UploadSoundboardSoundParams {
             community_id,
             name,
@@ -42,8 +35,8 @@ pub fn play_soundboard(
     channel_id: &str,
     expression_id_hex: &str,
 ) -> Result<(), String> {
-    host(state)?
-        .channel()
+    crate::state_helpers::host_channel(state)
+        .map_err(|e| e.to_string())?
         .play_soundboard(community_id, channel_id, expression_id_hex)
         .map_err(|e| e.to_string())
 }

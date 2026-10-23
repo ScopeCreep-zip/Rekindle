@@ -65,7 +65,7 @@ impl HostChannel {
                 let body = self
                     .reply_body(community_id, thread_id, message_id, scope)
                     .await;
-                let (c, t, m, s, b, r) = (
+                let (in_community, thread, message, sender, text, reply_to) = (
                     community.clone(),
                     thread_id.clone(),
                     message_id.clone(),
@@ -76,14 +76,14 @@ impl HostChannel {
                 let ts = *timestamp;
                 db.call(move |conn| {
                     let row = ThreadMessageRow {
-                        thread_id: &t,
-                        message_id: &m,
-                        sender_pseudonym: &s,
-                        body: &b,
+                        thread_id: &thread,
+                        message_id: &message,
+                        sender_pseudonym: &sender,
+                        body: &text,
                         timestamp: ts,
-                        reply_to_id: r.as_deref(),
+                        reply_to_id: reply_to.as_deref(),
                     };
-                    threads::insert_message(conn, &owner, &c, &row)
+                    threads::insert_message(conn, &owner, &in_community, &row)
                 })
                 .await
                 .ok()?;

@@ -22,7 +22,8 @@ use super::into_event_control_rest::control_into_event_rest;
 /// variants are media- or transport-plane traffic — voice signaling,
 /// video fragments and FEC, attachment chunks, bandwidth and topology
 /// reports — consumed by the subsystems that own them and never
-/// surfaced to a subscriber. Saying so in the return type is what stops
+/// surfaced to a subscriber — and the three thread payloads, whose
+/// events the Host publishes once it has stored them. Saying so in the return type is what stops
 /// them being given an invented event just to satisfy the match.
 pub fn control_into_event(
     payload: ControlPayload,
@@ -264,7 +265,7 @@ pub fn control_into_event(
             message_id,
         }),
 
-        // The remaining categories (events, threads, game servers,
+        // The remaining categories (events, game servers,
         // governance, voice, admin delegation, bootstrap, sync, system)
         // are mapped by `into_event_rest` to keep this method under the
         // clippy::too_many_lines limit. They are listed explicitly rather
@@ -275,9 +276,6 @@ pub fn control_into_event(
         | ControlPayload::EventDeleted { .. }
         | ControlPayload::EventRsvpChanged { .. }
         | ControlPayload::EventReminder { .. }
-        | ControlPayload::ThreadCreated { .. }
-        | ControlPayload::ThreadMessageReceived { .. }
-        | ControlPayload::ThreadArchived { .. }
         | ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }
         | ControlPayload::GovernanceUpdated { .. }
@@ -316,7 +314,17 @@ pub fn control_into_event(
         // rotation ack path — and none has a meaning in a subscriber's
         // event stream. Listed by name rather than caught by `_` so a
         // new variant still has to be classified here.
-        ControlPayload::MekTransferAck(_)
+        //
+        // Threads (plan E3.1 E3f): the Host's channel adapter stores each
+        // one and publishes its event. A reply's notification carries the
+        // sealed body but not the subkey and Lamport position its AAD
+        // binds, so only the Host, reading the reply from the thread
+        // record, has the body the event carries; mapping them here as
+        // well would publish each twice, the reply once without its body.
+        ControlPayload::ThreadCreated { .. }
+        | ControlPayload::ThreadMessageReceived { .. }
+        | ControlPayload::ThreadArchived { .. }
+        | ControlPayload::MekTransferAck(_)
         | ControlPayload::RequestSegmentExpansion { .. }
         | ControlPayload::VoiceJoinAck { .. }
         | ControlPayload::VoiceJoinConfirmed { .. }

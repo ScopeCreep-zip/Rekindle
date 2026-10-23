@@ -92,6 +92,20 @@ pub fn host_governance(
         .ok_or(rekindle_db::NotLoggedIn)
 }
 
+/// The unlocked Host's channel adapter (`HostChannel`), or `NotLoggedIn`.
+///
+/// # Errors
+/// `NotLoggedIn` while no identity is unlocked.
+pub fn host_channel(
+    state: &AppState,
+) -> Result<rekindle_node::host::adapters::channel::HostChannel, rekindle_db::NotLoggedIn> {
+    state
+        .host
+        .current()
+        .map(|host| host.channel())
+        .ok_or(rekindle_db::NotLoggedIn)
+}
+
 /// Routing context configured for safe community/chat transport, or a descriptive error.
 pub fn require_safe_routing_context(
     state: &Arc<AppState>,

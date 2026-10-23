@@ -48,9 +48,9 @@ pub use meks::{
     LiveMekCache,
 };
 pub use node::{
-    app_context, app_handle, friend_list_dht_key, host_governance, is_attached, login_scope,
-    login_scope_or_closed, our_media_route_blob, our_route_blob, own_routes, record_pool,
-    require_safe_routing_context, safe_api_and_routing_context, safe_routing_context,
+    app_context, app_handle, friend_list_dht_key, host_channel, host_governance, is_attached,
+    login_scope, login_scope_or_closed, our_media_route_blob, our_route_blob, own_routes,
+    record_pool, require_safe_routing_context, safe_api_and_routing_context, safe_routing_context,
     spawn_in_login, spawn_in_login_with_token, veilid_api,
 };
 pub use owner_keys::{load_owner, persist_owner};

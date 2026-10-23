@@ -11,7 +11,7 @@ use super::{create_ann, offline_host, seed_registry_community};
 use crate::host::adapters::channel::history::stored_view;
 use crate::host::adapters::channel::HostChannel;
 
-const CHANNEL: &str = "0123456789abcdef0123456789abcdef";
+const BACKFILL_CHANNEL: &str = "0123456789abcdef0123456789abcdef";
 
 fn offer() -> AttachmentOffer {
     AttachmentOffer {
@@ -62,13 +62,13 @@ async fn a_backfilled_message_keeps_its_attachment() {
     let owner = create_ann(&host).await.public_key;
     seed_registry_community(&host, &owner).await;
     HostChannel::new(&host.ctx)
-        .store_record_messages(&owner, CHANNEL, &[record_message()])
+        .store_record_messages(&owner, BACKFILL_CHANNEL, &[record_message()])
         .await
         .unwrap();
     let db = host.ctx.db.current().unwrap();
     let key = owner.clone();
     let stored = db
-        .call(move |conn| rows::page(conn, &key, CHANNEL, None, 10))
+        .call(move |conn| rows::page(conn, &key, BACKFILL_CHANNEL, None, 10))
         .await
         .unwrap();
     assert_eq!(stored.len(), 1);
