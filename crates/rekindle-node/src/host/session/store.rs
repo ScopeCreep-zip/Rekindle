@@ -230,6 +230,8 @@ pub struct NewMembership {
     /// Our member record's owner keypair `K_M(p)` (the vault's
     /// `MemberRecordOwner`, plan E3.2).
     pub member_record_owner: Option<zeroize::Zeroizing<String>>,
+    /// Our card's X25519 HPKE secret (the vault's `MemberHpkeSecret`).
+    pub member_hpke_secret: Option<zeroize::Zeroizing<[u8; 32]>>,
     /// The pinned `GenesisCert` as the anchor holds it
     /// (`communities.genesis_cert`).
     pub genesis_cert: Option<Vec<u8>>,
@@ -237,8 +239,8 @@ pub struct NewMembership {
     pub joined_at: i64,
 }
 
-/// Record a membership: its slot seed, registry keypair and member record
-/// owner into the vault first (a slot seed lost is a slot lost), then its `communities` row,
+/// Record a membership: its slot seed, registry keypair, member record
+/// owner and card HPKE secret into the vault first (a slot seed lost is a slot lost), then its `communities` row,
 /// then the projection.
 ///
 /// # Errors
@@ -256,6 +258,7 @@ pub fn record_membership(
         dht_owner_keypair,
         registry_keypair,
         member_record_owner,
+        member_hpke_secret,
         genesis_cert,
         joined_at,
     } = new;
@@ -299,6 +302,12 @@ pub fn record_membership(
                     keypair.as_bytes(),
                 )
                 .map_err(|e| format!("member record owner: {e}"))?;
+        }
+        if let Some(secret) = &member_hpke_secret {
+            rekindle_vault::typed::community_keys::persist_member_hpke_secret(
+                vault, &community, secret,
+            )
+            .map_err(|e| format!("member hpke secret: {e}"))?;
         }
     }
     communities.install_membership(

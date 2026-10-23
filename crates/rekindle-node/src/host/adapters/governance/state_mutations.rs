@@ -136,6 +136,7 @@ impl HostGovernance {
                 dht_owner_keypair: None,
                 registry_keypair: community.registry_owner_keypair,
                 member_record_owner: Some(community.member_record_owner_keypair),
+                member_hpke_secret: Some(community.member_hpke_secret),
                 genesis_cert: Some(community.genesis_cert),
                 joined_at: self.ctx.clock.now_ms_i64(),
             },

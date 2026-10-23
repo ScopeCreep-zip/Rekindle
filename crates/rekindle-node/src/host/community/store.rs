@@ -8,7 +8,7 @@
 //! overflow chain, the observed roster and the per-member roles, all on the
 //! one [`CommunityState`].
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -35,13 +35,44 @@ pub fn new_map() -> CommunityMap {
 #[derive(Debug, Clone)]
 pub struct CommunityStore {
     map: CommunityMap,
+    /// The display names on members' verified cards (`M`/0), by community
+    /// and pseudonym (plan E3.2).
+    member_cards: Arc<RwLock<BTreeMap<(String, [u8; 32]), String>>>,
 }
 
 impl CommunityStore {
     /// The store over `map` (the Host's `HostStores::communities`).
     #[must_use]
     pub fn new(map: CommunityMap) -> Self {
-        Self { map }
+        Self {
+            map,
+            member_cards: Arc::new(RwLock::new(BTreeMap::new())),
+        }
+    }
+
+    /// The display name on `pseudonym`'s verified card.
+    #[must_use]
+    pub fn member_card_name(
+        &self,
+        community_id: &str,
+        pseudonym: &rekindle_types::id::PseudonymKey,
+    ) -> Option<String> {
+        self.member_cards
+            .read()
+            .get(&(community_id.to_owned(), pseudonym.0))
+            .cloned()
+    }
+
+    /// Remember the display name on `pseudonym`'s verified card.
+    pub fn note_member_card_name(
+        &self,
+        community_id: &str,
+        pseudonym: &rekindle_types::id::PseudonymKey,
+        name: String,
+    ) {
+        self.member_cards
+            .write()
+            .insert((community_id.to_owned(), pseudonym.0), name);
     }
 
     /// The shared map itself.
@@ -493,11 +524,15 @@ impl CommunityStore {
     /// Drop a community — on leave.
     pub fn remove(&self, community_id: &str) {
         self.map.write().remove(community_id);
+        self.member_cards
+            .write()
+            .retain(|(community, _), _| community != community_id);
     }
 
     /// Drop every community. Called when the session ends.
     pub fn clear(&self) {
         self.map.write().clear();
+        self.member_cards.write().clear();
     }
 }
 

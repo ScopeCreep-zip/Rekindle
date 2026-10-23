@@ -328,10 +328,27 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.genesis_cert_impl(community_id)
     }
 
-    /// We hold no verified member card yet: `M`/0 is read once the watch
-    /// ring and record warming read member records (plan E3.2 S7).
-    fn member_card_name(&self, _community_id: &str, _pseudonym: &PseudonymKey) -> Option<String> {
-        None
+    /// From the cards `member_card::read_card` verified (owner pinned to
+    /// the member's `MemberJoined`, signed by the pseudonym).
+    fn member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> Option<String> {
+        self.ctx
+            .communities
+            .member_card_name(community_id, pseudonym)
+    }
+
+    fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String) {
+        self.ctx
+            .communities
+            .note_member_card_name(community_id, pseudonym, name);
+    }
+
+    fn record_port(
+        &self,
+    ) -> Result<std::sync::Arc<dyn rekindle_records::port::RecordPort>, GovernanceRuntimeError>
+    {
+        self.transport()?
+            .require_records()
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("record pool: {e}")))
     }
 
     async fn governance_ops(

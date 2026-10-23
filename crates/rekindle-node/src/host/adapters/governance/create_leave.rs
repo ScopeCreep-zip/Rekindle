@@ -203,6 +203,7 @@ impl HostGovernance {
             if let Err(e) = vault.delete(&slot) {
                 tracing::warn!(community, error = %e, "slot keypair not deleted");
             }
+            rekindle_vault::typed::community_keys::delete_member_hpke_secret(vault, community);
         }
         if let Some(shell) = &self.ctx.shell {
             shell.community_left(community);

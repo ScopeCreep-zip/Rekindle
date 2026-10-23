@@ -39,6 +39,7 @@ pub mod join;
 pub mod join_flow;
 pub mod join_gate;
 pub mod join_stages;
+pub mod member_card;
 pub mod membership_events;
 pub mod moderation;
 pub mod op_log;

@@ -11,10 +11,11 @@
 //! its registry slot (E3.4 replaces the claim).
 //!
 //! **Stops before host state.** Nothing is written to `M` here: the host
-//! stores `K_M(p)` in its vault and the community row first (the key is
-//! durable before anything is published), then stores the walked ops and
-//! ours and publishes ours, whose sender appends it to `M`/2 and writes
-//! `M`/3 after it.
+//! stores `K_M(p)` and the card's HPKE secret in its vault and the
+//! community row first (the keys are durable before anything is
+//! published), then stores the walked ops and ours and publishes `M` in
+//! §4.4's order (`crate::member_card::publish_own_record`): the card
+//! `M`/0, ours on `M`/2 with `M`/3 after it, then the beat `M`/1.
 
 use rekindle_crypto::keypair_text;
 use rekindle_governance::merge;
@@ -40,6 +41,9 @@ pub struct JoinerRecord {
     pub record_key: String,
     /// `K_M(p)`'s keypair text, for the host's vault.
     pub owner_keypair: Zeroizing<String>,
+    /// Our card's X25519 HPKE secret in this community, for the host's
+    /// vault (durable before the card is published).
+    pub hpke_secret: Zeroizing<[u8; 32]>,
 }
 
 /// Everything the join produced. The caller turns this into its own state
@@ -138,6 +142,7 @@ async fn create_member_record<D: GovernanceRuntimeDeps>(
         JoinerRecord {
             record_key: info.record_key,
             owner_keypair: text,
+            hpke_secret: crate::member_card::new_hpke_secret(deps.rng().as_ref()),
         },
         owner,
     ))

@@ -55,6 +55,7 @@ async fn writes_come_back_in_the_next_projection() {
             dht_owner_keypair: None,
             registry_keypair: Some("reg-kp".into()),
             member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
+            member_hpke_secret: Some(zeroize::Zeroizing::new([7; 32])),
             genesis_cert: None,
             joined_at: 1,
         },

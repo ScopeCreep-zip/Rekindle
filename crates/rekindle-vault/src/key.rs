@@ -73,6 +73,11 @@ pub enum VaultKey {
     MemberRecordOwner {
         community: String,
     },
+    /// Our member card's X25519 HPKE secret in a community (plan E3.2, the
+    /// card's `hpkeKey`) — `("communities", "member_hpke_secret_{community}")`.
+    MemberHpkeSecret {
+        community: String,
+    },
 
     /// Audit chain MAC key — `("audit", "mac_key")`.
     AuditMacKey,
@@ -135,7 +140,8 @@ impl VaultKey {
             | Self::SlotKeypair { .. }
             | Self::RegistryKeypair { .. }
             | Self::SlotSeed { .. }
-            | Self::MemberRecordOwner { .. } => "communities",
+            | Self::MemberRecordOwner { .. }
+            | Self::MemberHpkeSecret { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
             Self::ClientKey { .. } => "clients",
         }
@@ -188,6 +194,7 @@ impl VaultKey {
             Self::RegistryKeypair { community } => ("registry_keypair", vec![s(community)]),
             Self::SlotSeed { community } => ("slot_seed", vec![s(community)]),
             Self::MemberRecordOwner { community } => ("member_record_owner", vec![s(community)]),
+            Self::MemberHpkeSecret { community } => ("member_hpke_secret", vec![s(community)]),
             Self::AuditMacKey => ("mac_key", vec![]),
             Self::AuditTail => ("tail", vec![]),
             Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
@@ -266,6 +273,9 @@ impl VaultKey {
             ("member_record_owner", [c]) => Self::MemberRecordOwner {
                 community: c.clone(),
             },
+            ("member_hpke_secret", [c]) => Self::MemberHpkeSecret {
+                community: c.clone(),
+            },
             ("mac_key", []) => Self::AuditMacKey,
             ("tail", []) => Self::AuditTail,
             ("client", [k]) => Self::ClientKey {
@@ -335,6 +345,7 @@ mod tests {
             VaultKey::RegistryKeypair { community: c() },
             VaultKey::SlotSeed { community: c() },
             VaultKey::MemberRecordOwner { community: c() },
+            VaultKey::MemberHpkeSecret { community: c() },
             VaultKey::AuditMacKey,
             VaultKey::AuditTail,
             VaultKey::ClientKey {

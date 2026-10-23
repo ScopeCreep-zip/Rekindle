@@ -1,11 +1,15 @@
 //! Community-level keys: the per-member SMPL slot keypair, the registry
 //! owner keypair and the slot seed. MEKs (community and channel scopes,
-//! every generation) are in [`crate::typed::mek`].
+//! every generation) are in [`crate::typed::mek`]. The member card's HPKE
+//! secret (plan E3.2) is persisted strictly: the card publishes its public
+//! half, so a secret not stored is a card no one can seal to.
 //!
 //! Persisting is best-effort: a failure is logged and the key lives in
 //! memory until the next successful write.
 
-use crate::{VaultKey, VaultStore};
+use zeroize::Zeroizing;
+
+use crate::{VaultError, VaultKey, VaultStore};
 
 /// Persist a community SMPL slot keypair to the keystore.
 ///
@@ -114,5 +118,53 @@ pub fn delete_slot_seed(vault: &VaultStore, community_id: &str) {
         community: community_id.to_string(),
     }) {
         tracing::warn!(error = %e, community = %community_id, "failed to delete slot seed");
+    }
+}
+
+/// Store our member card's X25519 HPKE secret for `community_id`, before
+/// the card that carries its public half is published.
+///
+/// # Errors
+/// The vault write failed.
+pub fn persist_member_hpke_secret(
+    vault: &VaultStore,
+    community_id: &str,
+    secret: &[u8; 32],
+) -> Result<(), VaultError> {
+    vault.put(
+        &VaultKey::MemberHpkeSecret {
+            community: community_id.to_string(),
+        },
+        secret,
+    )
+}
+
+/// Our member card's X25519 HPKE secret for `community_id`, if stored.
+///
+/// # Errors
+/// The vault read failed, or the stored value is not 32 bytes.
+pub fn load_member_hpke_secret(
+    vault: &VaultStore,
+    community_id: &str,
+) -> Result<Option<Zeroizing<[u8; 32]>>, VaultError> {
+    let Some(bytes) = vault.get(&VaultKey::MemberHpkeSecret {
+        community: community_id.to_string(),
+    })?
+    else {
+        return Ok(None);
+    };
+    let secret: [u8; 32] = bytes
+        .as_slice()
+        .try_into()
+        .map_err(|_| VaultError::Schema(format!("member hpke secret is {} bytes", bytes.len())))?;
+    Ok(Some(Zeroizing::new(secret)))
+}
+
+/// Forget our member card's HPKE secret for `community_id` — on leave.
+pub fn delete_member_hpke_secret(vault: &VaultStore, community_id: &str) {
+    if let Err(e) = vault.delete(&VaultKey::MemberHpkeSecret {
+        community: community_id.to_string(),
+    }) {
+        tracing::warn!(error = %e, community = %community_id, "failed to delete member hpke secret");
     }
 }

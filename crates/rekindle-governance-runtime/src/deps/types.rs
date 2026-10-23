@@ -137,4 +137,8 @@ pub struct CommunityInsert {
     /// `K_M(p)`'s keypair text: stored as
     /// `VaultKey::MemberRecordOwner{community}` before the row (D1).
     pub member_record_owner_keypair: zeroize::Zeroizing<String>,
+    /// Our card's X25519 HPKE secret: stored as
+    /// `VaultKey::MemberHpkeSecret{community}` before the row, so before
+    /// the card that carries its public half.
+    pub member_hpke_secret: zeroize::Zeroizing<[u8; 32]>,
 }

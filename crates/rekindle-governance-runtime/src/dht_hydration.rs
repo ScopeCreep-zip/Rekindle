@@ -237,6 +237,7 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
     });
 
     tracing::info!(community = %community_id, "rebuilt governance state from the op set");
+    crate::member_card::refresh_pending_cards(deps, community_id).await;
 
     for banned_pseudonym in new_bans {
         deps.spawn_text_mek_rotation_for_ban(community_id, &banned_pseudonym);

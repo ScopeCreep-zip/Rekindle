@@ -267,6 +267,8 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     drop(k_m);
     let member_key = member.record_key.clone();
     deps.release_record(member.lease).await;
+    let writer = k_m_text.clone();
+    let hpke_secret = crate::member_card::new_hpke_secret(deps.rng().as_ref());
 
     let cert = GenesisCert {
         name: name.to_string(),
@@ -360,17 +362,42 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         governance_state: gov_state,
         creator_role_ids: creator_role_ids.clone(),
         genesis_cert: cert_bytes,
-        member_record: member_key,
+        member_record: member_key.clone(),
         member_record_owner_keypair: k_m_text,
+        member_hpke_secret: hpke_secret.clone(),
     };
     deps.insert_community(insert);
 
-    // The genesis ops into the op store (after the row they reference),
-    // then onto the governance-op stream, which appends them to M(p).
-    for op in genesis_ops {
-        deps.store_governance_op(&anchor_key, &op).await?;
-        deps.publish_governance_op(&anchor_key, op.encoded).await?;
-    }
+    // M(p) in §4.4's order: the card first (the record is openable), the
+    // genesis ops into the op store (after the row they reference) and onto
+    // the governance-op stream, which appends them to M/2 and writes M/3,
+    // then the beat.
+    let port = deps.record_port()?;
+    let own = crate::member_card::OwnRecord {
+        community_id: &anchor_key,
+        record: &member_key,
+        writer: &writer,
+        pseudonym: &pseudonym_signing,
+    };
+    let profile = crate::member_card::OwnProfile {
+        display_name: deps.identity_display_name(),
+        status: deps.identity_status(),
+        now_ms: deps.clock().now_ms(),
+    };
+    let publish_ops = async {
+        for op in genesis_ops {
+            deps.store_governance_op(&anchor_key, &op)
+                .await
+                .map_err(|e| e.to_string())?;
+            deps.publish_governance_op(&anchor_key, op.encoded)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    };
+    crate::member_card::publish_own_record(&*port, &own, &profile, &hpke_secret, publish_ops)
+        .await
+        .map_err(|e| GovernanceRuntimeError::Adapter(format!("origin: {e}")))?;
 
     deps.ensure_files_cache_open(&anchor_key);
     deps.persist_discovered_registry_members(

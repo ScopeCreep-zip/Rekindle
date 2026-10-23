@@ -51,23 +51,20 @@ impl HostGovernance {
                 dht_owner_keypair: None,
                 registry_keypair: None,
                 member_record_owner: Some(outcome.member.owner_keypair.clone()),
+                member_hpke_secret: Some(outcome.member.hpke_secret.clone()),
                 genesis_cert: Some(outcome.cert_bytes.clone()),
                 joined_at,
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
-        // `K_M(p)` and the row are durable: the walked ops and our
-        // `MemberJoined` into the op store, the merge, then ours published
-        // (its sender appends it to `M`/2 and writes `M`/3).
+        // `K_M(p)`, the card's HPKE secret and the row are durable: the
+        // walked ops and our `MemberJoined` into the op store, the merge,
+        // then `M` in §4.4's order.
         self.store_join_ops(&id, &outcome).await?;
         rekindle_governance_runtime::rebuild_governance(self, &id).await;
-        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::publish_governance_op(
-            self,
-            &id,
-            outcome.joined.encoded.clone(),
-        )
-        .await
-        .map_err(|e| format!("community joined, MemberJoined not published: {e}"))?;
+        self.publish_joined_record(&id, &outcome)
+            .await
+            .map_err(|e| format!("community joined, member record not published: {e}"))?;
         self.store_own_member_row(&id, &pseudonym, joined_at)
             .await?;
         self.announce_join(&id);
@@ -86,6 +83,43 @@ impl HostGovernance {
             known_members: u32::try_from(outcome.initial_presence.known_members.len())
                 .unwrap_or(u32::MAX),
         })
+    }
+
+    /// Our `M` in §4.4's order: the card (`M`/0), our `MemberJoined` on
+    /// `M`/2 with `M`/3 after it (the governance-op stream's send), then
+    /// the beat (`M`/1).
+    async fn publish_joined_record(
+        &self,
+        community: &str,
+        outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
+    ) -> Result<(), String> {
+        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        use rekindle_governance_runtime::member_card::{publish_own_record, OwnProfile, OwnRecord};
+        let port = self.record_port().map_err(|e| e.to_string())?;
+        let own = OwnRecord {
+            community_id: community,
+            record: &outcome.member.record_key,
+            writer: &outcome.member.owner_keypair,
+            pseudonym: &outcome.identity.pseudonym_signing,
+        };
+        let profile = OwnProfile {
+            display_name: self.ctx.identity_display_name(),
+            status: self.identity_status(),
+            now_ms: self.ctx.clock.now_ms(),
+        };
+        let publish_ops = async {
+            self.publish_governance_op(community, outcome.joined.encoded.clone())
+                .await
+                .map_err(|e| format!("MemberJoined not published: {e}"))
+        };
+        publish_own_record(
+            &*port,
+            &own,
+            &profile,
+            &outcome.member.hpke_secret,
+            publish_ops,
+        )
+        .await
     }
 
     async fn store_join_ops(
@@ -191,3 +225,7 @@ impl HostGovernance {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "join_tests.rs"]
+mod tests;

@@ -135,6 +135,11 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// descriptor names it (`RecordPort::owner_of`): the pin of `A` to the
     /// cert's `K_A` and of `M(p)` to its `memberRecordOwner`.
     fn owner_of(&self, lease: LeaseId) -> Result<String, GovernanceRuntimeError>;
+    /// The record port our member record is written and read through
+    /// (`crate::member_card`).
+    fn record_port(
+        &self,
+    ) -> Result<std::sync::Arc<dyn rekindle_records::port::RecordPort>, GovernanceRuntimeError>;
 
     async fn create_smpl_record(
         &self,
@@ -373,6 +378,9 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// The display name on `pseudonym`'s verified member card (`M`/0), when
     /// we hold one; never a field from an unverified peer payload.
     fn member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> Option<String>;
+    /// Remember the display name on `pseudonym`'s card, which
+    /// `crate::member_card::read_card` verified.
+    fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String);
     /// Every op `governance_ops` holds for the community.
     async fn governance_ops(
         &self,
