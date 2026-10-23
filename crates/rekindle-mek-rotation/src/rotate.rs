@@ -21,6 +21,31 @@ use crate::error::MekRotationError;
 use crate::{wait_for_rotation_slot, RotationRecipient};
 
 use crate::pseudonym_hex::{pseudonym_from_hex, pseudonym_hex};
+use rekindle_types::id::PseudonymKey;
+
+/// The members who may be elected to rotate after `departed` leaves: the
+/// online recipients and us, when the governance lets each rotate. The
+/// departed member is never one, even when we are it: the kick's notice
+/// reaches the kicked node too, and a rotator it elected would mint the
+/// key that is meant to shut it out.
+fn rotation_candidates(
+    departed: &PseudonymKey,
+    recipients: &[RotationRecipient],
+    me: Option<PseudonymKey>,
+    may_rotate: impl Fn(&PseudonymKey) -> bool,
+) -> Vec<PseudonymKey> {
+    let mut candidates = recipients
+        .iter()
+        .filter_map(|r| pseudonym_from_hex(&r.pseudonym_hex))
+        .collect::<Vec<_>>();
+    if let Some(me) = me {
+        if !candidates.contains(&me) {
+            candidates.push(me);
+        }
+    }
+    candidates.retain(|candidate| candidate != departed && may_rotate(candidate));
+    candidates
+}
 
 pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     deps: &D,
@@ -35,16 +60,12 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
     // on the candidates. With none online, nobody rotates: the rotation
     // waits for an eligible member rather than falling to one readers
     // would refuse.
-    let mut candidate_keys = recipients
-        .iter()
-        .filter_map(|r| pseudonym_from_hex(&r.pseudonym_hex))
-        .collect::<Vec<_>>();
-    if let Some(me) = deps.my_pseudonym(community_id) {
-        if !candidate_keys.contains(&me) {
-            candidate_keys.push(me);
-        }
-    }
-    candidate_keys.retain(|candidate| deps.may_rotate(community_id, candidate));
+    let candidate_keys = rotation_candidates(
+        &departed,
+        &recipients,
+        deps.my_pseudonym(community_id),
+        |candidate| deps.may_rotate(community_id, candidate),
+    );
     if candidate_keys.is_empty() {
         tracing::info!(community = %community_id, "departure rotation pending — no member who may rotate is online");
         return Ok(());
@@ -217,4 +238,39 @@ fn install_minted<D: MekDistributeDeps>(
     }
     deps.persist_received_mek(community_id, scope, mek);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(b: u8) -> PseudonymKey {
+        PseudonymKey([b; 32])
+    }
+
+    fn recipient(b: u8) -> RotationRecipient {
+        RotationRecipient {
+            pseudonym_hex: pseudonym_hex(&key(b)),
+            route_blob: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_departed_member_is_never_a_rotation_candidate_even_as_us() {
+        let departed = key(2);
+        let candidates = rotation_candidates(
+            &departed,
+            &[recipient(1), recipient(3)],
+            Some(key(2)),
+            |_| true,
+        );
+        assert_eq!(candidates, vec![key(1), key(3)]);
+    }
+
+    #[test]
+    fn we_join_the_candidates_when_the_governance_lets_us_rotate() {
+        let candidates =
+            rotation_candidates(&key(9), &[recipient(1)], Some(key(4)), |c| *c != key(1));
+        assert_eq!(candidates, vec![key(4)]);
+    }
 }
