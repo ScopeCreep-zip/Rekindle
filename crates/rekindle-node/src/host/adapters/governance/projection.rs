@@ -158,17 +158,22 @@ fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
     cs.my_role_ids.sort_unstable();
 }
 
-/// A banned member, and one the durable kick `MemberRemoved` took out of
-/// the merged `members` (plan E3.2; a re-join after the removal is in
-/// `members` again), stops receiving our gossip and leaves the member
-/// lists at once (architecture §13).
-fn prune_departed(cs: &mut CommunityState, gov: &GovernanceState) {
-    let departed: HashSet<String> = gov
-        .bans
+/// The members merged governance has departed, by hex pseudonym: a banned
+/// member, and one the durable kick `MemberRemoved` took out of the merged
+/// `members` (plan E3.2; a re-join after the removal is in `members`
+/// again). The overlay prunes them and the member list leaves them out.
+pub(crate) fn departed(gov: &GovernanceState) -> HashSet<String> {
+    gov.bans
         .iter()
         .chain(gov.removed.keys().filter(|p| !gov.members.contains_key(*p)))
         .map(|p| hex::encode(p.0))
-        .collect();
+        .collect()
+}
+
+/// A [`departed`] member stops receiving our gossip and leaves the known
+/// members at once (architecture §13).
+fn prune_departed(cs: &mut CommunityState, gov: &GovernanceState) {
+    let departed = departed(gov);
     if departed.is_empty() {
         return;
     }

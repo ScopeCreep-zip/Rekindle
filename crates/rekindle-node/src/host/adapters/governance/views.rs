@@ -213,11 +213,13 @@ impl HostGovernance {
             .map_err(|e| format!("community members: {e}"))?;
         let my_status = self.ctx.own_presence.status().as_wire_str().to_owned();
         let now = self.ctx.clock.now_secs();
-        // Bans and timeouts are the merged governance's (plan E3.1 F2): a
-        // banned member leaves the list, and a timeout ends at its time.
+        // Bans, removals and timeouts are the merged governance's (plan
+        // E3.1 F2, E3.2): a banned or removed member leaves the list, as the
+        // merge decides it on every reader (the roster row is deleted only
+        // where the departure was seen first-hand), and a timeout ends at
+        // its time.
         let governance = self.governance_state_impl(community).unwrap_or_default();
-        let banned: std::collections::HashSet<String> =
-            governance.bans.iter().map(|p| hex::encode(p.0)).collect();
+        let departed = super::projection::departed(&governance);
         let timeout_until = |pseudonym: &str| {
             governance
                 .timeouts
@@ -228,7 +230,7 @@ impl HostGovernance {
         };
         Ok(rows
             .into_iter()
-            .filter(|row| !banned.contains(&row.pseudonym_key))
+            .filter(|row| !departed.contains(&row.pseudonym_key))
             .map(|row| {
                 let is_me = overlay.me.as_deref() == Some(row.pseudonym_key.as_str());
                 let online = overlay.online.get(&row.pseudonym_key);

@@ -29,6 +29,21 @@ async fn listed(community: &Community, i: usize, pseudonym: &str) -> Option<Valu
         })
 }
 
+/// The key generations node `i` holds, by scope (the age a listing carries
+/// moves with the clock).
+async fn held_keys(community: &Community, i: usize) -> Vec<(Value, Value)> {
+    community
+        .mek_list(i)
+        .await
+        .as_array()
+        .map(|keys| {
+            keys.iter()
+                .map(|k| (k["channel_id"].clone(), k["generation"].clone()))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// The creator bans a member: the third member's list loses it, the ban
 /// list names it, and a member without `BAN_MEMBERS` is refused.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -154,7 +169,7 @@ async fn kick_removes_member_and_refuses_its_key_request() {
     }
     community.sim.quiesce().await;
     let general = community.general_id(1).await;
-    let held_before = community.mek_list(1).await;
+    let held_before = held_keys(&community, 1).await;
     community.nodes[1]
         .ok(IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::MekRequest {
@@ -166,7 +181,7 @@ async fn kick_removes_member_and_refuses_its_key_request() {
         .await;
     community.sim.quiesce().await;
     assert_eq!(
-        community.mek_list(1).await,
+        held_keys(&community, 1).await,
         held_before,
         "no responder answers the kicked member's RequestMEK"
     );
