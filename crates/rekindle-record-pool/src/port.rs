@@ -44,6 +44,10 @@ impl RecordPort for RecordPool {
         RecordPool::key_of(self, lease)
     }
 
+    fn owner_of(&self, lease: LeaseId) -> Result<String, PortError> {
+        RecordPool::owner_of(self, lease)
+    }
+
     async fn release(&self, lease: LeaseId) {
         RecordPool::release(self, lease).await;
     }

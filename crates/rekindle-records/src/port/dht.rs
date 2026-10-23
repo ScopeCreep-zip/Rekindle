@@ -27,6 +27,12 @@ pub struct RecordDescriptor {
     /// The owner keypair, when the backend holds the owner's secret (always
     /// after a create).
     pub owner: Option<WriterKey>,
+    /// The owner's public key text, which the record key hashes and the
+    /// descriptor's signature is made with
+    /// (`storage_manager/create_record.rs:88-104`, `record_key.rs:67-94`,
+    /// fork 0cd847de): a reader that compares it with the key it expects
+    /// pins the record to that owner.
+    pub owner_public: String,
     /// The schema's subkey count.
     pub subkey_count: u32,
 }

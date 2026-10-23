@@ -82,12 +82,14 @@ use tokio_util::sync::CancellationToken;
 pub const RETRY_BUDGET: Duration = Duration::from_secs(30);
 /// Wait between retries while the node already reports readiness.
 const RETRY_DELAY: Duration = Duration::from_secs(1);
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct OpenRecord {
     pub(crate) key_cap: usize,
     /// The record's subkey count (from its schema), for a whole-record
     /// watch.
     pub(crate) subkey_count: u32,
+    /// The descriptor's owner public key text ([`RecordDescriptor::owner_public`]).
+    pub(crate) owner: String,
 }
 
 /// Which calls the pool admits (plan C7.6g).
@@ -351,18 +353,20 @@ impl RecordPool {
             .records
             .lock()
             .get(key)
-            .copied()
+            .cloned()
             .ok_or(PortError::LeaseNotHeld(id.0))?;
         Ok((key.to_string(), opened))
     }
 
-    fn remember(&self, key: &str, subkey_count: u32) {
+    fn remember(&self, key: &str, descriptor: &RecordDescriptor) {
+        let subkey_count = descriptor.subkey_count;
         let cap = max_subkey_bytes(SchemaShape { subkey_count });
         self.records.lock().insert(
             key.to_string(),
             OpenRecord {
                 key_cap: cap,
                 subkey_count,
+                owner: descriptor.owner_public.clone(),
             },
         );
     }
@@ -406,7 +410,7 @@ impl RecordPool {
             .await
         {
             Ok(descriptor) => {
-                self.remember(key, descriptor.subkey_count);
+                self.remember(key, &descriptor);
                 if self.table.lock().writer(&name).is_some() {
                     self.wake_held(&name);
                 }
@@ -441,10 +445,19 @@ impl RecordPool {
             .owner
             .clone()
             .ok_or_else(|| PortError::Dht("created record has no owner secret".into()))?;
-        let key = descriptor.key;
+        let key = descriptor.key.clone();
         let (id, _) = self.table.lock().acquire(&key, Some(keypair.clone()));
-        self.remember(&key, descriptor.subkey_count);
+        self.remember(&key, &descriptor);
         Ok((id, key, keypair))
+    }
+
+    /// The owner public key text of the record a lease borrows, as its
+    /// descriptor names it.
+    ///
+    /// # Errors
+    /// The lease is not held.
+    pub fn owner_of(&self, id: LeaseId) -> Result<String, PortError> {
+        self.lookup(id).map(|(_, opened)| opened.owner)
     }
 
     /// The record key a lease borrows, while it is held.

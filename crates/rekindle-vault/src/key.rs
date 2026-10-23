@@ -68,6 +68,11 @@ pub enum VaultKey {
     SlotSeed {
         community: String,
     },
+    /// Our `MemberRecord` owner keypair `K_M` in a community (plan E3.2,
+    /// ADR 0011) — `("communities", "member_record_owner_{community}")`.
+    MemberRecordOwner {
+        community: String,
+    },
 
     /// Audit chain MAC key — `("audit", "mac_key")`.
     AuditMacKey,
@@ -129,7 +134,8 @@ impl VaultKey {
             | Self::ChannelMekGenerationsIndex { .. }
             | Self::SlotKeypair { .. }
             | Self::RegistryKeypair { .. }
-            | Self::SlotSeed { .. } => "communities",
+            | Self::SlotSeed { .. }
+            | Self::MemberRecordOwner { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
             Self::ClientKey { .. } => "clients",
         }
@@ -181,6 +187,7 @@ impl VaultKey {
             Self::SlotKeypair { community } => ("slot_keypair", vec![s(community)]),
             Self::RegistryKeypair { community } => ("registry_keypair", vec![s(community)]),
             Self::SlotSeed { community } => ("slot_seed", vec![s(community)]),
+            Self::MemberRecordOwner { community } => ("member_record_owner", vec![s(community)]),
             Self::AuditMacKey => ("mac_key", vec![]),
             Self::AuditTail => ("tail", vec![]),
             Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
@@ -256,6 +263,9 @@ impl VaultKey {
             ("slot_seed", [c]) => Self::SlotSeed {
                 community: c.clone(),
             },
+            ("member_record_owner", [c]) => Self::MemberRecordOwner {
+                community: c.clone(),
+            },
             ("mac_key", []) => Self::AuditMacKey,
             ("tail", []) => Self::AuditTail,
             ("client", [k]) => Self::ClientKey {
@@ -324,6 +334,7 @@ mod tests {
             VaultKey::DmParticipantOwner { conversation: c() },
             VaultKey::RegistryKeypair { community: c() },
             VaultKey::SlotSeed { community: c() },
+            VaultKey::MemberRecordOwner { community: c() },
             VaultKey::AuditMacKey,
             VaultKey::AuditTail,
             VaultKey::ClientKey {

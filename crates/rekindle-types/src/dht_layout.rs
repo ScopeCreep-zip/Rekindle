@@ -200,9 +200,90 @@ pub mod request_inbox {
     pub const MAX_SUBKEY_VALUE_LEN: usize = 32_768;
 }
 
+/// Subkey layout for a community's anchor `A` (plan E3.2, ADR 0011): a
+/// DFLT(1) record whose one subkey holds the `GenesisCert`, written once by
+/// the anchor's owner `K_A`, whose keypair is then discarded. The community
+/// id is `A`'s record key.
+pub mod community_anchor {
+    /// The `GenesisCert`.
+    pub const GENESIS_CERT: u32 = 0;
+    /// Total subkeys to allocate when creating the anchor.
+    pub const SUBKEY_COUNT: u16 = 1;
+}
+
+/// Subkey layout for a member's `MemberRecord` `M(p)` (plan E3.2, D15,
+/// ADR 0011): one DFLT(8) record per member per community, owned by a
+/// random keypair `K_M(p)` only that member holds.
+pub mod member_record {
+    /// The member's per-community card: Cap'n Proto `MemberCard`.
+    pub const CARD: u32 = 0;
+    /// The presence beat: Cap'n Proto `PresenceBeat`.
+    pub const BEAT: u32 = 1;
+    /// The head of the member's governance op log: `GovHead`.
+    pub const GOV_HEAD: u32 = 2;
+    /// The ops the member has seen: `Frontier`, at most
+    /// [`MAX_FRONTIER_REFS`] `OpRef`s.
+    pub const FRONTIER: u32 = 3;
+    /// The member's outbox.
+    pub const OUTBOX: u32 = 4;
+    /// The member's history ad: `HistoryAdRecord`.
+    pub const HISTORY_AD: u32 = 5;
+    /// Subkeys 6 and 7: reserved.
+    pub const FIRST_RESERVED: u32 = 6;
+    /// Most `OpRef`s a [`FRONTIER`] value carries.
+    pub const MAX_FRONTIER_REFS: usize = 64;
+    /// Total subkeys to allocate when creating the record.
+    pub const SUBKEY_COUNT: u16 = 8;
+
+    /// Largest value a subkey of the record accepts:
+    /// `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / o_cnt)` =
+    /// `min(32,768, 1,048,576 / 8)` = 32,768 bytes
+    /// (`veilid-core/src/storage_manager/schema.rs:61-64`, with the two
+    /// constants at `storage_manager/types/mod.rs:14-16`, fork 0cd847de).
+    pub const MAX_SUBKEY_VALUE_LEN: usize = 32_768;
+}
+
+/// Subkey layout for a community's sealed page (plan E3.2): an op-log,
+/// spill or directory page, a DFLT(1) record written once through E2.5's
+/// chain primitive (`rekindle_records::chain`), its owner keypair then
+/// discarded.
+pub mod sealed_page {
+    /// The page's content.
+    pub const PAGE: u32 = 0;
+    /// Total subkeys to allocate when creating the page.
+    pub const SUBKEY_COUNT: u16 = 1;
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{dm_participant, manifest, prekeys, profile, request_inbox};
+    use super::{
+        community_anchor, dm_participant, manifest, member_record, prekeys, profile, request_inbox,
+        sealed_page,
+    };
+
+    /// Pins the community anchor, the member record (D15) and the sealed
+    /// page: their subkeys are wire-visible to every member.
+    #[test]
+    fn community_layouts_are_pinned() {
+        assert_eq!(community_anchor::GENESIS_CERT, 0);
+        assert_eq!(community_anchor::SUBKEY_COUNT, 1);
+        assert_eq!(sealed_page::PAGE, 0);
+        assert_eq!(sealed_page::SUBKEY_COUNT, 1);
+        let map = [
+            member_record::CARD,
+            member_record::BEAT,
+            member_record::GOV_HEAD,
+            member_record::FRONTIER,
+            member_record::OUTBOX,
+            member_record::HISTORY_AD,
+        ];
+        assert_eq!(map, [0, 1, 2, 3, 4, 5]);
+        assert_eq!(member_record::FIRST_RESERVED, 6);
+        assert_eq!(member_record::SUBKEY_COUNT, 8);
+        assert_eq!(member_record::MAX_FRONTIER_REFS, 64);
+        let cap = usize::min(32_768, 1_048_576 / usize::from(member_record::SUBKEY_COUNT));
+        assert_eq!(member_record::MAX_SUBKEY_VALUE_LEN, cap);
+    }
 
     /// Pins the request inbox: the owner subkey, then the writer's, and the
     /// per-subkey cap Veilid derives for two subkeys.

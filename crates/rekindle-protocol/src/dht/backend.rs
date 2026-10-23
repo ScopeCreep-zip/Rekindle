@@ -136,6 +136,7 @@ fn descriptor(descriptor: &DHTRecordDescriptor) -> RecordDescriptor {
         owner: descriptor
             .owner_secret()
             .map(|secret| writer_key(&KeyPair::new_from_parts(descriptor.owner(), secret.value()))),
+        owner_public: descriptor.owner().to_string(),
         subkey_count: u32::try_from(descriptor.schema().subkey_count()).unwrap_or(u32::MAX),
     }
 }

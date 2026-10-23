@@ -192,6 +192,7 @@ impl SimDht {
         Ok(RecordDescriptor {
             key: key.to_string(),
             owner,
+            owner_public: public_text(&record.owner),
             subkey_count: subkey_count(&record.schema),
         })
     }

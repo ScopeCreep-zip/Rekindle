@@ -78,6 +78,10 @@ impl RecordPort for MemPort {
         self.0.lock().leases.get(&lease.0).map(|l| l.0.clone())
     }
 
+    fn owner_of(&self, _: LeaseId) -> Result<String, PortError> {
+        Err(unused())
+    }
+
     async fn release(&self, lease: LeaseId) {
         self.0.lock().leases.remove(&lease.0);
     }

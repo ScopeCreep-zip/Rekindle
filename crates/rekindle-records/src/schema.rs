@@ -102,6 +102,33 @@ pub fn single() -> RecordSchema {
     RecordSchema::Dflt { owner_subkeys: 1 }
 }
 
+/// A community's anchor `A` (plan E3.2, ADR 0011): DFLT(1), its one subkey
+/// the `GenesisCert`; the community id is its record key.
+#[must_use]
+pub fn community_anchor() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::community_anchor::SUBKEY_COUNT,
+    }
+}
+
+/// A member's `MemberRecord` `M(p)` (plan E3.2, D15): DFLT(8), owned by a
+/// keypair only the member holds.
+#[must_use]
+pub fn member_record() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::member_record::SUBKEY_COUNT,
+    }
+}
+
+/// A community's sealed page (op-log, spill or directory; plan E3.2):
+/// DFLT(1), written once, its owner keypair discarded.
+#[must_use]
+pub fn sealed_page() -> RecordSchema {
+    RecordSchema::Dflt {
+        owner_subkeys: layout::sealed_page::SUBKEY_COUNT,
+    }
+}
+
 /// A community channel record: the channel layout's owner subkeys, then a
 /// member page of the layout's size per slot key, in slot order (the slot
 /// keys derive from the community's slot seed).
@@ -129,6 +156,9 @@ mod tests {
         assert_eq!(mailbox().subkey_count(), 1);
         assert_eq!(prekeys().subkey_count(), 101);
         assert_eq!(request_inbox(&[3u8; 32]).subkey_count(), 2);
+        assert_eq!(community_anchor().subkey_count(), 1);
+        assert_eq!(member_record().subkey_count(), 8);
+        assert_eq!(sealed_page().subkey_count(), 1);
         let keys = [[1u8; 32], [2u8; 32]];
         assert_eq!(community_smpl(&keys).subkey_count(), 2);
         assert_eq!(channel(&keys).subkey_count(), 2);

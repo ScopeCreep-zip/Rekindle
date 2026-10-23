@@ -194,6 +194,12 @@ pub trait RecordPort: Send + Sync {
     /// The record key a lease borrows, while it is held.
     fn key_of(&self, lease: LeaseId) -> Option<String>;
 
+    /// The owner public key text of the record a lease borrows, as the
+    /// record's descriptor names it: the key the record key hashes and the
+    /// descriptor is signed with, so comparing it with an expected key pins
+    /// the record to that owner (plan E3.2).
+    fn owner_of(&self, lease: LeaseId) -> Result<String, PortError>;
+
     /// Return a borrow.
     async fn release(&self, lease: LeaseId);
 

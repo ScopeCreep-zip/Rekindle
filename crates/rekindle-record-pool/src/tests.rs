@@ -63,6 +63,7 @@ impl DhtBackend for TestDht {
         Ok(RecordDescriptor {
             key: key.to_string(),
             owner: None,
+            owner_public: "VLD0:test-owner".into(),
             subkey_count: 4,
         })
     }
