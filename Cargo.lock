@@ -7574,6 +7574,7 @@ dependencies = [
  "blake3",
  "proptest",
  "regex",
+ "rekindle-governance",
  "rekindle-secrets",
  "rekindle-types",
  "rekindle-utils",

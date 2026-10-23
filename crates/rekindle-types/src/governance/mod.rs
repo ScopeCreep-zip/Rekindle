@@ -8,9 +8,9 @@
 //! See rekindle-architecture-v2.md §4 for field specifications.
 
 mod entry;
-mod op;
 mod mod_report;
 mod onboarding;
+mod op;
 mod payload;
 mod role_edit;
 
@@ -20,12 +20,12 @@ mod tests;
 mod automod;
 pub use automod::AutoModAction;
 pub use entry::{AdmissionMode, GovernanceEntry};
-pub use op::{GenesisCert, GovernanceOp, InviteProof, OpHash, OpRef};
 pub use mod_report::ModReportTarget;
 pub use onboarding::{
     GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel, MAX_ONBOARDING_GUIDE_STEPS,
     MAX_ONBOARDING_ID_CHARS, MAX_ONBOARDING_OPTIONS_PER_QUESTION, MAX_ONBOARDING_QUESTIONS,
     MAX_ONBOARDING_TITLE_CHARS, MAX_ONBOARDING_WELCOME_CHARS, MAX_WELCOME_SCREEN_CHANNELS,
 };
+pub use op::{GenesisCert, GovernanceOp, InviteProof, OpHash, OpRef};
 pub use payload::GovernanceSubkeyPayload;
 pub use role_edit::ExclusionGroupEdit;

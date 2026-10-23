@@ -238,9 +238,7 @@ pub enum GovernanceEntry {
     },
 
     /// Archive a category.
-    CategoryArchived {
-        category_id: CategoryId,
-    },
+    CategoryArchived { category_id: CategoryId },
 
     /// Set per-channel permission overwrite. CRDT: LWW per (channel_id, target_id).
     PermissionOverwrite {
@@ -355,9 +353,7 @@ pub enum GovernanceEntry {
     },
 
     /// Remove a custom expression. CRDT: OR-Set tombstone by expression_id.
-    ExpressionRemoved {
-        expression_id: [u8; 16],
-    },
+    ExpressionRemoved { expression_id: [u8; 16] },
 
     /// Archive a scheduled event. CRDT: tombstone.
     EventArchived { event_id: EventId },
@@ -514,4 +510,3 @@ pub enum GovernanceEntry {
         join_interval_seconds: u32,
     },
 }
-
