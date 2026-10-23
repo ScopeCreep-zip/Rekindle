@@ -3,9 +3,11 @@
 //! its ack, a session reset, a presence key or a rotation notice to one
 //! peer is framed once, committed as a row of `friend_handshake:<peer>`,
 //! and sent by the outbox until it settles. These are control frames no
-//! `DmAck` answers: a row settles `sent` when its frame leaves, a request
-//! and a first contact (the PreKeyInit carrying our `FriendAccept` or
-//! `SessionResetAccept`) only on its `app_call` receipt (`delivered`: an
+//! `DmAck` answers: a row settles `sent` when its frame leaves, a request,
+//! a first contact (the PreKeyInit carrying our `FriendAccept` or
+//! `SessionResetAccept`) and a presence key (`FriendsKey`: a lost one left
+//! the friend's presence dark until the next rotation, live A/B finding
+//! 36) only on its `app_call` receipt (`delivered`: an
 //! app message has no delivery guarantee, and a request or an accept lost
 //! on the way would leave the row settled and the peer never asked, or
 //! pending for ever; live A/B finding 27), and the `Unfriended` row waits
@@ -127,6 +129,7 @@ async fn attempt_inbox(
 ) -> Attempt {
     use rekindle_records::port::SetOutcome;
     let Ok(Ok(records)) = host.node().map(|node| node.require_records()) else {
+        tracing::debug!("inbox write deferred: the node or its record port is not up");
         return Attempt::Deferred;
     };
     let subkey = rekindle_types::dht_layout::request_inbox::REQUEST;
@@ -137,7 +140,10 @@ async fn attempt_inbox(
         Ok(SetOutcome::Landed | SetOutcome::Unchanged) => Attempt::Sent,
         Ok(SetOutcome::Superseded(value)) if value.data == frame => Attempt::Sent,
         Ok(SetOutcome::Superseded(_)) => Attempt::Wedged(INBOX_TAKEN.to_owned()),
-        Ok(SetOutcome::BelowConsensus | SetOutcome::Offline) => Attempt::Deferred,
+        Ok(outcome @ (SetOutcome::BelowConsensus | SetOutcome::Offline)) => {
+            tracing::debug!(?outcome, "inbox write deferred");
+            Attempt::Deferred
+        }
         Err(e) if refuses(&e) => Attempt::Wedged(format!("inbox write refused: {e}")),
         Err(e) => {
             tracing::debug!(error = %e, "inbox write missed — attempted again");
@@ -181,7 +187,10 @@ async fn commit(
 }
 
 /// Whether a handshake row of `kind` goes by `app_call` and settles only
-/// on its receipt: a request, and a first contact. Every PreKeyInit on
+/// on its receipt: a request, a first contact, and a presence key (the
+/// receiver answers once the frame's ratchet step and its unprocessed row
+/// are committed, `direct::receive_call`, and a duplicate with the same
+/// empty receipt). Every PreKeyInit on
 /// this stream is a first contact ([`enqueue_frame`]'s callers), and the
 /// receiver answers a re-sent one it already opened with the same receipt
 /// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
@@ -189,7 +198,10 @@ async fn commit(
 pub fn receipted(kind: DmTypeId) -> bool {
     matches!(
         kind,
-        DmTypeId::FriendRequest | DmTypeId::FriendAccept | DmTypeId::SessionResetAccept
+        DmTypeId::FriendRequest
+            | DmTypeId::FriendAccept
+            | DmTypeId::SessionResetAccept
+            | DmTypeId::FriendsKey
     )
 }
 
@@ -213,7 +225,10 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
     }
     let (datagram, kind) = match send::datagram_of(host, to, &framed) {
         Ok(sent) => sent,
-        Err(FriendError::Locked | FriendError::NotReady(_)) => return Attempt::Deferred,
+        Err(e @ (FriendError::Locked | FriendError::NotReady(_))) => {
+            tracing::debug!(to = %to, reason = %e, "handshake row deferred");
+            return Attempt::Deferred;
+        }
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
     if receipted(kind) {
@@ -247,7 +262,14 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
     match send::route_send_datagram(host, to, &datagram, kind, true).await {
         Ok(true) if kind == DmTypeId::Unfriended => Attempt::Awaiting,
         Ok(true) => Attempt::Sent,
-        Ok(false) | Err(FriendError::NotReady(_) | FriendError::Locked) => Attempt::Deferred,
+        Ok(false) => {
+            tracing::debug!(to = %to, ?kind, "handshake row deferred: no usable route");
+            Attempt::Deferred
+        }
+        Err(e @ (FriendError::NotReady(_) | FriendError::Locked)) => {
+            tracing::debug!(to = %to, ?kind, reason = %e, "handshake row deferred");
+            Attempt::Deferred
+        }
         Err(e) => Attempt::Wedged(e.to_string()),
     }
 }
@@ -270,13 +292,13 @@ mod tests {
     }
 
     #[test]
-    fn requests_and_first_contacts_wait_for_their_receipt() {
+    fn requests_first_contacts_and_presence_keys_wait_for_their_receipt() {
         assert!(receipted(DmTypeId::FriendRequest));
         assert!(receipted(DmTypeId::FriendAccept));
         assert!(receipted(DmTypeId::SessionResetAccept));
         assert!(!receipted(DmTypeId::FriendReject));
         assert!(!receipted(DmTypeId::Unfriended));
-        assert!(!receipted(DmTypeId::FriendsKey));
+        assert!(receipted(DmTypeId::FriendsKey));
     }
 
     #[test]

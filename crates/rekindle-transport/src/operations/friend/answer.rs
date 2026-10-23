@@ -115,6 +115,7 @@ pub async fn reject(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)
     })
     .await?;
+    state::discard_pending_dms(host, public_key, "the request was rejected").await?;
     if let Some(invite_id) = &answer.invite_id {
         invites::mark_rejected(host, invite_id);
     }
@@ -147,6 +148,7 @@ pub async fn cancel(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     })
     .await?;
     state::take(host, public_key);
+    state::discard_pending_dms(host, public_key, "the request was cancelled").await?;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));
@@ -177,6 +179,7 @@ pub async fn expire_stale_requests(host: &dyn FriendHost) -> Result<(), FriendEr
     }
     for public_key in &outgoing {
         state::take(host, public_key);
+        state::discard_pending_dms(host, public_key, "the request expired").await?;
         host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: public_key.clone(),
         }));

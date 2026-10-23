@@ -34,6 +34,9 @@ pub async fn block(host: &dyn FriendHost, public_key: &str) -> Result<(), Friend
     let owner = state::owner(host)?;
     let now = host.clock().now_ms_i64();
     let name = state::known_name(host, &owner, public_key).await?;
+    // Settled before the block's transaction deletes their queue, so each
+    // message shows failed rather than vanishing.
+    state::discard_pending_dms(host, public_key, "the user was blocked").await?;
     let pk = public_key.to_string();
     // The friend, their request, their queue, the sessions and the block:
     // one transaction (plan audit D-1).

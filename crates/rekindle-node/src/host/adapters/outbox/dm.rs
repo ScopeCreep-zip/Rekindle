@@ -384,6 +384,11 @@ impl DmOutbox for DmStream {
         self.0.discard(client_id).await.map_err(|e| failed(&e))
     }
 
+    async fn discard_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError> {
+        let discarded = self.0.discard_streams(StreamKind::Dm, peer, reason).await;
+        discarded.map_err(|e| failed(&e))
+    }
+
     async fn retry(&self, client_id: &str) -> Result<bool, FriendError> {
         self.0.retry(client_id).await.map_err(|e| failed(&e))
     }

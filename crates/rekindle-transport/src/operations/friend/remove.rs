@@ -35,6 +35,7 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     state::update(host, public_key, |f| {
         f.friendship_state = FriendshipState::Removing;
     });
+    state::discard_pending_dms(host, public_key, "the friend was removed").await?;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));

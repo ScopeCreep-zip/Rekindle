@@ -283,3 +283,25 @@ pub(crate) async fn acknowledge_unfriended(host: &dyn FriendHost, public_key: &s
         }
     }
 }
+
+/// The friendship with `peer`, or our attempt at one, ended (`why`: a
+/// cancel, a reject, a removal, a block, an expiry): our pending messages
+/// to them are discarded through the outbox, each settling `failed` with
+/// the reason, so none reaches a later friendship and none holds the
+/// stream (live A/B findings 31, 35; Signal and Matrix drop undelivered
+/// sends to a removed contact). Every ending path calls it.
+///
+/// # Errors
+/// The outbox is not running or its storage failed.
+pub(crate) async fn discard_pending_dms(
+    host: &dyn FriendHost,
+    peer: &str,
+    why: &str,
+) -> Result<(), FriendError> {
+    let reason = format!("not delivered: {why}");
+    let discarded = host.outbox()?.discard_to(peer, &reason).await?;
+    if discarded > 0 {
+        tracing::info!(peer = %peer, discarded, why, "pending messages discarded");
+    }
+    Ok(())
+}

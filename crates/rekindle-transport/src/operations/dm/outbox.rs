@@ -87,6 +87,13 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn discard(&self, client_id: &str) -> Result<bool, FriendError>;
+    /// The friendship (or the attempt at one) with `peer` ended: every
+    /// unsettled row of our `dm` stream to them settles `failed` with
+    /// `reason` and leaves it (live A/B findings 31, 35); how many.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn discard_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError>;
     /// The user's Retry under the same client id; `false` when no row waits.
     ///
     /// # Errors
@@ -206,7 +213,11 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
             Ok(Framed::Record(datagram, type_id)) => {
                 match send::route_send_datagram(host, to, &datagram, type_id, true).await {
                     Ok(true) => Attempt::Sent,
-                    Ok(false) | Err(FriendError::NotReady(_)) => Attempt::Deferred,
+                    Ok(false) => {
+                        tracing::debug!(to = %to, ?type_id, "dm row deferred: no usable route");
+                        Attempt::Deferred
+                    }
+                    Err(e @ FriendError::NotReady(_)) => attempt_of(e),
                     Err(e) => Attempt::Wedged(e.to_string()),
                 }
             }
@@ -238,10 +249,11 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
 }
 
 /// How an attempt that failed with `e` ends: a locked, not-ready or
-/// conflicting host is tried again later.
+/// conflicting host is tried again later, and the reason is logged.
 pub(crate) fn attempt_of(e: FriendError) -> Attempt {
     match e {
         FriendError::Locked | FriendError::NotReady(_) | FriendError::Conflict(_) => {
+            tracing::debug!(reason = %e, "outbox row deferred");
             Attempt::Deferred
         }
         e => Attempt::Wedged(e.to_string()),
