@@ -6,15 +6,11 @@
 
 use std::sync::Arc;
 
-use crate::db_helpers::db_fire;
 use crate::state::AppState;
-use crate::state_helpers;
-use rekindle_db::Db;
 
 pub(super) fn handle_membership_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &Db,
     community_id: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {

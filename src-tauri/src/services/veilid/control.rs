@@ -27,7 +27,6 @@ pub(crate) async fn handle_relayed_control(
             super::control_membership::handle_membership_payload(
                 app_handle,
                 state,
-                pool,
                 community_id,
                 payload,
             );

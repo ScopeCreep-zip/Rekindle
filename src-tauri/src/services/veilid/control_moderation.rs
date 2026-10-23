@@ -1,7 +1,5 @@
 use std::sync::Arc;
 
-use crate::db_helpers::db_fire;
-use rekindle_db::Db;
 // Voice signaling dispatch now goes through
 // `crate::services::voice_signaling_adapter::handle_voice_signaling`.
 use crate::state::AppState;
@@ -125,18 +123,7 @@ pub(crate) fn handle_gossip_control_payloads(
             );
         }
         other => {
-            let Ok(pool) = state.db.current() else {
-                tracing::debug!("gossip moderation: no identity database — dropped");
-                return;
-            };
-            handle_gossip_moderation(
-                app_handle,
-                state,
-                &pool,
-                community_id,
-                sender_pseudonym,
-                other,
-            );
+            handle_gossip_moderation(app_handle, state, community_id, sender_pseudonym, other);
         }
     }
 }
@@ -144,16 +131,16 @@ pub(crate) fn handle_gossip_control_payloads(
 fn handle_gossip_moderation(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
 ) {
     use rekindle_codec::community::envelope::ControlPayload;
 
-    let Ok(owner_key) = crate::state_helpers::current_owner_key(state) else {
+    if crate::state_helpers::current_owner_key(state).is_err() {
+        tracing::debug!("gossip moderation: not logged in — dropped");
         return;
-    };
+    }
 
     if !check_gossip_moderation_permission(state, community_id, sender_pseudonym, &payload) {
         return;
