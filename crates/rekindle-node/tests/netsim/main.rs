@@ -41,6 +41,7 @@ mod pins;
 mod prekey_collision;
 mod prekeys;
 mod read_marker_only_advances;
+mod refriend_after_removal;
 mod resume_after_restart;
 mod rich_messaging;
 mod role_assign;

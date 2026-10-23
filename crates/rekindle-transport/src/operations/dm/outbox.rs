@@ -94,6 +94,15 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn discard_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError>;
+    /// A new friendship with `peer` starts: every unsettled row of our
+    /// `friend_handshake` stream to them, framed under the friendship that
+    /// ended (an `Unfriended` awaiting its ack, an old `FriendsKey`),
+    /// settles `failed` with `reason` and leaves it (live A/B finding 38);
+    /// how many.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn discard_handshakes_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError>;
     /// The user's Retry under the same client id; `false` when no row waits.
     ///
     /// # Errors

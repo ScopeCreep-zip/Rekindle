@@ -74,6 +74,7 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     friend.mailbox_dht_key = named(&answer.mailbox_dht_key);
     let profile_key = friend.dht_record_key.clone();
     state::put(host, friend);
+    state::settle_ended_handshakes(host, public_key).await?;
 
     // Our accept opens the session from their record (the profile their
     // request named; plan E2.4, B2). A failure shows on their row with

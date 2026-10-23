@@ -389,6 +389,13 @@ impl DmOutbox for DmStream {
         discarded.map_err(|e| failed(&e))
     }
 
+    async fn discard_handshakes_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError> {
+        let discarded = (self.0)
+            .discard_streams(StreamKind::FriendHandshake, peer, reason)
+            .await;
+        discarded.map_err(|e| failed(&e))
+    }
+
     async fn retry(&self, client_id: &str) -> Result<bool, FriendError> {
         self.0.retry(client_id).await.map_err(|e| failed(&e))
     }

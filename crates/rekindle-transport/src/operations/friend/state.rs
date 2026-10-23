@@ -305,3 +305,25 @@ pub(crate) async fn discard_pending_dms(
     }
     Ok(())
 }
+
+/// A new friendship with `peer` starts (our request is about to be
+/// committed, or our accept): every handshake row to them still pending
+/// from a friendship that ended (a pending `Unfriended`, an old
+/// `FriendsKey`) settles `failed` through the outbox's discard, so a stale
+/// removal framed under the ended session can never end the new
+/// friendship (live A/B finding 38). Called before the new friendship's
+/// own rows are committed, so none of them is discarded.
+///
+/// # Errors
+/// The outbox is not running or its storage failed.
+pub(crate) async fn settle_ended_handshakes(
+    host: &dyn FriendHost,
+    peer: &str,
+) -> Result<(), FriendError> {
+    let reason = "superseded by a new friendship";
+    let settled = host.outbox()?.discard_handshakes_to(peer, reason).await?;
+    if settled > 0 {
+        tracing::info!(peer = %peer, settled, "handshake rows of an ended friendship settled");
+    }
+    Ok(())
+}
