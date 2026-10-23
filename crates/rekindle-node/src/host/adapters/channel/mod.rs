@@ -34,7 +34,9 @@ mod history;
 pub mod ingest;
 mod persist;
 pub(crate) mod rich;
+pub mod stage_sound;
 mod state;
+mod thread_receive;
 mod thread_refusal;
 
 pub use dht::delivery;

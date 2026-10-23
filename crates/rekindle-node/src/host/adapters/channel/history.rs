@@ -72,8 +72,21 @@ impl HostChannel {
             .filter(|m| !m.view.decryption_failed && m.view.server_message_id.is_some())
             .cloned()
             .collect();
+        let attachments = record
+            .iter()
+            .map(|m| {
+                (m.attachment.as_ref())
+                    .map(|offer| {
+                        serde_json::to_string(&rekindle_files::AttachmentRecordJson::from_offer(
+                            offer, None,
+                        ))
+                    })
+                    .transpose()
+                    .map_err(|e| ChannelError::Adapter(format!("attachment record: {e}")))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         db.call(move |conn| {
-            for message in &record {
+            for (message, attachment_json) in record.iter().zip(&attachments) {
                 let Some(message_id) = message.view.server_message_id.as_deref() else {
                     continue;
                 };
@@ -98,7 +111,7 @@ impl HostChannel {
                         automod_blurred: false,
                         forwarded_from_author: None,
                         flags: 0,
-                        attachment_json: None,
+                        attachment_json: attachment_json.as_deref(),
                         send_state: SendState::Delivered,
                         mentions_me: message.mentions_me,
                     },

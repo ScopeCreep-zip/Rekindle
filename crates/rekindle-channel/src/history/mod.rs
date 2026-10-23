@@ -9,7 +9,7 @@ mod materialize;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rekindle_codec::community::channel_record::ChannelRecordEntry;
-use rekindle_types::dto::channel_message::{ChannelMessageView, ReactionGroup};
+use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment, ReactionGroup};
 use rekindle_types::message::SendState;
 
 use crate::deps::ChannelMessagingDeps;
@@ -30,6 +30,9 @@ pub struct RecordMessage {
     /// Whether it mentions us (an `@` of our pseudonym, `@everyone` or
     /// `@here`), for the unread mention count (plan E3.1 G1).
     pub mentions_me: bool,
+    /// The attachment's offer embedded in the message, which the host
+    /// stores as the attachment's record.
+    pub attachment: Option<rekindle_types::attachment::AttachmentOffer>,
 }
 
 /// The latest `limit` messages of `channel_id`'s record (only those older
@@ -108,7 +111,14 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                     pinned: None,
                     poll: id.and_then(|id| polls.get(id).cloned()),
                     forwarded_from_author: None,
-                    attachment: None,
+                    attachment: message.attachment.as_ref().map(|offer| MessageAttachment {
+                        attachment_id: hex::encode(offer.attachment_id),
+                        filename: offer.filename.clone(),
+                        mime_type: offer.mime_type.clone(),
+                        total_size: offer.total_size,
+                        chunk_count: offer.chunk_count,
+                        downloaded: false,
+                    }),
                     flags: 0,
                     send_state: if is_own {
                         SendState::Sent
@@ -120,6 +130,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 mek_generation: message.mek_generation,
                 lamport_ts: message.lamport_ts,
                 mentions_me,
+                attachment: message.attachment.clone(),
             }
         })
         .collect())

@@ -238,6 +238,29 @@ impl InboundHandler for DaemonHandler {
             }
         }
 
+        // A thread opened, archived or replied to (plan E3.1 E3f): stored by
+        // the Host's channel adapter; the subscription event follows below.
+        if let CommunityEnvelope::Control(
+            ref payload @ (ControlPayload::ThreadCreated { .. }
+            | ControlPayload::ThreadArchived { .. }
+            | ControlPayload::ThreadMessageReceived { .. }),
+        ) = envelope
+        {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                let channel = crate::host::adapters::channel::HostChannel::new(&ctx);
+                let scope = rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(
+                    &crate::daemon::dispatch::adapter(&ctx),
+                );
+                let (community, payload, task_scope) =
+                    (community_id.to_string(), payload.clone(), scope.clone());
+                scope.spawn_or_drop("thread control", async move {
+                    channel
+                        .on_thread_control(&community, &payload, &task_scope)
+                        .await;
+                });
+            }
+        }
+
         // An event created, updated, deleted or answered (plan E3.1 E4):
         // stored when the Host's adapter accepts it.
         if let CommunityEnvelope::Control(

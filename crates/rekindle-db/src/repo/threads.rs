@@ -72,3 +72,73 @@ pub fn get(
     )
     .optional()
 }
+
+/// Mark thread `thread_id` archived or open.
+///
+/// # Errors
+/// The update failed.
+pub fn set_archived(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    thread_id: &str,
+    archived: bool,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE community_threads SET archived = ?1 \
+         WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
+        params![i32::from(archived), owner_key, community_id, thread_id],
+    )?;
+    Ok(())
+}
+
+/// A reply received in a thread.
+pub struct ThreadMessageRow<'a> {
+    pub thread_id: &'a str,
+    pub message_id: &'a str,
+    pub sender_pseudonym: &'a str,
+    pub body: &'a str,
+    pub timestamp: u64,
+    pub reply_to_id: Option<&'a str>,
+}
+
+/// Store `message` once and count it on its thread's row.
+///
+/// # Errors
+/// The insert or the update failed.
+pub fn insert_message(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    message: &ThreadMessageRow<'_>,
+) -> rusqlite::Result<()> {
+    let inserted = conn.execute(
+        "INSERT OR IGNORE INTO thread_messages \
+         (owner_key, community_id, thread_id, message_id, sender_pseudonym, body, timestamp, \
+          reply_to_id) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            owner_key,
+            community_id,
+            message.thread_id,
+            message.message_id,
+            message.sender_pseudonym,
+            message.body,
+            message.timestamp.cast_signed(),
+            message.reply_to_id,
+        ],
+    )?;
+    if inserted > 0 {
+        conn.execute(
+            "UPDATE community_threads SET message_count = message_count + 1, last_message_at = ?1 \
+             WHERE owner_key = ?2 AND community_id = ?3 AND id = ?4",
+            params![
+                message.timestamp.cast_signed(),
+                owner_key,
+                community_id,
+                message.thread_id
+            ],
+        )?;
+    }
+    Ok(())
+}

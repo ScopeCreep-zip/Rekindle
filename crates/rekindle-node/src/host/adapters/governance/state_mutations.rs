@@ -47,9 +47,26 @@ impl HostGovernance {
             community_id,
             move |mine| *mine = roles,
         );
+        self.refresh_files(community_id);
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
         }
+    }
+
+    /// The files domain's effects of a projection (plan E3.1 E3f), on both
+    /// modes: the cache's pinned set follows the merged
+    /// `pinned_attachments`, and the expression assets the merge names that
+    /// we lack are fetched under the session scope.
+    fn refresh_files(&self, community_id: &str) {
+        let files = crate::host::adapters::files::HostFiles::new(self.clone());
+        rekindle_files::sync_pinned_from_governance(&files, community_id);
+        let community = community_id.to_string();
+        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
+            "eager expression cache",
+            async move {
+                files.eager_fetch(&community).await;
+            },
+        );
     }
 
     /// Keep the threads newly held at receipt, so the unlock loader holds
