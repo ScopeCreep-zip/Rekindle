@@ -40,7 +40,12 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
     let primary = fetch_governance_record_entries(deps, governance_key_str).await?;
     let mut all_entries = primary.authored;
     let mut overflow_keys = primary.overflow_keys;
-    let gov_state_v1 = merge::merge(&all_entries);
+    // Merge under the anchor's pinned cert: the ops we hold (S6's
+    // bootstrapResponseV2 delivers the rest).
+    let (cert, _) = crate::genesis::read_pinned(deps, governance_key_str).await?;
+    let held = deps.governance_ops(governance_key_str).await?;
+    let ops = crate::op_log::verify_held(governance_key_str, &held).ops;
+    let gov_state_v1 = merge::merge(&cert, &ops);
 
     // Pass 2: fetch every segment's governance record. CRDT idempotence +
     // commutativity (Almeida 2016 §3) means re-merge is canonical
@@ -63,7 +68,7 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
         }
     }
     let gov_state = if gov_state_v1.segments.iter().any(|s| s.segment_index > 0) {
-        merge::merge(&all_entries)
+        merge::merge(&cert, &ops)
     } else {
         gov_state_v1
     };

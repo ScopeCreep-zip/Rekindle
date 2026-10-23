@@ -126,20 +126,26 @@ pub struct DiscoveredMember {
 /// succeed. The adapter copies the contents into a fresh `CommunityState`.
 #[derive(Debug, Clone)]
 pub struct CommunityInsert {
+    /// The anchor `A`'s record key.
     pub id: String,
     pub name: String,
     pub channel_id_hex: String,
     pub channel_record_key: String,
-    pub governance_key: String,
     pub registry_key: String,
     pub registry_owner_keypair: Option<String>,
-    pub dht_owner_keypair: Option<String>,
     pub slot_seed_hex: String,
     pub slot_keypair: String,
     pub my_pseudonym_hex: String,
     pub mek: MekSnapshot,
     pub governance_state: GovernanceState,
-    /// The community's governance clock.
-    pub governance_clock: u64,
     pub creator_role_ids: Vec<u32>,
+    /// The pinned `GenesisCert` as `A`/0 holds it
+    /// (`rekindle_codec::governance_op::genesis::encode_genesis`), stored
+    /// in `communities.genesis_cert`.
+    pub genesis_cert: Vec<u8>,
+    /// Our member record `M(p)`'s key.
+    pub member_record: String,
+    /// `K_M(p)`'s keypair text: stored as
+    /// `VaultKey::MemberRecordOwner{community}` before the row (D1).
+    pub member_record_owner_keypair: zeroize::Zeroizing<String>,
 }

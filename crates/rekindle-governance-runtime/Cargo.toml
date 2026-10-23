@@ -9,6 +9,7 @@ license = "MIT"
 workspace = true
 
 [dependencies]
+zeroize = "1"
 rekindle-types = { path = "../rekindle-types" }
 # Tier 5 (downward edge). Reuses `parse_and_classify_row` — the W26
 # signature verify + ban filter that decides whether a registry row

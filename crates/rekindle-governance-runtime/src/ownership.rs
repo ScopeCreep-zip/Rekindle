@@ -145,6 +145,7 @@ mod tests {
                 mentionable: false,
                 self_assignable: false,
                 exclusion_group: None,
+                stamp: rekindle_governance::op::OpStamp::MIN,
             },
         )
     }

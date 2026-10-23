@@ -55,7 +55,7 @@ fn splits_into_two_pages_at_budget() {
 fn oversized_primary_entry_spills_to_overflow_page() {
     // An entry that exceeds the tiny primary budget but fits the overflow
     // budget must land on an overflow page, leaving the primary empty.
-    let big = channel_entry(&"x".repeat(400), 1);
+    let big = channel_entry(&"x".repeat(400));
     let sz = entry_size(&big);
     let pages = partition_into_pages(vec![big], sz / 2, sz * 2).unwrap();
     assert_eq!(pages.len(), 2);
@@ -68,7 +68,7 @@ fn oversized_primary_entry_spills_to_overflow_page() {
 
 #[test]
 fn unsplittable_entry_errors() {
-    let big = channel_entry(&"y".repeat(500), 1);
+    let big = channel_entry(&"y".repeat(500));
     let sz = entry_size(&big);
     let err = partition_into_pages(vec![big], sz / 2, sz / 2);
     assert!(matches!(err, Err(n) if n == sz));
@@ -81,7 +81,7 @@ fn roundtrip_partition_then_concat_preserves_entries() {
     let input: Vec<GovernanceEntry> = (0..40)
         .map(|i| {
             if i % 2 == 0 {
-                channel_entry(&format!("chan-{i}"), i)
+                channel_entry(&format!("chan-{i}"))
             } else {
                 role_entry()
             }
@@ -182,7 +182,7 @@ async fn write_then_read_reassembles_across_overflow_pages() {
     let my_slot = 5u32;
 
     let input: Vec<GovernanceEntry> = (0..30u64)
-        .map(|i| channel_entry(&format!("chan{i:02}"), i))
+        .map(|i| channel_entry(&format!("chan{i:02}")))
         .collect();
     let one = entry_size(&input[0]);
     // Budgets force the primary to hold ~4 entries and spill the rest into

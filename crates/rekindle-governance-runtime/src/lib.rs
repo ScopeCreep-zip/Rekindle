@@ -32,6 +32,7 @@ pub mod deps;
 pub mod dht_hydration;
 pub mod error;
 pub mod event;
+pub mod genesis;
 pub mod invite_secrets;
 pub mod invites;
 pub mod join;

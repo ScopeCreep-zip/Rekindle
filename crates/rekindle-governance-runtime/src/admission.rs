@@ -15,45 +15,43 @@
 //! claims a slot without asking, so the pending list stays empty and the
 //! approve/reject paths are inert.
 
+use rekindle_governance::op::OpStamp;
 use rekindle_governance::state::AdmissionDecision;
-use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
+use rekindle_types::governance::{AdmissionMode, GovernanceEntry, InviteProof};
 use rekindle_types::id::PseudonymKey;
 
 use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 
-/// One pending request, flattened for a frontend.
+/// One pending member, flattened for a frontend.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingMember {
     pub pseudonym_hex: String,
-    /// Peer-supplied. Untrusted display data — render escaped.
-    pub display_name: String,
-    pub lamport: u64,
+    /// The name on the joiner's verified card, when we hold it.
+    pub display_name: Option<String>,
+    /// The `MemberJoined` op's stamp: the order every reader agrees on.
+    pub stamp: OpStamp,
 }
 
-/// Ask to be admitted.
-///
-/// Self-authored by construction: the entry names *us* as the requester,
-/// and `validate_write` drops any `JoinRequested` whose author differs —
-/// so this cannot be used to enqueue somebody else.
-pub async fn request_join<D: GovernanceRuntimeDeps>(
+/// Announce our membership: our `MemberJoined` op, naming our member
+/// record and its owner. Self-authored by construction (the op's author is
+/// the joiner); under `ApprovalRequired` it stays pending until a
+/// `MemberApproved`.
+pub async fn announce_joined<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    display_name: &str,
+    member_record: &str,
+    member_record_owner: &str,
+    invite_proof: Option<InviteProof>,
 ) -> Result<(), GovernanceRuntimeError> {
-    let me = deps
-        .community_membership(community_id)
-        .and_then(|m| m.my_pseudonym_hex)
-        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
-
     apply::write_entry(
         deps,
         community_id,
-        GovernanceEntry::JoinRequested {
-            requester: PseudonymKey::from_hex_lossy(&me),
-            display_name: display_name.to_string(),
-            lamport,
+        GovernanceEntry::MemberJoined {
+            member_record: member_record.to_string(),
+            member_record_owner: member_record_owner.to_string(),
+            invite_proof,
         },
     )
     .await
@@ -112,17 +110,13 @@ pub fn pending_members<D: GovernanceRuntimeDeps>(
         .iter()
         .map(|(pseudonym, pending)| PendingMember {
             pseudonym_hex: hex::encode(pseudonym.0),
-            display_name: pending.display_name.clone(),
+            display_name: deps.member_card_name(community_id, pseudonym),
+            stamp: pending.stamp,
         })
         .collect();
-    // Deterministic order across peers: Lamport, then pseudonym to break
-    // ties. A HashMap iteration order would differ per process and make
-    // two clients disagree about "the next request".
-    out.sort_by(|a, b| {
-        a.lamport
-            .cmp(&b.lamport)
-            .then_with(|| a.pseudonym_hex.cmp(&b.pseudonym_hex))
-    });
+    // Deterministic order across peers: the op stamp (lamport, hash). A
+    // HashMap iteration order would differ per process.
+    out.sort_by_key(|m| m.stamp);
     out
 }
 

@@ -19,17 +19,6 @@ pub(crate) async fn inspect_local_seqs<D: GovernanceRuntimeDeps>(
     seqs
 }
 
-/// [`GovernanceRuntimeDeps::inspect_dht_record_update_get_seqs`] on a borrow.
-pub(crate) async fn inspect_update_get_seqs<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    record_key: &str,
-) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
-    let seqs = deps.inspect_dht_record_update_get_seqs(lease).await;
-    deps.release_record(lease).await;
-    seqs
-}
-
 /// [`GovernanceRuntimeDeps::inspect_dht_record_present_subkeys`] on a borrow.
 pub(crate) async fn inspect_present_subkeys<D: GovernanceRuntimeDeps>(
     deps: &D,

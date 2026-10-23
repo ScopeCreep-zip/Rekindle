@@ -340,6 +340,7 @@ mod tests {
                 description: Some("desc".into()),
                 icon_hash: None,
                 banner_hash: None,
+                stamp: rekindle_governance::op::OpStamp::MIN,
             }),
             ..Default::default()
         };
@@ -365,6 +366,7 @@ mod tests {
                 slowmode_seconds: None,
                 nsfw: None,
                 parent_voice_channel_id: None,
+                created: rekindle_governance::op::OpStamp::MIN,
             },
         );
         let gov = GovernanceState {
@@ -381,7 +383,6 @@ mod tests {
             } => {
                 assert_eq!(cid, &channel_id);
                 assert_eq!(name, "general");
-                assert_eq!(*lamport, 5);
             }
             other => panic!("expected ChannelCreated, got {other:?}"),
         }

@@ -16,6 +16,7 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::id::PseudonymKey;
 
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
@@ -124,6 +125,19 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// scope. Called by origin, hydration, a new channel, a segment
     /// expansion and overflow pages.
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases);
+
+    /// Create a record of `schema` with a fresh random owner; the returned
+    /// `owner_keypair` is that owner's keypair text (plan E3.2: the anchor
+    /// `A`, whose `K_A` origin zeroizes after one write, and `M(p)`).
+    async fn create_record(
+        &self,
+        schema: &rekindle_records::port::RecordSchema,
+    ) -> Result<DhtRecordInfo, GovernanceRuntimeError>;
+
+    /// The owner public-key text of the record `lease` borrows, as its
+    /// descriptor names it (`RecordPort::owner_of`): the pin of `A` to the
+    /// cert's `K_A` and of `M(p)` to its `memberRecordOwner`.
+    fn owner_of(&self, lease: LeaseId) -> Result<String, GovernanceRuntimeError>;
 
     async fn create_smpl_record(
         &self,
@@ -380,10 +394,14 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     // ---------- Governance ops (plan E3.2) ----------
 
-    /// The community's pinned `GenesisCert`. S5 writes it to the anchor at
-    /// origin and S6 pins it at join; until then the adapter builds it from
-    /// where the community's creator is known today (the community row).
+    /// The community's pinned `GenesisCert`: `communities.genesis_cert`,
+    /// decoded (`rekindle_codec::governance_op::genesis::decode_genesis`).
+    /// Origin stores it with the row; S6 pins it at join
+    /// ([`crate::genesis::read_pinned`]).
     fn genesis_cert(&self, community_id: &str) -> Option<rekindle_types::governance::GenesisCert>;
+    /// The display name on `pseudonym`'s verified member card (`M`/0), when
+    /// we hold one; never a field from an unverified peer payload.
+    fn member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> Option<String>;
     /// Every op `governance_ops` holds for the community.
     async fn governance_ops(
         &self,
@@ -411,9 +429,9 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
     /// Queue our encoded op on the governance-op outbox stream
     /// (`StreamKind::GovernanceOp`, D22). Its sender appends the row to our
-    /// member record's op log with `chain::append_at(M(p), GOV_HEAD, K_M(p))`;
-    /// `M(p)` and `K_M(p)` are created by S5 (origin) and S6 (join), and
-    /// until they exist the row waits in the outbox.
+    /// member record's op log with `chain::append_at(M(p), GOV_HEAD, K_M(p))`,
+    /// `K_M(p)` from `VaultKey::MemberRecordOwner{community}` (origin stores
+    /// it before the row; S6 at join).
     fn publish_governance_op(
         &self,
         community_id: &str,
