@@ -200,9 +200,11 @@ mod tests {
     }
 
     /// Plan E2.5 (D23): a friend's watch is opened on their profile record
-    /// and held, and nothing is read: the watch brings each change.
+    /// and held, and the watch brings each change. The display name is read
+    /// once after the watch is set, since a watch reports changes, not the
+    /// value held (live A/B finding 39); nothing else is read.
     #[tokio::test]
-    async fn watching_a_friend_holds_the_watch_and_reads_nothing() {
+    async fn watching_a_friend_holds_the_watch_and_reads_the_name_once() {
         let deps = Arc::new(MockDeps::default());
         crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
             .await
@@ -215,7 +217,15 @@ mod tests {
             vec![(1, crate::FRIEND_WATCH_SUBKEYS.to_vec())]
         );
         assert_eq!(st.calls_hold, vec![("alice".to_string(), 1)]);
-        assert!(st.calls_fetch_subkey.is_empty(), "no subkey is polled");
+        assert_eq!(
+            st.calls_fetch_subkey,
+            vec![(
+                "dht1".to_string(),
+                rekindle_types::dht_layout::profile::DISPLAY_NAME,
+                true
+            )],
+            "only the display name is read, once"
+        );
     }
 
     #[test]
