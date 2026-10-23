@@ -1,6 +1,6 @@
 //! The unlock's warm load of every joined community (plan E3.1 C1): the
 //! `communities` rows with their channels, roles, categories, member
-//! profiles, our RSVPs and slowmode stamps, and the governance cache, in
+//! profiles, our RSVPs and slowmode stamps, and the governance op set, in
 //! one connection call, for the Host's community store.
 
 use rusqlite::{params, Connection};
@@ -9,7 +9,7 @@ use crate::row::{get, get_enum};
 use rekindle_types::channel::ChannelKind;
 
 use super::CommunityRow;
-use crate::repo::governance_cache;
+use crate::repo::governance_ops;
 use crate::repo::members::ProfileRow;
 
 /// A channel as the warm load reads it, with our notification preference.
@@ -77,8 +77,8 @@ pub struct CommunityLoad {
     pub members: Vec<ProfileRow>,
     pub event_rsvps: Vec<EventRsvpRow>,
     pub slowmode: Vec<SlowmodeRow>,
-    /// The governance cache's merge input per community.
-    pub governance: Vec<(String, governance_cache::Entries)>,
+    /// Every held governance op, `(community_id, op)` by community.
+    pub governance: Vec<(String, governance_ops::StoredOp)>,
     /// The threads held at receipt, `(community_id, thread_id)`.
     pub held_threads: Vec<(String, String)>,
 }
@@ -96,7 +96,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<CommunityLoa
         members: crate::repo::members::load_profiles(conn, owner_key)?,
         event_rsvps: event_rsvps(conn, owner_key)?,
         slowmode: slowmode(conn, owner_key)?,
-        governance: governance_cache::load(conn, owner_key)?,
+        governance: governance_ops::load_all(conn, owner_key)?,
         held_threads: crate::repo::held_threads::load(conn, owner_key)?,
     })
 }

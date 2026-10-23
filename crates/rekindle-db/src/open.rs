@@ -183,7 +183,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 113 (plan E3.1, F3h): `community_held_threads`, the threads held at
 /// receipt, so a hold survives a restart.
-pub const SCHEMA_VERSION: i64 = 114;
+///
+/// 115 (plan E3.2, S4): `governance_ops` and `governance_heads`, the signed
+/// op set and each author's head, replace `governance_entries_cache`.
+pub const SCHEMA_VERSION: i64 = 115;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

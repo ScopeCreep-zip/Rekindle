@@ -799,20 +799,35 @@ CREATE TABLE IF NOT EXISTS pending_pairings (
     PRIMARY KEY (owner_key, pairing_code)
 );
 
--- Warm local cache of the raw per-author governance entry set merged
--- from the SMPL governance record (architecture v2.0 flat governance).
--- The DHT is the source of truth; this is the lossless merge *input*
--- (Vec<(PseudonymKey, Vec<GovernanceEntry>)> as JSON) so the next login
--- re-merges an identical GovernanceState immediately instead of waiting
--- on the slow best-effort DHT rebuild pass. A denormalized view of the
--- merged state lives in the communities/channels/roles tables; this is
--- the only place the full per-author entry set survives a restart.
-CREATE TABLE IF NOT EXISTS governance_entries_cache (
+-- Governance ops (plan E3.2, ADR 0011): every signed op this identity holds
+-- for a community, with its fate in the last merge. The member records are
+-- the source of truth; this is the op set `rebuild_governance` re-merges,
+-- so a login has the community's state before the network answers.
+-- `governance_heads` is each author's newest op seen and its member record.
+CREATE TABLE IF NOT EXISTS governance_ops (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
-    entries_json TEXT NOT NULL CHECK(json_valid(entries_json)),
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_key, community_id),
+    op_hash BLOB NOT NULL CHECK(length(op_hash) = 32),
+    author TEXT NOT NULL,
+    author_seq INTEGER NOT NULL CHECK(author_seq >= 0),
+    lamport INTEGER NOT NULL CHECK(lamport >= 0),
+    issued_at INTEGER NOT NULL CHECK(issued_at >= 0),
+    op BLOB NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('applied','pending_deps','quarantined','equivocation')),
+    PRIMARY KEY (owner_key, community_id, op_hash),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_governance_ops_state
+    ON governance_ops(owner_key, community_id, state);
+
+CREATE TABLE IF NOT EXISTS governance_heads (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    author TEXT NOT NULL,
+    member_record TEXT NOT NULL,
+    head_seq INTEGER NOT NULL CHECK(head_seq >= 0),
+    frontier_hash BLOB NOT NULL CHECK(length(frontier_hash) = 32),
+    PRIMARY KEY (owner_key, community_id, author),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 

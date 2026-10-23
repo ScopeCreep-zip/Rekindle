@@ -41,8 +41,11 @@ fn seeded() -> Connection {
          platform, record_keys_json, created_at) VALUES (?1, 'r', 't', 'self', '[]', 0)",
         "INSERT INTO voice_session_events (owner_key, community_id, channel_id, member_pseudonym, \
          event_type, occurred_at) VALUES (?1, 'c', 'ch', 'p', 'join', 0)",
-        "INSERT INTO governance_entries_cache (owner_key, community_id, entries_json, updated_at) \
-         VALUES (?1, 'c', '[]', 0)",
+        "INSERT INTO governance_ops (owner_key, community_id, op_hash, author, author_seq, \
+         lamport, issued_at, op, state) VALUES (?1, 'c', zeroblob(32), 'a', 0, 1, 0, x'00', \
+         'applied')",
+        "INSERT INTO governance_heads (owner_key, community_id, author, member_record, head_seq, \
+         frontier_hash) VALUES (?1, 'c', 'a', 'm', 0, zeroblob(32))",
         "INSERT INTO signal_prekeys (owner_key, id, kind, secret, public, created_at, \
          published_subkey) VALUES (?1, 1, 'spk', x'00', x'00', 0, 0)",
         "INSERT INTO prekey_slots_used (owner_key, peer, device_id, opk_id, used_at) \
@@ -94,7 +97,13 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("push_relay_registrations", "platform", "'sms'"),
     ("push_relay_registrations", "record_keys_json", "'k'"),
     ("voice_session_events", "event_type", "'mute'"),
-    ("governance_entries_cache", "entries_json", "'['"),
+    ("governance_ops", "state", "'merged'"),
+    ("governance_ops", "op_hash", "x'00'"),
+    ("governance_ops", "author_seq", "-1"),
+    ("governance_ops", "lamport", "-1"),
+    ("governance_ops", "issued_at", "-1"),
+    ("governance_heads", "head_seq", "-1"),
+    ("governance_heads", "frontier_hash", "zeroblob(31)"),
     ("signal_prekeys", "kind", "'otpk'"),
     ("signal_prekeys", "id", "0"),
     ("signal_prekeys", "id", "2147483648"),
