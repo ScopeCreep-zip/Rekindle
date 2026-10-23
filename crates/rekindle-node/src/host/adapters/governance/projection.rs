@@ -158,18 +158,27 @@ fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
     cs.my_role_ids.sort_unstable();
 }
 
-/// A banned member stops receiving our gossip and leaves the member lists
-/// at once (architecture §13).
-fn prune_banned(cs: &mut CommunityState, gov: &GovernanceState) {
-    if gov.bans.is_empty() {
+/// A banned member, and one the durable kick `MemberRemoved` took out of
+/// the merged `members` (plan E3.2; a re-join after the removal is in
+/// `members` again), stops receiving our gossip and leaves the member
+/// lists at once (architecture §13).
+fn prune_departed(cs: &mut CommunityState, gov: &GovernanceState) {
+    let departed: HashSet<String> = gov
+        .bans
+        .iter()
+        .chain(gov.removed.keys().filter(|p| !gov.members.contains_key(*p)))
+        .map(|p| hex::encode(p.0))
+        .collect();
+    if departed.is_empty() {
         return;
     }
-    let banned: HashSet<String> = gov.bans.iter().map(|p| hex::encode(p.0)).collect();
     if let Some(gossip) = cs.gossip.as_mut() {
-        gossip.peers.retain(|key, _| !banned.contains(key));
-        gossip.online_members.retain(|key, _| !banned.contains(key));
+        gossip.peers.retain(|key, _| !departed.contains(key));
+        gossip
+            .online_members
+            .retain(|key, _| !departed.contains(key));
     }
-    cs.known_members.retain(|key| !banned.contains(key));
+    cs.known_members.retain(|key| !departed.contains(key));
 }
 
 /// Lay `gov` onto `cs` and install it as the community's governance state.
@@ -185,7 +194,7 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
         cs.banner_hash.clone_from(&meta.banner_hash);
     }
     cs.mek_generation = gov.mek_generation;
-    prune_banned(cs, &gov);
+    prune_departed(cs, &gov);
     super::event_rsvps::project(cs, &gov);
     // Segment 0 stays implicit (`rekindle_governance_runtime::segments`).
     cs.segments = gov

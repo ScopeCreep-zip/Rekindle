@@ -1,10 +1,12 @@
 //! Plan E3.1 F2: a ban takes the member out of every other member's list,
-//! and a timeout ends at its time on the sim clock.
+//! and a timeout ends at its time on the sim clock. Plan E3.2: a kick is
+//! the durable `MemberRemoved` op, so it leaves every reader's member set
+//! and the kicked member's `RequestMEK` is answered by no one.
 
 use std::time::Duration;
 
+use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_ipc::protocol::{LifecycleRequest, MemberRequest};
 use serde_json::Value;
 
 use crate::harness::{eventually, Community};
@@ -115,5 +117,61 @@ async fn timeout_expires() {
         })
         .await,
         "the timeout ends at its time"
+    );
+}
+
+/// The creator kicks a member: the `MemberRemoved` op takes it out of
+/// every reader's member set (the creator's and the third member's), and
+/// a `RequestMEK` it sends afterwards is refused by every responder, so it
+/// gains no key.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn kick_removes_member_and_refuses_its_key_request() {
+    let community = Community::of(3, 97).await;
+    let bea = community.pseudonym(1).await;
+    assert!(
+        eventually(&community.sim, Duration::from_secs(60), || async {
+            listed(&community, 2, &bea).await.is_some()
+        })
+        .await,
+        "the member is listed before the kick"
+    );
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Kick {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea.clone(),
+            },
+        )))
+        .await;
+    for reader in [0, 2] {
+        assert!(
+            eventually(&community.sim, Duration::from_secs(120), || async {
+                listed(&community, reader, &bea).await.is_none()
+            })
+            .await,
+            "the kicked member leaves node {reader}'s member set"
+        );
+    }
+    community.sim.quiesce().await;
+    let general = community.general_id(1).await;
+    let held_before = community.mek_list(1).await;
+    community.nodes[1]
+        .ok(IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::MekRequest {
+                community: community.governance_key.clone(),
+                channel: general,
+                generation: 0,
+            },
+        )))
+        .await;
+    community.sim.quiesce().await;
+    assert_eq!(
+        community.mek_list(1).await,
+        held_before,
+        "no responder answers the kicked member's RequestMEK"
+    );
+    assert!(
+        listed(&community, 2, &bea).await.is_none(),
+        "the kick holds on the third member"
     );
 }
