@@ -145,7 +145,6 @@ mod tests {
                 mentionable: false,
                 self_assignable: false,
                 exclusion_group: None,
-                lamport: 1,
             },
         )
     }

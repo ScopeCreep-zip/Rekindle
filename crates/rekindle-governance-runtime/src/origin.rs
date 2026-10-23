@@ -73,7 +73,6 @@ fn genesis_entries(
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 2,
         },
         GovernanceEntry::RoleDefinition {
             role_id: RoleId([0u8; 16]),
@@ -85,7 +84,6 @@ fn genesis_entries(
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 3,
         },
         GovernanceEntry::RoleDefinition {
             role_id: OWNER_ROLE_ID,
@@ -97,12 +95,10 @@ fn genesis_entries(
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 4,
         },
         GovernanceEntry::RoleAssignment {
             target: my_pseudo.clone(),
             role_id: OWNER_ROLE_ID,
-            lamport: 5,
         },
         GovernanceEntry::ChannelCreated {
             channel_id,
@@ -112,7 +108,6 @@ fn genesis_entries(
             category_id: None,
             position: 0,
             parent_voice_channel_id: None,
-            lamport: 6,
         },
     ]
 }

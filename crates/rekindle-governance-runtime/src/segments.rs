@@ -151,7 +151,6 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
 
     // Taken before the creates, so nothing fails between them and the
     // announcement that hands their leases to the host.
-    let lamport = deps.next_governance_lamport(community_id)?;
     let new_gov_record = deps.create_smpl_record(&member_pubkeys).await?;
     let new_reg_record = match deps.create_smpl_record(&member_pubkeys).await {
         Ok(record) => record,
@@ -181,7 +180,6 @@ pub async fn expand_community_segment<D: GovernanceRuntimeDeps>(
             governance_key: new_gov_record.record_key,
             slot_range_start,
             slot_range_end,
-            lamport,
         },
     )
     .await
@@ -303,7 +301,6 @@ pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
     // race, messages go to our orphan record; readers pick up the
     // canonical record once the merge applies. The lamport is taken before
     // the create so nothing fails between it and the hand-over.
-    let lamport = deps.next_governance_lamport(community_id)?;
     let new_record = deps.create_smpl_record(&member_pubkeys).await?;
     let new_record_key = new_record.record_key.clone();
     if let Err(e) = crate::records::publish_created(
@@ -324,7 +321,6 @@ pub async fn ensure_channel_segment_record<D: GovernanceRuntimeDeps>(
             channel_id: channel_id_typed,
             segment_index,
             record_key: new_record_key.clone(),
-            lamport,
         },
     )
     .await

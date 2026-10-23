@@ -93,11 +93,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     // ---------- Community state (mutation) ----------
 
     fn set_governance_state(&self, community_id: &str, state: GovernanceState);
-    /// Next governance-clock value for a `GovernanceEntry` we write.
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
     fn insert_community(&self, community: CommunityInsert);
 
     // ---------- DHT (Schwarzschild — bytes only) ----------
@@ -381,36 +376,49 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     ///
     /// Async because the SQLite persist is async. Returns when the
     /// in-memory + on-disk state are both updated.
-    async fn apply_governance_rebuild_result(
-        &self,
-        community_id: &str,
-        gov_state: GovernanceState,
-        accepted_clock: u64,
-    );
+    async fn apply_governance_rebuild_result(&self, community_id: &str, gov_state: GovernanceState);
 
-    /// Persist the raw per-author governance entry set for a community to
-    /// local storage so `GovernanceState` can be losslessly re-merged on
-    /// the next login — without waiting for the slow, best-effort DHT
-    /// rebuild. The DHT stays authoritative; this is a warm cache
-    /// refreshed on every successful rebuild. The full per-author grouping
-    /// is preserved (not a flattened snapshot) so `merge`'s genesis +
-    /// reader-validation rules reproduce an identical state. Fire-and-
-    /// forget — failures are logged, never fatal.
-    fn persist_governance_entries_cache(
-        &self,
-        community_id: &str,
-        entries: &[(rekindle_types::id::PseudonymKey, Vec<GovernanceEntry>)],
-    );
+    // ---------- Governance ops (plan E3.2) ----------
 
-    /// Replace our own author set in the community's warm cache after an
-    /// own governance write landed, so a restart before the next rebuild
-    /// re-merges it (plan E3.1 B2). Fire-and-forget like the full save.
-    fn persist_own_governance_entries(
+    /// The community's pinned `GenesisCert`. S5 writes it to the anchor at
+    /// origin and S6 pins it at join; until then the adapter builds it from
+    /// where the community's creator is known today (the community row).
+    fn genesis_cert(&self, community_id: &str) -> Option<rekindle_types::governance::GenesisCert>;
+    /// Every op `governance_ops` holds for the community.
+    async fn governance_ops(
         &self,
         community_id: &str,
-        author: &rekindle_types::id::PseudonymKey,
-        entries: &[GovernanceEntry],
-    );
+    ) -> Result<Vec<crate::op_log::HeldOp>, GovernanceRuntimeError>;
+    /// Store an op (an op already held keeps its row) and advance its
+    /// author's `governance_heads` row.
+    async fn store_governance_op(
+        &self,
+        community_id: &str,
+        op: &crate::op_log::HeldOp,
+    ) -> Result<(), GovernanceRuntimeError>;
+    /// Record each op's fate in the last merge.
+    async fn set_governance_op_fates(
+        &self,
+        community_id: &str,
+        fates: Vec<(rekindle_types::governance::OpHash, crate::op_log::OpFate)>,
+    ) -> Result<(), GovernanceRuntimeError>;
+    /// The encoded op `op_ref` names, read from its author's op log
+    /// (`rekindle_records::chain::read_log_after` on
+    /// `op_ref.author_record`/`GOV_HEAD`, chain seq `author_seq + 1`).
+    async fn fetch_governance_op(
+        &self,
+        op_ref: &rekindle_types::governance::OpRef,
+    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
+    /// Queue our encoded op on the governance-op outbox stream
+    /// (`StreamKind::GovernanceOp`, D22). Its sender appends the row to our
+    /// member record's op log with `chain::append_at(M(p), GOV_HEAD, K_M(p))`;
+    /// `M(p)` and `K_M(p)` are created by S5 (origin) and S6 (join), and
+    /// until they exist the row waits in the outbox.
+    fn publish_governance_op(
+        &self,
+        community_id: &str,
+        encoded: Vec<u8>,
+    ) -> Result<(), GovernanceRuntimeError>;
 
     /// Fire-and-forget spawn of a text-MEK rotation task for a newly
     /// observed ban. Delegates to the existing

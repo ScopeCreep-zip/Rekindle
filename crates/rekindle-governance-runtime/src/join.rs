@@ -296,7 +296,6 @@ mod tests {
                 max_uses: 0,
                 expires_at: None,
                 secrets_record_key: "VLD0:record-key".into(),
-                lamport: 1,
             }],
         )];
         let (record_key, inviter) =
@@ -318,11 +317,9 @@ mod tests {
                     max_uses: 0,
                     expires_at: None,
                     secrets_record_key: "x".into(),
-                    lamport: 1,
                 },
                 GovernanceEntry::InviteRevoked {
                     invite_id: [1u8; 16],
-                    lamport: 2,
                 },
             ],
         )];
@@ -356,7 +353,6 @@ mod tests {
                 max_uses: 0,
                 expires_at: None,
                 secrets_record_key: "VLD0:secrets".into(),
-                lamport: 1,
             }],
         )];
         match inspect_invite_in_entries(&entries, "live", rekindle_utils::timestamp_secs()) {
@@ -383,7 +379,6 @@ mod tests {
                 // Unix epoch + 1s — unconditionally in the past.
                 expires_at: Some(1),
                 secrets_record_key: "x".into(),
-                lamport: 1,
             }],
         )];
         assert!(matches!(

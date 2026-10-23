@@ -171,13 +171,9 @@ mod tests {
     #[test]
     fn an_approved_member_is_admitted() {
         let mut state = GovernanceState::default();
-        state.admitted.insert(
-            key(1),
-            AdmissionDecision {
-                approved: true,
-                lamport: 4,
-            },
-        );
+        state
+            .admitted
+            .insert(key(1), AdmissionDecision { approved: true });
         assert!(is_admitted(&state, &hex_of(1)));
     }
 
@@ -186,13 +182,9 @@ mod tests {
     #[test]
     fn a_rejected_member_is_not_admitted() {
         let mut state = GovernanceState::default();
-        state.admitted.insert(
-            key(2),
-            AdmissionDecision {
-                approved: false,
-                lamport: 4,
-            },
-        );
+        state
+            .admitted
+            .insert(key(2), AdmissionDecision { approved: false });
         assert!(!is_admitted(&state, &hex_of(2)));
     }
 

@@ -57,13 +57,11 @@ pub async fn set_notification_default<D: GovernanceRuntimeDeps>(
         )));
     }
     deps.require_permission(community_id, MANAGE_COMMUNITY)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::CommunityNotificationDefault {
             level: level.to_owned(),
-            lamport,
         },
     )
     .await

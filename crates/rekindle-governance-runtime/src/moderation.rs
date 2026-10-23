@@ -35,14 +35,12 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, BAN_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::BanEntry {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
             reason: reason.map(ToString::to_string),
-            lamport,
         },
     )
     .await?;
@@ -64,13 +62,11 @@ pub async fn unban_member<D: GovernanceRuntimeDeps>(
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, BAN_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::UnbanEntry {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
-            lamport,
         },
     )
     .await
@@ -86,7 +82,6 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, TIMEOUT_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -97,7 +92,6 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
             // Wall-clock start, so every peer computes the same expiry
             // from the entry alone rather than from when it merged it.
             started_at: deps.clock().now_secs(),
-            lamport,
         },
     )
     .await
@@ -110,13 +104,11 @@ pub async fn remove_timeout<D: GovernanceRuntimeDeps>(
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, TIMEOUT_MEMBERS)?;
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::RemoveTimeoutEntry {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
-            lamport,
         },
     )
     .await

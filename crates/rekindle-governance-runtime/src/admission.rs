@@ -47,7 +47,6 @@ pub async fn request_join<D: GovernanceRuntimeDeps>(
         .and_then(|m| m.my_pseudonym_hex)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
 
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -67,13 +66,11 @@ pub async fn approve_member<D: GovernanceRuntimeDeps>(
     community_id: &str,
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::MemberApproved {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
-            lamport,
         },
     )
     .await
@@ -86,14 +83,12 @@ pub async fn reject_member<D: GovernanceRuntimeDeps>(
     pseudonym_hex: &str,
     reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::MemberRejected {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
             reason: reason.map(ToString::to_string),
-            lamport,
         },
     )
     .await
@@ -118,7 +113,6 @@ pub fn pending_members<D: GovernanceRuntimeDeps>(
         .map(|(pseudonym, pending)| PendingMember {
             pseudonym_hex: hex::encode(pseudonym.0),
             display_name: pending.display_name.clone(),
-            lamport: pending.lamport,
         })
         .collect();
     // Deterministic order across peers: Lamport, then pseudonym to break

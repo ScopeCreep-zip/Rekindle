@@ -1,7 +1,7 @@
 use super::*;
 use rekindle_types::id::{ChannelId, RoleId};
 
-fn channel_entry(name: &str, lamport: u64) -> GovernanceEntry {
+fn channel_entry(name: &str) -> GovernanceEntry {
     GovernanceEntry::ChannelCreated {
         channel_id: ChannelId([0u8; 16]),
         name: name.to_string(),
@@ -10,15 +10,13 @@ fn channel_entry(name: &str, lamport: u64) -> GovernanceEntry {
         category_id: None,
         position: 0,
         parent_voice_channel_id: None,
-        lamport,
     }
 }
 
-fn role_entry(lamport: u64) -> GovernanceEntry {
+fn role_entry() -> GovernanceEntry {
     GovernanceEntry::RoleAssignment {
         target: PseudonymKey([1u8; 32]),
         role_id: RoleId([0u8; 16]),
-        lamport,
     }
 }
 
@@ -28,7 +26,7 @@ fn entry_size(e: &GovernanceEntry) -> usize {
 
 #[test]
 fn single_page_when_under_budget() {
-    let entries = vec![role_entry(1), role_entry(2), role_entry(3)];
+    let entries = vec![role_entry(), role_entry(), role_entry()];
     let pages = partition_into_pages(entries.clone(), 100_000, 100_000).unwrap();
     assert_eq!(pages.len(), 1);
     assert_eq!(pages[0].len(), 3);
@@ -37,9 +35,9 @@ fn single_page_when_under_budget() {
 #[test]
 fn splits_into_two_pages_at_budget() {
     // Budget that fits ~2 role entries on the primary page, forcing overflow.
-    let one = entry_size(&role_entry(1));
+    let one = entry_size(&role_entry());
     let primary_budget = one * 2 + one / 2; // room for exactly 2
-    let entries = vec![role_entry(1), role_entry(2), role_entry(3), role_entry(4)];
+    let entries = vec![role_entry(), role_entry(), role_entry(), role_entry()];
     let pages = partition_into_pages(entries, primary_budget, primary_budget).unwrap();
     assert!(
         pages.len() >= 2,
@@ -85,11 +83,11 @@ fn roundtrip_partition_then_concat_preserves_entries() {
             if i % 2 == 0 {
                 channel_entry(&format!("chan-{i}"), i)
             } else {
-                role_entry(i)
+                role_entry()
             }
         })
         .collect();
-    let one = entry_size(&role_entry(1));
+    let one = entry_size(&role_entry());
     let pages = partition_into_pages(input.clone(), one * 3, one * 7).unwrap();
     assert!(pages.len() >= 2, "test budgets should force multiple pages");
     let flattened: Vec<GovernanceEntry> = pages.into_iter().flatten().collect();
@@ -256,7 +254,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
     write_overflow_page(
         &mock,
         "ovl-1",
-        &[channel_entry("evil", 2)],
+        &[channel_entry("evil")],
         None,
         &attacker,
         &attacker_pseudo,
@@ -265,7 +263,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
     .await
     .unwrap();
     let (_p, bytes) = build_signed_payload(
-        &[channel_entry("good", 1)],
+        &[channel_entry("good")],
         Some("ovl-1".to_string()),
         &signing,
         &author,

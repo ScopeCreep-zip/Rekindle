@@ -45,6 +45,16 @@ pub enum GovernanceRuntimeError {
 
     #[error("insufficient permission for this governance operation")]
     PermissionDenied,
+    /// No `GenesisCert` is pinned for the community (S5 writes it at
+    /// origin, S6 pins it at join).
+    #[error("no genesis certificate is pinned for community {0}")]
+    GenesisCertMissing(String),
+    /// An op's author has no member record in the merged state.
+    #[error("no member record is known for {0}")]
+    MemberRecordMissing(String),
+    /// Our own op failed the verification every reader runs.
+    #[error("our governance op was refused: {0}")]
+    OpRefused(String),
 
     /// The entry carries a value outside its reader-validated bound
     /// (`rekindle_governance::validate::bounds`, plan E3.0): every reader

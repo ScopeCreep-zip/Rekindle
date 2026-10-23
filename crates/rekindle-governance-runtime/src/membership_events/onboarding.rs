@@ -148,25 +148,9 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
         if already_assigned.contains(&role_id) {
             continue;
         }
-        // The governance clock, never the wall clock: a millisecond
-        // timestamp (~1.7e12) as a lamport outranks every later
-        // unassignment (plan C9.2).
-        let lamport = match deps.next_governance_lamport(community_id) {
-            Ok(lamport) => lamport,
-            Err(e) => {
-                tracing::warn!(
-                    community = %community_id,
-                    pseudonym = %sender_pseudonym,
-                    error = %e,
-                    "onboarding role assignment: no governance lamport"
-                );
-                return;
-            }
-        };
         let entry = GovernanceEntry::RoleAssignment {
             target: sender_key.clone(),
             role_id,
-            lamport,
         };
         match write_entry(deps, community_id, entry).await {
             Ok(()) => newly_assigned.push(role_id),

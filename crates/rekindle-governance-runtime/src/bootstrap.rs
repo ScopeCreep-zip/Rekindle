@@ -41,7 +41,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             description: metadata.description.clone(),
             icon_hash: metadata.icon_hash.clone(),
             banner_hash: metadata.banner_hash.clone(),
-            lamport: metadata.lamport,
         });
     }
 
@@ -54,7 +53,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             category_id: channel.category_id,
             position: channel.position,
             parent_voice_channel_id: channel.parent_voice_channel_id,
-            lamport: channel.created_lamport,
         });
     }
 
@@ -69,7 +67,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             mentionable: role.mentionable,
             self_assignable: role.self_assignable,
             exclusion_group: role.exclusion_group.clone(),
-            lamport: role.lamport,
         });
     }
 
@@ -78,7 +75,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             entries.push(GovernanceEntry::RoleAssignment {
                 target: member.clone(),
                 role_id: *role_id,
-                lamport: 0,
             });
         }
     }
@@ -87,7 +83,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
         entries.push(GovernanceEntry::BanEntry {
             target: banned.clone(),
             reason: None,
-            lamport: 0,
         });
     }
 
@@ -97,7 +92,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             duration_seconds: timeout.duration_seconds,
             reason: None,
             started_at: timeout.started_at,
-            lamport: timeout.lamport,
         });
     }
 
@@ -106,7 +100,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             category_id: *category_id,
             name: category.name.clone(),
             position: category.position,
-            lamport: category.created_lamport,
         });
     }
 
@@ -118,7 +111,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             questions: onboarding.questions.clone(),
             welcome_message: onboarding.welcome_message.clone(),
             guide_steps: onboarding.guide_steps.clone(),
-            lamport: onboarding.lamport,
         });
     }
 
@@ -126,7 +118,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
         entries.push(GovernanceEntry::WelcomeScreen {
             description: welcome_screen.description.clone(),
             channels: welcome_screen.channels.clone(),
-            lamport: welcome_screen.lamport,
         });
     }
 
@@ -137,7 +128,6 @@ fn snapshot_governance_entries(governance: &GovernanceState) -> Vec<GovernanceEn
             max_uses: invite.max_uses,
             expires_at: invite.expires_at,
             secrets_record_key: invite.secrets_record_key.clone(),
-            lamport: invite.created_lamport,
         });
     }
 
@@ -350,7 +340,6 @@ mod tests {
                 description: Some("desc".into()),
                 icon_hash: None,
                 banner_hash: None,
-                lamport: 1,
             }),
             ..Default::default()
         };
@@ -376,7 +365,6 @@ mod tests {
                 slowmode_seconds: None,
                 nsfw: None,
                 parent_voice_channel_id: None,
-                created_lamport: 5,
             },
         );
         let gov = GovernanceState {
@@ -389,7 +377,6 @@ mod tests {
             GovernanceEntry::ChannelCreated {
                 channel_id: cid,
                 name,
-                lamport,
                 ..
             } => {
                 assert_eq!(cid, &channel_id);

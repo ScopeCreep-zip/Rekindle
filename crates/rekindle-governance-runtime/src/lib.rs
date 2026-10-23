@@ -40,6 +40,7 @@ pub mod join_gate;
 pub mod join_stages;
 pub mod membership_events;
 pub mod moderation;
+pub mod op_log;
 pub mod origin;
 pub mod overflow;
 pub mod ownership;
@@ -76,6 +77,7 @@ pub use membership_events::{
     process_onboarding_answers, process_peer_assisted_join, process_slot_keypair_grant,
     JoinAcceptedInput, MemberUpsertRow, MembershipEventDeps, SlotGrantUpdate,
 };
+pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
 pub use origin::create_community;
 pub use overflow::{
     partition_into_pages, read_governance_with_overflow, read_my_chain, MAX_OVERFLOW_PAGES,

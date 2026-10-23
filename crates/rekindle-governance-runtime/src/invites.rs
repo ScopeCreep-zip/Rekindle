@@ -153,7 +153,6 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
 
     let invite_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
     let expires_at = expires_in_seconds.map(|s| deps.clock().now_secs() + s);
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -163,7 +162,6 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
             max_uses,
             expires_at,
             secrets_record_key: secrets_record_key.clone(),
-            lamport,
         },
     )
     .await?;
@@ -186,11 +184,10 @@ pub async fn revoke_invite<D: GovernanceRuntimeDeps>(
     community_id: &str,
     invite_id: [u8; 16],
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
-        GovernanceEntry::InviteRevoked { invite_id, lamport },
+        GovernanceEntry::InviteRevoked { invite_id },
     )
     .await
 }

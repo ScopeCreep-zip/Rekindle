@@ -27,7 +27,6 @@ pub struct CreatedChannel {
     pub channel_id_hex: String,
     pub record_key: String,
     pub position: u32,
-    pub lamport: u64,
 }
 
 /// The fields a caller chooses; everything else is derived.
@@ -72,7 +71,6 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
     let member_pubkeys = segment_slot_pubkeys(&slot_seed, 0)?;
     // Taken before the create, so nothing can fail between the create and
     // the announcement that hands the record's lease to the host.
-    let lamport = deps.next_governance_lamport(community_id)?;
     let record = deps.create_smpl_record(&member_pubkeys).await?;
     if let Err(e) = crate::records::publish_created(deps, record.lease, &slot_seed, 0).await {
         deps.release_record(record.lease).await;
@@ -99,7 +97,6 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
             category_id: channel.category_id,
             position: channel.position,
             parent_voice_channel_id: channel.parent_voice_channel_id,
-            lamport,
         },
     )
     .await;
@@ -122,6 +119,5 @@ pub async fn create_channel<D: GovernanceRuntimeDeps>(
         channel_id_hex,
         record_key: record.record_key,
         position: channel.position,
-        lamport,
     })
 }

@@ -58,14 +58,12 @@ pub async fn assign_role<D: GovernanceRuntimeDeps>(
     pseudonym_key: &str,
     role_id: u32,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::RoleAssignment {
             target: PseudonymKey::from_hex_lossy(pseudonym_key),
             role_id: RoleId::from_legacy_u32(role_id),
-            lamport,
         },
     )
     .await?;
@@ -85,14 +83,12 @@ pub async fn unassign_role<D: GovernanceRuntimeDeps>(
     pseudonym_key: &str,
     role_id: u32,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::RoleUnassignment {
             target: PseudonymKey::from_hex_lossy(pseudonym_key),
             role_id: RoleId::from_legacy_u32(role_id),
-            lamport,
         },
     )
     .await?;
@@ -138,7 +134,6 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
         GovernanceRuntimeError::Adapter("failed to allocate unique role id".into())
     })?;
 
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -152,7 +147,6 @@ pub async fn create_role<D: GovernanceRuntimeDeps>(
             mentionable,
             self_assignable,
             exclusion_group: exclusion_group.clone(),
-            lamport,
         },
     )
     .await?;
@@ -188,7 +182,6 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
         ExclusionGroupEdit::Set(s) => Some(s.clone()),
     };
 
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
@@ -202,7 +195,6 @@ pub async fn edit_role<D: GovernanceRuntimeDeps>(
             mentionable: patch.mentionable.unwrap_or(current.mentionable),
             self_assignable: patch.self_assignable.unwrap_or(current.self_assignable),
             exclusion_group: next_exclusion,
-            lamport,
         },
     )
     .await?;
@@ -215,13 +207,11 @@ pub async fn delete_role<D: GovernanceRuntimeDeps>(
     community_id: &str,
     role_id: u32,
 ) -> Result<(), GovernanceRuntimeError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::RoleArchived {
             role_id: RoleId::from_legacy_u32(role_id),
-            lamport,
         },
     )
     .await?;
