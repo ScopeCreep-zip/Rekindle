@@ -71,8 +71,7 @@ pub async fn set_attachment_pinned<D: crate::deps::FilesDeps + ?Sized>(
                 "invalid attachment id hex: {attachment_id_hex}"
             ))
         })?;
-    let lamport = deps.next_governance_lamport(community_id)?;
-    deps.write_attachment_pinned(community_id, attachment_id, pinned, lamport)
+    deps.write_attachment_pinned(community_id, attachment_id, pinned)
         .await
 }
 

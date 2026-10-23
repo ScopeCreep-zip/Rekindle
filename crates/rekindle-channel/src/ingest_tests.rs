@@ -1,8 +1,18 @@
+use rekindle_governance::op::OpStamp;
 use rekindle_governance::state::{AutoModRuleState, ChannelState, TimeoutState};
+use rekindle_types::governance::OpHash;
 
 use rekindle_types::governance::AutoModAction;
 
 use super::*;
+
+/// The stamp of a test op at `lamport`.
+fn stamp(lamport: u64) -> OpStamp {
+    OpStamp {
+        lamport,
+        hash: OpHash([0; 32]),
+    }
+}
 
 const GATE_CHANNEL: &str = "00112233445566778899aabbccddeeff";
 const ANN: &str = "aa00000000000000000000000000000000000000000000000000000000000000";
@@ -33,7 +43,7 @@ fn state() -> GovernanceState {
             slowmode_seconds: None,
             nsfw: None,
             parent_voice_channel_id: None,
-            created_lamport: 0,
+            created: OpStamp::MIN,
         },
     );
     gov
@@ -47,7 +57,7 @@ fn rule(gov: &mut GovernanceState, id: u8, trigger_json: &str, action: AutoModAc
             enabled: true,
             trigger_json: trigger_json.into(),
             action,
-            lamport: 1,
+            stamp: stamp(1),
         },
     );
 }
@@ -98,7 +108,7 @@ fn drops_a_timed_out_author_until_the_timeout_ends() {
         TimeoutState {
             duration_seconds: 60,
             started_at: 100,
-            lamport: 1,
+            stamp: stamp(1),
         },
     );
     assert_eq!(
@@ -196,9 +206,9 @@ fn thread_by(creator: &PseudonymKey) -> rekindle_governance::state::ThreadState 
         forum_tag: None,
         auto_archive_seconds: 3600,
         creator: creator.clone(),
-        created_lamport: 2,
-        archived_lamport: None,
-        unarchived_lamport: None,
+        created: stamp(2),
+        archived: None,
+        unarchived: None,
     }
 }
 
@@ -208,7 +218,7 @@ fn time_out(gov: &mut GovernanceState, member: &PseudonymKey) {
         TimeoutState {
             duration_seconds: 60,
             started_at: 100,
-            lamport: 1,
+            stamp: stamp(1),
         },
     );
 }

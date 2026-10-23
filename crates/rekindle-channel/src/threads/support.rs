@@ -76,9 +76,6 @@ pub(super) async fn create_lazy_thread_record<D: ChannelMessagingDeps>(
     let slot_seed = deps
         .slot_seed_bytes(community_id)
         .ok_or_else(|| ChannelError::Adapter("no slot seed available for community".into()))?;
-    // Taken before the create, so nothing fails between it and the
-    // announcement that hands the record's lease to the host.
-    let lamport = deps.next_governance_lamport(community_id)?;
     let (lease, record_key) = deps.create_smpl_thread_record(&slot_seed).await?;
 
     let announced = deps
@@ -93,7 +90,6 @@ pub(super) async fn create_lazy_thread_record<D: ChannelMessagingDeps>(
                 invited: thread.invited.clone(),
                 forum_tag: thread.forum_tag.clone(),
                 auto_archive_seconds: thread.auto_archive_seconds,
-                lamport,
             },
         )
         .await;

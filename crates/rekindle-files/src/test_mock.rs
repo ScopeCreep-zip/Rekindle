@@ -37,7 +37,7 @@ pub struct MockCalls {
     pub channel_messages_persisted: Vec<String>, // message_id
     pub slowmode_persists: Vec<(String, String, i64)>, // community, channel, now_ms
     pub local_path_persists: Vec<(String, String, String)>, // owner, channel, attachment_id_hex
-    pub attachment_pinneds: Vec<([u8; 16], bool, u64)>, // attachment_id, pinned, lamport
+    pub attachment_pinneds: Vec<([u8; 16], bool)>, // attachment_id, pinned
     pub events: Vec<FilesEvent>,
     pub app_calls: Vec<Vec<u8>>, // routed payloads
     pub posts_queued: Vec<crate::deps::ChannelPost>,
@@ -243,13 +243,6 @@ impl FilesDeps for MockDeps {
         Ok(1)
     }
 
-    fn next_governance_lamport(
-        &self,
-        _c: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        Ok(1)
-    }
-
     fn next_channel_sequence(&self, _c: &str, _ch: &str) -> u64 {
         1
     }
@@ -379,12 +372,11 @@ impl FilesDeps for MockDeps {
         _c: &str,
         attachment_id: [u8; 16],
         pinned: bool,
-        lamport: u64,
     ) -> Result<(), FilesError> {
         self.calls
             .lock()
             .attachment_pinneds
-            .push((attachment_id, pinned, lamport));
+            .push((attachment_id, pinned));
         Ok(())
     }
 

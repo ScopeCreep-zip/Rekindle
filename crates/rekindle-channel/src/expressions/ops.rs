@@ -7,7 +7,7 @@ use rekindle_types::governance::GovernanceEntry;
 
 use super::image::{published_media_type, ExpressionPicture};
 use super::limits::detect_audio_kind;
-use super::upload::next_lamport;
+use super::upload::require_governance;
 use crate::deps::{ChannelMessagingDeps, ExpressionView};
 use crate::error::ChannelError;
 
@@ -48,13 +48,10 @@ pub async fn delete_expression<D: ChannelMessagingDeps>(
         .try_into()
         .map_err(|_| ChannelError::InvalidId("expression id must be 16 bytes".into()))?;
 
-    let lamport = next_lamport(deps, community_id)?;
+    require_governance(deps, community_id)?;
     deps.write_governance_entry(
         community_id,
-        GovernanceEntry::ExpressionRemoved {
-            expression_id,
-            lamport,
-        },
+        GovernanceEntry::ExpressionRemoved { expression_id },
     )
     .await
 }

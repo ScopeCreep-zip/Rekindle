@@ -267,12 +267,6 @@ pub trait ChannelMessagingDeps: Send + Sync {
         &self,
         community_id: &str,
     ) -> Result<u64, rekindle_types::lamport::LamportError>;
-    /// Next governance-clock value (threads, expressions — anything written
-    /// as a `GovernanceEntry`).
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     // ---------- DHT ----------
 

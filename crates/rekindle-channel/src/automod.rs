@@ -9,6 +9,7 @@
 use regex::Regex;
 use std::sync::Arc;
 
+use rekindle_governance::op::OpStamp;
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::governance::AutoModAction;
 use serde::Deserialize;
@@ -54,7 +55,7 @@ pub struct CompiledAutoModRule {
 /// a broken rule is not recompiled per post either).
 #[derive(Debug, Clone)]
 pub struct AutoModCompiledCache {
-    pub fingerprint: Vec<([u8; 16], u64)>,
+    pub fingerprint: Vec<([u8; 16], OpStamp)>,
     pub rules: Result<Vec<CompiledAutoModRule>, String>,
 }
 
@@ -118,7 +119,7 @@ pub fn get_rule<D: ChannelMessagingDeps>(
         keywords: trigger.keywords,
         regex_patterns: trigger.regex_patterns,
         action: rule.action,
-        lamport: rule.lamport,
+        lamport: rule.stamp.lamport,
     })
 }
 
@@ -162,11 +163,11 @@ fn compile_rules(governance: &GovernanceState) -> Result<Vec<CompiledAutoModRule
     Ok(rules)
 }
 
-fn rule_fingerprint(governance: &GovernanceState) -> Vec<([u8; 16], u64)> {
+fn rule_fingerprint(governance: &GovernanceState) -> Vec<([u8; 16], OpStamp)> {
     let mut fingerprint = governance
         .automod_rules
         .iter()
-        .map(|(rule_id, rule)| (*rule_id, rule.lamport))
+        .map(|(rule_id, rule)| (*rule_id, rule.stamp))
         .collect::<Vec<_>>();
     fingerprint.sort_by(|a, b| a.0.cmp(&b.0));
     fingerprint
@@ -196,7 +197,7 @@ pub fn rules_of(governance: &GovernanceState) -> Vec<AutoModRuleInfo> {
                 keywords: trigger.keywords,
                 regex_patterns: trigger.regex_patterns,
                 action: rule.action,
-                lamport: rule.lamport,
+                lamport: rule.stamp.lamport,
             })
         })
         .collect::<Vec<_>>();

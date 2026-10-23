@@ -34,7 +34,7 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
                 starter_message_id: String::new(),
                 creator_pseudonym: hex::encode(thread.creator.0),
                 forum_tag: thread.forum_tag.clone(),
-                created_at: thread.created_lamport,
+                created_at: thread.created.lamport,
                 archived: false,
                 auto_archive_seconds: u32::try_from(thread.auto_archive_seconds)
                     .unwrap_or(u32::MAX),
@@ -51,7 +51,7 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
         dto.last_message_at = last_activity;
         dto.message_count = message_count;
         dto.archived = is_thread_archived(
-            thread.archived_lamport,
+            thread.archived.map(|stamp| stamp.lamport),
             last_lamport,
             last_activity,
             thread.auto_archive_seconds,

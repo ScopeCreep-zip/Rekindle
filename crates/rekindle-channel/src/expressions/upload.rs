@@ -48,16 +48,16 @@ fn enforce_count_limit<D: ChannelMessagingDeps>(
     }
 }
 
-pub(super) fn next_lamport<D: ChannelMessagingDeps>(
+pub(super) fn require_governance<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
-) -> Result<u64, ChannelError> {
+) -> Result<(), ChannelError> {
     if deps.governance_state(community_id).is_none() {
         return Err(ChannelError::Adapter(
             "governance state not loaded for this community".into(),
         ));
     }
-    Ok(deps.next_governance_lamport(community_id)?)
+    Ok(())
 }
 
 /// Upload a custom emoji. `kind` is what the file picker declared; the
@@ -91,7 +91,7 @@ pub async fn upload_emoji<D: ChannelMessagingDeps>(
         picture.kind.mime().to_string(),
     )?;
 
-    let lamport = next_lamport(deps, community_id)?;
+    require_governance(deps, community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::ExpressionAdded {
@@ -106,7 +106,6 @@ pub async fn upload_emoji<D: ChannelMessagingDeps>(
             creator_pseudonym: creator,
             created_at: Some(deps.now_secs()),
             available_to_peers: Some(true),
-            lamport,
         },
     )
     .await?;
@@ -148,7 +147,7 @@ pub async fn upload_sticker<D: ChannelMessagingDeps>(
         picture.kind.mime().to_string(),
     )?;
 
-    let lamport = next_lamport(deps, community_id)?;
+    require_governance(deps, community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::ExpressionAdded {
@@ -163,7 +162,6 @@ pub async fn upload_sticker<D: ChannelMessagingDeps>(
             creator_pseudonym: creator,
             created_at: Some(deps.now_secs()),
             available_to_peers: Some(true),
-            lamport,
         },
     )
     .await?;
@@ -233,7 +231,7 @@ pub async fn upload_soundboard_sound<D: ChannelMessagingDeps>(
         "audio/ogg".to_string(),
     )?;
 
-    let lamport = next_lamport(deps, community_id)?;
+    require_governance(deps, community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::ExpressionAdded {
@@ -248,7 +246,6 @@ pub async fn upload_soundboard_sound<D: ChannelMessagingDeps>(
             creator_pseudonym: creator,
             created_at: Some(deps.now_secs()),
             available_to_peers: Some(true),
-            lamport,
         },
     )
     .await?;

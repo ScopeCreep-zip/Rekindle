@@ -25,7 +25,6 @@ pub async fn create_thread<D: ChannelMessagingDeps>(
         Some(secs) => validate_auto_archive_seconds(secs)?,
         None => default_auto_archive_seconds(&thread_type),
     };
-    let lamport = deps.next_governance_lamport(community_id)?;
     let forum_tag_for_entry = forum_tag.clone();
 
     deps.write_governance_entry(
@@ -39,7 +38,6 @@ pub async fn create_thread<D: ChannelMessagingDeps>(
             invited: Vec::new(),
             forum_tag: forum_tag_for_entry,
             auto_archive_seconds,
-            lamport,
         },
     )
     .await?;
@@ -75,12 +73,10 @@ pub async fn archive_thread<D: ChannelMessagingDeps>(
     community_id: &str,
     thread_id: &str,
 ) -> Result<(), ChannelError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::ThreadArchived {
             thread_id: ThreadId(hex_to_id_16(thread_id)),
-            lamport,
         },
     )
     .await
@@ -95,12 +91,10 @@ pub async fn unarchive_thread<D: ChannelMessagingDeps>(
     community_id: &str,
     thread_id: &str,
 ) -> Result<(), ChannelError> {
-    let lamport = deps.next_governance_lamport(community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::ThreadUnarchived {
             thread_id: ThreadId(hex_to_id_16(thread_id)),
-            lamport,
         },
     )
     .await

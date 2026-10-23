@@ -156,11 +156,6 @@ pub trait FilesDeps: FileCacheDeps {
         &self,
         community_id: &str,
     ) -> Result<u64, rekindle_types::lamport::LamportError>;
-    /// Next governance-clock value (`AttachmentPinned`).
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
 
     fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64;
 
@@ -268,7 +263,6 @@ pub trait FilesDeps: FileCacheDeps {
         community_id: &str,
         attachment_id: [u8; 16],
         pinned: bool,
-        lamport: u64,
     ) -> Result<(), FilesError>;
 
     // ── Events ─────────────────────────────────────────────────────
