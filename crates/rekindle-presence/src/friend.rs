@@ -253,6 +253,10 @@ fn parse_game_info(data: &[u8]) -> Option<GameInfoSnapshot> {
     })
 }
 
+/// The one read of a friend's display name after their watch is set
+/// ([`watch_friend`]); the host runs it on its own task.
+pub type NameRead = std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send>>;
+
 /// Subscribe to a friend's DHT presence record. On hard failures
 /// (invalid key, open fails) the friend is added to the
 /// log + the function returns `Ok(())` — non-fatal so
@@ -261,7 +265,7 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     deps: Arc<D>,
     friend_key: &str,
     dht_record_key: &str,
-) -> Result<(), PresenceError> {
+) -> Result<Option<NameRead>, PresenceError> {
     deps.set_friend_dht_record_key(friend_key, dht_record_key);
 
     let lease = match deps.acquire_friend_record(dht_record_key).await {
@@ -272,7 +276,7 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
                 dht_key = %dht_record_key,
                 "failed to open DHT record for watching"
             );
-            return Ok(());
+            return Ok(None);
         }
     };
     // Watch on the new lease before handing it over: the host releases
@@ -297,18 +301,22 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     // Held either way: the pool re-arms a held record's watch.
     deps.hold_friend_record(friend_key, lease).await;
     // The name is read once now: a watch reports changes, not the value
-    // the record already holds (live A/B finding 39).
-    if let Some(name) = deps
-        .fetch_friend_dht_subkey(
-            dht_record_key,
-            rekindle_types::dht_layout::profile::DISPLAY_NAME,
-            true,
-        )
-        .await
-    {
-        handle_name_change(&*deps, friend_key, &name);
-    }
-    Ok(())
+    // the record already holds (live A/B finding 39). The read is a network
+    // GET, so it is handed back for the host to run on its session scope:
+    // the accept or add that set the watch never waits on it.
+    let (friend_key, dht_record_key) = (friend_key.to_string(), dht_record_key.to_string());
+    Ok(Some(Box::pin(async move {
+        if let Some(name) = deps
+            .fetch_friend_dht_subkey(
+                &dht_record_key,
+                rekindle_types::dht_layout::profile::DISPLAY_NAME,
+                true,
+            )
+            .await
+        {
+            handle_name_change(&*deps, &friend_key, &name);
+        }
+    })))
 }
 
 /// Publish our own status to profile subkey 2: the 9-byte

@@ -206,9 +206,15 @@ mod tests {
     #[tokio::test]
     async fn watching_a_friend_holds_the_watch_and_reads_the_name_once() {
         let deps = Arc::new(MockDeps::default());
-        crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
+        let name_read = crate::watch_friend(Arc::clone(&deps), "alice", "dht1")
             .await
-            .unwrap();
+            .unwrap()
+            .expect("the record opened");
+        assert!(
+            deps.state.lock().calls_fetch_subkey.is_empty(),
+            "the watch itself reads nothing"
+        );
+        name_read.await;
         let st = deps.state.lock();
         assert_eq!(st.calls_set_dht_key, vec![("dht1".into(), "alice".into())]);
         assert_eq!(st.calls_open_friend, vec!["dht1".to_string()]);

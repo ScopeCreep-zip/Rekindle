@@ -180,10 +180,11 @@ impl FriendHost for HostFriends {
     }
 
     async fn watch_friend(&self, peer: &str, profile_dht_key: &str) {
-        if let Err(e) =
-            rekindle_presence::watch_friend(Arc::new(self.clone()), peer, profile_dht_key).await
-        {
-            tracing::trace!(peer = %peer, error = %e, "friend presence not watched");
+        match rekindle_presence::watch_friend(Arc::new(self.clone()), peer, profile_dht_key).await {
+            // The name read is a GET: off the path that set the watch.
+            Ok(Some(name_read)) => self.scope().spawn_or_drop("friend name read", name_read),
+            Ok(None) => {}
+            Err(e) => tracing::trace!(peer = %peer, error = %e, "friend presence not watched"),
         }
         // The profile is held only once its record opened; a failed open is
         // retried on the maintenance tick (`retry_failed_watches`).
