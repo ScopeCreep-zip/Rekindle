@@ -422,6 +422,13 @@ impl DhtBackend for SimDht {
             tokio::time::sleep(span).await;
             return Err(try_again());
         }
+        let below = (self.node, key.to_string());
+        if self.net.inner.lock().faults.write_fails.contains(&below) {
+            // Below consensus: no replica accepted it, so nothing is
+            // stored (`fanout::commit`).
+            tokio::time::sleep(span).await;
+            return Ok(None);
+        }
         let ours = self.ours(key, subkey, data, &public);
         let fanout = fanout::run(&self.net, self.node, (key, subkey), &ours, span).await;
         if self.offline() {

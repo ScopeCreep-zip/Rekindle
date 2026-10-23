@@ -65,6 +65,10 @@ pub enum Fault {
     TryAgain { node: usize, calls: u32 },
     /// Every DHT call of the node fails (or stops failing): no connection.
     DhtOffline { node: usize, offline: bool },
+    /// Every set of `record` by the node lands below consensus (no replica
+    /// accepts it and nothing is stored, as a Veilid `set_value` can),
+    /// until [`Fault::Heal`]; its other records' writes are unaffected.
+    WriteFails { node: usize, record: String },
     /// The two groups cannot exchange app messages or calls, and neither
     /// reaches the record replicas placed beside the other's nodes (a
     /// stale read or a set below consensus follows from which replicas a
@@ -257,6 +261,14 @@ impl Netsim {
             Fault::DhtOffline { node, offline } => {
                 toggle(&mut self.net.inner.lock().faults.dht_offline, node, offline);
             }
+            Fault::WriteFails { node, record } => {
+                self.net
+                    .inner
+                    .lock()
+                    .faults
+                    .write_fails
+                    .insert((node, record));
+            }
             Fault::Partition { a, b } => {
                 let mut inner = self.net.inner.lock();
                 for x in &a {
@@ -303,6 +315,7 @@ impl Netsim {
             let mut inner = self.net.inner.lock();
             inner.faults.partitions.clear();
             inner.faults.dht_offline.clear();
+            inner.faults.write_fails.clear();
             let mut nodes: Vec<usize> = inner.faults.not_ready.iter().copied().collect();
             nodes.sort_unstable();
             nodes
