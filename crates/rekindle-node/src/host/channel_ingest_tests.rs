@@ -75,7 +75,6 @@ fn post(timestamp_secs: u64) -> ReceivedPost {
             mentioned_roles: Vec::new(),
         },
         forwarded_from_author: None,
-        attachment_json: None,
     }
 }
 

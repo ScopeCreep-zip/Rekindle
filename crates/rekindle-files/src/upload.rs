@@ -42,6 +42,26 @@ pub struct AttachmentRecordJson {
     pub local_path: Option<String>,
 }
 
+impl AttachmentRecordJson {
+    /// The record of `offer`, as the uploader stores it and as every
+    /// receiver's ingest stores it from the post's embedded offer;
+    /// `local_path` is where the file sits on this device, if anywhere.
+    #[must_use]
+    pub fn from_offer(
+        offer: &rekindle_types::attachment::AttachmentOffer,
+        local_path: Option<String>,
+    ) -> Self {
+        Self {
+            attachment_id: hex::encode(offer.attachment_id),
+            filename: offer.filename.clone(),
+            mime_type: offer.mime_type.clone(),
+            total_size: offer.total_size,
+            chunk_count: offer.chunk_count,
+            local_path,
+        }
+    }
+}
+
 /// Caller-supplied inputs for [`upload_bytes_as_attachment`]. Groups the
 /// file payload + addressing + body so the core pipeline stays under the
 /// argument-count budget; each caller still names every field at the
@@ -292,15 +312,9 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
 
     // Persist a SQLite row.
     let owner_key = deps.owner_key()?;
-    let attachment_json = serde_json::to_string(&AttachmentRecordJson {
-        attachment_id: hex::encode(attachment_id),
-        filename: filename.clone(),
-        mime_type: mime_type.clone(),
-        total_size,
-        chunk_count,
-        local_path,
-    })
-    .map_err(|e| FilesError::Db(format!("serialize attachment_json: {e}")))?;
+    let attachment_json =
+        serde_json::to_string(&AttachmentRecordJson::from_offer(&offer, local_path))
+            .map_err(|e| FilesError::Db(format!("serialize attachment_json: {e}")))?;
     let body_for_db = if flags & rekindle_types::channel::flags::VOICE_MESSAGE != 0 {
         // Voice-message body is JSON metadata: persist it as-is so the local
         // SQLite read path can decode without a separate fetch.

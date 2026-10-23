@@ -65,17 +65,6 @@ pub async fn handle_message_notification(
     // The Host's one ingest (plan E3.1 F3): it opens the body, runs the D26
     // gate (block list, bans, timeouts, slowmode, automod), stores the row
     // and publishes the post and the channel's unread count.
-    let attachment_json: Option<String> = message.attachment.as_ref().map(|att| {
-        serde_json::to_string(&serde_json::json!({
-            "attachmentId": hex::encode(att.attachment_id),
-            "filename": att.filename,
-            "mimeType": att.mime_type,
-            "totalSize": att.total_size,
-            "chunkCount": att.chunk_count,
-            "localPath": serde_json::Value::Null,
-        }))
-        .unwrap_or_default()
-    });
     let ingested = state
         .host
         .get()
@@ -89,7 +78,6 @@ pub async fn handle_message_notification(
             sequence: pending.sequence,
             message: message.clone(),
             forwarded_from_author: fetched.forwarded_from_author.clone(),
-            attachment_json,
         })
         .await
         .map_err(|e| e.to_string())?;

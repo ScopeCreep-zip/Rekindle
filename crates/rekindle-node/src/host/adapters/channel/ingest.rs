@@ -34,8 +34,6 @@ pub struct ReceivedPost {
     pub message: ChannelMessage,
     /// The original author, when the post is a forward.
     pub forwarded_from_author: Option<String>,
-    /// The attachment's stored record, as JSON.
-    pub attachment_json: Option<String>,
 }
 
 /// The columns of a received row the ingest decides.
@@ -96,7 +94,6 @@ impl HostChannel {
                             sequence,
                             message,
                             forwarded_from_author: None,
-                            attachment_json: None,
                         })
                         .await;
                 }
@@ -320,6 +317,16 @@ impl HostChannel {
         post: ReceivedPost,
         row: Row,
     ) -> Result<(), ChannelError> {
+        // The post's embedded offer is the attachment's record, the same
+        // record the uploader stored; a later download fills its path.
+        let attachment_json = (post.message.attachment.as_ref())
+            .map(|offer| {
+                serde_json::to_string(&rekindle_files::AttachmentRecordJson::from_offer(
+                    offer, None,
+                ))
+            })
+            .transpose()
+            .map_err(stored)?;
         db.call(move |conn| {
             let m = &post.message;
             rows::insert(
@@ -338,7 +345,7 @@ impl HostChannel {
                     automod_blurred: row.blurred,
                     forwarded_from_author: post.forwarded_from_author.as_deref(),
                     flags: m.flags,
-                    attachment_json: post.attachment_json.as_deref(),
+                    attachment_json: attachment_json.as_deref(),
                     send_state: SendState::Delivered,
                     mentions_me: row.mentions_me,
                 },
