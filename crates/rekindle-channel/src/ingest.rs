@@ -86,11 +86,15 @@ impl BlockList {
     }
 }
 
-/// The last admitted post's time per community, channel and author, for
-/// slowmode.
+/// The timestamps of the posts we hold that started a slowmode window (each
+/// admitted or hidden post), per community, channel and author. A post is
+/// judged against its author's nearest earlier-timestamped one here, never
+/// against the last one judged, so a backfilled older post gets the verdict
+/// the live path gave it in order (plan E3.1 FX2). A predecessor that
+/// arrives after its successor does not drop the successor retroactively.
 #[derive(Debug, Default)]
 pub struct RateLimits {
-    last: BTreeMap<(String, String, String), u64>,
+    held: BTreeMap<(String, String, String), BTreeSet<u64>>,
 }
 
 /// When `member`'s timeout ends, while it lasts at `now_secs` (the
@@ -135,8 +139,8 @@ pub fn hold_timed_out_threads<S: BuildHasher>(
 
 /// Judge `item` against the community's merged state `gov`, its compiled
 /// automod rules (`crate::automod::compiled_rules`), the block list and the
-/// slowmode windows; an admitted or hidden post starts its author's next
-/// window.
+/// slowmode windows; an admitted or hidden post starts a window of its
+/// author's.
 pub fn gate(
     item: &GateItem<'_>,
     gov: &GovernanceState,
@@ -163,7 +167,7 @@ pub fn gate(
     }
     let verdict = automod(rules, item.body);
     if !matches!(verdict, Verdict::Drop(_)) {
-        limits.last.insert(window_key(item), item.sent_at_secs);
+        (limits.held.entry(window_key(item)).or_default()).insert(item.sent_at_secs);
     }
     verdict
 }
@@ -183,11 +187,12 @@ fn window_key(item: &GateItem<'_>) -> (String, String, String) {
     )
 }
 
+/// Whether the author's nearest held post at or before `item`'s timestamp
+/// is less than `seconds` older than it.
 fn within_window(item: &GateItem<'_>, limits: &RateLimits, seconds: u32) -> bool {
-    limits
-        .last
-        .get(&window_key(item))
-        .is_some_and(|last| item.sent_at_secs.saturating_sub(*last) < u64::from(seconds))
+    (limits.held.get(&window_key(item)))
+        .and_then(|times| times.range(..=item.sent_at_secs).next_back())
+        .is_some_and(|earlier| item.sent_at_secs - earlier < u64::from(seconds))
 }
 
 /// The automod verdict: a matching `BlockLocally` rule drops, then

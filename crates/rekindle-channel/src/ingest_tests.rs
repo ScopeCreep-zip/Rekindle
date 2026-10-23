@@ -259,3 +259,47 @@ fn a_thread_received_while_its_creator_is_timed_out_is_held() {
     hold_timed_out_threads(Some(&known), &mut held, &mut merged, 500);
     assert!(!merged.threads.contains_key(&ThreadId([2; 16])));
 }
+
+/// Judge posts at `times` (seconds) in that order under a 30 s slowmode,
+/// answering each post's verdict by its timestamp.
+fn slowmode_verdicts(times: &[u64]) -> BTreeMap<u64, Verdict> {
+    let mut gov = state();
+    for channel in gov.channels.values_mut() {
+        channel.slowmode_seconds = Some(30);
+    }
+    let (blocked, mut limits) = (BlockList::default(), RateLimits::default());
+    let rules = AutoModCompiledCache::compile(&gov);
+    (times.iter())
+        .map(|t| {
+            let verdict = gate(&item("post", *t, 500), &gov, &rules, &blocked, &mut limits);
+            (*t, verdict)
+        })
+        .collect()
+}
+
+#[test]
+fn an_older_post_judged_after_a_newer_one_gets_its_in_order_verdict() {
+    let in_order = slowmode_verdicts(&[100, 140]);
+    assert_eq!(in_order[&100], Verdict::Admit);
+    assert_eq!(in_order[&140], Verdict::Admit);
+    assert_eq!(slowmode_verdicts(&[140, 100]), in_order);
+}
+
+#[test]
+fn the_later_of_two_posts_inside_the_window_drops_whatever_the_arrival_order() {
+    let slowmode = Verdict::Drop(GateReason::Slowmode { seconds: 30 });
+    let in_order = slowmode_verdicts(&[100, 110, 200]);
+    assert_eq!(in_order[&100], Verdict::Admit);
+    assert_eq!(in_order[&110], slowmode);
+    assert_eq!(in_order[&200], Verdict::Admit);
+    for order in [[100, 200, 110], [200, 100, 110]] {
+        assert_eq!(slowmode_verdicts(&order), in_order, "{order:?}");
+    }
+}
+
+#[test]
+fn a_predecessor_arriving_after_its_successor_does_not_drop_it() {
+    let verdicts = slowmode_verdicts(&[110, 100]);
+    assert_eq!(verdicts[&110], Verdict::Admit);
+    assert_eq!(verdicts[&100], Verdict::Admit);
+}
