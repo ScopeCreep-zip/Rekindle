@@ -23,7 +23,14 @@ pub(crate) fn handle_mek_list(
     if !state.can_query() {
         return state_error(state, "query");
     }
-    let snapshot = ctx.mek_cache.read().snapshot(community);
+    // `community` is what the user typed, a name or a governance key; the
+    // cache is keyed by the governance key, so a name matched nothing
+    // (live A/B finding 10).
+    let membership = match ctx.resolve_community(community) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    let snapshot = ctx.mek_cache.read().snapshot(&membership.governance_key);
     IpcResponse::ok(&snapshot)
 }
 
