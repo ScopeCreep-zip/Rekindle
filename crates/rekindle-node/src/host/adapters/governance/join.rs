@@ -57,6 +57,7 @@ impl HostGovernance {
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
+        self.open_gossip_mesh(&id);
         // `K_M(p)`, the card's HPKE secret and the row are durable: the
         // walked ops and our `MemberJoined` into the op store, the merge,
         // then `M` in §4.4's order.

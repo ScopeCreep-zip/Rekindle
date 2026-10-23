@@ -145,6 +145,7 @@ impl HostGovernance {
             tracing::error!(error = %e, community = %community.id, "created community not recorded");
             return;
         }
+        self.open_gossip_mesh(&community.id);
         self.install_created(&super::state_builder::CreatedCommunity {
             id: &community.id,
             governance_key: &community.id,

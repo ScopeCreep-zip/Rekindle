@@ -25,6 +25,22 @@ impl HostGovernance {
         crate::daemon::gossip::send(&self.ctx.gossip_tx, community_id, envelope);
     }
 
+    /// Open the community's gossip mesh as its membership is recorded, before
+    /// the create or join publishes its first op (live A/B findings 7, 12):
+    /// the mesh was registered only by `activate_community`, after the create
+    /// or join returned, so every op the flow gossiped found no mesh. An open
+    /// mesh with no online member yet takes the no-peers branch (PATH 2 has
+    /// no durability; the op rides the governance-op stream to `M`). The
+    /// shell opens its own services (`ShellHooks::community_records_ready`).
+    pub(crate) fn open_gossip_mesh(&self, community_id: &str) {
+        if self.ctx.shell.is_some() {
+            return;
+        }
+        if let Some(broadcast) = self.ctx.broadcast_mgr.read().as_ref() {
+            broadcast.register_mesh(community_id);
+        }
+    }
+
     // ---------- Permissions ----------
 
     /// Reader-validates permission check against the merged CRDT state.
