@@ -304,15 +304,25 @@ async fn call_frame(
     call_datagram(host, to, frame::wire(frame)?).await
 }
 
-/// [`call_frame`] of a datagram already wired (a `friend_handshake` row's).
+/// How a peer answered an `app_call` of ours.
+pub(super) enum CallAnswer {
+    /// The empty return: the receipt.
+    Receipt,
+    /// [`NAK`](crate::operations::direct::NAK): the peer refused the frame.
+    Refused,
+    /// A frame in reply.
+    Reply(Vec<u8>),
+}
+
+/// `app_call` a datagram already wired to `to`; how they answered.
 ///
 /// # Errors
-/// As [`send_to_peer_call`].
-pub(super) async fn call_datagram(
+/// No usable route, or the call failed.
+pub(super) async fn call_datagram_answer(
     host: &dyn FriendHost,
     to: &str,
     datagram: Vec<u8>,
-) -> Result<Option<Opened>, FriendError> {
+) -> Result<CallAnswer, FriendError> {
     let node = host.node()?;
     let target = if let Some(target) = route::cached_target(&node, to) {
         target
@@ -328,12 +338,31 @@ pub(super) async fn call_datagram(
         .call_direct(&target, datagram)
         .await
         .map_err(|e| FriendError::Failed(format!("app_call: {e}")))?;
-    if reply.is_empty() {
-        return Ok(None);
-    }
-    if reply == crate::operations::direct::NAK {
-        return Err(FriendError::Failed(format!("{to} refused the app_call")));
-    }
+    Ok(if reply.is_empty() {
+        CallAnswer::Receipt
+    } else if reply == crate::operations::direct::NAK {
+        CallAnswer::Refused
+    } else {
+        CallAnswer::Reply(reply)
+    })
+}
+
+/// [`call_frame`] of a datagram already wired (a `friend_handshake` row's).
+///
+/// # Errors
+/// As [`send_to_peer_call`].
+pub(super) async fn call_datagram(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+) -> Result<Option<Opened>, FriendError> {
+    let reply = match call_datagram_answer(host, to, datagram).await? {
+        CallAnswer::Receipt => return Ok(None),
+        CallAnswer::Refused => {
+            return Err(FriendError::Failed(format!("{to} refused the app_call")));
+        }
+        CallAnswer::Reply(reply) => reply,
+    };
     let opened = super::unwire(&reply)
         .ok_or_else(|| FriendError::Failed("app_call reply is not a 1:1 frame".into()))?;
     let opened = crate::operations::direct::frame::open(host, opened)

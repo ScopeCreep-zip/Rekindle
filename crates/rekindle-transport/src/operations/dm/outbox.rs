@@ -162,6 +162,10 @@ pub enum Attempt {
     Deferred,
     /// It can never be sent as it stands.
     Wedged(String),
+    /// It is no longer worth sending (a first contact the peer refused,
+    /// whose `PreKeyRejected` sends the retry): it settles failed and
+    /// leaves its stream.
+    Superseded(String),
 }
 
 /// One `dm` row of our stream to a peer, as [`attempt`] takes it.

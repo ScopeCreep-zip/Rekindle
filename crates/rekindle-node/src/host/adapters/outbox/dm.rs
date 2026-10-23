@@ -265,6 +265,7 @@ fn outcome(attempt: Attempt) -> AttemptOutcome {
         Attempt::Receipted => AttemptOutcome::Receipted,
         Attempt::Deferred => AttemptOutcome::Deferred,
         Attempt::Wedged(reason) => AttemptOutcome::Wedged(reason),
+        Attempt::Superseded(reason) => AttemptOutcome::Superseded(reason),
     }
 }
 

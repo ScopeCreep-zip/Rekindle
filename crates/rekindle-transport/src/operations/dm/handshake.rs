@@ -217,10 +217,23 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
     if receipted(kind) {
-        if let Err(e) = send::call_datagram(host, to, datagram).await {
-            tracing::debug!(to = %to, ?kind, error = %e,
-                "handshake frame not receipted by app_call — attempted again");
-            return Attempt::Deferred;
+        match send::call_datagram_answer(host, to, datagram).await {
+            Ok(send::CallAnswer::Receipt | send::CallAnswer::Reply(_)) => {}
+            // A first contact the peer refused is answered by its
+            // `PreKeyRejected`, which sends the one retry (plan E2.4) on
+            // this stream: this row ends and the rows behind it go on.
+            Ok(send::CallAnswer::Refused) if kind != DmTypeId::FriendRequest => {
+                return Attempt::Superseded(format!("{kind:?} refused by {to}"));
+            }
+            Ok(send::CallAnswer::Refused) => {
+                tracing::debug!(to = %to, ?kind, "friend request refused by app_call — attempted again");
+                return Attempt::Deferred;
+            }
+            Err(e) => {
+                tracing::debug!(to = %to, ?kind, error = %e,
+                    "handshake frame not receipted by app_call — attempted again");
+                return Attempt::Deferred;
+            }
         }
         if kind == DmTypeId::FriendRequest {
             host.publish(SubscriptionEvent::Friend(
