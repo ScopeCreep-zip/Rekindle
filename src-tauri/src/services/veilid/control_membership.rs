@@ -144,12 +144,6 @@ pub(super) fn handle_membership_payload(
             pseudonym_key,
             timeout_until,
         } => {
-            let ok = state_helpers::current_owner_key(state).unwrap_or_default();
-            let cid = community_id.to_string();
-            let tp = pseudonym_key.clone();
-            db_fire(pool, "relayed_member_timed_out", move |conn| {
-                rekindle_db::repo::members::set_timeout(conn, &ok, &cid, &tp, timeout_until)
-            });
             crate::event_dispatch::emit_membership(
                 app_handle,
                 rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {

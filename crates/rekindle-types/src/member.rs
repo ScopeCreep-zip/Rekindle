@@ -26,8 +26,6 @@ pub struct MemberInfo {
     /// `online` / `away` / `busy` / `offline`.
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_until: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_blob: Option<Vec<u8>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bio: Option<String>,
@@ -54,7 +52,6 @@ mod tests {
             display_name: "Alice".into(),
             role_ids: vec![0, 1],
             status: "online".into(),
-            timeout_until: None,
             route_blob: Some(vec![1, 2, 3]),
             bio: Some("hi".into()),
             pronouns: None,
@@ -74,7 +71,6 @@ mod tests {
             display_name: "Alice".into(),
             role_ids: vec![],
             status: "online".into(),
-            timeout_until: None,
             route_blob: None,
             bio: None,
             pronouns: None,

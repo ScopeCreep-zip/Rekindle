@@ -13,15 +13,13 @@ struct MemberInfo @0xa0d4eb16e9bf1c2e {
     roleIds        @2 :List(UInt32);
     # `online` / `away` / `busy` / `offline`.
     status         @3 :Text;
-    # 0 when not timed-out; otherwise unix-seconds when timeout expires.
-    timeoutUntil   @4 :UInt64;
     # Empty when route is omitted (offline / private routes withheld).
-    routeBlob      @5 :Data;
-    bio            @6 :Text;
-    pronouns       @7 :Text;
+    routeBlob      @4 :Data;
+    bio            @5 :Text;
+    pronouns       @6 :Text;
     # 0 when no theme color set (caller treats 0 as "default").
-    themeColor     @8 :UInt32;
-    badges         @9 :List(Text);
+    themeColor     @7 :UInt32;
+    badges         @8 :List(Text);
     # Unix-seconds of the last presence heartbeat from this member.
-    lastSeen       @10 :UInt64;
+    lastSeen       @9 :UInt64;
 }

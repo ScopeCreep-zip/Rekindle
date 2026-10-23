@@ -14,14 +14,6 @@ use rekindle_types::member::MemberInfo;
 
 use super::role_ids;
 
-/// A unix-seconds value as SQLite stores it (`INTEGER` is `i64`).
-fn seconds(value: Option<u64>) -> rusqlite::Result<Option<i64>> {
-    value
-        .map(i64::try_from)
-        .transpose()
-        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-}
-
 /// A member's stored profile, as login loads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProfileRow {
@@ -69,7 +61,6 @@ pub struct RosterRow {
     pub pseudonym_key: String,
     pub display_name: Option<String>,
     pub role_ids: Vec<u32>,
-    pub timeout_until: Option<i64>,
 }
 
 /// The community's members, by display name.
@@ -82,7 +73,7 @@ pub fn roster(
     community_id: &str,
 ) -> rusqlite::Result<Vec<RosterRow>> {
     let mut stmt = conn.prepare(
-        "SELECT pseudonym_key, display_name, role_ids, timeout_until FROM community_members \
+        "SELECT pseudonym_key, display_name, role_ids FROM community_members \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY display_name",
     )?;
     let rows = stmt
@@ -91,7 +82,6 @@ pub fn roster(
                 pseudonym_key: row.get(0)?,
                 display_name: row.get(1)?,
                 role_ids: role_ids::decode(2, &row.get::<_, String>(2)?)?,
-                timeout_until: row.get(3)?,
             })
         })?
         .collect();
@@ -144,16 +134,15 @@ pub fn insert_bootstrap_if_absent(
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     conn.execute(
         "INSERT OR IGNORE INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, role_ids, timeout_until, \
-          joined_at, bio, pronouns, theme_color, badges) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, \
+          bio, pronouns, theme_color, badges) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         params![
             owner_key,
             community_id,
             member.pseudonym_key,
             member.display_name,
             role_ids::encode(&member.role_ids)?,
-            seconds(member.timeout_until)?,
             joined_at,
             member.bio,
             member.pronouns,
@@ -173,7 +162,6 @@ pub struct AcceptedMember<'a> {
     pub joined_at: i64,
     pub subkey_index: u32,
     pub onboarding_complete: bool,
-    pub timeout_until: Option<i64>,
 }
 
 /// Store a `JoinAccepted` member, replacing what was stored.
@@ -189,8 +177,8 @@ pub fn replace_accepted(
     conn.execute(
         "INSERT OR REPLACE INTO community_members \
          (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, \
-          subkey_index, onboarding_complete, timeout_until) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+          subkey_index, onboarding_complete) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             owner_key,
             community_id,
@@ -200,7 +188,6 @@ pub fn replace_accepted(
             member.joined_at,
             member.subkey_index,
             member.onboarding_complete,
-            member.timeout_until,
         ],
     )?;
     Ok(())
@@ -303,25 +290,6 @@ pub fn record_leave(
          (owner_key, community_id, pseudonym_key, left_at) \
          VALUES (?1, ?2, ?3, ?4)",
         params![owner_key, community_id, pseudonym_key, left_at],
-    )?;
-    Ok(())
-}
-
-/// Set (unix seconds) or clear (`None`) the member's timeout.
-///
-/// # Errors
-/// The write failed, or `until` is beyond `i64`.
-pub fn set_timeout(
-    conn: &Connection,
-    owner_key: &str,
-    community_id: &str,
-    pseudonym_key: &str,
-    until: Option<u64>,
-) -> rusqlite::Result<()> {
-    conn.execute(
-        "UPDATE community_members SET timeout_until = ?1 \
-         WHERE owner_key = ?2 AND community_id = ?3 AND pseudonym_key = ?4",
-        params![seconds(until)?, owner_key, community_id, pseudonym_key],
     )?;
     Ok(())
 }

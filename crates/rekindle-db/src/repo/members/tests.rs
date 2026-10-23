@@ -135,14 +135,13 @@ fn onboarding_from_another_device_marks_only_our_own_row() {
 }
 
 #[test]
-fn timeouts_set_and_clear_and_a_bootstrap_member_is_stored_once() {
+fn a_bootstrap_member_is_stored_once() {
     let conn = conn_with_community();
     let member = MemberInfo {
         pseudonym_key: "bob".into(),
         display_name: "Bob".into(),
         role_ids: vec![0, 1],
         status: "online".into(),
-        timeout_until: None,
         route_blob: None,
         bio: Some("hi".into()),
         pronouns: None,
@@ -152,16 +151,10 @@ fn timeouts_set_and_clear_and_a_bootstrap_member_is_stored_once() {
     };
     insert_bootstrap_if_absent(&conn, OWNER, "c1", &member, 1).unwrap();
     insert_bootstrap_if_absent(&conn, OWNER, "c1", &member, 2).unwrap();
-    set_timeout(&conn, OWNER, "c1", "bob", Some(500)).unwrap();
-    assert_eq!(
-        roster(&conn, OWNER, "c1").unwrap()[0].timeout_until,
-        Some(500)
-    );
-    set_timeout(&conn, OWNER, "c1", "bob", None).unwrap();
     let profiles = load_profiles(&conn, OWNER).unwrap();
     assert_eq!(profiles.len(), 1);
     assert_eq!(profiles[0].badges, ["early"]);
-    assert_eq!(roster(&conn, OWNER, "c1").unwrap()[0].timeout_until, None);
+    assert_eq!(roster(&conn, OWNER, "c1").unwrap().len(), 1);
     delete(&conn, OWNER, "c1", "bob").unwrap();
     assert!(load_profiles(&conn, OWNER).unwrap().is_empty());
 }

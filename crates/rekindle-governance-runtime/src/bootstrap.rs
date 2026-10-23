@@ -191,7 +191,6 @@ pub async fn build_bootstrap_response<D: GovernanceRuntimeDeps>(
             display_name: String::new(),
             role_ids: Vec::new(),
             status: m.status,
-            timeout_until: None,
             route_blob: Some(m.route_blob),
             bio: None,
             pronouns: None,

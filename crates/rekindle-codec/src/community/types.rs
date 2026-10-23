@@ -122,8 +122,6 @@ pub struct MemberSummary {
     pub subkey_index: u32,
     #[serde(default)]
     pub onboarding_complete: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub timeout_until: Option<u64>,
 }
 
 /// A ban entry in the manifest ban list (subkey 4).

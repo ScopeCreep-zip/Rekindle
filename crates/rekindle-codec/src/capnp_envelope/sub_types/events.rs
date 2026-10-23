@@ -315,10 +315,6 @@ pub(crate) fn write_member_summary(
     b.set_joined_at(m.joined_at);
     b.set_subkey_index(m.subkey_index);
     b.set_onboarding_complete(m.onboarding_complete);
-    b.set_has_timeout_until(m.timeout_until.is_some());
-    if let Some(t) = m.timeout_until {
-        b.set_timeout_until(t);
-    }
 }
 
 pub(crate) fn read_member_summary(
@@ -336,11 +332,6 @@ pub(crate) fn read_member_summary(
         joined_at: r.get_joined_at(),
         subkey_index: r.get_subkey_index(),
         onboarding_complete: r.get_onboarding_complete(),
-        timeout_until: if r.get_has_timeout_until() {
-            Some(r.get_timeout_until())
-        } else {
-            None
-        },
     })
 }
 

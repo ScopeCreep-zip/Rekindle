@@ -70,7 +70,6 @@ pub(crate) fn write_member_info(
         role_ids.set(len_u32(i), *id);
     }
     b.set_status(&m.status);
-    b.set_timeout_until(m.timeout_until.unwrap_or(0));
     if let Some(ref blob) = m.route_blob {
         b.set_route_blob(blob);
     }
@@ -105,14 +104,12 @@ pub(crate) fn read_member_info(
         .iter()
         .map(|t| text_to_string(t.map_err(|e| capnp_err(&e))?))
         .collect();
-    let timeout = r.get_timeout_until();
     let theme = r.get_theme_color();
     Ok(MemberInfo {
         pseudonym_key: text_to_string(r.get_pseudonym_key().map_err(|e| capnp_err(&e))?)?,
         display_name: text_to_string(r.get_display_name().map_err(|e| capnp_err(&e))?)?,
         role_ids,
         status: text_to_string(r.get_status().map_err(|e| capnp_err(&e))?)?,
-        timeout_until: if timeout == 0 { None } else { Some(timeout) },
         route_blob: if route_blob_bytes.is_empty() {
             None
         } else {

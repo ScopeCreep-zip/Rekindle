@@ -200,12 +200,6 @@ fn handle_gossip_moderation(
             ..
         } => {
             let timeout_until = rekindle_utils::timestamp_secs() + duration_seconds;
-            let ok = owner_key.clone();
-            let cid = community_id.to_string();
-            let tp = target_pseudonym.clone();
-            db_fire(pool, "timeout_member", move |conn| {
-                rekindle_db::repo::members::set_timeout(conn, &ok, &cid, &tp, Some(timeout_until))
-            });
             crate::event_dispatch::emit_membership(
                 app_handle,
                 rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {
@@ -216,12 +210,6 @@ fn handle_gossip_moderation(
             );
         }
         ControlPayload::RemoveTimeout { target_pseudonym } => {
-            let ok = owner_key.clone();
-            let cid = community_id.to_string();
-            let tp = target_pseudonym.clone();
-            db_fire(pool, "remove_timeout", move |conn| {
-                rekindle_db::repo::members::set_timeout(conn, &ok, &cid, &tp, None)
-            });
             crate::event_dispatch::emit_membership(
                 app_handle,
                 rekindle_types::subscription_events::MembershipEvent::TimeoutStatusChanged {

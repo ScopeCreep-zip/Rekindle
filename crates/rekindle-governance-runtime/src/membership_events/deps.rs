@@ -25,7 +25,6 @@ pub struct MemberUpsertRow {
     pub joined_at: u64,
     pub subkey_index: u32,
     pub onboarding_complete: bool,
-    pub timeout_until: Option<u64>,
 }
 
 /// Material to install after a keypair / slot-seed grant is unwrapped

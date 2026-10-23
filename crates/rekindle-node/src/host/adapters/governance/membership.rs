@@ -135,7 +135,6 @@ impl MembershipEventDeps for HostGovernance {
                             joined_at: m.joined_at.cast_signed(),
                             subkey_index: m.subkey_index,
                             onboarding_complete: m.onboarding_complete,
-                            timeout_until: m.timeout_until.map(u64::cast_signed),
                         },
                     )?;
                 }

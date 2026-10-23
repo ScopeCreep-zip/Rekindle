@@ -15,7 +15,6 @@ fn member(pseudonym: &str, name: &str, subkey_index: u32) -> MemberSummary {
         joined_at: 1,
         subkey_index,
         onboarding_complete: false,
-        timeout_until: None,
     }
 }
 

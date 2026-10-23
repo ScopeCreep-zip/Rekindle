@@ -249,7 +249,6 @@ CREATE TABLE IF NOT EXISTS community_members (
     pseudonym_key TEXT NOT NULL,
     display_name TEXT,
     role_ids TEXT NOT NULL DEFAULT '[0,1]' CHECK(json_valid(role_ids)),
-    timeout_until INTEGER,
     joined_at INTEGER NOT NULL,
     -- LOCAL slot within the segment's registry record (raw SMPL subkey
     -- 0..254 — records are o_cnt:0, no owner offset). Written by the

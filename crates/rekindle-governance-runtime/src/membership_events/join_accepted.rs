@@ -34,7 +34,6 @@ fn member_rows(members: &[MemberSummary]) -> Vec<MemberUpsertRow> {
             joined_at: m.joined_at,
             subkey_index: m.subkey_index,
             onboarding_complete: m.onboarding_complete,
-            timeout_until: m.timeout_until,
         })
         .collect()
 }

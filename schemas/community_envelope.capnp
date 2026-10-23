@@ -113,8 +113,6 @@ struct MemberSummary @0xe7d4eb16e9bf1c2e {
     joinedAt             @3 :UInt64;
     subkeyIndex          @4 :UInt32;
     onboardingComplete   @5 :Bool;
-    hasTimeoutUntil      @6 :Bool;
-    timeoutUntil         @7 :UInt64;
 }
 
 struct VoiceRosterEntry @0xe8d4eb16e9bf1c2e {
