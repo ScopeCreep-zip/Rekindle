@@ -10,6 +10,7 @@ import { truncateKey } from "../../utils/formatting";
 import { transformMessages } from "../../utils/transformers";
 import { setTypingUsers, typingTimers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
+import { handleLoadExpressions } from "../../actions/community/lifecycle";
 
 /// Channel-message slice of the community event dispatcher (edits,
 /// deletes, reactions, pins, delivery receipts, typing, system msgs,
@@ -52,18 +53,22 @@ export function reduceMessages(event: CommunityEvent): boolean {
     }
     return true;
   } else if (event.type === "attachmentDownloaded") {
-    const { communityId, channelId, attachmentId } = event.data;
-    const messages = communityState.channelMessages[channelId];
-    if (!messages) return true;
-    const idx = messages.findIndex((m) => m.attachment?.attachmentId === attachmentId);
-    if (idx < 0) return true;
-    const _ = communityId;
-    setCommunityState("channelMessages", channelId, idx, "attachment", (att) =>
-      att ? { ...att, downloaded: true } : att,
-    );
+    applyAttachmentDownloaded(event.data.channelId, event.data.attachmentId);
     return true;
   }
   return false;
+}
+
+/// The attachment's row now reads `downloaded`. Attachment ids are
+/// unique per channel, so the channel names the message list.
+function applyAttachmentDownloaded(channel: string, attachmentId: string): void {
+  const messages = communityState.channelMessages[channel];
+  if (!messages) return;
+  const idx = messages.findIndex((m) => m.attachment?.attachmentId === attachmentId);
+  if (idx < 0) return;
+  setCommunityState("channelMessages", channel, idx, "attachment", (att) =>
+    att ? { ...att, downloaded: true } : att,
+  );
 }
 
 // ── Daemon vocabulary ──────────────────────────────────────────────
@@ -209,6 +214,12 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
       applyDelete(m.deleted.channel, m.deleted.messageId);
     } else if ("channelSendStatus" in m) {
       applySendStatus(m.channelSendStatus.channel, m.channelSendStatus.messageId, m.channelSendStatus.state);
+    } else if ("attachmentDownloaded" in m) {
+      applyAttachmentDownloaded(m.attachmentDownloaded.channel, m.attachmentDownloaded.attachmentId);
+    } else if ("expressionAssetReady" in m) {
+      // Architecture §18.4 — the eager fetch landed; re-pull the
+      // community's expressions so the picker shows the resolved bytes.
+      void handleLoadExpressions(m.expressionAssetReady.community);
     }
     return;
   }

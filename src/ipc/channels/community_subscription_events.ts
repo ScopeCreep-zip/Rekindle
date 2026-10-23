@@ -316,7 +316,17 @@ export type ChannelMessageEvent =
         messageId: string;
         state: "queued" | "sent" | "delivered" | "read" | "failed";
       };
-    };
+    }
+  /** An attachment finished downloading to the place the user chose. */
+  | {
+      attachmentDownloaded: {
+        community: string;
+        channel: string;
+        attachmentId: string;
+      };
+    }
+  /** A custom emoji's or sticker's bytes are in the chunk cache. */
+  | { expressionAssetReady: { community: string; expressionId: string } };
 
 export type CommunitySubscriptionEvent =
   | { membership: MembershipEvent }
