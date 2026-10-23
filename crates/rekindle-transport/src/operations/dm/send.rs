@@ -324,20 +324,21 @@ pub(super) async fn call_datagram_answer(
     datagram: Vec<u8>,
 ) -> Result<CallAnswer, FriendError> {
     let node = host.node()?;
-    let target = if let Some(target) = route::cached_target(&node, to) {
-        target
-    } else {
-        let blob = route::fetch_from_profile(host, to)
+    let cached = route::cached(&node, to);
+    let reply = match route::cached_target(&node, to) {
+        Some(target) => match node.caller().call_direct(&target, datagram.clone()).await {
+            Ok(reply) => reply,
+            // The peer may have a new route since we cached theirs (a
+            // restart): call once more over the one their profile holds,
+            // as a send does (`refresh_and_send`), when it differs.
+            Err(e) => call_refreshed(host, to, datagram, cached.as_deref())
+                .await
+                .ok_or_else(|| FriendError::Failed(format!("app_call: {e}")))??,
+        },
+        None => call_refreshed(host, to, datagram, None)
             .await
-            .ok_or_else(|| FriendError::NotReady(format!("no route for peer {to}")))?;
-        route::import(&node, to, &blob)
-            .ok_or_else(|| FriendError::NotReady(format!("unusable route for peer {to}")))?
+            .ok_or_else(|| FriendError::NotReady(format!("no usable route for peer {to}")))??,
     };
-    let reply = node
-        .caller()
-        .call_direct(&target, datagram)
-        .await
-        .map_err(|e| FriendError::Failed(format!("app_call: {e}")))?;
     Ok(if reply.is_empty() {
         CallAnswer::Receipt
     } else if reply == crate::operations::direct::NAK {
@@ -345,6 +346,29 @@ pub(super) async fn call_datagram_answer(
     } else {
         CallAnswer::Reply(reply)
     })
+}
+
+/// `app_call` `datagram` to `to` over the route their profile holds, when
+/// it is not `stale` (the one a call just failed on); `None` when there is
+/// no other route to try.
+async fn call_refreshed(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+    stale: Option<&[u8]>,
+) -> Option<Result<Vec<u8>, FriendError>> {
+    let blob = route::fetch_from_profile(host, to).await?;
+    if stale == Some(blob.as_slice()) {
+        return None;
+    }
+    let node = host.node().ok()?;
+    let target = route::import(&node, to, &blob)?;
+    Some(
+        node.caller()
+            .call_direct(&target, datagram)
+            .await
+            .map_err(|e| FriendError::Failed(format!("app_call: {e}"))),
+    )
 }
 
 /// [`call_frame`] of a datagram already wired (a `friend_handshake` row's).

@@ -46,3 +46,4 @@ mod rotation;
 mod route_link_failure;
 mod scenarios;
 mod smoke;
+mod stale_route_call;
