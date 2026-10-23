@@ -2,8 +2,9 @@
 //! invite made to last two minutes is listed until then, expires at its
 //! time on the simulated clock (`InviteExpired` from the inviter's Host),
 //! and is then refused to a joiner through the inviter's `InviteRevoked`
-//! (register SEC-3): the joiner's merged state no longer holds the invite,
-//! which it checks before its own clock's expiry.
+//! (register SEC-3) once that revocation is on the inviter's frontier: the
+//! joiner's merged state no longer holds the invite. Before then the
+//! joiner refuses it on its own clock as expired.
 
 use std::time::Duration;
 
@@ -61,16 +62,35 @@ async fn an_invite_expires_at_its_time_and_is_then_refused() {
         "no longer listed"
     );
 
-    // The inviter's `InviteRevoked` reaches its op log on the DHT.
-    community.sim.quiesce().await;
-    let joined = community.nodes[1]
-        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
-            LifecycleRequest::CommunityJoin { invite: link },
-        )))
-        .await;
-    let refused = format!("{joined:?}");
+    // `InviteExpired` is journaled at the invite's time, before the
+    // inviter's `InviteRevoked` lands on its op log and frontier (`M`/2,
+    // `M`/3). A join meanwhile walks a frontier without the revocation:
+    // its merged state still holds the invite and the joiner refuses it on
+    // its own clock as expired. Once the revocation is on the frontier,
+    // the walk reaches it and the join is refused as revoked. Either way
+    // the expired invite is never admitted.
+    let answers = std::cell::RefCell::new(Vec::<String>::new());
+    let revoked = eventually(&community.sim, Duration::from_secs(TTL), || async {
+        let joined = community.nodes[1]
+            .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityJoin {
+                    invite: link.clone(),
+                },
+            )))
+            .await;
+        let answer = format!("{joined:?}");
+        assert!(
+            joined.is_err() && (answer.contains("expired") || answer.contains("revoked")),
+            "an expired invite is never admitted: {answer}"
+        );
+        let done = answer.contains("revoked");
+        answers.borrow_mut().push(answer);
+        done
+    })
+    .await;
     assert!(
-        joined.is_err() && refused.contains("revoked"),
-        "an expired invite is refused as revoked: {refused}"
+        revoked,
+        "an expired invite is then refused as revoked: {:?}",
+        answers.borrow()
     );
 }
