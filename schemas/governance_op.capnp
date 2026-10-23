@@ -18,6 +18,13 @@ struct OpRef {
   authorSeq @3 :UInt64;
 }
 
+# A member record's subkey 3 (`member_record::FRONTIER`): the heads of the
+# op set the member has seen, at most 64, in op-hash order. A joiner's walk
+# of the op DAG starts at the inviter's frontier.
+struct Frontier {
+  heads @0 :List(OpRef);
+}
+
 struct GovernanceOp {
   author @0 :Data;             # the author pseudonym, 32 bytes
   seq @1 :UInt64;              # position in the author's chain, from 0

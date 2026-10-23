@@ -16,8 +16,8 @@ fn invite_url(
 ) -> Result<String, String> {
     use rekindle_types::key_format;
     let link = rekindle_types::invite::InviteLink {
-        governance_key: key_format::record_key(governance_key)
-            .map_err(|e| format!("invite governance key: {e}"))?,
+        anchor: key_format::record_key(governance_key)
+            .map_err(|e| format!("invite anchor: {e}"))?,
         secrets_record_key: key_format::record_key(secrets_record_key)
             .map_err(|e| format!("invite secrets key: {e}"))?,
         invite_code: key_format::hex16_id(code).map_err(|e| format!("invite code: {e}"))?,

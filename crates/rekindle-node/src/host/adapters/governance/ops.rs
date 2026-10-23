@@ -283,9 +283,54 @@ impl HostGovernance {
             .map_err(|e| e.to_string())?
             .require_records()
             .map_err(|e| format!("record pool: {e}"))?;
-        append_op_once(&*pool, record, &writer, op)
+        append_op_once(&*pool, record, &writer, op).await?;
+        self.write_own_frontier(community_id, record, &writer).await
+    }
+
+    /// Write our `Frontier` (`M`/3) after an append: the heads of the op set
+    /// we hold, which a joiner's walk starts from.
+    async fn write_own_frontier(
+        &self,
+        community_id: &str,
+        record: &str,
+        writer: &str,
+    ) -> Result<(), String> {
+        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        let (cert, state) = {
+            let map = self.ctx.communities.map().read();
+            let community = map.get(community_id).ok_or("community not found")?;
+            (
+                community
+                    .genesis_cert
+                    .clone()
+                    .ok_or("no genesis cert is pinned")?,
+                community.governance_state.clone().unwrap_or_default(),
+            )
+        };
+        let held = self
+            .governance_ops(community_id)
             .await
-            .map(|_| ())
+            .map_err(|e| format!("read op store: {e}"))?;
+        let set = op_log::verify_held(community_id, &held);
+        let heads = op_log::frontier_refs(&cert, &state, &set);
+        let bytes = rekindle_codec::governance_op::encode_frontier(&heads)
+            .map_err(|e| format!("frontier: {e}"))?;
+        let lease = self
+            .acquire_record(record, Some(writer.to_owned()))
+            .await
+            .map_err(|e| format!("open member record: {e}"))?;
+        let written = self
+            .set_dht_value(
+                lease,
+                rekindle_types::dht_layout::member_record::FRONTIER,
+                bytes,
+                Some(writer.to_owned()),
+            )
+            .await;
+        self.release_record(lease).await;
+        written
+            .map(drop)
+            .map_err(|e| format!("write frontier: {e}"))
     }
 }
 

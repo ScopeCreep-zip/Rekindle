@@ -20,7 +20,7 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::capnp_codec::{capnp_err, pack, text_to_string, unpack_bounded};
 use crate::capnp_envelope::{read_governance_entry, write_governance_entry};
-use crate::governance_op_capnp::{governance_op, op_ref};
+use crate::governance_op_capnp::{frontier, governance_op, op_ref};
 use crate::member_record::{check_len, check_size};
 use crate::CodecError;
 
@@ -92,6 +92,39 @@ pub fn decode_op(data: &[u8]) -> Result<DecodedOp, CodecError> {
     };
     let unsigned = op_unsigned_bytes(&op);
     Ok(DecodedOp { op, unsigned })
+}
+
+/// Encode a member record's `Frontier` (`M`/3), refusing more than
+/// [`MAX_FRONTIER_REFS`] heads.
+pub fn encode_frontier(heads: &[OpRef]) -> Result<Vec<u8>, CodecError> {
+    check_len("frontier heads", heads.len(), MAX_FRONTIER_REFS)?;
+    let mut builder = capnp::message::Builder::new_default();
+    let b = builder.init_root::<frontier::Builder<'_>>();
+    let count = u32::try_from(heads.len()).unwrap_or(u32::MAX);
+    let mut list = b.init_heads(count);
+    for (i, head) in (0..count).zip(heads) {
+        write_op_ref(list.reborrow().get(i), head);
+    }
+    let out = pack(&builder);
+    check_len("frontier", out.len(), MAX_SUBKEY_VALUE_LEN)?;
+    Ok(out)
+}
+
+/// Decode a member record's `Frontier` off the network.
+pub fn decode_frontier(data: &[u8]) -> Result<Vec<OpRef>, CodecError> {
+    check_size("frontier", data, MAX_SUBKEY_VALUE_LEN)?;
+    let message = unpack_bounded(data, MAX_WORDS)?;
+    let r = message
+        .get_root::<frontier::Reader<'_>>()
+        .map_err(|e| capnp_err(&e))?;
+    let heads = r.get_heads().map_err(|e| capnp_err(&e))?;
+    let count = usize::try_from(heads.len()).unwrap_or(usize::MAX);
+    if count > MAX_FRONTIER_REFS {
+        return Err(CodecError::Deserialization(format!(
+            "frontier has {count} heads, the bound is {MAX_FRONTIER_REFS}"
+        )));
+    }
+    heads.iter().map(read_op_ref).collect()
 }
 
 /// One encoder for both forms, so they differ only in `sig`.

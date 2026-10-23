@@ -1,211 +1,251 @@
-//! The self-sovereign join, stages 1-5, shared by every host.
+//! The self-sovereign join (plan E3.2, ADR 0011), shared by every host.
 //!
-//! Architecture §6.2 steps 1-9: governance snapshot → identity → ban
-//! check → invite decode → slot claim → initial presence. Generic over
-//! `GovernanceRuntimeDeps` so every host can run it; today only the daemon
-//! does (`rekindle-node` `dispatch/community/lifecycle.rs`). The desktop
-//! still joins through its own `services/community/join/flow.rs`; ADR 0010
-//! moves the desktop onto the daemon (F1), which retires that copy.
+//! It works from the DHT with nobody online. The invite names the anchor
+//! `A` and the inviter's member record `M`: the joiner pins `A`'s
+//! `GenesisCert` to its descriptor owner, reads the inviter's `Frontier`
+//! (`M`/3), walks the op DAG by `OpRef` through the authors' op logs, and
+//! merges what it found under the cert. The invite is checked against that
+//! state (an unknown, revoked or expired invite, or a ban, refuses the
+//! join), then the joiner creates its own `M` and signs op #0 of its chain,
+//! `MemberJoined{memberRecord, memberRecordOwner, inviteProof}`, and claims
+//! its registry slot (E3.4 replaces the claim).
 //!
-//! That mattered: the daemon had no v2.0 join at all. It submitted a
-//! request to an inbox and waited for an operator to *assign* it a slot,
-//! then derived its slot seed from its own identity key —
-//! `derive_slot_seed(signing_key, governance_key, slot)`. The registry's
-//! 255 member keys come from the **creator's** shared seed
-//! (`create_segment`), so a locally-derived seed can never produce a
-//! matching writer and veilid rejects the presence write. The seed has
-//! to come from the invite, which is what this does.
-//!
-//! **Stops before host state.** Everything after step 5 — building the
-//! host's community record, persisting it, spawning loops — differs per
-//! host and stays there. This is the Schwarzschild boundary: shared
-//! orchestration up to the point where host state begins.
-//!
-//! The BootstrapBundle optimisation is deliberately *not* here. The
-//! architecture calls it "convenience, not trust" and says the join is
-//! self-sovereign regardless of inviter availability, so a host may
-//! fetch it as an extra step; skipping it costs latency, never
-//! correctness.
+//! **Stops before host state.** Nothing is written to `M` here: the host
+//! stores `K_M(p)` in its vault and the community row first (the key is
+//! durable before anything is published), then stores the walked ops and
+//! ours and publishes ours, whose sender appends it to `M`/2 and writes
+//! `M`/3 after it.
 
-use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::PseudonymKey;
+use rekindle_crypto::keypair_text;
+use rekindle_governance::merge;
+use rekindle_governance::op::invite_proof_bytes;
+use rekindle_governance::state::GovernanceState;
+use rekindle_records::schema;
+use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+use rekindle_types::dht_layout::member_record;
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, InviteProof, OpRef};
+use rekindle_types::invite::InviteSecrets;
+use zeroize::Zeroizing;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
-use crate::join::{
-    derive_join_identity, inspect_invite_in_entries, InitialPresence, InviteGovStatus, JoinIdentity,
-};
+use crate::join::{derive_join_identity, InitialPresence, JoinIdentity};
 use crate::join_stages::{
-    claim_registry_slot, collect_initial_presence_state, ClaimedSlot, GovernanceSnapshot,
-    SlotClaimCtx,
+    claim_registry_slot, collect_initial_presence_state, ClaimedSlot, SlotClaimCtx,
 };
+use crate::op_log::{self, HeldOp, OpFate};
 
-/// What the invite yielded, once decrypted and checked against
-/// governance.
-pub struct InviteContext {
-    pub registry_key: String,
-    pub slot_seed_hex: String,
-    /// The community key the invite carries, checked when decoded.
-    pub mek: crate::deps::MekSnapshot,
-    pub community_name: String,
-    pub inviter_pseudonym: Option<PseudonymKey>,
-    pub inviter_route_blob: Vec<u8>,
+/// The joiner's own member record, created by the join.
+pub struct JoinerRecord {
+    pub record_key: String,
+    /// `K_M(p)`'s keypair text, for the host's vault.
+    pub owner_keypair: Zeroizing<String>,
 }
 
-/// Everything stages 1-5 produced. The caller turns this into its own
-/// state representation.
+/// Everything the join produced. The caller turns this into its own state
+/// representation, then stores `walked` and `joined` and publishes `joined`.
 pub struct JoinStagesOutcome {
-    pub snapshot: GovernanceSnapshot,
+    pub cert_bytes: Vec<u8>,
     pub identity: JoinIdentity,
-    pub invite: InviteContext,
+    pub invite: InviteSecrets,
+    pub gov_state: GovernanceState,
+    pub member: JoinerRecord,
+    /// The ops the walk found (verified by every reader again on merge).
+    pub walked: Vec<HeldOp>,
+    /// Our op #0, `MemberJoined`.
+    pub joined: HeldOp,
     pub claimed: ClaimedSlot,
     pub initial_presence: InitialPresence,
 }
 
-/// Decrypt the invite and reconcile it with governance.
-///
-/// The secrets pointer comes from the invite link (chiral §12).
-/// Governance is consulted only to *enforce* revocation and expiry when
-/// the entry is visible, and to recover the inviter for the invite-quota
-/// check.
+/// Fetch and decrypt the invite's secrets from their DFLT record.
 async fn decode_invite<D: GovernanceRuntimeDeps>(
     deps: &D,
     invite_code: &str,
     secrets_record_key: &str,
-    all_entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
-) -> Result<InviteContext, GovernanceRuntimeError> {
-    let code_hash = rekindle_secrets::invite::hash_invite_code(invite_code);
-    let status = inspect_invite_in_entries(all_entries, &code_hash, deps.clock().now_secs());
-    match status {
-        InviteGovStatus::Revoked => {
-            return Err(GovernanceRuntimeError::Adapter(
-                "invite has been revoked".into(),
-            ))
-        }
-        InviteGovStatus::Expired => {
-            return Err(GovernanceRuntimeError::Adapter("invite has expired".into()))
-        }
-        _ => {}
-    }
-
-    let inviter_pseudonym = match status {
-        InviteGovStatus::Active { inviter, .. } => Some(inviter),
-        _ => None,
-    };
-
-    // Governance carries only a pointer; the encrypted blob lives in its
-    // own DFLT record.
+) -> Result<InviteSecrets, GovernanceRuntimeError> {
+    use base64::Engine as _;
     let encrypted_b64 = crate::invite_secrets::fetch_invite_secrets(deps, secrets_record_key)
         .await
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("fetch invite secrets: {e}")))?;
-    let encrypted = {
-        use base64::Engine as _;
-        base64::engine::general_purpose::STANDARD
-            .decode(&encrypted_b64)
-            .map_err(|e| {
-                GovernanceRuntimeError::Encoding(format!("invalid invite secrets encoding: {e}"))
-            })?
-    };
+    let encrypted = base64::engine::general_purpose::STANDARD
+        .decode(&encrypted_b64)
+        .map_err(|e| {
+            GovernanceRuntimeError::Encoding(format!("invalid invite secrets encoding: {e}"))
+        })?;
     let secrets_json = rekindle_secrets::invite::decrypt_invite_secrets(invite_code, &encrypted)
         .map_err(|e| {
             GovernanceRuntimeError::Crypto(format!("failed to decrypt invite secrets: {e}"))
         })?;
-    let secrets: rekindle_types::invite::InviteSecrets = serde_json::from_slice(&secrets_json)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid invite secrets: {e}")))?;
-    // The key is checked before any slot is claimed: an invite whose key
-    // does not decode is refused whole.
-    let mek = {
-        use base64::Engine as _;
-        let wire = base64::engine::general_purpose::STANDARD
-            .decode(&secrets.mek_wire_bytes)
-            .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid MEK encoding: {e}")))?;
-        let key = rekindle_crypto::group::media_key::MediaEncryptionKey::from_wire_bytes(&wire)
-            .ok_or_else(|| GovernanceRuntimeError::Encoding("invalid MEK wire bytes".into()))?;
-        crate::deps::MekSnapshot {
-            generation: key.generation(),
-            key_bytes: *key.as_bytes(),
-        }
-    };
-
-    Ok(InviteContext {
-        registry_key: secrets.registry_key,
-        slot_seed_hex: secrets.slot_seed,
-        mek,
-        community_name: secrets.community_name,
-        inviter_pseudonym,
-        inviter_route_blob: secrets.inviter_route_blob,
-    })
+    serde_json::from_slice(&secrets_json)
+        .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid invite secrets: {e}")))
 }
 
-/// Run join stages 1-5.
+/// A member's `Frontier` (`M`/3), read from the network.
 ///
-/// The joiner does every step itself — no operator assigns anything.
-/// `claim_registry_slot` is the compare-and-swap that makes that safe
-/// under concurrent joins.
+/// # Errors
+/// The record is unreadable, holds no frontier, or it does not decode.
+pub async fn read_frontier<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    record: &str,
+) -> Result<Vec<OpRef>, GovernanceRuntimeError> {
+    let lease = deps.acquire_record(record, None).await?;
+    let read = deps
+        .get_dht_value(lease, member_record::FRONTIER, true)
+        .await;
+    deps.release_record(lease).await;
+    let bytes = read?.ok_or_else(|| {
+        GovernanceRuntimeError::Adapter(format!("member record {record} has no frontier"))
+    })?;
+    rekindle_codec::governance_op::decode_frontier(&bytes)
+        .map_err(|e| GovernanceRuntimeError::Encoding(format!("frontier of {record}: {e}")))
+}
+
+/// Refuse an invite the merged state does not hold as live: unknown or
+/// revoked (a revoked invite leaves `invites`), or expired.
+fn check_invite(
+    state: &GovernanceState,
+    code_hash: &str,
+    now_secs: u64,
+) -> Result<rekindle_types::id::PseudonymKey, GovernanceRuntimeError> {
+    let mut invites: Vec<_> = state.invites.iter().collect();
+    invites.sort_by_key(|(id, _)| **id);
+    let invite = invites
+        .into_iter()
+        .map(|(_, invite)| invite)
+        .find(|invite| invite.code_hash == code_hash)
+        .ok_or_else(|| GovernanceRuntimeError::Adapter("invite is revoked or unknown".into()))?;
+    if invite.expires_at.is_some_and(|at| at <= now_secs) {
+        return Err(GovernanceRuntimeError::Adapter("invite has expired".into()));
+    }
+    Ok(invite.creator_pseudonym.clone())
+}
+
+/// Create our member record `M(p)`; its lease is released (the op-log
+/// sender reacquires it with `K_M(p)`).
+async fn create_member_record<D: GovernanceRuntimeDeps>(
+    deps: &D,
+) -> Result<(JoinerRecord, String), GovernanceRuntimeError> {
+    let info = deps.create_record(&schema::member_record()).await?;
+    deps.release_record(info.lease).await;
+    let text = Zeroizing::new(info.owner_keypair.clone().ok_or_else(|| {
+        GovernanceRuntimeError::Adapter("join: the member record has no owner keypair".into())
+    })?);
+    let (public, _) = keypair_text::parse_keypair_text(&text)
+        .map_err(|e| GovernanceRuntimeError::Crypto(format!("member record owner: {e}")))?;
+    let owner = keypair_text::public_key_text(&public);
+    Ok((
+        JoinerRecord {
+            record_key: info.record_key,
+            owner_keypair: text,
+        },
+        owner,
+    ))
+}
+
+/// Our op #0: `MemberJoined` with the invite proof (the joiner pseudonym
+/// over `INVITE_PROOF ‖ anchor ‖ code hash ‖ memberRecord`).
+fn joined_op(
+    anchor: &str,
+    cert: &GenesisCert,
+    state: &GovernanceState,
+    set: &op_log::VerifiedSet,
+    key: &SigningKey,
+    member: (&str, String),
+    code_hash: String,
+    now_secs: u64,
+) -> Result<HeldOp, GovernanceRuntimeError> {
+    let (record, owner) = member;
+    let sig = key
+        .sign(&invite_proof_bytes(anchor, &code_hash, record))
+        .to_bytes()
+        .to_vec();
+    let body = GovernanceEntry::MemberJoined {
+        member_record: record.to_owned(),
+        member_record_owner: owner,
+        invite_proof: Some(InviteProof { code_hash, sig }),
+    };
+    let (op, encoded) = op_log::build_op(anchor, cert, state, set, key, body, now_secs)?;
+    Ok(op_log::held(
+        &op,
+        record.to_owned(),
+        encoded,
+        OpFate::Applied,
+    ))
+}
+
+/// Run the join.
+///
+/// # Errors
+/// The anchor does not pin, the invite does not decode or is not live in
+/// the walked state, we are banned, or a DHT step failed.
 pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     deps: &D,
     link: &rekindle_types::invite::InviteLink,
 ) -> Result<JoinStagesOutcome, GovernanceRuntimeError> {
-    let governance_key = link.governance_key.as_str();
-    // 1. Multi-segment governance snapshot (DHT scan + signature verify
-    //    + CRDT re-merge).
-    let snapshot = crate::join_stages::load_governance_snapshot(deps, governance_key).await?;
-
-    // 2. Our pseudonym for this community — HKDF(master_secret,
-    //    community_id), unlinkable across communities.
-    let identity_secret = deps.identity_secret().ok_or_else(|| {
-        GovernanceRuntimeError::Adapter("identity secret not available (locked?)".into())
-    })?;
-    let identity = derive_join_identity(&identity_secret, governance_key);
-
-    // 3. Ban check, client-side. A banned pseudonym aborts here rather
-    //    than burning a registry slot it would be dropped from anyway.
-    if snapshot.gov_state.bans.contains(&identity.pseudo) {
-        return Err(GovernanceRuntimeError::Adapter(
-            "You are banned from this community".into(),
-        ));
-    }
-
-    // 4. Decode the invite — this is where the shared slot seed comes
-    //    from. Deriving it locally cannot work: the registry's member
-    //    keys were generated from the creator's seed.
+    let anchor = link.anchor.as_str();
+    let (cert, cert_bytes) = crate::genesis::read_pinned(deps, anchor).await?;
+    let identity_secret = deps
+        .identity_secret()
+        .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+    let identity = derive_join_identity(&identity_secret, anchor);
     let invite = decode_invite(
         deps,
         link.invite_code.as_str(),
         link.secrets_record_key.as_str(),
-        &snapshot.all_entries,
     )
     .await?;
+    if invite.anchor != anchor {
+        return Err(GovernanceRuntimeError::Adapter(
+            "the invite names another community".into(),
+        ));
+    }
 
-    // 5. Claim a slot (CAS, retrying past contention, auto-expanding
-    //    the Plate Gate when every segment is full).
-    //
-    //    Claimed *before* any admission check, on purpose. `o_cnt: 0`
-    //    means the SMPL schema cannot refuse a write, so a slot claim is
-    //    not an access-control point and pretending otherwise would be
-    //    theatre. Admission is enforced where it can be — every reader
-    //    independently declines to count an unapproved row as a member
-    //    (`roster::segment_roster`), the same reader-validates rule that
-    //    makes bans work.
-    let display_name = Some(deps.identity_display_name());
+    // The op set from the inviter's frontier, merged under the pinned cert.
+    let start = read_frontier(deps, &invite.inviter_member_record).await?;
+    let walked = op_log::walk(deps, anchor, &start).await?;
+    let set = op_log::verify_held(anchor, &walked);
+    let gov_state = merge::merge(&cert, &set.ops);
+
+    if gov_state.bans.contains(&identity.pseudo) {
+        return Err(GovernanceRuntimeError::Adapter(
+            "You are banned from this community".into(),
+        ));
+    }
+    let now = deps.clock().now_secs();
+    let code_hash = rekindle_secrets::invite::hash_invite_code(link.invite_code.as_str());
+    let inviter = check_invite(&gov_state, &code_hash, now)?;
+
+    let (member, member_owner) = create_member_record(deps).await?;
+    let joined = joined_op(
+        anchor,
+        &cert,
+        &gov_state,
+        &set,
+        &identity.pseudonym_signing,
+        (&member.record_key, member_owner),
+        code_hash,
+        now,
+    )?;
+
+    // The registry slot, as before E3.4. A claim is not an access-control
+    // point (`o_cnt: 0`): readers count only members whose `MemberJoined`
+    // they verified.
     let claimed = claim_registry_slot(
         deps,
-        &invite.slot_seed_hex,
+        &invite.slot_seed,
         SlotClaimCtx {
-            community_id: governance_key,
+            community_id: anchor,
             invite_registry_key: &invite.registry_key,
-            inviter_pseudonym: invite.inviter_pseudonym.as_ref(),
+            inviter_pseudonym: Some(&inviter),
             my_pseudo: &identity.pseudo,
             pseudonym_signing: &identity.pseudonym_signing,
-            gov_state: &snapshot.gov_state,
+            gov_state: &gov_state,
             join_status_label: deps.identity_status().as_wire_str(),
-            display_name,
+            display_name: Some(deps.identity_display_name()),
         },
     )
     .await?;
-
-    // 6. Seed the peer set from the slots the claim already inspected —
-    //    no second sweep of the registry.
     let initial_presence = collect_initial_presence_state(
         deps,
         &claimed.registry_key,
@@ -215,19 +255,14 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     )
     .await;
 
-    // 7. Our `MemberJoined` (op #0 of our chain, on our member record) is
-    //    written by the self-sovereign join (plan E3.2 S6).
-
-    // 8. The community key the invite carried, through the host's one
-    //    convergence rule (a join racing a rotation keeps the newer key) and
-    //    into its vault, so the joiner reads the channels from the first
-    //    page (the desktop's join did this alone).
-    deps.insert_community_mek(governance_key, invite.mek.clone());
-
     Ok(JoinStagesOutcome {
-        snapshot,
+        cert_bytes,
         identity,
         invite,
+        gov_state,
+        member,
+        walked,
+        joined,
         claimed,
         initial_presence,
     })

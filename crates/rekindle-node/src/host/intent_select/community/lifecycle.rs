@@ -25,7 +25,7 @@ pub(super) fn selection(
             let link = rekindle_types::invite::InviteLink::parse(invite)
                 .map_err(|e| IpcResponse::error(400, format!("community invite: {e}")))?;
             let fingerprint =
-                rekindle_crypto::identity::record_key_fingerprint(link.governance_key.as_str())
+                rekindle_crypto::identity::record_key_fingerprint(link.anchor.as_str())
                     .ok_or_else(|| {
                         IpcResponse::error(400, "community invite key is not a record key")
                     })?;

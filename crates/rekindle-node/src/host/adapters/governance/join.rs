@@ -19,11 +19,11 @@ impl HostGovernance {
     /// The join stages failed (an expired, banned or full invite, the DHT),
     /// or storing the membership failed.
     pub(crate) async fn join(&self, link: &InviteLink) -> Result<CommunityJoined, String> {
-        let id = link.governance_key.as_str().to_owned();
+        let id = link.anchor.as_str().to_owned();
         let outcome = rekindle_governance_runtime::join_flow::run_join_stages(self, link)
             .await
             .map_err(|e| format!("community join failed: {e}"))?;
-        let slot_seed = hex::decode(&outcome.invite.slot_seed_hex)
+        let slot_seed = hex::decode(&outcome.invite.slot_seed)
             .ok()
             .and_then(|b| <[u8; 32]>::try_from(b).ok());
         let pseudonym = outcome.identity.pseudo_hex.clone();
@@ -50,18 +50,28 @@ impl HostGovernance {
                 membership,
                 dht_owner_keypair: None,
                 registry_keypair: None,
-                member_record_owner: None,
-                genesis_cert: None,
+                member_record_owner: Some(outcome.member.owner_keypair.clone()),
+                genesis_cert: Some(outcome.cert_bytes.clone()),
                 joined_at,
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
-        // The op set merges under the pinned cert once the membership's row
-        // (which the op store references) is stored.
+        // `K_M(p)` and the row are durable: the walked ops and our
+        // `MemberJoined` into the op store, the merge, then ours published
+        // (its sender appends it to `M`/2 and writes `M`/3).
+        self.store_join_ops(&id, &outcome).await?;
         rekindle_governance_runtime::rebuild_governance(self, &id).await;
+        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::publish_governance_op(
+            self,
+            &id,
+            outcome.joined.encoded.clone(),
+        )
+        .map_err(|e| format!("community joined, MemberJoined not published: {e}"))?;
         self.store_own_member_row(&id, &pseudonym, joined_at)
             .await?;
         self.announce_join(&id);
+        // The invite carries no community key (D11): ask for it.
+        self.recover_behind_meks();
         self.audit_joined(&id, &outcome.invite.community_name);
         tracing::info!(community = %id, "joined community");
         Ok(CommunityJoined {
@@ -72,6 +82,24 @@ impl HostGovernance {
             known_members: u32::try_from(outcome.initial_presence.known_members.len())
                 .unwrap_or(u32::MAX),
         })
+    }
+
+    async fn store_join_ops(
+        &self,
+        community: &str,
+        outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
+    ) -> Result<(), String> {
+        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        for op in outcome
+            .walked
+            .iter()
+            .chain(std::iter::once(&outcome.joined))
+        {
+            self.store_governance_op(community, op)
+                .await
+                .map_err(|e| format!("community joined, op not stored: {e}"))?;
+        }
+        Ok(())
     }
 
     async fn store_own_member_row(

@@ -483,3 +483,22 @@ fn max_deps_fit_the_subkey_and_one_more_is_refused() {
     unchecked.resize(GOVERNANCE_OP_MAX_BYTES + 1, 0);
     assert!(decode_op(&unchecked).is_err());
 }
+
+#[test]
+fn a_full_frontier_round_trips_under_the_subkey_cap() {
+    use rekindle_types::dht_layout::member_record::{MAX_FRONTIER_REFS, MAX_SUBKEY_VALUE_LEN};
+    let heads: Vec<OpRef> = (0..MAX_FRONTIER_REFS)
+        .map(|i| OpRef {
+            op_hash: OpHash([0xA5; 32]),
+            author: pk(u8::try_from(i).unwrap()),
+            author_record: "VLD0:".to_string() + &"x".repeat(43) + ":" + &"y".repeat(43),
+            author_seq: u64::MAX - i as u64,
+        })
+        .collect();
+    let bytes = super::encode_frontier(&heads).unwrap();
+    assert!(bytes.len() <= MAX_SUBKEY_VALUE_LEN);
+    assert_eq!(super::decode_frontier(&bytes).unwrap(), heads);
+    let mut over = heads.clone();
+    over.push(heads[0].clone());
+    assert!(super::encode_frontier(&over).is_err());
+}

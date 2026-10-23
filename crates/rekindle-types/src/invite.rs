@@ -1,44 +1,34 @@
-//! Invite secrets for self-sovereign community join.
+//! Invite secrets for self-sovereign community join (plan E3.2, ADR 0011).
 //!
-//! In v2.0, invites are distributed out-of-band (deep links, QR codes, peer share).
-//! The invite blob contains everything a joiner needs: governance key, registry key,
-//! slot seed, channel keys, and current MEK. Encrypted with HKDF(invite_code).
+//! Invites are distributed out-of-band (deep links, QR codes, peer share).
+//! The blob names what a joiner reads from the DHT with nobody online: the
+//! community anchor `A` and the inviter's member record `M`, whose `Frontier`
+//! is where the joiner's walk of the op DAG starts. It carries no community
+//! key (the joiner asks for it, D11) and no channel keys (`ChannelCreated`
+//! names each channel record). Encrypted with HKDF(invite_code).
 
 use serde::{Deserialize, Serialize};
 
-/// Decrypted invite secrets — everything needed to join a community.
+/// Decrypted invite secrets: everything a joiner needs to join.
 ///
-/// The invite code (shared out-of-band) is the HKDF key that decrypts this blob.
-/// The governance_key in the deep link URL identifies the community.
+/// The invite code (shared out-of-band) is the HKDF key that decrypts this
+/// blob; the anchor in the deep link identifies the community.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InviteSecrets {
-    /// DHT key of the SMPL governance record (community identifier).
-    pub governance_key: String,
-    /// DHT key of the SMPL member registry record.
-    pub registry_key: String,
-    /// Private route blob to the inviting member for bootstrap bundle app_call.
+    /// DHT key of the community anchor `A` (the community identifier).
+    pub anchor: String,
+    /// DHT key of the inviter's member record `M`.
+    pub inviter_member_record: String,
+    /// Private route blob to the inviting member for the bootstrap app_call.
     pub inviter_route_blob: Vec<u8>,
-    /// 32-byte slot seed for deriving SMPL member slot keypairs (hex-encoded).
-    pub slot_seed: String,
-    /// Current MEK wire bytes (generation LE + key, base64-encoded).
-    pub mek_wire_bytes: String,
-    /// Channel record keys for direct channel access.
-    pub channel_keys: Vec<ChannelKeyInfo>,
     /// Community display name (for UI before full state is loaded).
     pub community_name: String,
-}
-
-/// A channel's DHT record key bundled in invite secrets.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ChannelKeyInfo {
-    /// Channel identifier (hex-encoded 16-byte UUID).
-    pub channel_id: String,
-    /// DHT key of the channel's SMPL record.
-    pub record_key: String,
-    /// Channel display name.
-    pub name: String,
+    /// DHT key of the SMPL member registry record (deleted by E3.4).
+    pub registry_key: String,
+    /// 32-byte slot seed for deriving SMPL member slot keypairs (hex-encoded;
+    /// deleted by E3.4).
+    pub slot_seed: String,
 }
 
 #[cfg(test)]
@@ -48,23 +38,18 @@ mod tests {
     #[test]
     fn invite_secrets_serde_roundtrip() {
         let secrets = InviteSecrets {
-            governance_key: "VLD0:gov123".into(),
-            registry_key: "VLD0:reg456".into(),
+            anchor: "VLD0:anchor".into(),
+            inviter_member_record: "VLD0:member".into(),
             inviter_route_blob: vec![1, 2, 3, 4],
-            slot_seed: "ab".repeat(32),
-            mek_wire_bytes: "base64mekdata".into(),
-            channel_keys: vec![ChannelKeyInfo {
-                channel_id: "ch1".into(),
-                record_key: "VLD0:ch789".into(),
-                name: "general".into(),
-            }],
             community_name: "Test Community".into(),
+            registry_key: "VLD0:reg456".into(),
+            slot_seed: "ab".repeat(32),
         };
         let json = serde_json::to_string(&secrets).unwrap();
         let back: InviteSecrets = serde_json::from_str(&json).unwrap();
-        assert_eq!(back.governance_key, "VLD0:gov123");
+        assert_eq!(back.anchor, "VLD0:anchor");
+        assert_eq!(back.inviter_member_record, "VLD0:member");
         assert_eq!(back.inviter_route_blob, vec![1, 2, 3, 4]);
-        assert_eq!(back.channel_keys.len(), 1);
     }
 }
 
@@ -84,12 +69,12 @@ pub const MAX_INVITE_URL_LEN: usize = 256;
 /// `CommunityJoin`, the CLI) accepts exactly the same link, and every
 /// producer builds it with [`InviteLink::to_url`].
 ///
-/// Format: `rekindle://invite/{governance_key}/{secrets_record_key}/{invite_code}`,
+/// Format: `rekindle://invite/{anchor}/{secrets_record_key}/{invite_code}`,
 /// where both keys are Veilid record keys and the code is 32 lowercase hex
 /// (16 random bytes).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InviteLink {
-    pub governance_key: RecordKeyStr,
+    pub anchor: RecordKeyStr,
     pub secrets_record_key: RecordKeyStr,
     pub invite_code: Hex16Id,
 }
@@ -101,12 +86,12 @@ pub enum InviteLinkError {
     NotAnInvite,
     #[error("invite link is {got} bytes, max {max}")]
     TooLong { max: usize, got: usize },
-    #[error("invite link needs a governance key, a secrets key and a code")]
+    #[error("invite link needs an anchor, a secrets key and a code")]
     MissingPart,
     #[error("invite link has extra path segments")]
     ExtraPart,
-    #[error("invite governance key: {0}")]
-    GovernanceKey(KeyFormatError),
+    #[error("invite anchor: {0}")]
+    Anchor(KeyFormatError),
     #[error("invite secrets key: {0}")]
     SecretsRecordKey(KeyFormatError),
     #[error("invite code: {0}")]
@@ -134,15 +119,14 @@ impl InviteLink {
                 .filter(|p| !p.is_empty())
                 .ok_or(InviteLinkError::MissingPart)
         };
-        let governance_key = next()?;
+        let anchor = next()?;
         let secrets_record_key = next()?;
         let invite_code = next()?;
         if parts.next().is_some() {
             return Err(InviteLinkError::ExtraPart);
         }
         Ok(Self {
-            governance_key: key_format::record_key(governance_key)
-                .map_err(InviteLinkError::GovernanceKey)?,
+            anchor: key_format::record_key(anchor).map_err(InviteLinkError::Anchor)?,
             secrets_record_key: key_format::record_key(secrets_record_key)
                 .map_err(InviteLinkError::SecretsRecordKey)?,
             invite_code: key_format::hex16_id(invite_code).map_err(InviteLinkError::InviteCode)?,
@@ -154,7 +138,7 @@ impl InviteLink {
     pub fn to_url(&self) -> String {
         format!(
             "{INVITE_PREFIX}{}/{}/{}",
-            self.governance_key, self.secrets_record_key, self.invite_code
+            self.anchor, self.secrets_record_key, self.invite_code
         )
     }
 }
@@ -265,7 +249,7 @@ mod invite_link_tests {
         let sec = format!("VLD0:{B64}");
         let url = link(&gov, &sec, CODE);
         let parsed = InviteLink::parse(&format!("  {url}\n")).unwrap();
-        assert_eq!(parsed.governance_key.as_str(), gov);
+        assert_eq!(parsed.anchor.as_str(), gov);
         assert_eq!(parsed.secrets_record_key.as_str(), sec);
         assert_eq!(parsed.invite_code.as_str(), CODE);
         assert_eq!(parsed.to_url(), url);
@@ -306,7 +290,7 @@ mod invite_link_tests {
         }
         assert!(matches!(
             InviteLink::parse(&link(&format!("VLD1:{B64}"), &k, CODE)),
-            Err(InviteLinkError::GovernanceKey(_))
+            Err(InviteLinkError::Anchor(_))
         ));
         assert!(matches!(
             InviteLink::parse(&link(&k, "VLD0:short", CODE)),

@@ -273,24 +273,8 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             .collect();
         let mut fetched = false;
         for op_ref in wanted {
-            let Some(encoded) = deps.fetch_governance_op(&op_ref).await? else {
+            let Some(op) = fetch_held(deps, &op_ref).await? else {
                 continue;
-            };
-            let Ok(decoded) = decode_op(&encoded) else {
-                continue;
-            };
-            if op_hash(&decoded.unsigned, &decoded.op.sig) != op_ref.op_hash {
-                continue;
-            }
-            let op = HeldOp {
-                hash: op_ref.op_hash,
-                author: decoded.op.author.clone(),
-                author_record: op_ref.author_record.clone(),
-                seq: decoded.op.seq,
-                lamport: 0,
-                issued_at: decoded.op.issued_at,
-                encoded,
-                fate: OpFate::PendingDeps,
             };
             deps.store_governance_op(community_id, &op).await?;
             held.push(op);
@@ -303,6 +287,78 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             return Ok(outcome.state);
         }
     }
+}
+
+/// The op `op_ref` names, fetched from its author's op log and checked
+/// against the locator's hash; `None` when it is not there or does not
+/// match.
+///
+/// # Errors
+/// The fetch failed.
+pub async fn fetch_held<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    op_ref: &OpRef,
+) -> Result<Option<HeldOp>, GovernanceRuntimeError> {
+    let Some(encoded) = deps.fetch_governance_op(op_ref).await? else {
+        return Ok(None);
+    };
+    let Ok(decoded) = decode_op(&encoded) else {
+        return Ok(None);
+    };
+    if op_hash(&decoded.unsigned, &decoded.op.sig) != op_ref.op_hash {
+        return Ok(None);
+    }
+    Ok(Some(HeldOp {
+        hash: op_ref.op_hash,
+        author: decoded.op.author.clone(),
+        author_record: op_ref.author_record.clone(),
+        seq: decoded.op.seq,
+        lamport: 0,
+        issued_at: decoded.op.issued_at,
+        encoded,
+        fate: OpFate::PendingDeps,
+    }))
+}
+
+/// Walk the op DAG of `anchor` from `start` (a member's `Frontier`) by
+/// `OpRef`, through deps, until a pass fetches nothing new: the joiner's
+/// read of the op set with nobody online. Nothing is stored; the caller
+/// stores the walked ops once its community row exists.
+///
+/// # Errors
+/// A fetch failed.
+pub async fn walk<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    start: &[OpRef],
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+    let mut held: Vec<HeldOp> = Vec::new();
+    let mut tried: BTreeSet<OpHash> = BTreeSet::new();
+    let mut wanted: Vec<OpRef> = start.to_vec();
+    loop {
+        let mut fetched = false;
+        for op_ref in wanted.into_iter().filter(|r| tried.insert(r.op_hash)) {
+            if let Some(op) = fetch_held(deps, &op_ref).await? {
+                held.push(op);
+                fetched = true;
+            }
+        }
+        if !fetched {
+            return Ok(held);
+        }
+        wanted = verify_held(anchor, &held).missing;
+    }
+}
+
+/// Our `Frontier` (`M`/3): the heads of the verified set as `OpRef`s, in
+/// hash order; a head whose author has no member record in `state` is
+/// left out.
+#[must_use]
+pub fn frontier_refs(cert: &GenesisCert, state: &GovernanceState, set: &VerifiedSet) -> Vec<OpRef> {
+    frontier(&set.ops, None)
+        .into_iter()
+        .filter_map(|op| author_record(cert, state, op.author()).map(|r| op.op_ref(&r)))
+        .collect()
 }
 
 /// The state at `frontier`: the merge of the frontier ops' causal past

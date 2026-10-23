@@ -28,7 +28,7 @@
 //! matters as much as the first.
 
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::invite::{ChannelKeyInfo, InviteSecrets};
+use rekindle_types::invite::InviteSecrets;
 
 use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
@@ -88,33 +88,20 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         )));
     }
 
-    let (epoch, key) = rekindle_types::channel_keys::current_key(
-        &*deps.keys(),
-        community_id,
-        rekindle_types::channel_keys::KeyScope::Community,
-    )
-    .ok_or_else(|| {
-        GovernanceRuntimeError::Adapter("no MEK available to seed the invite".to_string())
-    })?;
-    let mek_wire_bytes = {
-        use base64::Engine as _;
-        let mut wire = Vec::with_capacity(40);
-        wire.extend_from_slice(&epoch.0.to_le_bytes());
-        wire.extend_from_slice(&*key);
-        base64::engine::general_purpose::STANDARD.encode(wire)
-    };
-
-    // Channel record keys from merged governance — the joiner reads
-    // history from these directly rather than waiting for its own merge.
-    let channel_keys: Vec<ChannelKeyInfo> = gov_state
-        .channels
-        .iter()
-        .map(|(channel_id, channel)| ChannelKeyInfo {
-            channel_id: hex::encode(channel_id.0),
-            record_key: channel.record_key.clone(),
-            name: channel.name.clone(),
+    // The joiner's walk of the op DAG starts at our frontier (`M`/3), on
+    // our member record.
+    let cert = deps
+        .genesis_cert(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_string()))?;
+    let me = deps
+        .identity_secret()
+        .map(|secret| {
+            let key = rekindle_secrets::derive::derive_community_pseudonym(&secret, community_id);
+            rekindle_types::id::PseudonymKey(key.verifying_key().to_bytes())
         })
-        .collect();
+        .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
+    let inviter_member_record = crate::op_log::author_record(&cert, &gov_state, &me)
+        .ok_or_else(|| GovernanceRuntimeError::MemberRecordMissing(hex::encode(me.0)))?;
 
     let code = hex::encode(rekindle_utils::random::id_bytes_16_from(
         deps.rng().as_ref(),
@@ -122,15 +109,11 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     let code_hash = rekindle_secrets::invite::hash_invite_code(&code);
 
     let secrets = InviteSecrets {
-        governance_key: membership
-            .governance_key
-            .clone()
-            .unwrap_or_else(|| community_id.to_string()),
+        anchor: community_id.to_string(),
+        inviter_member_record,
         registry_key,
         inviter_route_blob: deps.our_route_blob(),
         slot_seed,
-        mek_wire_bytes,
-        channel_keys,
         // From merged governance, not the local membership record: the
         // name a joiner is shown before joining should be the one the
         // community agrees on, not whatever this peer cached.
