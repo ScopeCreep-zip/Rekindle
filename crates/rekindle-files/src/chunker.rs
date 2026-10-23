@@ -5,7 +5,6 @@
 //! 28 KB so the math is uniform.
 
 use sha2::{Digest, Sha256};
-use uuid::Uuid;
 
 use crate::error::FilesError;
 
@@ -33,8 +32,9 @@ impl Chunker {
     /// Split a plaintext byte slice into ≤`CHUNK_SIZE_BYTES` chunks, hash each
     /// with SHA-256, and compute the v1 flat-list Merkle root.
     ///
-    /// The new `attachment_id` is a fresh v4 UUID — uploaders never reuse one.
-    pub fn chunk(bytes: &[u8]) -> Result<ChunkedFile, FilesError> {
+    /// `attachment_id` is a fresh id the uploader draws from its RNG port
+    /// (plan C9.2); uploaders never reuse one.
+    pub fn chunk(bytes: &[u8], attachment_id: [u8; 16]) -> Result<ChunkedFile, FilesError> {
         let actual = bytes.len() as u64;
         if actual > MAX_FILE_SIZE_BYTES {
             return Err(FilesError::FileTooLarge {
@@ -64,7 +64,6 @@ impl Chunker {
 
         let merkle_root = merkle_root_of(&chunk_hashes);
 
-        let attachment_id = *Uuid::new_v4().as_bytes();
         Ok(ChunkedFile {
             attachment_id,
             chunks,
@@ -102,7 +101,7 @@ mod tests {
         let bytes: Vec<u8> = (0..(CHUNK_SIZE_BYTES * 3 + 17))
             .map(|i| (i % 251) as u8)
             .collect();
-        let chunked = Chunker::chunk(&bytes).unwrap();
+        let chunked = Chunker::chunk(&bytes, [1; 16]).unwrap();
         assert_eq!(chunked.chunks.len(), 4);
         let reassembled: Vec<u8> = chunked.chunks.into_iter().flatten().collect();
         assert_eq!(reassembled, bytes);
@@ -119,7 +118,7 @@ mod tests {
         ];
         for (size, expected) in cases {
             let bytes = vec![0u8; size];
-            let chunked = Chunker::chunk(&bytes).unwrap();
+            let chunked = Chunker::chunk(&bytes, [1; 16]).unwrap();
             assert_eq!(chunked.chunks.len(), expected, "size {size}");
             assert_eq!(chunked.chunk_hashes.len(), expected, "size {size}");
         }
@@ -128,30 +127,30 @@ mod tests {
     #[test]
     fn merkle_root_is_deterministic() {
         let bytes = b"the quick brown fox jumps over the lazy dog".repeat(1000);
-        let a = Chunker::chunk(&bytes).unwrap();
-        let b = Chunker::chunk(&bytes).unwrap();
+        let a = Chunker::chunk(&bytes, [1; 16]).unwrap();
+        let b = Chunker::chunk(&bytes, [2; 16]).unwrap();
         assert_eq!(a.merkle_root, b.merkle_root);
-        // attachment_id should differ — fresh UUID per upload.
-        assert_ne!(a.attachment_id, b.attachment_id);
+        // attachment_id is the uploader's fresh id, whatever the bytes.
+        assert_eq!((a.attachment_id, b.attachment_id), ([1; 16], [2; 16]));
     }
 
     #[test]
     fn distinct_inputs_have_distinct_roots() {
-        let a = Chunker::chunk(b"alpha").unwrap();
-        let b = Chunker::chunk(b"beta").unwrap();
+        let a = Chunker::chunk(b"alpha", [1; 16]).unwrap();
+        let b = Chunker::chunk(b"beta", [1; 16]).unwrap();
         assert_ne!(a.merkle_root, b.merkle_root);
     }
 
     #[test]
     fn rejects_oversized_files() {
         let oversize = vec![0u8; (MAX_FILE_SIZE_BYTES + 1) as usize];
-        let err = Chunker::chunk(&oversize).unwrap_err();
+        let err = Chunker::chunk(&oversize, [1; 16]).unwrap_err();
         assert!(matches!(err, FilesError::FileTooLarge { .. }));
     }
 
     #[test]
     fn empty_file_produces_single_chunk() {
-        let chunked = Chunker::chunk(&[]).unwrap();
+        let chunked = Chunker::chunk(&[], [1; 16]).unwrap();
         assert_eq!(chunked.chunks.len(), 1);
         assert_eq!(chunked.chunks[0].len(), 0);
     }

@@ -42,7 +42,7 @@ pub fn upload_expression_to_cache<D: FileCacheDeps + ?Sized>(
     let fek = MediaEncryptionKey::generate(0);
 
     deps.ensure_cache_open(community_id)?;
-    let chunked = Chunker::chunk(bytes)
+    let chunked = Chunker::chunk(bytes, expression_id)
         .map_err(|e| FilesError::InvalidInput(format!("chunker failed: {e}")))?;
     let chunk_count = u32::try_from(chunked.chunks.len())
         .map_err(|_| FilesError::InvalidInput("chunk count exceeds u32::MAX".to_string()))?;

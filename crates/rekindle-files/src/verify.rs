@@ -49,7 +49,7 @@ mod tests {
     use crate::chunker::{Chunker, CHUNK_SIZE_BYTES};
 
     fn offer_from(bytes: &[u8]) -> AttachmentOffer {
-        let chunked = Chunker::chunk(bytes).unwrap();
+        let chunked = Chunker::chunk(bytes, [1; 16]).unwrap();
         AttachmentOffer {
             attachment_id: chunked.attachment_id,
             filename: "f".into(),

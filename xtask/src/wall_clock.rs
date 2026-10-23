@@ -63,10 +63,6 @@ const OUTSIDE_THE_SIM: &[(&str, &str)] = &[
         "the fetched_at of an HTTPS preview fetch; the netsim makes no HTTP requests",
     ),
     (
-        "crates/rekindle-files/src/upload.rs",
-        "the upload pipeline, driven only by the desktop's FilesDeps; the Host never uploads",
-    ),
-    (
         "crates/rekindle-ipc/src/server/",
         "the daemon's Unix-socket server and its connections; the netsim never binds a socket",
     ),

@@ -58,6 +58,14 @@ impl HostFiles {
 
 #[async_trait]
 impl FilesDeps for HostFiles {
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock> {
+        GovernanceRuntimeDeps::clock(&self.gov)
+    }
+
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        GovernanceRuntimeDeps::rng(&self.gov)
+    }
+
     fn owner_key(&self) -> Result<String, FilesError> {
         self.channel
             .owner_key()

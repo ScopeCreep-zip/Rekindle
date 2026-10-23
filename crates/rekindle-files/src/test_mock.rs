@@ -190,6 +190,14 @@ impl FileCacheDeps for MockDeps {
 
 #[async_trait]
 impl FilesDeps for MockDeps {
+    fn clock(&self) -> std::sync::Arc<dyn rekindle_utils::Clock> {
+        std::sync::Arc::new(rekindle_utils::SystemClock)
+    }
+
+    fn rng(&self) -> std::sync::Arc<dyn rekindle_utils::RandomSource> {
+        std::sync::Arc::new(rekindle_utils::OsRandom)
+    }
+
     fn owner_key(&self) -> Result<String, FilesError> {
         Ok(self.owner_key.clone())
     }

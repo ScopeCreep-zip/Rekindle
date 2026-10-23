@@ -114,6 +114,14 @@ pub trait FileCacheDeps: Send + Sync + 'static {
 /// supply concrete AppState / Db / AppHandle / Veilid wiring.
 #[async_trait]
 pub trait FilesDeps: FileCacheDeps {
+    // ── Ports (plan C9.2) ──────────────────────────────────────────
+
+    /// The host's clock: post timestamps and the slowmode state.
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock>;
+
+    /// The host's RNG: the attachment, message and voice-file ids.
+    fn rng(&self) -> Arc<dyn rekindle_utils::RandomSource>;
+
     // ── Identity ───────────────────────────────────────────────────
 
     fn owner_key(&self) -> Result<String, FilesError>;

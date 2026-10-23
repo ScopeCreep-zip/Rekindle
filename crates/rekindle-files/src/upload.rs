@@ -217,7 +217,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     // Architecture §28.7 — file uploads (and voice messages, which call
     // through here) write a ChannelMessage carrying the attachment, so
     // the slowmode gate applies just like a plain text send.
-    deps.enforce_slowmode(community_id, channel_id, timestamp_now())?;
+    deps.enforce_slowmode(community_id, channel_id, timestamp_now(deps))?;
     deps.ensure_cache_open(community_id)?;
 
     // Per-file FEK (plan §1.J1): fresh AES-256 key, never reused.
@@ -225,7 +225,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
 
     // Chunk the plaintext + compute chunk_hashes + Merkle root.
     let chunked =
-        Chunker::chunk(&bytes).map_err(|e| FilesError::InvalidManifest(format!("chunker: {e}")))?;
+        Chunker::chunk(&bytes, *random_uuid(deps).as_bytes()).map_err(|e| FilesError::InvalidManifest(format!("chunker: {e}")))?;
     let attachment_id = chunked.attachment_id;
     let attachment_uuid = Uuid::from_bytes(attachment_id);
     let chunk_count = u32::try_from(chunked.chunks.len())
@@ -269,8 +269,8 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
 
     // Carrying ChannelMessage. The body holds whatever the caller asked
     // (empty for plain uploads; JSON metadata for voice messages).
-    let timestamp_ms = timestamp_now();
-    let message_id = format!("msg_{}", Uuid::new_v4().simple());
+    let timestamp_ms = timestamp_now(deps);
+    let message_id = format!("msg_{}", random_uuid(deps).simple());
     let lamport_ts = deps.increment_lamport(community_id)?;
     let sequence = deps.next_channel_sequence(community_id, channel_id);
     // The carrying message's body uses the channel-body codec every
@@ -351,7 +351,7 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
     // Architecture §28.7 — record this send for the slowmode window so
     // the next call to enforce_slowmode (from any send path) sees the
     // updated timestamp.
-    deps.persist_slowmode_state(community_id, channel_id, timestamp_now());
+    deps.persist_slowmode_state(community_id, channel_id, timestamp_now(deps));
 
     // Announce full possession via AttachmentCached entry on our subkey.
     let cached_lamport = deps.increment_lamport(community_id)?;
@@ -438,7 +438,7 @@ pub async fn send_voice_message_bytes<D: FilesDeps>(
             community_id: community_id.to_string(),
             channel_id: channel_id.to_string(),
             bytes: opus_bytes,
-            filename: format!("voice-{}.ogg", Uuid::new_v4().simple()),
+            filename: format!("voice-{}.ogg", random_uuid(deps).simple()),
             mime_type: "audio/ogg".to_string(),
             body_plaintext: body,
             flags: rekindle_types::channel::flags::VOICE_MESSAGE,
@@ -448,8 +448,14 @@ pub async fn send_voice_message_bytes<D: FilesDeps>(
     .await
 }
 
-fn timestamp_now() -> i64 {
-    i64::try_from(rekindle_utils::timestamp_ms()).unwrap_or(i64::MAX)
+/// Now, in Unix milliseconds, from the host's clock port (plan C9.2).
+fn timestamp_now<D: FilesDeps>(deps: &D) -> i64 {
+    i64::try_from(deps.clock().now_ms()).unwrap_or(i64::MAX)
+}
+
+/// A random (v4-shaped) id from the host's RNG port (plan C9.2).
+fn random_uuid<D: FilesDeps>(deps: &D) -> Uuid {
+    uuid::Builder::from_random_bytes(rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref())).into_uuid()
 }
 
 #[cfg(test)]
