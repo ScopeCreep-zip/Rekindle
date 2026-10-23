@@ -154,20 +154,29 @@ fn rows_survive_a_reopen() {
 #[test]
 fn read_through_raises_settled_and_waiting_echoes_at_or_below_the_marker() {
     let conn = fixture::conn();
-    for id in ["a", "b", "c"] {
+    for id in ["a", "b", "c", "d"] {
         enqueue_with_echo(&conn, &row("dm:bob", id, 0), Some(&echo())).unwrap();
     }
-    // `a` was delivered and settled; `b` and `c` wait.
+    // `a` was delivered and settled; `b` landed and waits; `c` has not
+    // landed (the peer read its hint first); `d` is past the marker.
     assert!(settle(&conn, OWNER, "a", SendState::Delivered).unwrap());
-    let raised = read_through(&conn, OWNER, "dm:bob", "bob", 2).unwrap();
+    update(&conn, OWNER, "b", &sent(1, 0)).unwrap().unwrap();
+    let raised = read_through(&conn, OWNER, "dm:bob", "bob", 3).unwrap();
     assert_eq!(raised, [(1, "a".to_owned()), (2, "b".to_owned())]);
     let state = |id| own_dm(&conn, OWNER, id).unwrap().unwrap().row.send_state;
     assert_eq!((state("a"), state("b")), (SendState::Read, SendState::Read));
-    assert_eq!(state("c"), SendState::Queued, "past the marker");
-    assert_eq!(unsettled_count(&conn, OWNER).unwrap(), 1);
+    assert_eq!(state("c"), SendState::Queued, "not landed: marked, kept");
+    assert_eq!(state("d"), SendState::Queued, "past the marker");
+    assert_eq!(unsettled_count(&conn, OWNER).unwrap(), 2);
     assert!(read_through(&conn, OWNER, "dm:bob", "bob", 2)
         .unwrap()
         .is_empty());
+    // `c`'s landing reads the peer's read back (live A/B finding 42
+    // follow-up); `d`'s finds none.
+    let landed = update(&conn, OWNER, "c", &sent(1, 0)).unwrap().unwrap();
+    assert_eq!(landed.peer_ack, Some(SendState::Read));
+    let landed = update(&conn, OWNER, "d", &sent(1, 0)).unwrap().unwrap();
+    assert_eq!(landed.peer_ack, None);
 }
 
 #[test]

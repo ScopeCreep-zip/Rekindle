@@ -189,20 +189,31 @@ pub fn read_through(
     up_to: i64,
 ) -> rusqlite::Result<Vec<(i64, String)>> {
     let tx = conn.unchecked_transaction()?;
+    // A covered row whose append has not landed (`queued`: the peer read
+    // the hint first) is marked read, not settled: it settles on its
+    // landing, as an early `DmAck` does (live A/B finding 42 follow-up).
+    tx.execute(
+        "UPDATE outbox SET peer_ack = 'read' WHERE owner_key = ?1 AND stream = ?2 \
+         AND stream_seq <= ?3 AND state = 'queued'",
+        params![owner_key, stream, up_to],
+    )?;
     let raised = {
         let mut stmt = tx.prepare(
             "UPDATE messages SET send_state = 'read' WHERE owner_key = ?1 \
              AND conversation_id = ?2 AND conversation_type = 'dm' AND sender_key = ?1 \
              AND stream_seq IS NOT NULL AND stream_seq <= ?3 AND message_id IS NOT NULL \
-             AND send_state != 'read' RETURNING stream_seq, message_id",
+             AND send_state != 'read' AND NOT EXISTS (SELECT 1 FROM outbox o \
+             WHERE o.owner_key = ?1 AND o.stream = ?4 AND o.stream_seq = messages.stream_seq \
+             AND o.state = 'queued') RETURNING stream_seq, message_id",
         )?;
-        let rows = stmt.query_map(params![owner_key, peer_key, up_to], |r| {
+        let rows = stmt.query_map(params![owner_key, peer_key, up_to, stream], |r| {
             Ok((r.get(0)?, r.get(1)?))
         })?;
         rows.collect::<rusqlite::Result<Vec<(i64, String)>>>()?
     };
     tx.execute(
-        "DELETE FROM outbox WHERE owner_key = ?1 AND stream = ?2 AND stream_seq <= ?3",
+        "DELETE FROM outbox WHERE owner_key = ?1 AND stream = ?2 AND stream_seq <= ?3 \
+         AND state != 'queued'",
         params![owner_key, stream, up_to],
     )?;
     tx.commit()?;

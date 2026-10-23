@@ -165,6 +165,8 @@ pub trait OutboxDeps: Send + Sync {
     /// The peer read `stream` (scope `scope`) through `up_to`: raise every
     /// echo at or below it to `read` and settle its rows still waiting, in
     /// one transaction; the entries raised, as `(stream_seq, client_id)`.
+    /// A covered row not landed (`queued`) is marked read, as an early ack
+    /// is ([`note_ack`](Self::note_ack)), and settles on its landing.
     async fn read_through(
         &self,
         stream: &str,

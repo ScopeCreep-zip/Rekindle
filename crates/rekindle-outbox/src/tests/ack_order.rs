@@ -109,3 +109,25 @@ async fn an_awaiting_row_waits_for_its_ack_by_client_id() {
         .await
         .unwrap());
 }
+
+/// Finding 42 follow-up: a `ReadUpTo` that covers a row whose append has
+/// not landed marks it read and keeps it; the landing settles it `read`.
+#[tokio::test]
+async fn a_read_up_to_before_the_landing_waits_for_it() {
+    let o = outbox();
+    let at = o
+        .enqueue(entry(StreamKind::Dm, "bob", "a"), ())
+        .await
+        .unwrap();
+    o.read_up_to(StreamKind::Dm, "bob", at.stream_seq)
+        .await
+        .unwrap();
+    assert_eq!(
+        state_of(&o, "a"),
+        Some(SendState::Queued),
+        "kept, not settled"
+    );
+    assert!(settled(&o).is_empty());
+    o.pump().await.unwrap();
+    assert_eq!(settled(&o), [("a".to_owned(), SendState::Read)]);
+}

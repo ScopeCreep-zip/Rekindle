@@ -194,14 +194,25 @@ impl OutboxDeps for Fake {
         up_to: i64,
     ) -> Result<Vec<(i64, String)>, OutboxError> {
         let mut s = self.store.lock();
+        let covered = |r: &OutboxRow| r.stream == stream && r.stream_seq <= up_to;
+        // A covered row not landed is marked read and kept.
+        let unlanded: Vec<String> = s
+            .rows
+            .iter()
+            .filter(|r| covered(r) && r.state == SendState::Queued)
+            .map(|r| r.client_id.clone())
+            .collect();
+        for id in unlanded {
+            s.acks.insert(id, PeerAck::Read);
+        }
         let mut raised: Vec<(i64, String)> = s
             .rows
             .iter()
-            .filter(|r| r.stream == stream && r.stream_seq <= up_to)
+            .filter(|r| covered(r) && r.state != SendState::Queued)
             .map(|r| (r.stream_seq, r.client_id.clone()))
             .collect();
         s.rows
-            .retain(|r| !(r.stream == stream && r.stream_seq <= up_to));
+            .retain(|r| !(covered(r) && r.state != SendState::Queued));
         for (st, seq, id, state) in &mut s.settled {
             if st == stream && *seq <= up_to && *state != SendState::Read {
                 *state = SendState::Read;
@@ -341,18 +352,17 @@ async fn read_up_to_raises_every_entry_at_or_below_it_once() {
         .await
         .unwrap();
     o.pump().await.unwrap();
-    // `a` was delivered and settled; `b` waits; `c` is past the marker.
+    // `a` was delivered and settled; `b` waits behind it, not yet landed,
+    // so the read marks it and keeps it (live A/B finding 42 follow-up);
+    // `c` is past the marker.
     o.acknowledge(&a.stream, a.stream_seq, PeerAck::Delivered)
         .await
         .unwrap();
     o.deps().store.lock().published.clear();
-    assert_eq!(o.read_up_to(StreamKind::Dm, "bob", 2).await.unwrap(), 2);
-    let mut read = o.deps().store.lock().published.clone();
-    read.sort_by(|x, y| x.0.cmp(&y.0));
-    assert_eq!(
-        read,
-        [("a".into(), SendState::Read), ("b".into(), SendState::Read)]
-    );
+    assert_eq!(o.read_up_to(StreamKind::Dm, "bob", 2).await.unwrap(), 1);
+    let read = o.deps().store.lock().published.clone();
+    assert_eq!(read, [("a".into(), SendState::Read)]);
+    assert_eq!(state_of(&o, "b"), Some(SendState::Queued), "marked, kept");
     let unread = |id| state_of(&o, id).is_some_and(|s| s != SendState::Read);
     assert!(unread("c"), "past the marker");
     assert!(unread("d"), "another stream");
