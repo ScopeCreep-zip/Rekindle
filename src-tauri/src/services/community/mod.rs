@@ -1,10 +1,7 @@
 pub mod analytics;
 pub mod background_sync;
 pub mod bootstrap;
-pub mod channel_messages;
-pub mod expression_assets;
 pub mod expressions;
-pub mod files;
 pub mod gossip;
 pub mod governance;
 pub mod inspect;
@@ -15,7 +12,6 @@ pub mod media_ready_runtime;
 pub mod mek_rotation;
 pub mod mek_rotation_orchestrators;
 pub(crate) mod mek_rotation_support;
-pub mod mentions;
 pub mod message_notifications;
 pub mod message_notifications_handle;
 pub mod notifications;

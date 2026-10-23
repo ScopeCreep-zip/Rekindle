@@ -74,19 +74,3 @@ pub(super) fn safe_routing_context_from(
         .with_safety(rekindle_protocol::dht::pool::safety_selection(&profile))
         .ok()
 }
-
-/// Decode a hex string into a 16-byte id, or all-zeros if it is not
-/// exactly 16 bytes of valid hex.
-///
-/// There were three copies of this. Two required an exact 16 bytes;
-/// this one decoded whatever it could and zero-padded the remainder, so
-/// a truncated id like `"deadbeef"` became
-/// `deadbeef00000000000000000000` here and `0…0` everywhere else — a
-/// half-real id that shares a prefix with a genuine one is worse than
-/// an obviously-invalid one, so the strict behaviour is what survives.
-pub(crate) fn hex_to_id_16(hex_str: &str) -> [u8; 16] {
-    hex::decode(hex_str)
-        .ok()
-        .and_then(|b| b.try_into().ok())
-        .unwrap_or([0u8; 16])
-}

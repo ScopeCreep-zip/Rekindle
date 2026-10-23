@@ -14,9 +14,6 @@ pub(super) fn on_projected(
     community_id: &str,
     projected: &GovernanceProjected,
 ) {
-    // The pinned set of the cache the Host opened (plan E3.1 E3c).
-    crate::services::community::files::sync_pinned_from_governance(state, community_id);
-
     let scope = crate::state_helpers::login_scope_or_closed(state);
     // New Plate Gate segment records opened (the watch path, E3.1 C1).
     let (s, c) = (state.clone(), community_id.to_string());
@@ -33,11 +30,6 @@ pub(super) fn on_projected(
             }
         });
     }
-    // Expression assets fetched eagerly (files domain, E3.1 E3).
-    let (s, c) = (state.clone(), community_id.to_string());
-    scope.spawn_or_drop("eager expression cache", async move {
-        crate::services::community::expression_assets::eager_fetch_missing(&s, &c).await;
-    });
 }
 
 /// One presence poll right after a slot grant (presence, E3.4).

@@ -2,8 +2,8 @@
 //!
 //! Every operation the upload/download/dht_scan/expression_fetch flows
 //! need against AppState, the database, the Veilid transport, or the
-//! Tauri event system is abstracted behind a single trait. The src-tauri
-//! `files_adapter` implements this trait against the live runtime; the
+//! Tauri event system is abstracted behind a single trait. The Host's
+//! `HostFiles` implements this trait against the live runtime; the
 //! crate-side bodies are parameterised over `Arc<dyn FilesDeps>` so they
 //! never import `veilid-core` or `tauri` directly (Invariant 2).
 //!

@@ -4,7 +4,6 @@
 #[cfg(debug_assertions)]
 pub mod call_runtime; // Phase 23.C — mid-call signaling orchestration lifted from commands/calls.rs.
 pub mod calls_adapter; // Phase 14 — CallSignalingDeps impl + calls free-fn facades.
-pub mod channel_adapter; // Phase 19.h-REDO — ChannelMessagingDeps impl for channel messaging ops.
 pub mod community;
 #[cfg(debug_assertions)]
 pub mod community_diagnostics_runtime; // Phase 23.C — debug_gossip_state body lifted from commands/community/diagnostics.rs.
@@ -17,7 +16,6 @@ pub mod community_video_runtime; // Phase 23.C — video-handler runtime orchest
 pub mod cross_device_sync;
 pub mod dm;
 pub mod dm_runtime; // Phase 23.C — DM video-frame command orchestration lifted from commands/dm.rs.
-pub mod files_adapter; // Phase 15 — FilesDeps impl + Tier-9 facades.
 pub mod gossip_adapter; // Phase 20.e-REDO — GossipDeps impl for mesh broadcast.
 pub mod mek_adapter; // Phase 17 — MekDistributeDeps impl + ChannelMekCache wrapper + Stronghold persist.
 pub mod message_service;

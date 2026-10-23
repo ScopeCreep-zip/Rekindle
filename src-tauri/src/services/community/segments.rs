@@ -47,17 +47,6 @@ pub async fn open_new_segments(state: &SharedState, community_id: &str) {
     gov_rt::open_new_segments(&adapter, community_id).await;
 }
 
-pub async fn ensure_channel_segment_record(
-    state: &SharedState,
-    community_id: &str,
-    channel_id: &str,
-) -> Result<String, String> {
-    let adapter = build_adapter(state)?;
-    gov_rt::ensure_channel_segment_record(&adapter, community_id, channel_id)
-        .await
-        .map_err(|e| e.to_string())
-}
-
 pub fn channel_record_keys_per_segment(
     state: &SharedState,
     community_id: &str,

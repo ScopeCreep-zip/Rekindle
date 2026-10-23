@@ -1,8 +1,6 @@
 //! Gossip-overlay state reads, extracted from `deps_impl.rs`.
 //!
-//! Mirrors the layout the other adapters already use
-//! (`channel_adapter`): the trait impl stays a
-//! list of one-line delegations, and the bodies that reach into
+//! The trait impl stays a list of one-line delegations, and the bodies that reach into
 //! `AppState` live beside it. This adapter was the only one that had
 //! never been split, so its `GossipDeps` impl carried six inline
 //! `communities.read()/.write()` bodies.

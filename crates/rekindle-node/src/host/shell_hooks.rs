@@ -102,10 +102,9 @@ pub trait ShellHooks: Send + Sync {
 
     /// The Host projected merged governance onto the community
     /// (`adapters::governance::projection`): the shell's effects of a merge
-    /// that the Host cannot run yet. Each names its owner step: the Lost
-    /// Cargo cache and pinned set, and the eager expression fetch (the files
-    /// domain, E3.1 E3); opening new Plate Gate segment records and the
-    /// watch refresh when `projected.new_watch_targets` (the watch path,
+    /// that the Host cannot run yet (the Host itself syncs the pinned set
+    /// and fetches the expressions, E3.1 E3f). Each names its owner step:
+    /// opening new Plate Gate segment records and the watch refresh when `projected.new_watch_targets` (the watch path,
     /// E3.1 C1); the event RSVP lists, the `community_events` rows and the
     /// reminder wake (the events domain, E3.1 E3).
     fn on_governance_projected(

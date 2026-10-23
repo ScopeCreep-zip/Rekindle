@@ -15,7 +15,7 @@
 //! Voice messages play from [`assemble_attachment`]'s bytes and never touch
 //! the filesystem outside the chunk cache.
 //!
-//! Parameterised over `FilesDeps`. The src-tauri `FilesAdapter`
+//! Parameterised over `FilesDeps`. The Host's `HostFiles`
 //! supplies the concrete DHT + transport + DB + cache + governance
 //! wiring.
 

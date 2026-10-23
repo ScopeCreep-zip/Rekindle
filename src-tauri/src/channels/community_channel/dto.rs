@@ -39,10 +39,6 @@ impl From<&rekindle_codec::message::RoleDto> for RoleDto {
     }
 }
 
-/// Thread info DTO for frontend consumption.
-/// Thread info DTO — alias for `rekindle-types::thread::ThreadInfo`.
-pub type ThreadInfoDto = rekindle_types::thread::ThreadInfo;
-
 impl From<&crate::state::RoleDefinition> for RoleDto {
     fn from(def: &crate::state::RoleDefinition) -> Self {
         Self {

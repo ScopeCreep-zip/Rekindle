@@ -41,29 +41,22 @@ pub async fn should_emit_message_notification(
 
     let level = resolve_notification_level(state, community_id, channel_id);
 
-    // Architecture §28.5 + §9.3 (reader-validates): rebuild a
-    // `MentionMatches` from the cleartext envelope fields, then strip
-    // privileged classes (@everyone/@here) when the sender lacks
-    // `MENTION_EVERYONE`. Body text is preserved as written; only the
-    // *escalation* effect is gated.
-    let mention_everyone = cleartext.flags & MENTION_EVERYONE != 0;
-    let mention_here = cleartext.flags & MENTION_HERE != 0;
-    let mut mentions = super::super::mentions::matches_from_cleartext(
-        state,
-        community_id,
-        cleartext.mentioned_pseudonyms,
-        cleartext.mentioned_roles,
-        mention_everyone,
-        mention_here,
-    );
-    super::super::mentions::validate_sender_permissions(
-        state,
-        community_id,
-        sender_pseudonym_hex,
-        &mut mentions,
-    );
-    let mentioned =
-        super::super::mentions::local_member_is_mentioned(state, community_id, &mentions);
+    // Architecture §28.5 + §9.3 (reader-validates): the Host rebuilds the
+    // mentions from the cleartext envelope fields and strips @everyone and
+    // @here when the sender lacks `MENTION_EVERYONE`; only the escalation
+    // is gated.
+    let mentioned = state.host.current().is_some_and(|host| {
+        host.channel().mentions_us(
+            community_id,
+            &rekindle_node::host::adapters::channel::stage_sound::MentionFields {
+                sender_pseudonym: sender_pseudonym_hex,
+                pseudonyms: cleartext.mentioned_pseudonyms,
+                roles: cleartext.mentioned_roles,
+                everyone: cleartext.flags & MENTION_EVERYONE != 0,
+                here: cleartext.flags & MENTION_HERE != 0,
+            },
+        )
+    });
 
     Ok(match level {
         NotificationLevel::All => true,

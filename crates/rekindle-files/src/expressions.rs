@@ -1,6 +1,5 @@
 //! Phase 23.D.9 — Lost Cargo storage + retrieval for expression assets
-//! (custom emoji, stickers, soundboard sounds). Ported from
-//! `src-tauri/services/community/expression_assets.rs`. Architecture
+//! (custom emoji, stickers, soundboard sounds). Architecture
 //! §18.4 + §28.9 line 3286.
 //!
 //! Upload chunks bytes, encrypts each chunk under a fresh per-asset

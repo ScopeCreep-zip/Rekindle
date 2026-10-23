@@ -9,7 +9,7 @@
 //!
 //! Parameterised over `FilesDeps` so the crate never touches
 //! `AppState` / `tauri::AppHandle` / `veilid-core` directly. The
-//! src-tauri `FilesAdapter` supplies the concrete wiring.
+//! Host's `HostFiles` supplies the concrete wiring.
 
 use std::path::Path;
 

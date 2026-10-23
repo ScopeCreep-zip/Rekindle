@@ -481,14 +481,13 @@ async fn handle_relayed_envelope(
             );
         }
         CommunityEnvelope::Control(payload) => {
-            let Ok(pool) = state.db.current() else {
+            if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");
                 return;
-            };
+            }
             super::control::handle_relayed_control(
                 app_handle,
                 state,
-                &pool,
                 &community_id,
                 &signed.sender_pseudonym,
                 payload,

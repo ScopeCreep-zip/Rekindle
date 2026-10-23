@@ -1,14 +1,12 @@
 use std::sync::Arc;
 
 use crate::state::AppState;
-use rekindle_db::Db;
 
 use super::control_events::handle_control_events_and_threads;
 
 pub(crate) async fn handle_relayed_control(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
-    pool: &Db,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
@@ -55,7 +53,6 @@ pub(crate) async fn handle_relayed_control(
             handle_control_events_and_threads(
                 app_handle,
                 state,
-                pool,
                 community_id,
                 sender_pseudonym,
                 other,

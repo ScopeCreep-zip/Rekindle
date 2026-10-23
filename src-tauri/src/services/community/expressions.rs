@@ -1,16 +1,14 @@
-//! Phase 19.i-REDO — thin facade.
-//!
-//! Expression uploads (emoji / sticker / soundboard) + delete + list
-//! + soundboard play live in `rekindle_channel::expressions`. This
-//! module constructs a `ChannelAdapter` per call and maps the crate's
-//! `ExpressionView` ↔ src-tauri `ExpressionInfo`.
+//! The soundboard's upload and play, over the Host's channel adapter
+//! (`HostChannel`). Their requests are plan E4.1's; until then these
+//! commands call the Host directly.
 
 use crate::state::SharedState;
 
-fn build_adapter(
-    state: &SharedState,
-) -> Result<crate::services::channel_adapter::ChannelAdapter, String> {
-    crate::services::build_adapter(state, crate::services::channel_adapter::ChannelAdapter::new)
+fn host(state: &SharedState) -> Result<std::sync::Arc<rekindle_node::host::Host>, String> {
+    state
+        .host
+        .current()
+        .ok_or_else(|| "not logged in".to_string())
 }
 
 pub async fn upload_soundboard_sound(
@@ -23,10 +21,9 @@ pub async fn upload_soundboard_sound(
     volume: f32,
     emoji: Option<String>,
 ) -> Result<String, String> {
-    let adapter = build_adapter(state)?;
-    rekindle_channel::upload_soundboard_sound(
-        &adapter,
-        rekindle_channel::UploadSoundboardSoundParams {
+    host(state)?
+        .channel()
+        .upload_soundboard_sound(rekindle_channel::UploadSoundboardSoundParams {
             community_id,
             name,
             bytes,
@@ -34,10 +31,9 @@ pub async fn upload_soundboard_sound(
             duration_seconds,
             volume,
             emoji,
-        },
-    )
-    .await
-    .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())
 }
 
 pub fn play_soundboard(
@@ -46,7 +42,8 @@ pub fn play_soundboard(
     channel_id: &str,
     expression_id_hex: &str,
 ) -> Result<(), String> {
-    let adapter = build_adapter(state)?;
-    rekindle_channel::play_soundboard(&adapter, community_id, channel_id, expression_id_hex)
+    host(state)?
+        .channel()
+        .play_soundboard(community_id, channel_id, expression_id_hex)
         .map_err(|e| e.to_string())
 }

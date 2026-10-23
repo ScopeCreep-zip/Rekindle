@@ -3,8 +3,7 @@
 //! its community store, database, record pool, outbox and governance
 //! adapter — on both modes. It replaces the daemon's own send (its
 //! `dispatch/channel_message.rs` send over the transport's
-//! `operations/channel.rs`), and the channel send of the desktop's
-//! `services/channel_adapter`.
+//! `operations/channel.rs`), and the desktop's former channel adapter.
 //!
 //! File split: this module holds the struct, the send entry and the
 //! settle task; `deps_impl` is the single trait impl and delegates;

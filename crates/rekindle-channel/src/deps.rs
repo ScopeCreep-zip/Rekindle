@@ -2,8 +2,8 @@
 //!
 //! One composite trait (`ChannelMessagingDeps`) abstracts every
 //! src-tauri/Veilid/SQLite/Stronghold capability the crate's pure
-//! pipeline logic needs. The adapter at
-//! `src-tauri/src/services/channel_adapter/` (task #190) implements it.
+//! pipeline logic needs. The Host's
+//! `HostChannel` (`rekindle_node::host::adapters::channel`) implements it.
 //!
 //! Schwarzschild boundary: all Veilid types are exchanged as opaque
 //! `String`/`Vec<u8>` here. The crate never imports `veilid-core`.
