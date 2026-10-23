@@ -14,7 +14,7 @@ use rekindle_types::presence::SessionStatus;
 
 use super::super::ops::append_op_once;
 
-const COMMUNITY_ID: &str = "community";
+const JOINED_COMMUNITY: &str = "community";
 
 /// A fresh member record: its key, writer keypair text and owner public key.
 async fn record(port: &dyn RecordPort) -> (String, String, String) {
@@ -65,7 +65,7 @@ async fn the_card_lands_before_op_zero_and_the_beat_after() {
     let signing = SigningKey::from_bytes(&[5; 32]);
     let pseudonym = PseudonymKey(signing.verifying_key().to_bytes());
     let own = OwnRecord {
-        community_id: COMMUNITY_ID,
+        community_id: JOINED_COMMUNITY,
         record: &key,
         writer: &writer,
         pseudonym: &signing,
@@ -86,7 +86,7 @@ async fn the_card_lands_before_op_zero_and_the_beat_after() {
         .await
         .unwrap();
     let member = MemberRecordRef {
-        community_id: COMMUNITY_ID,
+        community_id: JOINED_COMMUNITY,
         pseudonym: &pseudonym,
         record: &key,
         owner: &owner,
@@ -118,14 +118,14 @@ async fn a_card_under_another_owner_or_signer_is_refused() {
     // owner: the owner pin refuses it.
     let (forged, forged_writer, _) = record(port).await;
     let own = OwnRecord {
-        community_id: COMMUNITY_ID,
+        community_id: JOINED_COMMUNITY,
         record: &forged,
         writer: &forged_writer,
         pseudonym: &signing,
     };
     write_card(port, &own, &profile(), &[9; 32]).await.unwrap();
     let pinned_elsewhere = MemberRecordRef {
-        community_id: COMMUNITY_ID,
+        community_id: JOINED_COMMUNITY,
         pseudonym: &pseudonym,
         record: &forged,
         owner: &owner,
@@ -135,7 +135,7 @@ async fn a_card_under_another_owner_or_signer_is_refused() {
     let other = SigningKey::from_bytes(&[6; 32]);
     let (own_key, own_writer, own_owner) = record(port).await;
     let wrong_signer = OwnRecord {
-        community_id: COMMUNITY_ID,
+        community_id: JOINED_COMMUNITY,
         record: &own_key,
         writer: &own_writer,
         pseudonym: &other,
@@ -144,7 +144,7 @@ async fn a_card_under_another_owner_or_signer_is_refused() {
         .await
         .unwrap();
     let member = MemberRecordRef {
-        community_id: COMMUNITY_ID,
+        community_id: JOINED_COMMUNITY,
         pseudonym: &pseudonym,
         record: &own_key,
         owner: &own_owner,
