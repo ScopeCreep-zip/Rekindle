@@ -11,10 +11,6 @@ pub struct InitArgs {
     #[arg(long)]
     pub display_name: Option<String>,
 
-    /// Storage directory override.
-    #[arg(long)]
-    pub storage: Option<PathBuf>,
-
     /// Read the passphrase from this file (`-` for stdin) instead of a
     /// prompt. Never pass a passphrase as a flag value.
     #[arg(long)]
@@ -58,10 +54,6 @@ pub struct StatusArgs {
     /// Set exit code from doctor results (10/11/12).
     #[arg(long, requires = "doctor")]
     pub exit_code: bool,
-
-    /// Suppress doctor output, exit code only.
-    #[arg(long)]
-    pub quiet: bool,
 
     /// Continuous status refresh (2s interval).
     #[arg(long)]

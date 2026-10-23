@@ -12,6 +12,8 @@ mod identity;
 mod keys;
 mod network;
 mod own;
+#[cfg(test)]
+mod parse_tests;
 mod social;
 
 // Re-export all types so callers use `cli::Cli`, `cli::Command`, etc.

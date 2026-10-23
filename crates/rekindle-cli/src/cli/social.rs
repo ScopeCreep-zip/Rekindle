@@ -45,9 +45,6 @@ pub enum FriendCmd {
         /// Filter by status: online, away, busy, offline, all.
         #[arg(long)]
         status: Option<String>,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
     /// Remove a friend (the host asks to confirm).
@@ -221,9 +218,6 @@ pub enum DmCmd {
         /// Messages since timestamp (ISO 8601 or epoch ms).
         #[arg(long)]
         since: Option<String>,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
     /// Live-stream incoming DMs.

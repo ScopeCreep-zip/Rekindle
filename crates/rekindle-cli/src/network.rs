@@ -77,7 +77,7 @@ pub async fn cmd_status(
             checks
         };
 
-        format::print_doctor_checks(&filtered, mode, false)?;
+        format::print_doctor_checks(&filtered, mode)?;
 
         if args.exit_code {
             use rekindle_types::display::CheckStatus;
@@ -190,7 +190,7 @@ pub async fn dispatch(
     mode: OutputMode,
 ) -> anyhow::Result<()> {
     match cmd {
-        NetworkCmd::Peers { .. } => {
+        NetworkCmd::Peers => {
             let value = helpers::send(client, IpcRequest::NetworkPeers).await?;
             if mode.is_structured() {
                 return format::print_structured(&value, mode);

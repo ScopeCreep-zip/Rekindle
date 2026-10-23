@@ -133,7 +133,6 @@ pub fn print_list(items: &[String], mode: OutputMode) -> anyhow::Result<()> {
 pub fn print_doctor_checks(
     checks: &[rekindle_types::display::Check],
     mode: OutputMode,
-    quiet: bool,
 ) -> anyhow::Result<()> {
     if mode.is_structured() {
         let output = serde_json::json!({
@@ -159,7 +158,9 @@ pub fn print_doctor_checks(
         return print_structured(&output, mode);
     }
 
-    if quiet {
+    // The global `--quiet` (errors only): a doctor run prints nothing and
+    // answers through its exit code (`--exit-code`).
+    if is_quiet() {
         return Ok(());
     }
 

@@ -9,6 +9,18 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Hard ceiling on per-invite reuse. Even if `CommunityPolicy` permits a
+/// higher value, readers reject the entry. Combined with the per-inviter
+/// active-invite cap, this bounds the worst-case reachable joiners
+/// from a single rogue inviter at `max_active_invites * MAX_USES_PER_INVITE`.
+///
+/// Set deliberately conservative — the Discord-equivalent invite is
+/// usually 1, 25, or unlimited (`max_uses=0`). We forbid unlimited and
+/// cap at 100, which is enough for legitimate community-link sharing
+/// (small groups, classroom rosters, conference attendees) without
+/// granting attacker leverage.
+pub const MAX_USES_PER_INVITE: u32 = 100;
+
 /// Decrypted invite secrets: everything a joiner needs to join.
 ///
 /// The invite code (shared out-of-band) is the HKDF key that decrypts this

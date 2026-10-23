@@ -12,6 +12,9 @@ use clap::Subcommand;
 #[derive(Subcommand)]
 pub enum CommunityCmd {
     /// Create a new community.
+    ///
+    /// `--confirm` takes the community name you are creating.
+    #[command(after_help = "--confirm SUBJECT: the community name, as given.")]
     Create {
         /// Community name.
         name: String,
@@ -31,6 +34,11 @@ pub enum CommunityCmd {
     },
 
     /// Join via invite code or governance key.
+    ///
+    /// `--confirm` takes the invite's fingerprint: the 64 hex digits the
+    /// review prints (the spaces between groups may be kept), not the
+    /// community name, which the joiner does not know yet.
+    #[command(after_help = "--confirm SUBJECT: the invite's 64-hex fingerprint from the review.")]
     Join {
         /// Invite code or governance key.
         #[arg(long, short = 'i')]
@@ -48,11 +56,7 @@ pub enum CommunityCmd {
     },
 
     /// List joined communities.
-    List {
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
-    },
+    List,
 
     /// Show community details (metadata, channels, roles, members).
     Info {
@@ -61,7 +65,7 @@ pub enum CommunityCmd {
         community: String,
         /// Include full channel list and role permissions.
         #[arg(long)]
-        verbose: bool,
+        full: bool,
     },
 
     /// Approve a pending member from the waiting room.
@@ -117,8 +121,9 @@ pub enum InviteCmd {
         /// Community name or governance key.
         #[arg(long, short = 'c')]
         community: String,
-        /// Maximum number of uses (0 = unlimited).
-        #[arg(long)]
+        /// Maximum number of uses, 1 to 100 (there is no unlimited invite).
+        #[arg(long, value_parser = clap::value_parser!(u32)
+            .range(1..=i64::from(rekindle_types::invite::MAX_USES_PER_INVITE)))]
         max_uses: Option<u32>,
         /// Expiration duration (e.g., "24h", "7d", "never").
         #[arg(long)]

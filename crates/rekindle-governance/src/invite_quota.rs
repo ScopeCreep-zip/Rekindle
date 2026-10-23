@@ -11,17 +11,9 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::state::GovernanceState;
 
-/// Hard ceiling on per-invite reuse. Even if `CommunityPolicy` permits a
-/// higher value, readers reject the entry. Combined with the per-inviter
-/// active-invite cap, this bounds the worst-case reachable joiners
-/// from a single rogue inviter at `max_active_invites * MAX_USES_PER_INVITE`.
-///
-/// Set deliberately conservative — the Discord-equivalent invite is
-/// usually 1, 25, or unlimited (`max_uses=0`). We forbid unlimited and
-/// cap at 100, which is enough for legitimate community-link sharing
-/// (small groups, classroom rosters, conference attendees) without
-/// granting attacker leverage.
-pub const MAX_USES_PER_INVITE: u32 = 100;
+/// Hard ceiling on per-invite reuse; it lives in `rekindle-types` so the
+/// CLI refuses an out-of-range `--max-uses` with the same bound.
+pub use rekindle_types::invite::MAX_USES_PER_INVITE;
 
 /// Hard ceiling on simultaneously-active invites per inviter. Deliberately
 /// decoupled from `CommunityPolicy.max_joins_per_interval` (which bounds the

@@ -14,9 +14,6 @@ pub enum ChannelCmd {
         /// Community name or governance key.
         #[arg(long, short = 'c')]
         community: String,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
     /// Create a channel.
@@ -105,9 +102,6 @@ pub enum ChannelCmd {
         /// Messages since timestamp (ISO 8601 or epoch ms).
         #[arg(long)]
         since: Option<String>,
-        /// Output format override.
-        #[arg(long)]
-        format: Option<String>,
     },
 
     /// Live-stream channel messages (gossip + DHT watch).

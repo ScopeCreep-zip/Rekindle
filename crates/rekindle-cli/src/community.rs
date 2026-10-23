@@ -59,7 +59,7 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::List { .. } => {
+        CommunityCmd::List => {
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList)),
@@ -96,7 +96,7 @@ pub async fn dispatch(
                 .unwrap_or_default();
             table::print_table(&["Name", "Members", "Channels", "Key"], &rows, mode)
         }
-        CommunityCmd::Info { community, .. } => {
+        CommunityCmd::Info { community, full } => {
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::Lifecycle(
@@ -157,7 +157,11 @@ pub async fn dispatch(
                         .to_string(),
                 ),
             ];
-            table::print_kv_table(&pairs, mode)
+            table::print_kv_table(&pairs, mode)?;
+            if *full {
+                print_full_info(&value, mode)?;
+            }
+            Ok(())
         }
         CommunityCmd::Approve { community, member } => {
             let value = helpers::send(
@@ -260,4 +264,63 @@ pub async fn dispatch(
         }
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
     }
+}
+
+/// `community info --full`: the channel list and the roles with their
+/// permission bits, from the `CommunityDetail` answer.
+fn print_full_info(value: &serde_json::Value, mode: OutputMode) -> anyhow::Result<()> {
+    use rekindle_types::display::{ChannelOverviewDisplay, RoleDisplay};
+    let channels: Vec<ChannelOverviewDisplay> =
+        serde_json::from_value(value.get("channels").cloned().unwrap_or_default())?;
+    let roles: Vec<RoleDisplay> =
+        serde_json::from_value(value.get("roles").cloned().unwrap_or_default())?;
+    format::print_text("")?;
+    table::print_table(
+        &["Channel", "Kind", "Topic", "Key gen", "ID"],
+        &channel_rows(&channels),
+        mode,
+    )?;
+    format::print_text("")?;
+    table::print_table(
+        &["Role", "Position", "Permissions", "ID"],
+        &role_rows(&roles),
+        mode,
+    )
+}
+
+fn channel_rows(channels: &[rekindle_types::display::ChannelOverviewDisplay]) -> Vec<Vec<String>> {
+    let mut sorted: Vec<_> = channels.iter().collect();
+    sorted.sort_by(|a, b| {
+        a.sort_order
+            .cmp(&b.sort_order)
+            .then_with(|| a.name.cmp(&b.name))
+    });
+    sorted
+        .into_iter()
+        .map(|c| {
+            vec![
+                c.name.clone(),
+                c.kind.clone(),
+                c.topic.clone(),
+                c.mek_generation.to_string(),
+                rekindle_client::fmt::abbreviate_key(&c.id),
+            ]
+        })
+        .collect()
+}
+
+fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>> {
+    let mut sorted: Vec<_> = roles.iter().collect();
+    sorted.sort_by(|a, b| b.position.cmp(&a.position).then_with(|| a.id.cmp(&b.id)));
+    sorted
+        .into_iter()
+        .map(|r| {
+            vec![
+                r.name.clone(),
+                r.position.to_string(),
+                format!("{:#x}", r.permissions),
+                r.id.to_string(),
+            ]
+        })
+        .collect()
 }
