@@ -97,11 +97,21 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
         tracing::debug!(from = %sender, "ignoring Unfriended from non-friend");
         return true;
     }
+    // The ack is framed under the session before the removal deletes it,
+    // and committed once the removal stands (live A/B 2026-10-23: framed
+    // after, it found no session and was never sent, so the peer re-sent
+    // its Unfriended until the deadline).
+    let ack = dm::handshake::frame_now(host, sender, &DirectBody::UnfriendedAck).await;
     if !state::write_unfriended(host, sender).await {
         return false;
     }
-    if let Err(e) = dm::handshake::enqueue(host, sender, &DirectBody::UnfriendedAck).await {
-        tracing::warn!(to = %sender, error = %e, "UnfriendedAck not committed to the outbox");
+    match ack {
+        Ok(ack) => {
+            if let Err(e) = dm::handshake::commit_framed(host, sender, ack).await {
+                tracing::warn!(to = %sender, error = %e, "UnfriendedAck not committed to the outbox");
+            }
+        }
+        Err(e) => tracing::warn!(to = %sender, error = %e, "UnfriendedAck not framed"),
     }
     state::take(host, sender);
     host.unwatch_friend(sender).await;

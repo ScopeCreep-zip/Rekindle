@@ -173,6 +173,41 @@ fn refuses(e: &rekindle_records::port::PortError) -> bool {
     )
 }
 
+/// A handshake row framed now and committed later ([`commit_framed`]):
+/// what a frame needs when its session is about to go (our
+/// `UnfriendedAck`, whose removal deletes the session it is framed under).
+pub struct FramedRow {
+    kind: DmTypeId,
+    payload: Vec<u8>,
+}
+
+/// Frame `body` to `to` under the session as it is now.
+///
+/// # Errors
+/// The frame could not be built.
+pub async fn frame_now(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<FramedRow, FriendError> {
+    Ok(FramedRow {
+        kind: body.type_id(),
+        payload: payload(host, to, body).await?,
+    })
+}
+
+/// Commit a row [`frame_now`] framed; the row's client id.
+///
+/// # Errors
+/// The row could not be stored.
+pub async fn commit_framed(
+    host: &dyn FriendHost,
+    to: &str,
+    row: FramedRow,
+) -> Result<String, FriendError> {
+    commit(host, to, client_id(host, row.kind), row.payload).await
+}
+
 async fn commit(
     host: &dyn FriendHost,
     to: &str,
