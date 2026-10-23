@@ -1,6 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import type { Community } from "../../../../stores/community.store";
-import type { ConfirmOptions } from "../types";
 import {
   handleReorderCategories,
   handleCreateCategory,
@@ -19,7 +18,6 @@ import {
 
 interface CategoryManagerProps {
   community: Community;
-  requestConfirm: (opts: ConfirmOptions) => void;
 }
 
 const CategoryManager: Component<CategoryManagerProps> = (props) => {
@@ -44,13 +42,8 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
     setRenamingCategoryId(null);
   }
 
-  function confirmDeleteCategory(cat: { id: string; name: string }): void {
-    props.requestConfirm({
-      title: "Delete Category",
-      message: `Delete category "${cat.name}"? Channels will become uncategorized.`,
-      confirmLabel: "Delete",
-      action: () => handleDeleteCategory(props.community.id, cat.id),
-    });
+  function deleteCategory(cat: { id: string; name: string }): void {
+    void handleDeleteCategory(props.community.id, cat.id);
   }
 
   async function handleCreateCat(): Promise<void> {
@@ -118,7 +111,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             </Show>
             <button
               class="form-btn-danger channel-manage-btn"
-              onClick={() => confirmDeleteCategory(cat)}
+              onClick={() => deleteCategory(cat)}
               title="Delete"
             >
               <span class="nf-icon">{ICON_DELETE}</span>

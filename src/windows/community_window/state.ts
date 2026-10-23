@@ -42,7 +42,6 @@ export function createCommunityWindowState() {
   const [showServers, setShowServers] = createSignal(false);
   const [renameTarget, setRenameTarget] = createSignal<{ channelId: string; currentName: string } | null>(null);
   const [renameCategoryTarget, setRenameCategoryTarget] = createSignal<{ categoryId: string; currentName: string } | null>(null);
-  const [showLeaveConfirm, setShowLeaveConfirm] = createSignal(false);
   // Architecture §23 — Cmd/Ctrl-F overlay for FTS5 message search.
   const [showSearch, setShowSearch] = createSignal(false);
   // Plan §Failure 9 — when the user opens search via Cmd/Ctrl-F we
@@ -58,7 +57,6 @@ export function createCommunityWindowState() {
   const [editingTopic, setEditingTopic] = createSignal(false);
   const [topicDraft, setTopicDraft] = createSignal("");
   const [editState, setEditState] = createSignal<EditMode | null>(null);
-  const [deleteTarget, setDeleteTarget] = createSignal<string | null>(null);
   const [isLoadingOlder, setIsLoadingOlder] = createSignal(false);
   const [hasMoreOlder, setHasMoreOlder] = createSignal(true);
   const [editingEvent, setEditingEvent] = createSignal<ScheduledEvent | null>(null);
@@ -208,10 +206,10 @@ export function createCommunityWindowState() {
     showCreateCategory, setShowCreateCategory, showCreateEvent, setShowCreateEvent,
     showEvents, setShowEvents, showServers, setShowServers,
     renameTarget, setRenameTarget, renameCategoryTarget, setRenameCategoryTarget,
-    showLeaveConfirm, setShowLeaveConfirm, showSearch, setShowSearch,
+    showSearch, setShowSearch,
     searchInitialChannel, setSearchInitialChannel, replyTo, setReplyTo,
     pins, setPins, activeThread, setActiveThread, editingTopic, setEditingTopic,
-    topicDraft, setTopicDraft, editState, setEditState, deleteTarget, setDeleteTarget,
+    topicDraft, setTopicDraft, editState, setEditState, 
     isLoadingOlder, setIsLoadingOlder, hasMoreOlder, setHasMoreOlder,
     editingEvent, setEditingEvent, createPollTarget, setCreatePollTarget,
     createThreadTarget, setCreateThreadTarget, forwardTarget, setForwardTarget,

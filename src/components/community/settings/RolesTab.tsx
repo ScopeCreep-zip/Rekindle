@@ -1,6 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import type { Community } from "../../../stores/community.store";
-import type { ConfirmOptions } from "./types";
 import RoleTag from "../RoleTag";
 import PermissionCheckboxList from "./PermissionCheckboxList";
 import FormField from "../../common/FormField";
@@ -21,7 +20,6 @@ import {
 
 interface RolesTabProps {
   community: Community;
-  requestConfirm: (opts: ConfirmOptions) => void;
 }
 
 const RolesTab: Component<RolesTabProps> = (props) => {
@@ -104,16 +102,9 @@ const RolesTab: Component<RolesTabProps> = (props) => {
     }
   }
 
-  function confirmDeleteRole(roleId: number, roleName: string): void {
-    props.requestConfirm({
-      title: "Delete Role",
-      message: `Delete the "${roleName}" role? This cannot be undone.`,
-      confirmLabel: "Delete",
-      action: () => {
-        handleDeleteRole(props.community.id, roleId);
-        if (editingRoleId() === roleId) setEditingRoleId(null);
-      },
-    });
+  function deleteRole(roleId: number): void {
+    void handleDeleteRole(props.community.id, roleId);
+    if (editingRoleId() === roleId) setEditingRoleId(null);
   }
 
   return (
@@ -141,7 +132,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 <Show when={role.id > 1}>
                   <button
                     class="form-btn-danger"
-                    onClick={(e) => { e.stopPropagation(); confirmDeleteRole(role.id, role.name); }}
+                    onClick={(e) => { e.stopPropagation(); deleteRole(role.id); }}
                     title="Delete Role"
                   >
                     <span class="nf-icon">{ICON_DELETE}</span>

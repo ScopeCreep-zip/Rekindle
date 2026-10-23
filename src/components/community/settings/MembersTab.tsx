@@ -2,7 +2,6 @@ import { Component, For, Show, createSignal } from "solid-js";
 import StatusDot from "../../status/StatusDot";
 import RoleTag from "../RoleTag";
 import type { Community, Member, Role } from "../../../stores/community.store";
-import type { ConfirmOptions } from "./types";
 import {
   handleRemoveCommunityMember,
   handleBanMember,
@@ -28,7 +27,6 @@ interface MembersTabProps {
   canBan: boolean;
   canModerate: boolean;
   canManageCommunity: boolean;
-  requestConfirm: (opts: ConfirmOptions) => void;
 }
 
 const SLOTS_PER_SEGMENT = 255;
@@ -68,22 +66,12 @@ const MembersTab: Component<MembersTabProps> = (props) => {
     return myPos > memberPos && member.pseudonymKey !== props.community.myPseudonymKey;
   }
 
-  function confirmKick(member: Member): void {
-    props.requestConfirm({
-      title: "Kick Member",
-      message: `Kick ${member.displayName} from the community?`,
-      confirmLabel: "Kick",
-      action: () => handleRemoveCommunityMember(props.community.id, member.pseudonymKey),
-    });
+  function kickMember(member: Member): void {
+    void handleRemoveCommunityMember(props.community.id, member.pseudonymKey);
   }
 
-  function confirmBan(member: Member): void {
-    props.requestConfirm({
-      title: "Ban Member",
-      message: `Ban ${member.displayName}? They will not be able to rejoin.`,
-      confirmLabel: "Ban",
-      action: () => handleBanMember(props.community.id, member.pseudonymKey),
-    });
+  function banMember(member: Member): void {
+    void handleBanMember(props.community.id, member.pseudonymKey);
   }
 
   // Plate Gate (architecture §15): admins see two-state banner — a
@@ -222,7 +210,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 <Show when={props.canKick}>
                   <button
                     class="form-btn-secondary"
-                    onClick={() => confirmKick(member)}
+                    onClick={() => kickMember(member)}
                   >
                     <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Kick
                   </button>
@@ -230,7 +218,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 <Show when={props.canBan}>
                   <button
                     class="form-btn-danger"
-                    onClick={() => confirmBan(member)}
+                    onClick={() => banMember(member)}
                   >
                     <span class="nf-icon">{ICON_BAN}</span> Ban
                   </button>

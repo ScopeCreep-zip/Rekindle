@@ -125,7 +125,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
           <OverviewTab community={props.community} canManage={canManageCommunity()} />
         </Show>
         <Show when={activeTab() === "channels"}>
-          <ChannelsTab community={props.community} canManageChannels={canManageChannels()} requestConfirm={requestConfirm} />
+          <ChannelsTab community={props.community} canManageChannels={canManageChannels()} />
         </Show>
         <Show when={activeTab() === "members"}>
           <MembersTab
@@ -136,7 +136,6 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
             canBan={canBan()}
             canModerate={canModerate()}
             canManageCommunity={canManageCommunity()}
-            requestConfirm={requestConfirm}
           />
         </Show>
         <Show when={activeTab() === "invites"}>
@@ -147,7 +146,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
           />
         </Show>
         <Show when={activeTab() === "roles"}>
-          <RolesTab community={props.community} requestConfirm={requestConfirm} />
+          <RolesTab community={props.community} />
         </Show>
         <Show when={activeTab() === "bans"}>
           <BansTab communityId={props.community.id} canBan={canBan()} />

@@ -13,6 +13,7 @@ import {
   handleVotePoll,
   handleClosePoll,
   handleEditChannelMessage,
+  handleDeleteChannelMessage,
 } from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
@@ -63,7 +64,7 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
           vm.setEditState({ messageId, body: currentBody });
         }}
         onDelete={(messageId) => {
-          vm.setDeleteTarget(messageId);
+          void handleDeleteChannelMessage(vm.selectedChannelId(), messageId);
         }}
         onVotePoll={(pollId, selectedAnswers) =>
           handleVotePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId, selectedAnswers)

@@ -1,6 +1,5 @@
 import { Component, For, Show } from "solid-js";
 import type { Channel, Community } from "../../../stores/community.store";
-import type { ConfirmOptions } from "./types";
 import CategoryManager from "./channels_tab/CategoryManager";
 import ChannelRow from "./channels_tab/ChannelRow";
 import NewChannelForm from "./channels_tab/NewChannelForm";
@@ -8,7 +7,6 @@ import NewChannelForm from "./channels_tab/NewChannelForm";
 interface ChannelsTabProps {
   community: Community;
   canManageChannels: boolean;
-  requestConfirm: (opts: ConfirmOptions) => void;
 }
 
 const ChannelsTab: Component<ChannelsTabProps> = (props) => {
@@ -52,7 +50,7 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
   return (
     <div class="settings-section">
       <Show when={props.canManageChannels}>
-        <CategoryManager community={props.community} requestConfirm={props.requestConfirm} />
+        <CategoryManager community={props.community} />
       </Show>
 
       <h4 class="settings-subsection-title">Channels</h4>
@@ -66,7 +64,6 @@ const ChannelsTab: Component<ChannelsTabProps> = (props) => {
                   community={props.community}
                   channel={channel}
                   canManageChannels={props.canManageChannels}
-                  requestConfirm={props.requestConfirm}
                 />
               )}
             </For>

@@ -5,7 +5,6 @@ import { Member, Role, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import MemberProfilePopup from "./MemberProfilePopup";
-import ConfirmDialog from "../common/ConfirmDialog";
 import {
   ICON_SHIELD,
   ICON_TIMEOUT,
@@ -75,12 +74,6 @@ const MemberList: Component<MemberListProps> = (props) => {
     else set.delete(key);
     setBlocked(set);
   }
-
-  const [confirmAction, setConfirmAction] = createSignal<{
-    type: "kick" | "ban";
-    pseudonymKey: string;
-    displayName: string;
-  } | null>(null);
 
   function myPerms(): bigint {
     return calculateBasePermissions(props.myRoleIds, props.roles);
@@ -160,17 +153,6 @@ const MemberList: Component<MemberListProps> = (props) => {
 
     return groups;
   });
-
-  function handleConfirm(): void {
-    const action = confirmAction();
-    if (!action) return;
-    if (action.type === "kick") {
-      handleRemoveCommunityMember(props.communityId, action.pseudonymKey);
-    } else {
-      handleBanMember(props.communityId, action.pseudonymKey);
-    }
-    setConfirmAction(null);
-  }
 
   function memberMenu(member: Member): JSX.Element {
     const perms = myPerms();
@@ -282,11 +264,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
-                setConfirmAction({
-                  type: "kick",
-                  pseudonymKey: member.pseudonymKey,
-                  displayName: member.displayName,
-                })
+                void handleRemoveCommunityMember(props.communityId, member.pseudonymKey)
               }
             >
               <span class="nf-icon context-menu-icon">{ICON_ACCOUNT_REMOVE}</span>
@@ -298,11 +276,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
-                setConfirmAction({
-                  type: "ban",
-                  pseudonymKey: member.pseudonymKey,
-                  displayName: member.displayName,
-                })
+                void handleBanMember(props.communityId, member.pseudonymKey)
               }
             >
               <span class="nf-icon context-menu-icon">{ICON_BAN}</span>
@@ -403,15 +377,6 @@ const MemberList: Component<MemberListProps> = (props) => {
           </>
         )}
       </For>
-      <ConfirmDialog
-        isOpen={confirmAction() !== null}
-        title={confirmAction()?.type === "kick" ? "Kick Member" : "Ban Member"}
-        message={`Are you sure you want to ${confirmAction()?.type ?? "kick"} ${confirmAction()?.displayName ?? "this member"}?${confirmAction()?.type === "ban" ? " They will not be able to rejoin." : ""}`}
-        danger
-        confirmLabel={confirmAction()?.type === "kick" ? "Kick" : "Ban"}
-        onConfirm={handleConfirm}
-        onCancel={() => setConfirmAction(null)}
-      />
     </div>
   );
 };

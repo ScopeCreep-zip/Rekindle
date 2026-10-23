@@ -12,6 +12,7 @@ import {
   handleRemoveReaction,
   handleVotePoll,
   handleClosePoll,
+  handleDeleteChannelMessage,
 } from "../../actions/community.actions";
 import type { CommunityVm } from "./useCommunityWindow";
 
@@ -76,7 +77,7 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               }}
               onCreatePoll={(messageId) => vm.setCreatePollTarget(messageId)}
               onEdit={(messageId, currentBody) => vm.setEditState({ messageId, body: currentBody })}
-              onDelete={(messageId) => vm.setDeleteTarget(messageId)}
+              onDelete={(messageId) => void handleDeleteChannelMessage(vm.selectedChannelId(), messageId)}
               onVotePoll={(pollId, selectedAnswers) =>
                 handleVotePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId, selectedAnswers)
               }

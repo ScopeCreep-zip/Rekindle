@@ -9,6 +9,7 @@ import { handleJoinVoice } from "../../actions/voice.actions";
 import {
   handleDeleteChannel,
   handleDeleteCategory,
+  handleLeaveCommunity,
   handleSetNotificationOverride,
 } from "../../actions/community.actions";
 import {
@@ -51,7 +52,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
         selectedId={vm.selectedCommunityId()}
         onSelect={vm.handleSelectCommunity}
         onSettings={(id) => { vm.handleSelectCommunity(id); vm.setShowSettings(true); }}
-        onLeave={() => vm.setShowLeaveConfirm(true)}
+        onLeave={() => void handleLeaveCommunity(vm.selectedCommunityId())}
       />
       <Show when={vm.activeCommunity()}>
         <div class="community-sidebar-header">
@@ -179,7 +180,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
           </button>
           <button
             class="community-leave-btn"
-            onClick={() => vm.setShowLeaveConfirm(true)}
+            onClick={() => void handleLeaveCommunity(vm.selectedCommunityId())}
           >
             <span class="nf-icon">{ICON_LOGOUT}</span> Leave
           </button>

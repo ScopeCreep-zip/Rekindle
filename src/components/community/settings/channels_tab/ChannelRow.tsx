@@ -1,6 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import type { Channel, Community } from "../../../../stores/community.store";
-import type { ConfirmOptions } from "../types";
 import {
   handleRenameChannel,
   handleDeleteChannel,
@@ -28,7 +27,6 @@ interface ChannelRowProps {
   community: Community;
   channel: Channel;
   canManageChannels: boolean;
-  requestConfirm: (opts: ConfirmOptions) => void;
 }
 
 const ChannelRow: Component<ChannelRowProps> = (props) => {
@@ -58,13 +56,8 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
     setRenaming(false);
   }
 
-  function confirmDeleteChannel(): void {
-    props.requestConfirm({
-      title: "Delete Channel",
-      message: `Delete #${props.channel.name}? This cannot be undone.`,
-      confirmLabel: "Delete",
-      action: () => handleDeleteChannel(cid(), props.channel.id),
-    });
+  function deleteChannel(): void {
+    void handleDeleteChannel(cid(), props.channel.id);
   }
 
   function startEditSlowmode(): void {
@@ -201,7 +194,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
           </Show>
           <button
             class="form-btn-danger channel-manage-btn"
-            onClick={confirmDeleteChannel}
+            onClick={deleteChannel}
             title="Delete"
           >
             <span class="nf-icon">{ICON_DELETE}</span>
