@@ -107,7 +107,7 @@ pub(super) async fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
-        _ => {}
+        ChannelRequest::ChannelList { .. } => {}
     }
     Ok(())
 }

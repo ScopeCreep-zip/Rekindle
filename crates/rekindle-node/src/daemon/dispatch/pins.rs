@@ -72,6 +72,8 @@ pub(crate) async fn handle(
             Ok(()) => IpcResponse::ok(&()),
             Err(e) => runtime_refused(&e, "pin attachment"),
         },
-        other => IpcResponse::error(500, format!("{} is not a pin request", other.name())),
+        other @ PinRequest::MessageSearch { .. } => {
+            IpcResponse::error(500, format!("{} is not a pin request", other.name()))
+        }
     }
 }

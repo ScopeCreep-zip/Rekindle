@@ -39,7 +39,7 @@ pub(super) fn audit_fields(request: &AuditRequest) -> Checked {
             }
             Ok(())
         }
-        _ => Ok(()),
+        AuditRequest::NotificationDefaultGet { .. } => Ok(()),
     }
 }
 

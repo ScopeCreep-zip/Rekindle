@@ -22,7 +22,7 @@ pub(super) fn selection(
 
             s.subject = Subject::Community { id, name };
         }
-        _ => {}
+        ExpressionRequest::Expressions { .. } => {}
     }
     Ok(())
 }

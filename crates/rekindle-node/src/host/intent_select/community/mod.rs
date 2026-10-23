@@ -9,11 +9,12 @@ mod lifecycle;
 mod members;
 mod messages;
 mod pins;
+mod settings;
 
 use rekindle_idempotency::intent_gate::Selection;
 use rekindle_ipc::protocol::{
-    AuditRequest, ChannelMessageRequest, ChannelRequest, ExpressionRequest, LifecycleRequest,
-    MemberRequest, PinRequest, SettingsRequest,
+    ActivityRequest, AuditRequest, ChannelMessageRequest, ChannelRequest, ExpressionRequest,
+    LifecycleRequest, MemberRequest, PinRequest, RichRequest, SettingsRequest,
 };
 use rekindle_ipc::protocol::{CommunityRequest, IpcResponse};
 use rekindle_types::intent::{Escalation, Fact, IntentKind, Notifies, Reversibility, Subject};
@@ -38,10 +39,20 @@ pub(super) async fn selection(
         CommunityRequest::Members(request) => members::selection(ctx, request, s),
         CommunityRequest::Pins(request) => pins::selection(ctx, request, s),
         CommunityRequest::Expressions(request) => expressions::selection(ctx, request, s),
-        CommunityRequest::Settings(_)
-        | CommunityRequest::Unread(_)
-        | CommunityRequest::Activities(_)
-        | CommunityRequest::Rich(_) => Ok(()),
+        CommunityRequest::Settings(request) => settings::selection(ctx, request, s),
+        CommunityRequest::Activities(
+            request @ (ActivityRequest::GameServerAdd { .. }
+            | ActivityRequest::GameServerRemove { .. }),
+        ) => super::game_servers::selection(ctx, request, s).await,
+        CommunityRequest::Activities(request) => super::events::selection(ctx, request, s).await,
+        CommunityRequest::Rich(
+            RichRequest::ThreadList { .. }
+            | RichRequest::ThreadListActive { .. }
+            | RichRequest::ThreadMessages { .. }
+            | RichRequest::PollResults { .. },
+        )
+        | CommunityRequest::Unread(_) => Ok(()),
+        CommunityRequest::Rich(request) => super::rich_messaging::selection(ctx, request, s),
     }
 }
 
@@ -269,58 +280,4 @@ pub(super) fn pseudonym(hex_key: &str) -> Option<rekindle_types::id::PseudonymKe
         .ok()
         .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
         .map(rekindle_types::id::PseudonymKey)
-}
-
-/// Fill `s` for a community settings request: its profile, pictures,
-/// policy, onboarding flow, welcome screen and our onboarding.
-///
-/// # Errors
-/// The community is not joined.
-pub(super) fn settings_selection(
-    ctx: &DaemonContext,
-    request: &SettingsRequest,
-    s: &mut Selection,
-) -> Result<(), IpcResponse> {
-    match request {
-        SettingsRequest::CommunityUpdateProfile {
-            community: target, ..
-        }
-        | SettingsRequest::CommunitySetAvatar {
-            community: target, ..
-        }
-        | SettingsRequest::CommunitySetBanner {
-            community: target, ..
-        } => {
-            let (id, name) = community(ctx, target)?;
-            s.reversibility = Reversibility::Undoable;
-            s.subject = Subject::Community { id, name };
-        }
-        SettingsRequest::CommunityPolicySet {
-            community: target, ..
-        } => {
-            let (id, name) = community(ctx, target)?;
-            s.reversibility = Reversibility::Undoable;
-            s.notifies = members(ctx, &id);
-            s.subject = Subject::Community { id, name };
-        }
-        SettingsRequest::OnboardingConfigSet {
-            community: target, ..
-        }
-        | SettingsRequest::WelcomeScreenSet {
-            community: target, ..
-        } => {
-            let (id, name) = community(ctx, target)?;
-            s.notifies = members(ctx, &id);
-            s.subject = Subject::Community { id, name };
-        }
-        SettingsRequest::OnboardingSubmit {
-            community: target, ..
-        }
-        | SettingsRequest::OnboardingComplete { community: target } => {
-            let (id, name) = community(ctx, target)?;
-            s.subject = Subject::Community { id, name };
-        }
-        _ => {}
-    }
-    Ok(())
 }
