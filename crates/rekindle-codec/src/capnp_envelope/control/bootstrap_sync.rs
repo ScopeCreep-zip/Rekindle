@@ -21,13 +21,15 @@ pub(super) fn write_bootstrap_request(
         joiner_pseudonym,
         anchor,
         member_joined,
+        member_joined_op,
     } = payload
     else {
         unreachable!("write_bootstrap_request: variant mismatch")
     };
     p.set_joiner_pseudonym(joiner_pseudonym);
     p.set_anchor(anchor);
-    write_op_ref(p.init_member_joined(), member_joined);
+    write_op_ref(p.reborrow().init_member_joined(), member_joined);
+    p.set_member_joined_op(member_joined_op);
 }
 
 /// Refuses a frontier over `MAX_FRONTIER_REFS` heads or more than
@@ -111,6 +113,10 @@ pub(super) fn read_bootstrap_request(
         joiner_pseudonym: text_to_string(p.get_joiner_pseudonym().map_err(|e| capnp_err(&e))?)?,
         anchor: text_to_string(p.get_anchor().map_err(|e| capnp_err(&e))?)?,
         member_joined: read_op_ref(p.get_member_joined().map_err(|e| capnp_err(&e))?)?,
+        member_joined_op: p
+            .get_member_joined_op()
+            .map_err(|e| capnp_err(&e))?
+            .to_vec(),
     })
 }
 

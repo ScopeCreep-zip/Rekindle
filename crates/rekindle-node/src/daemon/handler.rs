@@ -395,6 +395,7 @@ impl InboundHandler for DaemonHandler {
                 joiner_pseudonym,
                 anchor,
                 member_joined,
+                member_joined_op,
             } => {
                 let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
                     return CallResponse::Rejected {
@@ -404,6 +405,7 @@ impl InboundHandler for DaemonHandler {
                 let joiner = rekindle_governance_runtime::BootstrapJoiner {
                     pseudonym: joiner_pseudonym,
                     member_joined,
+                    member_joined_op,
                 };
                 let host = crate::host::adapters::governance::HostGovernance::new(ctx);
                 match rekindle_governance_runtime::build_bootstrap_response_v2(

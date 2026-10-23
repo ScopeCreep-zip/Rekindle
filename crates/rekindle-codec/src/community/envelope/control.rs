@@ -302,8 +302,8 @@ pub enum ControlPayload {
     },
     /// The joiner's bootstrap request (plan E3.2): a bare app_call to the
     /// inviter's route. It carries no authority of its own: the inviter
-    /// fetches the joiner's signed `MemberJoined` by `member_joined` from
-    /// the joiner's member record and verifies it before answering.
+    /// verifies the joiner's signed `MemberJoined` (`member_joined_op`,
+    /// whose hash `member_joined` names) before answering.
     BootstrapRequest {
         /// Joiner's community pseudonym (hex-encoded Ed25519 public key).
         joiner_pseudonym: String,
@@ -311,6 +311,8 @@ pub enum ControlPayload {
         anchor: String,
         /// The joiner's op #0, `MemberJoined`.
         member_joined: rekindle_types::governance::OpRef,
+        /// The encoded signed op `member_joined` names.
+        member_joined_op: Vec<u8>,
     },
     /// The inviter's answer to a `BootstrapRequest` (plan E3.2): where the
     /// joiner's walk of the op DAG continues, constant in N. No keys (D11)

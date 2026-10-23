@@ -93,10 +93,12 @@ async fn community_call(
             joiner_pseudonym,
             anchor,
             member_joined,
+            member_joined_op,
         }))) => {
             let joiner = rekindle_governance_runtime::BootstrapJoiner {
                 pseudonym: joiner_pseudonym,
                 member_joined,
+                member_joined_op,
             };
             crate::services::community::build_bootstrap_response_v2(state, &anchor, &joiner)
                 .await

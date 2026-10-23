@@ -123,6 +123,7 @@ impl HostGovernance {
                 author_record: joined.author_record.clone(),
                 author_seq: joined.seq,
             },
+            member_joined_op: joined.encoded.clone(),
         };
         let walked = match rekindle_governance_runtime::request_bootstrap(
             self,

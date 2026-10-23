@@ -425,6 +425,10 @@ struct BootstrapRequestPayload @0xea002a000000a000 {
     joinerPseudonym      @0 :Text;
     anchor               @1 :Text;
     memberJoined         @2 :OpRef;
+    # The signed op `memberJoined` names, carried so the inviter answers
+    # within the app_call reply window without a DHT read (its hash must
+    # be `memberJoined.opHash`).
+    memberJoinedOp       @3 :Data;
 }
 
 # The inviter's answer (plan E3.2): where the joiner's walk of the op DAG

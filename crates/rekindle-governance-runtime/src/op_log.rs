@@ -302,13 +302,18 @@ pub async fn fetch_held<D: GovernanceRuntimeDeps>(
     let Some(encoded) = deps.fetch_governance_op(op_ref).await? else {
         return Ok(None);
     };
-    let Ok(decoded) = decode_op(&encoded) else {
-        return Ok(None);
-    };
+    Ok(held_from_encoded(op_ref, encoded))
+}
+
+/// The op `encoded`, when it decodes and its hash is `op_ref`'s; `None`
+/// otherwise.
+#[must_use]
+pub fn held_from_encoded(op_ref: &OpRef, encoded: Vec<u8>) -> Option<HeldOp> {
+    let decoded = decode_op(&encoded).ok()?;
     if op_hash(&decoded.unsigned, &decoded.op.sig) != op_ref.op_hash {
-        return Ok(None);
+        return None;
     }
-    Ok(Some(HeldOp {
+    Some(HeldOp {
         hash: op_ref.op_hash,
         author: decoded.op.author.clone(),
         author_record: op_ref.author_record.clone(),
@@ -317,7 +322,7 @@ pub async fn fetch_held<D: GovernanceRuntimeDeps>(
         issued_at: decoded.op.issued_at,
         encoded,
         fate: OpFate::PendingDeps,
-    }))
+    })
 }
 
 /// The gossip fast path (`governanceOp @74`): store an op a member

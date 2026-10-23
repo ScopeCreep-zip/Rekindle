@@ -130,13 +130,14 @@ pub enum InboundCall {
     },
     /// A joiner's bootstrap request (plan E3.2), bare like the MEK
     /// transfer; its authority is the joiner's signed `MemberJoined`,
-    /// which the handler fetches and verifies by `member_joined`. The
+    /// carried in `member_joined_op` and verified against `member_joined`. The
     /// handler answers `CallResponse::Ok` with the encoded
     /// `bootstrapResponseV2` envelope; anything else is a NAK.
     BootstrapRequest {
         joiner_pseudonym: String,
         anchor: String,
         member_joined: rekindle_types::governance::OpRef,
+        member_joined_op: Vec<u8>,
     },
 }
 

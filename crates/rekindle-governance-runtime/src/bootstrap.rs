@@ -4,8 +4,10 @@
 //! online, this exchange is how it learns of the joiner. The joiner sends
 //! `BootstrapRequest{joinerPseudonym, anchor, memberJoined}` as a bare
 //! `app_call` to `InviteSecrets.inviter_route_blob` once its `MemberJoined`
-//! is durable on its member record. The request carries no authority of
-//! its own: the inviter fetches that op by its `OpRef`, verifies it,
+//! is durable on its member record. The request's authority is that
+//! signed op, carried with its `OpRef` (an inviter answers within the
+//! app_call reply window, too short for a DHT read): the inviter checks
+//! it against the `OpRef`, verifies it,
 //! stores and merges it, and only a joiner who is then a member of the
 //! merged state is answered, with `bootstrapResponseV2{anchor,
 //! checkpointRef, frontier, directoryPages}`: where the joiner's walk of
@@ -30,19 +32,21 @@ pub struct BootstrapJoiner {
     /// Hex of the joiner's community pseudonym.
     pub pseudonym: String,
     pub member_joined: OpRef,
+    /// The encoded signed op `member_joined` names.
+    pub member_joined_op: Vec<u8>,
 }
 
 fn adapter(msg: impl Into<String>) -> GovernanceRuntimeError {
     GovernanceRuntimeError::Adapter(msg.into())
 }
 
-/// Answer a joiner's `BootstrapRequest`: fetch its `MemberJoined` from its
-/// member record, verify, store and merge it, then encode
+/// Answer a joiner's `BootstrapRequest`: check its `MemberJoined` against
+/// the `OpRef`, verify, store and merge it, then encode
 /// `bootstrapResponseV2` with our frontier.
 ///
 /// # Errors
-/// We are not in the community, the op is not the joiner's op #0 or is not
-/// on its record, the merged state does not hold the joiner as a member,
+/// We are not in the community, the op is not the joiner's op #0 or does
+/// not match its `OpRef`, the merged state does not hold the joiner as a member,
 /// or the store or the encode failed. The caller NAKs.
 pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     deps: &D,
@@ -55,9 +59,8 @@ pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     if hex::encode(author.0) != joiner.pseudonym || joiner.member_joined.author_seq != 0 {
         return Err(adapter("bootstrap: the OpRef is not the joiner's op #0"));
     }
-    let op = op_log::fetch_held(deps, &joiner.member_joined)
-        .await?
-        .ok_or_else(|| adapter("bootstrap: the joiner's MemberJoined is not on its record"))?;
+    let op = op_log::held_from_encoded(&joiner.member_joined, joiner.member_joined_op.clone())
+        .ok_or_else(|| adapter("bootstrap: the op does not match the joiner's OpRef"))?;
     if op.seq != 0 || op.author != *author {
         return Err(adapter(
             "bootstrap: the fetched op is not the joiner's op #0",
@@ -122,6 +125,7 @@ pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
         joiner_pseudonym: joiner.pseudonym.clone(),
         anchor: anchor.to_owned(),
         member_joined: joiner.member_joined.clone(),
+        member_joined_op: joiner.member_joined_op.clone(),
     });
     let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&request)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap request: {e}")))?;
