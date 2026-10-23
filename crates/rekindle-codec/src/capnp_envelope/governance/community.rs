@@ -19,7 +19,6 @@ pub(super) fn write_community_meta(
         description,
         icon_hash,
         banner_hash,
-        lamport,
     } = e
     else {
         unreachable!("write_community_meta: variant mismatch")
@@ -28,7 +27,6 @@ pub(super) fn write_community_meta(
     let description = description.as_deref();
     let icon_hash = icon_hash.as_deref();
     let banner_hash = banner_hash.as_deref();
-    let lamport = *lamport;
     p.set_has_name(name.is_some());
     if let Some(n) = name {
         p.set_name(n);
@@ -45,16 +43,13 @@ pub(super) fn write_community_meta(
     if let Some(h) = banner_hash {
         p.set_banner_hash(h);
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_community_notification_default(
     mut p: schema_pkg::community_notification_default_entry::Builder<'_>,
     level: &str,
-    lamport: u64,
 ) {
     p.set_level(level);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_mek_generation_bump(
@@ -62,7 +57,6 @@ pub(super) fn write_mek_generation_bump(
     generation: u64,
     trigger_departed: &PseudonymKey,
     cascade_skipped: &[PseudonymKey],
-    lamport: u64,
 ) {
     p.set_generation(generation);
     pseudonym_key_to_capnp(p.reborrow().init_trigger_departed(), trigger_departed);
@@ -72,7 +66,6 @@ pub(super) fn write_mek_generation_bump(
     for (i, k) in cascade_skipped.iter().enumerate() {
         pseudonym_key_to_capnp(list.reborrow().get(len_u32(i)), k);
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_segment_added(
@@ -85,7 +78,6 @@ pub(super) fn write_segment_added(
         governance_key,
         slot_range_start,
         slot_range_end,
-        lamport,
     } = e
     else {
         unreachable!("write_segment_added: variant mismatch")
@@ -95,7 +87,6 @@ pub(super) fn write_segment_added(
     p.set_governance_key(governance_key);
     p.set_slot_range_start(*slot_range_start);
     p.set_slot_range_end(*slot_range_end);
-    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_invite_created(
@@ -108,7 +99,6 @@ pub(super) fn write_invite_created(
         max_uses,
         expires_at,
         secrets_record_key,
-        lamport,
     } = e
     else {
         unreachable!("write_invite_created: variant mismatch")
@@ -121,16 +111,13 @@ pub(super) fn write_invite_created(
         p.set_expires_at(*t);
     }
     p.set_secrets_record_key(secrets_record_key);
-    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_invite_revoked(
     mut p: schema_pkg::invite_revoked_entry::Builder<'_>,
     invite_id: &[u8; 16],
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_invite_id(), invite_id);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_community_policy(
@@ -138,7 +125,6 @@ pub(super) fn write_community_policy(
     policy_text: Option<&str>,
     max_joins_per_interval: u32,
     join_interval_seconds: u32,
-    lamport: u64,
 ) {
     p.set_has_policy_text(policy_text.is_some());
     if let Some(t) = policy_text {
@@ -146,7 +132,6 @@ pub(super) fn write_community_policy(
     }
     p.set_max_joins_per_interval(max_joins_per_interval);
     p.set_join_interval_seconds(join_interval_seconds);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn read_community_meta(
@@ -179,7 +164,6 @@ pub(super) fn read_community_meta(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
 
@@ -188,7 +172,6 @@ pub(super) fn read_community_notification_default(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::CommunityNotificationDefault {
         level: text_to_string(p.get_level().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -207,7 +190,6 @@ pub(super) fn read_mek_generation_bump(
             p.get_trigger_departed().map_err(|e| capnp_err(&e))?,
         )?,
         cascade_skipped: cascade?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -220,7 +202,6 @@ pub(super) fn read_segment_added(
         governance_key: text_to_string(p.get_governance_key().map_err(|e| capnp_err(&e))?)?,
         slot_range_start: p.get_slot_range_start(),
         slot_range_end: p.get_slot_range_end(),
-        lamport: p.get_lamport(),
     })
 }
 
@@ -237,7 +218,6 @@ pub(super) fn read_invite_created(
             None
         },
         secrets_record_key: text_to_string(p.get_secrets_record_key().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -246,7 +226,6 @@ pub(super) fn read_invite_revoked(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::InviteRevoked {
         invite_id: uuid16_from_capnp(p.get_invite_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -263,6 +242,5 @@ pub(super) fn read_community_policy(
         },
         max_joins_per_interval: p.get_max_joins_per_interval(),
         join_interval_seconds: p.get_join_interval_seconds(),
-        lamport: p.get_lamport(),
     })
 }

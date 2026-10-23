@@ -23,14 +23,12 @@ pub(super) fn write_onboarding_config(
         questions,
         welcome_message,
         guide_steps,
-        lamport,
     } = e
     else {
         unreachable!("write_onboarding_config: variant mismatch")
     };
     let enabled = *enabled;
     let welcome_message = welcome_message.as_deref();
-    let lamport = *lamport;
     p.set_enabled(enabled);
     p.set_mode(mode);
     let mut chans = p
@@ -51,21 +49,18 @@ pub(super) fn write_onboarding_config(
     for (i, s) in guide_steps.iter().enumerate() {
         write_guide_step(steps.reborrow().get(len_u32(i)), s);
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_welcome_screen(
     mut p: schema_pkg::welcome_screen_entry::Builder<'_>,
     description: &str,
     channels: &[WelcomeChannel],
-    lamport: u64,
 ) {
     p.set_description(description);
     let mut list = p.reborrow().init_channels(len_u32(channels.len()));
     for (i, c) in channels.iter().enumerate() {
         write_welcome_channel(list.reborrow().get(len_u32(i)), c);
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn read_onboarding_config(
@@ -102,7 +97,6 @@ pub(super) fn read_onboarding_config(
             None
         },
         guide_steps: guide_steps?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -118,6 +112,5 @@ pub(super) fn read_welcome_screen(
     Ok(GovernanceEntry::WelcomeScreen {
         description: text_to_string(p.get_description().map_err(|e| capnp_err(&e))?)?,
         channels: channels?,
-        lamport: p.get_lamport(),
     })
 }

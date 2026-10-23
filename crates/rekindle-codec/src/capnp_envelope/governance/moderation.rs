@@ -7,30 +7,26 @@ use super::super::sub_types::{
 use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::CodecError;
-use rekindle_types::governance::{AdmissionMode, AutoModAction, GovernanceEntry, ModReportTarget};
+use rekindle_types::governance::{AutoModAction, GovernanceEntry, ModReportTarget};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
 pub(super) fn write_ban_entry(
     mut p: schema_pkg::ban_entry_payload::Builder<'_>,
     target: &PseudonymKey,
     reason: Option<&str>,
-    lamport: u64,
 ) {
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
     p.set_has_reason(reason.is_some());
     if let Some(r) = reason {
         p.set_reason(r);
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_unban_entry(
     mut p: schema_pkg::unban_entry_payload::Builder<'_>,
     target: &PseudonymKey,
-    lamport: u64,
 ) {
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_timeout_entry(
@@ -42,7 +38,6 @@ pub(super) fn write_timeout_entry(
         duration_seconds,
         reason,
         started_at,
-        lamport,
     } = e
     else {
         unreachable!("write_timeout_entry: variant mismatch")
@@ -54,16 +49,13 @@ pub(super) fn write_timeout_entry(
         p.set_reason(r);
     }
     p.set_started_at(*started_at);
-    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_remove_timeout_entry(
     mut p: schema_pkg::remove_timeout_entry_payload::Builder<'_>,
     target: &PseudonymKey,
-    lamport: u64,
 ) {
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_admin_delete(
@@ -71,7 +63,6 @@ pub(super) fn write_admin_delete(
     message_id: &[u8; 16],
     channel_id: ChannelId,
     reason: Option<&str>,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_message_id(), message_id);
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
@@ -79,7 +70,6 @@ pub(super) fn write_admin_delete(
     if let Some(r) = reason {
         p.set_reason(r);
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_auto_mod_rule(
@@ -92,7 +82,6 @@ pub(super) fn write_auto_mod_rule(
         enabled,
         trigger_json,
         action,
-        lamport,
     } = e
     else {
         unreachable!("write_auto_mod_rule: variant mismatch")
@@ -106,7 +95,6 @@ pub(super) fn write_auto_mod_rule(
         AutoModAction::BlurContent => schema_pkg::AutoModActionKind::BlurContent,
         AutoModAction::AlertModerators => schema_pkg::AutoModActionKind::AlertModerators,
     });
-    p.set_lamport(*lamport);
 }
 
 pub(super) fn read_ban_entry(
@@ -119,7 +107,6 @@ pub(super) fn read_ban_entry(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
 
@@ -128,7 +115,6 @@ pub(super) fn read_unban_entry(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::UnbanEntry {
         target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -144,7 +130,6 @@ pub(super) fn read_timeout_entry(
             None
         },
         started_at: p.get_started_at(),
-        lamport: p.get_lamport(),
     })
 }
 
@@ -153,7 +138,6 @@ pub(super) fn read_remove_timeout_entry(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::RemoveTimeoutEntry {
         target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -168,7 +152,6 @@ pub(super) fn read_admin_delete(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
 
@@ -185,28 +168,16 @@ pub(super) fn read_auto_mod_rule(
             schema_pkg::AutoModActionKind::BlurContent => AutoModAction::BlurContent,
             schema_pkg::AutoModActionKind::AlertModerators => AutoModAction::AlertModerators,
         },
-        lamport: p.get_lamport(),
     })
 }
 
 // ── Admission ────────────────────────────────────────────────────────
-
-pub(super) fn read_join_requested(
-    p: schema_pkg::join_requested_payload::Reader<'_>,
-) -> Result<GovernanceEntry, CodecError> {
-    Ok(GovernanceEntry::JoinRequested {
-        requester: pseudonym_key_from_capnp(p.get_requester().map_err(|e| capnp_err(&e))?)?,
-        display_name: text_to_string(p.get_display_name().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
-    })
-}
 
 pub(super) fn read_member_approved(
     p: schema_pkg::member_approved_payload::Reader<'_>,
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::MemberApproved {
         target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -222,68 +193,26 @@ pub(super) fn read_member_rejected(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
-}
-
-pub(super) fn read_admission_policy(
-    p: schema_pkg::admission_policy_payload::Reader<'_>,
-) -> Result<GovernanceEntry, CodecError> {
-    use schema_pkg::AdmissionMode as Wire;
-    Ok(GovernanceEntry::AdmissionPolicy {
-        mode: match p.get_mode().map_err(not_in_schema)? {
-            Wire::Open => AdmissionMode::Open,
-            Wire::ApprovalRequired => AdmissionMode::ApprovalRequired,
-        },
-        lamport: p.get_lamport(),
-    })
-}
-
-pub(super) fn write_join_requested(
-    mut p: schema_pkg::join_requested_payload::Builder<'_>,
-    requester: &PseudonymKey,
-    display_name: &str,
-    lamport: u64,
-) {
-    pseudonym_key_to_capnp(p.reborrow().init_requester(), requester);
-    p.set_display_name(display_name);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_member_approved(
     mut p: schema_pkg::member_approved_payload::Builder<'_>,
     target: &PseudonymKey,
-    lamport: u64,
 ) {
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_member_rejected(
     mut p: schema_pkg::member_rejected_payload::Builder<'_>,
     target: &PseudonymKey,
     reason: Option<&str>,
-    lamport: u64,
 ) {
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
     p.set_has_reason(reason.is_some());
     if let Some(r) = reason {
         p.set_reason(r);
     }
-    p.set_lamport(lamport);
-}
-
-pub(super) fn write_admission_policy(
-    mut p: schema_pkg::admission_policy_payload::Builder<'_>,
-    mode: AdmissionMode,
-    lamport: u64,
-) {
-    use schema_pkg::AdmissionMode as Wire;
-    p.set_mode(match mode {
-        AdmissionMode::Open => Wire::Open,
-        AdmissionMode::ApprovalRequired => Wire::ApprovalRequired,
-    });
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_mod_report(
@@ -291,7 +220,6 @@ pub(super) fn write_mod_report(
     report_id: &[u8; 16],
     target: &ModReportTarget,
     reason: &str,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_report_id(), report_id);
     match target {
@@ -308,7 +236,6 @@ pub(super) fn write_mod_report(
         }
     }
     p.set_reason(reason);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn read_mod_report(
@@ -328,6 +255,5 @@ pub(super) fn read_mod_report(
         report_id: uuid16_from_capnp(p.get_report_id().map_err(|e| capnp_err(&e))?)?,
         target,
         reason: text_to_string(p.get_reason().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }

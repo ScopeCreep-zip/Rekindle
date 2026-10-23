@@ -121,7 +121,6 @@ mod tests {
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 1,
         };
 
         let signed = build_signed_envelope(&secret, community_id, &payload).unwrap();
@@ -135,7 +134,6 @@ mod tests {
             generation: 1,
             trigger_departed: PseudonymKey([0; 32]),
             cascade_skipped: vec![],
-            lamport: 1,
         };
 
         let mut signed = build_signed_envelope(&secret, "c", &payload).unwrap();
@@ -151,7 +149,6 @@ mod tests {
             generation: 1,
             trigger_departed: PseudonymKey([0; 32]),
             cascade_skipped: vec![],
-            lamport: 1,
         };
 
         let mut signed = build_signed_envelope(&secret, "c", &payload).unwrap();
@@ -172,7 +169,6 @@ mod tests {
             category_id: None,
             position: 0,
             parent_voice_channel_id: None,
-            lamport: 5,
         };
 
         let signed = build_signed_envelope(&secret, "c", &payload).unwrap();
@@ -187,7 +183,6 @@ mod tests {
             generation: 1,
             trigger_departed: PseudonymKey([0; 32]),
             cascade_skipped: vec![],
-            lamport: 1,
         };
         let signed = build_signed_envelope(&secret, "c", &payload).unwrap();
         assert_eq!(signed.ttl, DEFAULT_TTL);
@@ -207,7 +202,6 @@ mod tests {
                 generation: 1,
                 trigger_departed: PseudonymKey([0; 32]),
                 cascade_skipped: vec![],
-                lamport: 1,
             },
         )
         .unwrap();

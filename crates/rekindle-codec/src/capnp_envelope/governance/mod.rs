@@ -1,4 +1,4 @@
-//! `GovernanceEntry` (34-arm union) encoder / decoder.
+//! `GovernanceEntry` union encoder / decoder.
 //!
 //! Mirrors `rekindle_types::governance::GovernanceEntry` against the
 //! schema in `schemas/community_governance.capnp`. Each variant has
@@ -7,7 +7,7 @@
 //! workspace `too-many-lines` threshold and individual variant logic
 //! is independently reviewable.
 
-use crate::capnp_codec::{capnp_err, not_in_schema, pack, unpack};
+use crate::capnp_codec::{capnp_err, pack, unpack};
 use crate::community_governance_capnp::governance_entry as schema;
 use crate::error::CodecError;
 use rekindle_types::governance::GovernanceEntry;
@@ -17,6 +17,7 @@ mod community;
 mod dispatch_write;
 mod events;
 mod expression;
+mod membership;
 mod moderation;
 mod onboarding;
 mod roles;
@@ -37,10 +38,11 @@ use events::{
     read_thread_created, read_thread_unarchived,
 };
 use expression::{read_attachment_pinned, read_expression_added, read_expression_removed};
+use membership::{read_member_joined, read_member_record_moved, read_member_removed};
 use moderation::{
-    read_admin_delete, read_admission_policy, read_auto_mod_rule, read_ban_entry,
-    read_join_requested, read_member_approved, read_member_rejected, read_mod_report,
-    read_remove_timeout_entry, read_timeout_entry, read_unban_entry,
+    read_admin_delete, read_auto_mod_rule, read_ban_entry, read_member_approved,
+    read_member_rejected, read_mod_report, read_remove_timeout_entry, read_timeout_entry,
+    read_unban_entry,
 };
 use onboarding::{read_onboarding_config, read_welcome_screen};
 use roles::{
@@ -67,7 +69,20 @@ pub fn decode_governance_entry(bytes: &[u8]) -> Result<GovernanceEntry, CodecErr
 
 pub(super) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceEntry, CodecError> {
     use schema::Which;
-    match r.which().map_err(not_in_schema)? {
+    let which = r
+        .which()
+        .map_err(|e| CodecError::UnknownGovernanceArm(format!("governance entry arm {}", e.0)))?;
+    match which {
+        Which::ObsoleteJoinRequested(_) => Err(CodecError::UnknownGovernanceArm(
+            "retired joinRequested (@34)".into(),
+        )),
+        Which::ObsoleteAdmissionPolicy(_) => Err(CodecError::UnknownGovernanceArm(
+            "retired admissionPolicy (@37)".into(),
+        )),
+        Which::MemberJoined(p) => read_member_joined(p.map_err(|e| capnp_err(&e))?),
+        Which::MemberRecordMoved(p) => read_member_record_moved(p.map_err(|e| capnp_err(&e))?),
+        Which::MemberLeft(_) => Ok(GovernanceEntry::MemberLeft {}),
+        Which::MemberRemoved(p) => read_member_removed(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelCreated(p) => read_channel_created(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelArchived(p) => read_channel_archived(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelUpdated(p) => read_channel_updated(p.map_err(|e| capnp_err(&e))?),
@@ -76,10 +91,8 @@ pub(super) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::RoleUnassignment(p) => read_role_unassignment(p.map_err(|e| capnp_err(&e))?),
         Which::BanEntry(p) => read_ban_entry(p.map_err(|e| capnp_err(&e))?),
         Which::UnbanEntry(p) => read_unban_entry(p.map_err(|e| capnp_err(&e))?),
-        Which::JoinRequested(p) => read_join_requested(p.map_err(|e| capnp_err(&e))?),
         Which::MemberApproved(p) => read_member_approved(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRejected(p) => read_member_rejected(p.map_err(|e| capnp_err(&e))?),
-        Which::AdmissionPolicy(p) => read_admission_policy(p.map_err(|e| capnp_err(&e))?),
         Which::TimeoutEntry(p) => read_timeout_entry(p.map_err(|e| capnp_err(&e))?),
         Which::RemoveTimeoutEntry(p) => read_remove_timeout_entry(p.map_err(|e| capnp_err(&e))?),
         Which::CommunityMeta(p) => read_community_meta(p.map_err(|e| capnp_err(&e))?),
@@ -125,7 +138,7 @@ mod admission_wire_tests {
     //! declared but not wired **compiles fine and panics at runtime**.
     //! Only an actual encode→decode proves the wiring exists.
 
-    use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
+    use rekindle_types::governance::GovernanceEntry;
     use rekindle_types::id::PseudonymKey;
 
     use super::{decode_governance_entry, encode_governance_entry};
@@ -141,20 +154,8 @@ mod admission_wire_tests {
     }
 
     #[test]
-    fn join_requested_round_trips() {
-        round_trip(&GovernanceEntry::JoinRequested {
-            requester: pseudo(1),
-            display_name: "ada".to_string(),
-            lamport: 7,
-        });
-    }
-
-    #[test]
     fn member_approved_round_trips() {
-        round_trip(&GovernanceEntry::MemberApproved {
-            target: pseudo(2),
-            lamport: 8,
-        });
+        round_trip(&GovernanceEntry::MemberApproved { target: pseudo(2) });
     }
 
     #[test]
@@ -162,14 +163,12 @@ mod admission_wire_tests {
         round_trip(&GovernanceEntry::MemberRejected {
             target: pseudo(3),
             reason: Some("spam".to_string()),
-            lamport: 9,
         });
         // `None` must not come back as `Some("")` — that is why the wire
         // carries an explicit `hasReason`, matching `BanEntry`.
         round_trip(&GovernanceEntry::MemberRejected {
             target: pseudo(3),
             reason: None,
-            lamport: 10,
         });
     }
 
@@ -177,18 +176,14 @@ mod admission_wire_tests {
     fn event_rsvp_round_trips_every_status() {
         use rekindle_types::event::RsvpStatus;
         use rekindle_types::id::EventId;
-        for (lamport, status) in [
+        for status in [
             RsvpStatus::Going,
             RsvpStatus::Interested,
             RsvpStatus::Declined,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        ] {
             round_trip(&GovernanceEntry::EventRsvp {
                 event_id: EventId([0x5A; 16]),
                 status,
-                lamport: lamport as u64 + 1,
             });
         }
     }
@@ -204,7 +199,6 @@ mod admission_wire_tests {
                 message_id: "m-1".into(),
             },
             reason: "alert_moderators: slurs".into(),
-            lamport: 4,
         });
         round_trip(&GovernanceEntry::ModReport {
             report_id: [0x33; 16],
@@ -212,19 +206,57 @@ mod admission_wire_tests {
                 pseudonym: PseudonymKey([0x44; 32]),
             },
             reason: "spam".into(),
-            lamport: 5,
         });
     }
 
     #[test]
-    fn admission_policy_round_trips_both_modes() {
-        round_trip(&GovernanceEntry::AdmissionPolicy {
-            mode: AdmissionMode::Open,
-            lamport: 1,
+    fn membership_ops_round_trip() {
+        use rekindle_types::governance::InviteProof;
+        for proof in [
+            None,
+            Some(InviteProof {
+                code_hash: "code".into(),
+                sig: vec![9; 64],
+            }),
+        ] {
+            round_trip(&GovernanceEntry::MemberJoined {
+                member_record: "VLD0:m".into(),
+                member_record_owner: "owner".into(),
+                invite_proof: proof,
+            });
+        }
+        round_trip(&GovernanceEntry::MemberRecordMoved {
+            member_record: "VLD0:n".into(),
+            member_record_owner: "owner2".into(),
         });
-        round_trip(&GovernanceEntry::AdmissionPolicy {
-            mode: AdmissionMode::ApprovalRequired,
-            lamport: 2,
-        });
+        round_trip(&GovernanceEntry::MemberLeft {});
+        for reason in [None, Some(String::new()), Some("spam".into())] {
+            round_trip(&GovernanceEntry::MemberRemoved {
+                target: pseudo(4),
+                reason,
+            });
+        }
+    }
+
+    #[test]
+    fn retired_arms_decode_to_unknown() {
+        use crate::community_governance_capnp::governance_entry as schema;
+        use crate::error::CodecError;
+        let mut builder = capnp::message::Builder::new_default();
+        let mut root = builder.init_root::<schema::Builder<'_>>();
+        root.reborrow().init_obsolete_admission_policy();
+        let bytes = crate::capnp_codec::pack(&builder);
+        assert!(matches!(
+            decode_governance_entry(&bytes),
+            Err(CodecError::UnknownGovernanceArm(_))
+        ));
+        let mut builder = capnp::message::Builder::new_default();
+        let root = builder.init_root::<schema::Builder<'_>>();
+        root.init_obsolete_join_requested();
+        let bytes = crate::capnp_codec::pack(&builder);
+        assert!(matches!(
+            decode_governance_entry(&bytes),
+            Err(CodecError::UnknownGovernanceArm(_))
+        ));
     }
 }

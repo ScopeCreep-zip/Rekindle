@@ -39,7 +39,6 @@ fn signed_envelope_marshalling_p95_within_budget() {
             description: Some("body".repeat(50)),
             icon_hash: None,
             banner_hash: None,
-            lamport: u64::try_from(i).unwrap() + 1,
         };
         let started = std::time::Instant::now();
         let signed = build_signed_envelope(&secret, community_id, &payload).unwrap();

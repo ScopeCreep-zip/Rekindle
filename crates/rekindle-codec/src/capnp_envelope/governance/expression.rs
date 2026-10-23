@@ -26,7 +26,6 @@ pub(super) fn write_expression_added(
         creator_pseudonym,
         created_at,
         available_to_peers,
-        lamport,
     } = e
     else {
         unreachable!("write_expression_added: variant mismatch")
@@ -59,7 +58,6 @@ pub(super) fn write_expression_added(
     if let Some(a) = available_to_peers {
         p.set_available_to_peers(*a);
     }
-    p.set_lamport(*lamport);
     p.set_has_attachment(attachment.is_some());
     if let Some(offer) = attachment {
         write_attachment_offer(p.reborrow().init_attachment(), offer);
@@ -90,21 +88,17 @@ pub(super) fn write_attachment_offer(
 pub(super) fn write_expression_removed(
     mut p: schema_pkg::expression_removed_entry::Builder<'_>,
     expression_id: &[u8; 16],
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_expression_id(), expression_id);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_attachment_pinned(
     mut p: schema_pkg::attachment_pinned_entry::Builder<'_>,
     attachment_id: &[u8; 16],
     pinned: bool,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_attachment_id(), attachment_id);
     p.set_pinned(pinned);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn read_expression_added(
@@ -159,7 +153,6 @@ pub(super) fn read_expression_added(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
 
@@ -201,7 +194,6 @@ pub(super) fn read_expression_removed(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::ExpressionRemoved {
         expression_id: uuid16_from_capnp(p.get_expression_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -211,6 +203,5 @@ pub(super) fn read_attachment_pinned(
     Ok(GovernanceEntry::AttachmentPinned {
         attachment_id: uuid16_from_capnp(p.get_attachment_id().map_err(|e| capnp_err(&e))?)?,
         pinned: p.get_pinned(),
-        lamport: p.get_lamport(),
     })
 }

@@ -84,8 +84,9 @@ struct WelcomeChannel @0xb5d4eb16e9bf1c2e {
     emoji            @3 :Text;
 }
 
-# Variant payloads for `GovernanceEntry`. Each carries `lamport` for
-# CRDT ordering plus the per-variant fields. Optional sub-fields use
+# Variant payloads for `GovernanceEntry`. The per-variant `lamport`
+# fields are retired (`obsoleteLamport`, never read): an op's position
+# comes from its signed deps (plan E3.2). Optional sub-fields use
 # `has<Field>` flags.
 
 struct ChannelCreatedEntry @0xb6d4eb16e9bf1c2e {
@@ -97,7 +98,7 @@ struct ChannelCreatedEntry @0xb6d4eb16e9bf1c2e {
     hasCategoryId    @4 :Bool;
     categoryId       @5 :Uuid16;
     position         @6 :UInt32;
-    lamport          @7 :UInt64;
+    obsoleteLamport          @7 :UInt64;
     # Architecture §10.8 — text-in-voice. When set, this channel is
     # the text companion of `parentVoiceChannelId`; the frontend
     # hides it unless the local member is connected to that voice
@@ -108,7 +109,7 @@ struct ChannelCreatedEntry @0xb6d4eb16e9bf1c2e {
 
 struct ChannelArchivedEntry @0xb7d4eb16e9bf1c2e {
     channelId        @0 :Uuid16;
-    lamport          @1 :UInt64;
+    obsoleteLamport          @1 :UInt64;
 }
 
 struct ChannelUpdatedEntry @0xb8d4eb16e9bf1c2e {
@@ -131,7 +132,7 @@ struct ChannelUpdatedEntry @0xb8d4eb16e9bf1c2e {
     hasCategoryId        @13 :Bool;
     categoryIdPresent    @14 :Bool;
     categoryId           @15 :Uuid16;
-    lamport              @16 :UInt64;
+    obsoleteLamport              @16 :UInt64;
 }
 
 struct RoleDefinitionEntry @0xb9d4eb16e9bf1c2e {
@@ -145,31 +146,31 @@ struct RoleDefinitionEntry @0xb9d4eb16e9bf1c2e {
     selfAssignable       @7 :Bool;
     hasExclusionGroup    @8 :Bool;
     exclusionGroup       @9 :Text;
-    lamport              @10 :UInt64;
+    obsoleteLamport              @10 :UInt64;
 }
 
 struct RoleAssignmentEntry @0xbad4eb16e9bf1c2e {
     target               @0 :PseudonymKey;
     roleId               @1 :Uuid16;
-    lamport              @2 :UInt64;
+    obsoleteLamport              @2 :UInt64;
 }
 
 struct RoleUnassignmentEntry @0xbbd4eb16e9bf1c2e {
     target               @0 :PseudonymKey;
     roleId               @1 :Uuid16;
-    lamport              @2 :UInt64;
+    obsoleteLamport              @2 :UInt64;
 }
 
 struct BanEntryPayload @0xbcd4eb16e9bf1c2e {
     target               @0 :PseudonymKey;
     hasReason            @1 :Bool;
     reason               @2 :Text;
-    lamport              @3 :UInt64;
+    obsoleteLamport              @3 :UInt64;
 }
 
 struct UnbanEntryPayload @0xbdd4eb16e9bf1c2e {
     target               @0 :PseudonymKey;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 # ── Admission (join requests and decisions) ──────────────────────────
@@ -184,24 +185,48 @@ enum AdmissionMode {
 struct JoinRequestedPayload {
     requester            @0 :PseudonymKey;
     displayName          @1 :Text;
-    lamport              @2 :UInt64;
+    obsoleteLamport              @2 :UInt64;
+}
+
+# Membership ops (plan E3.2). `JoinRequested` (@34) is absorbed into
+# `MemberJoined`; `AdmissionPolicy` (@37) is retired because
+# `GenesisCert.policy` pins the mode. Both arms are never read.
+struct MemberJoinedPayload {
+    memberRecord         @0 :Text;
+    memberRecordOwner    @1 :Text;
+    hasInviteProof       @2 :Bool;
+    inviteCodeHash       @3 :Text;
+    inviteSig            @4 :Data;
+}
+
+struct MemberRecordMovedPayload {
+    memberRecord         @0 :Text;
+    memberRecordOwner    @1 :Text;
+}
+
+struct MemberLeftPayload {}
+
+struct MemberRemovedPayload {
+    target               @0 :PseudonymKey;
+    hasReason            @1 :Bool;
+    reason               @2 :Text;
 }
 
 struct MemberApprovedPayload {
     target               @0 :PseudonymKey;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct MemberRejectedPayload {
     target               @0 :PseudonymKey;
     hasReason            @1 :Bool;
     reason               @2 :Text;
-    lamport              @3 :UInt64;
+    obsoleteLamport              @3 :UInt64;
 }
 
 struct AdmissionPolicyPayload {
     mode                 @0 :AdmissionMode;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct TimeoutEntryPayload @0xbed4eb16e9bf1c2e {
@@ -210,12 +235,12 @@ struct TimeoutEntryPayload @0xbed4eb16e9bf1c2e {
     hasReason            @2 :Bool;
     reason               @3 :Text;
     startedAt            @4 :UInt64;
-    lamport              @5 :UInt64;
+    obsoleteLamport              @5 :UInt64;
 }
 
 struct RemoveTimeoutEntryPayload @0xbfd4eb16e9bf1c2e {
     target               @0 :PseudonymKey;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct CommunityMetaEntry @0xc0d4eb16e9bf1c2e {
@@ -227,32 +252,32 @@ struct CommunityMetaEntry @0xc0d4eb16e9bf1c2e {
     iconHash             @5 :Text;
     hasBannerHash        @6 :Bool;
     bannerHash           @7 :Text;
-    lamport              @8 :UInt64;
+    obsoleteLamport              @8 :UInt64;
 }
 
 struct CommunityNotificationDefaultEntry @0xc1d4eb16e9bf1c2e {
     # `all` / `mentions` / `nothing`.
     level                @0 :Text;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct MEKGenerationBumpEntry @0xc2d4eb16e9bf1c2e {
     generation           @0 :UInt64;
     triggerDeparted      @1 :PseudonymKey;
     cascadeSkipped       @2 :List(PseudonymKey);
-    lamport              @3 :UInt64;
+    obsoleteLamport              @3 :UInt64;
 }
 
 struct CategoryCreatedEntry @0xc3d4eb16e9bf1c2e {
     categoryId           @0 :Uuid16;
     name                 @1 :Text;
     position             @2 :UInt32;
-    lamport              @3 :UInt64;
+    obsoleteLamport              @3 :UInt64;
 }
 
 struct CategoryArchivedEntry @0xc4d4eb16e9bf1c2e {
     categoryId           @0 :Uuid16;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct PermissionOverwriteEntry @0xc5d4eb16e9bf1c2e {
@@ -263,7 +288,7 @@ struct PermissionOverwriteEntry @0xc5d4eb16e9bf1c2e {
     targetId             @2 :Text;
     allow                @3 :UInt64;
     deny                 @4 :UInt64;
-    lamport              @5 :UInt64;
+    obsoleteLamport              @5 :UInt64;
 }
 
 struct ThreadCreatedEntry @0xc6d4eb16e9bf1c2e {
@@ -277,17 +302,17 @@ struct ThreadCreatedEntry @0xc6d4eb16e9bf1c2e {
     hasForumTag          @7 :Bool;
     forumTag             @8 :Text;
     autoArchiveSeconds   @9 :UInt64;
-    lamport              @10 :UInt64;
+    obsoleteLamport              @10 :UInt64;
 }
 
 struct ThreadArchivedEntry @0xc7d4eb16e9bf1c2e {
     threadId             @0 :Uuid16;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct ThreadUnarchivedEntry @0xaf718751aeb31c5b {
     threadId             @0 :Uuid16;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct EventCreatedEntry @0xc8d4eb16e9bf1c2e {
@@ -310,7 +335,7 @@ struct EventCreatedEntry @0xc8d4eb16e9bf1c2e {
     location             @16 :EventLocation;
     hasStatus            @17 :Bool;
     status               @18 :EventStatus;
-    lamport              @19 :UInt64;
+    obsoleteLamport              @19 :UInt64;
 }
 
 struct ExpressionAddedEntry @0xc9d4eb16e9bf1c2e {
@@ -336,7 +361,7 @@ struct ExpressionAddedEntry @0xc9d4eb16e9bf1c2e {
     createdAt            @13 :UInt64;
     hasAvailableToPeers  @14 :Bool;
     availableToPeers     @15 :Bool;
-    lamport              @16 :UInt64;
+    obsoleteLamport              @16 :UInt64;
     # Architecture §18.4 — Lost Cargo manifest. Required for any new
     # expression upload; receivers fetch the asset bytes via the
     # existing RequestAttachment / AttachmentChunk handlers.
@@ -353,19 +378,19 @@ struct SoundboardMeta @0xcad4eb16e9bf1c2e {
 
 struct ExpressionRemovedEntry @0xcbd4eb16e9bf1c2e {
     expressionId         @0 :Uuid16;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct EventArchivedEntry @0xccd4eb16e9bf1c2e {
     eventId              @0 :Uuid16;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 # Plan C7.15 — the author's RSVP to a live event; LWW per (event, author).
 struct EventRsvpEntry @0x822acc59ac9bfa9e {
     eventId              @0 :Uuid16;
     status               @1 :RsvpStatus;
-    lamport              @2 :UInt64;
+    obsoleteLamport              @2 :UInt64;
 }
 
 struct OnboardingConfigEntry @0xcdd4eb16e9bf1c2e {
@@ -377,13 +402,13 @@ struct OnboardingConfigEntry @0xcdd4eb16e9bf1c2e {
     hasWelcomeMessage    @4 :Bool;
     welcomeMessage       @5 :Text;
     guideSteps           @6 :List(GuideStep);
-    lamport              @7 :UInt64;
+    obsoleteLamport              @7 :UInt64;
 }
 
 struct WelcomeScreenEntry @0xced4eb16e9bf1c2e {
     description          @0 :Text;
     channels             @1 :List(WelcomeChannel);
-    lamport              @2 :UInt64;
+    obsoleteLamport              @2 :UInt64;
 }
 
 struct AdminDeleteEntry @0xcfd4eb16e9bf1c2e {
@@ -391,14 +416,14 @@ struct AdminDeleteEntry @0xcfd4eb16e9bf1c2e {
     channelId            @1 :Uuid16;
     hasReason            @2 :Bool;
     reason               @3 :Text;
-    lamport              @4 :UInt64;
+    obsoleteLamport              @4 :UInt64;
 }
 
 struct ChannelSegmentLinkedEntry @0xd0d4eb16e9bf1c2e {
     channelId            @0 :Uuid16;
     segmentIndex         @1 :UInt32;
     recordKey            @2 :Text;
-    lamport              @3 :UInt64;
+    obsoleteLamport              @3 :UInt64;
 }
 
 struct SegmentAddedEntry @0xd1d4eb16e9bf1c2e {
@@ -407,7 +432,7 @@ struct SegmentAddedEntry @0xd1d4eb16e9bf1c2e {
     governanceKey        @2 :Text;
     slotRangeStart       @3 :UInt32;
     slotRangeEnd         @4 :UInt32;
-    lamport              @5 :UInt64;
+    obsoleteLamport              @5 :UInt64;
 }
 
 struct AutoModRuleEntry @0xd2d4eb16e9bf1c2f {
@@ -418,7 +443,7 @@ struct AutoModRuleEntry @0xd2d4eb16e9bf1c2f {
     # The free-text action this field carried; never written or read
     # (D26: no ordinal reuse). `actionKind` carries the action.
     obsoleteAction       @4 :Text;
-    lamport              @5 :UInt64;
+    obsoleteLamport              @5 :UInt64;
     actionKind           @6 :AutoModActionKind;
 }
 
@@ -430,7 +455,7 @@ enum AutoModActionKind {
 
 struct RoleArchivedEntry @0xd3d4eb16e9bf1c2e {
     roleId               @0 :Uuid16;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct CategoryUpdatedEntry @0xd4d4eb16e9bf1c2e {
@@ -439,7 +464,7 @@ struct CategoryUpdatedEntry @0xd4d4eb16e9bf1c2e {
     name                 @2 :Text;
     hasPosition          @3 :Bool;
     position             @4 :UInt32;
-    lamport              @5 :UInt64;
+    obsoleteLamport              @5 :UInt64;
 }
 
 struct InviteCreatedEntry @0xd5d4eb16e9bf1c2e {
@@ -449,18 +474,18 @@ struct InviteCreatedEntry @0xd5d4eb16e9bf1c2e {
     hasExpiresAt         @3 :Bool;
     expiresAt            @4 :UInt64;
     secretsRecordKey     @5 :Text;
-    lamport              @6 :UInt64;
+    obsoleteLamport              @6 :UInt64;
 }
 
 struct InviteRevokedEntry @0xd6d4eb16e9bf1c2e {
     inviteId             @0 :Uuid16;
-    lamport              @1 :UInt64;
+    obsoleteLamport              @1 :UInt64;
 }
 
 struct AttachmentPinnedEntry @0xd7d4eb16e9bf1c2e {
     attachmentId         @0 :Uuid16;
     pinned               @1 :Bool;
-    lamport              @2 :UInt64;
+    obsoleteLamport              @2 :UInt64;
 }
 
 struct CommunityPolicyEntry @0xd8d4eb16e9bf1c2e {
@@ -468,7 +493,7 @@ struct CommunityPolicyEntry @0xd8d4eb16e9bf1c2e {
     policyText           @1 :Text;
     maxJoinsPerInterval  @2 :UInt32;
     joinIntervalSeconds  @3 :UInt32;
-    lamport              @4 :UInt64;
+    obsoleteLamport              @4 :UInt64;
 }
 
 # A report to the moderators (plan E3.1, D26): a message or a member.
@@ -482,7 +507,7 @@ struct ModReportEntry @0xe019ff96c073fa38 {
         member           @3 :PseudonymKey;
     }
     reason               @4 :Text;
-    lamport              @5 :UInt64;
+    obsoleteLamport              @5 :UInt64;
 }
 
 # Top-level governance entry union — 40 arms, append-only.
@@ -522,12 +547,16 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         inviteRevoked                 @31 :InviteRevokedEntry;
         attachmentPinned              @32 :AttachmentPinnedEntry;
         communityPolicy               @33 :CommunityPolicyEntry;
-        joinRequested                 @34 :JoinRequestedPayload;
+        obsoleteJoinRequested         @34 :JoinRequestedPayload;
         memberApproved                @35 :MemberApprovedPayload;
         memberRejected                @36 :MemberRejectedPayload;
-        admissionPolicy               @37 :AdmissionPolicyPayload;
+        obsoleteAdmissionPolicy       @37 :AdmissionPolicyPayload;
         eventRsvp                     @38 :EventRsvpEntry;
         modReport                     @39 :ModReportEntry;
         threadUnarchived              @40 :ThreadUnarchivedEntry;
+        memberJoined                  @41 :MemberJoinedPayload;
+        memberRecordMoved             @42 :MemberRecordMovedPayload;
+        memberLeft                    @43 :MemberLeftPayload;
+        memberRemoved                 @44 :MemberRemovedPayload;
     }
 }

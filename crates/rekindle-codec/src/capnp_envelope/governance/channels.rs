@@ -21,7 +21,6 @@ pub(super) fn write_channel_created(
         category_id,
         position,
         parent_voice_channel_id,
-        lamport,
     } = e
     else {
         unreachable!("write_channel_created: variant mismatch")
@@ -39,16 +38,13 @@ pub(super) fn write_channel_created(
     if let Some(pv) = parent_voice_channel_id {
         uuid16_to_capnp(p.reborrow().init_parent_voice_channel_id(), &pv.0);
     }
-    p.set_lamport(*lamport);
 }
 
 pub(super) fn write_channel_archived(
     mut p: schema_pkg::channel_archived_entry::Builder<'_>,
     channel_id: ChannelId,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_channel_updated(
@@ -64,7 +60,6 @@ pub(super) fn write_channel_updated(
         slowmode_seconds,
         nsfw,
         category_id,
-        lamport,
     } = e
     else {
         unreachable!("write_channel_updated: variant mismatch")
@@ -80,7 +75,6 @@ pub(super) fn write_channel_updated(
         Some(None) => CategoryUpdate::Cleared,
         Some(Some(c)) => CategoryUpdate::Set(*c),
     };
-    let lamport = *lamport;
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
     p.set_has_name(name.is_some());
     if let Some(n) = name {
@@ -123,7 +117,6 @@ pub(super) fn write_channel_updated(
             uuid16_to_capnp(p.reborrow().init_category_id(), &c.0);
         }
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_category_created(
@@ -131,21 +124,17 @@ pub(super) fn write_category_created(
     category_id: CategoryId,
     name: &str,
     position: u32,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_category_id(), &category_id.0);
     p.set_name(name);
     p.set_position(position);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_category_archived(
     mut p: schema_pkg::category_archived_entry::Builder<'_>,
     category_id: CategoryId,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_category_id(), &category_id.0);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_permission_overwrite(
@@ -158,20 +147,17 @@ pub(super) fn write_permission_overwrite(
         target_id,
         allow,
         deny,
-        lamport,
     } = e
     else {
         unreachable!("write_permission_overwrite: variant mismatch")
     };
     let allow = *allow;
     let deny = *deny;
-    let lamport = *lamport;
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
     p.set_target_type(target_type);
     p.set_target_id(target_id);
     p.set_allow(allow);
     p.set_deny(deny);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_channel_segment_linked(
@@ -179,12 +165,10 @@ pub(super) fn write_channel_segment_linked(
     channel_id: ChannelId,
     segment_index: u32,
     record_key: &str,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_channel_id(), &channel_id.0);
     p.set_segment_index(segment_index);
     p.set_record_key(record_key);
-    p.set_lamport(lamport);
 }
 
 pub(super) fn write_category_updated(
@@ -192,7 +176,6 @@ pub(super) fn write_category_updated(
     category_id: CategoryId,
     name: Option<&str>,
     position: Option<u32>,
-    lamport: u64,
 ) {
     uuid16_to_capnp(p.reborrow().init_category_id(), &category_id.0);
     p.set_has_name(name.is_some());
@@ -203,7 +186,6 @@ pub(super) fn write_category_updated(
     if let Some(pos) = position {
         p.set_position(pos);
     }
-    p.set_lamport(lamport);
 }
 
 pub(super) fn read_channel_created(
@@ -229,7 +211,6 @@ pub(super) fn read_channel_created(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
 
@@ -238,7 +219,6 @@ pub(super) fn read_channel_archived(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::ChannelArchived {
         channel_id: channel_id_from_capnp(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -295,7 +275,6 @@ pub(super) fn read_channel_updated(
             None
         },
         category_id,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -306,7 +285,6 @@ pub(super) fn read_category_created(
         category_id: category_id_from_capnp(p.get_category_id().map_err(|e| capnp_err(&e))?)?,
         name: text_to_string(p.get_name().map_err(|e| capnp_err(&e))?)?,
         position: p.get_position(),
-        lamport: p.get_lamport(),
     })
 }
 
@@ -315,7 +293,6 @@ pub(super) fn read_category_archived(
 ) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::CategoryArchived {
         category_id: category_id_from_capnp(p.get_category_id().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -328,7 +305,6 @@ pub(super) fn read_permission_overwrite(
         target_id: text_to_string(p.get_target_id().map_err(|e| capnp_err(&e))?)?,
         allow: p.get_allow(),
         deny: p.get_deny(),
-        lamport: p.get_lamport(),
     })
 }
 
@@ -339,7 +315,6 @@ pub(super) fn read_channel_segment_linked(
         channel_id: channel_id_from_capnp(p.get_channel_id().map_err(|e| capnp_err(&e))?)?,
         segment_index: p.get_segment_index(),
         record_key: text_to_string(p.get_record_key().map_err(|e| capnp_err(&e))?)?,
-        lamport: p.get_lamport(),
     })
 }
 
@@ -358,6 +333,5 @@ pub(super) fn read_category_updated(
         } else {
             None
         },
-        lamport: p.get_lamport(),
     })
 }
