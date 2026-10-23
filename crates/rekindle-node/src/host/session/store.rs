@@ -260,6 +260,13 @@ pub fn record_membership(
         joined_at,
     } = new;
     let community = membership.governance_key.clone();
+    // Decoded before anything is stored: a cert that does not decode
+    // records nothing.
+    let cert = genesis_cert
+        .as_deref()
+        .map(rekindle_codec::governance_op::genesis::decode_genesis)
+        .transpose()
+        .map_err(|e| format!("genesis cert: {e}"))?;
     {
         let guard = vault.lock();
         let vault = guard.as_ref().ok_or("no identity is unlocked")?;
@@ -299,6 +306,10 @@ pub fn record_membership(
         dht_owner_keypair.as_deref(),
         registry_keypair.as_deref(),
     );
+    // The pinned cert every op of ours is built and published under.
+    if let Some(decoded) = cert {
+        communities.set_genesis_cert(&community, decoded.signed.cert);
+    }
     let row = membership.clone();
     db.fire("community membership", move |conn| {
         repo::communities::insert(

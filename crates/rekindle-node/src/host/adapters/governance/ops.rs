@@ -216,9 +216,11 @@ impl HostGovernance {
             .map(|entry| entry.ciphertext))
     }
 
-    /// Queue `encoded` for our member record's op log. The record is the
-    /// cert's for the creator, else our `MemberJoined`'s.
-    pub(super) fn publish_governance_op_impl(
+    /// Publish `encoded` on our member record's op log and wait until it
+    /// landed (`M`/2 and `M`/3): the record is the cert's for the creator,
+    /// else our `MemberJoined`'s. A failed attempt stays queued for the
+    /// outbox's retry and is an error here.
+    pub(super) async fn publish_governance_op_impl(
         &self,
         community_id: &str,
         encoded: Vec<u8>,
@@ -244,16 +246,9 @@ impl HostGovernance {
             .outbox
             .governance_ops()
             .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
-        let community = community_id.to_owned();
-        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
-            "governance op publish",
-            async move {
-                if let Err(error) = ops.queue(&community, &record, encoded).await {
-                    tracing::warn!(community, %error, "governance op not queued");
-                }
-            },
-        );
-        Ok(())
+        ops.publish(community_id, &record, encoded)
+            .await
+            .map_err(|e| adapter("publish op", e))
     }
 
     /// The `governance_op` stream's send: append `op` to `record`'s op log

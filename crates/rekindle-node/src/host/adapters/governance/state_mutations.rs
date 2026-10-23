@@ -126,15 +126,6 @@ impl HostGovernance {
         // it is the registry's owner credential; `K_M(p)` is our member
         // record's writer, stored before the row (D1). The anchor's `K_A`
         // was discarded after its one write.
-        let cert = match rekindle_codec::governance_op::genesis::decode_genesis(
-            &community.genesis_cert,
-        ) {
-            Ok(decoded) => decoded.signed.cert,
-            Err(e) => {
-                tracing::error!(error = %e, community = %community.id, "created community's cert does not decode");
-                return;
-            }
-        };
         let recorded = crate::host::session::record_membership(
             &self.ctx.session,
             &self.ctx.db,
@@ -153,7 +144,6 @@ impl HostGovernance {
             tracing::error!(error = %e, community = %community.id, "created community not recorded");
             return;
         }
-        self.ctx.communities.set_genesis_cert(&community.id, cert);
         self.install_created(&super::state_builder::CreatedCommunity {
             id: &community.id,
             governance_key: &community.id,

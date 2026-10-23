@@ -50,8 +50,9 @@ fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
 }
 
 /// Apply a governance entry as our next signed op: validate it against the
-/// merged state, store it in `governance_ops`, queue it on the
-/// governance-op outbox stream, re-merge, and emit the UI events.
+/// merged state, store it in `governance_ops`, re-merge, emit the UI
+/// events, and publish it on the governance-op outbox stream, returning
+/// once it is on the DHT.
 pub async fn write_entry<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -108,7 +109,6 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
         &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
     )
     .await?;
-    deps.publish_governance_op(community_id, encoded)?;
 
     // The state every reader merges from the op set with this op in it.
     let mut ops = set.ops;
@@ -132,7 +132,11 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
         });
     }
 
-    Ok(())
+    // The op is stored and applied here; it is written only once it is on
+    // our `M`/2 and `M`/3, which a joiner's walk reads with nobody online.
+    // A failed attempt stays queued for the outbox's retry and is an error,
+    // so nothing that needs the op on the DHT (an invite link) is handed out.
+    deps.publish_governance_op(community_id, encoded).await
 }
 
 /// Every reader drops an entry outside its value bounds (plan E3.0), so the

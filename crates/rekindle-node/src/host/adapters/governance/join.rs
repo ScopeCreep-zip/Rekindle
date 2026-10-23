@@ -66,6 +66,7 @@ impl HostGovernance {
             &id,
             outcome.joined.encoded.clone(),
         )
+        .await
         .map_err(|e| format!("community joined, MemberJoined not published: {e}"))?;
         self.store_own_member_row(&id, &pseudonym, joined_at)
             .await?;

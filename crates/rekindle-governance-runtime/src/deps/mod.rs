@@ -413,11 +413,15 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         op_ref: &rekindle_types::governance::OpRef,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
     /// Queue our encoded op on the governance-op outbox stream
-    /// (`StreamKind::GovernanceOp`, D22). Its sender appends the row to our
-    /// member record's op log with `chain::append_at(M(p), GOV_HEAD, K_M(p))`,
-    /// `K_M(p)` from `VaultKey::MemberRecordOwner{community}` (origin stores
-    /// it before the row; S6 at join).
-    fn publish_governance_op(
+    /// (`StreamKind::GovernanceOp`, D22) and wait for its first attempt. Its
+    /// sender appends the row to our member record's op log with
+    /// `chain::append_at(M(p), GOV_HEAD, K_M(p))`, `K_M(p)` from
+    /// `VaultKey::MemberRecordOwner{community}` (origin stores it before the
+    /// row; S6 at join), then writes our `Frontier` (`M`/3). `Ok`: both
+    /// landed, so a joiner's walk from the DHT finds the op. `Err`: the row
+    /// stays queued for the outbox's retry, and nothing that needs the op
+    /// on the DHT (an invite link) may be handed out.
+    async fn publish_governance_op(
         &self,
         community_id: &str,
         encoded: Vec<u8>,

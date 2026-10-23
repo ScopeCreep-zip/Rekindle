@@ -31,6 +31,7 @@ use crate::host::adapters::friends::HostFriends;
 pub struct OutboxSlot {
     pub(super) current: RwLock<Option<Arc<Outbox<HostOutbox>>>>,
     pub(super) senders: Arc<Senders>,
+    pub(super) governance_waiters: Arc<super::governance_op::OpWaiters>,
 }
 
 impl OutboxSlot {
@@ -87,7 +88,9 @@ impl OutboxSlot {
         self.senders.remove(StreamKind::DhtWrite);
         self.senders.remove(StreamKind::MediaKey);
         self.senders.remove(StreamKind::ChannelPost);
+        self.senders.remove(StreamKind::GovernanceOp);
         self.current.write().take();
+        self.governance_waiters.clear();
     }
 
     /// The running outbox as the 1:1 operations use it.

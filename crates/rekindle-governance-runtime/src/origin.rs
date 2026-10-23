@@ -369,7 +369,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     // then onto the governance-op stream, which appends them to M(p).
     for op in genesis_ops {
         deps.store_governance_op(&anchor_key, &op).await?;
-        deps.publish_governance_op(&anchor_key, op.encoded)?;
+        deps.publish_governance_op(&anchor_key, op.encoded).await?;
     }
 
     deps.ensure_files_cache_open(&anchor_key);

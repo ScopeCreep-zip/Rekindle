@@ -2,13 +2,15 @@
 //! is a row of the community's stream, and its send appends the op to our
 //! member record's op log (`M`/2, `rekindle_records::chain::append_at`
 //! with `K_M(p)`). One stream per community keeps the chain in op order.
+//! [`GovernanceOps::publish`] returns when the op's first attempt landed
+//! on `M`/2 and `M`/3, or with the reason it did not (the row stays and
+//! the outbox retries it): a joiner's walk reads what is on the DHT.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use rekindle_outbox::{
-    AttemptOutcome, Deadline, Entry, Outbox, OutboxError, OutboxRow, StreamKind,
-};
+use rekindle_outbox::{AttemptOutcome, Deadline, Entry, Outbox, OutboxRow, StreamKind};
 
 use super::{HostOutbox, OutboxSlot, StreamSender};
 use crate::host::adapters::governance::HostGovernance;
@@ -37,49 +39,133 @@ fn decode(payload: &[u8]) -> Option<(&str, &str, &[u8])> {
     Some((community, record, op))
 }
 
-/// The unlocked identity's `governance_op` streams.
-pub struct GovernanceOps(Arc<Outbox<HostOutbox>>);
+/// Whether a published op landed, for its publisher.
+type Landed = tokio::sync::oneshot::Sender<Result<(), String>>;
 
-impl GovernanceOps {
-    /// Queue `op` (encoded) for `record`'s op log in `community`.
-    ///
-    /// # Errors
-    /// The op does not decode, a key is too long, or the storage failed.
-    pub async fn queue(
+/// The publishers waiting on an op's first attempt, by community and the
+/// op's client id (its hash).
+#[derive(Default)]
+pub struct OpWaiters(parking_lot::Mutex<BTreeMap<(String, String), Landed>>);
+
+impl OpWaiters {
+    fn wait(
         &self,
         community: &str,
-        record: &str,
-        op: Vec<u8>,
-    ) -> Result<(), OutboxError> {
+        client_id: &str,
+    ) -> tokio::sync::oneshot::Receiver<Result<(), String>> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.0
+            .lock()
+            .insert((community.to_owned(), client_id.to_owned()), tx);
+        rx
+    }
+
+    fn forget(&self, community: &str, client_id: &str) {
+        self.0
+            .lock()
+            .remove(&(community.to_owned(), client_id.to_owned()));
+    }
+
+    fn landed(&self, community: &str, client_id: &str) {
+        let waiter = self
+            .0
+            .lock()
+            .remove(&(community.to_owned(), client_id.to_owned()));
+        if let Some(waiter) = waiter {
+            drop(waiter.send(Ok(())));
+        }
+    }
+
+    /// The stream is held at an op that did not land: no later op of
+    /// `community` lands before it, so every publisher there hears why.
+    fn failed(&self, community: &str, reason: &str) {
+        let waiting: Vec<Landed> = {
+            let mut map = self.0.lock();
+            let keys: Vec<_> = map
+                .keys()
+                .filter(|(c, _)| c == community)
+                .cloned()
+                .collect();
+            keys.iter().filter_map(|key| map.remove(key)).collect()
+        };
+        for waiter in waiting {
+            drop(waiter.send(Err(reason.to_owned())));
+        }
+    }
+
+    /// The outbox stopped: every publisher hears it (the rows stay).
+    pub(super) fn clear(&self) {
+        self.0.lock().clear();
+    }
+}
+
+/// The unlocked identity's `governance_op` streams.
+pub struct GovernanceOps {
+    outbox: Arc<Outbox<HostOutbox>>,
+    waiters: Arc<OpWaiters>,
+}
+
+impl GovernanceOps {
+    /// Queue `op` (encoded) for `record`'s op log in `community`, and wait
+    /// for its first attempt: `Ok` when it is on `M`/2 and our `Frontier`
+    /// on `M`/3. On `Err` the row stays queued and the outbox retries it.
+    ///
+    /// # Errors
+    /// The op does not decode, a key is too long, the storage failed, or
+    /// the op did not land (the reason).
+    pub async fn publish(&self, community: &str, record: &str, op: Vec<u8>) -> Result<(), String> {
         let decoded = rekindle_codec::governance_op::decode_op(&op)
-            .map_err(|e| OutboxError::Storage(format!("governance op: {e}")))?;
+            .map_err(|e| format!("governance op: {e}"))?;
         let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
-        let payload = encode(community, record, &op)
-            .ok_or_else(|| OutboxError::Storage("governance op keys too long".into()))?;
+        let payload = encode(community, record, &op).ok_or("governance op keys too long")?;
+        let client_id = hex::encode(hash.0);
+        let landed = self.waiters.wait(community, &client_id);
         let entry = Entry {
             kind: StreamKind::GovernanceOp,
             scope: community.to_owned(),
-            client_id: hex::encode(hash.0),
+            client_id: client_id.clone(),
             payload,
             deadline: Deadline::Horizon,
         };
-        self.0.enqueue(entry, None).await.map(|_| ())
+        if let Err(error) = self.outbox.enqueue(entry, None).await {
+            self.waiters.forget(community, &client_id);
+            return Err(error.to_string());
+        }
+        landed
+            .await
+            .map_err(|_| "the outbox stopped before the op landed".to_owned())?
+            .map_err(|reason| format!("queued for retry, not yet on the DHT: {reason}"))
     }
 }
 
 /// The stream's sender: the op into our op log.
-struct GovernanceOpSender(HostGovernance);
+struct GovernanceOpSender {
+    governance: HostGovernance,
+    waiters: Arc<OpWaiters>,
+}
 
 #[async_trait]
 impl StreamSender for GovernanceOpSender {
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
         let Some((community, record, op)) = decode(&row.payload) else {
+            if let Some(community) = row.stream.split_once(':').map(|(_, scope)| scope) {
+                self.waiters
+                    .failed(community, "unreadable governance op row");
+            }
             return AttemptOutcome::Wedged("unreadable governance op row".into());
         };
-        match self.0.append_own_op(community, record, op.to_vec()).await {
-            Ok(()) => AttemptOutcome::Sent,
+        match self
+            .governance
+            .append_own_op(community, record, op.to_vec())
+            .await
+        {
+            Ok(()) => {
+                self.waiters.landed(community, &row.client_id);
+                AttemptOutcome::Sent
+            }
             Err(error) => {
                 tracing::debug!(community, %error, "governance op not appended yet");
+                self.waiters.failed(community, &error);
                 AttemptOutcome::Deferred
             }
         }
@@ -91,13 +177,20 @@ impl OutboxSlot {
     pub(super) fn install_governance_op_sender(&self, governance: HostGovernance) {
         self.senders.install(
             StreamKind::GovernanceOp,
-            Arc::new(GovernanceOpSender(governance)),
+            Arc::new(GovernanceOpSender {
+                governance,
+                waiters: Arc::clone(&self.governance_waiters),
+            }),
         );
     }
 
     /// The running outbox's `governance_op` streams.
     pub(crate) fn governance_ops(&self) -> Option<GovernanceOps> {
-        self.current.read().clone().map(GovernanceOps)
+        let outbox = self.current.read().clone()?;
+        Some(GovernanceOps {
+            outbox,
+            waiters: Arc::clone(&self.governance_waiters),
+        })
     }
 }
 
