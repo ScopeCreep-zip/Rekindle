@@ -229,6 +229,21 @@ fn an_invite_creator_may_revoke_only_its_own_invite() {
     );
 }
 
+/// A departed author's op log stays locatable: its last op (the leave)
+/// is published on that record, and frontiers keep naming its ops.
+#[test]
+fn a_departed_author_keeps_its_op_log_record() {
+    let mut ops = community();
+    let left = op(&pk(4), 1, &[head(&ops)], 20, GovernanceEntry::MemberLeft {});
+    ops.push(left);
+    let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
+    assert!(!state.members.contains_key(&pk(4)), "the member left");
+    assert_eq!(
+        state.op_log_records.get(&pk(4)).map(String::as_str),
+        Some("VLD0:m")
+    );
+}
+
 #[test]
 fn invite_max_uses_caps_joins() {
     let c0 = op(&pk(1), 0, &[], 0, joined(None));

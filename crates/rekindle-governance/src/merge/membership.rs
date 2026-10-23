@@ -21,6 +21,9 @@ pub(super) fn apply_membership(
             member_record_owner,
             ..
         } => {
+            state
+                .op_log_records
+                .insert(author.clone(), member_record.clone());
             if state.removed.get(author).is_some_and(|r| *r > stamp) {
                 return;
             }
@@ -57,6 +60,9 @@ pub(super) fn apply_membership(
             member_record_owner,
         } => {
             if let Some(member) = state.members.get_mut(author) {
+                state
+                    .op_log_records
+                    .insert(author.clone(), member_record.clone());
                 member.member_record.clone_from(member_record);
                 member.member_record_owner.clone_from(member_record_owner);
             }

@@ -30,6 +30,12 @@ pub struct GovernanceState {
     /// Counted members, from their `MemberJoined` ops (plan E3.2).
     pub members: HashMap<PseudonymKey, MemberState>,
 
+    /// Where each author's op log lives (`M`/2), from its latest merged
+    /// `MemberJoined` or `MemberRecordMoved`, kept after the author leaves
+    /// or is removed: its ops stay in the DAG, so its own last op is
+    /// published there and frontiers still name it (plan E3.2, evidence 4.4).
+    pub op_log_records: HashMap<PseudonymKey, String>,
+
     /// Highest `MemberRemoved` stamp per removed member; a re-join must
     /// come after it.
     pub removed: HashMap<PseudonymKey, OpStamp>,

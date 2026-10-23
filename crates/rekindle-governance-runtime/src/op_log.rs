@@ -112,7 +112,8 @@ pub fn verify_held(anchor: &str, held: &[HeldOp]) -> VerifiedSet {
 }
 
 /// The member record an author's ops live in: the cert's for the
-/// creator, else the author's `MemberJoined` in the merged state.
+/// creator, else the author's `MemberJoined` in the merged state, kept
+/// after the author leaves or is removed (`op_log_records`).
 #[must_use]
 pub fn author_record(
     cert: &GenesisCert,
@@ -132,6 +133,7 @@ pub fn author_record(
                 .get(author)
                 .map(|m| m.member_record.clone())
         })
+        .or_else(|| state.op_log_records.get(author).cloned())
 }
 
 /// The frontier: the verified ops no other verified op cites, newest
