@@ -106,6 +106,18 @@ labels! {
     CHANNEL_SUBKEY = "rekindle-channel-subkey-v1";
     /// Signature prefix: member-registry presence row.
     PRESENCE_ROW = "rekindle-presence-v1";
+    /// Ed25519 signature prefix: a member card (`M`/0, plan E3.2), by the
+    /// pseudonym, over `community ‖ memberRecord ‖ body`.
+    MEMBER_CARD = "rekindle-member-card-v1";
+    /// Ed25519 signature prefix: the pseudonym's cross-signature over the
+    /// card's HPKE key, `community ‖ hpkeKey` (plan E3.2).
+    CARD_HPKE = "rekindle-card-hpke-v1";
+    /// Ed25519 signature prefix: a presence beat (`M`/1, plan E3.2), by
+    /// the pseudonym.
+    PRESENCE_BEAT = "rekindle-presence-beat-v1";
+    /// Ed25519 signature prefix: a history ad (`M`/5, plan E3.2), by the
+    /// pseudonym, over `community ‖ memberRecord ‖ mekGeneration ‖ sealed`.
+    HISTORY_AD = "rekindle-history-ad-v1";
     /// HKDF info: invite-secrets record key.
     INVITE_SECRETS = "rekindle-invite-secrets-v1";
     /// BLAKE3 derive-key context: a community invite code's lookup id, the

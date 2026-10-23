@@ -24,6 +24,7 @@ pub mod invite;
 pub mod keys;
 pub mod media_sender_key;
 pub mod mek;
+pub mod member_record;
 pub mod pq_keys;
 pub mod rotator;
 pub mod sframe;

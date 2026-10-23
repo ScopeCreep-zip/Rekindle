@@ -16,6 +16,7 @@ pub mod envelope;
 pub mod error;
 pub mod friend;
 pub mod ingress;
+pub mod member_record;
 pub mod message;
 pub mod presence_row;
 
@@ -60,3 +61,4 @@ capnp_module!(community_message_capnp);
 capnp_module!(community_event_capnp);
 capnp_module!(community_governance_capnp);
 capnp_module!(community_envelope_capnp);
+capnp_module!(member_record_capnp);
