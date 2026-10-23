@@ -316,6 +316,9 @@ where
     }
 }
 
+/// The name every netsim community is created with.
+pub const COMMUNITY_NAME: &str = "Netsim";
+
 /// A community node 0 created, with every other node joined through an
 /// invite of its own, after each joiner lists it.
 pub struct Community {
@@ -346,7 +349,7 @@ impl Community {
         let created = nodes[0]
             .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityCreate {
-                    name: "Netsim".into(),
+                    name: COMMUNITY_NAME.into(),
                     description: String::new(),
                     approval_required: false,
                 },
@@ -407,6 +410,37 @@ impl Community {
         })
         .await;
         assert!(keyed, "node {i} holds the community key");
+        // A community named rather than keyed answers the same keys (the
+        // CLI's `key mek list --community <name>`, live A/B finding 10),
+        // while the name names one: a shared name names none.
+        let listed = self.nodes[i]
+            .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityList,
+            )))
+            .await;
+        let named: Vec<&str> = listed.as_array().map_or_else(Vec::new, |all| {
+            all.iter()
+                .filter(|c| {
+                    c.get("name").and_then(serde_json::Value::as_str) == Some(COMMUNITY_NAME)
+                })
+                .filter_map(|c| c.get("governanceKey").and_then(serde_json::Value::as_str))
+                .collect()
+        });
+        if named != [self.governance_key.as_str()] {
+            return;
+        }
+        let by_name = self.nodes[i]
+            .ok(IpcRequest::Community(CommunityRequest::Messages(
+                ChannelMessageRequest::MekList {
+                    community: COMMUNITY_NAME.into(),
+                },
+            )))
+            .await;
+        assert_eq!(
+            by_name,
+            self.mek_list(i).await,
+            "node {i} lists its keys by name"
+        );
     }
 
     /// Node `i`'s held key generations.
