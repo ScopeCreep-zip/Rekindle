@@ -90,14 +90,12 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
 
     install_minted(deps, community_id, scope, &mek)?;
 
-    let lamport = deps.next_governance_lamport(community_id)?;
     deps.write_governance_entry(
         community_id,
         GovernanceEntry::MEKGenerationBump {
             generation: new_generation,
             trigger_departed: departed,
             cascade_skipped,
-            lamport,
         },
     )
     .await?;
@@ -178,7 +176,6 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
     // the distribution can tell their cached key is stale. A channel key's
     // generation is its own and is not a governance fact.
     if scope == KeyScope::Community {
-        let lamport = deps.next_governance_lamport(community_id)?;
         deps.write_governance_entry(
             community_id,
             GovernanceEntry::MEKGenerationBump {
@@ -188,7 +185,6 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
                 // otherwise look like they had left.
                 trigger_departed: me,
                 cascade_skipped: Vec::new(),
-                lamport,
             },
         )
         .await?;

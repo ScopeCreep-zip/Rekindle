@@ -135,12 +135,6 @@ pub trait MekDistributeDeps: Send + Sync {
     /// Emit a UI-facing rotation event.
     fn emit_event(&self, event: MekRotationEvent);
 
-    /// Next governance-clock value, for the `MEKGenerationBump` entry.
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError>;
-
     /// Identity secret bytes (for deriving the rotator's own
     /// pseudonym signing key in distribute.rs).
     fn identity_secret(&self) -> Option<[u8; 32]>;
@@ -164,9 +158,9 @@ pub trait MekDistributeDeps: Send + Sync {
     /// rotator-initiated lifecycle states like `RotationStarted`).
     fn emit_rotation_received(&self, community_id: &str, scope: KeyScope, generation: u64);
 
-    /// Write a governance entry to the merged CRDT state. Used by
-    /// `rotate_text_mek_for_departure` to stamp the
-    /// `MEKGenerationBump` entry on the rotator side.
+    /// Append a governance entry as our next signed op (the op-append API,
+    /// lamport `1 + max(deps)`). Both rotations stamp their
+    /// `MEKGenerationBump` through it.
     async fn write_governance_entry(
         &self,
         community_id: &str,

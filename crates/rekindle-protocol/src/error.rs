@@ -107,7 +107,9 @@ impl From<rekindle_codec::CodecError> for ProtocolError {
         match e {
             CodecError::Serialization(m) => Self::Serialization(m),
             CodecError::Deserialization(m) => Self::Deserialization(m),
-            CodecError::UnknownVariant(m) => Self::UnknownVariant(m),
+            CodecError::UnknownVariant(m) | CodecError::UnknownGovernanceArm(m) => {
+                Self::UnknownVariant(m)
+            }
             CodecError::Verification(m) => Self::Verification(m),
         }
     }
