@@ -5,7 +5,7 @@
 use proptest::prelude::*;
 use rekindle_types::governance::{AdmissionMode, GovernanceEntry, InviteProof};
 use rekindle_types::id::{PseudonymKey, RoleId};
-use rekindle_types::permissions::{KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
+use rekindle_types::permissions::{CREATE_INVITES, KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
 
 use super::{merge, merge_outcome};
 use crate::fixture::{cert, meta, op, op_at};
@@ -169,6 +169,63 @@ fn a_join_backdated_before_its_deps_is_refused() {
     assert!(
         !state.members.contains_key(&pk(3)),
         "a join dated before its deps' latest time"
+    );
+}
+
+/// Who may revoke an invite (register FX1 SEC-3): its creator, or a
+/// `MANAGE_COMMUNITY` holder. A `CREATE_INVITES`-only member's revocation
+/// of its own invite is admitted, and of someone else's is refused.
+#[test]
+fn an_invite_creator_may_revoke_only_its_own_invite() {
+    let ops = community();
+    let inviter_role = GovernanceEntry::RoleDefinition {
+        role_id: RoleId([8; 16]),
+        name: "inviter".into(),
+        permissions: VIEW_CHANNELS | CREATE_INVITES,
+        position: 1,
+        color: 0,
+        hoist: false,
+        mentionable: false,
+        self_assignable: false,
+        exclusion_group: None,
+    };
+    let c6 = op(&pk(1), 6, &[head(&ops)], 9, inviter_role);
+    let c7 = op(&pk(1), 7, &[&c6], 10, assign(4, 8));
+    let own = GovernanceEntry::InviteCreated {
+        invite_id: [9; 16],
+        code_hash: "own".into(),
+        max_uses: MAX_USES_PER_INVITE,
+        expires_at: None,
+        secrets_record_key: "VLD0:o".into(),
+    };
+    let d1 = op(&pk(4), 1, &[&c7], 11, own);
+    let d2 = op(
+        &pk(4),
+        2,
+        &[&d1],
+        12,
+        GovernanceEntry::InviteRevoked { invite_id: [9; 16] },
+    );
+    let d3 = op(
+        &pk(4),
+        3,
+        &[&d2],
+        13,
+        GovernanceEntry::InviteRevoked { invite_id: [7; 16] },
+    );
+    let mut all = ops.clone();
+    all.extend([c6, c7, d1.clone()]);
+    let before = merge(&cert(&pk(1), AdmissionMode::Open), &all);
+    assert!(before.invites.contains_key(&[9; 16]), "own invite created");
+    all.extend([d2, d3]);
+    let state = merge(&cert(&pk(1), AdmissionMode::Open), &all);
+    assert!(
+        !state.invites.contains_key(&[9; 16]),
+        "the creator's revocation of its own invite is admitted"
+    );
+    assert!(
+        state.invites.contains_key(&[7; 16]),
+        "a CREATE_INVITES-only revocation of another's invite is refused"
     );
 }
 

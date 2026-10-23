@@ -379,7 +379,17 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
                 && crate::invite_quota::check_active_invites_cap(state, writer)
         }
 
-        GovernanceEntry::InviteRevoked { .. } => has(perms, MANAGE_COMMUNITY),
+        // FX1 SEC-3 (register 2026-10-23): an invite's creator may revoke
+        // its own invite (Matrix: a user may redact their own events), so
+        // the expiry timer works for a CREATE_INVITES-only inviter;
+        // MANAGE_COMMUNITY holders may revoke any invite.
+        GovernanceEntry::InviteRevoked { invite_id } => {
+            has(perms, MANAGE_COMMUNITY)
+                || state
+                    .invites
+                    .get(invite_id)
+                    .is_some_and(|invite| invite.creator_pseudonym == *writer)
+        }
     }
 }
 
