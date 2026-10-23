@@ -76,3 +76,86 @@ fn a_held_op_whose_dep_is_absent_is_pending_and_its_dep_is_missing() {
     assert_eq!(alone.missing.len(), 1);
     assert_eq!(alone.missing[0].op_hash, first.hash());
 }
+
+#[test]
+fn a_refused_op_is_quarantined_and_a_verified_op_carries_its_lamport() {
+    let creator = SigningKey::from_bytes(&[7; 32]);
+    let stranger = SigningKey::from_bytes(&[9; 32]);
+    let cert = cert(&creator);
+    let state = GovernanceState::default();
+    let empty = VerifiedSet::default();
+    let (ours, ours_bytes) = build_op("A", &cert, &state, &empty, &creator, meta("a"), 5).unwrap();
+    // A non-member's write verifies (signature, chain) but the merge refuses it.
+    let (theirs, theirs_bytes) =
+        build_op("A", &cert, &state, &empty, &stranger, meta("b"), 5).unwrap();
+    let set = verify_held(
+        "A",
+        &[
+            held(&ours, "m".into(), ours_bytes, OpFate::PendingDeps),
+            held(&theirs, "s".into(), theirs_bytes, OpFate::PendingDeps),
+        ],
+    );
+    let outcome = merge::merge_outcome(&cert, &set.ops);
+    assert!(outcome.refused.contains(&theirs.hash()));
+    let verdicts = fates(&set, &outcome);
+    let of = |hash| *verdicts.iter().find(|v| v.hash == hash).unwrap();
+    assert_eq!(
+        of(ours.hash()),
+        OpVerdict {
+            hash: ours.hash(),
+            fate: OpFate::Applied,
+            lamport: Some(1),
+        }
+    );
+    assert_eq!(of(theirs.hash()).fate, OpFate::Quarantined);
+    assert_eq!(of(theirs.hash()).lamport, Some(1));
+}
+
+fn joined(key: &SigningKey, code_hash: Option<&str>) -> GovernanceOp {
+    GovernanceOp {
+        author: PseudonymKey(key.verifying_key().to_bytes()),
+        seq: 0,
+        prev: None,
+        deps: Vec::new(),
+        issued_at: 1,
+        body: GovernanceEntry::MemberJoined {
+            member_record: "VLD0:j".into(),
+            member_record_owner: "o".into(),
+            invite_proof: code_hash.map(|c| rekindle_types::governance::InviteProof {
+                code_hash: c.into(),
+                sig: vec![0; 64],
+            }),
+        },
+        sig: [0; 64],
+    }
+}
+
+#[test]
+fn a_gossiped_join_is_stored_only_against_a_live_invite_and_within_bounds() {
+    let joiner = SigningKey::from_bytes(&[3; 32]);
+    let mut state = GovernanceState::default();
+    assert!(!receive_bounded(&joined(&joiner, None), &state));
+    assert!(!receive_bounded(&joined(&joiner, Some("live")), &state));
+    state.invites.insert(
+        [1; 16],
+        rekindle_governance::state::InviteState {
+            code_hash: "live".into(),
+            max_uses: 1,
+            expires_at: None,
+            secrets_record_key: "VLD0:s".into(),
+            created: rekindle_governance::op::OpStamp::MIN,
+            creator_pseudonym: PseudonymKey([1; 32]),
+        },
+    );
+    assert!(receive_bounded(&joined(&joiner, Some("live")), &state));
+    assert!(!receive_bounded(&joined(&joiner, Some("other")), &state));
+    let mut oob = joined(&joiner, Some("live"));
+    oob.seq = 1;
+    oob.body = GovernanceEntry::CommunityMeta {
+        name: None,
+        description: Some("x".repeat(rekindle_types::key_format::MAX_DESCRIPTION_LEN + 1)),
+        icon_hash: None,
+        banner_hash: None,
+    };
+    assert!(!receive_bounded(&oob, &state));
+}

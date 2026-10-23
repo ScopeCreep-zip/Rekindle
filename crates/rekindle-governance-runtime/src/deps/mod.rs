@@ -397,7 +397,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     async fn set_governance_op_fates(
         &self,
         community_id: &str,
-        fates: Vec<(rekindle_types::governance::OpHash, crate::op_log::OpFate)>,
+        fates: Vec<crate::op_log::OpVerdict>,
     ) -> Result<(), GovernanceRuntimeError>;
     /// The encoded op `op_ref` names, read from its author's op log
     /// (`rekindle_records::chain::read_log_after` on

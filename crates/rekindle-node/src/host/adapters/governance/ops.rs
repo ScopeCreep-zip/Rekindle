@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 
 use rekindle_db::repo::governance_ops::{self as repo, AuthorHead, OpState, StoredOp};
 use rekindle_governance_runtime::deps::DhtRecordInfo;
-use rekindle_governance_runtime::op_log::{self, HeldOp, OpFate};
+use rekindle_governance_runtime::op_log::{self, HeldOp, OpFate, OpVerdict};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::RecordSchema;
@@ -176,14 +176,21 @@ impl HostGovernance {
     pub(super) async fn set_governance_op_fates_impl(
         &self,
         community_id: &str,
-        fates: Vec<(OpHash, OpFate)>,
+        fates: Vec<OpVerdict>,
     ) -> Result<(), GovernanceRuntimeError> {
         let (owner, db) = self.op_store()?;
         let community = community_id.to_owned();
         db.call(move |conn| {
             let tx = conn.unchecked_transaction()?;
-            for (hash, fate) in &fates {
-                repo::set_state(&tx, &owner, &community, &hash.0, state_of(*fate))?;
+            for verdict in &fates {
+                repo::set_state(
+                    &tx,
+                    &owner,
+                    &community,
+                    &verdict.hash.0,
+                    state_of(verdict.fate),
+                    verdict.lamport,
+                )?;
             }
             tx.commit()
         })

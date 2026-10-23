@@ -13,12 +13,12 @@ use rekindle_governance_runtime::deps::{
     GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
-use rekindle_governance_runtime::op_log::{HeldOp, OpFate};
+use rekindle_governance_runtime::op_log::{HeldOp, OpVerdict};
 use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_records::port::RecordSchema;
-use rekindle_types::governance::{GenesisCert, OpHash, OpRef};
+use rekindle_types::governance::{GenesisCert, OpRef};
 use rekindle_types::id::PseudonymKey;
 
 use super::HostGovernance;
@@ -369,7 +369,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
     async fn set_governance_op_fates(
         &self,
         community_id: &str,
-        fates: Vec<(OpHash, OpFate)>,
+        fates: Vec<OpVerdict>,
     ) -> Result<(), GovernanceRuntimeError> {
         self.set_governance_op_fates_impl(community_id, fates).await
     }

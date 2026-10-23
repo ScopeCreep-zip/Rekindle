@@ -227,24 +227,54 @@ pub fn held(op: &VerifiedOp, author_record: String, encoded: Vec<u8>, fate: OpFa
     }
 }
 
-/// The fate of every held op after `outcome`.
+/// One held op's fate after a merge, as `governance_ops` records it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpVerdict {
+    pub hash: OpHash,
+    pub fate: OpFate,
+    /// The validated lamport (`1 + max(dep lamports)`) of an op that
+    /// verified; `None` for one that did not, whose lamport is unknown.
+    pub lamport: Option<u64>,
+}
+
+/// The fate of every held op after `outcome`: an equivocator's ops are
+/// `Equivocation`, an op the merge refused (validation, strong removal, the
+/// invite and approval gates) is `Quarantined`, one the merge holds for a
+/// dep is `PendingDeps`, and only an applied op is `Applied`.
 #[must_use]
-pub fn fates(set: &VerifiedSet, outcome: &MergeOutcome) -> Vec<(OpHash, OpFate)> {
-    let equivocators = &outcome.equivocators;
-    let mut out: Vec<(OpHash, OpFate)> = set
+pub fn fates(set: &VerifiedSet, outcome: &MergeOutcome) -> Vec<OpVerdict> {
+    let refused: BTreeSet<OpHash> = outcome.refused.iter().copied().collect();
+    let pending: BTreeSet<OpHash> = outcome.pending.iter().copied().collect();
+    let mut out: Vec<OpVerdict> = set
         .ops
         .iter()
         .map(|op| {
-            let fate = if equivocators.contains(op.author()) {
+            let hash = op.hash();
+            let fate = if outcome.equivocators.contains(op.author()) {
                 OpFate::Equivocation
+            } else if refused.contains(&hash) {
+                OpFate::Quarantined
+            } else if pending.contains(&hash) {
+                OpFate::PendingDeps
             } else {
                 OpFate::Applied
             };
-            (op.hash(), fate)
+            OpVerdict {
+                hash,
+                fate,
+                lamport: Some(op.lamport()),
+            }
         })
         .collect();
-    out.extend(set.pending.iter().map(|h| (*h, OpFate::PendingDeps)));
-    out.extend(set.quarantined.iter().map(|h| (*h, OpFate::Quarantined)));
+    let unverified = |fate| {
+        move |hash: &OpHash| OpVerdict {
+            hash: *hash,
+            fate,
+            lamport: None,
+        }
+    };
+    out.extend(set.pending.iter().map(unverified(OpFate::PendingDeps)));
+    out.extend(set.quarantined.iter().map(unverified(OpFate::Quarantined)));
     out
 }
 
@@ -401,22 +431,20 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
+    let state = deps.governance_state(community_id).unwrap_or_default();
     let record = match &decoded.op.body {
-        rekindle_types::governance::GovernanceEntry::MemberJoined { member_record, .. }
-            if decoded.op.seq == 0 =>
-        {
+        GovernanceEntry::MemberJoined { member_record, .. } if decoded.op.seq == 0 => {
             Some(member_record.clone())
         }
-        _ => author_record(
-            &cert,
-            &deps.governance_state(community_id).unwrap_or_default(),
-            &decoded.op.author,
-        ),
+        _ => author_record(&cert, &state, &decoded.op.author),
     };
     let Some(author_record) = record else {
         return Ok(false);
     };
-    let op = HeldOp {
+    if !receive_bounded(&decoded.op, &state) {
+        return Ok(false);
+    }
+    let mut op = HeldOp {
         hash,
         author: decoded.op.author.clone(),
         author_record,
@@ -427,12 +455,45 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
         fate: OpFate::PendingDeps,
     };
     held.push(op.clone());
-    if verify_held(community_id, &held).quarantined.contains(&hash) {
+    let set = verify_held(community_id, &held);
+    if set.quarantined.contains(&hash) {
         return Ok(false);
+    }
+    if let Some(verified) = set.ops.iter().find(|v| v.hash() == hash) {
+        op.lamport = verified.lamport();
     }
     deps.store_governance_op(community_id, &op).await?;
     crate::dht_hydration::rebuild_governance(deps, community_id).await;
     Ok(true)
+}
+
+/// The receive-side bounds on a gossiped op, before it is stored: its
+/// fields are within the reader bounds (`validate::bounds`, which the merge
+/// applies too), and a seq-0 `MemberJoined` from an author `state` does not
+/// already hold carries an invite proof naming one of the community's live
+/// `InviteCreated` codes (plan E3.2: readers check `inviteProof` against the
+/// community's `InviteCreated` set; every admission mode needs an invite),
+/// so a key with no invite cannot leave a row behind. The merge's invite
+/// gate still decides admission.
+#[must_use]
+pub fn receive_bounded(op: &GovernanceOp, state: &GovernanceState) -> bool {
+    if rekindle_governance::validate::bounds::out_of_bounds_field(&op.body).is_some() {
+        return false;
+    }
+    match &op.body {
+        GovernanceEntry::MemberJoined { invite_proof, .. } if op.seq == 0 => {
+            let known = state.members.contains_key(&op.author)
+                || state.pending_members.contains_key(&op.author);
+            known
+                || invite_proof.as_ref().is_some_and(|proof| {
+                    state
+                        .invites
+                        .values()
+                        .any(|invite| invite.code_hash == proof.code_hash)
+                })
+        }
+        _ => true,
+    }
 }
 
 /// Walk the op DAG of `anchor` from `start` (a member's `Frontier`) by

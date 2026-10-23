@@ -205,7 +205,9 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<(Str
     rows.collect()
 }
 
-/// Record the fate of `op_hash` in the last merge.
+/// Record the fate of `op_hash` in the last merge and, for an op the merge
+/// verified, its validated lamport (`1 + max(dep lamports)`); `None` keeps
+/// the stored lamport (an op that did not verify has none).
 ///
 /// # Errors
 /// The write failed.
@@ -215,11 +217,19 @@ pub fn set_state(
     community_id: &str,
     op_hash: &[u8; 32],
     state: OpState,
+    lamport: Option<u64>,
 ) -> rusqlite::Result<()> {
+    let lamport = lamport.map(int).transpose()?;
     conn.execute(
-        "UPDATE governance_ops SET state = ?4 \
+        "UPDATE governance_ops SET state = ?4, lamport = COALESCE(?5, lamport) \
          WHERE owner_key = ?1 AND community_id = ?2 AND op_hash = ?3",
-        params![owner_key, community_id, op_hash.as_slice(), state.as_str()],
+        params![
+            owner_key,
+            community_id,
+            op_hash.as_slice(),
+            state.as_str(),
+            lamport
+        ],
     )?;
     Ok(())
 }
@@ -311,13 +321,16 @@ mod tests {
     }
 
     #[test]
-    fn set_state_moves_only_the_state() {
+    fn set_state_moves_the_state_and_the_validated_lamport() {
         let conn = fixture::conn();
         fixture::community(&conn, "c1");
-        insert(&conn, OWNER, "c1", &op(1, 1, OpState::PendingDeps)).unwrap();
-        set_state(&conn, OWNER, "c1", &[1; 32], OpState::Applied).unwrap();
+        insert(&conn, OWNER, "c1", &op(1, 0, OpState::PendingDeps)).unwrap();
+        set_state(&conn, OWNER, "c1", &[1; 32], OpState::Applied, Some(7)).unwrap();
         let got = get_op(&conn, OWNER, "c1", &[1; 32]).unwrap().unwrap();
-        assert_eq!(got, op(1, 1, OpState::Applied));
+        assert_eq!(got, op(1, 7, OpState::Applied));
+        set_state(&conn, OWNER, "c1", &[1; 32], OpState::Quarantined, None).unwrap();
+        let got = get_op(&conn, OWNER, "c1", &[1; 32]).unwrap().unwrap();
+        assert_eq!(got, op(1, 7, OpState::Quarantined));
         assert_eq!(get_op(&conn, OWNER, "c1", &[9; 32]).unwrap(), None);
     }
 
