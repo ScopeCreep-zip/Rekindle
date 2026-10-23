@@ -8,7 +8,6 @@
 //! the remaining members' key rotation (`community_rpc/leave.rs` until
 //! E3.5).
 
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::dto::community::CommunityCreated;
 use rekindle_types::governance::{AdmissionMode, GovernanceEntry};

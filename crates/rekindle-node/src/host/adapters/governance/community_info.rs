@@ -4,7 +4,6 @@
 //! The merge projects it into the store and journals `MetadataChanged`;
 //! the row follows here.
 
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_types::governance::GovernanceEntry;
 
 use super::HostGovernance;
