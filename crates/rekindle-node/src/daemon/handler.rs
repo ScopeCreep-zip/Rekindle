@@ -324,6 +324,22 @@ impl InboundHandler for DaemonHandler {
                 )
             }
             InboundCall::Sync(_) => CallResponse::Ack,
+            InboundCall::RequestAttachment {
+                attachment_id,
+                requested_chunks,
+            } => {
+                let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+                    return CallResponse::Rejected {
+                        reason: "no host".into(),
+                    };
+                };
+                crate::host::adapters::files::ops::serve(
+                    &ctx.files,
+                    attachment_id,
+                    &requested_chunks,
+                )
+                .map_or(CallResponse::Ack, CallResponse::Ok)
+            }
         }
     }
 

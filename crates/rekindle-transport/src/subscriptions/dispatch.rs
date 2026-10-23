@@ -176,6 +176,16 @@ async fn dispatch_app_call<H: InboundHandler>(
                 dispatch_bare_mek_transfer(handler, messages, call_id, transfer).await;
                 return;
             }
+            if let Some((attachment_id, requested_chunks)) =
+                super::bare_envelope::decode_bare_attachment_request(raw)
+            {
+                let request = crate::payload::rpc::InboundCall::RequestAttachment {
+                    attachment_id,
+                    requested_chunks,
+                };
+                dispatch_bare_attachment_request(handler, messages, call_id, request).await;
+                return;
+            }
             warn!(error = %e, "dropping app_call: frame decode failed");
             reply_nak(messages, call_id).await;
             return;
@@ -328,6 +338,41 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
 
     if let Err(e) = messages.reply(call_id, response_bytes).await {
         warn!(error = %e, "failed to send MEK transfer reply");
+    }
+}
+
+/// The reply a requester of attachment chunks reads when we hold none of
+/// them: the desktop track's answer, so both shells read alike.
+const NOTHING_HELD: &[u8] = b"ACK";
+
+/// Hand a bare attachment request to the handler and reply in its
+/// dialect: the encoded `MultiAttachmentChunk` envelope the handler
+/// built, [`NOTHING_HELD`] when it holds none of the chunks, and a NAK
+/// when it refused or ran past the deadline.
+async fn dispatch_bare_attachment_request<H: InboundHandler>(
+    handler: &Arc<H>,
+    messages: &dyn AppMessagePort,
+    call_id: AppCallId,
+    request: crate::payload::rpc::InboundCall,
+) {
+    use crate::payload::rpc::CallResponse;
+    let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
+        Ok(CallResponse::Ok(chunks)) => chunks,
+        Ok(CallResponse::Ack) => NOTHING_HELD.to_vec(),
+        Ok(CallResponse::Rejected { reason }) => {
+            warn!(%reason, "attachment request refused");
+            NAK.to_vec()
+        }
+        Err(_) => {
+            warn!(
+                deadline_secs = CALL_DEADLINE.as_secs(),
+                "attachment request exceeded deadline — sending NAK"
+            );
+            NAK.to_vec()
+        }
+    };
+    if let Err(e) = messages.reply(call_id, reply).await {
+        warn!(error = %e, "failed to send attachment reply");
     }
 }
 

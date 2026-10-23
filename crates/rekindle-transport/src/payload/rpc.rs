@@ -133,6 +133,18 @@ pub enum InboundCall {
     /// minting a fourth MEK-transfer struct to restate it is the
     /// drift this branch exists to remove.
     CommunityMekTransfer(rekindle_codec::community::envelope::MekTransferPayload),
+    /// A peer asking for the chunks of an attachment we hold
+    /// (architecture §28.9), as the bare Cap'n Proto `RequestAttachment`
+    /// envelope `rekindle_files::download` sends. Like the MEK transfer it
+    /// arrives unframed: what makes that safe is that the answer is chunk
+    /// ciphertext under the attachment's FEK, which only a member holding
+    /// the community key can open, and the request itself changes nothing.
+    RequestAttachment {
+        /// The attachment's 16-byte id.
+        attachment_id: [u8; 16],
+        /// The chunk indices asked for.
+        requested_chunks: Vec<u32>,
+    },
 }
 
 /// Response from the handler to an inbound RPC.

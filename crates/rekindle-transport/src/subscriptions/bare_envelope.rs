@@ -16,7 +16,15 @@
 //! The `sender_pseudonym` field is bound by the cryptography rather
 //! than believed.
 //!
-//! That argument covers `MekTransfer` and nothing else. Every other
+//! The second admitted format is a `RequestAttachment` (architecture
+//! §28.9), which `rekindle_files::download` sends bare to whichever peer
+//! advertised the chunks. It carries no authority at all: it asks for
+//! bytes and changes nothing, and the bytes it gets back are chunk
+//! ciphertext under the attachment's FEK, which only a member holding
+//! the channel key can unwrap.
+//!
+//! Those two arguments cover `MekTransfer` and `RequestAttachment` and
+//! nothing else. Every other
 //! control variant carries its authority in plaintext fields — a
 //! `MEKRotated` generation, a `GovernanceUpdated` subkey — and would be
 //! forgeable by anyone who can reach our route. Those must keep
@@ -40,9 +48,22 @@ pub(super) fn decode_bare_mek_transfer(raw: &[u8]) -> Option<MekTransferPayload>
     }
 }
 
+/// Recognise a bare `CommunityEnvelope` asking for attachment chunks:
+/// the attachment id and the chunk indices requested.
+pub(super) fn decode_bare_attachment_request(raw: &[u8]) -> Option<([u8; 16], Vec<u32>)> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::RequestAttachment {
+            attachment_id,
+            requested_chunks,
+            ..
+        }))) => Some((attachment_id, requested_chunks)),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::decode_bare_mek_transfer;
+    use super::{decode_bare_attachment_request, decode_bare_mek_transfer};
     use rekindle_codec::capnp_envelope::encode_community_envelope;
     use rekindle_codec::community::envelope::{
         CommunityEnvelope, ControlPayload, MekTransferPayload,
@@ -86,6 +107,26 @@ mod tests {
             decode_bare_mek_transfer(&rotated).is_none(),
             "an unsigned MEKRotated must not be actionable"
         );
+    }
+
+    #[test]
+    fn admits_an_attachment_request_and_nothing_else_as_one() {
+        let request = encode_community_envelope(&CommunityEnvelope::Control(
+            ControlPayload::RequestAttachment {
+                channel_id: "general".into(),
+                attachment_id: [7; 16],
+                requested_chunks: vec![0, 2],
+                requester_pseudonym: "cc".repeat(32),
+            },
+        ))
+        .expect("encode");
+        assert_eq!(
+            decode_bare_attachment_request(&request),
+            Some(([7; 16], vec![0, 2]))
+        );
+        assert!(decode_bare_mek_transfer(&request).is_none());
+        assert!(decode_bare_attachment_request(&mek_transfer_bytes()).is_none());
+        assert!(decode_bare_attachment_request(b"garbage").is_none());
     }
 
     #[test]
