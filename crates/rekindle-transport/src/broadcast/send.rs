@@ -33,6 +33,14 @@ fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> Tr
     }
 }
 
+/// The route an `app_call`'s answer comes back over, for the trace. It is
+/// none of our `OwnRoutes` classes: Veilid picks the question's reply
+/// private route itself, an unpublished automatic pool route of the safety
+/// hop count, `Direction::In` (veilid `rpc_processor/destination.rs:467-508`;
+/// published routes, General and Media, are never chosen,
+/// `routing_table/route_spec_store/route_select.rs:283`).
+const REPLY_ROUTE: &str = "veilid pool route (unpublished, safety hop count)";
+
 /// Report of a broadcast operation.
 #[derive(Debug, Default)]
 pub struct BroadcastReport {
@@ -61,6 +69,14 @@ impl Sender {
     /// The send failed; an unusable route is forgotten first.
     pub async fn send_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<()> {
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        // The route id is scrubbed to a per-run tag at the log sink
+        // (`rekindle_utils::log_scrub`).
+        debug!(
+            route = target.as_str(),
+            hops = profile.hop_count,
+            len = message.len(),
+            "1:1 app_message sent"
+        );
         self.messages
             .send(target, &profile, message)
             .await
@@ -140,6 +156,13 @@ impl AppCaller {
     /// The call failed or timed out; an unusable route is forgotten first.
     pub async fn call_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<Vec<u8>> {
         let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        debug!(
+            route = target.as_str(),
+            hops = profile.hop_count,
+            len = message.len(),
+            reply_over = REPLY_ROUTE,
+            "1:1 app_call sent"
+        );
         self.messages
             .call(target, &profile, message)
             .await
