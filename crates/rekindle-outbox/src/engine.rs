@@ -214,10 +214,14 @@ impl<D: OutboxDeps> Outbox<D> {
                 let acked = self.deps.update(&row.client_id, &update).await?;
                 // The peer's ack came before this landing: both are in now
                 // (live A/B finding 42).
+                // Its state was shown when the ack came (D22); the landing
+                // lets the row go.
                 if let (true, Some(ack)) = (landed, acked) {
-                    return self
-                        .settle_at(row, merge(state, StateInput::Peer(ack)))
-                        .await;
+                    self.deps
+                        .settle(&row.client_id, merge(state, StateInput::Peer(ack)))
+                        .await?;
+                    self.wake.notify_one();
+                    return Ok(());
                 }
                 if state != row.state {
                     self.deps.publish(StateChange::of(row, state, None));
@@ -332,12 +336,15 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(true)
     }
 
-    /// The peer's `ack` of `row`. A row whose send has not landed (`queued`:
-    /// the peer read the hint before our chain append returned) keeps the
-    /// ack, durably, and settles when the landing comes; the landing and the
-    /// ack are two inputs to one row, in either order (live A/B finding 42).
+    /// The peer's `ack` of `row`, shown at once (D22: `delivered` comes from
+    /// the peer's `DmAck`). A row whose send has not landed (`queued`: the
+    /// peer read the hint before our chain append returned) keeps the ack,
+    /// durably, and stays until the landing comes, then goes with the state
+    /// already shown (live A/B finding 42).
     async fn settle_acked(&self, row: &OutboxRow, ack: PeerAck) -> Result<(), OutboxError> {
         if row.state == SendState::Queued && self.deps.note_ack(&row.client_id, ack).await? {
+            let shown = merge(row.state, StateInput::Peer(ack));
+            self.deps.publish(StateChange::of(row, shown, None));
             return Ok(());
         }
         self.settle_at(row, merge(row.state, StateInput::Peer(ack)))

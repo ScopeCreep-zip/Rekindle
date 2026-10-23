@@ -162,10 +162,24 @@ fn read_through_raises_settled_and_waiting_echoes_at_or_below_the_marker() {
     assert!(settle(&conn, OWNER, "a", SendState::Delivered).unwrap());
     update(&conn, OWNER, "b", &sent(1, 0)).unwrap().unwrap();
     let raised = read_through(&conn, OWNER, "dm:bob", "bob", 3).unwrap();
-    assert_eq!(raised, [(1, "a".to_owned()), (2, "b".to_owned())]);
+    assert_eq!(
+        raised,
+        [
+            (1, "a".to_owned()),
+            (2, "b".to_owned()),
+            (3, "c".to_owned())
+        ]
+    );
     let state = |id| own_dm(&conn, OWNER, id).unwrap().unwrap().row.send_state;
     assert_eq!((state("a"), state("b")), (SendState::Read, SendState::Read));
-    assert_eq!(state("c"), SendState::Queued, "not landed: marked, kept");
+    // D22: `c` shows read at once; not landed, its row is kept.
+    assert_eq!(state("c"), SendState::Read, "not landed: shown read, kept");
+    assert!(
+        read_through(&conn, OWNER, "dm:bob", "bob", 3)
+            .unwrap()
+            .is_empty(),
+        "raised once"
+    );
     assert_eq!(state("d"), SendState::Queued, "past the marker");
     assert_eq!(unsettled_count(&conn, OWNER).unwrap(), 2);
     assert!(read_through(&conn, OWNER, "dm:bob", "bob", 2)

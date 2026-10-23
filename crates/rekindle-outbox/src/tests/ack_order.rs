@@ -1,6 +1,6 @@
-//! Live A/B finding 42: a row's landing and the peer's ack are two inputs
-//! to one row, and it settles `delivered` only when both are in, in
-//! either order; a receipt is both at once, and an awaiting row waits for
+//! Live A/B finding 42 with D22: the peer's ack is shown when it comes;
+//! the row stays until its landing too, in either order, and only then
+//! leaves; a receipt is both at once, and an awaiting row waits for
 //! its ack by client id.
 
 use super::*;
@@ -26,7 +26,12 @@ async fn an_ack_before_the_landing_waits_for_it() {
         .await
         .unwrap());
     assert_eq!(state_of(&o, "a"), Some(SendState::Queued), "not landed yet");
-    assert!(settled(&o).is_empty());
+    assert!(settled(&o).is_empty(), "the row stays until its landing");
+    assert_eq!(
+        o.deps().store.lock().published.last(),
+        Some(&("a".into(), SendState::Delivered)),
+        "delivered is shown on the ack"
+    );
     // The append did not land this time: the ack stays on the row.
     script(&o, [AttemptOutcome::Deferred, AttemptOutcome::Sent]);
     o.pump().await.unwrap();
@@ -36,6 +41,7 @@ async fn an_ack_before_the_landing_waits_for_it() {
     assert_eq!(settled(&o), [("a".to_owned(), SendState::Delivered)]);
     let published = o.deps().store.lock().published.clone();
     let states: Vec<_> = published.into_iter().map(|(_, s)| s).collect();
+    // Shown on the ack (D22), once: the landing only lets the row go.
     assert_eq!(states, [SendState::Queued, SendState::Delivered]);
 }
 
@@ -128,6 +134,11 @@ async fn a_read_up_to_before_the_landing_waits_for_it() {
         "kept, not settled"
     );
     assert!(settled(&o).is_empty());
+    assert_eq!(
+        o.deps().store.lock().published.last(),
+        Some(&("a".into(), SendState::Read)),
+        "read is shown on the marker"
+    );
     o.pump().await.unwrap();
     assert_eq!(settled(&o), [("a".to_owned(), SendState::Read)]);
 }

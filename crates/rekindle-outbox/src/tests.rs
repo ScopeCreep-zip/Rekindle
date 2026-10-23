@@ -208,7 +208,7 @@ impl OutboxDeps for Fake {
         let mut raised: Vec<(i64, String)> = s
             .rows
             .iter()
-            .filter(|r| covered(r) && r.state != SendState::Queued)
+            .filter(|r| covered(r))
             .map(|r| (r.stream_seq, r.client_id.clone()))
             .collect();
         s.rows

@@ -192,12 +192,23 @@ pub fn read_through(
     // A covered row whose append has not landed (`queued`: the peer read
     // the hint first) is marked read, not settled: it settles on its
     // landing, as an early `DmAck` does (live A/B finding 42 follow-up).
-    tx.execute(
-        "UPDATE outbox SET peer_ack = 'read' WHERE owner_key = ?1 AND stream = ?2 \
-         AND stream_seq <= ?3 AND state = 'queued'",
-        params![owner_key, stream, up_to],
-    )?;
-    let raised = {
+    // Its echo shows `read` now (D22: the state comes from the peer's
+    // marker; the landing only lets the row go).
+    let marked = {
+        let mut stmt = tx.prepare(
+            "UPDATE outbox SET peer_ack = 'read' WHERE owner_key = ?1 AND stream = ?2 \
+             AND stream_seq <= ?3 AND state = 'queued' \
+             AND (peer_ack IS NULL OR peer_ack != 'read') RETURNING stream_seq, client_id",
+        )?;
+        let rows = stmt.query_map(params![owner_key, stream, up_to], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?;
+        rows.collect::<rusqlite::Result<Vec<(i64, String)>>>()?
+    };
+    for (_, client_id) in &marked {
+        project_ack(&tx, owner_key, client_id, SendState::Read)?;
+    }
+    let mut raised = {
         let mut stmt = tx.prepare(
             "UPDATE messages SET send_state = 'read' WHERE owner_key = ?1 \
              AND conversation_id = ?2 AND conversation_type = 'dm' AND sender_key = ?1 \
@@ -211,6 +222,8 @@ pub fn read_through(
         })?;
         rows.collect::<rusqlite::Result<Vec<(i64, String)>>>()?
     };
+    raised.extend(marked);
+    raised.sort();
     tx.execute(
         "DELETE FROM outbox WHERE owner_key = ?1 AND stream = ?2 AND stream_seq <= ?3 \
          AND state != 'queued'",
@@ -507,11 +520,33 @@ pub fn note_ack(
     client_id: &str,
     ack: SendState,
 ) -> rusqlite::Result<bool> {
-    Ok(conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    let noted = tx.execute(
         "UPDATE outbox SET peer_ack = CASE WHEN peer_ack = 'read' THEN 'read' ELSE ?3 END \
          WHERE owner_key = ?1 AND client_id = ?2 AND state = 'queued'",
         params![owner_key, client_id, ack.as_str()],
-    )? > 0)
+    )? > 0;
+    if noted {
+        project_ack(&tx, owner_key, client_id, ack)?;
+    }
+    tx.commit()?;
+    Ok(noted)
+}
+
+/// Show the peer's `ack` on `client_id`'s echo at once (D22: `delivered`
+/// and `read` come from the peer), never lowering a `read`.
+fn project_ack(
+    conn: &Connection,
+    owner_key: &str,
+    client_id: &str,
+    ack: SendState,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE messages SET send_state = ?3 WHERE owner_key = ?1 AND message_id = ?2 \
+         AND sender_key = ?1 AND send_state != 'read'",
+        params![owner_key, client_id, ack.as_str()],
+    )?;
+    Ok(())
 }
 
 /// Settle `client_id` at `state`: project it onto the local echo and
