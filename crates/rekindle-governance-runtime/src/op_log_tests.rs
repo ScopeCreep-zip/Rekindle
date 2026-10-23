@@ -3,6 +3,7 @@
 //! replays a frontier's past only.
 
 use super::*;
+use rekindle_governance::fixture::meta;
 use rekindle_types::governance::AdmissionMode;
 
 fn cert(key: &SigningKey) -> GenesisCert {
@@ -14,15 +15,6 @@ fn cert(key: &SigningKey) -> GenesisCert {
         creator_member_record: "VLD0:m".into(),
         creator_member_record_owner: "o".into(),
         created_at: 1,
-    }
-}
-
-fn meta(name: &str) -> GovernanceEntry {
-    GovernanceEntry::CommunityMeta {
-        name: Some(name.into()),
-        description: None,
-        icon_hash: None,
-        banner_hash: None,
     }
 }
 

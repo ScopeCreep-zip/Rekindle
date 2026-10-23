@@ -8,7 +8,7 @@ use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions::{KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
 
 use super::{merge, merge_outcome};
-use crate::fixture::{cert, op, op_at};
+use crate::fixture::{cert, meta, op, op_at};
 use crate::invite_quota::MAX_USES_PER_INVITE;
 use crate::op::VerifiedOp;
 use crate::power::{class_of, OpClass};
@@ -63,15 +63,6 @@ fn invite(max_uses: u32) -> GovernanceEntry {
         max_uses,
         expires_at: None,
         secrets_record_key: "VLD0:s".into(),
-    }
-}
-
-fn meta(name: &str) -> GovernanceEntry {
-    GovernanceEntry::CommunityMeta {
-        name: Some(name.into()),
-        description: None,
-        icon_hash: None,
-        banner_hash: None,
     }
 }
 

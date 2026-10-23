@@ -12,6 +12,25 @@ use crate::community_governance_capnp::governance_entry as schema;
 use crate::error::CodecError;
 use rekindle_types::governance::GovernanceEntry;
 
+/// A `write_<name>` for a payload that is a target and an optional
+/// reason (ban, rejection, removal): one definition, expanded in the
+/// variant's module.
+macro_rules! target_reason_writer {
+    ($name:ident, $payload:ident) => {
+        pub(super) fn $name(
+            mut p: crate::community_governance_capnp::$payload::Builder<'_>,
+            target: &rekindle_types::id::PseudonymKey,
+            reason: Option<&str>,
+        ) {
+            super::super::sub_types::pseudonym_key_to_capnp(p.reborrow().init_target(), target);
+            p.set_has_reason(reason.is_some());
+            if let Some(r) = reason {
+                p.set_reason(r);
+            }
+        }
+    };
+}
+
 mod channels;
 mod community;
 mod dispatch_write;

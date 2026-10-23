@@ -5,9 +5,9 @@
 use rekindle_governance::fixture::stamp;
 use rekindle_governance::state::{GovernanceState, ThreadState, TimeoutState};
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
-use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
+use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey, ThreadId};
 

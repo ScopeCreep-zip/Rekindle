@@ -16,12 +16,7 @@ fn key(byte: u8) -> PseudonymKey {
 const MODERATED_CHANNEL: ChannelId = ChannelId([5; 16]);
 
 /// A role at `position` (its lamport is one above, so @everyone comes first).
-fn role_definition(
-    role_id: RoleId,
-    name: &str,
-    permissions: u64,
-    position: u32,
-) -> Stamped {
+fn role_definition(role_id: RoleId, name: &str, permissions: u64, position: u32) -> Stamped {
     let entry = GovernanceEntry::RoleDefinition {
         role_id,
         name: name.into(),
@@ -46,18 +41,18 @@ fn community() -> GovernanceState {
         &key(1),
         &[(
             key(1),
-        vec![
-            role_definition(RoleId([0; 16]), "everyone", DEFAULT_EVERYONE, 0),
-            role_definition(moderator, "moderator", MANAGE_MESSAGES, 1),
-            at(
-                3,
-                GovernanceEntry::RoleAssignment {
-                    target: key(2),
-                    role_id: moderator,
-                },
-            ),
-        ],
-    )],
+            vec![
+                role_definition(RoleId([0; 16]), "everyone", DEFAULT_EVERYONE, 0),
+                role_definition(moderator, "moderator", MANAGE_MESSAGES, 1),
+                at(
+                    3,
+                    GovernanceEntry::RoleAssignment {
+                        target: key(2),
+                        role_id: moderator,
+                    },
+                ),
+            ],
+        )],
     )
 }
 

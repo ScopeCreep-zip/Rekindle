@@ -283,7 +283,9 @@ impl HostGovernance {
             .map_err(|e| e.to_string())?
             .require_records()
             .map_err(|e| format!("record pool: {e}"))?;
-        append_op_once(&*pool, record, &writer, op).await.map(|_| ())
+        append_op_once(&*pool, record, &writer, op)
+            .await
+            .map(|_| ())
     }
 }
 
@@ -301,8 +303,8 @@ pub(crate) async fn append_op_once(
     writer: &str,
     op: Vec<u8>,
 ) -> Result<bool, String> {
-    let decoded = rekindle_codec::governance_op::decode_op(&op)
-        .map_err(|e| format!("governance op: {e}"))?;
+    let decoded =
+        rekindle_codec::governance_op::decode_op(&op).map_err(|e| format!("governance op: {e}"))?;
     let hash = rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig);
     let recent = rekindle_records::chain::read_log_after(port, record, GOV_HEAD, decoded.op.seq)
         .await

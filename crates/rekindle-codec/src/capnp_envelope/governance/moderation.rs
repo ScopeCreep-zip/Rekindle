@@ -10,17 +10,7 @@ use crate::error::CodecError;
 use rekindle_types::governance::{AutoModAction, GovernanceEntry, ModReportTarget};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
-pub(super) fn write_ban_entry(
-    mut p: schema_pkg::ban_entry_payload::Builder<'_>,
-    target: &PseudonymKey,
-    reason: Option<&str>,
-) {
-    pseudonym_key_to_capnp(p.reborrow().init_target(), target);
-    p.set_has_reason(reason.is_some());
-    if let Some(r) = reason {
-        p.set_reason(r);
-    }
-}
+target_reason_writer!(write_ban_entry, ban_entry_payload);
 
 pub(super) fn write_unban_entry(
     mut p: schema_pkg::unban_entry_payload::Builder<'_>,
@@ -203,17 +193,7 @@ pub(super) fn write_member_approved(
     pseudonym_key_to_capnp(p.reborrow().init_target(), target);
 }
 
-pub(super) fn write_member_rejected(
-    mut p: schema_pkg::member_rejected_payload::Builder<'_>,
-    target: &PseudonymKey,
-    reason: Option<&str>,
-) {
-    pseudonym_key_to_capnp(p.reborrow().init_target(), target);
-    p.set_has_reason(reason.is_some());
-    if let Some(r) = reason {
-        p.set_reason(r);
-    }
-}
+target_reason_writer!(write_member_rejected, member_rejected_payload);
 
 pub(super) fn write_mod_report(
     mut p: schema_pkg::mod_report_entry::Builder<'_>,

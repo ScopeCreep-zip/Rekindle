@@ -1,12 +1,11 @@
 //! Membership ops (plan E3.2): `MemberJoined`, `MemberRecordMoved`,
 //! `MemberLeft` and the durable kick `MemberRemoved`.
 
-use super::super::sub_types::{pseudonym_key_from_capnp, pseudonym_key_to_capnp};
+use super::super::sub_types::pseudonym_key_from_capnp;
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::CodecError;
 use rekindle_types::governance::{GovernanceEntry, InviteProof};
-use rekindle_types::id::PseudonymKey;
 
 pub(super) fn read_member_joined(
     p: schema_pkg::member_joined_payload::Reader<'_>,
@@ -76,14 +75,4 @@ pub(super) fn write_member_record_moved(
     p.set_member_record_owner(member_record_owner);
 }
 
-pub(super) fn write_member_removed(
-    mut p: schema_pkg::member_removed_payload::Builder<'_>,
-    target: &PseudonymKey,
-    reason: Option<&str>,
-) {
-    pseudonym_key_to_capnp(p.reborrow().init_target(), target);
-    p.set_has_reason(reason.is_some());
-    if let Some(r) = reason {
-        p.set_reason(r);
-    }
-}
+target_reason_writer!(write_member_removed, member_removed_payload);

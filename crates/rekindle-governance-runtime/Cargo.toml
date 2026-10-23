@@ -37,5 +37,6 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }
 mockall = "0.13"
 tokio = { workspace = true, features = [ "macros", "rt-multi-thread", "test-util" ] }

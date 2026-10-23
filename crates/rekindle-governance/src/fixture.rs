@@ -27,6 +27,17 @@ pub fn stamp(lamport: u64) -> OpStamp {
     }
 }
 
+/// A `CommunityMeta` entry naming the community `name`.
+#[must_use]
+pub fn meta(name: &str) -> GovernanceEntry {
+    GovernanceEntry::CommunityMeta {
+        name: Some(name.into()),
+        description: None,
+        icon_hash: None,
+        banner_hash: None,
+    }
+}
+
 /// A cert naming `creator`, with `policy`.
 #[must_use]
 pub fn cert(creator: &PseudonymKey, policy: AdmissionMode) -> GenesisCert {
