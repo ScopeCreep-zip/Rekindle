@@ -64,7 +64,6 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport: 0,
         }],
         None,
         &forger,
