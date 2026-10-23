@@ -49,8 +49,16 @@ pub struct Opened {
 }
 
 /// Why an inbound frame did not open.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum Dropped {
+    /// A PreKeyInit naming prekeys we no longer hold (B5), from a sender
+    /// the gate admits for it: the signed `PreKeyRejected` for `to`. An
+    /// `app_call` is answered with it ([`super::receive_call`]); an init
+    /// that came by message gets it by message.
+    Rejected {
+        to: String,
+        body: Box<rekindle_codec::capnp_codec::direct::DirectBody>,
+    },
     /// A copy of a frame that already opened: its receipt stands.
     Duplicate,
     /// Refused (undecodable, not admitted, a bad signature, stale, or a
@@ -372,8 +380,21 @@ async fn open_init(
         }
         Err(RatchetError::UnknownPrekey { kind, id }) => {
             tracing::info!(from = %sender_hex, %kind, id, "PreKeyInit names prekeys we no longer hold");
-            crate::operations::prekeys::reject_init(host, sender, &sender_hex, init, status);
-            return Err(Dropped::Refused);
+            return match crate::operations::prekeys::rejection(
+                host,
+                sender,
+                &sender_hex,
+                init,
+                status,
+            )
+            .await
+            {
+                Some(body) => Err(Dropped::Rejected {
+                    to: sender_hex,
+                    body: Box::new(body),
+                }),
+                None => Err(Dropped::Refused),
+            };
         }
         Err(e) => Err(e),
     };

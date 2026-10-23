@@ -19,4 +19,7 @@ pub(crate) use first_contact::{
 pub use own::{device_list, maintain, plan_and_store, publish, publish_landed, reconcile, status};
 pub use pick::pick_bundle;
 pub use reject::FirstContact;
-pub(crate) use reject::{acknowledged, began_first_contact, on_rejected, refilled, reject_init};
+pub(crate) use reject::{
+    acknowledged, began_first_contact, on_rejected, refilled, rejection, rejection_reply,
+    send_rejection,
+};

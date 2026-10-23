@@ -75,49 +75,68 @@ pub(crate) fn refilled(host: &dyn FriendHost, refills: Vec<Publish>) {
 /// B5: `sender`'s init named prekeys we no longer hold. A sender with
 /// `status` whom the gate's own predicate admits for that init
 /// ([`init_admitted`], audit G9: a friend, or a group member for a group
-/// control kind) gets a signed rejection after a random
-/// 2–10 s delay, at most one per base key and ten per sender per 3 h.
-pub(crate) fn reject_init(
+/// control kind) gets a signed rejection, at most one per base key and ten
+/// per sender per 3 h: the `PreKeyRejected` to send, or `None`.
+pub(crate) async fn rejection(
     host: &dyn FriendHost,
     sender: [u8; 32],
     sender_hex: &str,
     init: &PreKeyInitBody,
     status: Status,
-) {
+) -> Option<DirectBody> {
     let kind = init.first_type_id;
     let hash = base_key_hash(&init.base_key);
-    let rejection = DirectBody::PreKeyRejected(PreKeyRejected {
-        signed_prekey_id: init.signed_prekey_id,
-        one_time_prekey_id: init.one_time_prekey_id,
-        pq_prekey: init.pq_prekey,
-        base_key_hash: hash,
-    });
-    let (owned, peer) = (host.owned(), sender_hex.to_string());
+    // A reset's init reaches here (a prekey we no longer hold) only past
+    // `accept_init`'s check of our stored request (audit D-4).
+    if !init_admitted(host, sender_hex, kind, status).await {
+        tracing::debug!(from = %sender_hex, ?kind, "no rejection for this PreKeyInit");
+        return None;
+    }
+    let (Ok(db), Ok(local)) = (host.db(), host.local_party()) else {
+        return None;
+    };
+    let verdict =
+        rekindle_db::prekeys::admit_rejection(&db, &local.owner(), &sender, hash, local.now_ms)
+            .await;
+    match verdict {
+        Ok(RejectionVerdict::Send) => Some(DirectBody::PreKeyRejected(PreKeyRejected {
+            signed_prekey_id: init.signed_prekey_id,
+            one_time_prekey_id: init.one_time_prekey_id,
+            pq_prekey: init.pq_prekey,
+            base_key_hash: hash,
+        })),
+        Ok(other) => {
+            tracing::debug!(to = %sender_hex, ?other, "PreKeyRejected not sent");
+            None
+        }
+        Err(e) => {
+            tracing::warn!(to = %sender_hex, error = %e, "PreKeyRejected not recorded; not sent");
+            None
+        }
+    }
+}
+
+/// B5 for an init that came by `app_call` (finding 46): the rejection,
+/// wired as the call's reply. It answers a call the sender is already
+/// waiting on, whose refusal its timing shows anyway, so it carries no
+/// delay.
+pub(crate) async fn rejection_reply(
+    host: &dyn FriendHost,
+    to: &str,
+    rejection: &DirectBody,
+) -> Option<Vec<u8>> {
+    dm::reply_frame(host, to, rejection)
+        .await
+        .map_err(|e| tracing::info!(to = %to, error = %e, "PreKeyRejected reply not framed"))
+        .ok()
+}
+
+/// B5 for an init that came by message: the rejection, sent after a
+/// random 2–10 s delay.
+pub(crate) fn send_rejection(host: &dyn FriendHost, to: &str, rejection: DirectBody) {
+    let (owned, peer) = (host.owned(), to.to_string());
     host.scope().spawn_or_drop("prekey rejection", async move {
         let host = owned.as_ref();
-        // A reset's init reaches here (a prekey we no longer hold) only
-        // past `accept_init`'s check of our stored request (audit D-4).
-        if !init_admitted(host, &peer, kind, status).await {
-            tracing::debug!(from = %peer, ?kind, "no rejection for this PreKeyInit");
-            return;
-        }
-        let (Ok(db), Ok(local)) = (host.db(), host.local_party()) else {
-            return;
-        };
-        let verdict =
-            rekindle_db::prekeys::admit_rejection(&db, &local.owner(), &sender, hash, local.now_ms)
-                .await;
-        match verdict {
-            Ok(RejectionVerdict::Send) => {}
-            Ok(other) => {
-                tracing::debug!(to = %peer, ?other, "PreKeyRejected not sent");
-                return;
-            }
-            Err(e) => {
-                tracing::warn!(to = %peer, error = %e, "PreKeyRejected not recorded; not sent");
-                return;
-            }
-        }
         let delay = rejection_delay_ms(host.rng());
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
         if let Err(e) = dm::send_to_peer(host, &peer, &rejection).await {

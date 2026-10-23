@@ -107,24 +107,12 @@ pub(crate) fn failed(host: &dyn FriendHost, peer: &str, kind: DmTypeId, reason: 
     }));
 }
 
-/// Finding 46: the peer refused our first contact `kind` (a NAK to its
-/// `app_call`). It shows as failed with Retry at once, so a refusal no
-/// `PreKeyRejected` follows is never a silent split; a `PreKeyRejected`
-/// that does follow sends B6's one resend and clears it
-/// (`reject::on_rejected`). While that resend is out, a NAK (the first
-/// row's, answered after the `PreKeyRejected` came) leaves it to the
-/// resend's own receipt or rejection.
+/// Finding 46: the peer refused our first contact `kind` with a bare NAK
+/// (an established session, admission): not a refused prekey, which they
+/// answer with their `PreKeyRejected` as the call's reply
+/// (`direct::on_first_contact_reply`, the one resend). It shows as failed
+/// with Retry, never a silent split.
 pub(crate) fn refused(host: &dyn FriendHost, peer: &str, kind: DmTypeId) {
-    let resending = host
-        .stores()
-        .first_contacts
-        .lock()
-        .get(peer)
-        .is_some_and(|c| c.retried && !c.failed);
-    if resending {
-        tracing::debug!(peer = %peer, ?kind, "first contact refused while its resend is out");
-        return;
-    }
     failed(
         host,
         peer,

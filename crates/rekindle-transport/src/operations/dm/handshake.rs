@@ -268,11 +268,20 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
     };
     if receipted(kind) {
         match send::call_datagram_answer(host, to, datagram).await {
-            Ok(send::CallAnswer::Receipt | send::CallAnswer::Reply(_)) => {}
-            // A first contact the peer refused shows as failed with Retry
-            // (finding 46, `first_contact::refused`); a `PreKeyRejected`
-            // that follows sends the one retry (plan E2.4) on this stream
-            // and clears it. This row ends and the rows behind it go on.
+            Ok(send::CallAnswer::Receipt) => {}
+            // A first contact whose prekeys the peer refused is answered
+            // with their `PreKeyRejected` (B5), which sends the one resend
+            // (plan E2.4) on this stream: this row ends and the rows behind
+            // it go on.
+            Ok(send::CallAnswer::Reply(reply)) => {
+                if kind != DmTypeId::FriendRequest
+                    && crate::operations::direct::on_first_contact_reply(host, to, &reply).await
+                {
+                    return Attempt::Superseded(format!("{kind:?} prekeys refused by {to}"));
+                }
+            }
+            // Any other refusal (a bare NAK) shows as failed with Retry
+            // (finding 46, `first_contact::refused`).
             Ok(send::CallAnswer::Refused) if kind != DmTypeId::FriendRequest => {
                 if matches!(kind, DmTypeId::FriendAccept | DmTypeId::SessionResetAccept) {
                     crate::operations::prekeys::refused(host, to, kind);

@@ -57,13 +57,49 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
         tracing::warn!(len = datagram.len(), "dropping untagged 1:1 message");
         return Routed::Handled;
     };
-    let Ok(opened) = frame::open(host, bytes).await else {
-        return Routed::Handled;
+    let opened = match frame::open(host, bytes).await {
+        Ok(opened) => opened,
+        Err(dropped) => {
+            by_message(host, dropped);
+            return Routed::Handled;
+        }
     };
     if opened.stream_seq > 0 {
         dm::stream::on_hint(host, &opened.sender_hex);
     }
     handlers::handle(host, opened).await
+}
+
+/// A frame that did not open by message: a rejected init's
+/// `PreKeyRejected` goes back by message (B5).
+fn by_message(host: &dyn FriendHost, dropped: Dropped) {
+    if let Dropped::Rejected { to, body } = dropped {
+        crate::operations::prekeys::send_rejection(host, &to, *body);
+    }
+}
+
+/// The reply to a first contact we called `to` with, other than the
+/// receipt: their `PreKeyRejected` (B5, finding 46) is handled as one
+/// that came by message (`prekeys::on_rejected`, the one resend). Whether
+/// it was that rejection.
+pub(crate) async fn on_first_contact_reply(host: &dyn FriendHost, to: &str, reply: &[u8]) -> bool {
+    let Some(bytes) = dm::unwire(reply) else {
+        return false;
+    };
+    let Ok(opened) = frame::open(host, bytes).await else {
+        return false;
+    };
+    if opened.sender_hex != to {
+        tracing::warn!(to = %to, from = %opened.sender_hex, "dropping a call reply by another sender");
+        frame::processed(host, &opened);
+        return false;
+    }
+    if !matches!(opened.body, DirectBody::PreKeyRejected(_)) {
+        frame::processed(host, &opened);
+        return false;
+    }
+    drop(handlers::apply(host, opened).await);
+    true
 }
 
 /// Handle one entry of `writer`'s DM chain (a wired frame they appended):
@@ -73,8 +109,12 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
         tracing::warn!(from = %writer, "dropping an untagged chain entry");
         return Routed::Handled;
     };
-    let Ok(opened) = frame::open(host, bytes).await else {
-        return Routed::Handled;
+    let opened = match frame::open(host, bytes).await {
+        Ok(opened) => opened,
+        Err(dropped) => {
+            by_message(host, dropped);
+            return Routed::Handled;
+        }
     };
     if opened.sender_hex != writer {
         tracing::warn!(from = %writer, by = %opened.sender_hex, "dropping a chain entry by another sender");
@@ -101,6 +141,15 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
         Ok(opened) => opened,
         Err(Dropped::Duplicate) => return Called::Answered(Vec::new()),
         Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
+        // B5 by the call itself (finding 46): the caller tells a refused
+        // prekey (this reply, its one resend) from any other refusal (NAK).
+        Err(Dropped::Rejected { to, body }) => {
+            return Called::Answered(
+                crate::operations::prekeys::rejection_reply(host, &to, &body)
+                    .await
+                    .unwrap_or_else(|| NAK.to_vec()),
+            );
+        }
     };
     if matches!(opened.body, DirectBody::RelayOffer(_)) {
         frame::processed(host, &opened);
