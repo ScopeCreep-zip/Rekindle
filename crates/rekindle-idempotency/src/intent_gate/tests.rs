@@ -37,7 +37,7 @@ fn who(conn: u8) -> Who {
 type TestGate = IntentGate<&'static str, Who, &'static str>;
 
 fn gate() -> TestGate {
-    IntentGate::new(Arc::new(AttemptLimiter::default()))
+    IntentGate::new(Arc::new(AttemptLimiter::default()), Arc::new(rekindle_utils::OsRandom))
 }
 
 fn selection(kind: IntentKind, escalations: Vec<Escalation>) -> Selection {

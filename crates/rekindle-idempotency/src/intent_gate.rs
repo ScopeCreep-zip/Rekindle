@@ -34,6 +34,8 @@ use rekindle_types::intent::{
     IntentReview, Notifies, ProofRequired, Reversibility, Subject,
 };
 
+use rekindle_utils::RandomSource;
+
 use crate::attempts::AttemptLimiter;
 use crate::cache::IdempotencyCache;
 
@@ -125,14 +127,31 @@ pub struct IntentGate<A, O: GateOwner, R: Clone + Send + Sync + 'static> {
     limiter: Arc<AttemptLimiter<O::Identity>>,
     /// Each run's owner and result, for a repeated commit of its id.
     results: IdempotencyCache<(O, R)>,
+    /// The host's RNG port, for the ids it mints (plan C9.2).
+    rng: Arc<dyn RandomSource>,
+}
+
+/// A fresh time-ordered intent id for `now_ms`, from `rng` (plan C9.2:
+/// the host's clock and RNG ports, so a seed fixes it).
+#[must_use]
+pub fn mint_intent_id(now_ms: u64, rng: &dyn RandomSource) -> IntentId {
+    let mut random = [0u8; 10];
+    rng.fill(&mut random);
+    IntentId::v7(now_ms, random)
 }
 
 /// The review of `selection`, held `ttl_ms` from `now_ms`; `cancel_sends`
 /// when its Cancel runs an action of its own.
-fn review_of(selection: &Selection, now_ms: u64, ttl_ms: u64, cancel_sends: bool) -> IntentReview {
+fn review_of(
+    intent_id: IntentId,
+    selection: &Selection,
+    now_ms: u64,
+    ttl_ms: u64,
+    cancel_sends: bool,
+) -> IntentReview {
     let class = effective_class(selection.kind, &selection.escalations);
     IntentReview {
-        intent_id: IntentId::new(),
+        intent_id,
         kind: selection.kind,
         class,
         subject: selection.subject.clone(),
@@ -148,13 +167,14 @@ fn review_of(selection: &Selection, now_ms: u64, ttl_ms: u64, cancel_sends: bool
 
 impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
     /// A gate whose passphrase failures count in `limiter` (shared with
-    /// the host's unlock).
+    /// the host's unlock) and whose ids come from `rng`.
     #[must_use]
-    pub fn new(limiter: Arc<AttemptLimiter<O::Identity>>) -> Self {
+    pub fn new(limiter: Arc<AttemptLimiter<O::Identity>>, rng: Arc<dyn RandomSource>) -> Self {
         Self {
             pending: parking_lot::Mutex::new(HashMap::new()),
             limiter,
             results: IdempotencyCache::new(4096, Duration::from_millis(INTENT_TTL_MS)),
+            rng,
         }
     }
 
@@ -210,7 +230,8 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         if pending.values().filter(|p| p.owner == owner).count() >= MAX_PENDING_PER_OWNER {
             return Err(GateError::TooManyPending);
         }
-        let review = review_of(&selection, now_ms, ttl_ms, on_cancel.is_some());
+        let id = mint_intent_id(now_ms, self.rng.as_ref());
+        let review = review_of(id, &selection, now_ms, ttl_ms, on_cancel.is_some());
         pending.insert(
             review.intent_id,
             Pending {
@@ -251,7 +272,8 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
             let Some(mut held) = pending.remove(&intent_id) else {
                 return Err(GateError::UnknownIntent);
             };
-            held.review = review_of(&fresh, now_ms, held.ttl_ms, held.on_cancel.is_some());
+            let id = mint_intent_id(now_ms, self.rng.as_ref());
+            held.review = review_of(id, &fresh, now_ms, held.ttl_ms, held.on_cancel.is_some());
             held.selection = fresh;
             let review = held.review.clone();
             pending.insert(review.intent_id, held);

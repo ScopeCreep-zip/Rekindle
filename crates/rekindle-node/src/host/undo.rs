@@ -8,7 +8,7 @@
 use std::collections::VecDeque;
 
 use parking_lot::Mutex;
-use rekindle_idempotency::intent_gate::GateOwner;
+use rekindle_idempotency::intent_gate::{mint_intent_id, GateOwner};
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::intent::{IntentId, IntentKind, UndoOffer};
 
@@ -33,15 +33,17 @@ pub struct UndoCache {
 }
 
 impl UndoCache {
-    /// Keep `inverse` for `owner`, and the offer that names it.
+    /// Keep `inverse` for `owner`, and the offer that names it, whose id
+    /// comes from the host's clock (`now_ms`) and RNG port (plan C9.2).
     pub(crate) fn offer(
         &self,
         owner: IntentOwner,
         inverse: IpcRequest,
         kind: IntentKind,
         now_ms: u64,
+        rng: &dyn rekindle_utils::RandomSource,
     ) -> UndoOffer {
-        let id = IntentId::new();
+        let id = mint_intent_id(now_ms, rng);
         let expires_at_ms = now_ms + UNDO_WINDOW_MS;
         let mut entries = self.entries.lock();
         entries.retain(|entry| entry.expires_at_ms > now_ms);
@@ -106,7 +108,7 @@ mod tests {
     #[test]
     fn an_offer_is_taken_once_by_its_owner_while_it_lasts() {
         let cache = UndoCache::default();
-        let offer = cache.offer(owner(1), back(), IntentKind::SetStatus, 1_000);
+        let offer = cache.offer(owner(1), back(), IntentKind::SetStatus, 1_000, &rekindle_utils::OsRandom);
         assert_eq!(offer.expires_at_ms, 1_000 + UNDO_WINDOW_MS);
         assert!(
             cache.take(offer.id, &owner(2), 1_001).is_none(),
@@ -118,7 +120,7 @@ mod tests {
             "taken once"
         );
 
-        let late = cache.offer(owner(1), back(), IntentKind::SetStatus, 1_000);
+        let late = cache.offer(owner(1), back(), IntentKind::SetStatus, 1_000, &rekindle_utils::OsRandom);
         assert!(cache
             .take(late.id, &owner(1), 1_000 + UNDO_WINDOW_MS)
             .is_none());
@@ -127,7 +129,7 @@ mod tests {
     #[test]
     fn a_lock_drops_its_identitys_offers() {
         let cache = UndoCache::default();
-        let offer = cache.offer(owner(1), back(), IntentKind::SetStatus, 0);
+        let offer = cache.offer(owner(1), back(), IntentKind::SetStatus, 0, &rekindle_utils::OsRandom);
         cache.clear_matching(|o| o.identity == "me");
         assert!(cache.take(offer.id, &owner(1), 1).is_none());
     }

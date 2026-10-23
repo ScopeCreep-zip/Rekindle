@@ -7619,6 +7619,7 @@ dependencies = [
  "moka",
  "parking_lot 0.12.5",
  "rekindle-types",
+ "rekindle-utils",
  "serde",
  "thiserror 2.0.18",
  "tokio",

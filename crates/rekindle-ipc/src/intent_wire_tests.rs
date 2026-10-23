@@ -28,7 +28,7 @@ fn round_trip(payload: BusPayload) -> BusPayload {
 
 #[test]
 fn a_commit_with_a_passphrase_proof_crosses_the_bus() {
-    let intent_id = IntentId::new();
+    let intent_id = IntentId::v7(1_000, [7; 10]);
     let decoded = round_trip(BusPayload::Request(IpcRequest::IntentCommit {
         intent_id,
         proof: IntentProof::Passphrase("correct horse".to_string().into()),
@@ -50,7 +50,7 @@ fn a_commit_with_a_passphrase_proof_crosses_the_bus() {
 #[test]
 fn a_pending_review_crosses_the_bus() {
     let review = IntentReview {
-        intent_id: IntentId::new(),
+        intent_id: IntentId::v7(1_000, [7; 10]),
         kind: IntentKind::LeaveCommunity,
         class: IntentClass::Destructive,
         subject: Subject::Community {

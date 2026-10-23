@@ -217,7 +217,7 @@ mod tests {
 
     fn review(proof: ProofRequired) -> IntentReview {
         IntentReview {
-            intent_id: IntentId::new(),
+            intent_id: IntentId::v7(1_000, [7; 10]),
             kind: IntentKind::LeaveCommunity,
             class: IntentClass::Destructive,
             subject: Subject::Community {

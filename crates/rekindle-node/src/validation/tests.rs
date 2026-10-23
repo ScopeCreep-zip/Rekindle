@@ -389,7 +389,7 @@ fn deletes_name_a_key_and_typed_proofs_are_bounded() {
         identity: "../x".into()
     }));
     let commit = |name: String| IpcRequest::IntentCommit {
-        intent_id: rekindle_types::intent::IntentId::new(),
+        intent_id: rekindle_types::intent::IntentId::v7(1_000, [7; 10]),
         proof: rekindle_types::intent::IntentProof::Typed(name),
     };
     assert!(!rejected(&commit("general".into())));

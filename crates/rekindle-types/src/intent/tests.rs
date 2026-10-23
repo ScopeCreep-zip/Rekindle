@@ -103,7 +103,7 @@ fn each_class_demands_its_proof() {
 
 #[test]
 fn intent_ids_are_v7_and_round_trip_as_strings() {
-    let id = IntentId::new();
+    let id = IntentId::v7(1_000, [7; 10]);
     assert_eq!(id.0.get_version_num(), 7);
     let back: IntentId = id.to_string().parse().unwrap();
     assert_eq!(back, id);

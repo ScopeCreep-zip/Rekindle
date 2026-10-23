@@ -320,9 +320,12 @@ impl Host {
             shutdown: Arc::new(crate::daemon::shutdown::Shutdown::new()),
             journal: Arc::clone(&journal),
             clock: Arc::clone(&clock),
+            intents: Arc::new(super::gate::HostGate::new(
+                Arc::clone(&stores.attempts),
+                Arc::clone(&rng),
+            )),
             rng,
             idle,
-            intents: Arc::new(super::gate::HostGate::new(Arc::clone(&stores.attempts))),
             undo: super::undo::UndoCache::default(),
             event_watch_tx,
             pending_joins,

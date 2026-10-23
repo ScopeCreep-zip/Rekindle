@@ -11,6 +11,7 @@ workspace = true
 moka = { version = "0.12", features = [ "future" ] }
 parking_lot = { workspace = true }
 rekindle-types = { path = "../rekindle-types" }
+rekindle-utils = { path = "../rekindle-utils" }
 thiserror = { workspace = true }
 serde = { workspace = true }
 tracing = { workspace = true }
