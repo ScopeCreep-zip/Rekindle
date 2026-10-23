@@ -162,7 +162,9 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
         return;
     }
     let contact = host.stores().first_contacts.lock().get(sender).copied();
-    let Some(contact) = contact.filter(|c| !c.failed) else {
+    // A first contact failed by its NAK (finding 46) still has its one
+    // resend: the `PreKeyRejected` that followed the NAK sends it.
+    let Some(contact) = contact else {
         // No first contact we remember (one lost with a restart, or an init
         // that carried a message): an accepted friend has no session now,
         // so it fails visibly with Retry rather than waiting for a send.
@@ -188,8 +190,12 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
     }
     if let Some(entry) = host.stores().first_contacts.lock().get_mut(sender) {
         entry.retried = true;
+        entry.failed = false;
     }
-    state::update(host, sender, |f| f.handshake_retrying = true);
+    state::update(host, sender, |f| {
+        f.handshake_retrying = true;
+        f.handshake_error = None;
+    });
     host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeRetrying {
         peer_key: sender.to_string(),
     }));

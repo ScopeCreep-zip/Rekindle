@@ -82,15 +82,21 @@ pub(crate) async fn open_or_fail(host: &dyn FriendHost, peer: &str, kind: DmType
 /// B7: the first contact carrying `kind` cannot be completed. The friend's
 /// row says why and offers Retry ([`retry`]), which re-sends `kind`. There
 /// is no session-reset prompt for a first contact.
+/// A failure keeps whether B6's one resend was spent, so a later
+/// `PreKeyRejected` resends only if it was not.
 pub(crate) fn failed(host: &dyn FriendHost, peer: &str, kind: DmTypeId, reason: String) {
-    host.stores().first_contacts.lock().insert(
-        peer.to_string(),
-        FirstContact {
-            kind,
-            retried: false,
-            failed: true,
-        },
-    );
+    {
+        let mut contacts = host.stores().first_contacts.lock();
+        let retried = contacts.get(peer).is_some_and(|c| c.retried);
+        contacts.insert(
+            peer.to_string(),
+            FirstContact {
+                kind,
+                retried,
+                failed: true,
+            },
+        );
+    }
     state::update(host, peer, |f| {
         f.handshake_retrying = false;
         f.handshake_error = Some(reason.clone());
@@ -99,6 +105,32 @@ pub(crate) fn failed(host: &dyn FriendHost, peer: &str, kind: DmTypeId, reason: 
         peer_key: peer.to_string(),
         reason,
     }));
+}
+
+/// Finding 46: the peer refused our first contact `kind` (a NAK to its
+/// `app_call`). It shows as failed with Retry at once, so a refusal no
+/// `PreKeyRejected` follows is never a silent split; a `PreKeyRejected`
+/// that does follow sends B6's one resend and clears it
+/// (`reject::on_rejected`). While that resend is out, a NAK (the first
+/// row's, answered after the `PreKeyRejected` came) leaves it to the
+/// resend's own receipt or rejection.
+pub(crate) fn refused(host: &dyn FriendHost, peer: &str, kind: DmTypeId) {
+    let resending = host
+        .stores()
+        .first_contacts
+        .lock()
+        .get(peer)
+        .is_some_and(|c| c.retried && !c.failed);
+    if resending {
+        tracing::debug!(peer = %peer, ?kind, "first contact refused while its resend is out");
+        return;
+    }
+    failed(
+        host,
+        peer,
+        kind,
+        "they refused our secure session".to_string(),
+    );
 }
 
 /// The user's Retry on a friend whose secure session did not open: the

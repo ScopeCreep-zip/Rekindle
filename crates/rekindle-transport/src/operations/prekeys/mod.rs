@@ -13,7 +13,9 @@ mod pick;
 mod reject;
 
 pub use first_contact::retry as retry_first_contact;
-pub(crate) use first_contact::{bundle_for_friend, failed, open_first_contact, open_or_fail};
+pub(crate) use first_contact::{
+    bundle_for_friend, failed, open_first_contact, open_or_fail, refused,
+};
 pub use own::{device_list, maintain, plan_and_store, publish, publish_landed, reconcile, status};
 pub use pick::pick_bundle;
 pub use reject::FirstContact;
