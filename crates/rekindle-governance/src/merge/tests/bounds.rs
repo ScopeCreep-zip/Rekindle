@@ -2,7 +2,9 @@
 //! is dropped by every reader, whoever wrote it and wherever it sorts.
 
 use super::*;
+use crate::fixture::{cert, ops_in_order};
 use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
+use rekindle_types::governance::AdmissionMode;
 use rekindle_types::key_format::MAX_DESCRIPTION_LEN;
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
 
@@ -112,12 +114,15 @@ fn slowmode_over_the_bound_is_dropped_from_peer_and_creator() {
         } else {
             subkeys.push((peer.clone(), vec![over]));
         }
-        assert_eq!(slowmode_of(&merge_entries(&subkeys)), None);
+        assert_eq!(slowmode_of(&merge_entries(&creator, &subkeys)), None);
     }
-    let at_bound = merge_entries(&[
-        (creator, base()),
-        (peer, vec![slowmode(MAX_SLOWMODE_SECONDS, 10)]),
-    ]);
+    let at_bound = merge_entries(
+        &creator,
+        &[
+            (creator.clone(), base()),
+            (peer, vec![slowmode(MAX_SLOWMODE_SECONDS, 10)]),
+        ],
+    );
     assert_eq!(slowmode_of(&at_bound), Some(MAX_SLOWMODE_SECONDS));
 }
 
@@ -125,19 +130,25 @@ fn slowmode_over_the_bound_is_dropped_from_peer_and_creator() {
 fn timeout_outside_the_range_is_dropped_from_peer_and_creator() {
     let (creator, peer, target) = (pseudo(1), pseudo(2), pseudo(3));
     for duration in [0, MAX_TIMEOUT_SECONDS + 1] {
-        let state = merge_entries(&[
-            (
-                creator.clone(),
-                [base(), vec![timeout(target.clone(), duration, 10)]].concat(),
-            ),
-            (peer.clone(), vec![timeout(target.clone(), duration, 11)]),
-        ]);
+        let state = merge_entries(
+            &creator,
+            &[
+                (
+                    creator.clone(),
+                    [base(), vec![timeout(target.clone(), duration, 10)]].concat(),
+                ),
+                (peer.clone(), vec![timeout(target.clone(), duration, 11)]),
+            ],
+        );
         assert!(!state.timeouts.contains_key(&target), "{duration} s");
     }
-    let state = merge_entries(&[
-        (creator, base()),
-        (peer, vec![timeout(target.clone(), MAX_TIMEOUT_SECONDS, 10)]),
-    ]);
+    let state = merge_entries(
+        &creator,
+        &[
+            (creator.clone(), base()),
+            (peer, vec![timeout(target.clone(), MAX_TIMEOUT_SECONDS, 10)]),
+        ],
+    );
     assert_eq!(
         state.timeouts[&target].duration_seconds,
         MAX_TIMEOUT_SECONDS
@@ -148,20 +159,26 @@ fn timeout_outside_the_range_is_dropped_from_peer_and_creator() {
 fn description_the_ipc_refuses_is_dropped_from_peer_and_creator() {
     let (creator, peer) = (pseudo(1), pseudo(2));
     for bad in ["x".repeat(MAX_DESCRIPTION_LEN + 1), "bell\u{7}".into()] {
-        let state = merge_entries(&[
-            (
-                creator.clone(),
-                [base(), vec![meta(Some(bad.clone()), 10)]].concat(),
-            ),
-            (peer.clone(), vec![meta(Some(bad), 11)]),
-        ]);
+        let state = merge_entries(
+            &creator,
+            &[
+                (
+                    creator.clone(),
+                    [base(), vec![meta(Some(bad.clone()), 10)]].concat(),
+                ),
+                (peer.clone(), vec![meta(Some(bad), 11)]),
+            ],
+        );
         assert_eq!(state.metadata.expect("base meta").stamp.lamport, 1);
     }
     let fits = "é".repeat(MAX_DESCRIPTION_LEN);
-    let state = merge_entries(&[
-        (creator, base()),
-        (peer, vec![meta(Some(fits.clone()), 10)]),
-    ]);
+    let state = merge_entries(
+        &creator,
+        &[
+            (creator.clone(), base()),
+            (peer, vec![meta(Some(fits.clone()), 10)]),
+        ],
+    );
     assert_eq!(state.metadata.expect("meta").description, Some(fits));
 }
 
@@ -176,9 +193,19 @@ fn out_of_bounds_lowest_lamport_entry_is_not_the_genesis() {
         slowmode(u32::MAX, 0),
     ];
     for attempt in genesis_attempts {
-        let state = merge_entries(&[(attacker.clone(), vec![attempt]), (creator.clone(), base())]);
+        let ops = ops_in_order(&[(attacker.clone(), vec![attempt]), (creator.clone(), base())]);
+        let state = merge(&cert(&creator, AdmissionMode::default()), &ops);
         assert_eq!(state.creator, Some(creator.clone()));
-        assert_eq!(state.metadata.as_ref().expect("meta").stamp.lamport, 1);
+        let creators_meta = ops
+            .iter()
+            .find(|o| {
+                o.author() == &creator && matches!(o.body(), GovernanceEntry::CommunityMeta { .. })
+            })
+            .expect("the creator's meta op");
+        assert_eq!(
+            state.metadata.as_ref().expect("meta").stamp,
+            creators_meta.stamp()
+        );
         assert!(state.timeouts.is_empty());
         assert_eq!(slowmode_of(&state), None);
     }

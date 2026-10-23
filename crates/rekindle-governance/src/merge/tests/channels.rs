@@ -44,7 +44,7 @@ fn channel_create_and_archive() {
         ),
         at(4, GovernanceEntry::ChannelArchived { channel_id: ch }),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(
         state.channels.is_empty(),
         "archived channel should be removed"
@@ -80,7 +80,7 @@ fn channel_archive_with_lower_lamport_ignored() {
         // Archive with lower lamport than create — should be ignored
         at(3, GovernanceEntry::ChannelArchived { channel_id: ch }),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(
         state.channels.contains_key(&ch),
         "channel should still exist"

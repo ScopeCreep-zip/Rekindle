@@ -93,13 +93,15 @@ pub fn op(
 /// before it.
 #[must_use]
 pub fn ops_in_order(subkeys: &[(PseudonymKey, Vec<Stamped>)]) -> Vec<VerifiedOp> {
-    let mut all: Vec<(u64, &PseudonymKey, usize, &GovernanceEntry)> = Vec::new();
+    // Ties at one (lamport, author) break on the entry itself, so the order
+    // an author's entries are listed in never changes the chain.
+    let mut all: Vec<(u64, &PseudonymKey, String, &GovernanceEntry)> = Vec::new();
     for (author, entries) in subkeys {
-        for (i, (lamport, entry)) in entries.iter().enumerate() {
-            all.push((*lamport, author, i, entry));
+        for (lamport, entry) in entries {
+            all.push((*lamport, author, format!("{entry:?}"), entry));
         }
     }
-    all.sort_by(|a, b| (a.0, &a.1 .0, a.2).cmp(&(b.0, &b.1 .0, b.2)));
+    all.sort_by(|a, b| (a.0, &a.1 .0, &a.2).cmp(&(b.0, &b.1 .0, &b.2)));
     let mut seqs: std::collections::HashMap<&PseudonymKey, u64> = std::collections::HashMap::new();
     let mut out: Vec<VerifiedOp> = Vec::new();
     for (tag, (lamport, author, _, entry)) in all.into_iter().enumerate() {
@@ -120,21 +122,49 @@ pub fn ops_in_order(subkeys: &[(PseudonymKey, Vec<Stamped>)]) -> Vec<VerifiedOp>
     out
 }
 
-/// Merge with the creator the test meant: the author of the first entry,
-/// its `AdmissionPolicy` (if any) as the cert's policy.
+/// Merge under a cert naming `creator` (default admission mode): the
+/// creator comes from the cert alone, never from an op's position.
 #[must_use]
-pub fn merge_entries(subkeys: &[(PseudonymKey, Vec<Stamped>)]) -> GovernanceState {
-    let ops = ops_in_order(subkeys);
-    let Some(first) = ops.first() else {
-        return GovernanceState::default();
-    };
-    let creator = first.author().clone();
-    let policy = ops
-        .iter()
-        .find_map(|o| match o.body() {
-            GovernanceEntry::AdmissionPolicy { mode } if o.author() == &creator => Some(*mode),
-            _ => None,
-        })
-        .unwrap_or_default();
-    crate::merge::merge(&cert(&creator, policy), &ops)
+pub fn merge_entries(
+    creator: &PseudonymKey,
+    subkeys: &[(PseudonymKey, Vec<Stamped>)],
+) -> GovernanceState {
+    merge_entries_under(&cert(creator, AdmissionMode::default()), subkeys)
+}
+
+/// Merge under `cert`.
+#[must_use]
+pub fn merge_entries_under(
+    cert: &GenesisCert,
+    subkeys: &[(PseudonymKey, Vec<Stamped>)],
+) -> GovernanceState {
+    crate::merge::merge(cert, &ops_in_order(subkeys))
+}
+
+/// `ops` without the ones `drop` picks, each survivor's deps re-pointed
+/// past them (a dropped op's deps stand in for it); hashes and lamports
+/// are kept, so the survivors are the same ops as in `ops`.
+#[must_use]
+pub fn without(ops: &[VerifiedOp], drop: impl Fn(&VerifiedOp) -> bool) -> Vec<VerifiedOp> {
+    let mut dropped: std::collections::HashMap<OpHash, Vec<OpRef>> =
+        std::collections::HashMap::new();
+    let mut out = Vec::new();
+    for o in ops {
+        let mut deps: Vec<OpRef> = Vec::new();
+        for d in &o.op().deps {
+            match dropped.get(&d.op_hash) {
+                Some(through) => deps.extend(through.iter().cloned()),
+                None => deps.push(d.clone()),
+            }
+        }
+        deps.dedup_by_key(|d| d.op_hash);
+        if drop(o) {
+            dropped.insert(o.hash(), deps);
+            continue;
+        }
+        let mut op = o.op().clone();
+        op.deps = deps;
+        out.push(VerifiedOp::assume_verified(op, o.hash(), o.lamport()));
+    }
+    out
 }

@@ -64,9 +64,10 @@ pub fn check_active_invites_cap(state: &GovernanceState, inviter: &PseudonymKey)
 
 /// Reject invites whose declared reuse count exceeds the hard cap.
 /// Reader-validates: even a creator-bypass writer cannot smuggle a
-/// `max_uses = u32::MAX` entry past honest peers.
+/// `max_uses = u32::MAX` entry past honest peers. `max_uses = 0` is not
+/// "unlimited": unlimited invites are forbidden, so 0 is refused too.
 pub fn check_max_uses_cap(max_uses: u32) -> bool {
-    max_uses <= MAX_USES_PER_INVITE
+    (1..=MAX_USES_PER_INVITE).contains(&max_uses)
 }
 
 #[cfg(test)]
@@ -151,6 +152,7 @@ mod tests {
 
     #[test]
     fn max_uses_cap_rejects_high_values() {
+        assert!(!check_max_uses_cap(0), "no unlimited invites");
         assert!(check_max_uses_cap(1));
         assert!(check_max_uses_cap(MAX_USES_PER_INVITE));
         assert!(!check_max_uses_cap(MAX_USES_PER_INVITE + 1));

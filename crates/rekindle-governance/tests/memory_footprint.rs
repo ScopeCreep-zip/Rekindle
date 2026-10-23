@@ -32,34 +32,43 @@ const BUDGET_MB: usize = 200;
 fn synthetic_state() -> GovernanceState {
     let creator = PseudonymKey([0x33u8; 32]);
     let mut entries = Vec::with_capacity(ENTRY_COUNT);
-    entries.push(at(1, GovernanceEntry::CommunityMeta {
-        name: Some("MemTest".into()),
-        description: Some("memory budget regression target".repeat(8)),
-        icon_hash: None,
-        banner_hash: None,
-    }));
-    entries.push(at(2, GovernanceEntry::RoleDefinition {
-        role_id: RoleId([0u8; 16]),
-        name: "@everyone".into(),
-        permissions: permissions::SEND_MESSAGES | permissions::READ_HISTORY,
-        position: 0,
-        color: 0,
-        hoist: false,
-        mentionable: false,
-        self_assignable: false,
-        exclusion_group: None,
-    }));
+    entries.push(at(
+        1,
+        GovernanceEntry::CommunityMeta {
+            name: Some("MemTest".into()),
+            description: Some("memory budget regression target".repeat(8)),
+            icon_hash: None,
+            banner_hash: None,
+        },
+    ));
+    entries.push(at(
+        2,
+        GovernanceEntry::RoleDefinition {
+            role_id: RoleId([0u8; 16]),
+            name: "@everyone".into(),
+            permissions: permissions::SEND_MESSAGES | permissions::READ_HISTORY,
+            position: 0,
+            color: 0,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+        },
+    ));
     let mut lamport: u64 = 3;
     for i in 0..(ENTRY_COUNT - 2) {
         let author_byte = u8::try_from(i % 50).unwrap_or(0).wrapping_add(1);
-        entries.push(at(lamport, GovernanceEntry::RoleAssignment {
-            target: PseudonymKey([author_byte; 32]),
-            role_id: RoleId([0u8; 16]),
-        }));
+        entries.push(at(
+            lamport,
+            GovernanceEntry::RoleAssignment {
+                target: PseudonymKey([author_byte; 32]),
+                role_id: RoleId([0u8; 16]),
+            },
+        ));
         lamport += 1;
     }
-    let subkeys = vec![(creator, entries)];
-    merge_entries(&subkeys)
+    let subkeys = vec![(creator.clone(), entries)];
+    merge_entries(&creator, &subkeys)
 }
 
 /// Conservative shallow estimate of the governance state size — not a

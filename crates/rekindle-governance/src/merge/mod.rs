@@ -170,10 +170,6 @@ fn apply(
         | G::MemberRecordMoved { .. }
         | G::MemberLeft {}
         | G::MemberRemoved { .. } => apply_membership(author, entry, stamp, state),
-        // `validate_write` already refused any write after the first,
-        // so reaching here means this is the creator's one-and-only
-        // policy entry.
-        G::AdmissionPolicy { mode, .. } => state.admission_mode = Some(*mode),
         G::CommunityMeta { .. }
         | G::CommunityNotificationDefault { .. }
         | G::MEKGenerationBump { .. }
@@ -198,7 +194,7 @@ fn apply(
         | G::AutoModRule { .. } => apply_moderation(entry, stamp, state),
         G::ModReport { .. } => apply_mod_report(author, entry, stamp, state),
         G::OnboardingConfig { .. } | G::WelcomeScreen { .. } => {
-            apply_onboarding(entry, stamp, state)
+            apply_onboarding(entry, stamp, state);
         }
         G::RoleDefinition { .. }
         | G::RoleAssignment { .. }

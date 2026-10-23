@@ -27,23 +27,29 @@ fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<Stamped>)> {
 
     // Genesis: creator at lamport 1, role at 2.
     let creator_entries = vec![
-        at(1, GovernanceEntry::CommunityMeta {
-            name: Some("Perf Test Community".to_string()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-        }),
-        at(2, GovernanceEntry::RoleDefinition {
-            role_id: RoleId([0u8; 16]),
-            name: "@everyone".into(),
-            permissions: permissions::SEND_MESSAGES | permissions::READ_HISTORY,
-            position: 0,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }),
+        at(
+            1,
+            GovernanceEntry::CommunityMeta {
+                name: Some("Perf Test Community".to_string()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            },
+        ),
+        at(
+            2,
+            GovernanceEntry::RoleDefinition {
+                role_id: RoleId([0u8; 16]),
+                name: "@everyone".into(),
+                permissions: permissions::SEND_MESSAGES | permissions::READ_HISTORY,
+                position: 0,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        ),
     ];
     by_author.insert(creator.clone(), creator_entries);
 
@@ -55,10 +61,13 @@ fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<Stamped>)> {
         let author = PseudonymKey([author_byte; 32]);
         let target = PseudonymKey([author_byte; 32]);
         let role = RoleId([0u8; 16]);
-        let entry = at(lamport, GovernanceEntry::RoleAssignment {
-            target,
-            role_id: role,
-        });
+        let entry = at(
+            lamport,
+            GovernanceEntry::RoleAssignment {
+                target,
+                role_id: role,
+            },
+        );
         by_author.entry(author).or_default().push(entry);
         lamport += 1;
     }
@@ -70,7 +79,7 @@ fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<Stamped>)> {
 fn merge_10k_entries_completes_within_budget() {
     let subkeys = gen_synthetic_entries(ENTRY_COUNT);
     let started = std::time::Instant::now();
-    let _ = merge_entries(&subkeys);
+    let _ = merge_entries(&PseudonymKey([0x42u8; 32]), &subkeys);
     let elapsed = started.elapsed();
 
     // Spec target: <10ms in release. Debug-mode is ~5–10× slower; we

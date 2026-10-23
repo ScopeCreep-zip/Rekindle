@@ -68,12 +68,6 @@ pub fn well_formed(
         } if state.creator.as_ref() != Some(writer) => {
             return false;
         }
-        // Settable once. The creator is the only one who may set it at
-        // all, but not repeatedly — otherwise the mode is mutable after
-        // the fact and the immutability guarantee is empty.
-        GovernanceEntry::AdmissionPolicy { .. } if state.admission_mode.is_some() => {
-            return false;
-        }
         // Invite caps are ceilings on the protocol, not a permission the
         // creator outranks. `invite_quota`'s own doc claims "even a
         // creator-bypass writer cannot smuggle a `max_uses = u32::MAX`
@@ -158,12 +152,6 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         GovernanceEntry::MemberApproved { .. } | GovernanceEntry::MemberRejected { .. } => {
             has(perms, KICK_MEMBERS)
         }
-
-        // Only the creator sets the mode, and the settable-once half is
-        // enforced above (before the creator bypass). Reaching here means
-        // a non-creator tried, which never succeeds — so a
-        // MANAGE_COMMUNITY holder cannot open a private community.
-        GovernanceEntry::AdmissionPolicy { .. } => false,
 
         GovernanceEntry::ChannelCreated { .. }
         | GovernanceEntry::ChannelArchived { .. }

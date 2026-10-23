@@ -49,7 +49,7 @@ fn expression_or_set_remove_with_higher_lamport_wins() {
         at(4, GovernanceEntry::ExpressionRemoved { expression_id }),
     ];
 
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(!state.expressions.contains_key(&expression_id));
 }
 
@@ -100,7 +100,7 @@ fn expression_or_set_add_after_remove_reappears() {
         ),
     ];
 
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let expression = state
         .expressions
         .get(&expression_id)
@@ -137,7 +137,7 @@ fn attachment_pin_lww_pin_then_unpin_then_repin() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(state.pinned_attachments.contains(&attachment_id));
     assert_eq!(
         state
@@ -176,7 +176,7 @@ fn attachment_pin_out_of_order_arrival_converges() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(state.pinned_attachments.contains(&attachment_id));
     assert_eq!(
         state
@@ -207,7 +207,7 @@ fn attachment_unpin_at_highest_lamport_clears() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(!state.pinned_attachments.contains(&attachment_id));
     assert_eq!(
         state
@@ -246,7 +246,7 @@ fn attachment_pin_independent_per_attachment() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(state.pinned_attachments.contains(&id_a));
     assert!(state.pinned_attachments.contains(&id_b));
 }

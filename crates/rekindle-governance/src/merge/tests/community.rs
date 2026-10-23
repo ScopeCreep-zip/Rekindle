@@ -27,7 +27,7 @@ fn mek_generation_advances_by_one() {
         bump(u64::MAX, 5),
         bump(3, 6),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert_eq!(state.mek_generation, 3);
 }
 
@@ -36,7 +36,13 @@ fn mek_generation_advances_by_one() {
 fn mek_bump_needs_a_rotation_permission() {
     let creator = pseudo(1);
     let member = pseudo(2);
-    let state = merge_entries(&[(creator, vec![meta_entry(1)]), (member, vec![bump(1, 2)])]);
+    let state = merge_entries(
+        &creator,
+        &[
+            (creator.clone(), vec![meta_entry(1)]),
+            (member, vec![bump(1, 2)]),
+        ],
+    );
     assert_eq!(state.mek_generation, 0);
 }
 
@@ -81,7 +87,7 @@ fn community_policy_lww_keeps_highest_lamport() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let policy = state.community_policy.expect("policy must be set");
     assert_eq!(policy.stamp.lamport, 5);
     assert_eq!(policy.policy_text.as_deref(), Some("v2"));

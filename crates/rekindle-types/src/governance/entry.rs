@@ -25,9 +25,9 @@ use super::onboarding::{GuideStep, OnboardingQuestion, WelcomeChannel};
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum AdmissionMode {
-    /// Anyone holding a valid invite joins without review. The default
-    /// when a community has no `AdmissionPolicy` genesis entry, which is
-    /// every community created before this existed.
+    /// Anyone holding a valid invite joins without review. The mode is
+    /// pinned by `GenesisCert.policy` (plan E3.2 decision (b)), so it is
+    /// immutable; there is no admission-policy entry.
     #[default]
     Open,
     /// A `MemberJoined` must be matched by `MemberApproved` from a
@@ -178,16 +178,6 @@ pub enum GovernanceEntry {
         target: PseudonymKey,
         reason: Option<String>,
     },
-
-    /// Whether the community admits members freely or by approval.
-    ///
-    /// **Honored only as the genesis entry.** A later one is ignored by
-    /// every honest peer, which is what makes the mode immutable — the
-    /// point of putting it here rather than on `CommunityPolicy`, whose
-    /// LWW semantics would let anyone holding `MANAGE_COMMUNITY`
-    /// silently flip a private community open. Jami fixes conversation
-    /// mode in the initial commit for the same reason.
-    AdmissionPolicy { mode: AdmissionMode },
 
     /// Timeout a member temporarily. Strips all permissions except view.
     TimeoutEntry {

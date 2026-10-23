@@ -18,7 +18,7 @@
 //! this one asserts the concrete fan-out shape Plate Gate must produce.
 
 use rekindle_governance::fixture::{at, merge_entries, Stamped};
-use rekindle_governance::{validate::validate_write};
+use rekindle_governance::validate::validate_write;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::permissions::{ADMINISTRATOR, SEND_MESSAGES, VIEW_CHANNELS};
@@ -45,60 +45,81 @@ fn member_role_id() -> RoleId {
 
 fn admin_entries() -> Vec<Stamped> {
     vec![
-        at(1, GovernanceEntry::CommunityMeta {
-            name: Some("plate-gate-e2e".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-        }),
+        at(
+            1,
+            GovernanceEntry::CommunityMeta {
+                name: Some("plate-gate-e2e".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            },
+        ),
         // Two roles: admin (full perms) and everyone (send + view).
-        at(2, GovernanceEntry::RoleDefinition {
-            role_id: admin_role_id(),
-            name: "admin".into(),
-            permissions: ADMINISTRATOR,
-            position: 1,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }),
-        at(3, GovernanceEntry::RoleDefinition {
-            role_id: member_role_id(),
-            name: "everyone".into(),
-            permissions: VIEW_CHANNELS | SEND_MESSAGES,
-            position: 0,
-            color: 0,
-            hoist: false,
-            mentionable: false,
-            self_assignable: false,
-            exclusion_group: None,
-        }),
-        at(4, GovernanceEntry::RoleAssignment {
-            target: admin_pseudonym(),
-            role_id: admin_role_id(),
-        }),
-        at(5, GovernanceEntry::RoleAssignment {
-            target: joiner_pseudonym(),
-            role_id: member_role_id(),
-        }),
-        at(6, GovernanceEntry::ChannelCreated {
-            channel_id: channel_id(),
-            name: "general".into(),
-            channel_type: "text".into(),
-            record_key: "VLD0:CH-SEGMENT-0".into(),
-            category_id: None,
-            position: 0,
-            parent_voice_channel_id: None,
-        }),
+        at(
+            2,
+            GovernanceEntry::RoleDefinition {
+                role_id: admin_role_id(),
+                name: "admin".into(),
+                permissions: ADMINISTRATOR,
+                position: 1,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        ),
+        at(
+            3,
+            GovernanceEntry::RoleDefinition {
+                role_id: member_role_id(),
+                name: "everyone".into(),
+                permissions: VIEW_CHANNELS | SEND_MESSAGES,
+                position: 0,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+        ),
+        at(
+            4,
+            GovernanceEntry::RoleAssignment {
+                target: admin_pseudonym(),
+                role_id: admin_role_id(),
+            },
+        ),
+        at(
+            5,
+            GovernanceEntry::RoleAssignment {
+                target: joiner_pseudonym(),
+                role_id: member_role_id(),
+            },
+        ),
+        at(
+            6,
+            GovernanceEntry::ChannelCreated {
+                channel_id: channel_id(),
+                name: "general".into(),
+                channel_type: "text".into(),
+                record_key: "VLD0:CH-SEGMENT-0".into(),
+                category_id: None,
+                position: 0,
+                parent_voice_channel_id: None,
+            },
+        ),
         // Architecture §15.2: admin writes the segment expansion entry.
-        at(7, GovernanceEntry::SegmentAdded {
-            segment_index: 1,
-            registry_key: "VLD0:REG-1".into(),
-            governance_key: "VLD0:GOV-1".into(),
-            slot_range_start: 255,
-            slot_range_end: 510,
-        }),
+        at(
+            7,
+            GovernanceEntry::SegmentAdded {
+                segment_index: 1,
+                registry_key: "VLD0:REG-1".into(),
+                governance_key: "VLD0:GOV-1".into(),
+                slot_range_start: 255,
+                slot_range_end: 510,
+            },
+        ),
     ]
 }
 
@@ -107,20 +128,26 @@ fn joiner_entries() -> Vec<Stamped> {
         // Architecture §15.4: the first segment-N message in a channel
         // also emits a ChannelSegmentLinked governance entry so other
         // members open + watch the new SMPL record.
-        at(10, GovernanceEntry::ChannelSegmentLinked {
-            channel_id: channel_id(),
-            segment_index: 1,
-            record_key: "VLD0:CH-SEGMENT-1".into(),
-        }),
+        at(
+            10,
+            GovernanceEntry::ChannelSegmentLinked {
+                channel_id: channel_id(),
+                segment_index: 1,
+                record_key: "VLD0:CH-SEGMENT-1".into(),
+            },
+        ),
     ]
 }
 
 #[test]
 fn segment1_record_appears_in_state_and_validates() {
-    let state = merge_entries(&[
-        (admin_pseudonym(), admin_entries()),
-        (joiner_pseudonym(), joiner_entries()),
-    ]);
+    let state = merge_entries(
+        &admin_pseudonym(),
+        &[
+            (admin_pseudonym(), admin_entries()),
+            (joiner_pseudonym(), joiner_entries()),
+        ],
+    );
 
     // Segment 1's expansion landed.
     assert_eq!(state.segments.len(), 1);
@@ -166,18 +193,27 @@ fn channel_segment_linked_lww_resolves_first_writer_race() {
     let racer_a = PseudonymKey([0xCA; 32]);
     let racer_b = PseudonymKey([0xCB; 32]);
     let mut a_entries = admin_entries();
-    a_entries.push(at(11, GovernanceEntry::ChannelSegmentLinked {
-        channel_id: channel_id(),
-        segment_index: 1,
-        record_key: "VLD0:RACER-A".into(),
-    }));
-    let b_entries = vec![at(12, GovernanceEntry::ChannelSegmentLinked {
-        channel_id: channel_id(),
-        segment_index: 1,
-        record_key: "VLD0:RACER-B".into(),
-    })];
+    a_entries.push(at(
+        11,
+        GovernanceEntry::ChannelSegmentLinked {
+            channel_id: channel_id(),
+            segment_index: 1,
+            record_key: "VLD0:RACER-A".into(),
+        },
+    ));
+    let b_entries = vec![at(
+        12,
+        GovernanceEntry::ChannelSegmentLinked {
+            channel_id: channel_id(),
+            segment_index: 1,
+            record_key: "VLD0:RACER-B".into(),
+        },
+    )];
 
-    let state = merge_entries(&[(admin_pseudonym(), a_entries), (racer_b.clone(), b_entries)]);
+    let state = merge_entries(
+        &admin_pseudonym(),
+        &[(admin_pseudonym(), a_entries), (racer_b.clone(), b_entries)],
+    );
     let _ = racer_a;
     let record = state
         .channel_segment_records

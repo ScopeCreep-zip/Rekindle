@@ -44,7 +44,7 @@ fn ban_unban_lww() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(!state.bans.contains(&target), "unban should reverse ban");
 }
 
@@ -86,7 +86,7 @@ fn timeout_lww() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let timeout = state.timeouts.get(&target).unwrap();
     assert_eq!(timeout.duration_seconds, 3600);
     assert!(!timeout.is_expired(1500));
@@ -137,6 +137,6 @@ fn remove_timeout_clears_active_timeout() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert!(!state.timeouts.contains_key(&target));
 }

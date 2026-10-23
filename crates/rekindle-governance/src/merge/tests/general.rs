@@ -4,10 +4,14 @@ use super::*;
 
 #[test]
 fn empty_merge() {
-    let state = merge_entries(&[]);
+    let state = merge_entries(&pseudo(1), &[]);
     assert!(state.channels.is_empty());
     assert!(state.roles.is_empty());
-    assert!(state.creator.is_none());
+    assert_eq!(
+        state.creator,
+        Some(pseudo(1)),
+        "the creator comes from the cert alone"
+    );
 }
 
 #[test]
@@ -22,7 +26,7 @@ fn genesis_sets_creator() {
             banner_hash: None,
         },
     )];
-    let state = merge_entries(&[(creator.clone(), entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert_eq!(state.creator, Some(creator));
     assert_eq!(state.metadata.unwrap().name, "Test");
 }
@@ -83,13 +87,19 @@ fn multi_member_merge_converges() {
     )];
 
     // Order A, B
-    let state1 = merge_entries(&[
-        (member_a.clone(), a_entries.clone()),
-        (member_b.clone(), b_entries.clone()),
-    ]);
+    let state1 = merge_entries(
+        &member_a,
+        &[
+            (member_a.clone(), a_entries.clone()),
+            (member_b.clone(), b_entries.clone()),
+        ],
+    );
 
     // Order B, A — should produce same result
-    let state2 = merge_entries(&[(member_b, b_entries), (member_a, a_entries)]);
+    let state2 = merge_entries(
+        &member_a,
+        &[(member_b, b_entries), (member_a.clone(), a_entries)],
+    );
 
     assert_eq!(
         state1, state2,

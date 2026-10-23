@@ -5,10 +5,11 @@
 use proptest::prelude::*;
 use rekindle_types::governance::{AdmissionMode, GovernanceEntry, InviteProof};
 use rekindle_types::id::{PseudonymKey, RoleId};
-use rekindle_types::permissions::{KICK_MEMBERS, MANAGE_COMMUNITY};
+use rekindle_types::permissions::{KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
 
 use super::{merge, merge_outcome};
 use crate::fixture::{cert, op, op_at};
+use crate::invite_quota::MAX_USES_PER_INVITE;
 use crate::op::VerifiedOp;
 use crate::power::{class_of, OpClass};
 
@@ -31,7 +32,7 @@ fn role(id: u8, position: u32) -> GovernanceEntry {
     GovernanceEntry::RoleDefinition {
         role_id: RoleId([id; 16]),
         name: format!("r{id}"),
-        permissions: KICK_MEMBERS | MANAGE_COMMUNITY,
+        permissions: VIEW_CHANNELS | KICK_MEMBERS | MANAGE_COMMUNITY,
         position,
         color: 0,
         hoist: false,
@@ -78,7 +79,7 @@ fn meta(name: &str) -> GovernanceEntry {
 /// ops and the head everyone has seen.
 fn community() -> Vec<VerifiedOp> {
     let c0 = op(&pk(1), 0, &[], 0, joined(None));
-    let c1 = op(&pk(1), 1, &[&c0], 1, invite(0));
+    let c1 = op(&pk(1), 1, &[&c0], 1, invite(MAX_USES_PER_INVITE));
     let a0 = op(&pk(2), 0, &[&c1], 2, joined(Some("code")));
     let b0 = op(&pk(3), 0, &[&c1], 3, joined(Some("code")));
     let d0 = op(&pk(4), 0, &[&c1], 4, joined(Some("code")));
@@ -93,7 +94,7 @@ fn head(ops: &[VerifiedOp]) -> &VerifiedOp {
     ops.last().expect("ops")
 }
 
-fn find<'a>(ops: &'a [VerifiedOp], author: u8, seq: u64) -> &'a VerifiedOp {
+fn find(ops: &[VerifiedOp], author: u8, seq: u64) -> &VerifiedOp {
     ops.iter()
         .find(|o| o.author() == &pk(author) && o.op().seq == seq)
         .expect("op")
@@ -150,7 +151,7 @@ fn invite_max_uses_caps_joins() {
 #[test]
 fn approval_required_holds_joiners_pending() {
     let c0 = op(&pk(1), 0, &[], 0, joined(None));
-    let c1 = op(&pk(1), 1, &[&c0], 1, invite(0));
+    let c1 = op(&pk(1), 1, &[&c0], 1, invite(MAX_USES_PER_INVITE));
     let a0 = op(&pk(2), 0, &[&c1], 2, joined(Some("code")));
     let b0 = op(&pk(3), 0, &[&c1], 3, joined(Some("code")));
     let a1 = op(&pk(2), 1, &[&a0, &b0], 4, assign(2, 6));
@@ -219,16 +220,49 @@ fn rejoin_after_removal_is_allowed_and_concurrent_acts_stay_void() {
 }
 
 #[test]
-fn equal_rank_managers_cannot_kick_each_other() {
-    // The built hierarchy rule (target rank < writer rank) refuses both
-    // halves of a mutual kick between equal ranks, so both stay.
+fn strong_removal_chains_transitively() {
+    // Under the hierarchy (target rank < writer rank) a mutual kick is
+    // refused on both sides, so the case that matters is the chain
+    // (decision (a), p2panda-auth): A (2, rank 6) removes B (3, rank 5)
+    // concurrently with B removing C (5, rank 4), while C, unaware, kicks
+    // member 4. B's removal of C is invalidated, so C stays a manager and
+    // C's kick, no longer under a valid removal, applies.
     let mut ops = community();
-    let peer = op(&pk(1), 6, &[head(&ops)], 50, assign(3, 6));
-    let k2 = op(&pk(2), 1, &[&peer, find(&ops, 2, 0)], 51, kick(3));
-    let k3 = op(&pk(3), 1, &[&peer, find(&ops, 3, 0)], 52, kick(2));
-    ops.extend([peer, k2, k3]);
-    let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
-    assert!(state.members.contains_key(&pk(2)) && state.members.contains_key(&pk(3)));
+    let c_join = op(&pk(5), 0, &[head(&ops)], 50, joined(Some("code")));
+    let c_role = op(&pk(1), 6, &[&c_join], 51, role(4, 4));
+    let c_assign = op(&pk(1), 7, &[&c_role], 52, assign(5, 4));
+    ops.extend([c_join, c_role, c_assign]);
+    let seen = head(&ops).clone();
+    let a = op(&pk(2), 1, &[&seen, find(&ops, 2, 0)], 53, kick(3));
+    let b = op(&pk(3), 1, &[&seen, find(&ops, 3, 0)], 54, kick(5));
+    let c = op(&pk(5), 1, &[&seen, find(&ops, 5, 0)], 55, kick(4));
+    ops.extend([a.clone(), b.clone(), c.clone()]);
+    let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
+    assert!(!outcome.state.members.contains_key(&pk(3)), "A removed B");
+    assert!(
+        outcome.refused.contains(&b.hash()),
+        "B's removal of C is void"
+    );
+    assert!(outcome.state.members.contains_key(&pk(5)), "C stays");
+    assert!(outcome.applied.contains(&c.hash()), "C's own kick stands");
+    assert!(!outcome.state.members.contains_key(&pk(4)));
+}
+
+#[test]
+fn an_invite_without_a_use_cap_is_refused() {
+    let c0 = op(&pk(1), 0, &[], 0, joined(None));
+    let c1 = op(&pk(1), 1, &[&c0], 1, invite(0));
+    let a0 = op(&pk(2), 0, &[&c1], 2, joined(Some("code")));
+    let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &[c0, c1.clone(), a0]);
+    assert!(
+        outcome.refused.contains(&c1.hash()),
+        "max_uses 0 is not unlimited"
+    );
+    assert!(outcome.state.invites.is_empty());
+    assert!(
+        !outcome.state.members.contains_key(&pk(2)),
+        "no live invite"
+    );
 }
 
 #[test]

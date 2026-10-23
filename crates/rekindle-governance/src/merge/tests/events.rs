@@ -45,7 +45,7 @@ fn thread_prefers_populated_record_key() {
         ),
     ];
 
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     assert_eq!(
         state
             .threads
@@ -86,7 +86,7 @@ fn thread_archive_sets_tombstone_without_removing_thread() {
         at(5, GovernanceEntry::ThreadArchived { thread_id }),
     ];
 
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let thread = state
         .threads
         .get(&thread_id)
@@ -125,7 +125,7 @@ fn thread_archive_with_lower_lamport_is_ignored() {
         at(4, GovernanceEntry::ThreadArchived { thread_id }),
     ];
 
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let thread = state
         .threads
         .get(&thread_id)
@@ -192,14 +192,17 @@ mod rsvps {
 
     #[test]
     fn each_member_keeps_their_latest_answer() {
-        let state = merge_entries(&[
-            (pseudo(1), vec![meta(), created(2)]),
-            (
-                pseudo(2),
-                vec![rsvp(RsvpStatus::Going, 3), rsvp(RsvpStatus::Declined, 5)],
-            ),
-            (pseudo(3), vec![rsvp(RsvpStatus::Interested, 4)]),
-        ]);
+        let state = merge_entries(
+            &pseudo(1),
+            &[
+                (pseudo(1), vec![meta(), created(2)]),
+                (
+                    pseudo(2),
+                    vec![rsvp(RsvpStatus::Going, 3), rsvp(RsvpStatus::Declined, 5)],
+                ),
+                (pseudo(3), vec![rsvp(RsvpStatus::Interested, 4)]),
+            ],
+        );
         assert_eq!(
             statuses(&state),
             vec![
@@ -211,17 +214,20 @@ mod rsvps {
 
     #[test]
     fn archiving_the_event_clears_its_rsvps() {
-        let state = merge_entries(&[
-            (
-                pseudo(1),
-                vec![
-                    meta(),
-                    created(2),
-                    at(6, GovernanceEntry::EventArchived { event_id: EVENT }),
-                ],
-            ),
-            (pseudo(2), vec![rsvp(RsvpStatus::Going, 3)]),
-        ]);
+        let state = merge_entries(
+            &pseudo(1),
+            &[
+                (
+                    pseudo(1),
+                    vec![
+                        meta(),
+                        created(2),
+                        at(6, GovernanceEntry::EventArchived { event_id: EVENT }),
+                    ],
+                ),
+                (pseudo(2), vec![rsvp(RsvpStatus::Going, 3)]),
+            ],
+        );
         assert!(!state.event_rsvps.contains_key(&EVENT));
         assert!(statuses(&state).is_empty());
     }
@@ -231,42 +237,51 @@ mod rsvps {
     /// is live, on every peer alike.
     #[test]
     fn an_rsvp_merged_before_the_surviving_create_still_counts() {
-        let state = merge_entries(&[
-            (pseudo(1), vec![meta(), created(9)]),
-            (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
-        ]);
+        let state = merge_entries(
+            &pseudo(1),
+            &[
+                (pseudo(1), vec![meta(), created(9)]),
+                (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
+            ],
+        );
         assert_eq!(statuses(&state), vec![(pseudo(2), RsvpStatus::Going)]);
     }
 
     #[test]
     fn rsvps_of_events_that_are_not_live_are_not_shown() {
-        let state = merge_entries(&[
-            (pseudo(1), vec![meta()]),
-            (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
-        ]);
+        let state = merge_entries(
+            &pseudo(1),
+            &[
+                (pseudo(1), vec![meta()]),
+                (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
+            ],
+        );
         assert!(state.event_rsvps.contains_key(&EVENT));
         assert!(state.live_event_rsvps().is_empty());
     }
 
     #[test]
     fn a_banned_member_cannot_rsvp() {
-        let state = merge_entries(&[
-            (
-                pseudo(1),
-                vec![
-                    meta(),
-                    created(2),
-                    at(
-                        3,
-                        GovernanceEntry::BanEntry {
-                            target: pseudo(2),
-                            reason: None,
-                        },
-                    ),
-                ],
-            ),
-            (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
-        ]);
+        let state = merge_entries(
+            &pseudo(1),
+            &[
+                (
+                    pseudo(1),
+                    vec![
+                        meta(),
+                        created(2),
+                        at(
+                            3,
+                            GovernanceEntry::BanEntry {
+                                target: pseudo(2),
+                                reason: None,
+                            },
+                        ),
+                    ],
+                ),
+                (pseudo(2), vec![rsvp(RsvpStatus::Going, 4)]),
+            ],
+        );
         assert!(statuses(&state).is_empty());
     }
 }

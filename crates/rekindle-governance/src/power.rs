@@ -34,8 +34,7 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         | G::RemoveTimeoutEntry { .. }
         | G::MemberApproved { .. }
         | G::MemberRejected { .. }
-        | G::MemberRemoved { .. }
-        | G::AdmissionPolicy { .. } => OpClass::Power,
+        | G::MemberRemoved { .. } => OpClass::Power,
         G::ChannelCreated { .. }
         | G::ChannelArchived { .. }
         | G::ChannelUpdated { .. }

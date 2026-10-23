@@ -6,8 +6,10 @@
 //! Property-based convergence tests for the CRDT merge engine.
 
 use super::*;
-use crate::fixture::{at, merge_entries, Stamped};
+use crate::fixture::{at, cert, merge_entries, ops_in_order, without, Stamped};
+use crate::op::VerifiedOp;
 use proptest::prelude::*;
+use rekindle_types::governance::AdmissionMode;
 use rekindle_types::id::{ChannelId, RoleId, ThreadId};
 
 fn arb_pseudonym() -> impl Strategy<Value = PseudonymKey> {
@@ -244,8 +246,12 @@ proptest! {
             kept.push((author.clone(), within.collect()));
             raw.push((author, entries));
         }
-        let state = merge_entries(&raw);
-        prop_assert_eq!(&state, &merge_entries(&kept));
+        let _ = kept;
+        let cert = cert(&creator, AdmissionMode::default());
+        let ops = ops_in_order(&raw);
+        let state = merge(&cert, &ops);
+        let within = without(&ops, |o| !bounds::entry_within_bounds(o.body()));
+        prop_assert_eq!(&state, &merge(&cert, &within));
         for ch in state.channels.values() {
             prop_assert!(ch.slowmode_seconds.is_none_or(bounds::slowmode_ok));
         }
@@ -265,13 +271,13 @@ proptest! {
         entries_a in prop::collection::vec(arb_entry(), 1..5),
         entries_b in prop::collection::vec(arb_entry(), 0..3),
     ) {
-        let state1 = merge_entries(&[
+        let state1 = merge_entries(&author_a, &[
             (author_a.clone(), entries_a.clone()),
             (author_b.clone(), entries_b.clone()),
         ]);
-        let state2 = merge_entries(&[
-            (author_b, entries_b),
-            (author_a, entries_a),
+        let state2 = merge_entries(&author_a, &[
+            (author_b.clone(), entries_b),
+            (author_a.clone(), entries_a),
         ]);
         prop_assert_eq!(state1, state2);
     }
@@ -282,12 +288,10 @@ proptest! {
         author in arb_pseudonym(),
         entries in prop::collection::vec(arb_entry(), 1..5),
     ) {
-        let state1 = merge_entries(&[(author.clone(), entries.clone())]);
-        let state2 = merge_entries(&[
-            (author.clone(), entries.clone()),
-            (author, entries),
-        ]);
-        prop_assert_eq!(state1, state2);
+        let cert = cert(&author, AdmissionMode::default());
+        let ops = ops_in_order(&[(author, entries)]);
+        let twice: Vec<VerifiedOp> = ops.iter().chain(ops.iter()).cloned().collect();
+        prop_assert_eq!(merge(&cert, &ops), merge(&cert, &twice));
     }
 
     #[test]
@@ -332,7 +336,7 @@ proptest! {
             thread_id,
         });
 
-        let state1 = merge_entries(&[(
+        let state1 = merge_entries(&creator, &[(
             creator.clone(),
             vec![
                 community_meta.clone(),
@@ -341,8 +345,8 @@ proptest! {
                 archive.clone(),
             ],
         )]);
-        let state2 = merge_entries(&[(
-            creator,
+        let state2 = merge_entries(&creator, &[(
+            creator.clone(),
             vec![
                 community_meta,
                 archive,
@@ -405,8 +409,8 @@ proptest! {
         let mut reverse = vec![community_meta];
         reverse.extend(segment_entries.iter().rev().cloned());
 
-        let state_forward = merge_entries(&[(creator.clone(), forward)]);
-        let state_reverse = merge_entries(&[(creator, reverse)]);
+        let state_forward = merge_entries(&creator, &[(creator.clone(), forward)]);
+        let state_reverse = merge_entries(&creator, &[(creator.clone(), reverse)]);
 
         prop_assert_eq!(&state_forward.segments, &state_reverse.segments);
         // Sorted by segment_index ascending (merge.rs:565).

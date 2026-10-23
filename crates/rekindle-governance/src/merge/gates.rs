@@ -69,7 +69,8 @@ fn rejoined(set: &OpSet<'_>, round: &Round, r: usize, o: usize) -> bool {
 /// A `MemberJoined` with an invite proof needs a live `InviteCreated` with
 /// that commitment in its causal past (not revoked there, not expired at
 /// its `issued_at`), and fewer than `max_uses` earlier joins on it
-/// (`max_uses` 0 is unlimited, as on Discord).
+/// (`max_uses` is in `1..=MAX_USES_PER_INVITE`; there are no unlimited
+/// invites).
 fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
     let mut uses: BTreeMap<[u8; 16], u32> = BTreeMap::new();
     for (o, op) in set.ops.iter().enumerate() {
@@ -103,7 +104,7 @@ fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
         });
         let expired = expires_at.is_some_and(|exp| op.op().issued_at > exp);
         let used = uses.entry(invite_id).or_insert(0);
-        if revoked || expired || (max_uses != 0 && *used >= max_uses) {
+        if revoked || expired || *used >= max_uses {
             invalid[o] = true;
         } else if !invalid[o] {
             *used += 1;

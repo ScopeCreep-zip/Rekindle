@@ -7,7 +7,6 @@ use rekindle_types::governance::OpHash;
 use rekindle_types::id::PseudonymKey;
 
 use crate::op::VerifiedOp;
-use crate::validate::bounds;
 
 /// The op set `merge` resolves: complete (every dep present), free of
 /// equivocating forks, in stamp order (which is causal: a dep's lamport is
@@ -79,10 +78,11 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
     let mut deps_of: Vec<Vec<usize>> = Vec::new();
     let mut pending = Vec::new();
     for op in sorted {
+        // An out-of-bounds op stays in the DAG (validation refuses it), so
+        // the ops that cite it are not held pending forever.
         if fork_at
             .get(&op.author().0)
             .is_some_and(|seq| op.op().seq >= *seq)
-            || !bounds::entry_within_bounds(op.body())
         {
             continue;
         }

@@ -45,7 +45,7 @@ fn role_lww_highest_lamport_wins() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let role = state.roles.get(&rid).unwrap();
     assert_eq!(role.name, "new_name");
     assert_eq!(role.permissions, 0xFF);
@@ -96,7 +96,7 @@ fn role_assignment_and_unassignment() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let roles = state.role_assignments.get(&member);
     assert!(
         roles.is_none() || roles.unwrap().is_empty(),
@@ -203,7 +203,7 @@ fn exclusion_group_unassigns_prior_role_in_same_group() {
             },
         ),
     ];
-    let state = merge_entries(&[(creator, entries)]);
+    let state = merge_entries(&creator, &[(creator.clone(), entries)]);
     let assignments = state
         .role_assignments
         .get(&member)
