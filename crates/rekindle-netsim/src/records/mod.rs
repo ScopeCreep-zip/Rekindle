@@ -53,6 +53,8 @@ mod dht;
 mod fanout;
 #[cfg(test)]
 mod fanout_tests;
+#[cfg(test)]
+mod key_tests;
 mod outside;
 #[cfg(test)]
 mod outside_tests;
@@ -128,11 +130,82 @@ impl RecordStore for FakeRecords {
     }
 }
 
-/// A record key in Veilid's text form, from the node's generator.
-pub(crate) fn new_key_text(rng: &dyn RandomSource) -> String {
+/// Veilid's crypto kind `VLD0`, the first bytes a record key hashes.
+const CRYPTO_KIND: [u8; 4] = *b"VLD0";
+
+/// A schema's compiled bytes, as Veilid's `DHTSchema::compile`
+/// (`schema/dflt.rs:48-55`, `schema/smpl.rs:106-122`): the kind's four
+/// bytes, `o_cnt` little-endian, then each SMPL member's id and `m_cnt`
+/// little-endian.
+pub(crate) fn schema_bytes(schema: &RecordSchema) -> Vec<u8> {
+    match schema {
+        RecordSchema::Dflt { owner_subkeys } => {
+            let mut out = b"DFLT".to_vec();
+            out.extend_from_slice(&owner_subkeys.to_le_bytes());
+            out
+        }
+        RecordSchema::Smpl {
+            owner_subkeys,
+            members,
+        } => {
+            let mut out = b"SMPL".to_vec();
+            out.extend_from_slice(&owner_subkeys.to_le_bytes());
+            for member in members {
+                out.extend_from_slice(&member.key);
+                out.extend_from_slice(&member.subkeys.to_le_bytes());
+            }
+            out
+        }
+    }
+}
+
+/// A record key in Veilid's text form, derived as Veilid derives it
+/// (`storage_manager/record_key.rs:67-94`): the opaque key is BLAKE3 over
+/// the crypto kind, the owner's public key and the compiled schema, and the
+/// key text is `VLD0:<opaque>:<encryption key>`, both base64url without
+/// padding (`crypto_typed.rs:76-81`, `record_key.rs:61-67`).
+pub(crate) fn record_key_text(
+    owner: &[u8; 32],
+    schema: &RecordSchema,
+    encryption_key: &[u8; 32],
+) -> String {
+    let mut hash_data = CRYPTO_KIND.to_vec();
+    hash_data.extend_from_slice(owner);
+    hash_data.extend_from_slice(&schema_bytes(schema));
+    let opaque = blake3::hash(&hash_data);
+    format!(
+        "VLD0:{}:{}",
+        URL_SAFE_NO_PAD.encode(opaque.as_bytes()),
+        URL_SAFE_NO_PAD.encode(encryption_key)
+    )
+}
+
+/// A record key text in canonical form, or `None` when it is not
+/// `VLD0:<opaque>` or `VLD0:<opaque>:<encryption key>` with each part 32
+/// bytes (`record_key.rs:100-122`, `check_record_key`).
+pub(crate) fn canonical_key_text(key: &str) -> Option<String> {
+    let part = |text: &str| {
+        URL_SAFE_NO_PAD
+            .decode(text)
+            .ok()
+            .filter(|b| b.len() == 32)
+            .map(|b| URL_SAFE_NO_PAD.encode(b))
+    };
+    let mut parts = key.strip_prefix("VLD0:")?.split(':');
+    let opaque = part(parts.next()?)?;
+    let canonical = match parts.next() {
+        None => format!("VLD0:{opaque}"),
+        Some(secret) => format!("VLD0:{opaque}:{}", part(secret)?),
+    };
+    parts.next().is_none().then_some(canonical)
+}
+
+/// A fresh record encryption key from the node's generator, as Veilid's
+/// `random_shared_secret` in `create_record.rs:88-89`.
+pub(crate) fn new_encryption_key(rng: &dyn RandomSource) -> [u8; 32] {
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes);
-    format!("VLD0:{}", URL_SAFE_NO_PAD.encode(bytes))
+    bytes
 }
 
 /// A public key in Veilid's text form (`RecordValue::writer`).

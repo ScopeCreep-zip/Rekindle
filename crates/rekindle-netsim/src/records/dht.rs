@@ -55,8 +55,6 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
 use rekindle_crypto::keypair_text::keypair_text_from_signing;
 use rekindle_records::port::{
     DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, RecordReport, RecordSchema,
@@ -65,8 +63,8 @@ use rekindle_records::port::{
 use rekindle_utils::RandomSource;
 
 use super::{
-    admits, fanout, new_key_text, public_text, reachable, rehydrate, replicas, size, stores,
-    subkey_count, watches, writer_public,
+    admits, canonical_key_text, fanout, new_encryption_key, public_text, reachable,
+    record_key_text, rehydrate, replicas, size, stores, subkey_count, watches, writer_public,
 };
 use crate::clock::SimRandom;
 use crate::latency::{self, Slot, Span};
@@ -285,12 +283,8 @@ impl DhtBackend for SimDht {
     }
 
     fn check_key(&self, key: &str) -> Result<String, DhtCallError> {
-        let bytes = key
-            .strip_prefix("VLD0:")
-            .and_then(|b| URL_SAFE_NO_PAD.decode(b).ok())
-            .filter(|b| b.len() == 32)
-            .ok_or_else(|| error(DhtErrorKind::ParseError, format!("record key: {key}")))?;
-        Ok(format!("VLD0:{}", URL_SAFE_NO_PAD.encode(bytes)))
+        canonical_key_text(key)
+            .ok_or_else(|| error(DhtErrorKind::ParseError, format!("record key: {key}")))
     }
 
     async fn create(
@@ -319,7 +313,9 @@ impl DhtBackend for SimDht {
         );
         let public =
             writer_public(&owner).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
-        let key = new_key_text(self.rng.as_ref());
+        // The encryption key after the owner, as `create_record.rs:79-89`.
+        let encryption_key = new_encryption_key(self.rng.as_ref());
+        let key = record_key_text(&public, schema, &encryption_key);
         {
             let mut inner = self.net.inner.lock();
             let nodes = inner.nodes.len();
