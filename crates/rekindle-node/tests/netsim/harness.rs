@@ -397,6 +397,27 @@ impl Community {
         })
         .await;
         assert!(listed, "node {i} lists the community");
+        // The invite carries no community key (D11): the join is complete
+        // once the key a member answered with is installed.
+        let keyed = eventually(&self.sim, Duration::from_secs(60), || async {
+            let held = self.mek_list(i).await;
+            !(held.is_null()
+                || held.as_array().is_some_and(Vec::is_empty)
+                || held.as_object().is_some_and(serde_json::Map::is_empty))
+        })
+        .await;
+        assert!(keyed, "node {i} holds the community key");
+    }
+
+    /// Node `i`'s held key generations.
+    pub async fn mek_list(&self, i: usize) -> serde_json::Value {
+        self.nodes[i]
+            .ok(IpcRequest::Community(CommunityRequest::Messages(
+                ChannelMessageRequest::MekList {
+                    community: self.governance_key.clone(),
+                },
+            )))
+            .await
     }
 
     /// Node `i`'s community info.

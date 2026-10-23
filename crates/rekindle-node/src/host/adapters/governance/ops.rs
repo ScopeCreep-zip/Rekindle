@@ -41,7 +41,7 @@ fn fate_of(state: OpState) -> OpFate {
     }
 }
 
-fn pseudonym_of(hex_key: &str) -> Option<PseudonymKey> {
+pub(super) fn pseudonym_of(hex_key: &str) -> Option<PseudonymKey> {
     let bytes = hex::decode(hex_key).ok()?;
     Some(PseudonymKey(<[u8; 32]>::try_from(bytes).ok()?))
 }

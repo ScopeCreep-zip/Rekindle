@@ -225,6 +225,17 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.apply_gossip_plan_impl(community_id, plan);
     }
 
+    fn reachable_mesh_peers(&self, community_id: &str) -> std::collections::HashSet<String> {
+        self.reachable_mesh_peers_impl(community_id)
+    }
+
+    fn on_mesh_peers_gained(&self, community_id: &str, _peers: &[String]) {
+        let deps = std::sync::Arc::new(crate::daemon::mek_rotation::DaemonMekAdapter::new(
+            std::sync::Arc::clone(&self.ctx),
+        ));
+        crate::daemon::dispatch::adapter(&self.ctx).on_mesh_peers_gained(deps, community_id);
+    }
+
     fn extend_online_with_recent_gossip(
         &self,
         community_id: &str,

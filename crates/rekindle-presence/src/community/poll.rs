@@ -263,10 +263,24 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     // lock, then the orchestrator fires the drained envelopes
     // (prevents the send_to_mesh_raw deadlock pre-port documented
     // in poll.rs).
+    let prior_reachable = deps.reachable_mesh_peers(community_id);
+    let mut gained: Vec<String> = online_members
+        .iter()
+        .filter(|(key, member)| {
+            !member.route_blob.is_empty()
+                && **key != creds.my_pseudonym_hex
+                && !prior_reachable.contains(*key)
+        })
+        .map(|(key, _)| key.clone())
+        .collect();
+    gained.sort_unstable();
     let prior_overlay = deps.read_gossip_snapshot(community_id);
     let rebuild = crate::community::compute_rebuild_plan(prior_overlay, selected, online_members);
     if let Some(plan) = rebuild.plan {
         deps.apply_gossip_rebuild_plan(community_id, plan);
+    }
+    if !gained.is_empty() {
+        deps.on_mesh_peers_gained(community_id, &gained);
     }
     if !rebuild.drained_pending.is_empty() {
         tracing::info!(

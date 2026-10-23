@@ -462,6 +462,22 @@ impl CommunityPresenceDeps for PresenceAdapter {
         )
     }
 
+    fn reachable_mesh_peers(&self, community_id: &str) -> std::collections::HashSet<String> {
+        super::gossip_overlay::reachable_mesh_peers(&self.state, community_id)
+    }
+
+    fn on_mesh_peers_gained(&self, community_id: &str, _peers: &[String]) {
+        let (Some(host), Ok(pool)) = (self.state.host.current(), self.state.db.current()) else {
+            return;
+        };
+        let deps = crate::services::mek_adapter::MekAdapter::new(
+            std::sync::Arc::clone(&self.state),
+            self.app_handle.clone(),
+            pool,
+        );
+        host.governance().on_mesh_peers_gained(deps, community_id);
+    }
+
     fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
         super::gossip_overlay::read_gossip_snapshot(&self.state, community_id)
     }

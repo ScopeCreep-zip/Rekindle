@@ -20,6 +20,10 @@ use rekindle_types::id::PseudonymKey;
 use super::moderation::pseudonym;
 use super::HostGovernance;
 
+/// The most `RequestMEK`s parked per community (gossip sender rate limits
+/// bound how fast a non-member can refill it).
+const PARKED_MEK_REQUESTS: usize = 32;
+
 /// One inbound `RequestMEK`, as the wire carries it.
 #[derive(Debug, Clone)]
 pub struct MekRequest {
@@ -92,16 +96,21 @@ impl HostGovernance {
             return Ok(());
         }
         if !self.is_key_reader(community_id, &requester) {
+            self.park_mek_request(community_id, request);
             return Err(format!(
                 "RequestMEK from {} refused: not a member",
                 request.requester_pseudonym
             ));
         }
-        let route_blob = online
+        let Some(route_blob) = online
             .into_iter()
             .find(|r| r.pseudonym_hex == request.requester_pseudonym)
             .map(|r| r.route_blob)
-            .ok_or("requester not in online peer set")?;
+        else {
+            // Its route reaches our overlay with a later presence row.
+            self.park_mek_request(community_id, request);
+            return Err("requester not in online peer set".into());
+        };
         let mek = Self::requested_key(deps, community_id, scope, request.needed_generation)
             .await
             .ok_or_else(|| {
@@ -122,6 +131,68 @@ impl HostGovernance {
         )
         .await
         .map_err(|e| e.to_string())
+    }
+
+    /// Hold `request` until its requester's ops merge: one per requester,
+    /// the oldest dropped past `PARKED_MEK_REQUESTS`.
+    fn park_mek_request(&self, community_id: &str, request: &MekRequest) {
+        let mut map = self.ctx.communities.map().write();
+        let Some(community) = map.get_mut(community_id) else {
+            return;
+        };
+        let parked = &mut community.parked_mek_requests;
+        parked.retain(|r| r.requester_pseudonym != request.requester_pseudonym);
+        if parked.len() >= PARKED_MEK_REQUESTS {
+            parked.remove(0);
+        }
+        parked.push(request.clone());
+    }
+
+    /// The overlay of `community_id` gained a reachable peer: catch
+    /// ourselves up (`catch_up_on_peer`) and answer what we parked for it.
+    pub fn on_mesh_peers_gained<D>(&self, deps: std::sync::Arc<D>, community_id: &str)
+    where
+        D: MekDistributeDeps + Send + Sync + 'static,
+    {
+        use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+        self.catch_up_on_peer(community_id);
+        let host = self.clone();
+        let community = community_id.to_owned();
+        self.scope()
+            .spawn_or_drop("parked key requests", async move {
+                host.answer_parked_mek_requests(deps.as_ref(), &community)
+                    .await;
+            });
+    }
+
+    /// Answer the parked requests whose requester is now a member; run
+    /// after a gossiped op merged. The rest stay parked.
+    pub async fn answer_parked_mek_requests<D: MekDistributeDeps>(
+        &self,
+        deps: &D,
+        community_id: &str,
+    ) {
+        let parked = {
+            let mut map = self.ctx.communities.map().write();
+            let Some(community) = map.get_mut(community_id) else {
+                return;
+            };
+            std::mem::take(&mut community.parked_mek_requests)
+        };
+        // The membership read takes the store's lock: outside the write.
+        let (ready, waiting): (Vec<MekRequest>, Vec<MekRequest>) =
+            parked.into_iter().partition(|r| {
+                pseudonym(&r.requester_pseudonym)
+                    .is_some_and(|p| self.is_key_reader(community_id, &p))
+            });
+        for request in &waiting {
+            self.park_mek_request(community_id, request);
+        }
+        for request in ready {
+            if let Err(error) = self.answer_mek_request(deps, community_id, &request).await {
+                tracing::debug!(community = community_id, %error, "parked RequestMEK not answered");
+            }
+        }
     }
 
     /// Generation 0 is the current key, with its provenance (a rebuilt key

@@ -38,6 +38,26 @@ pub(super) fn extend_online_with_recent_gossip(
     }
 }
 
+/// The overlay's online members that carry a route.
+pub(super) fn reachable_mesh_peers(
+    state: &Arc<AppState>,
+    community_id: &str,
+) -> std::collections::HashSet<String> {
+    let communities = state.communities.read();
+    communities
+        .get(community_id)
+        .and_then(|cs| cs.gossip.as_ref())
+        .map(|gossip| {
+            gossip
+                .online_members
+                .iter()
+                .filter(|(_, member)| !member.route_blob.is_empty())
+                .map(|(pseudonym, _)| pseudonym.clone())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub(super) fn gossip_offline_diff(
     state: &Arc<AppState>,
     community_id: &str,

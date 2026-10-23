@@ -110,6 +110,18 @@ impl DaemonPresenceAdapter {
         }
     }
 
+    /// The overlay's online members that carry a route.
+    pub(super) fn reachable_mesh_peers_impl(
+        &self,
+        community_id: &str,
+    ) -> std::collections::HashSet<String> {
+        self.online_from_mesh(community_id)
+            .into_iter()
+            .filter(|(_, member)| !member.route_blob.is_empty())
+            .map(|(pseudonym, _)| pseudonym)
+            .collect()
+    }
+
     /// Members the overlay considers gone that the scan still lists.
     pub(super) fn gossip_offline_diff_impl(
         &self,

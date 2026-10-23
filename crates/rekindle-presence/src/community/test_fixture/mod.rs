@@ -381,6 +381,15 @@ impl CommunityPresenceDeps for MockCommunityDeps {
         ));
         st.offline_diff.clone()
     }
+    fn reachable_mesh_peers(&self, _community_id: &str) -> std::collections::HashSet<String> {
+        self.state.lock().reachable_mesh_peers.clone()
+    }
+    fn on_mesh_peers_gained(&self, community_id: &str, peers: &[String]) {
+        self.state
+            .lock()
+            .calls_peers_gained
+            .push((community_id.to_string(), peers.to_vec()));
+    }
     fn read_gossip_snapshot(&self, community_id: &str) -> GossipOverlaySnapshot {
         let mut st = self.state.lock();
         st.calls_read_gossip.push(community_id.to_string());

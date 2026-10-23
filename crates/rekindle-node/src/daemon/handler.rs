@@ -239,9 +239,10 @@ impl InboundHandler for DaemonHandler {
         // A signed governance op (plan E3.2, `governanceOp @74`).
         if let CommunityEnvelope::Control(ControlPayload::GovernanceOp { ref op }) = envelope {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
-                crate::host::adapters::governance::HostGovernance::new(ctx)
-                    .on_governance_op(community_id, op.clone())
-                    .await;
+                let deps = super::mek_rotation::DaemonMekAdapter::new(Arc::clone(&ctx));
+                let host = crate::host::adapters::governance::HostGovernance::new(ctx);
+                host.on_governance_op(community_id, op.clone()).await;
+                host.answer_parked_mek_requests(&deps, community_id).await;
             }
             return;
         }

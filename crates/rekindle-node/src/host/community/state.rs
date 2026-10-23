@@ -51,6 +51,12 @@ pub struct CommunityState {
     /// adapter's `SegmentAdded` handler — see `rekindle_governance_runtime::segments`.
     #[serde(default)]
     pub segments: Vec<rekindle_types::presence::SegmentDescriptor>,
+    /// `RequestMEK`s from pseudonyms that are not members in our merged
+    /// state yet (plan E3.2 S6): gossip is unordered, so a joiner's request
+    /// can outrun its `MemberJoined` op. Answered once the op merges;
+    /// bounded by `PARKED_MEK_REQUESTS`, never persisted.
+    #[serde(skip)]
+    pub parked_mek_requests: Vec<crate::host::adapters::governance::MekRequest>,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.

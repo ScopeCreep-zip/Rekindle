@@ -46,6 +46,16 @@ pub(crate) async fn handle_control_events_and_threads(
             // The Host's op store and rebuild (plan E3.2).
             if let Some(host) = state.host.current() {
                 host.governance().on_governance_op(community_id, op).await;
+                if let Ok(pool) = state.db.current() {
+                    let deps = crate::services::mek_adapter::MekAdapter::new(
+                        Arc::clone(state),
+                        app_handle.clone(),
+                        pool,
+                    );
+                    host.governance()
+                        .answer_parked_mek_requests(deps.as_ref(), community_id)
+                        .await;
+                }
             }
         }
         payload @ (ControlPayload::GameServerAdded { .. }

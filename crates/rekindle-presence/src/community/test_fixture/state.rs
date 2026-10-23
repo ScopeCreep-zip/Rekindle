@@ -29,6 +29,8 @@ pub struct MockState {
     pub segment_raw: HashMap<String, Vec<(u32, Vec<u8>)>>,
     pub member_roles: HashMap<String, Vec<u32>>,
     pub offline_diff: Vec<String>,
+    /// The prior overlay's reachable peers `reachable_mesh_peers` returns.
+    pub reachable_mesh_peers: std::collections::HashSet<String>,
     pub gossip_snapshot: GossipOverlaySnapshot,
     pub stale_syncs: Vec<(String, u32)>,
     /// Outcomes `write_presence_to_registry_subkey` returns in order;
@@ -71,6 +73,8 @@ pub struct MockState {
     pub calls_apply_profiles: Vec<(String, usize, bool)>,
     pub calls_extend_online: Vec<(String, usize, String, u64)>,
     pub calls_offline_diff: Vec<(String, usize, String)>,
+    /// Each `on_mesh_peers_gained`: the community and the sorted peers.
+    pub calls_peers_gained: Vec<(String, Vec<String>)>,
     pub calls_read_gossip: Vec<String>,
     pub calls_apply_gossip: Vec<(String, usize, usize)>,
     pub calls_send_raw: Vec<(String, SignedEnvelope)>,

@@ -345,6 +345,15 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         my_pseudonym: &str,
     ) -> Vec<String>;
 
+    /// The prior overlay's reachable peers: its online members that
+    /// carry a route, so the poll can tell which ones a scan adds.
+    fn reachable_mesh_peers(&self, community_id: &str) -> std::collections::HashSet<String>;
+
+    /// The rebuilt overlay gained `peers` (sorted), reachable members the
+    /// prior one lacked. The host catches a behind member up (plan E3.2
+    /// S6): what gossip dropped while nobody was reachable.
+    fn on_mesh_peers_gained(&self, community_id: &str, peers: &[String]);
+
     /// Snapshot the prior gossip overlay's mutation-relevant
     /// fields (lamport counter + needs_initial_sync flag + the
     /// drained pending-mesh queue). The crate orchestrator hands
