@@ -11,6 +11,7 @@
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -33,9 +34,11 @@ pub struct Counts {
 }
 
 type Tally = Arc<Mutex<BTreeMap<Option<usize>, Counts>>>;
+/// Each WARN and ERROR event's text (its message and fields), by node.
+type Lines = Arc<Mutex<Vec<(Option<usize>, String)>>>;
 
 thread_local! {
-    static RUN: RefCell<Option<(tracing::subscriber::DefaultGuard, Tally)>> =
+    static RUN: RefCell<Option<(tracing::subscriber::DefaultGuard, Tally, Lines)>> =
         const { RefCell::new(None) };
 }
 
@@ -45,14 +48,15 @@ pub fn install() {
         let mut run = run.borrow_mut();
         if run.is_none() {
             let tally = Tally::default();
+            let lines = Lines::default();
             let subscriber = tracing_subscriber::registry()
                 .with(
                     tracing_subscriber::fmt::layer()
                         .with_test_writer()
                         .with_filter(EnvFilter::from_default_env()),
                 )
-                .with(Capture(Arc::clone(&tally)));
-            *run = Some((tracing::subscriber::set_default(subscriber), tally));
+                .with(Capture(Arc::clone(&tally), Arc::clone(&lines)));
+            *run = Some((tracing::subscriber::set_default(subscriber), tally, lines));
         }
     });
 }
@@ -62,7 +66,24 @@ pub fn counts() -> BTreeMap<Option<usize>, Counts> {
     RUN.with(|run| {
         run.borrow()
             .as_ref()
-            .map(|(_, t)| t.lock().clone())
+            .map(|(_, t, _)| t.lock().clone())
+            .unwrap_or_default()
+    })
+}
+
+/// The WARN and ERROR events so far that contain `needle`, any node.
+pub fn warned(needle: &str) -> Vec<String> {
+    RUN.with(|run| {
+        run.borrow()
+            .as_ref()
+            .map(|(_, _, lines)| {
+                lines
+                    .lock()
+                    .iter()
+                    .filter(|(_, text)| text.contains(needle))
+                    .map(|(node, text)| format!("node {node:?}: {text}"))
+                    .collect()
+            })
             .unwrap_or_default()
     })
 }
@@ -89,7 +110,21 @@ impl Visit for NodeField {
     fn record_debug(&mut self, _: &Field, _: &dyn std::fmt::Debug) {}
 }
 
-struct Capture(Tally);
+/// An event's message and fields as one line.
+#[derive(Default)]
+struct Text(String);
+
+impl Visit for Text {
+    fn record_str(&mut self, field: &Field, value: &str) {
+        let _ = write!(self.0, "{}={value} ", field.name());
+    }
+
+    fn record_debug(&mut self, field: &Field, value: &dyn std::fmt::Debug) {
+        let _ = write!(self.0, "{}={value:?} ", field.name());
+    }
+}
+
+struct Capture(Tally, Lines);
 
 impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
@@ -114,6 +149,9 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
                 .filter_map(|s| s.extensions().get::<NodeIndex>().map(|n| n.0))
                 .last()
         });
+        let mut text = Text::default();
+        event.record(&mut text);
+        self.1.lock().push((node, text.0));
         let mut tally = self.0.lock();
         let counts = tally.entry(node).or_default();
         if level == Level::ERROR {

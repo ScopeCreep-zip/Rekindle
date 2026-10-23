@@ -4,7 +4,9 @@
 //! (`GovernanceRebuilt`, with the new channel) and republishes its
 //! communities and schedules their history catch-up; the unlock's MEK
 //! stage (plan E3.1 C2c) reloads the stored keys, so the member posts
-//! again and reads the message it missed.
+//! again and reads the message it missed. Its restart writes nothing
+//! early (live findings 24, 25): no route or status write to a record the
+//! own-records stage does not yet hold, no presence row without a route.
 
 use std::time::Duration;
 
@@ -77,4 +79,8 @@ async fn a_member_resumes_its_community_after_a_restart() {
         community.reads(0, "back again", LIMIT).await,
         "the creator reads the member's post"
     );
+    for early in ["not held writable", "our_route_blob is None"] {
+        let seen = crate::logs::warned(early);
+        assert!(seen.is_empty(), "an early write warned: {seen:#?}");
+    }
 }

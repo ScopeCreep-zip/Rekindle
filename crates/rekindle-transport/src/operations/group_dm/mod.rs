@@ -106,7 +106,9 @@ pub async fn create(
     members: &[String],
 ) -> Result<String, FriendError> {
     rekindle_dm::group::check_name(name).map_err(|e| friend_error(&e))?;
-    let own = state::own_identity(host)?;
+    // The roster names our profile: wait for the own-records stage to
+    // hold it (live finding 24), as a friend request does.
+    let own = crate::operations::friend::published_identity(host).await?;
     let mut others = Vec::with_capacity(members.len());
     for key in members {
         let profile = state::friend(host, key)

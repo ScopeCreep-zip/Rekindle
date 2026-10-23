@@ -373,9 +373,10 @@ export interface IdentityView {
 export interface IdentityShown {
   publicKey: string;
   displayName: string;
-  profileDhtKey: string;
-  mailboxDhtKey: string;
-  friendListDhtKey: string;
+  /** Null while not yet held (the own-records stage names each after unlock). */
+  profileDhtKey: string | null;
+  mailboxDhtKey: string | null;
+  friendListDhtKey: string | null;
   communities: number;
 }
 

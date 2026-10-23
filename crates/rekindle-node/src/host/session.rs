@@ -99,9 +99,13 @@ pub async fn load(
             OwnerKey::FriendList,
             rows.records.friend_list.as_deref(),
         )?,
-        profile_dht_key: rows.records.profile.unwrap_or_default(),
-        mailbox_dht_key: rows.records.mailbox.unwrap_or_default(),
-        friend_list_dht_key: rows.records.friend_list.unwrap_or_default(),
+        // Unnamed until the own-records stage holds each record
+        // (`OwnRecords::project`, live finding 24): a key named before its
+        // record is held writable sent the route publisher and the status
+        // heartbeat to write it first, and both failed "not held writable".
+        profile_dht_key: String::new(),
+        mailbox_dht_key: String::new(),
+        friend_list_dht_key: String::new(),
     };
 
     // The memberships are the community store's projection, made by the

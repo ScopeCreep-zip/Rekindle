@@ -144,9 +144,9 @@ fn samples() -> Map<String, Value> {
         to(Some(IdentityShown {
             public_key: pk('a'),
             display_name: "Ann".into(),
-            profile_dht_key: format!("VLD0:{}", "p".repeat(43)),
-            mailbox_dht_key: format!("VLD0:{}", "m".repeat(43)),
-            friend_list_dht_key: format!("VLD0:{}", "f".repeat(43)),
+            profile_dht_key: Some(format!("VLD0:{}", "p".repeat(43))),
+            mailbox_dht_key: Some(format!("VLD0:{}", "m".repeat(43))),
+            friend_list_dht_key: Some(format!("VLD0:{}", "f".repeat(43))),
             communities: 2,
         })),
     );

@@ -366,11 +366,14 @@ fn build_checks(
         let has_profile = !session.identity.profile_dht_key.is_empty();
         let has_mailbox = !session.identity.mailbox_dht_key.is_empty();
         let has_friends = !session.identity.friend_list_dht_key.is_empty();
+        // Only the own-records stage names a key, once its record is held
+        // (live finding 24): an unnamed one is not yet held.
+        let held = |has: bool| if has { "ok" } else { "not yet held" };
         let dht_value = format!(
             "profile:{} mailbox:{} friends:{}",
-            if has_profile { "ok" } else { "missing" },
-            if has_mailbox { "ok" } else { "missing" },
-            if has_friends { "ok" } else { "missing" },
+            held(has_profile),
+            held(has_mailbox),
+            held(has_friends),
         );
         checks.push(if has_profile && has_mailbox && has_friends {
             Check::pass("identity.dht_records", "identity", dht_value)

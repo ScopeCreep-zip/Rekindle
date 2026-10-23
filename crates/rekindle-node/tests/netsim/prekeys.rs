@@ -89,7 +89,13 @@ async fn the_prekey_status_reads_the_record_the_profile_names() {
     let shown: rekindle_types::dto::identity::IdentityShown =
         serde_json::from_value(nodes[0].ok(IpcRequest::IdentityShow).await).expect("the identity");
     let list = sim
-        .network_get(&shown.profile_dht_key, PREKEY_RECORDS)
+        .network_get(
+            shown
+                .profile_dht_key
+                .as_deref()
+                .expect("the profile is held"),
+            PREKEY_RECORDS,
+        )
         .expect("the profile's device list");
     let list = decode_prekey_record_list(&list.data).expect("a device list");
     assert_eq!(list.devices.len(), 1);

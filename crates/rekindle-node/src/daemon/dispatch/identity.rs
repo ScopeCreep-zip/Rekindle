@@ -99,12 +99,18 @@ pub(crate) fn handle_show(ctx: &DaemonContext) -> IpcResponse {
     let shown = ctx.session.read().as_ref().map(|session| IdentityShown {
         public_key: session.identity.public_key_hex.clone(),
         display_name: session.identity.display_name.clone(),
-        profile_dht_key: session.identity.profile_dht_key.clone(),
-        mailbox_dht_key: session.identity.mailbox_dht_key.clone(),
-        friend_list_dht_key: session.identity.friend_list_dht_key.clone(),
+        profile_dht_key: held(&session.identity.profile_dht_key),
+        mailbox_dht_key: held(&session.identity.mailbox_dht_key),
+        friend_list_dht_key: held(&session.identity.friend_list_dht_key),
         communities: session.communities.len(),
     });
     IpcResponse::ok(&shown)
+}
+
+/// A record key the session names, `None` while the own-records stage has
+/// not yet held its record.
+fn held(key: &str) -> Option<String> {
+    (!key.is_empty()).then(|| key.to_string())
 }
 
 /// Handle IdentityExport — the unlocked identity's archive (base64), after

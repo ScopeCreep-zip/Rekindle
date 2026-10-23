@@ -28,9 +28,11 @@ pub struct IdentityView {
 pub struct IdentityShown {
     pub public_key: String,
     pub display_name: String,
-    pub profile_dht_key: String,
-    pub mailbox_dht_key: String,
-    pub friend_list_dht_key: String,
+    /// Our records' keys, `None` while not yet held: the own-records stage
+    /// names each once its record is held, after unlock.
+    pub profile_dht_key: Option<String>,
+    pub mailbox_dht_key: Option<String>,
+    pub friend_list_dht_key: Option<String>,
     pub communities: usize,
 }
 

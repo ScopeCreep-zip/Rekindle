@@ -50,6 +50,9 @@ async fn publish_personal_route(
             None => return,
         }
     };
+    if profile_key.is_empty() && mailbox_key.is_empty() {
+        return;
+    }
     let Some(pool) = shared.records() else {
         return;
     };

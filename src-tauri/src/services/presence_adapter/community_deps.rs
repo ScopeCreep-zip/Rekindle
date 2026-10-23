@@ -42,6 +42,14 @@ impl CommunityPresenceDeps for PresenceAdapter {
         state_helpers::our_route_blob(&self.state)
     }
 
+    async fn own_route_available(&self) {
+        if let Some(routes) = state_helpers::own_routes(&self.state) {
+            routes
+                .available(rekindle_records::port::RouteClass::General)
+                .await;
+        }
+    }
+
     fn current_presence_status_str(&self, community_id: &str) -> String {
         // Delegate to the src-tauri helper so the wire-string
         // mapping lives in exactly one place. The helper is the

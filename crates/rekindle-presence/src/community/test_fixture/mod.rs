@@ -61,6 +61,8 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn our_route_blob(&self) -> Option<Vec<u8>> {
         self.state.lock().our_route.clone()
     }
+    /// The fixture's route is whatever its state holds: no wait.
+    async fn own_route_available(&self) {}
     fn current_presence_status_str(&self, community_id: &str) -> String {
         let mut st = self.state.lock();
         st.calls_status_str.push(community_id.to_string());

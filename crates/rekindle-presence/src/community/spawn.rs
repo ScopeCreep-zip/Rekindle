@@ -39,6 +39,15 @@ pub fn start_presence_poll<D: CommunityPresenceDeps>(
     scope: &Arc<SessionScope>,
 ) {
     scope.spawn_with_token_or_drop("community presence poll", |stop| async move {
+        // Our first row names our route, so it waits for one (live
+        // finding 25): unlock starts the poll before the route lands.
+        if stop
+            .run_until_cancelled(deps.own_route_available())
+            .await
+            .is_none()
+        {
+            return;
+        }
         if let Err(error) = deps.run_presence_poll_tick(&community_id).await {
             tracing::warn!(
                 community = %community_id,

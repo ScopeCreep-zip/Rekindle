@@ -15,6 +15,7 @@ pub mod identity_rotation;
 pub(crate) mod inbound;
 pub mod inbox;
 mod invites;
+pub(crate) use invites::published_identity;
 mod list;
 mod list_record;
 pub(crate) mod presence_key;

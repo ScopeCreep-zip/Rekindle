@@ -151,3 +151,41 @@ async fn writes_come_back_in_the_next_projection() {
     assert!(stored.is_empty());
     assert_eq!(after.presence_key, Some(minted));
 }
+
+/// The session an unlock loads names no own record, even when the identity
+/// row does: only the own-records stage names each, once it holds the record
+/// writable (live finding 24), so the route publisher and the status
+/// heartbeat never write one first.
+#[tokio::test]
+async fn the_session_names_no_own_record_before_the_stage_holds_it() {
+    use rekindle_db::repo::identity::{set_mailbox_key, set_owned_record, OwnedRecord};
+    let f = Fixture::new();
+    let made = identity::create(
+        &f.root,
+        &f.stores(),
+        Some("Ann"),
+        "pass",
+        1,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
+    let owner = made.public_key.clone();
+    drop(made);
+    let db = f.db.current().unwrap();
+    let o = owner.clone();
+    db.call(move |conn| {
+        set_owned_record(conn, &o, OwnedRecord::Profile, "VLD0:profile")?;
+        set_owned_record(conn, &o, OwnedRecord::FriendList, "VLD0:friends")?;
+        set_mailbox_key(conn, &o, "VLD0:mailbox")?;
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let session = load(&db, &f.vault, &owner, &rekindle_utils::OsRandom, 0)
+        .await
+        .unwrap();
+    assert_eq!(session.identity.profile_dht_key, "");
+    assert_eq!(session.identity.mailbox_dht_key, "");
+    assert_eq!(session.identity.friend_list_dht_key, "");
+}

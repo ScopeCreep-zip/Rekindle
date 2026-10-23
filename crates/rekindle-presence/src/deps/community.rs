@@ -35,6 +35,12 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// (Reliable + PreferOrdered) for chat / governance / gossip.
     fn our_route_blob(&self) -> Option<Vec<u8>>;
 
+    /// Return once our general route is live: the record port's own
+    /// `available_own(General)`, the wait the own-records stage takes, so
+    /// the first presence row names a route peers can import (live
+    /// finding 25). At once when no transport runs: the tick reports that.
+    async fn own_route_available(&self);
+
     /// String form of the local user's current presence status —
     /// "online" / "away" / "busy" / "offline" (Invisible folds to
     /// "offline"). Defaults to "online" when no identity is loaded.

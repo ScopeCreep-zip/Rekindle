@@ -50,6 +50,14 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.our_route_blob_impl()
     }
 
+    async fn own_route_available(&self) {
+        if let Some(node) = self.transport() {
+            node.routes()
+                .available_own(rekindle_records::port::RouteClass::General)
+                .await;
+        }
+    }
+
     fn current_presence_status_str(&self, _community_id: &str) -> String {
         Self::current_status_impl()
     }
