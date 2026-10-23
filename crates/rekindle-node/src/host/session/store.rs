@@ -146,73 +146,6 @@ pub fn record_channels(
     changed
 }
 
-/// Advance the community's governance clock and return the new value. The
-/// stored clock is raised to it in order; a rebuild raises it past every
-/// entry of ours the DHT holds, so a lost write cannot hand a published
-/// value out again.
-///
-/// # Errors
-/// We are not in the community, or the clock is exhausted.
-pub fn next_clock(
-    session: &RwLock<Option<Session>>,
-    db: &DbHandle,
-    communities: &CommunityStore,
-    community_id: &str,
-) -> Result<u64, rekindle_types::lamport::LamportError> {
-    let next = {
-        let mut guard = session.write();
-        let membership = guard
-            .as_mut()
-            .and_then(|s| s.communities.get_mut(community_id))
-            .ok_or(rekindle_types::lamport::LamportError::UnknownCommunity)?;
-        let next =
-            rekindle_types::lamport::LamportClock::new(membership.lamport_counter).increment()?;
-        membership.lamport_counter = next;
-        next
-    };
-    communities.set_governance_clock(community_id, next);
-    store_clock(session, db, community_id, next);
-    Ok(next)
-}
-
-/// Raise the community's governance clock to `accepted` (never lower).
-pub fn raise_clock(
-    session: &RwLock<Option<Session>>,
-    db: &DbHandle,
-    communities: &CommunityStore,
-    community_id: &str,
-    accepted: u64,
-) {
-    let raised = {
-        let mut guard = session.write();
-        match guard
-            .as_mut()
-            .and_then(|s| s.communities.get_mut(community_id))
-        {
-            Some(m) if m.lamport_counter < accepted => {
-                m.lamport_counter = accepted;
-                true
-            }
-            _ => false,
-        }
-    };
-    if raised {
-        communities.set_governance_clock(community_id, accepted);
-        store_clock(session, db, community_id, accepted);
-    }
-}
-
-fn store_clock(session: &RwLock<Option<Session>>, db: &DbHandle, community_id: &str, clock: u64) {
-    let Some((owner, db)) = owner_and_db(session, db) else {
-        return;
-    };
-    let community = community_id.to_string();
-    let clock = i64::try_from(clock).unwrap_or(i64::MAX);
-    db.fire("governance clock", move |conn| {
-        repo::communities::raise_clock(conn, &owner, &community, clock)
-    });
-}
-
 /// Apply `f` to our role list in the community and store it if it changed.
 pub fn update_roles(
     session: &RwLock<Option<Session>>,
@@ -294,12 +227,18 @@ pub struct NewMembership {
     pub dht_owner_keypair: Option<String>,
     /// The registry's owner keypair (the vault's `RegistryKeypair`).
     pub registry_keypair: Option<String>,
+    /// Our member record's owner keypair `K_M(p)` (the vault's
+    /// `MemberRecordOwner`, plan E3.2).
+    pub member_record_owner: Option<zeroize::Zeroizing<String>>,
+    /// The pinned `GenesisCert` as the anchor holds it
+    /// (`communities.genesis_cert`).
+    pub genesis_cert: Option<Vec<u8>>,
     /// When it was joined, in ms, by the host's clock.
     pub joined_at: i64,
 }
 
-/// Record a membership: its slot seed and registry keypair into the vault
-/// first (a slot seed lost is a slot lost), then its `communities` row,
+/// Record a membership: its slot seed, registry keypair and member record
+/// owner into the vault first (a slot seed lost is a slot lost), then its `communities` row,
 /// then the projection.
 ///
 /// # Errors
@@ -316,6 +255,8 @@ pub fn record_membership(
         membership,
         dht_owner_keypair,
         registry_keypair,
+        member_record_owner,
+        genesis_cert,
         joined_at,
     } = new;
     let community = membership.governance_key.clone();
@@ -341,6 +282,16 @@ pub fn record_membership(
                     keypair.as_bytes(),
                 )
                 .map_err(|e| format!("registry keypair: {e}"))?;
+        }
+        if let Some(keypair) = &member_record_owner {
+            vault
+                .put(
+                    &VaultKey::MemberRecordOwner {
+                        community: community.clone(),
+                    },
+                    keypair.as_bytes(),
+                )
+                .map_err(|e| format!("member record owner: {e}"))?;
         }
     }
     communities.install_membership(
@@ -373,6 +324,15 @@ pub fn record_membership(
             repo::communities::Column::MySegmentIndex,
             row.segment_index.unwrap_or(0),
         )?;
+        if let Some(cert) = &genesis_cert {
+            repo::communities::set(
+                conn,
+                &owner,
+                &row.governance_key,
+                repo::communities::Column::GenesisCert,
+                cert,
+            )?;
+        }
         repo::communities::raise_clock(
             conn,
             &owner,

@@ -13,10 +13,12 @@ use rekindle_governance_runtime::deps::{
     GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RecentMessageRow, UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
+use rekindle_governance_runtime::op_log::{HeldOp, OpFate};
 use rekindle_governance_runtime::roles::{RoleSnapshotInsert, RoleSnapshotPatch};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_records::port::RecordSchema;
+use rekindle_types::governance::{GenesisCert, OpHash, OpRef};
 use rekindle_types::id::PseudonymKey;
 
 use super::HostGovernance;
@@ -73,18 +75,22 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.set_governance_state_impl(community_id, state);
     }
 
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        self.next_governance_lamport_impl(community_id)
-    }
-
     fn insert_community(&self, community: CommunityInsert) {
         self.insert_community_impl(community);
     }
 
     // ---------- DHT ----------
+
+    async fn create_record(
+        &self,
+        schema: &RecordSchema,
+    ) -> Result<DhtRecordInfo, GovernanceRuntimeError> {
+        self.create_record_impl(schema).await
+    }
+
+    fn owner_of(&self, lease: LeaseId) -> Result<String, GovernanceRuntimeError> {
+        self.owner_of_impl(lease)
+    }
 
     async fn create_smpl_record(
         &self,
@@ -266,13 +272,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.app_call_peer_impl(target_route_blob, payload).await
     }
 
-    fn rebuild_governance_state(
-        &self,
-        entries: Vec<(PseudonymKey, Vec<GovernanceEntry>)>,
-    ) -> GovernanceState {
-        Self::rebuild_governance_state_impl(&entries)
-    }
-
     // ---------- DHT hydration ----------
 
     fn list_community_governance_targets(&self) -> Vec<(String, String)> {
@@ -328,27 +327,59 @@ impl GovernanceRuntimeDeps for HostGovernance {
         &self,
         community_id: &str,
         gov_state: GovernanceState,
-        accepted_clock: u64,
     ) {
-        self.apply_governance_rebuild_result_impl(community_id, gov_state, accepted_clock)
+        self.apply_governance_rebuild_result_impl(community_id, gov_state)
             .await;
     }
 
-    fn persist_governance_entries_cache(
-        &self,
-        community_id: &str,
-        entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
-    ) {
-        self.persist_governance_entries_cache_impl(community_id, entries);
+    // ---------- Governance ops ----------
+
+    fn genesis_cert(&self, community_id: &str) -> Option<GenesisCert> {
+        self.genesis_cert_impl(community_id)
     }
 
-    fn persist_own_governance_entries(
+    /// We hold no verified member card yet: `M`/0 is read once the watch
+    /// ring and record warming read member records (plan E3.2 S7).
+    fn member_card_name(&self, _community_id: &str, _pseudonym: &PseudonymKey) -> Option<String> {
+        None
+    }
+
+    async fn governance_ops(
         &self,
         community_id: &str,
-        author: &PseudonymKey,
-        entries: &[GovernanceEntry],
-    ) {
-        self.persist_own_governance_entries_impl(community_id, author, entries);
+    ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+        self.governance_ops_impl(community_id).await
+    }
+
+    async fn store_governance_op(
+        &self,
+        community_id: &str,
+        op: &HeldOp,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.store_governance_op_impl(community_id, op).await
+    }
+
+    async fn set_governance_op_fates(
+        &self,
+        community_id: &str,
+        fates: Vec<(OpHash, OpFate)>,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.set_governance_op_fates_impl(community_id, fates).await
+    }
+
+    async fn fetch_governance_op(
+        &self,
+        op_ref: &OpRef,
+    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
+        self.fetch_governance_op_impl(op_ref).await
+    }
+
+    fn publish_governance_op(
+        &self,
+        community_id: &str,
+        encoded: Vec<u8>,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.publish_governance_op_impl(community_id, encoded)
     }
 
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str) {

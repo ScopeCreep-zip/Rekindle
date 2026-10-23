@@ -15,7 +15,6 @@ use async_trait::async_trait;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
-use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
 use crate::error::GovernanceRuntimeError;
@@ -298,15 +297,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         payload: Vec<u8>,
     ) -> Result<Vec<u8>, GovernanceRuntimeError>;
 
-    /// Re-merge the current governance state for a community after the
-    /// joiner has applied bootstrap entries — gives `GovernanceState`
-    /// back. Convenience over the rekindle-governance::merge call so the
-    /// adapter can supply the canonical pseudonym + entry list.
-    fn rebuild_governance_state(
-        &self,
-        entries: Vec<(rekindle_types::id::PseudonymKey, Vec<GovernanceEntry>)>,
-    ) -> GovernanceState;
-
     // ---------- DHT-hydration deps (Phase 23.C chiral split) ----------
 
     /// Snapshot every joined community's `(community_id, governance_key)`.
@@ -381,15 +371,10 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// path as channels.
     fn governance_overflow_keys_for_community(&self, community_id: &str) -> Vec<String>;
 
-    /// Apply the post-merge result for one community:
-    /// 1. raise the governance clock to `max(current, accepted_clock)`
-    ///    (`accepted_clock` from `merge_with_accepted`: what the accepted
-    ///    entries justify, never a forged or rejected value),
-    /// 2. install the new `GovernanceState` via `set_governance_state`,
-    /// 3. persist the merged snapshot to SQLite so it survives restarts.
-    ///
-    /// Async because the SQLite persist is async. Returns when the
-    /// in-memory + on-disk state are both updated.
+    /// Apply the post-merge result for one community: install the new
+    /// `GovernanceState` via `set_governance_state` and persist the merged
+    /// snapshot to SQLite so it survives restarts. Returns when the
+    /// in-memory and on-disk state are both updated.
     async fn apply_governance_rebuild_result(&self, community_id: &str, gov_state: GovernanceState);
 
     // ---------- Governance ops (plan E3.2) ----------

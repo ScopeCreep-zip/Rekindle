@@ -99,28 +99,6 @@ impl HostGovernance {
         });
     }
 
-    /// Advance the community's **governance** Lamport counter and return
-    /// the new value.
-    ///
-    /// Not the gossip mesh clock (`GossipMesh::clock`) — that one orders
-    /// epidemic broadcast, this one stamps governance entries for the
-    /// CRDT merge. Two clocks on purpose; do not collapse them.
-    ///
-    /// Stored, because a counter that restarts at zero after a daemon
-    /// restart would emit entries that lose every LWW merge against our
-    /// own earlier writes.
-    pub(super) fn next_governance_lamport_impl(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        crate::host::session::next_clock(
-            &self.ctx.session,
-            &self.ctx.db,
-            &self.ctx.communities,
-            community_id,
-        )
-    }
-
     /// Record a freshly created community (origin flow).
     ///
     /// Stores the membership with the origin's owner keypairs and seeds
@@ -131,7 +109,7 @@ impl HostGovernance {
             .ok()
             .and_then(|b| <[u8; 32]>::try_from(b).ok());
         let membership = SessionMembership {
-            governance_key: community.governance_key.clone(),
+            governance_key: community.id.clone(),
             pseudonym_key: community.my_pseudonym_hex.clone(),
             role_ids: community.creator_role_ids.clone(),
             registry_key: community.registry_key.clone(),
@@ -141,13 +119,22 @@ impl HostGovernance {
             slot_seed,
             channel_record_keys: std::collections::HashMap::new(),
             segment_index: Some(0),
-            lamport_counter: community.governance_clock,
+            lamport_counter: 0,
             mek_generation: community.mek.generation,
         };
-        // The registry and governance owner keypairs grant no writer slot
-        // under `o_cnt: 0` (members write their subkeys with slot keypairs),
-        // but they are the records' owner credentials: the vault and the
-        // community row keep them as the desktop does.
+        // The registry keypair grants no writer slot under `o_cnt: 0`, but
+        // it is the registry's owner credential; `K_M(p)` is our member
+        // record's writer, stored before the row (D1). The anchor's `K_A`
+        // was discarded after its one write.
+        let cert = match rekindle_codec::governance_op::genesis::decode_genesis(
+            &community.genesis_cert,
+        ) {
+            Ok(decoded) => decoded.signed.cert,
+            Err(e) => {
+                tracing::error!(error = %e, community = %community.id, "created community's cert does not decode");
+                return;
+            }
+        };
         let recorded = crate::host::session::record_membership(
             &self.ctx.session,
             &self.ctx.db,
@@ -155,8 +142,10 @@ impl HostGovernance {
             &self.ctx.communities,
             crate::host::session::NewMembership {
                 membership,
-                dht_owner_keypair: community.dht_owner_keypair,
+                dht_owner_keypair: None,
                 registry_keypair: community.registry_owner_keypair,
+                member_record_owner: Some(community.member_record_owner_keypair),
+                genesis_cert: Some(community.genesis_cert),
                 joined_at: self.ctx.clock.now_ms_i64(),
             },
         );
@@ -164,9 +153,10 @@ impl HostGovernance {
             tracing::error!(error = %e, community = %community.id, "created community not recorded");
             return;
         }
+        self.ctx.communities.set_genesis_cert(&community.id, cert);
         self.install_created(&super::state_builder::CreatedCommunity {
             id: &community.id,
-            governance_key: &community.governance_key,
+            governance_key: &community.id,
             registry_key: &community.registry_key,
             channel_id_hex: &community.channel_id_hex,
             channel_record_key: &community.channel_record_key,

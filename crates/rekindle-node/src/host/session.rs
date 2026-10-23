@@ -138,8 +138,8 @@ fn friend_state(row: repo::friends::FriendRow) -> FriendState {
 mod store;
 
 pub use store::{
-    forget_membership, next_clock, raise_clock, record_channels, record_membership, update_roles,
-    update_slot_and_roles, NewMembership,
+    forget_membership, record_channels, record_membership, update_roles, update_slot_and_roles,
+    NewMembership,
 };
 
 #[cfg(test)]

@@ -81,6 +81,36 @@ pub struct CommunityLoad {
     pub governance: Vec<(String, governance_ops::StoredOp)>,
     /// The threads held at receipt, `(community_id, thread_id)`.
     pub held_threads: Vec<(String, String)>,
+    /// Each community with a pinned `GenesisCert`: its id, the cert's
+    /// bytes, and its op authors' heads (the member records their ops
+    /// live in), by community (plan E3.2).
+    pub pinned: Vec<PinnedGovernance>,
+}
+
+/// A community's pinned cert and its op authors' heads.
+pub struct PinnedGovernance {
+    pub community_id: String,
+    pub genesis_cert: Vec<u8>,
+    pub heads: Vec<governance_ops::AuthorHead>,
+}
+
+fn pinned(
+    conn: &Connection,
+    owner_key: &str,
+    communities: &[CommunityRow],
+) -> rusqlite::Result<Vec<PinnedGovernance>> {
+    let mut out = Vec::new();
+    for row in communities {
+        let Some(genesis_cert) = super::genesis_cert(conn, owner_key, &row.id)? else {
+            continue;
+        };
+        out.push(PinnedGovernance {
+            community_id: row.id.clone(),
+            genesis_cert,
+            heads: governance_ops::heads(conn, owner_key, &row.id)?,
+        });
+    }
+    Ok(out)
 }
 
 /// Read every joined community of `owner_key`.
@@ -88,8 +118,10 @@ pub struct CommunityLoad {
 /// # Errors
 /// A query failed.
 pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<CommunityLoad> {
+    let communities = super::load_all(conn, owner_key)?;
     Ok(CommunityLoad {
-        communities: super::load_all(conn, owner_key)?,
+        pinned: pinned(conn, owner_key, &communities)?,
+        communities,
         channels: channels(conn, owner_key)?,
         roles: roles(conn, owner_key)?,
         categories: categories(conn, owner_key)?,

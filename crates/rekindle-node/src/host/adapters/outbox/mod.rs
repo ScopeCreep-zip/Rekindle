@@ -7,6 +7,7 @@
 mod channel_post;
 mod dht_write;
 mod dm;
+mod governance_op;
 mod media_key;
 mod senders;
 #[cfg(test)]
@@ -29,6 +30,7 @@ use tokio::sync::broadcast;
 pub use channel_post::{post_of_row, ChannelPosts, SUPERSEDED};
 pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
+pub use governance_op::GovernanceOps;
 pub use media_key::{MediaKeyCarrier, MediaKeyDelivery, MediaKeyStreams, SESSION_ENDED};
 pub use senders::{Reissuer, Senders, StreamSender};
 

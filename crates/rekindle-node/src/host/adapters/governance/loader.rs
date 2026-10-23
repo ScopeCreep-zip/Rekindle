@@ -1,16 +1,17 @@
 //! The warm-cache unlock stage, on both modes (plan E3.1 C1): every joined
 //! community from the identity's database and vault into the Host's
-//! community store, its governance re-merged from `governance_entries_cache`,
-//! so the community answers at once, network or not. The DHT rebuild later
-//! replaces the governance with anything newer.
+//! community store, its governance re-merged from the stored op set
+//! (`governance_ops`) under the pinned `GenesisCert`, so the community
+//! answers at once, network or not. The DHT rebuild later replaces the
+//! governance with anything newer.
 //!
-//! The cache holds the lossless merge input, so re-running
-//! [`rekindle_governance::merge::merge_with_accepted`] reproduces the state
-//! the last session merged (merge is reader-validates; a merged view would
-//! not). The keys are the vault's: the derived pseudonym, the slot keypair
-//! and seed, the registry keypair; the channel keys are the MEK stage's
-//! (`HostGovernance::restore_stored_meks`, run right after this one). A key the vault lacks is left absent
-//! and re-acquired from a peer, never minted (that forks the community).
+//! The op store holds the signed ops, so verifying and merging them
+//! (`rekindle_governance_runtime::op_log`) reproduces the state the last
+//! session merged. The keys are the vault's: the derived pseudonym, the
+//! slot keypair and seed, the registry keypair; the channel keys are the
+//! MEK stage's (`HostGovernance::restore_stored_meks`, run right after
+//! this one). A key the vault lacks is left absent and re-acquired from a
+//! peer, never minted (that forks the community).
 
 use std::collections::{HashMap, HashSet};
 
@@ -18,6 +19,7 @@ use rekindle_db::repo::communities::load::{
     CategoryRow, ChannelRow, CommunityLoad, EventRsvpRow, RoleRow, SlowmodeRow,
 };
 use rekindle_db::repo::communities::CommunityRow;
+use rekindle_db::repo::governance_ops::StoredOp;
 use rekindle_db::repo::members::ProfileRow;
 use rekindle_transport::session::CommunityMembership;
 use rekindle_vault::typed::community_keys;
@@ -84,21 +86,33 @@ pub(crate) async fn load(
         };
         state.held_threads.insert(rekindle_types::id::ThreadId(id));
     }
-    for (community_id, entries) in &load.governance {
+    let mut ops: HashMap<&str, Vec<StoredOp>> = HashMap::new();
+    for (community_id, op) in &load.governance {
+        ops.entry(community_id.as_str())
+            .or_default()
+            .push(op.clone());
+    }
+    for pinned in &load.pinned {
+        let community_id = &pinned.community_id;
         let Some(state) = states.get_mut(community_id) else {
             continue;
         };
-        if entries.is_empty() {
-            continue;
-        }
-        let (mut governance, accepted_clock) =
-            rekindle_governance::merge::merge_with_accepted(entries);
+        let cert = rekindle_codec::governance_op::genesis::decode_genesis(&pinned.genesis_cert)
+            .map_err(|e| format!("community {community_id}'s genesis cert: {e}"))?
+            .signed
+            .cert;
+        let held = super::ops::held_ops(
+            ops.remove(community_id.as_str()).unwrap_or_default(),
+            &pinned.heads,
+        )?;
+        let set = rekindle_governance_runtime::op_log::verify_held(community_id, &held);
+        let mut governance = rekindle_governance::merge::merge(&cert, &set.ops);
         governance
             .threads
             .retain(|id, _| !state.held_threads.contains(id));
-        state.governance_clock = state.governance_clock.max(accepted_clock);
         sync_my_roles(state, &governance);
         state.governance_state = Some(governance);
+        state.genesis_cert = Some(cert);
     }
     Ok(states)
 }

@@ -1,10 +1,9 @@
 //! Joining a community from an invite on the Host (plan E3.1 D2), both
 //! modes: `rekindle_governance_runtime::join_flow` claims our slot, then
-//! the membership, the merge input (the warm cache), the merged state and
-//! the projection are stored, with our own member row, and the mesh hears
+//! the membership is stored and the op set merged into the state and
+//! the projection, with our own member row, and the mesh hears
 //! the join. Nothing petitions anyone: admission is self-sovereign.
 
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_types::dto::community::CommunityJoined;
 use rekindle_types::invite::InviteLink;
 
@@ -51,16 +50,15 @@ impl HostGovernance {
                 membership,
                 dht_owner_keypair: None,
                 registry_keypair: None,
+                member_record_owner: None,
+                genesis_cert: None,
                 joined_at,
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
-        // The merge input into the warm cache, after the membership's row,
-        // which the cache row references; the merged state seeds the
-        // runtime cache, so the first read does not go back to the DHT.
-        self.persist_governance_entries_cache(&id, &outcome.snapshot.all_entries);
-        self.set_governance_state(&id, outcome.snapshot.gov_state);
-        self.persist_governance_snapshot(&id).await;
+        // The op set merges under the pinned cert once the membership's row
+        // (which the op store references) is stored.
+        rekindle_governance_runtime::rebuild_governance(self, &id).await;
         self.store_own_member_row(&id, &pseudonym, joined_at)
             .await?;
         self.announce_join(&id);

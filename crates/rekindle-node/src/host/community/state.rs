@@ -240,6 +240,11 @@ pub struct CommunityState {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub banner_hash: Option<String>,
 
+    /// The pinned `GenesisCert` (plan E3.2): `communities.genesis_cert`,
+    /// decoded. Origin stores it with the row; the unlock loader restores it.
+    #[serde(skip)]
+    pub genesis_cert: Option<rekindle_types::governance::GenesisCert>,
+
     /// Reader-aggregated profile snapshots (peer pseudonym → profile fields).
     /// Populated by `presence_poll_tick` from peers' presence subkeys.
     #[serde(skip)]

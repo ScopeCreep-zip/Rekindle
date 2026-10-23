@@ -54,14 +54,24 @@ async fn writes_come_back_in_the_next_projection() {
             membership: membership(),
             dht_owner_keypair: None,
             registry_keypair: Some("reg-kp".into()),
+            member_record_owner: Some(zeroize::Zeroizing::new("mr-kp".into())),
+            genesis_cert: None,
             joined_at: 1,
         },
     )
     .unwrap();
-    assert_eq!(
-        next_clock(&session, &f.db, &communities, "gov-key").unwrap(),
-        13
-    );
+    // `K_M(p)` is in the vault (plan E3.2, D1: before the row).
+    let member_record_owner = f
+        .vault
+        .lock()
+        .as_ref()
+        .unwrap()
+        .get(&rekindle_vault::VaultKey::MemberRecordOwner {
+            community: "gov-key".into(),
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(member_record_owner.as_slice(), b"mr-kp");
     update_roles(&session, &f.db, &communities, "gov-key", |roles| {
         roles.push(9);
     });
@@ -73,7 +83,7 @@ async fn writes_come_back_in_the_next_projection() {
             stored.my_pseudonym_key.as_deref(),
             Some("cd".repeat(32).as_str())
         );
-        assert_eq!(stored.governance_clock, 13);
+        assert_eq!(stored.governance_clock, 12);
         assert_eq!(stored.my_role_ids, vec![0, 7, 9]);
         assert_eq!(stored.my_subkey_index, Some(3));
         assert_eq!(stored.my_segment_index, Some(1));
@@ -106,7 +116,7 @@ async fn writes_come_back_in_the_next_projection() {
     assert_eq!(m.slot_seed, Some([9; 32]));
     assert_eq!(m.slot_index, 3);
     assert_eq!(m.segment_index, Some(1));
-    assert_eq!(m.lamport_counter, 13);
+    assert_eq!(m.lamport_counter, 12);
     assert_eq!(m.role_ids, vec![0, 7, 9]);
     assert_eq!(m.community_name, "Team");
     let bob = &reloaded.friends["bob"];

@@ -7,7 +7,6 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::CommunityDhtOpenSetup;
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
 use super::HostGovernance;
@@ -107,14 +106,6 @@ impl HostGovernance {
             .map_err(|e| GovernanceRuntimeError::Adapter(format!("app_call: {e}")))
     }
 
-    /// Re-run the pure CRDT merge. Same function every peer runs, which
-    /// is what makes the result convergent.
-    pub(super) fn rebuild_governance_state_impl(
-        entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
-    ) -> GovernanceState {
-        rekindle_governance::merge::merge(entries)
-    }
-
     // ---------- Hydration ----------
 
     pub(super) fn list_communities_for_dht_open_impl(&self) -> Vec<CommunityDhtOpenSetup> {
@@ -173,23 +164,13 @@ impl HostGovernance {
         keys
     }
 
-    /// Raise the Lamport counter, project the merged state, and save its
-    /// snapshot for the next login's restore.
+    /// Project the merged state and save its snapshot for the next
+    /// login's restore.
     pub(super) async fn apply_governance_rebuild_result_impl(
         &self,
         community_id: &str,
         gov_state: GovernanceState,
-        accepted_clock: u64,
     ) {
-        // max(), never overwrite: our own unsent entries may already have
-        // advanced past what the DHT shows.
-        crate::host::session::raise_clock(
-            &self.ctx.session,
-            &self.ctx.db,
-            &self.ctx.communities,
-            community_id,
-            accepted_clock,
-        );
         self.set_governance_state_impl(community_id, gov_state);
         self.persist_governance_snapshot(community_id).await;
     }
@@ -224,63 +205,6 @@ impl HostGovernance {
         if let Err(error) = saved {
             tracing::warn!(community_id, %error, "rebuilt governance snapshot not persisted");
         }
-    }
-
-    /// Warm cache of the raw per-author entry sets, so the next start can
-    /// re-merge losslessly without waiting on the DHT rebuild: the same
-    /// `governance_entries_cache` rows the desktop keeps. Queued; the DHT
-    /// stays authoritative.
-    pub(super) fn persist_governance_entries_cache_impl(
-        &self,
-        community_id: &str,
-        entries: &[(PseudonymKey, Vec<GovernanceEntry>)],
-    ) {
-        let Some(owner) = self
-            .ctx
-            .session
-            .read()
-            .as_ref()
-            .map(|s| s.identity.public_key_hex.clone())
-        else {
-            return;
-        };
-        let Ok(db) = self.ctx.db.current() else {
-            return;
-        };
-        let (community, entries) = (community_id.to_string(), entries.to_vec());
-        let now = self.ctx.clock.now_ms_i64();
-        db.fire("governance entries cache", move |conn| {
-            rekindle_db::repo::governance_cache::save(conn, &owner, &community, &entries, now)
-        });
-    }
-
-    /// Our new author set into the warm cache, the other authors kept.
-    pub(super) fn persist_own_governance_entries_impl(
-        &self,
-        community_id: &str,
-        author: &PseudonymKey,
-        entries: &[GovernanceEntry],
-    ) {
-        let Some(owner) = self
-            .ctx
-            .session
-            .read()
-            .as_ref()
-            .map(|s| s.identity.public_key_hex.clone())
-        else {
-            return;
-        };
-        let Ok(db) = self.ctx.db.current() else {
-            return;
-        };
-        let (community, author, entries) =
-            (community_id.to_string(), author.clone(), entries.to_vec());
-        let now = self.ctx.clock.now_ms_i64();
-        db.fire("own governance entries cache", move |conn| {
-            rekindle_db::repo::governance_cache::replace_author(
-                conn, &owner, &community, &author, &entries, now,
-            )
-        });
     }
 
     // ---------- Background tasks ----------

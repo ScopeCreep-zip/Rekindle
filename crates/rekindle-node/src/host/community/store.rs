@@ -352,9 +352,22 @@ impl CommunityStore {
         });
     }
 
-    /// Our governance clock, as the session advanced or raised it.
-    pub fn set_governance_clock(&self, community_id: &str, clock: u64) {
-        self.update(community_id, |c| c.governance_clock = clock);
+    /// Pin the community's `GenesisCert` (plan E3.2).
+    pub fn set_genesis_cert(
+        &self,
+        community_id: &str,
+        cert: rekindle_types::governance::GenesisCert,
+    ) {
+        self.update(community_id, |c| c.genesis_cert = Some(cert));
+    }
+
+    /// The community's pinned `GenesisCert`.
+    #[must_use]
+    pub fn genesis_cert(
+        &self,
+        community_id: &str,
+    ) -> Option<rekindle_types::governance::GenesisCert> {
+        self.map.read().get(community_id)?.genesis_cert.clone()
     }
 
     /// Our role ids, as the session changed them.

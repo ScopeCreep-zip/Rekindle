@@ -140,7 +140,8 @@ pub enum GovernanceEntry {
     MemberJoined {
         /// DHT key of the joiner's DFLT(8) member record.
         member_record: String,
-        /// The member record's owner public key (hex).
+        /// The member record's owner public key, as `owner_of` names it
+        /// (`VLD0:<base64url>` text).
         member_record_owner: String,
         invite_proof: Option<super::op::InviteProof>,
     },

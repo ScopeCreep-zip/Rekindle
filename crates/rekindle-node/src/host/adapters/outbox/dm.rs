@@ -64,6 +64,9 @@ impl OutboxSlot {
             StreamKind::GroupDm,
             Arc::new(GroupSender(HostFriends::of(ctx))),
         );
+        self.install_governance_op_sender(crate::host::adapters::governance::HostGovernance::new(
+            ctx.this.upgrade().expect("a context in use is alive"),
+        ));
         *self.current.write() = Some(Arc::clone(&outbox));
         let friends = HostFriends::of(ctx);
         scope

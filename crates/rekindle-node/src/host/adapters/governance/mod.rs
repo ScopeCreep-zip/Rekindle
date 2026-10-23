@@ -61,6 +61,7 @@ mod membership_roster;
 mod membership_route;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_map;
+mod ops;
 pub(crate) mod pins;
 pub mod projection;
 mod registry;
