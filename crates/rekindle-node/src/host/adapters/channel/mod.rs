@@ -29,7 +29,7 @@ mod blocks;
 pub mod deps_impl;
 mod dht;
 mod events;
-mod history;
+pub(crate) mod history;
 pub mod ingest;
 mod persist;
 pub(crate) mod rich;

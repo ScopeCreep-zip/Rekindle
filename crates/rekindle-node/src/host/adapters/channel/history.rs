@@ -59,7 +59,7 @@ impl HostChannel {
     /// Store each record message we do not hold yet and could open. One we
     /// could not open is not stored: its row would keep an empty body after
     /// its key arrives.
-    async fn store_record_messages(
+    pub(crate) async fn store_record_messages(
         &self,
         owner: &str,
         channel_id: &str,
@@ -126,7 +126,11 @@ impl HostChannel {
 
 /// One stored row as a frontend renders it; `own_key` and `pseudonym` mark
 /// which senders are us.
-fn stored_view(row: StoredChannelMessage, own_key: &str, pseudonym: &str) -> ChannelMessageView {
+pub(crate) fn stored_view(
+    row: StoredChannelMessage,
+    own_key: &str,
+    pseudonym: &str,
+) -> ChannelMessageView {
     let is_own = row.sender_key == own_key || row.sender_key == pseudonym;
     let attachment = (row.attachment_json.as_deref())
         .and_then(|json| serde_json::from_str::<rekindle_files::AttachmentRecordJson>(json).ok())

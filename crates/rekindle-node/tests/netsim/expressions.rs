@@ -68,4 +68,16 @@ async fn expression_upload_seen() {
     })
     .await;
     assert!(seen, "the other member lists the emoji");
+
+    // The other member's Host fetches the emoji's chunks after the merge
+    // that named it (plan E3.1 E3f), so it reads the same picture.
+    let picture = mine.inline_data_url.clone();
+    let fetched = eventually(&community.sim, LIMIT, || async {
+        expressions(&community.nodes[1], &key)
+            .await
+            .iter()
+            .any(|e| e.expression_id == id && e.inline_data_url == picture)
+    })
+    .await;
+    assert!(fetched, "the other member reads the emoji's bytes");
 }

@@ -12,6 +12,8 @@ use rekindle_ipc::{Caller, ConnId, HostApi};
 mod attachment_limit;
 #[path = "automod_malformed_tests.rs"]
 mod automod_malformed;
+#[path = "channel_history_tests.rs"]
+mod channel_history_tests;
 #[path = "channel_ingest_tests.rs"]
 mod channel_ingest_tests;
 #[path = "channel_send_tests.rs"]
