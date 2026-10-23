@@ -320,6 +320,64 @@ pub async fn fetch_held<D: GovernanceRuntimeDeps>(
     }))
 }
 
+/// The gossip fast path (`governanceOp @74`): store an op a member
+/// published, as a fetched one, when it is new, its author's member record
+/// is known (its own `MemberJoined`, or the merged state's) and it does not
+/// verify as refused; then rebuild, which fetches its missing deps by
+/// `OpRef`. `true`: it was stored.
+///
+/// # Errors
+/// No cert is pinned, or the op store failed.
+pub async fn receive_op<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    encoded: Vec<u8>,
+) -> Result<bool, GovernanceRuntimeError> {
+    let Ok(decoded) = decode_op(&encoded) else {
+        return Ok(false);
+    };
+    let hash = op_hash(&decoded.unsigned, &decoded.op.sig);
+    let mut held = deps.governance_ops(community_id).await?;
+    if held.iter().any(|op| op.hash == hash) {
+        return Ok(false);
+    }
+    let cert = deps
+        .genesis_cert(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
+    let record = match &decoded.op.body {
+        rekindle_types::governance::GovernanceEntry::MemberJoined { member_record, .. }
+            if decoded.op.seq == 0 =>
+        {
+            Some(member_record.clone())
+        }
+        _ => author_record(
+            &cert,
+            &deps.governance_state(community_id).unwrap_or_default(),
+            &decoded.op.author,
+        ),
+    };
+    let Some(author_record) = record else {
+        return Ok(false);
+    };
+    let op = HeldOp {
+        hash,
+        author: decoded.op.author.clone(),
+        author_record,
+        seq: decoded.op.seq,
+        lamport: 0,
+        issued_at: decoded.op.issued_at,
+        encoded,
+        fate: OpFate::PendingDeps,
+    };
+    held.push(op.clone());
+    if verify_held(community_id, &held).quarantined.contains(&hash) {
+        return Ok(false);
+    }
+    deps.store_governance_op(community_id, &op).await?;
+    crate::dht_hydration::rebuild_governance(deps, community_id).await;
+    Ok(true)
+}
+
 /// Walk the op DAG of `anchor` from `start` (a member's `Frontier`) by
 /// `OpRef`, through deps, until a pass fetches nothing new: the joiner's
 /// read of the op set with nobody online. Nothing is stored; the caller

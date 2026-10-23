@@ -42,6 +42,12 @@ pub(crate) async fn handle_control_events_and_threads(
         | ControlPayload::ThreadMessageReceived { .. }) => {
             handle_thread_payload(app_handle, state, community_id, payload);
         }
+        ControlPayload::GovernanceOp { op } => {
+            // The Host's op store and rebuild (plan E3.2).
+            if let Some(host) = state.host.current() {
+                host.governance().on_governance_op(community_id, op).await;
+            }
+        }
         payload @ (ControlPayload::GameServerAdded { .. }
         | ControlPayload::GameServerRemoved { .. }) => {
             handle_game_server_payload(app_handle, state, community_id, sender_pseudonym, payload)

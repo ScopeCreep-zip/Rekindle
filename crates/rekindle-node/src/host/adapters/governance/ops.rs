@@ -246,9 +246,28 @@ impl HostGovernance {
             .outbox
             .governance_ops()
             .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
-        ops.publish(community_id, &record, encoded)
+        ops.publish(community_id, &record, encoded.clone())
             .await
-            .map_err(|e| adapter("publish op", e))
+            .map_err(|e| adapter("publish op", e))?;
+        // The fast path: every member hears the op before its watch fires.
+        self.send_to_mesh_impl(
+            community_id,
+            &rekindle_codec::community::envelope::CommunityEnvelope::Control(
+                rekindle_codec::community::envelope::ControlPayload::GovernanceOp { op: encoded },
+            ),
+        );
+        Ok(())
+    }
+
+    /// A gossiped `governanceOp @74`: into the op store and the rebuild
+    /// (`op_log::receive_op`), for both tracks.
+    pub async fn on_governance_op(&self, community_id: &str, op: Vec<u8>) {
+        if !self.ctx.communities.map().read().contains_key(community_id) {
+            return;
+        }
+        if let Err(error) = op_log::receive_op(self, community_id, op).await {
+            tracing::debug!(community = community_id, %error, "gossiped governance op not stored");
+        }
     }
 
     /// The `governance_op` stream's send: append `op` to `record`'s op log

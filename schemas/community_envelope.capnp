@@ -789,5 +789,9 @@ struct ControlPayload @0xeaffffff00000001 {
         voiceMediaKey            @71 :VoiceMediaKeyPayload;
         voiceMediaKeyRequest     @72 :VoiceMediaKeyRequestPayload;
         voiceMediaKeyAck         @73 :VoiceMediaKeyAckPayload;
+        # The gossip fast path for a signed governance op (plan E3.2): the
+        # encoded GovernanceOp (governance_op.capnp) a member published to
+        # its M/2; a receiver verifies it and stores it like a fetched op.
+        governanceOp             @74 :Data;
     }
 }

@@ -331,6 +331,9 @@ pub fn control_into_event(
         | ControlPayload::VoiceMediaKey { .. }
         | ControlPayload::VoiceMediaKeyRequest { .. }
         | ControlPayload::VoiceMediaKeyAck { .. }
+        // A governance op reaches the Host's op store, whose rebuild emits
+        // what changed (plan E3.2).
+        | ControlPayload::GovernanceOp { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

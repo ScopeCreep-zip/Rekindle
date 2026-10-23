@@ -210,6 +210,16 @@ impl InboundHandler for DaemonHandler {
             }
         }
 
+        // A signed governance op (plan E3.2, `governanceOp @74`).
+        if let CommunityEnvelope::Control(ControlPayload::GovernanceOp { ref op }) = envelope {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .on_governance_op(community_id, op.clone())
+                    .await;
+            }
+            return;
+        }
+
         // A game server added or removed (plan E3.1 H1): stored when the
         // Host's adapter accepts it.
         if let CommunityEnvelope::Control(
