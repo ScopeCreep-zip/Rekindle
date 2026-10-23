@@ -17,6 +17,7 @@ mod first_contact_receipt;
 mod first_contact_retry;
 mod first_login;
 mod forward_cross_audience;
+mod friend_name;
 mod friend_watch;
 mod friends;
 mod friends_key_receipt;

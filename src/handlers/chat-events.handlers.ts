@@ -200,6 +200,13 @@ function applyFriendEvent(friend: FriendEvent): void {
     }
     return;
   }
+  if ("displayNameChanged" in friend) {
+    const { peerKey, displayName } = friend.displayNameChanged;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "displayName", displayName);
+    }
+    return;
+  }
   if ("groupChanged" in friend) {
     const { peerKey, group, groupLabel } = friend.groupChanged;
     if (friendsState.friends[peerKey]) {

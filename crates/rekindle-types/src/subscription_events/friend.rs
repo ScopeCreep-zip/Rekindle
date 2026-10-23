@@ -60,6 +60,14 @@ pub enum FriendEvent {
         peer_key: String,
         nickname: Option<String>,
     },
+    /// A friend's own display name changed, as their profile record holds
+    /// it (subkey 0, live A/B finding 39).
+    /// Triggered by: the read after their profile is watched, and a value
+    /// change of its subkey 0.
+    DisplayNameChanged {
+        peer_key: String,
+        display_name: String,
+    },
     /// A friend's group changed: moved, or their group renamed or deleted
     /// (`None`: no group).
     /// Triggered by: the friend-group actions.

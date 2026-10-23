@@ -214,6 +214,15 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"|");
             h.update(new_profile_dht_key.as_bytes());
         }
+        FriendEvent::DisplayNameChanged {
+            peer_key,
+            display_name,
+        } => {
+            h.update(b"name|");
+            h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(display_name.as_bytes());
+        }
         FriendEvent::NicknameChanged { peer_key, nickname } => {
             h.update(b"nick|");
             h.update(peer_key.as_bytes());

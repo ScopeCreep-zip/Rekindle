@@ -107,6 +107,9 @@ mod tests {
         }
         fn set_friend_last_heartbeat(&self, _: &str, _: i64) {}
         fn set_friend_game_info(&self, _: &str, _: Option<GameInfoSnapshot>) {}
+        fn set_friend_display_name(&self, _: &str, _: &str) -> bool {
+            true
+        }
         fn set_friend_dht_record_key(&self, friend_key: &str, dht_key: &str) {
             self.state
                 .lock()

@@ -14,6 +14,7 @@ pub const NAMES: &[&str] = &[
     "removeAcknowledged",
     "profileKeyRotated",
     "nicknameChanged",
+    "displayNameChanged",
     "groupChanged",
     "keyChanged",
     "handshakeFailed",
@@ -35,6 +36,7 @@ pub fn variant_name(e: &FriendEvent) -> &'static str {
         FriendEvent::RemoveAcknowledged { .. } => "removeAcknowledged",
         FriendEvent::ProfileKeyRotated { .. } => "profileKeyRotated",
         FriendEvent::NicknameChanged { .. } => "nicknameChanged",
+        FriendEvent::DisplayNameChanged { .. } => "displayNameChanged",
         FriendEvent::GroupChanged { .. } => "groupChanged",
         FriendEvent::KeyChanged { .. } => "keyChanged",
         FriendEvent::HandshakeFailed { .. } => "handshakeFailed",
@@ -98,6 +100,13 @@ pub fn samples() -> Vec<Sample> {
             FriendEvent::NicknameChanged {
                 peer_key: pk('b'),
                 nickname: Some(text("Bobby")),
+            },
+        ),
+        ev(
+            "displayNameChanged",
+            FriendEvent::DisplayNameChanged {
+                peer_key: pk('b'),
+                display_name: text("Bob"),
             },
         ),
         ev(

@@ -124,6 +124,7 @@ export type FriendEvent =
   | { removeAcknowledged: { peerKey: string } }
   | { profileKeyRotated: { peerKey: string; newProfileDhtKey: string } }
   | { nicknameChanged: { peerKey: string; nickname: string | null } }
+  | { displayNameChanged: { peerKey: string; displayName: string } }
   | { groupChanged: { peerKey: string; group: string | null; groupLabel: string } }
   | { keyChanged: { peerKey: string; newKey: string } }
   | { handshakeFailed: { peerKey: string; reason: string } }

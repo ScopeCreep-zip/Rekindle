@@ -21,14 +21,15 @@ pub const STALE_PRESENCE_THRESHOLD_MS: i64 = 150 * 1000;
 /// `[status, timestamp_be]` payload.
 pub const PROFILE_STATUS_SUBKEY: u32 = rekindle_types::dht_layout::profile::STATUS;
 
-/// Subkeys we subscribe to on a friend's profile DHT record: status
-/// + game-info + route-blob.
+/// Subkeys we subscribe to on a friend's profile DHT record: display
+/// name (live A/B finding 39) + status + game-info + route-blob.
 ///
 /// These were written as a bare `&[2, 4, 6]`. Naming them means a
 /// renumbering of the profile record moves this watch set with it —
 /// the indices moved once already when the friend-inbox pair was
 /// relocated to make room for the Strand Relay pool.
 pub const FRIEND_WATCH_SUBKEYS: &[u32] = &[
+    rekindle_types::dht_layout::profile::DISPLAY_NAME,
     rekindle_types::dht_layout::profile::STATUS,
     rekindle_types::dht_layout::profile::GAME_INFO,
     rekindle_types::dht_layout::profile::ROUTE_BLOB,
@@ -88,6 +89,7 @@ pub fn handle_value_change<D: FriendPresenceDeps>(
     };
     for &subkey in subkeys {
         match subkey {
+            0 => handle_name_change(deps, &friend_key, value),
             2 => {
                 if let Some(value) = opened(deps, &friend_key, subkey, value) {
                     handle_status_change(deps, &friend_key, &value);
@@ -193,6 +195,28 @@ fn handle_game_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: 
     });
 }
 
+/// A friend's profile subkey 0: their own display name, UTF-8 as they
+/// wrote it (`rekindle_protocol::dht::profile`). One that is empty, too
+/// long or holds a forbidden character is dropped; a new one is stored
+/// and published (live A/B finding 39).
+fn handle_name_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: &[u8]) {
+    let name = std::str::from_utf8(value)
+        .ok()
+        .and_then(|text| rekindle_types::presence::limits::peer_display_name(text).ok())
+        .map(str::trim)
+        .filter(|name| !name.is_empty());
+    let Some(name) = name else {
+        tracing::debug!(friend = %friend_key, "friend display name dropped");
+        return;
+    };
+    if deps.set_friend_display_name(friend_key, name) {
+        deps.emit(FriendPresenceEvent::DisplayNameChanged {
+            friend_key: friend_key.to_string(),
+            display_name: name.to_string(),
+        });
+    }
+}
+
 fn handle_route_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: &[u8]) {
     tracing::debug!(friend = %friend_key, "friend route blob updated");
     if !value.is_empty() {
@@ -272,6 +296,18 @@ pub async fn watch_friend<D: FriendPresenceDeps>(
     }
     // Held either way: the pool re-arms a held record's watch.
     deps.hold_friend_record(friend_key, lease).await;
+    // The name is read once now: a watch reports changes, not the value
+    // the record already holds (live A/B finding 39).
+    if let Some(name) = deps
+        .fetch_friend_dht_subkey(
+            dht_record_key,
+            rekindle_types::dht_layout::profile::DISPLAY_NAME,
+            true,
+        )
+        .await
+    {
+        handle_name_change(&*deps, friend_key, &name);
+    }
     Ok(())
 }
 

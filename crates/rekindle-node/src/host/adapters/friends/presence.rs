@@ -11,16 +11,26 @@ use rekindle_presence::{
 use rekindle_records::lease::LeaseId;
 use rekindle_types::friend::{FriendshipState, GameInfoState, UserStatus};
 use rekindle_types::subscription_events::{
-    GameActivity, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
+    FriendEvent, GameActivity, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
 };
 
 use super::HostFriends;
 
-/// A presence event as the subscription stream names it: online, offline
-/// and status are one observation; a game change leaves the status
+/// A presence event as the subscription stream names it (a display name
+/// is a friend event, live A/B finding 39): online, offline and status are
+/// one observation; a game change leaves the status
 /// unobserved, so neither overwrites what the peer never restated.
-fn presence_event(event: FriendPresenceEvent) -> PresenceEvent {
+fn subscription_event(event: FriendPresenceEvent) -> SubscriptionEvent {
     let (friend_key, snapshot) = match event {
+        FriendPresenceEvent::DisplayNameChanged {
+            friend_key,
+            display_name,
+        } => {
+            return SubscriptionEvent::Friend(FriendEvent::DisplayNameChanged {
+                peer_key: friend_key,
+                display_name,
+            })
+        }
         FriendPresenceEvent::FriendOnline { friend_key } => {
             (friend_key, PresenceSnapshot::status("online"))
         }
@@ -40,10 +50,10 @@ fn presence_event(event: FriendPresenceEvent) -> PresenceEvent {
             )),
         ),
     };
-    PresenceEvent::FriendChanged {
+    SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
         peer_key: friend_key,
         snapshot,
-    }
+    })
 }
 
 impl HostFriends {
@@ -151,6 +161,32 @@ impl FriendPresenceDeps for HostFriends {
         self.with_friend(friend_key, |f| f.game_info = game);
     }
 
+    fn set_friend_display_name(&self, friend_key: &str, display_name: &str) -> bool {
+        let mut changed = false;
+        self.with_friend(friend_key, |f| {
+            if f.display_name != display_name {
+                display_name.clone_into(&mut f.display_name);
+                changed = true;
+            }
+        });
+        if !changed {
+            return false;
+        }
+        if let (Ok(owner), Ok(db)) = (self.ctx().require_owner(), self.ctx().db.current()) {
+            let (pk, name) = (friend_key.to_string(), display_name.to_string());
+            db.fire("friend display name", move |conn| {
+                rekindle_db::repo::friends::set(
+                    conn,
+                    &owner,
+                    &pk,
+                    rekindle_db::repo::friends::Column::DisplayName,
+                    name,
+                )
+            });
+        }
+        true
+    }
+
     fn set_friend_dht_record_key(&self, friend_key: &str, dht_record_key: &str) {
         self.with_friend(friend_key, |f| {
             f.dht_record_key = Some(dht_record_key.to_string());
@@ -217,8 +253,7 @@ impl FriendPresenceDeps for HostFriends {
     }
 
     fn emit(&self, event: FriendPresenceEvent) {
-        self.ctx()
-            .publish_event(SubscriptionEvent::Presence(presence_event(event)));
+        self.ctx().publish_event(subscription_event(event));
     }
 
     async fn fetch_friend_dht_subkey(

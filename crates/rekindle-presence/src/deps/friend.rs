@@ -50,6 +50,12 @@ pub enum FriendPresenceEvent {
         friend_key: String,
         game: Option<GameInfoSnapshot>,
     },
+    /// The friend's own display name (their profile's subkey 0) changed
+    /// (live A/B finding 39); the adapter publishes it as a friend event.
+    DisplayNameChanged {
+        friend_key: String,
+        display_name: String,
+    },
 }
 
 /// Composite Deps for every friend-presence op.
@@ -104,6 +110,10 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
     fn set_friend_offline(&self, friend_key: &str, last_seen_ts_ms: i64);
     fn set_friend_last_heartbeat(&self, friend_key: &str, heartbeat_ts_ms: i64);
     fn set_friend_game_info(&self, friend_key: &str, game: Option<GameInfoSnapshot>);
+    /// Store the friend's own display name, read from their profile, in
+    /// the projection and the database; whether it changed (live A/B
+    /// finding 39).
+    fn set_friend_display_name(&self, friend_key: &str, display_name: &str) -> bool;
     fn set_friend_dht_record_key(&self, friend_key: &str, dht_record_key: &str);
 
     // === Route and watch state ===

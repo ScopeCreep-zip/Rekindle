@@ -417,6 +417,7 @@ impl App {
                 | FriendEvent::BlockChanged { .. }
                 | FriendEvent::GroupChanged { .. }
                 | FriendEvent::NicknameChanged { .. }
+                | FriendEvent::DisplayNameChanged { .. }
                 | FriendEvent::KeyChanged { .. }
                 | FriendEvent::VerificationChanged { .. }
                 | FriendEvent::Added { .. }

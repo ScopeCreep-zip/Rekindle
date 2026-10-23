@@ -321,6 +321,14 @@
       }
     }
   },
+  "friend.displayNameChanged": {
+    "friend": {
+      "displayNameChanged": {
+        "displayName": "Bob",
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    }
+  },
   "friend.groupChanged": {
     "friend": {
       "groupChanged": {
