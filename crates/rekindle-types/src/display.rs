@@ -83,6 +83,9 @@ pub struct DecryptedMessageDisplay {
     pub mek_generation: u64,
     pub is_encrypted: bool,
     pub needs_mek: Option<u64>,
+    /// The D26 gate hid it (an automod `BlurContent` match): it renders
+    /// blurred.
+    pub automod_blurred: bool,
 }
 
 // ── DMs ─────────────────────────────────────────────────────────────────

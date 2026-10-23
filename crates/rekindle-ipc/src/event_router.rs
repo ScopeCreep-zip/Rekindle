@@ -276,6 +276,7 @@ mod tests {
             timestamp: 0,
             body: None,
             reply_to_message_id: None,
+            automod_blurred: false,
         })
     }
 

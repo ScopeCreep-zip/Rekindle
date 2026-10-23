@@ -26,6 +26,7 @@ impl HostChannel {
                 timestamp: echo.timestamp_ms,
                 body: Some(echo.body.clone()),
                 reply_to_message_id: None,
+                automod_blurred: false,
             },
         ));
     }

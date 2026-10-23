@@ -215,6 +215,7 @@
   "channelMessage.new": {
     "channelMessage": {
       "new": {
+        "automodBlurred": true,
         "body": "hello channel",
         "channel": "ch_cccccccccccccccccccccccccccccccc",
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",

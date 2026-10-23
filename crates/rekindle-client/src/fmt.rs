@@ -2,6 +2,10 @@
 
 use std::time::Duration;
 
+/// What a frontend shows in place of a post the D26 gate hid (an automod
+/// `BlurContent` match, `automod_blurred`): the body stays out of sight.
+pub const AUTOMOD_BLURRED: &str = "[blurred by automod]";
+
 /// A duration as "just now", "4m ago", "2h 13m ago", "3d 5h ago".
 #[must_use]
 pub fn format_duration_ago(duration: Duration) -> String {

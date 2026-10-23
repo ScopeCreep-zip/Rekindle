@@ -28,6 +28,10 @@ pub enum ChannelMessageEvent {
         body: Option<String>,
         /// The message id of the parent this one replies to.
         reply_to_message_id: Option<String>,
+        /// The D26 gate hid the post (an automod `BlurContent` match): it is
+        /// stored with `automod_blurred` and every frontend renders it
+        /// blurred.
+        automod_blurred: bool,
     },
     /// A message was edited.
     /// Triggered by: gossip `ControlPayload::MessageEdited`.

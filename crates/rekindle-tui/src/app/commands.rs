@@ -396,5 +396,6 @@ fn message_row(view: ChannelMessageView) -> dt::DecryptedMessageDisplay {
         mek_generation: 0,
         is_encrypted: encrypted,
         needs_mek: encrypted.then_some(0),
+        automod_blurred: view.automod_blurred,
     }
 }

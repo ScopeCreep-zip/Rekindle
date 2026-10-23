@@ -217,6 +217,7 @@ impl SubscriptionManager {
                             timestamp: self.clock.now_ms(),
                             body: None,
                             reply_to_message_id: None,
+                            automod_blurred: false,
                         },
                     ));
                 }

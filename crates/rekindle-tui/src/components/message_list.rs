@@ -259,6 +259,11 @@ impl MessageList {
                     ),
                     Span::styled(hint, Style::new().dim()),
                 ]));
+            } else if msg.automod_blurred {
+                lines.push(Line::from(Span::styled(
+                    rekindle_client::fmt::AUTOMOD_BLURRED,
+                    Style::new().dim().italic(),
+                )));
             } else {
                 let body = helpers::sanitize_for_display(&msg.body);
                 for line in body.lines() {
@@ -405,6 +410,7 @@ mod tests {
             mek_generation: 1,
             is_encrypted: false,
             needs_mek: None,
+            automod_blurred: false,
         }
     }
 

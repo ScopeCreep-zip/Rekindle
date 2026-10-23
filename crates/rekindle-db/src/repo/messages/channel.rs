@@ -94,6 +94,28 @@ pub fn row_id_by_message_id(
     .optional()
 }
 
+/// Whether the gate hid our stored channel message `message_id`
+/// (`automod_blurred`), when we hold it.
+///
+/// # Errors
+/// The query failed.
+pub fn held_blurred(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<bool>> {
+    use rusqlite::OptionalExtension as _;
+    conn.query_row(
+        "SELECT automod_blurred FROM messages \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND message_id = ?3 LIMIT 1",
+        params![owner_key, channel_id, message_id],
+        |row| row.get::<_, i64>(0).map(|blurred| blurred != 0),
+    )
+    .optional()
+}
+
 /// The local row (`reply_to_id`) that our stored channel message
 /// `message_id` replies to, or `None` when it is not a reply or not stored.
 pub fn reply_row_id(

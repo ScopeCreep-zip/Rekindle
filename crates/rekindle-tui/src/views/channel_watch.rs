@@ -427,6 +427,7 @@ impl View for ChannelWatchView {
                 timestamp,
                 body,
                 reply_to_message_id,
+                automod_blurred,
             }) if *community == self.community && *channel == self.channel => {
                 self.message_list.push(DecryptedMessageDisplay {
                     message_id: message_id.clone(),
@@ -439,6 +440,7 @@ impl View for ChannelWatchView {
                     mek_generation: 0,
                     is_encrypted: body.is_none(),
                     needs_mek: if body.is_none() { Some(0) } else { None },
+                    automod_blurred: *automod_blurred,
                 });
             }
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Deleted {

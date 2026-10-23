@@ -215,12 +215,17 @@ async fn watch_channel(
             sender_pseudonym,
             timestamp,
             body: text,
+            automod_blurred,
             ..
         }) if *channel == channel_id => Some(format!(
             "[{}] {}: {}",
             rekindle_client::fmt::format_time_short(*timestamp),
             rekindle_client::fmt::abbreviate_key(sender_pseudonym),
-            body(text)
+            if *automod_blurred {
+                rekindle_client::fmt::AUTOMOD_BLURRED.to_owned()
+            } else {
+                body(text)
+            }
         )),
         SubscriptionEvent::ChannelMessage(ChannelMessageEvent::Edited {
             channel,

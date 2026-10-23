@@ -7,9 +7,12 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::{self, BlockList, GateItem, GateReason, Verdict};
-use rekindle_channel::ChannelMessagingDeps;
+use std::sync::Arc;
+
+use rekindle_channel::{AutoModCompiledCache, ChannelMessagingDeps};
 use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
+use rekindle_governance::state::GovernanceState;
 use rekindle_records::port::RecordPort;
 use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
 use rekindle_types::id::ChannelId;
@@ -43,6 +46,24 @@ struct Row {
     blurred: bool,
     own: bool,
     mentions_me: bool,
+}
+
+/// One opened post as the gate judges it, from any receive path.
+pub(crate) struct GatedPost<'a> {
+    pub community_id: &'a str,
+    pub channel_id: &'a str,
+    pub sender_pseudonym: &'a str,
+    pub body: &'a str,
+    /// The post's own timestamp, in milliseconds.
+    pub timestamp_ms: u64,
+}
+
+/// The community state a batch of posts is judged against
+/// ([`HostChannel::gate_inputs`]).
+pub(crate) struct GateInputs {
+    gov: GovernanceState,
+    rules: Arc<AutoModCompiledCache>,
+    blocked: BlockList,
 }
 
 /// What the ingest did with a post.
@@ -173,6 +194,7 @@ impl HostChannel {
             self.my_pseudonym_impl(community).as_deref() == Some(&post.message.sender_pseudonym);
         let mentions_me =
             !own && rekindle_channel::mentions::message_mentions_me(self, community, &post.message);
+        let report_id = message_id.clone();
         let row = Row {
             message_id: message_id.clone(),
             body: body.clone(),
@@ -191,6 +213,7 @@ impl HostChannel {
                 timestamp: post.message.timestamp,
                 body: Some(body.clone()),
                 reply_to_message_id: post.message.reply_to.clone(),
+                automod_blurred: blurred,
             },
         ));
         if let Err(e) = self
@@ -201,7 +224,8 @@ impl HostChannel {
             tracing::warn!(error = %e, "channel unread count not published");
         }
         if let Some(reason) = report {
-            self.report_to_moderators(&post, &reason).await;
+            self.report_to_moderators(community, &post.channel_id, &report_id, &reason)
+                .await;
         }
         Ok(Ingested::Stored { body, blurred })
     }
@@ -210,16 +234,17 @@ impl HostChannel {
     /// writes the post's `ModReport` and raises `AutoModAlert`. The report
     /// id is derived from the post, so every moderator's write is one
     /// queue row.
-    async fn report_to_moderators(&self, post: &ReceivedPost, reason: &str) {
-        let community = post.community_id.as_str();
+    pub(crate) async fn report_to_moderators(
+        &self,
+        community: &str,
+        channel: &str,
+        message_id: &str,
+        reason: &str,
+    ) {
         let moderator = self
-            .require_channel_permission(community, Some(&post.channel_id), MANAGE_MESSAGES)
+            .require_channel_permission(community, Some(channel), MANAGE_MESSAGES)
             .is_ok();
-        let (Some(message_id), Some(channel_id), true) = (
-            post.message.message_id.clone(),
-            ChannelId::from_hex(&post.channel_id),
-            moderator,
-        ) else {
+        let (Some(channel_id), true) = (ChannelId::from_hex(channel), moderator) else {
             return;
         };
         let mut hasher = blake3::Hasher::new_derive_key("rekindle 2026-10 mod report id");
@@ -233,7 +258,7 @@ impl HostChannel {
             .is_some_and(|g| g.mod_reports.contains_key(&report_id));
         if !held {
             if let Err(e) = self
-                .write_report(community, report_id, channel_id, &message_id, reason)
+                .write_report(community, report_id, channel_id, message_id, reason)
                 .await
             {
                 tracing::warn!(error = %e, community, "moderator report not written");
@@ -241,9 +266,9 @@ impl HostChannel {
         }
         self.ctx()
             .publish_event(SubscriptionEvent::System(SystemEvent::AutoModAlert {
-                community: post.community_id.clone(),
-                channel: post.channel_id.clone(),
-                message_id,
+                community: community.to_owned(),
+                channel: channel.to_owned(),
+                message_id: message_id.to_owned(),
                 rule_name: reason.to_owned(),
             }));
     }
@@ -279,31 +304,68 @@ impl HostChannel {
         post: &ReceivedPost,
         body: &str,
     ) -> Result<Verdict, ChannelError> {
+        let inputs = self.gate_inputs(owner, db, &post.community_id).await?;
+        Ok(self.verdict(
+            &inputs,
+            &GatedPost {
+                community_id: &post.community_id,
+                channel_id: &post.channel_id,
+                sender_pseudonym: &post.message.sender_pseudonym,
+                body,
+                timestamp_ms: post.message.timestamp,
+            },
+        ))
+    }
+
+    /// What the gate judges a community's posts against: its merged state,
+    /// its compiled automod rules and our block list, read once for every
+    /// post of one batch (a live post, or a backfilled page).
+    ///
+    /// # Errors
+    /// The community's governance state is not loaded, or the block list
+    /// read failed.
+    pub(crate) async fn gate_inputs(
+        &self,
+        owner: &str,
+        db: &rekindle_db::Db,
+        community_id: &str,
+    ) -> Result<GateInputs, ChannelError> {
         let gov = self
-            .governance_state(&post.community_id)
+            .governance_state(community_id)
             .ok_or_else(|| ChannelError::Adapter("governance state not loaded".into()))?;
-        let (key, community) = (owner.to_owned(), post.community_id.clone());
+        let (key, community) = (owner.to_owned(), community_id.to_owned());
         let blocked = db
             .call(move |conn| rekindle_db::repo::community_blocks::list(conn, &key, &community))
             .await
             .map_err(stored)?;
-        let blocked = BlockList::new(blocked.into_iter().map(|b| b.pseudonym));
+        let rules = rekindle_channel::compiled_automod_rules(self, community_id, &gov);
+        Ok(GateInputs {
+            gov,
+            rules,
+            blocked: BlockList::new(blocked.into_iter().map(|b| b.pseudonym)),
+        })
+    }
+
+    /// The gate's verdict on one post, against `inputs` and the Host's
+    /// slowmode windows: the one judgement every received post passes,
+    /// whatever path brought it in (live ingest, notified fetch or the
+    /// history backfill).
+    pub(crate) fn verdict(&self, inputs: &GateInputs, post: &GatedPost<'_>) -> Verdict {
         let item = GateItem {
-            community_id: &post.community_id,
-            channel_id: &post.channel_id,
-            sender_pseudonym: &post.message.sender_pseudonym,
-            body,
-            sent_at_secs: post.message.timestamp / 1000,
+            community_id: post.community_id,
+            channel_id: post.channel_id,
+            sender_pseudonym: post.sender_pseudonym,
+            body: post.body,
+            sent_at_secs: post.timestamp_ms / 1000,
             now_secs: self.ctx().clock.now_secs(),
         };
-        let rules = rekindle_channel::compiled_automod_rules(self, &post.community_id, &gov);
-        Ok(ingest::gate(
+        ingest::gate(
             &item,
-            &gov,
-            &rules,
-            &blocked,
+            &inputs.gov,
+            &inputs.rules,
+            &inputs.blocked,
             &mut self.ctx().channel_rate_limits.lock(),
-        ))
+        )
     }
 
     async fn store_received(

@@ -52,6 +52,7 @@ pub fn samples() -> Vec<Sample> {
                 timestamp: 1_760_000_000_000,
                 body: Some(text("hello channel")),
                 reply_to_message_id: Some("msg_41".into()),
+                automod_blurred: true,
             },
         ),
         ev(
