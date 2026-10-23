@@ -34,10 +34,7 @@ use super::roles::{
     write_role_archived, write_role_assignment, write_role_definition, write_role_unassignment,
 };
 
-pub(in crate::capnp_envelope) fn write_governance_entry(
-    b: schema::Builder<'_>,
-    e: &GovernanceEntry,
-) {
+pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry) {
     let mut b = b;
     match e {
         GovernanceEntry::AdminDelete {

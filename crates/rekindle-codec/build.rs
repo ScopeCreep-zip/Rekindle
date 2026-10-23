@@ -119,6 +119,7 @@ fn main() {
                 .file("../../schemas/community_governance.capnp")
                 .file("../../schemas/community_envelope.capnp")
                 .file("../../schemas/member_record.capnp")
+                .file("../../schemas/governance_op.capnp")
                 .run()
                 .expect("Cap'n Proto schema compilation failed");
 

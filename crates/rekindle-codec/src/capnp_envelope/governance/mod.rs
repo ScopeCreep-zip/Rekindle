@@ -32,7 +32,7 @@ use community::{
     read_community_meta, read_community_notification_default, read_community_policy,
     read_invite_created, read_invite_revoked, read_mek_generation_bump, read_segment_added,
 };
-pub(super) use dispatch_write::write_governance_entry;
+pub(crate) use dispatch_write::write_governance_entry;
 use events::{
     read_event_archived, read_event_created, read_event_rsvp, read_thread_archived,
     read_thread_created, read_thread_unarchived,
@@ -67,7 +67,7 @@ pub fn decode_governance_entry(bytes: &[u8]) -> Result<GovernanceEntry, CodecErr
     read_governance_entry(root)
 }
 
-pub(super) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceEntry, CodecError> {
+pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceEntry, CodecError> {
     use schema::Which;
     let which = r
         .which()

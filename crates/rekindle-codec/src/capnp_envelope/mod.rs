@@ -39,6 +39,7 @@ pub(super) fn len_u32(n: usize) -> u32 {
 
 pub use control::{decode_control_payload, encode_control_payload};
 pub use governance::{decode_governance_entry, encode_governance_entry};
+pub(crate) use governance::{read_governance_entry, write_governance_entry};
 
 /// Encode a `CommunityEnvelope` into packed Cap'n Proto bytes.
 pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, CodecError> {
