@@ -19,11 +19,15 @@ use super::DaemonPresenceAdapter;
 impl DaemonPresenceAdapter {
     /// Read every occupied subkey of one segment.
     ///
-    /// Uses `inspect_present_subkeys` to learn which subkeys hold a
-    /// value, then fetches only those — rather than sweeping
-    /// `0..max_subkey` blind. On a segment holding five members that is
-    /// five reads instead of 255, and the orchestrator's contract only
-    /// asks for non-empty rows.
+    /// One UpdateGet inspect says which subkeys hold a value and which are
+    /// newer on the network than our local copy (`RecordPool::read_changed`);
+    /// only those are fetched, and only the changed ones from the network.
+    /// The registry is not watched (`setup_community_watches`), so a plain
+    /// local read returned the first copy of a peer's row forever: Veilid's
+    /// `get_value` answers from local storage whenever it holds the subkey
+    /// and `force_refresh` is false (`storage_manager/get_value.rs`), and
+    /// the peer's heartbeat aged past `STALE_HEARTBEAT_SECS` while the peer
+    /// kept writing.
     ///
     /// `skip_subkey` is our own slot: we already know what we wrote
     /// there, and re-reading it would let a stale network copy of our
@@ -37,24 +41,43 @@ impl DaemonPresenceAdapter {
         let Some(node) = self.transport() else {
             return Vec::new();
         };
+        let pool = match node.require_records() {
+            Ok(pool) => pool,
+            Err(error) => {
+                tracing::debug!(registry = %registry_key, %error, "presence scan: no record pool");
+                return Vec::new();
+            }
+        };
         // One borrow per segment for the whole scan: a table hit while the
         // community holds the record (plan C7.7g).
-        let lease = match rekindle_transport::broadcast::dht_writes::acquire_str(
-            node.as_ref(),
-            registry_key,
-            None,
-        )
-        .await
-        {
+        let lease = match pool.acquire(registry_key, None).await {
             Ok(lease) => lease,
             Err(error) => {
                 tracing::debug!(registry = %registry_key, %error, "presence scan: segment not open");
                 return Vec::new();
             }
         };
-        let rows = scan_leased(node.as_ref(), lease, registry_key, max_subkey, skip_subkey).await;
-        rekindle_transport::broadcast::dht_writes::release(node.as_ref(), lease).await;
-        rows
+        let subkeys: Vec<u32> = (0..=max_subkey)
+            .filter(|subkey| Some(*subkey) != skip_subkey)
+            .collect();
+        let read = pool.read_changed(lease, &subkeys).await;
+        pool.release(lease).await;
+        match read {
+            Ok(values) => values
+                .into_iter()
+                .filter(|(_, value)| !value.data.is_empty())
+                .map(|(subkey, value)| (subkey, value.data))
+                .collect(),
+            Err(error) => {
+                // Not an empty segment: an unreadable one, skipped this tick.
+                tracing::debug!(
+                    registry = %registry_key,
+                    %error,
+                    "presence scan: inspect failed; skipping this segment for now"
+                );
+                Vec::new()
+            }
+        }
     }
 
     /// Write our own presence row into our slot.
@@ -196,47 +219,4 @@ impl DaemonPresenceAdapter {
             .filter(|pseudonym| !known.contains_key(pseudonym))
             .collect()
     }
-}
-
-/// [`DaemonPresenceAdapter::scan_segment_impl`] on the segment's lease.
-async fn scan_leased(
-    node: &rekindle_transport::broadcast::node::TransportNode,
-    lease: rekindle_transport::broadcast::dht_writes::LeaseId,
-    registry_key: &str,
-    max_subkey: u32,
-    skip_subkey: Option<u32>,
-) -> Vec<(u32, Vec<u8>)> {
-    let occupied = match rekindle_transport::broadcast::dht_writes::inspect_leased_present_subkeys(
-        node, lease,
-    )
-    .await
-    {
-        Ok(subkeys) => subkeys,
-        Err(error) => {
-            // Not an empty segment — an unreadable one. Falling
-            // back to a blind sweep would turn one failed round
-            // trip into 255.
-            tracing::debug!(
-                registry = %registry_key,
-                %error,
-                "presence scan: inspect failed; skipping this segment for now"
-            );
-            return Vec::new();
-        }
-    };
-
-    let mut rows = Vec::new();
-    for subkey in occupied {
-        if subkey > max_subkey || Some(subkey) == skip_subkey {
-            continue;
-        }
-        if let Ok(Some(raw)) =
-            rekindle_transport::broadcast::dht_writes::get_leased(node, lease, subkey, false).await
-        {
-            if !raw.is_empty() {
-                rows.push((subkey, raw));
-            }
-        }
-    }
-    rows
 }
