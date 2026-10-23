@@ -249,7 +249,7 @@ pub mod member_record {
 /// discarded.
 pub mod sealed_page {
     /// The page's content.
-    pub const PAGE: u32 = 0;
+    pub const CONTENT: u32 = 0;
     /// Total subkeys to allocate when creating the page.
     pub const SUBKEY_COUNT: u16 = 1;
 }
@@ -267,7 +267,7 @@ mod tests {
     fn community_layouts_are_pinned() {
         assert_eq!(community_anchor::GENESIS_CERT, 0);
         assert_eq!(community_anchor::SUBKEY_COUNT, 1);
-        assert_eq!(sealed_page::PAGE, 0);
+        assert_eq!(sealed_page::CONTENT, 0);
         assert_eq!(sealed_page::SUBKEY_COUNT, 1);
         let map = [
             member_record::CARD,
