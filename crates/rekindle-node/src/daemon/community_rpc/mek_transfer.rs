@@ -17,8 +17,6 @@
 //! fails to decrypt rather than being believed — which is why the only
 //! thing this handler does with the claimed sender is try it as a key.
 
-use std::sync::Arc;
-
 use parking_lot::RwLock;
 
 use rekindle_codec::community::envelope::MekTransferPayload;
@@ -26,7 +24,9 @@ use rekindle_transport::payload::rpc::CallResponse;
 
 use rekindle_types::channel_keys::KeyScope;
 
-/// Accept a wrapped MEK and cache it.
+/// Accept a wrapped MEK and install it through the Host's governance
+/// adapter, which caches it under the convergence rule and stores it in the
+/// vault (so the next unlock reloads it) and tells the shell.
 ///
 /// Returns `CallResponse::Ok(pseudonym_hex)` so the transport layer can
 /// name us in the `MekTransferAck` the rotator is waiting on; anything
@@ -36,7 +36,7 @@ pub(crate) fn handle_mek_transfer(
     transfer: &MekTransferPayload,
     session: &RwLock<Option<rekindle_transport::Session>>,
     signing_key: &RwLock<Option<crate::state::signing_key::SigningKeyHandle>>,
-    mek_cache: &Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
+    governance: Option<&crate::host::adapters::governance::HostGovernance>,
 ) -> CallResponse {
     let governance_key = &transfer.community_id;
 
@@ -86,13 +86,14 @@ pub(crate) fn handle_mek_transfer(
         Ok(mek) => {
             let generation = mek.generation();
             // Installed under the shared convergence rule (no downgrade,
-            // lowest rank at an equal generation), not a plain insert.
-            rekindle_mek_rotation::ChannelMekCache::insert(
-                &crate::daemon::mek_rotation::MekCacheAdapter::new(Arc::clone(mek_cache)),
-                governance_key,
-                scope,
-                mek,
-            );
+            // lowest rank at an equal generation), not a plain insert, and
+            // stored in the vault when taken.
+            let Some(governance) = governance else {
+                return CallResponse::Rejected {
+                    reason: "locked".into(),
+                };
+            };
+            governance.install_transferred_mek(governance_key, scope, &mek);
             let our_pseudonym = rekindle_transport::crypto::pseudonym::derive_community_pseudonym(
                 &signing_key_bytes,
                 governance_key,

@@ -28,8 +28,6 @@ pub struct DaemonHandler {
     pub(crate) subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
     /// Session state (shared with DaemonContext).
     pub(crate) session: Arc<RwLock<Option<Session>>>,
-    /// MEK cache (shared with DaemonContext, passed to RPC handlers).
-    pub(crate) mek_cache: Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
     /// Signing key (shared with DaemonContext, passed to RPC handlers).
     pub(crate) signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
     /// Transport node (shared with DaemonContext, passed to RPC handlers).
@@ -64,7 +62,6 @@ impl DaemonHandler {
     pub fn new(
         subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
         session: Arc<RwLock<Option<Session>>>,
-        mek_cache: Arc<RwLock<rekindle_transport::crypto::mek::MekCache>>,
         signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
         transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
         pending_joins: Arc<
@@ -83,7 +80,6 @@ impl DaemonHandler {
         Self {
             subscriptions,
             session,
-            mek_cache,
             signing_key,
             transport,
             pending_joins,
@@ -383,11 +379,16 @@ impl InboundHandler for DaemonHandler {
                 super::community_rpc::handle_leave(&notif, &self.session, &self.mek_rotation_tx)
             }
             InboundCall::CommunityMekTransfer(transfer) => {
+                let governance = self
+                    .host
+                    .get()
+                    .and_then(std::sync::Weak::upgrade)
+                    .map(crate::host::adapters::governance::HostGovernance::new);
                 super::community_rpc::handle_mek_transfer(
                     &transfer,
                     &self.session,
                     &self.signing_key,
-                    &self.mek_cache,
+                    governance.as_ref(),
                 )
             }
             InboundCall::Sync(_) => CallResponse::Ack,

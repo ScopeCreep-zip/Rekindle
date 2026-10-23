@@ -106,6 +106,16 @@ impl HostGovernance {
         }
     }
 
+    /// A key a rotator delivered (`MekTransfer`), installed as every other
+    /// key is: cached under the convergence rule, then stored in the vault.
+    pub(crate) fn install_transferred_mek(&self, community_id: &str, scope: KeyScope, mek: &Mek) {
+        let snapshot = MekSnapshot {
+            generation: mek.generation(),
+            key_bytes: *mek.as_bytes(),
+        };
+        self.install(community_id, scope, &snapshot);
+    }
+
     pub(super) fn insert_community_mek_impl(&self, community_id: &str, mek: &MekSnapshot) {
         self.install(community_id, KeyScope::Community, mek);
     }

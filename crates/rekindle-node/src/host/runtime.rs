@@ -223,7 +223,6 @@ impl Host {
             let handler = Arc::new(DaemonHandler::new(
                 Arc::clone(&subscriptions),
                 Arc::clone(&stores.session),
-                Arc::clone(&mek_cache),
                 Arc::clone(&signing_key),
                 Arc::clone(&handler_transport),
                 Arc::clone(&pending_joins),
