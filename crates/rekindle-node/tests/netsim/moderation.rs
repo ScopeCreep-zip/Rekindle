@@ -12,7 +12,7 @@ use serde_json::Value;
 use crate::harness::{eventually, Community};
 
 /// Node `i`'s view of `pseudonym` in the member list, if listed.
-async fn listed(community: &Community, i: usize, pseudonym: &str) -> Option<Value> {
+pub(crate) async fn listed(community: &Community, i: usize, pseudonym: &str) -> Option<Value> {
     community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityMembers {

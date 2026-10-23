@@ -14,7 +14,8 @@ use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::{ADMINISTRATOR, KICK_MEMBERS};
 
-use crate::harness::Community;
+use crate::harness::{eventually, Community};
+use crate::moderation::listed;
 
 /// A member's slot seed, as anyone holding an invite reads it: the link's
 /// code decrypts the secrets record.
@@ -85,14 +86,20 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
     assert_ne!(joined_view["name"], "Taken");
 }
 
-/// Concurrent mutual kick of two managers (fixed in E3.2): both removals
-/// apply (p2panda-auth "strong removal"), on every node, so neither's
-/// later post is read by anyone.
+/// The strong-removal chain (fixed in E3.2; plan E3.2 S3 decision (a)).
+/// Under the hierarchy (target rank < writer rank) a mutual kick of two
+/// managers is refused on both sides, so the Verify item is the chain: the
+/// creator A removes the moderator B concurrently with B removing the
+/// member C. B's removal of C is invalidated (p2panda-auth transitive
+/// invalidation), so on every remaining node B is gone and C stays, and
+/// C's later post is read. Whether B's later post is read is the key's
+/// business, not the merge's: the ingest gate holds no membership check
+/// (`host/adapters/channel/ingest.rs` gate_inputs) and B keeps the
+/// generation it held until the rotation after a removal (E3.5, ADR 0018).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-#[ignore = "E3.2"]
-async fn a_concurrent_mutual_kick_removes_both_everywhere() {
+async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
     let community = Community::of(3, 42).await;
-    let (ann, bea) = (community.pseudonym(0).await, community.pseudonym(1).await);
+    let (bea, cal) = (community.pseudonym(1).await, community.pseudonym(2).await);
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
@@ -121,6 +128,14 @@ async fn a_concurrent_mutual_kick_removes_both_everywhere() {
         community.holds_role(1, role_id).await,
         "the moderator learns its role"
     );
+    let limit = Duration::from_secs(120);
+    assert!(
+        eventually(&community.sim, limit, || async {
+            listed(&community, 1, &cal).await.is_some()
+        })
+        .await,
+        "the moderator lists the member it removes"
+    );
 
     let kick = |by: usize, target: &str| {
         community.nodes[by].call(IpcRequest::Community(CommunityRequest::Members(
@@ -130,15 +145,25 @@ async fn a_concurrent_mutual_kick_removes_both_everywhere() {
             },
         )))
     };
-    let (by_ann, by_bea) = tokio::join!(kick(0, &bea), kick(1, &ann));
+    let (by_ann, by_bea) = tokio::join!(kick(0, &bea), kick(1, &cal));
     assert!(by_ann.is_ok() && by_bea.is_ok(), "{by_ann:?} / {by_bea:?}");
-    community.sim.quiesce().await;
 
-    let _ = community.post(0, "ann after the kicks").await;
-    let _ = community.post(1, "bea after the kicks").await;
-    let limit = Duration::from_secs(60);
-    assert!(!community.reads(2, "ann after the kicks", limit).await);
-    assert!(!community.reads(2, "bea after the kicks", limit).await);
+    for reader in [0, 2] {
+        assert!(
+            eventually(&community.sim, limit, || async {
+                listed(&community, reader, &bea).await.is_none()
+                    && listed(&community, reader, &cal).await.is_some()
+            })
+            .await,
+            "node {reader}: the moderator is removed and its removal of the member is void"
+        );
+    }
+
+    community
+        .post(2, "cal after the kicks")
+        .await
+        .expect("the member still posts");
+    assert!(community.reads(0, "cal after the kicks", limit).await);
 }
 
 /// Two concurrent manual rotations produce one generation (fixed in E3.5):
