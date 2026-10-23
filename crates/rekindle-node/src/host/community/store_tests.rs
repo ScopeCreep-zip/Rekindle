@@ -142,7 +142,7 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 1,
+            stamp: rekindle_governance::fixture::stamp(1),
         },
     );
     governance
@@ -185,9 +185,9 @@ fn thread_by(creator: &PseudonymKey) -> rekindle_governance::state::ThreadState 
         forum_tag: None,
         auto_archive_seconds: 3600,
         creator: creator.clone(),
-        created_lamport: 2,
-        archived_lamport: None,
-        unarchived_lamport: None,
+        created: rekindle_governance::fixture::stamp(2),
+        archived: None,
+        unarchived: None,
     }
 }
 
@@ -209,7 +209,7 @@ fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
         rekindle_governance::state::TimeoutState {
             duration_seconds: 60,
             started_at: 100,
-            lamport: 1,
+            stamp: rekindle_governance::fixture::stamp(1),
         },
     );
     merged.threads.insert(ThreadId([2; 16]), thread_by(&late));

@@ -1,5 +1,6 @@
 //! The audit log's rows and the notification default (plan E3.1 F4).
 
+use rekindle_governance::fixture::{at, stamp, Stamped};
 use rekindle_governance::state::{GovernanceState, NotificationDefaultState};
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{PseudonymKey, RoleId};
@@ -12,20 +13,24 @@ fn key(byte: u8) -> PseudonymKey {
 
 /// The creator `key(1)` grants a role to `key(2)` at Lamport 4 and bans
 /// `key(3)` at 5, exactly the entries the role and ban writes make.
-fn authored() -> Vec<(PseudonymKey, Vec<GovernanceEntry>)> {
+fn authored() -> Vec<(PseudonymKey, Vec<Stamped>)> {
     vec![(
         key(1),
         vec![
-            GovernanceEntry::RoleAssignment {
-                target: key(2),
-                role_id: RoleId::from_legacy_u32(7),
-                lamport: 4,
-            },
-            GovernanceEntry::BanEntry {
-                target: key(3),
-                reason: Some("spam".into()),
-                lamport: 5,
-            },
+            at(
+                4,
+                GovernanceEntry::RoleAssignment {
+                    target: key(2),
+                    role_id: RoleId::from_legacy_u32(7),
+                },
+            ),
+            at(
+                5,
+                GovernanceEntry::BanEntry {
+                    target: key(3),
+                    reason: Some("spam".into()),
+                },
+            ),
         ],
     )]
 }
@@ -56,11 +61,8 @@ fn a_page_is_older_than_its_cursor_and_bounded() {
         1,
         "a page holds a row"
     );
-    let many: Vec<GovernanceEntry> = (0..u64::from(MAX_AUDIT_PAGE) + 10)
-        .map(|lamport| GovernanceEntry::UnbanEntry {
-            target: key(3),
-            lamport,
-        })
+    let many: Vec<Stamped> = (0..u64::from(MAX_AUDIT_PAGE) + 10)
+        .map(|lamport| at(lamport, GovernanceEntry::UnbanEntry { target: key(3) }))
         .collect();
     assert_eq!(
         audit_page(vec![(key(1), many)], None, u32::MAX).len(),
@@ -74,12 +76,12 @@ fn the_notification_default_is_the_merged_level() {
     assert_eq!(notification_default(&state), None);
     state.notification_default = Some(NotificationDefaultState {
         level: "mentions".into(),
-        lamport: 3,
+        stamp: stamp(3),
     });
     assert_eq!(notification_default(&state).as_deref(), Some("mentions"));
     state.notification_default = Some(NotificationDefaultState {
         level: "loud".into(),
-        lamport: 4,
+        stamp: stamp(4),
     });
     assert_eq!(
         notification_default(&state),

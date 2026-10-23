@@ -34,7 +34,7 @@ fn governance(slowmode_seconds: Option<u32>) -> GovernanceState {
             slowmode_seconds,
             nsfw: None,
             parent_voice_channel_id: None,
-            created_lamport: 0,
+            created: rekindle_governance::fixture::stamp(0),
         },
     );
     gov
@@ -48,7 +48,7 @@ fn rule(gov: &mut GovernanceState, trigger_json: &str) {
             enabled: true,
             trigger_json: trigger_json.into(),
             action: AutoModAction::BlockLocally,
-            lamport: 1,
+            stamp: rekindle_governance::fixture::stamp(1),
         },
     );
 }
@@ -118,7 +118,7 @@ async fn a_timed_out_author_is_dropped_until_the_timeout_ends() {
         TimeoutState {
             duration_seconds: 600,
             started_at: now,
-            lamport: 1,
+            stamp: rekindle_governance::fixture::stamp(1),
         },
     );
     host.ctx.communities.set_governance_state("c1", gov.clone());

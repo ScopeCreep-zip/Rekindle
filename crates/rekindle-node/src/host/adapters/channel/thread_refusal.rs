@@ -50,7 +50,6 @@ mod tests {
             invited: Vec::new(),
             forum_tag: None,
             auto_archive_seconds: 3600,
-            lamport: 9,
         }
     }
 
@@ -61,7 +60,7 @@ mod tests {
             TimeoutState {
                 duration_seconds: 60,
                 started_at: 100,
-                lamport: 1,
+                stamp: rekindle_governance::fixture::stamp(1),
             },
         );
         gov
@@ -86,7 +85,6 @@ mod tests {
         assert!(refuse_timed_out_thread(&thread(), &gov, &PseudonymKey([3; 32]), 120).is_ok());
         let archive = GovernanceEntry::ThreadArchived {
             thread_id: ThreadId([4; 16]),
-            lamport: 10,
         };
         assert!(refuse_timed_out_thread(&archive, &gov, &member, 120).is_ok());
     }

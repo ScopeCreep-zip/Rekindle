@@ -48,7 +48,7 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
         slowmode_seconds: None,
         nsfw: None,
         parent_voice_channel_id: None,
-        created_lamport: 1,
+        created: rekindle_governance::fixture::stamp(1),
     };
     let mut gov = GovernanceState::default();
     gov.channels
@@ -67,11 +67,11 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
             mentionable: false,
             self_assignable: false,
             exclusion_group: None,
-            lamport: 1,
+            stamp: rekindle_governance::fixture::stamp(1),
         },
     );
     host.governance()
-        .apply_governance_rebuild_result("c1", gov, 3)
+        .apply_governance_rebuild_result("c1", gov)
         .await;
 
     let projected = host

@@ -113,7 +113,7 @@ fn policy_view(policy: Option<CommunityPolicyState>) -> CommunityPolicyView {
 mod tests {
     //! A policy set is the policy read back, through the governance merge.
 
-    use rekindle_governance::merge::merge;
+    use rekindle_governance::fixture::{at, merge_entries, Stamped};
     use rekindle_types::id::PseudonymKey;
 
     use super::*;
@@ -126,13 +126,16 @@ mod tests {
         }
     }
 
-    fn meta(lamport: u64) -> GovernanceEntry {
-        GovernanceEntry::CommunityMeta {
-            name: Some("C".into()),
-            description: None,
-            icon_hash: None,
-            banner_hash: None,
-        }
+    fn meta(lamport: u64) -> Stamped {
+        at(
+            lamport,
+            GovernanceEntry::CommunityMeta {
+                name: Some("C".into()),
+                description: None,
+                icon_hash: None,
+                banner_hash: None,
+            },
+        )
     }
 
     #[test]
@@ -152,7 +155,10 @@ mod tests {
     #[test]
     fn a_policy_set_is_read_back() {
         let creator = PseudonymKey([1; 32]);
-        let state = merge(&[(creator, vec![meta(1), policy_entry(edit(), 2)])]);
+        let state = merge_entries(
+            &creator,
+            &[(creator.clone(), vec![meta(1), at(2, policy_entry(edit()))])],
+        );
         let view = policy_view(state.community_policy);
         assert_eq!(view.policy_text.as_deref(), Some("Be kind"));
         assert_eq!(view.max_joins_per_interval, 5);
@@ -163,10 +169,13 @@ mod tests {
     fn a_policy_without_manage_community_is_not_read() {
         let creator = PseudonymKey([1; 32]);
         let member = PseudonymKey([2; 32]);
-        let state = merge(&[
-            (creator, vec![meta(1)]),
-            (member, vec![policy_entry(edit(), 2)]),
-        ]);
+        let state = merge_entries(
+            &creator,
+            &[
+                (creator.clone(), vec![meta(1)]),
+                (member, vec![at(2, policy_entry(edit()))]),
+            ],
+        );
         assert_eq!(policy_view(state.community_policy).policy_text, None);
     }
 }

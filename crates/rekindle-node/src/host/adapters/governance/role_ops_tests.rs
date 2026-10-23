@@ -19,7 +19,7 @@ fn governance_with(role_id: u32, self_assignable: bool) -> GovernanceState {
             mentionable: false,
             self_assignable,
             exclusion_group: None,
-            lamport: 1,
+            stamp: rekindle_governance::fixture::stamp(1),
         },
     );
     governance

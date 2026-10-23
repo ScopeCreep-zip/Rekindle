@@ -1,7 +1,7 @@
 //! The admin-delete refusals (plan E3.1 E2d): what readers would drop is
 //! refused before it is written.
 
-use rekindle_governance::merge::merge;
+use rekindle_governance::fixture::{at, merge_entries, Stamped};
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
@@ -21,8 +21,8 @@ fn role_definition(
     name: &str,
     permissions: u64,
     position: u32,
-) -> GovernanceEntry {
-    GovernanceEntry::RoleDefinition {
+) -> Stamped {
+    let entry = GovernanceEntry::RoleDefinition {
         role_id,
         name: name.into(),
         permissions,
@@ -32,8 +32,8 @@ fn role_definition(
         mentionable: false,
         self_assignable: false,
         exclusion_group: None,
-        lamport: u64::from(position) + 1,
-    }
+    };
+    at(u64::from(position) + 1, entry)
 }
 
 /// A community merged from its creator's entries: `key(1)` writes the
@@ -42,18 +42,23 @@ fn role_definition(
 /// only @everyone.
 fn community() -> GovernanceState {
     let moderator = RoleId([9; 16]);
-    merge(&[(
-        key(1),
+    merge_entries(
+        &key(1),
+        &[(
+            key(1),
         vec![
             role_definition(RoleId([0; 16]), "everyone", DEFAULT_EVERYONE, 0),
             role_definition(moderator, "moderator", MANAGE_MESSAGES, 1),
-            GovernanceEntry::RoleAssignment {
-                target: key(2),
-                role_id: moderator,
-                lamport: 3,
-            },
+            at(
+                3,
+                GovernanceEntry::RoleAssignment {
+                    target: key(2),
+                    role_id: moderator,
+                },
+            ),
         ],
-    )])
+    )],
+    )
 }
 
 #[test]

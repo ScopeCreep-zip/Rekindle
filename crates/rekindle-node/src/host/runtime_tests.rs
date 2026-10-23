@@ -7,6 +7,9 @@ use super::*;
 use crate::host::fixture::temp_root;
 use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
+use rekindle_secrets::ed25519_dalek::SigningKey;
+
+use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};
 
 #[path = "attachment_limit_tests.rs"]
 mod attachment_limit;
@@ -22,6 +25,8 @@ mod channel_send_tests;
 mod community_info;
 #[path = "expression_upload_tests.rs"]
 mod expression_upload_tests;
+#[path = "governance_seed_tests.rs"]
+mod governance_seed;
 #[path = "held_threads_tests.rs"]
 mod held_threads;
 #[path = "login_stage_tests.rs"]
@@ -343,56 +348,35 @@ async fn a_held_root_cannot_be_claimed_again() {
     assert!(claim(temp_root(&dir)).is_err());
 }
 
-/// An own governance write updates the warm cache at once (plan E3.1 B2):
-/// our author set replaces the cached one and the other authors stay.
+/// An own governance op lands in the op store at once (plan E3.2): the
+/// warm restore reads it beside the other authors' ops, which stay.
 #[tokio::test]
-async fn an_own_governance_write_updates_the_warm_cache() {
+async fn an_own_governance_op_lands_in_the_op_store() {
     use rekindle_governance_runtime::GovernanceRuntimeDeps;
-    use rekindle_types::id::PseudonymKey;
 
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
-    let db = host.ctx.db.current().unwrap();
-    let other = PseudonymKey([1; 32]);
-    let me = PseudonymKey([2; 32]);
-    let seeded = owner.clone();
-    db.call(move |conn| {
-        rekindle_db::repo::communities::insert_if_absent(
-            conn,
-            &seeded,
-            &rekindle_db::repo::communities::NewCommunity {
-                id: "c1",
-                name: "C",
-                my_role_ids: &[],
-                joined_at: 1,
-                dht_owner_keypair: None,
-                my_pseudonym_key: "",
-                mek_generation: 0,
-                member_registry_key: None,
-                my_subkey_index: None,
-                governance_key: None,
-            },
-        )?;
-        rekindle_db::repo::governance_cache::save(
-            conn,
-            &seeded,
-            "c1",
-            &[(PseudonymKey([1; 32]), Vec::new())],
-            1,
-        )
-    })
-    .await
-    .unwrap();
+    seed_registry_community(&host, &owner).await;
+    let other = SigningKey::from_bytes(&[1; 32]);
+    let me = SigningKey::from_bytes(&[2; 32]);
+    let theirs = signed_chain("c1", &other, CREATOR_RECORD, vec![meta("theirs")]);
+    seed_governance(&host, &owner, "c1", &other, &theirs).await;
 
+    let mine = signed_chain("c1", &me, "VLD0:my-record", vec![meta("mine")]);
     host.governance()
-        .persist_own_governance_entries("c1", &me, &[]);
-    let loaded = db
-        .call(move |conn| rekindle_db::repo::governance_cache::load(conn, &owner))
+        .store_governance_op("c1", &mine[0])
         .await
         .unwrap();
-    let authors: Vec<_> = loaded[0].1.iter().map(|(pk, _)| pk.clone()).collect();
-    assert_eq!(authors, vec![other, me]);
+    let held = host.governance().governance_ops("c1").await.unwrap();
+    let mut authors: Vec<[u8; 32]> = held.iter().map(|op| op.author.0).collect();
+    authors.sort_unstable();
+    let mut expected = vec![
+        other.verifying_key().to_bytes(),
+        me.verifying_key().to_bytes(),
+    ];
+    expected.sort_unstable();
+    assert_eq!(authors, expected);
     host.shutdown().await.unwrap();
 }
 

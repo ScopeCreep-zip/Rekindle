@@ -1,7 +1,6 @@
 //! The op log append is idempotent across a row's attempts.
 
 use rekindle_governance::fixture;
-use rekindle_records::port::RecordPort as _;
 use rekindle_types::dht_layout::member_record::GOV_HEAD;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;

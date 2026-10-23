@@ -14,7 +14,7 @@ fn invite(code_hash: &str, creator: u8) -> InviteState {
         max_uses: 0,
         expires_at: None,
         secrets_record_key: String::new(),
-        created_lamport: 1,
+        created: rekindle_governance::fixture::stamp(1),
         creator_pseudonym: PseudonymKey([creator; 32]),
     }
 }
