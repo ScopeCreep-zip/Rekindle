@@ -24,12 +24,18 @@ pub enum StreamKind {
     /// Our group-DM content to one group (plan E2.6): a row settles `sent`
     /// when its entry lands on our group chain; no member acknowledges it.
     GroupDm,
+    /// Our signed governance ops for one community (plan E3.2, D22): a row
+    /// is one encoded op, appended to our member record's op log (`M`/2,
+    /// through the chain primitive); it settles `sent` when the log's head
+    /// names it. No member acknowledges an op.
+    GovernanceOp,
 }
 
 impl StreamKind {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Dm,
         Self::GroupDm,
+        Self::GovernanceOp,
         Self::FriendHandshake,
         Self::DhtWrite,
         Self::ChannelPost,
@@ -46,6 +52,7 @@ impl StreamKind {
             Self::ChannelPost => "channel_post",
             Self::MediaKey => "media_key",
             Self::GroupDm => "group_dm",
+            Self::GovernanceOp => "governance_op",
         }
     }
 
@@ -86,8 +93,9 @@ impl StreamKind {
         let (base, cap) = match self {
             // The record pool's write of the slot is the send (plan E2.5).
             Self::ChannelPost => return OutboxRetry::SettledExternally,
-            // A group send is a chain write, retried like a DM.
-            Self::Dm | Self::GroupDm => (1, 300),
+            // A group send and an op append are chain writes, retried
+            // like a DM.
+            Self::Dm | Self::GroupDm | Self::GovernanceOp => (1, 300),
             Self::FriendHandshake => (2, 900),
             Self::DhtWrite => (1, 60),
             // C7.22's 1/2/4/8/15 s: a call key is useless late.
@@ -143,6 +151,17 @@ mod group_dm_tests {
         let kind = StreamKind::GroupDm;
         assert_eq!(StreamKind::parse(kind.as_str()), Some(kind));
         assert_eq!(kind.stream("ab"), "group_dm:ab");
+        assert!(!kind.awaits_ack());
+        assert!(kind.user_retryable());
+        assert!(matches!(kind.policy(), OutboxRetry::Backoff { .. }));
+    }
+
+    /// An op append settles on its log write, like a group send.
+    #[test]
+    fn a_governance_op_row_awaits_no_ack_and_may_be_retried() {
+        let kind = StreamKind::GovernanceOp;
+        assert_eq!(StreamKind::parse(kind.as_str()), Some(kind));
+        assert_eq!(kind.stream("c"), "governance_op:c");
         assert!(!kind.awaits_ack());
         assert!(kind.user_retryable());
         assert!(matches!(kind.policy(), OutboxRetry::Backoff { .. }));

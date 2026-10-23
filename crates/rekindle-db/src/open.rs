@@ -185,7 +185,8 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// receipt, so a hold survives a restart.
 ///
 /// 115 (plan E3.2, S4): `governance_ops` and `governance_heads`, the signed
-/// op set and each author's head, replace `governance_entries_cache`.
+/// op set and each author's head, replace `governance_entries_cache`;
+/// the outbox's `governance_op` stream kind.
 pub const SCHEMA_VERSION: i64 = 115;
 
 /// Opening the database failed.

@@ -371,3 +371,30 @@ fn page_runs_fill_each_page_in_order() {
         Err(ChainError::TooLarge { .. })
     ));
 }
+
+/// A member's op log: the chain's head is `M`/`GOV_HEAD`, nothing else in
+/// the record moves, and the log is read without a retire mark.
+#[tokio::test]
+async fn an_op_log_chains_on_the_member_records_gov_head() {
+    use rekindle_types::dht_layout::member_record;
+    let port = MemPort::default();
+    let (lease, key, owner) = port.create(&schema::member_record(), None).await.unwrap();
+    port.release(lease).await;
+    let gov_head = member_record::GOV_HEAD;
+    super::append_at(&port, &key, gov_head, &owner, &entries(1..=2))
+        .await
+        .unwrap();
+    let newest = super::append_at(&port, &key, gov_head, &owner, &entries(3..=3))
+        .await
+        .unwrap();
+    assert_eq!(
+        super::head_at(&port, &key, gov_head).await.unwrap(),
+        Some(newest)
+    );
+    assert_eq!(head(&port, &key).await.unwrap(), None);
+    let read = super::read_log_after(&port, &key, gov_head, 1)
+        .await
+        .unwrap();
+    assert_eq!(seqs(&read), vec![2, 3]);
+    assert_eq!((read.last_seq, read.retired_gap), (3, None));
+}

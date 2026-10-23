@@ -14,6 +14,12 @@
 //! The reader walks back from `HEAD` to a cursor and stops at the retire
 //! mark, reporting when the mark overtook the cursor (the history is gone).
 //! It is Veilid-free: everything goes through `&dyn RecordPort`.
+//!
+//! The same chain carries a member's governance op log (plan E3.2): its
+//! head is `M`/`GOV_HEAD` of the member record instead of a participant
+//! record's `HEAD`, and it is never retired (a signed DAG op cannot be
+//! dropped), so it is written with [`append_at`] and read with
+//! [`read_log_after`].
 
 mod page;
 #[cfg(test)]
@@ -77,7 +83,19 @@ pub async fn head(
     port: &dyn RecordPort,
     participant: &str,
 ) -> Result<Option<PagePointer>, ChainError> {
-    port.read_once(participant, dm_participant::HEAD, true)
+    head_at(port, participant, dm_participant::HEAD).await
+}
+
+/// The newest page of the chain whose head is `record`/`head_subkey`.
+///
+/// # Errors
+/// The read failed, or the head is malformed.
+pub async fn head_at(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+) -> Result<Option<PagePointer>, ChainError> {
+    port.read_once(record, head_subkey, true)
         .await?
         .map(|v| page::decode_head(&v.data))
         .transpose()
@@ -109,10 +127,25 @@ pub async fn append(
     writer: &str,
     entries: &[Vec<u8>],
 ) -> Result<PagePointer, ChainError> {
+    append_at(port, participant, dm_participant::HEAD, writer, entries).await
+}
+
+/// [`append`] to the chain whose head is `record`/`head_subkey`; `writer`
+/// is `record`'s owner keypair.
+///
+/// # Errors
+/// As [`append`].
+pub async fn append_at(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+    writer: &str,
+    entries: &[Vec<u8>],
+) -> Result<PagePointer, ChainError> {
     if entries.is_empty() {
         return Err(ChainError::EmptyAppend);
     }
-    let prev = head(port, participant).await?;
+    let prev = head_at(port, record, head_subkey).await?;
     let first_seq = prev.as_ref().map_or(0, |p| p.last_seq) + 1;
     let span = u64::try_from(entries.len() - 1).ok();
     let last_seq = span
@@ -133,13 +166,13 @@ pub async fn append(
         last_seq,
     };
     port.write_once(
-        participant,
-        dm_participant::HEAD,
+        record,
+        head_subkey,
         page::encode_head(&newest)?,
         Some(writer),
     )
     .await?
-    .require_stored(dm_participant::HEAD)?;
+    .require_stored(head_subkey)?;
     Ok(newest)
 }
 
@@ -188,6 +221,41 @@ pub async fn read_after(
         });
     }
     let floor = cursor.max(retired);
+    let entries = walk_down(port, newest, floor).await?;
+    Ok(ChainRead {
+        entries,
+        last_seq,
+        retired_gap: (retired > cursor).then_some(retired),
+    })
+}
+
+/// The entries after `cursor` of a chain that is never retired, whose head
+/// is `record`/`head_subkey` (a member's op log).
+///
+/// # Errors
+/// A read failed, a page is missing, or a value is malformed.
+pub async fn read_log_after(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+    cursor: u64,
+) -> Result<ChainRead, ChainError> {
+    let newest = head_at(port, record, head_subkey).await?;
+    let last_seq = newest.as_ref().map_or(0, |p| p.last_seq);
+    Ok(ChainRead {
+        entries: walk_down(port, newest, cursor).await?,
+        last_seq,
+        retired_gap: None,
+    })
+}
+
+/// The entries above `floor`, in sequence order, walking back from
+/// `newest`.
+async fn walk_down(
+    port: &dyn RecordPort,
+    newest: Option<PagePointer>,
+    floor: u64,
+) -> Result<Vec<ChainEntry>, ChainError> {
     let mut pages: Vec<Vec<ChainEntry>> = Vec::new();
     let mut next = newest;
     // Each page's previous page ends right before it (`page::decode_page`),
@@ -212,11 +280,7 @@ pub async fn read_after(
         );
         next = page.prev;
     }
-    Ok(ChainRead {
-        entries: pages.into_iter().rev().flatten().collect(),
-        last_seq,
-        retired_gap: (retired > cursor).then_some(retired),
-    })
+    Ok(pages.into_iter().rev().flatten().collect())
 }
 
 /// Retire every entry at or below `seq`: readers stop fetching them. The

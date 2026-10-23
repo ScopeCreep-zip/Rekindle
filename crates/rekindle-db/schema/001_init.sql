@@ -846,7 +846,7 @@ CREATE TABLE IF NOT EXISTS outbox (
     stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
     client_id TEXT NOT NULL CHECK(length(client_id) > 0),
     kind TEXT NOT NULL
-        CHECK(kind IN ('dm', 'group_dm', 'friend_handshake', 'dht_write', 'channel_post', 'media_key')),
+        CHECK(kind IN ('dm', 'group_dm', 'governance_op', 'friend_handshake', 'dht_write', 'channel_post', 'media_key')),
     payload BLOB NOT NULL,
     state TEXT NOT NULL CHECK(state IN ('queued', 'sent', 'delivered', 'read', 'failed')),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
