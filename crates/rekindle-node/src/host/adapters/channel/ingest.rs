@@ -60,6 +60,8 @@ pub(crate) struct GatedPost<'a> {
     /// ([`HostChannel::stored_before_secs`], and in a batch
     /// `ingest::BatchWindows`).
     pub held_before_secs: Option<u64>,
+    /// Read from history, not received live ([`GateItem::backfill`]).
+    pub backfill: bool,
 }
 
 /// The community state a batch of posts is judged against
@@ -328,6 +330,7 @@ impl HostChannel {
                 body,
                 timestamp_ms: post.message.timestamp,
                 held_before_secs,
+                backfill: false,
             },
         ))
     }
@@ -413,6 +416,7 @@ impl HostChannel {
             sent_at_secs: post.timestamp_ms / 1000,
             held_before_secs: post.held_before_secs,
             now_secs: self.ctx().clock.now_secs(),
+            backfill: post.backfill,
         };
         ingest::gate(&item, &inputs.gov, &inputs.rules, &inputs.blocked)
     }

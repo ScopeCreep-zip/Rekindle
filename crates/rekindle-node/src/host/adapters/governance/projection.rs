@@ -165,7 +165,9 @@ fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
 pub(crate) fn departed(gov: &GovernanceState) -> HashSet<String> {
     gov.bans
         .iter()
-        .chain(gov.removed.keys().filter(|p| !gov.members.contains_key(*p)))
+        .chain(gov.removed.keys())
+        .chain(gov.op_log_records.keys())
+        .filter(|p| gov.is_departed(p))
         .map(|p| hex::encode(p.0))
         .collect()
 }
@@ -324,4 +326,47 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
         categories,
         overwrites,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use rekindle_governance::op::OpStamp;
+    use rekindle_governance::state::{GovernanceState, MemberState};
+    use rekindle_types::id::PseudonymKey;
+
+    fn member(gov: &mut GovernanceState, b: u8) {
+        gov.members.insert(
+            PseudonymKey([b; 32]),
+            MemberState {
+                member_record: format!("VLD0:{b}"),
+                member_record_owner: "owner".into(),
+                joined: OpStamp::MIN,
+            },
+        );
+    }
+
+    /// The left, the removed and the banned have departed; a member, a
+    /// re-joined one and an author never seen have not (register FX1).
+    #[test]
+    fn departed_holds_the_left_the_removed_and_the_banned() {
+        let mut gov = GovernanceState::default();
+        for b in 1..=5 {
+            gov.op_log_records
+                .insert(PseudonymKey([b; 32]), format!("VLD0:{b}"));
+        }
+        member(&mut gov, 1);
+        gov.removed.insert(PseudonymKey([3; 32]), OpStamp::MIN);
+        gov.removed.insert(PseudonymKey([5; 32]), OpStamp::MIN);
+        member(&mut gov, 5);
+        gov.bans.insert(PseudonymKey([4; 32]));
+        member(&mut gov, 4);
+        let departed = super::departed(&gov);
+        let hex = |b: u8| hex::encode([b; 32]);
+        assert!(!departed.contains(&hex(1)), "a member");
+        assert!(departed.contains(&hex(2)), "left");
+        assert!(departed.contains(&hex(3)), "removed");
+        assert!(departed.contains(&hex(4)), "banned");
+        assert!(!departed.contains(&hex(5)), "re-joined");
+        assert!(!departed.contains(&hex(9)), "never joined");
+    }
 }

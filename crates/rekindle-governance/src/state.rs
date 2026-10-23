@@ -36,6 +36,11 @@ pub struct GovernanceState {
     /// published there and frontiers still name it (plan E3.2, evidence 4.4).
     pub op_log_records: HashMap<PseudonymKey, String>,
 
+    /// The `issued_at` of each member's latest merged departure: its own
+    /// `MemberLeft` or a `MemberRemoved` naming it. A backfilled post dated
+    /// before it stays readable (register FX1, a removed member's posts).
+    pub departed_at: HashMap<PseudonymKey, u64>,
+
     /// Highest `MemberRemoved` stamp per removed member; a re-join must
     /// come after it.
     pub removed: HashMap<PseudonymKey, OpStamp>,
@@ -306,6 +311,17 @@ pub struct RsvpState {
 }
 
 impl GovernanceState {
+    /// Whether `member` has departed: banned, or once joined (it has an op
+    /// log here or was removed) and now neither a member nor pending, so
+    /// removed or left and not re-joined.
+    #[must_use]
+    pub fn is_departed(&self, member: &PseudonymKey) -> bool {
+        self.bans.contains(member)
+            || (!self.members.contains_key(member)
+                && !self.pending_members.contains_key(member)
+                && (self.removed.contains_key(member) || self.op_log_records.contains_key(member)))
+    }
+
     /// RSVPs of live events, each event's list sorted by pseudonym so a
     /// reader's view is deterministic.
     #[must_use]

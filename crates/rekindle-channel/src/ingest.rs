@@ -44,6 +44,9 @@ pub struct GateItem<'a> {
     pub held_before_secs: Option<u64>,
     /// The receiver's clock, in seconds: a timeout ends by it.
     pub now_secs: u64,
+    /// Read from history (the backfill), not received live: a departed
+    /// author's post dated before its departure stays readable.
+    pub backfill: bool,
 }
 
 /// Why the gate hid or dropped a post.
@@ -53,6 +56,8 @@ pub enum GateReason {
     Blocked,
     /// The author is banned from the community.
     Banned,
+    /// The author has left or was removed and has not re-joined.
+    NotMember,
     /// The author is timed out until the given second.
     TimedOut { until_secs: u64 },
     /// The author posted again within the channel's slowmode.
@@ -181,6 +186,9 @@ pub fn gate(
     if gov.bans.contains(&sender) {
         return Verdict::Drop(GateReason::Banned);
     }
+    if not_member(gov, &sender, item) {
+        return Verdict::Drop(GateReason::NotMember);
+    }
     if let Some(until_secs) = timed_out_until(gov, &sender, item.now_secs) {
         return Verdict::Drop(GateReason::TimedOut { until_secs });
     }
@@ -192,6 +200,18 @@ pub fn gate(
         }
     }
     automod(rules, item.body)
+}
+
+/// A departed author's post (D26 reader-validates, register FX1): dropped
+/// live, and from history unless dated before the author's departure (a
+/// kick keeps history, as a ban does not).
+fn not_member(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>) -> bool {
+    gov.is_departed(sender)
+        && !(item.backfill
+            && gov
+                .departed_at
+                .get(sender)
+                .is_some_and(|at| item.sent_at_secs < *at))
 }
 
 fn slowmode_seconds(gov: &GovernanceState, channel: Option<&ChannelId>) -> Option<u32> {

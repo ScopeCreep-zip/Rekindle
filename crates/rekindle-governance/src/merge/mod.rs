@@ -132,6 +132,14 @@ fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
         return false;
     }
     apply(op.author(), op.body(), op.stamp(), state);
+    let gone = match op.body() {
+        GovernanceEntry::MemberLeft {} => Some(op.author()),
+        GovernanceEntry::MemberRemoved { target, .. } => Some(target),
+        _ => None,
+    };
+    if let Some(gone) = gone {
+        state.departed_at.insert(gone.clone(), op.op().issued_at);
+    }
     true
 }
 

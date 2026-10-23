@@ -239,6 +239,7 @@ fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
         sent_at_secs: 120,
         held_before_secs: None,
         now_secs: 120,
+        backfill: false,
     };
     let verdict = gate(
         &item,

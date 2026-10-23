@@ -137,6 +137,7 @@ impl HostChannel {
                     body: &message.view.body,
                     timestamp_ms,
                     held_before_secs: batch.held_before(sender, at_secs, stored),
+                    backfill: true,
                 },
             );
             batch.record(sender, at_secs, &verdict);

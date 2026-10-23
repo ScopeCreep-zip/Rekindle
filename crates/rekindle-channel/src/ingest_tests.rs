@@ -26,6 +26,7 @@ fn item(body: &str, sent_at_secs: u64, now_secs: u64) -> GateItem<'_> {
         sent_at_secs,
         held_before_secs: None,
         now_secs,
+        backfill: false,
     }
 }
 
@@ -328,4 +329,53 @@ fn a_predecessor_arriving_after_its_successor_does_not_drop_it() {
     let verdicts = slowmode_verdicts(&[110, 100]);
     assert_eq!(verdicts[&110], Verdict::Admit);
     assert_eq!(verdicts[&100], Verdict::Admit);
+}
+
+/// ANN joined (an op log is known), then departed at second 100.
+fn departed_state() -> GovernanceState {
+    let mut gov = state();
+    let ann = PseudonymKey::from_hex_lossy(ANN);
+    gov.op_log_records.insert(ann.clone(), "VLD0:m".into());
+    gov.departed_at.insert(ann, 100);
+    gov
+}
+
+#[test]
+fn a_departed_authors_live_post_is_dropped() {
+    let gov = departed_state();
+    for sent in [50, 150] {
+        assert_eq!(
+            judge(&gov, &item("hi", sent, 200)),
+            Verdict::Drop(GateReason::NotMember)
+        );
+    }
+}
+
+#[test]
+fn a_backfilled_post_dated_before_the_departure_stays_readable() {
+    let gov = departed_state();
+    let before = GateItem {
+        backfill: true,
+        ..item("old", 50, 200)
+    };
+    let after = GateItem {
+        backfill: true,
+        ..item("new", 100, 200)
+    };
+    assert_eq!(judge(&gov, &before), Verdict::Admit);
+    assert_eq!(judge(&gov, &after), Verdict::Drop(GateReason::NotMember));
+}
+
+#[test]
+fn a_rejoined_member_is_admitted() {
+    let mut gov = departed_state();
+    gov.members.insert(
+        PseudonymKey::from_hex_lossy(ANN),
+        rekindle_governance::state::MemberState {
+            member_record: "VLD0:m".into(),
+            member_record_owner: "owner".into(),
+            joined: rekindle_governance::op::OpStamp::MIN,
+        },
+    );
+    assert_eq!(judge(&gov, &item("back", 150, 200)), Verdict::Admit);
 }

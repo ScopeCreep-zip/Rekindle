@@ -92,10 +92,8 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
 /// creator A removes the moderator B concurrently with B removing the
 /// member C. B's removal of C is invalidated (p2panda-auth transitive
 /// invalidation), so on every remaining node B is gone and C stays, and
-/// C's later post is read. Whether B's later post is read is the key's
-/// business, not the merge's: the ingest gate holds no membership check
-/// (`host/adapters/channel/ingest.rs` gate_inputs) and B keeps the
-/// generation it held until the rotation after a removal (E3.5, ADR 0018).
+/// C's later post is read, while B's is not: every reader's ingest gate
+/// drops a departed author's post (`GateReason::NotMember`, register FX1).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
     let community = Community::of(3, 42).await;
@@ -159,11 +157,15 @@ async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
         );
     }
 
+    let _ = community.post(1, "bea after the kicks").await;
     community
         .post(2, "cal after the kicks")
         .await
         .expect("the member still posts");
     assert!(community.reads(0, "cal after the kicks", limit).await);
+    for reader in [0, 2] {
+        assert!(!community.reads(reader, "bea after the kicks", limit).await);
+    }
 }
 
 /// Two concurrent manual rotations produce one generation (fixed in E3.5):
