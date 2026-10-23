@@ -36,7 +36,6 @@ use rekindle_types::config::ANONYMITY_HOP_FLOOR;
 /// peer. A call pinned to it (`SafetySpec.preferred_route`) takes it first
 /// (`route_select.rs:124-152`), and its answer comes back over it
 /// (`rpc_processor/destination.rs:477-497`).
-#[must_use]
 pub fn sending_private_spec() -> veilid_core::PrivateSpec {
     veilid_core::PrivateSpec {
         // Empty = all available crypto kinds, as the default does.
