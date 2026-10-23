@@ -11,7 +11,7 @@ use rekindle_types::presence::SessionStatus;
 use rekindle_types::subscription_events::{PresenceEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, start, Events, PASSPHRASE};
-use crate::pair::{befriend, holds_message, key, send, talk, LIMIT};
+use crate::pair::{befriend, holds_message, key, send, talk, unretired, LIMIT};
 
 fn saw(events: &Events, peer: &str, status: &str) -> bool {
     events.any(|event| {
@@ -136,6 +136,15 @@ async fn a_participant_record_received_mid_session_is_watched() {
     }
     befriend(&sim, &nodes[0], &nodes[1]).await;
     crate::pair::talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    // The hint leaves while the append is in flight (live A/B finding 42),
+    // so `talk` returns before the entry lands and before the StreamRecord
+    // naming the chain, a later row, reaches the reader: his watch on the
+    // chain is held once a watched change of it reached him (F8).
+    talk(&sim, &nodes[0], &nodes[1], "watched").await;
+    assert!(
+        eventually(&sim, LIMIT, || async { !unretired(&sim, 1).is_empty() }).await,
+        "a change of the writer's chain reached the reader"
+    );
     let (ora, pim) = (key(&nodes[0]), key(&nodes[1]));
 
     sim.fault(Fault::DropMessages { per_mille: 1000 });
@@ -184,6 +193,15 @@ async fn missed_while_shut(cut: Fault) {
     }
     befriend(&sim, &nodes[0], &nodes[1]).await;
     talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    // The hint leaves while the append is in flight (live A/B finding 42),
+    // so `talk` returns before the entry lands and before the StreamRecord
+    // naming the chain, a later row, reaches the reader: his watch on the
+    // chain is held once a watched change of it reached him (F8).
+    talk(&sim, &nodes[0], &nodes[1], "watched").await;
+    assert!(
+        eventually(&sim, LIMIT, || async { !unretired(&sim, 1).is_empty() }).await,
+        "a change of the writer's chain reached the reader"
+    );
     let (kim, lev) = (key(&nodes[0]), key(&nodes[1]));
     nodes[1].ok(IpcRequest::Lock).await;
     sim.fault(Fault::DhtOffline {
