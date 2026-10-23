@@ -56,3 +56,15 @@ pub async fn push(host: &dyn FriendHost) -> Result<(), FriendError> {
     );
     Ok(())
 }
+
+/// Write our friend-list record off the caller's path, on the session
+/// scope (live A/B finding 50: an accept never pushed it, so it never
+/// listed the friend). `after` names the change for the log.
+pub(crate) fn push_soon(host: &dyn FriendHost, after: &'static str) {
+    let owned = host.owned();
+    host.scope().spawn_or_drop("friend list push", async move {
+        if let Err(e) = push(owned.as_ref()).await {
+            tracing::warn!(error = %e, after, "failed to update DHT friend list");
+        }
+    });
+}

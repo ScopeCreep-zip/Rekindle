@@ -88,6 +88,7 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     if let Some(invite_id) = &answer.invite_id {
         invites::mark_accepted(host, invite_id);
     }
+    super::list_record::push_soon(host, "our accept");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: public_key.to_string(),
         display_name: Some(display_name.to_string()),

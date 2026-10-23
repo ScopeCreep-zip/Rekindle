@@ -199,6 +199,7 @@ pub(super) async fn accept_crossing_request(
     if !req.profile_dht_key.is_empty() {
         host.watch_friend(req.sender_hex, req.profile_dht_key).await;
     }
+    list_record::push_soon(host, "a cross request");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: req.sender_hex.to_string(),
         display_name: Some(req.display_name.to_string()),
