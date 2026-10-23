@@ -47,6 +47,9 @@ impl CommunityPresenceDeps for MockCommunityDeps {
     fn now_secs(&self) -> u64 {
         1_700_000_000
     }
+    fn rng(&self) -> &dyn rekindle_utils::RandomSource {
+        &rekindle_utils::OsRandom
+    }
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         std::sync::Arc::clone(&self.scope)
     }

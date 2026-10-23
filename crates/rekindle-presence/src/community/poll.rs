@@ -245,7 +245,7 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
 
     let degree = gossip_degree(online_members.len());
     let online_count = online_members.len();
-    let selected = random_peer_sample(&online_members, degree);
+    let selected = random_peer_sample(&online_members, degree, deps.rng());
 
     // Emit one `MemberPresenceChanged{status:"offline"}` per peer
     // that was in the prior overlay but isn't in the freshly-scanned

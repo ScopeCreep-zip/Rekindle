@@ -32,6 +32,10 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         self.ctx.clock.now_secs()
     }
 
+    fn rng(&self) -> &dyn rekindle_utils::RandomSource {
+        self.ctx.rng.as_ref()
+    }
+
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         self.ctx.unlock_scope_or_closed()
     }

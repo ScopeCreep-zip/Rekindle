@@ -26,6 +26,10 @@ impl CommunityPresenceDeps for PresenceAdapter {
         rekindle_utils::timestamp_secs()
     }
 
+    fn rng(&self) -> &dyn rekindle_utils::RandomSource {
+        &rekindle_utils::OsRandom
+    }
+
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         state_helpers::login_scope_or_closed(&self.state)
     }

@@ -12,6 +12,10 @@ use crate::deps::PresenceError;
 
 #[async_trait]
 pub trait CommunityPresenceDeps: Send + Sync + 'static {
+    /// The host's RNG port (plan C9.2): the gossip fan-out sample draws
+    /// from it, so a seed fixes which peers a tick asks.
+    fn rng(&self) -> &dyn rekindle_utils::RandomSource;
+
     /// The scope of the session this work belongs to. A poll tick stops
     /// before its next Veilid call once it is closed (plan C4.L1).
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope>;

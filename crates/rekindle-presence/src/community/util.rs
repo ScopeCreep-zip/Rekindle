@@ -6,8 +6,8 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::BuildHasher;
 
-use rand::seq::SliceRandom;
 use rekindle_types::id::RoleId;
+use rekindle_utils::RandomSource;
 
 /// Convert a governance-state set of `RoleId`s into the sorted
 /// `Vec<u32>` shape the in-memory member roles map uses. Stable
@@ -23,10 +23,16 @@ pub fn role_ids_from_governance<S: BuildHasher>(assigned: &HashSet<RoleId, S>) -
 }
 
 /// Architecture §3 — pick a uniformly-random `d`-sized subset of
-/// the online members for the gossip fan-out. Returns the full set
-/// when `d >= online.len()` (no point in random selection).
+/// the online members for the gossip fan-out, drawn from `rng` (the
+/// host's RNG port, plan C9.2) over the members in key order, so a seed
+/// fixes the subset. Returns the full set when `d >= online.len()` (no
+/// point in random selection).
 #[must_use]
-pub fn random_peer_sample<V, S>(online: &HashMap<String, V, S>, d: usize) -> HashMap<String, V>
+pub fn random_peer_sample<V, S>(
+    online: &HashMap<String, V, S>,
+    d: usize,
+    rng: &dyn RandomSource,
+) -> HashMap<String, V>
 where
     V: Clone,
     S: BuildHasher,
@@ -37,18 +43,24 @@ where
     if d >= online.len() {
         return online.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     }
-    let keys: Vec<&String> = online.keys().collect();
-    let mut rng = rand::rngs::OsRng;
-    let selected: Vec<&String> = keys.choose_multiple(&mut rng, d).copied().collect();
-    selected
-        .into_iter()
-        .filter_map(|k| online.get(k).map(|v| (k.clone(), v.clone())))
+    let mut keys: Vec<&String> = online.keys().collect();
+    keys.sort_unstable();
+    // A partial Fisher-Yates shuffle: the first `d` slots are the sample.
+    for i in 0..d {
+        let remaining = (keys.len() - i) as u64;
+        let pick = i + usize::try_from(rng.below(remaining)).unwrap_or(0);
+        keys.swap(i, pick);
+    }
+    keys[..d]
+        .iter()
+        .filter_map(|k| online.get(*k).map(|v| ((*k).clone(), v.clone())))
         .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rekindle_utils::OsRandom;
 
     #[test]
     fn role_ids_from_governance_sorts_ascending() {
@@ -74,7 +86,7 @@ mod tests {
     #[test]
     fn random_peer_sample_empty_set_returns_empty() {
         let online: HashMap<String, u32> = HashMap::new();
-        assert!(random_peer_sample(&online, 5).is_empty());
+        assert!(random_peer_sample(&online, 5, &OsRandom).is_empty());
     }
 
     #[test]
@@ -82,7 +94,7 @@ mod tests {
         let mut online: HashMap<String, u32> = HashMap::new();
         online.insert("alice".into(), 1);
         online.insert("bob".into(), 2);
-        assert!(random_peer_sample(&online, 0).is_empty());
+        assert!(random_peer_sample(&online, 0, &OsRandom).is_empty());
     }
 
     #[test]
@@ -90,9 +102,9 @@ mod tests {
         let mut online: HashMap<String, u32> = HashMap::new();
         online.insert("alice".into(), 1);
         online.insert("bob".into(), 2);
-        let s = random_peer_sample(&online, 2);
+        let s = random_peer_sample(&online, 2, &OsRandom);
         assert_eq!(s.len(), 2);
-        let s = random_peer_sample(&online, 99);
+        let s = random_peer_sample(&online, 99, &OsRandom);
         assert_eq!(s.len(), 2);
     }
 
@@ -102,7 +114,7 @@ mod tests {
         for i in 0..10u32 {
             online.insert(format!("p{i}"), i);
         }
-        let s = random_peer_sample(&online, 3);
+        let s = random_peer_sample(&online, 3, &OsRandom);
         assert_eq!(s.len(), 3);
         // Every returned key must exist in the source.
         for key in s.keys() {

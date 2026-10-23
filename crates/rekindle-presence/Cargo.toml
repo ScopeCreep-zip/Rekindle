@@ -12,7 +12,6 @@ workspace = true
 async-trait = "0.1"
 blake3 = "1"
 hex = { workspace = true }
-rand = { workspace = true }
 rekindle-db = { path = "../rekindle-db" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-codec = { path = "../rekindle-codec" }
