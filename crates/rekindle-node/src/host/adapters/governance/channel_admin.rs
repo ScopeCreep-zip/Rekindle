@@ -64,28 +64,22 @@ pub(crate) enum ChannelAdminOp {
     },
 }
 
-type Entry = Box<dyn FnOnce(u64) -> GovernanceEntry + Send>;
+type Entry = GovernanceEntry;
 
 /// A `ChannelUpdated` that changes only what `set` fills in.
-fn channel_update(
-    channel: ChannelId,
-    set: impl FnOnce(&mut GovernanceEntry) + Send + 'static,
-) -> Entry {
-    Box::new(move |lamport| {
-        let mut entry = GovernanceEntry::ChannelUpdated {
-            channel_id: channel,
-            name: None,
-            topic: None,
-            forum_tags: None,
-            position: None,
-            slowmode_seconds: None,
-            nsfw: None,
-            category_id: None,
-            lamport,
-        };
-        set(&mut entry);
-        entry
-    })
+fn channel_update(channel: ChannelId, set: impl FnOnce(&mut GovernanceEntry)) -> Entry {
+    let mut entry = GovernanceEntry::ChannelUpdated {
+        channel_id: channel,
+        name: None,
+        topic: None,
+        forum_tags: None,
+        position: None,
+        slowmode_seconds: None,
+        nsfw: None,
+        category_id: None,
+    };
+    set(&mut entry);
+    entry
 }
 
 fn position(index: usize) -> u32 {
@@ -106,9 +100,7 @@ impl HostGovernance {
     ) -> Result<serde_json::Value, GovernanceRuntimeError> {
         let (entries, answer) = self.entries(community_id, op);
         for entry in entries {
-            let lamport = self.next_governance_lamport(community_id)?;
-            rekindle_governance_runtime::apply::write_entry(self, community_id, entry(lamport))
-                .await?;
+            rekindle_governance_runtime::apply::write_entry(self, community_id, entry).await?;
         }
         self.persist_governance_snapshot(community_id).await;
         Ok(answer)
@@ -180,22 +172,20 @@ impl HostGovernance {
                 let mut id = [0u8; 16];
                 self.rng().fill(&mut id);
                 let next = self.next_category_position(community_id);
-                let entry: Entry = Box::new(move |lamport| GovernanceEntry::CategoryCreated {
+                let entry: Entry = GovernanceEntry::CategoryCreated {
                     category_id: CategoryId(id),
                     name,
                     position: next,
-                    lamport,
-                });
+                };
                 (
                     vec![entry],
                     serde_json::json!({ "categoryId": hex::encode(id) }),
                 )
             }
             ChannelAdminOp::CategoryDelete { category } => {
-                let entry: Entry = Box::new(move |lamport| GovernanceEntry::CategoryArchived {
+                let entry: Entry = GovernanceEntry::CategoryArchived {
                     category_id: category,
-                    lamport,
-                });
+                };
                 (vec![entry], null)
             }
             ChannelAdminOp::CategoryRename { category, name } => {
@@ -264,21 +254,19 @@ fn overwrite(
     allow: u64,
     deny: u64,
 ) -> Entry {
-    Box::new(move |lamport| GovernanceEntry::PermissionOverwrite {
+    GovernanceEntry::PermissionOverwrite {
         channel_id: channel,
         target_type,
         target_id,
         allow,
         deny,
-        lamport,
-    })
+    }
 }
 
 fn category_update(category: CategoryId, name: Option<String>, position: Option<u32>) -> Entry {
-    Box::new(move |lamport| GovernanceEntry::CategoryUpdated {
+    GovernanceEntry::CategoryUpdated {
         category_id: category,
         name,
         position,
-        lamport,
-    })
+    }
 }

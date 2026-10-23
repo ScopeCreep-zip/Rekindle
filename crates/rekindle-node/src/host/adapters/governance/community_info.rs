@@ -35,9 +35,6 @@ impl HostGovernance {
             || (None, None, None, None),
             |m| (Some(m.name), m.description, m.icon_hash, m.banner_hash),
         );
-        let lamport = self
-            .next_governance_lamport(community)
-            .map_err(|e| e.to_string())?;
         rekindle_governance_runtime::apply::write_entry(
             self,
             community,
@@ -46,7 +43,6 @@ impl HostGovernance {
                 description: edit.description.clone().or(description),
                 icon_hash: edit.icon_hash.clone().or(icon_hash),
                 banner_hash: edit.banner_hash.clone().or(banner_hash),
-                lamport,
             },
         )
         .await

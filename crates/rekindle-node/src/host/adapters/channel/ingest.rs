@@ -256,9 +256,6 @@ impl HostChannel {
         message_id: &str,
         reason: &str,
     ) -> Result<(), ChannelError> {
-        let lamport = self
-            .next_governance_lamport(community)
-            .map_err(|e| ChannelError::Adapter(e.to_string()))?;
         self.write_governance_entry(
             community,
             GovernanceEntry::ModReport {
@@ -268,7 +265,6 @@ impl HostChannel {
                     message_id: message_id.to_owned(),
                 },
                 reason: reason.to_owned(),
-                lamport,
             },
         )
         .await

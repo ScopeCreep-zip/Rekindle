@@ -80,23 +80,16 @@ impl HostGovernance {
         edit: PolicyEdit,
     ) -> Result<(), GovernanceRuntimeError> {
         self.require_permission(community, permissions::MANAGE_COMMUNITY)?;
-        let lamport = self.next_governance_lamport(community)?;
-        rekindle_governance_runtime::apply::write_entry(
-            self,
-            community,
-            policy_entry(edit, lamport),
-        )
-        .await
+        rekindle_governance_runtime::apply::write_entry(self, community, policy_entry(edit)).await
     }
 }
 
 /// The governance entry that makes `edit` the policy.
-fn policy_entry(edit: PolicyEdit, lamport: u64) -> GovernanceEntry {
+fn policy_entry(edit: PolicyEdit) -> GovernanceEntry {
     GovernanceEntry::CommunityPolicy {
         policy_text: edit.policy_text,
         max_joins_per_interval: edit.max_joins_per_interval,
         join_interval_seconds: edit.join_interval_seconds,
-        lamport,
     }
 }
 
@@ -139,7 +132,6 @@ mod tests {
             description: None,
             icon_hash: None,
             banner_hash: None,
-            lamport,
         }
     }
 

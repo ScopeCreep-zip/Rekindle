@@ -6,12 +6,13 @@ use rekindle_types::dto::community::CommunityAuditEntry;
 
 pub(super) fn governance_entry_to_audit_row(
     actor_pseudonym: &str,
+    lamport: u64,
     entry: rekindle_types::governance::GovernanceEntry,
 ) -> CommunityAuditEntry {
     use rekindle_types::governance::GovernanceEntry;
 
     let actor_pseudonym = actor_pseudonym.to_string();
-    let timestamp = entry.lamport();
+    let timestamp = lamport;
     match entry {
         GovernanceEntry::ChannelCreated {
             channel_id,

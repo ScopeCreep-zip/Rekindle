@@ -123,15 +123,12 @@ pub fn permitted(
             &GovernanceEntry::BanEntry {
                 target,
                 reason: None,
-                lamport: 0,
             },
             state,
         ),
-        ModerationAction::Unban => validate_write(
-            me,
-            &GovernanceEntry::UnbanEntry { target, lamport: 0 },
-            state,
-        ),
+        ModerationAction::Unban => {
+            validate_write(me, &GovernanceEntry::UnbanEntry { target }, state)
+        }
         ModerationAction::Timeout(duration_seconds) => validate_write(
             me,
             &GovernanceEntry::TimeoutEntry {
@@ -139,15 +136,12 @@ pub fn permitted(
                 duration_seconds,
                 reason: None,
                 started_at: now,
-                lamport: 0,
             },
             state,
         ),
-        ModerationAction::RemoveTimeout => validate_write(
-            me,
-            &GovernanceEntry::RemoveTimeoutEntry { target, lamport: 0 },
-            state,
-        ),
+        ModerationAction::RemoveTimeout => {
+            validate_write(me, &GovernanceEntry::RemoveTimeoutEntry { target }, state)
+        }
         ModerationAction::Remove => {
             let perms = rekindle_governance::permissions::compute_permissions(me, None, state, now);
             state.creator.as_ref() == Some(me)
@@ -347,7 +341,7 @@ fn mod_report_view((id, r): (&[u8; 16], &ModReportState)) -> ModReportView {
         message_id,
         member,
         reason: r.reason.clone(),
-        lamport: r.lamport,
+        lamport: r.stamp.lamport,
     }
 }
 

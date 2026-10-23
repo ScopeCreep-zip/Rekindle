@@ -30,14 +30,22 @@ pub const NOTIFICATION_LEVELS: [&str; 3] = ["all", "mentions", "nothing"];
 pub async fn read_audit_entries<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-) -> Result<Vec<(PseudonymKey, Vec<GovernanceEntry>)>, GovernanceRuntimeError> {
+) -> Result<Vec<(PseudonymKey, Vec<(u64, GovernanceEntry)>)>, GovernanceRuntimeError> {
     deps.require_permission(community_id, VIEW_AUDIT_LOG)?;
-    let occupied = crate::records::inspect_present_subkeys(deps, community_id).await?;
-    Ok(
-        crate::overflow::read_governance_with_overflow(deps, community_id, &occupied)
-            .await
-            .authored,
-    )
+    let held = deps.governance_ops(community_id).await?;
+    let verified = crate::op_log::verify_held(community_id, &held);
+    let mut authored: Vec<(PseudonymKey, Vec<(u64, GovernanceEntry)>)> = Vec::new();
+    for op in &verified.ops {
+        let row = (op.lamport(), op.body().clone());
+        match authored
+            .iter_mut()
+            .find(|(author, _)| author == op.author())
+        {
+            Some((_, rows)) => rows.push(row),
+            None => authored.push((op.author().clone(), vec![row])),
+        }
+    }
+    Ok(authored)
 }
 
 /// Write the community-wide default notification level. Requires

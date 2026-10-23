@@ -35,14 +35,11 @@ fn mode_name(mode: OnboardingModeDto) -> &'static str {
     }
 }
 
-/// The `OnboardingConfig` entry `config` writes at `lamport`.
+/// The `OnboardingConfig` entry `config` writes.
 ///
 /// # Errors
 /// A channel id is not 32 hex characters.
-pub(crate) fn config_entry(
-    config: &OnboardingConfigDto,
-    lamport: u64,
-) -> Result<GovernanceEntry, String> {
+pub(crate) fn config_entry(config: &OnboardingConfigDto) -> Result<GovernanceEntry, String> {
     let questions = config
         .questions
         .iter()
@@ -94,18 +91,14 @@ pub(crate) fn config_entry(
         questions,
         welcome_message: config.welcome_message.clone(),
         guide_steps,
-        lamport,
     })
 }
 
-/// The `WelcomeScreen` entry `screen` writes at `lamport`.
+/// The `WelcomeScreen` entry `screen` writes.
 ///
 /// # Errors
 /// A channel id is not 32 hex characters.
-pub(crate) fn welcome_entry(
-    screen: &WelcomeScreenDto,
-    lamport: u64,
-) -> Result<GovernanceEntry, String> {
+pub(crate) fn welcome_entry(screen: &WelcomeScreenDto) -> Result<GovernanceEntry, String> {
     let channels = screen
         .channels
         .iter()
@@ -120,7 +113,6 @@ pub(crate) fn welcome_entry(
     Ok(GovernanceEntry::WelcomeScreen {
         description: screen.description.clone(),
         channels,
-        lamport,
     })
 }
 

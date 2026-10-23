@@ -49,7 +49,6 @@ pub fn may_delete_messages(
         message_id: [0; 16],
         channel_id: channel,
         reason: None,
-        lamport: 0,
     };
     if validate_write(me, &probe, state) {
         Ok(())
@@ -153,9 +152,6 @@ impl HostGovernance {
         target: &Target<'_>,
         reason: Option<&str>,
     ) -> Result<(), ModerationRefusal> {
-        let lamport = self
-            .next_governance_lamport(community_id)
-            .map_err(GovernanceRuntimeError::from)?;
         rekindle_governance_runtime::apply::write_entry(
             self,
             community_id,
@@ -163,7 +159,6 @@ impl HostGovernance {
                 message_id: target.bytes,
                 channel_id: channel,
                 reason: reason.map(str::to_owned),
-                lamport,
             },
         )
         .await?;

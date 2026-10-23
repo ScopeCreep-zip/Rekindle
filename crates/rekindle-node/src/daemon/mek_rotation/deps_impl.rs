@@ -174,13 +174,6 @@ impl MekDistributeDeps for DaemonMekAdapter {
         self.publish(SubscriptionEvent::Crypto(mapped));
     }
 
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        self.governance().next_governance_lamport(community_id)
-    }
-
     fn identity_secret(&self) -> Option<[u8; 32]> {
         self.governance().identity_secret()
     }

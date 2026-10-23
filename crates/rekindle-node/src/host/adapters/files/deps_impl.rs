@@ -132,13 +132,6 @@ impl FilesDeps for HostFiles {
         self.channel.increment_lamport(community_id)
     }
 
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        ChannelMessagingDeps::next_governance_lamport(&self.channel, community_id)
-    }
-
     fn next_channel_sequence(&self, community_id: &str, channel_id: &str) -> u64 {
         self.channel.next_channel_sequence(community_id, channel_id)
     }
@@ -327,12 +320,10 @@ impl FilesDeps for HostFiles {
         community_id: &str,
         attachment_id: [u8; 16],
         pinned: bool,
-        lamport: u64,
     ) -> Result<(), FilesError> {
         let entry = GovernanceEntry::AttachmentPinned {
             attachment_id,
             pinned,
-            lamport,
         };
         (self
             .channel

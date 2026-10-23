@@ -76,7 +76,7 @@ fn check_bounds(title: &str, description: &str) -> Result<(), GovernanceRuntimeE
 }
 
 /// The `EventCreated` entry that carries `event` in full.
-fn entry_of(event: &EventInfo, lamport: u64) -> Result<GovernanceEntry, GovernanceRuntimeError> {
+fn entry_of(event: &EventInfo) -> Result<GovernanceEntry, GovernanceRuntimeError> {
     let channel_id = event
         .channel_id
         .as_deref()
@@ -100,7 +100,6 @@ fn entry_of(event: &EventInfo, lamport: u64) -> Result<GovernanceEntry, Governan
         recurrence: event.recurrence.clone(),
         location: event.location.clone(),
         status: Some(status_of(&event.status)?),
-        lamport,
     })
 }
 
@@ -198,14 +197,10 @@ impl HostGovernance {
     ) -> Result<(), GovernanceRuntimeError> {
         self.require_permission(community_id, permissions::MANAGE_EVENTS)?;
         let id = event_id_of(event_id).ok_or_else(|| adapter("malformed event id"))?;
-        let lamport = self.next_governance_lamport(community_id)?;
         rekindle_governance_runtime::apply::write_entry(
             self,
             community_id,
-            GovernanceEntry::EventArchived {
-                event_id: id,
-                lamport,
-            },
+            GovernanceEntry::EventArchived { event_id: id },
         )
         .await?;
         self.send_to_mesh(
@@ -243,14 +238,12 @@ impl HostGovernance {
             .community_membership_impl(community_id)
             .and_then(|m| m.my_pseudonym_hex)
             .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.into()))?;
-        let lamport = self.next_governance_lamport(community_id)?;
         rekindle_governance_runtime::apply::write_entry(
             self,
             community_id,
             GovernanceEntry::EventRsvp {
                 event_id: id,
                 status: rsvp,
-                lamport,
             },
         )
         .await?;
@@ -382,13 +375,8 @@ impl HostGovernance {
         event: EventInfo,
         created: bool,
     ) -> Result<(), GovernanceRuntimeError> {
-        let lamport = self.next_governance_lamport(community_id)?;
-        rekindle_governance_runtime::apply::write_entry(
-            self,
-            community_id,
-            entry_of(&event, lamport)?,
-        )
-        .await?;
+        rekindle_governance_runtime::apply::write_entry(self, community_id, entry_of(&event)?)
+            .await?;
         self.store_event_row(community_id, &event).await?;
         let (payload, social) = if created {
             (

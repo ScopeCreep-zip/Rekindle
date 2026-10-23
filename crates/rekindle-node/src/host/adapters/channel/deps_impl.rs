@@ -152,13 +152,6 @@ impl ChannelMessagingDeps for HostChannel {
         self.increment_lamport_impl(community_id)
     }
 
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        self.gov.next_governance_lamport(community_id)
-    }
-
     // ---------- DHT ----------
 
     async fn write_channel_message_smpl(

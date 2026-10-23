@@ -27,7 +27,7 @@ pub const MAX_AUDIT_PAGE: u32 = 500;
 /// are broken on every field so the order is total.
 #[must_use]
 pub fn audit_page(
-    authored: Vec<(PseudonymKey, Vec<GovernanceEntry>)>,
+    authored: Vec<(PseudonymKey, Vec<(u64, GovernanceEntry)>)>,
     before: Option<u64>,
     limit: u32,
 ) -> Vec<CommunityAuditEntry> {
@@ -37,7 +37,7 @@ pub fn audit_page(
             let actor = hex::encode(author.0);
             entries
                 .into_iter()
-                .map(move |entry| governance_entry_to_audit_row(&actor, entry))
+                .map(move |(lamport, entry)| governance_entry_to_audit_row(&actor, lamport, entry))
         })
         .filter(|row| before.is_none_or(|b| row.timestamp < b))
         .collect();

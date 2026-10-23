@@ -131,8 +131,8 @@ impl HostChannel {
             invited: thread.invited.clone(),
             forum_tag: thread.forum_tag.clone(),
             auto_archive_seconds: thread.auto_archive_seconds,
-            created_lamport: thread.created_lamport,
-            archived_lamport: thread.archived_lamport,
+            created_lamport: thread.created.lamport,
+            archived_lamport: thread.archived.map(|stamp| stamp.lamport),
             creator_pseudonym_hex: hex::encode(thread.creator.0),
         })
     }

@@ -38,9 +38,6 @@ impl HostGovernance {
             .await
             .map_err(|e| format!("community create failed: {e}"))?;
         if !description.is_empty() {
-            let lamport = self
-                .next_governance_lamport(&id)
-                .map_err(|e| e.to_string())?;
             rekindle_governance_runtime::apply::write_entry(
                 self,
                 &id,
@@ -49,7 +46,6 @@ impl HostGovernance {
                     description: Some(description.to_owned()),
                     icon_hash: None,
                     banner_hash: None,
-                    lamport,
                 },
             )
             .await

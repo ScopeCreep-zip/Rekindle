@@ -83,7 +83,6 @@ impl HostGovernance {
             enabled: edit.enabled,
             trigger_json: trigger_json(&edit.keywords, &edit.regex_patterns),
             action: edit.action,
-            lamport: self.next_governance_lamport(community_id)?,
         };
         rekindle_governance_runtime::apply::write_entry(self, community_id, entry).await?;
         self.persist_governance_snapshot(community_id).await;
@@ -113,7 +112,6 @@ impl HostGovernance {
             enabled: false,
             trigger_json: existing.trigger_json,
             action: existing.action,
-            lamport: self.next_governance_lamport(community_id)?,
         };
         rekindle_governance_runtime::apply::write_entry(self, community_id, entry).await?;
         self.persist_governance_snapshot(community_id).await;

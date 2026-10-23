@@ -95,10 +95,7 @@ impl HostGovernance {
         community_id: &str,
         config: &OnboardingConfigDto,
     ) -> Result<(), OnboardingRefusal> {
-        let lamport = GovernanceRuntimeDeps::next_governance_lamport(self, community_id)
-            .map_err(GovernanceRuntimeError::from)?;
-        let entry =
-            onboarding_map::config_entry(config, lamport).map_err(OnboardingRefusal::Invalid)?;
+        let entry = onboarding_map::config_entry(config).map_err(OnboardingRefusal::Invalid)?;
         write_entry(self, community_id, entry).await?;
         Ok(())
     }
@@ -112,10 +109,7 @@ impl HostGovernance {
         community_id: &str,
         screen: &WelcomeScreenDto,
     ) -> Result<(), OnboardingRefusal> {
-        let lamport = GovernanceRuntimeDeps::next_governance_lamport(self, community_id)
-            .map_err(GovernanceRuntimeError::from)?;
-        let entry =
-            onboarding_map::welcome_entry(screen, lamport).map_err(OnboardingRefusal::Invalid)?;
+        let entry = onboarding_map::welcome_entry(screen).map_err(OnboardingRefusal::Invalid)?;
         write_entry(self, community_id, entry).await?;
         Ok(())
     }
@@ -175,12 +169,9 @@ impl HostGovernance {
             if !self_assignable || held.contains(&role_id) {
                 continue;
             }
-            let lamport = GovernanceRuntimeDeps::next_governance_lamport(self, community_id)
-                .map_err(GovernanceRuntimeError::from)?;
             let entry = GovernanceEntry::RoleAssignment {
                 target: me.clone(),
                 role_id,
-                lamport,
             };
             write_entry(self, community_id, entry).await?;
         }

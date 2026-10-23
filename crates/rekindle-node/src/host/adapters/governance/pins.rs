@@ -136,7 +136,6 @@ impl HostGovernance {
         let entry = GovernanceEntry::AttachmentPinned {
             attachment_id: attachment_id(hex_id)?,
             pinned,
-            lamport: self.next_governance_lamport(community_id)?,
         };
         rekindle_governance_runtime::apply::write_entry(self, community_id, entry).await?;
         self.persist_governance_snapshot(community_id).await;

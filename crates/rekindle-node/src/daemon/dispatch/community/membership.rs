@@ -102,7 +102,7 @@ pub(crate) fn handle_pending_members(
                 serde_json::json!({
                     "pseudonymHex": p.pseudonym_hex,
                     "displayName": p.display_name,
-                    "lamport": p.lamport,
+                    "lamport": p.stamp.lamport,
                 })
             })
             .collect();

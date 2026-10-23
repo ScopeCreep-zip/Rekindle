@@ -2,7 +2,6 @@
 //! are in `channel_message`).
 
 use rekindle_governance_runtime::channels::NewChannel;
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_types::display::ChannelOverviewDisplay;
 
 use crate::daemon::DaemonState;
@@ -237,12 +236,6 @@ pub(crate) async fn handle_create(
             .and_then(|b| <[u8; 16]>::try_from(b).ok())
             .map(rekindle_types::id::ChannelId)
         {
-            let lamport = match adapter.next_governance_lamport(&membership.governance_key) {
-                Ok(l) => l,
-                Err(e) => {
-                    return IpcResponse::error(500, format!("governance clock: {e}"));
-                }
-            };
             if let Err(e) = rekindle_governance_runtime::apply::write_entry(
                 &adapter,
                 &membership.governance_key,
@@ -255,7 +248,6 @@ pub(crate) async fn handle_create(
                     slowmode_seconds: (slowmode_seconds != 0).then_some(slowmode_seconds),
                     nsfw: None,
                     category_id: None,
-                    lamport,
                 },
             )
             .await
@@ -302,17 +294,10 @@ pub(crate) async fn handle_delete(
     // "delete" is a governance statement about visibility rather than a
     // claim to have removed anything from the network.
     let adapter = super::adapter(ctx);
-    let lamport = match adapter.next_governance_lamport(&membership.governance_key) {
-        Ok(l) => l,
-        Err(e) => return IpcResponse::error(500, format!("governance clock: {e}")),
-    };
     match rekindle_governance_runtime::apply::write_entry(
         &adapter,
         &membership.governance_key,
-        rekindle_types::governance::GovernanceEntry::ChannelArchived {
-            channel_id: id,
-            lamport,
-        },
+        rekindle_types::governance::GovernanceEntry::ChannelArchived { channel_id: id },
     )
     .await
     {
@@ -355,10 +340,6 @@ pub(crate) async fn handle_update(
     };
 
     let adapter = super::adapter(ctx);
-    let lamport = match adapter.next_governance_lamport(&membership.governance_key) {
-        Ok(l) => l,
-        Err(e) => return IpcResponse::error(500, format!("governance clock: {e}")),
-    };
     match rekindle_governance_runtime::apply::write_entry(
         &adapter,
         &membership.governance_key,
@@ -375,7 +356,6 @@ pub(crate) async fn handle_update(
             slowmode_seconds: update.slowmode_seconds,
             nsfw: None,
             category_id: None,
-            lamport,
         },
     )
     .await

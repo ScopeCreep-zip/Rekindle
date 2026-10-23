@@ -24,11 +24,11 @@ pub(super) fn check(request: &SettingsRequest) -> Checked {
         SettingsRequest::OnboardingConfigSet {
             community: key,
             config,
-        } => community(key).and_then(|()| within_bounds(onboarding_map::config_entry(config, 0))),
+        } => community(key).and_then(|()| within_bounds(onboarding_map::config_entry(config))),
         SettingsRequest::WelcomeScreenSet {
             community: key,
             screen,
-        } => community(key).and_then(|()| within_bounds(onboarding_map::welcome_entry(screen, 0))),
+        } => community(key).and_then(|()| within_bounds(onboarding_map::welcome_entry(screen))),
         SettingsRequest::OnboardingSubmit {
             community: key,
             answers,
