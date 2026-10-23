@@ -94,7 +94,10 @@ mod tests {
             max_uses: 1,
             expires_at,
             secrets_record_key: secrets_key.to_string(),
-            created_lamport: 0,
+            created: rekindle_governance::op::OpStamp {
+                lamport: 0,
+                hash: rekindle_types::governance::OpHash([0; 32]),
+            },
             creator_pseudonym: creator,
         }
     }
@@ -109,6 +112,7 @@ mod tests {
         let mut channel_log_keys = HashMap::new();
         channel_log_keys.insert("c1".to_string(), "chan-key-1".to_string());
         CommunityState {
+            genesis_cert: None,
             held_threads: std::collections::HashSet::new(),
             id: "gov-id".to_string(),
             name: "T".to_string(),

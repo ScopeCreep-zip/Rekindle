@@ -46,18 +46,6 @@ pub fn merge_message_lamport(state: &Arc<AppState>, community_id: &str, received
     }
 }
 
-/// Tick the community's governance clock and return the new value. The
-/// new value is persisted (`communities.lamport_clock`) before any entry
-/// using it can reach the network, so a restart never reissues it.
-pub fn next_governance_lamport(
-    state: &Arc<AppState>,
-    community_id: &str,
-) -> Result<u64, LamportError> {
-    let next = tick(state, community_id, |cs| &mut cs.governance_clock)?;
-    super::governance_persist::persist_governance_clock(state, community_id, next);
-    Ok(next)
-}
-
 fn tick(
     state: &Arc<AppState>,
     community_id: &str,

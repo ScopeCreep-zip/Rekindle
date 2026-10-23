@@ -13,7 +13,6 @@
 //! - [`routes`] — peer routes through the Host, route imports and deaths.
 //! - [`communities`] — community channel-list write helpers.
 //! - [`governance`] — v2.0 CRDT governance state read/write.
-//! - [`governance_persist`] — SQLite snapshot of merged governance.
 //! - [`meks`] — live community/channel keys and the `ChannelKeyProvider`.
 //! - [`owner_keys`] — the identity's record owner keypairs in the vault.
 //! - [`voice`] — running voice-engine accessors.
@@ -21,7 +20,6 @@
 mod communities;
 mod friends;
 mod governance;
-mod governance_persist;
 mod identity;
 mod meks;
 mod node;
@@ -36,8 +34,8 @@ pub use communities::{
 };
 pub use friends::{friend_display_name, friend_field, friend_presence_change, is_friend};
 pub use governance::{
-    governance_key, governance_state, merge_message_lamport, my_permissions,
-    next_governance_lamport, next_message_lamport, permissions_for, permissions_for_pseudonym,
+    governance_key, governance_state, merge_message_lamport, my_permissions, next_message_lamport,
+    permissions_for, permissions_for_pseudonym,
 };
 pub use identity::{
     current_identity, current_owner_key, identity_display_name, identity_secret, identity_status,

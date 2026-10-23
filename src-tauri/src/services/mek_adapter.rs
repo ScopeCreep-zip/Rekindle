@@ -186,13 +186,6 @@ impl MekDistributeDeps for MekAdapter {
         );
     }
 
-    fn next_governance_lamport(
-        &self,
-        community_id: &str,
-    ) -> Result<u64, rekindle_types::lamport::LamportError> {
-        state_helpers::next_governance_lamport(&self.state, community_id)
-    }
-
     fn identity_secret(&self) -> Option<[u8; 32]> {
         state_helpers::identity_secret(&self.state)
     }
