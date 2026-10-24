@@ -145,18 +145,10 @@ export async function handleLoadChannelMessages(
 export async function handleSendVoiceMessage(
   communityId: string,
   channelId: string,
-  opusBytesB64: string,
-  durationMs: number,
-  waveformB64: string,
+  pcmB64: string,
 ): Promise<boolean> {
   try {
-    await commands.sendVoiceMessage(
-      communityId,
-      channelId,
-      opusBytesB64,
-      durationMs,
-      waveformB64,
-    );
+    await commands.sendVoiceMessage(communityId, channelId, pcmB64);
     return true;
   } catch (e) {
     const msg = typeof e === "string" ? e : "Voice message failed";

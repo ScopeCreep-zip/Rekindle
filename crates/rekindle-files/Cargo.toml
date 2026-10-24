@@ -12,6 +12,9 @@ workspace = true
 async-trait = "0.1"
 base64 = "0.22"
 blake3 = "1"
+# Voice messages: Opus in Ogg, encoded and decoded by the Host (plan E5.1),
+# with the binding the media engine (rekindle-voice) uses.
+opus = "0.3"
 hex = { workspace = true }
 lru = "0.12"
 parking_lot = { workspace = true }

@@ -1,5 +1,13 @@
 import { hostInvoke, invoke } from "../invoke";
 import type { ImageKind } from "./system";
+
+/// A voice message as the Host decoded it: the Ogg Opus audio and the
+/// duration and waveform read from it (base64 fields).
+export interface VoiceMessageAudioView {
+  audio: string;
+  durationMs: number;
+  waveform: string;
+}
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
@@ -157,7 +165,11 @@ export const communityCommands = {
     hostInvoke<boolean>("download_attachment", { communityId, channelId, attachmentId }),
   /// A voice message's audio, fetched into the chunk cache if needed.
   getVoiceMessageAudio: (communityId: string, channelId: string, attachmentId: string) =>
-    invoke<ArrayBuffer>("get_voice_message_audio", { communityId, channelId, attachmentId }),
+    hostInvoke<VoiceMessageAudioView>("get_voice_message_audio", {
+      communityId,
+      channelId,
+      attachmentId,
+    }),
   /// Show a downloaded attachment in the OS file manager.
   revealDownloadedAttachment: (communityId: string, channelId: string, attachmentId: string) =>
     hostInvoke<unknown>("reveal_downloaded_attachment", { communityId, channelId, attachmentId }).then(
@@ -167,19 +179,10 @@ export const communityCommands = {
     hostInvoke<unknown>("pin_attachment", { communityId, attachmentId, pinned }).then(
       () => undefined,
     ),
-  sendVoiceMessage: (
-    communityId: string,
-    channelId: string,
-    opusBytesB64: string,
-    durationMs: number,
-    waveformB64: string,
-  ) => hostInvoke<string>("send_voice_message", {
-    communityId,
-    channelId,
-    opusBytesB64,
-    durationMs,
-    waveformB64,
-  }),
+  /// `pcmB64`: the recording as mono little-endian f32 PCM at 16 kHz; the
+  /// Host encodes it as Ogg Opus.
+  sendVoiceMessage: (communityId: string, channelId: string, pcmB64: string) =>
+    hostInvoke<string>("send_voice_message", { communityId, channelId, pcmB64 }),
   expandCommunitySegment: (communityId: string) =>
     invoke<number>("expand_community_segment", { communityId }),
   /**

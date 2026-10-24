@@ -7,7 +7,9 @@
 
 use std::path::Path;
 
+use rekindle_files::voice_note;
 use rekindle_files::{AttachmentRecordJson, FilesError, MAX_FILE_SIZE_BYTES};
+use rekindle_types::dto::channel_message::VoiceMessageAudioView;
 
 use super::HostFiles;
 
@@ -142,27 +144,45 @@ impl HostFiles {
         rekindle_files::assemble_attachment(self, community_id, &fetched)
     }
 
-    /// Send a recorded voice message: its attachment id.
+    /// Send a recorded voice message: the PCM the frontend recorded,
+    /// encoded here as Ogg Opus (plan E5.1). Its attachment id.
     ///
     /// # Errors
-    /// The upload failed.
+    /// The PCM is malformed or out of the length bounds, or the upload
+    /// failed.
     pub async fn voice(
         &self,
         community_id: &str,
         channel_id: &str,
-        opus: Vec<u8>,
-        duration_ms: u32,
-        waveform: Vec<u8>,
+        pcm: &[u8],
     ) -> Result<String, FilesError> {
-        rekindle_files::send_voice_message_bytes(
-            self,
-            community_id,
-            channel_id,
-            opus,
-            duration_ms,
-            waveform,
-        )
-        .await
+        let ogg = voice_note::pcm_from_le_bytes(pcm)
+            .and_then(|pcm| voice_note::encode(&pcm))
+            .map_err(|e| FilesError::InvalidInput(e.to_string()))?;
+        rekindle_files::send_voice_message_bytes(self, community_id, channel_id, ogg).await
+    }
+
+    /// A voice message's audio with the duration and waveform decoded from
+    /// it here; a file that is not our Ogg Opus is refused.
+    ///
+    /// # Errors
+    /// The fetch failed, or the file is not a voice message.
+    pub async fn voice_audio(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        attachment_id_hex: &str,
+    ) -> Result<VoiceMessageAudioView, FilesError> {
+        let audio = self
+            .bytes(community_id, channel_id, attachment_id_hex)
+            .await?;
+        let info =
+            voice_note::analyze(&audio).map_err(|e| FilesError::InvalidInput(e.to_string()))?;
+        Ok(VoiceMessageAudioView {
+            audio,
+            duration_ms: info.duration_ms,
+            waveform: info.waveform,
+        })
     }
 
     /// Fetch every expression asset of `community_id` not yet cached, so a

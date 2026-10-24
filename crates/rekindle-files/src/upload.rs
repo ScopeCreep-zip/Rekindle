@@ -389,48 +389,21 @@ pub async fn upload_bytes_as_attachment<D: FilesDeps>(
 
 /// Architecture §16.4 — a voice message is a `ChannelEntry::Message`
 /// with `flags |= VOICE_MESSAGE` carrying a single `audio/ogg` Lost
-/// Cargo attachment plus waveform + duration metadata. The metadata
-/// travels inside the (MEK-encrypted) body as JSON so it propagates
-/// with the message without changing the AttachmentOffer wire format.
+/// Cargo attachment: the Ogg Opus file the Host encoded (plan E5.1). It
+/// carries no duration or waveform: each receiver decodes them from the
+/// audio, so a sender cannot claim them (prod research batch 7 V-2).
 pub async fn send_voice_message_bytes<D: FilesDeps>(
     deps: &D,
     community_id: &str,
     channel_id: &str,
     opus_bytes: Vec<u8>,
-    duration_ms: u32,
-    waveform: Vec<u8>,
 ) -> Result<String, FilesError> {
     deps.require_permission(community_id, permissions::SEND_VOICE_MESSAGES)?;
-    if duration_ms == 0 || duration_ms > 5 * 60 * 1000 {
-        return Err(FilesError::InvalidInput(format!(
-            "voice message duration {duration_ms}ms outside 1ms..=5min"
-        )));
-    }
-    if waveform.len() > 256 {
-        return Err(FilesError::InvalidInput(format!(
-            "waveform has {} peaks — max 256",
-            waveform.len()
-        )));
-    }
     if opus_bytes.is_empty() {
         return Err(FilesError::InvalidInput(
             "voice message has empty audio bytes".into(),
         ));
     }
-
-    // Body JSON: peers decode this after MEK-decrypting the message body.
-    #[derive(serde::Serialize)]
-    #[serde(rename_all = "camelCase")]
-    struct VoiceMessageBody {
-        duration_ms: u32,
-        waveform_b64: String,
-    }
-    use base64::Engine as _;
-    let body = serde_json::to_vec(&VoiceMessageBody {
-        duration_ms,
-        waveform_b64: base64::engine::general_purpose::STANDARD.encode(&waveform),
-    })
-    .map_err(|e| FilesError::Db(format!("serialize voice message body: {e}")))?;
 
     upload_bytes_as_attachment(
         deps,
@@ -440,7 +413,7 @@ pub async fn send_voice_message_bytes<D: FilesDeps>(
             bytes: opus_bytes,
             filename: format!("voice-{}.ogg", random_uuid(deps).simple()),
             mime_type: "audio/ogg".to_string(),
-            body_plaintext: body,
+            body_plaintext: Vec::new(),
             flags: rekindle_types::channel::flags::VOICE_MESSAGE,
             local_path: None,
         },

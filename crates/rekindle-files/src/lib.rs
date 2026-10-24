@@ -51,6 +51,7 @@ pub mod sanitize;
 pub mod serve;
 pub mod upload;
 pub mod verify;
+pub mod voice_note;
 
 #[cfg(test)]
 mod test_mock;

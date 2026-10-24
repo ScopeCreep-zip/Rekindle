@@ -1,6 +1,7 @@
 import { commands } from "../../ipc/commands";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
+import { decodeBase64ToBytes } from "../../utils/base64";
 
 export async function handleUpdateCommunityProfile(
   communityId: string,
@@ -108,10 +109,14 @@ export async function handleLoadVoiceMessage(
   channelId: string,
   attachmentId: string,
   mimeType: string,
-): Promise<Blob | null> {
+): Promise<{ blob: Blob; durationMs: number; waveform: Uint8Array } | null> {
   try {
-    const bytes = await commands.getVoiceMessageAudio(communityId, channelId, attachmentId);
-    return new Blob([bytes], { type: mimeType });
+    const view = await commands.getVoiceMessageAudio(communityId, channelId, attachmentId);
+    return {
+      blob: new Blob([decodeBase64ToBytes(view.audio) as Uint8Array<ArrayBuffer>], { type: mimeType }),
+      durationMs: view.durationMs,
+      waveform: decodeBase64ToBytes(view.waveform),
+    };
   } catch (e) {
     const msg = typeof e === "string" ? e : "Could not load voice message";
     console.error("Voice message fetch failed:", e);

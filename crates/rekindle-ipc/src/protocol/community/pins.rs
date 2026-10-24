@@ -63,12 +63,13 @@ pub enum PinRequest {
     },
 
     /// Send a recorded voice message: the new attachment id.
+    /// The recording is mono PCM (little-endian `f32` at
+    /// `rekindle_files::voice_note::INPUT_SAMPLE_RATE`); the Host encodes
+    /// it as Ogg Opus (plan E5.1).
     VoiceMessageSend {
         community: String,
         channel_id: String,
-        opus: Vec<u8>,
-        duration_ms: u32,
-        waveform: Vec<u8>,
+        pcm: Vec<u8>,
     },
 
     /// A voice message's audio bytes, fetched into the chunk cache.

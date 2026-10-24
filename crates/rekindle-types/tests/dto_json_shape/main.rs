@@ -125,6 +125,16 @@ fn samples() -> Map<String, Value> {
         }),
     );
     add(
+        "channel.voice_message_audio",
+        to(
+            rekindle_types::dto::channel_message::VoiceMessageAudioView {
+                audio: b"OggS".to_vec(),
+                duration_ms: 2_340,
+                waveform: vec![0, 128, 255],
+            },
+        ),
+    );
+    add(
         "identity.summary",
         to(IdentitySummary {
             public_key: pk('a'),

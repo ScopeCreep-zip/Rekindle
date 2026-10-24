@@ -58,15 +58,8 @@ pub(super) async fn handle(ctx: &DaemonContext, key: &str, request: PinRequest) 
             Err(e) => refused(&e, "attachment info"),
         },
         PinRequest::VoiceMessageSend {
-            channel_id,
-            opus,
-            duration_ms,
-            waveform,
-            ..
-        } => match files
-            .voice(key, &channel_id, opus, duration_ms, waveform)
-            .await
-        {
+            channel_id, pcm, ..
+        } => match files.voice(key, &channel_id, &pcm).await {
             Ok(id) => IpcResponse::ok(&id),
             Err(e) => refused(&e, "send voice message"),
         },
@@ -74,8 +67,8 @@ pub(super) async fn handle(ctx: &DaemonContext, key: &str, request: PinRequest) 
             channel_id,
             attachment_id,
             ..
-        } => match files.bytes(key, &channel_id, &attachment_id).await {
-            Ok(bytes) => IpcResponse::ok(&bytes),
+        } => match files.voice_audio(key, &channel_id, &attachment_id).await {
+            Ok(view) => IpcResponse::ok(&view),
             Err(e) => refused(&e, "voice message audio"),
         },
         other => IpcResponse::error(

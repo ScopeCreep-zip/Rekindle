@@ -57,6 +57,21 @@ pub struct MessageAttachment {
     pub downloaded: bool,
 }
 
+/// A voice message as the receiving Host decoded it (plan E5.1, research
+/// batch 7 V-2): the Ogg Opus audio, and the duration and waveform read
+/// from that audio, never from the sender.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VoiceMessageAudioView {
+    /// The `audio/ogg` file, base64.
+    #[serde(with = "crate::base64_bytes")]
+    pub audio: Vec<u8>,
+    pub duration_ms: u32,
+    /// Peaks 0–255, base64.
+    #[serde(with = "crate::base64_bytes")]
+    pub waveform: Vec<u8>,
+}
+
 /// One channel message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

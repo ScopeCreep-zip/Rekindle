@@ -17,12 +17,6 @@ const MAX_SEARCH_QUERY_LEN: usize = 1024;
 /// The longest local path an upload or download names, in bytes.
 const MAX_PATH_LEN: usize = 4096;
 
-/// The most waveform peaks a voice message carries.
-const MAX_WAVEFORM_LEN: usize = 256;
-
-/// The longest voice message, in milliseconds.
-const MAX_VOICE_MS: u32 = 5 * 60 * 1000;
-
 fn id(value: &str, what: &str) -> Checked {
     if value.is_empty() || value.len() > MAX_PIN_ID_LEN {
         return Err(IpcResponse::error(
@@ -55,21 +49,22 @@ fn local_path(value: &str) -> Checked {
     Ok(())
 }
 
-/// A voice message: Opus of at most the attachment cap, a waveform of at
-/// most `MAX_WAVEFORM_LEN` peaks, and 1 ms to `MAX_VOICE_MS`.
-fn voice(opus: &[u8], duration_ms: u32, waveform: &[u8]) -> Checked {
-    if opus.is_empty() || opus.len() as u64 > rekindle_files::MAX_FILE_SIZE_BYTES {
-        return Err(IpcResponse::error(
-            400,
-            "a voice message is 1 byte up to the attachment cap",
-        ));
-    }
-    if duration_ms == 0 || duration_ms > MAX_VOICE_MS || waveform.len() > MAX_WAVEFORM_LEN {
+/// A voice message's PCM: whole little-endian `f32` samples at the
+/// Host's input rate, from the shortest to the longest voice message
+/// (`rekindle_voice::voice_note`, plan E5.1).
+fn voice(pcm: &[u8]) -> Checked {
+    use rekindle_files::voice_note::{INPUT_SAMPLE_RATE, MAX_DURATION_MS, MIN_DURATION_MS};
+    let bytes_for = |ms: u32| u64::from(ms) * u64::from(INPUT_SAMPLE_RATE) / 1000 * 4;
+    let len = pcm.len() as u64;
+    if !len.is_multiple_of(4)
+        || len < bytes_for(MIN_DURATION_MS)
+        || len > bytes_for(MAX_DURATION_MS)
+    {
         return Err(IpcResponse::error(
             400,
             format!(
-                "a voice message lasts 1 ms to {MAX_VOICE_MS} ms with at most \
-                 {MAX_WAVEFORM_LEN} waveform peaks"
+                "a voice message is {MIN_DURATION_MS}–{MAX_DURATION_MS} ms of f32 PCM at \
+                 {INPUT_SAMPLE_RATE} Hz"
             ),
         ));
     }
@@ -144,13 +139,11 @@ pub(super) fn check(request: &PinRequest) -> Checked {
         PinRequest::VoiceMessageSend {
             community: key,
             channel_id,
-            opus,
-            duration_ms,
-            waveform,
+            pcm,
         } => {
             community(key)?;
             id(channel_id, "channel id")?;
-            voice(opus, *duration_ms, waveform)
+            voice(pcm)
         }
         PinRequest::MessageSearch { request } => {
             if request.query.len() > MAX_SEARCH_QUERY_LEN {
@@ -228,17 +221,16 @@ mod tests {
 
     #[test]
     fn a_voice_message_is_bounded() {
-        let voice = |opus: Vec<u8>, duration_ms: u32, peaks: usize| PinRequest::VoiceMessageSend {
+        let voice = |pcm_bytes: usize| PinRequest::VoiceMessageSend {
             community: "VLD0:".to_owned() + &"A".repeat(43),
             channel_id: "c".into(),
-            opus,
-            duration_ms,
-            waveform: vec![0; peaks],
+            pcm: vec![0; pcm_bytes],
         };
-        assert!(check(&voice(vec![1; 16], 1_000, 64)).is_ok());
-        assert!(check(&voice(Vec::new(), 1_000, 64)).is_err());
-        assert!(check(&voice(vec![1; 16], 0, 64)).is_err());
-        assert!(check(&voice(vec![1; 16], MAX_VOICE_MS + 1, 64)).is_err());
-        assert!(check(&voice(vec![1; 16], 1_000, MAX_WAVEFORM_LEN + 1)).is_err());
+        // 16 kHz f32: 64 bytes a millisecond.
+        assert!(check(&voice(64 * 1_000)).is_ok());
+        assert!(check(&voice(0)).is_err());
+        assert!(check(&voice(64 * 199)).is_err());
+        assert!(check(&voice(64 * 1_000 + 3)).is_err());
+        assert!(check(&voice(64 * (5 * 60 * 1000 + 1))).is_err());
     }
 }

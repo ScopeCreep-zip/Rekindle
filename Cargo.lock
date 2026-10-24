@@ -7507,6 +7507,7 @@ dependencies = [
  "blake3",
  "hex",
  "lru 0.12.5",
+ "opus",
  "parking_lot 0.12.5",
  "proptest",
  "rekindle-codec",

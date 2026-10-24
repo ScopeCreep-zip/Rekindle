@@ -79,16 +79,12 @@ impl std::fmt::Debug for PinRequest {
             Self::VoiceMessageSend {
                 community,
                 channel_id,
-                opus,
-                duration_ms,
-                waveform,
+                pcm,
             } => f
                 .debug_struct("VoiceMessageSend")
                 .field("community", community)
                 .field("channel_id", channel_id)
-                .field("opus", &opus.len())
-                .field("duration_ms", duration_ms)
-                .field("waveform", &waveform.len())
+                .field("pcm", &pcm.len())
                 .finish(),
             Self::MessageSearch { request } => f
                 .debug_struct("MessageSearch")

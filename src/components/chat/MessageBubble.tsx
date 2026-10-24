@@ -109,24 +109,11 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     }
   }
 
-  /** Decode `{durationMs, waveformB64}` JSON when this is a voice message
-   *  (architecture §16.4 — metadata travels in the carrying Message body). */
-  const voiceMeta = createMemo<{ durationMs: number; waveform: Uint8Array } | null>(() => {
-    if (!(props.message.flags && (props.message.flags & FLAG_VOICE_MESSAGE) !== 0)) return null;
-    const body = props.message.body;
-    if (!body) return null;
-    try {
-      const parsed = JSON.parse(body) as { durationMs?: number; waveformB64?: string };
-      const durationMs = parsed.durationMs ?? 0;
-      const b64 = parsed.waveformB64 ?? "";
-      const bin = atob(b64);
-      const waveform = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) waveform[i] = bin.charCodeAt(i);
-      return { durationMs, waveform };
-    } catch {
-      return null;
-    }
-  });
+  /** A voice message: the Host decodes its duration and waveform from the
+   *  audio (plan E5.1), so nothing is read from the message body. */
+  const isVoice = createMemo(
+    () => props.message.flags != null && (props.message.flags & FLAG_VOICE_MESSAGE) !== 0,
+  );
 
   // Architecture §32 a11y — screen-reader announcement composed from
   // sender + timestamp + body. Read by the parent message-list's
@@ -329,20 +316,16 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         )}
       </Show>
 
-      <Show when={props.message.attachment && voiceMeta()}>
-        {(meta) => (
-          <Show when={props.communityId && props.channelId}>
-            <VoiceMessagePlayer
-              communityId={props.communityId!}
-              channelId={props.channelId!}
-              attachment={props.message.attachment!}
-              durationMs={meta().durationMs}
-              waveform={meta().waveform}
-            />
-          </Show>
-        )}
+      <Show when={props.message.attachment && isVoice()}>
+        <Show when={props.communityId && props.channelId}>
+          <VoiceMessagePlayer
+            communityId={props.communityId!}
+            channelId={props.channelId!}
+            attachment={props.message.attachment!}
+          />
+        </Show>
       </Show>
-      <Show when={props.message.attachment && !voiceMeta() ? props.message.attachment : null}>
+      <Show when={props.message.attachment && !isVoice() ? props.message.attachment : null}>
         {(att) => (
           <Show when={props.communityId && props.channelId}>
             <AttachmentDisplay

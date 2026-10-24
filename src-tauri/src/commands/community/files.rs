@@ -2,6 +2,7 @@
 //! Host (`PinRequest`).
 
 use rekindle_ipc::protocol::PinRequest;
+use rekindle_types::dto::channel_message::VoiceMessageAudioView;
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
@@ -51,8 +52,8 @@ pub async fn get_voice_message_audio(
     channel_id: String,
     attachment_id: String,
     state: State<'_, SharedState>,
-) -> Result<tauri::ipc::Response, CommandError> {
-    let done: Done<Vec<u8>> = crate::host_call::call(
+) -> Result<Done<VoiceMessageAudioView>, CommandError> {
+    crate::host_call::call(
         &state,
         pins(PinRequest::VoiceMessageAudio {
             community: community_id,
@@ -60,8 +61,7 @@ pub async fn get_voice_message_audio(
             attachment_id,
         }),
     )
-    .await?;
-    Ok(tauri::ipc::Response::new(done.value))
+    .await
 }
 
 /// Show a downloaded attachment in the OS file manager.
@@ -88,9 +88,7 @@ pub async fn reveal_downloaded_attachment(
 pub async fn send_voice_message(
     community_id: String,
     channel_id: String,
-    opus_bytes_b64: String,
-    duration_ms: u32,
-    waveform_b64: String,
+    pcm_b64: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<String>, CommandError> {
     use base64::Engine as _;
@@ -108,9 +106,7 @@ pub async fn send_voice_message(
         pins(PinRequest::VoiceMessageSend {
             community: community_id,
             channel_id,
-            opus: decode(&opus_bytes_b64, "opus")?,
-            duration_ms,
-            waveform: decode(&waveform_b64, "waveform")?,
+            pcm: decode(&pcm_b64, "pcm")?,
         }),
     )
     .await

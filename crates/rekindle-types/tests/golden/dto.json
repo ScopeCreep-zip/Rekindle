@@ -66,6 +66,11 @@
     "serverMessageId": "msg_1",
     "timestamp": 1760000000
   },
+  "channel.voice_message_audio": {
+    "audio": "T2dnUw==",
+    "durationMs": 2340,
+    "waveform": "AID/"
+  },
   "command.done": {
     "undo": null,
     "value": null
