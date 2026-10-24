@@ -264,7 +264,7 @@ pub async fn dispatch_invite(
                 IpcRequest::Community(CommunityRequest::Lifecycle(
                     LifecycleRequest::InviteCreate {
                         community: community.clone(),
-                        max_uses: max_uses.unwrap_or(0),
+                        max_uses: *max_uses,
                         expires_seconds: exp_secs,
                     },
                 )),

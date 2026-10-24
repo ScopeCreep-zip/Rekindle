@@ -61,6 +61,18 @@ fn storage_on_init_is_the_global_storage() {
 }
 
 #[test]
+fn an_invite_without_max_uses_is_single_use() {
+    let cli =
+        Cli::try_parse_from(["rekindle", "community", "invite", "create", "-c", "X"]).unwrap();
+    assert!(matches!(
+        cli.command,
+        Some(Command::Community(CommunityCmd::Invite(
+            InviteCmd::Create { max_uses: 1, .. }
+        )))
+    ));
+}
+
+#[test]
 fn invite_max_uses_is_refused_outside_one_to_a_hundred() {
     let invite = |n: &str| {
         Cli::try_parse_from([
@@ -80,7 +92,7 @@ fn invite_max_uses_is_refused_outside_one_to_a_hundred() {
         let cli = invite(n).unwrap();
         assert!(matches!(
             cli.command,
-            Some(Command::Community(CommunityCmd::Invite(InviteCmd::Create { max_uses: Some(m), .. })))
+            Some(Command::Community(CommunityCmd::Invite(InviteCmd::Create { max_uses: m, .. })))
                 if m.to_string() == n
         ));
     }

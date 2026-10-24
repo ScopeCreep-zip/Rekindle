@@ -55,6 +55,11 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     max_uses: u32,
     expires_in_seconds: Option<u64>,
 ) -> Result<MintedInvite, GovernanceRuntimeError> {
+    // Readers refuse a `max_uses` outside `1..=MAX_USES_PER_INVITE` (plan
+    // E3.2 (d)), so it is refused here, before any secret is published.
+    if !rekindle_governance::invite_quota::check_max_uses_cap(max_uses) {
+        return Err(GovernanceRuntimeError::OutOfBounds { field: "max_uses" });
+    }
     let membership = deps
         .community_membership(community_id)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;

@@ -121,10 +121,11 @@ pub enum InviteCmd {
         /// Community name or governance key.
         #[arg(long, short = 'c')]
         community: String,
-        /// Maximum number of uses, 1 to 100 (there is no unlimited invite).
-        #[arg(long, value_parser = clap::value_parser!(u32)
+        /// Maximum number of uses, 1 (the default) to 100 (there is no
+        /// unlimited invite).
+        #[arg(long, default_value_t = 1, value_parser = clap::value_parser!(u32)
             .range(1..=i64::from(rekindle_types::invite::MAX_USES_PER_INVITE)))]
-        max_uses: Option<u32>,
+        max_uses: u32,
         /// Expiration duration (e.g., "24h", "7d", "never").
         #[arg(long)]
         expires: Option<String>,
