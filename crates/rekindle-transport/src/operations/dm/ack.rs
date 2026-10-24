@@ -14,7 +14,7 @@
 //! Our read marker (`ReadUpTo`, [`super::receipts`]) rides the same
 //! coalescer, delay and Invisible hold.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::time::Duration;
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmAck, ReadUpTo, MAX_DM_ACK_SEQS};
@@ -24,6 +24,7 @@ use rekindle_utils::RandomSource;
 use rekindle_sync::stream::DM_STREAM;
 
 use super::{client_id_text, receipts, send};
+use crate::operations::direct::frame::Opened;
 use crate::operations::friend::{state, FriendHost};
 
 /// The coalescing delay's bounds, milliseconds.
@@ -48,7 +49,18 @@ pub struct PendingAcks {
     by_peer: HashMap<String, BTreeSet<u64>>,
     read_up_to: HashMap<String, u64>,
     scheduled: HashSet<String>,
+    /// Per peer, the newest [`APPLIED_KEPT`] entries we opened: the
+    /// digest of the exact frame with its stream seq.
+    applied: HashMap<String, VecDeque<([u8; 32], u64)>>,
 }
+
+/// How many opened entries per peer an exact copy is matched against: a
+/// copy is the peer's re-ask of rows one of our acks named and lost, and
+/// one `DmAck` names at most `MAX_DM_ACK_SEQS` seqs, so twice that covers
+/// two lost flushes in a row. Memory only: after a restart a copy draws
+/// no ack, and the re-ask after the row lands (framed afresh,
+/// `dm::outbox::rehint`) is acknowledged as a new arrival.
+const APPLIED_KEPT: usize = 2 * MAX_DM_ACK_SEQS;
 
 /// What one flush to a peer sends.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -67,12 +79,22 @@ impl PendingAcks {
         self.scheduled.insert(peer.to_owned())
     }
 
-    /// Owe `peer` a `DmAck` (a duplicate arrived): its `through`, the
-    /// cursor, covers what they re-sent; `true` when a flush must be
-    /// scheduled.
-    fn add_through(&mut self, peer: &str) -> bool {
-        self.by_peer.entry(peer.to_owned()).or_default();
-        self.scheduled.insert(peer.to_owned())
+    /// Entry `seq` of `peer`'s stream opened from the frame `digest`.
+    fn remember(&mut self, peer: &str, digest: [u8; 32], seq: u64) {
+        let kept = self.applied.entry(peer.to_owned()).or_default();
+        if kept.len() == APPLIED_KEPT {
+            kept.pop_front();
+        }
+        kept.push_back((digest, seq));
+    }
+
+    /// The stream seq of `peer`'s entry whose frame was exactly `digest`.
+    fn applied_seq(&self, peer: &str, digest: &[u8; 32]) -> Option<u64> {
+        self.applied
+            .get(peer)?
+            .iter()
+            .find(|(d, _)| d == digest)
+            .map(|(_, seq)| *seq)
     }
 
     /// Hold our read marker `seq` for `peer` (the highest one wins);
@@ -106,6 +128,7 @@ impl PendingAcks {
         self.by_peer.clear();
         self.read_up_to.clear();
         self.scheduled.clear();
+        self.applied.clear();
     }
 }
 
@@ -150,22 +173,44 @@ pub(crate) async fn committed(
     }
 }
 
-/// A copy of an entry of `from`'s of `type_id` that we already hold (the
-/// ratchet's duplicate, by hint or chain): their first ack may be lost, so
-/// it is acknowledged again (register 2026-10-24, Briar
-/// `DatabaseComponentImpl.java#L961-997`), after the same 2–10 s
-/// coalescing delay, by a `DmAck` whose `through` is our cursor at the
-/// flush. Only user content we acknowledge, and only to an accepted friend.
-pub(crate) fn duplicate(
-    host: &dyn FriendHost,
-    from: &str,
-    type_id: rekindle_codec::capnp_codec::direct::DmTypeId,
-) {
-    use rekindle_codec::capnp_codec::direct::DmTypeId;
-    if !matches!(type_id, DmTypeId::DmText | DmTypeId::StreamRecord) || !accepted(host, from) {
+/// The digest an exact copy of a frame is matched by: BLAKE3 of the
+/// whole frame (header, ciphertext and the wire kind).
+#[must_use]
+pub(crate) fn digest(bytes: &[u8]) -> [u8; 32] {
+    blake3::hash(bytes).into()
+}
+
+/// `opened` came from the frame `digest`: an entry of its sender's stream
+/// that we acknowledge is remembered, so an exact copy of it is
+/// acknowledged again ([`duplicate`]).
+pub(crate) fn opened(host: &dyn FriendHost, opened: &Opened, digest: [u8; 32]) {
+    if opened.stream_seq > 0 && acknowledged_id(&opened.body).is_some() {
+        host.stores()
+            .acks
+            .lock()
+            .remember(&opened.sender_hex, digest, opened.stream_seq);
+    }
+}
+
+/// A copy, `digest`, of a frame claiming `from` that the ratchet or replay
+/// cache already saw: their ack of it may be lost, so an exact copy of an
+/// entry of theirs we opened is acknowledged again by its own stream seq
+/// (register 2026-10-24, Briar `DatabaseComponentImpl.java#L961-997` acks
+/// the message id), after the same 2–10 s coalescing delay. A copy that
+/// matches nothing we opened (a header seen with another ciphertext, a
+/// replayed page with its kind rewritten) draws no ack, and only an
+/// accepted friend is answered.
+pub(crate) fn duplicate(host: &dyn FriendHost, from: &str, digest: &[u8; 32]) {
+    if !accepted(host, from) {
         return;
     }
-    let first = host.stores().acks.lock().add_through(from);
+    let first = {
+        let mut acks = host.stores().acks.lock();
+        let Some(seq) = acks.applied_seq(from, digest) else {
+            return tracing::debug!(from = %from, "duplicate matches no entry we opened: no ack");
+        };
+        acks.add(from, seq)
+    };
     if first {
         schedule(host, from);
     }
@@ -395,26 +440,21 @@ mod tests {
     }
 
     #[test]
-    fn a_duplicate_owes_an_ack_of_the_cursor_alone() {
+    fn only_an_exact_copy_of_an_opened_entry_is_acknowledged_by_its_seq() {
         let mut acks = PendingAcks::default();
-        assert!(acks.add_through("bob"));
-        assert!(!acks.add_through("bob"), "one flush per peer");
-        let held = acks.take("bob", false).unwrap();
-        assert_eq!(held.seqs, Some(BTreeSet::new()));
+        let (frame, forged) = (super::digest(b"frame 4"), super::digest(b"frame 4'"));
+        acks.remember("bob", frame, 4);
+        assert_eq!(acks.applied_seq("bob", &frame), Some(4));
+        assert_eq!(acks.applied_seq("bob", &forged), None, "another ciphertext");
+        assert_eq!(acks.applied_seq("eve", &frame), None, "another sender");
+        for seq in 5..5 + APPLIED_KEPT as u64 {
+            acks.remember("bob", super::digest(&seq.to_be_bytes()), seq);
+        }
+        assert_eq!(acks.applied_seq("bob", &frame), None, "bounded");
+        acks.clear();
         assert_eq!(
-            super::acks(&[], 3),
-            [DirectBody::DmAck(DmAck {
-                stream_seqs: Vec::new(),
-                through: 3
-            })]
-        );
-        assert!(super::acks(&[], 0).is_empty(), "nothing to name");
-        // A duplicate rides a flush already holding seqs.
-        assert!(acks.add("bob", 4));
-        assert!(!acks.add_through("bob"));
-        assert_eq!(
-            acks.take("bob", false).unwrap().seqs,
-            Some(BTreeSet::from([4]))
+            acks.applied_seq("bob", &super::digest(&5u64.to_be_bytes())),
+            None
         );
     }
 

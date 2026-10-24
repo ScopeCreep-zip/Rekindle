@@ -82,13 +82,15 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
         tracing::warn!(len = datagram.len(), "dropping untagged 1:1 message");
         return Routed::Handled;
     };
+    let digest = dm::ack::digest(bytes);
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
         Err(dropped) => {
-            by_message(host, dropped);
+            by_message(host, dropped, &digest);
             return Routed::Handled;
         }
     };
+    dm::ack::opened(host, &opened, digest);
     if opened.stream_seq > 0 {
         dm::stream::on_hint(host, &opened.sender_hex);
     }
@@ -96,15 +98,16 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
 }
 
 /// A frame that did not open by message or from a chain: a rejected
-/// init's `PreKeyRejected` goes back by message (B5), and a copy of an
-/// entry we already hold is acknowledged again (Briar answers every
-/// duplicate; live A/B finding 73).
-fn by_message(host: &dyn FriendHost, dropped: Dropped) {
+/// init's `PreKeyRejected` goes back by message (B5), and an exact copy
+/// (`digest`, [`dm::ack::digest`]) of an entry we applied is acknowledged
+/// again by its own seq (Briar answers every duplicate; live A/B finding
+/// 73b).
+fn by_message(host: &dyn FriendHost, dropped: Dropped, digest: &[u8; 32]) {
     match dropped {
         Dropped::Rejected { to, frame } => {
             crate::operations::prekeys::send_rejection(host, &to, *frame);
         }
-        Dropped::Duplicate { from, type_id } => dm::ack::duplicate(host, &from, type_id),
+        Dropped::Duplicate { from } => dm::ack::duplicate(host, &from, digest),
         // A blocked sender is never acked (LV23 review H1/H2); an in-flight
         // copy's first copy settles the receipt.
         Dropped::Blocked | Dropped::InFlight | Dropped::Refused | Dropped::Failed => {}
@@ -153,13 +156,15 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
         tracing::warn!(from = %writer, "dropping an untagged chain entry");
         return Routed::Handled;
     };
+    let digest = dm::ack::digest(bytes);
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
         Err(dropped) => {
-            by_message(host, dropped);
+            by_message(host, dropped, &digest);
             return Routed::Handled;
         }
     };
+    dm::ack::opened(host, &opened, digest);
     if opened.sender_hex != writer {
         tracing::warn!(from = %writer, by = %opened.sender_hex, "dropping a chain entry by another sender");
         frame::processed(host, &opened);

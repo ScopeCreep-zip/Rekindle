@@ -68,10 +68,12 @@ pub enum Dropped {
     /// receipted is never acked: their side shows "sent", never
     /// "delivered".
     Blocked,
-    /// A copy of a frame that already opened and was applied, of `type_id`
-    /// from `from`: its receipt stands, and a hint's is sent again
+    /// A copy of a frame that already opened and was applied, from `from`
+    /// (as its frame claims, unauthenticated: the ratchet judges a duplicate
+    /// by its header alone): its receipt stands, and an exact copy of an
+    /// entry we applied is acknowledged again
     /// ([`crate::operations::dm::ack::duplicate`]; live A/B finding 73).
-    Duplicate { from: String, type_id: DmTypeId },
+    Duplicate { from: String },
     /// A copy of a sealed frame whose first copy is still being applied
     /// (its nonce tentative, review RV5 H1): nothing is stored yet, so no
     /// receipt; a call is answered [`super::RETRY_LATER`].
@@ -192,7 +194,6 @@ fn open_sealed(
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate sealed frame");
             return Err(Dropped::Duplicate {
                 from: sender_hex.clone(),
-                type_id,
             });
         }
         Sighting::InFlight => {
@@ -372,7 +373,6 @@ async fn open_ephemeral(
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
             return Err(Dropped::Duplicate {
                 from: sender_hex.clone(),
-                type_id,
             });
         }
         Err(e) => {
@@ -498,7 +498,6 @@ fn recorded(
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
             return Err(Dropped::Duplicate {
                 from: sender_hex.clone(),
-                type_id,
             });
         }
         Err(e) => {
