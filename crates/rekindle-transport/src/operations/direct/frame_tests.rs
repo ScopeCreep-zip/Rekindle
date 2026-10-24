@@ -123,3 +123,13 @@ fn freshness_allows_skew_ahead_and_the_window_behind() {
     assert!(fresh(now - ENVELOPE_FRESHNESS_WINDOW_MS, now));
     assert!(!fresh(now - ENVELOPE_FRESHNESS_WINDOW_MS - 1, now));
 }
+
+/// RV5 R2: our database failing in a ratchet step judged nothing (no
+/// answer); any other failure is the frame's (NAK).
+#[test]
+fn a_ratchet_db_error_is_ours_and_any_other_failure_is_a_refusal() {
+    let db = RatchetError::Db(rekindle_asql::Error::ConnectionClosed);
+    assert!(matches!(ratchet_dropped(&db), Dropped::Failed));
+    let theirs = RatchetError::EstablishedSession;
+    assert!(matches!(ratchet_dropped(&theirs), Dropped::Refused));
+}

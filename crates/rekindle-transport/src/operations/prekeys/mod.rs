@@ -21,5 +21,5 @@ pub use pick::pick_bundle;
 pub use reject::FirstContact;
 pub(crate) use reject::{
     acknowledged, began_first_contact, on_rejected, refilled, rejection, rejection_reply,
-    send_rejection,
+    send_rejection, Rejection, Unjudged,
 };

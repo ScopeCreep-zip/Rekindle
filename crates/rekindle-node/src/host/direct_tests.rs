@@ -553,10 +553,10 @@ async fn a_receipted_request_is_stored_once() {
     assert_eq!(received_events(&mut events).await, 1, "one event");
 }
 
-/// Audit G4: a request whose store fails is refused, and its retry under
+/// Audit G4: a request whose store fails is left unanswered, and its retry under
 /// the same nonce goes through once the store works.
 #[tokio::test]
-async fn a_request_whose_store_fails_is_refused_and_its_retry_lands() {
+async fn a_request_whose_store_fails_is_unanswered_and_its_retry_lands() {
     let dir = tempfile::tempdir().unwrap();
     let (host, owner) = ann(&dir).await;
     let bob = rekindle_crypto::Identity::generate();
@@ -570,7 +570,13 @@ async fn a_request_whose_store_fails_is_refused_and_its_retry_lands() {
     .await
     .unwrap();
     let frame = sealed_request(&bob, owner, [6; 16], now_ms());
-    assert_eq!(call(&host, &frame).await, direct::NAK.to_vec());
+    let datagram = rekindle_transport::operations::dm::wire(&frame).unwrap();
+    // Our store failing is no refusal (RV5 R2): no answer, so the caller
+    // attempts it again; a NAK would end its row.
+    assert!(matches!(
+        host.receive_direct_call(&datagram).await,
+        direct::Called::Unanswered
+    ));
 
     db.call(|conn| conn.execute_batch("DROP TRIGGER temp.refuse_requests;"))
         .await

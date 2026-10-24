@@ -13,20 +13,32 @@ use crate::operations::friend::{is_blocked, state, FriendHost};
 /// unreadable (failing closed).
 pub(crate) type Status = Option<FriendshipState>;
 
-/// The sender's stored friendship when they are not blocked; `None`
-/// (logged) when they are, or when the block list is unreadable (failing
-/// closed). The gate reads the stored row (the Host's friend authority),
-/// so a frame dispatched before the projection loads is judged on it.
-pub(crate) async fn unblocked(host: &dyn FriendHost, sender_hex: &str) -> Option<Status> {
+/// Why a sender's frame goes no further than the block list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Barred {
+    /// The sender is blocked: a judged refusal, answered NAK (register
+    /// :76, "a NAK means … admission"; RV5 R1).
+    Blocked,
+    /// Our block list is unreadable: nothing was judged (fail closed, no
+    /// answer).
+    Unreadable,
+}
+
+/// The sender's stored friendship when they are not blocked, or why not
+/// (logged): [`Barred::Blocked`], or [`Barred::Unreadable`] when the block
+/// list cannot be read. The gate reads the stored row (the Host's friend
+/// authority), so a frame dispatched before the projection loads is
+/// judged on it.
+pub(crate) async fn unblocked(host: &dyn FriendHost, sender_hex: &str) -> Result<Status, Barred> {
     match is_blocked(host, sender_hex).await {
-        Ok(false) => Some(friendship_authoritative(host, sender_hex).await),
+        Ok(false) => Ok(friendship_authoritative(host, sender_hex).await),
         Ok(true) => {
             tracing::debug!(from = %sender_hex, "dropping frame from a blocked user");
-            None
+            Err(Barred::Blocked)
         }
         Err(e) => {
             tracing::warn!(from = %sender_hex, error = %e, "block list unreadable; dropping frame");
-            None
+            Err(Barred::Unreadable)
         }
     }
 }
@@ -36,8 +48,8 @@ pub(crate) async fn unblocked(host: &dyn FriendHost, sender_hex: &str) -> Option
 /// decrypted before a block or a removal is judged when it is applied.
 pub(crate) async fn admitted(host: &dyn FriendHost, sender_hex: &str, kind: DmTypeId) -> bool {
     match unblocked(host, sender_hex).await {
-        Some(status) => frame_admitted(host, sender_hex, kind, status, false).await,
-        None => false,
+        Ok(status) => frame_admitted(host, sender_hex, kind, status, false).await,
+        Err(_) => false,
     }
 }
 
@@ -49,8 +61,8 @@ pub(crate) async fn friend_admitted(
     kind: DmTypeId,
 ) -> bool {
     match unblocked(host, sender_hex).await {
-        Some(status) => kind_admitted(sender_hex, kind, status),
-        None => false,
+        Ok(status) => kind_admitted(sender_hex, kind, status),
+        Err(_) => false,
     }
 }
 

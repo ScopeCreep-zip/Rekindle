@@ -108,7 +108,7 @@ pub async fn reply_frame(
 }
 
 /// The frame to `to` for `body`, and how an outbox row keeps it.
-pub(super) async fn framed(
+pub(crate) async fn framed(
     host: &dyn FriendHost,
     to: &str,
     body: &DirectBody,

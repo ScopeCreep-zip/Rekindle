@@ -4,7 +4,9 @@
 //! after a second rejection (B7). The slot a first contact consumed is
 //! refilled on the record after the commit (B8).
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, PreKeyInitBody, PreKeyRejected};
+use rekindle_codec::capnp_codec::direct::{
+    DirectBody, DmFrame, DmTypeId, PreKeyInitBody, PreKeyRejected,
+};
 use rekindle_crypto::signal::prekey_record::Publish;
 use rekindle_crypto::signal::prekey_record::{base_key_hash, rejection_delay_ms};
 use rekindle_db::prekeys::RejectionVerdict;
@@ -76,70 +78,98 @@ pub(crate) fn refilled(host: &dyn FriendHost, refills: Vec<Publish>) {
 /// `status` whom the gate's own predicate admits for that init
 /// ([`init_admitted`], audit G9: a friend, or a group member for a group
 /// control kind) gets a signed rejection, at most one per base key and ten
-/// per sender per 3 h: the `PreKeyRejected` to send, or `None`.
+/// per sender per 3 h: the framed `PreKeyRejected` to send, or `None`
+/// (refused: answered NAK).
+///
+/// It is framed before its slot is counted (D6): a rejection that could
+/// not be built is never counted as sent. A message-borne one is counted
+/// once framed, before its delayed send: an `app_message` has no delivery
+/// report, so a framed one is as sent as it gets, and counting it first
+/// keeps the per-base-key limit over the 2–10 s delay.
+///
+/// # Errors
+/// [`Unjudged`]: our own failure (no identity, the database, framing):
+/// nothing was judged, so a call is left unanswered (RV5 R2).
 pub(crate) async fn rejection(
     host: &dyn FriendHost,
     sender: [u8; 32],
     sender_hex: &str,
     init: &PreKeyInitBody,
     status: Status,
-) -> Option<DirectBody> {
+) -> Result<Option<DmFrame>, Unjudged> {
     let kind = init.first_type_id;
     let hash = base_key_hash(&init.base_key);
     // A reset's init reaches here (a prekey we no longer hold) only past
     // `accept_init`'s check of our stored request (audit D-4).
     if !init_admitted(host, sender_hex, kind, status).await {
         tracing::debug!(from = %sender_hex, ?kind, "no rejection for this PreKeyInit");
-        return None;
+        return Ok(None);
     }
     let (Ok(db), Ok(local)) = (host.db(), host.local_party()) else {
-        return None;
+        return Err(Unjudged);
     };
+    let body = DirectBody::PreKeyRejected(PreKeyRejected {
+        signed_prekey_id: init.signed_prekey_id,
+        one_time_prekey_id: init.one_time_prekey_id,
+        pq_prekey: init.pq_prekey,
+        base_key_hash: hash,
+    });
+    let (frame, _) = dm::framed(host, sender_hex, &body).await.map_err(|e| {
+        tracing::info!(to = %sender_hex, error = %e, "PreKeyRejected not framed");
+        Unjudged
+    })?;
     let verdict =
         rekindle_db::prekeys::admit_rejection(&db, &local.owner(), &sender, hash, local.now_ms)
             .await;
     match verdict {
-        Ok(RejectionVerdict::Send) => Some(DirectBody::PreKeyRejected(PreKeyRejected {
-            signed_prekey_id: init.signed_prekey_id,
-            one_time_prekey_id: init.one_time_prekey_id,
-            pq_prekey: init.pq_prekey,
-            base_key_hash: hash,
-        })),
+        Ok(RejectionVerdict::Send) => Ok(Some(frame)),
         Ok(other) => {
             tracing::debug!(to = %sender_hex, ?other, "PreKeyRejected not sent");
-            None
+            Ok(None)
         }
         Err(e) => {
             tracing::warn!(to = %sender_hex, error = %e, "PreKeyRejected not recorded; not sent");
-            None
+            Err(Unjudged)
         }
     }
 }
 
+/// Our own failure while judging a frame: nothing was judged.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Unjudged;
+
+/// What a `PreKeyRejected` that reached us came to (R4, R5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Rejection {
+    /// It named our unanswered init and was acted on.
+    Applied,
+    /// It names no unanswered init of ours (or the reply was no such
+    /// rejection): final, a refusal; its nonce stays seen.
+    NotOurs,
+    /// Our own failure (no identity, the database): nothing was judged.
+    Failed,
+}
+
 /// B5 for an init that came by `app_call` (finding 46): the rejection,
-/// wired as the call's reply. It answers a call the sender is already
+/// wired as the call's reply, or `None` when it does not wire (ours: the
+/// call is left unanswered). It answers a call the sender is already
 /// waiting on, whose refusal its timing shows anyway, so it carries no
 /// delay.
-pub(crate) async fn rejection_reply(
-    host: &dyn FriendHost,
-    to: &str,
-    rejection: &DirectBody,
-) -> Option<Vec<u8>> {
-    dm::reply_frame(host, to, rejection)
-        .await
-        .map_err(|e| tracing::info!(to = %to, error = %e, "PreKeyRejected reply not framed"))
+pub(crate) fn rejection_reply(to: &str, frame: &DmFrame) -> Option<Vec<u8>> {
+    dm::frame::wire(frame)
+        .map_err(|e| tracing::info!(to = %to, error = %e, "PreKeyRejected reply not wired"))
         .ok()
 }
 
-/// B5 for an init that came by message: the rejection, sent after a
+/// B5 for an init that came by message: the framed rejection, sent after a
 /// random 2–10 s delay.
-pub(crate) fn send_rejection(host: &dyn FriendHost, to: &str, rejection: DirectBody) {
+pub(crate) fn send_rejection(host: &dyn FriendHost, to: &str, frame: DmFrame) {
     let (owned, peer) = (host.owned(), to.to_string());
     host.scope().spawn_or_drop("prekey rejection", async move {
         let host = owned.as_ref();
         let delay = rejection_delay_ms(host.rng());
         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-        if let Err(e) = dm::send_to_peer(host, &peer, &rejection).await {
+        if let Err(e) = dm::send_frame(host, &peer, &frame).await {
             tracing::info!(to = %peer, error = %e, "PreKeyRejected not delivered");
         }
     });
@@ -149,20 +179,20 @@ pub(crate) fn send_rejection(host: &dyn FriendHost, to: &str, rejection: DirectB
 /// names our unanswered init (it verified under their identity, the frame's
 /// signature; its base-key hash matches; nothing decrypted under it)
 /// discards that session; the first contact is then resent once from a
-/// fresh slot, and a second rejection fails it visibly. Whether it named
-/// our unanswered init and was acted on (a first contact's call reply that
-/// was not is a refusal, finding 46 refined).
+/// fresh slot, and a second rejection fails it visibly. What it came to:
+/// a first contact's call reply that named no init of ours is a refusal
+/// (finding 46 refined); our own failure is no refusal of theirs (R5).
 pub(crate) async fn on_rejected(
     host: &dyn FriendHost,
     sender: &str,
     rejected: &PreKeyRejected,
-) -> bool {
+) -> Rejection {
     let (Ok(db), Ok(local), Ok(peer)) = (
         host.db(),
         host.local_party(),
         dm::frame::peer_address(sender),
     ) else {
-        return false;
+        return Rejection::Failed;
     };
     let discarded = rekindle_db::ratchet::discard_pending_init(
         &db,
@@ -176,15 +206,15 @@ pub(crate) async fn on_rejected(
         Ok(true) => {}
         Ok(false) => {
             tracing::info!(from = %sender, "PreKeyRejected names no unanswered init of ours — ignored");
-            return false;
+            return Rejection::NotOurs;
         }
         Err(e) => {
             tracing::warn!(from = %sender, error = %e, "PreKeyRejected not applied");
-            return false;
+            return Rejection::Failed;
         }
     }
     if crate::operations::group_dm::first_contact::on_rejected(host, sender).await {
-        return true;
+        return Rejection::Applied;
     }
     let contact = host.stores().first_contacts.lock().get(sender).copied();
     // A first contact failed by its NAK (finding 46) still has its one
@@ -202,7 +232,7 @@ pub(crate) async fn on_rejected(
                 "they refused the keys of our secure session".to_string(),
             );
         }
-        return true;
+        return Rejection::Applied;
     };
     if contact.retried {
         super::failed(
@@ -211,7 +241,7 @@ pub(crate) async fn on_rejected(
             contact.kind,
             "they refused our keys twice; try again later".to_string(),
         );
-        return true;
+        return Rejection::Applied;
     }
     if let Some(entry) = host.stores().first_contacts.lock().get_mut(sender) {
         entry.retried = true;
@@ -229,5 +259,5 @@ pub(crate) async fn on_rejected(
     if let Err(e) = super::open_first_contact(host, sender, contact.kind).await {
         super::failed(host, sender, contact.kind, e.to_string());
     }
-    true
+    Rejection::Applied
 }

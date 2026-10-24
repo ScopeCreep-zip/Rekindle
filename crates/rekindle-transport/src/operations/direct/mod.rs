@@ -15,6 +15,7 @@ use rekindle_codec::capnp_codec::direct::DirectBody;
 
 use crate::operations::dm;
 use crate::operations::friend::FriendHost;
+pub(crate) use crate::operations::prekeys::Rejection;
 
 /// What became of an inbound 1:1 message.
 #[derive(Debug)]
@@ -34,20 +35,27 @@ pub enum Routed {
 pub const NAK: &[u8] = b"N";
 
 /// How long an inbound `app_call` may take to be answered before it is
-/// refused with [`NAK`], on both hosts.
-pub const CALL_DEADLINE: std::time::Duration = std::time::Duration::from_secs(12);
+/// left unanswered ([`Called::Unanswered`]; a deadline is no refusal), on
+/// both hosts. Under Veilid's own wait for our answer, `rpc.timeout_ms`
+/// (`CALL_TIMEOUT_MS`, 5 s: `rpc_app_call.rs:133-136` waits
+/// `self.timeout`, set from `timeout_ms` at `rpc_processor/mod.rs:192`),
+/// with a second for the reply to reach it, so ours fires first and the
+/// Host stops working on a call whose answer Veilid would discard.
+pub const CALL_DEADLINE: std::time::Duration =
+    std::time::Duration::from_millis(rekindle_types::message::CALL_TIMEOUT_MS - 1_000);
 
 /// What became of an inbound 1:1 `app_call`.
 #[derive(Debug)]
 pub enum Called {
     /// The reply: empty for a call that opened and was applied, or a
-    /// duplicate of one (its return is the receipt); [`NAK`] for any drop;
-    /// or a frame.
+    /// duplicate of one (its return is the receipt); [`NAK`] for a judged
+    /// refusal; or a frame.
     Answered(Vec<u8>),
     /// A kind whose owner step has not come; the desktop answers it.
     Unported(Box<Opened>),
     /// No answer: nothing was judged (the deadline passed, or an internal
-    /// error). A NAK is a refusal, so the host sends no reply; Veilid then
+    /// error of ours: our database, a store that failed, a reply that did
+    /// not frame). A NAK is a refusal, so the host sends no reply; Veilid then
     /// sends nothing back (`rpc_app_call.rs:128-133`) and the caller's
     /// `app_call` times out, so its row is attempted again (RV2).
     Unanswered,
@@ -78,37 +86,44 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
 /// A frame that did not open by message: a rejected init's
 /// `PreKeyRejected` goes back by message (B5).
 fn by_message(host: &dyn FriendHost, dropped: Dropped) {
-    if let Dropped::Rejected { to, body } = dropped {
-        crate::operations::prekeys::send_rejection(host, &to, *body);
+    if let Dropped::Rejected { to, frame } = dropped {
+        crate::operations::prekeys::send_rejection(host, &to, *frame);
     }
 }
 
 /// The reply to a first contact we called `to` with, other than the
 /// receipt: their `PreKeyRejected` (B5, finding 46) is handled as one
-/// that came by message (`prekeys::on_rejected`, the one resend). Whether
-/// it was that rejection and was applied; a reply that did not open, or a
-/// rejection naming no unanswered init of ours, is a refusal (finding 46
-/// refined).
-pub(crate) async fn on_first_contact_reply(host: &dyn FriendHost, to: &str, reply: &[u8]) -> bool {
+/// that came by message (`prekeys::on_rejected`, the one resend). A reply
+/// that did not open, or a rejection naming no unanswered init of ours, is
+/// [`Rejection::NotOurs`], a refusal (finding 46 refined); one we could
+/// not judge or apply (our own failure) is [`Rejection::Failed`] (R5).
+pub(crate) async fn on_first_contact_reply(
+    host: &dyn FriendHost,
+    to: &str,
+    reply: &[u8],
+) -> Rejection {
     let Some(bytes) = dm::unwire(reply) else {
-        return false;
+        return Rejection::NotOurs;
     };
-    let Ok(opened) = frame::open(host, bytes).await else {
-        return false;
+    let opened = match frame::open(host, bytes).await {
+        Ok(opened) => opened,
+        Err(Dropped::Failed) => return Rejection::Failed,
+        Err(_) => return Rejection::NotOurs,
     };
     if opened.sender_hex != to {
         tracing::warn!(to = %to, from = %opened.sender_hex, "dropping a call reply by another sender");
         frame::processed(host, &opened);
-        return false;
+        return Rejection::NotOurs;
     }
     if !matches!(opened.body, DirectBody::PreKeyRejected(_)) {
         frame::processed(host, &opened);
-        return false;
+        return Rejection::NotOurs;
     }
-    matches!(
-        handlers::apply(host, opened).await,
-        handlers::Applied::Done(true)
-    )
+    match handlers::apply(host, opened).await {
+        handlers::Applied::Done(true) => Rejection::Applied,
+        handlers::Applied::Done(false) => Rejection::Failed,
+        handlers::Applied::Refused | handlers::Applied::Unported(_) => Rejection::NotOurs,
+    }
 }
 
 /// Handle one entry of `writer`'s DM chain (a wired frame they appended):
@@ -135,7 +150,8 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
 
 /// Handle one inbound `app_call`. A relay offer is unported (the desktop
 /// replies with its ack). A refused frame is answered [`NAK`], one not
-/// judged (an internal error) is left unanswered, and a copy
+/// judged (an internal error of ours, a store that failed) is left
+/// unanswered, and a copy
 /// of one that opened the empty receipt (plan audit G3). A sealed kind
 /// advances no ratchet and leaves no `unprocessed` row, so it is applied
 /// before the answer, and only a stored one is receipted (G4). A ratchet
@@ -154,12 +170,11 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
         Err(Dropped::Failed) => return Called::Unanswered,
         // B5 by the call itself (finding 46): the caller tells a refused
         // prekey (this reply, its one resend) from any other refusal (NAK).
-        Err(Dropped::Rejected { to, body }) => {
-            return Called::Answered(
-                crate::operations::prekeys::rejection_reply(host, &to, &body)
-                    .await
-                    .unwrap_or_else(|| NAK.to_vec()),
-            );
+        Err(Dropped::Rejected { to, frame }) => {
+            return match crate::operations::prekeys::rejection_reply(&to, &frame) {
+                Some(reply) => Called::Answered(reply),
+                None => Called::Unanswered,
+            };
         }
     };
     if matches!(opened.body, DirectBody::RelayOffer(_)) {
@@ -169,7 +184,9 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     if opened.unprocessed.is_none() {
         return match handlers::apply(host, opened).await {
             handlers::Applied::Done(true) => Called::Answered(Vec::new()),
-            handlers::Applied::Done(false) => Called::Answered(NAK.to_vec()),
+            // Its store failed: ours, not a refusal (RV5 R2).
+            handlers::Applied::Done(false) => Called::Unanswered,
+            handlers::Applied::Refused => Called::Answered(NAK.to_vec()),
             handlers::Applied::Unported(opened) => {
                 tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
                     "unported kind by app_call — dropped");

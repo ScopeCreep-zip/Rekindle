@@ -55,21 +55,20 @@ pub struct Opened {
 #[derive(Debug)]
 pub enum Dropped {
     /// A PreKeyInit naming prekeys we no longer hold (B5), from a sender
-    /// the gate admits for it: the signed `PreKeyRejected` for `to`. An
-    /// `app_call` is answered with it ([`super::receive_call`]); an init
-    /// that came by message gets it by message.
-    Rejected {
-        to: String,
-        body: Box<rekindle_codec::capnp_codec::direct::DirectBody>,
-    },
+    /// the gate admits for it: the signed `PreKeyRejected` for `to`,
+    /// already framed and counted (framed first, D6). An `app_call` is
+    /// answered with it ([`super::receive_call`]); an init that came by
+    /// message gets it by message.
+    Rejected { to: String, frame: Box<DmFrame> },
     /// A copy of a frame that already opened: its receipt stands.
     Duplicate,
-    /// Refused (undecodable, not admitted, a bad signature, stale, or a
-    /// failed decrypt): no receipt.
+    /// Refused (undecodable, blocked, not admitted, a bad signature, stale,
+    /// or a failed decrypt): no receipt, a call is answered NAK.
     Refused,
-    /// Not judged: an internal error (no unlocked identity, the database or
-    /// the admission lookup failed). Not a refusal: a call is left
-    /// unanswered, so the caller attempts it again (RV2, `c37fef40`).
+    /// Not judged: an internal error of ours (no unlocked identity, our
+    /// database, the block-list read, or framing our reply failed). Not a
+    /// refusal: a call is left unanswered, so the caller attempts it again
+    /// (RV2, `c37fef40`; RV5 R2).
     Failed,
 }
 
@@ -123,7 +122,12 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
     let init = matches!(frame.body, FrameBody::PreKeyInit(_));
     // The full key: the log scrubber turns it into a per-process tag (B19).
     tracing::debug!(from = %sender_hex, ?kind, init, "1:1 frame received");
-    let status = admission::unblocked(host, &sender_hex).await.or_failed()?;
+    let status = admission::unblocked(host, &sender_hex)
+        .await
+        .map_err(|barred| match barred {
+            admission::Barred::Blocked => Dropped::Refused,
+            admission::Barred::Unreadable => Dropped::Failed,
+        })?;
     if !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
         return Err(Dropped::Refused);
     }
@@ -408,11 +412,12 @@ async fn open_init(
             )
             .await
             {
-                Some(body) => Err(Dropped::Rejected {
+                Ok(Some(frame)) => Err(Dropped::Rejected {
                     to: sender_hex,
-                    body: Box::new(body),
+                    frame: Box::new(frame),
                 }),
-                None => Err(Dropped::Refused),
+                Ok(None) => Err(Dropped::Refused),
+                Err(crate::operations::prekeys::Unjudged) => Err(Dropped::Failed),
             };
         }
         Err(e) => Err(e),
@@ -429,6 +434,16 @@ async fn open_init(
         }
     }
     recorded(host, sender, sender_hex, init.first_type_id, inbound)
+}
+
+/// What a failed ratchet step is: our database failing is no judgement
+/// ([`Dropped::Failed`], the call is left unanswered, RV5 R2); any other
+/// failure is the frame's ([`Dropped::Refused`]).
+pub(crate) fn ratchet_dropped(error: &RatchetError) -> Dropped {
+    match error {
+        RatchetError::Db(_) => Dropped::Failed,
+        _ => Dropped::Refused,
+    }
 }
 
 /// A decrypted message recorded in `unprocessed`, opened as `type_id`; a
@@ -449,7 +464,7 @@ fn recorded(
         }
         Err(e) => {
             tracing::warn!(from = %sender_hex, ?type_id, error = %e, "dropping 1:1 message: ratchet step failed");
-            return Err(Dropped::Refused);
+            return Err(ratchet_dropped(&e));
         }
     };
     debug_assert_eq!(inbound.key.peer_identity, sender);

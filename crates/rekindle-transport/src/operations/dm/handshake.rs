@@ -24,6 +24,7 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 use super::outbox::Attempt;
 use super::send::{self, Framed};
 use crate::operations::friend::{FriendError, FriendHost};
+use crate::operations::prekeys::Rejection;
 
 /// The client id of our `Unfriended` row to `peer`: the one row their
 /// `UnfriendedAck` settles.
@@ -271,12 +272,12 @@ enum Answered {
     Again,
 }
 
-/// [`Answered`] for `kind`'s `answer`, where `rejection_applied` says
-/// whether its reply was a `PreKeyRejected` we applied.
+/// [`Answered`] for `kind`'s `answer`, where `rejection` is what its reply
+/// came to as a `PreKeyRejected` (`direct::on_first_contact_reply`).
 fn answered(
     kind: DmTypeId,
     answer: &Result<send::CallAnswer, FriendError>,
-    rejection_applied: bool,
+    rejection: Rejection,
 ) -> Answered {
     match answer {
         Ok(send::CallAnswer::Receipt) => Answered::Receipt,
@@ -285,7 +286,10 @@ fn answered(
         {
             Answered::Again
         }
-        Ok(send::CallAnswer::Reply(_)) if rejection_applied => Answered::Rejected,
+        Ok(send::CallAnswer::Reply(_)) if rejection == Rejection::Applied => Answered::Rejected,
+        // Our own failure judging or applying it is no refusal of theirs
+        // (RV5 R5): attempted again.
+        Ok(send::CallAnswer::Reply(_)) if rejection == Rejection::Failed => Answered::Again,
         Ok(send::CallAnswer::Reply(_) | send::CallAnswer::Refused) => Answered::Refused,
         Err(_) => Answered::Again,
     }
@@ -323,7 +327,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             Ok(send::CallAnswer::Reply(reply)) if kind != DmTypeId::FriendRequest => {
                 crate::operations::direct::on_first_contact_reply(host, to, reply).await
             }
-            _ => false,
+            _ => Rejection::NotOurs,
         };
         return match answered(kind, &answer, applied) {
             Answered::Receipt => {
@@ -412,23 +416,30 @@ mod tests {
             DmTypeId::SessionResetAccept,
             DmTypeId::FriendsKey,
         ] {
-            assert_eq!(answered(kind, &reply(), false), Answered::Refused);
-            assert_eq!(answered(kind, &reply(), true), Answered::Rejected);
             assert_eq!(
-                answered(kind, &Ok(send::CallAnswer::Refused), false),
+                answered(kind, &reply(), Rejection::NotOurs),
+                Answered::Refused
+            );
+            assert_eq!(answered(kind, &reply(), Rejection::Failed), Answered::Again);
+            assert_eq!(
+                answered(kind, &reply(), Rejection::Applied),
+                Answered::Rejected
+            );
+            assert_eq!(
+                answered(kind, &Ok(send::CallAnswer::Refused), Rejection::NotOurs),
                 Answered::Refused
             );
             assert_eq!(
-                answered(kind, &Ok(send::CallAnswer::Receipt), false),
+                answered(kind, &Ok(send::CallAnswer::Receipt), Rejection::NotOurs),
                 Answered::Receipt
             );
             assert_eq!(
-                answered(kind, &Err(FriendError::Locked), false),
+                answered(kind, &Err(FriendError::Locked), Rejection::NotOurs),
                 Answered::Again
             );
         }
         assert_eq!(
-            answered(DmTypeId::FriendRequest, &reply(), false),
+            answered(DmTypeId::FriendRequest, &reply(), Rejection::NotOurs),
             Answered::Again
         );
     }

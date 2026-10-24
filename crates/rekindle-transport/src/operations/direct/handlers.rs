@@ -29,6 +29,9 @@ pub(super) enum Applied {
     /// It ran; `false` when its store failed (its row is kept for the
     /// replay, a sealed frame's nonce forgotten for its retry).
     Done(bool),
+    /// Judged and refused (a policy, not a failure): its row goes and its
+    /// nonce stays seen, so a replay is a duplicate (RV5 R4).
+    Refused,
     /// A kind whose owner step has not come, handed back.
     Unported(Box<Opened>),
 }
@@ -36,7 +39,7 @@ pub(super) enum Applied {
 /// Handle `opened`, or hand it back when its owner step has not come.
 pub(super) async fn handle(host: &dyn FriendHost, opened: Opened) -> Routed {
     match apply(host, opened).await {
-        Applied::Done(_) => Routed::Handled,
+        Applied::Done(_) | Applied::Refused => Routed::Handled,
         Applied::Unported(opened) => Routed::Unported(opened),
     }
 }
@@ -113,7 +116,8 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
             // A group member who is not a friend passed the gate for a
             // group's record only: a 1:1 one needs the friend gate.
             if !super::admission::friend_admitted(host, sender, DmTypeId::StreamRecord).await {
-                return Applied::Done(false);
+                processed(host, &opened);
+                return Applied::Refused;
             }
             applied = crate::operations::dm::stream::on_stream_record(host, sender, r).await;
             if applied {
@@ -142,7 +146,14 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         }
         DirectBody::SessionResetAccept => session_reset::on_accept(host, sender),
         DirectBody::PreKeyRejected(r) => {
-            applied = crate::operations::prekeys::on_rejected(host, sender, r).await;
+            match crate::operations::prekeys::on_rejected(host, sender, r).await {
+                crate::operations::prekeys::Rejection::Applied => {}
+                crate::operations::prekeys::Rejection::NotOurs => {
+                    processed(host, &opened);
+                    return Applied::Refused;
+                }
+                crate::operations::prekeys::Rejection::Failed => applied = false,
+            }
         }
         DirectBody::SessionResetDecline(_) => session_reset::on_decline(host, sender),
         DirectBody::StatusResponse(r) => relay::on_status_response(host, sender, r),

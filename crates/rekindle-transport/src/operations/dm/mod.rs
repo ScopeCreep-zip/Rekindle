@@ -22,6 +22,7 @@ pub use chat::{
 pub(crate) use chat::{mint_client_id, publish_dm_unread, NewDmFields};
 pub use frame::wire;
 pub use outgoing::{send_friend_accept, send_friend_reject, send_friend_request};
+pub(crate) use send::framed;
 pub use send::{hint_for, reply_frame, send_frame, send_to_peer, send_to_peer_call, Framed};
 pub use typing::report_draft;
 
