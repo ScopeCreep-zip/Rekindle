@@ -5,7 +5,7 @@
 
 use rand::seq::SliceRandom;
 
-use super::{PreKeyInit, SessionRecord, ARCHIVED_STATES_MAX_LENGTH};
+use super::{PreKeyInit, SessionRecord, MAX_INACTIVE_SESSIONS};
 use crate::error::{CoreCryptoError, CryptoError};
 use crate::signal::test_support::{BobKeys, TestRandom};
 use crate::signal::RatchetMessage;
@@ -316,7 +316,7 @@ fn inactive_sessions_are_bounded_and_promoted_on_use() {
     round_trip(&mut a2, &mut b);
     assert_eq!(*b.active.as_ref().unwrap().base_key(), init.base_key);
 
-    for i in 0..ARCHIVED_STATES_MAX_LENGTH + 3 {
+    for i in 0..MAX_INACTIVE_SESSIONS + 3 {
         let (next_a, init) = a2
             .initiate(
                 &alice,
@@ -329,10 +329,10 @@ fn inactive_sessions_are_bounded_and_promoted_on_use() {
         a2 = next_a;
         b = accept(&b, &bob, &init).unwrap().0;
     }
-    assert_eq!(b.inactive.len(), ARCHIVED_STATES_MAX_LENGTH);
-    assert_eq!(a2.inactive.len(), ARCHIVED_STATES_MAX_LENGTH);
+    assert_eq!(b.inactive.len(), MAX_INACTIVE_SESSIONS);
+    assert_eq!(a2.inactive.len(), MAX_INACTIVE_SESSIONS);
     let b = SessionRecord::from_bytes(&b.to_bytes()).unwrap();
-    assert_eq!(b.inactive.len(), ARCHIVED_STATES_MAX_LENGTH);
+    assert_eq!(b.inactive.len(), MAX_INACTIVE_SESSIONS);
 }
 
 /// B6: only our unanswered init is pending, and discarding it restores

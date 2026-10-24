@@ -1,13 +1,13 @@
-//! The reference model: DR rev. 1 §3.5's pseudocode, line for line, over
-//! the same §5.2 functions, so a difference from [`SessionState`] is a
+//! The reference model: DR rev. 4 §3.5's pseudocode, line for line, over
+//! the same §7.2 functions, so a difference from [`SessionState`] is a
 //! difference in the state machine.
 //!
 //! Two additions, both from the spec's own text: a decryption that fails
 //! leaves the state as it was (§3.5, "changes to the state object are
 //! discarded"), and skipped keys are deleted by the policy §3.2 leaves to
-//! the implementation — here libsignal's: the keys of the newest
-//! [`MAX_RECEIVER_CHAINS`] receiving keys only, at most
-//! [`MAX_MESSAGE_KEYS`] per receiving key, oldest first.
+//! the implementation — here the bounds of §8.4: the keys of the newest
+//! [`MAX_RECEIVING_CHAINS_KEPT`] receiving keys only, at most
+//! [`MAX_SKIPPED_KEYS_PER_CHAIN`] per receiving key, oldest first.
 //!
 //! [`SessionState`]: super::super::SessionState
 
@@ -16,12 +16,9 @@ use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 
 use super::super::kdf::{kdf_ck, kdf_rk, open, seal};
 use super::super::{
-    Header, RatchetMessage, MAX_FORWARD_JUMPS, MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS,
+    Header, RatchetMessage, MAX_RECEIVING_CHAINS_KEPT, MAX_SKIP, MAX_SKIPPED_KEYS_PER_CHAIN,
 };
 use crate::error::CryptoError;
-
-/// `MAX_SKIP`.
-const MAX_SKIP: u32 = MAX_FORWARD_JUMPS;
 
 #[derive(Clone)]
 pub(super) struct Model {
@@ -203,13 +200,13 @@ impl Model {
     /// Keep the skipped keys of the newest receiving keys only, and the
     /// newest keys of each.
     fn delete_policy(&mut self) {
-        let excess = self.history.len().saturating_sub(MAX_RECEIVER_CHAINS);
+        let excess = self.history.len().saturating_sub(MAX_RECEIVING_CHAINS_KEPT);
         self.history.drain(..excess);
         let history = &self.history;
         self.mkskipped.retain(|((dh, _), _)| history.contains(dh));
         for dh in history.clone() {
             let held = self.mkskipped.iter().filter(|((d, _), _)| *d == dh).count();
-            let mut drop = held.saturating_sub(MAX_MESSAGE_KEYS);
+            let mut drop = held.saturating_sub(MAX_SKIPPED_KEYS_PER_CHAIN);
             self.mkskipped.retain(|((d, _), _)| {
                 if *d == dh && drop > 0 {
                     drop -= 1;

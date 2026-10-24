@@ -44,8 +44,7 @@ pub enum CryptoError {
 
     /// The message was already decrypted (its key is gone), or the
     /// PreKeyInit's base key is already a session's. Dropped silently by
-    /// the receiver; nothing changed (plan E2.2, libsignal
-    /// `DuplicatedMessage`).
+    /// the receiver; nothing changed (plan E2.2).
     #[error("duplicate message")]
     DuplicateMessage,
 

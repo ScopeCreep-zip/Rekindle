@@ -6,17 +6,19 @@ use ed25519_dalek::VerifyingKey;
 use rekindle_secrets::pq_keys::MlKemPublic;
 use x25519_dalek::PublicKey as X25519Public;
 
-/// Type byte of a Curve25519 key (`u`-coordinate): libsignal's `DJB_TYPE`.
+/// Type byte of a Curve25519 key (`u`-coordinate): the byte Signal's
+/// deployed clients use (PQXDH rev. 3 §2.3 leaves the constant to the
+/// application).
 pub const X25519_TYPE: u8 = 0x05;
 
 /// Type byte of an Ed25519 identity key (RFC 8032 point encoding).
-/// Rekindle's own: libsignal identities are Curve25519 keys signed with
+/// Rekindle's own: Signal's identities are Curve25519 keys signed with
 /// XEdDSA, ours are Ed25519 keys and the address is that key, whose
 /// Montgomery `u` drops the sign bit.
 pub const ED25519_TYPE: u8 = 0x06;
 
-/// Type byte of an ML-KEM-768 key. Rekindle's own: libsignal assigns
-/// Kyber768 0x07, Kyber1024 0x08 and ML-KEM-1024 0x0A, and no ML-KEM-768.
+/// Type byte of an ML-KEM-768 key. Rekindle's own, apart from the bytes
+/// Signal's deployed clients give other KEMs (0x07, 0x08, 0x0A).
 pub const ML_KEM_768_TYPE: u8 = 0x09;
 
 /// Length of an encoded curve key: the type byte and 32 key bytes.

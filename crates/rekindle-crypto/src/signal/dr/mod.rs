@@ -10,15 +10,16 @@
 //! and an IV; AES-256-CBC with PKCS#7; HMAC-SHA256 over `AD ‖ ciphertext`
 //! truncated to 128 bits (§8.6).
 //!
-//! Skipped message keys are bounded as libsignal bounds them (commit
-//! `1738ead8`, `consts.rs`): at most [`MAX_MESSAGE_KEYS`] per receiving
-//! chain (oldest dropped first), at most [`MAX_RECEIVER_CHAINS`] receiving
-//! chains (oldest dropped first: §8.4's deletion "by counting ... DH
-//! ratchet steps"), and a forward jump of at most [`MAX_FORWARD_JUMPS`]
-//! within a chain. libsignal has no timer; §8.4 also asks for deletion
-//! "after an appropriate interval", and a conversation whose peer never
-//! answers takes no DH ratchet step, so a skipped key is also deleted
-//! [`SKIPPED_KEY_MAX_AGE_MS`] after it was stored.
+//! Skipped message keys are bounded three ways: a message may run at most
+//! [`MAX_SKIP`] ahead of its chain (§3.2, §3.5), at most
+//! [`MAX_SKIPPED_KEYS_PER_CHAIN`] skipped keys are kept per receiving
+//! chain (oldest dropped first), and only the newest
+//! [`MAX_RECEIVING_CHAINS_KEPT`] receiving chains keep theirs (oldest
+//! dropped first: §8.4's deletion "by counting ... DH ratchet steps").
+//! §8.4 also asks for deletion "after an appropriate interval", and a
+//! conversation whose peer never answers takes no DH ratchet step, so a
+//! skipped key is also deleted [`SKIPPED_KEY_MAX_AGE_MS`] after it was
+//! stored. The values are the bounds Signal's deployed clients use.
 
 mod codec;
 mod kdf;
@@ -29,16 +30,17 @@ mod tests;
 pub(crate) use codec::{corrupt, Reader};
 pub(crate) use state::SessionState;
 
-/// Skipped message keys kept per receiving chain (libsignal
-/// `MAX_MESSAGE_KEYS`).
-pub const MAX_MESSAGE_KEYS: usize = 2000;
+/// Skipped message keys kept per receiving chain, oldest dropped first
+/// (DR rev. 4 §8.4).
+pub const MAX_SKIPPED_KEYS_PER_CHAIN: usize = 2000;
 
-/// Receiving chains kept per session (libsignal `MAX_RECEIVER_CHAINS`).
-pub const MAX_RECEIVER_CHAINS: usize = 5;
+/// Receiving chains whose skipped keys a session keeps, oldest dropped
+/// first (DR rev. 4 §8.4, deletion by counting DH ratchet steps).
+pub const MAX_RECEIVING_CHAINS_KEPT: usize = 5;
 
-/// The furthest a message may run ahead of its chain (libsignal
-/// `MAX_FORWARD_JUMPS`; the spec's `MAX_SKIP`).
-pub const MAX_FORWARD_JUMPS: u32 = 25_000;
+/// The furthest a message may run ahead of its chain: the spec's
+/// `MAX_SKIP` (DR rev. 4 §3.2, §3.5).
+pub const MAX_SKIP: u32 = 25_000;
 
 /// How long a skipped message key is kept: the delivery horizon (plan
 /// D24), the longest a message may take to arrive, after which its key

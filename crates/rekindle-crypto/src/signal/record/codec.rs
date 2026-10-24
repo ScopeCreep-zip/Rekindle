@@ -5,7 +5,7 @@
 
 use zeroize::Zeroizing;
 
-use super::{SessionRecord, ARCHIVED_STATES_MAX_LENGTH};
+use super::{SessionRecord, MAX_INACTIVE_SESSIONS};
 use crate::error::CryptoError;
 use crate::signal::dr::{corrupt, Reader, SessionState};
 
@@ -61,7 +61,7 @@ impl SessionRecord {
             .then(|| SessionState::read(&mut reader))
             .transpose()?;
         let count = usize::from(reader.u8()?);
-        if count > ARCHIVED_STATES_MAX_LENGTH {
+        if count > MAX_INACTIVE_SESSIONS {
             return Err(corrupt("too many inactive sessions"));
         }
         let inactive = (0..count)

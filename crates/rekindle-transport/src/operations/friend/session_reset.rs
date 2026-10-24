@@ -1,5 +1,5 @@
 //! Secure-session resets (P3.3) with their out-of-band safety number (plan
-//! E2.3: libsignal's 60-digit format, `verification::safety_number`).
+//! E2.3: Signal's 60-digit safety number, `verification::safety_number`).
 //!
 //! The user starts one ([`start`]): a sealed request naming no keys (plan
 //! E2.4: our prekey record is where the friend reads them). A friend's

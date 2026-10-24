@@ -5,13 +5,13 @@
 //! it was.
 //!
 //! The record is stored under `(peer identity, peer device)`. It holds one
-//! active session and up to [`ARCHIVED_STATES_MAX_LENGTH`] inactive ones,
-//! newest first (libsignal `SessionRecord`, `consts.rs`). Sesame's rules
-//! apply: a new session becomes active and the old one is archived; a
-//! message that only an inactive session decrypts promotes it (libsignal
-//! `promote_old_session`); and a PreKeyInit whose base key is already a
-//! session's is a no-op, reported as [`CryptoError::DuplicateMessage`]
-//! (libsignal `promote_matching_session`, r10 B4).
+//! active session and up to [`MAX_INACTIVE_SESSIONS`] inactive ones,
+//! newest first. Sesame's (rev. 2) session rules apply: a new session
+//! becomes active and the old one is archived; a message that only an
+//! inactive session decrypts makes that session the active one; and a
+//! PreKeyInit whose base key is already a session's (PQXDH rev. 3 §3.3,
+//! the initiator's ephemeral key) starts nothing new and is reported as
+//! [`CryptoError::DuplicateMessage`] (r10 B4).
 //!
 //! Identity == address: the record is for one identity key, and a bundle
 //! or init under any other key is refused with
@@ -33,9 +33,9 @@ use crate::signal::pqxdh::PqxdhError;
 use crate::signal::prekeys::PreKeyBundle;
 use crate::Identity;
 
-/// Inactive sessions kept per record (libsignal
-/// `ARCHIVED_STATES_MAX_LENGTH`).
-pub const ARCHIVED_STATES_MAX_LENGTH: usize = 40;
+/// Inactive sessions a record keeps beside its active one, the oldest
+/// dropped first.
+pub const MAX_INACTIVE_SESSIONS: usize = 40;
 
 /// The initiator's first message (PQXDH rev. 3 §3.3): its identity, its
 /// ephemeral key, the KEM ciphertext, the prekey ids it used, and the
@@ -276,7 +276,7 @@ impl SessionRecord {
     fn activate(&mut self, state: SessionState) {
         if let Some(previous) = self.active.replace(state) {
             self.inactive.insert(0, previous);
-            self.inactive.truncate(ARCHIVED_STATES_MAX_LENGTH);
+            self.inactive.truncate(MAX_INACTIVE_SESSIONS);
         }
     }
 }

@@ -9,7 +9,7 @@
 //! `x` when `1`.
 
 use super::state::{Chain, ReceiverChain, SessionState, SkippedKey};
-use super::{MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS};
+use super::{MAX_RECEIVING_CHAINS_KEPT, MAX_SKIPPED_KEYS_PER_CHAIN};
 use crate::error::CryptoError;
 use crate::signal::pqxdh::agreement::AD_LEN;
 
@@ -86,7 +86,7 @@ impl SessionState {
         let sender = reader.flag()?.then(|| read_chain(reader)).transpose()?;
         let pn = reader.u32()?;
         let count = usize::from(reader.u8()?);
-        if count > MAX_RECEIVER_CHAINS {
+        if count > MAX_RECEIVING_CHAINS_KEPT {
             return Err(corrupt("too many receiving chains"));
         }
         let mut receivers = Vec::with_capacity(count);
@@ -94,7 +94,7 @@ impl SessionState {
             let their = reader.array()?;
             let chain = read_chain(reader)?;
             let skipped = usize::from(reader.u16()?);
-            if skipped > MAX_MESSAGE_KEYS {
+            if skipped > MAX_SKIPPED_KEYS_PER_CHAIN {
                 return Err(corrupt("too many skipped keys"));
             }
             let skipped = (0..skipped)

@@ -1,5 +1,5 @@
 //! Safety numbers and verification (plan E2.3): our safety number with a
-//! peer (libsignal's 60 digits, `rekindle_crypto::SafetyNumber`), its
+//! peer (Signal's 60-digit safety number, `rekindle_crypto::SafetyNumber`), its
 //! scannable form as a QR code, and the user's mark that they compared it
 //! out of band (`signal_identities.verified`).
 //!

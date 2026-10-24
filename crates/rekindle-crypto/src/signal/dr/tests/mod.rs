@@ -1,4 +1,4 @@
-//! The ratchet's own cases and libsignal's bounds; `differential` runs it
+//! The ratchet's own cases and its skipped-key bounds; `differential` runs it
 //! against the §3.5 reference model in `model`.
 
 mod differential;
@@ -9,7 +9,9 @@ mod vectors;
 use x25519_dalek::{PublicKey as X25519Public, StaticSecret};
 use zeroize::Zeroizing;
 
-use super::{Header, SessionState, MAX_FORWARD_JUMPS, MAX_MESSAGE_KEYS, MAX_RECEIVER_CHAINS};
+use super::{
+    Header, SessionState, MAX_RECEIVING_CHAINS_KEPT, MAX_SKIP, MAX_SKIPPED_KEYS_PER_CHAIN,
+};
 use crate::error::CryptoError;
 use crate::signal::pqxdh::agreement::{SessionKeys, AD_LEN};
 use crate::signal::test_support::TestRandom;
@@ -141,10 +143,10 @@ fn a_tampered_message_or_other_ad_fails_and_changes_nothing() {
 fn a_forward_jump_past_the_bound_is_refused_before_any_key_is_derived() {
     let (mut alice, mut bob) = pair(6);
     let mut message = alice.encrypt(b"x", b"").unwrap();
-    message.header.n = MAX_FORWARD_JUMPS + 1;
+    message.header.n = MAX_SKIP + 1;
     let err = receive(&mut bob, &message).unwrap_err();
     assert!(err.to_string().contains("ahead"), "{err}");
-    message.header.n = MAX_FORWARD_JUMPS;
+    message.header.n = MAX_SKIP;
     let err = receive(&mut bob, &message).unwrap_err();
     assert!(err.to_string().contains("authenticate"), "{err}");
 }
@@ -180,7 +182,7 @@ fn a_new_chain_past_the_bound_is_refused_before_the_ratchet_runs() {
     let before = stored(&bob);
     let fresh = X25519Public::from(&StaticSecret::from([9; 32])).to_bytes();
     for dh in [fresh, low_order_points()[0]] {
-        for (pn, n) in [(0, MAX_FORWARD_JUMPS + 1), (MAX_FORWARD_JUMPS + 2, 0)] {
+        for (pn, n) in [(0, MAX_SKIP + 1), (MAX_SKIP + 2, 0)] {
             let mut message = alice.encrypt(b"x", b"").unwrap();
             message.header = Header { dh, pn, n };
             let err = bob
@@ -220,7 +222,7 @@ fn a_low_order_ratchet_key_is_refused_and_changes_nothing() {
 #[test]
 fn a_chain_keeps_only_the_newest_skipped_keys() {
     let (mut alice, mut bob) = pair(7);
-    let messages: Vec<_> = (0..MAX_MESSAGE_KEYS + 3)
+    let messages: Vec<_> = (0..MAX_SKIPPED_KEYS_PER_CHAIN + 3)
         .map(|i| alice.encrypt(&i.to_be_bytes(), b"").unwrap())
         .collect();
     receive(&mut bob, messages.last().unwrap()).unwrap();
@@ -230,7 +232,7 @@ fn a_chain_keeps_only_the_newest_skipped_keys() {
             Err(CryptoError::DuplicateMessage)
         ));
     }
-    for kept in [&messages[2], &messages[MAX_MESSAGE_KEYS + 1]] {
+    for kept in [&messages[2], &messages[MAX_SKIPPED_KEYS_PER_CHAIN + 1]] {
         receive(&mut bob, kept).unwrap();
     }
 }
@@ -254,10 +256,10 @@ fn deliver_after_rounds(rounds: usize) -> Result<Vec<u8>, CryptoError> {
 #[test]
 fn only_the_newest_receiving_chains_are_kept() {
     assert_eq!(
-        deliver_after_rounds(MAX_RECEIVER_CHAINS - 1).unwrap(),
+        deliver_after_rounds(MAX_RECEIVING_CHAINS_KEPT - 1).unwrap(),
         b"x0"
     );
-    assert!(deliver_after_rounds(MAX_RECEIVER_CHAINS).is_err());
+    assert!(deliver_after_rounds(MAX_RECEIVING_CHAINS_KEPT).is_err());
 }
 
 #[test]
