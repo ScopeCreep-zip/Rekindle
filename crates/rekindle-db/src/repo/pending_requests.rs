@@ -117,13 +117,17 @@ pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<PendingF
     rows
 }
 
-/// What answering the request from `public_key` needs; all `None` when
-/// there is no such request.
+/// What answering the request from `public_key` needs; `None` when there
+/// is no such request (an answer to nothing is refused, live A/B finding 68).
 ///
 /// # Errors
 /// The query failed.
-pub fn answer(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<Answer> {
-    Ok(conn
+pub fn answer(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<Option<Answer>> {
+    conn
         .query_row(
             "SELECT display_name, profile_dht_key, mailbox_dht_key, route_blob, invite_id \
              FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
@@ -138,8 +142,7 @@ pub fn answer(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
                 })
             },
         )
-        .optional()?
-        .unwrap_or_default())
+        .optional()
 }
 
 /// Delete the request from `public_key`.
@@ -214,10 +217,10 @@ mod tests {
                 received_at: 5,
             }]
         );
-        let a = answer(&conn, OWNER, "bob").unwrap();
+        let a = answer(&conn, OWNER, "bob").unwrap().expect("bob asked");
         assert_eq!(a.route_blob.as_deref(), Some(&[1, 2][..]));
         assert_eq!(a.invite_id.as_deref(), Some("invite"));
-        assert_eq!(answer(&conn, OWNER, "ghost").unwrap(), Answer::default());
+        assert_eq!(answer(&conn, OWNER, "ghost").unwrap(), None, "no request, no answer");
     }
 
     #[test]

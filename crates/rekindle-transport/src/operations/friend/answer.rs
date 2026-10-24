@@ -20,7 +20,8 @@ async fn pending_request(
     state::db_call!(host, "read pending request", move |conn| {
         rekindle_db::repo::pending_requests::answer(conn, &owner, &pk)
     })
-    .await
+    .await?
+    .ok_or_else(|| FriendError::NotFound(format!("no pending request from {public_key}")))
 }
 
 /// Accept the pending request from `public_key`: the friend is stored

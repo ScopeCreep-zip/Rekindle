@@ -138,7 +138,7 @@ pub(crate) async fn known_name(
     })
     .await?;
     Ok(answer
-        .display_name
+        .and_then(|a| a.display_name)
         .unwrap_or_else(|| label(host, public_key)))
 }
 
