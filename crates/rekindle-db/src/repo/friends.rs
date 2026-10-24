@@ -7,12 +7,14 @@ use rekindle_types::friend_store::{FriendRecord, FriendshipState};
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension as _};
 
 mod changes;
+mod listing;
 mod participant;
 mod presence;
 pub use changes::{
     accept_request, accept_with_records, block, cancel_request, forget, forget_removed,
     mark_removing, replace_with_invited, unfriended, RecordKeys,
 };
+pub use listing::added_at;
 pub use participant::{
     participant_record_key, peer_participant_record_key, set_participant_record_key,
     set_peer_participant_record_key,

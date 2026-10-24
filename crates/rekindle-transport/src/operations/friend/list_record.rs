@@ -9,39 +9,45 @@ use super::error::FriendError;
 use super::host::FriendHost;
 use super::state;
 
-/// Write the friends we keep to our friend-list record. Entries already in
-/// it keep their `added_at`; friends being removed are dropped.
+/// Write the friends we keep to our friend-list record, each with the
+/// `added_at` its stored row holds; friends being removed are dropped.
+/// Built from local state alone, so no network read can lose the write:
+/// the pool's held write owns the value reaching consensus, and a lock
+/// keeps what it still holds as a `dht_write` outbox row (D22 layering).
 ///
 /// # Errors
-/// The record could not be read or written.
+/// The rows could not be read, or the record could not be written.
 pub async fn push(host: &dyn FriendHost) -> Result<(), FriendError> {
     let key = state::own_identity(host)?.friend_list_dht_key;
     if key.is_empty() {
         return Err(FriendError::NotReady("no friend list DHT key".to_string()));
     }
     let records = host.node()?.require_records()?;
-    let current = rekindle_protocol::dht::friends::read_friend_list(records.as_ref(), &key)
-        .await
-        .map_err(|e| FriendError::Failed(format!("read friend list: {e}")))?;
+    let owner = state::owner(host)?;
+    let added: std::collections::HashMap<String, i64> =
+        state::db_call!(host, "read when friends were added", move |conn| {
+            rekindle_db::repo::friends::added_at(conn, &owner)
+        })
+        .await?
+        .into_iter()
+        .collect();
     let now = host.clock().now_ms();
-    let entries: Vec<FriendEntry> = state::friends(host)
+    let mut entries: Vec<FriendEntry> = state::friends(host)
         .into_iter()
         .filter(|f| f.friendship_state != FriendshipState::Removing)
-        .map(|f| {
-            let added_at = current
-                .friends
-                .iter()
-                .find(|e| e.public_key == f.public_key)
-                .map_or(now, |e| e.added_at);
-            FriendEntry {
-                public_key: f.public_key,
-                nickname: f.nickname,
-                group: f.group,
-                added_at,
-                profile_dht_key: f.dht_record_key,
-            }
+        .map(|f| FriendEntry {
+            added_at: added
+                .get(&f.public_key)
+                .and_then(|at| u64::try_from(*at).ok())
+                .unwrap_or(now),
+            public_key: f.public_key,
+            nickname: f.nickname,
+            group: f.group,
+            profile_dht_key: f.dht_record_key,
         })
         .collect();
+    // The session's friends are a map: a defined order on the wire.
+    entries.sort_by(|a, b| a.public_key.cmp(&b.public_key));
     let outcome =
         rekindle_protocol::dht::friends::write_friend_list(records.as_ref(), &key, &entries)
             .await
