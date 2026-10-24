@@ -215,7 +215,7 @@ pub fn serve(
 async fn off_runtime<T: Send + 'static>(
     work: impl FnOnce() -> Result<T, voice_note::VoiceNoteError> + Send + 'static,
 ) -> Result<T, FilesError> {
-    tokio::task::spawn_blocking(work)
+    rekindle_lifecycle::run_blocking(work)
         .await
         .map_err(|e| FilesError::InvalidInput(format!("voice note task: {e}")))?
         .map_err(|e| FilesError::InvalidInput(e.to_string()))
