@@ -7,7 +7,10 @@
 //! a first contact (the PreKeyInit carrying our `FriendAccept` or
 //! `SessionResetAccept`) and a presence key (`FriendsKey`: a lost one left
 //! the friend's presence dark until the next rotation, live A/B finding
-//! 36) only on its `app_call` receipt (`delivered`: an
+//! 36) and the ack of a removal (`UnfriendedAck`: a lost one left the
+//! remover re-sending `Unfriended` into a session we had deleted, and its
+//! removal never ended, live A/B finding 62) only on its `app_call` receipt
+//! (`delivered`: an
 //! app message has no delivery guarantee, and a request or an accept lost
 //! on the way would leave the row settled and the peer never asked, or
 //! pending for ever; live A/B finding 27), and the `Unfriended` row waits
@@ -228,10 +231,13 @@ async fn commit(
 }
 
 /// Whether a handshake row of `kind` goes by `app_call` and settles only
-/// on its receipt: a request, a first contact, and a presence key (the
-/// receiver answers once the frame's ratchet step and its unprocessed row
-/// are committed, `direct::receive_call`, and a duplicate with the same
-/// empty receipt). Every PreKeyInit on
+/// on its receipt: a request, a first contact, a presence key, and the
+/// ack of a removal (the receiver answers once the frame's ratchet step and
+/// its unprocessed row are committed, `direct::receive_call`, and a
+/// duplicate with the same empty receipt). The remover keeps the session
+/// while its removal waits (`removing`), so it opens our ack, settles its
+/// `Unfriended` row (`acknowledge_unfriended`, a no-op for a duplicate
+/// whose row already settled) and answers the receipt (finding 62). Every PreKeyInit on
 /// this stream is a first contact ([`enqueue_frame`]'s callers), and the
 /// receiver answers a re-sent one it already opened with the same receipt
 /// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
@@ -243,6 +249,7 @@ pub fn receipted(kind: DmTypeId) -> bool {
             | DmTypeId::FriendAccept
             | DmTypeId::SessionResetAccept
             | DmTypeId::FriendsKey
+            | DmTypeId::UnfriendedAck
     )
 }
 
@@ -350,13 +357,14 @@ mod tests {
     }
 
     #[test]
-    fn requests_first_contacts_and_presence_keys_wait_for_their_receipt() {
+    fn requests_first_contacts_presence_keys_and_removal_acks_wait_for_their_receipt() {
         assert!(receipted(DmTypeId::FriendRequest));
         assert!(receipted(DmTypeId::FriendAccept));
         assert!(receipted(DmTypeId::SessionResetAccept));
         assert!(!receipted(DmTypeId::FriendReject));
         assert!(!receipted(DmTypeId::Unfriended));
         assert!(receipted(DmTypeId::FriendsKey));
+        assert!(receipted(DmTypeId::UnfriendedAck));
     }
 
     #[test]
