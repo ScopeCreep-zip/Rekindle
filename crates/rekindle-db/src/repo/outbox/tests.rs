@@ -272,3 +272,48 @@ fn an_ack_before_the_landing_is_kept_until_the_update_reads_it() {
         Some(Updated { peer_ack: None })
     );
 }
+
+fn at(state: SendState) -> Update<'static> {
+    Update {
+        state,
+        attempts: 1,
+        next_at: 0,
+        deadline: 1_000,
+        wedge_reason: None,
+    }
+}
+
+/// LV17 follow-up (i): the echo's state is monotone, merged with max (D22).
+/// A re-handed-off in-flight row is `queued` again, but its delivered echo
+/// stays delivered; a `failed` echo is queued again by a retry.
+#[test]
+fn the_echo_state_never_goes_down() {
+    let conn = fixture::conn();
+    let state = |id: &str| own_dm(&conn, OWNER, id).unwrap().unwrap().row.send_state;
+    enqueue_with_echo(&conn, &row("dm:bob", "a", 0), Some(&echo())).unwrap();
+    assert!(note_ack(&conn, OWNER, "a", SendState::Delivered).unwrap());
+    assert_eq!(state("a"), SendState::Delivered);
+    for lower in [SendState::Queued, SendState::Sent, SendState::Failed] {
+        update(&conn, OWNER, "a", &at(lower)).unwrap();
+        assert_eq!(state("a"), SendState::Delivered, "{lower:?} lowered it");
+    }
+    update(&conn, OWNER, "a", &at(SendState::Read)).unwrap();
+    assert_eq!(state("a"), SendState::Read);
+    assert!(settle(&conn, OWNER, "a", SendState::Delivered).unwrap());
+    assert_eq!(state("a"), SendState::Read);
+
+    let mut b = echo();
+    b.message_id = "b";
+    enqueue_with_echo(&conn, &row("dm:bob", "b", 0), Some(&b)).unwrap();
+    update(&conn, OWNER, "b", &at(SendState::Sent)).unwrap();
+    update(&conn, OWNER, "b", &at(SendState::Queued)).unwrap();
+    assert_eq!(state("b"), SendState::Sent, "a re-handoff keeps sent");
+    update(&conn, OWNER, "b", &at(SendState::Failed)).unwrap();
+    assert_eq!(state("b"), SendState::Failed);
+    update(&conn, OWNER, "b", &at(SendState::Queued)).unwrap();
+    assert_eq!(
+        state("b"),
+        SendState::Queued,
+        "a retry queues a failed echo"
+    );
+}

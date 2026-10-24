@@ -388,6 +388,12 @@ pub fn get_by_seq(
     .optional()
 }
 
+/// Project `state` onto `client_id`'s echo, never lowering it (D22: the
+/// echo's state is monotone, merged with max). `queued` < `sent` <
+/// `delivered` < `read`; `failed` ranks with `sent`, so it replaces an
+/// unacked echo but never a `delivered` or `read` one, and a `failed` echo
+/// takes any state (a retry queues it again). A re-handed-off in-flight row
+/// is `queued` again in the outbox, but its delivered echo stays delivered.
 fn project(
     conn: &Connection,
     owner_key: &str,
@@ -396,7 +402,11 @@ fn project(
 ) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE messages SET send_state = ?3 WHERE owner_key = ?1 AND id = \
-         (SELECT echo_id FROM outbox WHERE owner_key = ?1 AND client_id = ?2)",
+         (SELECT echo_id FROM outbox WHERE owner_key = ?1 AND client_id = ?2) \
+         AND (CASE ?3 WHEN 'queued' THEN 0 WHEN 'sent' THEN 1 WHEN 'failed' THEN 1 \
+         WHEN 'delivered' THEN 2 ELSE 3 END) >= \
+         (CASE send_state WHEN 'queued' THEN 0 WHEN 'sent' THEN 1 \
+         WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE -1 END)",
         params![owner_key, client_id, state.as_str()],
     )?;
     Ok(())
