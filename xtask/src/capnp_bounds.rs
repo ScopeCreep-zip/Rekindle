@@ -33,17 +33,22 @@
 //! other crate can call a reader however it spells it. A file that does not
 //! parse is refused rather than skipped.
 //!
-//! Test code (`#[cfg(test)]`, `#[test]`, `tests/`, `tests.rs`,
-//! `*_tests.rs`) builds its messages locally and is not scanned.
+//! It scans every workspace member's `src/` and every non-test target's
+//! own file (build scripts, benches, examples), from `cargo metadata`. Test
+//! code builds its messages locally and is not scanned, and is known only
+//! from the module tree: an inline `#[cfg(test)]` module or `#[test]`
+//! function, and the file (with its submodules' directory) that a
+//! `#[cfg(test)] mod name;` declaration loads. A production file named
+//! `tests.rs` is scanned like any other.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use syn::visit::Visit;
 
 use crate::walk_source_files;
-use crate::wall_clock::{is_test_attr, is_test_file};
+use crate::wall_clock::is_test_attr;
 
 /// The one file allowed to call a capnp reader.
 const READER_FILE: &str = "crates/rekindle-codec/src/capnp_codec/mod.rs";
@@ -386,6 +391,103 @@ impl<'ast> Visit<'ast> for Finder<'_> {
     }
 }
 
+/// What `#[cfg(test)]` module declarations make test code: the files they
+/// load and the directories their submodules live in.
+#[derive(Default)]
+struct TestModules {
+    files: BTreeSet<PathBuf>,
+    dirs: Vec<PathBuf>,
+}
+
+impl TestModules {
+    fn contains(&self, path: &Path) -> bool {
+        self.files.contains(path) || self.dirs.iter().any(|d| path.starts_with(d))
+    }
+
+    /// Record the test modules `items` declare, `dir` being where their
+    /// non-inline submodules live and `file_dir` the declaring file's own
+    /// directory (`#[path]` is relative to it).
+    fn collect(&mut self, items: &[syn::Item], dir: &Path, file_dir: &Path) {
+        for item in items {
+            let syn::Item::Mod(m) = item else {
+                continue;
+            };
+            let name = m.ident.to_string();
+            let sub = dir.join(&name);
+            if m.attrs.iter().any(is_test_attr) {
+                if let Some(p) = path_attr(&m.attrs) {
+                    self.files.insert(file_dir.join(&p));
+                    if let Some(parent) = file_dir.join(&p).parent() {
+                        self.dirs.push(parent.join(&name));
+                    }
+                } else {
+                    self.files.insert(dir.join(format!("{name}.rs")));
+                    self.files.insert(sub.join("mod.rs"));
+                }
+                self.dirs.push(sub);
+            } else if let Some((_, inner)) = &m.content {
+                self.collect(inner, &sub, file_dir);
+            }
+        }
+    }
+}
+
+/// The value of a `#[path = "…"]` attribute.
+fn path_attr(attrs: &[syn::Attribute]) -> Option<String> {
+    attrs.iter().find_map(|a| {
+        let syn::Meta::NameValue(nv) = &a.meta else {
+            return None;
+        };
+        let syn::Expr::Lit(syn::ExprLit {
+            lit: syn::Lit::Str(s),
+            ..
+        }) = &nv.value
+        else {
+            return None;
+        };
+        nv.path.is_ident("path").then(|| s.value())
+    })
+}
+
+/// The test modules of every file in `files` (`roots` are the crate roots,
+/// whose submodules live beside them).
+fn test_modules(files: &[(PathBuf, String)], roots: &BTreeSet<PathBuf>) -> TestModules {
+    let mut tests = TestModules::default();
+    for (path, src) in files {
+        let Ok(parsed) = syn::parse_file(src) else {
+            continue;
+        };
+        let file_dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
+        let beside = roots.contains(path) || path.file_name().is_some_and(|n| n == "mod.rs");
+        let dir = if beside {
+            file_dir.clone()
+        } else {
+            file_dir.join(path.file_stem().unwrap_or_default())
+        };
+        tests.collect(&parsed.items, &dir, &file_dir);
+    }
+    tests
+}
+
+/// Every workspace member's `src/` files and its non-test targets' own
+/// files, with the crate roots.
+fn source_files(meta: &crate::cargo_meta::Metadata) -> Result<(Vec<PathBuf>, BTreeSet<PathBuf>)> {
+    let mut files = BTreeSet::new();
+    let mut roots = BTreeSet::new();
+    for package in meta.members() {
+        let dir = package.manifest_path.parent().unwrap_or(Path::new(""));
+        files.extend(walk_source_files(&dir.join("src"), &["rs"])?);
+        for target in &package.targets {
+            if target.kind.iter().any(|k| k == "test") {
+                continue;
+            }
+            roots.insert(target.src_path.clone());
+            files.insert(target.src_path.clone());
+        }
+    }
+    Ok((files.into_iter().collect(), roots))
+}
+
 #[cfg(test)]
 fn scan(rel: &str, src: &str) -> Vec<String> {
     let bounds = ["SIGNED_ENVELOPE".to_owned()].into_iter().collect();
@@ -410,31 +512,36 @@ fn scan_with(rel: &str, src: &str, bounds: &BTreeSet<String>) -> Vec<String> {
 }
 
 pub(crate) fn check_capnp_bounds(root: &Path) -> Result<()> {
-    let mut dirs = vec![root.join("src-tauri/src")];
-    for entry in std::fs::read_dir(root.join("crates"))? {
-        dirs.push(entry?.path().join("src"));
-    }
     let bounds = bound_names(&std::fs::read_to_string(root.join(BOUNDS_FILE))?);
     if bounds.is_empty() {
         return Err(anyhow!("{BOUNDS_FILE} declares no Bound const"));
     }
     let meta = crate::cargo_meta::Metadata::load(root)?;
     let mut hits = capnp_dependent_hits(&meta.direct_dependents("capnp"));
-    for dir in dirs {
-        for path in walk_source_files(&dir, &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            if is_test_file(&rel) {
-                continue;
-            }
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            hits.extend(scan_with(&rel, &src, &bounds));
+    let root = root.canonicalize()?;
+    let (paths, roots) = source_files(&meta)?;
+    let mut files = Vec::new();
+    for path in paths {
+        let path = path.canonicalize().unwrap_or(path);
+        let src = std::fs::read_to_string(&path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        files.push((path, src));
+    }
+    let roots = roots
+        .into_iter()
+        .map(|r| r.canonicalize().unwrap_or(r))
+        .collect();
+    let tests = test_modules(&files, &roots);
+    for (path, src) in &files {
+        if tests.contains(path) {
+            continue;
         }
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(path)
+            .display()
+            .to_string();
+        hits.extend(scan_with(&rel, src, &bounds));
     }
     if hits.is_empty() {
         return Ok(());
@@ -451,6 +558,7 @@ pub(crate) fn check_capnp_bounds(root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
+    use std::path::{Path, PathBuf};
 
     use super::{scan, READER_FILE};
 
@@ -574,6 +682,29 @@ mod tests {
     #[test]
     fn a_file_that_does_not_parse_is_refused() {
         assert_eq!(scan("crates/x/src/lib.rs", "fn (").len(), 1);
+    }
+
+    /// Test files are known from the module tree, not their names.
+    #[test]
+    fn test_files_come_from_cfg_test_declarations() {
+        let lib = (
+            PathBuf::from("/c/src/lib.rs"),
+            "mod codec; #[cfg(test)] mod tests; #[cfg(test)] #[path = \"x_t.rs\"] mod x;"
+                .to_owned(),
+        );
+        let codec = (
+            PathBuf::from("/c/src/codec.rs"),
+            "mod tests; mod inner { #[cfg(test)] mod deep; }".to_owned(),
+        );
+        let roots = [PathBuf::from("/c/src/lib.rs")].into_iter().collect();
+        let t = super::test_modules(&[lib, codec], &roots);
+        assert!(t.contains(Path::new("/c/src/tests.rs")));
+        assert!(t.contains(Path::new("/c/src/tests/helpers.rs")));
+        assert!(t.contains(Path::new("/c/src/x_t.rs")));
+        assert!(t.contains(Path::new("/c/src/codec/inner/deep.rs")));
+        // A production module that happens to be named `tests`.
+        assert!(!t.contains(Path::new("/c/src/codec/tests.rs")));
+        assert!(!t.contains(Path::new("/c/src/codec.rs")));
     }
 
     #[test]

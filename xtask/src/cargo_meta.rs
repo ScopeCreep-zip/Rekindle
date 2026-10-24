@@ -4,7 +4,7 @@
 //! as the manifests spell it.
 
 use std::collections::BTreeSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
@@ -12,6 +12,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub(crate) struct Metadata {
     pub(crate) packages: Vec<Package>,
+    pub(crate) workspace_members: Vec<String>,
     pub(crate) resolve: Resolve,
 }
 
@@ -19,6 +20,14 @@ pub(crate) struct Metadata {
 pub(crate) struct Package {
     pub(crate) id: String,
     pub(crate) name: String,
+    pub(crate) manifest_path: PathBuf,
+    pub(crate) targets: Vec<Target>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Target {
+    pub(crate) kind: Vec<String>,
+    pub(crate) src_path: PathBuf,
 }
 
 #[derive(Deserialize)]
@@ -60,6 +69,13 @@ impl Metadata {
             .iter()
             .find(|p| p.id == id)
             .map(|p| p.name.as_str())
+    }
+
+    /// The workspace members.
+    pub(crate) fn members(&self) -> impl Iterator<Item = &Package> {
+        self.packages
+            .iter()
+            .filter(|p| self.workspace_members.contains(&p.id))
     }
 
     /// Every package with a direct dependency of any kind on `name`.
