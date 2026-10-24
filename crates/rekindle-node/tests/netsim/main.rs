@@ -11,6 +11,7 @@ mod channel_post_both_ways;
 mod community_block_drops;
 mod community_policy;
 mod dm_ack_loss;
+mod dm_ack_through;
 mod dm_after_cancel;
 mod dm_hint_loss;
 mod events;
