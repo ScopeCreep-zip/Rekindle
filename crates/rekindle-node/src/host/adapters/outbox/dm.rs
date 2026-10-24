@@ -407,6 +407,11 @@ impl DmOutbox for DmStream {
         acked.map_err(|e| failed(&e))
     }
 
+    async fn reask_soon(&self, peer: &str) -> Result<usize, FriendError> {
+        let moved = self.0.reask_soon(StreamKind::Dm, peer).await;
+        moved.map_err(|e| failed(&e))
+    }
+
     async fn discard(&self, client_id: &str) -> Result<bool, FriendError> {
         self.0.discard(client_id).await.map_err(|e| failed(&e))
     }

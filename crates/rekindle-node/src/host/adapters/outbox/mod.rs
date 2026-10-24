@@ -233,6 +233,14 @@ impl OutboxDeps for HostOutbox {
         row.map_err(|e| storage(&e))?.map(row_of).transpose()
     }
 
+    async fn reschedule_sent(&self, stream: &str, at: i64) -> Result<usize, OutboxError> {
+        let (db, owner) = self.db()?;
+        let stream = stream.to_owned();
+        db.call(move |c| repo::reschedule_sent(c, &owner, &stream, at))
+            .await
+            .map_err(|e| storage(&e))
+    }
+
     async fn row_at(
         &self,
         stream: &str,

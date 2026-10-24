@@ -57,6 +57,18 @@ fn subscription_event(event: FriendPresenceEvent) -> SubscriptionEvent {
 }
 
 impl HostFriends {
+    /// `friend_key` was heard from again (their route changed or they came
+    /// online): bring our re-asks to them forward (E2.5g).
+    fn peer_heard(&self, friend_key: &str) {
+        let (host, peer) = (self.clone(), friend_key.to_owned());
+        rekindle_transport::operations::friend::FriendHost::scope(self).spawn_or_drop(
+            "bring re-asks forward",
+            async move {
+                rekindle_transport::operations::dm::outbox::peer_heard(&host, &peer).await;
+            },
+        );
+    }
+
     fn records(
         &self,
     ) -> Result<std::sync::Arc<dyn rekindle_records::port::RecordPort>, PresenceError> {
@@ -197,6 +209,7 @@ impl FriendPresenceDeps for HostFriends {
         if let Some(node) = self.ctx().transport.read().as_ref() {
             node.peers().write().cache_route(friend_key, blob);
         }
+        self.peer_heard(friend_key);
     }
 
     async fn acquire_friend_record(&self, dht_record_key: &str) -> Result<LeaseId, PresenceError> {
@@ -253,6 +266,9 @@ impl FriendPresenceDeps for HostFriends {
     }
 
     fn emit(&self, event: FriendPresenceEvent) {
+        if let FriendPresenceEvent::FriendOnline { friend_key } = &event {
+            self.peer_heard(friend_key);
+        }
         self.ctx().publish_event(subscription_event(event));
     }
 

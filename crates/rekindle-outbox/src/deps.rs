@@ -160,6 +160,9 @@ pub trait OutboxDeps: Send + Sync {
     /// The earliest due time or deadline of an unsettled row.
     async fn next_wake(&self) -> Result<Option<i64>, OutboxError>;
     async fn row(&self, client_id: &str) -> Result<Option<OutboxRow>, OutboxError>;
+    /// Bring each `sent` row of `stream` due at `at` when that is earlier
+    /// than its `next_at`; how many moved.
+    async fn reschedule_sent(&self, stream: &str, at: i64) -> Result<usize, OutboxError>;
     async fn row_at(&self, stream: &str, stream_seq: i64)
         -> Result<Option<OutboxRow>, OutboxError>;
     /// Store `update` for `client_id` and project its state; the peer's

@@ -412,6 +412,25 @@ fn project(
     Ok(())
 }
 
+/// Bring every landed, unacked (`sent`) row of `stream` due at `at` when
+/// that is earlier than its `next_at`; how many moved. A later `next_at`
+/// is never set, so a sooner re-ask is kept.
+///
+/// # Errors
+/// The write failed; nothing changed.
+pub fn reschedule_sent(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    at: i64,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE outbox SET next_at = ?3 WHERE owner_key = ?1 AND stream = ?2 \
+         AND state = 'sent' AND next_at > ?3",
+        params![owner_key, stream, at],
+    )
+}
+
 /// A row [`update`] stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Updated {

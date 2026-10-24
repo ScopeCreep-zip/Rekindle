@@ -151,6 +151,28 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn receive(&self, from: &str, client_id: &str) -> Result<bool, FriendError>;
+    /// `peer` became reachable again: each landed, unacked row of our
+    /// stream to them is asked for again at now plus the first re-ask when
+    /// that is earlier than its `next_at`; how many moved.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn reask_soon(&self, peer: &str) -> Result<usize, FriendError>;
+}
+
+/// `peer` was heard from again: their route changed, their presence turned
+/// online, or a hint of theirs arrived (E2.5g, Briar's reset of its
+/// retransmission backoff on a contact's transport change). The one place
+/// every such signal resets our landed, unacked rows' re-ask backoff.
+pub async fn peer_heard(host: &dyn FriendHost, peer: &str) {
+    match host.outbox() {
+        Ok(outbox) => match outbox.reask_soon(peer).await {
+            Ok(0) => {}
+            Ok(moved) => tracing::debug!(peer = %peer, moved, "re-ask brought forward"),
+            Err(e) => tracing::warn!(peer = %peer, error = %e, "re-ask not brought forward"),
+        },
+        Err(e) => tracing::debug!(error = %e, "no outbox: re-ask not brought forward"),
+    }
 }
 
 /// A `dm` row's payload: the body, framed afresh at each attempt.

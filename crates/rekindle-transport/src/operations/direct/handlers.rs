@@ -47,6 +47,8 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
     let mut applied = true;
     match &opened.body {
         DirectBody::DmText(text) => {
+            // A hint of theirs arrived: they are reachable (E2.5g).
+            crate::operations::dm::outbox::peer_heard(host, sender).await;
             applied =
                 direct_message(host, sender, text, opened.sent_at_ms, opened.stream_seq).await;
             if applied {

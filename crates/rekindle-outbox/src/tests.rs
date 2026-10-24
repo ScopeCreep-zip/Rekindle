@@ -14,6 +14,8 @@ use rekindle_utils::time::Clock;
 use crate::state::{merge, PeerAck, StateInput};
 use crate::*;
 
+mod reask;
+
 struct FixedClock(AtomicI64);
 impl Clock for FixedClock {
     fn now_ms(&self) -> u64 {
@@ -131,6 +133,12 @@ impl OutboxDeps for Fake {
             .filter(|r| unsettled(r) && r.deadline <= now)
             .cloned()
             .collect())
+    }
+    async fn reschedule_sent(&self, stream: &str, at: i64) -> Result<usize, OutboxError> {
+        let mut s = self.store.lock();
+        let rows = s.rows.iter_mut().filter(|r| r.stream == stream);
+        let late = rows.filter(|r| r.state == SendState::Sent && r.next_at > at);
+        Ok(late.map(|r| r.next_at = at).count())
     }
     async fn next_wake(&self) -> Result<Option<i64>, OutboxError> {
         let s = self.store.lock();
