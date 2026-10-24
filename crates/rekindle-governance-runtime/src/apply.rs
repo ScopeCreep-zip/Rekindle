@@ -65,9 +65,11 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
 }
 
 /// [`write_entry`], returning once the op is queued on our stream, behind
-/// our earlier ops (an invite refused "not yet published" queues its
-/// `InviteRevoked` this way).
-pub(crate) async fn write_entry_queued<D: GovernanceRuntimeDeps>(
+/// our earlier ops: the governance-op outbox stream owns its delivery
+/// (plan E3.2 S6b). For a writer that must not wait on the network: the
+/// ingest loop (onboarding answers), the MEK rotation worker, and an
+/// invite refused "not yet published" queueing its `InviteRevoked`.
+pub async fn write_entry_queued<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,

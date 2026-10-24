@@ -63,19 +63,29 @@ impl HostGovernance {
         // then `M` in §4.4's order.
         self.store_join_ops(&id, &outcome).await?;
         rekindle_governance_runtime::rebuild_governance(self, &id).await;
-        self.publish_joined_record(&id, &outcome)
+        let joined_queued = self
+            .publish_joined_record(&id, &outcome)
             .await
             .map_err(|e| format!("community joined, member record not published: {e}"))?;
         self.store_own_member_row(&id, &pseudonym, joined_at)
             .await?;
         self.announce_join(&id);
-        // Our `MemberJoined` is durable on `M`: tell the inviter (it
-        // verifies and merges it), then continue the walk from its frontier.
+        // Our `MemberJoined` is on `M` (or queued there and gossiped to the
+        // mesh): tell the inviter (it verifies and merges it), then continue
+        // the walk from its frontier.
         self.bootstrap_from_inviter(&id, &outcome).await;
         // The invite carries no community key (D11): ask for it.
         self.recover_behind_meks();
         self.audit_joined(&id, &outcome.invite.community_name);
         tracing::info!(community = %id, "joined community");
+        // The join's local side is done, but its op is not on `M` yet: the
+        // command answers "not yet published" and the outbox lands it (S6b).
+        if joined_queued {
+            return Err(format!(
+                "community joined: {}",
+                rekindle_governance_runtime::GovernanceRuntimeError::NotYetPublished
+            ));
+        }
         Ok(CommunityJoined {
             governance_key: id,
             name: outcome.invite.community_name.clone(),
@@ -88,12 +98,13 @@ impl HostGovernance {
 
     /// Our `M` in §4.4's order: the card (`M`/0), our `MemberJoined` on
     /// `M`/2 with `M`/3 after it (the governance-op stream's send), then
-    /// the beat (`M`/1).
+    /// the beat (`M`/1). `true`: the `MemberJoined` did not land within the
+    /// command's deadline and stays queued; the beat is written regardless.
     async fn publish_joined_record(
         &self,
         community: &str,
         outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
-    ) -> Result<(), String> {
+    ) -> Result<bool, String> {
         use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
         use rekindle_governance_runtime::member_card::{publish_own_record, OwnProfile, OwnRecord};
         let port = self.record_port().map_err(|e| e.to_string())?;
@@ -108,14 +119,23 @@ impl HostGovernance {
             status: self.identity_status(),
             now_ms: self.ctx.clock.now_ms(),
         };
+        let queued = std::sync::atomic::AtomicBool::new(false);
         let publish_ops = async {
-            self.publish_governance_op(
-                community,
-                outcome.joined.encoded.clone(),
-                rekindle_governance_runtime::OpLanding::Landed,
-            )
-            .await
-            .map_err(|e| format!("MemberJoined not published: {e}"))
+            match self
+                .publish_governance_op(
+                    community,
+                    outcome.joined.encoded.clone(),
+                    rekindle_governance_runtime::OpLanding::Landed,
+                )
+                .await
+            {
+                Ok(()) => Ok(()),
+                Err(rekindle_governance_runtime::GovernanceRuntimeError::NotYetPublished) => {
+                    queued.store(true, std::sync::atomic::Ordering::Relaxed);
+                    Ok(())
+                }
+                Err(e) => Err(format!("MemberJoined not published: {e}")),
+            }
         };
         publish_own_record(
             &*port,
@@ -124,7 +144,8 @@ impl HostGovernance {
             &outcome.member.hpke_secret,
             publish_ops,
         )
-        .await
+        .await?;
+        Ok(queued.load(std::sync::atomic::Ordering::Relaxed))
     }
 
     async fn store_join_ops(

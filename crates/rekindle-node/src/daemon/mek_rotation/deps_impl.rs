@@ -217,12 +217,15 @@ impl MekDistributeDeps for DaemonMekAdapter {
         }));
     }
 
+    /// Queued, not waited for: the rotation worker runs one rotation at a
+    /// time, so a wait on the network here would hold every later one; the
+    /// governance-op outbox stream lands the `MEKGenerationBump` (S6b).
     async fn write_governance_entry(
         &self,
         community_id: &str,
         entry: rekindle_types::governance::GovernanceEntry,
     ) -> Result<(), MekRotationError> {
-        rekindle_governance_runtime::write_entry(&self.governance(), community_id, entry)
+        rekindle_governance_runtime::write_entry_queued(&self.governance(), community_id, entry)
             .await
             .map_err(|e| MekRotationError::InvalidInput(e.to_string()))
     }

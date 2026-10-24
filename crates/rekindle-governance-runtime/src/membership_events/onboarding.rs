@@ -1,7 +1,8 @@
 //! Onboarding-answers control-message handler (drained from
 //! `legacy/onboarding.rs`). Validates submitted answers against the
 //! governance onboarding config, assigns the configured roles via
-//! `apply::write_entry`, and broadcasts completion.
+//! `apply::write_entry_queued` (it runs on the ingest loop, which must not
+//! wait on the network: the outbox lands the ops), and broadcasts completion.
 
 use std::collections::{HashMap, HashSet};
 
@@ -9,7 +10,7 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, Onb
 use rekindle_types::governance::{GovernanceEntry, OnboardingQuestion};
 use rekindle_types::id::{PseudonymKey, RoleId};
 
-use crate::apply::write_entry;
+use crate::apply::write_entry_queued;
 use crate::event::GovernanceRuntimeEvent;
 use crate::membership_events::deps::MembershipEventDeps;
 use crate::membership_events::roles_changed::process_member_roles_changed;
@@ -152,7 +153,7 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
             target: sender_key.clone(),
             role_id,
         };
-        match write_entry(deps, community_id, entry).await {
+        match write_entry_queued(deps, community_id, entry).await {
             Ok(()) => newly_assigned.push(role_id),
             Err(e) => {
                 tracing::warn!(

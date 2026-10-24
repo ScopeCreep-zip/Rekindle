@@ -50,7 +50,7 @@ use tokio::sync::{mpsc, watch};
 pub use attach::ATTACH_STEP;
 pub use busy::{db_call, db_queued, on_sim_thread, DbCall};
 pub use clock::{SimClock, SimRandom, SIM_EPOCH_MS};
-pub use faults::Fault;
+pub use faults::{Fault, Writes};
 pub use idle::SimIdle;
 pub use messages::{call_timeout, FakeMessages, RPC_TIMEOUT};
 pub use network::Network;

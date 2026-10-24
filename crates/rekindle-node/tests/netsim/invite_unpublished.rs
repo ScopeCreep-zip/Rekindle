@@ -17,13 +17,13 @@ use std::time::Duration;
 
 use rekindle_ipc::protocol::{ChannelRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, Writes};
 use rekindle_types::dht_layout::community_anchor;
 
 use crate::harness::{eventually, Community};
 
 /// The creator's member record `M`, where its op log lives.
-fn creator_record(community: &Community) -> String {
+pub(crate) fn creator_record(community: &Community) -> String {
     let cert = community
         .sim
         .network_get(&community.governance_key, community_anchor::GENESIS_CERT)
@@ -45,7 +45,10 @@ fn invite_list(community: &Community) -> IpcRequest {
 async fn no_invite_link_until_its_op_is_on_the_dht() {
     let mut community = Community::create(2, 223).await;
     let record = creator_record(&community);
-    community.sim.fault(Fault::WriteFails { node: 0, record });
+    community.sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Record(record),
+    });
     let refused = community.nodes[0]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::InviteCreate {
@@ -94,7 +97,10 @@ async fn a_governance_command_answers_once_its_op_landed() {
     let mut community = Community::create(2, 227).await;
     community.join(1).await;
     let record = creator_record(&community);
-    community.sim.fault(Fault::WriteFails { node: 0, record });
+    community.sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Record(record),
+    });
     let create = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
         community: community.governance_key.clone(),
         name: "queued".into(),
@@ -127,5 +133,52 @@ async fn a_governance_command_answers_once_its_op_landed() {
     assert!(
         landed,
         "the queued op reaches the other member: {ours} / {theirs}"
+    );
+}
+
+/// A join whose `MemberJoined` cannot land (every set node 1 makes of an op
+/// log head, `M`/2, is refused, so its card lands and its op does not)
+/// answers "not yet published" with its local side done and the op queued
+/// (plan E3.2 S6b). Once the fault lifts the op lands: a later op of the
+/// joiner, behind it on the same stream, lands within its deadline.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_join_whose_member_joined_cannot_land_is_not_yet_published() {
+    let mut community = Community::create(2, 229).await;
+    community.sim.fault(Fault::WriteFails {
+        node: 1,
+        of: Writes::Subkey(rekindle_types::dht_layout::member_record::GOV_HEAD),
+    });
+    let link = community.invite().await;
+    let refused = community.nodes[1]
+        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityJoin { invite: link },
+        )))
+        .await;
+    let answer = format!("{refused:?}");
+    assert!(
+        refused.is_err() && answer.contains("not yet published"),
+        "the join waits for its op: {answer}"
+    );
+    let listed = community.nodes[1]
+        .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityList,
+        )))
+        .await;
+    assert!(
+        listed.to_string().contains(&community.governance_key),
+        "the join's local side is done: {listed}"
+    );
+
+    community.sim.fault(Fault::Heal);
+    let leave = community.nodes[1]
+        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityLeave {
+                governance_key: community.governance_key.clone(),
+            },
+        )))
+        .await;
+    assert!(
+        leave.is_ok(),
+        "the queued MemberJoined lands, then the MemberLeft behind it: {leave:?}"
     );
 }

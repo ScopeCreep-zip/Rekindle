@@ -422,8 +422,15 @@ impl DhtBackend for SimDht {
             tokio::time::sleep(span).await;
             return Err(try_again());
         }
-        let below = (self.node, key.to_string());
-        if self.net.inner.lock().faults.write_fails.contains(&below) {
+        let below = self
+            .net
+            .inner
+            .lock()
+            .faults
+            .write_fails
+            .iter()
+            .any(|(node, of)| *node == self.node && of.selects(key, subkey));
+        if below {
             // Below consensus: no replica accepted it, so nothing is
             // stored (`fanout::commit`).
             tokio::time::sleep(span).await;

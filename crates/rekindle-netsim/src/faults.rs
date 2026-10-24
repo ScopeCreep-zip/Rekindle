@@ -10,10 +10,10 @@ pub enum Fault {
     TryAgain { node: usize, calls: u32 },
     /// Every DHT call of the node fails (or stops failing): no connection.
     DhtOffline { node: usize, offline: bool },
-    /// Every set of `record` by the node lands below consensus (no replica
-    /// accepts it and nothing is stored, as a Veilid `set_value` can),
-    /// until [`Fault::Heal`]; its other records' writes are unaffected.
-    WriteFails { node: usize, record: String },
+    /// Every set by the node that `of` selects lands below consensus (no
+    /// replica accepts it and nothing is stored, as a Veilid `set_value`
+    /// can), until [`Fault::Heal`]; its other writes are unaffected.
+    WriteFails { node: usize, of: Writes },
     /// The two groups cannot exchange app messages or calls, and neither
     /// reaches the record replicas placed beside the other's nodes (a
     /// stale read or a set below consensus follows from which replicas a
@@ -80,6 +80,27 @@ pub enum Fault {
     ReplicaChurn { key: String, count: usize },
 }
 
+/// Which of a node's sets [`Fault::WriteFails`] refuses: the network
+/// refusing that writer's sets, chosen by what they write.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Writes {
+    /// Every set of this record.
+    Record(String),
+    /// Every set of this subkey, in any record: a record the node creates
+    /// mid-scenario (a joiner's member record) is covered before its key
+    /// is known.
+    Subkey(u32),
+}
+
+impl Writes {
+    pub(crate) fn selects(&self, key: &str, subkey: u32) -> bool {
+        match self {
+            Self::Record(record) => record == key,
+            Self::Subkey(selected) => *selected == subkey,
+        }
+    }
+}
+
 impl Netsim {
     /// Put `fault` in force.
     pub fn fault(&self, fault: Fault) {
@@ -90,13 +111,8 @@ impl Netsim {
             Fault::DhtOffline { node, offline } => {
                 toggle(&mut self.net.inner.lock().faults.dht_offline, node, offline);
             }
-            Fault::WriteFails { node, record } => {
-                self.net
-                    .inner
-                    .lock()
-                    .faults
-                    .write_fails
-                    .insert((node, record));
+            Fault::WriteFails { node, of } => {
+                self.net.inner.lock().faults.write_fails.insert((node, of));
             }
             Fault::Partition { a, b } => {
                 let mut inner = self.net.inner.lock();
