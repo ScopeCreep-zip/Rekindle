@@ -10,13 +10,13 @@ impl<D: OutboxDeps> Outbox<D> {
     /// The peer of the `kind` stream `scope` became reachable again (their
     /// route changed, they came online, or a frame of theirs arrived):
     /// each landed, unacked row of it is asked for again at now plus the
-    /// kind's first re-ask (jittered), when that is earlier than its `next_at`. A kind
+    /// kind's first re-ask, when that is earlier than its `next_at`. A kind
     /// with no re-ask is untouched. Returns how many moved.
     ///
     /// # Errors
     /// The storage failed.
     pub async fn reask_soon(&self, kind: StreamKind, scope: &str) -> Result<usize, OutboxError> {
-        let Some(wait) = kind.first_reask(self.deps.rng()) else {
+        let Some(wait) = kind.first_reask() else {
             return Ok(0);
         };
         let wait = i64::try_from(wait.as_millis()).unwrap_or(i64::MAX);

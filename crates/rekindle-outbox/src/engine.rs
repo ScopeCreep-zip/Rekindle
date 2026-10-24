@@ -101,7 +101,7 @@ impl<D: OutboxDeps> Outbox<D> {
     /// (live A/B finding 73c); any other its backoff.
     fn next_after(&self, row: &OutboxRow, state: SendState, attempts: u32, sent_at: i64) -> i64 {
         let now = self.now();
-        match row.kind.first_reask(self.deps.rng()) {
+        match row.kind.first_reask() {
             Some(wait) if row.state != SendState::Sent && state == SendState::Sent => {
                 sent_at.saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX))
             }
@@ -215,10 +215,8 @@ impl<D: OutboxDeps> Outbox<D> {
             stream.sort_by_key(|row| row.stream_seq);
             // A prefix: the rows past the first that stayed behind were not
             // attempted and keep their schedule.
-            let outcomes = self.deps.attempt_stream(&stream).await;
-            // Read once the hints left: a cold route fetch or a run of
-            // hints inside the attempt must not shrink the ack's window.
             let sent_at = self.now();
+            let outcomes = self.deps.attempt_stream(&stream).await;
             let mut jobs = Vec::new();
             for (row, outcome) in stream.iter().zip(outcomes) {
                 if let AttemptOutcome::Appending(frame) = outcome {
