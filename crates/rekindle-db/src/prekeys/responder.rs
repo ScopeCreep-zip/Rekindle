@@ -66,6 +66,7 @@ pub(crate) fn consume_one_time(
             )
             .optional()?;
         if let Some((subkey, current)) = slot {
+            crate::erase::erased();
             if current && is_slot(subkey) && !refill.contains(&subkey) {
                 refill.push(subkey);
             }

@@ -6,7 +6,7 @@
 use rekindle_crypto::signal::prekey_record::{OPK_STALE_MS, RETIRED_ARCHIVE_MS};
 use rusqlite::params;
 
-use crate::ratchet::{in_transaction_erasing, RatchetError};
+use crate::ratchet::{in_transaction, RatchetError};
 use crate::repo::identity_text;
 use crate::Db;
 
@@ -44,8 +44,9 @@ pub async fn sweep_archive(
 ) -> Result<ArchiveSweep, RatchetError> {
     let owner = identity_text(owner);
     let horizon = now_ms - RETIRED_ARCHIVE_MS;
-    in_transaction_erasing(db, move |conn| {
-        let prekeys = conn.execute(
+    in_transaction(db, move |conn| {
+        let prekeys = crate::erase::delete(
+            conn,
             "DELETE FROM signal_prekeys WHERE owner_key = ?1 \
              AND (retired_at <= ?2 OR consumed_at <= ?2)",
             params![owner, horizon],

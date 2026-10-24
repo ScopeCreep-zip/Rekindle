@@ -32,7 +32,8 @@ pub fn replace(
         "INSERT INTO presence_keys (owner_key, epoch, key, created_at) VALUES (?1, ?2, ?3, ?4)",
         params![owner_key, epoch, key, created_at],
     )?;
-    conn.execute(
+    crate::erase::delete(
+        conn,
         "DELETE FROM presence_keys WHERE owner_key = ?1 AND epoch < ?2",
         params![owner_key, epoch],
     )?;

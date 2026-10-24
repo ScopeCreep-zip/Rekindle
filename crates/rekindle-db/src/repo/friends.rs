@@ -102,7 +102,7 @@ pub fn insert_pending_out(
     display_name: &str,
     added_at: i64,
 ) -> rusqlite::Result<()> {
-    changes::erasing(conn, |conn| {
+    changes::atomically(conn, |conn| {
         end_removal(conn, owner_key, public_key)?;
         // A request to someone we hold no row for starts a new friendship: no
         // session kept from an ended one may refuse its first contact (live
@@ -131,7 +131,7 @@ pub fn insert_accepted(
     display_name: &str,
     added_at: i64,
 ) -> rusqlite::Result<()> {
-    changes::erasing(conn, |conn| {
+    changes::atomically(conn, |conn| {
         end_removal(conn, owner_key, public_key)?;
         conn.execute(
             "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
@@ -190,7 +190,7 @@ pub fn delete_pending_out_before(
     owner_key: &str,
     cutoff: i64,
 ) -> rusqlite::Result<Vec<String>> {
-    changes::erasing(conn, |conn| {
+    changes::atomically(conn, |conn| {
         let expired = conn
             .prepare(
                 "SELECT public_key FROM friends \

@@ -30,6 +30,19 @@ impl From<Connection> for Db {
     }
 }
 
+/// After a call on the database thread: when its outermost commit erased
+/// key material, queue the WAL truncation behind the calls already
+/// waiting, never inside the call that erased (`crate::erase`, I14).
+fn after_erase(queue: &Connection, conn: &rusqlite::Connection) {
+    if crate::erase::take_committed(conn)
+        && queue
+            .call_detached(|conn| crate::erase::truncate_wal(conn))
+            .is_err()
+    {
+        tracing::debug!("database closing; its close checkpoints the erased frames");
+    }
+}
+
 impl Db {
     /// Run `function` on the database thread and return its result.
     ///
@@ -40,7 +53,14 @@ impl Db {
         F: FnOnce(&mut rusqlite::Connection) -> Result<R, rusqlite::Error> + 'static + Send,
         R: Send + 'static,
     {
-        self.conn.call(function).await
+        let after = self.conn.clone();
+        self.conn
+            .call(move |conn| {
+                let result = function(conn);
+                after_erase(&after, conn);
+                result
+            })
+            .await
     }
 
     /// Queue `function` on the database thread without waiting for it; it
@@ -52,7 +72,11 @@ impl Db {
     where
         F: FnOnce(&mut rusqlite::Connection) + Send + 'static,
     {
-        self.conn.call_detached(function)
+        let after = self.conn.clone();
+        self.conn.call_detached(move |conn| {
+            function(conn);
+            after_erase(&after, conn);
+        })
     }
 
     /// Fire-and-forget write: queued in order, a failure is logged.
@@ -60,10 +84,12 @@ impl Db {
     where
         F: FnOnce(&mut rusqlite::Connection) -> Result<(), rusqlite::Error> + Send + 'static,
     {
+        let after = self.conn.clone();
         let queued = self.conn.call_detached(move |conn| {
             if let Err(e) = function(conn) {
                 tracing::warn!(context, error = %e, "fire-and-forget DB operation failed");
             }
+            after_erase(&after, conn);
         });
         if queued.is_err() {
             tracing::warn!(

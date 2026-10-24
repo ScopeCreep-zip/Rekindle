@@ -67,7 +67,8 @@ pub fn rotate_peer(
             "DELETE FROM chain_entries WHERE owner_key = ?1 AND peer = ?2",
             params![owner_key, old_key],
         )?;
-        tx.execute(
+        crate::erase::delete(
+            &tx,
             "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
             params![owner_key, old_key],
         )?;

@@ -266,6 +266,8 @@ async fn a_consumption_truncates_the_wal() {
         "storing the record wrote WAL frames"
     );
     accept(&bob, &alice, init).await.unwrap();
+    // The truncation is queued behind the erasing call (RV5 M4).
+    bob.db.call(|_| Ok(())).await.unwrap();
     assert_eq!(std::fs::metadata(&wal).unwrap().len(), 0);
 }
 

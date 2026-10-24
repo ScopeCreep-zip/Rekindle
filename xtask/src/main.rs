@@ -14,6 +14,8 @@
 //!                                      through event_dispatch (ADR 0007).
 //!     cargo xtask check-capnp-bounds   Every Cap'n Proto read has a
 //!                                      traversal bound (plan F4).
+//!     cargo xtask check-key-erasure    Key-material rows are deleted only
+//!                                      through rekindle_db::erase (I14).
 //!     cargo xtask check-e2e-server-release
 //!                                      The E2E bridge never builds in release.
 //!     cargo xtask check-veilid-dht-calls
@@ -75,6 +77,7 @@ mod frontend_boundaries;
 mod frontend_duplication;
 mod intent_table;
 mod jsx;
+mod key_erasure;
 mod literals;
 mod motion;
 mod no_emitter;
@@ -121,6 +124,8 @@ enum Command {
     CheckNoEmitter,
     /// Verify every Cap'n Proto read has a traversal bound (no unbounded network decode).
     CheckCapnpBounds,
+    /// Verify key-material rows are deleted only through `rekindle_db::erase::delete`.
+    CheckKeyErasure,
     /// Verify the E2E bridge cannot be built into a release bundle.
     CheckE2eServerRelease,
     /// Verify every Veilid DHT and private-route call stays in its owner.
@@ -221,6 +226,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| capnp_bounds::check_capnp_bounds(&root)),
                 ),
                 (
+                    "key-erasure",
+                    Box::new(|| key_erasure::check_key_erasure(&root)),
+                ),
+                (
                     "e2e-server-release",
                     Box::new(|| e2e_release::check_e2e_server_release(&root)),
                 ),
@@ -308,6 +317,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
+        Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),
         Command::CheckE2eServerRelease => e2e_release::check_e2e_server_release(&root),
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
         Command::CheckSqlite => sqlite::check_sqlite(&root),

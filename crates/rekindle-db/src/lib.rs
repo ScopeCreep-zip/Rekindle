@@ -12,6 +12,7 @@
 //!   one transaction on the `Db` thread (plan E2.3).
 
 mod db;
+pub mod erase;
 mod fault;
 mod friend_store;
 mod handle;

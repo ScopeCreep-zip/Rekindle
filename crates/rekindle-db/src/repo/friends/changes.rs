@@ -24,45 +24,17 @@ pub(crate) fn atomically<T>(
     Ok(value)
 }
 
-/// [`atomically`], for a change that may delete ratchet sessions (chain
-/// keys): when it opened the transaction itself and the commit left fewer
-/// session rows than it found (none of these changes inserts one), a
-/// `wal_checkpoint(TRUNCATE)` follows the commit, so the erased keys' old
-/// pages leave the `-wal` file too (threat model I14). A change that erased
-/// nothing (most expiry ticks, an add with no old session) pays no full
-/// checkpoint (RV5). Inside the caller's transaction the caller's own
-/// erasing commit counts and truncates, so a nested erase is never missed.
-pub(crate) fn erasing<T>(
-    conn: &Connection,
-    change: impl FnOnce(&Connection) -> rusqlite::Result<T>,
-) -> rusqlite::Result<T> {
-    if !conn.is_autocommit() {
-        return change(conn);
-    }
-    let before = session_rows(conn)?;
-    let value = atomically(conn, change)?;
-    if session_rows(conn)? < before {
-        crate::ratchet::truncate_wal(conn);
-    }
-    Ok(value)
-}
-
-/// How many ratchet sessions the database holds (every identity's: the
-/// count only has to fall when one is erased).
-fn session_rows(conn: &Connection) -> rusqlite::Result<i64> {
-    conn.query_row("SELECT count(*) FROM ratchet_sessions", [], |row| {
-        row.get(0)
-    })
-}
-
 /// Delete every ratchet session with `peer`: the friendship that carried
-/// them ended. The ratchet tables key both sides by lowercase hex.
+/// them ended. It marks the connection erased, so the WAL is truncated
+/// after the outermost commit, wherever that is (`crate::erase`; RV5 M3).
+/// The ratchet tables key both sides by lowercase hex.
 pub(super) fn delete_sessions(
     conn: &Connection,
     owner_key: &str,
     peer: &str,
 ) -> rusqlite::Result<()> {
-    conn.execute(
+    crate::erase::delete(
+        conn,
         "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
         params![owner_key.to_ascii_lowercase(), peer.to_ascii_lowercase()],
     )?;
@@ -89,7 +61,7 @@ pub fn accept_request(
     added_at: i64,
     keys: RecordKeys<'_>,
 ) -> rusqlite::Result<()> {
-    erasing(conn, |conn| {
+    atomically(conn, |conn| {
         insert_accepted(conn, owner_key, public_key, display_name, added_at)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         set_record_keys(conn, owner_key, public_key, keys.profile, keys.mailbox)
@@ -137,7 +109,7 @@ pub fn block(
     display_name: &str,
     blocked_at: i64,
 ) -> rusqlite::Result<()> {
-    erasing(conn, |conn| {
+    atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         outbox::delete_to_peer(conn, owner_key, public_key)?;
@@ -190,7 +162,7 @@ pub fn cancel_request(
     owner_key: &str,
     public_key: &str,
 ) -> rusqlite::Result<()> {
-    erasing(conn, |conn| {
+    atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         super::nickname::clear(conn, owner_key, public_key)?;
         delete_sessions(conn, owner_key, public_key)
@@ -203,7 +175,7 @@ pub fn cancel_request(
 /// # Errors
 /// A write failed; nothing is kept.
 pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
-    erasing(conn, |conn| {
+    atomically(conn, |conn| {
         forget(conn, owner_key, public_key)?;
         super::nickname::clear(conn, owner_key, public_key)?;
         outbox::delete_to_peer(conn, owner_key, public_key)?;
@@ -219,7 +191,7 @@ pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusql
 /// # Errors
 /// The query or a delete failed; nothing is kept.
 pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
-    erasing(conn, |conn| {
+    atomically(conn, |conn| {
         let done = conn
             .prepare(&format!(
                 "SELECT public_key FROM friends f \
@@ -253,7 +225,7 @@ pub fn replace_with_invited(
     profile_key: &str,
     mailbox_key: &str,
 ) -> rusqlite::Result<()> {
-    erasing(conn, |conn| {
+    atomically(conn, |conn| {
         replace_with_invited_rows(
             conn,
             owner_key,
@@ -298,6 +270,8 @@ mod tests {
         .unwrap();
         assert!(wal_len() > 0, "storing the session wrote WAL frames");
         db.call(|c| cancel_request(c, OWNER, BOB)).await.unwrap();
+        // The truncation is queued behind the erasing call (RV5 M4).
+        db.call(|_| Ok(())).await.unwrap();
         assert_eq!(wal_len(), 0);
     }
 
@@ -338,6 +312,7 @@ mod tests {
             .unwrap();
             assert!(wal_len() > 0, "{name}: the setup wrote WAL frames");
             db.call(move |c| change(c)).await.unwrap();
+            db.call(|_| Ok(())).await.unwrap();
             assert_eq!(wal_len(), 0, "{name}: erased a session, so truncated");
             // Nothing left to erase: the same change again checkpoints nothing.
             db.call(|c| c.execute_batch("CREATE TABLE IF NOT EXISTS t (x)"))

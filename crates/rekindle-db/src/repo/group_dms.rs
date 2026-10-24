@@ -195,7 +195,8 @@ pub fn delete_member_keys(
     group_id: &str,
     member: &str,
 ) -> rusqlite::Result<usize> {
-    conn.execute(
+    crate::erase::delete(
+        conn,
         "DELETE FROM group_dm_sender_keys WHERE owner_key = ?1 AND group_id = ?2 AND member = ?3",
         params![owner_key, group_id, member],
     )
@@ -253,7 +254,8 @@ pub fn delete_chain(
     group_id: &str,
     member: &str,
 ) -> rusqlite::Result<usize> {
-    conn.execute(
+    crate::erase::delete(
+        conn,
         "DELETE FROM group_dm_chains WHERE owner_key = ?1 AND group_id = ?2 AND member = ?3",
         params![owner_key, group_id, member],
     )

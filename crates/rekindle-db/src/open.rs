@@ -235,7 +235,9 @@ fn sqlite(context: &'static str) -> impl FnOnce(rusqlite::Error) -> DbError {
 /// `checkpoint_fullfsync` (macOS: `F_FULLFSYNC`, so a committed ratchet
 /// step survives a power loss before the message it keys goes out), and
 /// `journal_size_limit=0`, so a WAL reset truncates the file instead of
-/// keeping old frames (old ratchet records, erased prekey secrets) in it. A new database gets the schema; a database at
+/// keeping old frames (old ratchet records, erased prekey secrets) in it,
+/// and `wal_autocheckpoint=1000`, which bounds what the erase checkpoint
+/// (`crate::erase`) copies. A new database gets the schema; a database at
 /// another schema version is an error, never a silent reset — the layout
 /// check (`crate::reset::check_layout`) already cleared a root laid out for
 /// another version.
@@ -261,7 +263,7 @@ pub fn open(path: &Path, key: &[u8; 32]) -> Result<Db, DbError> {
     conn.execute_batch(
         "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON; \
          PRAGMA synchronous=FULL; PRAGMA fullfsync=ON; PRAGMA checkpoint_fullfsync=ON; \
-         PRAGMA journal_size_limit=0;",
+         PRAGMA journal_size_limit=0; PRAGMA wal_autocheckpoint=1000;",
     )
     .map_err(sqlite("set pragmas"))?;
     let version: i64 = conn

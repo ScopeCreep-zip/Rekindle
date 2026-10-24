@@ -308,7 +308,7 @@ pub enum Reinitiation {
 /// transaction, consume the one-time keys it used, record a last-resort
 /// use, store the session, refill the consumed slot and record the
 /// plaintext in `unprocessed` as `type_id`. A failure stores nothing. The
-/// commit truncates the WAL ([`truncate_wal`]): the erased one-time
+/// commit truncates the WAL (`crate::erase`): the erased one-time
 /// secrets and the replaced session must not linger in `-wal` frames.
 ///
 /// # Errors
@@ -336,7 +336,7 @@ pub async fn accept_init(
     type_id: u16,
 ) -> Result<Accepted, RatchetError> {
     let (local, peer, ad_extra) = (local.clone(), peer.clone(), ad_extra.to_vec());
-    in_transaction_erasing(db, move |conn| {
+    in_transaction(db, move |conn| {
         let owner = local.owner();
         let record = load(conn, &owner, &peer)?;
         if record.has_base_key(&init.base_key) {
@@ -429,7 +429,8 @@ pub async fn discard_pending_init(
 pub async fn forget(db: &Db, owner: &[u8; 32], peer: &[u8; 32]) -> Result<(), RatchetError> {
     let (owner, peer) = (identity_text(owner), identity_text(peer));
     db.call(move |conn| {
-        conn.execute(
+        crate::erase::delete(
+            conn,
             "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
             params![owner, peer],
         )
@@ -457,43 +458,6 @@ where
         }
     })
     .await?
-}
-
-/// [`in_transaction`], then a `wal_checkpoint(TRUNCATE)` once it commits:
-/// for a step that erases secrets (a prekey consumption, the archive
-/// sweep), so their old pages leave the `-wal` file as well as the
-/// database (`secure_delete` zeroes the freed pages there; DR §8.1).
-pub(crate) async fn in_transaction_erasing<T, F>(db: &Db, step: F) -> Result<T, RatchetError>
-where
-    T: Send + 'static,
-    F: FnOnce(&Connection) -> Result<T, RatchetError> + Send + 'static,
-{
-    db.call(move |conn| {
-        let tx = conn.transaction()?;
-        match step(&tx) {
-            Ok(value) => {
-                tx.commit()?;
-                truncate_wal(conn);
-                Ok(Ok(value))
-            }
-            Err(e) => Ok(Err(e)),
-        }
-    })
-    .await?
-}
-
-/// Checkpoint the WAL into the database and truncate it to zero bytes. The
-/// step it follows has committed, so a failure (a reader holding the WAL)
-/// is logged, not returned: the next truncating checkpoint, or the
-/// connection's close, removes the frames.
-pub(crate) fn truncate_wal(conn: &Connection) {
-    match conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| {
-        row.get::<_, i64>(0)
-    }) {
-        Ok(0) => {}
-        Ok(_) => tracing::warn!("WAL checkpoint blocked by a reader; erased frames remain"),
-        Err(e) => tracing::warn!(error = %e, "WAL checkpoint failed; erased frames remain"),
-    }
 }
 
 /// The stored record for `peer`, or an empty one.
@@ -534,6 +498,10 @@ fn store(
     record: &SessionRecord,
     now_ms: i64,
 ) -> rusqlite::Result<()> {
+    // Every write replaces the record before it: a step's spent chain and
+    // skipped keys, an archived state the cap evicts, a session replaced
+    // by a new one are all erased (I14, RV5 L2).
+    crate::erase::erased();
     conn.execute(
         "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
          VALUES (?1, ?2, ?3, ?4, ?5) \
