@@ -29,7 +29,7 @@ which primitives address which threats.
 | Safety numbers | **SHA-512**, 5200 iterations per side (libsignal's format) | `sha2` (in `rekindle-crypto::fingerprint`) |
 | Pre-session 1:1 frames | **HPKE Base** (RFC 9180) + Ed25519 signature | `rekindle-secrets::hpke` |
 | Hash / KDF / dedup | **SHA-256** | `sha2` |
-| Hash (rotator selection, content addressing, replay ids, base-key hash, file-cache names, vault key split) | **BLAKE3** | `blake3` |
+| Hash (rotator selection, content addressing, replay ids, base-key hash, file-cache names, vault key split, governance fork evidence, restore evidence and device-set hashes) | **BLAKE3** | `blake3` |
 | Key derivation | **HKDF-SHA256** | `hkdf` |
 | Passphrase KDF | **Argon2id** | `argon2` (via `rekindle-vault`) |
 | IPC bus handshake | **Noise IK** (`Noise_IK_25519_ChaChaPoly_BLAKE2s`) | `snow` |
@@ -43,6 +43,12 @@ Every sealed pre-session 1:1 frame signature (`DM_PRESESSION_SIG`) and `Identity
 Every prekey signature (`PREKEY_SPK_SIG`, `PREKEY_PQ_LR_SIG`, `PREKEY_PQ_OT_SIG`,
 `PREKEY_OPK_SIG`; the head's two keys sign its `issued_at` too) and every friend
 invite blob (`FRIEND_INVITE_SIG ‖` the JSON of every field but the signature).
+Per-community device keys (ADR 0022, Proposed; plan E3.2 S7d-keys) add the signature
+contexts `rekindle-gov-device-key-v1` (an endorsement, by the community pseudonym),
+`rekindle-gov-device-retired-v1` (a retirement, by the pseudonym),
+`rekindle-gov-device-readmit-v1` (a re-admission body, inside an op signed under
+`rekindle-gov-op-v1`) and `rekindle-gov-successor-v1` (a pseudonym-signed
+`CommunitySuccessor`); ADR 0022 rule 10 gives their layouts.
 
 **Why.**
 
@@ -322,6 +328,13 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   are never ids and are unlinkable across identities (plan E3.0a).
 - **Vault key split**: `derive_key` of the Argon2id master under
   `rekindle-vault-{sqlcipher,entry,app-db}-v1` (§9).
+- **Governance device keys** (ADR 0022, Proposed; plan E3.2 S7d-keys):
+  fork evidence under `rekindle-gov-fork-evidence-v1` over `community ‖
+  device key ‖ seq ‖` the two op hashes in byte order; the "retired by
+  restore" marker under `rekindle-gov-restore-evidence-v1` over `community
+  ‖ deviceKey ‖ incarnation ‖ lastSeq ‖` the published `GovHead` op hash;
+  the extended-set hash under `rekindle-gov-device-set-v1` over the sorted
+  ids `(kind, deviceKey, incarnation)` of the member's endorsement set.
 - **Content addressing** in places where we want speed and a wider
   output range (32-byte BLAKE3 vs 32-byte SHA-256, but BLAKE3 is
   variable-length-output friendly without the truncation patterns

@@ -224,6 +224,20 @@ device persists each registration in the `push_relay_registrations`
 SQLite table so it can re-establish or revoke registrations on next
 launch.
 
+**Target (plan E5.2 and E5.6):** the shape above is today's code, and it
+tells the relay operator which records the device watches, which reveals
+its communities, and it leaves through the identity-bearing DM frame path
+(`dm::send_to_peer`, `src-tauri/src/services/push_relay.rs:62`), which
+names the device's identity to the relay; E5.6 replaces that path. The
+target registers under a `device_relay_key` (a key derived for that relay
+alone, never the identity key; `relay_pseudonym` above stays the relay's
+own address) and names opaque
+watch tokens instead of raw record keys, as SimpleX's notification server
+does. A token stays inactive until the device echoes the code carried by
+the relay's test push (SimpleX `TNEW`/`TVFY`). A registration that is not
+re-signed within 14 days expires (Session). The wake carries no
+timestamp: it becomes `{ "t": "wake" }`, like Signal's empty FCM data push.
+
 ### Wake-notify debounce
 
 When the device is in `Tier 1` foreground mode, it doesn't need wake

@@ -3,7 +3,11 @@
 - **Status:** Accepted (owner ruling O5, 2026-10-15). **Amended 2026-10-22** (plan §0, Q7 decided
   from research): the ballot covers every MEK generation bump of either scope, not only the rotation
   after a removal. The original title was "MEK rotation after a removal is agreed by write-once
-  ballots and majority confirmation".
+  ballots and majority confirmation". **Amended 2026-10-24** (research batch 4 (b), register
+  `audit-2026-10-23/00-register.md` "Decided 2026-10-24"): sends are held during a rotation after a removal, a
+  ban or a visibility change (not after a voluntary leave), the round and quorum rules are stated, an abandoned
+  electorate exits through `CommunitySuccessor`, members with only retired device keys (ADR 0022) are outside
+  the electorate, and the RFC citation is corrected (RFC 9750 §8.1.4, not RFC 9420 §14).
 - **Date:** 2026-10-15
 - **Amends:** [0012](0012-community-keys-stay-on-mek.md), its "rotation by the deterministic rotator" clause.
   The rest of 0012 stands: per-channel MEKs, signed wraps checked against rank, rotators limited to
@@ -67,13 +71,55 @@ owner's rule (O9, 2026-10-15) that is a lead, not a precedent; the reasons above
 
 - Deleted at E3.5: the B5 recovery mint ("last-resort mint", `community/mek_rotation.rs`) and the post-hoc
   same-generation tiebreak, because divergence can no longer be produced.
-- *(Added 2026-10-22, Q7.)* That deletion is sound only if no generation bump bypasses the ballot. RFC 9420 §14
-  rests on the same rule ("only one Commit is processed for each epoch"), and Keybase orders PTK rotations as
+- *(Added 2026-10-22, Q7.)* That deletion is sound only if no generation bump bypasses the ballot. MLS rests on
+  the same rule: the delivery service "is trusted to select the single Commit message that is applied in each
+  epoch" (RFC 9750 §8.1.4, L1402-1405; RFC 9420 §14 only asks for rules to choose which Commit "will be
+  canonical", L5208-5212; *citation amended 2026-10-24*, it read "RFC 9420 §14"), and Keybase orders PTK
+  rotations as
   `team.rotate` links in one chain. So E3.5 also deletes the direct-mint paths: `rotate_mek_on_request`
   (`rotate.rs:138`) and the desktop `rotate_mek_local` (`community_mek_local_rotate.rs:23`).
 - A kick or ban takes effect for new messages only once a majority confirms. While it waits, the kicked
   member may still read new text under the old key. U1's review for `ban_member` says so ("a key rotation
   starts; it completes when a majority confirms").
+- *(Amended 2026-10-24, research batch 4 (b).)* That window no longer carries new text after an adversarial
+  removal. After a converged `MemberRemoved` or `BanEntry`, or a history-visibility change, new channel sends in
+  the affected scope are held in the outbox as "pending: key rotation" until the majority confirms, then sent
+  under the new generation. There is no interim key and no 1:1 fan-out fallback. A converged `MemberLeft` (a
+  voluntary leave) starts the same ballot but **does not hold sends**: they continue under the old generation
+  until confirmation. Scheduled, manual and electorate-refresh rotations also keep sending under the old key
+  until confirmation. *(Amended 2026-10-24, ADR 0022 docs review.)* An **identity reset** (ADR 0022 rule 0, the
+  remedy for a stolen device holding the master secret) holds sends like a removal: the old pseudonym leaves
+  each community through the `CommunitySuccessor` exit below, and the departure is treated as adversarial,
+  since a thief may still hold that pseudonym. A device revocation alone is not a trigger: it cannot lock out a
+  device that holds the master secret, so a rotation would cost a ballot in every community for nothing.
+  - *Precedent.* Signal and Megolm rotate on a leave and on a removal without holding anyone's sends: each
+    sender rotates its own key locally before its next send (Signal `SenderKeyUtil.java` L15-23,
+    `GroupTable.kt` L910-919; the Matrix spec's Megolm section, e2e L1989-2015; matrix-rust-sdk
+    `group_sessions/mod.rs` L419-465). MLS requires a Commit before application data once a Remove is proposed
+    (RFC 9420 §12.4). Not holding on `MemberLeft` matches that precedent. Holding on removals, bans and
+    visibility changes is Rekindle's own stricter rule, needed because the MEK is one shared key whose next
+    generation exists only once a majority confirms; there is no per-sender key a sender could rotate alone.
+  - *Why a leave does not hold.* A member who holds or obtains a multi-use invite could otherwise leave and
+    rejoin repeatedly and keep every send in scope held. The cost is stated: a voluntary leaver can read text
+    sent under the old generation until the majority confirms, which it could have read by staying.
+  - The kicked member can still read what was sent before the removal converged on the sender. U1's review for
+    a kick or ban says "new messages wait until a majority confirms".
+- *(Amended 2026-10-24.)* Round and quorum rules: a vote is write-once per (generation, round); a round that
+  times out starts the next round with the same electorate and the same strict majority, so a timeout never
+  lowers the quorum; a member never applies a key before it holds a strict majority's confirmations; and the
+  community shows a standing warning when 2 or fewer members are eligible to rotate, since then one absent
+  rotator stalls every rotation.
+- *(Amended 2026-10-24.)* **Abandoned electorate.** Because the quorum never lowers, a community whose electorate
+  a majority has abandoned holds every removal's sends for good. The exit is a creator-signed
+  `CommunitySuccessor` (ADR 0011): the standing warning also shows when a round has not reached a majority
+  across its timeouts and points creators to it, and members are offered the move. There is no member-signed
+  exit and no quorum reduction.
+- *(Amended 2026-10-24, ADR 0022.)* **Device keys and the electorate.** Votes are ops signed by device keys and
+  are counted per member. A member is in a ballot's electorate only if, at the previous epoch's cut, it holds at
+  least one effective device key (endorsed, within the cap, not retired). A member whose device keys are all
+  retired is outside the electorate until a `DeviceReadmit` converges, so a fork never leaves a vote nobody can
+  cast. The electorate is still fixed per round, so this changes who is counted, never the strict majority of
+  those counted.
 - A community with too few eligible rotators online cannot rotate until they return. That is a visible
   pending state, not a fallback.
 - New wire and DHT objects: the `mek_ballot` record and `MekBallotRef` (plan §6 ledgers, E3.5).
@@ -84,5 +130,12 @@ owner's rule (O9, 2026-10-15) that is a lead, not a precedent; the reasons above
 - [0012](0012-community-keys-stay-on-mek.md), [0002](0002-signal-protocol-for-1to1.md)
 - L. Lamport, [Paxos Made Simple](https://lamport.azurewebsites.net/pubs/paxos-simple.pdf) (2001), majority quorums
 - [DAVE protocol](https://daveprotocol.com/)
-- [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420) §14, one Commit per epoch
+- [RFC 9750](https://www.rfc-editor.org/rfc/rfc9750) §8.1.4 (L1402-1405): the DS "is trusted to select the single
+  Commit message that is applied in each epoch" *(amended 2026-10-24; this line read "RFC 9420 §14, one Commit
+  per epoch")*
+- [RFC 9420](https://www.rfc-editor.org/rfc/rfc9420) §12.4, Commit before application data after a Remove; §14
+  (L5208-5212), rules to choose which Commit "will be canonical"
+- Signal `SenderKeyUtil.java` L15-23 and `GroupTable.kt` L910-919; the Matrix spec, Megolm (e2e L1989-2015);
+  matrix-rust-sdk `group_sessions/mod.rs` L419-465: per-sender rotation on leave and removal, no held sends
+- [0022](0022-device-op-keys.md), device keys and the electorate
 - Plan §0 decision log, 2026-10-22 row "Q7 decided"

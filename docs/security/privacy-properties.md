@@ -225,21 +225,33 @@ nothing written after; a value that does not open is dropped, never shown.
 
 ### 2.8 Opt-in, content-free push relay
 
-Mobile push relay sends only `{type: "wake", ts}` — no content, no
+Mobile push relay sends only `{ "t": "wake", "ts" }` — no content, no
 record-key reference, no community ID. The platform vendor (Apple,
 Google) sees only that the device might have had something happen at
-time T. The relay daemon sees which DHT keys the device cares about
-(metadata leak), which is the cost of timely notification on a fully
-suspended device. The feature is **opt-in** and **self-hostable** so
-users can decide their own threshold.
+time T. In today's code the relay daemon sees which DHT keys the device
+cares about, which leaks community membership to its operator, and the
+registration leaves through the identity-bearing DM frame path
+(`src-tauri/src/services/push_relay.rs:62`), so the relay also learns the
+identity. The target (plan E5.2, E5.6) closes that: the device registers
+under a `device_relay_key`, a key derived for that relay alone and never its
+identity key (distinct from `relay_pseudonym`, which stays the relay's own
+address), and names opaque watch tokens, never
+raw record keys (SimpleX NTF). A registration expires unless it is
+re-signed within 14 days, and the wake carries no timestamp
+(`{ "t": "wake" }`). The feature
+is **opt-in** and **self-hostable** so users can decide their own
+threshold.
 
 ### 2.9 No telemetry
 
-There is no analytics, crash reporting, A/B testing, engagement
+There is no usage analytics, crash reporting, A/B testing, engagement
 tracking, or "diagnostic ping" of any kind. The app does not call out
 to scopecreep.zip or anywhere else for any reason during normal
 operation. The only outbound traffic is Veilid network bootstrap,
-peer connections, and explicit user actions.
+peer connections, and explicit user actions. *Community insights*
+(the admin view once called "analytics", gated by `VIEW_INSIGHTS`)
+are aggregates computed on the device from data it already holds,
+issue no network request of their own, and never leave the device.
 
 ### 2.10 Memory hygiene
 
