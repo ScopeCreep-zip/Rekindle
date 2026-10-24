@@ -12,7 +12,13 @@
 //!   the `serialize_packed` ones) anywhere but that file;
 //! - in that file, a function calling a reader without calling
 //!   `traversal_limit_in_words`;
-//! - `traversal_limit_in_words(None)` anywhere.
+//! - `traversal_limit_in_words(None)` anywhere;
+//! - outside that file, any `ReaderOptions` (every reader needs one, so
+//!   this also catches a reader spelled through `message::Reader::new` and
+//!   a `BufferSegments`/`SliceSegments`), `message::Reader::new`, an import
+//!   of `capnp::message::Reader`, and a renamed or glob import of capnp's
+//!   `serialize`, `serialize_packed` or `message` module or of `capnp`
+//!   itself, any of which would let a reader hide behind another name.
 //!
 //! Test code (`#[cfg(test)]`, `#[test]`, `tests/`, `tests.rs`,
 //! `*_tests.rs`) builds its messages locally and is not scanned.
@@ -30,6 +36,19 @@ const READER_FILE: &str = "crates/rekindle-codec/src/capnp_codec/mod.rs";
 
 fn is_reader_name(name: &str) -> bool {
     name.starts_with("read_message") || name.starts_with("try_read_message")
+}
+
+/// capnp's modules a reader can be reached through.
+fn is_capnp_reader_module(name: &str) -> bool {
+    matches!(name, "serialize" | "serialize_packed" | "message")
+}
+
+/// `…::message::Reader::new`: a reader built from raw segments.
+fn is_segments_reader(path: &syn::Path) -> bool {
+    let names: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+    names
+        .windows(3)
+        .any(|w| w[0] == "message" && w[1] == "Reader" && w[2] == "new")
 }
 
 fn is_reader_path(path: &syn::Path) -> bool {
@@ -67,19 +86,62 @@ impl Finder<'_> {
         self.hit("capnp reader outside unpack_bounded (use the codec's bounded decoders)");
     }
 
+    /// A hit outside the reader file only.
+    fn outside_reader(&mut self, what: &str) {
+        if !self.reader_file {
+            self.hit(what);
+        }
+    }
+
     /// A `use` naming a reader through a `serialize` or `serialize_packed`
-    /// module.
-    fn use_tree(&mut self, tree: &syn::UseTree, through_serialize: bool) {
+    /// module, or hiding capnp's reader modules behind another name.
+    /// `from` is the path so far.
+    fn use_tree(&mut self, tree: &syn::UseTree, through_serialize: bool, from: &[String]) {
+        let in_capnp = from.first().is_some_and(|f| f == "capnp");
+        let module = from.last().map(String::as_str);
+        let in_reader_module = in_capnp && module.is_some_and(is_capnp_reader_module);
         match tree {
             syn::UseTree::Path(p) => {
                 let here = p.ident == "serialize" || p.ident == "serialize_packed";
-                self.use_tree(&p.tree, through_serialize || here);
+                let mut next = from.to_vec();
+                next.push(p.ident.to_string());
+                self.use_tree(&p.tree, through_serialize || here, &next);
+                return;
             }
             syn::UseTree::Group(g) => {
                 for t in &g.items {
-                    self.use_tree(t, through_serialize);
+                    self.use_tree(t, through_serialize, from);
                 }
+                return;
             }
+            syn::UseTree::Glob(_) if in_reader_module || (in_capnp && from.len() == 1) => {
+                self.outside_reader("glob import of a capnp reader module");
+            }
+            syn::UseTree::Rename(r)
+                if (from.is_empty() && r.ident == "capnp")
+                    || (in_capnp && r.ident == "self" && from.len() == 1)
+                    || (in_capnp
+                        && from.len() == 1
+                        && is_capnp_reader_module(&r.ident.to_string()))
+                    || (in_reader_module && r.ident == "self") =>
+            {
+                self.outside_reader("renamed import of capnp or a capnp reader module");
+            }
+            _ => {}
+        }
+        let name = match tree {
+            syn::UseTree::Name(n) => Some(&n.ident),
+            syn::UseTree::Rename(r) => Some(&r.ident),
+            _ => None,
+        };
+        if let Some(name) = name {
+            if name == "ReaderOptions" {
+                self.outside_reader("capnp ReaderOptions outside unpack_bounded");
+            } else if in_capnp && module == Some("message") && name == "Reader" {
+                self.outside_reader("import of capnp::message::Reader outside unpack_bounded");
+            }
+        }
+        match tree {
             syn::UseTree::Name(n) if through_serialize && is_reader_name(&n.ident.to_string()) => {
                 self.reader_seen();
             }
@@ -132,12 +194,24 @@ impl<'ast> Visit<'ast> for Finder<'_> {
     }
 
     fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
-        self.use_tree(&item.tree, false);
+        self.use_tree(&item.tree, false, &[]);
+    }
+
+    fn visit_item_extern_crate(&mut self, item: &'ast syn::ItemExternCrate) {
+        if item.ident == "capnp" && item.rename.is_some() {
+            self.outside_reader("renamed import of capnp or a capnp reader module");
+        }
     }
 
     fn visit_path(&mut self, path: &'ast syn::Path) {
         if is_reader_path(path) {
             self.reader_seen();
+        }
+        if path.segments.iter().any(|s| s.ident == "ReaderOptions") {
+            self.outside_reader("capnp ReaderOptions outside unpack_bounded");
+        }
+        if is_segments_reader(path) {
+            self.outside_reader("capnp message::Reader::new outside unpack_bounded");
         }
         syn::visit::visit_path(self, path);
     }
@@ -215,13 +289,43 @@ mod tests {
     fn a_reader_outside_the_codec_is_refused() {
         let src = "fn f(b: &[u8]) { capnp::serialize_packed::read_message(b, \
                    capnp::message::ReaderOptions::new()); }";
-        assert_eq!(scan("crates/x/src/lib.rs", src).len(), 1);
+        assert_eq!(scan("crates/x/src/lib.rs", src).len(), 2, "the reader and its options");
         let used = "use capnp::serialize::read_message_from_flat_slice;";
         assert_eq!(scan("crates/x/src/lib.rs", used).len(), 1);
         let grouped = "use capnp::{serialize_packed::{read_message as r}};";
         assert_eq!(scan("crates/x/src/lib.rs", grouped).len(), 1);
         let codec_fn = "use super::read::{read_message_edited};";
         assert!(scan("crates/x/src/lib.rs", codec_fn).is_empty());
+    }
+
+    /// The three spellings that once passed: an aliased module, a glob, and
+    /// a reader built from segments.
+    #[test]
+    fn a_reader_behind_another_name_is_refused() {
+        let lib = "crates/x/src/lib.rs";
+        let alias = "use capnp::serialize_packed as sp; \
+                     fn f(b: &[u8]) { sp::read_message(b, Default::default()); }";
+        assert!(!scan(lib, alias).is_empty());
+        let glob = "use capnp::serialize::*; \
+                    fn f(b: &[u8]) { read_message(b, Default::default()); }";
+        assert!(!scan(lib, glob).is_empty());
+        let segments = "fn f(b: &[u8]) { capnp::message::Reader::new(\
+                        capnp::serialize::BufferSegments::new(b, Default::default()).unwrap(), \
+                        Default::default()); }";
+        assert!(!scan(lib, segments).is_empty());
+        let options = "use capnp::message::ReaderOptions as O; fn f() { O::new(); }";
+        assert!(!scan(lib, options).is_empty());
+        let reader = "use capnp::message::{Reader as R}; fn f() {}";
+        assert!(!scan(lib, reader).is_empty());
+        let crate_alias = "use capnp as c; fn f() {}";
+        assert!(!scan(lib, crate_alias).is_empty());
+        let extern_alias = "extern crate capnp as c;";
+        assert!(!scan(lib, extern_alias).is_empty());
+        let module_alias = "use capnp::{message as m};";
+        assert!(!scan(lib, module_alias).is_empty());
+        let plain = "use capnp::message; use crate::chat::message::*; \
+                     fn f(b: &message::Builder<message::HeapAllocator>) {}";
+        assert!(scan(lib, plain).is_empty());
     }
 
     #[test]
