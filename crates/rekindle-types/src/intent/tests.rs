@@ -202,3 +202,21 @@ fn the_review_serializes_in_camel_case() {
     let back: IntentReview = serde_json::from_value(json).unwrap();
     assert_eq!(back, review);
 }
+
+/// A review names a person by their label beside the fingerprint, the
+/// fingerprint alone when there is no name (a member with no card).
+#[test]
+fn a_person_is_labelled_beside_the_fingerprint() {
+    let person = |nick: Option<&str>, card: Option<&str>| Subject::Person {
+        local_nickname: nick.map(Into::into),
+        display_name: card.map(Into::into),
+        fingerprint: "ab12 cd34".into(),
+    };
+    assert_eq!(person(Some("Al"), Some("Alice")).label(), "Al (ab12 cd34)");
+    assert_eq!(person(None, Some("Alice")).label(), "Alice (ab12 cd34)");
+    assert_eq!(person(None, None).label(), "ab12 cd34");
+    let named = Subject::Named {
+        name: "thing".into(),
+    };
+    assert_eq!(named.label(), "thing");
+}

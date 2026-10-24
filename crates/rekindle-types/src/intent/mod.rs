@@ -224,6 +224,25 @@ pub enum Subject {
 }
 
 impl Subject {
+    /// The subject as a review names it: for a person, their label (our
+    /// nickname, else the name they or their card give) beside the grouped
+    /// fingerprint; otherwise its name. Every frontend shows this, and
+    /// asks for [`Self::typed_name`] (finding 79 review, M3).
+    #[must_use]
+    pub fn label(&self) -> String {
+        match self {
+            Self::Person {
+                local_nickname,
+                display_name,
+                fingerprint,
+            } => match local_nickname.as_ref().or(display_name.as_ref()) {
+                Some(name) => format!("{name} ({fingerprint})"),
+                None => fingerprint.clone(),
+            },
+            other => other.typed_name().to_owned(),
+        }
+    }
+
     /// What a TypeSubject proof must match: the object's own name, never a
     /// fixed word (r9 §7.5). A person's is the full fingerprint of the key
     /// acted on, matched exactly; never a nickname or display name, labels

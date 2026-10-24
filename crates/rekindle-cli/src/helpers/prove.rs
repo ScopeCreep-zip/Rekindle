@@ -138,7 +138,7 @@ fn prove(review: &IntentReview) -> anyhow::Result<IntentProof> {
 }
 
 fn verb(review: &IntentReview) -> String {
-    format!("{:?} {}", review.kind, review.subject.typed_name())
+    format!("{:?} {}", review.kind, review.subject.label())
 }
 
 /// The review on stderr: as text, or as the JSON object with

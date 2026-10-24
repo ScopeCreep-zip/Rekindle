@@ -34,7 +34,8 @@ export function subjectLabel(subject: Subject): string {
 
 /** What a typed proof must match: the object's own name. */
 export function typedName(subject: Subject): string {
-  if ("person" in subject) return subject.person.localNickname ?? subject.person.fingerprint;
+  // The full fingerprint, never a nickname (`Subject::typed_name`, finding 79).
+  if ("person" in subject) return subject.person.fingerprint;
   if ("community" in subject) return subject.community.name;
   if ("channel" in subject) return subject.channel.name;
   if ("role" in subject) return subject.role.name;

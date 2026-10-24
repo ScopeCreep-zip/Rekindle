@@ -144,7 +144,7 @@ pub fn render(frame: &mut Frame, area: Rect, state: &IntentOverlay, theme: &Them
     let mut lines = vec![Line::from(format!(
         "  {:?} {}",
         review.kind,
-        review.subject.typed_name()
+        review.subject.label()
     ))];
     lines.extend(
         review

@@ -104,9 +104,7 @@ fn member_selection(
             target_pseudonym: member_pseudonym,
         } => {
             let (id, _) = community(ctx, target)?;
-            s.subject = Subject::Named {
-                name: member_pseudonym.clone(),
-            };
+            s.subject = member_person(ctx, &id, member_pseudonym)?;
             s.reversibility = match request {
                 MemberRequest::RoleAssign { .. } => {
                     Reversibility::ReversibleByInverse(IntentKind::UnassignRole)
@@ -149,6 +147,24 @@ fn member_selection(
         _ => {}
     }
     Ok(())
+}
+
+/// The member a moderation or role request is about, as a person: the
+/// grouped fingerprint of their pseudonym, the name on their verified card
+/// beside it, and the full fingerprint as the confirm token, as for a
+/// friend (finding 79 review, M3). There is no local nickname for a member.
+fn member_person(
+    ctx: &DaemonContext,
+    community_id: &str,
+    member_pseudonym: &str,
+) -> Result<Subject, IpcResponse> {
+    let key = pseudonym(member_pseudonym)
+        .ok_or_else(|| IpcResponse::error(400, "member pseudonym: not a 32-byte hex key"))?;
+    Ok(Subject::Person {
+        local_nickname: None,
+        display_name: ctx.communities.member_card_name(community_id, &key),
+        fingerprint: rekindle_crypto::identity::key_fingerprint(&key.0),
+    })
 }
 
 /// A community by governance key or name: `(id, name)`.
