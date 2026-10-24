@@ -231,7 +231,7 @@ mod tests {
                 invite_id: "0a".repeat(16),
                 code_hash: "hash".into(),
                 created_by: "pk".into(),
-                max_uses: Some(5),
+                max_uses: 5,
                 uses: 0,
                 expires_at: None,
                 created_at: 1,

@@ -494,7 +494,7 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             invite_id: "0a".repeat(16),
             code_hash: "ab".repeat(32),
             created_by: pk('a'),
-            max_uses: Some(5),
+            max_uses: 5,
             uses: 2,
             expires_at: None,
             created_at: Some(1_700_000_000_000),

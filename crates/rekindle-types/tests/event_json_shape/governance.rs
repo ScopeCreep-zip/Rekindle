@@ -137,7 +137,7 @@ fn invites_and_subkeys() -> Vec<Sample> {
                 invite_id: "0a".repeat(16),
                 code_hash: invite_hash(),
                 created_by: pk('a'),
-                max_uses: Some(10),
+                max_uses: 10,
                 uses: 0,
                 expires_at: Some(1_760_086_400_000),
                 created_at: 1_760_000_000_000,
