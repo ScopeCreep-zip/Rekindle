@@ -55,3 +55,23 @@ async fn a_peer_heard_again_brings_its_landed_rows_re_ask_forward_only() {
     assert_eq!(state_of(&o, "q"), Some(SendState::Queued));
     assert_eq!(next_at(&o, "q"), 10_000_000);
 }
+
+/// Live A/B finding 73c: a row's first re-ask runs from when its hint left,
+/// not from its append's landing, however late that comes.
+#[tokio::test]
+async fn the_first_re_ask_runs_from_the_hint_not_the_landing() {
+    let first = i64::try_from(DM_FIRST_REASK.as_millis()).unwrap();
+    let o = outbox();
+    o.enqueue(entry(StreamKind::Dm, "bob", "a"), ())
+        .await
+        .unwrap();
+    let row = o.deps().row("a").await.unwrap().unwrap();
+    // The hint left at 1 000; the append landed 20 s later.
+    let sent_at = 1_000;
+    advance(&o, 20_000);
+    o.settle_attempt(&row, AttemptOutcome::Sent, sent_at)
+        .await
+        .unwrap();
+    assert_eq!(state_of(&o, "a"), Some(SendState::Sent));
+    assert_eq!(next_at(&o, "a"), sent_at + first);
+}

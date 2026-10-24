@@ -96,13 +96,14 @@ impl<D: OutboxDeps> Outbox<D> {
     }
 
     /// When `row`, now `state`, is due again: one that just reached `sent`
-    /// waits its kind's first re-ask for the peer's ack; any other its
-    /// backoff.
-    fn next_after(&self, row: &OutboxRow, state: SendState, attempts: u32) -> i64 {
+    /// waits its kind's first re-ask for the peer's ack, measured from
+    /// `sent_at`, when its send (the hint) left, not from a later landing
+    /// (live A/B finding 73c); any other its backoff.
+    fn next_after(&self, row: &OutboxRow, state: SendState, attempts: u32, sent_at: i64) -> i64 {
         let now = self.now();
         match row.kind.first_reask() {
             Some(wait) if row.state != SendState::Sent && state == SendState::Sent => {
-                now.saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX))
+                sent_at.saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX))
             }
             _ => self.next_due(row.kind, attempts, now, row.deadline),
         }
@@ -214,6 +215,7 @@ impl<D: OutboxDeps> Outbox<D> {
             stream.sort_by_key(|row| row.stream_seq);
             // A prefix: the rows past the first that stayed behind were not
             // attempted and keep their schedule.
+            let sent_at = self.now();
             let outcomes = self.deps.attempt_stream(&stream).await;
             let mut jobs = Vec::new();
             for (row, outcome) in stream.iter().zip(outcomes) {
@@ -222,20 +224,23 @@ impl<D: OutboxDeps> Outbox<D> {
                     jobs.push(crate::appender::Job {
                         row: row.clone(),
                         frame,
+                        sent_at,
                     });
                     continue;
                 }
-                self.settle_attempt(row, outcome).await?;
+                self.settle_attempt(row, outcome, sent_at).await?;
             }
             self.appends.hand(jobs);
         }
         Ok(())
     }
 
+    /// Settle `row`'s attempt, whose send left at `sent_at`.
     pub(crate) async fn settle_attempt(
         &self,
         row: &OutboxRow,
         outcome: AttemptOutcome,
+        sent_at: i64,
     ) -> Result<(), OutboxError> {
         let attempts = row.attempts.saturating_add(1);
         match outcome {
@@ -262,7 +267,7 @@ impl<D: OutboxDeps> Outbox<D> {
                 let update = RowUpdate {
                     state,
                     attempts,
-                    next_at: self.next_after(row, state, attempts),
+                    next_at: self.next_after(row, state, attempts, sent_at),
                     deadline: row.deadline,
                     wedge_reason: None,
                 };

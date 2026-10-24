@@ -24,6 +24,9 @@ pub(crate) struct Job {
     /// The row as the pass read it (its `attempts` before the hand-off).
     pub(crate) row: OutboxRow,
     pub(crate) frame: Vec<u8>,
+    /// When the pass sent the row's hint: its first re-ask runs from it,
+    /// not from the landing (live A/B finding 73c).
+    pub(crate) sent_at: i64,
 }
 
 #[derive(Default)]
@@ -145,7 +148,7 @@ impl<D: OutboxDeps> Outbox<D> {
         // The rows past the one that stopped were not appended: they stay
         // queued, due at the `next_at` their hand-off set.
         for (job, outcome) in jobs.iter().zip(outcomes) {
-            if let Err(e) = self.settle_attempt(&job.row, outcome).await {
+            if let Err(e) = self.settle_attempt(&job.row, outcome, job.sent_at).await {
                 tracing::warn!(error = %e, stream = %stream, "outbox landing not stored");
             }
         }
