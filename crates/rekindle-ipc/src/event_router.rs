@@ -345,6 +345,7 @@ mod tests {
             1,
             &SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
                 title: "t".into(),
+                subject: None,
                 body: "b".into(),
             })
         ));

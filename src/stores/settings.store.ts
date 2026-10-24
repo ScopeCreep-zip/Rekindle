@@ -65,7 +65,7 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
   ringtoneEnabled: true,
   ringtoneVolume: 0.4,
   inCallDndAutoEnable: true,
-  notificationContent: "nameAndMessage",
+  notificationContent: "nameOnly",
 });
 
 export { settingsState, setSettingsState };

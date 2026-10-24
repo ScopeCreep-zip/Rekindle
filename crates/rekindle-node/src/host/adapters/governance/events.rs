@@ -93,6 +93,7 @@ impl HostGovernance {
             } => Some(SubscriptionEvent::Notification(
                 NotificationEvent::SystemAlert {
                     title: "Joining community…".to_string(),
+                    subject: None,
                     body: if *have_manage_community {
                         "Community is full — expanding capacity. This will take a few seconds."
                     } else {

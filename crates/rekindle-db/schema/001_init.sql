@@ -470,7 +470,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
     in_call_dnd_auto_enable INTEGER NOT NULL DEFAULT 1 CHECK(in_call_dnd_auto_enable IN (0, 1)),
     -- What an OS notification shows (prod research batch 7): the sender's
     -- name and the message, the name only, or nothing.
-    notification_content TEXT NOT NULL DEFAULT 'name_and_message'
+    notification_content TEXT NOT NULL DEFAULT 'name_only'
         CHECK(notification_content IN ('name_and_message', 'name_only', 'nothing')),
     -- DM read receipts (plan E2.5, r10): opt-in, reciprocal, off by default.
     -- Set only by the trust-changing `SetReadReceiptsEnabled`, never by the

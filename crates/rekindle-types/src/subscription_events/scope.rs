@@ -288,6 +288,7 @@ mod tests {
         assert_eq!(dm_voice.scope(), EventScope::Peer("pk".into()));
         let alert = SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
             title: "t".into(),
+            subject: None,
             body: "b".into(),
         });
         assert_eq!(alert.scope(), EventScope::Device);

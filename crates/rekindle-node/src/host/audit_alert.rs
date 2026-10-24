@@ -52,6 +52,7 @@ fn raise(ctx: &DaemonContext, cursor: u64, body: String) {
     ctx.publish_event(SubscriptionEvent::Notification(
         NotificationEvent::SystemAlert {
             title: "Audit chain broken".into(),
+            subject: None,
             body,
         },
     ));

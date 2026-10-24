@@ -484,7 +484,11 @@ impl VoiceSessionDeps for VoiceAdapter {
     fn emit_system_alert(&self, title: String, body: String) {
         crate::event_dispatch::emit_notification(
             &self.app_handle,
-            rekindle_types::subscription_events::NotificationEvent::SystemAlert { title, body },
+            rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                title,
+                body,
+                subject: None,
+            },
         );
     }
 

@@ -162,7 +162,7 @@ const NotificationsTab: Component = () => {
           }
         >
           <option value="nameAndMessage">Name and message</option>
-          <option value="nameOnly">Name only</option>
+          <option value="nameOnly">Name only (sender or channel, no text)</option>
           <option value="nothing">No name or message</option>
         </select>
       </FormField>

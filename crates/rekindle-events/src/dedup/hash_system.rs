@@ -178,7 +178,7 @@ pub(super) fn hash_notification(h: &mut blake3::Hasher, n: &NotificationEvent) {
             h.update(b"|");
             h.update(body.as_bytes());
         }
-        NotificationEvent::SystemAlert { title, body } => {
+        NotificationEvent::SystemAlert { title, body, .. } => {
             h.update(b"alert|");
             h.update(title.as_bytes());
             h.update(b"|");

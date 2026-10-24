@@ -43,12 +43,12 @@ pub fn pending_safety_number(host: &dyn FriendHost, peer: &str) -> Option<String
     super::verification::safety_number(host, peer)
 }
 
-fn alert(host: &dyn FriendHost, title: &str, body: String) {
+/// An alert about the friend `display`: `named` is the text naming them,
+/// `unnamed` the same text naming no one (shown when notifications show
+/// nothing of who).
+fn alert(host: &dyn FriendHost, title: &str, display: String, named: String, unnamed: &str) {
     host.publish(SubscriptionEvent::Notification(
-        NotificationEvent::SystemAlert {
-            title: title.to_string(),
-            body,
-        },
+        NotificationEvent::contact_alert(title, display, named, unnamed),
     ));
 }
 
@@ -174,13 +174,17 @@ pub(crate) async fn on_request(host: &dyn FriendHost, sender: &str, reason: &str
 /// request, consumed in the transaction that accepted it).
 pub(crate) fn on_accept(host: &dyn FriendHost, sender: &str) {
     let display = state::label(host, sender);
+    let named = format!(
+        "A new secure session with {display} is active. Verify their safety number \
+         out-of-band before resuming sensitive conversations."
+    );
     alert(
         host,
         "Secure session re-established",
-        format!(
-            "A new secure session with {display} is active. Verify their safety number \
-             out-of-band before resuming sensitive conversations."
-        ),
+        display,
+        named,
+        "A new secure session with a contact is active. Verify their safety number \
+         out-of-band before resuming sensitive conversations.",
     );
 }
 
@@ -194,10 +198,13 @@ pub(crate) fn on_decline(host: &dyn FriendHost, sender: &str) {
         });
     }
     let display = state::label(host, sender);
+    let named = format!("{display} declined your secure session reset request.");
     alert(
         host,
         "Session Reset Declined",
-        format!("{display} declined your secure session reset request."),
+        display,
+        named,
+        "A contact declined your secure session reset request.",
     );
 }
 

@@ -298,6 +298,7 @@ pub fn handle_attachment(
     };
     let notification = rekindle_types::subscription_events::NotificationEvent::SystemAlert {
         title: "Network".to_string(),
+        subject: None,
         body: format!("Veilid network {status}"),
     };
     crate::event_dispatch::emit_notification(app_handle, notification);

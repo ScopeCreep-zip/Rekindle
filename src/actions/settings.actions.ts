@@ -20,7 +20,7 @@ export async function handleLoadSettings(): Promise<void> {
       ringtoneEnabled: prefs.ringtoneEnabled ?? true,
       ringtoneVolume: prefs.ringtoneVolume ?? 0.4,
       inCallDndAutoEnable: prefs.inCallDndAutoEnable ?? true,
-      notificationContent: prefs.notificationContent ?? "nameAndMessage",
+      notificationContent: prefs.notificationContent ?? "nameOnly",
     });
   } catch (e) {
     console.error("Failed to load settings:", e);

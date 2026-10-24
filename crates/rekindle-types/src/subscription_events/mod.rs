@@ -32,7 +32,7 @@ pub use governance::GovernanceEvent;
 pub use group_dm::{GroupDmEvent, GroupDmMember};
 pub use membership::MembershipEvent;
 pub use network::{NetworkEvent, RouteAvailability};
-pub use notification::NotificationEvent;
+pub use notification::{AlertSubject, NotificationEvent};
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use scope::EventScope;
 pub use social::SocialEvent;

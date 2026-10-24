@@ -40,8 +40,15 @@ pub enum NotificationEvent {
     },
 
     /// An app-level alert that belongs to no channel — network
-    /// connectivity, a decrypt failure, and the like.
-    SystemAlert { title: String, body: String },
+    /// connectivity, a decrypt failure, a contact declining a request, and
+    /// the like. `subject` is the contact `body` names, when it names one
+    /// ([`NotificationEvent::contact_alert`]), so the notification policy
+    /// can leave them out without reading the text.
+    SystemAlert {
+        title: String,
+        body: String,
+        subject: Option<AlertSubject>,
+    },
 
     /// A newer release is available.
     UpdateAvailable { version: String },
@@ -64,6 +71,38 @@ pub enum NotificationEvent {
     },
 }
 
+/// The contact a [`NotificationEvent::SystemAlert`] names.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertSubject {
+    /// Their display name, as the alert's `body` shows it.
+    pub display_name: String,
+    /// The alert's text with no name in it ("A contact …"), shown when
+    /// `Preferences.notification_content` is `nothing`.
+    pub unnamed_body: String,
+}
+
+impl NotificationEvent {
+    /// A [`Self::SystemAlert`] about one contact: `named` is the text with
+    /// `display_name` in it, `unnamed` the same text naming no one.
+    #[must_use]
+    pub fn contact_alert(
+        title: impl Into<String>,
+        display_name: impl Into<String>,
+        named: impl Into<String>,
+        unnamed: impl Into<String>,
+    ) -> Self {
+        Self::SystemAlert {
+            title: title.into(),
+            body: named.into(),
+            subject: Some(AlertSubject {
+                display_name: display_name.into(),
+                unnamed_body: unnamed.into(),
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,6 +119,7 @@ mod tests {
             },
             NotificationEvent::SystemAlert {
                 title: "t".into(),
+                subject: None,
                 body: "b".into(),
             },
             NotificationEvent::UpdateAvailable {

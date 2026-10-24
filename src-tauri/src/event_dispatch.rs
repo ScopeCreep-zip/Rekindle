@@ -480,6 +480,7 @@ mod tests {
         let a = sub(SubscriptionEvent::Notification(
             NotificationEvent::SystemAlert {
                 title: "t".into(),
+                subject: None,
                 body: "b".into(),
             },
         ));

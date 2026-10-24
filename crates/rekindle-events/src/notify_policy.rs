@@ -97,15 +97,28 @@ pub fn os_notification_for(
     match event {
         SubscriptionEvent::Notification(n) => match n {
             NotificationEvent::MessageReceived { title, body, .. } => {
+                // `title` names the sender, or the channel and community for
+                // a community message: a name, not content, so `nameOnly`
+                // keeps it and drops only the body.
                 (!in_call_silenced).then(|| match inputs.content {
                     NotificationContent::NameAndMessage => OsNotification::new(title, body),
                     NotificationContent::NameOnly => OsNotification::new(title, ""),
                     NotificationContent::Nothing => OsNotification::new(HIDDEN_MESSAGE_TITLE, ""),
                 })
             }
-            NotificationEvent::SystemAlert { title, body } => {
-                Some(OsNotification::new(title, body))
-            }
+            // An alert carries no message content; one about a contact
+            // names them in `subject`, and under `nothing` it is shown
+            // with its unnamed text.
+            NotificationEvent::SystemAlert {
+                title,
+                body,
+                subject,
+            } => Some(match (inputs.content, subject) {
+                (NotificationContent::Nothing, Some(subject)) => {
+                    OsNotification::new(title, subject.unnamed_body.clone())
+                }
+                _ => OsNotification::new(title, body),
+            }),
             NotificationEvent::UpdateAvailable { version } => (!inputs.status_busy).then(|| {
                 OsNotification::new(
                     "Update Available",
@@ -136,6 +149,8 @@ pub fn os_notification_for(
             minutes_until_start,
             ..
         }) => (!inputs.quiet_hours_active && !in_call_silenced).then(|| {
+            // An event's title is what its organiser wrote, so it counts as
+            // content: shown only under `nameAndMessage`.
             let body = if inputs.content == NotificationContent::NameAndMessage {
                 format!("{title} starts in {minutes_until_start} min")
             } else {
@@ -169,7 +184,8 @@ mod tests {
         );
         assert_eq!(
             NotifyInputs::default().content,
-            NotificationContent::NameAndMessage
+            NotificationContent::NameOnly,
+            "the conservative default (decided from research 2026-10-24)"
         );
         let call = SubscriptionEvent::Notification(NotificationEvent::CallIncoming {
             call_id: "c".into(),
@@ -184,6 +200,128 @@ mod tests {
             ..on()
         };
         assert_eq!(os_notification_for(&call, &hidden).unwrap().body, "");
+    }
+
+    /// Every alert kind that names a contact, as its producer builds it,
+    /// and the generic ones: under `nothing` no display name is shown.
+    #[test]
+    fn no_display_name_is_shown_under_nothing_for_any_alert() {
+        let name = "Rae Winters";
+        let alerts = [
+            NotificationEvent::contact_alert(
+                "Friend request declined",
+                name,
+                format!("{name} declined your friend request"),
+                "A contact declined your friend request",
+            ),
+            NotificationEvent::contact_alert(
+                "Session Reset Declined",
+                name,
+                format!("{name} declined your secure session reset request."),
+                "A contact declined your secure session reset request.",
+            ),
+            NotificationEvent::contact_alert(
+                "Secure session re-established",
+                name,
+                format!("A new secure session with {name} is active."),
+                "A new secure session with a contact is active.",
+            ),
+            NotificationEvent::SystemAlert {
+                title: "Network".into(),
+                body: "Veilid network attached".into(),
+                subject: None,
+            },
+        ];
+        let events: Vec<SubscriptionEvent> = alerts
+            .into_iter()
+            .map(SubscriptionEvent::Notification)
+            .chain([
+                message_from(name),
+                call_from(name),
+                SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
+                    peer_key: "pk".into(),
+                    display_name: name.into(),
+                }),
+                SubscriptionEvent::Social(SocialEvent::EventReminder {
+                    community: "c".into(),
+                    event_id: "e".into(),
+                    title: format!("{name}'s raid"),
+                    minutes_until_start: 5,
+                }),
+            ])
+            .collect();
+        let nothing = NotifyInputs {
+            content: NotificationContent::Nothing,
+            ..on()
+        };
+        for event in &events {
+            let shown = os_notification_for(event, &nothing).unwrap();
+            assert!(
+                !shown.title.contains(name) && !shown.body.contains(name),
+                "{event:?} showed {shown:?}"
+            );
+        }
+        // Under nameOnly a contact alert keeps the name (an alert has no
+        // message content).
+        let name_only = NotifyInputs {
+            content: NotificationContent::NameOnly,
+            ..on()
+        };
+        let shown = os_notification_for(&events[0], &name_only).unwrap();
+        assert!(shown.body.contains(name));
+    }
+
+    /// `nameOnly`: a community message keeps its title (the channel and
+    /// community name, not content) and drops the body; a reminder drops
+    /// the event title, which is content.
+    #[test]
+    fn name_only_keeps_channel_names_and_hides_event_titles() {
+        let name_only = NotifyInputs {
+            content: NotificationContent::NameOnly,
+            ..on()
+        };
+        let channel = os_notification_for(&message(), &name_only).unwrap();
+        assert_eq!(
+            (channel.title.as_str(), channel.body.as_str()),
+            ("Gamers", "")
+        );
+        let reminder = SubscriptionEvent::Social(SocialEvent::EventReminder {
+            community: "c".into(),
+            event_id: "e".into(),
+            title: "Secret raid".into(),
+            minutes_until_start: 5,
+        });
+        let shown = os_notification_for(&reminder, &name_only).unwrap();
+        assert!(!shown.body.contains("Secret raid"), "{shown:?}");
+        let full = NotifyInputs {
+            content: NotificationContent::NameAndMessage,
+            ..on()
+        };
+        assert!(os_notification_for(&reminder, &full)
+            .unwrap()
+            .body
+            .contains("Secret raid"));
+    }
+
+    fn message_from(sender: &str) -> SubscriptionEvent {
+        SubscriptionEvent::Notification(NotificationEvent::MessageReceived {
+            title: sender.into(),
+            body: "hi".into(),
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            sound_ref: None,
+        })
+    }
+
+    fn call_from(name: &str) -> SubscriptionEvent {
+        SubscriptionEvent::Notification(NotificationEvent::CallIncoming {
+            call_id: "id".into(),
+            from: "pk".into(),
+            display_name: name.into(),
+            kind: "voice".into(),
+            expires_at_ms: 0,
+            is_group: false,
+        })
     }
 
     fn on() -> NotifyInputs {
@@ -273,8 +411,12 @@ mod tests {
             minutes_until_start: 15,
         });
         assert!(is_candidate(&reminder));
+        let full = NotifyInputs {
+            content: NotificationContent::NameAndMessage,
+            ..on()
+        };
         assert_eq!(
-            os_notification_for(&reminder, &on()),
+            os_notification_for(&reminder, &full),
             Some(OsNotification::new(
                 "Event Reminder",
                 "Raid night starts in 15 min"

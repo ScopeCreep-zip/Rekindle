@@ -395,6 +395,7 @@ async fn save_unsent(ctx: &DaemonContext, unsent: Vec<rekindle_records::port::Un
         ctx.publish_event(SubscriptionEvent::Notification(
             NotificationEvent::SystemAlert {
                 title: "Changes still to publish".into(),
+                subject: None,
                 body: format!(
                     "{saved} profile or contact change(s) did not reach the network before \
                      you logged out. They will be published the next time you log in."

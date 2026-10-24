@@ -27,7 +27,13 @@ export type NotificationEvent =
         soundRef: string | null;
       };
     }
-  | { systemAlert: { title: string; body: string } }
+  | {
+      systemAlert: {
+        title: string;
+        body: string;
+        subject: { displayName: string; unnamedBody: string } | null;
+      };
+    }
   | { updateAvailable: { version: string } }
   | {
       /**

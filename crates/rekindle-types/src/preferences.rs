@@ -58,14 +58,21 @@ pub struct Preferences {
     pub notification_content: NotificationContent,
 }
 
-/// What an OS notification shows of who wrote and what they wrote.
+/// What an OS notification shows of who wrote and what they wrote. A
+/// "name" is a sender, a contact, or a channel and community (a community
+/// message is titled by its channel); "content" is what someone wrote: a
+/// message's text and an event's title. The default is [`Self::NameOnly`]
+/// (decided from research 2026-10-24: the threat model's vulnerable users
+/// and prod research batch 7 N1, whose conservative choice is name only
+/// or nothing; Signal also hides content while locked).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NotificationContent {
-    /// The sender's name and the message.
-    #[default]
+    /// The name and the content.
     NameAndMessage,
-    /// The sender's name, not the message.
+    /// The name (sender, contact, or channel), no content: no message text
+    /// and no event title.
+    #[default]
     NameOnly,
     /// Neither: only that something arrived.
     Nothing,
@@ -114,7 +121,7 @@ impl Default for Preferences {
             ringtone_volume: 0.4,
             in_call_dnd_auto_enable: true,
             read_receipts_enabled: false,
-            notification_content: NotificationContent::NameAndMessage,
+            notification_content: NotificationContent::NameOnly,
         }
     }
 }

@@ -54,6 +54,7 @@ pub(super) async fn ended(state: &SharedState, app: Option<&tauri::AppHandle>, r
                 app,
                 rekindle_types::subscription_events::NotificationEvent::SystemAlert {
                     title: "Session ended".into(),
+                    subject: None,
                     body: format!(
                         "An internal error ({task}) ended your session. Log in again to continue."
                     ),
