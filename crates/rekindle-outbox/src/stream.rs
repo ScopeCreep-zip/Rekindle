@@ -106,9 +106,14 @@ impl StreamKind {
 
     /// How long a row of this kind that just reached `sent` waits for the
     /// peer's ack before it is first asked for again; `None`: its backoff.
+    /// Drawn uniformly from `[DM_FIRST_REASK, 1.5 × DM_FIRST_REASK]` by
+    /// `rng` (threat model: no deterministic timing; the same equal-jitter
+    /// half step as [`OutboxRetry::delay`]), never below the floor an ack
+    /// needs.
     #[must_use]
-    pub fn first_reask(self) -> Option<Duration> {
-        matches!(self, Self::Dm).then_some(DM_FIRST_REASK)
+    pub fn first_reask(self, rng: &dyn RandomSource) -> Option<Duration> {
+        let floor = u64::try_from(DM_FIRST_REASK.as_millis()).unwrap_or(u64::MAX);
+        matches!(self, Self::Dm).then(|| Duration::from_millis(floor + rng.below(floor / 2 + 1)))
     }
 
     /// Whether the user may Retry a failed row of this kind. A call media
