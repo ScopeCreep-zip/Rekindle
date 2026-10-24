@@ -197,8 +197,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// arrived before its row's send landed.
 ///
 /// 119 (plan E2.5, live A/B finding 71 refined): `chain_entries.appended_at`
-/// is NULL while an entry's seq is assigned (sealed into its hint) and its
-/// append has not landed.
+/// is NULL while an entry is pending, `chain_entries.frame` holds its sealed
+/// hint until it lands, and `friends.dm_chain_head` is the highest seq
+/// assigned.
 pub const SCHEMA_VERSION: i64 = 119;
 
 /// Opening the database failed.

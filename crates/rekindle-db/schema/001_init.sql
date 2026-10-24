@@ -70,6 +70,10 @@ CREATE TABLE IF NOT EXISTS friends (
     -- holds our stream to them, and theirs (their `StreamRecord`), whose
     -- chain holds their stream to us.
     participant_record_key TEXT,
+    -- The highest seq assigned on our dm chain to this friend (live A/B
+    -- finding 71 refined): the next hint's seq comes from here, with no DHT
+    -- read; a new participant record is a new chain and resets it.
+    dm_chain_head INTEGER NOT NULL DEFAULT 0,
     peer_participant_record_key TEXT,
     CHECK((presence_epoch IS NULL) = (presence_key IS NULL)),
     PRIMARY KEY (owner_key, public_key)
@@ -906,6 +910,8 @@ CREATE TABLE IF NOT EXISTS chain_entries (
     chain_seq INTEGER NOT NULL CHECK(chain_seq >= 1),
     stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
     appended_at INTEGER,
+    -- The frame sealed with this seq (its hint), kept until it lands.
+    frame BLOB,
     PRIMARY KEY (owner_key, peer, chain_seq)
 );
 

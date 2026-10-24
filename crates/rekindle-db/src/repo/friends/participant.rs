@@ -23,7 +23,7 @@ pub fn set_participant_record_key(
 ) -> rusqlite::Result<bool> {
     let tx = conn.unchecked_transaction()?;
     let changed = tx.execute(
-        "UPDATE friends SET participant_record_key = ?3 \
+        "UPDATE friends SET participant_record_key = ?3, dm_chain_head = 0 \
          WHERE owner_key = ?1 AND public_key = ?2 \
            AND participant_record_key IS NOT ?3",
         params![owner_key, public_key, record_key],

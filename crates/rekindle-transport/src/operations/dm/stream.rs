@@ -186,7 +186,16 @@ pub async fn retire_quiet(host: &dyn FriendHost) {
     };
     for peer in peers.iter().filter(|p| state::is_accepted(host, p)) {
         match host.held_participant_writer(peer).await {
-            Ok(Some(ours)) => retire(host, peer, &ours, port.as_ref()).await,
+            Ok(Some(ours)) => {
+                // A sealed entry whose row left (a deadline, a wedge) still
+                // lands (finding 71 refined), with no later message to carry it.
+                if let Err(e) =
+                    super::chain_seq::append_pending(host, port.as_ref(), &ours, peer).await
+                {
+                    tracing::debug!(to = %peer, error = %e, "pending chain entries not appended");
+                }
+                retire(host, peer, &ours, port.as_ref()).await;
+            }
             // No record of ours held: nothing to retire (the tick never
             // creates or sends one).
             Ok(None) => {}
