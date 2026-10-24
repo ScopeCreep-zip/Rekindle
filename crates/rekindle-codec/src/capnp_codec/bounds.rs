@@ -15,6 +15,17 @@
 //! the carrier, while a zero-run bomb is refused. This is the rule the
 //! governance op, genesis cert and DM frame bounds already follow.
 //!
+//! The rule assumes legitimate content packs no better than four to one.
+//! Packing writes a word with one non-zero byte in two bytes (exactly
+//! four to one) and a run of zero words in two bytes, so a value made
+//! mostly of zero words, or a decoder that reads one list twice (capnp
+//! counts every read against the limit), could exceed a bound its carrier
+//! admits. `at_cap_tests` holds each type's largest realistic value at its
+//! carrier's cap (random keys and ciphertext, hex and record-key text,
+//! small timestamps and arrival offsets, the smallest chain entries), and
+//! every one decodes; a type that failed there would take a bound derived
+//! from its schema, as the chain head and retire do.
+//!
 //! The carriers are Veilid's, from `rekindle_types::dht_layout`:
 //! - `MAX_APP_MESSAGE_LEN`, 32,768 bytes: the largest `app_message` or
 //!   `app_call` payload;
@@ -107,6 +118,9 @@ pub(crate) fn inflating_message(words: usize) -> Vec<u8> {
     }
     packed
 }
+
+#[cfg(test)]
+mod at_cap_tests;
 
 #[cfg(test)]
 mod tests {
