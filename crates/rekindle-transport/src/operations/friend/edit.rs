@@ -38,27 +38,11 @@ pub async fn set_nickname(
         f.nickname = nickname.map(str::to_string);
     });
 
-    // The record half: our friend list is our own record, held writable by
-    // the session's pool. `group: None` leaves the group alone.
-    let key = state::own_identity(host)?.friend_list_dht_key;
-    if let (false, Ok(records)) = (
-        key.is_empty(),
-        host.node().and_then(|n| Ok(n.require_records()?)),
-    ) {
-        match rekindle_protocol::dht::friends::update_friend(
-            records.as_ref(),
-            &key,
-            public_key,
-            nickname.map(str::to_string),
-            None,
-        )
-        .await
-        {
-            Ok(outcome) if !outcome.missed() => {}
-            Ok(outcome) => tracing::warn!(?outcome, "friend nickname not stored at consensus"),
-            Err(e) => tracing::warn!(error = %e, "friend nickname DHT write failed"),
-        }
-    }
+    // The record half: our friend list, built from local state alone like
+    // every other friend-list write (`list_record`), never a network read
+    // written back, which could replace a held push with a stale list and
+    // drop a new friend from the record (review RV3 problem 6).
+    super::list_record::push_soon(host, "a nickname edit");
     host.publish(SubscriptionEvent::Friend(FriendEvent::NicknameChanged {
         peer_key: public_key.to_string(),
         nickname: nickname.map(str::to_string),
