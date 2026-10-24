@@ -287,8 +287,6 @@ fn answered(
 ) -> Answered {
     match answer {
         Ok(send::CallAnswer::Receipt) => Answered::Receipt,
-        // Their own fault, said at once (review RV5 M2): as a timeout.
-        Ok(send::CallAnswer::RetryLater) => Answered::Again,
         Ok(send::CallAnswer::Reply(_)) if kind == DmTypeId::FriendRequest => Answered::Again,
         Ok(send::CallAnswer::Refused) if kind == DmTypeId::FriendRequest => Answered::Undelivered,
         Ok(send::CallAnswer::Reply(_)) if rejection == Rejection::Applied => Answered::Rejected,
@@ -296,7 +294,9 @@ fn answered(
         // (RV5 R5): attempted again.
         Ok(send::CallAnswer::Reply(_)) if rejection == Rejection::Failed => Answered::Again,
         Ok(send::CallAnswer::Reply(_) | send::CallAnswer::Refused) => Answered::Refused,
-        Err(_) => Answered::Again,
+        // Their "retry later" is their own fault, said at once (review RV5
+        // M2): attempted again as a timeout is.
+        Ok(send::CallAnswer::RetryLater) | Err(_) => Answered::Again,
     }
 }
 
