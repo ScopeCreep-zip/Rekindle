@@ -98,11 +98,14 @@ impl TransportNode {
     }
 
     /// The node without dispatch: senders, records, routes and peers.
+    /// Every outbound `app_call` of the node is bounded here, the one place
+    /// its port comes in ([`crate::broadcast::deadline`], finding 78).
     fn outbound(
         config: TransportConfig,
-        ports: PortSet,
+        mut ports: PortSet,
         shared_state: Arc<SharedState>,
     ) -> (Self, mpsc::Receiver<()>) {
+        ports.messages = crate::broadcast::deadline::Bounded::wrap(ports.messages);
         let config = Arc::new(config);
         let peer_registry = Arc::new(parking_lot::RwLock::new(PeerRegistry::new(
             config.route_cache_ttl_secs,

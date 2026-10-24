@@ -31,6 +31,7 @@ mod gate;
 mod governance_warm_restore;
 mod group_dm;
 mod harness;
+mod hung_call;
 mod internet_flap;
 mod invite_expiry;
 mod invite_join_leave;

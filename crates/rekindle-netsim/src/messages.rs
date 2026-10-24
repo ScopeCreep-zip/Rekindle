@@ -149,6 +149,10 @@ impl FakeMessages {
             self.net.lost_question(self.node, target.as_str(), pinned);
             return Err(PortError::Send("app call timed out".into()));
         };
+        if self.net.inner.lock().faults.hung.contains(&to) {
+            // Stuck before the answer wait: nothing is sent, nothing ends it.
+            return std::future::pending().await;
+        }
         let (tx, rx) = oneshot::channel();
         let call_id = {
             let mut inner = self.net.inner.lock();

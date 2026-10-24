@@ -7,6 +7,7 @@
 //! - `node` — the transport node over its `PortSet` (start, adopt, shutdown,
 //!   record sessions, own routes)
 //! - `send` — app message / app call senders
+//! - `deadline` — our bound on every outbound app call (finding 78)
 //! - `peer_registry` — peer route caching and circuit breaking (PeerRegistry)
 //! - `dht/` — channel messages over the record port
 //!
@@ -16,6 +17,7 @@
 //! - `route` — peer route import
 
 // Node and infrastructure
+pub mod deadline;
 pub mod dht;
 pub mod node;
 pub mod peer_registry;

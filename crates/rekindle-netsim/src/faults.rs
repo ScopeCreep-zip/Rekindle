@@ -34,6 +34,12 @@ pub enum Fault {
     DropFrom { node: usize, per_mille: u32 },
     /// The node never answers app calls; its callers time out.
     Unanswered { node: usize, unanswered: bool },
+    /// A call to the node's routes never resolves: no answer and no
+    /// Veilid `Timeout`, as a call stuck before Veilid's answer wait
+    /// (route resolution, rendering, the first hop's send, none bounded:
+    /// `rpc_processor/mod.rs:1718-1830`; live finding 78). The question is
+    /// lost; only the caller's own deadline ends it.
+    CallHangs { node: usize, hangs: bool },
     /// The node's clock runs this far from simulated true time.
     ClockSkew { node: usize, ms: i64 },
     /// The node's watch on `key` dies: Veilid sends a last change with
@@ -112,6 +118,9 @@ impl Netsim {
                     node,
                     unanswered,
                 );
+            }
+            Fault::CallHangs { node, hangs } => {
+                toggle(&mut self.net.inner.lock().faults.hung, node, hangs);
             }
             Fault::ClockSkew { node, ms } => {
                 if let Some(clock) = self.clocks.lock().get(node) {
