@@ -200,7 +200,10 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// is NULL while an entry is pending, `chain_entries.frame` holds its sealed
 /// hint until it lands, and `friends.dm_chain_head` is the highest seq
 /// assigned.
-pub const SCHEMA_VERSION: i64 = 119;
+/// 120 (live finding 79): `friends.nickname` is gone; `friend_nicknames`
+/// binds a nickname to the key it was given for, cleared when the
+/// friendship ends.
+pub const SCHEMA_VERSION: i64 = 120;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

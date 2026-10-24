@@ -139,6 +139,13 @@ async fn is_friend(host: &dyn FriendHost, peer: &str) -> bool {
     store.is_active_friend(&owner, peer).await.unwrap_or(false)
 }
 
+/// The new key of `peer`'s pending rotation: the key a review of its
+/// acceptance names (finding 79); `None` when none is pending.
+#[must_use]
+pub fn pending_key(host: &dyn FriendHost, peer: &str) -> Option<[u8; 32]> {
+    host.stores().pending_rotations.lock().get(peer).copied()
+}
+
 /// The safety number with `peer` now and the one with their pending new
 /// identity, as the review shows them; `None` when no rotation from
 /// `peer` is pending or no identity is unlocked.
@@ -182,6 +189,11 @@ pub async fn accept(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError
     if let Some(mut friend) = state::take(host, peer) {
         friend.public_key.clone_from(&new_hex);
         friend.mailbox_dht_key = None;
+        // Our name was given for the old key (finding 79, `friend_nicknames`).
+        friend.nickname = friend
+            .nickname
+            .as_deref()
+            .map(rekindle_db::repo::friends::for_previous_key);
         let profile = friend.dht_record_key.clone();
         state::put(host, friend);
         if let Some(profile) = profile {

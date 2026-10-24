@@ -271,6 +271,7 @@ export type Fact =
   | { fingerprint: { fingerprint: string } }
   | { safetyNumber: { safetyNumber: string } }
   | { safetyNumberChanged: { oldSafetyNumber: string; newSafetyNumber: string } }
+  | { keyChanged: { oldFingerprint: string; newFingerprint: string } }
   | { membersAffected: { count: number } }
   | { messagesDeleted: { count: number } };
 

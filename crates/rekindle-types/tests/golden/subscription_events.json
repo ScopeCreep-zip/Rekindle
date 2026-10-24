@@ -724,6 +724,12 @@
     }
   },
   "intent.fact.ipAddressLeaves": "ipAddressLeaves",
+  "intent.fact.keyChanged": {
+    "keyChanged": {
+      "newFingerprint": "4567 89ef",
+      "oldFingerprint": "abcd 0123"
+    }
+  },
   "intent.fact.membersAffected": {
     "membersAffected": {
       "count": 41

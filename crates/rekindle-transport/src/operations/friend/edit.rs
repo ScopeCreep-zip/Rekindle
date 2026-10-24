@@ -25,13 +25,7 @@ pub async fn set_nickname(
     }
     let (pk, nick) = (public_key.to_string(), nickname.map(str::to_string));
     state::db_call!(host, "store nickname", move |conn| {
-        rekindle_db::repo::friends::set(
-            conn,
-            &owner,
-            &pk,
-            rekindle_db::repo::friends::Column::Nickname,
-            nick,
-        )
+        rekindle_db::repo::friends::set_nickname(conn, &owner, &pk, nick.as_deref())
     })
     .await?;
     state::update(host, public_key, |f| {

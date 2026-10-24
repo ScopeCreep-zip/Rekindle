@@ -65,6 +65,7 @@ fn fact_name(f: &Fact) -> &'static str {
         Fact::Fingerprint { .. } => "fingerprint",
         Fact::SafetyNumber { .. } => "safetyNumber",
         Fact::SafetyNumberChanged { .. } => "safetyNumberChanged",
+        Fact::KeyChanged { .. } => "keyChanged",
         Fact::MembersAffected { .. } => "membersAffected",
         Fact::MessagesDeleted { .. } => "messagesDeleted",
         Fact::PresenceVisible => "presenceVisible",
@@ -176,6 +177,10 @@ fn facts() -> Vec<Fact> {
         Fact::SafetyNumberChanged {
             old_safety_number: "1a2b3c4d".into(),
             new_safety_number: "5e6f7a8b".into(),
+        },
+        Fact::KeyChanged {
+            old_fingerprint: "abcd 0123".into(),
+            new_fingerprint: "4567 89ef".into(),
         },
         Fact::MembersAffected { count: 41 },
         Fact::MessagesDeleted { count: 1204 },
@@ -317,7 +322,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("intentClass", 5),
     ("proofRequired", 5),
     ("escalation", 10),
-    ("fact", 13),
+    ("fact", 14),
     ("subject", 8),
     ("reversibility", 4),
     ("notifies", 3),

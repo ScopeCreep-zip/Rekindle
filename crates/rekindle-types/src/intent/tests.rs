@@ -114,14 +114,23 @@ fn intent_ids_are_v7_and_round_trip_as_strings() {
 }
 
 #[test]
-fn a_person_is_typed_by_local_nickname_then_fingerprint() {
+fn a_person_is_typed_by_the_full_fingerprint_alone() {
     let person = |nick: Option<&str>| Subject::Person {
         local_nickname: nick.map(Into::into),
         display_name: Some("Spoofable".into()),
-        fingerprint: "ab12".into(),
+        fingerprint: "ab12 cd34".into(),
     };
-    assert_eq!(person(Some("Alice")).typed_name(), "Alice");
-    assert_eq!(person(None).typed_name(), "ab12");
+    assert_eq!(person(Some("Alice")).typed_name(), "ab12 cd34");
+    assert_eq!(person(None).typed_name(), "ab12 cd34");
+    let typed = |text: &str| IntentProof::Typed(text.into());
+    let subject = person(Some("Alice"));
+    assert!(typed("ab12 cd34").satisfies(ProofRequired::TypeSubject, &subject));
+    for wrong in ["Alice", "Spoofable", "ab12", "AB12 CD34", "ab12 cd34 "] {
+        assert!(
+            !typed(wrong).satisfies(ProofRequired::TypeSubject, &subject),
+            "{wrong}"
+        );
+    }
 }
 
 #[test]

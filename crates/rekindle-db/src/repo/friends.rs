@@ -8,6 +8,7 @@ use rusqlite::{params, params_from_iter, Connection, OptionalExtension as _};
 
 mod changes;
 mod listing;
+mod nickname;
 mod participant;
 mod presence;
 pub use changes::{
@@ -15,6 +16,8 @@ pub use changes::{
     mark_removing, replace_with_invited, unfriended, RecordKeys,
 };
 pub use listing::added_at;
+pub(crate) use nickname::rekey as rekey_nickname;
+pub use nickname::{for_previous_key, set_nickname, PREVIOUS_KEY_SUFFIX};
 pub use participant::{
     participant_record_key, peer_participant_record_key, set_participant_record_key,
     set_peer_participant_record_key,
@@ -39,12 +42,13 @@ pub struct FriendRow {
 /// # Errors
 /// The query failed.
 pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<FriendRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT f.public_key, f.display_name, f.nickname, g.name, f.dht_record_key, \
+    let mut stmt = conn.prepare(&format!(
+        "SELECT f.public_key, f.display_name, {}, g.name, f.dht_record_key, \
          f.last_seen_at, f.mailbox_dht_key, f.friendship_state \
          FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
          WHERE f.owner_key = ?1",
-    )?;
+        nickname::NICKNAME
+    ))?;
     let rows = stmt
         .query_map(params![owner_key], |row| {
             Ok(FriendRow {
@@ -212,7 +216,10 @@ pub fn names(
     public_key: &str,
 ) -> rusqlite::Result<Option<(Option<String>, Option<String>)>> {
     conn.query_row(
-        "SELECT nickname, display_name FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+        &format!(
+            "SELECT {}, f.display_name FROM friends f WHERE f.owner_key = ?1 AND f.public_key = ?2",
+            nickname::NICKNAME
+        ),
         params![owner_key, public_key],
         |row| Ok((row.get(0)?, row.get(1)?)),
     )
@@ -242,7 +249,6 @@ pub fn avatar(
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Column {
     DisplayName,
-    Nickname,
     DhtRecordKey,
     MailboxDhtKey,
     LastSeenAt,
@@ -253,7 +259,6 @@ impl Column {
     fn name(self) -> &'static str {
         match self {
             Self::DisplayName => "display_name",
-            Self::Nickname => "nickname",
             Self::DhtRecordKey => "dht_record_key",
             Self::MailboxDhtKey => "mailbox_dht_key",
             Self::LastSeenAt => "last_seen_at",
@@ -434,7 +439,7 @@ mod tests {
     fn set_writes_one_column_and_record_keys_keep_the_stored_value_for_none() {
         let conn = fixture::conn();
         replace_with_invited(&conn, OWNER, "bob", "Bob", 1, "profile", "mailbox").unwrap();
-        set(&conn, OWNER, "bob", Column::Nickname, "bobby").unwrap();
+        set_nickname(&conn, OWNER, "bob", Some("bobby")).unwrap();
         set_record_keys(&conn, OWNER, "bob", None, Some("mailbox-2")).unwrap();
         let row = &load_all(&conn, OWNER).unwrap()[0];
         assert_eq!(row.nickname.as_deref(), Some("bobby"));

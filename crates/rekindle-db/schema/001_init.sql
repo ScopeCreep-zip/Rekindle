@@ -44,7 +44,6 @@ CREATE TABLE IF NOT EXISTS friends (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
     public_key TEXT NOT NULL,
     display_name TEXT,
-    nickname TEXT,
     group_id INTEGER REFERENCES friend_groups(id) ON DELETE SET NULL,
     added_at INTEGER NOT NULL,
     dht_record_key TEXT,
@@ -376,6 +375,21 @@ CREATE TABLE IF NOT EXISTS missed_calls (
 
 CREATE INDEX IF NOT EXISTS idx_missed_calls_owner_peer
     ON missed_calls(owner_key, peer_key, expired_at DESC);
+
+-- Our nickname for a contact, bound to the key it was given for (live
+-- finding 79, research batch 13): `contact_key` is the contact's key now
+-- (an identity rotation moves it, `repo::peer_rekey`), `for_key` the key the
+-- user named. Off that key it reads "(name for previous key)" until the
+-- user sets it again (`repo::friends::NICKNAME`). Ending the friendship
+-- (our removal, theirs, a cancelled request) deletes it; a block keeps it,
+-- the key unchanged. A user-chosen label, never a confirm token.
+CREATE TABLE IF NOT EXISTS friend_nicknames (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    contact_key TEXT NOT NULL,
+    for_key TEXT NOT NULL,
+    nickname TEXT NOT NULL,
+    PRIMARY KEY (owner_key, contact_key)
+);
 
 CREATE TABLE IF NOT EXISTS blocked_users (
     owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,

@@ -160,6 +160,7 @@ pub fn mark_removing(
 ) -> rusqlite::Result<()> {
     atomically(conn, |conn| {
         set_state(conn, owner_key, public_key, FriendshipState::Removing)?;
+        super::nickname::clear(conn, owner_key, public_key)?;
         super::clear_presence_key(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         outbox::append(conn, unfriended, None).map(drop)
@@ -191,6 +192,7 @@ pub fn cancel_request(
 ) -> rusqlite::Result<()> {
     erasing(conn, |conn| {
         delete(conn, owner_key, public_key)?;
+        super::nickname::clear(conn, owner_key, public_key)?;
         delete_sessions(conn, owner_key, public_key)
     })
 }
@@ -203,6 +205,7 @@ pub fn cancel_request(
 pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
     erasing(conn, |conn| {
         forget(conn, owner_key, public_key)?;
+        super::nickname::clear(conn, owner_key, public_key)?;
         outbox::delete_to_peer(conn, owner_key, public_key)?;
         delete_sessions(conn, owner_key, public_key)
     })
@@ -229,6 +232,7 @@ pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Ve
         for public_key in &done {
             outbox::delete_to_peer(conn, owner_key, public_key)?;
             delete(conn, owner_key, public_key)?;
+            super::nickname::clear(conn, owner_key, public_key)?;
             delete_sessions(conn, owner_key, public_key)?;
         }
         Ok(done)

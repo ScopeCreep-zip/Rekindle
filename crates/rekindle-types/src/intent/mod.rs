@@ -225,15 +225,13 @@ pub enum Subject {
 
 impl Subject {
     /// What a TypeSubject proof must match: the object's own name, never a
-    /// fixed word (r9 §7.5).
+    /// fixed word (r9 §7.5). A person's is the full fingerprint of the key
+    /// acted on, matched exactly; never a nickname or display name, labels
+    /// a user or the peer chose (finding 79, research batch 13).
     #[must_use]
     pub fn typed_name(&self) -> &str {
         match self {
-            Self::Person {
-                local_nickname: Some(name),
-                ..
-            }
-            | Self::Community { name, .. }
+            Self::Community { name, .. }
             | Self::Channel { name, .. }
             | Self::Role { name, .. }
             | Self::File { name }
@@ -275,6 +273,14 @@ pub enum Fact {
     SafetyNumberChanged {
         old_safety_number: String,
         new_safety_number: String,
+    },
+    /// A changed-key warning: the subject's key changes from
+    /// `old_fingerprint` to `new_fingerprint`, the one typed to confirm
+    /// (finding 79, research batch 13). Confirming never verifies it.
+    #[serde(rename_all = "camelCase")]
+    KeyChanged {
+        old_fingerprint: String,
+        new_fingerprint: String,
     },
     /// This many members are affected.
     #[serde(rename_all = "camelCase")]

@@ -40,6 +40,8 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     .await;
     state::update(host, public_key, |f| {
         f.friendship_state = FriendshipState::Removing;
+        // The friendship ended: so did our name for them (finding 79).
+        f.nickname = None;
     });
     state::after_commit(
         "discard_pending_dms",

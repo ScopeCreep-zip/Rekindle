@@ -69,6 +69,11 @@ export function factText(fact: Fact): string {
     return `Their key changed. Safety number was ${groupDigits(oldSafetyNumber).join(" ")}; ` +
       `it becomes ${groupDigits(newSafetyNumber).join(" ")}.`;
   }
+  if ("keyChanged" in fact) {
+    const { oldFingerprint, newFingerprint } = fact.keyChanged;
+    return `Warning: their key changed. It was ${oldFingerprint}; it becomes ${newFingerprint}. ` +
+      "Confirming does not verify it.";
+  }
   if ("membersAffected" in fact) return `${fact.membersAffected.count} members are affected.`;
   return `${fact.messagesDeleted.count} messages are deleted for everyone.`;
 }

@@ -506,3 +506,73 @@ async fn an_agent_is_refused_a_local_file() {
         "{answer:?}"
     );
 }
+
+/// Finding 79: a person's confirm token is the fingerprint of the key acted
+/// on, never our nickname, and a removed contact's nickname is gone.
+#[tokio::test]
+async fn a_person_is_confirmed_by_fingerprint_and_a_removal_drops_the_nickname() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, ann) = host_with_identity(&dir).await;
+    let unlock = IpcRequest::Unlock {
+        identity: ann.clone(),
+        passphrase: "pass".into(),
+    };
+    assert!(code(&host.call(Caller::shell(), unlock).await).is_none());
+    let bob = hex::encode(rekindle_crypto::Identity::generate().public_key_bytes());
+    let fingerprint = rekindle_crypto::identity::key_fingerprint(&hex::decode(&bob).unwrap());
+    let (owner, peer) = (ann.clone(), bob.clone());
+    let db = host.ctx.db.current().unwrap();
+    db.call(move |conn| {
+        rekindle_db::repo::friends::insert_accepted(conn, &owner, &peer, "Bob", 1)?;
+        rekindle_db::repo::friends::set_nickname(conn, &owner, &peer, Some("Mac buddy"))
+    })
+    .await
+    .unwrap();
+    let remove = IpcRequest::FriendRemove {
+        public_key: bob.clone(),
+    };
+    let held = review(host.call(bus(1), remove).await);
+    // Whatever class reviews it, a typed confirmation names the key.
+    assert_eq!(held.subject.typed_name(), fingerprint);
+    let typed = |text: &str| {
+        IntentProof::Typed(text.into()).satisfies(ProofRequired::TypeSubject, &held.subject)
+    };
+    assert!(typed(&fingerprint));
+    assert!(!typed("Mac buddy"), "the nickname is refused");
+    // The friendship ends (the removal's own transaction, without a network).
+    let (owner, peer) = (ann.clone(), bob.clone());
+    db.call(move |conn| {
+        let stream = format!("friend_handshake:{peer}");
+        let row = rekindle_db::repo::outbox::NewRow {
+            owner_key: &owner,
+            stream: &stream,
+            client_id: "unfriended",
+            kind: "friend_handshake",
+            payload: b"{}",
+            next_at: 2,
+            deadline: 9,
+        };
+        rekindle_db::repo::friends::mark_removing(conn, &owner, &peer, &row)?;
+        rekindle_db::repo::friends::names(conn, &owner, &peer)
+    })
+    .await
+    .map(|names| assert_eq!(names.and_then(|n| n.0), None, "the nickname is gone"))
+    .unwrap();
+    let again = review(
+        host.call(
+            bus(1),
+            IpcRequest::FriendRemove {
+                public_key: bob.clone(),
+            },
+        )
+        .await,
+    );
+    assert_eq!(again.subject.typed_name(), fingerprint);
+    assert!(matches!(
+        &again.subject,
+        rekindle_types::intent::Subject::Person {
+            local_nickname: None,
+            ..
+        }
+    ));
+}

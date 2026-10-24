@@ -138,7 +138,24 @@ pub(super) async fn selection(
         }
         IpcRequest::IdentityRotationAccept { public_key }
         | IpcRequest::IdentityRotationDecline { public_key } => {
-            s.subject = person(ctx, public_key).await?;
+            // The key acted on is the new one: its fingerprint is the
+            // token, so a rotation replaced before the commit re-reviews
+            // (finding 79, research batch 13).
+            let new_key = rekindle_transport::operations::friend::identity_rotation::pending_key(
+                &HostFriends::of(ctx),
+                public_key,
+            )
+            .ok_or_else(|| {
+                IpcResponse::error(404, "no identity rotation from this friend is pending")
+            })?;
+            let old = person(ctx, public_key).await?;
+            if let Subject::Person { fingerprint, .. } = &old {
+                s.facts.push(Fact::KeyChanged {
+                    old_fingerprint: fingerprint.clone(),
+                    new_fingerprint: rekindle_crypto::identity::key_fingerprint(&new_key),
+                });
+            }
+            s.subject = rotated_person(old, &new_key);
             let (old_safety_number, new_safety_number) =
                 rekindle_transport::operations::friend::identity_rotation::pending_safety_numbers(
                     &HostFriends::of(ctx),
@@ -233,8 +250,29 @@ async fn key_change(
         .map_err(|e| unavailable("the peer's key verification", e))
 }
 
-/// A person: our nickname for them first, their key fingerprint always; a
-/// peer-chosen display name never alone.
+/// `old` (a person named by the key they rotate from) as named by `new`:
+/// its fingerprint, the old key's beside it, and our nickname as one given
+/// for the previous key.
+fn rotated_person(old: Subject, new: &[u8; 32]) -> Subject {
+    let Subject::Person {
+        local_nickname,
+        display_name,
+        fingerprint: _,
+    } = old
+    else {
+        return old;
+    };
+    Subject::Person {
+        local_nickname: local_nickname
+            .map(|name| rekindle_db::repo::friends::for_previous_key(&name)),
+        display_name,
+        fingerprint: rekindle_crypto::identity::key_fingerprint(new),
+    }
+}
+
+/// A person: the fingerprint of the key acted on, which is the confirm
+/// token (`Subject::typed_name`); our nickname and their display name are
+/// labels shown beside it, never alone and never typed (finding 79).
 pub(super) async fn person(ctx: &DaemonContext, public_key: &str) -> Result<Subject, IpcResponse> {
     let fingerprint = hex::decode(public_key)
         .map(|bytes| rekindle_crypto::identity::key_fingerprint(&bytes))

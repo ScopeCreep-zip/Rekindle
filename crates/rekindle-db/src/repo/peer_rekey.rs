@@ -78,6 +78,7 @@ pub fn rotate_peer(
         ] {
             tx.execute(sql, params![owner_key, old_key, new_key])?;
         }
+        super::friends::rekey_nickname(&tx, &owner_key, &old_key, &new_key)?;
         signal_identities::rotate(&tx, owner, old, new, now_ms)?;
     }
     tx.commit()?;
