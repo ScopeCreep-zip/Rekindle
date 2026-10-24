@@ -142,7 +142,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         }
         DirectBody::SessionResetAccept => session_reset::on_accept(host, sender),
         DirectBody::PreKeyRejected(r) => {
-            crate::operations::prekeys::on_rejected(host, sender, r).await;
+            applied = crate::operations::prekeys::on_rejected(host, sender, r).await;
         }
         DirectBody::SessionResetDecline(_) => session_reset::on_decline(host, sender),
         DirectBody::StatusResponse(r) => relay::on_status_response(host, sender, r),

@@ -149,14 +149,20 @@ pub(crate) fn send_rejection(host: &dyn FriendHost, to: &str, rejection: DirectB
 /// names our unanswered init (it verified under their identity, the frame's
 /// signature; its base-key hash matches; nothing decrypted under it)
 /// discards that session; the first contact is then resent once from a
-/// fresh slot, and a second rejection fails it visibly.
-pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &PreKeyRejected) {
+/// fresh slot, and a second rejection fails it visibly. Whether it named
+/// our unanswered init and was acted on (a first contact's call reply that
+/// was not is a refusal, finding 46 refined).
+pub(crate) async fn on_rejected(
+    host: &dyn FriendHost,
+    sender: &str,
+    rejected: &PreKeyRejected,
+) -> bool {
     let (Ok(db), Ok(local), Ok(peer)) = (
         host.db(),
         host.local_party(),
         dm::frame::peer_address(sender),
     ) else {
-        return;
+        return false;
     };
     let discarded = rekindle_db::ratchet::discard_pending_init(
         &db,
@@ -170,15 +176,15 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
         Ok(true) => {}
         Ok(false) => {
             tracing::info!(from = %sender, "PreKeyRejected names no unanswered init of ours — ignored");
-            return;
+            return false;
         }
         Err(e) => {
             tracing::warn!(from = %sender, error = %e, "PreKeyRejected not applied");
-            return;
+            return false;
         }
     }
     if crate::operations::group_dm::first_contact::on_rejected(host, sender).await {
-        return;
+        return true;
     }
     let contact = host.stores().first_contacts.lock().get(sender).copied();
     // A first contact failed by its NAK (finding 46) still has its one
@@ -196,7 +202,7 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
                 "they refused the keys of our secure session".to_string(),
             );
         }
-        return;
+        return true;
     };
     if contact.retried {
         super::failed(
@@ -205,7 +211,7 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
             contact.kind,
             "they refused our keys twice; try again later".to_string(),
         );
-        return;
+        return true;
     }
     if let Some(entry) = host.stores().first_contacts.lock().get_mut(sender) {
         entry.retried = true;
@@ -223,4 +229,5 @@ pub(crate) async fn on_rejected(host: &dyn FriendHost, sender: &str, rejected: &
     if let Err(e) = super::open_first_contact(host, sender, contact.kind).await {
         super::failed(host, sender, contact.kind, e.to_string());
     }
+    true
 }

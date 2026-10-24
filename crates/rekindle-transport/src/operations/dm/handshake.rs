@@ -253,6 +253,44 @@ pub fn receipted(kind: DmTypeId) -> bool {
     )
 }
 
+/// What a receipted row's `app_call` answer means.
+#[derive(Debug, PartialEq, Eq)]
+enum Answered {
+    /// The empty return: the receipt.
+    Receipt,
+    /// Their `PreKeyRejected`, opened and applied (B5, finding 46): it sent
+    /// the one resend (plan E2.4), so this row ends.
+    Rejected,
+    /// A bare NAK, or a reply that did not open or was not applied (a
+    /// `PreKeyRejected` naming no unanswered init of ours): a refusal,
+    /// shown on the friend's row as failed with Retry (finding 46 refined,
+    /// `first_contact::refused`), never a receipt or a silent split.
+    Refused,
+    /// No answer, or a friend request refused: attempted again until the
+    /// row's deadline.
+    Again,
+}
+
+/// [`Answered`] for `kind`'s `answer`, where `rejection_applied` says
+/// whether its reply was a `PreKeyRejected` we applied.
+fn answered(
+    kind: DmTypeId,
+    answer: &Result<send::CallAnswer, FriendError>,
+    rejection_applied: bool,
+) -> Answered {
+    match answer {
+        Ok(send::CallAnswer::Receipt) => Answered::Receipt,
+        Ok(send::CallAnswer::Reply(_) | send::CallAnswer::Refused)
+            if kind == DmTypeId::FriendRequest =>
+        {
+            Answered::Again
+        }
+        Ok(send::CallAnswer::Reply(_)) if rejection_applied => Answered::Rejected,
+        Ok(send::CallAnswer::Reply(_) | send::CallAnswer::Refused) => Answered::Refused,
+        Err(_) => Answered::Again,
+    }
+}
+
 /// One attempt of a handshake row to `to`: a request or a first contact
 /// ([`receipted`]) goes by `app_call` only, over the cached route or one
 /// refreshed from their profile, and is attempted again until its empty
@@ -280,49 +318,41 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
     if receipted(kind) {
-        match send::call_datagram_answer(host, to, datagram).await {
-            Ok(send::CallAnswer::Receipt) => {}
-            // A first contact whose prekeys the peer refused is answered
-            // with their `PreKeyRejected` (B5), which sends the one resend
-            // (plan E2.4) on this stream: this row ends and the rows behind
-            // it go on.
-            Ok(send::CallAnswer::Reply(reply)) => {
-                if kind != DmTypeId::FriendRequest
-                    && crate::operations::direct::on_first_contact_reply(host, to, &reply).await
-                {
-                    return Attempt::Superseded(format!("{kind:?} prekeys refused by {to}"));
-                }
+        let answer = send::call_datagram_answer(host, to, datagram).await;
+        let applied = match &answer {
+            Ok(send::CallAnswer::Reply(reply)) if kind != DmTypeId::FriendRequest => {
+                crate::operations::direct::on_first_contact_reply(host, to, reply).await
             }
-            // Any other refusal (a bare NAK) shows as failed with Retry
-            // (finding 46, `first_contact::refused`).
-            Ok(send::CallAnswer::Refused) if kind != DmTypeId::FriendRequest => {
+            _ => false,
+        };
+        return match answered(kind, &answer, applied) {
+            Answered::Receipt => {
+                if kind == DmTypeId::FriendRequest {
+                    host.publish(SubscriptionEvent::Friend(
+                        FriendEvent::RequestAcknowledged {
+                            peer_key: to.to_string(),
+                        },
+                    ));
+                }
+                Attempt::Receipted
+            }
+            Answered::Rejected => Attempt::Superseded(format!("{kind:?} prekeys refused by {to}")),
+            Answered::Refused => {
                 if matches!(kind, DmTypeId::FriendAccept | DmTypeId::SessionResetAccept) {
                     crate::operations::prekeys::refused(host, to, kind);
                 }
-                return Attempt::Superseded(format!("{kind:?} refused by {to}"));
+                Attempt::Superseded(format!("{kind:?} refused by {to}"))
             }
-            Ok(send::CallAnswer::Refused) => {
-                tracing::debug!(to = %to, ?kind, "friend request refused by app_call — attempted again");
-                return Attempt::Deferred;
+            Answered::Again => {
+                if let Err(e) = &answer {
+                    tracing::debug!(to = %to, ?kind, error = %e,
+                        "handshake frame not receipted by app_call — attempted again");
+                } else {
+                    tracing::debug!(to = %to, ?kind, "friend request refused by app_call — attempted again");
+                }
+                Attempt::Deferred
             }
-            Err(e @ FriendError::NotReady(_)) => {
-                tracing::debug!(to = %to, ?kind, reason = %e, "handshake row deferred");
-                return Attempt::Deferred;
-            }
-            Err(e) => {
-                tracing::debug!(to = %to, ?kind, error = %e,
-                    "handshake frame not receipted by app_call — attempted again");
-                return Attempt::Deferred;
-            }
-        }
-        if kind == DmTypeId::FriendRequest {
-            host.publish(SubscriptionEvent::Friend(
-                FriendEvent::RequestAcknowledged {
-                    peer_key: to.to_string(),
-                },
-            ));
-        }
-        return Attempt::Receipted;
+        };
     }
     match send::route_send_datagram(host, to, &datagram, kind, true).await {
         Ok(true) if kind == DmTypeId::Unfriended => Attempt::Awaiting,
@@ -372,5 +402,34 @@ mod tests {
         let id = unfriended_client_id("ab12");
         assert_eq!(unfriended_peer(&id), Some("ab12"));
         assert_eq!(unfriended_peer("FriendRequest:00"), None);
+    }
+
+    #[test]
+    fn a_reply_that_did_not_open_or_was_not_applied_is_a_refusal_never_a_receipt() {
+        let reply = || Ok(send::CallAnswer::Reply(b"garbage".to_vec()));
+        for kind in [
+            DmTypeId::FriendAccept,
+            DmTypeId::SessionResetAccept,
+            DmTypeId::FriendsKey,
+        ] {
+            assert_eq!(answered(kind, &reply(), false), Answered::Refused);
+            assert_eq!(answered(kind, &reply(), true), Answered::Rejected);
+            assert_eq!(
+                answered(kind, &Ok(send::CallAnswer::Refused), false),
+                Answered::Refused
+            );
+            assert_eq!(
+                answered(kind, &Ok(send::CallAnswer::Receipt), false),
+                Answered::Receipt
+            );
+            assert_eq!(
+                answered(kind, &Err(FriendError::Locked), false),
+                Answered::Again
+            );
+        }
+        assert_eq!(
+            answered(DmTypeId::FriendRequest, &reply(), false),
+            Answered::Again
+        );
     }
 }

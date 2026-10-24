@@ -81,7 +81,9 @@ fn by_message(host: &dyn FriendHost, dropped: Dropped) {
 /// The reply to a first contact we called `to` with, other than the
 /// receipt: their `PreKeyRejected` (B5, finding 46) is handled as one
 /// that came by message (`prekeys::on_rejected`, the one resend). Whether
-/// it was that rejection.
+/// it was that rejection and was applied; a reply that did not open, or a
+/// rejection naming no unanswered init of ours, is a refusal (finding 46
+/// refined).
 pub(crate) async fn on_first_contact_reply(host: &dyn FriendHost, to: &str, reply: &[u8]) -> bool {
     let Some(bytes) = dm::unwire(reply) else {
         return false;
@@ -98,8 +100,10 @@ pub(crate) async fn on_first_contact_reply(host: &dyn FriendHost, to: &str, repl
         frame::processed(host, &opened);
         return false;
     }
-    drop(handlers::apply(host, opened).await);
-    true
+    matches!(
+        handlers::apply(host, opened).await,
+        handlers::Applied::Done(true)
+    )
 }
 
 /// Handle one entry of `writer`'s DM chain (a wired frame they appended):
