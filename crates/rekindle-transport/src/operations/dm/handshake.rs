@@ -265,10 +265,13 @@ enum Answered {
     /// A bare NAK, or a reply that did not open or was not applied (a
     /// `PreKeyRejected` naming no unanswered init of ours): a refusal,
     /// shown on the friend's row as failed with Retry (finding 46 refined,
-    /// `first_contact::refused`), never a receipt or a silent split.
+    /// `first_contact::refused`), never a receipt or a silent split. A
+    /// friend request's bare NAK is a refusal too (finding 74): the
+    /// pending-out row shows it, with no timer (`first_contact::request_refused`).
     Refused,
-    /// No answer, or a friend request refused: attempted again until the
-    /// row's deadline.
+    /// No answer (our own fault is unanswered, RV5), a friend request's
+    /// reply (no answer a request defines), or our own failure applying a
+    /// reply: attempted again until the row's deadline.
     Again,
 }
 
@@ -281,11 +284,7 @@ fn answered(
 ) -> Answered {
     match answer {
         Ok(send::CallAnswer::Receipt) => Answered::Receipt,
-        Ok(send::CallAnswer::Reply(_) | send::CallAnswer::Refused)
-            if kind == DmTypeId::FriendRequest =>
-        {
-            Answered::Again
-        }
+        Ok(send::CallAnswer::Reply(_)) if kind == DmTypeId::FriendRequest => Answered::Again,
         Ok(send::CallAnswer::Reply(_)) if rejection == Rejection::Applied => Answered::Rejected,
         // Our own failure judging or applying it is no refusal of theirs
         // (RV5 R5): attempted again.
@@ -298,7 +297,8 @@ fn answered(
 /// One attempt of a handshake row to `to`: a request or a first contact
 /// ([`receipted`]) goes by `app_call` only, over the cached route or one
 /// refreshed from their profile, and is attempted again until its empty
-/// return (the receipt) comes back or its deadline passes; any other frame
+/// return (the receipt) comes back, a judged refusal ends it ([`answered`]),
+/// or its deadline passes; any other frame
 /// is sent once over the route.
 pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt {
     let framed: Framed = match serde_json::from_slice(payload) {
@@ -344,6 +344,8 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             Answered::Refused => {
                 if matches!(kind, DmTypeId::FriendAccept | DmTypeId::SessionResetAccept) {
                     crate::operations::prekeys::refused(host, to, kind);
+                } else if kind == DmTypeId::FriendRequest {
+                    crate::operations::prekeys::request_refused(host, to);
                 }
                 Attempt::Superseded(format!("{kind:?} refused by {to}"))
             }
@@ -352,7 +354,8 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
                     tracing::debug!(to = %to, ?kind, error = %e,
                         "handshake frame not receipted by app_call — attempted again");
                 } else {
-                    tracing::debug!(to = %to, ?kind, "friend request refused by app_call — attempted again");
+                    tracing::debug!(to = %to, ?kind,
+                        "friend request answered with a reply — attempted again");
                 }
                 Attempt::Deferred
             }
@@ -440,6 +443,25 @@ mod tests {
         }
         assert_eq!(
             answered(DmTypeId::FriendRequest, &reply(), Rejection::NotOurs),
+            Answered::Again
+        );
+    }
+
+    /// Live A/B finding 74: a blocker NAKs our request on every attempt; a
+    /// bare NAK is a judged refusal (RV5), so it ends the row, not a retry.
+    #[test]
+    fn a_refused_friend_request_ends_and_is_not_attempted_again() {
+        let request = DmTypeId::FriendRequest;
+        assert_eq!(
+            answered(request, &Ok(send::CallAnswer::Refused), Rejection::NotOurs),
+            Answered::Refused
+        );
+        assert_eq!(
+            answered(request, &Ok(send::CallAnswer::Receipt), Rejection::NotOurs),
+            Answered::Receipt
+        );
+        assert_eq!(
+            answered(request, &Err(FriendError::Locked), Rejection::NotOurs),
             Answered::Again
         );
     }

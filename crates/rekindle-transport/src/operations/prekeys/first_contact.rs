@@ -104,6 +104,12 @@ pub(crate) fn failed(host: &dyn FriendHost, peer: &str, kind: DmTypeId, reason: 
             },
         );
     }
+    show_failed(host, peer, reason);
+}
+
+/// The friend's row shows `reason`, not retrying, and the failure is
+/// published.
+fn show_failed(host: &dyn FriendHost, peer: &str, reason: String) {
     state::update(host, peer, |f| {
         f.handshake_retrying = false;
         f.handshake_error = Some(reason.clone());
@@ -112,6 +118,20 @@ pub(crate) fn failed(host: &dyn FriendHost, peer: &str, kind: DmTypeId, reason: 
         peer_key: peer.to_string(),
         reason,
     }));
+}
+
+/// The reason a friend request answered with a bare NAK shows.
+pub(crate) const REQUEST_REFUSED: &str = "they did not accept a request from you";
+
+/// Live A/B finding 74: `peer` answered our `FriendRequest` with a bare NAK,
+/// a judged refusal (a block, an admission refusal; RV5: our own faults
+/// are unanswered). Per finding 46 it ends as a visible failure with no
+/// timer: the pending-out friend keeps its state and shows
+/// [`REQUEST_REFUSED`]; the user cancels it or sends a fresh `friend add`,
+/// which replaces the row and clears the error. It is no first contact, so
+/// nothing is recorded for [`retry`].
+pub(crate) fn request_refused(host: &dyn FriendHost, peer: &str) {
+    show_failed(host, peer, REQUEST_REFUSED.to_string());
 }
 
 /// Finding 46: the peer refused our first contact `kind` with a bare NAK
