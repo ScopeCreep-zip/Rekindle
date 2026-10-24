@@ -208,3 +208,96 @@ fn malformed_pages_are_refused() {
         Err(VoiceNoteError::Duration { .. })
     ));
 }
+
+#[test]
+fn a_recording_at_the_cap_round_trips_and_a_longer_one_is_refused() {
+    let rate = usize::try_from(INPUT_SAMPLE_RATE).unwrap();
+    let full = vec![0.0f32; rate * 300];
+    assert_eq!(
+        analyze(&encode(&full).unwrap()).unwrap().duration_ms,
+        MAX_DURATION_MS
+    );
+    let one_frame_over = vec![0.0f32; rate * 300 + FRAME_SAMPLES];
+    assert_eq!(
+        analyze(&encode(&one_frame_over).unwrap())
+            .unwrap()
+            .duration_ms,
+        MAX_DURATION_MS + DURATION_GRACE_MS
+    );
+    assert!(matches!(
+        encode(&vec![0.0f32; rate * 301]),
+        Err(VoiceNoteError::Duration { .. })
+    ));
+}
+
+/// The byte offset of each page of `ogg`.
+fn page_offsets(ogg: &[u8]) -> Vec<usize> {
+    let mut offsets = Vec::new();
+    let mut at = 0;
+    while at < ogg.len() {
+        offsets.push(at);
+        let count = usize::from(ogg[at + 26]);
+        let body: usize = ogg[at + 27..at + 27 + count]
+            .iter()
+            .map(|&v| usize::from(v))
+            .sum();
+        at += 27 + count + body;
+    }
+    offsets
+}
+
+/// Change one page's header with `edit` and fix its CRC.
+fn edit_page(ogg: &mut [u8], page: usize, edit: impl FnOnce(&mut [u8])) {
+    let offsets = page_offsets(ogg);
+    let start = offsets[page];
+    let end = offsets.get(page + 1).copied().unwrap_or(ogg.len());
+    edit(&mut ogg[start..end]);
+    ogg[start + 22..start + 26].fill(0);
+    let crc = ogg::crc32(&ogg[start..end]);
+    ogg[start + 22..start + 26].copy_from_slice(&crc.to_le_bytes());
+}
+
+#[test]
+fn the_rfc_7845_page_layout_is_enforced() {
+    let ogg = encode(&tone(440.0, 500)).unwrap();
+    assert!(analyze(&ogg).is_ok());
+    let packets = ogg::read(&ogg, MAX_PACKETS).unwrap();
+    let head = packets[0].data.clone();
+    let audio: Vec<&[u8]> = packets[2..].iter().map(|p| p.data.as_slice()).collect();
+    let end = packets.last().unwrap().page_granule.unwrap();
+
+    // OpusHead and OpusTags share the first page.
+    let mut writer = ogg::OggWriter::new(1);
+    writer.page(&[&head, EMPTY_TAGS], 0, true, false);
+    writer.page(&audio, end, false, true);
+    assert!(matches!(
+        analyze(&writer.finish()),
+        Err(VoiceNoteError::Format(_))
+    ));
+
+    // OpusTags shares its page with audio.
+    let mut writer = ogg::OggWriter::new(1);
+    writer.page(&[&head], 0, true, false);
+    let mut with_tags: Vec<&[u8]> = vec![EMPTY_TAGS];
+    with_tags.extend(audio.iter().copied());
+    writer.page(&with_tags, end, false, true);
+    assert!(matches!(
+        analyze(&writer.finish()),
+        Err(VoiceNoteError::Format(_))
+    ));
+
+    // A reserved header-type bit, on any page.
+    for page in [0, 2] {
+        let mut flagged = ogg.clone();
+        edit_page(&mut flagged, page, |p| p[5] |= 0x08);
+        assert!(
+            matches!(analyze(&flagged), Err(VoiceNoteError::Format(_))),
+            "page {page}"
+        );
+    }
+
+    // A page with another serial.
+    let mut other = ogg.clone();
+    edit_page(&mut other, 2, |p| p[14] ^= 0x01);
+    assert!(matches!(analyze(&other), Err(VoiceNoteError::Format(_))));
+}

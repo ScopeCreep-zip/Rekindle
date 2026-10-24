@@ -18,6 +18,13 @@ use thiserror::Error;
 pub const INPUT_SAMPLE_RATE: u32 = 16_000;
 /// The longest voice message, in ms.
 pub const MAX_DURATION_MS: u32 = 5 * 60 * 1000;
+/// How far past [`MAX_DURATION_MS`] a voice message may run: one 20 ms
+/// frame, so a recording stopped at the limit (whose last frame the
+/// encoder pads) is never refused. The Host's PCM bound and [`analyze`]
+/// both allow it; anything longer is refused.
+pub const DURATION_GRACE_MS: u32 = 20;
+/// The longest voice message accepted, in ms.
+pub const MAX_ACCEPTED_MS: u32 = MAX_DURATION_MS + DURATION_GRACE_MS;
 /// The shortest voice message, in ms (a shorter press is a cancel).
 pub const MIN_DURATION_MS: u32 = 200;
 /// How many peaks a waveform has.
@@ -34,13 +41,13 @@ const BITRATE: i32 = 24_000;
 /// Most samples one Opus packet decodes to: 120 ms at 48 kHz (RFC 6716 §3.2.5).
 const MAX_PACKET_SAMPLES: usize = 5760;
 /// Most decoded samples a voice message holds past its pre-skip:
-/// [`MAX_DURATION_MS`] at 48 kHz, one channel, plus one packet of
+/// [`MAX_ACCEPTED_MS`] at 48 kHz, one channel, plus one 120 ms packet of
 /// end-trimmed padding.
 pub const MAX_DECODED_SAMPLES: u64 =
-    MAX_DURATION_MS as u64 * GRANULE_RATE / 1000 + MAX_PACKET_SAMPLES as u64;
+    MAX_ACCEPTED_MS as u64 * GRANULE_RATE / 1000 + MAX_PACKET_SAMPLES as u64;
 /// Most packets a voice message holds: [`MAX_DURATION_MS`] of the
 /// shortest Opus frame (2.5 ms), plus the two header packets.
-pub const MAX_PACKETS: usize = MAX_DURATION_MS as usize * 2 / 5 + 2;
+pub const MAX_PACKETS: usize = MAX_ACCEPTED_MS as usize * 2 / 5 + 2;
 /// Largest voice message file: [`MAX_DURATION_MS`] at [`BITRATE`], doubled
 /// for the encoder's variable rate, plus 64 KiB of Ogg pages (27 header
 /// bytes and up to 255 lacing values each, one page a second). Far under
@@ -48,7 +55,7 @@ pub const MAX_PACKETS: usize = MAX_DURATION_MS as usize * 2 / 5 + 2;
 /// voice message is held to is this one: [`encode`] refuses to produce
 /// more and [`analyze`] refuses to parse more.
 pub const MAX_FILE_BYTES: usize =
-    MAX_DURATION_MS as usize / 1000 * BITRATE as usize / 8 * 2 + 64 * 1024;
+    MAX_ACCEPTED_MS as usize * BITRATE as usize / 8 / 1000 * 2 + 64 * 1024;
 /// Largest Opus packet (RFC 6716 §3.4).
 const MAX_PACKET: usize = 1275;
 /// Audio packets per page: one second of 20 ms frames.
@@ -58,7 +65,7 @@ const EMPTY_TAGS: &[u8; 16] = b"OpusTags\0\0\0\0\0\0\0\0";
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum VoiceNoteError {
-    #[error("voice message is {got_ms} ms; it must be {MIN_DURATION_MS}..={MAX_DURATION_MS} ms")]
+    #[error("voice message is {got_ms} ms; it must be {MIN_DURATION_MS}..={MAX_ACCEPTED_MS} ms")]
     Duration { got_ms: u64 },
     #[error("PCM is not whole 32-bit float samples")]
     Pcm,
@@ -89,7 +96,7 @@ fn duration_ms(samples: u64, rate: u64) -> u64 {
 fn check_duration(ms: u64) -> Result<u32, VoiceNoteError> {
     u32::try_from(ms)
         .ok()
-        .filter(|ms| (MIN_DURATION_MS..=MAX_DURATION_MS).contains(ms))
+        .filter(|ms| (MIN_DURATION_MS..=MAX_ACCEPTED_MS).contains(ms))
         .ok_or(VoiceNoteError::Duration { got_ms: ms })
 }
 
@@ -216,6 +223,7 @@ pub fn analyze(bytes: &[u8]) -> Result<VoiceNoteInfo, VoiceNoteError> {
     let packets = ogg::read(bytes, MAX_PACKETS).map_err(VoiceNoteError::Format)?;
     let mut packets = packets.into_iter();
     let head = packets.next().ok_or_else(|| format("no OpusHead"))?;
+    let head_page = (head.page, head.page_granule);
     let head = &head.data;
     if head.len() != 19
         || &head[..8] != b"OpusHead"
@@ -229,6 +237,15 @@ pub fn analyze(bytes: &[u8]) -> Result<VoiceNoteInfo, VoiceNoteError> {
     let tags = packets.next().ok_or_else(|| format("no OpusTags"))?;
     if tags.data.as_slice() != EMPTY_TAGS {
         return Err(format("OpusTags is not empty"));
+    }
+    // RFC 7845 §3: OpusHead alone on the first (BOS) page, granule 0;
+    // OpusTags on the next page, finishing it, granule 0; audio from a
+    // fresh page after it.
+    if head_page != (0, Some(0)) {
+        return Err(format("OpusHead is not alone on the first page"));
+    }
+    if (tags.page, tags.page_granule) != (1, Some(0)) {
+        return Err(format("OpusTags does not fill its own page"));
     }
     let audio: Vec<ogg::Packet> = packets.collect();
     let granule = audio

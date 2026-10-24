@@ -53,17 +53,17 @@ fn local_path(value: &str) -> Checked {
 /// Host's input rate, from the shortest to the longest voice message
 /// (`rekindle_files::voice_note`, plan E5.1).
 fn voice(pcm: &[u8]) -> Checked {
-    use rekindle_files::voice_note::{INPUT_SAMPLE_RATE, MAX_DURATION_MS, MIN_DURATION_MS};
+    use rekindle_files::voice_note::{INPUT_SAMPLE_RATE, MAX_ACCEPTED_MS, MIN_DURATION_MS};
     let bytes_for = |ms: u32| u64::from(ms) * u64::from(INPUT_SAMPLE_RATE) / 1000 * 4;
     let len = pcm.len() as u64;
     if !len.is_multiple_of(4)
         || len < bytes_for(MIN_DURATION_MS)
-        || len > bytes_for(MAX_DURATION_MS)
+        || len > bytes_for(MAX_ACCEPTED_MS)
     {
         return Err(IpcResponse::error(
             400,
             format!(
-                "a voice message is {MIN_DURATION_MS}–{MAX_DURATION_MS} ms of f32 PCM at \
+                "a voice message is {MIN_DURATION_MS}–{MAX_ACCEPTED_MS} ms of f32 PCM at \
                  {INPUT_SAMPLE_RATE} Hz"
             ),
         ));
@@ -165,6 +165,17 @@ pub(super) fn check(request: &PinRequest) -> Checked {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_voice_message_at_the_cap_passes_and_a_second_over_does_not() {
+        let bytes = |samples: usize| vec![0u8; samples * 4];
+        assert!(super::voice(&bytes(16_000 * 300)).is_ok(), "300.0 s");
+        assert!(
+            super::voice(&bytes(16_000 * 300 + 320)).is_ok(),
+            "300 s + 1 frame"
+        );
+        assert!(super::voice(&bytes(16_000 * 301)).is_err(), "301 s");
+    }
+
     use rekindle_types::search::{MessageSearch, SearchFilters, SearchSort};
 
     use super::*;

@@ -8,6 +8,8 @@ pub(super) struct Packet {
     /// The granule position of the page this packet completes, if it is
     /// that page's last packet.
     pub page_granule: Option<u64>,
+    /// The index of the page this packet completes on.
+    pub page: u32,
 }
 
 const CAPTURE: &[u8; 4] = b"OggS";
@@ -15,6 +17,8 @@ const HEADER_LEN: usize = 27;
 const FLAG_CONTINUED: u8 = 0x01;
 const FLAG_FIRST: u8 = 0x02;
 const FLAG_LAST: u8 = 0x04;
+/// The header-type bits RFC 3533 §6 leaves reserved: zero.
+const FLAGS_RESERVED: u8 = !(FLAG_CONTINUED | FLAG_FIRST | FLAG_LAST);
 /// Most lacing values one page carries (RFC 3533 §6).
 const MAX_LACING_VALUES: usize = 255;
 /// Largest packet read: 120 ms of 1275-byte Opus frames (RFC 6716 §3.4,
@@ -47,7 +51,7 @@ const CRC_TABLE: [u32; 256] = {
 /// The Ogg CRC-32: polynomial 0x04c11db7, no reflection, initial value and
 /// final XOR zero (RFC 3533 §6, the `CRC_checksum` field), a byte at a
 /// time from [`CRC_TABLE`].
-fn crc32(data: &[u8]) -> u32 {
+pub(super) fn crc32(data: &[u8]) -> u32 {
     data.iter().fold(0u32, |crc, &byte| {
         (crc << 8) ^ CRC_TABLE[usize::from(u8::try_from(crc >> 24).unwrap_or(0) ^ byte)]
     })
@@ -116,7 +120,8 @@ impl OggWriter {
 
 /// Read every packet of a single-stream Ogg file: one serial, page
 /// sequence numbers in order, every CRC valid, the first page marked
-/// first and the last marked last, no packet left open, refusing a stream of more than `max_packets`: the
+/// first and the last marked last, no reserved header-type bit set, no
+/// packet left open, refusing a stream of more than `max_packets`: the
 /// count is checked as each page completes packets, so a stream of tiny
 /// packets stops at the bound.
 pub(super) fn read(bytes: &[u8], max_packets: usize) -> Result<Vec<Packet>, String> {
@@ -137,6 +142,9 @@ pub(super) fn read(bytes: &[u8], max_packets: usize) -> Result<Vec<Packet>, Stri
             return Err("not an Ogg page".into());
         }
         let flags = header[5];
+        if flags & FLAGS_RESERVED != 0 {
+            return Err("reserved header-type bits set".into());
+        }
         let granule = u64::from_le_bytes(header[6..14].try_into().map_err(|_| "granule")?);
         let page_serial = u32::from_le_bytes(header[14..18].try_into().map_err(|_| "serial")?);
         let page_sequence = u32::from_le_bytes(header[18..22].try_into().map_err(|_| "seq")?);
@@ -187,7 +195,11 @@ pub(super) fn read(bytes: &[u8], max_packets: usize) -> Result<Vec<Packet>, Stri
         }
         for (i, data) in completed.into_iter().enumerate() {
             let page_granule = (i + 1 == last).then_some(granule);
-            packets.push(Packet { data, page_granule });
+            packets.push(Packet {
+                data,
+                page_granule,
+                page: sequence,
+            });
         }
         ended = flags & FLAG_LAST != 0;
         sequence += 1;

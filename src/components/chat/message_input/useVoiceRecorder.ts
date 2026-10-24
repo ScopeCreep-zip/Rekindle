@@ -2,7 +2,11 @@ import { createSignal, onCleanup } from "solid-js";
 import { bytesToBase64 } from "../../../utils/base64";
 import { handleSendVoiceMessage } from "../../../actions/community.actions";
 
+/** The longest voice message (`rekindle_files::voice_note::MAX_DURATION_MS`):
+ *  the recorder stops at exactly this, and the PCM handed over is cut to it,
+ *  so a full-length recording is never refused. */
 const VOICE_MESSAGE_MAX_MS = 5 * 60 * 1000;
+const VOICE_PCM_MAX_SAMPLES = (VOICE_MESSAGE_MAX_MS / 1000) * 16_000;
 /** The rate the Host takes a recording's PCM at
  *  (`rekindle_files::voice_note::INPUT_SAMPLE_RATE`). */
 const VOICE_PCM_SAMPLE_RATE = 16_000;
@@ -23,6 +27,7 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
   let recorderStartedAt = 0;
   let recorderStream: MediaStream | null = null;
   let timerHandle: number | null = null;
+  let limitHandle: number | null = null;
   const [recording, setRecording] = createSignal(false);
   const [recordedMs, setRecordedMs] = createSignal(0);
 
@@ -30,6 +35,10 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
     if (timerHandle != null) {
       window.cancelAnimationFrame(timerHandle);
       timerHandle = null;
+    }
+    if (limitHandle != null) {
+      window.clearTimeout(limitHandle);
+      limitHandle = null;
     }
     recorderStream?.getTracks().forEach((t) => t.stop());
     recorderStream = null;
@@ -62,12 +71,14 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
       setRecording(true);
       setRecordedMs(0);
 
+      // The cap is a timer of its own, not a frame check, so the stop
+      // lands at the limit even while the window is hidden.
+      limitHandle = window.setTimeout(() => {
+        limitHandle = null;
+        void stopRecording(true);
+      }, VOICE_MESSAGE_MAX_MS);
       const tick = (): void => {
-        setRecordedMs(Date.now() - recorderStartedAt);
-        if (Date.now() - recorderStartedAt >= VOICE_MESSAGE_MAX_MS) {
-          void stopRecording(true);
-          return;
-        }
+        setRecordedMs(Math.min(Date.now() - recorderStartedAt, VOICE_MESSAGE_MAX_MS));
         timerHandle = window.requestAnimationFrame(tick);
       };
       timerHandle = window.requestAnimationFrame(tick);
@@ -105,7 +116,8 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
     const decoder = new AudioContext({ sampleRate: VOICE_PCM_SAMPLE_RATE });
     try {
       const decoded = await decoder.decodeAudioData(await blob.arrayBuffer());
-      const pcm = decoded.getChannelData(0);
+      // A stop lands a few ms after the limit; the audio is cut to it.
+      const pcm = decoded.getChannelData(0).subarray(0, VOICE_PCM_MAX_SAMPLES);
       const pcmB64 = bytesToBase64(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
       await handleSendVoiceMessage(localCommunityId, localChannelId, pcmB64);
     } catch (e) {
