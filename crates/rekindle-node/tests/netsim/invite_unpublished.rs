@@ -9,9 +9,11 @@
 //! invite's `InviteRevoked` is queued behind its `InviteCreated` on the same
 //! stream, so it lands revoked and is never listed (plan E3.2 S6b).
 //!
-//! Every other governance command answers the same way: a channel created
-//! while its op cannot land is refused "not yet published", and the op,
-//! still queued, reaches the other members once the fault clears.
+//! Every other governance command answers once its op's first attempt is
+//! known or `GOVERNANCE_ANSWER_BOUND` passed, a success either way (RV4
+//! review M1/M2, Matrix's local echo): a channel created while its op
+//! cannot land answers Ok, pending, and the op, still queued, reaches the
+//! other members once the fault clears.
 
 use std::time::Duration;
 
@@ -93,7 +95,7 @@ async fn no_invite_link_until_its_op_is_on_the_dht() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_governance_command_answers_once_its_op_landed() {
+async fn a_governance_command_answers_pending_within_the_bound() {
     let mut community = Community::create(2, 227).await;
     community.join(1).await;
     let record = creator_record(&community);
@@ -110,11 +112,15 @@ async fn a_governance_command_answers_once_its_op_landed() {
         slowmode_seconds: 0,
         parent_voice_channel: None,
     }));
-    let refused = community.nodes[0].call(create).await;
-    let answer = format!("{refused:?}");
+    let asked = tokio::time::Instant::now();
+    let answer = community.nodes[0].call(create).await;
+    let waited = asked.elapsed();
+    assert!(answer.is_ok(), "a pending op is a success: {answer:?}");
+    // The channel's own record is created before its op; the op's wait is
+    // the bound, never the command's deadline (about 168 s).
     assert!(
-        refused.is_err() && answer.contains("not yet published"),
-        "refused while its op is off the DHT: {answer}"
+        waited <= rekindle_types::config::GOVERNANCE_ANSWER_BOUND * 2,
+        "answered within the bound, not the command's deadline: {waited:?}"
     );
 
     community.sim.fault(Fault::Heal);
@@ -138,26 +144,29 @@ async fn a_governance_command_answers_once_its_op_landed() {
 
 /// A join whose `MemberJoined` cannot land (every set node 1 makes of an op
 /// log head, `M`/2, is refused, so its card lands and its op does not)
-/// answers "not yet published" with its local side done and the op queued
-/// (plan E3.2 S6b). Once the fault lifts the op lands: a later op of the
-/// joiner, behind it on the same stream, lands within its deadline.
+/// answers Ok, pending, with its local side done and the op queued (plan
+/// E3.2 S6b, RV4 review M1). The join is idempotent: asked again, it
+/// answers the same membership and mints no second record. Once the fault
+/// lifts the op lands: a later op of the joiner, behind it on the same
+/// stream, lands.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_join_whose_member_joined_cannot_land_is_not_yet_published() {
+async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
     let mut community = Community::create(2, 229).await;
     community.sim.fault(Fault::WriteFails {
         node: 1,
         of: Writes::Subkey(rekindle_types::dht_layout::member_record::GOV_HEAD),
     });
     let link = community.invite().await;
-    let refused = community.nodes[1]
-        .call(IpcRequest::Community(CommunityRequest::Lifecycle(
-            LifecycleRequest::CommunityJoin { invite: link },
-        )))
-        .await;
-    let answer = format!("{refused:?}");
-    assert!(
-        refused.is_err() && answer.contains("not yet published"),
-        "the join waits for its op: {answer}"
+    let join = IpcRequest::Community(CommunityRequest::Lifecycle(
+        LifecycleRequest::CommunityJoin { invite: link },
+    ));
+    let joined = community.nodes[1].ok(join.clone()).await;
+    assert_eq!(joined["pending"], true, "the join is pending: {joined}");
+    let again = community.nodes[1].ok(join).await;
+    assert_eq!(
+        (&again["slot"], &again["segment"], &again["pending"]),
+        (&joined["slot"], &joined["segment"], &joined["pending"]),
+        "a repeated join answers the same membership: {joined} / {again}"
     );
     let listed = community.nodes[1]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(

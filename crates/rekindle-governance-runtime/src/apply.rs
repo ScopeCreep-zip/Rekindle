@@ -8,7 +8,7 @@ use rekindle_secrets::derive;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
 
-use crate::deps::{GovernanceRuntimeDeps, OpLanding};
+use crate::deps::{GovernanceRuntimeDeps, OpLanding, OpOutcome};
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 use crate::op_log;
@@ -51,16 +51,28 @@ fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
 
 /// Apply a governance entry as our next signed op: validate it against the
 /// merged state, store it in `governance_ops`, re-merge, emit the UI
-/// events, and publish it on the governance-op outbox stream, returning
-/// only once it landed on our `M`/2 with our frontier on `M`/3 (plan E3.2
-/// S6b: a kick, a role, a channel or an invite is done when a joiner's walk
-/// finds it). An op not landed by the command's deadline is
-/// [`GovernanceRuntimeError::NotYetPublished`] and stays queued.
+/// events, gossip it and publish it on the governance-op outbox stream,
+/// answering after its first attempt or `GOVERNANCE_ANSWER_BOUND`,
+/// whichever comes first (plan E3.2 S6b, RV4 review M1/M2): `Landed`, or
+/// `Pending` (applied, gossiped, queued; the outbox lands it and the
+/// backend announces the landing). Neither is retried by the caller.
 pub async fn write_entry<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,
-) -> Result<(), GovernanceRuntimeError> {
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    write(deps, community_id, entry, OpLanding::FirstAttempt).await
+}
+
+/// [`write_entry`], answering only once the op landed on `M`/2 with our
+/// frontier on `M`/3, else [`GovernanceRuntimeError::NotYetPublished`]
+/// with the op queued: for what a joiner must find on the DHT before we
+/// hand it out, the invite link (plan E3.2 S6 (4)).
+pub async fn write_entry_landed<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: GovernanceEntry,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
     write(deps, community_id, entry, OpLanding::Landed).await
 }
 
@@ -73,7 +85,7 @@ pub async fn write_entry_queued<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,
-) -> Result<(), GovernanceRuntimeError> {
+) -> Result<OpOutcome, GovernanceRuntimeError> {
     write(deps, community_id, entry, OpLanding::Queued).await
 }
 
@@ -82,7 +94,7 @@ async fn write<D: GovernanceRuntimeDeps>(
     community_id: &str,
     entry: GovernanceEntry,
     landing: OpLanding,
-) -> Result<(), GovernanceRuntimeError> {
+) -> Result<OpOutcome, GovernanceRuntimeError> {
     refuse_out_of_bounds(&entry)?;
 
     let gov_state = deps

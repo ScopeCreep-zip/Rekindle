@@ -491,6 +491,7 @@ impl ChannelMessagingDeps for HostChannel {
         }
         rekindle_governance_runtime::apply::write_entry(&self.gov, community_id, entry)
             .await
+            .map(drop)
             .map_err(|e| match e {
                 rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied => {
                     ChannelError::PermissionDenied(e.to_string())

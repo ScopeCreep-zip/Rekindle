@@ -233,7 +233,7 @@ impl HostGovernance {
         community_id: &str,
         encoded: Vec<u8>,
         landing: rekindle_governance_runtime::OpLanding,
-    ) -> Result<(), GovernanceRuntimeError> {
+    ) -> Result<rekindle_governance_runtime::OpOutcome, GovernanceRuntimeError> {
         let (cert, state, mine) = {
             let map = self.ctx.communities.map().read();
             let community = map.get(community_id).ok_or_else(|| {
@@ -255,21 +255,24 @@ impl HostGovernance {
             .outbox
             .governance_ops()
             .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
-        let mut landed = Ok(());
-        match landing {
+        let pending = match landing {
             rekindle_governance_runtime::OpLanding::FirstAttempt => {
-                let published = ops
-                    .publish(community_id, &record, encoded.clone())
+                let (published, landing) = ops
+                    .publish_answer(
+                        community_id,
+                        &record,
+                        encoded.clone(),
+                        rekindle_types::config::GOVERNANCE_ANSWER_BOUND,
+                    )
                     .await
                     .map_err(|e| adapter("publish op", e))?;
-                // A first attempt that did not land leaves the op queued: it
-                // is in our state and the outbox lands it, so the action stands.
-                if let crate::host::adapters::outbox::Published::Queued(reason) = published {
-                    tracing::warn!(community = %community_id, %reason, "governance op queued for retry, not yet on the DHT");
+                if let crate::host::adapters::outbox::Published::Queued(reason) = &published {
+                    tracing::info!(community = %community_id, %reason, "governance op pending, queued on the outbox");
                 }
+                landing
             }
             // Bounded by the command's deadline (the client's
-            // `NETWORK_COMMAND_DEADLINE`, answered before it).
+            // `NETWORK_COMMAND_DEADLINE`, answered before it): the invite link.
             rekindle_governance_runtime::OpLanding::Landed => {
                 let published = ops
                     .publish_landed(
@@ -281,26 +284,77 @@ impl HostGovernance {
                     .await
                     .map_err(|e| adapter("publish op", e))?;
                 // The command is refused, but the op stands (it is in our
-                // state and the outbox lands it), so the members hear it now:
-                // nothing else tells them before it lands (S6b).
+                // state and the outbox lands it), so the members hear it now.
                 if let crate::host::adapters::outbox::Published::Queued(reason) = published {
                     tracing::warn!(community = %community_id, %reason, "governance op not yet published, queued");
-                    landed = Err(GovernanceRuntimeError::NotYetPublished);
+                    self.gossip_op(community_id, encoded);
+                    return Err(GovernanceRuntimeError::NotYetPublished);
                 }
+                None
             }
-            rekindle_governance_runtime::OpLanding::Queued => ops
-                .queue(community_id, &record, encoded.clone())
-                .await
-                .map_err(|e| adapter("queue op", e))?,
-        }
-        // The fast path: every member hears the op before its watch fires.
+            rekindle_governance_runtime::OpLanding::Queued => Some(
+                ops.queue_watched(community_id, &record, encoded.clone())
+                    .await
+                    .map_err(|e| adapter("queue op", e))?,
+            ),
+        };
+        let outcome = match pending {
+            Some(landing) => {
+                self.announce_landing(community_id, &encoded, landing);
+                rekindle_governance_runtime::OpOutcome::Pending
+            }
+            None => rekindle_governance_runtime::OpOutcome::Landed,
+        };
+        self.gossip_op(community_id, encoded);
+        Ok(outcome)
+    }
+
+    /// The fast path: every member hears the op before its watch fires.
+    fn gossip_op(&self, community_id: &str, encoded: Vec<u8>) {
         self.send_to_mesh_impl(
             community_id,
             &rekindle_codec::community::envelope::CommunityEnvelope::Control(
                 rekindle_codec::community::envelope::ControlPayload::GovernanceOp { op: encoded },
             ),
         );
-        landed
+    }
+
+    /// A `Pending` op (applied, gossiped, queued): announce it now, and its
+    /// landing when a retry lands it (`GovernanceEvent::OpPublication`), so
+    /// every frontend shows it pending with no retry (plan E3.2 S6b). A
+    /// landing the outbox stops before is announced by no one: the row
+    /// stays and lands after the next unlock.
+    fn announce_landing(
+        &self,
+        community_id: &str,
+        encoded: &[u8],
+        landing: tokio::sync::oneshot::Receiver<()>,
+    ) {
+        let Ok(decoded) = rekindle_codec::governance_op::decode_op(encoded) else {
+            return;
+        };
+        let op =
+            hex::encode(rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig).0);
+        let publication = |landed| {
+            rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                rekindle_types::subscription_events::GovernanceEvent::OpPublication {
+                    community: community_id.to_owned(),
+                    op: op.clone(),
+                    landed,
+                },
+            )
+        };
+        self.ctx.publish_event(publication(false));
+        let landed = publication(true);
+        let ctx = std::sync::Arc::clone(&self.ctx);
+        rekindle_governance_runtime::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
+            "governance op landing",
+            async move {
+                if landing.await.is_ok() {
+                    ctx.publish_event(landed);
+                }
+            },
+        );
     }
 
     /// A gossiped `governanceOp @74`: into the op store and the rebuild

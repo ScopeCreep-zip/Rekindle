@@ -62,6 +62,11 @@ pub struct CommunityJoined {
     pub slot: u32,
     /// The members the join's registry scan found.
     pub known_members: u32,
+    /// Our `MemberJoined` is applied, gossiped and queued but not yet on
+    /// our member record (plan E3.2 S6b, Matrix's local echo): it lands
+    /// without a retry, announced by `GovernanceEvent::OpPublication`.
+    #[serde(default)]
+    pub pending: bool,
 }
 
 /// A joined community as its window renders it: channels, categories,

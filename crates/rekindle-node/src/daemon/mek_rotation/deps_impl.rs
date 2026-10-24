@@ -227,6 +227,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
     ) -> Result<(), MekRotationError> {
         rekindle_governance_runtime::write_entry_queued(&self.governance(), community_id, entry)
             .await
+            .map(drop)
             .map_err(|e| MekRotationError::InvalidInput(e.to_string()))
     }
 

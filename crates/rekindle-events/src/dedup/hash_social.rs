@@ -76,6 +76,11 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         GovernanceEvent::BansChanged { .. } => {
             h.update(b"bans");
         }
+        GovernanceEvent::OpPublication { op, landed, .. } => {
+            h.update(b"op_publication|");
+            h.update(op.as_bytes());
+            h.update(&[u8::from(*landed)]);
+        }
         GovernanceEvent::InviteCreated { code_hash, .. } => {
             h.update(b"invite_new|");
             h.update(code_hash.as_bytes());

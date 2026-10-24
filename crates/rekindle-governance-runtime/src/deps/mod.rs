@@ -407,27 +407,27 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         op_ref: &rekindle_types::governance::OpRef,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
     /// Queue our encoded op on the governance-op outbox stream
-    /// (`StreamKind::GovernanceOp`, D22) and wait for its first attempt. Its
+    /// (`StreamKind::GovernanceOp`, D22) and wait for what `landing` names. Its
     /// sender appends the row to our member record's op log with
     /// `chain::append_at(M(p), GOV_HEAD, K_M(p))`, `K_M(p)` from
     /// `VaultKey::MemberRecordOwner{community}` (origin stores it before the
-    /// row; S6 at join), then writes our `Frontier` (`M`/3). `Ok`: both
-    /// landed, so a joiner's walk from the DHT finds the op. `Err`: the row
-    /// stays queued for the outbox's retry, and nothing that needs the op
-    /// on the DHT (an invite link) may be handed out.
+    /// row; S6 at join), then writes our `Frontier` (`M`/3).
     ///
-    /// With [`OpLanding::Landed`] it waits instead, through the outbox's
-    /// retries and up to the command's deadline, until the op landed, and
-    /// is [`GovernanceRuntimeError::NotYetPublished`] if it has not (the row
-    /// stays queued): a governance command answers only once its op is on
-    /// `M` (plan E3.2 S6 (4), S6b). With [`OpLanding::Queued`] it returns
-    /// once the row is queued.
+    /// The op is applied and gossiped before this runs and nothing cancels
+    /// it, so every wait but the invite link's answers with an
+    /// [`OpOutcome`] (plan E3.2 S6b; RV4 review M1, Matrix's local echo):
+    /// [`OpLanding::FirstAttempt`] waits for the first attempt, at most
+    /// `GOVERNANCE_ANSWER_BOUND`; [`OpLanding::Queued`] only for the row.
+    /// A `Pending` op is announced (`GovernanceEvent::OpPublication`) when it
+    /// lands. [`OpLanding::Landed`] (the invite link, S6 (4)) waits through
+    /// the retries up to the command's deadline and is
+    /// [`GovernanceRuntimeError::NotYetPublished`] if it has not landed.
     async fn publish_governance_op(
         &self,
         community_id: &str,
         encoded: Vec<u8>,
         landing: OpLanding,
-    ) -> Result<(), GovernanceRuntimeError>;
+    ) -> Result<OpOutcome, GovernanceRuntimeError>;
 
     /// Fire-and-forget spawn of a text-MEK rotation task for a newly
     /// observed ban. Delegates to the existing
@@ -503,11 +503,26 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 /// ([`GovernanceRuntimeDeps::publish_governance_op`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpLanding {
-    /// The first attempt: a queued op stands, the outbox lands it.
+    /// The first attempt, at most `GOVERNANCE_ANSWER_BOUND`: a queued op
+    /// stands, the outbox lands it, and the answer is `Pending`.
     FirstAttempt,
-    /// The op on `M`/2 and our frontier on `M`/3, through the retries.
+    /// The op on `M`/2 and our frontier on `M`/3, through the retries: only
+    /// for what a joiner must find on the DHT before we hand it out (an
+    /// invite link, S6 (4)).
     Landed,
     /// Queued on the stream, not waited for: the outbox lands it behind our
     /// earlier ops (one stream per author, so the order holds).
     Queued,
+}
+
+/// How a published governance op stands when its command answers (plan
+/// E3.2 S6b): both are successes, since the op is applied, gossiped and
+/// queued and nothing cancels it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpOutcome {
+    /// On our `M`/2 with our frontier on `M`/3.
+    Landed,
+    /// Queued on the governance-op stream; the outbox lands it, and the
+    /// backend announces the landing.
+    Pending,
 }

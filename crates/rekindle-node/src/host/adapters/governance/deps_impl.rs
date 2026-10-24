@@ -386,7 +386,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         encoded: Vec<u8>,
         landing: rekindle_governance_runtime::OpLanding,
-    ) -> Result<(), GovernanceRuntimeError> {
+    ) -> Result<rekindle_governance_runtime::OpOutcome, GovernanceRuntimeError> {
         self.publish_governance_op_impl(community_id, encoded, landing)
             .await
     }

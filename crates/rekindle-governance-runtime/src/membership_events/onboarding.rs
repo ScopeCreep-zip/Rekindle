@@ -154,7 +154,7 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
             role_id,
         };
         match write_entry_queued(deps, community_id, entry).await {
-            Ok(()) => newly_assigned.push(role_id),
+            Ok(_) => newly_assigned.push(role_id),
             Err(e) => {
                 tracing::warn!(
                     community = %community_id,

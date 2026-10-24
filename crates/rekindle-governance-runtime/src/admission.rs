@@ -54,7 +54,8 @@ pub async fn announce_joined<D: GovernanceRuntimeDeps>(
             invite_proof,
         },
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 /// Admit a pending member. Requires `KICK_MEMBERS`, enforced by every
@@ -71,7 +72,8 @@ pub async fn approve_member<D: GovernanceRuntimeDeps>(
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
         },
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 /// Refuse a pending member.
@@ -89,7 +91,8 @@ pub async fn reject_member<D: GovernanceRuntimeDeps>(
             reason: reason.map(ToString::to_string),
         },
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 /// Everyone currently awaiting a decision, oldest first.

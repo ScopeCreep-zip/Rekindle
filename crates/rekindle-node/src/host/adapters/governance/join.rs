@@ -20,6 +20,12 @@ impl HostGovernance {
     /// or storing the membership failed.
     pub(crate) async fn join(&self, link: &InviteLink) -> Result<CommunityJoined, String> {
         let id = link.anchor.as_str().to_owned();
+        // Idempotent (RV4 review M1): a join answered `Pending`, or repeated,
+        // finds our membership and answers it, and never mints a second
+        // member record or `MemberJoined`.
+        if let Some(joined) = self.already_joined(&id) {
+            return Ok(joined);
+        }
         let outcome = rekindle_governance_runtime::join_flow::run_join_stages(self, link)
             .await
             .map_err(|e| format!("community join failed: {e}"))?;
@@ -78,14 +84,8 @@ impl HostGovernance {
         self.recover_behind_meks();
         self.audit_joined(&id, &outcome.invite.community_name);
         tracing::info!(community = %id, "joined community");
-        // The join's local side is done, but its op is not on `M` yet: the
-        // command answers "not yet published" and the outbox lands it (S6b).
-        if joined_queued {
-            return Err(format!(
-                "community joined: {}",
-                rekindle_governance_runtime::GovernanceRuntimeError::NotYetPublished
-            ));
-        }
+        // Our `MemberJoined` not on `M` yet is a pending success: applied,
+        // gossiped and queued, and the outbox lands it (S6b).
         Ok(CommunityJoined {
             governance_key: id,
             name: outcome.invite.community_name.clone(),
@@ -93,13 +93,35 @@ impl HostGovernance {
             slot: outcome.claimed.local_subkey,
             known_members: u32::try_from(outcome.initial_presence.known_members.len())
                 .unwrap_or(u32::MAX),
+            pending: joined_queued,
+        })
+    }
+
+    /// Our membership of `id` when we already hold one: its stored state,
+    /// pending while our `MemberJoined` is still on the governance-op stream.
+    fn already_joined(&self, id: &str) -> Option<CommunityJoined> {
+        let map = self.ctx.communities.map().read();
+        let community = map.get(id)?;
+        let pending = self
+            .ctx
+            .outbox
+            .governance_ops()
+            .is_some_and(|ops| ops.pending(id));
+        Some(CommunityJoined {
+            governance_key: id.to_owned(),
+            name: community.name.clone(),
+            segment: community.my_segment_index.unwrap_or_default(),
+            slot: community.my_subkey_index.unwrap_or_default(),
+            known_members: u32::try_from(community.members.len()).unwrap_or(u32::MAX),
+            pending,
         })
     }
 
     /// Our `M` in §4.4's order: the card (`M`/0), our `MemberJoined` on
     /// `M`/2 with `M`/3 after it (the governance-op stream's send), then
-    /// the beat (`M`/1). `true`: the `MemberJoined` did not land within the
-    /// command's deadline and stays queued; the beat is written regardless.
+    /// the beat (`M`/1). `true`: the `MemberJoined` is pending (its first
+    /// attempt did not land within `GOVERNANCE_ANSWER_BOUND`) and stays
+    /// queued; the beat is written regardless.
     async fn publish_joined_record(
         &self,
         community: &str,
@@ -125,12 +147,12 @@ impl HostGovernance {
                 .publish_governance_op(
                     community,
                     outcome.joined.encoded.clone(),
-                    rekindle_governance_runtime::OpLanding::Landed,
+                    rekindle_governance_runtime::OpLanding::FirstAttempt,
                 )
                 .await
             {
-                Ok(()) => Ok(()),
-                Err(rekindle_governance_runtime::GovernanceRuntimeError::NotYetPublished) => {
+                Ok(rekindle_governance_runtime::OpOutcome::Landed) => Ok(()),
+                Ok(rekindle_governance_runtime::OpOutcome::Pending) => {
                     queued.store(true, std::sync::atomic::Ordering::Relaxed);
                     Ok(())
                 }

@@ -143,7 +143,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     let expires_at = expires_in_seconds.map(|s| deps.clock().now_secs() + s);
     // The link is handed out only once its op and our frontier are on `M`
     // (plan E3.2 S6 (4)): a joiner walks what is on the DHT.
-    let created = apply::write_entry(
+    let created = apply::write_entry_landed(
         deps,
         community_id,
         GovernanceEntry::InviteCreated {
@@ -191,5 +191,6 @@ pub async fn revoke_invite<D: GovernanceRuntimeDeps>(
         community_id,
         GovernanceEntry::InviteRevoked { invite_id },
     )
-    .await
+    .await?;
+    Ok(())
 }

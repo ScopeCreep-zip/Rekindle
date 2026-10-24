@@ -37,6 +37,14 @@ pub const NETWORK_COMMAND_DEADLINE: std::time::Duration = std::time::Duration::f
 pub const NETWORK_ANSWER_DEADLINE: std::time::Duration =
     NETWORK_COMMAND_DEADLINE.saturating_sub(SESSION_STOP_DEADLINE);
 
+/// How long a governance command waits for its op's first attempt before
+/// it answers `Pending` (plan E3.2 S6b, RV4 review M2): the per-attempt send
+/// timeout of Matrix's local echo (matrix-rust-sdk, research batch 9 AK).
+/// The op is applied, gossiped and queued by then, so the answer is a
+/// success either way; no existing deadline is this bound (`CALL_TIMEOUT_MS`
+/// is one RPC, `NETWORK_ANSWER_DEADLINE` the whole command budget).
+pub const GOVERNANCE_ANSWER_BOUND: std::time::Duration = std::time::Duration::from_secs(30);
+
 /// Top-level transport configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

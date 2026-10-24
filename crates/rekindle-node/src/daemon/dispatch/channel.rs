@@ -301,11 +301,14 @@ pub(crate) async fn handle_delete(
     )
     .await
     {
-        Ok(()) => {
+        Ok(outcome) => {
             adapter
                 .persist_governance_snapshot(&membership.governance_key)
                 .await;
-            IpcResponse::ok(&serde_json::json!({ "deleted": hex_id }))
+            IpcResponse::ok(&serde_json::json!({
+                "deleted": hex_id,
+                "pending": outcome == rekindle_governance_runtime::OpOutcome::Pending,
+            }))
         }
         Err(e) => IpcResponse::error(500, format!("channel delete failed: {e}")),
     }
@@ -360,10 +363,11 @@ pub(crate) async fn handle_update(
     )
     .await
     {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({
+        Ok(outcome) => IpcResponse::ok(&serde_json::json!({
             "id": hex_id,
             "name": update.name,
             "topic": update.topic,
+            "pending": outcome == rekindle_governance_runtime::OpOutcome::Pending,
         })),
         Err(e) => IpcResponse::error(500, format!("channel update failed: {e}")),
     }

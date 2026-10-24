@@ -72,5 +72,6 @@ pub async fn set_notification_default<D: GovernanceRuntimeDeps>(
             level: level.to_owned(),
         },
     )
-    .await
+    .await?;
+    Ok(())
 }

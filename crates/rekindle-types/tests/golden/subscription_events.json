@@ -545,6 +545,15 @@
       }
     }
   },
+  "governance.opPublication": {
+    "governance": {
+      "opPublication": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "landed": false,
+        "op": "8888888888888888888888888888888888888888888888888888888888888888"
+      }
+    }
+  },
   "governance.rolesChanged": {
     "governance": {
       "rolesChanged": {

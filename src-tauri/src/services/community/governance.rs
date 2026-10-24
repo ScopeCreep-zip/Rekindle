@@ -15,7 +15,10 @@ pub async fn write_entry(
     entry: GovernanceEntry,
 ) -> Result<(), String> {
     let adapter = crate::state_helpers::host_governance(state)?;
+    // A pending op is a success: the Host announces its landing
+    // (`GovernanceEvent::OpPublication`, plan E3.2 S6b).
     rekindle_governance_runtime::write_entry(&adapter, community_id, entry)
         .await
+        .map(drop)
         .map_err(|e| e.to_string())
 }

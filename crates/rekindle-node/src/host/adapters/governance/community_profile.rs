@@ -80,7 +80,9 @@ impl HostGovernance {
         edit: PolicyEdit,
     ) -> Result<(), GovernanceRuntimeError> {
         self.require_permission(community, permissions::MANAGE_COMMUNITY)?;
-        rekindle_governance_runtime::apply::write_entry(self, community, policy_entry(edit)).await
+        rekindle_governance_runtime::apply::write_entry(self, community, policy_entry(edit))
+            .await
+            .map(drop)
     }
 }
 

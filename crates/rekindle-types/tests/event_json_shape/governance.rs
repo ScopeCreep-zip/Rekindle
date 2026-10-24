@@ -19,6 +19,7 @@ pub const NAMES: &[&str] = &[
     "channelPermissionsChanged",
     "governanceSubkeyUpdated",
     "governanceRebuilt",
+    "opPublication",
 ];
 
 pub fn variant_name(e: &GovernanceEvent) -> &'static str {
@@ -35,6 +36,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::ChannelPermissionsChanged { .. } => "channelPermissionsChanged",
         GovernanceEvent::GovernanceSubkeyUpdated { .. } => "governanceSubkeyUpdated",
         GovernanceEvent::GovernanceRebuilt { .. } => "governanceRebuilt",
+        GovernanceEvent::OpPublication { .. } => "opPublication",
     }
 }
 
@@ -57,6 +59,14 @@ pub fn samples() -> Vec<Sample> {
 
 fn structure() -> Vec<Sample> {
     vec![
+        ev(
+            "opPublication",
+            GovernanceEvent::OpPublication {
+                community: community(),
+                op: "8".repeat(64),
+                landed: false,
+            },
+        ),
         ev(
             "metadataChanged",
             GovernanceEvent::MetadataChanged {

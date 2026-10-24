@@ -83,7 +83,8 @@ pub async fn leave<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    apply::write_entry(deps, community_id, GovernanceEntry::MemberLeft {}).await
+    apply::write_entry(deps, community_id, GovernanceEntry::MemberLeft {}).await?;
+    Ok(())
 }
 
 /// Lift a ban. Requires `BAN_MEMBERS`.
@@ -103,7 +104,8 @@ pub async fn unban_member<D: GovernanceRuntimeDeps>(
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
         },
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 /// Temporarily strip a member's permissions. Requires `TIMEOUT_MEMBERS`,
@@ -128,7 +130,8 @@ pub async fn timeout_member<D: GovernanceRuntimeDeps>(
             started_at: deps.clock().now_secs(),
         },
     )
-    .await
+    .await?;
+    Ok(())
 }
 
 /// Lift a timeout early. Requires `TIMEOUT_MEMBERS`.
@@ -145,5 +148,6 @@ pub async fn remove_timeout<D: GovernanceRuntimeDeps>(
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
         },
     )
-    .await
+    .await?;
+    Ok(())
 }

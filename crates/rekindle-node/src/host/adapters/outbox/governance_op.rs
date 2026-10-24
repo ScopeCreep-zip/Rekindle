@@ -2,7 +2,7 @@
 //! is a row of the community's stream, and its send appends the op to our
 //! member record's op log (`M`/2, `rekindle_records::chain::append_at`
 //! with `K_M(p)`). One stream per community keeps the chain in op order.
-//! [`GovernanceOps::publish`] returns when the op's first attempt landed
+//! [`GovernanceOps::publish_answer`] returns when the op's first attempt landed
 //! on `M`/2 and `M`/3 ([`Published::Landed`]), or with the reason it did
 //! not ([`Published::Queued`]: the row stays and the outbox retries it, so
 //! the op is ours and the action stands): a joiner's walk reads what is on
@@ -110,6 +110,12 @@ impl OpWaiters {
         }
     }
 
+    /// Whether an op of ours in `community` answered `Pending` this session
+    /// and has not landed yet.
+    fn pending(&self, community: &str) -> bool {
+        self.landing.lock().keys().any(|(c, _)| c == community)
+    }
+
     /// The outbox stopped: every publisher hears it (the rows stay).
     pub(super) fn clear(&self) {
         self.first.lock().clear();
@@ -133,30 +139,54 @@ pub struct GovernanceOps {
 }
 
 impl GovernanceOps {
-    /// Queue `op` (encoded) for `record`'s op log in `community`, and wait
-    /// for its first attempt: [`Published::Landed`] when it is on `M`/2
-    /// and our `Frontier` on `M`/3, [`Published::Queued`] when it is not
-    /// there yet (the row stays queued and the outbox retries it).
+    /// Queue `op` (encoded) for `record`'s op log in `community` and wait
+    /// for its first attempt for at most `within` (plan E3.2 S6b, RV4 review M2): the
+    /// answer, and, when it is [`Published::Queued`], the landing to wait on
+    /// (it fires when a retry lands the op; dropped if the outbox stops).
     ///
     /// # Errors
     /// The op does not decode, a key is too long, the storage failed, or
     /// the outbox stopped before the first attempt.
-    pub async fn publish(
+    pub async fn publish_answer(
         &self,
         community: &str,
         record: &str,
         op: Vec<u8>,
-    ) -> Result<Published, String> {
+        within: std::time::Duration,
+    ) -> Result<(Published, Option<tokio::sync::oneshot::Receiver<()>>), String> {
         let (entry, client_id) = row(community, record, &op)?;
         let first = self.waiters.wait(community, &client_id);
+        let landed = self.waiters.wait_landed(community, &client_id);
         self.enqueue(entry, community, &client_id).await?;
-        let first = first
-            .await
-            .map_err(|_| "the outbox stopped before the op landed".to_owned())?;
-        Ok(first.map_or_else(Published::Queued, |()| Published::Landed))
+        let first = match tokio::time::timeout(within, first).await {
+            Ok(Ok(first)) => first,
+            Ok(Err(_)) => return Err("the outbox stopped before the op's first attempt".to_owned()),
+            Err(_) => Err(format!("no first attempt within {within:?}")),
+        };
+        Ok(match first {
+            Ok(()) => (Published::Landed, None),
+            Err(reason) => (Published::Queued(reason), Some(landed)),
+        })
     }
 
-    /// Queue `op` as [`publish`](Self::publish) does, and wait until it
+    /// Queue `op` and return once its row is stored, behind our earlier ops
+    /// on the stream, with the landing to wait on.
+    ///
+    /// # Errors
+    /// As [`publish_answer`](Self::publish_answer).
+    pub async fn queue_watched(
+        &self,
+        community: &str,
+        record: &str,
+        op: Vec<u8>,
+    ) -> Result<tokio::sync::oneshot::Receiver<()>, String> {
+        let (entry, client_id) = row(community, record, &op)?;
+        let landed = self.waiters.wait_landed(community, &client_id);
+        self.enqueue(entry, community, &client_id).await?;
+        Ok(landed)
+    }
+
+    /// Queue `op` as [`publish_answer`](Self::publish_answer) does, and wait until it
     /// landed on `M`/2 with our `Frontier` on `M`/3, through the outbox's
     /// retries, for at most `within` (plan E3.2 S6 (4)).
     ///
@@ -164,7 +194,7 @@ impl GovernanceOps {
     /// its row stays queued and the outbox lands it later.
     ///
     /// # Errors
-    /// As [`publish`](Self::publish).
+    /// As [`publish_answer`](Self::publish_answer).
     pub async fn publish_landed(
         &self,
         community: &str,
@@ -184,18 +214,11 @@ impl GovernanceOps {
         }
     }
 
-    /// Queue `op` as [`publish`](Self::publish) does and return once its row
-    /// is stored, behind our earlier ops on the stream.
-    ///
-    /// # Errors
-    /// The op does not decode, a key is too long, or the storage failed.
-    pub async fn queue(&self, community: &str, record: &str, op: Vec<u8>) -> Result<(), String> {
-        let (entry, _) = row(community, record, &op)?;
-        self.outbox
-            .enqueue(entry, None)
-            .await
-            .map(drop)
-            .map_err(|error| error.to_string())
+    /// Whether an op of ours in `community` is pending: answered `Pending`
+    /// this session and not landed yet.
+    #[must_use]
+    pub fn pending(&self, community: &str) -> bool {
+        self.waiters.pending(community)
     }
 
     async fn enqueue(&self, entry: Entry, community: &str, client_id: &str) -> Result<(), String> {
