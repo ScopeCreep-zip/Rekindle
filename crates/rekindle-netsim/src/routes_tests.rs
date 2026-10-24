@@ -210,3 +210,68 @@ async fn a_pinned_call_is_answered_over_its_sending_route() {
         }
     }
 }
+
+/// A one-direction loss (plan C9.4): what node 1 sends is dropped, its call
+/// answers included, while what is sent to it arrives.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn drop_from_loses_only_what_the_node_sends() {
+    let (sim, mut nodes) = Netsim::nodes(2, 23);
+    let _pump = sim.start();
+    let to_one = own_blob(&nodes[1]).await;
+    let to_zero = own_blob(&nodes[0]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    let profile = SafetyProfile::default_dht();
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 1000,
+    });
+    let one = nodes[0].ports.routes.import(&to_one).unwrap();
+    nodes[0]
+        .ports
+        .messages
+        .send(&one, &profile, b"in".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message } if message == b"in")
+    );
+    let caller = nodes[0].ports.messages.clone();
+    let (target, call_profile) = (one.clone(), profile.clone());
+    let call =
+        tokio::spawn(async move { caller.call(&target, &call_profile, b"q".to_vec()).await });
+    let PortEvent::AppCall { call_id, .. } = recv(&mut nodes[1]).await else {
+        panic!("the call arrives");
+    };
+    nodes[1]
+        .ports
+        .messages
+        .reply(call_id, b"a".to_vec())
+        .await
+        .unwrap();
+    assert!(call.await.unwrap().is_err(), "the answer is lost");
+    let zero = nodes[1].ports.routes.import(&to_zero).unwrap();
+    nodes[1]
+        .ports
+        .messages
+        .send(&zero, &profile, b"out".to_vec())
+        .await
+        .unwrap();
+    sim.quiesce().await;
+    while let Ok(event) = nodes[0].events.try_recv() {
+        assert!(!matches!(event, PortEvent::AppMessage { .. }), "lost");
+    }
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 0,
+    });
+    nodes[1]
+        .ports
+        .messages
+        .send(&zero, &profile, b"out".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        matches!(recv(&mut nodes[0]).await, PortEvent::AppMessage { message } if message == b"out")
+    );
+}

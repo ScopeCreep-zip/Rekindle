@@ -25,6 +25,11 @@ pub enum Fault {
     Heal,
     /// This fraction (per mille) of app messages and calls is dropped.
     DropMessages { per_mille: u32 },
+    /// This fraction (per mille) of the app messages and calls the node
+    /// sends, and of the answers to calls it receives, is dropped, while
+    /// what is sent to it still arrives: a one-direction loss (plan C9.4,
+    /// findings 33, 45 and 62). `0` ends it.
+    DropFrom { node: usize, per_mille: u32 },
     /// The node never answers app calls; its callers time out.
     Unanswered { node: usize, unanswered: bool },
     /// The node's clock runs this far from simulated true time.
@@ -90,6 +95,14 @@ impl Netsim {
             Fault::Heal => self.heal(),
             Fault::DropMessages { per_mille } => {
                 self.net.inner.lock().faults.drop_per_mille = per_mille.min(1000);
+            }
+            Fault::DropFrom { node, per_mille } => {
+                let drop_from = &mut self.net.inner.lock().faults.drop_from;
+                if per_mille == 0 {
+                    drop_from.remove(&node);
+                } else {
+                    drop_from.insert(node, per_mille.min(1000));
+                }
             }
             Fault::Unanswered { node, unanswered } => {
                 toggle(

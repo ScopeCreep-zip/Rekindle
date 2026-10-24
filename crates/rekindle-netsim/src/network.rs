@@ -87,6 +87,9 @@ pub(crate) struct Faults {
     pub partitions: HashSet<(usize, usize)>,
     /// Per mille of app messages and calls dropped.
     pub drop_per_mille: u32,
+    /// Per mille of the app messages, calls and call answers each node
+    /// sends that are dropped ([`crate::Fault::DropFrom`]).
+    pub drop_from: HashMap<usize, u32>,
     /// Nodes whose app calls are never answered (the caller times out).
     pub unanswered: HashSet<usize>,
     /// Nodes whose next send fails at its own route's first hop.
@@ -271,7 +274,9 @@ impl Network {
     }
 
     /// Whether a message from `from` to `to` is lost on the way: a
-    /// partition between them, `to` detached, or the drop fault's draw.
+    /// partition between them, `to` detached, or the draw of the drop fault
+    /// (the larger of the network's and the sender's own,
+    /// [`crate::Fault::DropFrom`]).
     pub(crate) fn lost_in_transit(&self, inner: &Inner, from: usize, to: usize) -> bool {
         if from == to {
             return false;
@@ -280,7 +285,10 @@ impl Network {
         {
             return true;
         }
-        let per_mille = inner.faults.drop_per_mille;
+        let per_mille = inner
+            .faults
+            .drop_per_mille
+            .max(inner.faults.drop_from.get(&from).copied().unwrap_or(0));
         per_mille > 0 && self.order.lock().gen_range(0..1000) < per_mille
     }
 
