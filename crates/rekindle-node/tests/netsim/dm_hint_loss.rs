@@ -120,6 +120,16 @@ async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
 }
 
 async fn failed(node: &SimNode, peer: &str, body: &str) -> bool {
+    shows(node, peer, body, rekindle_types::message::SendState::Failed).await
+}
+
+/// Whether our message `body` to `peer` shows `state`.
+async fn shows(
+    node: &SimNode,
+    peer: &str,
+    body: &str,
+    state: rekindle_types::message::SendState,
+) -> bool {
     let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
         node.ok(IpcRequest::DmHistory {
             peer_key: peer.to_string(),
@@ -129,9 +139,9 @@ async fn failed(node: &SimNode, peer: &str, body: &str) -> bool {
         .await,
     )
     .expect("the history");
-    history.iter().any(|m| {
-        m.is_own && m.body == body && m.send_state == rekindle_types::message::SendState::Failed
-    })
+    history
+        .iter()
+        .any(|m| m.is_own && m.body == body && m.send_state == state)
 }
 
 /// The first `StreamRecord` is lost: the outbox resends it until Jon's
@@ -211,6 +221,18 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
         per_mille: 1000,
     });
     send(&nodes[0], &jon, "unread on the chain").await;
+    // Its entry lands before the skew (review LV22 hypothesis A): landed
+    // later, it is stamped 31 days on and the retire stops below it.
+    assert!(
+        eventually(&sim, LIMIT, || shows(
+            &nodes[0],
+            &jon,
+            "unread on the chain",
+            rekindle_types::message::SendState::Sent
+        ))
+        .await,
+        "the missed entry landed"
+    );
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,
@@ -304,6 +326,18 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
     });
     send(&nodes[0], &jon, "unread on the chain").await;
     let keys = unretired(&sim, 1);
+    // Its entry lands before the skew (review LV22 hypothesis A): landed
+    // later, it is stamped 31 days on and the retire stops below it.
+    assert!(
+        eventually(&sim, LIMIT, || shows(
+            &nodes[0],
+            &jon,
+            "unread on the chain",
+            rekindle_types::message::SendState::Sent
+        ))
+        .await,
+        "the missed entry landed"
+    );
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,

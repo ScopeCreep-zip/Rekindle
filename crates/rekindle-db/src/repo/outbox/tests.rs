@@ -88,21 +88,22 @@ fn the_stream_head_blocks_the_rows_behind_it() {
     assert_eq!(next_wake(&conn, OWNER).unwrap(), Some(0));
     update(&conn, OWNER, "a", &sent(1, 500)).unwrap();
     assert_eq!(ids(10), ["b", "c"]);
-    // A wedged head blocks too, until it is discarded.
-    update(
-        &conn,
-        OWNER,
-        "a",
-        &Update {
-            state: SendState::Failed,
-            wedge_reason: Some("deadline"),
-            ..sent(1, 500)
-        },
-    )
-    .unwrap();
-    assert_eq!(ids(10), ["c"]);
-    settle(&conn, OWNER, "a", SendState::Failed).unwrap();
+    // A failed `dm` head no longer holds the DMs behind it (D22 corrected:
+    // the chain seqs set the order, review LV22 hypothesis B) ...
+    let failed = Update {
+        state: SendState::Failed,
+        wedge_reason: Some("deadline"),
+        ..sent(1, 500)
+    };
+    update(&conn, OWNER, "a", &failed).unwrap();
     assert_eq!(ids(10), ["b", "c"]);
+    // ... while any other stream's failed head blocks until it is discarded.
+    enqueue_with_echo(&conn, &row("friend_handshake:dan", "d", 50), None).unwrap();
+    enqueue_with_echo(&conn, &row("friend_handshake:dan", "e", 0), None).unwrap();
+    update(&conn, OWNER, "d", &failed).unwrap();
+    assert_eq!(ids(10), ["b", "c"]);
+    settle(&conn, OWNER, "d", SendState::Failed).unwrap();
+    assert_eq!(ids(10), ["b", "c", "e"]);
 }
 
 #[test]

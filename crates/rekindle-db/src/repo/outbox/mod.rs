@@ -214,22 +214,43 @@ const COLS: &str = "o.stream, o.stream_seq, o.client_id, o.kind, o.payload, o.st
                     o.next_at, o.deadline, o.wedge_reason, \
                     (SELECT e.timestamp FROM messages e WHERE e.id = o.echo_id)";
 
+/// Whether the failed row `h` still holds its stream: any failed row
+/// does, except on a `dm` stream (D22 corrected 2026-10-23: a DM is never
+/// held behind an earlier one's DHT write). There the chain order is the
+/// seqs: a sealed entry lands ahead of the later rows whatever happens to
+/// its row (`chain_entries::pending`), and an unsealed one took no seq, so
+/// a deadline failure, kept for the user's resend, no longer stops every
+/// later DM to the friend (live A/B finding 73, review LV22 hypothesis B).
+macro_rules! holds_chain {
+    () => {
+        "h.stream NOT LIKE 'dm:%'"
+    };
+}
+
 /// A row whose stream has no earlier row wedged (`failed`) or still to
 /// send (`queued`) and not due at `?2`: the stream's run of due rows from
 /// its head, which the engine attempts together in `stream_seq` order and
 /// stops at the first that stays behind (so a batch, the `dm` chain's
 /// page, carries them at once, plan E2.B F2), and the rows already past
 /// it.
-const DUE_UNBLOCKED: &str = "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
-                         AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
-                         AND (h.state = 'failed' OR (h.state = 'queued' AND h.next_at > ?2)))";
+const DUE_UNBLOCKED: &str = concat!(
+    "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
+     AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
+     AND ((h.state = 'failed' AND ",
+    holds_chain!(),
+    ") OR (h.state = 'queued' AND h.next_at > ?2)))"
+);
 
 /// A row whose stream has no earlier row still to send (`queued`) or
 /// wedged (`failed`): the stream head and the rows already past it, whose
 /// `next_at` is when the engine next has work.
-const UNBLOCKED: &str = "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
-                         AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
-                         AND h.state IN ('queued', 'failed'))";
+const UNBLOCKED: &str = concat!(
+    "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
+     AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
+     AND (h.state = 'queued' OR (h.state = 'failed' AND ",
+    holds_chain!(),
+    ")))"
+);
 
 fn parse_state(stored: &str, column: usize) -> rusqlite::Result<SendState> {
     SendState::parse(stored).ok_or_else(|| {
