@@ -3,7 +3,7 @@
 
 use rekindle_types::domains::VOICE_PACKET;
 
-use super::{capnp_err, pack, unpack, CodecError};
+use super::{bounds, capnp_err, pack, unpack_bounded, CodecError};
 use crate::voice_packet_capnp::voice_packet;
 
 /// One encrypted voice frame.
@@ -67,7 +67,7 @@ impl VoicePacket {
 
     /// Decode packed Cap'n Proto bytes. The signature is not checked.
     pub fn decode(data: &[u8]) -> Result<Self, CodecError> {
-        let reader = unpack(data)?;
+        let reader = unpack_bounded(data, bounds::VOICE_PACKET_MAX_WORDS)?;
         let root = reader
             .get_root::<voice_packet::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;

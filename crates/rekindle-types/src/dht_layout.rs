@@ -21,6 +21,12 @@
 /// sender refuses a larger one before Veilid sees it (plan C7.25).
 pub const MAX_APP_MESSAGE_LEN: usize = 32_768;
 
+/// Largest value any DHT subkey holds: Veilid's `MAX_SUBKEY_SIZE`, 32,768
+/// bytes (`veilid-core/src/storage_manager/types/mod.rs:14-16`, fork
+/// 0cd847de). A record's per-subkey cap is this or its share of the
+/// record's data cap, whichever is smaller (see [`prekeys`]).
+pub const MAX_SUBKEY_SIZE: usize = 32_768;
+
 /// Maximum member slots per registry segment.
 ///
 /// Veilid's `DHTSchemaSMPL` has `MAX_MEMBER_COUNT = 256` and

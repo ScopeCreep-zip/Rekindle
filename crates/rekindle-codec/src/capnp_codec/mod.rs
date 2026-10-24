@@ -93,18 +93,12 @@ pub(crate) fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocat
     output
 }
 
-/// Deserialize packed bytes into a Cap'n Proto message reader.
-pub(crate) fn unpack(
-    data: &[u8],
-) -> Result<capnp::message::Reader<capnp::serialize::OwnedSegments>, CodecError> {
-    capnp::serialize_packed::read_message(data, capnp::message::ReaderOptions::new())
-        .map_err(|e| capnp_err(&e))
-}
-
-/// [`unpack`] for bytes off the network, refusing a message of more than
-/// `max_words` words: packing collapses a run of zero words into two
-/// bytes, so a small datagram could otherwise unpack into megabytes (the
-/// traversal limit also bounds the segment sizes the header may claim).
+/// Deserialize packed bytes into a Cap'n Proto message reader, refusing a
+/// message of more than `max_words` words: packing collapses a run of zero
+/// words into two bytes, so a small datagram could otherwise unpack into
+/// megabytes (the traversal limit also bounds the segment sizes the header
+/// may claim). Every decoder reads through here with its type's bound from
+/// [`bounds`]; there is no unbounded reader (`cargo xtask check-capnp-bounds`).
 pub(crate) fn unpack_bounded(
     data: &[u8],
     max_words: usize,
@@ -175,6 +169,7 @@ fn read_game_status(
 }
 
 pub mod account;
+pub mod bounds;
 pub mod chain;
 pub mod direct;
 pub mod friend;

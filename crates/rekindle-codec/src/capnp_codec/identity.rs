@@ -1,5 +1,5 @@
 use super::direct::{data, fixed};
-use super::{capnp_err, pack, unpack, CodecError};
+use super::{bounds, capnp_err, pack, unpack_bounded, CodecError};
 use crate::identity_capnp;
 
 /// Prekey record subkey 0 (plan E2.4): the signed prekey and the ML-KEM
@@ -61,7 +61,7 @@ pub fn encode_prekey_head(head: &PrekeyRecordHead) -> Vec<u8> {
 }
 
 pub fn decode_prekey_head(bytes: &[u8]) -> Result<PrekeyRecordHead, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::PREKEY_MAX_WORDS)?;
     let r = reader
         .get_root::<identity_capnp::prekey_record_head::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -91,7 +91,7 @@ pub fn encode_opk_slot(slot: &OpkSlot) -> Vec<u8> {
 }
 
 pub fn decode_opk_slot(bytes: &[u8]) -> Result<OpkSlot, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::PREKEY_MAX_WORDS)?;
     let r = reader
         .get_root::<identity_capnp::opk_slot::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -122,7 +122,7 @@ pub fn encode_prekey_record_list(list: &PrekeyRecordList) -> Vec<u8> {
 }
 
 pub fn decode_prekey_record_list(bytes: &[u8]) -> Result<PrekeyRecordList, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::PREKEY_MAX_WORDS)?;
     let r = reader
         .get_root::<identity_capnp::prekey_record_list::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

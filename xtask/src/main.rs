@@ -12,6 +12,8 @@
 //!                                      rekindle-types::domains.
 //!     cargo xtask check-no-emitter     src-tauri sends webview events only
 //!                                      through event_dispatch (ADR 0007).
+//!     cargo xtask check-capnp-bounds   Every Cap'n Proto read has a
+//!                                      traversal bound (plan F4).
 //!     cargo xtask check-veilid-dht-calls
 //!                                      Veilid DHT/route calls only in their
 //!                                      owners (record pool, RouteImports,
@@ -55,6 +57,7 @@ use ignore::WalkBuilder;
 mod allow_reasons;
 mod bare_spawn;
 mod boundaries;
+mod capnp_bounds;
 mod contrast_pairs;
 mod css;
 mod declared_grounds;
@@ -112,6 +115,8 @@ enum Command {
     CheckDomainLiterals,
     /// Verify src-tauri never uses Tauri's `Emitter` (events go through the router).
     CheckNoEmitter,
+    /// Verify every Cap'n Proto read has a traversal bound (no unbounded network decode).
+    CheckCapnpBounds,
     /// Verify every Veilid DHT and private-route call stays in its owner.
     CheckVeilidDhtCalls,
     /// Verify SQL lives only in the storage crates (rekindle-db, -vault, -asql).
@@ -206,6 +211,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| no_emitter::check_no_emitter(&root)),
                 ),
                 (
+                    "capnp-bounds",
+                    Box::new(|| capnp_bounds::check_capnp_bounds(&root)),
+                ),
+                (
                     "veilid-dht-calls",
                     Box::new(|| veilid_dht_calls::check_veilid_dht_calls(&root)),
                 ),
@@ -288,6 +297,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDuplicateConstants => duplicate_constants::check_duplicate_constants(&root),
         Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
+        Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
         Command::CheckSqlite => sqlite::check_sqlite(&root),
         Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),

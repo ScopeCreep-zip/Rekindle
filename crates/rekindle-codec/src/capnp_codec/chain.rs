@@ -3,7 +3,7 @@
 //! its pointer and the page before it is `rekindle_records::chain`'s check.
 
 use super::direct::data;
-use super::{capnp_err, pack, text_to_string, unpack, CodecError};
+use super::{bounds, capnp_err, pack, text_to_string, unpack_bounded, CodecError};
 use crate::chain_capnp;
 
 /// Where a page sits: its record key and the sequence numbers it holds.
@@ -52,7 +52,7 @@ pub fn encode_chain_head(newest: &PagePointer) -> Vec<u8> {
 /// # Errors
 /// The bytes are not a `ChainHead`, or it names no page.
 pub fn decode_chain_head(bytes: &[u8]) -> Result<PagePointer, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::CHAIN_HEAD_MAX_WORDS)?;
     let r = reader
         .get_root::<chain_capnp::chain_head::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -77,7 +77,7 @@ pub fn encode_chain_retire(through_seq: u64) -> Vec<u8> {
 /// # Errors
 /// The bytes are not a `ChainRetire`.
 pub fn decode_chain_retire(bytes: &[u8]) -> Result<u64, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::CHAIN_RETIRE_MAX_WORDS)?;
     let r = reader
         .get_root::<chain_capnp::chain_retire::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -106,7 +106,7 @@ pub fn encode_chain_page(page: &ChainPage) -> Vec<u8> {
 /// # Errors
 /// The bytes are not a `ChainPage`.
 pub fn decode_chain_page(bytes: &[u8]) -> Result<ChainPage, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::CHAIN_PAGE_MAX_WORDS)?;
     let r = reader
         .get_root::<chain_capnp::chain_page::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

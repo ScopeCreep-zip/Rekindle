@@ -160,7 +160,7 @@ struct Finder<'a> {
     hits: Vec<String>,
 }
 
-fn is_test_attr(attr: &syn::Attribute) -> bool {
+pub(crate) fn is_test_attr(attr: &syn::Attribute) -> bool {
     let path = attr.path();
     if path.is_ident("test") || path.segments.last().is_some_and(|s| s.ident == "test") {
         return true;
@@ -377,7 +377,7 @@ fn sim_crates(root: &Path) -> Result<BTreeSet<String>> {
     Ok(seen)
 }
 
-fn is_test_file(rel: &str) -> bool {
+pub(crate) fn is_test_file(rel: &str) -> bool {
     rel.contains("/tests/") || rel.ends_with("_tests.rs") || rel.ends_with("/tests.rs")
 }
 

@@ -1,4 +1,4 @@
-use super::{capnp_err, pack, text_or_none, unpack, CodecError};
+use super::{bounds, capnp_err, pack, text_or_none, unpack_bounded, CodecError};
 use crate::friend::FriendEntry;
 use crate::friend_capnp;
 
@@ -26,7 +26,7 @@ pub fn encode_friend_list(entries: &[FriendEntry]) -> Vec<u8> {
 }
 
 pub fn decode_friend_list(data: &[u8]) -> Result<Vec<FriendEntry>, CodecError> {
-    let reader = unpack(data)?;
+    let reader = unpack_bounded(data, bounds::FRIEND_LIST_MAX_WORDS)?;
     let root = reader
         .get_root::<friend_capnp::friend_list::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

@@ -1,4 +1,6 @@
-use super::{capnp_err, pack, read_game_status, unpack, write_game_status, CodecError};
+use super::{
+    bounds, capnp_err, pack, read_game_status, unpack_bounded, write_game_status, CodecError,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::presence_capnp;
@@ -32,7 +34,7 @@ pub fn encode_update(status: u8, game: Option<&GameInfo>, timestamp_ms: u64) -> 
 
 /// Decode packed bytes into `(status, Option<GameInfo>)`.
 pub fn decode_update(data: &[u8]) -> Result<(u8, Option<GameInfo>), CodecError> {
-    let reader = unpack(data)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_MAX_WORDS)?;
     let root = reader
         .get_root::<presence_capnp::presence_update::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -60,7 +62,7 @@ pub fn encode_game_status(info: &GameInfo) -> Vec<u8> {
 
 /// Decode packed bytes into a `GameInfo`.
 pub fn decode_game_status(data: &[u8]) -> Result<GameInfo, CodecError> {
-    let reader = unpack(data)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_MAX_WORDS)?;
     let root = reader
         .get_root::<presence_capnp::game_status::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

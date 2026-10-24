@@ -7,7 +7,7 @@
 //! workspace `too-many-lines` threshold and individual variant logic
 //! is independently reviewable.
 
-use crate::capnp_codec::{capnp_err, pack, unpack};
+use crate::capnp_codec::{bounds, capnp_err, pack, unpack_bounded};
 use crate::community_governance_capnp::governance_entry as schema;
 use crate::error::CodecError;
 use rekindle_types::governance::GovernanceEntry;
@@ -79,7 +79,7 @@ pub fn encode_governance_entry(entry: &GovernanceEntry) -> Vec<u8> {
 
 /// Decode a single `GovernanceEntry` from packed Cap'n Proto bytes.
 pub fn decode_governance_entry(bytes: &[u8]) -> Result<GovernanceEntry, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::GOVERNANCE_ENTRY_MAX_WORDS)?;
     let root = reader
         .get_root::<schema::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

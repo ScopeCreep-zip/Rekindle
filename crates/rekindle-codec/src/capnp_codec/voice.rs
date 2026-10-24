@@ -1,4 +1,4 @@
-use super::{capnp_err, not_in_schema, pack, text_to_string, unpack, CodecError};
+use super::{bounds, capnp_err, not_in_schema, pack, text_to_string, unpack_bounded, CodecError};
 use crate::voice_capnp;
 
 /// Voice signaling types matching the capnp enum.
@@ -40,7 +40,7 @@ pub fn encode_signaling(sig: &VoiceSignaling) -> Vec<u8> {
 }
 
 pub fn decode_signaling(data: &[u8]) -> Result<VoiceSignaling, CodecError> {
-    let reader = unpack(data)?;
+    let reader = unpack_bounded(data, bounds::VOICE_SIGNALING_MAX_WORDS)?;
     let root = reader
         .get_root::<voice_capnp::voice_signaling::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

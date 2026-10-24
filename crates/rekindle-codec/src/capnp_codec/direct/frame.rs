@@ -453,23 +453,8 @@ pub(super) mod tests {
             DmFrame::decode(&over),
             Err(CodecError::Deserialization(_))
         ));
-        // A one-segment header claiming far more words than the cap, the
-        // run of zero words packed (tag 0x00 + count) to a few bytes.
-        let words = u32::try_from(super::super::MAX_UNPACKED_WORDS + 1).unwrap();
-        let mut header = [0u8; 8];
-        header[4..8].copy_from_slice(&words.to_le_bytes());
-        // Packed: a tag naming the nonzero bytes, then those bytes.
-        let mut packed = vec![0u8];
-        for (i, b) in header.iter().enumerate() {
-            if *b != 0 {
-                packed[0] |= 1 << i;
-                packed.push(*b);
-            }
-        }
-        // Then 256 zero words, as many times as it takes, two bytes each.
-        for _ in 0..=(super::super::MAX_UNPACKED_WORDS / 256) {
-            packed.extend_from_slice(&[0x00, 0xFF]);
-        }
+        let packed =
+            crate::capnp_codec::bounds::inflating_message(super::super::MAX_UNPACKED_WORDS + 1);
         assert!(DmFrame::decode(&packed).is_err());
         assert!(DmContent::decode(&packed).is_err());
     }

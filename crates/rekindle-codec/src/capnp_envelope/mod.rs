@@ -22,7 +22,7 @@
 //! Truncation / malformed bytes in known variants → drop, do not
 //! forward.
 
-use crate::capnp_codec::{capnp_err, not_in_schema, pack, text_to_string, unpack};
+use crate::capnp_codec::{bounds, capnp_err, not_in_schema, pack, text_to_string, unpack_bounded};
 use crate::community::envelope::{CommunityEnvelope, SignedEnvelope};
 use crate::error::CodecError;
 
@@ -55,7 +55,7 @@ pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, Cod
 /// Errors on truncation / malformed bytes; for known schemas with
 /// unknown variants use `try_decode_community_envelope`.
 pub fn decode_community_envelope(bytes: &[u8]) -> Result<CommunityEnvelope, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::COMMUNITY_ENVELOPE_MAX_WORDS)?;
     let root = reader
         .get_root::<crate::community_envelope_capnp::community_envelope::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -94,7 +94,7 @@ pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Vec<u8> {
 
 /// Decode a `SignedEnvelope` from packed Cap'n Proto bytes.
 pub fn decode_signed_envelope(bytes: &[u8]) -> Result<SignedEnvelope, CodecError> {
-    let reader = unpack(bytes)?;
+    let reader = unpack_bounded(bytes, bounds::SIGNED_ENVELOPE_MAX_WORDS)?;
     let root = reader
         .get_root::<crate::community_envelope_capnp::signed_envelope::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

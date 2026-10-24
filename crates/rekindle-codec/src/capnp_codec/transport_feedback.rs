@@ -5,7 +5,7 @@
 
 use rekindle_types::domains::TRANSPORT_FEEDBACK;
 
-use super::{capnp_err, pack, unpack, CodecError};
+use super::{bounds, capnp_err, pack, unpack_bounded, CodecError};
 use crate::media_feedback_capnp::transport_feedback;
 
 /// An `arrivals` entry: the datagram did not arrive.
@@ -72,7 +72,7 @@ impl TransportFeedback {
     /// # Errors
     /// The bytes are not a `TransportFeedback`.
     pub fn decode(data: &[u8]) -> Result<Self, CodecError> {
-        let reader = unpack(data)?;
+        let reader = unpack_bounded(data, bounds::TRANSPORT_FEEDBACK_MAX_WORDS)?;
         let root = reader
             .get_root::<transport_feedback::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;

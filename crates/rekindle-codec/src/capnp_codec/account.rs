@@ -1,4 +1,7 @@
-use super::{bytes_or_empty, capnp_err, pack, text_or_default, text_to_string, unpack, CodecError};
+use super::{
+    bounds, bytes_or_empty, capnp_err, pack, text_or_default, text_to_string, unpack_bounded,
+    CodecError,
+};
 use crate::account_capnp;
 
 /// Domain struct for the account header stored in the account DHT record.
@@ -31,7 +34,7 @@ pub fn encode_account_header(header: &AccountHeader) -> Vec<u8> {
 }
 
 pub fn decode_account_header(data: &[u8]) -> Result<AccountHeader, CodecError> {
-    let reader = unpack(data)?;
+    let reader = unpack_bounded(data, bounds::ACCOUNT_HEADER_MAX_WORDS)?;
     let root = reader
         .get_root::<account_capnp::account_header::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
