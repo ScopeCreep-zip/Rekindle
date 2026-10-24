@@ -88,6 +88,4 @@ tracing = { workspace = true }
 # The frame size tests build real bundles over a temporary database.
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 proptest = "1"
-# A ratchet step's own database error (`frame::ratchet_dropped`).
-rekindle-asql = { path = "../rekindle-asql" }
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

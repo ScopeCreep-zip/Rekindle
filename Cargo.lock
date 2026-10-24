@@ -8000,7 +8000,6 @@ dependencies = [
  "proptest",
  "qrcode",
  "rand 0.8.5",
- "rekindle-asql",
  "rekindle-audit",
  "rekindle-codec",
  "rekindle-crypto",
