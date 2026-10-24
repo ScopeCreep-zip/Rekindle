@@ -9,7 +9,12 @@
 //! - its manifest says `publish = false`;
 //! - it is not a workspace default member (a bare `cargo build --release`
 //!   at the root does not try it);
-//! - no other workspace manifest depends on it;
+//! - nothing depends on it: in the graph `cargo metadata` resolves, no
+//!   package has it as a dependency of any kind (so a renamed dependency,
+//!   `bridge = { package = "rekindle-e2e-server" }`, counts), no release
+//!   binary's build graph (every workspace member with a binary, the GUI
+//!   `rekindle-desktop` among them) reaches it, and the root
+//!   `[workspace.dependencies]` does not name it;
 //! - `src-tauri/tauri.conf.json` does not bundle it.
 
 use std::path::Path;
@@ -40,24 +45,43 @@ fn has_release_guard(lib: &str) -> bool {
     })
 }
 
-fn depends_on_bridge(manifest: &toml_edit::DocumentMut) -> bool {
-    let in_table = |t: Option<&toml_edit::Item>| {
-        t.and_then(toml_edit::Item::as_table_like)
-            .is_some_and(|t| t.contains_key(CRATE))
-    };
-    ["dependencies", "dev-dependencies", "build-dependencies"]
-        .iter()
-        .any(|k| in_table(manifest.get(k)))
-        || manifest
-            .get("target")
-            .and_then(toml_edit::Item::as_table_like)
-            .is_some_and(|targets| {
-                targets.iter().any(|(_, t)| {
-                    ["dependencies", "dev-dependencies", "build-dependencies"]
-                        .iter()
-                        .any(|k| in_table(t.get(k)))
-                })
+/// A `[workspace.dependencies]` entry naming the bridge, by key or by
+/// `package =`.
+fn workspace_names_bridge(manifest: &toml_edit::DocumentMut) -> bool {
+    manifest
+        .get("workspace")
+        .and_then(|w| w.get("dependencies"))
+        .and_then(toml_edit::Item::as_table_like)
+        .is_some_and(|deps| {
+            deps.iter().any(|(key, dep)| {
+                key == CRATE
+                    || dep
+                        .as_table_like()
+                        .and_then(|t| t.get("package"))
+                        .and_then(toml_edit::Item::as_str)
+                        == Some(CRATE)
             })
+        })
+}
+
+/// What reaches the bridge in the resolved graph: each package depending
+/// on it directly, and each release binary whose build graph holds it.
+fn graph_problems(meta: &crate::cargo_meta::Metadata) -> Vec<String> {
+    let mut problems: Vec<String> = meta
+        .direct_dependents(CRATE)
+        .into_iter()
+        .map(|name| format!("{name} depends on {CRATE}"))
+        .collect();
+    for member in meta.members() {
+        let ships_binary = member
+            .targets
+            .iter()
+            .any(|t| t.kind.iter().any(|k| k == "bin"));
+        if member.name != CRATE && ships_binary && meta.build_graph(&member.name).contains(CRATE) {
+            problems.push(format!("the {} build graph holds {CRATE}", member.name));
+        }
+    }
+    problems
 }
 
 fn read_manifest(path: &Path) -> Result<toml_edit::DocumentMut> {
@@ -92,23 +116,10 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
     }) {
         problems.push(format!("{CRATE} is a workspace default member"));
     }
-    let mut manifests = vec![root.join("src-tauri/Cargo.toml")];
-    for entry in std::fs::read_dir(root.join("crates"))? {
-        let path = entry?.path();
-        if path.file_name().is_some_and(|n| n != CRATE) {
-            manifests.push(path.join("Cargo.toml"));
-        }
+    if workspace_names_bridge(&workspace) {
+        problems.push(format!("the root [workspace.dependencies] names {CRATE}"));
     }
-    for path in manifests.iter().filter(|p| p.exists()) {
-        if depends_on_bridge(&read_manifest(path)?) {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(path)
-                .display()
-                .to_string();
-            problems.push(format!("{rel} depends on {CRATE}"));
-        }
-    }
+    problems.extend(graph_problems(&crate::cargo_meta::Metadata::load(root)?));
     let conf = std::fs::read_to_string(root.join("src-tauri/tauri.conf.json")).unwrap_or_default();
     if conf.contains("e2e-server") || conf.contains("e2e_server") {
         problems.push("src-tauri/tauri.conf.json bundles the e2e server".to_owned());
@@ -127,7 +138,7 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{depends_on_bridge, has_release_guard};
+    use super::{graph_problems, has_release_guard, workspace_names_bridge, CRATE};
 
     #[test]
     fn the_release_guard_is_recognised() {
@@ -138,17 +149,27 @@ mod tests {
     }
 
     #[test]
-    fn a_dependency_on_the_bridge_is_found_in_any_table() {
-        let plain: toml_edit::DocumentMut = "[dependencies]\nrekindle-e2e-server = \"0\""
-            .parse()
-            .unwrap();
-        assert!(depends_on_bridge(&plain));
-        let target: toml_edit::DocumentMut =
-            "[target.'cfg(unix)'.dev-dependencies]\nrekindle-e2e-server = \"0\""
-                .parse()
-                .unwrap();
-        assert!(depends_on_bridge(&target));
-        let none: toml_edit::DocumentMut = "[dependencies]\nserde = \"1\"".parse().unwrap();
-        assert!(!depends_on_bridge(&none));
+    fn a_workspace_dependency_on_the_bridge_is_found_by_key_or_package() {
+        let parse = |t: &str| t.parse::<toml_edit::DocumentMut>().unwrap();
+        let key = parse("[workspace.dependencies]\nrekindle-e2e-server = { path = \"x\" }");
+        assert!(workspace_names_bridge(&key));
+        let renamed = parse(
+            "[workspace.dependencies]\nbridge = { package = \"rekindle-e2e-server\", path = \"x\" }",
+        );
+        assert!(workspace_names_bridge(&renamed));
+        let none = parse("[workspace.dependencies]\nserde = \"1\"");
+        assert!(!workspace_names_bridge(&none));
+    }
+
+    /// The real workspace: nothing reaches the bridge, and the GUI's build
+    /// graph is the one a release ships.
+    #[test]
+    fn nothing_in_the_workspace_reaches_the_bridge() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let meta = crate::cargo_meta::Metadata::load(&root).unwrap();
+        assert!(meta.build_graph("rekindle-desktop").contains("rekindle-db"));
+        assert!(graph_problems(&meta).is_empty());
+        // The bridge's own graph does hold the GUI, so the walk sees edges.
+        assert!(meta.build_graph(CRATE).contains("rekindle-desktop"));
     }
 }

@@ -3,7 +3,7 @@
 //! workspace dependency, a dependency inside a macro-built file) rather than
 //! as the manifests spell it.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
@@ -44,6 +44,13 @@ pub(crate) struct Node {
 #[derive(Deserialize)]
 pub(crate) struct NodeDep {
     pub(crate) pkg: String,
+    pub(crate) dep_kinds: Vec<DepKind>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct DepKind {
+    /// `None` is a normal dependency, else `"dev"` or `"build"`.
+    pub(crate) kind: Option<String>,
 }
 
 impl Metadata {
@@ -71,6 +78,11 @@ impl Metadata {
             .map(|p| p.name.as_str())
     }
 
+    /// The package named `name`.
+    pub(crate) fn package(&self, name: &str) -> Option<&Package> {
+        self.packages.iter().find(|p| p.name == name)
+    }
+
     /// The workspace members.
     pub(crate) fn members(&self) -> impl Iterator<Item = &Package> {
         self.packages
@@ -86,5 +98,32 @@ impl Metadata {
             .filter(|n| n.deps.iter().any(|d| self.name_of(&d.pkg) == Some(name)))
             .filter_map(|n| self.name_of(&n.id).map(str::to_owned))
             .collect()
+    }
+
+    /// The package names reachable from `from` through normal and build
+    /// edges: what a build of `from` compiles.
+    pub(crate) fn build_graph(&self, from: &str) -> BTreeSet<String> {
+        let mut seen = BTreeSet::new();
+        let mut queue = VecDeque::from([from.to_owned()]);
+        while let Some(name) = queue.pop_front() {
+            let Some(id) = self.package(&name).map(|p| p.id.clone()) else {
+                continue;
+            };
+            let Some(node) = self.resolve.nodes.iter().find(|n| n.id == id) else {
+                continue;
+            };
+            for dep in &node.deps {
+                let linked = dep
+                    .dep_kinds
+                    .iter()
+                    .any(|k| k.kind.as_deref() != Some("dev"));
+                if let (true, Some(dep_name)) = (linked, self.name_of(&dep.pkg)) {
+                    if seen.insert(dep_name.to_owned()) {
+                        queue.push_back(dep_name.to_owned());
+                    }
+                }
+            }
+        }
+        seen
     }
 }
