@@ -55,6 +55,9 @@ async fn reask_never_starts_second_append() {
         hold.notify_one();
         settle_tasks().await;
         assert_eq!(state_of(&o, "a"), Some(SendState::Sent), "the late landing");
+        // Review LV22 M3: no second job ran after the first, nor waits.
+        assert_eq!(appends(&o), 1, "one append in all");
+        assert!(!o.stream_busy("dm:bob"), "no job waits");
     };
     tokio::select! {
         () = o.append_loop() => unreachable!("the appender runs until its scope ends"),
@@ -150,4 +153,30 @@ async fn lifespan_expiry_visible() {
     assert_eq!(row.state, SendState::Failed);
     assert_eq!(row.wedge_reason.as_deref(), Some(DEADLINE_REASON));
     assert_eq!(s.published.last(), Some(&("a".into(), SendState::Failed)));
+}
+
+/// The appender is busy while its append runs, though the row left
+/// `queued` (discarded mid-append): the friend tick's guard reads this,
+/// not the rows (review LV22 M1).
+#[tokio::test]
+async fn a_stream_stays_busy_while_its_append_runs_without_a_queued_row() {
+    let o = outbox();
+    let hold = held(&o);
+    o.enqueue(entry(StreamKind::Dm, "bob", "a"), ())
+        .await
+        .unwrap();
+    script(&o, [AttemptOutcome::Appending(b"f".to_vec())]);
+    let body = async {
+        o.pump().await.unwrap();
+        settle_tasks().await;
+        o.deps().store.lock().rows.clear();
+        assert!(o.stream_busy("dm:bob"), "the append still runs");
+        hold.notify_one();
+        settle_tasks().await;
+        assert!(!o.stream_busy("dm:bob"), "done");
+    };
+    tokio::select! {
+        () = o.append_loop() => unreachable!("the appender runs until its scope ends"),
+        () = body => {}
+    }
 }

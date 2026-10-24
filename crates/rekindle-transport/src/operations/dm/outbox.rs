@@ -166,6 +166,9 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn reconcile(&self) -> Result<usize, FriendError>;
+    /// Whether the appender of our stream to `peer` has an append running
+    /// or waiting (`rekindle_outbox::Outbox::stream_busy`, review LV22 M1).
+    fn appending(&self, peer: &str) -> bool;
 }
 
 /// `peer` was heard from again: their route changed, their presence turned

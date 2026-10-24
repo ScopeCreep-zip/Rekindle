@@ -44,6 +44,15 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(())
     }
 
+    /// Whether `stream`'s appender has an append running or waiting: the
+    /// one source of "an append is in flight" (review LV22 M1), which the
+    /// friend tick checks before it appends sealed entries itself, since a
+    /// row can leave `queued` (failed, discarded) while its append runs.
+    #[must_use]
+    pub fn stream_busy(&self, stream: &str) -> bool {
+        self.appends.streams().contains(stream)
+    }
+
     /// Reconcile every `queued` chain row (the `dm` and `group_dm` streams)
     /// with our own chain, run by the friend maintenance tick and at
     /// startup: a row whose append is in flight within its deadline is

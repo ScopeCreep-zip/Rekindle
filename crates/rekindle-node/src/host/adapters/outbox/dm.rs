@@ -411,6 +411,10 @@ impl DmOutbox for DmStream {
         self.0.reconcile().await.map_err(|e| failed(&e))
     }
 
+    fn appending(&self, peer: &str) -> bool {
+        self.0.stream_busy(&format!("dm:{peer}"))
+    }
+
     async fn reask_soon(&self, peer: &str) -> Result<usize, FriendError> {
         let moved = self.0.reask_soon(StreamKind::Dm, peer).await;
         moved.map_err(|e| failed(&e))

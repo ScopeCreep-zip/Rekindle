@@ -189,11 +189,12 @@ pub async fn retire_quiet(host: &dyn FriendHost) {
             Ok(Some(ours)) => {
                 // A sealed entry whose row left (a deadline, a wedge) still
                 // lands (finding 71 refined), with no later message to carry
-                // it. While a row of the stream is queued, its appender owns
+                // it. While the stream's appender is busy or a row of it is
+                // queued, the appender owns
                 // the chain (one append in flight per stream, research
                 // `prod_research_batch9.md` Q1): the reconcile below lands or
                 // re-queues it there, and its append carries these too.
-                if !rows_queued(host, peer).await {
+                if !appender_owns(host, peer).await {
                     if let Err(e) =
                         super::chain_seq::append_pending(host, port.as_ref(), &ours, peer).await
                     {
@@ -220,14 +221,19 @@ pub async fn retire_quiet(host: &dyn FriendHost) {
     }
 }
 
-/// Whether a row of our `dm` stream to `peer` is still `queued` (its
-/// append not landed): a storage failure counts as queued, so the tick
-/// never appends beside the stream's appender.
-async fn rows_queued(host: &dyn FriendHost, peer: &str) -> bool {
+/// Whether the stream's appender owns our `dm` chain to `peer`: an append
+/// of it runs or waits (`Outbox::stream_busy`, the appender's own state,
+/// review LV22 M1), or a row of it is still `queued` and may be handed to
+/// the appender. A storage failure or no outbox counts as owned, so the
+/// tick never appends beside the stream's appender.
+async fn appender_owns(host: &dyn FriendHost, peer: &str) -> bool {
+    if host.outbox().map_or(true, |o| o.appending(peer)) {
+        return true;
+    }
+    let stream = format!("dm:{peer}");
     let Ok(owner) = state::owner(host) else {
         return true;
     };
-    let stream = format!("dm:{peer}");
     let rows = state::db_call!(host, "read the stream's rows", move |conn| {
         rekindle_db::repo::outbox::stream_rows(conn, &owner, &stream)
     })
