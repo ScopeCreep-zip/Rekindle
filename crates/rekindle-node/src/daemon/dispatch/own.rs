@@ -21,7 +21,7 @@ pub(crate) async fn route(
     request: IpcRequest,
 ) -> IpcResponse {
     match request {
-        IpcRequest::PresenceSet { status } => handle_status(ctx, state, status),
+        IpcRequest::PresenceSet { status } => handle_status(ctx, state, status).await,
         IpcRequest::PresenceSetMessage { message } => handle_message(ctx, state, message).await,
         IpcRequest::PresenceGet => handle_get(ctx, state),
         IpcRequest::ProfileSetNickname { display_name } => {
@@ -59,12 +59,16 @@ pub(crate) async fn route(
 }
 
 /// `PresenceSet`: the status the user picked.
-fn handle_status(ctx: &DaemonContext, state: DaemonState, status: SessionStatus) -> IpcResponse {
+async fn handle_status(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    status: SessionStatus,
+) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
     let was_invisible = ctx.own_presence.status() == SessionStatus::Invisible;
-    ctx.own_presence.set_status(status);
+    ctx.own_presence.set_status(status).await;
     if was_invisible && status != SessionStatus::Invisible {
         // The receipts held while Invisible go now (plan E2.5).
         let host = crate::host::adapters::friends::HostFriends::of(ctx);

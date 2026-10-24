@@ -117,33 +117,66 @@ impl OwnPresence {
         self.state.read().status
     }
 
-    /// A status the user picked: auto-away no longer holds it.
-    pub(crate) fn set_status(&self, status: SessionStatus) {
-        {
+    /// A status the user picked: auto-away no longer holds it. Entering
+    /// Invisible or Offline writes the status message and the game empty
+    /// ([`hides_details`]); leaving them writes both again from what we
+    /// hold (prod research batch 7 G1: Discord and Steam show an invisible
+    /// user with no activity).
+    pub(crate) async fn set_status(&self, status: SessionStatus) {
+        let flipped = {
             let mut state = self.state.write();
+            let flipped = hides_details(state.status) != hides_details(status);
             state.status = status;
             state.pre_away = None;
             if state.idle == IdleState::AutoAway {
                 state.idle = IdleState::Active;
             }
-        }
+            flipped
+        };
         self.changed();
+        if flipped {
+            self.write_details().await;
+        }
     }
 
-    /// Our status message, written to profile subkey 1.
+    /// Write the status message and the game as the status now shows them.
+    async fn write_details(&self) {
+        let message = self.published_message();
+        if let Err(e) = self.write_profile(subkeys::STATUS_MESSAGE, message).await {
+            tracing::warn!(error = %e, "status message not rewritten for the status");
+        }
+        let game = self.state.read().game.clone();
+        if let Err(e) = self.write_game(game).await {
+            tracing::warn!(error = %e, "game info not rewritten for the status");
+        }
+    }
+
+    /// The status message as published: empty while the status hides it.
+    fn published_message(&self) -> Vec<u8> {
+        let state = self.state.read();
+        if hides_details(state.status) {
+            Vec::new()
+        } else {
+            state.message.clone().into_bytes()
+        }
+    }
+
+    /// Our status message, written to profile subkey 1 (empty while
+    /// Invisible or Offline).
     ///
     /// # Errors
     /// The profile write failed (the message is kept and shown).
     pub(crate) async fn set_message(&self, message: String) -> Result<(), String> {
         self.state.write().message.clone_from(&message);
         self.changed();
-        self.write_profile(subkeys::STATUS_MESSAGE, message.into_bytes())
+        self.write_profile(subkeys::STATUS_MESSAGE, self.published_message())
             .await
     }
 
     /// The game we play, or none: written to profile subkey 4 as the
     /// schema's packed `GameStatus`, empty for none (plan E1.1), sealed
-    /// under our friend-presence key (plan E2.5).
+    /// under our friend-presence key (plan E2.5). Written empty while
+    /// Invisible or Offline: the game is kept and published on leaving them.
     ///
     /// # Errors
     /// The profile write failed (the game is kept and shown).
@@ -165,7 +198,8 @@ impl OwnPresence {
     }
 
     async fn write_game(&self, game: Option<Game>) -> Result<(), String> {
-        let bytes = game.map_or_else(Vec::new, |game| {
+        let shown = game.filter(|_| !hides_details(self.status()));
+        let bytes = shown.map_or_else(Vec::new, |game| {
             rekindle_codec::capnp_codec::presence::encode_game_status(
                 &rekindle_codec::capnp_codec::presence::GameInfo {
                     game_id: game.id,
@@ -257,11 +291,22 @@ impl OwnPresence {
         {
             return;
         }
-        self.state.write().status = SessionStatus::Offline;
-        match tokio::time::timeout(
-            OFFLINE_WRITE_WAIT,
-            rekindle_presence::publish_status(Arc::new(self.clone()), SessionStatus::Offline),
-        )
+        let flipped = {
+            let mut state = self.state.write();
+            let flipped = !hides_details(state.status);
+            state.status = SessionStatus::Offline;
+            flipped
+        };
+        let details = async {
+            if flipped {
+                self.write_details().await;
+            }
+        };
+        let status =
+            rekindle_presence::publish_status(Arc::new(self.clone()), SessionStatus::Offline);
+        match tokio::time::timeout(OFFLINE_WRITE_WAIT, async {
+            tokio::join!(status, details).0
+        })
         .await
         {
             Ok(Ok(())) => {}
@@ -338,6 +383,12 @@ impl OwnPresence {
         }
         Ok(())
     }
+}
+
+/// Whether `status` shows no status message and no game to friends:
+/// Invisible (which peers read as offline) and Offline.
+fn hides_details(status: SessionStatus) -> bool {
+    matches!(status, SessionStatus::Invisible | SessionStatus::Offline)
 }
 
 #[async_trait]

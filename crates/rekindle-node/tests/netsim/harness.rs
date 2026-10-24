@@ -295,6 +295,11 @@ impl Events {
             .count()
     }
 
+    /// How many published events match `pick`.
+    pub fn matching(&self, pick: impl Fn(&SubscriptionEvent) -> bool) -> usize {
+        self.0.lock().iter().filter(|event| pick(event)).count()
+    }
+
     /// Whether any published event matches `pick`.
     pub fn any(&self, pick: impl Fn(&SubscriptionEvent) -> bool) -> bool {
         self.0.lock().iter().any(pick)
