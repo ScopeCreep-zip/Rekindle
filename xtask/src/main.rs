@@ -60,6 +60,7 @@ mod allow_reasons;
 mod bare_spawn;
 mod boundaries;
 mod capnp_bounds;
+mod cargo_meta;
 mod contrast_pairs;
 mod css;
 mod declared_grounds;

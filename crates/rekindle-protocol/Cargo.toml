@@ -10,7 +10,6 @@ workspace = true
 [dependencies]
 async-trait = "0.1"
 base64 = "0.22"
-capnp = { workspace = true }
 ed25519-dalek = { version = "2", features = [ "rand_core" ] }
 futures = { workspace = true }
 hex = "0.4"

@@ -27,6 +27,12 @@
 //!   `serialize`, `serialize_packed` or `message` module or of `capnp`
 //!   itself, any of which would let a reader hide behind another name.
 //!
+//! A gate on syntax cannot see inside a macro's token body, so the check
+//! also reads the resolved graph from `cargo metadata`: only the packages
+//! in [`CAPNP_DEPENDENTS`] may depend on the `capnp` crate at all, so no
+//! other crate can call a reader however it spells it. A file that does not
+//! parse is refused rather than skipped.
+//!
 //! Test code (`#[cfg(test)]`, `#[test]`, `tests/`, `tests.rs`,
 //! `*_tests.rs`) builds its messages locally and is not scanned.
 
@@ -44,6 +50,27 @@ const READER_FILE: &str = "crates/rekindle-codec/src/capnp_codec/mod.rs";
 
 /// The file that names every decoder's bound.
 const BOUNDS_FILE: &str = "crates/rekindle-codec/src/capnp_codec/bounds.rs";
+
+/// The packages that may depend on `capnp`, checked against `cargo
+/// metadata`:
+/// - `rekindle-codec`, the one Rekindle crate that encodes and decodes
+///   Cap'n Proto;
+/// - `capnpc`, the schema compiler `rekindle-codec`'s build script runs
+///   (and veilid-core's), which depends on `capnp` for its own schema
+///   reader;
+/// - `veilid-core` (the pinned fork, ADR 0017), whose RPC wire is Cap'n
+///   Proto; it decodes its own messages, never ours.
+const CAPNP_DEPENDENTS: &[&str] = &["rekindle-codec", "capnpc", "veilid-core"];
+
+/// Each package of `dependents` (those depending on `capnp`) that is not
+/// allowed to.
+fn capnp_dependent_hits(dependents: &BTreeSet<String>) -> Vec<String> {
+    dependents
+        .iter()
+        .filter(|name| !CAPNP_DEPENDENTS.contains(&name.as_str()))
+        .map(|name| format!("{name} depends on capnp (only rekindle-codec decodes Cap'n Proto)"))
+        .collect()
+}
 
 /// The one function allowed to build `ReaderOptions` and call a reader.
 const READER_FN: &str = "unpack_bounded";
@@ -366,9 +393,8 @@ fn scan(rel: &str, src: &str) -> Vec<String> {
 }
 
 fn scan_with(rel: &str, src: &str, bounds: &BTreeSet<String>) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
     let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
+        return vec![format!("{rel}  does not parse, so it cannot be checked")];
     };
     let mut finder = Finder {
         rel,
@@ -392,7 +418,8 @@ pub(crate) fn check_capnp_bounds(root: &Path) -> Result<()> {
     if bounds.is_empty() {
         return Err(anyhow!("{BOUNDS_FILE} declares no Bound const"));
     }
-    let mut hits = Vec::new();
+    let meta = crate::cargo_meta::Metadata::load(root)?;
+    let mut hits = capnp_dependent_hits(&meta.direct_dependents("capnp"));
     for dir in dirs {
         for path in walk_source_files(&dir, &["rs"])? {
             let rel = path
@@ -423,6 +450,8 @@ pub(crate) fn check_capnp_bounds(root: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::{scan, READER_FILE};
 
     #[test]
@@ -528,6 +557,23 @@ mod tests {
         let names =
             super::bound_names("pub const A: Bound = Bound::packed(1); pub const B: usize = 2;");
         assert_eq!(names.into_iter().collect::<Vec<_>>(), ["A"]);
+    }
+
+    #[test]
+    fn only_the_codec_may_depend_on_capnp() {
+        let allowed: BTreeSet<String> = ["rekindle-codec", "capnpc", "veilid-core"]
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        assert!(super::capnp_dependent_hits(&allowed).is_empty());
+        let mut with_protocol = allowed;
+        with_protocol.insert("rekindle-protocol".to_owned());
+        assert_eq!(super::capnp_dependent_hits(&with_protocol).len(), 1);
+    }
+
+    #[test]
+    fn a_file_that_does_not_parse_is_refused() {
+        assert_eq!(scan("crates/x/src/lib.rs", "fn (").len(), 1);
     }
 
     #[test]
