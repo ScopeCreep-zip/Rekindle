@@ -15,6 +15,8 @@ mod direct_call_tests;
 mod direct_tests;
 #[cfg(test)]
 mod friend_admission_tests;
+#[cfg(test)]
+mod friend_answer_tests;
 mod friends;
 mod game;
 pub mod gate;
