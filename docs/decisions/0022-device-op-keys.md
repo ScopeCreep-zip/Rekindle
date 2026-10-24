@@ -22,7 +22,11 @@
   restore retires at the barrier's maximum, each device watches its own `M(p,d)`/2, the re-key waits for a
   TrustChanging intent, a `DeviceRetired` is never a second fork, retirement verdicts move only from applied to
   quarantined, the power rows are S3's `power.rs`, E5.3's device root key is one design with these keys, and the
-  ADR 0011 passages amended are listed.
+  ADR 0011 passages amended are listed. Corrected 2026-10-24 (pass 2 of that check), still Proposed: a
+  `DeviceRetired` whose `lastSeq` is below its carrier's causal past is invalid, quarantined ops stay as DAG ancestry
+  and an op that loses its authority with them is quarantined and shown (rule 5), a new key after a fork needs the
+  `DeviceReadmit` in its op's deps (rule 7), a restore re-keys only through the `ReEnrolDevice` intent (rule 4), and
+  the authority rows are `validate/mod.rs` `permitted` checks, not `power.rs`.
 - **Date:** 2026-10-24
 - **Amends:** [0011](0011-member-sovereign-records.md) and plan D15, their rule that the member's pseudonym signs
   its own op log. The record owner does not change: `M(p)` stays owned by the random key `K_M(p)` that only the
@@ -149,7 +153,9 @@ as today's does.
    - signs nothing while a read is outstanding or a result is above the local head. Writes wait in the
      outbox under a visible "pending: catching up" state; offline, they queue and are never signed at a guessed
      seq.
-   If the published head is above the local one, this device was restored: it never signs under `d` again, `p`
+   If the published head is above the local one, this device was restored: it never signs under `d` again and
+   raises the backend-originated TrustChanging `ReEnrolDevice` intent (plan S7d-keys.10; *corrected 2026-10-24,
+   pass 2*: this paragraph re-keyed automatically, which rule 9 forbids); when the user commits it, `p`
    signs `DeviceRetired{d, incarnation, lastSeq}` with `lastSeq` the barrier's maximum (the DHT `GovHead` and every
    answering peer's walk, so an op gossiped before its append landed stays valid; corrected 2026-10-24, premise check,
    from "the published head"), and the device mints a fresh device key and
@@ -193,14 +199,21 @@ as today's does.
    evidence, and its hash is `BLAKE3 derive_key("rekindle-gov-fork-evidence-v1")` over `community ‖ device key ‖
    seq ‖` the two op hashes in byte order. The evidence retires that device key. Ops of that key below the fork seq
    stay valid and stay in the converged state (CT keeps pre-retirement SCTs); both conflicting ops and every later
-   op of that key are quarantined. An op above a `DeviceRetired`'s `lastSeq` is never applied and never counted as
-   an equivocation; it is quarantined with a visible reason and never dropped silently (plan D15's quarantine
+   op of that key are quarantined. An op above a `DeviceRetired`'s `lastSeq` is not in the converged state and never counted as
+   an equivocation (one already applied moves to quarantined, shown, rule 6; *corrected 2026-10-24, pass 2*, from
+   "is never applied"); it is quarantined with a visible reason and never dropped silently (plan D15's quarantine
    rule), so a copied data root's race (rule 4) stays visible. Readers never prefer the last writer of `d`
    (*amended 2026-10-24, prod research batch 10*): when the set holds more than one `DeviceRetired` for one key,
-   the lowest `lastSeq` counts; two different ops of `d` at one seq at or below it are shown as an equivocation
+   the lowest `lastSeq` counts, and a `DeviceRetired` whose `lastSeq` is below the key's highest seq in its
+   carrier's causal past is invalid and quarantined (*corrected 2026-10-24, pass 2*: otherwise any holder of `p`
+   could erase a key's applied history at no cost with `lastSeq = 0`); two different ops of `d` at one seq at or below it are shown as an equivocation
    pair (fork evidence, above), and every op of `d` above it, from either copy, is quarantined and shown (Tailnet
    Lock rejects both clones on a tie). The author's re-enrolled device offers "re-send under new key" for its own
-   quarantined ops; nothing inbound is lost, since records are not consumed on read. A replay of the same op is idempotent and never counts. The person is not muted:
+   quarantined ops; nothing inbound is lost, since records are not consumed on read. A replay of the same op is idempotent and never counts.
+   Quarantined ops stay in the DAG as ancestry and are never applied, so the ops that cite them resolve and are
+   never pending on their account; an op whose authority came from a quarantined op is re-judged on the converged
+   set and moves to quarantined, shown with that cause, only if its authority fails without it (*added
+   2026-10-24, pass 2*). The person is not muted:
    their other effective device keys keep working (until a second fork, rule 7), and they are shown as having a
    forked device (rule 9).
 6. **Device cap, judged at each op's causal deps.** A member has at most **6** effective device keys in total,
@@ -218,7 +231,9 @@ as today's does.
    a pure function of the op set (D15 "pure effects"), never of local time.
 7. **One fork per member.** After a member's first fork (fork evidence for any of its device keys, or any
    `DeviceRetired`, rule 4) in an op's deps, every new endorsement for that member becomes effective only together
-   with a converged `DeviceReadmit{member, memberRecord, newKey, incarnation, forkEvidence}` op that names it,
+   with a `DeviceReadmit{member, memberRecord, newKey, incarnation, forkEvidence}` op that names it in the
+   deps of the op being judged (*corrected 2026-10-24, pass 2*, from "a converged": effectiveness is judged at
+   deps, rule 6),
    co-signed by **either** a `KICK_MEMBERS` holder who outranks the member (rule 8) **or** one of the member's own
    device keys that is effective at that `DeviceReadmit`'s causal deps and was endorsed before the member's first
    fork (Signal's precedent: an existing device approves a link). Forks are counted per device key: fork evidence
@@ -321,8 +336,9 @@ as today's does.
 - ADR 0018 ballot votes are ops, so a restored device votes under its new key; the electorate is counted per
   member, and a member whose device keys are all retired is not in it until re-admitted (ADR 0018, 2026-10-24).
 - `DeviceRetired`'s power row is "self only", meaning `p`'s signature: it is valid from whatever op carries it,
-  a quarantined op or one signed by a forked, retired or unendorsed key included, so the power table (`rekindle-governance/src/power.rs`, built at plan S3;
-  corrected 2026-10-24, premise check, from "(S8/S9)")
+  a quarantined op or one signed by a forked, retired or unendorsed key included, so the authority check (`rekindle-governance/src/validate/mod.rs:113` `permitted`, built at plan S3;
+  corrected 2026-10-24, pass 2, from "the power table (`power.rs`)", whose `class_of` only sorts an op into power
+  and non-power and refuses nothing)
   judges it by `p`'s signature and never refuses it on its carrier's standing. Only `p` can retire, so this is
   harmless.
 - Restores count against the one-fork rule (rule 7): an honest user's first restore is free, but after it every
