@@ -11,6 +11,12 @@ use crate::op::OpStamp;
 use rekindle_types::governance::{AdmissionMode, GuideStep, OnboardingQuestion, WelcomeChannel};
 use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, ThreadId};
 
+/// The generation of the community key the creator mints at origin
+/// (`rekindle-governance-runtime` `origin.rs`): a merge starts here, so a
+/// `MEKGenerationBump` is `current + 1` against the key every member holds
+/// (plan D20), and the first rotation names generation 2.
+pub const GENESIS_MEK_GENERATION: u64 = 1;
+
 /// The merged governance state — produced by `merge::merge()`,
 /// consumed by `permissions::compute_permissions()` and `validate::validate_write()`.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -76,7 +82,9 @@ pub struct GovernanceState {
     /// Currently timed-out members with expiry info.
     pub timeouts: HashMap<PseudonymKey, TimeoutState>,
 
-    /// Current MEK generation (Max-Register — highest wins).
+    /// Current MEK generation (Max-Register — highest wins). A merge
+    /// starts at [`GENESIS_MEK_GENERATION`], the community key the creator
+    /// mints at origin, so the first rotation's bump names the next one.
     pub mek_generation: u64,
 
     /// Community metadata (LWW — highest lamport replaces all).

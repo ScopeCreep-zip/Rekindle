@@ -92,6 +92,7 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
     let mut state = GovernanceState {
         creator: Some(cert.creator_pseudonym.clone()),
         admission_mode: Some(cert.policy),
+        mek_generation: crate::state::GENESIS_MEK_GENERATION,
         ..GovernanceState::default()
     };
     let mut applied = vec![false; set.ops.len()];

@@ -1,6 +1,7 @@
 //! community merge tests.
 
 use super::*;
+use crate::state::GENESIS_MEK_GENERATION;
 
 fn bump(generation: u64, lamport: u64) -> Stamped {
     at(
@@ -13,22 +14,35 @@ fn bump(generation: u64, lamport: u64) -> Stamped {
     )
 }
 
-/// Generations advance one at a time (plan D20): each bump must name
-/// `current + 1`. A jump — `u64::MAX` included — and a replay are refused
-/// even from the creator.
+/// Generations advance one at a time (plan D20) from the community key
+/// minted at origin: each bump must name `current + 1`, so the genesis
+/// generation itself is a replay. A jump — `u64::MAX` included — and a
+/// replay are refused even from the creator.
 #[test]
 fn mek_generation_advances_by_one() {
     let creator = pseudo(1);
     let entries = vec![
-        bump(1, 1),
+        bump(GENESIS_MEK_GENERATION, 1),
         bump(2, 2),
-        bump(5, 3),
-        bump(2, 4),
-        bump(u64::MAX, 5),
-        bump(3, 6),
+        bump(3, 3),
+        bump(6, 4),
+        bump(3, 5),
+        bump(u64::MAX, 6),
+        bump(4, 7),
     ];
     let state = merge_entries(&creator, &[(creator.clone(), entries)]);
-    assert_eq!(state.mek_generation, 3);
+    assert_eq!(state.mek_generation, 4);
+}
+
+/// A merge with no bump is at the origin key's generation, which the
+/// first rotation's bump (generation 2) names as `current + 1`.
+#[test]
+fn a_merge_starts_at_the_genesis_key_generation() {
+    let creator = pseudo(1);
+    let none = merge_entries(&creator, &[(creator.clone(), vec![meta_entry(1)])]);
+    assert_eq!(none.mek_generation, GENESIS_MEK_GENERATION);
+    let first = merge_entries(&creator, &[(creator.clone(), vec![bump(2, 1)])]);
+    assert_eq!(first.mek_generation, 2);
 }
 
 /// A member without KICK, BAN or MANAGE_COMMUNITY cannot bump.
@@ -40,10 +54,10 @@ fn mek_bump_needs_a_rotation_permission() {
         &creator,
         &[
             (creator.clone(), vec![meta_entry(1)]),
-            (member, vec![bump(1, 2)]),
+            (member, vec![bump(GENESIS_MEK_GENERATION + 1, 2)]),
         ],
     );
-    assert_eq!(state.mek_generation, 0);
+    assert_eq!(state.mek_generation, GENESIS_MEK_GENERATION);
 }
 
 fn meta_entry(lamport: u64) -> Stamped {

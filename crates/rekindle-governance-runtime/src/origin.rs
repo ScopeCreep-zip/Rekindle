@@ -340,7 +340,10 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         return Err(GovernanceRuntimeError::WriteConflict(stale.len()));
     }
 
-    let mek = MediaEncryptionKey::generate_with(1, deps.rng().as_ref());
+    let mek = MediaEncryptionKey::generate_with(
+        rekindle_governance::state::GENESIS_MEK_GENERATION,
+        deps.rng().as_ref(),
+    );
     let mek_snapshot = MekSnapshot {
         generation: mek.generation(),
         key_bytes: *mek.as_bytes(),

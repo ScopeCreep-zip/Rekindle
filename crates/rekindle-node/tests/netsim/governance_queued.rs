@@ -7,7 +7,9 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{
+    ChannelMessageRequest, CommunityRequest, IpcRequest, LifecycleRequest,
+};
 use rekindle_ipc::protocol::{MemberRequest, SettingsRequest};
 use rekindle_netsim::{Fault, Writes};
 use rekindle_types::dto::onboarding::{
@@ -113,4 +115,65 @@ async fn onboarding_answers_never_wait_on_the_network() {
     })
     .await;
     assert!(granted, "the role assignment did not wait on the network");
+}
+
+/// Every node's merged community-key generation, from its community view.
+async fn generations(community: &Community) -> Vec<u64> {
+    let mut out = Vec::new();
+    for node in &community.nodes {
+        let views = node
+            .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                LifecycleRequest::CommunityViews,
+            )))
+            .await;
+        out.push(
+            views
+                .as_array()
+                .and_then(|views| {
+                    views
+                        .iter()
+                        .find(|v| v["id"].as_str() == Some(community.governance_key.as_str()))
+                })
+                .and_then(|v| v["mekGeneration"].as_u64())
+                .unwrap_or_default(),
+        );
+    }
+    out
+}
+
+/// A manual community-key rotation's `MEKGenerationBump` names the key
+/// after the one minted at origin, so every reader accepts it (plan D20,
+/// `current + 1`); the rotation worker queues it, so with the creator's op
+/// log unable to land, two rotations in a row finish on every node before
+/// one network answer's deadline (S6b).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_manual_rotation_never_waits_and_every_reader_accepts_its_bump() {
+    let community = Community::of(3, 233).await;
+    assert_eq!(
+        generations(&community).await,
+        vec![1, 1, 1],
+        "every member starts at the origin key's generation"
+    );
+    creator_cannot_land(&community);
+    for _ in 0..2 {
+        community.nodes[0]
+            .ok(IpcRequest::Community(CommunityRequest::Messages(
+                ChannelMessageRequest::MekRotate {
+                    community: community.governance_key.clone(),
+                    channel: String::new(),
+                },
+            )))
+            .await;
+    }
+    let accepted = eventually(
+        &community.sim,
+        rekindle_types::config::NETWORK_ANSWER_DEADLINE,
+        || async { generations(&community).await == vec![3, 3, 3] },
+    )
+    .await;
+    assert!(
+        accepted,
+        "both bumps on every reader: {:?}",
+        generations(&community).await
+    );
 }
