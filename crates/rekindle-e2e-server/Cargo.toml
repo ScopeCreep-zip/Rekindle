@@ -3,6 +3,8 @@ name = "rekindle-e2e-server"
 version = "0.0.1"
 edition = "2021"
 description = "E2E test HTTP bridge — exposes Tauri IPC commands for Playwright"
+# A test tool: never published, and it does not compile in release (src/lib.rs).
+publish = false
 
 [[bin]]
 name = "e2e-server"
@@ -17,6 +19,7 @@ rekindle-db = { path = "../rekindle-db" }
 rekindle-ipc = { path = "../rekindle-ipc" }
 rekindle-idle = { path = "../rekindle-idle" }
 rekindle-node = { path = "../rekindle-node" }
+rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
 rekindle_lib = { package = "rekindle-desktop", path = "../../src-tauri" }

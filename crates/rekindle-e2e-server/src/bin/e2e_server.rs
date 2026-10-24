@@ -6,26 +6,35 @@
 //! through the same `host_call::call` the window uses, against an Offline
 //! Host with the GUI's `ShellSession` hooks (plan E1.1).
 //!
+//! It binds a random loopback port and mints a per-run token, prints both
+//! on one line (`REKINDLE_E2E_READY {"url":…,"token":…}`) for the
+//! Playwright fixture, and admits only requests that pass
+//! [`rekindle_e2e_server::Guard`]: our `Host`, the frontend's `Origin` (from
+//! `REKINDLE_E2E_ORIGIN`) or none, and the token.
+//!
 //! ```bash
-//! cargo run -p rekindle --bin e2e-server --features e2e-server
+//! REKINDLE_E2E_ORIGIN=http://localhost:1430 cargo run -p rekindle-e2e-server --bin e2e-server
 //! ```
 
 use std::sync::Arc;
 
-use axum::extract::State as AxumState;
-use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::extract::{Request, State as AxumState};
+use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
+use axum::middleware::{self, Next};
+use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Json;
 use axum::Router;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 
 use rekindle_db::paths::DataRoot;
+use rekindle_e2e_server::{Guard, READY_PREFIX, TOKEN_HEADER};
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_lib::host_call;
 use rekindle_lib::state::{AppState, SharedState};
+use rekindle_secrets::bearer_token::BearerToken;
 use rekindle_types::dto::{CommandError, Done};
 
 /// Shared server state passed to every axum handler.
@@ -84,24 +93,59 @@ async fn main() {
     state.host.set(host);
     let server = Arc::new(ServerState { state, root });
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    // A random free port: nothing guessable sits on a fixed one.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("failed to bind a loopback port");
+    let port = listener.local_addr().expect("bound address").port();
+    let origin = std::env::var("REKINDLE_E2E_ORIGIN")
+        .expect("REKINDLE_E2E_ORIGIN names the frontend origin the bridge answers");
+    let guard = Arc::new(Guard::new(port, origin, BearerToken::mint()));
 
+    // Only the frontend's origin, only POST, only our two headers.
+    let cors = CorsLayer::new()
+        .allow_origin(
+            HeaderValue::from_str(guard.origin()).expect("REKINDLE_E2E_ORIGIN is a header value"),
+        )
+        .allow_methods([Method::POST])
+        .allow_headers([
+            axum::http::header::CONTENT_TYPE,
+            HeaderName::from_static(TOKEN_HEADER),
+        ]);
+
+    let ready =
+        json!({ "url": format!("http://127.0.0.1:{port}"), "token": guard.token().as_str() });
     let app = Router::new()
         .route("/invoke", post(handle_invoke))
         .route("/reset", post(handle_reset))
         .route("/health", axum::routing::get(|| async { "ok" }))
-        .layer(cors)
-        .with_state(server);
+        .with_state(server)
+        // Inside the CORS layer, so a preflight (which carries no token) is
+        // answered by CORS alone and every real request meets the guard.
+        .layer(middleware::from_fn_with_state(guard, admit))
+        .layer(cors);
 
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3001")
-        .await
-        .expect("failed to bind to port 3001");
-
-    tracing::info!("E2E server listening on http://127.0.0.1:3001");
+    tracing::info!(port, "E2E server listening on loopback");
+    // The fixture reads this one line for the address and the token.
+    {
+        use std::io::Write as _;
+        let mut out = std::io::stdout().lock();
+        writeln!(out, "{READY_PREFIX}{ready}")
+            .and_then(|()| out.flush())
+            .expect("stdout takes the ready line");
+    }
     axum::serve(listener, app).await.expect("server error");
+}
+
+/// Refuse a request [`Guard::admit`] refuses, before any handler runs.
+async fn admit(AxumState(guard): AxumState<Arc<Guard>>, request: Request, next: Next) -> Response {
+    match guard.admit(request.headers()) {
+        Ok(()) => next.run(request).await,
+        Err(status) => {
+            tracing::warn!(%status, path = %request.uri().path(), "refused a request");
+            status.into_response()
+        }
+    }
 }
 
 /// Dispatch an IPC command to the real backend core functions.

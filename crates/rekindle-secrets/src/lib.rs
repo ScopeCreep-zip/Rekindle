@@ -13,6 +13,7 @@
 // before this).
 #![forbid(unsafe_code)]
 
+pub mod bearer_token;
 pub mod channel_body;
 pub mod derive;
 pub mod forked_random;

@@ -12,9 +12,6 @@ import type { PlaywrightTestConfig } from "@playwright/test";
 /** Where `pnpm dev` serves the SolidJS frontend. */
 export const FRONTEND_URL = "http://localhost:1430";
 
-/** Health endpoint of the E2E Rust bridge (`e2e-server`). */
-export const E2E_BACKEND_HEALTH_URL = "http://127.0.0.1:3001/health";
-
 type WebServerConfig = Extract<
   NonNullable<PlaywrightTestConfig["webServer"]>,
   { command: string }

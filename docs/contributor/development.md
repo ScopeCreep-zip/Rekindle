@@ -230,7 +230,8 @@ Rekindle supports two E2E testing strategies:
 
 **Real E2E (`pnpm test:e2e`):**
 - The `rekindle-e2e-server` crate exposes Tauri commands over HTTP at
-  `http://127.0.0.1:3001/invoke`
+  `/invoke` on a random loopback port with a per-run token (started and
+  read by `e2e/fixtures/e2e-server-setup.ts`)
 - Playwright drives the real SolidJS UI in a browser
 - Uses real SQLite + Vault (`rekindle-vault`) + Ed25519 — no mocking
 - Frontend code path: `VITE_E2E=true` → `invoke()` sends HTTP POST

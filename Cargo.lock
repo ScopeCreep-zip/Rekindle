@@ -7474,6 +7474,7 @@ dependencies = [
  "rekindle-idle",
  "rekindle-ipc",
  "rekindle-node",
+ "rekindle-secrets",
  "rekindle-types",
  "rekindle-utils",
  "serde",

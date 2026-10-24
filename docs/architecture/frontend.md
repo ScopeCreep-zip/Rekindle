@@ -258,7 +258,7 @@ Playwright runs.
 
 | File | Purpose |
 |---|---|
-| `invoke.ts` | Conditional invoke (Tauri normally, HTTP to `localhost:3001` under E2E) |
+| `invoke.ts` | Conditional invoke (Tauri normally, HTTP to the E2E bridge, with its per-run token, under E2E) |
 | `hydrate.ts` | State hydration on login |
 | `avatar.ts` | Avatar bytes from `get_avatar` → `data:image/webp` URL |
 | `permissions.ts` | Permission bitmask helpers shared with the backend bitfield |

@@ -14,6 +14,8 @@
 //!                                      through event_dispatch (ADR 0007).
 //!     cargo xtask check-capnp-bounds   Every Cap'n Proto read has a
 //!                                      traversal bound (plan F4).
+//!     cargo xtask check-e2e-server-release
+//!                                      The E2E bridge never builds in release.
 //!     cargo xtask check-veilid-dht-calls
 //!                                      Veilid DHT/route calls only in their
 //!                                      owners (record pool, RouteImports,
@@ -66,6 +68,7 @@ mod domain_literals;
 mod duplicate_bodies;
 mod duplicate_constants;
 mod duplication;
+mod e2e_release;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
@@ -117,6 +120,8 @@ enum Command {
     CheckNoEmitter,
     /// Verify every Cap'n Proto read has a traversal bound (no unbounded network decode).
     CheckCapnpBounds,
+    /// Verify the E2E bridge cannot be built into a release bundle.
+    CheckE2eServerRelease,
     /// Verify every Veilid DHT and private-route call stays in its owner.
     CheckVeilidDhtCalls,
     /// Verify SQL lives only in the storage crates (rekindle-db, -vault, -asql).
@@ -215,6 +220,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| capnp_bounds::check_capnp_bounds(&root)),
                 ),
                 (
+                    "e2e-server-release",
+                    Box::new(|| e2e_release::check_e2e_server_release(&root)),
+                ),
+                (
                     "veilid-dht-calls",
                     Box::new(|| veilid_dht_calls::check_veilid_dht_calls(&root)),
                 ),
@@ -298,6 +307,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
+        Command::CheckE2eServerRelease => e2e_release::check_e2e_server_release(&root),
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
         Command::CheckSqlite => sqlite::check_sqlite(&root),
         Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),

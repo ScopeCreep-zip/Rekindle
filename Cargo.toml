@@ -58,6 +58,10 @@ members = [
 # Tauri path). Excluding them from default builds keeps `cargo build`
 # focused on what the shipped app needs.
 #
+# `rekindle-e2e-server` (the Playwright bridge) is likewise left out: it is a
+# test tool that refuses to compile in release (`cargo xtask
+# check-e2e-server-release`). Run it with `cargo run -p rekindle-e2e-server`.
+#
 # To build the daemon: `cargo build -p rekindle-node`
 # To build the CLI:    `cargo build -p rekindle-cli`
 #
@@ -89,7 +93,6 @@ default-members = [
     "crates/rekindle-game-detect",
     "crates/rekindle-idle",
     "crates/rekindle-voice",
-    "crates/rekindle-e2e-server",
     "crates/rekindle-utils",
     "crates/rekindle-transport",
     # Decomposed-harvest crates (shipped with the Tauri app).

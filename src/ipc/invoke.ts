@@ -18,7 +18,21 @@ import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { Done, IntentReview, UndoOffer } from "./commands/dto";
 import { isCommandError } from "./commands/dto";
 
-const E2E_SERVER = "http://127.0.0.1:3001";
+/** The E2E bridge's address and per-run token, which the Playwright
+ *  fixture (`e2e/fixtures/e2e-server.ts`) sets before any script runs. */
+interface E2EBridge {
+  url: string;
+  token: string;
+}
+
+function e2eBridge(): E2EBridge {
+  const bridge = (window as Window & { __REKINDLE_E2E__?: E2EBridge })
+    .__REKINDLE_E2E__;
+  if (bridge === undefined) {
+    throw new Error("VITE_E2E is set but the page was not given the E2E bridge");
+  }
+  return bridge;
+}
 
 /** Map window commands to browser routes for E2E navigation.
  *
@@ -87,9 +101,10 @@ async function invokeViaHttp<T>(
   cmd: string,
   args?: Record<string, unknown>,
 ): Promise<T> {
-  const res = await fetch(`${E2E_SERVER}/invoke`, {
+  const { url, token } = e2eBridge();
+  const res = await fetch(`${url}/invoke`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "x-rekindle-e2e-token": token },
     body: JSON.stringify({ cmd, args: args ?? {} }),
   });
 

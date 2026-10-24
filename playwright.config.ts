@@ -1,10 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-import {
-  E2E_BACKEND_HEALTH_URL,
-  baseConfig,
-  viteDevServer,
-} from "./playwright.base.config";
+import { baseConfig, viteDevServer } from "./playwright.base.config";
 
 export default defineConfig({
   ...baseConfig,
@@ -23,19 +19,11 @@ export default defineConfig({
       use: { ...devices["Desktop Chrome"] },
     },
   ],
-  webServer: [
-    viteDevServer(process.env.E2E ? "e2e" : "mock"),
-    // E2E backend server — only started for the e2e project
-    ...(process.env.E2E
-      ? [
-          {
-            command:
-              "cargo run -p rekindle-e2e-server --bin e2e-server",
-            url: E2E_BACKEND_HEALTH_URL,
-            reuseExistingServer: !process.env.CI,
-            timeout: 120_000,
-          },
-        ]
-      : []),
-  ],
+  // The e2e project's Rust bridge binds a random port with a per-run
+  // token; global setup starts it and passes both to the tests
+  // (e2e/fixtures/e2e-server.ts).
+  ...(process.env.E2E
+    ? { globalSetup: "./e2e/fixtures/e2e-server-setup.ts" }
+    : {}),
+  webServer: [viteDevServer(process.env.E2E ? "e2e" : "mock")],
 });

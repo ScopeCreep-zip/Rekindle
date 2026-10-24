@@ -16,13 +16,11 @@
  * - Tauri event system (listen) is no-oped
  */
 
-import { test, expect } from "@playwright/test";
-
-const E2E_SERVER = "http://127.0.0.1:3001";
+import { e2ePost, expect, test } from "./fixtures/e2e-server";
 
 /** Reset the E2E server state between tests for isolation. */
 async function resetServer(): Promise<void> {
-  const res = await fetch(`${E2E_SERVER}/reset`, { method: "POST" });
+  const res = await e2ePost("/reset");
   if (!res.ok) {
     throw new Error(`Failed to reset E2E server: ${res.status}`);
   }
@@ -33,13 +31,9 @@ async function createIdentityViaServer(
   passphrase: string,
   displayName: string,
 ): Promise<{ publicKey: string; displayName: string }> {
-  const res = await fetch(`${E2E_SERVER}/invoke`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      cmd: "create_identity",
-      args: { passphrase, displayName },
-    }),
+  const res = await e2ePost("/invoke", {
+    cmd: "create_identity",
+    args: { passphrase, displayName },
   });
   const body = await res.json();
   if (!res.ok) throw new Error(body.error);
@@ -48,11 +42,7 @@ async function createIdentityViaServer(
 
 /** Clear server identity state (simulate app restart). */
 async function simulateRestart(): Promise<void> {
-  await fetch(`${E2E_SERVER}/invoke`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ cmd: "logout", args: {} }),
-  });
+  await e2ePost("/invoke", { cmd: "logout", args: {} });
 }
 
 // ── New User Registration ───────────────────────────────────────────

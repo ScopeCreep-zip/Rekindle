@@ -135,8 +135,11 @@ pnpm test:e2e -- --debug    # step through
 E2E tests drive the real Rust backend over HTTP. The mechanism:
 
 1. `pnpm test:e2e` sets `VITE_E2E=true`.
-2. The `rekindle-e2e-server` crate spins up an HTTP IPC bridge on
-   `localhost:3001` that mirrors every Tauri command.
+2. Playwright's global setup (`e2e/fixtures/e2e-server-setup.ts`) starts
+   the `rekindle-e2e-server` HTTP IPC bridge, which binds a random loopback
+   port and mints a per-run token, and reads both from the line it prints.
+   The `test` fixture (`e2e/fixtures/e2e-server.ts`) hands them to each page
+   as `window.__REKINDLE_E2E__`; every request carries the token.
 3. The frontend's `src/ipc/invoke.ts` detects `VITE_E2E` and routes
    through HTTP instead of Tauri's IPC.
 4. Playwright opens the SolidJS app in a real browser and exercises
