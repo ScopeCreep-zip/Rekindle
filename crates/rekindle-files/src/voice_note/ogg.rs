@@ -98,8 +98,10 @@ impl OggWriter {
 
 /// Read every packet of a single-stream Ogg file: one serial, page
 /// sequence numbers in order, every CRC valid, the first page marked
-/// first and the last marked last, no packet left open.
-pub(super) fn read(bytes: &[u8]) -> Result<Vec<Packet>, String> {
+/// first and the last marked last, no packet left open, refusing a stream of more than `max_packets`: the
+/// count is checked as each page completes packets, so a stream of tiny
+/// packets stops at the bound.
+pub(super) fn read(bytes: &[u8], max_packets: usize) -> Result<Vec<Packet>, String> {
     let mut packets = Vec::new();
     let mut open: Vec<u8> = Vec::new();
     let mut at = 0usize;
@@ -156,6 +158,9 @@ pub(super) fn read(bytes: &[u8]) -> Result<Vec<Packet>, String> {
             }
         }
         let last = completed.len();
+        if packets.len() + last > max_packets {
+            return Err(format!("more than {max_packets} packets"));
+        }
         for (i, data) in completed.into_iter().enumerate() {
             let page_granule = (i + 1 == last).then_some(granule);
             packets.push(Packet { data, page_granule });

@@ -31,6 +31,24 @@ const GRANULE_RATE: u64 = 48_000;
 const FRAME_SAMPLES: usize = 320;
 /// ≈ Signal's and SimpleX's 32 kbps AAC (research V-1: 16–24 kbps Opus).
 const BITRATE: i32 = 24_000;
+/// Most samples one Opus packet decodes to: 120 ms at 48 kHz (RFC 6716 §3.2.5).
+const MAX_PACKET_SAMPLES: usize = 5760;
+/// Most decoded samples a voice message holds past its pre-skip:
+/// [`MAX_DURATION_MS`] at 48 kHz, one channel, plus one packet of
+/// end-trimmed padding.
+pub const MAX_DECODED_SAMPLES: u64 =
+    MAX_DURATION_MS as u64 * GRANULE_RATE / 1000 + MAX_PACKET_SAMPLES as u64;
+/// Most packets a voice message holds: [`MAX_DURATION_MS`] of the
+/// shortest Opus frame (2.5 ms), plus the two header packets.
+pub const MAX_PACKETS: usize = MAX_DURATION_MS as usize * 2 / 5 + 2;
+/// Largest voice message file: [`MAX_DURATION_MS`] at [`BITRATE`], doubled
+/// for the encoder's variable rate, plus 64 KiB of Ogg pages (27 header
+/// bytes and up to 255 lacing values each, one page a second). Far under
+/// the attachment cap (`chunker::MAX_FILE_SIZE_BYTES`), so the cap a
+/// voice message is held to is this one: [`encode`] refuses to produce
+/// more and [`analyze`] refuses to parse more.
+pub const MAX_FILE_BYTES: usize =
+    MAX_DURATION_MS as usize / 1000 * BITRATE as usize / 8 * 2 + 64 * 1024;
 /// Largest Opus packet (RFC 6716 §3.4).
 const MAX_PACKET: usize = 1275;
 /// Audio packets per page: one second of 20 ms frames.
@@ -62,8 +80,10 @@ fn codec(e: &opus::Error) -> VoiceNoteError {
     VoiceNoteError::Codec(e.to_string())
 }
 
+/// `samples` at `rate`, in ms; an attacker's granule may be anything, so
+/// the product saturates (and is then refused as too long).
 fn duration_ms(samples: u64, rate: u64) -> u64 {
-    samples * 1000 / rate
+    samples.saturating_mul(1000) / rate
 }
 
 fn check_duration(ms: u64) -> Result<u32, VoiceNoteError> {
@@ -162,7 +182,13 @@ pub fn encode(pcm: &[f32]) -> Result<Vec<u8>, VoiceNoteError> {
     }
     let refs: Vec<&[u8]> = page.iter().map(Vec::as_slice).collect();
     writer.page(&refs, end_granule, false, true);
-    Ok(writer.finish())
+    let ogg = writer.finish();
+    if ogg.len() > MAX_FILE_BYTES {
+        return Err(VoiceNoteError::Codec(
+            "encoded past the voice message size cap".into(),
+        ));
+    }
+    Ok(ogg)
 }
 
 fn bytemuck_f32(pcm: &[f32]) -> Vec<u8> {
@@ -171,14 +197,23 @@ fn bytemuck_f32(pcm: &[f32]) -> Vec<u8> {
 
 /// Decode a received voice message: it must be one Ogg stream of mono
 /// Opus with an empty `OpusTags`, between [`MIN_DURATION_MS`] and
-/// [`MAX_DURATION_MS`] long. Its duration comes from the last granule
-/// position and its waveform from the decoded samples.
+/// [`MAX_DURATION_MS`] long, at most [`MAX_FILE_BYTES`]. Its duration
+/// comes from the last granule position and its waveform from the decoded
+/// samples. Decoding is bounded before it starts: the input bytes, the
+/// packet count ([`MAX_PACKETS`]) and the decoded samples
+/// ([`MAX_DECODED_SAMPLES`] plus the pre-skip) are capped, the last two as
+/// running totals, so a stream of tiny packets stops at the bound; every
+/// page's granule must be the samples decoded so far (RFC 7845 §4), and
+/// the waveform is folded in as samples come out, never kept.
 ///
 /// # Errors
 /// Anything else.
 pub fn analyze(bytes: &[u8]) -> Result<VoiceNoteInfo, VoiceNoteError> {
     let format = |why: &str| VoiceNoteError::Format(why.to_string());
-    let packets = ogg::read(bytes).map_err(VoiceNoteError::Format)?;
+    if bytes.len() > MAX_FILE_BYTES {
+        return Err(format("larger than a voice message can be"));
+    }
+    let packets = ogg::read(bytes, MAX_PACKETS).map_err(VoiceNoteError::Format)?;
     let mut packets = packets.into_iter();
     let head = packets.next().ok_or_else(|| format("no OpusHead"))?;
     let head = &head.data;
@@ -195,48 +230,94 @@ pub fn analyze(bytes: &[u8]) -> Result<VoiceNoteInfo, VoiceNoteError> {
     if tags.data.as_slice() != EMPTY_TAGS {
         return Err(format("OpusTags is not empty"));
     }
-    let mut decoder = Decoder::new(48_000, Channels::Mono).map_err(|e| codec(&e))?;
-    let mut decoded: Vec<i16> = Vec::new();
-    let mut last_granule = None;
-    let mut out = vec![0i16; 5760];
-    for packet in packets {
-        let n = decoder
-            .decode(&packet.data, &mut out, false)
-            .map_err(|e| codec(&e))?;
-        decoded.extend_from_slice(&out[..n]);
-        if packet.page_granule.is_some() {
-            last_granule = packet.page_granule;
-        }
-    }
-    let granule = last_granule.ok_or_else(|| format("no audio"))?;
+    let audio: Vec<ogg::Packet> = packets.collect();
+    let granule = audio
+        .iter()
+        .rev()
+        .find_map(|p| p.page_granule)
+        .ok_or_else(|| format("no audio"))?;
     let samples = granule
         .checked_sub(pre_skip)
         .ok_or_else(|| format("granule before pre-skip"))?;
     let duration = check_duration(duration_ms(samples, GRANULE_RATE))?;
-    let audio = decoded
-        .get(usize::try_from(pre_skip).unwrap_or(usize::MAX)..)
-        .and_then(|rest| rest.get(..usize::try_from(samples).unwrap_or(usize::MAX)))
-        .ok_or_else(|| format("granule past the decoded audio"))?;
+    let mut decoder = Decoder::new(48_000, Channels::Mono).map_err(|e| codec(&e))?;
+    let mut peaks = Peaks::new(pre_skip, samples);
+    let mut decoded = 0u64;
+    let mut last_page = 0u64;
+    let mut last_packet = 0u64;
+    let mut out = vec![0i16; MAX_PACKET_SAMPLES];
+    let count = audio.len();
+    for (index, packet) in audio.into_iter().enumerate() {
+        let n = decoder
+            .decode(&packet.data, &mut out, false)
+            .map_err(|e| codec(&e))?;
+        last_packet = u64::try_from(n).unwrap_or(u64::MAX);
+        decoded = decoded.saturating_add(last_packet);
+        if decoded > pre_skip + MAX_DECODED_SAMPLES {
+            return Err(format("decodes to more audio than a voice message holds"));
+        }
+        peaks.fold(decoded - last_packet, &out[..n]);
+        if let Some(page) = packet.page_granule {
+            let is_last = index + 1 == count;
+            if page < last_page || (!is_last && page != decoded) {
+                return Err(format("granule positions disagree with the audio"));
+            }
+            last_page = page;
+        }
+    }
+    // End trimming (RFC 7845 §4.4) may cut into the last packet only.
+    if granule > decoded || decoded - granule >= last_packet.max(1) {
+        return Err(format("granule positions disagree with the audio"));
+    }
     Ok(VoiceNoteInfo {
         duration_ms: duration,
-        waveform: waveform(audio),
+        waveform: peaks.finish(),
     })
 }
 
-/// [`WAVEFORM_PEAKS`] peaks of `audio`, each its bucket's largest
-/// magnitude scaled to 0–255.
-fn waveform(audio: &[i16]) -> Vec<u8> {
-    let bucket = audio.len().div_ceil(WAVEFORM_PEAKS).max(1);
-    (0..WAVEFORM_PEAKS)
-        .map(|i| {
-            let peak = audio
-                .iter()
-                .skip(i * bucket)
-                .take(bucket)
-                .map(|s| s.unsigned_abs())
-                .max()
-                .unwrap_or(0);
-            u8::try_from(peak >> 7).unwrap_or(u8::MAX)
-        })
-        .collect()
+/// [`WAVEFORM_PEAKS`] peaks of the audio between the pre-skip and the end
+/// granule, each its bucket's largest magnitude scaled to 0–255, folded in
+/// packet by packet.
+struct Peaks {
+    pre_skip: u64,
+    samples: u64,
+    bucket: u64,
+    levels: [u16; WAVEFORM_PEAKS],
+}
+
+impl Peaks {
+    fn new(pre_skip: u64, samples: u64) -> Self {
+        let buckets = u64::try_from(WAVEFORM_PEAKS).unwrap_or(1);
+        Self {
+            pre_skip,
+            samples,
+            bucket: samples.div_ceil(buckets).max(1),
+            levels: [0; WAVEFORM_PEAKS],
+        }
+    }
+
+    /// Fold `out`, whose first sample is decoded sample `first`.
+    fn fold(&mut self, first: u64, out: &[i16]) {
+        for (offset, sample) in (first..).zip(out) {
+            let Some(at) = offset.checked_sub(self.pre_skip) else {
+                continue;
+            };
+            if at >= self.samples {
+                break;
+            }
+            if let Some(peak) = usize::try_from(at / self.bucket)
+                .ok()
+                .and_then(|i| self.levels.get_mut(i))
+            {
+                *peak = (*peak).max(sample.unsigned_abs());
+            }
+        }
+    }
+
+    fn finish(self) -> Vec<u8> {
+        self.levels
+            .iter()
+            .map(|&p| u8::try_from(p >> 7).unwrap_or(u8::MAX))
+            .collect()
+    }
 }

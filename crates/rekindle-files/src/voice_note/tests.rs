@@ -81,7 +81,7 @@ fn bounds_and_foreign_formats_are_refused() {
 #[test]
 fn a_non_empty_opus_tags_is_refused() {
     let ogg = encode(&tone(440.0, 500)).unwrap();
-    let packets = ogg::read(&ogg).unwrap();
+    let packets = ogg::read(&ogg, MAX_PACKETS).unwrap();
     let mut writer = ogg::OggWriter::new(1);
     writer.page(&[&packets[0].data], 0, true, false);
     writer.page(&[b"OpusTags\x07\0\0\0libopus\0\0\0\0"], 0, false, false);
@@ -90,4 +90,59 @@ fn a_non_empty_opus_tags_is_refused() {
     writer.page(&audio, end, false, true);
     let tagged = writer.finish();
     assert!(matches!(analyze(&tagged), Err(VoiceNoteError::Format(_))));
+}
+
+#[test]
+fn a_tiny_packet_bomb_is_refused_with_bounded_memory() {
+    // Two bytes per packet (a code-3 TOC for 48 CELT frames of 2.5 ms, all
+    // empty) decode to 120 ms each: a few KiB of file that would decode to
+    // hours of samples. Every page's granule is honest and the last claims
+    // four minutes, so only the running sample cap can stop it, and it
+    // does before the audio past the cap is decoded.
+    let ogg = encode(&tone(440.0, 500)).unwrap();
+    let head = ogg::read(&ogg, MAX_PACKETS).unwrap().remove(0).data;
+    let mut writer = ogg::OggWriter::new(7);
+    writer.page(&[&head], 0, true, false);
+    writer.page(&[EMPTY_TAGS], 0, false, false);
+    let packet: &[u8] = &[0x83, 48];
+    let pages = 100u64;
+    for page in 1..=pages {
+        let refs = vec![packet; 50];
+        let granule = if page == pages {
+            240 * 48_000
+        } else {
+            page * 50 * 5760
+        };
+        writer.page(&refs, granule, false, page == pages);
+    }
+    let bomb = writer.finish();
+    assert!(bomb.len() < MAX_FILE_BYTES);
+    assert_eq!(
+        analyze(&bomb),
+        Err(VoiceNoteError::Format(
+            "decodes to more audio than a voice message holds".into()
+        ))
+    );
+    // Past the size cap, nothing is parsed at all.
+    assert!(matches!(
+        analyze(&vec![0u8; MAX_FILE_BYTES + 1]),
+        Err(VoiceNoteError::Format(_))
+    ));
+}
+
+#[test]
+fn granules_that_disagree_with_the_audio_are_refused() {
+    // An honest file whose final granule claims more than was decoded.
+    let ogg = encode(&tone(440.0, 1_500)).unwrap();
+    let packets = ogg::read(&ogg, MAX_PACKETS).unwrap();
+    let mut writer = ogg::OggWriter::new(3);
+    writer.page(&[&packets[0].data], 0, true, false);
+    writer.page(&[EMPTY_TAGS], 0, false, false);
+    let audio: Vec<&[u8]> = packets[2..].iter().map(|p| p.data.as_slice()).collect();
+    let end = packets.last().unwrap().page_granule.unwrap();
+    writer.page(&audio, end + 48_000, false, true);
+    assert!(matches!(
+        analyze(&writer.finish()),
+        Err(VoiceNoteError::Format(_))
+    ));
 }
