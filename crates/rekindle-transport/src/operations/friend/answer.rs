@@ -75,7 +75,11 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     friend.mailbox_dht_key = named(&answer.mailbox_dht_key);
     let profile_key = friend.dht_record_key.clone();
     state::put(host, friend);
-    state::settle_ended_handshakes(host, public_key).await?;
+    state::after_commit(
+        "settle_ended_handshakes",
+        public_key,
+        state::settle_ended_handshakes(host, public_key).await,
+    );
 
     // Our accept opens the session from their record (the profile their
     // request named; plan E2.4, B2). A failure shows on their row with
@@ -118,7 +122,11 @@ pub async fn reject(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)
     })
     .await?;
-    state::discard_pending_dms(host, public_key, "the request was rejected").await?;
+    state::after_commit(
+        "discard_pending_dms",
+        public_key,
+        state::discard_pending_dms(host, public_key, "the request was rejected").await,
+    );
     if let Some(invite_id) = &answer.invite_id {
         invites::mark_rejected(host, invite_id);
     }
@@ -151,10 +159,18 @@ pub async fn cancel(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     })
     .await?;
     state::take(host, public_key);
-    state::discard_pending_dms(host, public_key, "the request was cancelled").await?;
+    state::after_commit(
+        "discard_pending_dms",
+        public_key,
+        state::discard_pending_dms(host, public_key, "the request was cancelled").await,
+    );
     // Our `FriendRequest` row goes with the request (finding 70), not at
     // the next add.
-    state::discard_handshakes(host, public_key, "the request was cancelled").await?;
+    state::after_commit(
+        "discard_handshakes",
+        public_key,
+        state::discard_handshakes(host, public_key, "the request was cancelled").await,
+    );
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));
@@ -185,7 +201,11 @@ pub async fn expire_stale_requests(host: &dyn FriendHost) -> Result<(), FriendEr
     }
     for public_key in &outgoing {
         state::take(host, public_key);
-        state::discard_pending_dms(host, public_key, "the request expired").await?;
+        state::after_commit(
+            "discard_pending_dms",
+            public_key,
+            state::discard_pending_dms(host, public_key, "the request expired").await,
+        );
         host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: public_key.clone(),
         }));

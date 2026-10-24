@@ -24,6 +24,23 @@ pub(crate) fn atomically<T>(
     Ok(value)
 }
 
+/// [`atomically`], for a change that deletes ratchet sessions (chain
+/// keys): when it opened the transaction itself, a
+/// `wal_checkpoint(TRUNCATE)` follows its commit, so the erased keys'
+/// old pages leave the `-wal` file too (threat model I14). Inside the
+/// caller's transaction the caller's own erasing commit truncates.
+pub(crate) fn erasing<T>(
+    conn: &Connection,
+    change: impl FnOnce(&Connection) -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    let outermost = conn.is_autocommit();
+    let value = atomically(conn, change)?;
+    if outermost {
+        crate::ratchet::truncate_wal(conn);
+    }
+    Ok(value)
+}
+
 /// Delete every ratchet session with `peer`: the friendship that carried
 /// them ended. The ratchet tables key both sides by lowercase hex.
 pub(super) fn delete_sessions(
@@ -58,7 +75,7 @@ pub fn accept_request(
     added_at: i64,
     keys: RecordKeys<'_>,
 ) -> rusqlite::Result<()> {
-    atomically(conn, |conn| {
+    erasing(conn, |conn| {
         insert_accepted(conn, owner_key, public_key, display_name, added_at)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         set_record_keys(conn, owner_key, public_key, keys.profile, keys.mailbox)
@@ -106,7 +123,7 @@ pub fn block(
     display_name: &str,
     blocked_at: i64,
 ) -> rusqlite::Result<()> {
-    atomically(conn, |conn| {
+    erasing(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         outbox::delete_to_peer(conn, owner_key, public_key)?;
@@ -158,7 +175,7 @@ pub fn cancel_request(
     owner_key: &str,
     public_key: &str,
 ) -> rusqlite::Result<()> {
-    atomically(conn, |conn| {
+    erasing(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         delete_sessions(conn, owner_key, public_key)
     })
@@ -170,7 +187,7 @@ pub fn cancel_request(
 /// # Errors
 /// A write failed; nothing is kept.
 pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
-    atomically(conn, |conn| {
+    erasing(conn, |conn| {
         forget(conn, owner_key, public_key)?;
         outbox::delete_to_peer(conn, owner_key, public_key)?;
         delete_sessions(conn, owner_key, public_key)
@@ -185,7 +202,7 @@ pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusql
 /// # Errors
 /// The query or a delete failed; nothing is kept.
 pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
-    atomically(conn, |conn| {
+    erasing(conn, |conn| {
         let done = conn
             .prepare(&format!(
                 "SELECT public_key FROM friends f \
@@ -218,7 +235,7 @@ pub fn replace_with_invited(
     profile_key: &str,
     mailbox_key: &str,
 ) -> rusqlite::Result<()> {
-    atomically(conn, |conn| {
+    erasing(conn, |conn| {
         replace_with_invited_rows(
             conn,
             owner_key,
@@ -237,6 +254,34 @@ mod tests {
     use crate::repo::fixture::{conn, OWNER};
 
     const BOB: &str = "bb";
+
+    /// I14: a change that deletes sessions truncates the WAL once it
+    /// commits, so the erased chain keys are in no `-wal` frame.
+    #[tokio::test]
+    async fn ending_a_friendship_truncates_the_wal() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("o.db");
+        let db = crate::open(&path, &[7; 32]).unwrap();
+        let wal_len = || {
+            std::fs::metadata(dir.path().join("o.db-wal"))
+                .unwrap()
+                .len()
+        };
+        db.call(|c| {
+            crate::repo::identity::insert(c, OWNER, "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa")?;
+            super::super::insert_pending_out(c, OWNER, BOB, "Bob", 1)?;
+            c.execute(
+                "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
+                 VALUES (?1, ?2, 'd', x'00', 1)",
+                params![OWNER.to_ascii_lowercase(), BOB],
+            )
+        })
+        .await
+        .unwrap();
+        assert!(wal_len() > 0, "storing the session wrote WAL frames");
+        db.call(|c| cancel_request(c, OWNER, BOB)).await.unwrap();
+        assert_eq!(wal_len(), 0);
+    }
 
     fn state_of(conn: &Connection) -> Option<String> {
         conn.query_row(

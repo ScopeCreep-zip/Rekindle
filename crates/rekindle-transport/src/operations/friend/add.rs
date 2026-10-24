@@ -96,7 +96,11 @@ pub async fn add(
     );
     friend.dht_record_key = Some(code.profile_key.as_str().to_string());
     state::put(host, friend);
-    state::settle_ended_handshakes(host, public_key).await?;
+    state::after_commit(
+        "settle_ended_handshakes",
+        public_key,
+        state::settle_ended_handshakes(host, public_key).await,
+    );
 
     let auth = RequestAuth::Token(code.token.as_str().to_string());
     let committed = dm::send_friend_request(host, public_key, message, auth).await;
@@ -170,7 +174,11 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     friend.dht_record_key = Some(blob.profile_dht_key.clone());
     friend.mailbox_dht_key = Some(blob.mailbox_dht_key.clone());
     state::put(host, friend);
-    state::settle_ended_handshakes(host, &blob.public_key).await?;
+    state::after_commit(
+        "settle_ended_handshakes",
+        &blob.public_key,
+        state::settle_ended_handshakes(host, &blob.public_key).await,
+    );
 
     setup_invite_contact(host, &blob).await;
     let committed = super::inbox::redeem(host, &blob, invite_id, "Added via invite link").await;

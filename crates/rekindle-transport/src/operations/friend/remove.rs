@@ -41,7 +41,11 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     state::update(host, public_key, |f| {
         f.friendship_state = FriendshipState::Removing;
     });
-    state::discard_pending_dms(host, public_key, "the friend was removed").await?;
+    state::after_commit(
+        "discard_pending_dms",
+        public_key,
+        state::discard_pending_dms(host, public_key, "the friend was removed").await,
+    );
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));
@@ -70,7 +74,11 @@ async fn forget_untold(host: &dyn FriendHost, public_key: &str) -> Result<(), Fr
         rekindle_db::repo::friends::forget(conn, &owner, &peer)
     })
     .await?;
-    state::discard_pending_dms(host, public_key, "the friend was removed").await?;
+    state::after_commit(
+        "discard_pending_dms",
+        public_key,
+        state::discard_pending_dms(host, public_key, "the friend was removed").await,
+    );
     state::take(host, public_key);
     host.audit(
         rekindle_audit::AuditKind::FriendRemoved,

@@ -284,6 +284,17 @@ pub(crate) async fn acknowledge_unfriended(host: &dyn FriendHost, public_key: &s
     }
 }
 
+/// A clean-up step that runs after the friend change it follows has
+/// committed (a discard, a settle): its failure is logged and the caller
+/// goes on, so every later step (the in-memory state, the event, the next
+/// expired peer) still runs and the committed change is never reported as
+/// failed (review RV3). Its rows stay for the next ending or add.
+pub(crate) fn after_commit(step: &'static str, peer: &str, result: Result<(), FriendError>) {
+    if let Err(e) = result {
+        tracing::warn!(peer = %peer, error = %e, step, "a clean-up after a committed friend change failed");
+    }
+}
+
 /// The friendship with `peer`, or our attempt at one, ended (`why`: a
 /// cancel, a reject, a removal, a block, an expiry): our pending messages
 /// to them are discarded through the outbox, each settling `failed` with

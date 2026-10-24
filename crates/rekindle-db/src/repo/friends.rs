@@ -98,19 +98,21 @@ pub fn insert_pending_out(
     display_name: &str,
     added_at: i64,
 ) -> rusqlite::Result<()> {
-    end_removal(conn, owner_key, public_key)?;
-    // A request to someone we hold no row for starts a new friendship: no
-    // session kept from an ended one may refuse its first contact (live
-    // A/B 2026-10-23).
-    let inserted = conn.execute(
-        "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
-         VALUES (?1, ?2, ?3, ?4, 'pending_out')",
-        params![owner_key, public_key, display_name, added_at],
-    )?;
-    if inserted == 1 {
-        changes::delete_sessions(conn, owner_key, public_key)?;
-    }
-    Ok(())
+    changes::erasing(conn, |conn| {
+        end_removal(conn, owner_key, public_key)?;
+        // A request to someone we hold no row for starts a new friendship: no
+        // session kept from an ended one may refuse its first contact (live
+        // A/B 2026-10-23).
+        let inserted = conn.execute(
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
+             VALUES (?1, ?2, ?3, ?4, 'pending_out')",
+            params![owner_key, public_key, display_name, added_at],
+        )?;
+        if inserted == 1 {
+            changes::delete_sessions(conn, owner_key, public_key)?;
+        }
+        Ok(())
+    })
 }
 
 /// Record an accepted friend, unless the friend is already there (a friend
@@ -125,13 +127,15 @@ pub fn insert_accepted(
     display_name: &str,
     added_at: i64,
 ) -> rusqlite::Result<()> {
-    end_removal(conn, owner_key, public_key)?;
-    conn.execute(
-        "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
-         VALUES (?1, ?2, ?3, ?4, 'accepted')",
-        params![owner_key, public_key, display_name, added_at],
-    )?;
-    Ok(())
+    changes::erasing(conn, |conn| {
+        end_removal(conn, owner_key, public_key)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
+             VALUES (?1, ?2, ?3, ?4, 'accepted')",
+            params![owner_key, public_key, display_name, added_at],
+        )?;
+        Ok(())
+    })
 }
 
 /// [`replace_with_invited`]'s rows, without its transaction.
@@ -182,17 +186,19 @@ pub fn delete_pending_out_before(
     owner_key: &str,
     cutoff: i64,
 ) -> rusqlite::Result<Vec<String>> {
-    let expired = conn
-        .prepare(
-            "SELECT public_key FROM friends \
-             WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
-        )?
-        .query_map(params![owner_key, cutoff], |row| row.get(0))?
-        .collect::<rusqlite::Result<Vec<String>>>()?;
-    for public_key in &expired {
-        changes::cancel_request(conn, owner_key, public_key)?;
-    }
-    Ok(expired)
+    changes::erasing(conn, |conn| {
+        let expired = conn
+            .prepare(
+                "SELECT public_key FROM friends \
+                 WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
+            )?
+            .query_map(params![owner_key, cutoff], |row| row.get(0))?
+            .collect::<rusqlite::Result<Vec<String>>>()?;
+        for public_key in &expired {
+            changes::cancel_request(conn, owner_key, public_key)?;
+        }
+        Ok(expired)
+    })
 }
 
 /// The friend's local nickname and display name, when the friend is
