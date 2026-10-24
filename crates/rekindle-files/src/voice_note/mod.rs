@@ -239,7 +239,8 @@ pub fn analyze(bytes: &[u8]) -> Result<VoiceNoteInfo, VoiceNoteError> {
     let samples = granule
         .checked_sub(pre_skip)
         .ok_or_else(|| format("granule before pre-skip"))?;
-    let duration = check_duration(duration_ms(samples, GRANULE_RATE))?;
+    // Refuse a claim past the bound before decoding anything.
+    check_duration(duration_ms(samples, GRANULE_RATE))?;
     let mut decoder = Decoder::new(48_000, Channels::Mono).map_err(|e| codec(&e))?;
     let mut peaks = Peaks::new(pre_skip, samples);
     let mut decoded = 0u64;
@@ -248,6 +249,11 @@ pub fn analyze(bytes: &[u8]) -> Result<VoiceNoteInfo, VoiceNoteError> {
     let mut out = vec![0i16; MAX_PACKET_SAMPLES];
     let count = audio.len();
     for (index, packet) in audio.into_iter().enumerate() {
+        if packet.data.is_empty() {
+            // libopus decodes an empty packet as a lost one, a whole
+            // buffer of concealment from no input.
+            return Err(format("an empty audio packet"));
+        }
         let n = decoder
             .decode(&packet.data, &mut out, false)
             .map_err(|e| codec(&e))?;
@@ -269,6 +275,11 @@ pub fn analyze(bytes: &[u8]) -> Result<VoiceNoteInfo, VoiceNoteError> {
     if granule > decoded || decoded - granule >= last_packet.max(1) {
         return Err(format("granule positions disagree with the audio"));
     }
+    // The duration is the audio decoded, less the pre-skip and the end
+    // trim, now that the granule is known to match it within one packet.
+    let trim = decoded - granule;
+    let kept = decoded - trim - pre_skip;
+    let duration = check_duration(duration_ms(kept, GRANULE_RATE))?;
     Ok(VoiceNoteInfo {
         duration_ms: duration,
         waveform: peaks.finish(),

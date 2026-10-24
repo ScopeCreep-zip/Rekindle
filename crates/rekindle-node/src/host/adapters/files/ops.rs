@@ -156,9 +156,11 @@ impl HostFiles {
         channel_id: &str,
         pcm: &[u8],
     ) -> Result<String, FilesError> {
-        let ogg = voice_note::pcm_from_le_bytes(pcm)
-            .and_then(|pcm| voice_note::encode(&pcm))
-            .map_err(|e| FilesError::InvalidInput(e.to_string()))?;
+        let pcm = pcm.to_vec();
+        let ogg = off_runtime(move || {
+            voice_note::pcm_from_le_bytes(&pcm).and_then(|pcm| voice_note::encode(&pcm))
+        })
+        .await?;
         rekindle_files::send_voice_message_bytes(self, community_id, channel_id, ogg).await
     }
 
@@ -176,8 +178,11 @@ impl HostFiles {
         let audio = self
             .bytes(community_id, channel_id, attachment_id_hex)
             .await?;
-        let info =
-            voice_note::analyze(&audio).map_err(|e| FilesError::InvalidInput(e.to_string()))?;
+        let (audio, info) = off_runtime(move || {
+            let info = voice_note::analyze(&audio)?;
+            Ok((audio, info))
+        })
+        .await?;
         Ok(VoiceMessageAudioView {
             audio,
             duration_ms: info.duration_ms,
@@ -203,6 +208,17 @@ pub fn serve(
 ) -> Option<Vec<u8>> {
     let community = store.holder_of(uuid::Uuid::from_bytes(attachment_id))?;
     store.serve(&community, attachment_id, requested_chunks)
+}
+
+/// Run a voice-note encode or decode on the blocking pool: both are whole
+/// Opus passes over up to five minutes of audio, never on a runtime worker.
+async fn off_runtime<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, voice_note::VoiceNoteError> + Send + 'static,
+) -> Result<T, FilesError> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| FilesError::InvalidInput(format!("voice note task: {e}")))?
+        .map_err(|e| FilesError::InvalidInput(e.to_string()))
 }
 
 #[cfg(test)]

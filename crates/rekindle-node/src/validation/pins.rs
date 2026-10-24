@@ -51,7 +51,7 @@ fn local_path(value: &str) -> Checked {
 
 /// A voice message's PCM: whole little-endian `f32` samples at the
 /// Host's input rate, from the shortest to the longest voice message
-/// (`rekindle_voice::voice_note`, plan E5.1).
+/// (`rekindle_files::voice_note`, plan E5.1).
 fn voice(pcm: &[u8]) -> Checked {
     use rekindle_files::voice_note::{INPUT_SAMPLE_RATE, MAX_DURATION_MS, MIN_DURATION_MS};
     let bytes_for = |ms: u32| u64::from(ms) * u64::from(INPUT_SAMPLE_RATE) / 1000 * 4;

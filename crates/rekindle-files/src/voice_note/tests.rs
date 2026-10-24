@@ -146,3 +146,65 @@ fn granules_that_disagree_with_the_audio_are_refused() {
         Err(VoiceNoteError::Format(_))
     ));
 }
+
+proptest::proptest! {
+    /// The reader and the decoder never panic on arbitrary bytes, and
+    /// what they accept stays inside the bounds.
+    #[test]
+    fn arbitrary_bytes_never_panic(bytes in proptest::collection::vec(proptest::num::u8::ANY, 0..4096)) {
+        if let Ok(packets) = ogg::read(&bytes, MAX_PACKETS) {
+            proptest::prop_assert!(packets.len() <= MAX_PACKETS);
+        }
+        if let Ok(info) = analyze(&bytes) {
+            proptest::prop_assert!(info.duration_ms <= MAX_DURATION_MS);
+        }
+    }
+
+    /// A valid file with any one byte changed (CRC refixed or not) is
+    /// refused or accepted within the bounds, never a panic.
+    #[test]
+    fn mutated_files_never_panic(at in 0usize..4096, value in proptest::num::u8::ANY) {
+        let mut ogg = encode(&tone(440.0, 400)).unwrap();
+        let at = at % ogg.len();
+        ogg[at] = value;
+        if let Ok(info) = analyze(&ogg) {
+            proptest::prop_assert!(info.duration_ms <= MAX_DURATION_MS);
+            proptest::prop_assert_eq!(info.waveform.len(), WAVEFORM_PEAKS);
+        }
+    }
+}
+
+#[test]
+fn malformed_pages_are_refused() {
+    let ogg = encode(&tone(440.0, 500)).unwrap();
+    // Truncated anywhere, trailing bytes, or a second stream.
+    for cut in [10, 27, 40, ogg.len() - 1] {
+        assert!(ogg::read(&ogg[..cut], MAX_PACKETS).is_err(), "cut at {cut}");
+    }
+    let mut trailing = ogg.clone();
+    trailing.extend_from_slice(&ogg);
+    assert!(ogg::read(&trailing, MAX_PACKETS).is_err());
+    // A page that completes a packet with granule -1.
+    let mut writer = ogg::OggWriter::new(9);
+    writer.page(&[b"x"], u64::MAX, true, true);
+    assert!(ogg::read(&writer.finish(), MAX_PACKETS).is_err());
+    // An empty audio packet is refused (libopus would conceal a lost one).
+    let packets = ogg::read(&ogg, MAX_PACKETS).unwrap();
+    let mut writer = ogg::OggWriter::new(5);
+    writer.page(&[&packets[0].data], 0, true, false);
+    writer.page(&[EMPTY_TAGS], 0, false, false);
+    writer.page(&[b""], 48_000, false, true);
+    assert!(matches!(
+        analyze(&writer.finish()),
+        Err(VoiceNoteError::Format(_))
+    ));
+    // An absurd granule saturates and is refused, no overflow.
+    let mut writer = ogg::OggWriter::new(6);
+    writer.page(&[&packets[0].data], 0, true, false);
+    writer.page(&[EMPTY_TAGS], 0, false, false);
+    writer.page(&[&packets[2].data], u64::MAX - 1, false, true);
+    assert!(matches!(
+        analyze(&writer.finish()),
+        Err(VoiceNoteError::Duration { .. })
+    ));
+}

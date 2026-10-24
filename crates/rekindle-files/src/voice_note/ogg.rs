@@ -17,22 +17,40 @@ const FLAG_FIRST: u8 = 0x02;
 const FLAG_LAST: u8 = 0x04;
 /// Most lacing values one page carries (RFC 3533 §6).
 const MAX_LACING_VALUES: usize = 255;
+/// Largest packet read: 120 ms of 1275-byte Opus frames (RFC 6716 §3.4,
+/// §3.2.5), bounding a packet continued across pages.
+const MAX_PACKET_BYTES: usize = 1275 * 48;
+/// The granule position meaning "no packet finishes on this page".
+const NO_GRANULE: u64 = u64::MAX;
 
-/// The Ogg CRC-32: polynomial 0x04c11db7, no reflection, initial value and
-/// final XOR zero (RFC 3533 §6, the `CRC_checksum` field).
-fn crc32(data: &[u8]) -> u32 {
-    let mut crc: u32 = 0;
-    for &byte in data {
-        crc ^= u32::from(byte) << 24;
-        for _ in 0..8 {
+/// The Ogg CRC-32 lookup table: polynomial 0x04c11db7, MSB first.
+const CRC_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    let mut i: u32 = 0;
+    while i < 256 {
+        let mut crc = i << 24;
+        let mut bit = 0;
+        while bit < 8 {
             crc = if crc & 0x8000_0000 != 0 {
                 (crc << 1) ^ 0x04c1_1db7
             } else {
                 crc << 1
             };
+            bit += 1;
         }
+        table[i as usize] = crc;
+        i += 1;
     }
-    crc
+    table
+};
+
+/// The Ogg CRC-32: polynomial 0x04c11db7, no reflection, initial value and
+/// final XOR zero (RFC 3533 §6, the `CRC_checksum` field), a byte at a
+/// time from [`CRC_TABLE`].
+fn crc32(data: &[u8]) -> u32 {
+    data.iter().fold(0u32, |crc, &byte| {
+        (crc << 8) ^ CRC_TABLE[usize::from(u8::try_from(crc >> 24).unwrap_or(0) ^ byte)]
+    })
 }
 
 /// The lacing values of one packet: 255s, then the rest (0 when the
@@ -153,11 +171,17 @@ pub(super) fn read(bytes: &[u8], max_packets: usize) -> Result<Vec<Packet>, Stri
             let (take, rest) = body.split_at(usize::from(value));
             open.extend_from_slice(take);
             body = rest;
+            if open.len() > MAX_PACKET_BYTES {
+                return Err("packet larger than any Opus packet".into());
+            }
             if value < 255 {
                 completed.push(std::mem::take(&mut open));
             }
         }
         let last = completed.len();
+        if last > 0 && granule == NO_GRANULE {
+            return Err("a page that completes a packet has no granule".into());
+        }
         if packets.len() + last > max_packets {
             return Err(format!("more than {max_packets} packets"));
         }
