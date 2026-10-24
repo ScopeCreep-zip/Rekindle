@@ -11,7 +11,7 @@ use rekindle_netsim::{Fault, Netsim};
 use rekindle_types::message::{SendState, CALL_TIMEOUT_MS, DM_ACK_DELAY_MAX_MS};
 
 use crate::harness::{eventually, start, SimNode};
-use crate::pair::{befriend, key, send};
+use crate::pair::{befriend, key, send, talk};
 
 const BODIES: [&str; 3] = ["one", "two", "three"];
 
@@ -145,5 +145,65 @@ async fn a_new_friendships_fourth_ack_covers_the_first_three_by_through() {
     assert!(
         started.elapsed() < first_reask(),
         "settled before any re-ask"
+    );
+}
+
+/// Live A/B finding 73b: Jon's ack of a message Ida sent once their
+/// conversation was set up is lost (his sends dropped while it is owed),
+/// and he holds the message; her `StreamRecord` settled long before, so no
+/// resend of it carries a fresh ack. Her first re-ask's re-hint, framed
+/// afresh because the entry landed (`dm::outbox::rehint`), opens on Jon
+/// under the same stream seq and is acknowledged again, and her row
+/// settles at that re-ask, not at a later one.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_lost_first_ack_is_answered_again_at_the_re_hint() {
+    let (sim, nodes, ida, jon) = new_friends(101).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    assert!(
+        eventually(&sim, first_reask(), || has(
+            &nodes[0],
+            &jon,
+            "hello: 0 to 1",
+            true,
+            Some(SendState::Delivered)
+        ))
+        .await,
+        "hello settled"
+    );
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 1000,
+    });
+    let started = tokio::time::Instant::now();
+    send(&nodes[0], &jon, "one").await;
+    assert!(
+        eventually(&sim, SET.min / 2, || has(
+            &nodes[1], &ida, "one", false, None
+        ))
+        .await,
+        "Jon shows it at its hint"
+    );
+    tokio::time::sleep(ack_window()).await;
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 0,
+    });
+    assert!(
+        !has(&nodes[0], &jon, "one", true, Some(SendState::Delivered)).await,
+        "the first ack was lost"
+    );
+    let bound = first_reask() + ack_window() + MESSAGE.max * 2;
+    assert!(
+        eventually(&sim, bound, || has(
+            &nodes[0],
+            &jon,
+            "one",
+            true,
+            Some(SendState::Delivered)
+        ))
+        .await,
+        "settled by the re-ack within {bound:?} (after {:?}): {:?}",
+        started.elapsed(),
+        states(&nodes[0], &jon).await
     );
 }
