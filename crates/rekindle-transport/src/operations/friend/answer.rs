@@ -152,6 +152,9 @@ pub async fn cancel(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     .await?;
     state::take(host, public_key);
     state::discard_pending_dms(host, public_key, "the request was cancelled").await?;
+    // Our `FriendRequest` row goes with the request (finding 70), not at
+    // the next add.
+    state::discard_handshakes(host, public_key, "the request was cancelled").await?;
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));

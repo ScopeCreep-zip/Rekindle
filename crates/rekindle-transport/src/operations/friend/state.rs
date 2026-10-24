@@ -320,10 +320,24 @@ pub(crate) async fn settle_ended_handshakes(
     host: &dyn FriendHost,
     peer: &str,
 ) -> Result<(), FriendError> {
-    let reason = "superseded by a new friendship";
+    discard_handshakes(host, peer, "superseded by a new friendship").await
+}
+
+/// Every unsettled row of our `friend_handshake` stream to `peer` settles
+/// `failed` with `reason` and leaves it: a new friendship supersedes them
+/// ([`settle_ended_handshakes`]), or our request was cancelled (live A/B
+/// finding 70).
+///
+/// # Errors
+/// The outbox is not open or its storage failed.
+pub(crate) async fn discard_handshakes(
+    host: &dyn FriendHost,
+    peer: &str,
+    reason: &str,
+) -> Result<(), FriendError> {
     let settled = host.outbox()?.discard_handshakes_to(peer, reason).await?;
     if settled > 0 {
-        tracing::info!(peer = %peer, settled, "handshake rows of an ended friendship settled");
+        tracing::info!(peer = %peer, settled, reason, "handshake rows settled");
     }
     Ok(())
 }
