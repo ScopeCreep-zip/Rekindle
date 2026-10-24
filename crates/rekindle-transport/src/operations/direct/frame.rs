@@ -121,8 +121,8 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => frame.type_id,
     };
     let init = matches!(frame.body, FrameBody::PreKeyInit(_));
-    tracing::debug!(from = %sender_hex.get(..8).unwrap_or(&sender_hex), ?kind, init,
-        "1:1 frame received");
+    // The full key: the log scrubber turns it into a per-process tag (B19).
+    tracing::debug!(from = %sender_hex, ?kind, init, "1:1 frame received");
     let status = admission::unblocked(host, &sender_hex).await.or_failed()?;
     if !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
         return Err(Dropped::Refused);
