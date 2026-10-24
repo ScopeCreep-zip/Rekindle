@@ -154,10 +154,7 @@ async fn fourth_ack_covers_the_first_three(sim: &Netsim, nodes: &[SimNode], ida:
     }
     for body in BODIES {
         assert!(
-            eventually(&sim, SET.min / 2, || has(
-                &nodes[1], &ida, body, false, None
-            ))
-            .await,
+            eventually(sim, SET.min / 2, || has(&nodes[1], ida, body, false, None)).await,
             "Jon shows {body} at its hint"
         );
     }
@@ -170,7 +167,7 @@ async fn fourth_ack_covers_the_first_three(sim: &Netsim, nodes: &[SimNode], ida:
     let delivered = Some(SendState::Delivered);
     for body in BODIES.into_iter().chain(["four"]) {
         assert!(
-            eventually(&sim, SET.min / 2 + ack_window() + MESSAGE.max * 2, || has(
+            eventually(sim, SET.min / 2 + ack_window() + MESSAGE.max * 2, || has(
                 &nodes[0], jon, body, true, delivered
             ))
             .await,
