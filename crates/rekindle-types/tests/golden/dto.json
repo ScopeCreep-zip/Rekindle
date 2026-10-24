@@ -367,6 +367,7 @@
     "inputDevice": null,
     "inputVolume": 1.0,
     "noiseSuppression": true,
+    "notificationContent": "nameAndMessage",
     "notificationSound": true,
     "notificationsEnabled": true,
     "outputDevice": null,

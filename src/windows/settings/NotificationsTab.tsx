@@ -3,6 +3,7 @@ import FormField from "../../components/common/FormField";
 import { settingsState } from "../../stores/settings.store";
 import { handleSaveSettings } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
+import type { NotificationContent } from "../../ipc/commands/types";
 
 const NotificationsTab: Component = () => {
   // Architecture §17.2 / §17.3 — Do Not Disturb + quiet hours.
@@ -149,6 +150,22 @@ const NotificationsTab: Component = () => {
           Suppress message notifications while in a call
         </span>
       </label>
+
+      <FormField label="Notifications show">
+        <select
+          class="form-select"
+          value={settingsState.notificationContent}
+          onChange={(e) =>
+            handleSaveSettings({
+              notificationContent: e.currentTarget.value as NotificationContent,
+            })
+          }
+        >
+          <option value="nameAndMessage">Name and message</option>
+          <option value="nameOnly">Name only</option>
+          <option value="nothing">No name or message</option>
+        </select>
+      </FormField>
 
       {/* Architecture §17.2 — Do Not Disturb suppresses every
           notification regardless of channel level, mention status, or

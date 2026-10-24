@@ -150,6 +150,9 @@ export interface MissedCallRow {
   expiredAt: number;
 }
 
+/** `Preferences.notificationContent`: sender and message, sender only, or nothing. */
+export type NotificationContent = "nameAndMessage" | "nameOnly" | "nothing";
+
 export interface Preferences {
   notificationsEnabled: boolean;
   notificationSound: boolean;
@@ -175,6 +178,8 @@ export interface Preferences {
   ringtoneEnabled?: boolean;
   ringtoneVolume?: number;
   inCallDndAutoEnable?: boolean;
+  /** What an OS notification shows; the Host decides and enforces it. */
+  notificationContent?: NotificationContent;
   /** DM read receipts (plan E2.5): reciprocal, off by default. Changed only
    *  by `setReadReceiptsEnabled`, never by `setPreferences`. */
   readReceiptsEnabled: boolean;

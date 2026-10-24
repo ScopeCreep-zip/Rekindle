@@ -203,7 +203,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 120 (live finding 79): `friends.nickname` is gone; `friend_nicknames`
 /// binds a nickname to the key it was given for, cleared when the
 /// friendship ends.
-pub const SCHEMA_VERSION: i64 = 120;
+/// 121: `app_settings.notification_content` (E5.2): what an OS notification
+/// shows (name and message, name only, or nothing).
+pub const SCHEMA_VERSION: i64 = 121;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

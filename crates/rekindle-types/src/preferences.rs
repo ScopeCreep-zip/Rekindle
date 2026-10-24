@@ -53,6 +53,42 @@ pub struct Preferences {
     /// by default, never sent while Invisible. Changed only by the
     /// trust-changing `SetReadReceiptsEnabled`.
     pub read_receipts_enabled: bool,
+    /// What an OS notification shows (prod research batch 7, Signal's
+    /// "Show: name and message / name only / no name or message").
+    pub notification_content: NotificationContent,
+}
+
+/// What an OS notification shows of who wrote and what they wrote.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NotificationContent {
+    /// The sender's name and the message.
+    #[default]
+    NameAndMessage,
+    /// The sender's name, not the message.
+    NameOnly,
+    /// Neither: only that something arrived.
+    Nothing,
+}
+
+impl NotificationContent {
+    /// Its `app_settings.notification_content` value.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NameAndMessage => "name_and_message",
+            Self::NameOnly => "name_only",
+            Self::Nothing => "nothing",
+        }
+    }
+
+    /// The value [`Self::as_str`] stored, `None` for any other text.
+    #[must_use]
+    pub fn from_stored(text: &str) -> Option<Self> {
+        [Self::NameAndMessage, Self::NameOnly, Self::Nothing]
+            .into_iter()
+            .find(|content| content.as_str() == text)
+    }
 }
 
 impl Default for Preferences {
@@ -78,6 +114,7 @@ impl Default for Preferences {
             ringtone_volume: 0.4,
             in_call_dnd_auto_enable: true,
             read_receipts_enabled: false,
+            notification_content: NotificationContent::NameAndMessage,
         }
     }
 }

@@ -20,6 +20,7 @@ export async function handleLoadSettings(): Promise<void> {
       ringtoneEnabled: prefs.ringtoneEnabled ?? true,
       ringtoneVolume: prefs.ringtoneVolume ?? 0.4,
       inCallDndAutoEnable: prefs.inCallDndAutoEnable ?? true,
+      notificationContent: prefs.notificationContent ?? "nameAndMessage",
     });
   } catch (e) {
     console.error("Failed to load settings:", e);
@@ -62,6 +63,9 @@ export async function handleSaveSettings(
       }),
       ...(settings.inCallDndAutoEnable !== undefined && {
         inCallDndAutoEnable: settings.inCallDndAutoEnable,
+      }),
+      ...(settings.notificationContent !== undefined && {
+        notificationContent: settings.notificationContent,
       }),
     };
     await commands.setPreferences(updated);

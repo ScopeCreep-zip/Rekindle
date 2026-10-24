@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store";
-import type { AudioDeviceInfo } from "../ipc/commands";
+import type { AudioDeviceInfo, NotificationContent } from "../ipc/commands";
 
 export interface SettingsState {
   notifications: boolean;
@@ -43,6 +43,8 @@ export interface SettingsState {
    *  is active so a noisy chat doesn't distract the participants.
    *  In-app modals still surface. */
   inCallDndAutoEnable: boolean;
+  /** What an OS notification shows (the Host applies it). */
+  notificationContent: NotificationContent;
 }
 
 const [settingsState, setSettingsState] = createStore<SettingsState>({
@@ -63,6 +65,7 @@ const [settingsState, setSettingsState] = createStore<SettingsState>({
   ringtoneEnabled: true,
   ringtoneVolume: 0.4,
   inCallDndAutoEnable: true,
+  notificationContent: "nameAndMessage",
 });
 
 export { settingsState, setSettingsState };

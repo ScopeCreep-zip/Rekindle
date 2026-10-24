@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::preferences::Preferences;
+use rekindle_types::preferences::{NotificationContent, Preferences};
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// The identity's preferences; the defaults when none were saved.
@@ -18,7 +18,7 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
              video_device_id, video_device_label, input_volume, output_volume, \
              noise_suppression, echo_cancellation, auto_away_minutes, \
              auto_volunteer_relay_for_new_friends, ringtone_enabled, ringtone_volume, \
-             in_call_dnd_auto_enable, read_receipts_enabled \
+             in_call_dnd_auto_enable, read_receipts_enabled, notification_content \
              FROM app_settings WHERE owner_key = ?1",
             params![owner_key],
             |row| {
@@ -42,6 +42,16 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
                     ringtone_volume: row.get(16)?,
                     in_call_dnd_auto_enable: row.get(17)?,
                     read_receipts_enabled: row.get(18)?,
+                    notification_content: {
+                        let text: String = row.get(19)?;
+                        NotificationContent::from_stored(&text).ok_or_else(|| {
+                            rusqlite::Error::FromSqlConversionFailure(
+                                19,
+                                rusqlite::types::Type::Text,
+                                format!("notification_content {text:?}").into(),
+                            )
+                        })?
+                    },
                     input_channels: BTreeMap::new(),
                 })
             },
@@ -81,8 +91,9 @@ pub fn save(conn: &mut Connection, owner_key: &str, prefs: &Preferences) -> rusq
          output_device, video_device_id, video_device_label, input_volume, output_volume, \
          noise_suppression, echo_cancellation, auto_away_minutes, \
          auto_volunteer_relay_for_new_friends, ringtone_enabled, ringtone_volume, \
-         in_call_dnd_auto_enable) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19) \
+         in_call_dnd_auto_enable, notification_content) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, \
+         ?20) \
          ON CONFLICT(owner_key) DO UPDATE SET \
          notifications_enabled = excluded.notifications_enabled, \
          notification_sound = excluded.notification_sound, \
@@ -101,7 +112,8 @@ pub fn save(conn: &mut Connection, owner_key: &str, prefs: &Preferences) -> rusq
          auto_volunteer_relay_for_new_friends = excluded.auto_volunteer_relay_for_new_friends, \
          ringtone_enabled = excluded.ringtone_enabled, \
          ringtone_volume = excluded.ringtone_volume, \
-         in_call_dnd_auto_enable = excluded.in_call_dnd_auto_enable",
+         in_call_dnd_auto_enable = excluded.in_call_dnd_auto_enable, \
+         notification_content = excluded.notification_content",
         params![
             owner_key,
             prefs.notifications_enabled,
@@ -122,6 +134,7 @@ pub fn save(conn: &mut Connection, owner_key: &str, prefs: &Preferences) -> rusq
             prefs.ringtone_enabled,
             prefs.ringtone_volume,
             prefs.in_call_dnd_auto_enable,
+            prefs.notification_content.as_str(),
         ],
     )?;
     tx.execute(

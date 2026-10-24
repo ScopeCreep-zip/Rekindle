@@ -77,6 +77,7 @@ async fn gather_inputs(state: &Arc<AppState>) -> NotifyInputs {
             None => false,
         },
         in_call_dnd: prefs.in_call_dnd_auto_enable,
+        content: prefs.notification_content,
         call_active,
         status_busy: crate::state_helpers::identity_status(state)
             == Some(crate::state::UserStatus::Busy),
