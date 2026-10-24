@@ -165,8 +165,8 @@ pub fn open(
 mod tests {
     use super::*;
 
-    const KIND: u16 = 0x0102;
-    const INFO: &str = domains::DM_FRIEND_REJECT_HPKE;
+    const KIND: u16 = 0x0002;
+    const INFO: &str = domains::DM_FRIEND_REQUEST_HPKE;
 
     #[test]
     fn a_sealed_frame_verifies_and_opens_only_for_its_recipient() {
@@ -196,7 +196,7 @@ mod tests {
             Err(Refused::DoesNotOpen)
         );
         assert_eq!(
-            open(&bob, &a, KIND, domains::DM_FRIEND_REQUEST_HPKE, &sealed),
+            open(&bob, &a, KIND, domains::DM_PREKEY_REJECTED_HPKE, &sealed),
             Err(Refused::DoesNotOpen)
         );
     }

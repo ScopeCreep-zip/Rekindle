@@ -28,14 +28,14 @@ async fn a_call_the_host_cannot_judge_is_told_to_retry_later() {
     );
 }
 
-/// RV5 R1: a blocked sender's call is judged (a block is a lookup that
-/// succeeded) and answered NAK (register :76, "a NAK means … admission"),
-/// which frees the Veilid RPC worker at once; it is never left
-/// unanswered, which would pin the worker for Veilid's 5 s timeout.
+/// LV23 review (amending RV5 R1): a blocked sender's call gets the silent
+/// receipt, the empty reply a reachable peer gives, never a NAK that would
+/// tell them they are blocked; and nothing of it is stored or published.
 #[tokio::test]
-async fn a_blocked_sender_is_answered_with_a_nak() {
+async fn a_blocked_sender_is_receipted_silently_and_nothing_is_kept() {
     let dir = tempfile::tempdir().unwrap();
     let (host, owner) = super::direct_tests::ann(&dir).await;
+    let mut events = host.ctx.journal.subscribe(None);
     let bob = rekindle_crypto::Identity::generate();
     let (o, b) = (hex::encode(owner), hex::encode(bob.public_key_bytes()));
     host.ctx
@@ -46,11 +46,9 @@ async fn a_blocked_sender_is_answered_with_a_nak() {
         .await
         .unwrap();
     let frame = sealed_request(&bob, owner, [8; 16], now_ms());
-    let datagram = rekindle_transport::operations::dm::wire(&frame).unwrap();
-    match host.receive_direct_call(&datagram).await {
-        direct::Called::Answered(reply) => assert_eq!(reply, direct::NAK.to_vec()),
-        other => panic!("a block is a judged refusal, not {other:?}"),
-    }
+    assert!(super::direct_tests::call(&host, &frame).await.is_empty());
+    assert_eq!(super::direct_tests::requests(&host, owner).await, 0);
+    assert_eq!(super::direct_tests::received_events(&mut events).await, 0);
 }
 
 /// RV5 M2: a store the request's own values fail (a constraint) is a

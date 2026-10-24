@@ -5,7 +5,7 @@
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
 use rekindle_db::repo::friends::Column;
 use rekindle_types::friend::FriendshipState;
-use rekindle_types::subscription_events::{FriendEvent, NotificationEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::IncomingFriendRequest;
 use crate::operations::dm;
@@ -55,34 +55,6 @@ pub(crate) async fn on_unfriended_ack(host: &dyn FriendHost, sender: &str) -> bo
     }));
     tracing::info!(from = %sender, "received UnfriendedAck — our Unfriended row settled");
     true
-}
-
-/// The peer rejected our request: a pending friend of ours goes. Whether
-/// it is done (`false`: the pending friend was not forgotten).
-pub(crate) async fn on_friend_reject(host: &dyn FriendHost, sender: &str) -> bool {
-    let pending = state::friendship(host, sender) == Some(FriendshipState::PendingOut);
-    // Named before the row goes: by our nickname or their key fingerprint,
-    // never a name from their payload.
-    let label = state::label(host, sender);
-    let forgotten = pending && state::write_forget(host, sender).await;
-    if forgotten {
-        state::take(host, sender);
-        host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
-            peer_key: sender.to_string(),
-        }));
-    }
-    host.publish(SubscriptionEvent::Friend(FriendEvent::Rejected {
-        peer_key: sender.to_string(),
-    }));
-    if pending {
-        host.publish(SubscriptionEvent::Notification(
-            NotificationEvent::SystemAlert {
-                title: "Friend request declined".to_string(),
-                body: format!("{label} declined your friend request"),
-            },
-        ));
-    }
-    !pending || forgotten
 }
 
 /// The peer removed us: the friend, any request and anything queued to

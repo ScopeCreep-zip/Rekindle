@@ -160,7 +160,6 @@ pub(crate) fn is_protective(kind: rekindle_codec::capnp_codec::direct::DmTypeId)
         kind,
         DmTypeId::Unfriended
             | DmTypeId::UnfriendedAck
-            | DmTypeId::FriendReject
             | DmTypeId::SessionResetDecline
             | DmTypeId::PreKeyRejected
     )
@@ -206,7 +205,6 @@ mod tests {
         for kind in [
             DmTypeId::Unfriended,
             DmTypeId::UnfriendedAck,
-            DmTypeId::FriendReject,
             DmTypeId::SessionResetDecline,
             DmTypeId::PreKeyRejected,
         ] {

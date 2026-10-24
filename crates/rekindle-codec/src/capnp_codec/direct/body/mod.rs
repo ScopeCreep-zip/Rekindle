@@ -6,7 +6,7 @@
 //! one for one (`String` → `Text`, `Vec<u8>` → `Data`, `Option<String>` →
 //! `Text`, empty when absent), so the cutover maps each variant without
 //! a semantic change. The friendship and content kinds are E2.3's own
-//! definitions. FriendReject, Unfriended, UnfriendedAck and
+//! definitions. Unfriended, UnfriendedAck and
 //! SessionResetAccept have an empty body. The group-DM kinds (0x0120-0x0124)
 //! are E2.6's sender-key bodies.
 
@@ -155,7 +155,6 @@ direct_bodies! {
     }
     empty {
         SessionResetAccept,
-        FriendReject,
         Unfriended,
         UnfriendedAck,
     }

@@ -60,6 +60,14 @@ pub enum Dropped {
     /// answered with it ([`super::receive_call`]); an init that came by
     /// message gets it by message.
     Rejected { to: String, frame: Box<DmFrame> },
+    /// From a sender we blocked: dropped unstored, with no state change
+    /// and no event. A call is answered the silent receipt, the empty
+    /// reply any reachable peer gives, so the block is never told to the
+    /// blocked (LV23 review H1/H2; Signal `RecipientUtil.block` and
+    /// `shouldIgnore`: nothing is sent to the blocked peer). A DM so
+    /// receipted is never acked: their side shows "sent", never
+    /// "delivered".
+    Blocked,
     /// A copy of a frame that already opened and was applied: its receipt
     /// stands.
     Duplicate,
@@ -130,7 +138,7 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
     let status = admission::unblocked(host, &sender_hex)
         .await
         .map_err(|barred| match barred {
-            admission::Barred::Blocked => Dropped::Refused,
+            admission::Barred::Blocked => Dropped::Blocked,
             admission::Barred::Unreadable => Dropped::Failed,
         })?;
     if !admission::frame_admitted(host, &sender_hex, kind, status, init).await {

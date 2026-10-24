@@ -7,7 +7,10 @@ fn presession(
     to: &Identity,
     sent_at: u64,
 ) -> (DmTypeId, rekindle_codec::capnp_codec::direct::SealedBody) {
-    let body = DirectBody::FriendReject;
+    let body =
+        DirectBody::SessionResetRequest(rekindle_codec::capnp_codec::direct::SessionResetRequest {
+            reason: String::new(),
+        });
     let frame = crate::operations::dm::frame::seal_presession(
         from,
         &to.public_key_bytes(),
@@ -106,7 +109,7 @@ fn a_relabelled_or_stale_frame_is_refused() {
         open_presession(
             &bob,
             &from,
-            DmTypeId::FriendReject,
+            DmTypeId::SessionResetRequest,
             &sealed,
             1_000 + ENVELOPE_FRESHNESS_WINDOW_MS + 1
         ),

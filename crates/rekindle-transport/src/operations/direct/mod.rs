@@ -161,7 +161,8 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
 }
 
 /// Handle one inbound `app_call`. A relay offer is unported (the desktop
-/// replies with its ack). A refused frame is answered [`NAK`], one not
+/// replies with its ack). A blocked sender's call gets the empty receipt
+/// and is dropped unstored (LV23 review). A refused frame is answered [`NAK`], one not
 /// judged (an internal error of ours, a store that failed on our side, a
 /// copy whose first is in flight) [`RETRY_LATER`], and a copy
 /// of one that opened the empty receipt (plan audit G3). A sealed kind
@@ -177,7 +178,8 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     };
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
-        Err(Dropped::Duplicate) => return Called::Answered(Vec::new()),
+        // The silent receipt: a block is never told (LV23 review H1/H2).
+        Err(Dropped::Duplicate | Dropped::Blocked) => return Called::Answered(Vec::new()),
         Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
         Err(Dropped::Failed | Dropped::InFlight) => return Called::RetryLater,
         // B5 by the call itself (finding 46): the caller tells a refused

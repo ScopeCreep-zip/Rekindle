@@ -4,7 +4,7 @@
 //! accept arrives as the first payload of the PreKeyInit that opened our
 //! session with the sender (plan E2.3).
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, RequestAuth};
+use rekindle_codec::capnp_codec::direct::{DmTypeId, RequestAuth};
 use rekindle_types::friend::FriendshipState;
 use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
@@ -12,15 +12,6 @@ use super::lifecycle::accept_crossing_request;
 use super::{IncomingFriendAccept, IncomingFriendRequest};
 use crate::operations::dm;
 use crate::operations::friend::{invites, state, FriendError, FriendHost};
-
-/// Commit `body` to the outbox, so the peer is not left re-sending (a lost
-/// rejection made the requester retry forever, B10/P3.4); the row's
-/// deadline bounds it.
-async fn enqueue_reply(host: &dyn FriendHost, to: &str, body: &DirectBody, what: &str) {
-    if let Err(e) = dm::handshake::enqueue(host, to, body).await {
-        tracing::warn!(to = %to, error = %e, "{what} not committed to the outbox");
-    }
-}
 
 /// Store the request; persisted before the event, so the row exists when a
 /// window acts on it (B5/P3.1). Whether it is new: the same request again
@@ -74,14 +65,9 @@ async fn admit_invite(
             true
         }
         Ok(false) => {
-            tracing::info!(from = %req.sender_hex, %invite_id, "rejecting request for a closed invite");
-            enqueue_reply(
-                host,
-                req.sender_hex,
-                &DirectBody::FriendReject,
-                "FriendReject",
-            )
-            .await;
+            // Silent to the requester (LV23 review L2): their request
+            // expires unanswered.
+            tracing::info!(from = %req.sender_hex, %invite_id, "dropping request for a closed invite");
             false
         }
         Err(e) => {

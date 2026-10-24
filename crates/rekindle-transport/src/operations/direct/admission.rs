@@ -20,8 +20,9 @@ pub(crate) struct Unreadable;
 /// Why a sender's frame goes no further than the block list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Barred {
-    /// The sender is blocked: a judged refusal, answered NAK (register
-    /// :76, "a NAK means … admission"; RV5 R1).
+    /// The sender is blocked: dropped silently, a call answered the empty
+    /// receipt (LV23 review, amending RV5 R1's NAK, which told the
+    /// blocked they were blocked).
     Blocked,
     /// Our block list or the sender's friendship is unreadable: nothing
     /// was judged (fail closed, answered retry later).
@@ -167,7 +168,6 @@ pub(crate) async fn friendship_authoritative(
 pub(crate) fn sender_admitted(kind: DmTypeId, status: Status) -> bool {
     match kind {
         DmTypeId::FriendRequest
-        | DmTypeId::FriendReject
         | DmTypeId::Unfriended
         | DmTypeId::UnfriendedAck
         | DmTypeId::RelayEnvelope => true,
@@ -258,7 +258,6 @@ mod tests {
     fn a_request_and_a_removal_come_from_anyone_not_blocked() {
         for kind in [
             DmTypeId::FriendRequest,
-            DmTypeId::FriendReject,
             DmTypeId::Unfriended,
             DmTypeId::UnfriendedAck,
         ] {

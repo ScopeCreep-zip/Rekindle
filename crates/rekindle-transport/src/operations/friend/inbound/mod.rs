@@ -1,18 +1,16 @@
 //! The receive side of the friend handshake: incoming `FriendRequest`,
-//! `FriendAccept`, `FriendReject`, `Unfriended`, `UnfriendedAck` and
+//! `FriendAccept`, `Unfriended`, `UnfriendedAck` and
 //! `ProfileKeyRotated`, and the crossing-request auto-accept.
 //!
 //! * `incoming`  — the request and accept handlers, with their stores (the
 //!   accept's session is the PreKeyInit that carried it, plan E2.3).
-//! * `lifecycle` — reject, unfriend, rotation and the crossing request.
+//! * `lifecycle` — unfriend, rotation and the crossing request.
 
 mod incoming;
 mod lifecycle;
 
 pub(crate) use incoming::{on_accept_failed, on_friend_accept, on_friend_request};
-pub(crate) use lifecycle::{
-    on_friend_reject, on_profile_key_rotated, on_unfriended, on_unfriended_ack,
-};
+pub(crate) use lifecycle::{on_profile_key_rotated, on_unfriended, on_unfriended_ack};
 
 /// An incoming friend request.
 pub(crate) struct IncomingFriendRequest<'a> {

@@ -236,15 +236,7 @@ async fn every_presession_frame_and_the_reset_accept_fit() {
         pq_prekey: PqPrekey::OneTime(u32::MAX),
         base_key_hash: [0xFF; 32],
     });
-    for body in [
-        &request,
-        &decline,
-        &DirectBody::FriendReject,
-        &register,
-        &unregister,
-        &wake,
-        &rejected,
-    ] {
+    for body in [&request, &decline, &register, &unregister, &wake, &rejected] {
         let len = sealed_len(&alice, &bob, body);
         assert!(len <= MAX_APP_MESSAGE_LEN, "{:?} {len} B", body.type_id());
     }

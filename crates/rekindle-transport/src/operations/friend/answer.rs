@@ -135,9 +135,9 @@ pub async fn reject(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
             dm::route::cache(&node, public_key, blob);
         }
     }
-    if let Err(e) = dm::send_friend_reject(host, public_key).await {
-        tracing::warn!(error = %e, "failed to send friend reject (peer may be offline)");
-    }
+    // Nothing goes to the requester (LV23 review L2, Signal's silent
+    // message-request delete): their request expires unanswered at its
+    // deadline, as an ignored one does.
     tracing::info!(public_key = %public_key, "friend request rejected");
     Ok(())
 }

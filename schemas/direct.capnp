@@ -13,7 +13,7 @@
 #   - every other kind: `ratchet`.
 # Every ratchet and PreKeyInit plaintext is a `DmContent`; every sealed
 # plaintext is a `SealedContent`. Their `payload` is the kind's body below
-# (empty for FriendReject, Unfriended, UnfriendedAck and
+# (empty for Unfriended, UnfriendedAck and
 # SessionResetAccept). Ordinals are never reused (§5).
 
 struct DmFrame {

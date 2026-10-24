@@ -84,8 +84,8 @@ type_ids! {
     DmText = 0x0100 => Ratchet,
     /// The first payload of the PreKeyInit that accepts a friend request.
     FriendAccept = 0x0101 => FirstPayload,
-    /// Decline a friend request.
-    FriendReject = 0x0102 => Sealed,
+    // 0x0102 (FriendReject) is retired: a decline is silent to the
+    // requester (LV23 review L2). Never reused.
     /// We removed the peer as a friend.
     Unfriended = 0x0103 => Ratchet,
     /// The receipt of `Unfriended`.
@@ -240,7 +240,8 @@ mod tests {
     #[test]
     fn unallocated_ids_are_not_kinds() {
         for id in [
-            0x0000, 0x0109, 0x0125, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
+            // 0x0102 is FriendReject, retired (LV23 review L2).
+            0x0000, 0x0102, 0x0109, 0x0125, 0x0150, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }
@@ -256,7 +257,7 @@ mod tests {
             .collect();
         assert_eq!(
             sealed,
-            [0x0002, 0x0005, 0x0007, 0x0009, 0x0102, 0x0310, 0x0311, 0x0312]
+            [0x0002, 0x0005, 0x0007, 0x0009, 0x0310, 0x0311, 0x0312]
         );
         assert_eq!(DmTypeId::PreKeyInit.carrier(), Carrier::PreKeyInit);
         assert_eq!(DmTypeId::GroupContent.carrier(), Carrier::GroupChain);

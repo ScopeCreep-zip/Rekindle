@@ -86,7 +86,6 @@ fn samples() -> Vec<DirectBody> {
             route_blob: vec![8; 32],
             mailbox_dht_key: dht_key(),
         }),
-        DirectBody::FriendReject,
         DirectBody::Unfriended,
         DirectBody::UnfriendedAck,
         DirectBody::ProfileKeyRotated(ProfileKeyRotated {
@@ -321,7 +320,7 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
     });
     assert!(DirectBody::decode(DmTypeId::DmDelete, &bytes).is_err());
     // An empty-bodied kind with bytes, and bytes of another kind.
-    assert!(DirectBody::decode(DmTypeId::FriendReject, &[0]).is_err());
+    assert!(DirectBody::decode(DmTypeId::UnfriendedAck, &[0]).is_err());
     assert!(DirectBody::decode(DmTypeId::DmText, &[0xFF; 3]).is_err());
 }
 
@@ -405,7 +404,6 @@ fn every_sealed_handshake_frame_fits() {
         sealed(&DirectBody::SessionResetDecline(SessionResetDecline {
             reason: widest(256),
         })),
-        sealed(&DirectBody::FriendReject),
     ];
     for frame in frames {
         assert_eq!(DmFrame::decode(&frame.encode()).as_ref(), Ok(&frame));

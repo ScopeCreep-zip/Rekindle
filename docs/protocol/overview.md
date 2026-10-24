@@ -86,7 +86,7 @@ The typeId names the kind and its carrier (`DmTypeId::carrier()`):
 |---------|------|-------|
 | Ratchet | `{header {dh, pn, n}, ciphertext}` of a `DmContent` | DMs, edits, reactions, typing, unfriend, rotations, group DM, call signaling, DM video, Strand Relay, status |
 | PreKeyInit | PQXDH init (base key, prekey ids, ML-KEM ciphertext) plus the first ratchet message | opens a session; the first payload is a `FriendAccept` or `SessionResetAccept` (or any ratchet kind) |
-| Sealed | `{enc, ciphertext, signature}` of a `SealedContent {nonce, sentAtMs, payload}` | pre-session kinds: `FriendRequest`, `FriendReject`, `PreKeyRejected`, `SessionResetRequest`/`Decline`, `RegisterPushRelay`/`UnregisterPushRelay`/`WakeNotify` |
+| Sealed | `{enc, ciphertext, signature}` of a `SealedContent {nonce, sentAtMs, payload}` | pre-session kinds: `FriendRequest`, `PreKeyRejected`, `SessionResetRequest`/`Decline`, `RegisterPushRelay`/`UnregisterPushRelay`/`WakeNotify` |
 
 **Ratchet.** The spec Double Ratchet (`rekindle-crypto::signal::{dr,record}`,
 `SessionRecord`) with one record per peer in `ratchet_sessions`. The send
@@ -131,7 +131,7 @@ and the framed DM kinds.
 | `Typing` (0x0401) | Ephemeral typing state: the sender's backend sends the start, refreshes it every 3 s while the draft changes, and stops after 3 s idle; the receiver lapses an unrefreshed start after 5 s (`rekindle_events::typing`) |
 | `FriendRequest` (0x0002) | Initial friend contact, sealed, by `app_call`; the reply is its receipt |
 | `FriendAccept` (0x0101) | Accept; travels as the first payload of the PreKeyInit that opens the session |
-| `FriendReject` (0x0102) | Rejection notification, sealed |
+| (0x0102, retired) | Was `FriendReject`. A decline is silent to the requester (LV23 review L2; Signal's message-request delete syncs only to our own devices); the request expires unanswered. Never reused |
 | `ProfileKeyRotated` (0x0105) | Notify remaining friends of new DHT profile key after block/unfriend |
 | `IdentityRotated` (0x0108) | Identity moved to a new key; signed by both keys over `IDENTITY_ROTATED ‖ old ‖ new ‖ recipient`, sent over the old session (`operations::friend::identity_rotation`) |
 | `Unfriended` / `UnfriendedAck` (0x0103/0x0104) | Notify peer of unfriending and confirm receipt |

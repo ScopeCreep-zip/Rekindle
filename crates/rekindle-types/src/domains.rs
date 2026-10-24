@@ -44,8 +44,6 @@ labels! {
     DM_PRESESSION_SIG = "rekindle-dm-presession-sig-v1";
     /// HPKE info: a sealed `FriendRequest` (0x0002).
     DM_FRIEND_REQUEST_HPKE = "rekindle-dm-friend-request-hpke-v1";
-    /// HPKE info: a sealed `FriendReject` (0x0102).
-    DM_FRIEND_REJECT_HPKE = "rekindle-dm-friend-reject-hpke-v1";
     /// HPKE info: a sealed `PreKeyRejected` (0x0005).
     DM_PREKEY_REJECTED_HPKE = "rekindle-dm-prekey-rejected-hpke-v1";
     /// BLAKE3 derive-key context: the initiator base key a `PreKeyRejected`

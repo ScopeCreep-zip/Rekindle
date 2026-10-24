@@ -52,7 +52,6 @@ pub fn sealed_info(type_id: DmTypeId) -> Option<&'static str> {
     Some(match type_id {
         DmTypeId::FriendRequest => domains::DM_FRIEND_REQUEST_HPKE,
         DmTypeId::PreKeyRejected => domains::DM_PREKEY_REJECTED_HPKE,
-        DmTypeId::FriendReject => domains::DM_FRIEND_REJECT_HPKE,
         DmTypeId::SessionResetRequest => domains::DM_SESSION_RESET_REQUEST_HPKE,
         DmTypeId::SessionResetDecline => domains::DM_SESSION_RESET_DECLINE_HPKE,
         DmTypeId::RegisterPushRelay => domains::DM_PUSH_REGISTER_HPKE,

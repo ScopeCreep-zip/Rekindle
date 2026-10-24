@@ -473,7 +473,7 @@ mod tests {
                 datagram: vec![b'D', 1, 2, 3],
             },
             Framed::Sealed {
-                type_id: DmTypeId::FriendReject.as_u16(),
+                type_id: DmTypeId::SessionResetDecline.as_u16(),
                 body: Vec::new(),
                 nonce: [9; 16],
             },

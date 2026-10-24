@@ -120,18 +120,35 @@ fn show_failed(host: &dyn FriendHost, peer: &str, reason: String) {
     }));
 }
 
-/// The reason a friend request answered with a bare NAK shows.
-pub(crate) const REQUEST_REFUSED: &str = "they did not accept a request from you";
+/// What a friend request answered with a bare NAK shows: generic, since a
+/// NAK on a request is never a block (LV23 review M1; a block is the
+/// silent receipt) and never "did not accept".
+pub(crate) const REQUEST_UNDELIVERED: &str = "couldn't deliver, will retry";
 
-/// Live A/B finding 74: `peer` answered our `FriendRequest` with a bare NAK,
-/// a judged refusal (a block, an admission refusal; RV5: our own faults
-/// are unanswered). Per finding 46 it ends as a visible failure with no
-/// timer: the pending-out friend keeps its state and shows
-/// [`REQUEST_REFUSED`]; the user cancels it or sends a fresh `friend add`,
-/// which replaces the row and clears the error. It is no first contact, so
-/// nothing is recorded for [`retry`].
-pub(crate) fn request_refused(host: &dyn FriendHost, peer: &str) {
-    show_failed(host, peer, REQUEST_REFUSED.to_string());
+/// LV23 review M1: `peer` answered our `FriendRequest` with a bare NAK
+/// (our open rate, their replay quota, a frame they could not decode). The
+/// row is attempted again with the stream's backoff, and the friend shows
+/// [`REQUEST_UNDELIVERED`], retrying, until a receipt clears it
+/// ([`request_delivered`]).
+pub(crate) fn request_undelivered(host: &dyn FriendHost, peer: &str) {
+    state::update(host, peer, |f| {
+        f.handshake_retrying = true;
+        f.handshake_error = Some(REQUEST_UNDELIVERED.to_string());
+    });
+    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeRetrying {
+        peer_key: peer.to_string(),
+    }));
+}
+
+/// Our request to `peer` was receipted: a [`REQUEST_UNDELIVERED`] shown on
+/// it goes.
+pub(crate) fn request_delivered(host: &dyn FriendHost, peer: &str) {
+    state::update(host, peer, |f| {
+        if f.handshake_error.as_deref() == Some(REQUEST_UNDELIVERED) {
+            f.handshake_error = None;
+            f.handshake_retrying = false;
+        }
+    });
 }
 
 /// Finding 46: the peer refused our first contact `kind` with a bare NAK

@@ -63,13 +63,3 @@ pub async fn send_friend_accept(
             .await?;
     handshake::enqueue_frame(host, to, &frame).await.map(drop)
 }
-
-/// Commit a friend rejection to the outbox.
-///
-/// # Errors
-/// The row could not be stored.
-pub async fn send_friend_reject(host: &dyn FriendHost, to: &str) -> Result<(), FriendError> {
-    handshake::enqueue(host, to, &DirectBody::FriendReject)
-        .await
-        .map(drop)
-}

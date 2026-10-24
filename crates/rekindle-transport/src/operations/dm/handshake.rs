@@ -265,13 +265,16 @@ enum Answered {
     /// A bare NAK, or a reply that did not open or was not applied (a
     /// `PreKeyRejected` naming no unanswered init of ours): a refusal,
     /// shown on the friend's row as failed with Retry (finding 46 refined,
-    /// `first_contact::refused`), never a receipt or a silent split. A
-    /// friend request's bare NAK is a refusal too (finding 74): the
-    /// pending-out row shows it, with no timer (`first_contact::request_refused`).
+    /// `first_contact::refused`), never a receipt or a silent split.
     Refused,
-    /// No answer (our own fault is unanswered, RV5), a friend request's
-    /// reply (no answer a request defines), or our own failure applying a
-    /// reply: attempted again until the row's deadline.
+    /// A friend request's bare NAK (LV23 review M1): never a block (a block
+    /// is the silent receipt), so attempted again as [`Self::Again`] is, the
+    /// row showing a generic "couldn't deliver, will retry"
+    /// (`first_contact::request_undelivered`), never "did not accept".
+    Undelivered,
+    /// No answer, their "retry later" (RV5 M2), a friend request's reply
+    /// (no answer a request defines), or our own failure applying a reply:
+    /// attempted again until the row's deadline.
     Again,
 }
 
@@ -287,6 +290,7 @@ fn answered(
         // Their own fault, said at once (review RV5 M2): as a timeout.
         Ok(send::CallAnswer::RetryLater) => Answered::Again,
         Ok(send::CallAnswer::Reply(_)) if kind == DmTypeId::FriendRequest => Answered::Again,
+        Ok(send::CallAnswer::Refused) if kind == DmTypeId::FriendRequest => Answered::Undelivered,
         Ok(send::CallAnswer::Reply(_)) if rejection == Rejection::Applied => Answered::Rejected,
         // Our own failure judging or applying it is no refusal of theirs
         // (RV5 R5): attempted again.
@@ -334,6 +338,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         return match answered(kind, &answer, applied) {
             Answered::Receipt => {
                 if kind == DmTypeId::FriendRequest {
+                    crate::operations::prekeys::request_delivered(host, to);
                     host.publish(SubscriptionEvent::Friend(
                         FriendEvent::RequestAcknowledged {
                             peer_key: to.to_string(),
@@ -346,10 +351,13 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             Answered::Refused => {
                 if matches!(kind, DmTypeId::FriendAccept | DmTypeId::SessionResetAccept) {
                     crate::operations::prekeys::refused(host, to, kind);
-                } else if kind == DmTypeId::FriendRequest {
-                    crate::operations::prekeys::request_refused(host, to);
                 }
                 Attempt::Superseded(format!("{kind:?} refused by {to}"))
+            }
+            Answered::Undelivered => {
+                tracing::debug!(to = %to, "friend request answered with a NAK — attempted again");
+                crate::operations::prekeys::request_undelivered(host, to);
+                Attempt::Deferred
             }
             Answered::Again => {
                 if let Err(e) = &answer {
@@ -400,7 +408,6 @@ mod tests {
         assert!(receipted(DmTypeId::FriendRequest));
         assert!(receipted(DmTypeId::FriendAccept));
         assert!(receipted(DmTypeId::SessionResetAccept));
-        assert!(!receipted(DmTypeId::FriendReject));
         assert!(!receipted(DmTypeId::Unfriended));
         assert!(receipted(DmTypeId::FriendsKey));
         assert!(receipted(DmTypeId::UnfriendedAck));
@@ -449,22 +456,17 @@ mod tests {
         );
     }
 
-    /// Live A/B finding 74: a blocker NAKs our request on every attempt; a
-    /// bare NAK is a judged refusal (RV5), so it ends the row, not a retry.
+    /// LV23 review M1: a friend request's bare NAK is never a block (that
+    /// is the silent receipt) and never ends the row: attempted again.
     #[test]
-    fn a_refused_friend_request_ends_and_is_not_attempted_again() {
-        let request = DmTypeId::FriendRequest;
+    fn a_nakd_friend_request_is_attempted_again_never_refused() {
         assert_eq!(
-            answered(request, &Ok(send::CallAnswer::Refused), Rejection::NotOurs),
-            Answered::Refused
-        );
-        assert_eq!(
-            answered(request, &Ok(send::CallAnswer::Receipt), Rejection::NotOurs),
-            Answered::Receipt
-        );
-        assert_eq!(
-            answered(request, &Err(FriendError::Locked), Rejection::NotOurs),
-            Answered::Again
+            answered(
+                DmTypeId::FriendRequest,
+                &Ok(send::CallAnswer::Refused),
+                Rejection::NotOurs
+            ),
+            Answered::Undelivered
         );
     }
 

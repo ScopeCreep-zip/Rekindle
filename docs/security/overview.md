@@ -105,7 +105,7 @@ datagram is dropped. A frame travels one of three ways:
   identities and the frame typeId.
 - **PreKeyInit.** Opens a session (above) and carries its first payload
   (`FriendAccept`, `SessionResetAccept`).
-- **Sealed.** The pre-session kinds (`FriendRequest`, `FriendReject`,
+- **Sealed.** The pre-session kinds (`FriendRequest`,
   `PreKeyRejected`, `SessionResetRequest`/`Decline`, push-relay kinds) have
   no session yet.
   They are HPKE Base sealed to the recipient identity's X25519 key and
