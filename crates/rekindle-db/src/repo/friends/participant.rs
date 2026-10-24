@@ -7,20 +7,37 @@ use rusqlite::{params, Connection, OptionalExtension as _};
 /// Store our participant record for the conversation with `public_key`.
 /// Whether a friend row took it.
 ///
+/// A new record is a new chain, numbered from 1: the `chain_entries` of
+/// the record it replaces (an ended friendship's, or the one before an
+/// identity rotation) go with it, so a cumulative `DmAck.through` on the
+/// new chain maps to the new chain's rows only (live A/B finding 71: a
+/// re-friend's entries were not noted under the old chain's seqs).
+///
 /// # Errors
-/// The write failed.
+/// The write failed; nothing changed.
 pub fn set_participant_record_key(
     conn: &Connection,
     owner_key: &str,
     public_key: &str,
     record_key: &str,
 ) -> rusqlite::Result<bool> {
-    let changed = conn.execute(
+    let tx = conn.unchecked_transaction()?;
+    let changed = tx.execute(
         "UPDATE friends SET participant_record_key = ?3 \
-         WHERE owner_key = ?1 AND public_key = ?2",
+         WHERE owner_key = ?1 AND public_key = ?2 \
+           AND participant_record_key IS NOT ?3",
         params![owner_key, public_key, record_key],
     )?;
-    Ok(changed > 0)
+    if changed > 0 {
+        tx.execute(
+            "DELETE FROM chain_entries WHERE owner_key = ?1 AND peer = ?2",
+            params![owner_key, public_key],
+        )?;
+    }
+    let held = changed > 0
+        || participant_record_key(&tx, owner_key, public_key)?.as_deref() == Some(record_key);
+    tx.commit()?;
+    Ok(held)
 }
 
 /// Store `public_key`'s participant record (their `StreamRecord`), for an
@@ -113,5 +130,37 @@ mod tests {
             Some("ours")
         );
         assert_eq!(participant_record_key(&conn, OWNER, "none").unwrap(), None);
+    }
+
+    #[test]
+    fn a_new_record_starts_a_new_chain() {
+        let conn = fixture::conn();
+        conn.execute(
+            "INSERT INTO friends (owner_key, public_key, added_at, friendship_state) \
+             VALUES (?1, 'bob', 0, 'accepted')",
+            params![OWNER],
+        )
+        .unwrap();
+        assert!(set_participant_record_key(&conn, OWNER, "bob", "old").unwrap());
+        crate::repo::chain_entries::record(&conn, OWNER, "bob", 1, 1, 0).unwrap();
+        // The same record again keeps its chain.
+        assert!(set_participant_record_key(&conn, OWNER, "bob", "old").unwrap());
+        let count = |c: &Connection| -> i64 {
+            c.query_row("SELECT COUNT(*) FROM chain_entries", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(count(&conn), 1);
+        // A new one forgets the old chain's entries, so its seq 1 is noted.
+        assert!(set_participant_record_key(&conn, OWNER, "bob", "new").unwrap());
+        assert_eq!(count(&conn), 0);
+        crate::repo::chain_entries::record(&conn, OWNER, "bob", 1, 9, 0).unwrap();
+        let seq: i64 = conn
+            .query_row(
+                "SELECT stream_seq FROM chain_entries WHERE chain_seq = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(seq, 9);
     }
 }
