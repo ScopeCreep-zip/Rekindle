@@ -26,7 +26,13 @@
   `DeviceRetired` whose `lastSeq` is below its carrier's causal past is invalid, quarantined ops stay as DAG ancestry
   and an op that loses its authority with them is quarantined and shown (rule 5), a new key after a fork needs the
   `DeviceReadmit` in its op's deps (rule 7), a restore re-keys only through the `ReEnrolDevice` intent (rule 4), and
-  the authority rows are `validate/mod.rs` `permitted` checks, not `power.rs`.
+  the authority rows are `validate/mod.rs` `permitted` checks, not `power.rs`. Corrected 2026-10-24 (pass 3 of that
+  check), still Proposed: plan S7c's checkpoints are acceleration hints that decide no op's fate, so the readmit interval
+  counts usable checkpoint heights in an op's deps (rule 7); the `lastSeq` floor is taken over the converged set and an
+  op another key builds on is never retired away, its late arrival being the one reverse move, shown (rule 5); a
+  refusal caused by a power op later quarantined stays until re-sent, and the quarantine cause is the lowest
+  `(lamport, op_hash)` op in the authority path (rule 5); device ops resolve in their own phase, first, and are never
+  quarantined by their subject's retirement, and a key whose endorsement has not arrived is pending (rule 6).
 - **Date:** 2026-10-24
 - **Amends:** [0011](0011-member-sovereign-records.md) and plan D15, their rule that the member's pseudonym signs
   its own op log. The record owner does not change: `M(p)` stays owned by the random key `K_M(p)` that only the
@@ -204,16 +210,24 @@ as today's does.
    "is never applied"); it is quarantined with a visible reason and never dropped silently (plan D15's quarantine
    rule), so a copied data root's race (rule 4) stays visible. Readers never prefer the last writer of `d`
    (*amended 2026-10-24, prod research batch 10*): when the set holds more than one `DeviceRetired` for one key,
-   the lowest `lastSeq` counts, and a `DeviceRetired` whose `lastSeq` is below the key's highest seq in its
-   carrier's causal past is invalid and quarantined (*corrected 2026-10-24, pass 2*: otherwise any holder of `p`
-   could erase a key's applied history at no cost with `lastSeq = 0`); two different ops of `d` at one seq at or below it are shown as an equivocation
+   the lowest `lastSeq` counts, and a `DeviceRetired` retires the key only above its effective `lastSeq`, the highest of its signed
+   `lastSeq`, the key's highest seq in the causal past of any op of another key in the converged set, and the key's
+   highest seq in its carrier's causal past (*Corrected 2026-10-24 (pass 3):* it read "a `DeviceRetired` whose `lastSeq` is below the key's
+   highest seq in its carrier's causal past is invalid and quarantined", which a carrier with genesis-only deps
+   bypassed; the key's own ops are left out, or a copy's own chain would lift the floor over everything it wrote), so
+   nobody erases ops others built on; when such an op arrives after a reader quarantined the ops it builds on, exactly
+   those move back to applied, shown, the one reverse move, since a reader holding the whole set applies them; two different ops of `d` at one seq at or below it are shown as an equivocation
    pair (fork evidence, above), and every op of `d` above it, from either copy, is quarantined and shown (Tailnet
    Lock rejects both clones on a tie). The author's re-enrolled device offers "re-send under new key" for its own
    quarantined ops; nothing inbound is lost, since records are not consumed on read. A replay of the same op is idempotent and never counts.
    Quarantined ops stay in the DAG as ancestry and are never applied, so the ops that cite them resolve and are
    never pending on their account; an op whose authority came from a quarantined op is re-judged on the converged
    set and moves to quarantined, shown with that cause, only if its authority fails without it (*added
-   2026-10-24, pass 2*). The person is not muted:
+   2026-10-24, pass 2*); with several, the cause is the lowest `(lamport, op_hash)` quarantined op in its authority
+   path. The move is one-way for refusals (*Corrected 2026-10-24 (pass 3)*): an op refused while a power op stood, a ban's or kick's
+   among them, stays refused after that power op is quarantined unless its own causal past holds the quarantine's
+   cause, so its author re-sends it; nothing members saw refused is revived without its author acting, and the rule
+   is a function of the op set, so every reader agrees. The person is not muted:
    their other effective device keys keep working (until a second fork, rule 7), and they are shown as having a
    forked device (rule 9).
 6. **Device cap, judged at each op's causal deps.** A member has at most **6** effective device keys in total,
@@ -225,10 +239,14 @@ as today's does.
    the converged set: a key is effective for op `o` if its endorsement is in `o`'s causal past (or carried by `o`
    itself at seq 0), it is among the first 6 live endorsements by `(incarnation, device key bytes)` in the
    member's set at `o`'s deps, and rule 7 admits it there. Once judged, effectiveness never changes (retirement and fork evidence are judged on the converged set and can
-   only move an op from applied to quarantined, shown, never back; corrected 2026-10-24, premise check), so a concurrent
+   only move an op from applied to quarantined, shown, never back, but for rule 5's floor; corrected 2026-10-24, premise check; *Corrected 2026-10-24 (pass 3)*), so a concurrent
    endorsement that converges later cannot void ops already accepted. An endorsement whose own extended set
    already holds 6 live keys is inert in every carrier and can never be re-carried into effect. All of this is
-   a pure function of the op set (D15 "pure effects"), never of local time.
+   a pure function of the op set (D15 "pure effects"), never of local time. Device ops resolve in their own
+   phase, before power ops, in `(lamport, op_hash)` order; a device op is quarantined only through fork evidence or a
+   retirement of the key that signed it, never of its subject, so a `DeviceReadmit` survives its subject's retirement.
+   An op of a key whose endorsement has not arrived is pending, until its endorsement arrives, never quarantined
+   (*Corrected 2026-10-24 (pass 3)*).
 7. **One fork per member.** After a member's first fork (fork evidence for any of its device keys, or any
    `DeviceRetired`, rule 4) in an op's deps, every new endorsement for that member becomes effective only together
    with a `DeviceReadmit{member, memberRecord, newKey, incarnation, forkEvidence}` op that names it in the
@@ -246,9 +264,10 @@ as today's does.
      approves a link, `DeviceController.java` L204-206; Apple: a newly added trusted device waits before it can
      make critical changes).
    - **One per checkpoint interval.** At most one own-key `DeviceReadmit` per member counts per checkpoint
-     interval, the span between two consecutive checkpoints of plan E3.2 S7c (a deterministic function of a stable
-     causal cut, strict-majority endorsed per ADR 0018). Of a member's own-key readmits whose deps hold the same
-     latest checkpoint, only the lowest `(lamport, op_hash)` counts and the others are inert; the device asks
+     interval, the span between two consecutive checkpoint heights of plan E3.2 S7c (any cut a strict majority
+     endorses per ADR 0018; checkpoints are acceleration hints and decide no op's fate, *Corrected 2026-10-24 (pass 3)*, from "a
+     deterministic function of a stable causal cut"). Of a member's own-key readmits whose deps hold the same
+     newest checkpoint height with a strict majority, only the lowest `(lamport, op_hash)` counts and the others are inert; the device asks
      again after the next checkpoint. This adapts Signal's per-account link bucket (`RateLimiters.java` L28-29, 6
      refilled one per 2 min) to causal order, a Rekindle choice from that source. The moderator path has no such
      limit, since a person outside the member decides it.
