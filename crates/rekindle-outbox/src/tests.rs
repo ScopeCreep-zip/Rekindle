@@ -179,6 +179,14 @@ impl OutboxDeps for Fake {
         }
         Ok(s.acks.get(client_id).copied())
     }
+    async fn reschedule_queued(&self, id: &str, n: u32, at: i64) -> Result<(), OutboxError> {
+        let mut s = self.store.lock();
+        let row = (s.rows.iter_mut()).find(|r| r.client_id == id && r.state == SendState::Queued);
+        if let Some(r) = row {
+            (r.attempts, r.next_at, r.wedge_reason) = (n, at, None);
+        }
+        Ok(())
+    }
     async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError> {
         let mut s = self.store.lock();
         let queued = s

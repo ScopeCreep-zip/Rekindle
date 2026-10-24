@@ -464,3 +464,22 @@ fn ack_before_and_after_landing() {
     );
     assert_eq!(state("b"), SendState::Delivered);
 }
+
+/// A hand-off reschedules a row only while it is queued: one the appender
+/// landed while its hint was sent stays sent (review LV22 M2).
+#[test]
+fn a_hand_off_never_lowers_a_landed_row() {
+    let conn = fixture::conn();
+    enqueue_with_echo(&conn, &row("dm:bob", "a", 0), Some(&echo())).unwrap();
+    assert!(reschedule_queued(&conn, OWNER, "a", 1, 7).unwrap());
+    let a = get(&conn, OWNER, "a").unwrap().unwrap();
+    assert_eq!((a.state, a.attempts, a.next_at), (SendState::Queued, 1, 7));
+    assert_eq!(land(&conn, OWNER, "a", 2, 9).unwrap(), Landing::Waiting);
+    assert!(!reschedule_queued(&conn, OWNER, "a", 3, 11).unwrap());
+    let a = get(&conn, OWNER, "a").unwrap().unwrap();
+    assert_eq!((a.state, a.attempts, a.next_at), (SendState::Sent, 2, 9));
+    assert_eq!(
+        own_dm(&conn, OWNER, "a").unwrap().unwrap().row.send_state,
+        SendState::Sent
+    );
+}

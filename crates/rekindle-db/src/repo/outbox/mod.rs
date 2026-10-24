@@ -535,7 +535,9 @@ pub fn unsettled_count(conn: &Connection, owner_key: &str) -> rusqlite::Result<i
 }
 
 mod receipts;
-pub use receipts::{deliver_chain_through, deliver_seq, land, note_ack, read_through, Landing};
+pub use receipts::{
+    deliver_chain_through, deliver_seq, land, note_ack, read_through, reschedule_queued, Landing,
+};
 
 #[cfg(test)]
 mod tests;

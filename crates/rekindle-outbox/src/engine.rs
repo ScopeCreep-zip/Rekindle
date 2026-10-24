@@ -189,17 +189,15 @@ impl<D: OutboxDeps> Outbox<D> {
     }
 
     /// `row`'s append is handed off: it stays `queued`, counted, and is due
-    /// again (if the append is cut off) after its backoff.
+    /// again (if the append is cut off) after its backoff. Written only
+    /// while it is still `queued`: `row` was read before the hint was
+    /// awaited, and the appender may have landed it since (review LV22 M2).
     pub(crate) async fn hand_off(&self, row: &OutboxRow) -> Result<(), OutboxError> {
         let attempts = row.attempts.saturating_add(1);
-        let update = RowUpdate {
-            state: row.state,
-            attempts,
-            next_at: self.next_due(row.kind, attempts, self.now(), row.deadline),
-            deadline: row.deadline,
-            wedge_reason: None,
-        };
-        self.deps.update(&row.client_id, &update).await.map(drop)
+        let next_at = self.next_due(row.kind, attempts, self.now(), row.deadline);
+        (self.deps)
+            .reschedule_queued(&row.client_id, attempts, next_at)
+            .await
     }
 
     /// Attempt `rows`, due rows in `due` order: each stream's run of due

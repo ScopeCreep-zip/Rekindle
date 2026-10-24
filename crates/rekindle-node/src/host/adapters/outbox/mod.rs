@@ -293,6 +293,20 @@ impl OutboxDeps for HostOutbox {
             .map_err(|e| storage(&e))
     }
 
+    async fn reschedule_queued(
+        &self,
+        client_id: &str,
+        attempts: u32,
+        next_at: i64,
+    ) -> Result<(), OutboxError> {
+        let (db, owner) = self.db()?;
+        let id = client_id.to_owned();
+        db.call(move |c| repo::reschedule_queued(c, &owner, &id, attempts, next_at))
+            .await
+            .map(drop)
+            .map_err(|e| storage(&e))
+    }
+
     async fn land(
         &self,
         client_id: &str,

@@ -188,6 +188,15 @@ pub trait OutboxDeps: Send + Sync {
     /// (`queued`; the higher ack stays), durably and atomically against
     /// [`Self::update`]: `false` when the row is past `queued` or gone.
     async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError>;
+    /// `client_id`'s append is handed off: store `attempts` and `next_at`
+    /// only while the row is `queued`, so a row that landed meanwhile is
+    /// never lowered (D22 monotone state, review LV22 M2).
+    async fn reschedule_queued(
+        &self,
+        client_id: &str,
+        attempts: u32,
+        next_at: i64,
+    ) -> Result<(), OutboxError>;
     /// The landing input of `client_id` (D22's two-input settle; research
     /// `prod_research_batch9.md` Q2), the only write that lands a row: a
     /// `queued` row becomes `sent`, due at `next_at` after `attempts`, and

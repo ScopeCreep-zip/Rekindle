@@ -268,3 +268,25 @@ pub fn land(
     tx.commit()?;
     Ok(landing)
 }
+
+/// `client_id`'s append is handed off: count the attempt and set when it
+/// is due again, only while it is still `queued` (review LV22 M2). A row
+/// that landed (or settled) while its hint was sent is never lowered back
+/// to `queued`. Returns whether the row was still queued.
+///
+/// # Errors
+/// The write failed.
+pub fn reschedule_queued(
+    conn: &Connection,
+    owner_key: &str,
+    client_id: &str,
+    attempts: u32,
+    next_at: i64,
+) -> rusqlite::Result<bool> {
+    let n = conn.execute(
+        "UPDATE outbox SET attempts = ?3, next_at = ?4, wedge_reason = NULL \
+         WHERE owner_key = ?1 AND client_id = ?2 AND state = 'queued'",
+        params![owner_key, client_id, attempts, next_at],
+    )?;
+    Ok(n > 0)
+}
