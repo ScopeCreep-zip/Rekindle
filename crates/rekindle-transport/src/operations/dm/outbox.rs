@@ -207,8 +207,9 @@ pub enum Attempt {
 pub struct RowAttempt<'a> {
     pub stream_seq: i64,
     /// The row's state: `sent` for a chain entry means its append landed,
-    /// and a later attempt neither appends nor hints it again (live A/B
-    /// finding 42); it waits for the peer's ack.
+    /// and a later attempt does not append it again (live A/B finding 42);
+    /// it is hinted again, on the dm backoff, until the peer's ack (live
+    /// A/B finding 64).
     pub state: SendState,
     /// When the entry was written (its echo's time; now for a row with
     /// none).
@@ -229,7 +230,8 @@ enum Framed {
 /// D23: the chain is authoritative; the run fills as few pages as hold it,
 /// E2.B F2) while each is sent once as the hint that makes the peer diff.
 /// Once on the chain a row counts as sent whether or not its hint left; a
-/// row already on it ([`landed`]) is neither appended nor hinted again.
+/// row already on it ([`landed`]) is not appended again, only hinted again
+/// until its ack ([`rehint`]).
 /// Every attempt's frame carries `sent_at`, so the peer orders it by that
 /// and not by the attempt that reached them (E2.B F3). The outcomes of a
 /// prefix of `rows`, in order: the rows after the first that stays behind
@@ -239,6 +241,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     let mut chained: Vec<(usize, Vec<u8>, DmTypeId)> = Vec::new();
     for row in rows {
         if landed(row) {
+            rehint(host, to, row).await;
             outcomes.push(Some(Attempt::Sent));
             continue;
         }
@@ -278,6 +281,27 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
         outcomes[i] = Some(Attempt::Appending(datagram));
     }
     finish(outcomes)
+}
+
+/// Hint `row` again, a chain entry whose append landed and whose `DmAck`
+/// has not come (live A/B finding 64): the peer's acks are never queued
+/// (`dm::ack`), so a lost one is asked for again only by this resend. It is
+/// framed afresh (the landed frame again would be dropped as a duplicate
+/// before the peer applies and acks it, `frame::open`) under the same
+/// stream seq and `sent_at`, and is not appended again: the entry is on the
+/// chain. An acked row is gone from the outbox (`Outbox::acknowledge`), so
+/// it is never hinted again. It stays sent whatever the hint does.
+async fn rehint(host: &dyn FriendHost, to: &str, row: &RowAttempt<'_>) {
+    match frame_row(host, to, row).await {
+        Ok(Framed::Entry(datagram, type_id) | Framed::Record(datagram, type_id)) => {
+            if let Err(e) = send::route_send_datagram(host, to, &datagram, type_id, true).await {
+                tracing::debug!(to = %to, error = %e, "landed entry re-hint not sent");
+            }
+        }
+        Err(outcome) => {
+            tracing::debug!(to = %to, ?outcome, "landed entry re-hint not framed");
+        }
+    }
 }
 
 /// Append `frames` (handed-off entries, each with its `stream_seq`, in

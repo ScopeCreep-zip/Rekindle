@@ -203,14 +203,20 @@ pub(crate) async fn on_ack(host: &dyn FriendHost, from: &str, ack: &DmAck) {
             return;
         }
     };
+    let (mut settled, mut unmatched) = (Vec::new(), Vec::new());
     for seq in &ack.stream_seqs {
-        let Ok(seq) = i64::try_from(*seq) else {
+        let Ok(stream_seq) = i64::try_from(*seq) else {
+            unmatched.push(*seq);
             continue;
         };
-        if let Err(e) = outbox.acknowledge(from, seq).await {
-            tracing::warn!(from = %from, error = %e, "DmAck not applied");
+        match outbox.acknowledge(from, stream_seq).await {
+            Ok(true) => settled.push(*seq),
+            Ok(false) => unmatched.push(*seq),
+            Err(e) => tracing::warn!(from = %from, error = %e, "DmAck not applied"),
         }
     }
+    tracing::debug!(from = %from, covered = ?ack.stream_seqs, ?settled, ?unmatched,
+        "DmAck ingested");
 }
 
 #[cfg(test)]
