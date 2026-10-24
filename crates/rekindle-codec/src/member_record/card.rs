@@ -10,7 +10,7 @@ use rekindle_types::key_format::{self, MAX_STATUS_LEN};
 use rekindle_types::presence::{limits, GameInfo};
 
 use super::{check_len, check_size, opt_text, put_lp, sign, verify, RecordScope};
-use crate::capnp_codec::{capnp_err, pack, text_to_string, unpack_bounded};
+use crate::capnp_codec::{bounds, capnp_err, pack, text_to_string, unpack_bounded};
 use crate::member_record_capnp::{card_game, member_card, member_card_body};
 use crate::CodecError;
 
@@ -21,8 +21,6 @@ pub const MEMBER_CARD_MAX_BYTES: usize = 8 * 1024;
 pub const MAX_GAME_NAME_LEN: usize = 128;
 /// Longest server address (`host:port`), ASCII.
 pub const MAX_SERVER_ADDRESS_LEN: usize = 255;
-
-const MAX_WORDS: usize = 4 * 1024;
 
 /// A member's per-community profile.
 #[derive(Debug, Clone, PartialEq)]
@@ -214,7 +212,7 @@ pub fn decode_member_card(
     pseudonym: &[u8; 32],
 ) -> Result<SignedMemberCard, CodecError> {
     check_size("member card", data, MEMBER_CARD_MAX_BYTES)?;
-    let outer = unpack_bounded(data, MAX_WORDS)?;
+    let outer = unpack_bounded(data, bounds::MEMBER_CARD)?;
     let root = outer
         .get_root::<member_card::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -228,7 +226,7 @@ pub fn decode_member_card(
         "member card",
     )?;
 
-    let inner = unpack_bounded(body, MAX_WORDS)?;
+    let inner = unpack_bounded(body, bounds::MEMBER_CARD)?;
     let b = inner
         .get_root::<member_card_body::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

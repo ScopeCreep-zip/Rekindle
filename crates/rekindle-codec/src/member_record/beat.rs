@@ -11,7 +11,7 @@ use rekindle_types::presence::{SessionExtras, SessionLocation, SessionStatus};
 use rekindle_utils::random::RandomSource;
 
 use super::{check_len, check_size, opt_text, put_lp, sign, verify, RecordScope};
-use crate::capnp_codec::{capnp_err, not_in_schema, pack, unpack_bounded};
+use crate::capnp_codec::{bounds, capnp_err, not_in_schema, pack, unpack_bounded};
 use crate::member_record_capnp::{presence_beat, session_extras_body, BeatStatus};
 use crate::CodecError;
 
@@ -23,8 +23,6 @@ pub const MAX_CHANNEL_ID: usize = 64;
 pub const MAX_ACTIVITY: usize = 96;
 /// The bound on the sealed extras.
 pub const MAX_SEALED_EXTRAS: usize = 256;
-
-const MAX_WORDS: usize = 256;
 
 /// The `SessionExtras` sealed under the community text key of
 /// `mek_generation`, bound to the record it is written in.
@@ -99,7 +97,7 @@ fn encode_extras(extras: &SessionExtras) -> Result<Vec<u8>, CodecError> {
 }
 
 fn decode_extras(data: &[u8]) -> Result<SessionExtras, CodecError> {
-    let reader = unpack_bounded(data, MAX_WORDS)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_BEAT)?;
     let b = reader
         .get_root::<session_extras_body::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -206,7 +204,7 @@ pub fn decode_presence_beat(
     pseudonym: &[u8; 32],
 ) -> Result<PresenceBeat, CodecError> {
     check_size("presence beat", data, PRESENCE_BEAT_MAX_BYTES)?;
-    let reader = unpack_bounded(data, MAX_WORDS)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_BEAT)?;
     let b = reader
         .get_root::<presence_beat::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

@@ -34,7 +34,7 @@ pub fn encode_update(status: u8, game: Option<&GameInfo>, timestamp_ms: u64) -> 
 
 /// Decode packed bytes into `(status, Option<GameInfo>)`.
 pub fn decode_update(data: &[u8]) -> Result<(u8, Option<GameInfo>), CodecError> {
-    let reader = unpack_bounded(data, bounds::PRESENCE_MAX_WORDS)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE)?;
     let root = reader
         .get_root::<presence_capnp::presence_update::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -62,7 +62,7 @@ pub fn encode_game_status(info: &GameInfo) -> Vec<u8> {
 
 /// Decode packed bytes into a `GameInfo`.
 pub fn decode_game_status(data: &[u8]) -> Result<GameInfo, CodecError> {
-    let reader = unpack_bounded(data, bounds::PRESENCE_MAX_WORDS)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE)?;
     let root = reader
         .get_root::<presence_capnp::game_status::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

@@ -14,7 +14,7 @@ use rekindle_types::presence::HistoryRange;
 use rekindle_utils::random::RandomSource;
 
 use super::{check_len, check_size, put_lp, sign, verify, RecordScope};
-use crate::capnp_codec::{capnp_err, pack, unpack_bounded};
+use crate::capnp_codec::{bounds, capnp_err, pack, unpack_bounded};
 use crate::member_record_capnp::{history_ad_record, history_ranges};
 use crate::CodecError;
 
@@ -22,8 +22,6 @@ use crate::CodecError;
 pub const HISTORY_AD_MAX_BYTES: usize = 4 * 1024;
 /// The most ranges one ad carries; the writer picks which.
 pub const HISTORY_AD_MAX_RANGES: usize = 64;
-
-const MAX_WORDS: usize = 1024;
 
 fn signing_bytes(at: RecordScope<'_>, mek_generation: u64, sealed: &[u8]) -> Vec<u8> {
     let mut out = at.signing_prefix(domains::HISTORY_AD);
@@ -49,7 +47,7 @@ fn encode_ranges(ranges: &[HistoryRange]) -> Vec<u8> {
 }
 
 fn decode_ranges(data: &[u8]) -> Result<Vec<HistoryRange>, CodecError> {
-    let reader = unpack_bounded(data, MAX_WORDS)?;
+    let reader = unpack_bounded(data, bounds::HISTORY_AD)?;
     let list = reader
         .get_root::<history_ranges::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?
@@ -109,7 +107,7 @@ pub fn decode_history_ad(
     pseudonym: &[u8; 32],
 ) -> Result<Vec<HistoryRange>, CodecError> {
     check_size("history ad", data, HISTORY_AD_MAX_BYTES)?;
-    let reader = unpack_bounded(data, MAX_WORDS)?;
+    let reader = unpack_bounded(data, bounds::HISTORY_AD)?;
     let root = reader
         .get_root::<history_ad_record::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

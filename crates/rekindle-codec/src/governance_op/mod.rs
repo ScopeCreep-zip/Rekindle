@@ -18,7 +18,7 @@ use rekindle_types::dht_layout::member_record::{MAX_FRONTIER_REFS, MAX_SUBKEY_VA
 use rekindle_types::governance::{GovernanceOp, OpHash, OpRef};
 use rekindle_types::id::PseudonymKey;
 
-use crate::capnp_codec::{capnp_err, pack, text_to_string, unpack_bounded};
+use crate::capnp_codec::{bounds, capnp_err, pack, text_to_string, unpack_bounded};
 use crate::capnp_envelope::{read_governance_entry, write_governance_entry};
 use crate::governance_op_capnp::{frontier, governance_op, op_ref};
 use crate::member_record::{check_len, check_size};
@@ -30,11 +30,6 @@ pub const GOVERNANCE_OP_MAX_BYTES: usize = MAX_SUBKEY_VALUE_LEN;
 /// Most deps an op cites: the heads its author had seen, which is at most
 /// one `Frontier` value.
 pub const GOVERNANCE_OP_MAX_DEPS: usize = MAX_FRONTIER_REFS;
-
-/// Traversal bound for the unpacked message: packing collapses zero words,
-/// so the unpacked form may exceed the packed bytes; four times the cap in
-/// words leaves room for any op that fits the cap.
-const MAX_WORDS: usize = GOVERNANCE_OP_MAX_BYTES / 8 * 4;
 
 /// A decoded op and the canonical unsigned bytes its signature covers.
 #[derive(Debug, Clone, PartialEq)]
@@ -62,7 +57,7 @@ pub fn op_unsigned_bytes(op: &GovernanceOp) -> Vec<u8> {
 /// Decode an op off the network, with its canonical unsigned bytes.
 pub fn decode_op(data: &[u8]) -> Result<DecodedOp, CodecError> {
     check_size("governance op", data, GOVERNANCE_OP_MAX_BYTES)?;
-    let message = unpack_bounded(data, MAX_WORDS)?;
+    let message = unpack_bounded(data, bounds::GOVERNANCE_OP)?;
     let r = message
         .get_root::<governance_op::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -113,7 +108,7 @@ pub fn encode_frontier(heads: &[OpRef]) -> Result<Vec<u8>, CodecError> {
 /// Decode a member record's `Frontier` off the network.
 pub fn decode_frontier(data: &[u8]) -> Result<Vec<OpRef>, CodecError> {
     check_size("frontier", data, MAX_SUBKEY_VALUE_LEN)?;
-    let message = unpack_bounded(data, MAX_WORDS)?;
+    let message = unpack_bounded(data, bounds::GOVERNANCE_OP)?;
     let r = message
         .get_root::<frontier::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

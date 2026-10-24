@@ -11,7 +11,7 @@
 //! Everything here decodes bytes off the network, so the decoder holds the
 //! network-side caps (plan §5 `validate_request` row; audit G6): a frame
 //! over Veilid's message cap is refused before it is unpacked, no message
-//! unpacks past [`MAX_UNPACKED_WORDS`], and the text a peer supplies — a
+//! unpacks past [`super::bounds::DM_FRAME`], and the text a peer supplies — a
 //! display name, a message, a reason, a status — is held to the bounds and
 //! the character rule the IPC validation holds a user to
 //! (`rekindle_types::key_format`, `presence::limits`), keys and record
@@ -46,12 +46,6 @@ use super::{capnp_err, pack, unpack_bounded, CodecError};
 /// A message's client id: the UUID v7 its author mints at send.
 pub type ClientId = [u8; 16];
 
-/// The most words any 1:1 message unpacks to: four times what Veilid's
-/// whole message cap could carry unpacked. A legitimate frame unpacks to
-/// about its packed size; a zero-word run packs 256 words into two bytes,
-/// so without this a 32 KiB datagram could unpack to 32 MiB.
-pub const MAX_UNPACKED_WORDS: usize = 4 * rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN / 8;
-
 /// Packed bytes of a root struct built by `write`.
 fn encode_root<O: capnp::traits::Owned>(write: impl FnOnce(O::Builder<'_>)) -> Vec<u8> {
     let mut message = capnp::message::Builder::new_default();
@@ -64,7 +58,7 @@ fn decode_root<O: capnp::traits::Owned, R>(
     bytes: &[u8],
     read: impl FnOnce(O::Reader<'_>) -> Result<R, CodecError>,
 ) -> Result<R, CodecError> {
-    let message = unpack_bounded(bytes, MAX_UNPACKED_WORDS)?;
+    let message = unpack_bounded(bytes, super::bounds::DM_FRAME)?;
     let root = message
         .get_root::<O::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

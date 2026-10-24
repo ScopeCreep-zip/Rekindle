@@ -12,7 +12,7 @@ use rekindle_types::governance::{AdmissionMode, GenesisCert};
 use rekindle_types::id::{PseudonymKey, RoleId};
 
 use super::{data_field, fixed};
-use crate::capnp_codec::{capnp_err, pack, text_to_string, unpack_bounded};
+use crate::capnp_codec::{bounds, capnp_err, pack, text_to_string, unpack_bounded};
 use crate::community_governance_capnp::AdmissionMode as WireMode;
 use crate::governance_op_capnp::genesis_cert;
 use crate::member_record::{check_len, check_size};
@@ -23,8 +23,6 @@ pub const GENESIS_CERT_MAX_BYTES: usize = MAX_SUBKEY_VALUE_LEN;
 
 /// Most initial roles a cert names.
 pub const GENESIS_MAX_ROLES: usize = 64;
-
-const MAX_WORDS: usize = GENESIS_CERT_MAX_BYTES / 8 * 4;
 
 /// A cert as the anchor holds it: the cert, the anchor owner `K_A`'s public
 /// key and both signatures.
@@ -64,7 +62,7 @@ pub fn genesis_unsigned_bytes(cert: &GenesisCert, anchor_owner: &[u8; 32]) -> Ve
 /// Decode a cert read from the anchor, with its canonical unsigned bytes.
 pub fn decode_genesis(data: &[u8]) -> Result<DecodedGenesis, CodecError> {
     check_size("genesis cert", data, GENESIS_CERT_MAX_BYTES)?;
-    let message = unpack_bounded(data, MAX_WORDS)?;
+    let message = unpack_bounded(data, bounds::GENESIS_CERT)?;
     let r = message
         .get_root::<genesis_cert::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

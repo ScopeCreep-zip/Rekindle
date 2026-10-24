@@ -26,7 +26,7 @@ pub fn encode_friend_list(entries: &[FriendEntry]) -> Vec<u8> {
 }
 
 pub fn decode_friend_list(data: &[u8]) -> Result<Vec<FriendEntry>, CodecError> {
-    let reader = unpack_bounded(data, bounds::FRIEND_LIST_MAX_WORDS)?;
+    let reader = unpack_bounded(data, bounds::FRIEND_LIST)?;
     let root = reader
         .get_root::<friend_capnp::friend_list::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
