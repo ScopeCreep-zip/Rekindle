@@ -109,7 +109,7 @@ impl OutboxDeps for Fake {
     async fn prefix_rows(&self, prefix: &str) -> Result<Vec<OutboxRow>, OutboxError> {
         let s = self.store.lock();
         let mut rows: Vec<OutboxRow> = (s.rows.iter())
-            .filter(|r| unsettled(r) && r.stream.starts_with(prefix))
+            .filter(|r| r.stream.starts_with(prefix))
             .cloned()
             .collect();
         rows.sort_by(|a, b| (&a.stream, a.stream_seq).cmp(&(&b.stream, b.stream_seq)));
@@ -573,3 +573,17 @@ mod deadline;
 mod ack_order;
 
 mod fake_acks;
+
+/// Finding 70 refined: a request cancelled right after it was queued and
+/// attempted (its first send wedged it) leaves no handshake row.
+#[tokio::test]
+async fn a_request_cancelled_after_its_first_attempt_leaves_no_row() {
+    let o = outbox();
+    script(&o, [AttemptOutcome::Wedged("no bundle".into())]);
+    let fh = StreamKind::FriendHandshake;
+    o.enqueue(entry(fh, "bob", "req"), ()).await.unwrap();
+    o.pump().await.unwrap();
+    assert_eq!(state_of(&o, "req"), Some(SendState::Failed));
+    assert_eq!(o.discard_streams(fh, "bob", "cancelled").await.unwrap(), 1);
+    assert_eq!(state_of(&o, "req"), None);
+}

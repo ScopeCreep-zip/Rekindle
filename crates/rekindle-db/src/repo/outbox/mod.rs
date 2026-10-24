@@ -286,9 +286,13 @@ pub fn due(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result<Vec
     )
 }
 
-/// The unsettled rows of every stream whose name starts with `prefix` (a
-/// call session's `media_key` streams, one per recipient), in stream and
-/// `stream_seq` order: the session's end discards them together.
+/// Every row still on a stream whose name starts with `prefix` (a call
+/// session's `media_key` streams, one per recipient; a peer's
+/// `friend_handshake` stream), in stream and `stream_seq` order, whatever
+/// its state: a row is in the table until it settles, so `queued`, `sent`
+/// and a wedged `failed` one awaiting Retry are all unsettled, and the
+/// session's end or a cancelled request discards them together (live A/B
+/// finding 70 refined: a request wedged on its first send stayed).
 ///
 /// # Errors
 /// The query failed.
@@ -296,7 +300,7 @@ pub fn prefix_rows(conn: &Connection, owner_key: &str, prefix: &str) -> rusqlite
     query_rows(
         conn,
         "o.owner_key = ?1 AND substr(o.stream, 1, length(?2)) = ?2 \
-         AND o.state IN ('queued', 'sent') ORDER BY o.stream, o.stream_seq",
+         ORDER BY o.stream, o.stream_seq",
         params![owner_key, prefix],
     )
 }
