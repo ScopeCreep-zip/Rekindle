@@ -226,18 +226,6 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::IdentityWipe
         | IpcRequest::IntentCommit { .. }
         | IpcRequest::Logout
-        | IpcRequest::Community(
-            CommunityRequest::Lifecycle(
-                LifecycleRequest::CommunityCreate { .. }
-                | LifecycleRequest::CommunityJoin { .. }
-                | LifecycleRequest::InviteCreate { .. },
-            )
-            | CommunityRequest::Messages(
-                ChannelMessageRequest::ChannelSend { .. }
-                | ChannelMessageRequest::ChannelMessages { .. }
-                | ChannelMessageRequest::ChannelMessagesBefore { .. },
-            ),
-        )
         | IpcRequest::FriendAddFromCode { .. }
         | IpcRequest::FriendAccept { .. }
         | IpcRequest::FriendRetryHandshake { .. }
@@ -248,6 +236,95 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::GroupDmAccept { .. }
         | IpcRequest::GroupDmSend { .. }
         | IpcRequest::DmInbox { .. } => LONG_TIMEOUT,
+        IpcRequest::Community(request) if !community_local_read(request) => LONG_TIMEOUT,
         _ => DEFAULT_TIMEOUT,
+    }
+}
+
+/// A community request answered from local state alone. Every other one
+/// waits on the network: a governance write answers once its op landed on
+/// our member record, up to the Host's `NETWORK_ANSWER_DEADLINE` (plan
+/// E3.2 S6b), and a send, a fetch or an upload waits on Veilid.
+fn community_local_read(request: &CommunityRequest) -> bool {
+    use rekindle_ipc::protocol::{
+        ActivityRequest, AuditRequest, ChannelRequest, ExpressionRequest, MemberRequest,
+        PinRequest, RichRequest, SettingsRequest,
+    };
+    matches!(
+        request,
+        CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityList
+                | LifecycleRequest::CommunityViews
+                | LifecycleRequest::CommunityMembers { .. }
+                | LifecycleRequest::CommunityInfo { .. }
+                | LifecycleRequest::CommunityPendingMembers { .. }
+                | LifecycleRequest::InviteList { .. }
+        ) | CommunityRequest::Settings(
+            SettingsRequest::CommunityAvatarGet { .. }
+                | SettingsRequest::CommunityPolicyGet { .. }
+                | SettingsRequest::OnboardingConfigGet { .. }
+                | SettingsRequest::WelcomeScreenGet { .. }
+        ) | CommunityRequest::Channels(ChannelRequest::ChannelList { .. })
+            | CommunityRequest::Messages(
+                ChannelMessageRequest::ChannelTyping { .. }
+                    | ChannelMessageRequest::ChannelSetActive { .. }
+                    | ChannelMessageRequest::MekList { .. }
+            )
+            | CommunityRequest::Unread(_)
+            | CommunityRequest::Audit(
+                AuditRequest::AuditLog { .. } | AuditRequest::NotificationDefaultGet { .. }
+            )
+            | CommunityRequest::Activities(
+                ActivityRequest::EventList { .. }
+                    | ActivityRequest::EventAttendees { .. }
+                    | ActivityRequest::GameServerList { .. }
+            )
+            | CommunityRequest::Members(
+                MemberRequest::RoleList { .. }
+                    | MemberRequest::MemberBlockList { .. }
+                    | MemberRequest::BanList { .. }
+                    | MemberRequest::AutomodRules { .. }
+                    | MemberRequest::ModReportList { .. }
+            )
+            | CommunityRequest::Pins(
+                PinRequest::ChannelPins { .. }
+                    | PinRequest::AttachmentInfo { .. }
+                    | PinRequest::MessageSearch { .. }
+            )
+            | CommunityRequest::Rich(
+                RichRequest::ThreadList { .. }
+                    | RichRequest::ThreadListActive { .. }
+                    | RichRequest::ThreadMessages { .. }
+                    | RichRequest::PollResults { .. }
+            )
+            | CommunityRequest::Expressions(ExpressionRequest::Expressions { .. })
+    )
+}
+
+#[cfg(test)]
+mod timeout_tests {
+    use super::*;
+    use rekindle_ipc::protocol::{ChannelRequest, MemberRequest};
+
+    /// A governance write answers once its op landed (plan E3.2 S6b), up to
+    /// the Host's `NETWORK_ANSWER_DEADLINE`, so its client waits longer.
+    #[test]
+    fn governance_writes_wait_for_the_network_answer() {
+        let kick = IpcRequest::Community(CommunityRequest::Members(MemberRequest::Kick {
+            community: "c".into(),
+            target_pseudonym: "p".into(),
+        }));
+        let leave = IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityLeave {
+                governance_key: "c".into(),
+            },
+        ));
+        let list = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelList {
+            community: "c".into(),
+        }));
+        assert_eq!(request_timeout(&kick), LONG_TIMEOUT);
+        assert_eq!(request_timeout(&leave), LONG_TIMEOUT);
+        assert_eq!(request_timeout(&list), DEFAULT_TIMEOUT);
+        assert!(rekindle_types::config::NETWORK_ANSWER_DEADLINE < LONG_TIMEOUT);
     }
 }

@@ -112,7 +112,7 @@ impl HostGovernance {
             self.publish_governance_op(
                 community,
                 outcome.joined.encoded.clone(),
-                rekindle_governance_runtime::OpLanding::FirstAttempt,
+                rekindle_governance_runtime::OpLanding::Landed,
             )
             .await
             .map_err(|e| format!("MemberJoined not published: {e}"))

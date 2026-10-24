@@ -160,26 +160,42 @@ impl GovernanceOps {
     /// landed on `M`/2 with our `Frontier` on `M`/3, through the outbox's
     /// retries, for at most `within` (plan E3.2 S6 (4)).
     ///
+    /// [`Published::Queued`]: the op is not yet published after `within`;
+    /// its row stays queued and the outbox lands it later.
+    ///
     /// # Errors
-    /// As [`publish`](Self::publish), or the op is not yet published after
-    /// `within`: its row stays queued and the outbox lands it later.
+    /// As [`publish`](Self::publish).
     pub async fn publish_landed(
         &self,
         community: &str,
         record: &str,
         op: Vec<u8>,
         within: std::time::Duration,
-    ) -> Result<(), String> {
+    ) -> Result<Published, String> {
         let (entry, client_id) = row(community, record, &op)?;
         let landed = self.waiters.wait_landed(community, &client_id);
         self.enqueue(entry, community, &client_id).await?;
         let waited = tokio::time::timeout(within, landed).await;
         self.waiters.forget(community, &client_id);
         match waited {
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(())) => Ok(Published::Landed),
             Ok(Err(_)) => Err("the outbox stopped before the op landed".to_owned()),
-            Err(_) => Err("not yet published: the op is queued until it lands".to_owned()),
+            Err(_) => Ok(Published::Queued(format!("not landed within {within:?}"))),
         }
+    }
+
+    /// Queue `op` as [`publish`](Self::publish) does and return once its row
+    /// is stored, behind our earlier ops on the stream.
+    ///
+    /// # Errors
+    /// The op does not decode, a key is too long, or the storage failed.
+    pub async fn queue(&self, community: &str, record: &str, op: Vec<u8>) -> Result<(), String> {
+        let (entry, _) = row(community, record, &op)?;
+        self.outbox
+            .enqueue(entry, None)
+            .await
+            .map(drop)
+            .map_err(|error| error.to_string())
     }
 
     async fn enqueue(&self, entry: Entry, community: &str, client_id: &str) -> Result<(), String> {

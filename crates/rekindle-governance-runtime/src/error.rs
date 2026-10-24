@@ -109,6 +109,12 @@ pub enum GovernanceRuntimeError {
 
     #[error("adapter error: {0}")]
     Adapter(String),
+
+    /// Our op did not land on our member record `M` within the command's
+    /// deadline; it stays queued and the outbox lands it later (plan E3.2
+    /// S6b).
+    #[error("not yet published: the op is queued until it lands")]
+    NotYetPublished,
 }
 
 impl GovernanceRuntimeError {

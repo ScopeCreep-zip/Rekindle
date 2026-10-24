@@ -5,31 +5,47 @@
 //! can), the invite's secrets record still lands but its op does not, so
 //! invite create waits through the outbox's retries up to the command's
 //! deadline and is refused "not yet published", with no link. Once the
-//! fault clears, a new invite lands and a joiner uses it.
+//! fault clears, a new invite lands and a joiner uses it. The refused
+//! invite's `InviteRevoked` is queued behind its `InviteCreated` on the same
+//! stream, so it lands revoked and is never listed (plan E3.2 S6b).
+//!
+//! Every other governance command answers the same way: a channel created
+//! while its op cannot land is refused "not yet published", and the op,
+//! still queued, reaches the other members once the fault clears.
 
-use rekindle_ipc::protocol::LifecycleRequest;
+use std::time::Duration;
+
+use rekindle_ipc::protocol::{ChannelRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_netsim::Fault;
 use rekindle_types::dht_layout::community_anchor;
 
-use crate::harness::Community;
+use crate::harness::{eventually, Community};
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn no_invite_link_until_its_op_is_on_the_dht() {
-    let mut community = Community::create(2, 223).await;
+/// The creator's member record `M`, where its op log lives.
+fn creator_record(community: &Community) -> String {
     let cert = community
         .sim
         .network_get(&community.governance_key, community_anchor::GENESIS_CERT)
         .expect("the anchor's GenesisCert");
-    let creator_record = rekindle_codec::governance_op::genesis::decode_genesis(&cert.data)
+    rekindle_codec::governance_op::genesis::decode_genesis(&cert.data)
         .expect("a GenesisCert")
         .signed
         .cert
-        .creator_member_record;
-    community.sim.fault(Fault::WriteFails {
-        node: 0,
-        record: creator_record,
-    });
+        .creator_member_record
+}
+
+fn invite_list(community: &Community) -> IpcRequest {
+    IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::InviteList {
+        community: community.governance_key.clone(),
+    }))
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn no_invite_link_until_its_op_is_on_the_dht() {
+    let mut community = Community::create(2, 223).await;
+    let record = creator_record(&community);
+    community.sim.fault(Fault::WriteFails { node: 0, record });
     let refused = community.nodes[0]
         .call(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::InviteCreate {
@@ -45,7 +61,71 @@ async fn no_invite_link_until_its_op_is_on_the_dht() {
         "no link while the op is off the DHT: {answer}"
     );
 
+    let listed = community.nodes[0].ok(invite_list(&community)).await;
+    assert_eq!(
+        listed.as_array().map(Vec::len),
+        Some(0),
+        "the refused invite is revoked behind its op: {listed}"
+    );
+
     community.sim.fault(Fault::Heal);
-    // A fresh invite (its op lands behind the queued one) and a join by it.
+    // A fresh invite (its op lands behind the queued ones) and a join by it.
     community.join(1).await;
+    // The joiner walked both queued ops from the DHT: the refused invite
+    // reached it revoked, so it lists what the inviter lists.
+    let ids = |listed: serde_json::Value| -> Vec<String> {
+        listed.as_array().map_or_else(Vec::new, |all| {
+            all.iter()
+                .filter_map(|i| i["inviteId"].as_str().map(str::to_owned))
+                .collect()
+        })
+    };
+    let ours = ids(community.nodes[0].ok(invite_list(&community)).await);
+    let theirs = ids(community.nodes[1].ok(invite_list(&community)).await);
+    assert_eq!(ours.len(), 1, "only the join's invite: {ours:?}");
+    assert_eq!(
+        ours, theirs,
+        "the refused invite is revoked for the joiner too"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_governance_command_answers_once_its_op_landed() {
+    let mut community = Community::create(2, 227).await;
+    community.join(1).await;
+    let record = creator_record(&community);
+    community.sim.fault(Fault::WriteFails { node: 0, record });
+    let create = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelCreate {
+        community: community.governance_key.clone(),
+        name: "queued".into(),
+        kind: "text".into(),
+        category: None,
+        topic: None,
+        slowmode_seconds: 0,
+        parent_voice_channel: None,
+    }));
+    let refused = community.nodes[0].call(create).await;
+    let answer = format!("{refused:?}");
+    assert!(
+        refused.is_err() && answer.contains("not yet published"),
+        "refused while its op is off the DHT: {answer}"
+    );
+
+    community.sim.fault(Fault::Heal);
+    let list = IpcRequest::Community(CommunityRequest::Channels(ChannelRequest::ChannelList {
+        community: community.governance_key.clone(),
+    }));
+    let landed = eventually(&community.sim, Duration::from_secs(900), || async {
+        community.nodes[1]
+            .call(list.clone())
+            .await
+            .is_ok_and(|v| v.to_string().contains("\"queued\""))
+    })
+    .await;
+    let ours = community.nodes[0].ok(list.clone()).await;
+    let theirs = community.nodes[1].ok(list).await;
+    assert!(
+        landed,
+        "the queued op reaches the other member: {ours} / {theirs}"
+    );
 }

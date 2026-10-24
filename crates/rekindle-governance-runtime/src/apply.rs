@@ -52,25 +52,27 @@ fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
 /// Apply a governance entry as our next signed op: validate it against the
 /// merged state, store it in `governance_ops`, re-merge, emit the UI
 /// events, and publish it on the governance-op outbox stream, returning
-/// once its first attempt ran (a queued op stands: the outbox lands it).
+/// only once it landed on our `M`/2 with our frontier on `M`/3 (plan E3.2
+/// S6b: a kick, a role, a channel or an invite is done when a joiner's walk
+/// finds it). An op not landed by the command's deadline is
+/// [`GovernanceRuntimeError::NotYetPublished`] and stays queued.
 pub async fn write_entry<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,
 ) -> Result<(), GovernanceRuntimeError> {
-    write(deps, community_id, entry, OpLanding::FirstAttempt).await
+    write(deps, community_id, entry, OpLanding::Landed).await
 }
 
-/// [`write_entry`], returning only once the op landed on our `M`/2 and
-/// `M`/3 (plan E3.2 S6 (4): an invite link needs its `InviteCreated` on
-/// the DHT); an op not landed by the command's deadline is an error and
-/// stays queued.
-pub async fn write_entry_landed<D: GovernanceRuntimeDeps>(
+/// [`write_entry`], returning once the op is queued on our stream, behind
+/// our earlier ops (an invite refused "not yet published" queues its
+/// `InviteRevoked` this way).
+pub(crate) async fn write_entry_queued<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,
 ) -> Result<(), GovernanceRuntimeError> {
-    write(deps, community_id, entry, OpLanding::Landed).await
+    write(deps, community_id, entry, OpLanding::Queued).await
 }
 
 async fn write<D: GovernanceRuntimeDeps>(

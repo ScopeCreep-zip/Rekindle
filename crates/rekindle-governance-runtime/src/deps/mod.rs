@@ -418,8 +418,10 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     ///
     /// With [`OpLanding::Landed`] it waits instead, through the outbox's
     /// retries and up to the command's deadline, until the op landed, and
-    /// is an error if it has not (the row stays queued): an invite link is
-    /// handed out only once its `InviteCreated` is on `M` (plan E3.2 S6 (4)).
+    /// is [`GovernanceRuntimeError::NotYetPublished`] if it has not (the row
+    /// stays queued): a governance command answers only once its op is on
+    /// `M` (plan E3.2 S6 (4), S6b). With [`OpLanding::Queued`] it returns
+    /// once the row is queued.
     async fn publish_governance_op(
         &self,
         community_id: &str,
@@ -505,4 +507,7 @@ pub enum OpLanding {
     FirstAttempt,
     /// The op on `M`/2 and our frontier on `M`/3, through the retries.
     Landed,
+    /// Queued on the stream, not waited for: the outbox lands it behind our
+    /// earlier ops (one stream per author, so the order holds).
+    Queued,
 }

@@ -51,7 +51,7 @@ pub mod roles;
 pub mod roster;
 pub mod segments;
 
-pub use apply::{write_entry, write_entry_landed};
+pub use apply::write_entry;
 pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};
 pub use deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,

@@ -225,8 +225,9 @@ impl HostGovernance {
 
     /// Publish `encoded` on our member record's op log (the cert's record
     /// for the creator, else our `MemberJoined`'s) and wait for what
-    /// `landing` names: its first attempt (a queued op stands), or its
-    /// landing on `M`/2 and `M`/3 within the command's deadline.
+    /// `landing` names: its first attempt (a queued op stands; community
+    /// create only), its landing on `M`/2 and `M`/3 within the command's
+    /// deadline, or only its row on the stream.
     pub(super) async fn publish_governance_op_impl(
         &self,
         community_id: &str,
@@ -254,6 +255,7 @@ impl HostGovernance {
             .outbox
             .governance_ops()
             .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
+        let mut landed = Ok(());
         match landing {
             rekindle_governance_runtime::OpLanding::FirstAttempt => {
                 let published = ops
@@ -268,15 +270,28 @@ impl HostGovernance {
             }
             // Bounded by the command's deadline (the client's
             // `NETWORK_COMMAND_DEADLINE`, answered before it).
-            rekindle_governance_runtime::OpLanding::Landed => ops
-                .publish_landed(
-                    community_id,
-                    &record,
-                    encoded.clone(),
-                    rekindle_types::config::NETWORK_ANSWER_DEADLINE,
-                )
+            rekindle_governance_runtime::OpLanding::Landed => {
+                let published = ops
+                    .publish_landed(
+                        community_id,
+                        &record,
+                        encoded.clone(),
+                        rekindle_types::config::NETWORK_ANSWER_DEADLINE,
+                    )
+                    .await
+                    .map_err(|e| adapter("publish op", e))?;
+                // The command is refused, but the op stands (it is in our
+                // state and the outbox lands it), so the members hear it now:
+                // nothing else tells them before it lands (S6b).
+                if let crate::host::adapters::outbox::Published::Queued(reason) = published {
+                    tracing::warn!(community = %community_id, %reason, "governance op not yet published, queued");
+                    landed = Err(GovernanceRuntimeError::NotYetPublished);
+                }
+            }
+            rekindle_governance_runtime::OpLanding::Queued => ops
+                .queue(community_id, &record, encoded.clone())
                 .await
-                .map_err(|e| adapter("publish op", e))?,
+                .map_err(|e| adapter("queue op", e))?,
         }
         // The fast path: every member hears the op before its watch fires.
         self.send_to_mesh_impl(
@@ -285,7 +300,7 @@ impl HostGovernance {
                 rekindle_codec::community::envelope::ControlPayload::GovernanceOp { op: encoded },
             ),
         );
-        Ok(())
+        landed
     }
 
     /// A gossiped `governanceOp @74`: into the op store and the rebuild
