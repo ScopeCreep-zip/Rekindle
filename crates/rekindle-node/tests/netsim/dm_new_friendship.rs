@@ -1,7 +1,10 @@
 //! Live A/B finding 73: a brand-new friendship's first hints (Ida's first
 //! three messages to Jon, her `StreamRecord` among them) are shown at
-//! receipt and step Jon's cursor on her chain, which her `StreamRecord`
-//! no longer resets, so one ack settles them all before any re-ask.
+//! receipt and settle by Jon's acks before any re-ask. The guard of the
+//! replace-only cursor reset is the re-friend scenario (it fails with the
+//! reset on every new key) and `repo::stream_cursors`' unit test; the
+//! fourth-ack scenario passes either way at seed 97, where the
+//! `StreamRecord` reaches Jon before hint 1 (review LV19 F5, run locally).
 
 use std::time::Duration;
 
@@ -11,7 +14,7 @@ use rekindle_netsim::{Fault, Netsim};
 use rekindle_types::message::{SendState, CALL_TIMEOUT_MS, DM_ACK_DELAY_MAX_MS};
 
 use crate::harness::{eventually, start, SimNode};
-use crate::pair::{befriend, key, send, talk};
+use crate::pair::{befriend, is_accepted_friend, key, send, talk, LIMIT};
 
 const BODIES: [&str; 3] = ["one", "two", "three"];
 
@@ -104,6 +107,39 @@ async fn a_new_friendships_first_hints_show_at_once_and_settle_by_one_ack() {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_new_friendships_fourth_ack_covers_the_first_three_by_through() {
     let (sim, nodes, ida, jon) = new_friends(97).await;
+    fourth_ack_covers_the_first_three(&sim, &nodes, &ida, &jon).await;
+}
+
+/// Live A/B finding 77: after a removal and a new friendship, Ida's new
+/// chain's first hints step Jon's cursor and her new `StreamRecord` does
+/// not put it back, so his fourth ack's `through` settles all four (at
+/// f0e141f8 the old reset held hint 3 past a gap at cursor 0).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_refriended_peers_new_chain_steps_the_cursor_from_its_first_hint() {
+    let (sim, nodes, ida, jon) = new_friends(97).await;
+    talk(&sim, &nodes[0], &nodes[1], "before").await;
+    talk(&sim, &nodes[0], &nodes[1], "and again").await;
+    nodes[0]
+        .ok(IpcRequest::FriendRemove {
+            public_key: jon.clone(),
+        })
+        .await;
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            !is_accepted_friend(&nodes[1], &ida).await
+        })
+        .await,
+        "Jon heard of the removal"
+    );
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    fourth_ack_covers_the_first_three(&sim, &nodes, &ida, &jon).await;
+}
+
+/// Jon's DHT is off and his acks of Ida's three messages are lost, so only
+/// his cursor, stepped by their hints (her `StreamRecord` among them), can
+/// settle them: his ack of a fourth carries `through` = 4 and settles all
+/// four before any re-ask.
+async fn fourth_ack_covers_the_first_three(sim: &Netsim, nodes: &[SimNode], ida: &str, jon: &str) {
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: true,
@@ -114,7 +150,7 @@ async fn a_new_friendships_fourth_ack_covers_the_first_three_by_through() {
     });
     let started = tokio::time::Instant::now();
     for body in BODIES {
-        send(&nodes[0], &jon, body).await;
+        send(&nodes[0], jon, body).await;
     }
     for body in BODIES {
         assert!(
@@ -130,16 +166,16 @@ async fn a_new_friendships_fourth_ack_covers_the_first_three_by_through() {
         node: 1,
         per_mille: 0,
     });
-    send(&nodes[0], &jon, "four").await;
+    send(&nodes[0], jon, "four").await;
     let delivered = Some(SendState::Delivered);
     for body in BODIES.into_iter().chain(["four"]) {
         assert!(
             eventually(&sim, SET.min / 2 + ack_window() + MESSAGE.max * 2, || has(
-                &nodes[0], &jon, body, true, delivered
+                &nodes[0], jon, body, true, delivered
             ))
             .await,
             "{body} settled by the fourth's through: {:?}",
-            states(&nodes[0], &jon).await
+            states(&nodes[0], jon).await
         );
     }
     assert!(
