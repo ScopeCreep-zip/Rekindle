@@ -183,3 +183,41 @@ async fn the_community_phase_requests_every_channel() {
     assert_eq!(pending, ["ch-a".to_string(), "ch-b".to_string()].into());
     host.shutdown().await.unwrap();
 }
+
+/// While Invisible the community phase sends nothing: five minutes of
+/// ticks leave no SyncRequest (none is marked pending) and no presence;
+/// the first pass after coming back asks for every channel.
+#[tokio::test(start_paused = true)]
+async fn an_invisible_member_sends_no_sync_request() {
+    use rekindle_types::presence::SessionStatus;
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        c.my_pseudonym_key = Some("me".into());
+        c.channel_log_keys.insert("ch-a".into(), "rec-a".into());
+    }
+    host.ctx
+        .own_presence
+        .set_status(SessionStatus::Invisible)
+        .await;
+    for _ in 0..10 {
+        host.governance().sync_community("c1", &[1, 2, 3]).await;
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+    }
+    assert!(host.ctx.communities.map().read()["c1"]
+        .pending_syncs
+        .is_empty());
+    host.ctx
+        .own_presence
+        .set_status(SessionStatus::Online)
+        .await;
+    host.governance().sync_community("c1", &[1, 2, 3]).await;
+    assert!(host.ctx.communities.map().read()["c1"]
+        .pending_syncs
+        .contains_key("ch-a"));
+    host.shutdown().await.unwrap();
+}

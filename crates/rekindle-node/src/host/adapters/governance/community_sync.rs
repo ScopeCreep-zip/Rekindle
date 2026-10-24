@@ -65,7 +65,11 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
             ticks = tokio::time::interval_at(tokio::time::Instant::now() + TICK, TICK);
         }
         let route = host.our_route_blob_impl();
-        if route.is_empty() {
+        // While our status hides presence the whole phase is silent: a
+        // member that quit sends no presence, no SyncRequest and no key
+        // request, and an Invisible one must not be told apart from it.
+        // The first tick after un-hiding runs the normal catch-up.
+        if route.is_empty() || rekindle_presence::hides_presence(host.ctx.own_presence.status()) {
             continue;
         }
         if !recovered {
@@ -83,22 +87,18 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
 
 /// The wire form of our status in a community `PresenceUpdate` or
 /// `MemberJoined`.
-/// The re-announce of our presence and route, or `None` while our status
-/// hides presence ([`rekindle_presence::hides_presence`]): an Invisible
-/// member sends what a member that quit sends, nothing, so no fresh route
-/// or "offline" beat marks it as running. The channel `SyncRequest`s still
-/// go out: they carry no status and no route.
+/// The re-announce of our presence and route, for a shown status.
 fn presence_announce(
     status: SessionStatus,
     pseudonym_key: String,
     route: &[u8],
-) -> Option<CommunityEnvelope> {
-    (!rekindle_presence::hides_presence(status)).then(|| CommunityEnvelope::PresenceUpdate {
+) -> CommunityEnvelope {
+    CommunityEnvelope::PresenceUpdate {
         pseudonym_key,
         status: status_str(status).to_string(),
         game_info: None,
         route_blob: Some(route.to_vec()),
-    })
+    }
 }
 
 pub(super) fn status_str(status: SessionStatus) -> &'static str {
@@ -129,8 +129,13 @@ impl HostGovernance {
     }
 
     /// One community's phase: our presence and route, then a `SyncRequest`
-    /// per channel since our newest message in it.
+    /// per channel since our newest message in it. Nothing at all while
+    /// our status hides presence ([`rekindle_presence::hides_presence`]).
     pub(crate) async fn sync_community(&self, community_id: &str, route: &[u8]) {
+        let status = self.ctx.own_presence.status();
+        if rekindle_presence::hides_presence(status) {
+            return;
+        }
         let (pseudonym, channels) = {
             let map = self.ctx.communities.map().read();
             let Some(c) = map.get(community_id) else {
@@ -143,12 +148,10 @@ impl HostGovernance {
             channels.sort_unstable();
             (pseudonym, channels)
         };
-        if let Some(presence) = presence_announce(self.ctx.own_presence.status(), pseudonym, route)
-        {
-            if let Err(e) = self.send_to_mesh(community_id, &presence) {
-                tracing::debug!(community = %community_id, error = %e, "presence re-announce not sent");
-                return;
-            }
+        let presence = presence_announce(status, pseudonym, route);
+        if let Err(e) = self.send_to_mesh(community_id, &presence) {
+            tracing::debug!(community = %community_id, error = %e, "presence re-announce not sent");
+            return;
         }
         for channel_id in channels {
             let Some(since) = self.last_channel_timestamp(community_id, &channel_id).await else {
@@ -183,28 +186,6 @@ impl HostGovernance {
                 tracing::warn!(community = %community_id, channel = %channel_id, error = %e, "channel watermark unreadable");
                 None
             }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_hidden_status_announces_nothing() {
-        for status in [SessionStatus::Invisible, SessionStatus::Offline] {
-            assert!(presence_announce(status, "me".into(), &[1]).is_none());
-        }
-        for status in [
-            SessionStatus::Online,
-            SessionStatus::Away,
-            SessionStatus::Busy,
-        ] {
-            assert!(matches!(
-                presence_announce(status, "me".into(), &[1]),
-                Some(CommunityEnvelope::PresenceUpdate { .. })
-            ));
         }
     }
 }
