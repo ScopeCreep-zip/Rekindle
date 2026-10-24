@@ -303,7 +303,7 @@ export type CommunityEvent =
         communityId: string;
         codeHash: string;
         createdBy: string;
-        maxUses: number | null;
+        maxUses: number;
         uses: number;
         expiresAt: number | null;
         createdAt: number;

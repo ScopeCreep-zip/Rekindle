@@ -27,8 +27,9 @@ pub struct CommunityInviteView {
     pub code_hash: String,
     /// The minter's community pseudonym, 64 lowercase hex.
     pub created_by: String,
-    /// `None` is unlimited.
-    pub max_uses: Option<u32>,
+    /// Redemptions allowed, `1..=100`: every reader refuses an invite
+    /// outside it (plan E3.2 (d)), so none is unlimited.
+    pub max_uses: u32,
     /// Redemptions we counted; only the minter counts them, so another
     /// member's invite shows 0.
     pub uses: u32,

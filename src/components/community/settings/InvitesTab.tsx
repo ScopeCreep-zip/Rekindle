@@ -94,7 +94,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
               class="form-input"
               type="number"
               min="1"
-              placeholder="Unlimited"
+              placeholder="1"
               value={maxUses()}
               onInput={(e) => setMaxUses(e.currentTarget.value)}
             />
@@ -162,7 +162,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   })()}
                 </span>
                 <span class="settings-list-date">
-                  Uses: {invite.uses} / {invite.maxUses !== null ? invite.maxUses : "\u221E"}
+                  Uses: {invite.uses} / {invite.maxUses}
                   {" \u00B7 "}
                   Expires: {formatExpiry(invite.expiresAt)}
                   <Show when={invite.expiresAt !== null && invite.expiresAt <= Math.floor(Date.now() / 1000)}>

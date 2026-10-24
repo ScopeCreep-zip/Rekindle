@@ -16,7 +16,7 @@ export async function handleCreateCommunityInvite(
       inviteId: result.inviteId,
       codeHash: result.codeHash,
       createdBy: authState.publicKey ?? "",
-      maxUses: maxUses ?? null,
+      maxUses: maxUses ?? 1, // the shell mints an empty field single-use
       uses: 0,
       expiresAt: result.expiresAt,
       createdAt: Date.now(),

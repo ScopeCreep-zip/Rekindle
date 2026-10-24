@@ -79,7 +79,8 @@ pub enum GovernanceEvent {
         invite_id: String,
         code_hash: String,
         created_by: String,
-        max_uses: Option<u32>,
+        /// Redemptions allowed, `1..=100` (plan E3.2 (d)).
+        max_uses: u32,
         uses: u32,
         expires_at: Option<u64>,
         created_at: u64,

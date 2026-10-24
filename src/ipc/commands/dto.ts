@@ -42,7 +42,7 @@ export interface InviteDto {
   inviteId: string;
   codeHash: string;
   createdBy: string;
-  maxUses: number | null;
+  maxUses: number;
   /** Counted only by the minter. */
   uses: number;
   /** Unix seconds. */
