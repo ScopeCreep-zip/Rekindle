@@ -30,7 +30,8 @@ impl PeerTarget {
 /// chosen for latency, never substituted by the general route (r6 R-NET2);
 /// `Sending` the safety route our 1:1 calls are pinned to, which is also
 /// their answers' reply route (plan E4.3 RH2, built at RH1r). Its blob is
-/// never handed to a peer.
+/// never published, but Veilid hands it to every callee as the reply
+/// route, the same for every peer we call while it lives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RouteClass {
     General,

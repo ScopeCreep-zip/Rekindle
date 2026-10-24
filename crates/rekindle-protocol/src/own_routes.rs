@@ -32,10 +32,14 @@ use rekindle_types::config::ANONYMITY_HOP_FLOOR;
 /// LowLatency, PreferUnordered. `new_custom_private_route` allocates it
 /// `DirectionSet::all()` and marks it published (`api.rs:437-467`), so it
 /// serves as a safety route and Veilid retests it
-/// (`private_route_management.rs:105-107`); its blob is never handed to a
-/// peer. A call pinned to it (`SafetySpec.preferred_route`) takes it first
-/// (`route_select.rs:124-152`), and its answer comes back over it
-/// (`rpc_processor/destination.rs:477-497`).
+/// (`private_route_management.rs:105-107`). We never publish its blob,
+/// but every callee receives it: a call pinned to it
+/// (`SafetySpec.preferred_route`) takes it first
+/// (`route_select.rs:124-152`), and Veilid assembles the same route as
+/// the call's `RespondTo` reply route (`rpc_processor/destination.rs:466-508`),
+/// so its answer comes back over it. Every peer we call while it lives
+/// holds the same blob, so two callees can link their calls to one sender
+/// route (threat model L2).
 pub fn sending_private_spec() -> veilid_core::PrivateSpec {
     veilid_core::PrivateSpec {
         // Empty = all available crypto kinds, as the default does.
