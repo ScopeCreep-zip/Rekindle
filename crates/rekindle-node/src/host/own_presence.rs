@@ -26,6 +26,8 @@ use rekindle_types::subscription_events::{
 /// How long the teardown waits for the Offline write; the write itself runs
 /// on (Signal Desktop bounds its shutdown queue drain the same way).
 const OFFLINE_WRITE_WAIT: Duration = Duration::from_secs(10);
+/// How often a failed status-message or game write is tried again.
+const DETAILS_RETRY: Duration = Duration::from_secs(15);
 
 /// The game we are playing.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,12 +65,40 @@ impl State {
     }
 }
 
+/// What one profile subkey was last written with.
+#[derive(Debug, Default)]
+enum Written<T> {
+    /// Not known: a new unlock, or a write that failed.
+    #[default]
+    Unknown,
+    Is(T),
+}
+
+impl<T: PartialEq> Written<T> {
+    fn is(&self, value: &T) -> bool {
+        matches!(self, Self::Is(written) if written == value)
+    }
+}
+
+/// The status message and the game (as shown: `None` while hidden) last
+/// written to the profile.
+#[derive(Debug, Default)]
+struct Published {
+    message: Written<Vec<u8>>,
+    game: Written<Option<Game>>,
+}
+
 /// Our presence and what it needs to publish itself. Cloned into the
 /// unlock's tasks (the publisher, the idle and game stages).
 #[derive(Clone)]
 pub(crate) struct OwnPresence {
     state: Arc<RwLock<State>>,
     wake: Arc<tokio::sync::Notify>,
+    /// The one writer of the status message and game: held across each
+    /// write, which computes its bytes from the state once it holds it.
+    details: Arc<tokio::sync::Mutex<Published>>,
+    /// A details write failed: the retry task writes again.
+    details_pending: Arc<std::sync::atomic::AtomicBool>,
     session: Arc<RwLock<Option<Session>>>,
     transport: Option<Arc<TransportNode>>,
     journal: Arc<rekindle_events::SessionJournal>,
@@ -85,6 +115,8 @@ impl OwnPresence {
         Self {
             state: Arc::new(RwLock::new(State::unlocked())),
             wake: Arc::new(tokio::sync::Notify::new()),
+            details: Arc::new(tokio::sync::Mutex::new(Published::default())),
+            details_pending: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             session,
             transport,
             journal,
@@ -102,11 +134,18 @@ impl OwnPresence {
     /// publisher in `scope`.
     pub(crate) fn start(&self, scope: &Arc<rekindle_lifecycle::SessionScope>) {
         *self.state.write() = State::unlocked();
+        if let Ok(mut published) = self.details.try_lock() {
+            *published = Published::default();
+        }
         if self.transport.is_some() {
             let deps = Arc::new(self.clone());
             let wake = Arc::clone(&self.wake);
             scope.spawn_with_token_or_drop("status publisher", move |stop| {
                 rekindle_presence::run_status_publisher(deps, wake, stop)
+            });
+            let this = self.clone();
+            scope.spawn_with_token_or_drop("presence details retry", move |stop| async move {
+                this.retry_details(stop).await;
             });
         }
         self.changed();
@@ -135,19 +174,63 @@ impl OwnPresence {
         };
         self.changed();
         if flipped {
-            self.write_details().await;
+            if let Err(e) = self.write_details(false).await {
+                tracing::warn!(error = %e, "presence details not rewritten for the status; retrying");
+            }
         }
     }
 
-    /// Write the status message and the game as the status now shows them.
-    async fn write_details(&self) {
+    /// Write the status message and the game as the state now shows them,
+    /// each only if it differs from what was last written (`force_game`
+    /// writes the game anyway: a reseal). One writer at a time, reading the
+    /// state once it holds the lock, so the last write always matches the
+    /// latest status; a failure is retried by [`Self::retry_details`].
+    async fn write_details(&self, force_game: bool) -> Result<(), String> {
+        let mut published = self.details.lock().await;
         let message = self.published_message();
-        if let Err(e) = self.write_profile(subkeys::STATUS_MESSAGE, message).await {
-            tracing::warn!(error = %e, "status message not rewritten for the status");
+        let mut result = Ok(());
+        if !published.message.is(&message) {
+            published.message = Written::Unknown;
+            match self
+                .write_profile(subkeys::STATUS_MESSAGE, message.clone())
+                .await
+            {
+                Ok(()) => published.message = Written::Is(message),
+                Err(e) => result = Err(e),
+            }
         }
-        let game = self.state.read().game.clone();
-        if let Err(e) = self.write_game(game).await {
-            tracing::warn!(error = %e, "game info not rewritten for the status");
+        let game = {
+            let state = self.state.read();
+            state.game.clone().filter(|_| !hides_details(state.status))
+        };
+        if force_game || !published.game.is(&game) {
+            published.game = Written::Unknown;
+            match self.write_game(game.as_ref()).await {
+                Ok(()) => published.game = Written::Is(game),
+                Err(e) => result = result.and(Err(e)),
+            }
+        }
+        self.details_pending
+            .store(result.is_err(), std::sync::atomic::Ordering::SeqCst);
+        result
+    }
+
+    /// Write the details again every [`DETAILS_RETRY`] while a write
+    /// failed, until `stop`.
+    async fn retry_details(&self, stop: tokio_util::sync::CancellationToken) {
+        loop {
+            tokio::select! {
+                () = stop.cancelled() => return,
+                () = tokio::time::sleep(DETAILS_RETRY) => {}
+            }
+            if self
+                .details_pending
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                if let Err(e) = self.write_details(false).await {
+                    tracing::debug!(error = %e, "presence details still not written; retrying");
+                }
+            }
         }
     }
 
@@ -169,8 +252,7 @@ impl OwnPresence {
     pub(crate) async fn set_message(&self, message: String) -> Result<(), String> {
         self.state.write().message.clone_from(&message);
         self.changed();
-        self.write_profile(subkeys::STATUS_MESSAGE, self.published_message())
-            .await
+        self.write_details(false).await
     }
 
     /// The game we play, or none: written to profile subkey 4 as the
@@ -183,7 +265,7 @@ impl OwnPresence {
     pub(crate) async fn set_game(&self, game: Option<Game>) -> Result<(), String> {
         self.state.write().game.clone_from(&game);
         self.changed();
-        self.write_game(game).await
+        self.write_details(false).await
     }
 
     /// Our presence key moved to a new epoch: STATUS and GAME_INFO are
@@ -191,22 +273,21 @@ impl OwnPresence {
     /// read them.
     pub(crate) async fn reseal(&self) {
         self.republish();
-        let game = self.state.read().game.clone();
-        if let Err(e) = self.write_game(game).await {
-            tracing::warn!(error = %e, "game info not resealed");
+        if let Err(e) = self.write_details(true).await {
+            tracing::warn!(error = %e, "game info not resealed; retrying");
         }
     }
 
-    async fn write_game(&self, game: Option<Game>) -> Result<(), String> {
-        let shown = game.filter(|_| !hides_details(self.status()));
+    /// Write `shown` (the game as the status shows it) to GAME_INFO, sealed.
+    async fn write_game(&self, shown: Option<&Game>) -> Result<(), String> {
         let bytes = shown.map_or_else(Vec::new, |game| {
             rekindle_codec::capnp_codec::presence::encode_game_status(
                 &rekindle_codec::capnp_codec::presence::GameInfo {
                     game_id: game.id,
                     game_name: game.name.clone(),
                     server_info: game.server_info.clone(),
-                    elapsed_seconds: self.elapsed_seconds(&game),
-                    server_address: game.server_address.map(String::from),
+                    elapsed_seconds: self.elapsed_seconds(game),
+                    server_address: game.server_address.clone().map(String::from),
                 },
             )
         });
@@ -297,9 +378,15 @@ impl OwnPresence {
             state.status = SessionStatus::Offline;
             flipped
         };
+        if !flipped {
+            // Already Invisible or Offline: that offline STATUS was written
+            // once, and a second write at quit would set Invisible apart
+            // from a real Offline.
+            return;
+        }
         let details = async {
-            if flipped {
-                self.write_details().await;
+            if let Err(e) = self.write_details(false).await {
+                tracing::warn!(error = %e, "presence details not cleared at the lock");
             }
         };
         let status =
@@ -388,7 +475,7 @@ impl OwnPresence {
 /// Whether `status` shows no status message and no game to friends:
 /// Invisible (which peers read as offline) and Offline.
 fn hides_details(status: SessionStatus) -> bool {
-    matches!(status, SessionStatus::Invisible | SessionStatus::Offline)
+    rekindle_presence::hides_presence(status)
 }
 
 #[async_trait]
