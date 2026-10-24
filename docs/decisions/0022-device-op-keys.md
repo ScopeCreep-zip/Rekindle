@@ -12,7 +12,12 @@
   may co-sign a new key after a fork (rule 7), a device checks for its own retirement and ops above a `lastSeq`
   are quarantined and shown, not dropped (rules 4 and 5), cards and beats are judged on the reader's converged
   set (rule 3), known ring peers that do not answer leave writes pending (rule 4), the MSC4153/MSC4312 citations
-  (rule 0) and Signal's pinned cap line (rule 6).
+  (rule 0) and Signal's pinned cap line (rule 6). Amended 2026-10-24 (prod research batch 10), still Proposed:
+  a device detects a copy of its data root itself, a `DeviceRetired` retires the key for every copy and each
+  re-enrols with every copied per-device secret replaced (rule 4), readers never prefer the last writer (rule 5),
+  forks count per device key, only pre-fork keys co-sign an own-key `DeviceReadmit`, at most one per checkpoint
+  interval and shown to the member's devices and `KICK_MEMBERS` holders, and retiring a key does not retire the
+  keys it co-signed (rule 7).
 - **Date:** 2026-10-24
 - **Amends:** [0011](0011-member-sovereign-records.md) and plan D15, their rule that the member's pseudonym signs
   its own op log. The record owner does not change: `M(p)` stays owned by the random key `K_M(p)` that only the
@@ -139,20 +144,46 @@ as today's does.
    lost-device retirement: both are `p`-signed): a later restore, fork or new device of that member needs a
    co-signer. A device also signs seq n + 1 only after seq n's append to `M(p,d)`/2 has landed, so no
    gossip-only op is ever the head.
-   **A copied data root** leaves the original device running under the same `d` while the copy retires it. So
-   every device checks the endorsement set for a `DeviceRetired` of its own `d` before each sign and on every
-   `ValueChange` of its member set. On finding one it stops signing under `d`, shows the visible state "this
-   device's key was retired by another copy of this data", and gets a new key through rule 7 (its own other
-   effective device key, the copy's new one, can co-sign). The race is stated: when the original publishes seq
-   n + 1 after the copy read n and retired `d` at `lastSeq = n`, that op is quarantined and shown (rule 5), not
-   lost, and its author re-signs it under the new key.
+   **A copied data root** leaves two devices running under the same `d` (*amended 2026-10-24, prod research batch
+   10*):
+   - **Self-detection.** Each device keeps its local signed log of the ops it wrote under `d` and checks against
+     it every op of `d` it ingests (gossip, the DAG fetch, the barrier's frontier walk) and every `ValueChange` of
+     its own `M(p,d)`/2. An op signed by `d` that it did not write (a seq or hash it holds no record of) is a
+     clone signal: the device stops signing under `d` and has `p` sign `DeviceRetired{d, incarnation, lastSeq =
+     its own local head}` itself, without waiting for the other copy (the evidence every clone detector studied
+     keys on: Matrix's duplicate one-time key, Signal's 4409, Tailscale Tailnet Lock's rotation tie). This feeds
+     the check below.
+   - **The check before signing.** Every device checks the endorsement set for a `DeviceRetired` of its own `d`
+     before each sign and on every `ValueChange` of its member set. On finding one it stops signing under `d` and
+     shows the visible state "this device's key was retired by another copy of this data".
+   - **Retired for every holder.** A `DeviceRetired` retires `d` for every copy; no copy keeps it, so the copies
+     cannot displace each other (Signal's 4409 ping-pong, Tailscale DERP's last-writer flapping), and **each**
+     copy re-enrols with a fresh key, its co-signer per rule 7. The whole data root was copied, so a clone signal
+     in one community retires the device's key in every community it holds.
+   - **Every copied per-device secret is replaced**, not only the op key (Tailscale's `--force-reauth` leaves the
+     shared machine key): the per-community device keys and their `K_M(p,d)` records, the device's DM and ratchet
+     state (its E2.4 prekey record and ratchet sessions, re-established through the prompt-first path, never
+     silently) and its sync device state (the E5.3 device root key, `identity.device_id` and its DeviceList
+     entry). The master secret and the pseudonyms stay shared by design (rule 0), so this is not theft recovery.
+   - **The race is stated:** ops either copy signed above `lastSeq` are quarantined and shown (rule 5), not lost,
+     and their author re-sends them under the new key.
+   - Wrapping the device op key in the OS keystore, non-exportable where the platform allows, would make a copied
+     data root fail closed at start (Tailscale `--encrypt-state`); it is a platform lead for plan E5.3, with its
+     verification step there, not a rule here. The same-machine instance lock stays as a separate guard against
+     two processes on one data root and is not the defence (matrix-rust-sdk's cross-process store lock and
+     Element's `SessionLock` cover one store only).
 5. **A fork retires the device key, not the person.** Two different ops at one `(device key, seq)` are fork
    evidence, and its hash is `BLAKE3 derive_key("rekindle-gov-fork-evidence-v1")` over `community ‖ device key ‖
    seq ‖` the two op hashes in byte order. The evidence retires that device key. Ops of that key below the fork seq
    stay valid and stay in the converged state (CT keeps pre-retirement SCTs); both conflicting ops and every later
    op of that key are quarantined. An op above a `DeviceRetired`'s `lastSeq` is never applied and never counted as
    an equivocation; it is quarantined with a visible reason and never dropped silently (plan D15's quarantine
-   rule), so a copied data root's race (rule 4) stays visible. A replay of the same op is idempotent and never counts. The person is not muted:
+   rule), so a copied data root's race (rule 4) stays visible. Readers never prefer the last writer of `d`
+   (*amended 2026-10-24, prod research batch 10*): when the set holds more than one `DeviceRetired` for one key,
+   the lowest `lastSeq` counts; two different ops of `d` at one seq at or below it are shown as an equivocation
+   pair (fork evidence, above), and every op of `d` above it, from either copy, is quarantined and shown (Tailnet
+   Lock rejects both clones on a tie). The author's re-enrolled device offers "re-send under new key" for its own
+   quarantined ops; nothing inbound is lost, since records are not consumed on read. A replay of the same op is idempotent and never counts. The person is not muted:
    their other effective device keys keep working (until a second fork, rule 7), and they are shown as having a
    forked device (rule 9).
 6. **Device cap, judged at each op's causal deps.** A member has at most **6** effective device keys in total,
@@ -170,14 +201,42 @@ as today's does.
 7. **One fork per member.** After a member's first fork (fork evidence for any of its device keys, or any
    `DeviceRetired`, rule 4) in an op's deps, every new endorsement for that member becomes effective only together
    with a converged `DeviceReadmit{member, memberRecord, newKey, incarnation, forkEvidence}` op that names it,
-   co-signed by **either** a `KICK_MEMBERS` holder who outranks the member (rule 8) **or** any of the member's own
-   device keys that is effective at that `DeviceReadmit`'s causal deps (Signal's precedent: an existing device
-   approves a link). The own-key path gives creators and top-rank members, whom nobody outranks, a way to add a
-   device while they still hold one effective key. A **second** fork from any of that member's keys, pre-endorsed ones included, retires **all** its keys until a
-   co-signed `DeviceReadmit`, so pre-endorsing keys buys at most one fork. Exempt from the co-signer is only the
-   replacement key that the member's first `DeviceRetired` is carried with (rule 4's restore, one op carrying both).
-   A later `DeviceRetired` retires only its own key, but its replacement needs a co-signer. A self-signed reset is
-   evidence shown to the co-signer, never a key on its own (Keybase re-add, Autobase `addWriter`).
+   co-signed by **either** a `KICK_MEMBERS` holder who outranks the member (rule 8) **or** one of the member's own
+   device keys that is effective at that `DeviceReadmit`'s causal deps and was endorsed before the member's first
+   fork (Signal's precedent: an existing device approves a link). Forks are counted per device key: fork evidence
+   and any number of `DeviceRetired`s for one key, such as both copies of a copied data root retiring it (rule 4),
+   are one fork. The own-key path gives creators and top-rank members, whom nobody outranks, a way to add a device
+   while they still hold a pre-fork key. It is bounded (*amended 2026-10-24, prod research batch 10*):
+   - **Pre-fork keys only.** The co-signer's endorsement must be in the causal past of the member's first fork
+     evidence or `DeviceRetired`. A key endorsed after it, a re-admitted key or the exempt replacement below
+     included, can never co-sign an own-key `DeviceReadmit`, so approvals do not chain (Signal: only the primary
+     approves a link, `DeviceController.java` L204-206; Apple: a newly added trusted device waits before it can
+     make critical changes).
+   - **One per checkpoint interval.** At most one own-key `DeviceReadmit` per member counts per checkpoint
+     interval, the span between two consecutive checkpoints of plan E3.2 S7c (a deterministic function of a stable
+     causal cut, strict-majority endorsed per ADR 0018). Of a member's own-key readmits whose deps hold the same
+     latest checkpoint, only the lowest `(lamport, op_hash)` counts and the others are inert; the device asks
+     again after the next checkpoint. This adapts Signal's per-account link bucket (`RateLimiters.java` L28-29, 6
+     refilled one per 2 min) to causal order, a Rekindle choice from that source. The moderator path has no such
+     limit, since a person outside the member decides it.
+   - **Shown.** Every own-key `DeviceReadmit` raises a notice on all of the member's devices and to members
+     holding `KICK_MEMBERS`, naming the co-signing key and the fork evidence (Matrix MSC4153: the user's own
+     devices MUST alert; Apple sends the request to every trusted device).
+
+   A **second** fork from any of that member's keys, pre-endorsed ones included, retires **all** its keys, after
+   which only the moderator path (rule 8) remains, or, for a creator, a `CommunitySuccessor`; so pre-endorsing keys
+   buys at most one fork. Exempt from the co-signer is only the replacement key that the member's first
+   `DeviceRetired` is carried with (rule 4's restore or clone signal, one op carrying both). When an op's deps hold
+   two carriers of a `DeviceRetired` for that first retired key (two copies retiring it concurrently), the exempt
+   replacement is the one in the lowest `(lamport, op_hash)` carrier, and the other copy's replacement needs a
+   `DeviceReadmit` for every op whose deps hold both (ops already judged stay judged, rule 6). A later
+   `DeviceRetired` retires only its own key, but its replacement needs a co-signer. A self-signed reset is
+   evidence shown to the co-signer, never a key on its own (Keybase re-add, Autobase `addWriter`). Retiring a key
+   does **not** retire the keys it co-signed (Keybase revokes only the named key, `keyfamily.go` L752-810, and
+   effectiveness judged at causal deps gives the same): a co-signee of a key later found compromised needs its own
+   `DeviceRetired` or a moderator's review, and the retire and review screens list the keys it co-signed. Rule 7
+   is not theft protection: a thief holding the master secret satisfies the own-key path, and theft recovery is
+   rule 0's identity reset.
 8. **Re-admission follows the kick rule** when the member has no effective device key left (every key retired),
    and whenever another member co-signs. That `DeviceReadmit` must be authored by another member's effective
    device key whose member holds `KICK_MEMBERS` and **outranks the target's highest role** in the MSC4289 hierarchy
@@ -246,12 +305,18 @@ as today's does.
   judges it by `p`'s signature and never refuses it on its carrier's standing. Only `p` can retire, so this is
   harmless.
 - Restores count against the one-fork rule (rule 7): an honest user's first restore is free, but after it every
-  new device, and any second restore, needs a co-signer: one of the member's own effective device keys (as a
-  Signal device approves a link) or a `KICK_MEMBERS` holder who outranks the member. A second fork retires all
+  new device, and any second restore, needs a co-signer: one of the member's own pre-fork device keys (as a
+  Signal device approves a link), at most once per checkpoint interval and shown to the member's devices and to
+  `KICK_MEMBERS` holders, or a `KICK_MEMBERS` holder who outranks the member. A second fork retires all
   the member's keys, and then only the rank path (rule 8) or, for a creator, `CommunitySuccessor` remains. That
-  is the cost of bounding equivocation to one fork per member without an unsourced rate window.
-- A device whose key another copy of its data root retired stops signing and shows so (rule 4); an op it
-  signed above `lastSeq` is quarantined and shown, and its author re-signs it under the new key.
+  is the cost of bounding equivocation to one fork per member; the only rate window is the own-key readmit's,
+  adapted from Signal's link bucket (*amended 2026-10-24, prod research batch 10*). A member whose data root was
+  copied and who has no other pre-fork key keeps one copy on the exempt replacement; the other copy re-enrols
+  through the rank path, and a sole creator's second copy stays unable to sign in that community.
+- A copied data root is caught by either copy, seeing an op under its own key that it did not write, or by the
+  check before signing (rule 4). The key is retired for both copies and each re-enrols with every copied
+  per-device secret replaced; ops above `lastSeq` are quarantined and shown, and their author re-sends them
+  under the new key.
 - A device signs seq n + 1 only after seq n's append landed (rule 4), so its governance writes are serialized
   behind DHT landing: two quick admin actions from one device are at least one DHT set apart, on top of S6b's
   landed-path command deadline. This latency is the price of never having a gossip-only head.
@@ -273,6 +338,29 @@ as today's does.
   research batch 3
 - Signal-Server `AccountsManager.java` L204 at commit `8edf3488f7d97398db7ffa5184c6b769a272ff59`, `MAX_DEVICES`
   (rule 6); prod research batch 7, 2026-10-24
+- Prod research batch 10, 2026-10-24 (copied data root, rules 4 and 5; re-admission, rule 7):
+  - Signal-Server at `8edf3488f7d97398db7ffa5184c6b769a272ff59`: `controllers/DeviceController.java` L204-206
+    (only the primary creates a link token), `limits/RateLimiters.java` L28-29 (`AllocateDeviceLimiter` and
+    `VerifyDeviceLimiter`, a bucket of 6 refilled one per 2 min), `websocket/WebSocketConnection.java` L147-154
+    (close 4409 "Connected elsewhere"), `websocket/WebSocketDisconnectionRequestListener.java` L28-32 (close 4401
+    "Reauthentication required"); Signal-Desktop at `17502b9d1a9e34af689f31508c4ac4ccee5b5cb7`
+    `ts/textsecure/SocketManager.preload.ts` L389-393 (no reconnect after 4409); libsignal at
+    `fc90b90fa2b9c37822fa47ba0e0dcdf387a0c071` `rust/net/src/chat/ws.rs` L140-146 (`ConnectedElsewhere`)
+  - Tailscale at `a6cffd0a6d11ef8aa3a0ca0ddc15879d0845605d`: `derp/derpserver/derpserver.go` L110-117, L262-273,
+    L1883-1910 (duplicate clients, `lastWriterIsActive` and `disableFighters`), `ipn/ipnlocal/tailnet-lock.go`
+    L253-260, L314-334 (`rotationTracker`, both clones rejected on a tie), `ipn/ipnlocal/local.go` L4604-4611,
+    L8628-8637 (`--force-reauth` keeps the machine key), `cmd/tailscaled/tailscaled.go` L220, L237-240
+    (`--encrypt-state`, `--hardware-attestation`); wireguard-go at `2631ce99a06f27120d581611cf125d68bc6aa565`
+    `device/receive.go` L374 and `device/noise-protocol.go` L686-704 (endpoint and keypair flapping)
+  - matrix-rust-sdk at `8de215a0aa0026afa5754ae5f05a6d168d1a1d60` `crates/matrix-sdk/src/encryption/mod.rs`
+    L531-540, L825-880 (duplicate one-time key) and L2010-2091 (cross-process store lock); Element Web at
+    `15f63d5959697796e9d30d507e75513b6c97e34f` `apps/web/src/utils/SessionLock.ts` L10-29
+  - Keybase client at `d87bde33c55dfa49ba47d95f15a745b87a97526d`: `go/libkb/keyfamily.go` L752-810, L917-939
+    (revoking a device revokes only its own keys), `go/engine/kex2_provisioner.go` L336-380 (any sibkey provisions)
+  - Apple Stolen Device Protection, https://support.apple.com/en-us/120340 (adding or removing a trusted device
+    away from familiar locations needs Face ID or Touch ID and an hour's wait), and
+    https://support.apple.com/en-us/122621 (a newly added trusted device waits before critical changes), both
+    retrieved 2026-10-24
 - Threat model L1, I8, I14, Z2, Z9; rows S6, T7, E6, E7 (added with this ADR)
 - Register `audit-2026-10-23/00-register.md`, "Decided 2026-10-24 from the research", item Q7
 - Reviews, 2026-10-24, held outside the repo: of the first draft (record owner, endorser, endorsement set,

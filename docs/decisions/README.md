@@ -26,7 +26,7 @@ filename is `NNNN-short-title.md`.
 | [0012](0012-community-keys-stay-on-mek.md) | Community channel keys stay on MEK + deterministic rotator (MLS re-evaluated) | Accepted (re-affirms 0002); rotator clause amended by 0018 (every bump, 2026-10-22). Governs channel **text**; call media is 0016 |
 | [0013](0013-per-window-event-router.md) | Typed webview events delivered per window, no Tauri `Emitter` | Accepted (supersedes 0007 delivery and replay) |
 | [0014](0014-veilid-boundary-is-transitive.md) | The Veilid boundary is transitive | Accepted (supersedes the 0001 and 0009 boundary sentences) |
-| [0015](0015-media-engine.md) | Media engine: one Rust engine built from ported production components | Accepted (ruling Q5, Option F). Erratum: the "Decision outcome" heading still reads "(proposed)"; accepted 2026-10-07 |
+| [0015](0015-media-engine.md) | Media engine: one Rust engine built from ported production components | Accepted (ruling Q5, Option F). Erratum: the "Decision outcome" heading still reads "(proposed)"; accepted 2026-10-07; amended 2026-10-24 (Q8: keyframe requests per TS 26.114) |
 | [0016](0016-sender-owned-call-media-keys.md) | Call media is keyed by sender-owned keys (RFC 9605 §5.1) | Accepted (ruling Q4, 2026-10-15) |
 | [0017](0017-veilid-fork.md) | veilid-core is built from a minimal pinned fork until upstream carries our fixes | Accepted (amends 0001; ruling O4) |
 | [0018](0018-mek-rotation-ballots.md) | MEK generation bumps are agreed by write-once ballots and majority confirmation | Accepted (amends the 0012 rotator clause; ruling O5); amended 2026-10-22 (Q7: every bump of either scope, not only after a removal) and 2026-10-24 (sends held during a rotation after a removal; round and quorum rules; RFC 9750 §8.1.4 citation) |
@@ -34,6 +34,7 @@ filename is `NNNN-short-title.md`.
 | [0020](0020-domain-logic-in-host-and-tier-crates.md) | Domain logic lives in tier crates and the Host; `src-tauri` is a frontend | Accepted (supersedes 0008) |
 | [0021](0021-record-pool-crate.md) | The record pool is its own Veilid-free crate; `rekindle-protocol` keeps its Veilid backend | Accepted (amends 0014) |
 | [0022](0022-device-op-keys.md) | Governance ops are signed by per-community device keys the community pseudonym endorses | Proposed (amends 0011 and D15: restored devices mint a new device key; a fork retires the device key, not the person; one `M(p,d)` per device) |
+| [0023](0023-mobile-in-process-host.md) | Mobile keeps the Host in-process permanently | Accepted (amends 0010 for mobile; Q9, decided from research 2026-10-24) |
 
 ## How to write a new ADR
 

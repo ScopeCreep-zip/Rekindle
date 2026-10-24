@@ -4,6 +4,8 @@
   C2 of the standards-remediation plan lands, the condition ADR-0005 set)
 - **Date:** 2026-10-04
 - **Supersedes:** the "Future direction" section of [0005](0005-daemon-cli-track.md)
+- **Amended by:** [0023](0023-mobile-in-process-host.md), 2026-10-24: migration step 4 applies to the desktop GUI;
+  mobile keeps the Host in-process permanently
 
 ## Context and problem statement
 

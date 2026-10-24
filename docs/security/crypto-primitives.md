@@ -26,7 +26,7 @@ which primitives address which threats.
 | Tamper-evident audit MAC | **BLAKE3-keyed** | `blake3` (via `rekindle-audit`) |
 | 1:1 messaging | **Signal Protocol** (PQXDH rev. 3 with X25519 + ML-KEM-768, + Double Ratchet) | spec implementation in `rekindle-crypto` (`signal/`) |
 | 1:1 message cipher (Double Ratchet `ENCRYPT`) | **AES-256-CBC + HMAC-SHA256** (DR rev. 4 §7.2, 128-bit tag) | `aes`, `cbc`, `hmac` (in `rekindle-crypto::signal::dr`) |
-| Safety numbers | **SHA-512**, 5200 iterations per side (libsignal's format) | `sha2` (in `rekindle-crypto::fingerprint`) |
+| Safety numbers | **SHA-512**, 5200 iterations per side (Signal's safety-number scheme) | `sha2` (in `rekindle-crypto::fingerprint`) |
 | Pre-session 1:1 frames | **HPKE Base** (RFC 9180) + Ed25519 signature | `rekindle-secrets::hpke` |
 | Hash / KDF / dedup | **SHA-256** | `sha2` |
 | Hash (rotator selection, content addressing, replay ids, base-key hash, file-cache names, vault key split, governance fork evidence, restore evidence and device-set hashes) | **BLAKE3** | `blake3` |
@@ -201,7 +201,7 @@ ongoing per-message forward and backward secrecy. Pre-session kinds
 (friend request and reject, `PreKeyRejected`, session reset request and
 decline, push-relay kinds) use HPKE Base to the recipient's X25519 key plus an Ed25519
 signature over `DM_PRESESSION_SIG ‖ recipient ‖ typeId ‖ enc ‖ ciphertext`
-(`rekindle-secrets::hpke`). Safety numbers are libsignal's 60-digit and
+(`rekindle-secrets::hpke`). Safety numbers are Signal's 60-digit and
 scannable format: 5200 iterations of SHA-512 per side
 (`rekindle-crypto::fingerprint`).
 
@@ -335,6 +335,10 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   ‖ deviceKey ‖ incarnation ‖ lastSeq ‖` the published `GovHead` op hash;
   the extended-set hash under `rekindle-gov-device-set-v1` over the sorted
   ids `(kind, deviceKey, incarnation)` of the member's endorsement set.
+- **MekTransfer ack tag** (plan E3.5; prod research batch 11, decided 2026-10-24): `ack_tag` is keyed BLAKE3 under
+  `derive_key("rekindle-mek-ack-v1", MEK_G)` over `community ‖ scope ‖ generation ‖ transfer_id ‖ inviter ‖
+  joiner`, a key-confirmation MAC after MLS `confirmation_tag` (RFC 9420 §12.4.3), compared in constant time; no
+  signature, for deniability.
 - **Content addressing** in places where we want speed and a wider
   output range (32-byte BLAKE3 vs 32-byte SHA-256, but BLAKE3 is
   variable-length-output friendly without the truncation patterns
