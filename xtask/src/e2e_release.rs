@@ -96,6 +96,42 @@ fn feature_problems(meta: &crate::cargo_meta::Metadata) -> Vec<String> {
     problems
 }
 
+/// The bundle entries of `conf` (`tauri.conf.json`) that ship the bridge:
+/// any `bundle.externalBin` path or `bundle.resources` source or target
+/// (a list, or a map of source to target) naming one of its binaries
+/// `bins` (with `-` or `_`), the crate or its directory.
+fn bundle_problems(conf: &serde_json::Value, bins: &[String]) -> Vec<String> {
+    let mut needles: Vec<String> = vec![CRATE.to_owned(), format!("crates/{CRATE}")];
+    for bin in bins {
+        needles.push(bin.clone());
+        needles.push(bin.replace('-', "_"));
+    }
+    let bundle = &conf["bundle"];
+    let mut entries: Vec<&str> = Vec::new();
+    for key in ["externalBin", "resources"] {
+        match &bundle[key] {
+            serde_json::Value::Array(items) => {
+                entries.extend(items.iter().filter_map(serde_json::Value::as_str));
+            }
+            serde_json::Value::Object(map) => {
+                for (source, target) in map {
+                    entries.push(source);
+                    entries.extend(target.as_str());
+                }
+            }
+            _ => {}
+        }
+    }
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let entry = entry.replace('\\', "/");
+            needles.iter().any(|n| entry.contains(n.as_str()))
+        })
+        .map(|entry| format!("src-tauri/tauri.conf.json bundles the E2E bridge ({entry})"))
+        .collect()
+}
+
 /// A `[workspace.dependencies]` entry naming the bridge, by key or by
 /// `package =`.
 fn workspace_names_bridge(manifest: &toml_edit::DocumentMut) -> bool {
@@ -156,6 +192,7 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
     if publish.and_then(toml_edit::Item::as_bool) != Some(false) {
         problems.push(format!("crates/{CRATE}/Cargo.toml lacks publish = false"));
     }
+    let meta = crate::cargo_meta::Metadata::load(root)?;
     let workspace = read_manifest(&root.join("Cargo.toml"))?;
     let default_members = workspace
         .get("workspace")
@@ -170,13 +207,24 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
     if workspace_names_bridge(&workspace) {
         problems.push(format!("the root [workspace.dependencies] names {CRATE}"));
     }
-    let meta = crate::cargo_meta::Metadata::load(root)?;
     problems.extend(graph_problems(&meta));
     problems.extend(feature_problems(&meta));
-    let conf = std::fs::read_to_string(root.join("src-tauri/tauri.conf.json")).unwrap_or_default();
-    if conf.contains("e2e-server") || conf.contains("e2e_server") {
-        problems.push("src-tauri/tauri.conf.json bundles the e2e server".to_owned());
-    }
+    let conf: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("src-tauri/tauri.conf.json"))
+            .context("reading src-tauri/tauri.conf.json")?,
+    )
+    .context("parsing src-tauri/tauri.conf.json")?;
+    let bridge = meta
+        .package(CRATE)
+        .map(|p| {
+            p.targets
+                .iter()
+                .filter(|t| t.kind.iter().any(|k| k == "bin"))
+                .map(|t| t.name.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    problems.extend(bundle_problems(&conf, &bridge));
     if problems.is_empty() {
         return Ok(());
     }
@@ -214,6 +262,23 @@ mod tests {
         assert!(workspace_names_bridge(&renamed));
         let none = parse("[workspace.dependencies]\nserde = \"1\"");
         assert!(!workspace_names_bridge(&none));
+    }
+
+    #[test]
+    fn a_bundled_bridge_is_found_in_external_bins_and_resources() {
+        let bins = ["e2e-server".to_owned()];
+        let conf = |bundle: serde_json::Value| serde_json::json!({ "bundle": bundle });
+        let ext = conf(serde_json::json!({ "externalBin": ["binaries/e2e_server"] }));
+        assert_eq!(super::bundle_problems(&ext, &bins).len(), 1);
+        let list = conf(serde_json::json!({ "resources": ["../crates/rekindle-e2e-server/x"] }));
+        assert_eq!(super::bundle_problems(&list, &bins).len(), 1);
+        let map =
+            conf(serde_json::json!({ "resources": { "../target/debug/e2e-server": "tools/x" } }));
+        assert_eq!(super::bundle_problems(&map, &bins).len(), 1);
+        let clean = conf(
+            serde_json::json!({ "externalBin": ["binaries/rekindled"], "icon": ["e2e-server.png"] }),
+        );
+        assert!(super::bundle_problems(&clean, &bins).is_empty());
     }
 
     /// The real workspace: nothing reaches the bridge, and the GUI's build

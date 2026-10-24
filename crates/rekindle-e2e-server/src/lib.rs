@@ -3,7 +3,8 @@
 //! The bridge drives a real Host over HTTP, so while it runs anything that
 //! can reach its port could drive the Host too, including a webpage in the
 //! user's browser. It binds a random loopback port, mints a per-run token
-//! and prints both for the Playwright fixture (`e2e/fixtures/e2e-server.ts`),
+//! and writes both to the owner-only handshake file the Playwright setup
+//! names (`e2e/fixtures/e2e-server-setup.ts`), never to a log,
 //! and [`Guard::admit`] refuses every request that:
 //! - names a `Host` other than the loopback address it bound (DNS
 //!   rebinding: a page on a hostile name that resolves to 127.0.0.1);
@@ -22,8 +23,33 @@ use rekindle_secrets::bearer_token::BearerToken;
 /// The header the token travels in.
 pub const TOKEN_HEADER: &str = "x-rekindle-e2e-token";
 
-/// The prefix of the line the bridge prints its address and token after.
-pub const READY_PREFIX: &str = "REKINDLE_E2E_READY ";
+/// The variable naming the file the bridge writes its address and token
+/// to: in a directory the Playwright setup created for this run, written
+/// owner-only (0600) and moved into place whole, so the token never reaches
+/// stdout or a CI log.
+pub const HANDSHAKE_ENV: &str = "REKINDLE_E2E_HANDSHAKE";
+
+/// Write `contents` to `path` readable by its owner only: a sibling file
+/// created new with mode 0600, then renamed over `path` so a reader never
+/// sees a partial write.
+///
+/// # Errors
+/// The sibling file exists or cannot be written, or the rename fails.
+pub fn write_handshake(path: &std::path::Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let partial = path.with_extension("partial");
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.mode(0o600);
+    }
+    let mut file = options.open(&partial)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()?;
+    std::fs::rename(&partial, path)
+}
 
 /// What a request must match to reach the bridge.
 pub struct Guard {
@@ -161,5 +187,23 @@ mod tests {
             g.admit(&headers("127.0.0.1:4242", Some("null"), Some(&t))),
             forbidden
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_handshake_file_is_owner_only_and_whole() {
+        use std::os::unix::fs::PermissionsExt as _;
+        let dir = std::env::temp_dir().join(format!("rekindle-e2e-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("bridge.json");
+        super::write_handshake(&path, "{\"url\":\"u\",\"token\":\"t\"}").unwrap();
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "{\"url\":\"u\",\"token\":\"t\"}"
+        );
+        assert!(!path.with_extension("partial").exists());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

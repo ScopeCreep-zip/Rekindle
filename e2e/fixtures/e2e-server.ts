@@ -2,8 +2,9 @@
  * The E2E bridge (`rekindle-e2e-server`) for the real-backend suite.
  *
  * The bridge binds a random loopback port and mints a per-run token,
- * then prints both on one line; `e2e-server-setup.ts` (the e2e project's
- * global setup) starts it, reads that line and hands the address and
+ * then writes both to an owner-only file in a directory that
+ * `e2e-server-setup.ts` (the e2e project's global setup) created for the
+ * run, never to stdout; the setup reads it and hands the address and
  * token to the tests through the environment. Every request must carry
  * the token, so a webpage that finds the port still cannot drive it.
  *
@@ -17,8 +18,8 @@ import { test as base } from "@playwright/test";
 /** The header the bridge reads the token from. */
 export const TOKEN_HEADER = "x-rekindle-e2e-token";
 
-/** The line prefix the bridge prints its address and token after. */
-export const READY_PREFIX = "REKINDLE_E2E_READY ";
+/** The variable naming the file the bridge writes its address and token to. */
+export const HANDSHAKE_ENV = "REKINDLE_E2E_HANDSHAKE";
 
 export interface E2EBridge {
   url: string;

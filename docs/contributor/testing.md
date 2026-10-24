@@ -137,7 +137,10 @@ E2E tests drive the real Rust backend over HTTP. The mechanism:
 1. `pnpm test:e2e` sets `VITE_E2E=true`.
 2. Playwright's global setup (`e2e/fixtures/e2e-server-setup.ts`) starts
    the `rekindle-e2e-server` HTTP IPC bridge, which binds a random loopback
-   port and mints a per-run token, and reads both from the line it prints.
+   port and mints a per-run token. It writes both to an owner-only (0600)
+   file in a private temp directory the setup created and named in
+   `REKINDLE_E2E_HANDSHAKE`, never to stdout, so the token stays out of CI
+   logs; the setup reads the file and removes the directory at teardown.
    The `test` fixture (`e2e/fixtures/e2e-server.ts`) hands them to each page
    as `window.__REKINDLE_E2E__`; every request carries the token.
 3. The frontend's `src/ipc/invoke.ts` detects `VITE_E2E` and routes

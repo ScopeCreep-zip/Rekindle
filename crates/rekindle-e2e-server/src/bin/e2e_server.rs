@@ -6,14 +6,14 @@
 //! through the same `host_call::call` the window uses, against an Offline
 //! Host with the GUI's `ShellSession` hooks (plan E1.1).
 //!
-//! It binds a random loopback port and mints a per-run token, prints both
-//! on one line (`REKINDLE_E2E_READY {"url":…,"token":…}`) for the
-//! Playwright fixture, and admits only requests that pass
+//! It binds a random loopback port and mints a per-run token, writes both
+//! (`{"url":…,"token":…}`) owner-only to the file `REKINDLE_E2E_HANDSHAKE`
+//! names, never to stdout, for the Playwright setup, and admits only requests that pass
 //! [`rekindle_e2e_server::Guard`]: our `Host`, the frontend's `Origin` (from
 //! `REKINDLE_E2E_ORIGIN`) or none, and the token.
 //!
 //! ```bash
-//! REKINDLE_E2E_ORIGIN=http://localhost:1430 cargo run -p rekindle-e2e-server --features e2e-bridge --bin e2e-server
+//! REKINDLE_E2E_ORIGIN=http://localhost:1430 REKINDLE_E2E_HANDSHAKE=/tmp/x/bridge.json cargo run -p rekindle-e2e-server --features e2e-bridge --bin e2e-server
 //! ```
 
 // The manifest builds this binary only with the feature; this holds if that
@@ -35,7 +35,7 @@ use serde_json::{json, Value};
 use tower_http::cors::CorsLayer;
 
 use rekindle_db::paths::DataRoot;
-use rekindle_e2e_server::{Guard, READY_PREFIX, TOKEN_HEADER};
+use rekindle_e2e_server::{write_handshake, Guard, HANDSHAKE_ENV, TOKEN_HEADER};
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_lib::host_call;
 use rekindle_lib::state::{AppState, SharedState};
@@ -131,14 +131,11 @@ async fn main() {
         .layer(cors);
 
     tracing::info!(port, "E2E server listening on loopback");
-    // The fixture reads this one line for the address and the token.
-    {
-        use std::io::Write as _;
-        let mut out = std::io::stdout().lock();
-        writeln!(out, "{READY_PREFIX}{ready}")
-            .and_then(|()| out.flush())
-            .expect("stdout takes the ready line");
-    }
+    // The setup reads the address and token from its file, never a log.
+    let handshake = std::env::var_os(HANDSHAKE_ENV)
+        .expect("REKINDLE_E2E_HANDSHAKE names the file the bridge reports to");
+    write_handshake(std::path::Path::new(&handshake), &ready.to_string())
+        .expect("the handshake file is written");
     axum::serve(listener, app).await.expect("server error");
 }
 
