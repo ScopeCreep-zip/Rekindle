@@ -97,7 +97,7 @@ fn encode_extras(extras: &SessionExtras) -> Result<Vec<u8>, CodecError> {
 }
 
 fn decode_extras(data: &[u8]) -> Result<SessionExtras, CodecError> {
-    let reader = unpack_bounded(data, bounds::PRESENCE_BEAT)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_BEAT_BOUND)?;
     let b = reader
         .get_root::<session_extras_body::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -204,7 +204,7 @@ pub fn decode_presence_beat(
     pseudonym: &[u8; 32],
 ) -> Result<PresenceBeat, CodecError> {
     check_size("presence beat", data, PRESENCE_BEAT_MAX_BYTES)?;
-    let reader = unpack_bounded(data, bounds::PRESENCE_BEAT)?;
+    let reader = unpack_bounded(data, bounds::PRESENCE_BEAT_BOUND)?;
     let b = reader
         .get_root::<presence_beat::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

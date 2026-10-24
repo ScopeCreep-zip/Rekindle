@@ -212,7 +212,7 @@ pub fn decode_member_card(
     pseudonym: &[u8; 32],
 ) -> Result<SignedMemberCard, CodecError> {
     check_size("member card", data, MEMBER_CARD_MAX_BYTES)?;
-    let outer = unpack_bounded(data, bounds::MEMBER_CARD)?;
+    let outer = unpack_bounded(data, bounds::MEMBER_CARD_BOUND)?;
     let root = outer
         .get_root::<member_card::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -226,7 +226,7 @@ pub fn decode_member_card(
         "member card",
     )?;
 
-    let inner = unpack_bounded(body, bounds::MEMBER_CARD)?;
+    let inner = unpack_bounded(body, bounds::MEMBER_CARD_BOUND)?;
     let b = inner
         .get_root::<member_card_body::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

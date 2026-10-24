@@ -40,7 +40,7 @@ pub fn encode_signaling(sig: &VoiceSignaling) -> Vec<u8> {
 }
 
 pub fn decode_signaling(data: &[u8]) -> Result<VoiceSignaling, CodecError> {
-    let reader = unpack_bounded(data, bounds::VOICE_SIGNALING)?;
+    let reader = unpack_bounded(data, bounds::VOICE_SIGNALING_BOUND)?;
     let root = reader
         .get_root::<voice_capnp::voice_signaling::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

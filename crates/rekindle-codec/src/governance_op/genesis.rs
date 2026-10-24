@@ -62,7 +62,7 @@ pub fn genesis_unsigned_bytes(cert: &GenesisCert, anchor_owner: &[u8; 32]) -> Ve
 /// Decode a cert read from the anchor, with its canonical unsigned bytes.
 pub fn decode_genesis(data: &[u8]) -> Result<DecodedGenesis, CodecError> {
     check_size("genesis cert", data, GENESIS_CERT_MAX_BYTES)?;
-    let message = unpack_bounded(data, bounds::GENESIS_CERT)?;
+    let message = unpack_bounded(data, bounds::GENESIS_CERT_BOUND)?;
     let r = message
         .get_root::<genesis_cert::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

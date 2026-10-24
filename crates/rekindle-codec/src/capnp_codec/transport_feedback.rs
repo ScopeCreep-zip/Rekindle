@@ -72,7 +72,7 @@ impl TransportFeedback {
     /// # Errors
     /// The bytes are not a `TransportFeedback`.
     pub fn decode(data: &[u8]) -> Result<Self, CodecError> {
-        let reader = unpack_bounded(data, bounds::TRANSPORT_FEEDBACK)?;
+        let reader = unpack_bounded(data, bounds::TRANSPORT_FEEDBACK_BOUND)?;
         let root = reader
             .get_root::<transport_feedback::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;

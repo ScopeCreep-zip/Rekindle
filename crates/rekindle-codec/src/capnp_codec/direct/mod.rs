@@ -11,7 +11,7 @@
 //! Everything here decodes bytes off the network, so the decoder holds the
 //! network-side caps (plan §5 `validate_request` row; audit G6): a frame
 //! over Veilid's message cap is refused before it is unpacked, no message
-//! unpacks past [`super::bounds::DM_FRAME`], and the text a peer supplies — a
+//! unpacks past [`super::bounds::DM_FRAME_BOUND`], and the text a peer supplies — a
 //! display name, a message, a reason, a status — is held to the bounds and
 //! the character rule the IPC validation holds a user to
 //! (`rekindle_types::key_format`, `presence::limits`), keys and record
@@ -58,7 +58,7 @@ fn decode_root<O: capnp::traits::Owned, R>(
     bytes: &[u8],
     read: impl FnOnce(O::Reader<'_>) -> Result<R, CodecError>,
 ) -> Result<R, CodecError> {
-    let message = unpack_bounded(bytes, super::bounds::DM_FRAME)?;
+    let message = unpack_bounded(bytes, super::bounds::DM_FRAME_BOUND)?;
     let root = message
         .get_root::<O::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

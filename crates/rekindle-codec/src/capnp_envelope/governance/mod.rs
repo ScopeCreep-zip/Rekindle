@@ -79,7 +79,7 @@ pub fn encode_governance_entry(entry: &GovernanceEntry) -> Vec<u8> {
 
 /// Decode a single `GovernanceEntry` from packed Cap'n Proto bytes.
 pub fn decode_governance_entry(bytes: &[u8]) -> Result<GovernanceEntry, CodecError> {
-    let reader = unpack_bounded(bytes, bounds::GOVERNANCE_ENTRY)?;
+    let reader = unpack_bounded(bytes, bounds::GOVERNANCE_ENTRY_BOUND)?;
     let root = reader
         .get_root::<schema::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

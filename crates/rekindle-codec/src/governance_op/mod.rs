@@ -57,7 +57,7 @@ pub fn op_unsigned_bytes(op: &GovernanceOp) -> Vec<u8> {
 /// Decode an op off the network, with its canonical unsigned bytes.
 pub fn decode_op(data: &[u8]) -> Result<DecodedOp, CodecError> {
     check_size("governance op", data, GOVERNANCE_OP_MAX_BYTES)?;
-    let message = unpack_bounded(data, bounds::GOVERNANCE_OP)?;
+    let message = unpack_bounded(data, bounds::GOVERNANCE_OP_BOUND)?;
     let r = message
         .get_root::<governance_op::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
@@ -108,7 +108,7 @@ pub fn encode_frontier(heads: &[OpRef]) -> Result<Vec<u8>, CodecError> {
 /// Decode a member record's `Frontier` off the network.
 pub fn decode_frontier(data: &[u8]) -> Result<Vec<OpRef>, CodecError> {
     check_size("frontier", data, MAX_SUBKEY_VALUE_LEN)?;
-    let message = unpack_bounded(data, bounds::GOVERNANCE_OP)?;
+    let message = unpack_bounded(data, bounds::GOVERNANCE_OP_BOUND)?;
     let r = message
         .get_root::<frontier::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

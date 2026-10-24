@@ -47,7 +47,7 @@ fn encode_ranges(ranges: &[HistoryRange]) -> Vec<u8> {
 }
 
 fn decode_ranges(data: &[u8]) -> Result<Vec<HistoryRange>, CodecError> {
-    let reader = unpack_bounded(data, bounds::HISTORY_AD)?;
+    let reader = unpack_bounded(data, bounds::HISTORY_AD_BOUND)?;
     let list = reader
         .get_root::<history_ranges::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?
@@ -107,7 +107,7 @@ pub fn decode_history_ad(
     pseudonym: &[u8; 32],
 ) -> Result<Vec<HistoryRange>, CodecError> {
     check_size("history ad", data, HISTORY_AD_MAX_BYTES)?;
-    let reader = unpack_bounded(data, bounds::HISTORY_AD)?;
+    let reader = unpack_bounded(data, bounds::HISTORY_AD_BOUND)?;
     let root = reader
         .get_root::<history_ad_record::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;

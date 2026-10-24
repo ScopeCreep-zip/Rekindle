@@ -67,7 +67,7 @@ impl VoicePacket {
 
     /// Decode packed Cap'n Proto bytes. The signature is not checked.
     pub fn decode(data: &[u8]) -> Result<Self, CodecError> {
-        let reader = unpack_bounded(data, bounds::VOICE_PACKET)?;
+        let reader = unpack_bounded(data, bounds::VOICE_PACKET_BOUND)?;
         let root = reader
             .get_root::<voice_packet::Reader<'_>>()
             .map_err(|e| capnp_err(&e))?;

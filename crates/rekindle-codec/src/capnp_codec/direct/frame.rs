@@ -454,7 +454,7 @@ pub(super) mod tests {
             Err(CodecError::Deserialization(_))
         ));
         let packed = crate::capnp_codec::bounds::inflating_message(
-            crate::capnp_codec::bounds::DM_FRAME.max_words + 1,
+            crate::capnp_codec::bounds::DM_FRAME_BOUND.max_words + 1,
         );
         assert!(DmFrame::decode(&packed).is_err());
         assert!(DmContent::decode(&packed).is_err());
