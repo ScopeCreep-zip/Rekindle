@@ -15,6 +15,7 @@ mod dm_ack_loss;
 mod dm_ack_through;
 mod dm_after_cancel;
 mod dm_hint_loss;
+mod dm_new_friendship;
 mod events;
 mod expressions;
 mod first_contact_receipt;
