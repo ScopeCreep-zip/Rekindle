@@ -97,8 +97,9 @@ pub fn get_presence_policy_inner(
 /// Our own presence changed (the Host's `SelfChanged`): broadcast a
 /// `PresenceUpdate` to every joined community over its gossip mesh, so
 /// members see our status and game at once (→ E3.4, which carries it on
-/// the member's beat). Ephemeral: no durable relay. Invisible appears
-/// offline, game included: nothing about it is sent.
+/// the member's beat). Ephemeral: no durable relay. A status that hides
+/// presence (Invisible, Offline) sends nothing, as a member that quit
+/// sends nothing: the Host's rule, [`rekindle_presence::hides_presence`].
 pub fn fan_out_own_presence(
     state: &SharedState,
     snapshot: &rekindle_types::subscription_events::PresenceSnapshot,
@@ -111,7 +112,7 @@ pub fn fan_out_own_presence(
         .as_deref()
         .and_then(|s| serde_json::from_value::<SessionStatus>(s.into()).ok())
         .unwrap_or_default();
-    if status == SessionStatus::Invisible {
+    if rekindle_presence::hides_presence(status) {
         return;
     }
     let game_info = match &snapshot.game {

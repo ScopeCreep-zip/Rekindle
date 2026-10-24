@@ -83,6 +83,24 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
 
 /// The wire form of our status in a community `PresenceUpdate` or
 /// `MemberJoined`.
+/// The re-announce of our presence and route, or `None` while our status
+/// hides presence ([`rekindle_presence::hides_presence`]): an Invisible
+/// member sends what a member that quit sends, nothing, so no fresh route
+/// or "offline" beat marks it as running. The channel `SyncRequest`s still
+/// go out: they carry no status and no route.
+fn presence_announce(
+    status: SessionStatus,
+    pseudonym_key: String,
+    route: &[u8],
+) -> Option<CommunityEnvelope> {
+    (!rekindle_presence::hides_presence(status)).then(|| CommunityEnvelope::PresenceUpdate {
+        pseudonym_key,
+        status: status_str(status).to_string(),
+        game_info: None,
+        route_blob: Some(route.to_vec()),
+    })
+}
+
 pub(super) fn status_str(status: SessionStatus) -> &'static str {
     match status {
         SessionStatus::Online => "online",
@@ -125,15 +143,12 @@ impl HostGovernance {
             channels.sort_unstable();
             (pseudonym, channels)
         };
-        let presence = CommunityEnvelope::PresenceUpdate {
-            pseudonym_key: pseudonym,
-            status: status_str(self.ctx.own_presence.status()).to_string(),
-            game_info: None,
-            route_blob: Some(route.to_vec()),
-        };
-        if let Err(e) = self.send_to_mesh(community_id, &presence) {
-            tracing::debug!(community = %community_id, error = %e, "presence re-announce not sent");
-            return;
+        if let Some(presence) = presence_announce(self.ctx.own_presence.status(), pseudonym, route)
+        {
+            if let Err(e) = self.send_to_mesh(community_id, &presence) {
+                tracing::debug!(community = %community_id, error = %e, "presence re-announce not sent");
+                return;
+            }
         }
         for channel_id in channels {
             let Some(since) = self.last_channel_timestamp(community_id, &channel_id).await else {
@@ -168,6 +183,28 @@ impl HostGovernance {
                 tracing::warn!(community = %community_id, channel = %channel_id, error = %e, "channel watermark unreadable");
                 None
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_hidden_status_announces_nothing() {
+        for status in [SessionStatus::Invisible, SessionStatus::Offline] {
+            assert!(presence_announce(status, "me".into(), &[1]).is_none());
+        }
+        for status in [
+            SessionStatus::Online,
+            SessionStatus::Away,
+            SessionStatus::Busy,
+        ] {
+            assert!(matches!(
+                presence_announce(status, "me".into(), &[1]),
+                Some(CommunityEnvelope::PresenceUpdate { .. })
+            ));
         }
     }
 }

@@ -27,17 +27,31 @@ pub const HEARTBEAT_INTERVAL_SECS: u64 = 60;
 enum Wake {
     /// A status change: publish whatever the status now is.
     Change,
-    /// The heartbeat: re-publish unless we are Offline.
+    /// The heartbeat: re-publish a shown status.
     Tick,
 }
 
-/// Publish for `wake`: the current status, read now. `None` when there is
-/// nothing to publish (logged out, or Offline on a heartbeat).
-fn status_to_publish(current: Option<UserStatusKind>, wake: Wake) -> Option<UserStatusKind> {
-    match (current?, wake) {
-        (UserStatusKind::Offline, Wake::Tick) => None,
-        (status, _) => Some(status),
-    }
+/// Whether `status` is one peers see as offline, the one rule every
+/// presence channel follows (the STATUS beat here, the Host's community
+/// gossip, the desktop fan-out). Invisible publishes
+/// exactly what Offline publishes (the same wire byte) and, like a real
+/// Offline, writes it once and then nothing until the status changes, so
+/// no watcher or replica can tell the two apart by a later beat.
+#[must_use]
+pub const fn hides_presence(status: UserStatusKind) -> bool {
+    matches!(status, UserStatusKind::Offline | UserStatusKind::Invisible)
+}
+
+/// Publish the current status, read now. `None` when there is
+/// nothing to publish: logged out, or a hidden status once an offline
+/// write has landed (`published` is the last status written successfully).
+/// A hidden status whose write failed is retried on the next tick.
+fn status_to_publish(
+    current: Option<UserStatusKind>,
+    published: Option<UserStatusKind>,
+) -> Option<UserStatusKind> {
+    let status = current?;
+    (!(hides_presence(status) && published.is_some_and(hides_presence))).then_some(status)
 }
 
 /// Run the publisher until `stop`. `wake` is notified on every status
@@ -50,6 +64,7 @@ pub async fn run_status_publisher<D: StatusPublisherDeps + ?Sized>(
 ) {
     let mut tick = interval(Duration::from_secs(HEARTBEAT_INTERVAL_SECS));
     tick.tick().await; // skip the immediate first fire
+    let mut published = None;
 
     loop {
         let reason = tokio::select! {
@@ -60,11 +75,15 @@ pub async fn run_status_publisher<D: StatusPublisherDeps + ?Sized>(
             () = wake.notified() => Wake::Change,
             _ = tick.tick() => Wake::Tick,
         };
-        let Some(status) = status_to_publish(deps.current_identity_status(), reason) else {
+        let Some(status) = status_to_publish(deps.current_identity_status(), published) else {
             continue;
         };
-        if let Err(error) = publish_status(Arc::clone(&deps), status).await {
-            tracing::debug!(%error, ?reason, "status publish failed; the next wake retries");
+        match publish_status(Arc::clone(&deps), status).await {
+            Ok(()) => published = Some(status),
+            Err(error) => {
+                published = None;
+                tracing::debug!(%error, ?reason, "status publish failed; the next wake retries");
+            }
         }
     }
 }
@@ -73,17 +92,76 @@ pub async fn run_status_publisher<D: StatusPublisherDeps + ?Sized>(
 mod tests {
     use super::*;
 
+    use std::sync::atomic::{AtomicU8, Ordering};
+
+    use async_trait::async_trait;
+    use parking_lot::Mutex;
+
+    use crate::deps::PresenceError;
+
+    struct Deps {
+        status: AtomicU8,
+        written: Mutex<Vec<u8>>,
+    }
+    #[async_trait]
+    impl StatusPublisherDeps for Deps {
+        fn profile_dht_info(&self) -> Option<String> {
+            Some("VLD0:profile".into())
+        }
+        async fn write_profile_status_subkey(
+            &self,
+            _key: &str,
+            payload: Vec<u8>,
+        ) -> Result<(), PresenceError> {
+            tokio::task::yield_now().await;
+            let (owner, key) = self.presence_key().unwrap();
+            let opened =
+                rekindle_secrets::friend_presence::open(&key, &owner, 2, &payload).unwrap();
+            self.written.lock().push(opened[0]);
+            Ok(())
+        }
+        fn presence_key(&self) -> Option<(String, rekindle_secrets::friend_presence::PresenceKey)> {
+            Some((
+                "aa".into(),
+                rekindle_secrets::friend_presence::PresenceKey::new(1, [9; 32]),
+            ))
+        }
+        fn current_identity_status(&self) -> Option<UserStatusKind> {
+            Some(match self.status.load(Ordering::SeqCst) {
+                0 => UserStatusKind::Online,
+                1 => UserStatusKind::Away,
+                _ => UserStatusKind::Invisible,
+            })
+        }
+        fn now_ms(&self) -> i64 {
+            0
+        }
+    }
+
     #[test]
-    fn a_change_publishes_any_status_and_a_tick_skips_offline() {
-        use UserStatusKind::{Away, Offline, Online};
-        assert_eq!(status_to_publish(Some(Away), Wake::Change), Some(Away));
+    fn a_change_publishes_any_status_and_a_hidden_status_publishes_once() {
+        use UserStatusKind::{Away, Invisible, Offline, Online};
+        assert_eq!(status_to_publish(Some(Away), None), Some(Away));
         assert_eq!(
-            status_to_publish(Some(Offline), Wake::Change),
+            status_to_publish(Some(Offline), Some(Online)),
             Some(Offline)
         );
-        assert_eq!(status_to_publish(Some(Online), Wake::Tick), Some(Online));
-        assert_eq!(status_to_publish(Some(Offline), Wake::Tick), None);
-        assert_eq!(status_to_publish(None, Wake::Change), None, "logged out");
+        assert_eq!(
+            status_to_publish(Some(Invisible), Some(Online)),
+            Some(Invisible)
+        );
+        assert_eq!(status_to_publish(Some(Online), Some(Online)), Some(Online));
+        for hidden in [Offline, Invisible] {
+            for landed in [Offline, Invisible] {
+                assert_eq!(status_to_publish(Some(hidden), Some(landed)), None);
+            }
+            assert_eq!(
+                status_to_publish(Some(hidden), None),
+                Some(hidden),
+                "a failed offline write is retried"
+            );
+        }
+        assert_eq!(status_to_publish(None, None), None, "logged out");
     }
 
     /// The bug this loop exists for: a change racing a heartbeat ends with
@@ -91,53 +169,6 @@ mod tests {
     /// status at write time.
     #[tokio::test]
     async fn a_change_during_a_heartbeat_ends_with_the_newer_status() {
-        use std::sync::atomic::{AtomicU8, Ordering};
-
-        use async_trait::async_trait;
-        use parking_lot::Mutex;
-
-        use crate::deps::PresenceError;
-
-        struct Deps {
-            status: AtomicU8,
-            written: Mutex<Vec<u8>>,
-        }
-        #[async_trait]
-        impl StatusPublisherDeps for Deps {
-            fn profile_dht_info(&self) -> Option<String> {
-                Some("VLD0:profile".into())
-            }
-            async fn write_profile_status_subkey(
-                &self,
-                _key: &str,
-                payload: Vec<u8>,
-            ) -> Result<(), PresenceError> {
-                tokio::task::yield_now().await;
-                let (owner, key) = self.presence_key().unwrap();
-                let opened =
-                    rekindle_secrets::friend_presence::open(&key, &owner, 2, &payload).unwrap();
-                self.written.lock().push(opened[0]);
-                Ok(())
-            }
-            fn presence_key(
-                &self,
-            ) -> Option<(String, rekindle_secrets::friend_presence::PresenceKey)> {
-                Some((
-                    "aa".into(),
-                    rekindle_secrets::friend_presence::PresenceKey::new(1, [9; 32]),
-                ))
-            }
-            fn current_identity_status(&self) -> Option<UserStatusKind> {
-                Some(if self.status.load(Ordering::SeqCst) == 0 {
-                    UserStatusKind::Online
-                } else {
-                    UserStatusKind::Away
-                })
-            }
-            fn now_ms(&self) -> i64 {
-                0
-            }
-        }
         let deps = Arc::new(Deps {
             status: AtomicU8::new(0),
             written: Mutex::new(Vec::new()),
@@ -160,6 +191,31 @@ mod tests {
             written.last().copied(),
             Some(crate::friend::status_to_wire_byte(UserStatusKind::Away)),
             "written: {written:?}"
+        );
+    }
+
+    /// Five minutes of Invisible write exactly one offline STATUS, the
+    /// shape a real Offline writes, and nothing after it.
+    #[tokio::test(start_paused = true)]
+    async fn invisible_writes_offline_once_and_then_nothing() {
+        let deps = Arc::new(Deps {
+            status: AtomicU8::new(2),
+            written: Mutex::new(Vec::new()),
+        });
+        let wake = Arc::new(Notify::new());
+        let stop = tokio_util::sync::CancellationToken::new();
+        let task = tokio::spawn(run_status_publisher(
+            Arc::clone(&deps),
+            Arc::clone(&wake),
+            stop.clone(),
+        ));
+        wake.notify_one();
+        tokio::time::sleep(Duration::from_secs(5 * 60 + 1)).await;
+        stop.cancel();
+        task.await.unwrap();
+        assert_eq!(
+            deps.written.lock().clone(),
+            vec![crate::friend::status_to_wire_byte(UserStatusKind::Offline)]
         );
     }
 }

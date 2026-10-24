@@ -40,7 +40,7 @@ pub use friend::{
     STALE_PRESENCE_THRESHOLD_MS,
 };
 pub use friend_sync::check_stale_friend_presences;
-pub use heartbeat::{run_status_publisher, HEARTBEAT_INTERVAL_SECS};
+pub use heartbeat::{hides_presence, run_status_publisher, HEARTBEAT_INTERVAL_SECS};
 pub use idle::{decide_status_after_idle, IDLE_THRESHOLD_MS};
 pub use poll_buckets::{is_member_stale, presence_poll_interval_ms, STALE_MEMBER_TTL_MS};
 pub use status::{UserStatusKind, INVISIBLE_WIRE_VALUE};
