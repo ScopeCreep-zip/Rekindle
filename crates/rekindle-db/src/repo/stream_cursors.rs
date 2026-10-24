@@ -83,4 +83,14 @@ mod tests {
         reset(&conn, OWNER, "dm", "w").unwrap();
         assert_eq!(get(&conn, OWNER, "dm", "w").unwrap(), 0);
     }
+
+    #[test]
+    fn a_friendship_that_ends_forgets_its_dm_cursor() {
+        let conn = fixture::conn();
+        advance(&conn, OWNER, "dm", "w", 3, 1).unwrap();
+        advance(&conn, OWNER, "other", "w", 2, 1).unwrap();
+        crate::repo::friends::forget(&conn, OWNER, "w").unwrap();
+        assert_eq!(get(&conn, OWNER, "dm", "w").unwrap(), 0);
+        assert_eq!(get(&conn, OWNER, "other", "w").unwrap(), 2);
+    }
 }

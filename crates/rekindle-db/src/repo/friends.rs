@@ -178,7 +178,10 @@ pub fn delete(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
         "DELETE FROM friends WHERE owner_key = ?1 AND public_key = ?2",
         params![owner_key, public_key],
     )?;
-    Ok(())
+    // The friendship's cursor on their dm chain ends with it: the next
+    // friendship's chain starts at seq 1, and its first hints step a fresh
+    // cursor (live A/B finding 73).
+    crate::repo::stream_cursors::reset(conn, owner_key, "dm", public_key)
 }
 
 /// Delete the outgoing requests sent before `cutoff`; their keys.
