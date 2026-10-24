@@ -28,7 +28,9 @@ pub enum Fault {
     /// This fraction (per mille) of the app messages and calls the node
     /// sends, and of the answers to calls it receives, is dropped, while
     /// what is sent to it still arrives: a one-direction loss (plan C9.4,
-    /// findings 33, 45 and 62). `0` ends it.
+    /// findings 33, 45 and 62). The DHT is a separate path: its sets, gets,
+    /// inspects and watches, and its replicas' answers, are never dropped
+    /// (LV17 follow-up ii). `0` ends it.
     DropFrom { node: usize, per_mille: u32 },
     /// The node never answers app calls; its callers time out.
     Unanswered { node: usize, unanswered: bool },

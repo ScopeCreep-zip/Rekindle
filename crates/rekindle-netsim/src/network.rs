@@ -88,7 +88,8 @@ pub(crate) struct Faults {
     /// Per mille of app messages and calls dropped.
     pub drop_per_mille: u32,
     /// Per mille of the app messages, calls and call answers each node
-    /// sends that are dropped ([`crate::Fault::DropFrom`]).
+    /// sends that are dropped ([`crate::Fault::DropFrom`]); read only by
+    /// [`Network::lost_in_transit`], never by the DHT model.
     pub drop_from: HashMap<usize, u32>,
     /// Nodes whose app calls are never answered (the caller times out).
     pub unanswered: HashSet<usize>,

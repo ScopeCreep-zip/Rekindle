@@ -110,3 +110,31 @@ async fn concurrent_same_seq_sets_can_split_with_neither_at_consensus() {
     let again = race(seed).await;
     assert_eq!((again.0, again.1), (na, nb), "one seed, one split");
 }
+
+/// LV17 follow-up (ii): `Fault::DropFrom` is a one-direction app-message
+/// loss; the DHT is a separate path. A node under it still sets values its
+/// peers read, and reads what they set from replicas, at full rate.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn drop_from_leaves_the_dht_untouched() {
+    let (sim, nodes) = Netsim::nodes(2, 73);
+    let (a, b) = (dht(&sim, &nodes, 0), dht(&sim, &nodes, 1));
+    sim.fault(crate::Fault::DropFrom {
+        node: 1,
+        per_mille: 1000,
+    });
+    let schema = RecordSchema::Dflt { owner_subkeys: 1 };
+    let theirs = b.create(&schema, None).await.unwrap().key;
+    assert_eq!(b.set(&theirs, 0, b"b0".to_vec(), None).await.unwrap(), None);
+    assert!(
+        holding(&sim, &theirs, b"b0", 0) >= 5,
+        "its set reached the replicas"
+    );
+    a.open(&theirs, None).await.unwrap();
+    let read = a.get(&theirs, 0, true).await.unwrap().expect("its value");
+    assert_eq!(read.data, b"b0");
+    let ours = a.create(&schema, None).await.unwrap().key;
+    a.set(&ours, 0, b"a0".to_vec(), None).await.unwrap();
+    b.open(&ours, None).await.unwrap();
+    let read = b.get(&ours, 0, true).await.unwrap().expect("our value");
+    assert_eq!(read.data, b"a0");
+}
