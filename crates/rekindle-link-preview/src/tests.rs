@@ -52,51 +52,6 @@ fn decodes_basic_html_entities() {
 }
 
 #[test]
-fn ssrf_guard_blocks_loopback_private_link_local_and_metadata() {
-    let disallowed: &[&str] = &[
-        "127.0.0.1",              // IPv4 loopback
-        "127.53.1.9",             // IPv4 loopback, full 127.0.0.0/8 range
-        "10.0.0.1",               // IPv4 private
-        "172.16.5.5",             // IPv4 private
-        "192.168.1.1",            // IPv4 private
-        "169.254.169.254",        // cloud metadata endpoint (IPv4 link-local)
-        "169.254.1.1",            // IPv4 link-local, general
-        "0.0.0.0",                // IPv4 unspecified
-        "224.0.0.1",              // IPv4 multicast
-        "255.255.255.255",        // IPv4 broadcast
-        "::1",                    // IPv6 loopback
-        "::",                     // IPv6 unspecified
-        "fc00::1",                // IPv6 unique-local
-        "fe80::1",                // IPv6 link-local
-        "ff02::1",                // IPv6 multicast
-        "::ffff:169.254.169.254", // IPv4-mapped IPv6 metadata endpoint
-    ];
-    for ip in disallowed {
-        let parsed: IpAddr = ip.parse().expect("valid test IP literal");
-        assert!(
-            is_disallowed_target(&parsed),
-            "{ip} should be disallowed but was not"
-        );
-    }
-}
-
-#[test]
-fn ssrf_guard_allows_ordinary_public_addresses() {
-    let allowed: &[&str] = &[
-        "93.184.216.34",        // example.com-class public IPv4
-        "8.8.8.8",              // public IPv4
-        "2606:4700:4700::1111", // public IPv6 (Cloudflare)
-    ];
-    for ip in allowed {
-        let parsed: IpAddr = ip.parse().expect("valid test IP literal");
-        assert!(
-            !is_disallowed_target(&parsed),
-            "{ip} should be allowed but was disallowed"
-        );
-    }
-}
-
-#[test]
 fn the_user_agent_does_not_name_rekindle() {
     assert!(
         !USER_AGENT.to_ascii_lowercase().contains("rekindle"),
@@ -121,6 +76,20 @@ fn fetchable_url_refuses_hidden_reserved_local_and_homograph_hosts() {
         "https://\u{0430}pple.com/",
         "https://xn--pple-43d.com/",
         "http://example.com/",
+        // Single-label and local-network names.
+        "https://intranet/",
+        "https://printer.local/",
+        "https://git.corp.internal/",
+        "https://router.lan/",
+        "https://nas.home.arpa/",
+        "https://home.arpa/",
+        "https://box.localdomain/",
+        "https://name.alt/",
+        // Not global unicast.
+        "https://100.100.100.100/",
+        "https://[64:ff9b::a00:1]/",
+        // A label mixing Latin and Greek under a Latin TLD.
+        "https://\u{03b1}lpha.com/",
     ] {
         assert!(fetchable_url(refused).is_err(), "{refused} must be refused");
     }
@@ -129,6 +98,13 @@ fn fetchable_url_refuses_hidden_reserved_local_and_homograph_hosts() {
         "https://news.ycombinator.com/",
         "https://\u{043f}\u{0440}\u{0438}\u{043c}\u{0435}\u{0440}.\u{0440}\u{0444}/",
         "https://93.184.216.34/",
+        // A label in one script under an ASCII TLD (UTS #39, per label).
+        "https://b\u{00fc}cher.de/",
+        "https://m\u{00fc}nchen.de/",
+        "https://xn--bcher-kva.de/",
+        "https://\u{043f}\u{0440}\u{0438}\u{043c}\u{0435}\u{0440}.com/",
+        // Latin with Han and kana is one of UTS #39's allowed mixes.
+        "https://abc\u{65e5}\u{672c}.jp/",
     ] {
         assert!(fetchable_url(allowed).is_ok(), "{allowed} must be allowed");
     }
@@ -137,10 +113,16 @@ fn fetchable_url_refuses_hidden_reserved_local_and_homograph_hosts() {
 #[test]
 fn every_redirect_hop_is_rechecked_and_capped() {
     let ok = Url::parse("https://example.com/next").unwrap();
-    assert!(redirect_allowed(0, &ok).is_ok());
-    assert!(redirect_allowed(4, &ok).is_ok());
+    // `previous` counts the first request too (reqwest's
+    // `Attempt::previous`): the 1st redirect sees 1, the 5th sees 5.
+    for previous in 1..=MAX_REDIRECTS {
+        assert!(
+            redirect_allowed(previous, &ok).is_ok(),
+            "redirect {previous}"
+        );
+    }
     assert!(matches!(
-        redirect_allowed(5, &ok),
+        redirect_allowed(MAX_REDIRECTS + 1, &ok),
         Err(LinkPreviewError::TooManyRedirects)
     ));
     for hop in [
@@ -207,4 +189,32 @@ fn accept_inbound_normalizes_or_drops() {
     assert!(title.starts_with("Hithere "));
     assert_eq!(title.chars().count(), MAX_TITLE_CHARS);
     assert_eq!(ok.description, None);
+}
+
+/// `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY` are ignored: with a proxy
+/// listening, a fetch through the preview client never reaches it.
+#[tokio::test]
+async fn environment_proxies_are_ignored() {
+    let proxy = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = format!("http://{}", proxy.local_addr().unwrap());
+    for var in [
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "ALL_PROXY",
+        "http_proxy",
+        "https_proxy",
+        "all_proxy",
+    ] {
+        std::env::set_var(var, &address);
+    }
+    let client = preview_client().unwrap();
+    // An IP literal skips the resolver; port 9 has no listener, so the
+    // direct connection fails fast. Through a proxy it would succeed.
+    let sent = client.get("https://127.0.0.1:9/").send();
+    let (sent, accepted) = tokio::join!(
+        sent,
+        tokio::time::timeout(std::time::Duration::from_secs(2), proxy.accept())
+    );
+    assert!(sent.is_err());
+    assert!(accepted.is_err(), "the environment proxy was used");
 }
