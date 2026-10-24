@@ -1,8 +1,9 @@
-//! Live A/B finding 64: Jon's `DmAck`s are never queued (`dm::ack`), so a
-//! lost one is asked for again only by Ida's resend. Her entry's append
-//! lands before any ack of it comes; the landed row is hinted again (framed
-//! afresh, not appended again) on the dm backoff, Jon, who already holds
-//! the message, acknowledges it again, and the row settles delivered.
+//! Live A/B finding 64 and the 2026-10-24 register: Jon's `DmAck`s are
+//! never queued (`dm::ack`). A lost one is covered by his next, cumulative
+//! ack (its `through`, his cursor on Ida's chain); with none to come, Ida
+//! asks again: her landed row is hinted again (framed afresh, not appended
+//! again) after its first re-ask wait, Jon, who already holds the message,
+//! acknowledges it again, and the row settles delivered.
 
 use std::time::Duration;
 
@@ -83,11 +84,11 @@ async fn a_landed_message_whose_acks_were_lost_is_hinted_again_until_delivered()
     );
     sim.fault(Fault::DropMessages { per_mille: 0 });
 
-    // The dm backoff: the floor (one ack delay and one call timeout) plus
-    // at most 2 s of step for the first attempts; a re-hint that fell in
-    // the hold was lost too, so two of them, then Jon's ack delay.
-    let floor = Duration::from_millis(DM_ACK_DELAY_MAX_MS + CALL_TIMEOUT_MS);
-    let bound = (floor + Duration::from_secs(4)) * 2 + ack_window + MESSAGE.max * 2;
+    // The append, if its sets were still going (a `HEAD` read and two
+    // sets), then the first re-ask 2 x (ack delay + call timeout) after
+    // the landing, then Jon's ack delay.
+    let first_reask = Duration::from_millis(2 * (DM_ACK_DELAY_MAX_MS + CALL_TIMEOUT_MS));
+    let bound = append + first_reask + ack_window + MESSAGE.max * 2;
     let healed = tokio::time::Instant::now();
     assert!(
         eventually(&sim, bound, || delivered(&nodes[0], &jon, "acked late")).await,

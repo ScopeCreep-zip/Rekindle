@@ -189,39 +189,24 @@ impl OutboxDeps for Fake {
     }
     async fn read_through(
         &self,
-        stream: &str,
+        st: &str,
         _: &str,
         up_to: i64,
     ) -> Result<Vec<(i64, String)>, OutboxError> {
-        let mut s = self.store.lock();
-        let covered = |r: &OutboxRow| r.stream == stream && r.stream_seq <= up_to;
-        // A covered row not landed is marked read and kept.
-        let unlanded: Vec<(i64, String)> = s
-            .rows
-            .iter()
-            .filter(|r| covered(r) && r.state == SendState::Queued)
-            .filter(|r| s.acks.get(&r.client_id) != Some(&PeerAck::Read))
-            .map(|r| (r.stream_seq, r.client_id.clone()))
-            .collect();
-        for (_, id) in &unlanded {
-            s.acks.insert(id.clone(), PeerAck::Read);
-        }
-        let mut raised: Vec<(i64, String)> = s
-            .rows
-            .iter()
-            .filter(|r| covered(r) && r.state != SendState::Queued)
-            .map(|r| (r.stream_seq, r.client_id.clone()))
-            .collect();
-        raised.extend(unlanded);
-        s.rows
-            .retain(|r| !(covered(r) && r.state != SendState::Queued));
-        for (st, seq, id, state) in &mut s.settled {
-            if st == stream && *seq <= up_to && *state != SendState::Read {
-                *state = SendState::Read;
-                raised.push((*seq, id.clone()));
-            }
-        }
-        Ok(raised)
+        Ok(self.ack_range(st, (0, up_to), PeerAck::Read))
+    }
+    async fn deliver(
+        &self,
+        st: &str,
+        _: &str,
+        cover: Cover,
+    ) -> Result<Vec<(i64, String)>, OutboxError> {
+        // The fake's chain seq is the stream seq.
+        let r = match cover {
+            Cover::Seq(s) => (s, s),
+            Cover::ChainThrough(t) => (1, t),
+        };
+        Ok(self.ack_range(st, r, PeerAck::Delivered))
     }
     async fn mark_received(&self, stream: &str, id: &str) -> Result<bool, OutboxError> {
         Ok(self
@@ -586,3 +571,5 @@ mod media_key;
 mod deadline;
 
 mod ack_order;
+
+mod fake_acks;

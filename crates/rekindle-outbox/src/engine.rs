@@ -95,6 +95,19 @@ impl<D: OutboxDeps> Outbox<D> {
         }
     }
 
+    /// When `row`, now `state`, is due again: one that just reached `sent`
+    /// waits its kind's first re-ask for the peer's ack; any other its
+    /// backoff.
+    fn next_after(&self, row: &OutboxRow, state: SendState, attempts: u32) -> i64 {
+        let now = self.now();
+        match row.kind.first_reask() {
+            Some(wait) if row.state != SendState::Sent && state == SendState::Sent => {
+                now.saturating_add(i64::try_from(wait.as_millis()).unwrap_or(i64::MAX))
+            }
+            _ => self.next_due(row.kind, attempts, now, row.deadline),
+        }
+    }
+
     /// Store `entry` with its local `echo`, `queued`, and wake the engine.
     ///
     /// # Errors
@@ -249,7 +262,7 @@ impl<D: OutboxDeps> Outbox<D> {
                 let update = RowUpdate {
                     state,
                     attempts,
-                    next_at: self.next_due(row.kind, attempts, self.now(), row.deadline),
+                    next_at: self.next_after(row, state, attempts),
                     deadline: row.deadline,
                     wedge_reason: None,
                 };

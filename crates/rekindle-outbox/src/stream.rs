@@ -11,6 +11,14 @@ use rekindle_utils::random::RandomSource;
 /// peer's `DmAck` may take to come back (live A/B finding 49).
 pub const DM_RETRY_FLOOR: Duration = Duration::from_millis(DM_ACK_DELAY_MAX_MS + CALL_TIMEOUT_MS);
 
+/// When a `dm` row that reached `sent` (its entry landed, or its
+/// `StreamRecord` left) is first asked for again if no ack covers it
+/// (register 2026-10-24): two of the longest an ack may take, its 2–10 s
+/// coalescing delay plus the call round trip, whose p99 is bounded by the
+/// call timeout `CALL_TIMEOUT_MS`.
+pub const DM_FIRST_REASK: Duration =
+    Duration::from_millis(2 * (DM_ACK_DELAY_MAX_MS + CALL_TIMEOUT_MS));
+
 /// What a stream carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamKind {
@@ -82,6 +90,13 @@ impl StreamKind {
     #[must_use]
     pub fn awaits_ack(self) -> bool {
         matches!(self, Self::Dm | Self::MediaKey)
+    }
+
+    /// How long a row of this kind that just reached `sent` waits for the
+    /// peer's ack before it is first asked for again; `None`: its backoff.
+    #[must_use]
+    pub fn first_reask(self) -> Option<Duration> {
+        matches!(self, Self::Dm).then_some(DM_FIRST_REASK)
     }
 
     /// Whether the user may Retry a failed row of this kind. A call media

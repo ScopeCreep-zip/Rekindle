@@ -10,14 +10,18 @@ use crate::direct_capnp::{dm_ack, dm_delete, dm_edit, dm_reaction, dm_text, read
 /// The most entries one `DmAck` names: one coalescing window's worth.
 pub const MAX_DM_ACK_SEQS: usize = 256;
 
-/// 0x0004 DmAck: we hold these entries of the peer's DM stream.
+/// 0x0004 DmAck: we hold these entries of the peer's DM stream:
+/// every one through `through` (cumulative; 0 none) and `stream_seqs`
+/// past it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DmAck {
     pub stream_seqs: Vec<u64>,
+    pub through: u64,
 }
 
 impl DmAck {
-    pub(super) fn write(&self, b: dm_ack::Builder<'_>) {
+    pub(super) fn write(&self, mut b: dm_ack::Builder<'_>) {
+        b.set_through(self.through);
         let mut seqs =
             b.init_stream_seqs(u32::try_from(self.stream_seqs.len()).unwrap_or(u32::MAX));
         for (i, seq) in (0u32..).zip(&self.stream_seqs) {
@@ -35,6 +39,7 @@ impl DmAck {
         }
         Ok(Self {
             stream_seqs: seqs.iter().collect(),
+            through: r.get_through(),
         })
     }
 }

@@ -128,6 +128,17 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn acknowledge(&self, from: &str, stream_seq: i64) -> Result<bool, FriendError>;
+    /// `from` applied our chain to them through chain seq `through` (a
+    /// cumulative `DmAck`): every entry it carried is delivered, row or
+    /// none; how many changed.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn acknowledge_chain_through(
+        &self,
+        from: &str,
+        through: u64,
+    ) -> Result<usize, FriendError>;
     /// `from` read our stream to them through `stream_seq` (`ReadUpTo`):
     /// every entry at or below it becomes `read`; how many changed.
     ///

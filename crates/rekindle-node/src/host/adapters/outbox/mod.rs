@@ -307,6 +307,24 @@ impl OutboxDeps for HostOutbox {
             .map_err(|e| storage(&e))
     }
 
+    async fn deliver(
+        &self,
+        stream: &str,
+        scope: &str,
+        cover: rekindle_outbox::Cover,
+    ) -> Result<Vec<(i64, String)>, OutboxError> {
+        let (db, owner) = self.db()?;
+        let (stream, peer) = (stream.to_owned(), scope.to_owned());
+        db.call(move |c| match cover {
+            rekindle_outbox::Cover::Seq(seq) => repo::deliver_seq(c, &owner, &stream, &peer, seq),
+            rekindle_outbox::Cover::ChainThrough(t) => {
+                repo::deliver_chain_through(c, &owner, &stream, &peer, t)
+            }
+        })
+        .await
+        .map_err(|e| storage(&e))
+    }
+
     async fn mark_received(&self, stream: &str, client_id: &str) -> Result<bool, OutboxError> {
         let (db, owner) = self.db()?;
         let (stream, id) = (stream.to_owned(), client_id.to_owned());

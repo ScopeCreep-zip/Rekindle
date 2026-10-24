@@ -79,6 +79,7 @@ fn samples() -> Vec<DirectBody> {
         }),
         DirectBody::DmAck(super::DmAck {
             stream_seqs: vec![1, 7, u64::MAX],
+            through: 5,
         }),
         DirectBody::FriendAccept(FriendAccept {
             profile_dht_key: dht_key(),

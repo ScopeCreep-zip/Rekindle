@@ -171,9 +171,13 @@ struct IdentityRotated {
 # --- Content (0x01xx, 0x04xx) ---
 
 # 0x0004. The receiver holds these entries of the sender's DM stream
-# (E2.5, D22): sent only to accepted friends, after the commit.
+# (E2.5, D22): sent only to accepted friends, after the commit. Cumulative
+# (register 2026-10-24, Tox `buffer_start`): `through` is the highest chain
+# index the receiver applied with none missing below it (its committed
+# cursor; 0 none), and `streamSeqs` the entries held past it.
 struct DmAck {
   streamSeqs @0 :List(UInt64);
+  through @1 :UInt64;
 }
 
 # 0x0100.

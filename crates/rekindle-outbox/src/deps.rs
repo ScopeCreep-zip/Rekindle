@@ -33,6 +33,15 @@ pub struct NewOutboxRow {
     pub deadline: i64,
 }
 
+/// What a cumulative `DmAck` covers (register 2026-10-24).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Cover {
+    /// One entry, by stream seq.
+    Seq(i64),
+    /// Every entry of our chain through this chain seq.
+    ChainThrough(i64),
+}
+
 /// One stored send intent. Times are ms since the epoch.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OutboxRow {
@@ -177,6 +186,17 @@ pub trait OutboxDeps: Send + Sync {
         stream: &str,
         scope: &str,
         up_to: i64,
+    ) -> Result<Vec<(i64, String)>, OutboxError>;
+    /// The peer holds the entries `cover` names of `stream` (to `scope`):
+    /// each echo there below `delivered` becomes it, row or none (an ack
+    /// that finds no row still raises the stored state), and the landed
+    /// rows settle, in one transaction; the entries raised. A covered row
+    /// not landed keeps the ack and settles on its landing.
+    async fn deliver(
+        &self,
+        stream: &str,
+        scope: &str,
+        cover: Cover,
     ) -> Result<Vec<(i64, String)>, OutboxError>;
     /// Record a received client id; `false` when it was already applied.
     async fn mark_received(&self, stream: &str, client_id: &str) -> Result<bool, OutboxError>;

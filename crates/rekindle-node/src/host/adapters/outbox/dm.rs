@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use parking_lot::RwLock;
 use rekindle_lifecycle::SessionScope;
 use rekindle_outbox::{
-    AttemptOutcome, Deadline, Entry, Outbox, OutboxRow, PeerAck, StateChange, StreamKind,
+    AttemptOutcome, Cover, Deadline, Entry, Outbox, OutboxRow, PeerAck, StateChange, StreamKind,
 };
 use rekindle_transport::operations::dm::handshake;
 use rekindle_transport::operations::dm::outbox::{
@@ -442,8 +442,31 @@ impl DmOutbox for DmStream {
         let acked = self
             .0
             .acknowledge(&stream, stream_seq, PeerAck::Delivered)
+            .await
+            .map_err(|e| failed(&e))?;
+        if acked {
+            return Ok(true);
+        }
+        // No row (it settled, or this device lost it): the ack still
+        // raises the stored message (register 2026-10-24).
+        let raised = self
+            .0
+            .deliver(StreamKind::Dm, from, Cover::Seq(stream_seq))
             .await;
-        acked.map_err(|e| failed(&e))
+        raised.map(|n| n > 0).map_err(|e| failed(&e))
+    }
+
+    async fn acknowledge_chain_through(
+        &self,
+        from: &str,
+        through: u64,
+    ) -> Result<usize, FriendError> {
+        let through = i64::try_from(through).unwrap_or(i64::MAX);
+        let raised = self
+            .0
+            .deliver(StreamKind::Dm, from, Cover::ChainThrough(through))
+            .await;
+        raised.map_err(|e| failed(&e))
     }
 
     async fn read_up_to(&self, from: &str, stream_seq: i64) -> Result<usize, FriendError> {

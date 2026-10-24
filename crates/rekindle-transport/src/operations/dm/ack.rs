@@ -6,6 +6,11 @@
 //! acknowledged), coalesced per peer after a uniform 2–10 s random delay
 //! from the Host's generator, and held while we are Invisible, then flushed
 //! on leaving it. A received `DmAck` is the only source of `delivered`.
+//! It is cumulative (register 2026-10-24, Tox `buffer_start`): `through`
+//! is our committed cursor on the peer's chain, every entry below it
+//! applied, so a later ack covers a lost one; the seqs it lists are the
+//! entries committed since the last flush, a resend already held among
+//! them (Briar answers every duplicate by acking again).
 //! Our read marker (`ReadUpTo`, [`super::receipts`]) rides the same
 //! coalescer, delay and Invisible hold.
 
@@ -15,6 +20,8 @@ use std::time::Duration;
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmAck, ReadUpTo, MAX_DM_ACK_SEQS};
 use rekindle_types::friend::FriendshipState;
 use rekindle_utils::RandomSource;
+
+use rekindle_sync::stream::DM_STREAM;
 
 use super::{client_id_text, receipts, send};
 use crate::operations::friend::{state, FriendHost};
@@ -160,11 +167,17 @@ async fn flush(host: &dyn FriendHost, peer: &str) {
         return;
     };
     let seqs: Vec<u64> = held.seqs.into_iter().collect();
+    let through = if seqs.is_empty() {
+        0
+    } else {
+        cursor(host, peer).await
+    };
     let mut bodies: Vec<DirectBody> = seqs
         .chunks(MAX_DM_ACK_SEQS)
         .map(|chunk| {
             DirectBody::DmAck(DmAck {
                 stream_seqs: chunk.to_vec(),
+                through,
             })
         })
         .collect();
@@ -186,6 +199,23 @@ async fn flush(host: &dyn FriendHost, peer: &str) {
     }
 }
 
+/// Our committed cursor on `peer`'s chain (`stream_cursors`, advanced only
+/// after an entry is applied): a `DmAck`'s `through`; 0 when unread.
+async fn cursor(host: &dyn FriendHost, peer: &str) -> u64 {
+    let Ok(owner) = state::owner(host) else {
+        return 0;
+    };
+    let writer = peer.to_owned();
+    let read = state::db_call!(host, "read the ack cursor", move |conn| {
+        rekindle_db::repo::stream_cursors::get(conn, &owner, DM_STREAM, &writer)
+    })
+    .await;
+    read.unwrap_or_else(|e| {
+        tracing::debug!(to = %peer, error = %e, "ack cursor not read");
+        0
+    })
+}
+
 /// We left Invisible: send every acknowledgement held meanwhile.
 pub async fn flush_held(host: &dyn FriendHost) {
     let peers = host.stores().acks.lock().held_peers();
@@ -203,6 +233,13 @@ pub(crate) async fn on_ack(host: &dyn FriendHost, from: &str, ack: &DmAck) {
             return;
         }
     };
+    let mut through_raised = 0;
+    if ack.through > 0 {
+        match outbox.acknowledge_chain_through(from, ack.through).await {
+            Ok(n) => through_raised = n,
+            Err(e) => tracing::warn!(from = %from, error = %e, "DmAck through not applied"),
+        }
+    }
     let (mut settled, mut unmatched) = (Vec::new(), Vec::new());
     for seq in &ack.stream_seqs {
         let Ok(stream_seq) = i64::try_from(*seq) else {
@@ -215,8 +252,8 @@ pub(crate) async fn on_ack(host: &dyn FriendHost, from: &str, ack: &DmAck) {
             Err(e) => tracing::warn!(from = %from, error = %e, "DmAck not applied"),
         }
     }
-    tracing::debug!(from = %from, covered = ?ack.stream_seqs, ?settled, ?unmatched,
-        "DmAck ingested");
+    tracing::debug!(from = %from, through = ack.through, through_raised,
+        covered = ?ack.stream_seqs, ?settled, ?unmatched, "DmAck ingested");
 }
 
 #[cfg(test)]

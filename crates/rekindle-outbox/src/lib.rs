@@ -16,12 +16,12 @@ pub mod state;
 mod stream;
 
 pub use deps::{
-    holds_back, AttemptOutcome, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate,
+    holds_back, AttemptOutcome, Cover, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate,
     StateChange,
 };
 pub use engine::{Deadline, Enqueued, Entry, Outbox, DEADLINE_REASON, OUTBOX_DEADLINE};
 pub use state::{PeerAck, StateInput};
-pub use stream::{OutboxRetry, StreamKind};
+pub use stream::{OutboxRetry, StreamKind, DM_FIRST_REASK};
 
 #[cfg(test)]
 mod tests;
