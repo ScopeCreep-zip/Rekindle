@@ -61,7 +61,9 @@ pub(crate) async fn assign(
 }
 
 /// Entry `chain_seq` is sealed into `frame`, the hint about to leave: it is
-/// kept until it lands, whatever happens to its row.
+/// kept until it lands, whatever happens to its row. Returns the frame the
+/// chain gets: `frame` on the first seal, the first hint's bytes for a
+/// re-hint of a seq already sealed (sealed once, review LV22 H1).
 ///
 /// # Errors
 /// The storage failed.
@@ -70,10 +72,11 @@ pub(crate) async fn seal(
     to: &str,
     chain_seq: u64,
     frame: Vec<u8>,
-) -> Result<(), FriendError> {
+) -> Result<Vec<u8>, FriendError> {
     let (owner, peer) = (state::owner(host)?, to.to_string());
     state::db_call!(host, "seal a chain entry", move |conn| {
         chain_entries::set_frame(conn, &owner, &peer, chain_seq, &frame)
+            .map(|sealed| sealed.unwrap_or(frame))
     })
     .await
 }

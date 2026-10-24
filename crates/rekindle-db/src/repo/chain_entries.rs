@@ -101,9 +101,13 @@ pub fn assign(
     Ok(Some(seq))
 }
 
-/// The frame sealed with entry `chain_seq` (its hint), kept until it lands
-/// so the append completes whatever happens to the row (a deadline, a
-/// wedge, a restart): a seq sealed into a hint is never released.
+/// Seal entry `chain_seq` with `frame` (its first hint), kept until it
+/// lands so the append completes whatever happens to the row (a deadline,
+/// a wedge, a restart): a seq sealed into a hint is never released. The
+/// seal is set once (review LV22 H1): a later framing of the same entry
+/// never replaces the bytes an append may already carry, so every append
+/// of the seq writes the same entry. Returns the sealed frame, `None`
+/// when the entry is gone or landed.
 ///
 /// # Errors
 /// A seq does not fit a row, or the write failed.
@@ -113,13 +117,21 @@ pub fn set_frame(
     peer: &str,
     chain_seq: u64,
     frame: &[u8],
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Option<Vec<u8>>> {
+    let seq = sql_seq(chain_seq)?;
     conn.execute(
         "UPDATE chain_entries SET frame = ?4 WHERE owner_key = ?1 AND peer = ?2 \
-         AND chain_seq = ?3 AND appended_at IS NULL",
-        params![owner_key, peer, sql_seq(chain_seq)?, frame],
+         AND chain_seq = ?3 AND appended_at IS NULL AND frame IS NULL",
+        params![owner_key, peer, seq, frame],
     )?;
-    Ok(())
+    conn.query_row(
+        "SELECT frame FROM chain_entries WHERE owner_key = ?1 AND peer = ?2 \
+         AND chain_seq = ?3 AND appended_at IS NULL",
+        params![owner_key, peer, seq],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(Option::flatten)
 }
 
 /// Entry `chain_seq`, just assigned, was never sealed into a frame (its
@@ -400,5 +412,27 @@ mod assign_tests {
         assert_eq!(landed(&conn, OWNER, "bob", (1, 1), 10).unwrap(), 1);
         assert!(has_landed(&conn, OWNER, "bob", 4).unwrap());
         assert!(pending(&conn, OWNER, "bob").unwrap().is_empty());
+    }
+
+    /// A seq is sealed once: a re-hint's fresh framing never replaces the
+    /// bytes an append may already carry (review LV22 H1), so the chain
+    /// gets the first hint's frame.
+    #[test]
+    fn a_sealed_entry_keeps_its_first_frame() {
+        let conn = fixture::conn();
+        friend(&conn);
+        assert_eq!(assign(&conn, OWNER, "bob", 4).unwrap(), Some(1));
+        assert_eq!(
+            set_frame(&conn, OWNER, "bob", 1, b"first").unwrap(),
+            Some(b"first".to_vec())
+        );
+        assert_eq!(
+            set_frame(&conn, OWNER, "bob", 1, b"again").unwrap(),
+            Some(b"first".to_vec())
+        );
+        assert_eq!(
+            pending(&conn, OWNER, "bob").unwrap(),
+            [(1, 4, b"first".to_vec())]
+        );
     }
 }

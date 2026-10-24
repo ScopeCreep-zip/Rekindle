@@ -262,8 +262,14 @@ pub struct RowAttempt<'a> {
 enum Framed {
     /// A `StreamRecord`: it names the chain and is not on it.
     Record(Vec<u8>, DmTypeId),
-    /// A frame for the chain.
-    Entry(Vec<u8>, DmTypeId),
+    /// A chain entry: the `hint` sent now, and the frame the `chain` gets
+    /// (sealed once: a re-hint of a sealed seq is a fresh framing, while
+    /// the chain keeps the first hint's bytes, review LV22 H1).
+    Entry {
+        hint: Vec<u8>,
+        chain: Vec<u8>,
+        type_id: DmTypeId,
+    },
 }
 
 /// Frame `rows` (the due run of our stream to `to`, in `stream_seq`
@@ -279,7 +285,7 @@ enum Framed {
 /// (`rekindle_outbox::holds_back`) are not attempted.
 pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -> Vec<Attempt> {
     let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
-    let mut chained: Vec<(usize, Vec<u8>, DmTypeId)> = Vec::new();
+    let mut chained: Vec<(usize, Vec<u8>, Vec<u8>, DmTypeId)> = Vec::new();
     for row in rows {
         if landed(row) {
             rehint(host, to, row).await;
@@ -301,8 +307,12 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
                     Err(e) => Attempt::Wedged(e.to_string()),
                 }
             }
-            Ok(Framed::Entry(datagram, type_id)) => {
-                chained.push((outcomes.len(), datagram, type_id));
+            Ok(Framed::Entry {
+                hint,
+                chain,
+                type_id,
+            }) => {
+                chained.push((outcomes.len(), hint, chain, type_id));
                 outcomes.push(None);
                 continue;
             }
@@ -315,11 +325,11 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     // stream's appender ([`append`]), so the peer has each message without
     // waiting on a DHT write, its own or an earlier one's (live A/B finding
     // 42, the DM pump); an ack that beats the landing waits on the row.
-    for (i, datagram, type_id) in chained {
-        if let Err(e) = send::route_send_datagram(host, to, &datagram, type_id, true).await {
+    for (i, hint, chain, type_id) in chained {
+        if let Err(e) = send::route_send_datagram(host, to, &hint, type_id, true).await {
             tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
         }
-        outcomes[i] = Some(Attempt::Appending(datagram));
+        outcomes[i] = Some(Attempt::Appending(chain));
     }
     finish(outcomes)
 }
@@ -334,7 +344,14 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
 /// it is never hinted again. It stays sent whatever the hint does.
 async fn rehint(host: &dyn FriendHost, to: &str, row: &RowAttempt<'_>) {
     match frame_row(host, to, row, false).await {
-        Ok(Framed::Entry(datagram, type_id) | Framed::Record(datagram, type_id)) => {
+        Ok(
+            Framed::Entry {
+                hint: datagram,
+                type_id,
+                ..
+            }
+            | Framed::Record(datagram, type_id),
+        ) => {
             if let Err(e) = send::route_send_datagram(host, to, &datagram, type_id, true).await {
                 tracing::debug!(to = %to, error = %e, "landed entry re-hint not sent");
             }
@@ -448,11 +465,15 @@ async fn frame_row(
     };
     let framed = frame_at(host, to, &body, (seq, chain_seq), sent_at_ms).await;
     match framed {
-        Ok(Framed::Entry(datagram, type_id)) if assign => {
-            super::chain_seq::seal(host, to, chain_seq, datagram.clone())
+        Ok(Framed::Entry { hint, type_id, .. }) if assign => {
+            let chain = super::chain_seq::seal(host, to, chain_seq, hint.clone())
                 .await
                 .map_err(attempt_of)?;
-            Ok(Framed::Entry(datagram, type_id))
+            Ok(Framed::Entry {
+                hint,
+                chain,
+                type_id,
+            })
         }
         Err(outcome) if assign && chain_seq > 0 => {
             super::chain_seq::unseal(host, to, chain_seq).await;
@@ -481,7 +502,11 @@ async fn frame_at(
         return Ok(Framed::Record(datagram, frame.type_id));
     }
     fits_page(&datagram)?;
-    Ok(Framed::Entry(datagram, frame.type_id))
+    Ok(Framed::Entry {
+        chain: datagram.clone(),
+        hint: datagram,
+        type_id: frame.type_id,
+    })
 }
 
 #[cfg(test)]
