@@ -66,6 +66,57 @@ pub fn reset(
     Ok(())
 }
 
+/// D23's receiver rule on an applied entry's chain `seq` from `writer` on
+/// `stream` (live A/B finding 71 refined), whatever path brought it: the
+/// cursor's next advances the cursor; one at or below it is a duplicate;
+/// one past a gap is applied and the gap held for the chain diff, the
+/// cursor not moved past it. Returns the cursor before the step.
+///
+/// # Errors
+/// `seq` does not fit a row, or the storage failed.
+pub fn step(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    writer: &str,
+    seq: u64,
+    now: i64,
+) -> rusqlite::Result<u64> {
+    let at = get(conn, owner_key, stream, writer)?;
+    if seq == at + 1 {
+        advance(conn, owner_key, stream, writer, seq, now)?;
+    }
+    Ok(at)
+}
+
+/// Store `peer`'s participant record `key` (their `StreamRecord`) and, on
+/// `stream`, keep the cursor on them unless the key replaces one held:
+/// the first record names the chain the friendship's hints already
+/// stepped the cursor on (live A/B findings 73, 77: resetting it there,
+/// after hints 1 and 2, held hint 3 as past a gap), while a replaced
+/// record is a new chain, read from its start. An ended friendship's
+/// cursor went with its row. Whether the key changed.
+///
+/// # Errors
+/// The storage failed.
+pub fn adopt_record(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    peer: &str,
+    key: &str,
+) -> rusqlite::Result<bool> {
+    let tx = conn.unchecked_transaction()?;
+    let replaced =
+        !super::friends::peer_participant_record_key(&tx, owner_key, Some(peer))?.is_empty();
+    let changed = super::friends::set_peer_participant_record_key(&tx, owner_key, peer, key)?;
+    if changed && replaced {
+        reset(&tx, owner_key, stream, peer)?;
+    }
+    tx.commit()?;
+    Ok(changed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,5 +143,53 @@ mod tests {
         crate::repo::friends::forget(&conn, OWNER, "w").unwrap();
         assert_eq!(get(&conn, OWNER, "dm", "w").unwrap(), 0);
         assert_eq!(get(&conn, OWNER, "other", "w").unwrap(), 2);
+    }
+
+    fn friend(conn: &Connection) {
+        conn.execute(
+            "INSERT INTO friends (owner_key, public_key, added_at, friendship_state) \
+             VALUES (?1, 'bob', 0, 'accepted')",
+            params![OWNER],
+        )
+        .unwrap();
+    }
+
+    /// Hints 1, 2 and 3 with the friendship's first `StreamRecord` at
+    /// either place (it can overtake hint 1 or come after hint 2, live A/B
+    /// findings 73 and 77): the cursor ends at 3 and no hint is held.
+    #[test]
+    fn a_first_stream_record_never_resets_the_hints_cursor() {
+        for record_after in [1, 2] {
+            let conn = fixture::conn();
+            friend(&conn);
+            for seq in 1..=3 {
+                let at = step(&conn, OWNER, "dm", "bob", seq, 1).unwrap();
+                assert_eq!(at, seq - 1, "hint {seq} is the cursor's next, none held");
+                if seq == record_after {
+                    assert!(adopt_record(&conn, OWNER, "dm", "bob", "rec1").unwrap());
+                }
+            }
+            assert_eq!(get(&conn, OWNER, "dm", "bob").unwrap(), 3);
+        }
+    }
+
+    /// A record that replaces the held one is a new chain: the cursor
+    /// restarts; the same key again changes nothing.
+    #[test]
+    fn a_replaced_stream_record_restarts_the_cursor() {
+        let conn = fixture::conn();
+        friend(&conn);
+        assert!(adopt_record(&conn, OWNER, "dm", "bob", "rec1").unwrap());
+        step(&conn, OWNER, "dm", "bob", 1, 1).unwrap();
+        assert!(!adopt_record(&conn, OWNER, "dm", "bob", "rec1").unwrap());
+        assert_eq!(get(&conn, OWNER, "dm", "bob").unwrap(), 1);
+        assert!(adopt_record(&conn, OWNER, "dm", "bob", "rec2").unwrap());
+        assert_eq!(get(&conn, OWNER, "dm", "bob").unwrap(), 0);
+        assert_eq!(
+            step(&conn, OWNER, "dm", "bob", 2, 1).unwrap(),
+            0,
+            "past a gap"
+        );
+        assert_eq!(get(&conn, OWNER, "dm", "bob").unwrap(), 0);
     }
 }

@@ -216,12 +216,10 @@ pub(crate) fn duplicate(host: &dyn FriendHost, from: &str, digest: &[u8; 32]) {
     }
 }
 
-/// D23's receiver rule on an applied entry's chain seq (live A/B finding 71
-/// refined), whatever path brought it: the cursor's next advances the
-/// cursor; one at or below it is a duplicate, acknowledged again; one past
-/// a gap is applied and the gap held for the chain diff (the hint started
-/// it), the cursor not moved past the gap. So `DmAck.through`, the cursor,
-/// is the highest contiguous chain seq applied by any path.
+/// D23's receiver rule on an applied entry's chain seq
+/// (`repo::stream_cursors::step`), whatever path brought it; a gap is held
+/// for the chain diff the hint started. So `DmAck.through`, the cursor, is
+/// the highest contiguous chain seq applied by any path.
 async fn step_cursor(host: &dyn FriendHost, from: &str, chain_seq: u64) {
     if chain_seq == 0 {
         return;
@@ -231,13 +229,7 @@ async fn step_cursor(host: &dyn FriendHost, from: &str, chain_seq: u64) {
     };
     let (writer, now) = (from.to_owned(), host.clock().now_ms_i64());
     let stepped = state::db_call!(host, "step the chain cursor", move |conn| {
-        let at = rekindle_db::repo::stream_cursors::get(conn, &owner, DM_STREAM, &writer)?;
-        if chain_seq == at + 1 {
-            rekindle_db::repo::stream_cursors::advance(
-                conn, &owner, DM_STREAM, &writer, chain_seq, now,
-            )?;
-        }
-        Ok(at)
+        rekindle_db::repo::stream_cursors::step(conn, &owner, DM_STREAM, &writer, chain_seq, now)
     })
     .await;
     match stepped {

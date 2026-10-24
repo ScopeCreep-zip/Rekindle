@@ -297,19 +297,7 @@ pub(crate) async fn on_stream_record(
     };
     let (peer, key) = (sender.to_string(), body.record_key.clone());
     let stored = state::db_call!(host, "store peer participant record", move |conn| {
-        let replaced =
-            !rekindle_db::repo::friends::peer_participant_record_key(conn, &owner, Some(&peer))?
-                .is_empty();
-        let changed =
-            rekindle_db::repo::friends::set_peer_participant_record_key(conn, &owner, &peer, &key)?;
-        // Only a replaced record restarts the cursor: the first one names
-        // the chain the friendship's hints already stepped the cursor on
-        // (live A/B finding 73: resetting it there held hints 2 and 3 as
-        // past a gap). An ended friendship's cursor went with its row.
-        if changed && replaced {
-            rekindle_db::repo::stream_cursors::reset(conn, &owner, DM_STREAM, &peer)?;
-        }
-        Ok(changed)
+        rekindle_db::repo::stream_cursors::adopt_record(conn, &owner, DM_STREAM, &peer, &key)
     })
     .await;
     match stored {
