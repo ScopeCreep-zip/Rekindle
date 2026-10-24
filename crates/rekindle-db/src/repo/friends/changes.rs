@@ -24,21 +24,35 @@ pub(crate) fn atomically<T>(
     Ok(value)
 }
 
-/// [`atomically`], for a change that deletes ratchet sessions (chain
-/// keys): when it opened the transaction itself, a
-/// `wal_checkpoint(TRUNCATE)` follows its commit, so the erased keys'
-/// old pages leave the `-wal` file too (threat model I14). Inside the
-/// caller's transaction the caller's own erasing commit truncates.
+/// [`atomically`], for a change that may delete ratchet sessions (chain
+/// keys): when it opened the transaction itself and the commit left fewer
+/// session rows than it found (none of these changes inserts one), a
+/// `wal_checkpoint(TRUNCATE)` follows the commit, so the erased keys' old
+/// pages leave the `-wal` file too (threat model I14). A change that erased
+/// nothing (most expiry ticks, an add with no old session) pays no full
+/// checkpoint (RV5). Inside the caller's transaction the caller's own
+/// erasing commit counts and truncates, so a nested erase is never missed.
 pub(crate) fn erasing<T>(
     conn: &Connection,
     change: impl FnOnce(&Connection) -> rusqlite::Result<T>,
 ) -> rusqlite::Result<T> {
-    let outermost = conn.is_autocommit();
+    if !conn.is_autocommit() {
+        return change(conn);
+    }
+    let before = session_rows(conn)?;
     let value = atomically(conn, change)?;
-    if outermost {
+    if session_rows(conn)? < before {
         crate::ratchet::truncate_wal(conn);
     }
     Ok(value)
+}
+
+/// How many ratchet sessions the database holds (every identity's: the
+/// count only has to fall when one is erased).
+fn session_rows(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row("SELECT count(*) FROM ratchet_sessions", [], |row| {
+        row.get(0)
+    })
 }
 
 /// Delete every ratchet session with `peer`: the friendship that carried
@@ -281,6 +295,82 @@ mod tests {
         assert!(wal_len() > 0, "storing the session wrote WAL frames");
         db.call(|c| cancel_request(c, OWNER, BOB)).await.unwrap();
         assert_eq!(wal_len(), 0);
+    }
+
+    /// I14 on every erasing entry point: each one that deletes a stored
+    /// session leaves the `-wal` file empty; one that erased nothing (an
+    /// expiry tick with nothing expired) runs no checkpoint (RV5).
+    #[tokio::test]
+    async fn every_erasing_change_truncates_only_when_it_erased() {
+        type Change = fn(&Connection) -> rusqlite::Result<()>;
+        let cases: [(&str, Change, Change); 7] = [
+            ("cancel_request", pending, |c| cancel_request(c, OWNER, BOB)),
+            ("block", accepted, |c| block(c, OWNER, BOB, "Bob", 2)),
+            ("unfriended", accepted, |c| unfriended(c, OWNER, BOB)),
+            ("forget_removed", removing, |c| {
+                forget_removed(c, OWNER).map(drop)
+            }),
+            ("expiry", pending, |c| {
+                super::super::delete_pending_out_before(c, OWNER, 5).map(drop)
+            }),
+            ("insert_accepted", removing, |c| {
+                insert_accepted(c, OWNER, BOB, "Bob", 3)
+            }),
+            ("insert_pending_out", removing, |c| {
+                super::super::insert_pending_out(c, OWNER, BOB, "Bob", 3)
+            }),
+        ];
+        for (name, setup, change) in cases {
+            let dir = tempfile::tempdir().unwrap();
+            let db = crate::open(&dir.path().join("o.db"), &[7; 32]).unwrap();
+            let wal = dir.path().join("o.db-wal");
+            let wal_len = || std::fs::metadata(&wal).unwrap().len();
+            db.call(move |c| {
+                crate::repo::identity::insert(c, OWNER, "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa")?;
+                setup(c)?;
+                store_session(c)
+            })
+            .await
+            .unwrap();
+            assert!(wal_len() > 0, "{name}: the setup wrote WAL frames");
+            db.call(move |c| change(c)).await.unwrap();
+            assert_eq!(wal_len(), 0, "{name}: erased a session, so truncated");
+            // Nothing left to erase: the same change again checkpoints nothing.
+            db.call(|c| c.execute_batch("CREATE TABLE IF NOT EXISTS t (x)"))
+                .await
+                .unwrap();
+            let written = wal_len();
+            assert!(written > 0);
+            db.call(|c| super::super::delete_pending_out_before(c, OWNER, 5).map(drop))
+                .await
+                .unwrap();
+            assert!(
+                wal_len() >= written,
+                "{name}: an empty expiry tick truncated"
+            );
+        }
+    }
+
+    fn pending(c: &Connection) -> rusqlite::Result<()> {
+        super::super::insert_pending_out(c, OWNER, BOB, "Bob", 1)
+    }
+
+    fn accepted(c: &Connection) -> rusqlite::Result<()> {
+        insert_accepted(c, OWNER, BOB, "Bob", 1)
+    }
+
+    fn removing(c: &Connection) -> rusqlite::Result<()> {
+        insert_accepted(c, OWNER, BOB, "Bob", 1)?;
+        set_state(c, OWNER, BOB, FriendshipState::Removing)
+    }
+
+    fn store_session(c: &Connection) -> rusqlite::Result<()> {
+        c.execute(
+            "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
+             VALUES (?1, ?2, 'd', x'00', 1)",
+            params![OWNER.to_ascii_lowercase(), BOB],
+        )
+        .map(drop)
     }
 
     fn state_of(conn: &Connection) -> Option<String> {
