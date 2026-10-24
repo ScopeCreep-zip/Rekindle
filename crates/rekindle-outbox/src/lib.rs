@@ -11,18 +11,19 @@
 mod appender;
 mod deps;
 mod engine;
+mod landing;
 mod reask;
 mod receipt;
 pub mod state;
 mod stream;
 
 pub use deps::{
-    holds_back, AttemptOutcome, Cover, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate,
-    StateChange,
+    holds_back, AttemptOutcome, Cover, Landed, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow,
+    RowUpdate, StateChange,
 };
 pub use engine::{Deadline, Enqueued, Entry, Outbox, DEADLINE_REASON, OUTBOX_DEADLINE};
 pub use state::{PeerAck, StateInput};
-pub use stream::{OutboxRetry, StreamKind, DM_FIRST_REASK};
+pub use stream::{OutboxRetry, StreamKind, DM_APPEND_DEADLINE, DM_FIRST_REASK};
 
 #[cfg(test)]
 mod tests;

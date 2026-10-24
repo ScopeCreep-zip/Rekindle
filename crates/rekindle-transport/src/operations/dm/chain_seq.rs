@@ -176,7 +176,12 @@ pub(crate) async fn append_pending(
         .await;
         match written {
             Ok(_) => {}
+            // The chain moved past the run: it is ours only when the chain
+            // holds exactly these entries at these seqs (research
+            // `prod_research_batch9.md`: "already present with the same
+            // frame" is the append's success, any other entry is not).
             Err(ChainError::SeqMoved { next, .. }) if next > last => {
+                holds_run(port, &ours.record_key, first, run).await?;
                 tracing::debug!(to = %to, first, last, "dm run already on the chain");
             }
             Err(e) => return Err(FriendError::NotReady(format!("chain append: {e}"))),
@@ -193,4 +198,32 @@ pub(crate) async fn append_pending(
         .await?;
     }
     Ok(())
+}
+
+/// Whether our chain `record` holds `run` at the seqs from `first`, each
+/// entry byte for byte.
+///
+/// # Errors
+/// The chain could not be read, or it holds another entry at one of them.
+async fn holds_run(
+    port: &dyn RecordPort,
+    record: &str,
+    first: u64,
+    run: &[Vec<u8>],
+) -> Result<(), FriendError> {
+    let read = chain::read_after(port, record, first - 1)
+        .await
+        .map_err(|e| FriendError::NotReady(format!("chain read: {e}")))?;
+    let held = (first..).zip(run).all(|(seq, frame)| {
+        read.entries
+            .iter()
+            .any(|entry| entry.seq == seq && entry.ciphertext == *frame)
+    });
+    if held {
+        Ok(())
+    } else {
+        Err(FriendError::Failed(format!(
+            "chain append: the chain holds other entries from seq {first}"
+        )))
+    }
 }

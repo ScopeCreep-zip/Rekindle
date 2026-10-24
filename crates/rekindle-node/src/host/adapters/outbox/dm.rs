@@ -407,6 +407,10 @@ impl DmOutbox for DmStream {
         acked.map_err(|e| failed(&e))
     }
 
+    async fn reconcile(&self) -> Result<usize, FriendError> {
+        self.0.reconcile().await.map_err(|e| failed(&e))
+    }
+
     async fn reask_soon(&self, peer: &str) -> Result<usize, FriendError> {
         let moved = self.0.reask_soon(StreamKind::Dm, peer).await;
         moved.map_err(|e| failed(&e))

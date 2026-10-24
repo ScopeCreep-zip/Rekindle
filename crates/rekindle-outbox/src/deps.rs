@@ -136,6 +136,17 @@ pub fn holds_back(outcome: &AttemptOutcome) -> bool {
     )
 }
 
+/// How a landing left a row ([`OutboxDeps::land`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Landed {
+    /// No `queued` row: gone, or landed already (a second landing is a no-op).
+    Unchanged,
+    /// `sent` now, waiting for the peer's ack.
+    Waiting,
+    /// The peer's ack was in: settled at this state.
+    Settled(SendState),
+}
+
 #[async_trait]
 pub trait OutboxDeps: Send + Sync {
     /// The local echo written with a row (a direct message's `messages`
@@ -177,6 +188,22 @@ pub trait OutboxDeps: Send + Sync {
     /// (`queued`; the higher ack stays), durably and atomically against
     /// [`Self::update`]: `false` when the row is past `queued` or gone.
     async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError>;
+    /// The landing input of `client_id` (D22's two-input settle; research
+    /// `prod_research_batch9.md` Q2), the only write that lands a row: a
+    /// `queued` row becomes `sent`, due at `next_at` after `attempts`, and
+    /// settles at the peer's ack when that is already on it, in one
+    /// transaction. A row past `queued`, or gone, is left as it is.
+    async fn land(
+        &self,
+        client_id: &str,
+        attempts: u32,
+        next_at: i64,
+    ) -> Result<Landed, OutboxError>;
+    /// Of `stream_seqs` (rows of `stream`, a chain stream), the ones whose
+    /// entry our own chain records as landed: the evidence a landing that
+    /// no append reported (a late completion, the maintenance tick's
+    /// append, a restart) leaves.
+    async fn on_chain(&self, stream: &str, stream_seqs: &[i64]) -> Result<Vec<i64>, OutboxError>;
     /// Project `state` and remove the row.
     async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError>;
     /// The peer read `stream` (scope `scope`) through `up_to`: raise every

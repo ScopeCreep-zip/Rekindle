@@ -423,3 +423,44 @@ fn deliver_seq_raises_an_echo_with_no_row_and_never_lowers_one() {
     assert_eq!(state("sent"), SendState::Delivered);
     assert_eq!(state("read"), SendState::Read);
 }
+
+/// The landing and the ack settle a row whichever comes last (live A/B
+/// finding 73; research `prod_research_batch9.md` Q2): `land` settles at
+/// an ack already on the row in its own transaction, the ack settles a
+/// landed row, and a second landing is a no-op.
+#[test]
+fn ack_before_and_after_landing() {
+    let conn = fixture::conn();
+    enqueue_with_echo(&conn, &row("dm:bob", "a", 0), Some(&echo())).unwrap();
+    enqueue_with_echo(&conn, &row("dm:bob", "b", 0), Some(&echo())).unwrap();
+    let state = |id| own_dm(&conn, OWNER, id).unwrap().unwrap().row.send_state;
+    // `a`: the ack first, kept on the queued row; the landing settles it.
+    deliver_seq(&conn, OWNER, "dm:bob", "bob", 1).unwrap();
+    assert!(
+        get(&conn, OWNER, "a").unwrap().is_some(),
+        "kept until it lands"
+    );
+    assert_eq!(
+        land(&conn, OWNER, "a", 1, 5).unwrap(),
+        Landing::Settled(SendState::Delivered)
+    );
+    assert!(get(&conn, OWNER, "a").unwrap().is_none(), "settled");
+    assert_eq!(state("a"), SendState::Delivered);
+    assert_eq!(land(&conn, OWNER, "a", 2, 9).unwrap(), Landing::Unchanged);
+    // `b`: the landing first, waiting; the ack settles it.
+    assert_eq!(land(&conn, OWNER, "b", 1, 5).unwrap(), Landing::Waiting);
+    let b = get(&conn, OWNER, "b").unwrap().unwrap();
+    assert_eq!((b.state, b.attempts, b.next_at), (SendState::Sent, 1, 5));
+    assert_eq!(state("b"), SendState::Sent);
+    assert_eq!(
+        land(&conn, OWNER, "b", 2, 9).unwrap(),
+        Landing::Unchanged,
+        "monotone"
+    );
+    deliver_seq(&conn, OWNER, "dm:bob", "bob", 2).unwrap();
+    assert!(
+        get(&conn, OWNER, "b").unwrap().is_none(),
+        "settled by the ack"
+    );
+    assert_eq!(state("b"), SendState::Delivered);
+}

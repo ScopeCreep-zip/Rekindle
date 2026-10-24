@@ -20,7 +20,7 @@ use rekindle_db::repo::messages::NewDm;
 use rekindle_db::repo::outbox as repo;
 use rekindle_db::{Db, DbHandle};
 use rekindle_outbox::{
-    AttemptOutcome, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, PeerAck, RowUpdate,
+    AttemptOutcome, Landed, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, PeerAck, RowUpdate,
     StateChange, StreamKind,
 };
 use rekindle_types::message::SendState;
@@ -291,6 +291,48 @@ impl OutboxDeps for HostOutbox {
         db.call(move |c| repo::note_ack(c, &owner, &id, stored))
             .await
             .map_err(|e| storage(&e))
+    }
+
+    async fn land(
+        &self,
+        client_id: &str,
+        attempts: u32,
+        next_at: i64,
+    ) -> Result<Landed, OutboxError> {
+        let (db, owner) = self.db()?;
+        let id = client_id.to_owned();
+        let landing = db
+            .call(move |c| repo::land(c, &owner, &id, attempts, next_at))
+            .await
+            .map_err(|e| storage(&e))?;
+        Ok(match landing {
+            repo::Landing::Unchanged => Landed::Unchanged,
+            repo::Landing::Waiting => Landed::Waiting,
+            repo::Landing::Settled(state) => Landed::Settled(state),
+        })
+    }
+
+    /// A `dm:<peer>` stream's entries are noted under `<peer>`, a
+    /// `group_dm:<id>` stream's under its stream name (`chain_entries`).
+    async fn on_chain(&self, stream: &str, seqs: &[i64]) -> Result<Vec<i64>, OutboxError> {
+        let chain = match stream.strip_prefix("dm:") {
+            Some(peer) => peer.to_owned(),
+            None if stream.starts_with("group_dm:") => stream.to_owned(),
+            None => return Ok(Vec::new()),
+        };
+        let (db, owner) = self.db()?;
+        let seqs = seqs.to_vec();
+        db.call(move |c| {
+            let mut on = Vec::new();
+            for seq in seqs {
+                if rekindle_db::repo::chain_entries::has_landed(c, &owner, &chain, seq)? {
+                    on.push(seq);
+                }
+            }
+            Ok(on)
+        })
+        .await
+        .map_err(|e| storage(&e))
     }
 
     async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError> {

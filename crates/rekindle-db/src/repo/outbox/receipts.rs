@@ -207,3 +207,64 @@ fn project_ack(
     )?;
     Ok(())
 }
+
+/// How [`land`] left a row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Landing {
+    /// No `queued` row is `client_id`: it is gone or landed already (a
+    /// landing is monotone, so a second one is a no-op).
+    Unchanged,
+    /// The row is `sent` now, waiting for the peer's ack.
+    Waiting,
+    /// The peer's ack was in: the row settled at this state.
+    Settled(SendState),
+}
+
+/// The landing input of `client_id` (D22's two-input settle; research
+/// `prod_research_batch9.md` Q2): a `queued` row becomes `sent`, due at
+/// `next_at` after `attempts`, and when the peer's ack is already on it
+/// the row settles at that ack, both in one transaction, so the landing
+/// and the ack ([`ack_range_in`], [`note_ack`]) settle the row whichever
+/// comes last. A row past `queued`, or gone, is left as it is.
+///
+/// # Errors
+/// The write failed; nothing changed.
+pub fn land(
+    conn: &Connection,
+    owner_key: &str,
+    client_id: &str,
+    attempts: u32,
+    next_at: i64,
+) -> rusqlite::Result<Landing> {
+    use rusqlite::OptionalExtension;
+    let tx = conn.unchecked_transaction()?;
+    let acked: Option<Option<String>> = tx
+        .query_row(
+            "UPDATE outbox SET state = 'sent', attempts = ?3, next_at = ?4, wedge_reason = NULL \
+             WHERE owner_key = ?1 AND client_id = ?2 AND state = 'queued' RETURNING peer_ack",
+            params![owner_key, client_id, attempts, next_at],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let landing = match acked {
+        None => Landing::Unchanged,
+        Some(None) => {
+            super::project(&tx, owner_key, client_id, SendState::Sent)?;
+            Landing::Waiting
+        }
+        Some(Some(ack)) => {
+            let state = match super::parse_state(&ack, 0)? {
+                SendState::Read => SendState::Read,
+                _ => SendState::Delivered,
+            };
+            super::project(&tx, owner_key, client_id, state)?;
+            tx.execute(
+                "DELETE FROM outbox WHERE owner_key = ?1 AND client_id = ?2",
+                params![owner_key, client_id],
+            )?;
+            Landing::Settled(state)
+        }
+    };
+    tx.commit()?;
+    Ok(landing)
+}

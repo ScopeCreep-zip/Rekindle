@@ -99,7 +99,13 @@ impl<D: OutboxDeps> Outbox<D> {
     /// waits its kind's first re-ask for the peer's ack, measured from
     /// `sent_at`, when its send (the hint) left, not from a later landing
     /// (live A/B finding 73c); any other its backoff.
-    fn next_after(&self, row: &OutboxRow, state: SendState, attempts: u32, sent_at: i64) -> i64 {
+    pub(crate) fn next_after(
+        &self,
+        row: &OutboxRow,
+        state: SendState,
+        attempts: u32,
+        sent_at: i64,
+    ) -> i64 {
         let now = self.now();
         match row.kind.first_reask() {
             Some(wait) if row.state != SendState::Sent && state == SendState::Sent => {
@@ -154,7 +160,7 @@ impl<D: OutboxDeps> Outbox<D> {
         self.wake.notify_one();
     }
 
-    async fn fail(&self, row: &OutboxRow, reason: String) -> Result<(), OutboxError> {
+    pub(crate) async fn fail(&self, row: &OutboxRow, reason: String) -> Result<(), OutboxError> {
         let state = merge(row.state, StateInput::Failed);
         let update = RowUpdate {
             state,
@@ -221,6 +227,11 @@ impl<D: OutboxDeps> Outbox<D> {
             for (row, outcome) in stream.iter().zip(outcomes) {
                 if let AttemptOutcome::Appending(frame) = outcome {
                     self.hand_off(row).await?;
+                    // Its append is still running past its deadline: the
+                    // attempt resent the hint, and no second append starts.
+                    if self.appends.in_flight(&row.client_id) {
+                        continue;
+                    }
                     jobs.push(crate::appender::Job {
                         row: row.clone(),
                         frame,
@@ -230,7 +241,7 @@ impl<D: OutboxDeps> Outbox<D> {
                 }
                 self.settle_attempt(row, outcome, sent_at).await?;
             }
-            self.appends.hand(jobs);
+            self.appends.hand(jobs, sent_at);
         }
         Ok(())
     }
@@ -259,6 +270,9 @@ impl<D: OutboxDeps> Outbox<D> {
             | AttemptOutcome::Deferred
             | AttemptOutcome::Appending(_)) => {
                 let landed = matches!(outcome, AttemptOutcome::Sent | AttemptOutcome::Awaiting);
+                if landed && row.state == SendState::Queued {
+                    return self.mark_landed(row, attempts, sent_at).await;
+                }
                 let state = if landed {
                     merge(row.state, StateInput::LocalSent)
                 } else {
@@ -271,18 +285,7 @@ impl<D: OutboxDeps> Outbox<D> {
                     deadline: row.deadline,
                     wedge_reason: None,
                 };
-                let acked = self.deps.update(&row.client_id, &update).await?;
-                // The peer's ack came before this landing: both are in now
-                // (live A/B finding 42).
-                // Its state was shown when the ack came (D22); the landing
-                // lets the row go.
-                if let (true, Some(ack)) = (landed, acked) {
-                    self.deps
-                        .settle(&row.client_id, merge(state, StateInput::Peer(ack)))
-                        .await?;
-                    self.wake.notify_one();
-                    return Ok(());
-                }
+                self.deps.update(&row.client_id, &update).await?;
                 if state != row.state {
                     self.deps.publish(StateChange::of(row, state, None));
                 }
@@ -536,6 +539,11 @@ impl<D: OutboxDeps> Outbox<D> {
     /// streams' appenders, until `stop`; an append still in flight then is
     /// cut off, and its row is attempted again by a later pass.
     pub async fn run(&self, stop: CancellationToken) {
+        // The startup pass (research `prod_research_batch9.md` Q3): rows
+        // whose entry landed before a restart settle, the rest re-queue.
+        if let Err(e) = self.reconcile().await {
+            tracing::warn!(error = %e, "outbox startup reconcile failed");
+        }
         tokio::select! {
             () = self.pump_loop(&stop) => {}
             () = self.append_loop() => {}

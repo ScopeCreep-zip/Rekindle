@@ -158,6 +158,14 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn reask_soon(&self, peer: &str) -> Result<usize, FriendError>;
+    /// Reconcile every queued chain row with our own chain (the friend
+    /// maintenance tick; live A/B finding 73): a row whose entry landed by
+    /// any path is landed, the one landing writer
+    /// (`rekindle_outbox::Outbox::reconcile`); how many.
+    ///
+    /// # Errors
+    /// The storage failed.
+    async fn reconcile(&self) -> Result<usize, FriendError>;
 }
 
 /// `peer` was heard from again: their route changed, their presence turned

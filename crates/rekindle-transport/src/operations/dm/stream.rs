@@ -188,11 +188,17 @@ pub async fn retire_quiet(host: &dyn FriendHost) {
         match host.held_participant_writer(peer).await {
             Ok(Some(ours)) => {
                 // A sealed entry whose row left (a deadline, a wedge) still
-                // lands (finding 71 refined), with no later message to carry it.
-                if let Err(e) =
-                    super::chain_seq::append_pending(host, port.as_ref(), &ours, peer).await
-                {
-                    tracing::debug!(to = %peer, error = %e, "pending chain entries not appended");
+                // lands (finding 71 refined), with no later message to carry
+                // it. While a row of the stream is queued, its appender owns
+                // the chain (one append in flight per stream, research
+                // `prod_research_batch9.md` Q1): the reconcile below lands or
+                // re-queues it there, and its append carries these too.
+                if !rows_queued(host, peer).await {
+                    if let Err(e) =
+                        super::chain_seq::append_pending(host, port.as_ref(), &ours, peer).await
+                    {
+                        tracing::debug!(to = %peer, error = %e, "pending chain entries not appended");
+                    }
                 }
                 retire(host, peer, &ours, port.as_ref()).await;
             }
@@ -202,6 +208,34 @@ pub async fn retire_quiet(host: &dyn FriendHost) {
             Err(e) => tracing::debug!(to = %peer, error = %e, "participant record unreadable"),
         }
     }
+    // Every queued chain row whose entry landed by any path settles through
+    // the outbox's one landing writer (live A/B finding 73).
+    match host.outbox() {
+        Ok(outbox) => match outbox.reconcile().await {
+            Ok(0) => {}
+            Ok(landed) => tracing::debug!(landed, "outbox rows landed from our chains"),
+            Err(e) => tracing::warn!(error = %e, "outbox not reconciled"),
+        },
+        Err(e) => tracing::debug!(error = %e, "no outbox: rows not reconciled"),
+    }
+}
+
+/// Whether a row of our `dm` stream to `peer` is still `queued` (its
+/// append not landed): a storage failure counts as queued, so the tick
+/// never appends beside the stream's appender.
+async fn rows_queued(host: &dyn FriendHost, peer: &str) -> bool {
+    let Ok(owner) = state::owner(host) else {
+        return true;
+    };
+    let stream = format!("dm:{peer}");
+    let rows = state::db_call!(host, "read the stream's rows", move |conn| {
+        rekindle_db::repo::outbox::stream_rows(conn, &owner, &stream)
+    })
+    .await;
+    rows.map_or(true, |rows| {
+        rows.iter()
+            .any(|r| r.state == rekindle_types::message::SendState::Queued)
+    })
 }
 
 /// The client id of the `dm` row that carries `record_key` in a

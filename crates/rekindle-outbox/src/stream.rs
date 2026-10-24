@@ -19,6 +19,18 @@ pub const DM_RETRY_FLOOR: Duration = Duration::from_millis(DM_ACK_DELAY_MAX_MS +
 pub const DM_FIRST_REASK: Duration =
     Duration::from_millis(2 * (DM_ACK_DELAY_MAX_MS + CALL_TIMEOUT_MS));
 
+/// How long a handed-off chain append is waited for before its outcome is
+/// unknown (live A/B finding 73; research `prod_research_batch9.md` Q1:
+/// Signal bounds an attempt at 10 s, SimpleX at 30 s, and neither reads a
+/// timeout as "not stored"). It is [`DM_RETRY_FLOOR`], the longest an ack
+/// may take, half of [`DM_FIRST_REASK`]: so the first re-ask always finds
+/// the append past it, and a row whose append is still running is
+/// re-hinted (the hint only) instead of waiting on the DHT. The append is
+/// never cancelled: its stream stays busy until it ends (one append in
+/// flight per stream), and its late outcome is recorded as any landing is
+/// (`OutboxDeps::land`, a no-op on a row already landed).
+pub const DM_APPEND_DEADLINE: Duration = DM_RETRY_FLOOR;
+
 /// What a stream carries.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamKind {

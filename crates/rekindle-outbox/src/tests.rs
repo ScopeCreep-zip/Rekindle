@@ -47,6 +47,11 @@ struct Store {
     attempted: Vec<String>,
     reissued: Vec<String>,
     outcomes: VecDeque<AttemptOutcome>,
+    /// The stream seqs our chain records as landed (`on_chain`).
+    chain: HashSet<i64>,
+    /// How many appends started, and what holds each until notified.
+    appends: usize,
+    hold: Option<Arc<tokio::sync::Notify>>,
 }
 
 #[derive(Clone)]
@@ -227,7 +232,48 @@ impl OutboxDeps for Fake {
         Ok(self.store.lock().rows.len() as u64)
     }
     async fn append(&self, _: StreamKind, _: &str, f: &[(Vec<u8>, i64)]) -> Vec<AttemptOutcome> {
+        let hold = {
+            let mut s = self.store.lock();
+            s.appends += 1;
+            s.hold.clone()
+        };
+        if let Some(hold) = hold {
+            hold.notified().await;
+        }
         vec![AttemptOutcome::Sent; f.len()]
+    }
+    async fn land(
+        &self,
+        client_id: &str,
+        attempts: u32,
+        next_at: i64,
+    ) -> Result<Landed, OutboxError> {
+        let ack = {
+            let mut s = self.store.lock();
+            let Some(r) = s
+                .rows
+                .iter_mut()
+                .find(|r| r.client_id == client_id && r.state == SendState::Queued)
+            else {
+                return Ok(Landed::Unchanged);
+            };
+            (r.state, r.attempts, r.next_at) = (SendState::Sent, attempts, next_at);
+            s.acks.get(client_id).copied()
+        };
+        let Some(ack) = ack else {
+            return Ok(Landed::Waiting);
+        };
+        let state = merge(SendState::Sent, StateInput::Peer(ack));
+        self.settle(client_id, state).await?;
+        Ok(Landed::Settled(state))
+    }
+    async fn on_chain(&self, _: &str, seqs: &[i64]) -> Result<Vec<i64>, OutboxError> {
+        let s = self.store.lock();
+        Ok(seqs
+            .iter()
+            .copied()
+            .filter(|q| s.chain.contains(q))
+            .collect())
     }
     async fn attempt(&self, row: &OutboxRow) -> AttemptOutcome {
         let mut s = self.store.lock();
@@ -506,73 +552,9 @@ fn backoff_is_jittered_within_its_step_and_capped() {
     assert_eq!(StreamKind::ChannelPost.policy().delay(1, &rng), None);
 }
 
-#[tokio::test]
-async fn a_channel_post_stream_settles_from_its_write_settle() {
-    let o = outbox();
-    o.enqueue(entry(StreamKind::ChannelPost, "rk:4", "p1"), ())
-        .await
-        .unwrap();
-    o.enqueue(entry(StreamKind::ChannelPost, "rk:4", "p2"), ())
-        .await
-        .unwrap();
-    o.enqueue(entry(StreamKind::ChannelPost, "rk:5", "p3"), ())
-        .await
-        .unwrap();
-    let settled = (o
-        .settle_stream(StreamKind::ChannelPost, "rk:4", Ok(()))
-        .await)
-        .unwrap();
-    let ids: Vec<_> = settled.iter().map(|r| r.client_id.as_str()).collect();
-    assert_eq!(ids, ["p1", "p2"]);
-    assert_eq!(state_of(&o, "p3"), Some(SendState::Queued));
-    let failed = (o.settle_stream(StreamKind::ChannelPost, "rk:5", Err("superseded".into())))
-        .await
-        .unwrap();
-    assert_eq!(failed.len(), 1);
-    let s = o.deps().store.lock();
-    assert!(s.rows.is_empty());
-    let states: Vec<_> = s.settled.iter().map(|e| (e.2.as_str(), e.3)).collect();
-    assert_eq!(
-        states,
-        [
-            ("p1", SendState::Sent),
-            ("p2", SendState::Sent),
-            ("p3", SendState::Failed)
-        ]
-    );
-}
+mod channel_post;
 
-#[tokio::test]
-async fn a_channel_post_gets_no_attempt_pass_and_fails_at_its_deadline() {
-    let o = outbox();
-    o.enqueue(entry(StreamKind::ChannelPost, "rk:4", "p1"), ())
-        .await
-        .unwrap();
-    let wake = o.pump().await.unwrap();
-    assert!(o.deps().store.lock().attempted.is_empty());
-    let deadline = o.deps().store.lock().rows[0].deadline;
-    assert_eq!(wake, Some(deadline), "no backoff pass, only its deadline");
-    assert_eq!(o.flush(StreamKind::ChannelPost).await.unwrap(), 0);
-    advance(&o, deadline);
-    o.pump().await.unwrap();
-    assert!(o.deps().store.lock().attempted.is_empty());
-    assert_eq!(state_of(&o, "p1"), Some(SendState::Failed));
-    // The user's Retry makes its write again under its id; the engine
-    // still never attempts it.
-    assert!(o.retry("p1").await.unwrap());
-    o.pump().await.unwrap();
-    assert!(o.deps().store.lock().attempted.is_empty());
-    assert_eq!(o.deps().store.lock().reissued, ["p1"]);
-    assert_eq!(state_of(&o, "p1"), Some(SendState::Queued));
-    // A write that cannot be made again fails the row at once.
-    o.enqueue(entry(StreamKind::ChannelPost, "rk:9", "gone1"), ())
-        .await
-        .unwrap();
-    advance(&o, deadline);
-    o.pump().await.unwrap();
-    assert!(o.retry("gone1").await.unwrap());
-    assert_eq!(state_of(&o, "gone1"), Some(SendState::Failed));
-}
+mod landing;
 
 mod media_key;
 

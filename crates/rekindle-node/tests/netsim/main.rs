@@ -14,6 +14,7 @@ mod crossing_request;
 mod dm_ack_loss;
 mod dm_ack_through;
 mod dm_after_cancel;
+mod dm_append_deadline;
 mod dm_hint_loss;
 mod dm_new_friendship;
 mod events;
