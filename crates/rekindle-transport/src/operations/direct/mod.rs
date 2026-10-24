@@ -95,11 +95,19 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
     handlers::handle(host, opened).await
 }
 
-/// A frame that did not open by message: a rejected init's
-/// `PreKeyRejected` goes back by message (B5).
+/// A frame that did not open by message or from a chain: a rejected
+/// init's `PreKeyRejected` goes back by message (B5), and a copy of an
+/// entry we already hold is acknowledged again (Briar answers every
+/// duplicate; live A/B finding 73).
 fn by_message(host: &dyn FriendHost, dropped: Dropped) {
-    if let Dropped::Rejected { to, frame } = dropped {
-        crate::operations::prekeys::send_rejection(host, &to, *frame);
+    match dropped {
+        Dropped::Rejected { to, frame } => {
+            crate::operations::prekeys::send_rejection(host, &to, *frame);
+        }
+        Dropped::Duplicate { from, type_id } => dm::ack::duplicate(host, &from, type_id),
+        // A blocked sender is never acked (LV23 review H1/H2); an in-flight
+        // copy's first copy settles the receipt.
+        Dropped::Blocked | Dropped::InFlight | Dropped::Refused | Dropped::Failed => {}
     }
 }
 
@@ -179,7 +187,7 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
         // The silent receipt: a block is never told (LV23 review H1/H2).
-        Err(Dropped::Duplicate | Dropped::Blocked) => return Called::Answered(Vec::new()),
+        Err(Dropped::Duplicate { .. } | Dropped::Blocked) => return Called::Answered(Vec::new()),
         Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
         Err(Dropped::Failed | Dropped::InFlight) => return Called::RetryLater,
         // B5 by the call itself (finding 46): the caller tells a refused

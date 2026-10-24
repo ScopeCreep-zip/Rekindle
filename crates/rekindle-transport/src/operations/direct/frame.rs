@@ -68,9 +68,10 @@ pub enum Dropped {
     /// receipted is never acked: their side shows "sent", never
     /// "delivered".
     Blocked,
-    /// A copy of a frame that already opened and was applied: its receipt
-    /// stands.
-    Duplicate,
+    /// A copy of a frame that already opened and was applied, of `type_id`
+    /// from `from`: its receipt stands, and a hint's is sent again
+    /// ([`crate::operations::dm::ack::duplicate`]; live A/B finding 73).
+    Duplicate { from: String, type_id: DmTypeId },
     /// A copy of a sealed frame whose first copy is still being applied
     /// (its nonce tentative, review RV5 H1): nothing is stored yet, so no
     /// receipt; a call is answered [`super::RETRY_LATER`].
@@ -189,7 +190,10 @@ fn open_sealed(
         Sighting::First => {}
         Sighting::Duplicate => {
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate sealed frame");
-            return Err(Dropped::Duplicate);
+            return Err(Dropped::Duplicate {
+                from: sender_hex.clone(),
+                type_id,
+            });
         }
         Sighting::InFlight => {
             tracing::debug!(from = %sender_hex, ?type_id, "sealed frame's first copy in flight");
@@ -366,7 +370,10 @@ async fn open_ephemeral(
         Ok(plaintext) => plaintext,
         Err(RatchetError::Crypto(CryptoError::DuplicateMessage)) => {
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
-            return Err(Dropped::Duplicate);
+            return Err(Dropped::Duplicate {
+                from: sender_hex.clone(),
+                type_id,
+            });
         }
         Err(e) => {
             tracing::warn!(from = %sender_hex, ?type_id, error = %e, "dropping 1:1 message: ratchet step failed");
@@ -489,7 +496,10 @@ fn recorded(
         Ok(inbound) => inbound,
         Err(RatchetError::Crypto(CryptoError::DuplicateMessage)) => {
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
-            return Err(Dropped::Duplicate);
+            return Err(Dropped::Duplicate {
+                from: sender_hex.clone(),
+                type_id,
+            });
         }
         Err(e) => {
             tracing::warn!(from = %sender_hex, ?type_id, error = %e, "dropping 1:1 message: ratchet step failed");

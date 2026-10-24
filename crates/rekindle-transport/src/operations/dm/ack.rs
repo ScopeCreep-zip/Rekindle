@@ -53,7 +53,9 @@ pub struct PendingAcks {
 /// What one flush to a peer sends.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Held {
-    seqs: BTreeSet<u64>,
+    /// A `DmAck` is owed: these seqs, or none past `through` (a
+    /// duplicate's re-ack).
+    seqs: Option<BTreeSet<u64>>,
     read_up_to: Option<u64>,
 }
 
@@ -62,6 +64,14 @@ impl PendingAcks {
     /// is).
     fn add(&mut self, peer: &str, seq: u64) -> bool {
         self.by_peer.entry(peer.to_owned()).or_default().insert(seq);
+        self.scheduled.insert(peer.to_owned())
+    }
+
+    /// Owe `peer` a `DmAck` (a duplicate arrived): its `through`, the
+    /// cursor, covers what they re-sent; `true` when a flush must be
+    /// scheduled.
+    fn add_through(&mut self, peer: &str) -> bool {
+        self.by_peer.entry(peer.to_owned()).or_default();
         self.scheduled.insert(peer.to_owned())
     }
 
@@ -80,7 +90,7 @@ impl PendingAcks {
             return None;
         }
         let held = Held {
-            seqs: self.by_peer.remove(peer).unwrap_or_default(),
+            seqs: self.by_peer.remove(peer),
             read_up_to: self.read_up_to.remove(peer),
         };
         (held != Held::default()).then_some(held)
@@ -135,6 +145,27 @@ pub(crate) async fn committed(
     }
     step_cursor(host, from, chain_seq).await;
     let first = host.stores().acks.lock().add(from, stream_seq);
+    if first {
+        schedule(host, from);
+    }
+}
+
+/// A copy of an entry of `from`'s of `type_id` that we already hold (the
+/// ratchet's duplicate, by hint or chain): their first ack may be lost, so
+/// it is acknowledged again (register 2026-10-24, Briar
+/// `DatabaseComponentImpl.java#L961-997`), after the same 2–10 s
+/// coalescing delay, by a `DmAck` whose `through` is our cursor at the
+/// flush. Only user content we acknowledge, and only to an accepted friend.
+pub(crate) fn duplicate(
+    host: &dyn FriendHost,
+    from: &str,
+    type_id: rekindle_codec::capnp_codec::direct::DmTypeId,
+) {
+    use rekindle_codec::capnp_codec::direct::DmTypeId;
+    if !matches!(type_id, DmTypeId::DmText | DmTypeId::StreamRecord) || !accepted(host, from) {
+        return;
+    }
+    let first = host.stores().acks.lock().add_through(from);
     if first {
         schedule(host, from);
     }
@@ -202,21 +233,13 @@ async fn flush(host: &dyn FriendHost, peer: &str) {
     let Some(held) = host.stores().acks.lock().take(peer, invisible) else {
         return;
     };
-    let seqs: Vec<u64> = held.seqs.into_iter().collect();
-    let through = if seqs.is_empty() {
-        0
-    } else {
-        cursor(host, peer).await
+    let mut bodies = match held.seqs {
+        Some(seqs) => acks(
+            &seqs.into_iter().collect::<Vec<_>>(),
+            cursor(host, peer).await,
+        ),
+        None => Vec::new(),
     };
-    let mut bodies: Vec<DirectBody> = seqs
-        .chunks(MAX_DM_ACK_SEQS)
-        .map(|chunk| {
-            DirectBody::DmAck(DmAck {
-                stream_seqs: chunk.to_vec(),
-                through,
-            })
-        })
-        .collect();
     // The marker is checked again as it leaves: the setting or the
     // friendship may have changed while it waited.
     if let Some(stream_seq) = held.read_up_to {
@@ -233,6 +256,31 @@ async fn flush(host: &dyn FriendHost, peer: &str) {
             Err(e) => tracing::debug!(to = %peer, error = %e, "receipt not sent"),
         }
     }
+}
+
+/// The `DmAck`s for `seqs` and our cursor `through`: one per
+/// `MAX_DM_ACK_SEQS` seqs, or one carrying `through` alone (a duplicate's
+/// re-ack); none when there is nothing to name.
+fn acks(seqs: &[u64], through: u64) -> Vec<DirectBody> {
+    if seqs.is_empty() {
+        return (through > 0)
+            .then(|| {
+                DirectBody::DmAck(DmAck {
+                    stream_seqs: Vec::new(),
+                    through,
+                })
+            })
+            .into_iter()
+            .collect();
+    }
+    seqs.chunks(MAX_DM_ACK_SEQS)
+        .map(|chunk| {
+            DirectBody::DmAck(DmAck {
+                stream_seqs: chunk.to_vec(),
+                through,
+            })
+        })
+        .collect()
 }
 
 /// Our committed cursor on `peer`'s chain (`stream_cursors`, advanced only
@@ -318,7 +366,13 @@ mod tests {
         assert_eq!(acks.take("bob", true), None);
         assert_eq!(acks.held_peers().len(), 2);
         assert!(acks.add("bob", 4), "a held peer schedules again");
-        let seqs: Vec<u64> = acks.take("bob", false).unwrap().seqs.into_iter().collect();
+        let seqs: Vec<u64> = acks
+            .take("bob", false)
+            .unwrap()
+            .seqs
+            .unwrap()
+            .into_iter()
+            .collect();
         assert_eq!(seqs, [1, 3, 4]);
     }
 
@@ -335,9 +389,33 @@ mod tests {
         // Leaving Invisible sends one marker, the highest.
         let held = acks.take("bob", false).unwrap();
         assert_eq!(held.read_up_to, Some(6));
-        assert_eq!(held.seqs.into_iter().collect::<Vec<_>>(), [7]);
+        assert_eq!(held.seqs.unwrap().into_iter().collect::<Vec<_>>(), [7]);
         assert_eq!(acks.take("bob", false), None, "sent once");
         assert!(acks.held_peers().is_empty());
+    }
+
+    #[test]
+    fn a_duplicate_owes_an_ack_of_the_cursor_alone() {
+        let mut acks = PendingAcks::default();
+        assert!(acks.add_through("bob"));
+        assert!(!acks.add_through("bob"), "one flush per peer");
+        let held = acks.take("bob", false).unwrap();
+        assert_eq!(held.seqs, Some(BTreeSet::new()));
+        assert_eq!(
+            super::acks(&[], 3),
+            [DirectBody::DmAck(DmAck {
+                stream_seqs: Vec::new(),
+                through: 3
+            })]
+        );
+        assert!(super::acks(&[], 0).is_empty(), "nothing to name");
+        // A duplicate rides a flush already holding seqs.
+        assert!(acks.add("bob", 4));
+        assert!(!acks.add_through("bob"));
+        assert_eq!(
+            acks.take("bob", false).unwrap().seqs,
+            Some(BTreeSet::from([4]))
+        );
     }
 
     #[test]
