@@ -17,7 +17,12 @@
   re-enrols with every copied per-device secret replaced (rule 4), readers never prefer the last writer (rule 5),
   forks count per device key, only pre-fork keys co-sign an own-key `DeviceReadmit`, at most one per checkpoint
   interval and shown to the member's devices and `KICK_MEMBERS` holders, and retiring a key does not retire the
-  keys it co-signed (rule 7).
+  keys it co-signed (rule 7). Corrected 2026-10-24 (premise check of plan S7c/S7d-keys), still Proposed: the device
+  key lives in a separate device vault that identity export never reads, the barrier's timeout bounds one round and a
+  restore retires at the barrier's maximum, each device watches its own `M(p,d)`/2, the re-key waits for a
+  TrustChanging intent, a `DeviceRetired` is never a second fork, retirement verdicts move only from applied to
+  quarantined, the power rows are S3's `power.rs`, E5.3's device root key is one design with these keys, and the
+  ADR 0011 passages amended are listed.
 - **Date:** 2026-10-24
 - **Amends:** [0011](0011-member-sovereign-records.md) and plan D15, their rule that the member's pseudonym signs
   its own op log. The record owner does not change: `M(p)` stays owned by the random key `K_M(p)` that only the
@@ -25,6 +30,10 @@
   per-community device keys that the pseudonym endorses. D15's equivocation bullet becomes "two conflicting ops at
   one `(device key, seq)` retire that device key; ops below the fork stay valid". It also fills in 0011's
   "Multiple devices" rule (:152, one `M(p,d)` per device) and replaces its "Key loss or compromise" rule (:150).
+  It further amends 0011's Binding rule (:116-118: readers check the device key that signs a record's data, not an
+  inner pseudonym signature), its successor rule (:92-93: two conflicting pseudonym-signed successors void each other
+  and neither is offered, rule 8) and its watcher bound (:128: each device also watches its own `M(p,d)`/2, so ≤ 5
+  watchers per record, rule 4) (corrected 2026-10-24, premise check).
 - **Plan:** E3.2 slice S7d-keys (after S7c) in `.claude/plans/standards-remediation/00-integration-plan.md` (v2.2);
   the decision row is in `.claude/plans/standards-remediation/audit-2026-10-23/00-register.md`, "Decided 2026-10-24
   from the research", item Q7.
@@ -119,13 +128,16 @@ as today's does.
    converged endorsement set, not at a causal cut, and governance effects never read them. A device's first op
    (seq 0 in its chain) is the op that carries its own `DeviceKey` endorsement.
 4. **Never backed up; catch up at every unlock.** The device key, `K_M(p,d)` and the device's seq head live in the
-   vault under `DeviceOpKey{community}` and are excluded from every Rekindle backup and export. That cannot stop a
+   vault under `DeviceOpKey{community}` and are excluded from every Rekindle backup and export: they live in a separate device vault, whose key the identity
+   vault holds and whose file identity export never reads (export copies the identity vault file whole,
+   `rekindle-vault` `export_files`), so an imported identity enrols new device keys (corrected 2026-10-24, premise
+   check). That cannot stop a
    whole-directory restore (Time Machine, a btrfs or VM snapshot, a copied data root; I14; E7.1's exclusion is
    best-effort), so the **unlock barrier** is the real defence and is mandatory. At every unlock, before the first
    governance write in each community, the device:
    - reads its own `GovHead` from `M(p,d)`/2 on the DHT (a network read, not the local cache);
    - asks every ring peer (k = 4) it knows for its frontier and, for each peer that answers within one app-call
-     timeout (the barrier's only bound), walks from that frontier's tips (frontiers hold DAG tips, not per-author heads) to the highest seq
+     timeout (the bound of one round; a round with no answer is retried, rule 4's pending state), walks from that frontier's tips (frontiers hold DAG tips, not per-author heads) to the highest seq
      of `d` reachable from them, the same walk the DAG fetch uses; it takes the **maximum over every answering
      peer**, since a stale or withholding peer can only report lower, never forge `d`'s signature. This covers
      an op that reached peers by gossip before its append landed;
@@ -138,7 +150,9 @@ as today's does.
      outbox under a visible "pending: catching up" state; offline, they queue and are never signed at a guessed
      seq.
    If the published head is above the local one, this device was restored: it never signs under `d` again, `p`
-   signs `DeviceRetired{d, incarnation, lastSeq = published head}`, and the device mints a fresh device key and
+   signs `DeviceRetired{d, incarnation, lastSeq}` with `lastSeq` the barrier's maximum (the DHT `GovHead` and every
+   answering peer's walk, so an op gossiped before its append landed stays valid; corrected 2026-10-24, premise check,
+   from "the published head"), and the device mints a fresh device key and
    record with a new endorsement. No fork happened, so this first restore needs no co-signer, but it counts as
    the member's one fork under rule 7 (any `DeviceRetired` does, since a reader cannot tell a restore from a
    lost-device retirement: both are `p`-signed): a later restore, fork or new device of that member needs a
@@ -148,9 +162,12 @@ as today's does.
    10*):
    - **Self-detection.** Each device keeps its local signed log of the ops it wrote under `d` and checks against
      it every op of `d` it ingests (gossip, the DAG fetch, the barrier's frontier walk) and every `ValueChange` of
-     its own `M(p,d)`/2. An op signed by `d` that it did not write (a seq or hash it holds no record of) is a
+     its own `M(p,d)`/2, which each device watches for this in every community (the ring watches only successors). An op signed by `d` that it did not write (a seq or hash it holds no record of) is a
      clone signal: the device stops signing under `d` and has `p` sign `DeviceRetired{d, incarnation, lastSeq =
-     its own local head}` itself, without waiting for the other copy (the evidence every clone detector studied
+     its own local head}` itself, without waiting for the other copy (corrected 2026-10-24, premise check: the
+     retirement and its replacement are signed, as one op, when the user commits a backend-originated TrustChanging
+     `ReEnrolDevice` intent, ADR 0019, since rule 9 allows no automatic recovery; `lastSeq` is fixed at detection, so
+     the wait changes no verdict) (the evidence every clone detector studied
      keys on: Matrix's duplicate one-time key, Signal's 4409, Tailscale Tailnet Lock's rotation tie). This feeds
      the check below.
    - **The check before signing.** Every device checks the endorsement set for a `DeviceRetired` of its own `d`
@@ -194,7 +211,8 @@ as today's does.
    cap included, is judged for each op at that op's causal deps, as moderator authority is (E3.3 M1), never on
    the converged set: a key is effective for op `o` if its endorsement is in `o`'s causal past (or carried by `o`
    itself at seq 0), it is among the first 6 live endorsements by `(incarnation, device key bytes)` in the
-   member's set at `o`'s deps, and rule 7 admits it there. Once judged, that never changes, so a concurrent
+   member's set at `o`'s deps, and rule 7 admits it there. Once judged, effectiveness never changes (retirement and fork evidence are judged on the converged set and can
+   only move an op from applied to quarantined, shown, never back; corrected 2026-10-24, premise check), so a concurrent
    endorsement that converges later cannot void ops already accepted. An endorsement whose own extended set
    already holds 6 live keys is inert in every carrier and can never be re-carried into effect. All of this is
    a pure function of the op set (D15 "pure effects"), never of local time.
@@ -230,7 +248,9 @@ as today's does.
    two carriers of a `DeviceRetired` for that first retired key (two copies retiring it concurrently), the exempt
    replacement is the one in the lowest `(lamport, op_hash)` carrier, and the other copy's replacement needs a
    `DeviceReadmit` for every op whose deps hold both (ops already judged stay judged, rule 6). A later
-   `DeviceRetired` retires only its own key, but its replacement needs a co-signer. A self-signed reset is
+   `DeviceRetired` retires only its own key, but its replacement needs a co-signer: a `DeviceRetired` opens the first
+   fork but is never a second fork, which is fork evidence for a second distinct key (corrected 2026-10-24, premise
+   check), so retiring a lost device after a restore retires no other key. A self-signed reset is
    evidence shown to the co-signer, never a key on its own (Keybase re-add, Autobase `addWriter`). Retiring a key
    does **not** retire the keys it co-signed (Keybase revokes only the named key, `keyfamily.go` L752-810, and
    effectiveness judged at causal deps gives the same): a co-signee of a key later found compromised needs its own
@@ -301,7 +321,8 @@ as today's does.
 - ADR 0018 ballot votes are ops, so a restored device votes under its new key; the electorate is counted per
   member, and a member whose device keys are all retired is not in it until re-admitted (ADR 0018, 2026-10-24).
 - `DeviceRetired`'s power row is "self only", meaning `p`'s signature: it is valid from whatever op carries it,
-  a quarantined op or one signed by a forked, retired or unendorsed key included, so the power table (S8/S9)
+  a quarantined op or one signed by a forked, retired or unendorsed key included, so the power table (`rekindle-governance/src/power.rs`, built at plan S3;
+  corrected 2026-10-24, premise check, from "(S8/S9)")
   judges it by `p`'s signature and never refuses it on its carrier's standing. Only `p` can retire, so this is
   harmless.
 - Restores count against the one-fork rule (rule 7): an honest user's first restore is free, but after it every

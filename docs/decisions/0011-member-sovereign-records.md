@@ -11,6 +11,9 @@
   op is the recovery and ownership-transfer path (Q3); an `ApprovalRequired` community admits a
   joiner by a reader-validated `MemberApproved`, and channel keys are withheld until then (Q6).
   The 2026-10-04 text is kept; the amended passages say what changed.
+- **Amended 2026-10-24** (plan E3.2 S7c and S7d-keys premise check; ADR 0022, Proposed): directory pages hold 128
+  entries (Discovery), conflicting pseudonym-signed successors are not offered (Successor community), record data is
+  checked against its device key (Binding), and each device also watches its own record (Notification).
 
 ## Context and problem statement
 
@@ -90,7 +93,9 @@ recovery and ownership transfer go through a new community:
 - The new `GenesisCert` names the old anchor as `predecessor`; readers check both links (the op in
   the old community and the `predecessor` in the new one) before they treat it as a successor.
 - Clients show who signed it and **offer** the move. Nobody is moved silently, no history is
-  copied, the old community stays readable, and if two valid successors exist both are shown.
+  copied, the old community stays readable, and if two valid successors exist both are shown. *(Amended
+  2026-10-24, ADR 0022 rule 8: two conflicting successors signed by one creator's pseudonym void each other; both
+  are shown and neither is offered.)*
 - Ownership transfer is a successor with a new creator set.
 - If every creator key is lost, members create a new community and re-invite. There is no
   member-signed successor: it would let any member phish the whole community.
@@ -115,17 +120,20 @@ fresh random owner, written once, and the key is discarded.
 
 **Binding.** A self-authored `MemberJoined` op carries `memberRecord` and `memberRecordOwner`.
 Readers accept data from `M(p)` only if the descriptor owner matches and the inner pseudonym
-signature verifies.
+signature verifies. *(Amended 2026-10-24, ADR 0022: the inner signature is the device key's that the record's
+`MemberJoined` or `DeviceKey` endorsement binds, itself endorsed by the pseudonym.)*
 
 **Discovery.**
 - Op dependencies carry locators (`OpRef`), so any op is fetchable without a directory.
-- Checkpoint ops list directory pages of about 170 members each.
+- Checkpoint ops list directory pages of about 170 members each. *(Amended 2026-10-24, plan S7c: 128 members
+  each, so a page is a complete subtree of one RFC 9162 tree; each entry names the member's record and owner.)*
 - Bootstrap over app_call is an accelerator of about 8.4 KiB, constant in N. A joiner can always
   rebuild the member set from the DHT.
 
 **Notification.**
 - Gossip is the fast path.
-- Each member watches 4 ring successors, giving ≤ 4 watchers per record at any size, and relays
+- Each member watches 4 ring successors, giving ≤ 4 watchers per record at any size *(amended 2026-10-24, ADR 0022
+  rule 4: each device also watches its own `M(p,d)`/2 to see a copy's write, so ≤ 5)*, and relays
   content-free `HeadAdvanced` hints.
 - A 60-second anti-entropy inspect sweep.
 
