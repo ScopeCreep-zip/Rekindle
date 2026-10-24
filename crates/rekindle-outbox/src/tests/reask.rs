@@ -35,16 +35,21 @@ async fn a_peer_heard_again_brings_its_landed_rows_re_ask_forward_only() {
     advance(&o, 5_000);
     let now = 6_000;
     assert_eq!(o.reask_soon(StreamKind::Dm, "bob").await.unwrap(), 1);
-    assert_eq!(next_at(&o, "a"), now + first, "reset to the first re-ask");
+    assert!(
+        within_first(next_at(&o, "a"), now, first),
+        "reset to the first re-ask"
+    );
     assert_eq!(
         next_at(&o, "c"),
         10_000_000,
         "another peer's row is untouched"
     );
-    // Never later than it was: a sooner re-ask is kept.
-    advance(&o, 1_000);
+    // Never later than it was: a sooner re-ask is kept (past the jitter's
+    // half step, any new draw is later).
+    let reset = next_at(&o, "a");
+    advance(&o, first / 2 + 1);
     assert_eq!(o.reask_soon(StreamKind::Dm, "bob").await.unwrap(), 0);
-    assert_eq!(next_at(&o, "a"), now + first);
+    assert_eq!(next_at(&o, "a"), reset);
     // A kind with no re-ask, and a row not yet landed, are untouched.
     assert_eq!(o.reask_soon(StreamKind::DhtWrite, "bob").await.unwrap(), 0);
     o.enqueue(entry(StreamKind::Dm, "bob", "q"), ())
@@ -73,5 +78,27 @@ async fn the_first_re_ask_runs_from_the_hint_not_the_landing() {
         .await
         .unwrap();
     assert_eq!(state_of(&o, "a"), Some(SendState::Sent));
-    assert_eq!(next_at(&o, "a"), sent_at + first);
+    assert!(within_first(next_at(&o, "a"), sent_at, first));
+}
+
+/// `at` is a first re-ask drawn after `from`: never below the floor
+/// `first`, at most half again (`StreamKind::first_reask`).
+fn within_first(at: i64, from: i64, first: i64) -> bool {
+    (from + first..=from + first * 3 / 2).contains(&at)
+}
+
+/// The first re-ask is drawn, not fixed (threat model: no deterministic
+/// timing), and never below the floor an ack needs.
+#[test]
+fn the_first_re_ask_is_jittered_above_its_floor() {
+    let o = outbox();
+    let first = DM_FIRST_REASK;
+    let draws: std::collections::BTreeSet<_> = (0..64)
+        .map(|_| StreamKind::Dm.first_reask(o.deps().rng()).unwrap())
+        .collect();
+    assert!(draws
+        .iter()
+        .all(|d| (first..=first + first / 2).contains(d)));
+    assert!(draws.len() > 1, "drawn, not fixed");
+    assert_eq!(StreamKind::MediaKey.first_reask(o.deps().rng()), None);
 }
