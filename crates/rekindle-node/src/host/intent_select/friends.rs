@@ -136,18 +136,19 @@ pub(super) async fn selection(
                 s.escalations.extend(key_change(ctx, public_key).await?);
             }
         }
-        IpcRequest::IdentityRotationAccept { public_key }
-        | IpcRequest::IdentityRotationDecline { public_key } => {
-            // The key acted on is the new one: its fingerprint is the
-            // token, so a rotation replaced before the commit re-reviews
-            // (finding 79, research batch 13).
-            let new_key = rekindle_transport::operations::friend::identity_rotation::pending_key(
-                &HostFriends::of(ctx),
-                public_key,
-            )
-            .ok_or_else(|| {
-                IpcResponse::error(404, "no identity rotation from this friend is pending")
-            })?;
+        IpcRequest::IdentityRotationAccept {
+            public_key,
+            new_key,
+        }
+        | IpcRequest::IdentityRotationDecline {
+            public_key,
+            new_key,
+        } => {
+            // The key acted on is the new one the request names: its
+            // fingerprint is the token (finding 79, research batch 13),
+            // and the apply refuses it if the pending rotation is another
+            // by then (M2).
+            let new_key = reviewed_rotation(ctx, public_key, new_key)?;
             let old = person(ctx, public_key).await?;
             if let Subject::Person { fingerprint, .. } = &old {
                 s.facts.push(Fact::KeyChanged {
@@ -295,4 +296,31 @@ pub(super) async fn person(ctx: &DaemonContext, public_key: &str) -> Result<Subj
         display_name,
         fingerprint,
     })
+}
+
+/// `new_key`, the rotation key a request names, when it is `peer`'s
+/// pending rotation; a rotation replaced since is a conflict, and its own
+/// review is the one held (finding 79 review, M2).
+fn reviewed_rotation(
+    ctx: &DaemonContext,
+    peer: &str,
+    new_key: &str,
+) -> Result<[u8; 32], IpcResponse> {
+    let named = rekindle_types::key_format::public_key_hex(new_key)
+        .map_err(|e| IpcResponse::error(400, format!("new key: {e}")))?
+        .to_bytes();
+    match rekindle_transport::operations::friend::identity_rotation::pending_key(
+        &HostFriends::of(ctx),
+        peer,
+    ) {
+        None => Err(IpcResponse::error(
+            404,
+            "no identity rotation from this friend is pending",
+        )),
+        Some(pending) if pending != named => Err(IpcResponse::error(
+            409,
+            "the identity rotation changed since it was reviewed: review the new one",
+        )),
+        Some(pending) => Ok(pending),
+    }
 }

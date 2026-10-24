@@ -163,24 +163,30 @@ pub fn pending_safety_numbers(host: &dyn FriendHost, peer: &str) -> Option<(Stri
 /// frontend hears `KeyChanged`. The new key is unverified; when the old
 /// one was verified the change escalates the next review.
 ///
+/// `reviewed` is the new key the user's review named: a rotation replaced
+/// since is refused and stays pending, with its own review held (finding
+/// 79 review, M2).
+///
 /// # Errors
 /// `NotFound` when no rotation from `peer` is pending or they are no
-/// longer a friend; the move's store error (the rotation stays pending).
-pub async fn accept(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
-    let new_key = host
-        .stores()
-        .pending_rotations
-        .lock()
-        .get(peer)
-        .copied()
-        .ok_or_else(|| FriendError::NotFound(NOT_PENDING.to_string()))?;
+/// longer a friend; `Conflict` when the pending one is not `reviewed`; the
+/// move's store error (the rotation stays pending).
+pub async fn accept(host: &dyn FriendHost, peer: &str, reviewed: &str) -> Result<(), FriendError> {
+    let new_key = reviewed_pending(host, peer, reviewed)?;
     let (owner, old) = verification::keys(host, peer)?;
     let now = host.clock().now_ms_i64();
     let moved = state::db_call!(host, "move rotated friend", move |conn| {
         rekindle_db::repo::peer_rekey::rotate_peer(conn, &owner, &old, &new_key, now)
     })
     .await?;
-    host.stores().pending_rotations.lock().remove(peer);
+    {
+        // Only the rotation moved: one that replaced it during the move
+        // is a key the user has not reviewed, so it stays for its review.
+        let mut pending = host.stores().pending_rotations.lock();
+        if pending.get(peer) == Some(&new_key) {
+            pending.remove(peer);
+        }
+    }
     if !moved {
         return Err(FriendError::NotFound(format!("{peer} is not a friend")));
     }
@@ -239,17 +245,44 @@ async fn follow_chain(host: &dyn FriendHost, new_hex: &str) {
 /// sent to the new key).
 ///
 /// # Errors
-/// `NotFound` when no rotation from `peer` is pending.
-pub fn decline(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError> {
-    host.stores()
-        .pending_rotations
-        .lock()
-        .remove(peer)
-        .map(|_| tracing::info!(from = %peer, "friend's identity rotation declined"))
-        .ok_or_else(|| FriendError::NotFound(NOT_PENDING.to_string()))
+/// `NotFound` when no rotation from `peer` is pending; `Conflict` when the
+/// pending one is not the `reviewed` key (it stays for its own review).
+pub fn decline(host: &dyn FriendHost, peer: &str, reviewed: &str) -> Result<(), FriendError> {
+    let named = reviewed_key(reviewed)?;
+    let mut pending = host.stores().pending_rotations.lock();
+    match pending.get(peer) {
+        None => Err(FriendError::NotFound(NOT_PENDING.to_string())),
+        Some(key) if *key != named => Err(FriendError::Conflict(REPLACED.to_string())),
+        Some(_) => {
+            pending.remove(peer);
+            tracing::info!(from = %peer, "friend's identity rotation declined");
+            Ok(())
+        }
+    }
+}
+
+/// `peer`'s pending rotation key when it is the `reviewed` one.
+fn reviewed_pending(
+    host: &dyn FriendHost,
+    peer: &str,
+    reviewed: &str,
+) -> Result<[u8; 32], FriendError> {
+    let named = reviewed_key(reviewed)?;
+    match host.stores().pending_rotations.lock().get(peer).copied() {
+        None => Err(FriendError::NotFound(NOT_PENDING.to_string())),
+        Some(key) if key != named => Err(FriendError::Conflict(REPLACED.to_string())),
+        Some(key) => Ok(key),
+    }
+}
+
+fn reviewed_key(reviewed: &str) -> Result<[u8; 32], FriendError> {
+    rekindle_types::key_format::public_key_hex(reviewed)
+        .map(|k| k.to_bytes())
+        .map_err(|e| FriendError::Invalid(format!("new key: {e}")))
 }
 
 const NOT_PENDING: &str = "no identity rotation from this friend is pending";
+const REPLACED: &str = "the identity rotation changed since it was reviewed: review the new one";
 
 #[cfg(test)]
 mod tests {

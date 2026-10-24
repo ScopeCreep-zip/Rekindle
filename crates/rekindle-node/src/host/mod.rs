@@ -48,6 +48,8 @@ pub mod read_markers;
 mod receive_tests;
 #[cfg(test)]
 mod reinitiate_tests;
+#[cfg(test)]
+mod rotation_tests;
 pub mod runtime;
 mod serve;
 pub mod session;

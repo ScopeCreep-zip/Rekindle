@@ -28,11 +28,21 @@ impl IpcRequest {
             | Self::SessionResetStart { public_key }
             | Self::SessionReinitiate { public_key }
             | Self::SessionResetAccept { public_key }
-            | Self::IdentityRotationAccept { public_key }
-            | Self::IdentityRotationDecline { public_key }
             | Self::SessionResetDecline { public_key } => f
                 .debug_struct(self.name())
                 .field("public_key", public_key)
+                .finish(),
+            Self::IdentityRotationAccept {
+                public_key,
+                new_key,
+            }
+            | Self::IdentityRotationDecline {
+                public_key,
+                new_key,
+            } => f
+                .debug_struct(self.name())
+                .field("public_key", public_key)
+                .field("new_key", new_key)
                 .finish(),
             Self::IdentitySafetyNumber { peer }
             | Self::IdentityMarkVerified { peer }

@@ -123,12 +123,18 @@ pub(crate) async fn route(
             release_reset_hold(ctx, &public_key);
             done(declined)
         }
-        IpcRequest::IdentityRotationAccept { public_key } => {
-            done(friend::identity_rotation::accept(&host, &public_key).await)
-        }
-        IpcRequest::IdentityRotationDecline { public_key } => {
-            done(friend::identity_rotation::decline(&host, &public_key))
-        }
+        IpcRequest::IdentityRotationAccept {
+            public_key,
+            new_key,
+        } => done(friend::identity_rotation::accept(&host, &public_key, &new_key).await),
+        IpcRequest::IdentityRotationDecline {
+            public_key,
+            new_key,
+        } => done(friend::identity_rotation::decline(
+            &host,
+            &public_key,
+            &new_key,
+        )),
         IpcRequest::IdentitySafetyNumber { peer } => {
             answer(friend::verification::view(&host, &peer).await)
         }

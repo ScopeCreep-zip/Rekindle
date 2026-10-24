@@ -162,10 +162,13 @@ pub enum IpcRequest {
     /// Decline the session reset a friend asked for.
     SessionResetDecline { public_key: String },
     /// Accept the identity rotation a friend (by their current key) sent:
-    /// they move to the new key (owner ruling R1).
-    IdentityRotationAccept { public_key: String },
-    /// Decline a friend's identity rotation: it is dropped, nothing moves.
-    IdentityRotationDecline { public_key: String },
+    /// they move to the new key (owner ruling R1). `new_key` is the key the
+    /// review named; a rotation replaced since is refused, never accepted
+    /// unreviewed (finding 79 review, M2).
+    IdentityRotationAccept { public_key: String, new_key: String },
+    /// Decline a friend's identity rotation to `new_key`: it is dropped,
+    /// nothing moves; a rotation replaced since is refused as above.
+    IdentityRotationDecline { public_key: String, new_key: String },
 
     // ── Communities (plan E3.1) ──────────────────────────────────
     /// A community-domain request: communities, channels, categories,

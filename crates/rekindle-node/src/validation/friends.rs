@@ -78,9 +78,15 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         | IpcRequest::SessionResetStart { public_key: key }
         | IpcRequest::SessionReinitiate { public_key: key }
         | IpcRequest::SessionResetAccept { public_key: key }
-        | IpcRequest::IdentityRotationAccept { public_key: key }
-        | IpcRequest::IdentityRotationDecline { public_key: key }
         | IpcRequest::SessionResetDecline { public_key: key } => public_key(key, "public key"),
+        IpcRequest::IdentityRotationAccept {
+            public_key: key,
+            new_key,
+        }
+        | IpcRequest::IdentityRotationDecline {
+            public_key: key,
+            new_key,
+        } => public_key(key, "public key").and_then(|()| public_key(new_key, "new key")),
         IpcRequest::FriendAddFromInvite { invite } => friend_invite(invite),
         IpcRequest::FriendInviteCancel { invite_id } => {
             text(invite_id, MAX_INVITE_ID_LEN, "invite id")

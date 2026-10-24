@@ -72,6 +72,7 @@ async fn rotated_pair(seed: u64) -> (Netsim, Vec<SimNode>, String, String, Strin
             nodes[1]
                 .call(IpcRequest::IdentityRotationAccept {
                     public_key: ann.clone(),
+                    new_key: new_ann.clone(),
                 })
                 .await
                 .is_ok()

@@ -19,9 +19,10 @@ fn rotate() -> IpcRequest {
     }
 }
 
-fn accept_rotation(old: &str) -> IpcRequest {
+fn accept_rotation(old: &str, new: &str) -> IpcRequest {
     IpcRequest::IdentityRotationAccept {
         public_key: old.to_string(),
+        new_key: new.to_string(),
     }
 }
 
@@ -73,7 +74,7 @@ async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
         !bea_events.any(|e| matches!(e, SubscriptionEvent::IntentPending(_))),
         "Bea holds no rotation for review"
     );
-    assert!(nodes[1].call(accept_rotation(&ann)).await.is_err());
+    assert!(nodes[1].call(accept_rotation(&ann, &ann)).await.is_err());
     assert!(is_accepted_friend(&nodes[1], &ann).await);
     assert_eq!(sim.network_get(&record, HEAD).map(|v| v.data), head);
 
@@ -113,7 +114,7 @@ async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
     assert_ne!(sim.network_get(&record, HEAD).map(|v| v.data), head);
     assert!(
         eventually(&sim, LIMIT, || async {
-            nodes[1].call(accept_rotation(&ann)).await.is_ok()
+            nodes[1].call(accept_rotation(&ann, &new_ann)).await.is_ok()
         })
         .await
     );

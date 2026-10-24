@@ -291,15 +291,20 @@ impl FriendHost for HostFriends {
                 None,
                 IntentKind::ReinitiateSession,
             ),
-            // The review is on the friend as we know them; the new key is
-            // in the pending rotation it shows (owner ruling R1).
+            // The review is on the friend as we know them and the new key
+            // it names; the commit acts on that key only (owner ruling R1,
+            // finding 79 review M2).
             BackendHold::IdentityRotation { peer, new_identity } => {
                 tracing::debug!(peer = %peer, new_identity = %new_identity, "identity rotation held");
                 (
                     IpcRequest::IdentityRotationAccept {
                         public_key: peer.clone(),
+                        new_key: new_identity.clone(),
                     },
-                    Some(IpcRequest::IdentityRotationDecline { public_key: peer }),
+                    Some(IpcRequest::IdentityRotationDecline {
+                        public_key: peer,
+                        new_key: new_identity,
+                    }),
                     IntentKind::AcceptIdentityRotation,
                 )
             }
@@ -387,8 +392,8 @@ fn same_hold(a: &IpcRequest, b: &IpcRequest) -> bool {
             IpcRequest::SessionResetAccept { public_key: y },
         )
         | (
-            IpcRequest::IdentityRotationAccept { public_key: x },
-            IpcRequest::IdentityRotationAccept { public_key: y },
+            IpcRequest::IdentityRotationAccept { public_key: x, .. },
+            IpcRequest::IdentityRotationAccept { public_key: y, .. },
         )
         | (
             IpcRequest::SessionReinitiate { public_key: x },
