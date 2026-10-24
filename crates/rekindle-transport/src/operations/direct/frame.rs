@@ -46,6 +46,9 @@ pub struct Opened {
     /// The entry's seq on the sender's outbox stream (plan E2.5); 0 for a
     /// sealed frame or a frame on no stream.
     pub stream_seq: u64,
+    /// The entry's seq on the sender's dm chain to us (finding 71 refined);
+    /// 0 for a frame on no chain.
+    pub chain_seq: u64,
 }
 
 /// Why an inbound frame did not open.
@@ -171,6 +174,7 @@ fn open_sealed(
         type_id,
         sent_at_ms: content.sent_at_ms,
         stream_seq: 0,
+        chain_seq: 0,
         body,
         unprocessed: None,
         nonce: Some(content.nonce),
@@ -330,6 +334,7 @@ async fn open_ephemeral(
         type_id,
         sent_at_ms: content.sent_at_ms,
         stream_seq: content.stream_seq,
+        chain_seq: content.chain_seq,
         body,
         unprocessed: None,
         nonce: None,
@@ -451,6 +456,7 @@ fn recorded(
         type_id,
         sent_at_ms: content.sent_at_ms,
         stream_seq: content.stream_seq,
+        chain_seq: content.chain_seq,
         body,
         unprocessed: Some(inbound.key),
         nonce: None,
@@ -490,6 +496,7 @@ pub(crate) fn replayed(row: &rekindle_db::repo::unprocessed::Unprocessed) -> Opt
         type_id,
         sent_at_ms: content.sent_at_ms,
         stream_seq: content.stream_seq,
+        chain_seq: content.chain_seq,
         body,
         unprocessed: Some(row.key),
         nonce: None,

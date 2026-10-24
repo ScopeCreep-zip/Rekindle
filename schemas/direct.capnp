@@ -67,6 +67,7 @@ struct DmContent {  # the plaintext
   sentAtMs @1 :UInt64;
   payload @2 :Data;
   streamSeq @3 :UInt64;                 # the entry's seq on our outbox stream to the peer (E2.5, D22); 0 = none
+  chainSeq @4 :UInt64;                  # the entry's seq on our dm chain to the peer, sealed into its hint (finding 71 refined); 0 = not on the chain
 }
 enum ContentHint { default @0; resendable @1; implicit @2; }
 

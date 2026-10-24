@@ -3,6 +3,7 @@
 //! the friend-handshake messages, our direct messages and our typing.
 
 pub mod ack;
+mod chain_seq;
 mod chat;
 pub mod frame;
 pub mod handshake;

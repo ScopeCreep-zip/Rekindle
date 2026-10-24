@@ -88,7 +88,7 @@ async fn session_pair(
         &hex::encode(owner),
         bundle,
         &text(1),
-        0,
+        frame::Position::default(),
     )
     .await
     .unwrap();
@@ -152,6 +152,7 @@ async fn ratcheted(other: &Host, owner: [u8; 32], content: &[u8]) -> Vec<u8> {
 fn undecodable_body() -> Vec<u8> {
     DmContent {
         stream_seq: 0,
+        chain_seq: 0,
         content_hint: ContentHint::Default,
         sent_at_ms: 1_700_000_000_000,
         payload: vec![0xFF; 3],
@@ -255,7 +256,7 @@ async fn a_rejection_with_no_first_contact_fails_visibly() {
         &hex::encode(bob.public_key_bytes()),
         bundle_of(&bob),
         &accept,
-        0,
+        frame::Position::default(),
     )
     .await
     .unwrap();

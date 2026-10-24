@@ -101,9 +101,20 @@ pub(crate) fn ratchet_error(to: &str, e: RatchetError) -> FriendError {
 }
 
 /// The plaintext of a ratchet or PreKeyInit message carrying `body`.
-fn content(body: &DirectBody, hint: ContentHint, stream_seq: u64, sent_at_ms: u64) -> Vec<u8> {
+/// Where a frame sits: its entry on our outbox stream to the peer and on
+/// our dm chain to them (0: on neither). Only a chain entry's hint carries
+/// a `chain_seq` (live A/B finding 71 refined); a `StreamRecord` row has a
+/// stream seq and none.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Position {
+    pub stream_seq: u64,
+    pub chain_seq: u64,
+}
+
+fn content(body: &DirectBody, hint: ContentHint, at: Position, sent_at_ms: u64) -> Vec<u8> {
     DmContent {
-        stream_seq,
+        stream_seq: at.stream_seq,
+        chain_seq: at.chain_seq,
         content_hint: hint,
         sent_at_ms,
         payload: body.encode(),
@@ -128,11 +139,19 @@ pub async fn ratchet_frame(
     body: &DirectBody,
     hint: ContentHint,
 ) -> Result<DmFrame, FriendError> {
-    ratchet_frame_at(host, to, body, hint, 0, host.clock().now_ms()).await
+    ratchet_frame_at(
+        host,
+        to,
+        body,
+        hint,
+        Position::default(),
+        host.clock().now_ms(),
+    )
+    .await
 }
 
-/// [`ratchet_frame`] for entry `stream_seq` of our outbox stream to `to`
-/// (plan E2.5): the seq rides in the encrypted content, with `sent_at_ms`,
+/// [`ratchet_frame`] for the entry `at` of our outbox stream (and chain) to
+/// `to` (plan E2.5): the seqs ride in the encrypted content, with `sent_at_ms`,
 /// when the message was written (E2.B F3).
 ///
 /// # Errors
@@ -142,13 +161,13 @@ pub async fn ratchet_frame_at(
     to: &str,
     body: &DirectBody,
     hint: ContentHint,
-    stream_seq: u64,
+    at: Position,
     sent_at_ms: u64,
 ) -> Result<DmFrame, FriendError> {
     let type_id = body.type_id();
     let local = host.local_party()?;
     let peer = peer_address(to)?;
-    let (db, plaintext) = (host.db()?, content(body, hint, stream_seq, sent_at_ms));
+    let (db, plaintext) = (host.db()?, content(body, hint, at, sent_at_ms));
     let encrypted = if is_logged(type_id) {
         ratchet::encrypt_record_and_log_outbound(
             &db,
@@ -180,7 +199,7 @@ pub async fn ratchet_frame_at(
                 )));
             }
             let bundle = crate::operations::prekeys::bundle_for_friend(host, to).await?;
-            return initiate_frame(host, to, bundle, body, stream_seq).await;
+            return initiate_frame(host, to, bundle, body, at).await;
         }
         Err(RatchetError::Crypto(CryptoError::NoSession(_)))
             if crate::operations::group_dm::opens_member_session(type_id) =>
@@ -189,7 +208,7 @@ pub async fn ratchet_frame_at(
             // session opens from the prekey record their roster profile
             // names, with this group frame as the init's first payload.
             let bundle = crate::operations::group_dm::member_bundle(host, to).await?;
-            let frame = initiate_frame(host, to, bundle, body, stream_seq).await?;
+            let frame = initiate_frame(host, to, bundle, body, at).await?;
             crate::operations::group_dm::first_contact::began(host, to, body);
             return Ok(frame);
         }
@@ -203,8 +222,8 @@ pub async fn ratchet_frame_at(
 }
 
 /// Open a session with `to` from its `bundle`, carrying `first` (an accept,
-/// or any ratchet kind) as the init's encrypted first payload, as entry
-/// `stream_seq` of our outbox stream to `to` (0: no stream entry). The seq
+/// or any ratchet kind) as the init's encrypted first payload, as the entry
+/// `at` of our outbox stream to `to` (`Position::default()`: none). The seqs
 /// rides in the content as in [`ratchet_frame_at`]: the peer acknowledges
 /// a stream entry by it, so a first message that dropped it would wait for
 /// a resend under the session it opened.
@@ -217,7 +236,7 @@ pub async fn initiate_frame(
     to: &str,
     bundle: PreKeyBundle,
     first: &DirectBody,
-    stream_seq: u64,
+    at: Position,
 ) -> Result<DmFrame, FriendError> {
     let first_type_id = first.type_id();
     if !first_type_id.is_first_payload() {
@@ -232,12 +251,7 @@ pub async fn initiate_frame(
         &local,
         &peer,
         bundle,
-        &content(
-            first,
-            ContentHint::Default,
-            stream_seq,
-            host.clock().now_ms(),
-        ),
+        &content(first, ContentHint::Default, at, host.clock().now_ms()),
         &ad_extra(first_type_id),
     )
     .await

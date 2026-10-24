@@ -109,13 +109,15 @@ pub fn acknowledged_id(body: &DirectBody) -> Option<String> {
     }
 }
 
-/// `body` from `from`, entry `stream_seq` of their stream, was committed:
-/// record it received and schedule its acknowledgement.
+/// `body` from `from`, entry `stream_seq` of their stream and `chain_seq` of
+/// their chain (0: none), was committed: record it received, step our
+/// cursor on their chain ([`step_cursor`]) and schedule its acknowledgement.
 pub(crate) async fn committed(
     host: &dyn FriendHost,
     from: &str,
     body: &DirectBody,
     stream_seq: u64,
+    chain_seq: u64,
 ) {
     let Some(client_id) = acknowledged_id(body) else {
         return;
@@ -131,9 +133,43 @@ pub(crate) async fn committed(
     if stream_seq == 0 || !accepted(host, from) {
         return;
     }
+    step_cursor(host, from, chain_seq).await;
     let first = host.stores().acks.lock().add(from, stream_seq);
     if first {
         schedule(host, from);
+    }
+}
+
+/// D23's receiver rule on an applied entry's chain seq (live A/B finding 71
+/// refined), whatever path brought it: the cursor's next advances the
+/// cursor; one at or below it is a duplicate, acknowledged again; one past
+/// a gap is applied and the gap held for the chain diff (the hint started
+/// it), the cursor not moved past the gap. So `DmAck.through`, the cursor,
+/// is the highest contiguous chain seq applied by any path.
+async fn step_cursor(host: &dyn FriendHost, from: &str, chain_seq: u64) {
+    if chain_seq == 0 {
+        return;
+    }
+    let Ok(owner) = state::owner(host) else {
+        return;
+    };
+    let (writer, now) = (from.to_owned(), host.clock().now_ms_i64());
+    let stepped = state::db_call!(host, "step the chain cursor", move |conn| {
+        let at = rekindle_db::repo::stream_cursors::get(conn, &owner, DM_STREAM, &writer)?;
+        if chain_seq == at + 1 {
+            rekindle_db::repo::stream_cursors::advance(
+                conn, &owner, DM_STREAM, &writer, chain_seq, now,
+            )?;
+        }
+        Ok(at)
+    })
+    .await;
+    match stepped {
+        Ok(at) if chain_seq > at + 1 => {
+            tracing::debug!(from = %from, chain_seq, cursor = at, "hint past a gap: held for the diff");
+        }
+        Ok(_) => {}
+        Err(e) => tracing::debug!(from = %from, error = %e, "chain cursor not stepped"),
     }
 }
 

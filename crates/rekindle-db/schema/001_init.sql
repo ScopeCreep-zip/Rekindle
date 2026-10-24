@@ -894,7 +894,9 @@ CREATE TABLE IF NOT EXISTS stream_cursors (
 );
 
 -- The entries of our DM chains (plan E2.5, D23/D24): which chain seq each
--- `dm` outbox row's frame went to, and when. An entry is retired (the
+-- `dm` outbox row's frame went to, and when it landed (NULL: its seq is
+-- assigned, sealed into its hint, and its append has not landed; finding 71
+-- refined, one append in flight per stream). An entry is retired (the
 -- chain's RETIRE_THROUGH) once it is older than DELIVERY_HORIZON and every
 -- entry up to it belongs to a row the peer acknowledged (no outbox row
 -- left); retired entries' rows go.
@@ -903,7 +905,7 @@ CREATE TABLE IF NOT EXISTS chain_entries (
     peer TEXT NOT NULL,
     chain_seq INTEGER NOT NULL CHECK(chain_seq >= 1),
     stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
-    appended_at INTEGER NOT NULL,
+    appended_at INTEGER,
     PRIMARY KEY (owner_key, peer, chain_seq)
 );
 

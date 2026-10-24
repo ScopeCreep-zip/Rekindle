@@ -97,6 +97,7 @@ pub(super) async fn befriend(host: &Host, owner: [u8; 32], bob: [u8; 32]) {
 async fn pending(host: &Host, owner: [u8; 32], from: [u8; 32], n: u32, body: &DirectBody) {
     let content = DmContent {
         stream_seq: 0,
+        chain_seq: 0,
         content_hint: ContentHint::Default,
         sent_at_ms: 1_700_000_000_000,
         payload: body.encode(),

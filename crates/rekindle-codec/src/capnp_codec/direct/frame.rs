@@ -98,6 +98,10 @@ pub struct DmContent {
     /// The entry's seq on the sender's outbox stream to us (plan E2.5,
     /// D22), which our `DmAck` names; 0 for a frame on no stream.
     pub stream_seq: u64,
+    /// The entry's seq on the sender's dm chain to us, sealed into its hint
+    /// (live A/B finding 71 refined): the receiver applies D23's rule to it;
+    /// 0 for a frame on no chain (a `StreamRecord`, a group entry).
+    pub chain_seq: u64,
 }
 
 /// The plaintext of a sealed frame.
@@ -277,6 +281,7 @@ impl DmContent {
             root.set_sent_at_ms(self.sent_at_ms);
             root.set_payload(&self.payload);
             root.set_stream_seq(self.stream_seq);
+            root.set_chain_seq(self.chain_seq);
         })
     }
 
@@ -295,6 +300,7 @@ impl DmContent {
                 sent_at_ms: root.get_sent_at_ms(),
                 payload: data(root.get_payload())?,
                 stream_seq: root.get_stream_seq(),
+                chain_seq: root.get_chain_seq(),
             })
         })
     }
@@ -477,6 +483,7 @@ pub(super) mod tests {
         ] {
             let content = DmContent {
                 stream_seq: 0,
+                chain_seq: 0,
                 content_hint,
                 sent_at_ms: u64::MAX,
                 payload: vec![1, 2, 3],

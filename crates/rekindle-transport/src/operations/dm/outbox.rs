@@ -250,13 +250,14 @@ enum Framed {
 pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -> Vec<Attempt> {
     let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
     let mut chained: Vec<(usize, Vec<u8>, DmTypeId)> = Vec::new();
+    let mut head = None;
     for row in rows {
         if landed(row) {
             rehint(host, to, row).await;
             outcomes.push(Some(Attempt::Sent));
             continue;
         }
-        let outcome = match frame_row(host, to, row).await {
+        let outcome = match frame_row(host, to, row, Some(&mut head)).await {
             Err(outcome) => outcome,
             // A `StreamRecord` waits for the peer's `DmAck` (resent until
             // then) like any `dm` row.
@@ -303,7 +304,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
 /// chain. An acked row is gone from the outbox (`Outbox::acknowledge`), so
 /// it is never hinted again. It stays sent whatever the hint does.
 async fn rehint(host: &dyn FriendHost, to: &str, row: &RowAttempt<'_>) {
-    match frame_row(host, to, row).await {
+    match frame_row(host, to, row, None).await {
         Ok(Framed::Entry(datagram, type_id) | Framed::Record(datagram, type_id)) => {
             if let Err(e) = send::route_send_datagram(host, to, &datagram, type_id, true).await {
                 tracing::debug!(to = %to, error = %e, "landed entry re-hint not sent");
@@ -389,11 +390,15 @@ pub(crate) fn finish(outcomes: Vec<Option<Attempt>>) -> Vec<Attempt> {
     outcomes.into_iter().map_while(|o| o).collect()
 }
 
-/// Frame `row` afresh for this attempt.
+/// Frame `row` afresh for this attempt. A chain entry's hint carries its
+/// chain seq (live A/B finding 71 refined): assigned now with `head` (the
+/// pass's cached chain head), or, for a re-hint (`None`), the one
+/// recorded when it was first handed off.
 async fn frame_row(
     host: &dyn FriendHost,
     to: &str,
     row: &RowAttempt<'_>,
+    head: Option<&mut Option<u64>>,
 ) -> Result<Framed, Attempt> {
     let body = decode(row.payload).map_err(|e| Attempt::Wedged(format!("payload: {e}")))?;
     let seq = u64::try_from(row.stream_seq).unwrap_or(0);
@@ -401,7 +406,21 @@ async fn frame_row(
         .sent_at
         .and_then(|t| u64::try_from(t).ok())
         .unwrap_or_else(|| host.clock().now_ms());
-    let frame = send::stream_frame(host, to, &body, seq, sent_at_ms)
+    let chain_seq = match (&body, head) {
+        (DirectBody::StreamRecord(_), _) => 0,
+        (_, Some(head)) => super::chain_seq::assign(host, to, row.stream_seq, head)
+            .await
+            .map_err(attempt_of)?,
+        (_, None) => super::chain_seq::assigned(host, to, row.stream_seq)
+            .await
+            .map_err(attempt_of)?
+            .unwrap_or(0),
+    };
+    let at = super::frame::Position {
+        stream_seq: seq,
+        chain_seq,
+    };
+    let frame = send::stream_frame(host, to, &body, at, sent_at_ms)
         .await
         .map_err(attempt_of)?;
     let datagram = super::frame::wire(&frame).map_err(|e| Attempt::Wedged(e.to_string()))?;

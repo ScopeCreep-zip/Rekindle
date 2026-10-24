@@ -195,7 +195,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 118 (plan E2.5, live A/B finding 42): `outbox.peer_ack`, an ack that
 /// arrived before its row's send landed.
-pub const SCHEMA_VERSION: i64 = 118;
+///
+/// 119 (plan E2.5, live A/B finding 71 refined): `chain_entries.appended_at`
+/// is NULL while an entry's seq is assigned (sealed into its hint) and its
+/// append has not landed.
+pub const SCHEMA_VERSION: i64 = 119;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

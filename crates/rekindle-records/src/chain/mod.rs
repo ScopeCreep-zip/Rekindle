@@ -52,6 +52,9 @@ pub enum ChainError {
     /// chain; nothing in it is used.
     #[error("malformed {what}: {reason}")]
     Malformed { what: &'static str, reason: String },
+    /// [`append_exact`]: the chain's next entry is not the assigned one.
+    #[error("the chain's next entry is {next}, not the assigned {expected}")]
+    SeqMoved { expected: u64, next: u64 },
     #[error("cannot retire through {seq}: the chain ends at {last_seq}")]
     RetireBeyondHead { seq: u64, last_seq: u64 },
 }
@@ -142,11 +145,45 @@ pub async fn append_at(
     writer: &str,
     entries: &[Vec<u8>],
 ) -> Result<PagePointer, ChainError> {
+    append_after(port, record, head_subkey, writer, None, entries).await
+}
+
+/// [`append_at`] with `entries` starting at exactly chain seq `first_seq`,
+/// the seq the first one's hint carries (live A/B finding 71 refined): a
+/// chain whose next entry is any other is not written.
+///
+/// # Errors
+/// As [`append_at`], or [`ChainError::SeqMoved`].
+pub async fn append_exact(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+    writer: &str,
+    first_seq: u64,
+    entries: &[Vec<u8>],
+) -> Result<PagePointer, ChainError> {
+    append_after(port, record, head_subkey, writer, Some(first_seq), entries).await
+}
+
+async fn append_after(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+    writer: &str,
+    expected: Option<u64>,
+    entries: &[Vec<u8>],
+) -> Result<PagePointer, ChainError> {
     if entries.is_empty() {
         return Err(ChainError::EmptyAppend);
     }
     let prev = head_at(port, record, head_subkey).await?;
     let first_seq = prev.as_ref().map_or(0, |p| p.last_seq) + 1;
+    if let Some(expected) = expected.filter(|e| *e != first_seq) {
+        return Err(ChainError::SeqMoved {
+            expected,
+            next: first_seq,
+        });
+    }
     let span = u64::try_from(entries.len() - 1).ok();
     let last_seq = span
         .and_then(|span| first_seq.checked_add(span))

@@ -40,6 +40,7 @@ pub fn inner(body: &DirectBody, sent_at_ms: u64, stream_seq: u64) -> Vec<u8> {
         sent_at_ms,
         payload: body.encode(),
         stream_seq,
+        chain_seq: 0,
     };
     let mut out = type_id.as_u16().to_be_bytes().to_vec();
     out.extend(content.encode());

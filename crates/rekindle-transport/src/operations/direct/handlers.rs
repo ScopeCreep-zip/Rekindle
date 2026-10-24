@@ -57,6 +57,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
                     sender,
                     &opened.body,
                     opened.stream_seq,
+                    opened.chain_seq,
                 )
                 .await;
             }
@@ -121,6 +122,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
                     sender,
                     &opened.body,
                     opened.stream_seq,
+                    opened.chain_seq,
                 )
                 .await;
             }

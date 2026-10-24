@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use rekindle_crypto::horizon::DELIVERY_HORIZON;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// How long an acknowledged entry stays on our chain, the peer's inbox,
 /// before it may be retired: [`DELIVERY_HORIZON`] (D24, ruling Q2b).
@@ -37,6 +37,91 @@ pub fn record(
         params![owner_key, peer, sql_seq(chain_seq)?, stream_seq, now],
     )?;
     Ok(())
+}
+
+/// The chain seq assigned to our `dm` row `stream_seq` to `peer` (live A/B
+/// finding 71 refined): a re-hint, or a pass after a crash between the
+/// assignment and the append, reuses it.
+///
+/// # Errors
+/// The query failed.
+pub fn assigned(
+    conn: &Connection,
+    owner_key: &str,
+    peer: &str,
+    stream_seq: i64,
+) -> rusqlite::Result<Option<u64>> {
+    let seq: Option<i64> = conn
+        .query_row(
+            "SELECT chain_seq FROM chain_entries \
+             WHERE owner_key = ?1 AND peer = ?2 AND stream_seq = ?3",
+            params![owner_key, peer, stream_seq],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(seq.and_then(|s| u64::try_from(s).ok()))
+}
+
+/// Assign our `dm` row `stream_seq` to `peer` its chain seq, the one its
+/// hint carries (live A/B finding 71 refined): the one it holds, or the
+/// next after `head` (the chain's newest landed seq) and every seq still
+/// pending (one append in flight per stream). An assignment whose row left
+/// the outbox before its append landed is released first, so the seqs
+/// stay contiguous behind the head. The entry has no `appended_at` until
+/// [`landed`].
+///
+/// # Errors
+/// A seq does not fit a row, or the write failed; nothing was assigned.
+pub fn assign(
+    conn: &Connection,
+    owner_key: &str,
+    peer: &str,
+    stream_seq: i64,
+    head: u64,
+) -> rusqlite::Result<u64> {
+    let tx = conn.unchecked_transaction()?;
+    if let Some(seq) = assigned(&tx, owner_key, peer, stream_seq)? {
+        return Ok(seq);
+    }
+    tx.execute(
+        "DELETE FROM chain_entries WHERE owner_key = ?1 AND peer = ?2 \
+         AND appended_at IS NULL AND NOT EXISTS (SELECT 1 FROM outbox o \
+         WHERE o.owner_key = ?1 AND o.stream = 'dm:' || ?2 \
+         AND o.stream_seq = chain_entries.stream_seq)",
+        params![owner_key, peer],
+    )?;
+    let pending: Option<i64> = tx.query_row(
+        "SELECT MAX(chain_seq) FROM chain_entries WHERE owner_key = ?1 AND peer = ?2",
+        params![owner_key, peer],
+        |row| row.get(0),
+    )?;
+    let pending = pending.and_then(|s| u64::try_from(s).ok()).unwrap_or(0);
+    let seq = head.max(pending) + 1;
+    tx.execute(
+        "INSERT INTO chain_entries (owner_key, peer, chain_seq, stream_seq, appended_at) \
+         VALUES (?1, ?2, ?3, ?4, NULL)",
+        params![owner_key, peer, sql_seq(seq)?, stream_seq],
+    )?;
+    tx.commit()?;
+    Ok(seq)
+}
+
+/// The entries `first..=last` of our chain to `peer` landed at `now`.
+///
+/// # Errors
+/// A seq does not fit a row, or the write failed.
+pub fn landed(
+    conn: &Connection,
+    owner_key: &str,
+    peer: &str,
+    (first, last): (u64, u64),
+    now: i64,
+) -> rusqlite::Result<usize> {
+    conn.execute(
+        "UPDATE chain_entries SET appended_at = ?5 WHERE owner_key = ?1 AND peer = ?2 \
+         AND chain_seq BETWEEN ?3 AND ?4 AND appended_at IS NULL",
+        params![owner_key, peer, sql_seq(first)?, sql_seq(last)?, now],
+    )
 }
 
 /// The highest chain seq our chain to `peer` may retire through: every
@@ -166,4 +251,53 @@ mod tests {
         assert_eq!(forget_through(&conn, OWNER, stream, 2).unwrap(), 2);
         assert_eq!(retirable_by_age(&conn, OWNER, stream, 50).unwrap(), None);
     }
+}
+
+#[cfg(test)]
+mod assign_tests {
+    use super::*;
+    use crate::repo::fixture::{self, OWNER};
+
+    fn queued(conn: &Connection, stream_seq: i64) {
+        conn.execute(
+            "INSERT INTO outbox (owner_key, stream, stream_seq, client_id, kind, payload, \
+             state, next_at, deadline) VALUES (?1, 'dm:bob', ?2, ?3, 'dm', x'00', 'queued', 0, 0)",
+            params![OWNER, stream_seq, format!("c{stream_seq}")],
+        )
+        .unwrap();
+    }
+
+    /// Seqs follow the head and every pending one, a re-assignment (a
+    /// re-hint, a pass after a crash) reuses the recorded seq, and an
+    /// unlanded entry is never retired.
+    #[test]
+    fn a_row_keeps_its_chain_seq_and_the_next_follows_the_pending() {
+        let conn = fixture::conn();
+        for s in [4, 5, 6] {
+            queued(&conn, s);
+        }
+        assert_eq!(assign(&conn, OWNER, "bob", 4, 7).unwrap(), 8);
+        assert_eq!(assign(&conn, OWNER, "bob", 5, 7).unwrap(), 9);
+        assert_eq!(assign(&conn, OWNER, "bob", 4, 9).unwrap(), 8);
+        assert_eq!(assigned(&conn, OWNER, "bob", 5).unwrap(), Some(9));
+        assert_eq!(retirable(&conn, OWNER, "bob", i64::MAX).unwrap(), None);
+        assert_eq!(landed(&conn, OWNER, "bob", (8, 8), 10).unwrap(), 1);
+        // Row 5 left before its append landed: its seq is released.
+        conn.execute("DELETE FROM outbox WHERE stream_seq = 5", [])
+            .unwrap();
+        assert_eq!(assign(&conn, OWNER, "bob", 6, 8).unwrap(), 9);
+    }
+}
+
+/// Our chain to `peer` has a hole below an assigned seq (an assignment
+/// released after its row left before landing): every seq not landed is
+/// released, so the next pass assigns them again from the head. How many.
+///
+/// # Errors
+/// The write failed.
+pub fn release_unlanded(conn: &Connection, owner_key: &str, peer: &str) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM chain_entries WHERE owner_key = ?1 AND peer = ?2 AND appended_at IS NULL",
+        params![owner_key, peer],
+    )
 }

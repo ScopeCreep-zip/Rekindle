@@ -227,8 +227,8 @@ pub(super) async fn route_send_datagram(
     Ok(false)
 }
 
-/// `body` framed as entry `stream_seq` of our outbox stream to `to` (plan
-/// E2.5): a ratchet message carrying the seq the peer's `DmAck` names and
+/// `body` framed as the entry `at` of our outbox stream (and chain) to `to`
+/// (plan E2.5): a ratchet message carrying the seqs the peer's `DmAck` names and
 /// `sent_at_ms`, when the entry was written (E2.B F3),
 /// behind the verification gate like any send of its kind.
 ///
@@ -239,7 +239,7 @@ pub(crate) async fn stream_frame(
     host: &dyn FriendHost,
     to: &str,
     body: &DirectBody,
-    stream_seq: u64,
+    at: frame::Position,
     sent_at_ms: u64,
 ) -> Result<DmFrame, FriendError> {
     let type_id = body.type_id();
@@ -251,7 +251,7 @@ pub(crate) async fn stream_frame(
     if !crate::operations::friend::verification::is_protective(type_id) {
         crate::operations::friend::verification::require_acknowledged(host, to).await?;
     }
-    frame::ratchet_frame_at(host, to, body, hint_for(type_id), stream_seq, sent_at_ms).await
+    frame::ratchet_frame_at(host, to, body, hint_for(type_id), at, sent_at_ms).await
 }
 
 /// Send `body` to `to` once: a receipt the peer's resend

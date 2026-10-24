@@ -58,7 +58,14 @@ pub(crate) async fn open_first_contact(
     match first {
         None => dm::send_friend_accept(host, peer, bundle).await,
         Some(body) => {
-            let frame = dm::frame::initiate_frame(host, peer, bundle, &body, 0).await?;
+            let frame = dm::frame::initiate_frame(
+                host,
+                peer,
+                bundle,
+                &body,
+                dm::frame::Position::default(),
+            )
+            .await?;
             dm::handshake::enqueue_frame(host, peer, &frame)
                 .await
                 .map(drop)

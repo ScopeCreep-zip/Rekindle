@@ -16,6 +16,7 @@ use crate::host::Host;
 async fn arrived(host: &Host, owner: [u8; 32], bob: [u8; 32], seq: u8, sent_at_ms: u64) {
     let content = DmContent {
         stream_seq: u64::from(seq),
+        chain_seq: 0,
         content_hint: ContentHint::Default,
         sent_at_ms,
         payload: text(seq).encode(),

@@ -82,9 +82,15 @@ async fn a_forged_prekey_rejection_leaves_the_pending_init() {
             route_blob: Vec::new(),
             mailbox_dht_key: String::new(),
         });
-        let sent = frame::initiate_frame(&friends, &bob_hex, bundle_of(&bob), &accept, 0)
-            .await
-            .unwrap();
+        let sent = frame::initiate_frame(
+            &friends,
+            &bob_hex,
+            bundle_of(&bob),
+            &accept,
+            frame::Position::default(),
+        )
+        .await
+        .unwrap();
         let FrameBody::PreKeyInit(init) = sent.body else {
             panic!("a first contact is a PreKeyInit");
         };
@@ -195,9 +201,15 @@ async fn a_strangers_prekey_init_consumes_nothing() {
         mailbox_dht_key: String::new(),
     });
     for first in [accept, text(9)] {
-        let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle.clone(), &first, 0)
-            .await
-            .unwrap();
+        let sent = frame::initiate_frame(
+            &sender,
+            &hex::encode(owner),
+            bundle.clone(),
+            &first,
+            frame::Position::default(),
+        )
+        .await
+        .unwrap();
         receive(&friends, &wire(&sent).unwrap()).await;
     }
 
@@ -217,9 +229,15 @@ async fn a_strangers_prekey_init_consumes_nothing() {
     // The same init from a friend does open the session and consume the
     // slot, so the stranger's was refused for who sent it.
     befriend(&host, owner, mallory).await;
-    let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle, &text(10), 0)
-        .await
-        .unwrap();
+    let sent = frame::initiate_frame(
+        &sender,
+        &hex::encode(owner),
+        bundle,
+        &text(10),
+        frame::Position::default(),
+    )
+    .await
+    .unwrap();
     receive(&friends, &wire(&sent).unwrap()).await;
     assert_ne!(prekey_counts(&host, owner).await, before);
     assert_eq!(history(&host, owner, mallory).await, 1);
@@ -239,9 +257,18 @@ async fn a_first_message_keeps_its_stream_seq() {
     let bundle = own_bundle(&host, owner).await;
     let first = text(11);
     let id = rekindle_transport::operations::dm::ack::acknowledged_id(&first).unwrap();
-    let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle, &first, 4)
-        .await
-        .unwrap();
+    let sent = frame::initiate_frame(
+        &sender,
+        &hex::encode(owner),
+        bundle,
+        &first,
+        frame::Position {
+            stream_seq: 4,
+            chain_seq: 0,
+        },
+    )
+    .await
+    .unwrap();
     receive(&friends, &wire(&sent).unwrap()).await;
     let (o, b) = (hex::encode(owner), hex::encode(bob));
     let seq = host

@@ -334,6 +334,7 @@ fn datagram_len(frame: &DmFrame) -> usize {
 fn pre_key_init(body: &DirectBody) -> DmFrame {
     let content = DmContent {
         stream_seq: 0,
+        chain_seq: 0,
         content_hint: ContentHint::Resendable,
         sent_at_ms: u64::MAX,
         payload: body.encode(),

@@ -75,7 +75,7 @@ async fn append_runs(
         send_record(host, to, &ours.record_key).await?;
     }
     let port = records(host)?;
-    append_noted(host, port.as_ref(), &ours, to, frames, landed).await?;
+    super::chain_seq::append_assigned(host, port.as_ref(), &ours, to, frames, landed).await?;
     retire(host, to, &ours, port.as_ref()).await;
     Ok(())
 }
@@ -209,7 +209,11 @@ pub fn stream_record_client_id(record_key: &str) -> String {
 /// Commit our participant record's key to `to` as a row of our `dm` stream
 /// (sent once a session exists, and again after the record is replaced):
 /// the outbox resends it until the peer's `DmAck` names it.
-async fn send_record(host: &dyn FriendHost, to: &str, record_key: &str) -> Result<(), FriendError> {
+pub(super) async fn send_record(
+    host: &dyn FriendHost,
+    to: &str,
+    record_key: &str,
+) -> Result<(), FriendError> {
     let body = DirectBody::StreamRecord(StreamRecord {
         record_key: record_key.to_string(),
         group_id: None,

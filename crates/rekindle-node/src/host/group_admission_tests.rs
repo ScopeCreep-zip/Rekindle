@@ -56,9 +56,15 @@ fn accept_of(group_id: GroupId) -> DirectBody {
 async fn init_from(host: &Host, owner: [u8; 32], from: &Host, first: &DirectBody) {
     let bundle = own_bundle(host, owner).await;
     let sender = HostFriends::of(&from.ctx);
-    let sent = frame::initiate_frame(&sender, &hex::encode(owner), bundle, first, 0)
-        .await
-        .unwrap();
+    let sent = frame::initiate_frame(
+        &sender,
+        &hex::encode(owner),
+        bundle,
+        first,
+        frame::Position::default(),
+    )
+    .await
+    .unwrap();
     receive(&HostFriends::of(&host.ctx), &wire(&sent).unwrap()).await;
 }
 
