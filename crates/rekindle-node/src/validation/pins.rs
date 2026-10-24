@@ -242,6 +242,8 @@ mod tests {
         assert!(check(&voice(0)).is_err());
         assert!(check(&voice(64 * 199)).is_err());
         assert!(check(&voice(64 * 1_000 + 3)).is_err());
-        assert!(check(&voice(64 * (5 * 60 * 1000 + 1))).is_err());
+        // One 20 ms frame past five minutes is allowed, a millisecond more is not.
+        assert!(check(&voice(64 * (5 * 60 * 1000 + 20))).is_ok());
+        assert!(check(&voice(64 * (5 * 60 * 1000 + 21))).is_err());
     }
 }
