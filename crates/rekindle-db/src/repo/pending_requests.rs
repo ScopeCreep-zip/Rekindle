@@ -127,22 +127,21 @@ pub fn answer(
     owner_key: &str,
     public_key: &str,
 ) -> rusqlite::Result<Option<Answer>> {
-    conn
-        .query_row(
-            "SELECT display_name, profile_dht_key, mailbox_dht_key, route_blob, invite_id \
+    conn.query_row(
+        "SELECT display_name, profile_dht_key, mailbox_dht_key, route_blob, invite_id \
              FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
-            params![owner_key, public_key],
-            |row| {
-                Ok(Answer {
-                    display_name: Some(row.get(0)?),
-                    profile_dht_key: row.get(1)?,
-                    mailbox_dht_key: row.get(2)?,
-                    route_blob: row.get(3)?,
-                    invite_id: row.get(4)?,
-                })
-            },
-        )
-        .optional()
+        params![owner_key, public_key],
+        |row| {
+            Ok(Answer {
+                display_name: Some(row.get(0)?),
+                profile_dht_key: row.get(1)?,
+                mailbox_dht_key: row.get(2)?,
+                route_blob: row.get(3)?,
+                invite_id: row.get(4)?,
+            })
+        },
+    )
+    .optional()
 }
 
 /// Delete the request from `public_key`.
@@ -220,7 +219,11 @@ mod tests {
         let a = answer(&conn, OWNER, "bob").unwrap().expect("bob asked");
         assert_eq!(a.route_blob.as_deref(), Some(&[1, 2][..]));
         assert_eq!(a.invite_id.as_deref(), Some("invite"));
-        assert_eq!(answer(&conn, OWNER, "ghost").unwrap(), None, "no request, no answer");
+        assert_eq!(
+            answer(&conn, OWNER, "ghost").unwrap(),
+            None,
+            "no request, no answer"
+        );
     }
 
     #[test]
