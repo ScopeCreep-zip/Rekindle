@@ -185,10 +185,14 @@ pub(super) async fn accept_crossing_request(
             f.mailbox_dht_key = Some(req.mailbox_dht_key.to_string());
         }
     });
-    state::settle_answered_request(host, req.sender_hex).await;
     // Exactly one side initiates: the lower identity opens the session with
-    // its accept; the higher side's session opens when that arrives.
+    // its accept; the higher side's session opens when that arrives. Their
+    // request does not prove ours arrived, so only the side whose accept
+    // opens the friendship settles its request here (finding 56 corrected,
+    // RV2); the higher side's request goes on until it lands, and the
+    // peer's accept settles it (`on_friend_accept`).
     if we_initiate_crossing(host, req.sender_hex) {
+        state::settle_answered_request(host, req.sender_hex).await;
         // From the peer's prekey record (the profile their request named,
         // stored above; plan E2.4). A failure shows on their row with Retry
         // (B7); it is a first contact, never a session reset.
