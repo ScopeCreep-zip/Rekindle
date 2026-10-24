@@ -79,6 +79,13 @@ impl PendingAcks {
         self.scheduled.insert(peer.to_owned())
     }
 
+    /// A `DmAck` carrying our cursor alone is owed to `peer` (a chain diff
+    /// moved it); `true` when a flush must be scheduled.
+    fn add_through(&mut self, peer: &str) -> bool {
+        self.by_peer.entry(peer.to_owned()).or_default();
+        self.scheduled.insert(peer.to_owned())
+    }
+
     /// Entry `seq` of `peer`'s stream opened from the frame `digest`.
     fn remember(&mut self, peer: &str, digest: [u8; 32], seq: u64) {
         let kept = self.applied.entry(peer.to_owned()).or_default();
@@ -168,6 +175,21 @@ pub(crate) async fn committed(
     }
     step_cursor(host, from, chain_seq).await;
     let first = host.stores().acks.lock().add(from, stream_seq);
+    if first {
+        schedule(host, from);
+    }
+}
+
+/// A chain diff of `from`'s stream applied entries or stored a gap, so our
+/// cursor on them moved (live finding 76b: a diff that applied hints held
+/// past a gap sent no ack, and the sender re-asked rows the cursor already
+/// covered): a `DmAck` carrying the new `through` follows, after the same
+/// coalescing delay, joined with any seqs already held.
+pub(crate) fn cursor_moved(host: &dyn FriendHost, from: &str) {
+    if !accepted(host, from) {
+        return;
+    }
+    let first = host.stores().acks.lock().add_through(from);
     if first {
         schedule(host, from);
     }
@@ -382,6 +404,23 @@ mod tests {
     use rekindle_codec::capnp_codec::direct::{DmReaction, DmText, Typing};
 
     use super::*;
+
+    /// A diff's ack carries `through` alone (finding 76b), and joins the
+    /// seqs already held for the same flush.
+    #[test]
+    fn a_moved_cursor_owes_a_through_ack() {
+        let mut acks = PendingAcks::default();
+        assert!(acks.add_through("p"));
+        let held = acks.take("p", false).expect("an ack is owed");
+        assert_eq!(held.seqs, Some(BTreeSet::new()));
+        assert_eq!(super::acks(&[], 3).len(), 1);
+        assert!(acks.add("p", 5));
+        assert!(!acks.add_through("p"));
+        assert_eq!(
+            acks.take("p", false).unwrap().seqs,
+            Some(BTreeSet::from([5]))
+        );
+    }
 
     #[test]
     fn the_delay_stays_within_two_to_ten_seconds() {

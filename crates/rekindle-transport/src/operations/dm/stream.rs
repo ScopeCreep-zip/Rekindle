@@ -386,6 +386,9 @@ async fn diff(host: &dyn FriendHost, peer: &str) {
     {
         Ok(d) => {
             tracing::debug!(peer = %peer, applied = d.applied, coalesced = d.coalesced, "dm stream diffed");
+            if d.applied > 0 || d.gap_through.is_some() {
+                super::ack::cursor_moved(host, peer);
+            }
         }
         Err(e) => {
             tracing::debug!(peer = %peer, error = %e, "dm stream diff failed");
