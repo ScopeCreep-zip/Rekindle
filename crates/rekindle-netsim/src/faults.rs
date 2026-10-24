@@ -40,6 +40,12 @@ pub enum Fault {
     /// `rpc_processor/mod.rs:1718-1830`; live finding 78). The question is
     /// lost; only the caller's own deadline ends it.
     CallHangs { node: usize, hangs: bool },
+    /// An app message to the node's routes is never dispatched: the send
+    /// neither returns nor fails, as a send stuck in the stages before the
+    /// first hop takes it (destination, render and safety-route compile,
+    /// `send_envelope`, none bounded: `rpc_processor/mod.rs:1882-1926`).
+    /// The message is lost; only the sender's own deadline ends the send.
+    SendHangs { node: usize, hangs: bool },
     /// The node's clock runs this far from simulated true time.
     ClockSkew { node: usize, ms: i64 },
     /// The node's watch on `key` dies: Veilid sends a last change with
@@ -121,6 +127,9 @@ impl Netsim {
             }
             Fault::CallHangs { node, hangs } => {
                 toggle(&mut self.net.inner.lock().faults.hung, node, hangs);
+            }
+            Fault::SendHangs { node, hangs } => {
+                toggle(&mut self.net.inner.lock().faults.send_hung, node, hangs);
             }
             Fault::ClockSkew { node, ms } => {
                 if let Some(clock) = self.clocks.lock().get(node) {

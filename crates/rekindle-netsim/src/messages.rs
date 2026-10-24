@@ -117,6 +117,10 @@ impl FakeMessages {
             // Dispatched into a released route: lost, and still "sent".
             return Ok(());
         };
+        if self.net.inner.lock().faults.send_hung.contains(&to) {
+            // Stuck before the first hop takes it: nothing ends it.
+            return std::future::pending().await;
+        }
         // Fire and forget: a dropped message still "sent".
         let delay = self.net.latency.draw(self.node, latency::MESSAGE);
         self.net.send_after(

@@ -32,6 +32,7 @@ mod governance_warm_restore;
 mod group_dm;
 mod harness;
 mod hung_call;
+mod hung_send;
 mod internet_flap;
 mod invisible_game;
 mod invite_expiry;

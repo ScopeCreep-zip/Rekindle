@@ -26,6 +26,20 @@
 //! leaves it to finish (`rpc_processor/mod.rs:606-614`). Veilid logs the
 //! dropped call's `DurationRecorder` (`logging/duration_recorder.rs:84-90`);
 //! that line appears only for a call Veilid itself left unresolved.
+//!
+//! An `app_message` goes through the same unbounded stages (destination,
+//! render and safety-route compile, `send_envelope` to the first hop:
+//! `rpc_processor/mod.rs:1882-1926`) and has no answer wait at all, so a
+//! send is bounded at [`app_message_deadline`]. A send that hits it is a
+//! send error, `PortError::Send`, as Veilid's own send errors are, and its
+//! callers handle it as they handle those.
+//!
+//! The port cannot see the moment Veilid starts waiting for the answer, so
+//! each call's pre-step time is logged at DEBUG from what it can see: a
+//! Veilid `Timeout` arrives exactly [`answer_wait`] after the question left,
+//! so its pre-steps are the elapsed time less that wait; an answered call's
+//! pre-steps are at most its elapsed time; a call at our bound spent at
+//! least the bound less the wait before it (live finding 78, L1).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -33,7 +47,7 @@ use std::time::Duration;
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortError, RouteClass};
 use rekindle_types::config::{SafetyProfile, ANONYMITY_HOP_FLOOR};
 use rekindle_types::message::CALL_TIMEOUT_MS;
-use tracing::warn;
+use tracing::{debug, warn};
 
 /// Veilid's wait for one answer at `profile`'s hop count, floor-clamped as
 /// the port clamps it: `rpc.timeout_ms` (`CALL_TIMEOUT_MS`) plus 500 ms for
@@ -58,7 +72,15 @@ pub fn app_call_deadline(profile: &SafetyProfile) -> Duration {
     answer_wait(profile) + Duration::from_millis(CALL_TIMEOUT_MS)
 }
 
-/// The node's app-message port with [`app_call_deadline`] on every call.
+/// Our bound on one outbound `app_message`: one `CALL_TIMEOUT_MS` for the
+/// stages Veilid does not bound (there is no answer wait), 5 s.
+#[must_use]
+pub fn app_message_deadline() -> Duration {
+    Duration::from_millis(CALL_TIMEOUT_MS)
+}
+
+/// The node's app-message port with [`app_call_deadline`] on every call
+/// and [`app_message_deadline`] on every send.
 pub(crate) struct Bounded {
     inner: Arc<dyn AppMessagePort>,
 }
@@ -75,15 +97,63 @@ async fn within(
     call: impl std::future::Future<Output = Result<Vec<u8>, PortError>>,
 ) -> Result<Vec<u8>, PortError> {
     let deadline = app_call_deadline(profile);
-    tokio::time::timeout(deadline, call)
+    let wait = answer_wait(profile);
+    let started = tokio::time::Instant::now();
+    let Ok(result) = tokio::time::timeout(deadline, call).await else {
+        debug!(
+            pre_step_min_ms = deadline.saturating_sub(wait).as_millis(),
+            elapsed_ms = deadline.as_millis(),
+            "app_call pre-steps: unresolved at our bound"
+        );
+        warn!(
+            deadline_ms = deadline.as_millis(),
+            "app_call unresolved at our deadline: timed out, outcome unknown"
+        );
+        return Err(PortError::Send(format!(
+            "app call timed out: unresolved after {} ms (outcome unknown)",
+            deadline.as_millis()
+        )));
+    };
+    log_pre_steps(&result, started.elapsed(), wait);
+    result
+}
+
+/// The DEBUG line for one call that Veilid resolved itself.
+fn log_pre_steps(result: &Result<Vec<u8>, PortError>, elapsed: Duration, wait: Duration) {
+    match result {
+        // Veilid's answer wait ran in full after the question left.
+        Err(PortError::Send(reason)) if reason == "Timeout" => debug!(
+            pre_step_ms = elapsed.saturating_sub(wait).as_millis(),
+            elapsed_ms = elapsed.as_millis(),
+            "app_call pre-steps: Veilid timed out the answer wait"
+        ),
+        Ok(_) => debug!(
+            pre_step_max_ms = elapsed.as_millis(),
+            elapsed_ms = elapsed.as_millis(),
+            "app_call pre-steps: answered"
+        ),
+        Err(_) => debug!(
+            pre_step_max_ms = elapsed.as_millis(),
+            elapsed_ms = elapsed.as_millis(),
+            "app_call pre-steps: failed before an answer"
+        ),
+    }
+}
+
+/// `send` within [`app_message_deadline`]; past it, a send error.
+async fn sent_within(
+    send: impl std::future::Future<Output = Result<(), PortError>>,
+) -> Result<(), PortError> {
+    let deadline = app_message_deadline();
+    tokio::time::timeout(deadline, send)
         .await
         .unwrap_or_else(|_| {
             warn!(
                 deadline_ms = deadline.as_millis(),
-                "app_call unresolved at our deadline: timed out, outcome unknown"
+                "app_message not dispatched at our deadline: send failed"
             );
             Err(PortError::Send(format!(
-                "app call timed out: unresolved after {} ms (outcome unknown)",
+                "app message not dispatched after {} ms",
                 deadline.as_millis()
             )))
         })
@@ -97,7 +167,7 @@ impl AppMessagePort for Bounded {
         profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<(), PortError> {
-        self.inner.send(target, profile, message).await
+        sent_within(self.inner.send(target, profile, message)).await
     }
 
     async fn call(
@@ -116,9 +186,7 @@ impl AppMessagePort for Bounded {
         class: RouteClass,
         message: Vec<u8>,
     ) -> Result<(), PortError> {
-        self.inner
-            .send_pinned(target, profile, class, message)
-            .await
+        sent_within(self.inner.send_pinned(target, profile, class, message)).await
     }
 
     async fn call_pinned(
@@ -160,7 +228,7 @@ mod tests {
         assert!(app_call_deadline(&at(4)) > answer_wait(&at(4)));
     }
 
-    /// A port whose calls never resolve.
+    /// A port whose calls and sends never resolve.
     struct Hung;
 
     #[async_trait::async_trait]
@@ -171,7 +239,7 @@ mod tests {
             _: &SafetyProfile,
             _: Vec<u8>,
         ) -> Result<(), PortError> {
-            Ok(())
+            std::future::pending().await
         }
         async fn call(
             &self,
@@ -188,7 +256,7 @@ mod tests {
             _: RouteClass,
             _: Vec<u8>,
         ) -> Result<(), PortError> {
-            Ok(())
+            std::future::pending().await
         }
         async fn call_pinned(
             &self,
@@ -216,5 +284,19 @@ mod tests {
         assert!(matches!(pinned, Err(PortError::Send(ref m)) if m.contains("timed out")));
         assert_eq!(started.elapsed(), app_call_deadline(&profile));
         assert!(port.call(&target, &profile, vec![1]).await.is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_send_that_never_dispatches_fails_at_its_deadline() {
+        let port = Bounded::wrap(Arc::new(Hung));
+        let target = PeerTarget::new("route".into());
+        let profile = at(3);
+        let started = tokio::time::Instant::now();
+        let pinned = port
+            .send_pinned(&target, &profile, RouteClass::Sending, vec![1])
+            .await;
+        assert!(matches!(pinned, Err(PortError::Send(ref m)) if m.contains("not dispatched")));
+        assert_eq!(started.elapsed(), app_message_deadline());
+        assert!(port.send(&target, &profile, vec![1]).await.is_err());
     }
 }

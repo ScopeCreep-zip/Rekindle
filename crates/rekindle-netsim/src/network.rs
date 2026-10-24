@@ -95,6 +95,9 @@ pub(crate) struct Faults {
     pub unanswered: HashSet<usize>,
     /// Nodes a call to whose route never resolves ([`crate::Fault::CallHangs`]).
     pub hung: HashSet<usize>,
+    /// Nodes an app message to whose route is never dispatched
+    /// ([`crate::Fault::SendHangs`]).
+    pub send_hung: HashSet<usize>,
     /// Nodes whose next send fails at its own route's first hop.
     pub link_failure: HashSet<usize>,
 }
