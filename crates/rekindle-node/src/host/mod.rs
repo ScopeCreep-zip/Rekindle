@@ -12,6 +12,8 @@ pub mod community;
 #[cfg(test)]
 mod direct_call_tests;
 #[cfg(test)]
+mod direct_deadline_tests;
+#[cfg(test)]
 mod direct_tests;
 #[cfg(test)]
 mod friend_admission_tests;

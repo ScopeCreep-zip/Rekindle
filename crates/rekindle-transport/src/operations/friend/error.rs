@@ -29,6 +29,22 @@ impl FriendError {
     pub(crate) fn store(what: &str, e: impl std::fmt::Display) -> Self {
         Self::Failed(format!("{what}: {e}"))
     }
+
+    /// Whether the input was at fault ([`Self::Invalid`]), not us.
+    pub(crate) fn is_input(&self) -> bool {
+        matches!(self, Self::Invalid(_))
+    }
+
+    /// A database call failed: [`Self::Invalid`] when the values it was
+    /// given are at fault (a constraint, a size; `rekindle_db::input_fault`,
+    /// review RV5 M2), else [`Self::Failed`] (ours).
+    pub(crate) fn db(what: &str, e: &rekindle_db::CallError) -> Self {
+        if rekindle_db::input_fault(e) {
+            Self::Invalid(format!("{what}: {e}"))
+        } else {
+            Self::store(what, e)
+        }
+    }
 }
 
 impl From<crate::error::TransportError> for FriendError {

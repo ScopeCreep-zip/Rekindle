@@ -60,15 +60,20 @@ pub enum Dropped {
     /// answered with it ([`super::receive_call`]); an init that came by
     /// message gets it by message.
     Rejected { to: String, frame: Box<DmFrame> },
-    /// A copy of a frame that already opened: its receipt stands.
+    /// A copy of a frame that already opened and was applied: its receipt
+    /// stands.
     Duplicate,
+    /// A copy of a sealed frame whose first copy is still being applied
+    /// (its nonce tentative, review RV5 H1): nothing is stored yet, so no
+    /// receipt; a call is answered [`super::RETRY_LATER`].
+    InFlight,
     /// Refused (undecodable, blocked, not admitted, a bad signature, stale,
     /// or a failed decrypt): no receipt, a call is answered NAK.
     Refused,
     /// Not judged: an internal error of ours (no unlocked identity, our
-    /// database, the block-list read, or framing our reply failed). Not a
-    /// refusal: a call is left unanswered, so the caller attempts it again
-    /// (RV2, `c37fef40`; RV5 R2).
+    /// database, the block-list or friendship read, or framing our reply
+    /// failed). Not a refusal: a call is answered [`super::RETRY_LATER`],
+    /// so the caller attempts it again (RV2, `c37fef40`; RV5 R2, M2).
     Failed,
 }
 
@@ -178,6 +183,10 @@ fn open_sealed(
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate sealed frame");
             return Err(Dropped::Duplicate);
         }
+        Sighting::InFlight => {
+            tracing::debug!(from = %sender_hex, ?type_id, "sealed frame's first copy in flight");
+            return Err(Dropped::InFlight);
+        }
         Sighting::Full => {
             tracing::warn!(from = %sender_hex, "sender over its replay quota — dropping sealed frame");
             return Err(Dropped::Refused);
@@ -204,6 +213,18 @@ fn open_sealed(
 /// landed.
 pub(crate) fn forget(host: &dyn FriendHost, sender: &[u8; 32], nonce: &Nonce) {
     host.stores().replay.lock().forget(sender, nonce);
+}
+
+/// Settle a sealed frame's nonce: its apply is done (stored, or judged),
+/// so a copy from now on is a duplicate (review RV5 H1).
+fn settle(host: &dyn FriendHost, opened: &Opened) {
+    let Some(nonce) = opened.nonce else {
+        return;
+    };
+    let Ok(Ok(sender)) = hex::decode(&opened.sender_hex).map(<[u8; 32]>::try_from) else {
+        return;
+    };
+    host.stores().replay.lock().settle(&sender, &nonce);
 }
 
 /// The content of a sealed frame from `sender` to `identity` at `now_ms`:
@@ -437,7 +458,7 @@ async fn open_init(
 }
 
 /// What a failed ratchet step is: our database failing is no judgement
-/// ([`Dropped::Failed`], the call is left unanswered, RV5 R2); any other
+/// ([`Dropped::Failed`], the call is answered retry later, RV5 R2, M2); any other
 /// failure is the frame's ([`Dropped::Refused`]).
 pub(crate) fn ratchet_dropped(error: &RatchetError) -> Dropped {
     match error {
@@ -532,9 +553,10 @@ pub(crate) fn replayed(row: &rekindle_db::repo::unprocessed::Unprocessed) -> Opt
     })
 }
 
-/// An opened message was applied (or handed to the desktop): its
-/// `unprocessed` row goes.
+/// An opened message was applied, judged or handed to the desktop: its
+/// `unprocessed` row goes, and a sealed frame's nonce settles (RV5 H1).
 pub fn processed(host: &dyn FriendHost, opened: &Opened) {
+    settle(host, opened);
     if let Some(key) = opened.unprocessed {
         delete_unprocessed(host, key);
     }

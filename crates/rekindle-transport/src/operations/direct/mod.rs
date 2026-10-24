@@ -34,9 +34,19 @@ pub enum Routed {
 /// It is the one refusal of every `app_call` either host answers.
 pub const NAK: &[u8] = b"N";
 
-/// How long an inbound `app_call` may take to be answered before it is
-/// left unanswered ([`Called::Unanswered`]; a deadline is no refusal), on
-/// both hosts. Under Veilid's own wait for our answer, `rpc.timeout_ms`
+/// The `app_call` reply to a call we could not judge or apply (review RV5
+/// M2): our own fault (our database, no unlocked identity, a store that
+/// failed on our side, a copy whose first is still in flight, our
+/// deadline). One byte, distinct from the receipt (empty), [`NAK`] and a
+/// `'D'` frame. Answering at once frees the Veilid RPC worker an
+/// unanswered call holds for `rpc.timeout_ms` (`rpc_app_call.rs:119-139`);
+/// the caller attempts its row again, as on a timeout, with no route
+/// refresh (the call reached us).
+pub const RETRY_LATER: &[u8] = b"R";
+
+/// How long an inbound `app_call`'s reply may take before it is answered
+/// [`RETRY_LATER`] ([`Called::RetryLater`]; a deadline is no refusal), on
+/// both hosts. The work goes on to completion past it (review RV5 H1). Under Veilid's own wait for our answer, `rpc.timeout_ms`
 /// (`CALL_TIMEOUT_MS`, 5 s: `rpc_app_call.rs:133-136` waits
 /// `self.timeout`, set from `timeout_ms` at `rpc_processor/mod.rs:192`),
 /// with a second for the reply to reach it, so ours fires first and the
@@ -49,16 +59,18 @@ pub const CALL_DEADLINE: std::time::Duration =
 pub enum Called {
     /// The reply: empty for a call that opened and was applied, or a
     /// duplicate of one (its return is the receipt); [`NAK`] for a judged
-    /// refusal; or a frame.
+    /// refusal (an unported kind among them: no handler is a judgement that
+    /// this host takes no such call, final for the caller as any refusal,
+    /// review RV5 L1); or a frame.
     Answered(Vec<u8>),
     /// A kind whose owner step has not come; the desktop answers it.
     Unported(Box<Opened>),
-    /// No answer: nothing was judged (the deadline passed, or an internal
-    /// error of ours: our database, a store that failed, a reply that did
-    /// not frame). A NAK is a refusal, so the host sends no reply; Veilid then
-    /// sends nothing back (`rpc_app_call.rs:128-133`) and the caller's
-    /// `app_call` times out, so its row is attempted again (RV2).
-    Unanswered,
+    /// Nothing was judged (the deadline passed, a copy whose first is in
+    /// flight, or an internal error of ours: our database, a store that
+    /// failed on our side, a reply that did not frame). A NAK is a
+    /// refusal, so the host answers [`RETRY_LATER`] (review RV5 M2) and the
+    /// caller attempts its row again (RV2).
+    RetryLater,
 }
 
 /// Handle one inbound `app_message`. `datagram` starts with the `'D'` tag;
@@ -107,7 +119,7 @@ pub(crate) async fn on_first_contact_reply(
     };
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
-        Err(Dropped::Failed) => return Rejection::Failed,
+        Err(Dropped::Failed | Dropped::InFlight) => return Rejection::Failed,
         Err(_) => return Rejection::NotOurs,
     };
     if opened.sender_hex != to {
@@ -150,8 +162,8 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
 
 /// Handle one inbound `app_call`. A relay offer is unported (the desktop
 /// replies with its ack). A refused frame is answered [`NAK`], one not
-/// judged (an internal error of ours, a store that failed) is left
-/// unanswered, and a copy
+/// judged (an internal error of ours, a store that failed on our side, a
+/// copy whose first is in flight) [`RETRY_LATER`], and a copy
 /// of one that opened the empty receipt (plan audit G3). A sealed kind
 /// advances no ratchet and leaves no `unprocessed` row, so it is applied
 /// before the answer, and only a stored one is receipted (G4). A ratchet
@@ -167,13 +179,13 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
         Ok(opened) => opened,
         Err(Dropped::Duplicate) => return Called::Answered(Vec::new()),
         Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
-        Err(Dropped::Failed) => return Called::Unanswered,
+        Err(Dropped::Failed | Dropped::InFlight) => return Called::RetryLater,
         // B5 by the call itself (finding 46): the caller tells a refused
         // prekey (this reply, its one resend) from any other refusal (NAK).
         Err(Dropped::Rejected { to, frame }) => {
             return match crate::operations::prekeys::rejection_reply(&to, &frame) {
                 Some(reply) => Called::Answered(reply),
-                None => Called::Unanswered,
+                None => Called::RetryLater,
             };
         }
     };
@@ -184,9 +196,10 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     if opened.unprocessed.is_none() {
         return match handlers::apply(host, opened).await {
             handlers::Applied::Done(true) => Called::Answered(Vec::new()),
-            // Its store failed: ours, not a refusal (RV5 R2).
-            handlers::Applied::Done(false) => Called::Unanswered,
+            // Its store failed on our side: not a refusal (RV5 R2, M2).
+            handlers::Applied::Done(false) => Called::RetryLater,
             handlers::Applied::Refused => Called::Answered(NAK.to_vec()),
+            // No handler: judged (review RV5 L1, [`Called::Answered`]).
             handlers::Applied::Unported(opened) => {
                 tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,
                     "unported kind by app_call — dropped");
@@ -204,16 +217,31 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     Called::Answered(Vec::new())
 }
 
-/// [`receive_call`] within [`CALL_DEADLINE`]: past it the call is
-/// [`Called::Unanswered`] (a deadline is no refusal). Each host answers its
-/// 1:1 `app_call`s through this.
+/// [`receive_call`], its reply raced against [`CALL_DEADLINE`]: past it
+/// the call is [`Called::RetryLater`] (a deadline is no refusal). The work
+/// itself runs on the session scope to completion (review RV5 H1), so a
+/// half-done receive is never dropped at an await: a sealed frame's nonce
+/// settles when its store commits or is forgotten when it fails, and its
+/// retry is judged on that. Each host answers its 1:1 `app_call`s through
+/// this.
 pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
-    tokio::time::timeout(CALL_DEADLINE, receive_call(host, datagram))
-        .await
-        .unwrap_or_else(|_| {
-            tracing::warn!("1:1 app_call exceeded its deadline — left unanswered");
-            Called::Unanswered
-        })
+    let (answer, answered) = tokio::sync::oneshot::channel();
+    let (owned, datagram) = (host.owned(), datagram.to_vec());
+    host.scope().spawn_or_drop("answer 1:1 call", async move {
+        // Past the deadline the answer has no taker; the work is done.
+        let _ = answer.send(receive_call(owned.as_ref(), &datagram).await);
+    });
+    match tokio::time::timeout(CALL_DEADLINE, answered).await {
+        Ok(Ok(called)) => called,
+        Ok(Err(_)) => {
+            tracing::debug!("1:1 app_call dropped with its session — retry later");
+            Called::RetryLater
+        }
+        Err(_) => {
+            tracing::warn!("1:1 app_call exceeded its deadline — answered retry later");
+            Called::RetryLater
+        }
+    }
 }
 
 /// Replay what was decrypted but never applied (a crash between the

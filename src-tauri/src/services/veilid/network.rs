@@ -217,14 +217,17 @@ async fn community_call(
 
 /// Answer a 1:1 `app_call` through the Host: its reply (empty for a
 /// handled call, whose return is the receipt, or a frame); an unported
-/// kind is answered by the desktop's arm. With no host, or a call the Host
-/// leaves unanswered (a deadline or an internal error), nothing was judged
-/// and there is no reply, so the caller attempts it again.
+/// kind is answered by the desktop's arm. A call the Host could not judge
+/// (its deadline, an internal error) is answered retry later
+/// (`direct::RETRY_LATER`, review RV5 M2); with no host there is no reply.
+/// Either way the caller attempts it again.
 async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Option<Vec<u8>> {
     let host = state.host.current()?;
     match host.receive_direct_call(message).await {
         rekindle_transport::operations::direct::Called::Answered(reply) => Some(reply),
-        rekindle_transport::operations::direct::Called::Unanswered => None,
+        rekindle_transport::operations::direct::Called::RetryLater => {
+            Some(rekindle_transport::operations::direct::RETRY_LATER.to_vec())
+        }
         rekindle_transport::operations::direct::Called::Unported(opened) => {
             let pool = state.db.current().ok()?;
             Some(super::inbound_unported::handle_call(state, &pool, *opened).await)

@@ -91,7 +91,17 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
                 mailbox_dht_key: &r.mailbox_dht_key,
                 auth: &r.auth,
             };
-            applied = inbound::on_friend_request(host, &req).await;
+            match inbound::on_friend_request(host, &req).await {
+                Ok(()) => {}
+                // The request's own values failed the store: judged
+                // (review RV5 M2).
+                Err(e) if e.is_input() => {
+                    tracing::info!(from = %sender, error = %e, "friend request refused by its store");
+                    processed(host, &opened);
+                    return Applied::Refused;
+                }
+                Err(_) => applied = false,
+            }
         }
         DirectBody::FriendAccept(a) => {
             let accept = IncomingFriendAccept {

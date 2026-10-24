@@ -9,9 +9,13 @@ use rekindle_types::friend::FriendshipState;
 
 use crate::operations::friend::{is_blocked, state, FriendHost};
 
-/// A sender's stored friendship: `None` for a stranger, or when the row is
-/// unreadable (failing closed).
+/// A sender's stored friendship: `None` for a stranger.
 pub(crate) type Status = Option<FriendshipState>;
+
+/// Our friend store, owner or the friendship row could not be read: nothing
+/// was judged (review RV5 M1), never the stranger status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Unreadable;
 
 /// Why a sender's frame goes no further than the block list.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,8 +23,8 @@ pub(crate) enum Barred {
     /// The sender is blocked: a judged refusal, answered NAK (register
     /// :76, "a NAK means … admission"; RV5 R1).
     Blocked,
-    /// Our block list is unreadable: nothing was judged (fail closed, no
-    /// answer).
+    /// Our block list or the sender's friendship is unreadable: nothing
+    /// was judged (fail closed, answered retry later).
     Unreadable,
 }
 
@@ -31,7 +35,9 @@ pub(crate) enum Barred {
 /// judged on it.
 pub(crate) async fn unblocked(host: &dyn FriendHost, sender_hex: &str) -> Result<Status, Barred> {
     match is_blocked(host, sender_hex).await {
-        Ok(false) => Ok(friendship_authoritative(host, sender_hex).await),
+        Ok(false) => friendship_authoritative(host, sender_hex)
+            .await
+            .map_err(|Unreadable| Barred::Unreadable),
         Ok(true) => {
             tracing::debug!(from = %sender_hex, "dropping frame from a blocked user");
             Err(Barred::Blocked)
@@ -123,18 +129,26 @@ pub(crate) async fn init_admitted(
     admitted
 }
 
-/// The sender's friendship as the identity's database holds it; `None`
-/// (fail closed) when it cannot be read.
-pub(crate) async fn friendship_authoritative(host: &dyn FriendHost, sender: &str) -> Status {
-    let store = host.friend_store().ok()?;
-    let owner = state::owner(host).ok()?;
-    match store.status_of(&owner, sender).await {
-        Ok(status) => status,
-        Err(e) => {
-            tracing::warn!(error = %e, from = %sender, "friend status unreadable; failing closed");
-            None
-        }
-    }
+/// The sender's friendship as the identity's database holds it.
+///
+/// # Errors
+/// [`Unreadable`] when the store, our owner or the row cannot be read
+/// (review RV5 M1: a stranger's status would NAK a friend for our fault,
+/// and admit as a stranger a kind strangers may send).
+pub(crate) async fn friendship_authoritative(
+    host: &dyn FriendHost,
+    sender: &str,
+) -> Result<Status, Unreadable> {
+    let unreadable = |e: &dyn std::fmt::Display| {
+        tracing::warn!(error = %e, from = %sender, "friend status unreadable; failing closed");
+        Unreadable
+    };
+    let store = host.friend_store().map_err(|e| unreadable(&e))?;
+    let owner = state::owner(host).map_err(|e| unreadable(&e))?;
+    store
+        .status_of(&owner, sender)
+        .await
+        .map_err(|e| unreadable(&e))
 }
 
 /// Whether a sender with friendship `status` may deliver a `kind`.

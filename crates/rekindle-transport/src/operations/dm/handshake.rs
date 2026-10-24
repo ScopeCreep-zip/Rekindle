@@ -284,6 +284,8 @@ fn answered(
 ) -> Answered {
     match answer {
         Ok(send::CallAnswer::Receipt) => Answered::Receipt,
+        // Their own fault, said at once (review RV5 M2): as a timeout.
+        Ok(send::CallAnswer::RetryLater) => Answered::Again,
         Ok(send::CallAnswer::Reply(_)) if kind == DmTypeId::FriendRequest => Answered::Again,
         Ok(send::CallAnswer::Reply(_)) if rejection == Rejection::Applied => Answered::Rejected,
         // Our own failure judging or applying it is no refusal of theirs
@@ -464,5 +466,24 @@ mod tests {
             answered(request, &Err(FriendError::Locked), Rejection::NotOurs),
             Answered::Again
         );
+    }
+
+    /// Review RV5 M2: their "retry later" is their own fault, attempted
+    /// again as a timeout is, whatever the kind.
+    #[test]
+    fn a_retry_later_is_attempted_again_for_every_kind() {
+        for kind in [
+            DmTypeId::FriendRequest,
+            DmTypeId::FriendAccept,
+            DmTypeId::SessionResetAccept,
+            DmTypeId::UnfriendedAck,
+        ] {
+            for rejection in [Rejection::Applied, Rejection::Failed, Rejection::NotOurs] {
+                assert_eq!(
+                    answered(kind, &Ok(send::CallAnswer::RetryLater), rejection),
+                    Answered::Again
+                );
+            }
+        }
     }
 }

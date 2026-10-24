@@ -145,7 +145,7 @@ impl InboundHandler for DaemonHandler {
                 debug!(from = %opened.sender_hex, "unported 1:1 call refused at the daemon");
                 Some(direct::NAK.to_vec())
             }
-            direct::Called::Unanswered => None,
+            direct::Called::RetryLater => Some(direct::RETRY_LATER.to_vec()),
         }
     }
 

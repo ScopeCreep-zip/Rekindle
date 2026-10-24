@@ -133,8 +133,11 @@ pub(crate) async fn drop_sessions(host: &dyn FriendHost, members: &[String]) {
             continue;
         }
         // The stored row (the Host's friend authority), as the gate reads it.
-        let friendship = friendship_authoritative(host, member).await;
-        if friendship == Some(FriendshipState::Accepted) {
+        // An unreadable row judges nothing: the session stays (RV5 M1).
+        if matches!(
+            friendship_authoritative(host, member).await,
+            Ok(Some(FriendshipState::Accepted)) | Err(_)
+        ) {
             continue;
         }
         host.stores().group_first_contacts.lock().remove(member);

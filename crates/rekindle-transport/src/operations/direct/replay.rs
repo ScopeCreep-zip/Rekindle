@@ -9,6 +9,13 @@
 //! a frame that already arrived is dropped as a duplicate, while one that
 //! never arrived goes through.
 //!
+//! A sighting is two-phase (review RV5 H1): it is *tentative* from
+//! [`ReplayGuard::observe`] until the frame's apply settles it
+//! ([`ReplayGuard::settle`], once its store commits or it is judged) or
+//! forgets it ([`ReplayGuard::forget`], its store failed). A copy that
+//! arrives while the first is tentative is [`Sighting::InFlight`]: neither
+//! a duplicate (nothing is stored yet, so no receipt) nor a first.
+//!
 //! Every sender has its own share (plan audit G7): a sender holding
 //! [`PER_SENDER_QUOTA`] live entries is refused, and so is one spending
 //! opens faster than its bucket refills ([`ReplayGuard::may_open`], checked
@@ -18,7 +25,7 @@
 //! each hold entries, and live entries are never evicted to make room,
 //! which would reopen the replay window.
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use rekindle_crypto::replay::replay_id;
 use rekindle_types::message::{ENVELOPE_FRESHNESS_WINDOW_MS, ENVELOPE_MAX_FUTURE_SKEW_MS};
@@ -48,8 +55,11 @@ type Sender = [u8; 32];
 pub enum Sighting {
     /// Not seen before; now remembered.
     First,
-    /// Already accepted within the freshness window.
+    /// Already accepted and settled within the freshness window.
     Duplicate,
+    /// Seen, and its first copy still in flight (tentative): answered
+    /// "retry later", never the receipt.
+    InFlight,
     /// This sender holds its quota of unexpired entries (or every sender
     /// together fills the backstop).
     Full,
@@ -82,6 +92,8 @@ pub struct ReplayGuard {
     order: VecDeque<(ReplayKey, Sender, u64)>,
     /// Live entries per sender.
     held: HashMap<Sender, usize>,
+    /// Sightings whose apply has not settled yet (tentative).
+    pending: HashSet<ReplayKey>,
     buckets: HashMap<Sender, Bucket>,
 }
 
@@ -126,7 +138,11 @@ impl ReplayGuard {
         self.prune(now_ms);
         let key = replay_id(sender, nonce);
         if self.expiry_by_key.contains_key(&key) {
-            return Sighting::Duplicate;
+            return if self.pending.contains(&key) {
+                Sighting::InFlight
+            } else {
+                Sighting::Duplicate
+            };
         }
         let held = self.held.get(sender).copied().unwrap_or(0);
         if held >= PER_SENDER_QUOTA || self.expiry_by_key.len() >= MAX_REMEMBERED {
@@ -140,13 +156,21 @@ impl ReplayGuard {
         self.expiry_by_key.insert(key, expiry);
         self.order.push_back((key, *sender, expiry));
         *self.held.entry(*sender).or_insert(0) += 1;
+        self.pending.insert(key);
         Sighting::First
+    }
+
+    /// Settle `(sender, nonce)`: its apply is done (stored, or judged), so
+    /// a copy from now on is a [`Sighting::Duplicate`].
+    pub fn settle(&mut self, sender: &Sender, nonce: &[u8; 16]) {
+        self.pending.remove(&replay_id(sender, nonce));
     }
 
     /// Forget `(sender, nonce)`: it opened but was not applied, so a retry
     /// under the same nonce must go through.
     pub fn forget(&mut self, sender: &Sender, nonce: &[u8; 16]) {
         let key = replay_id(sender, nonce);
+        self.pending.remove(&key);
         if self.expiry_by_key.remove(&key).is_some() {
             self.order.retain(|(k, _, _)| *k != key);
             self.release(sender);
@@ -158,6 +182,7 @@ impl ReplayGuard {
         self.expiry_by_key.clear();
         self.order.clear();
         self.held.clear();
+        self.pending.clear();
         self.buckets.clear();
     }
 
@@ -181,6 +206,7 @@ impl ReplayGuard {
             }
             self.order.pop_front();
             self.expiry_by_key.remove(&key);
+            self.pending.remove(&key);
             self.release(&sender);
         }
     }
@@ -206,9 +232,28 @@ mod tests {
     }
 
     #[test]
+    fn a_copy_is_in_flight_until_its_first_settles_or_is_forgotten() {
+        let mut guard = ReplayGuard::new();
+        assert_eq!(guard.observe(&ALICE, &nonce(1), NOW, NOW), Sighting::First);
+        assert_eq!(
+            guard.observe(&ALICE, &nonce(1), NOW, NOW),
+            Sighting::InFlight
+        );
+        guard.settle(&ALICE, &nonce(1));
+        assert_eq!(
+            guard.observe(&ALICE, &nonce(1), NOW, NOW),
+            Sighting::Duplicate
+        );
+        assert_eq!(guard.observe(&ALICE, &nonce(2), NOW, NOW), Sighting::First);
+        guard.forget(&ALICE, &nonce(2));
+        assert_eq!(guard.observe(&ALICE, &nonce(2), NOW, NOW), Sighting::First);
+    }
+
+    #[test]
     fn first_then_duplicate() {
         let mut guard = ReplayGuard::new();
         assert_eq!(guard.observe(&ALICE, &nonce(1), NOW, NOW), Sighting::First);
+        guard.settle(&ALICE, &nonce(1));
         assert_eq!(
             guard.observe(&ALICE, &nonce(1), NOW + 5, NOW + 10),
             Sighting::Duplicate
@@ -239,7 +284,7 @@ mod tests {
         );
         assert_eq!(
             guard.observe(&ALICE, &nonce(0), NOW, NOW),
-            Sighting::Duplicate,
+            Sighting::InFlight,
             "live entries are never evicted early"
         );
         assert_eq!(guard.observe(&BOB, &nonce(0), NOW, NOW), Sighting::First);

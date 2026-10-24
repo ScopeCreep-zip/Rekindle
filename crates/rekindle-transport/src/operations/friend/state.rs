@@ -154,7 +154,7 @@ macro_rules! db_call {
                 .db()?
                 .call($function)
                 .await
-                .map_err(|e| $crate::operations::friend::FriendError::store($what, e))
+                .map_err(|e| $crate::operations::friend::FriendError::db($what, &e))
         }
     };
 }

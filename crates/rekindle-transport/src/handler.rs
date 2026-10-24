@@ -75,7 +75,8 @@ pub trait InboundHandler: Send + Sync + 'static {
     fn on_direct(&self, datagram: &[u8]) -> impl Future<Output = ()> + Send;
 
     /// A 1:1 `app_call` arrived (tagged as for [`Self::on_direct`]): the
-    /// reply, or `None` for a NAK.
+    /// reply (`operations::direct`'s receipt, `NAK` or `RETRY_LATER`, or
+    /// a frame), or `None` for no reply at all (no host to judge it).
     fn on_direct_call(&self, datagram: &[u8]) -> impl Future<Output = Option<Vec<u8>>> + Send;
 
     /// An authenticated gossip broadcast arrived from a community member.

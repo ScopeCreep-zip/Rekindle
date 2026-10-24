@@ -163,16 +163,21 @@ fn reopen_unanswered(host: &dyn FriendHost, sender: &str) {
 
 /// An incoming friend request, applied once: the same request again stores
 /// nothing new and raises no second event (plan audit G4). Whether it is
-/// done: `false` when a store failed, so the sender is not receipted.
+/// done, or why its store failed: [`FriendError::Invalid`] when the
+/// request's own values were at fault (a judged refusal), anything else
+/// ours; either way the sender is not receipted.
+///
+/// # Errors
+/// The store failed.
 pub(crate) async fn on_friend_request(
     host: &dyn FriendHost,
     req: &IncomingFriendRequest<'_>,
-) -> bool {
+) -> Result<(), FriendError> {
     let status = state::friendship(host, req.sender_hex);
     // A stranger (or a friend we are removing) is admitted first; nothing
     // of a refused request is kept, not even its route.
     if matches!(status, None | Some(FriendshipState::Removing)) && !admit(host, req).await {
-        return true;
+        return Ok(());
     }
     if !req.route_blob.is_empty() {
         if let Ok(node) = host.node() {
@@ -184,17 +189,17 @@ pub(crate) async fn on_friend_request(
         Some(FriendshipState::PendingOut) => {
             tracing::info!(from = %req.sender_hex, "cross-request detected — auto-accepting");
             accept_crossing_request(host, req).await;
-            return true;
+            return Ok(());
         }
         Some(FriendshipState::Accepted) => {
             reopen_unanswered(host, req.sender_hex);
-            return true;
+            return Ok(());
         }
         Some(FriendshipState::Removing) => {
             // We removed them: the stale row goes, and the request is a
             // fresh contact.
             if !state::write_forget(host, req.sender_hex).await {
-                return false;
+                return Err(FriendError::Failed("stale friend row not forgotten".into()));
             }
             state::take(host, req.sender_hex);
             tracing::info!(from = %req.sender_hex,
@@ -207,12 +212,12 @@ pub(crate) async fn on_friend_request(
         Ok(true) => {}
         Ok(false) => {
             tracing::debug!(from = %req.sender_hex, "friend request already held — a retry");
-            return true;
+            return Ok(());
         }
         Err(e) => {
             tracing::warn!(from = %req.sender_hex, error = %e,
                 "failed to persist friend request — skipping the event to avoid phantom UI state");
-            return false;
+            return Err(e);
         }
     }
     host.publish(SubscriptionEvent::Friend(FriendEvent::RequestReceived {
@@ -220,7 +225,7 @@ pub(crate) async fn on_friend_request(
         display_name: req.display_name.to_string(),
         message: req.message.to_string(),
     }));
-    true
+    Ok(())
 }
 
 /// An incoming friend accept: the friend `Accepted` with the records it

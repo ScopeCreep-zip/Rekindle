@@ -310,6 +310,10 @@ pub(super) enum CallAnswer {
     Receipt,
     /// [`NAK`](crate::operations::direct::NAK): the peer refused the frame.
     Refused,
+    /// [`RETRY_LATER`](crate::operations::direct::RETRY_LATER): the peer
+    /// could not judge it now (its own fault); attempted again as on a
+    /// timeout, with no route refresh (review RV5 M2).
+    RetryLater,
     /// A frame in reply.
     Reply(Vec<u8>),
 }
@@ -348,6 +352,8 @@ pub(super) async fn call_datagram_answer(
         CallAnswer::Receipt
     } else if reply == crate::operations::direct::NAK {
         CallAnswer::Refused
+    } else if reply == crate::operations::direct::RETRY_LATER {
+        CallAnswer::RetryLater
     } else {
         CallAnswer::Reply(reply)
     })
@@ -395,6 +401,9 @@ pub(super) async fn call_datagram(
         CallAnswer::Refused => {
             return Err(FriendError::Failed(format!("{to} refused the app_call")));
         }
+        CallAnswer::RetryLater => {
+            return Err(FriendError::NotReady(format!("{to} asked to retry later")));
+        }
         CallAnswer::Reply(reply) => reply,
     };
     let opened = super::unwire(&reply)
@@ -403,6 +412,7 @@ pub(super) async fn call_datagram(
         .await
         .map_err(|_| FriendError::Failed("app_call reply does not open".into()))?;
     if opened.sender_hex != to {
+        crate::operations::direct::frame::processed(host, &opened);
         return Err(FriendError::Failed(format!(
             "app_call reply from {} for a call to {to}",
             opened.sender_hex

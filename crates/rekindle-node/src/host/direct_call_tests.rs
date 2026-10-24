@@ -1,7 +1,7 @@
-//! A 1:1 call the Host could not judge is left unanswered, never NAKed
-//! (RV2, `c37fef40`): a NAK is a refusal, which ends a first contact; no
-//! answer lets the caller's `app_call` time out and its row be attempted
-//! again.
+//! A 1:1 call the Host could not judge is answered retry later, never
+//! NAKed (RV2, `c37fef40`; RV5 M2): a NAK is a refusal, which ends a first
+//! contact; "retry later" frees Veilid's RPC worker at once and the
+//! caller's row is attempted again.
 
 use rekindle_transport::operations::direct;
 
@@ -10,7 +10,7 @@ use super::direct_tests::{now_ms, sealed_request, started};
 /// A well-formed request to a Host with no identity unlocked: the
 /// admission lookup cannot run, so nothing was judged.
 #[tokio::test]
-async fn a_call_the_host_cannot_judge_is_left_unanswered() {
+async fn a_call_the_host_cannot_judge_is_told_to_retry_later() {
     let dir = tempfile::tempdir().unwrap();
     let host = started(&dir).await;
     let (bob, ann) = (
@@ -22,7 +22,7 @@ async fn a_call_the_host_cannot_judge_is_left_unanswered() {
     assert!(
         matches!(
             host.receive_direct_call(&datagram).await,
-            direct::Called::Unanswered
+            direct::Called::RetryLater
         ),
         "an internal error is no refusal"
     );
@@ -51,6 +51,33 @@ async fn a_blocked_sender_is_answered_with_a_nak() {
         direct::Called::Answered(reply) => assert_eq!(reply, direct::NAK.to_vec()),
         other => panic!("a block is a judged refusal, not {other:?}"),
     }
+}
+
+/// RV5 M2: a store the request's own values fail (a constraint) is a
+/// judged refusal, answered NAK, and nothing is stored.
+#[tokio::test]
+async fn a_request_its_own_values_fail_to_store_is_answered_with_a_nak() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = super::direct_tests::ann(&dir).await;
+    let bob = rekindle_crypto::Identity::generate();
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(|conn| {
+            conn.execute_batch(
+                "CREATE TEMP TRIGGER refuse_requests BEFORE INSERT ON main.pending_friend_requests \
+                 BEGIN SELECT RAISE(ABORT, 'refused'); END;",
+            )
+        })
+        .await
+        .unwrap();
+    let frame = sealed_request(&bob, owner, [12; 16], now_ms());
+    assert_eq!(
+        super::direct_tests::call(&host, &frame).await,
+        direct::NAK.to_vec()
+    );
+    assert_eq!(super::direct_tests::requests(&host, owner).await, 0);
 }
 
 /// RV5 R4, through `prekeys::on_rejected`: a friend's `PreKeyRejected`
@@ -87,8 +114,8 @@ async fn an_ignored_prekey_rejection_is_refused_once_and_its_replay_is_a_duplica
 }
 
 /// RV5 R2: our deadline fires before Veilid stops waiting for our answer
-/// (`rpc.timeout_ms`, `CALL_TIMEOUT_MS`), so a late call is ours to leave
-/// unanswered, never one Veilid already dropped.
+/// (`rpc.timeout_ms`, `CALL_TIMEOUT_MS`), so a late call is ours to answer
+/// retry later, never one Veilid already dropped.
 #[test]
 fn the_call_deadline_is_under_veilids_app_call_timeout() {
     assert!(

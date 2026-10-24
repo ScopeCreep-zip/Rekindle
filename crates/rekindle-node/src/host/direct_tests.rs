@@ -454,7 +454,7 @@ async fn reply(host: &Host, datagram: &[u8]) -> Vec<u8> {
     match host.receive_direct_call(datagram).await {
         direct::Called::Answered(reply) => reply,
         direct::Called::Unported(opened) => panic!("unported {:?}", opened.type_id),
-        direct::Called::Unanswered => panic!("unanswered"),
+        direct::Called::RetryLater => panic!("retry later"),
     }
 }
 
@@ -553,34 +553,34 @@ async fn a_receipted_request_is_stored_once() {
     assert_eq!(received_events(&mut events).await, 1, "one event");
 }
 
-/// Audit G4: a request whose store fails is left unanswered, and its retry under
-/// the same nonce goes through once the store works.
+/// Audit G4: a request whose store fails on our side is answered retry
+/// later (RV5 M2), and its retry under the same nonce goes through once
+/// the store works.
 #[tokio::test]
-async fn a_request_whose_store_fails_is_unanswered_and_its_retry_lands() {
+async fn a_request_whose_store_fails_is_told_to_retry_and_its_retry_lands() {
     let dir = tempfile::tempdir().unwrap();
     let (host, owner) = ann(&dir).await;
     let bob = rekindle_crypto::Identity::generate();
     let db = host.ctx.db.current().unwrap();
     db.call(|conn| {
-        conn.execute_batch(
-            "CREATE TEMP TRIGGER refuse_requests BEFORE INSERT ON main.pending_friend_requests \
-             BEGIN SELECT RAISE(ABORT, 'refused'); END;",
-        )
+        conn.execute_batch("ALTER TABLE main.pending_friend_requests RENAME TO held_requests;")
     })
     .await
     .unwrap();
     let frame = sealed_request(&bob, owner, [6; 16], now_ms());
     let datagram = rekindle_transport::operations::dm::wire(&frame).unwrap();
-    // Our store failing is no refusal (RV5 R2): no answer, so the caller
-    // attempts it again; a NAK would end its row.
+    // Our store failing is no refusal (RV5 R2, M2): retry later, so the
+    // caller attempts it again; a NAK would end its row.
     assert!(matches!(
         host.receive_direct_call(&datagram).await,
-        direct::Called::Unanswered
+        direct::Called::RetryLater
     ));
 
-    db.call(|conn| conn.execute_batch("DROP TRIGGER temp.refuse_requests;"))
-        .await
-        .unwrap();
+    db.call(|conn| {
+        conn.execute_batch("ALTER TABLE main.held_requests RENAME TO pending_friend_requests;")
+    })
+    .await
+    .unwrap();
     assert!(call(&host, &frame).await.is_empty(), "the retry lands");
     assert_eq!(requests(&host, owner).await, 1);
 }

@@ -12,6 +12,7 @@
 //!   one transaction on the `Db` thread (plan E2.3).
 
 mod db;
+mod fault;
 mod friend_store;
 mod handle;
 pub mod lock;
@@ -27,9 +28,12 @@ pub mod row;
 pub mod test_support;
 
 pub use db::Db;
+pub use fault::input_fault;
 pub use friend_store::SqliteFriendStore;
 pub use handle::{DbHandle, DbStillHeld, NotLoggedIn};
 pub use open::{open, DbError, SCHEMA, SCHEMA_VERSION};
+/// A failed [`Db::call`]: the database thread's error.
+pub use rekindle_asql::Error as CallError;
 /// The database thread's call watch (`rekindle-asql`): a simulator
 /// installs one so its paused clock sees database work (plan E2.B S8).
 pub use rekindle_asql::{watch_calls, CallToken, CallWatch};
