@@ -1,6 +1,9 @@
 //! Removing a friend: they are told (`Unfriended`, an outbox row that waits
 //! for their `UnfriendedAck`), the row stays `Removing` while that row is
-//! unsettled, and the outbox's settle event forgets them (plan E2.5).
+//! unsettled, and the outbox's settle event forgets them (plan E2.5). A
+//! friend we hold no session with cannot be told, since no frame can be
+//! made for them: they are forgotten here, with no `Unfriended` (live A/B
+//! finding 69).
 
 use rekindle_codec::capnp_codec::direct::DirectBody;
 use rekindle_types::friend::FriendshipState;
@@ -16,6 +19,9 @@ use crate::operations::dm;
 /// # Errors
 /// The removal could not be stored.
 pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
+    if !has_session(host, public_key).await? {
+        return forget_untold(host, public_key).await;
+    }
     // The state and the `Unfriended` row are one transaction (plan audit
     // D-1): the row keeps the friend's routing information until it
     // settles, across a restart too.
@@ -41,6 +47,47 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     }));
     tracing::info!(public_key = %public_key, "friend removed");
 
+    cleanup(host, public_key);
+    // Their copy of our presence key opens nothing written from here on.
+    presence_key::rotate(host, public_key).await
+}
+
+/// Whether we hold a session a frame to `public_key` can be made under.
+async fn has_session(host: &dyn FriendHost, public_key: &str) -> Result<bool, FriendError> {
+    let owner = host.local_party()?.owner();
+    let peer = dm::frame::peer_address(public_key)?;
+    rekindle_db::ratchet::has_session(&host.db()?, &owner, &peer)
+        .await
+        .map_err(|e| dm::frame::ratchet_error(public_key, e))
+}
+
+/// Remove `public_key`, whom no frame can reach (we hold no session with
+/// them): their row and request go at once, nothing queued to them stays,
+/// and nobody is told.
+async fn forget_untold(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
+    let (owner, peer) = (state::owner(host)?, public_key.to_string());
+    state::db_call!(host, "forget a friend with no session", move |conn| {
+        rekindle_db::repo::friends::forget(conn, &owner, &peer)
+    })
+    .await?;
+    state::discard_pending_dms(host, public_key, "the friend was removed").await?;
+    state::take(host, public_key);
+    host.audit(
+        rekindle_audit::AuditKind::FriendRemoved,
+        serde_json::json!({ "peer_public_key": public_key }),
+    )
+    .await;
+    host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
+        peer_key: public_key.to_string(),
+    }));
+    tracing::info!(public_key = %public_key, "friend with no session removed, untold");
+    cleanup(host, public_key);
+    presence_key::rotate(host, public_key).await
+}
+
+/// Stop watching the removed `public_key` and publish the friend list
+/// without them, off the caller's path.
+fn cleanup(host: &dyn FriendHost, public_key: &str) {
     let owned = host.owned();
     let peer = public_key.to_string();
     host.scope()
@@ -51,8 +98,6 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
                 tracing::warn!(error = %e, "failed to update DHT friend list after removal");
             }
         });
-    // Their copy of our presence key opens nothing written from here on.
-    presence_key::rotate(host, public_key).await
 }
 
 /// Forget the friends we removed once no send to them is unsettled (their

@@ -422,3 +422,42 @@ async fn a_stream_record_is_kept_from_an_accepted_friend_only() {
         [(b.clone(), format!("VLD0:{}", "B".repeat(43)))]
     );
 }
+
+/// Live A/B finding 69: an accepted friend Ann holds no session with is
+/// removed at once, untold: no `Unfriended` row waits, and they are gone
+/// from her store and her list.
+#[tokio::test]
+async fn a_friend_with_no_session_is_removed_untold() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let bob = Identity::generate().public_key_bytes();
+    let bob_hex = hex::encode(bob);
+    accepted(&host, owner, bob).await;
+
+    rekindle_transport::operations::friend::remove(&HostFriends::of(&host.ctx), &bob_hex)
+        .await
+        .unwrap();
+
+    assert_eq!(queued(&host, owner).await, 0, "no Unfriended row waits");
+    assert!(!host
+        .ctx
+        .session
+        .read()
+        .as_ref()
+        .unwrap()
+        .friends
+        .contains_key(&bob_hex));
+    let o = hex::encode(owner);
+    let rows = host
+        .ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| rekindle_db::repo::friends::load_all(conn, &o))
+        .await
+        .unwrap();
+    assert!(
+        rows.iter().all(|row| row.public_key != bob_hex),
+        "forgotten"
+    );
+}

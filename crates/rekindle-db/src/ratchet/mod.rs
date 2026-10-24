@@ -32,6 +32,9 @@ use crate::repo::{identity_text, signal_identities};
 use crate::Db;
 use rekindle_crypto::signal::prekey_record::Publish;
 
+mod peek;
+pub use peek::{has_session, is_established};
+
 #[cfg(test)]
 mod accept_tests;
 #[cfg(test)]
@@ -413,23 +416,6 @@ pub async fn discard_pending_init(
         };
         store(conn, &owner, &peer, &next, now_ms)?;
         Ok(true)
-    })
-    .await
-}
-
-/// Whether our active session with `peer` is established: something
-/// decrypted under it. No session, or only our unanswered init, is not.
-///
-/// # Errors
-/// The database refused.
-pub async fn is_established(
-    db: &Db,
-    owner: &[u8; 32],
-    peer: &PeerAddress,
-) -> Result<bool, RatchetError> {
-    let (owner, peer) = (*owner, peer.clone());
-    in_transaction(db, move |conn| {
-        Ok(load(conn, &owner, &peer)?.is_established())
     })
     .await
 }
