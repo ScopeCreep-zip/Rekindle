@@ -119,6 +119,21 @@ async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
     })
 }
 
+async fn failed(node: &SimNode, peer: &str, body: &str) -> bool {
+    let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+        node.ok(IpcRequest::DmHistory {
+            peer_key: peer.to_string(),
+            limit: 100,
+            before: None,
+        })
+        .await,
+    )
+    .expect("the history");
+    history.iter().any(|m| {
+        m.is_own && m.body == body && m.send_state == rekindle_types::message::SendState::Failed
+    })
+}
+
 /// The first `StreamRecord` is lost: the outbox resends it until Jon's
 /// `DmAck` names it, and Jon then reads Ida's chain.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -189,20 +204,26 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
         node: 1,
         offline: true,
     });
+    // Jon misses its hint too, so his cursor stays before it: the entry
+    // lands, no ack comes, and its row fails at its deadline.
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
     send(&nodes[0], &jon, "unread on the chain").await;
+    sim.fault(Fault::ClockSkew {
+        node: 0,
+        ms: 31 * 24 * 60 * 60 * 1000,
+    });
     assert!(
-        eventually(&sim, LIMIT, || delivered(
+        eventually(&sim, LIMIT, || failed(
             &nodes[0],
             &jon,
             "unread on the chain"
         ))
         .await,
-        "Jon acknowledged it from its hint"
+        "its row failed at its deadline, shown to Ida"
     );
-    sim.fault(Fault::ClockSkew {
-        node: 0,
-        ms: 31 * 24 * 60 * 60 * 1000,
-    });
     let keys = unretired(&sim, 1);
     send(&nodes[0], &jon, "after the horizon").await;
     // The send is committed, not yet appended: the append retires the
@@ -212,6 +233,10 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
         eventually(&sim, LIMIT, || async { retired(&sim, &keys) }).await,
         "Ida's chain is retired"
     );
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 0,
+    });
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: false,
@@ -271,27 +296,37 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
         node: 1,
         offline: true,
     });
+    // Jon misses its hint too, so his cursor stays before it: the entry
+    // lands, no ack comes, and its row fails at its deadline.
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
     send(&nodes[0], &jon, "unread on the chain").await;
-    assert!(
-        eventually(&sim, LIMIT, || delivered(
-            &nodes[0],
-            &jon,
-            "unread on the chain"
-        ))
-        .await,
-        "Jon acknowledged it from its hint"
-    );
     let keys = unretired(&sim, 1);
     sim.fault(Fault::ClockSkew {
         node: 0,
         ms: 31 * 24 * 60 * 60 * 1000,
     });
+    assert!(
+        eventually(&sim, LIMIT, || failed(
+            &nodes[0],
+            &jon,
+            "unread on the chain"
+        ))
+        .await,
+        "its row failed at its deadline, shown to Ida"
+    );
     // No send from Ida: only her maintenance tick (~3 min) can retire, and
     // Jon stays away until it has (back, he would read the stretch first).
     assert!(
         eventually(&sim, LIMIT * 4, || async { retired(&sim, &keys) }).await,
         "Ida's tick retired her chain"
     );
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 0,
+    });
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: false,

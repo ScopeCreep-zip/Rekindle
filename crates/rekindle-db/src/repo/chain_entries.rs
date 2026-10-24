@@ -192,8 +192,10 @@ pub fn landed(
 
 /// The highest chain seq our chain to `peer` may retire through: every
 /// entry up to it was appended before `cutoff` (`now - DELIVERY_HORIZON`)
-/// and no entry up to it carries a `dm` row still in the outbox (the peer
-/// acknowledged each, or it settled at its deadline). `None`: nothing.
+/// and no entry up to it carries a `dm` row still to settle in the outbox
+/// (the peer acknowledged each, or it failed at its deadline: a failed row
+/// stays for the user's resend, whose hint carries the entry itself, and
+/// does not hold the chain past `DELIVERY_HORIZON`). `None`: nothing.
 ///
 /// # Errors
 /// The query failed.
@@ -209,7 +211,7 @@ pub fn retirable(
          AND c.chain_seq < COALESCE((\
              SELECT MIN(w.chain_seq) FROM chain_entries w JOIN outbox o \
              ON o.owner_key = w.owner_key AND o.stream = 'dm:' || w.peer \
-             AND o.stream_seq = w.stream_seq \
+             AND o.stream_seq = w.stream_seq AND o.state != 'failed' \
              WHERE w.owner_key = ?1 AND w.peer = ?2), 9223372036854775807)",
         params![owner_key, peer, cutoff],
         |row| row.get(0),
@@ -297,6 +299,16 @@ mod tests {
         assert_eq!(retirable(&conn, OWNER, "bob", 25).unwrap(), Some(2));
         outbox_row(&conn, 3);
         assert_eq!(retirable(&conn, OWNER, "bob", 50).unwrap(), Some(2));
+        // Failed at its deadline, the row stays for a resend and no longer
+        // holds the chain (live A/B finding 73, dm_hint_loss gap scenarios).
+        conn.execute(
+            "UPDATE outbox SET state = 'failed' WHERE stream_seq = 3",
+            [],
+        )
+        .unwrap();
+        assert_eq!(retirable(&conn, OWNER, "bob", 50).unwrap(), Some(4));
+        conn.execute("UPDATE outbox SET state = 'sent' WHERE stream_seq = 3", [])
+            .unwrap();
         assert_eq!(retirable(&conn, OWNER, "bob", 5).unwrap(), None);
         assert_eq!(forget_through(&conn, OWNER, "bob", 2).unwrap(), 2);
         assert_eq!(retirable(&conn, OWNER, "bob", 50).unwrap(), None);
