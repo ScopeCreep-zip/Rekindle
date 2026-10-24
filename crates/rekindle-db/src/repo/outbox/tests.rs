@@ -317,3 +317,109 @@ fn the_echo_state_never_goes_down() {
         "a retry queues a failed echo"
     );
 }
+
+/// Review RV3 (d3bcd308): a cancelled request or a session's end discards
+/// every row still on the stream, a `sent` one and a wedged `failed` one
+/// awaiting Retry as well as a `queued` one.
+#[test]
+fn prefix_rows_are_every_row_still_on_the_streams() {
+    let conn = fixture::conn();
+    for id in ["a", "b", "c"] {
+        enqueue_with_echo(&conn, &row("friend_handshake:bob", id, 0), None).unwrap();
+    }
+    update(&conn, OWNER, "b", &sent(1, 500)).unwrap();
+    let wedged = Update {
+        state: SendState::Failed,
+        wedge_reason: Some("refused"),
+        ..sent(1, 500)
+    };
+    update(&conn, OWNER, "c", &wedged).unwrap();
+    let ids: Vec<String> = (prefix_rows(&conn, OWNER, "friend_handshake:bob").unwrap())
+        .into_iter()
+        .map(|r| r.client_id)
+        .collect();
+    assert_eq!(ids, ["a", "b", "c"]);
+}
+
+/// Review RV3 (151be550): hearing from the peer again brings each landed
+/// row's re-ask forward to `at`, never later and never a queued row's.
+#[test]
+fn reschedule_sent_brings_only_landed_rows_forward() {
+    let conn = fixture::conn();
+    for id in ["late", "soon", "queued"] {
+        enqueue_with_echo(&conn, &row("dm:bob", id, 900), None).unwrap();
+    }
+    update(&conn, OWNER, "late", &sent(1, 500)).unwrap();
+    update(&conn, OWNER, "soon", &sent(1, 50)).unwrap();
+    enqueue_with_echo(&conn, &row("dm:carol", "other", 0), None).unwrap();
+    update(&conn, OWNER, "other", &sent(1, 500)).unwrap();
+    assert_eq!(reschedule_sent(&conn, OWNER, "dm:bob", 100).unwrap(), 1);
+    let next_at = |id| get(&conn, OWNER, id).unwrap().unwrap().next_at;
+    assert_eq!(
+        [
+            next_at("late"),
+            next_at("soon"),
+            next_at("queued"),
+            next_at("other")
+        ],
+        [100, 50, 900, 500]
+    );
+}
+
+fn chain(conn: &Connection, chain_seq: i64, stream_seq: i64) {
+    conn.execute(
+        "INSERT INTO chain_entries (owner_key, peer, chain_seq, stream_seq) VALUES (?1, 'bob', ?2, ?3)",
+        rusqlite::params![OWNER, chain_seq, stream_seq],
+    )
+    .unwrap();
+}
+
+/// Review RV3 (f61572a0): `through` is a chain index, mapped to stream
+/// seqs over `chain_entries`: a landed row it covers settles, a queued one
+/// keeps its row with its echo raised, and a row past it or not on the
+/// chain (a StreamRecord) is untouched.
+#[test]
+fn deliver_chain_through_maps_chain_seqs_to_stream_rows() {
+    let conn = fixture::conn();
+    for id in ["record", "c1", "c2", "c3"] {
+        enqueue_with_echo(&conn, &row("dm:bob", id, 0), Some(&echo())).unwrap();
+    }
+    // Stream seqs 1..4; the chain starts at the second.
+    for (chain_seq, stream_seq) in [(1, 2), (2, 3), (3, 4)] {
+        chain(&conn, chain_seq, stream_seq);
+    }
+    for id in ["record", "c1", "c3"] {
+        update(&conn, OWNER, id, &sent(1, 500)).unwrap();
+    }
+    let raised = deliver_chain_through(&conn, OWNER, "dm:bob", "bob", 2).unwrap();
+    let mut raised: Vec<i64> = raised.into_iter().map(|(seq, _)| seq).collect();
+    raised.sort_unstable();
+    assert_eq!(raised, [2, 3]);
+    let kept = |id| get(&conn, OWNER, id).unwrap().is_some();
+    assert_eq!(
+        [kept("record"), kept("c1"), kept("c2"), kept("c3")],
+        [true, false, true, true]
+    );
+    let state = |id| own_dm(&conn, OWNER, id).unwrap().unwrap().row.send_state;
+    assert_eq!(state("c1"), SendState::Delivered);
+    assert_eq!(state("c2"), SendState::Delivered);
+    assert_ne!(state("c3"), SendState::Delivered);
+    assert_ne!(state("record"), SendState::Delivered);
+}
+
+/// Review RV3 (f61572a0): an ack that finds no row still raises its echo
+/// to delivered, and never lowers a read one.
+#[test]
+fn deliver_seq_raises_an_echo_with_no_row_and_never_lowers_one() {
+    let conn = fixture::conn();
+    for id in ["sent", "read"] {
+        enqueue_with_echo(&conn, &row("dm:bob", id, 0), Some(&echo())).unwrap();
+    }
+    assert!(settle(&conn, OWNER, "sent", SendState::Sent).unwrap());
+    assert!(settle(&conn, OWNER, "read", SendState::Read).unwrap());
+    deliver_seq(&conn, OWNER, "dm:bob", "bob", 1).unwrap();
+    deliver_seq(&conn, OWNER, "dm:bob", "bob", 2).unwrap();
+    let state = |id| own_dm(&conn, OWNER, id).unwrap().unwrap().row.send_state;
+    assert_eq!(state("sent"), SendState::Delivered);
+    assert_eq!(state("read"), SendState::Read);
+}
