@@ -28,8 +28,11 @@ pub async fn handle_app_call(
     // (plan E2.3, "Ingress").
     match rekindle_codec::ingress::classify(&message) {
         rekindle_codec::ingress::Ingress::Direct(_) => {
-            let reply = direct_call(state, &message).await;
-            reply_to_call(state, call_id, reply).await;
+            // A call left unanswered gets no reply: the caller's `app_call`
+            // times out and is attempted again (a NAK is a refusal, RV2).
+            if let Some(reply) = direct_call(state, &message).await {
+                reply_to_call(state, call_id, reply).await;
+            }
             return;
         }
         rekindle_codec::ingress::Ingress::Gossip(_) => {
@@ -214,20 +217,17 @@ async fn community_call(
 
 /// Answer a 1:1 `app_call` through the Host: its reply (empty for a
 /// handled call, whose return is the receipt, or a frame); an unported
-/// kind is answered by the desktop's arm. With no host or no identity
-/// database nothing was received, so the reply is the transport's [`NAK`],
-/// which no caller takes for a receipt.
-async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Vec<u8> {
-    let Some(host) = state.host.current() else {
-        return NAK.to_vec();
-    };
+/// kind is answered by the desktop's arm. With no host, or a call the Host
+/// leaves unanswered (a deadline or an internal error), nothing was judged
+/// and there is no reply, so the caller attempts it again.
+async fn direct_call(state: &Arc<AppState>, message: &[u8]) -> Option<Vec<u8>> {
+    let host = state.host.current()?;
     match host.receive_direct_call(message).await {
-        rekindle_transport::operations::direct::Called::Answered(reply) => reply,
+        rekindle_transport::operations::direct::Called::Answered(reply) => Some(reply),
+        rekindle_transport::operations::direct::Called::Unanswered => None,
         rekindle_transport::operations::direct::Called::Unported(opened) => {
-            let Ok(pool) = state.db.current() else {
-                return NAK.to_vec();
-            };
-            super::inbound_unported::handle_call(state, &pool, *opened).await
+            let pool = state.db.current().ok()?;
+            Some(super::inbound_unported::handle_call(state, &pool, *opened).await)
         }
     }
 }

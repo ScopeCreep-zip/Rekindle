@@ -67,22 +67,36 @@ pub enum Dropped {
     /// Refused (undecodable, not admitted, a bad signature, stale, or a
     /// failed decrypt): no receipt.
     Refused,
+    /// Not judged: an internal error (no unlocked identity, the database or
+    /// the admission lookup failed). Not a refusal: a call is left
+    /// unanswered, so the caller attempts it again (RV2, `c37fef40`).
+    Failed,
 }
 
 /// A step that refuses with no more to say.
 trait OrRefused<T> {
     fn or_refused(self) -> Result<T, Dropped>;
+    /// [`Dropped::Failed`]: the step could not run, nothing was judged.
+    fn or_failed(self) -> Result<T, Dropped>;
 }
 
 impl<T> OrRefused<T> for Option<T> {
     fn or_refused(self) -> Result<T, Dropped> {
         self.ok_or(Dropped::Refused)
     }
+
+    fn or_failed(self) -> Result<T, Dropped> {
+        self.ok_or(Dropped::Failed)
+    }
 }
 
 impl<T, E> OrRefused<T> for Result<T, E> {
     fn or_refused(self) -> Result<T, Dropped> {
         self.map_err(|_| Dropped::Refused)
+    }
+
+    fn or_failed(self) -> Result<T, Dropped> {
+        self.map_err(|_| Dropped::Failed)
     }
 }
 
@@ -109,7 +123,7 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
     let init = matches!(frame.body, FrameBody::PreKeyInit(_));
     tracing::debug!(from = %sender_hex.get(..8).unwrap_or(&sender_hex), ?kind, init,
         "1:1 frame received");
-    let status = admission::unblocked(host, &sender_hex).await.or_refused()?;
+    let status = admission::unblocked(host, &sender_hex).await.or_failed()?;
     if !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
         return Err(Dropped::Refused);
     }
@@ -135,7 +149,7 @@ fn open_sealed(
     type_id: DmTypeId,
     sealed: &SealedBody,
 ) -> Result<Opened, Dropped> {
-    let identity = host.local_party().or_refused()?.identity;
+    let identity = host.local_party().or_failed()?.identity;
     let now = host.clock().now_ms();
     let refused = |why: &str| {
         tracing::warn!(from = %sender_hex, ?type_id, why, "dropping sealed frame");
@@ -270,12 +284,12 @@ async fn open_ratchet(
     type_id: DmTypeId,
     body: &RatchetBody,
 ) -> Result<Opened, Dropped> {
-    let local = host.local_party().or_refused()?;
+    let local = host.local_party().or_failed()?;
     if type_id.is_ephemeral() {
         return open_ephemeral(host, sender_hex, type_id, body, &local).await;
     }
     let inbound = ratchet::decrypt_and_record_inbound(
-        &host.db().or_refused()?,
+        &host.db().or_failed()?,
         &local,
         &peer_address(&sender_hex).or_refused()?,
         ratchet_message(body),
@@ -308,7 +322,7 @@ async fn open_ephemeral(
     local: &ratchet::LocalParty,
 ) -> Result<Opened, Dropped> {
     let plaintext = match ratchet::decrypt_ephemeral(
-        &host.db().or_refused()?,
+        &host.db().or_failed()?,
         local,
         &peer_address(&sender_hex).or_refused()?,
         ratchet_message(body),
@@ -351,9 +365,9 @@ async fn open_init(
     init: &PreKeyInitBody,
     status: admission::Status,
 ) -> Result<Opened, Dropped> {
-    let local = host.local_party().or_refused()?;
+    let local = host.local_party().or_failed()?;
     let accepted = ratchet::accept_init(
-        &host.db().or_refused()?,
+        &host.db().or_failed()?,
         &local,
         &peer_address(&sender_hex).or_refused()?,
         init_from_body(sender, init),

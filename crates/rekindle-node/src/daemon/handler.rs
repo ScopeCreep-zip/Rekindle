@@ -141,10 +141,11 @@ impl InboundHandler for DaemonHandler {
         match direct::answer_call(&host, datagram).await {
             direct::Called::Answered(reply) => Some(reply),
             direct::Called::Unported(opened) => {
-                // The daemon relays for no one yet (E5.2): no answer.
+                // The daemon relays for no one yet (E5.2): refused.
                 debug!(from = %opened.sender_hex, "unported 1:1 call refused at the daemon");
-                None
+                Some(direct::NAK.to_vec())
             }
+            direct::Called::Unanswered => None,
         }
     }
 

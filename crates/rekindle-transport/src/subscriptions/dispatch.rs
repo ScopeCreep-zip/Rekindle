@@ -152,11 +152,12 @@ async fn dispatch_app_call<H: InboundHandler>(
     }
     if let Ingress::Direct(_) = ingress {
         // The handler answers within the deadline itself
-        // (`operations::direct::answer_call`).
-        let reply = handler
-            .on_direct_call(raw)
-            .await
-            .unwrap_or_else(|| NAK.to_vec());
+        // (`operations::direct::answer_call`); a call it leaves unanswered
+        // gets no reply, so the caller's `app_call` times out and is
+        // attempted again (a NAK would be a refusal, RV2).
+        let Some(reply) = handler.on_direct_call(raw).await else {
+            return;
+        };
         if let Err(e) = messages.reply(call_id, reply).await {
             warn!(error = %e, "failed to send 1:1 app_call reply");
         }

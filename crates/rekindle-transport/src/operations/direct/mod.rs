@@ -46,6 +46,11 @@ pub enum Called {
     Answered(Vec<u8>),
     /// A kind whose owner step has not come; the desktop answers it.
     Unported(Box<Opened>),
+    /// No answer: nothing was judged (the deadline passed, or an internal
+    /// error). A NAK is a refusal, so the host sends no reply; Veilid then
+    /// sends nothing back (`rpc_app_call.rs:128-133`) and the caller's
+    /// `app_call` times out, so its row is attempted again (RV2).
+    Unanswered,
 }
 
 /// Handle one inbound `app_message`. `datagram` starts with the `'D'` tag;
@@ -129,7 +134,8 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
 }
 
 /// Handle one inbound `app_call`. A relay offer is unported (the desktop
-/// replies with its ack). A dropped frame is answered [`NAK`], and a copy
+/// replies with its ack). A refused frame is answered [`NAK`], one not
+/// judged (an internal error) is left unanswered, and a copy
 /// of one that opened the empty receipt (plan audit G3). A sealed kind
 /// advances no ratchet and leaves no `unprocessed` row, so it is applied
 /// before the answer, and only a stored one is receipted (G4). A ratchet
@@ -145,6 +151,7 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
         Ok(opened) => opened,
         Err(Dropped::Duplicate) => return Called::Answered(Vec::new()),
         Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
+        Err(Dropped::Failed) => return Called::Unanswered,
         // B5 by the call itself (finding 46): the caller tells a refused
         // prekey (this reply, its one resend) from any other refusal (NAK).
         Err(Dropped::Rejected { to, body }) => {
@@ -180,14 +187,15 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     Called::Answered(Vec::new())
 }
 
-/// [`receive_call`] within [`CALL_DEADLINE`]: past it the call is refused
-/// with [`NAK`]. Each host answers its 1:1 `app_call`s through this.
+/// [`receive_call`] within [`CALL_DEADLINE`]: past it the call is
+/// [`Called::Unanswered`] (a deadline is no refusal). Each host answers its
+/// 1:1 `app_call`s through this.
 pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     tokio::time::timeout(CALL_DEADLINE, receive_call(host, datagram))
         .await
         .unwrap_or_else(|_| {
-            tracing::warn!("1:1 app_call exceeded its deadline — refused");
-            Called::Answered(NAK.to_vec())
+            tracing::warn!("1:1 app_call exceeded its deadline — left unanswered");
+            Called::Unanswered
         })
 }
 

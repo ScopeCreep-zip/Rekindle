@@ -51,7 +51,8 @@ impl InboundHandler for Recorder {
 
     async fn on_direct_call(&self, datagram: &[u8]) -> Option<Vec<u8>> {
         self.seen.lock().push(Seen::DirectCall(datagram.to_vec()));
-        Some(b"reply".to_vec())
+        // `[DIRECT_TAG, 0]` stands for a call the Host left unanswered.
+        (datagram.get(1) != Some(&0)).then(|| b"reply".to_vec())
     }
 
     async fn on_gossip(
@@ -214,6 +215,19 @@ async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
         *replies.0.lock(),
         [b"reply".to_vec(), crate::operations::direct::NAK.to_vec()]
     );
+}
+
+/// A direct call the handler leaves unanswered gets no reply at all, never
+/// a NAK (a refusal): the caller's `app_call` times out and is attempted
+/// again (RV2).
+#[tokio::test]
+async fn a_direct_call_left_unanswered_gets_no_reply() {
+    let handler = Arc::new(Recorder::default());
+    let replies = Replies::default();
+    let datagram = [DIRECT_TAG, 0];
+    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram).await;
+    assert_eq!(handler.seen(), [Seen::DirectCall(datagram.to_vec())]);
+    assert!(replies.0.lock().is_empty());
 }
 
 /// Audit G10: a `'G'` call is refused by its tag, whatever follows it: one

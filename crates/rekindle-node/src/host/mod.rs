@@ -10,6 +10,8 @@ pub(crate) mod audit_alert;
 pub mod bus_key;
 pub mod community;
 #[cfg(test)]
+mod direct_call_tests;
+#[cfg(test)]
 mod direct_tests;
 #[cfg(test)]
 mod friend_admission_tests;

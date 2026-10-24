@@ -18,8 +18,8 @@ use rekindle_types::intent::{Fact, IntentProof, ProofRequired};
 use crate::host::adapters::friends::HostFriends;
 use crate::host::{claim, identity, Host, HostConfig, HostStores, TransportSource};
 
-/// An offline host with Ann unlocked; her key.
-pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
+/// A Host started over `dir`, with no identity unlocked.
+pub(super) async fn started(dir: &tempfile::TempDir) -> Arc<Host> {
     let data = dir.path().join("data");
     let root = rekindle_db::paths::DataRoot {
         config: dir.path().join("config"),
@@ -27,7 +27,7 @@ pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
         state: data.join("state"),
         data,
     };
-    let host = Host::start(HostConfig {
+    Host::start(HostConfig {
         root: claim(root).unwrap(),
         stores: HostStores::default(),
         transport: TransportSource::Offline,
@@ -38,7 +38,12 @@ pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
         shell: None,
     })
     .await
-    .unwrap();
+    .unwrap()
+}
+
+/// An offline host with Ann unlocked; her key.
+pub(super) async fn ann(dir: &tempfile::TempDir) -> (Arc<Host>, [u8; 32]) {
+    let host = started(dir).await;
     let created = identity::create(
         host.root(),
         &host.identity_stores(),
@@ -449,6 +454,7 @@ async fn reply(host: &Host, datagram: &[u8]) -> Vec<u8> {
     match host.receive_direct_call(datagram).await {
         direct::Called::Answered(reply) => reply,
         direct::Called::Unported(opened) => panic!("unported {:?}", opened.type_id),
+        direct::Called::Unanswered => panic!("unanswered"),
     }
 }
 
