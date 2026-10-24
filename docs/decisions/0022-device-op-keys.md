@@ -33,6 +33,10 @@
   refusal caused by a power op later quarantined stays until re-sent, and the quarantine cause is the lowest
   `(lamport, op_hash)` op in the authority path (rule 5); device ops resolve in their own phase, first, and are never
   quarantined by their subject's retirement, and a key whose endorsement has not arrived is pending (rule 6).
+  *Decided from research 2026-10-24 (batch 14):* still Proposed: an op whose authority came from a quarantined op is re-judged at its own causal
+  position, the power state in its causal past (plan E3.2 S7c.3a), never on the converged set, and a refusal "while a
+  power op stood" means that power op is in the refused op's causal past or is a removal whose `targetSeqFrontier`
+  masks it (rule 5).
 - **Date:** 2026-10-24
 - **Amends:** [0011](0011-member-sovereign-records.md) and plan D15, their rule that the member's pseudonym signs
   its own op log. The record owner does not change: `M(p)` stays owned by the random key `K_M(p)` that only the
@@ -221,11 +225,12 @@ as today's does.
    Lock rejects both clones on a tie). The author's re-enrolled device offers "re-send under new key" for its own
    quarantined ops; nothing inbound is lost, since records are not consumed on read. A replay of the same op is idempotent and never counts.
    Quarantined ops stay in the DAG as ancestry and are never applied, so the ops that cite them resolve and are
-   never pending on their account; an op whose authority came from a quarantined op is re-judged on the converged
-   set and moves to quarantined, shown with that cause, only if its authority fails without it (*added
+   never pending on their account; an op whose authority came from a quarantined op is re-judged at its own causal
+   position, against the power state in its causal past with the quarantined op left out (*Decided from research 2026-10-24 (batch 14):* it read "on the
+   converged set"; plan E3.2 S7c.3a), and moves to quarantined, shown with that cause, only if its authority fails without it (*added
    2026-10-24, pass 2*); with several, the cause is the lowest `(lamport, op_hash)` quarantined op in its authority
-   path. The move is one-way for refusals (*Corrected 2026-10-24 (pass 3)*): an op refused while a power op stood, a ban's or kick's
-   among them, stays refused after that power op is quarantined unless its own causal past holds the quarantine's
+   path. The move is one-way for refusals (*Corrected 2026-10-24 (pass 3)*): an op refused while a power op stood (in its causal past, or a removal whose
+   `targetSeqFrontier` masks it, S7c.3a; batch 14), a ban's or kick's among them, stays refused after that power op is quarantined unless its own causal past holds the quarantine's
    cause, so its author re-sends it; nothing members saw refused is revived without its author acting, and the rule
    is a function of the op set, so every reader agrees. The person is not muted:
    their other effective device keys keep working (until a second fork, rule 7), and they are shown as having a
