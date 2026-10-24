@@ -22,12 +22,16 @@ pub(crate) struct Package {
     pub(crate) name: String,
     pub(crate) manifest_path: PathBuf,
     pub(crate) targets: Vec<Target>,
+    #[serde(default)]
+    pub(crate) features: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 #[derive(Deserialize)]
 pub(crate) struct Target {
     pub(crate) kind: Vec<String>,
     pub(crate) src_path: PathBuf,
+    #[serde(default, rename = "required-features")]
+    pub(crate) required_features: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +43,8 @@ pub(crate) struct Resolve {
 pub(crate) struct Node {
     pub(crate) id: String,
     pub(crate) deps: Vec<NodeDep>,
+    #[serde(default)]
+    pub(crate) features: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -81,6 +87,17 @@ impl Metadata {
     /// The package named `name`.
     pub(crate) fn package(&self, name: &str) -> Option<&Package> {
         self.packages.iter().find(|p| p.name == name)
+    }
+
+    /// The features the resolve enables on the package named `name`.
+    pub(crate) fn resolved_features(&self, name: &str) -> Vec<String> {
+        let id = self.package(name).map(|p| p.id.as_str());
+        self.resolve
+            .nodes
+            .iter()
+            .find(|n| Some(n.id.as_str()) == id)
+            .map(|n| n.features.clone())
+            .unwrap_or_default()
     }
 
     /// The workspace members.

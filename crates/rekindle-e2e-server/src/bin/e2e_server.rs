@@ -13,8 +13,13 @@
 //! `REKINDLE_E2E_ORIGIN`) or none, and the token.
 //!
 //! ```bash
-//! REKINDLE_E2E_ORIGIN=http://localhost:1430 cargo run -p rekindle-e2e-server --bin e2e-server
+//! REKINDLE_E2E_ORIGIN=http://localhost:1430 cargo run -p rekindle-e2e-server --features e2e-bridge --bin e2e-server
 //! ```
+
+// The manifest builds this binary only with the feature; this holds if that
+// line is ever lost.
+#[cfg(not(feature = "e2e-bridge"))]
+compile_error!("the E2E bridge binary builds only with the e2e-bridge feature");
 
 use std::sync::Arc;
 

@@ -15,6 +15,10 @@
 //!   binary's build graph (every workspace member with a binary, the GUI
 //!   `rekindle-desktop` among them) reaches it, and the root
 //!   `[workspace.dependencies]` does not name it;
+//! - its binary builds only with the `e2e-bridge` feature
+//!   (`required-features`, backed by a `compile_error!` in the binary), the
+//!   feature is not a default, the resolve does not enable it, and no
+//!   package's features turn it on;
 //! - `src-tauri/tauri.conf.json` does not bundle it.
 
 use std::path::Path;
@@ -43,6 +47,53 @@ fn has_release_guard(lib: &str) -> bool {
         });
         is_compile_error && gated
     })
+}
+
+/// The feature only the Playwright setup enables.
+const FEATURE: &str = "e2e-bridge";
+
+/// What lets the bridge binary build without [`FEATURE`], or turns the
+/// feature on outside the e2e runner.
+fn feature_problems(meta: &crate::cargo_meta::Metadata) -> Vec<String> {
+    let mut problems = Vec::new();
+    let Some(bridge) = meta.package(CRATE) else {
+        return vec![format!("{CRATE} is not in the workspace")];
+    };
+    if !bridge.features.contains_key(FEATURE) {
+        problems.push(format!("{CRATE} has no {FEATURE} feature"));
+    }
+    if bridge
+        .features
+        .get("default")
+        .is_some_and(|d| d.iter().any(|f| f == FEATURE))
+    {
+        problems.push(format!("{FEATURE} is a default feature of {CRATE}"));
+    }
+    for bin in bridge
+        .targets
+        .iter()
+        .filter(|t| t.kind.iter().any(|k| k == "bin"))
+    {
+        if !bin.required_features.iter().any(|f| f == FEATURE) {
+            problems.push(format!(
+                "a {CRATE} binary does not require the {FEATURE} feature"
+            ));
+        }
+    }
+    if meta.resolved_features(CRATE).iter().any(|f| f == FEATURE) {
+        problems.push(format!("the workspace resolve enables {CRATE}/{FEATURE}"));
+    }
+    for package in &meta.packages {
+        let enables = package
+            .features
+            .values()
+            .flatten()
+            .any(|f| f.starts_with(CRATE) && f.ends_with(&format!("/{FEATURE}")));
+        if enables {
+            problems.push(format!("{} enables {CRATE}/{FEATURE}", package.name));
+        }
+    }
+    problems
 }
 
 /// A `[workspace.dependencies]` entry naming the bridge, by key or by
@@ -119,7 +170,9 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
     if workspace_names_bridge(&workspace) {
         problems.push(format!("the root [workspace.dependencies] names {CRATE}"));
     }
-    problems.extend(graph_problems(&crate::cargo_meta::Metadata::load(root)?));
+    let meta = crate::cargo_meta::Metadata::load(root)?;
+    problems.extend(graph_problems(&meta));
+    problems.extend(feature_problems(&meta));
     let conf = std::fs::read_to_string(root.join("src-tauri/tauri.conf.json")).unwrap_or_default();
     if conf.contains("e2e-server") || conf.contains("e2e_server") {
         problems.push("src-tauri/tauri.conf.json bundles the e2e server".to_owned());
@@ -138,7 +191,9 @@ pub(crate) fn check_e2e_server_release(root: &Path) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{graph_problems, has_release_guard, workspace_names_bridge, CRATE};
+    use super::{
+        feature_problems, graph_problems, has_release_guard, workspace_names_bridge, CRATE,
+    };
 
     #[test]
     fn the_release_guard_is_recognised() {
@@ -169,6 +224,11 @@ mod tests {
         let meta = crate::cargo_meta::Metadata::load(&root).unwrap();
         assert!(meta.build_graph("rekindle-desktop").contains("rekindle-db"));
         assert!(graph_problems(&meta).is_empty());
+        assert!(
+            feature_problems(&meta).is_empty(),
+            "{:?}",
+            feature_problems(&meta)
+        );
         // The bridge's own graph does hold the GUI, so the walk sees edges.
         assert!(meta.build_graph(CRATE).contains("rekindle-desktop"));
     }

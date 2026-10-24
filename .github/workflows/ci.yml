@@ -64,6 +64,10 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # The E2E bridge binary builds only with its feature (L5), so the
+      # workspace run above skips it.
+      - name: cargo clippy (E2E bridge)
+        run: cargo clippy -p rekindle-e2e-server --features e2e-bridge --all-targets -- -D warnings
 
       - name: cargo test
         run: cargo test --workspace --no-fail-fast

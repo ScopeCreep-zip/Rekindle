@@ -576,8 +576,10 @@ random `127.0.0.1` port, mints a per-run token and prints both on one
 `REKINDLE_E2E_READY` line for the Playwright fixture; its guard
 (`src/lib.rs`) refuses a request with a foreign `Host` or `Origin` or
 without the token, and CORS answers only `REKINDLE_E2E_ORIGIN`. It is
-`publish = false`, not a default member, and refuses to compile in release
-(`cargo xtask check-e2e-server-release`).
+`publish = false`, not a default member, and refuses to compile in release;
+its binary also needs the `e2e-bridge` feature, which only the Playwright
+setup enables and no release graph does (`cargo xtask
+check-e2e-server-release`).
 
 ### rekindle-netsim
 

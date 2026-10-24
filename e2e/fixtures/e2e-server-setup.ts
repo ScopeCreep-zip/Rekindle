@@ -17,7 +17,7 @@ const START_TIMEOUT_MS = 600_000;
 export default async function globalSetup(): Promise<() => Promise<void>> {
   const child = spawn(
     "cargo",
-    ["run", "-q", "-p", "rekindle-e2e-server", "--bin", "e2e-server"],
+    ["run", "-q", "-p", "rekindle-e2e-server", "--features", "e2e-bridge", "--bin", "e2e-server"],
     {
       stdio: ["ignore", "pipe", "inherit"],
       // The only browser origin the bridge answers.

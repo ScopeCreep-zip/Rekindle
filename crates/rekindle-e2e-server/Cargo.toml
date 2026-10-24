@@ -6,9 +6,17 @@ description = "E2E test HTTP bridge — exposes Tauri IPC commands for Playwrigh
 # A test tool: never published, and it does not compile in release (src/lib.rs).
 publish = false
 
+[features]
+# The bridge binary builds only with this feature, which only Playwright's
+# e2e global setup enables (e2e/fixtures/e2e-server-setup.ts); it is never a
+# default and no release graph enables it (cargo xtask
+# check-e2e-server-release).
+e2e-bridge = []
+
 [[bin]]
 name = "e2e-server"
 path = "src/bin/e2e_server.rs"
+required-features = ["e2e-bridge"]
 
 [lints]
 workspace = true
