@@ -204,7 +204,6 @@ CREATE TABLE IF NOT EXISTS communities (
     description TEXT,
     icon_hash TEXT,
     banner_hash TEXT,
-    my_role_ids TEXT NOT NULL DEFAULT '[0]' CHECK(json_valid(my_role_ids)),
     joined_at INTEGER NOT NULL,
     last_synced INTEGER,
     dht_record_key TEXT,
@@ -257,7 +256,6 @@ CREATE TABLE IF NOT EXISTS community_members (
     community_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
     display_name TEXT,
-    role_ids TEXT NOT NULL DEFAULT '[0,1]' CHECK(json_valid(role_ids)),
     joined_at INTEGER NOT NULL,
     -- LOCAL slot within the segment's registry record (raw SMPL subkey
     -- 0..254 — records are o_cnt:0, no owner offset). Written by the

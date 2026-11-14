@@ -2,17 +2,12 @@
 //! per local identity. Every query is scoped to the owner: two identities
 //! on one device never read each other's rows.
 
-mod roles;
 #[cfg(test)]
 mod tests;
-
-pub use roles::{add_role, remove_role, remove_role_everywhere, role_ids, set_role_ids};
 
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 use rekindle_types::member::MemberInfo;
-
-use super::role_ids;
 
 /// A member's stored profile, as login loads it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,20 +55,19 @@ pub fn load_profiles(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec
 pub struct RosterRow {
     pub pseudonym_key: String,
     pub display_name: Option<String>,
-    pub role_ids: Vec<u32>,
 }
 
 /// The community's members, by display name.
 ///
 /// # Errors
-/// The query failed or a role-id set does not decode.
+/// The query failed.
 pub fn roster(
     conn: &Connection,
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<RosterRow>> {
     let mut stmt = conn.prepare(
-        "SELECT pseudonym_key, display_name, role_ids FROM community_members \
+        "SELECT pseudonym_key, display_name FROM community_members \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY display_name",
     )?;
     let rows = stmt
@@ -81,7 +75,6 @@ pub fn roster(
             Ok(RosterRow {
                 pseudonym_key: row.get(0)?,
                 display_name: row.get(1)?,
-                role_ids: role_ids::decode(2, &row.get::<_, String>(2)?)?,
             })
         })?
         .collect();
@@ -99,19 +92,17 @@ pub fn insert_if_absent(
     community_id: &str,
     pseudonym_key: &str,
     display_name: &str,
-    role_ids: &[u32],
     joined_at: i64,
 ) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+         (owner_key, community_id, pseudonym_key, display_name, joined_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5)",
         params![
             owner_key,
             community_id,
             pseudonym_key,
             display_name,
-            role_ids::encode(role_ids)?,
             joined_at
         ],
     )?;
@@ -134,15 +125,14 @@ pub fn insert_bootstrap_if_absent(
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     conn.execute(
         "INSERT OR IGNORE INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, \
+         (owner_key, community_id, pseudonym_key, display_name, joined_at, \
           bio, pronouns, theme_color, badges) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             owner_key,
             community_id,
             member.pseudonym_key,
             member.display_name,
-            role_ids::encode(&member.role_ids)?,
             joined_at,
             member.bio,
             member.pronouns,
@@ -158,7 +148,6 @@ pub fn insert_bootstrap_if_absent(
 pub struct AcceptedMember<'a> {
     pub pseudonym_key: &'a str,
     pub display_name: &'a str,
-    pub role_ids: &'a [u32],
     pub joined_at: i64,
     pub subkey_index: u32,
     pub onboarding_complete: bool,
@@ -176,15 +165,14 @@ pub fn replace_accepted(
 ) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT OR REPLACE INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, \
+         (owner_key, community_id, pseudonym_key, display_name, joined_at, \
           subkey_index, onboarding_complete) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             owner_key,
             community_id,
             member.pseudonym_key,
             member.display_name,
-            role_ids::encode(member.role_ids)?,
             member.joined_at,
             member.subkey_index,
             member.onboarding_complete,
@@ -199,7 +187,6 @@ pub fn replace_accepted(
 pub struct DiscoveredMemberRow {
     pub pseudonym_key: String,
     pub display_name: Option<String>,
-    pub role_ids: Vec<u32>,
     pub subkey_index: u32,
     pub segment_index: u32,
     pub bio: Option<String>,
@@ -226,11 +213,11 @@ pub fn upsert_discovered(
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
     conn.execute(
         "INSERT INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at, \
+         (owner_key, community_id, pseudonym_key, display_name, joined_at, \
           subkey_index, segment_index, bio, pronouns, theme_color, badges, avatar_ref, banner_ref) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) \
          ON CONFLICT(owner_key, community_id, pseudonym_key) DO UPDATE SET \
-           display_name = excluded.display_name, role_ids = excluded.role_ids, \
+           display_name = excluded.display_name, \
            subkey_index = excluded.subkey_index, segment_index = excluded.segment_index, \
            bio = excluded.bio, pronouns = excluded.pronouns, theme_color = excluded.theme_color, \
            badges = excluded.badges, avatar_ref = excluded.avatar_ref, banner_ref = excluded.banner_ref",
@@ -239,7 +226,6 @@ pub fn upsert_discovered(
             community_id,
             member.pseudonym_key,
             member.display_name,
-            role_ids::encode(&member.role_ids)?,
             joined_at,
             member.subkey_index,
             member.segment_index,

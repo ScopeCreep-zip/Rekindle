@@ -401,7 +401,6 @@ async fn seed_registry_community(host: &Host, owner: &str) {
                 &rekindle_db::repo::communities::NewCommunity {
                     id: "c1",
                     name: "C",
-                    my_role_ids: &[],
                     joined_at: 1,
                     dht_owner_keypair: None,
                     my_pseudonym_key: "",
@@ -467,7 +466,6 @@ async fn discovered_registry_members_are_persisted() {
             segment_index: 0,
             slot_index: 3,
             presence: bea,
-            role_ids: vec![0, 2],
         }],
     );
 
@@ -484,7 +482,6 @@ async fn discovered_registry_members_are_persisted() {
     assert_eq!(roster.len(), 1);
     assert_eq!(roster[0].pseudonym_key, bea_hex);
     assert_eq!(roster[0].display_name.as_deref(), Some("Bea"));
-    assert_eq!(roster[0].role_ids, vec![0, 2]);
     host.shutdown().await.unwrap();
 }
 

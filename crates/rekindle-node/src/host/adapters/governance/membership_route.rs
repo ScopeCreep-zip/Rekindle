@@ -108,14 +108,13 @@ impl HostGovernance {
             ControlPayload::MemberJoined {
                 pseudonym_key,
                 display_name,
-                role_ids,
                 status,
                 route_blob,
+                ..
             } if pseudonym_key == sender_pseudonym => self.on_member_joined(
                 community_id,
                 pseudonym_key,
                 display_name,
-                role_ids,
                 status,
                 route_blob.as_deref(),
             ),

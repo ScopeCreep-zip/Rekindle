@@ -187,33 +187,16 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
         }
     }
 
-    // Update in-memory state: member roles, known members, persist
-    // discovered rows + ban deletions, event RSVP aggregation,
-    // member profile diff + MembersRefreshed emit. Role merging
-    // composes three sources (existing + governance + my_roles)
-    // via the pure `compute_merged_roles`; the host applies the
-    // resulting AppState write under one lock.
-    let existing_roles = deps.read_existing_member_roles(community_id);
-    let governance_assignments = deps.read_governance_role_assignments(community_id);
-    let my_role_ids = deps.read_my_role_ids(community_id);
-    let merged_roles = crate::community::role_merge::compute_merged_roles(
-        existing_roles,
-        &discovered,
-        &governance_assignments,
-        &creds.my_pseudonym_hex,
-        my_role_ids,
-    );
-    deps.apply_member_state_update(
-        community_id,
-        merged_roles.clone(),
-        known_member_keys,
-        &banned,
-    );
+    // Update in-memory state: known members, persist discovered rows +
+    // ban deletions, event RSVP aggregation, member profile diff +
+    // MembersRefreshed emit. Member roles are not the scan's: every
+    // reader derives them from the merged governance's role assignments
+    // (plan E3.2, D15; review RV7 M1).
+    deps.apply_member_state_update(community_id, known_member_keys, &banned);
     crate::community::persist_discovered_registry_members(
         deps.as_ref(),
         community_id,
         &discovered,
-        &merged_roles,
         &banned,
     );
     // Voice roster backstop (three-path Path 1, MatrixRTC pattern):
@@ -487,7 +470,6 @@ mod tests {
         assert_eq!(st.calls_governance_bans, vec!["c1".to_string()]);
         assert_eq!(st.calls_segment_descriptors, vec!["c1".to_string()]);
         assert_eq!(st.calls_scan_segment.len(), 1);
-        assert_eq!(st.calls_merge_roles.len(), 1);
         assert_eq!(st.calls_apply_member_state.len(), 1);
         assert_eq!(st.calls_read_profiles, vec!["c1".to_string()]);
         assert_eq!(st.calls_apply_profiles.len(), 1);

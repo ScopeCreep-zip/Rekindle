@@ -19,7 +19,8 @@ pub struct CommunityState {
     pub description: Option<String>,
     pub channels: Vec<ChannelInfo>,
     pub categories: Vec<CategoryInfo>,
-    /// Our role IDs in this community (multi-role, bitmask-based).
+    /// Our role IDs in this community: the merged role assignments, which
+    /// only the projection (`projection::project_my_roles`) writes.
     pub my_role_ids: Vec<u32>,
     /// Cached role definitions from merged governance state.
     pub roles: Vec<RoleDefinition>,
@@ -117,12 +118,6 @@ pub struct CommunityState {
     /// Used for fast membership checks on incoming community gossip envelopes.
     #[serde(skip)]
     pub known_members: HashSet<String>,
-
-    /// Cached member role_ids: pseudonym_key → role_ids.
-    /// Populated during presence_poll_tick from the member index.
-    /// Used for permission checks on incoming gossip moderation payloads.
-    #[serde(skip)]
-    pub member_roles: HashMap<String, Vec<u32>>,
 
     /// Per-channel message sequence counter (channel_id → next sequence).
     /// Incremented for each message we send in a channel. Persisted to SQLite.

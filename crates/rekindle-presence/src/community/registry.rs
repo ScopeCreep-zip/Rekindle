@@ -6,7 +6,7 @@
 //! write) and `persist_discovered_registry_members` (diff + emit
 //! MemberDiscovered + batch SQLite upsert + delete banned rows).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::BuildHasher;
 
 use rekindle_records::lease::{max_subkey_bytes, SchemaShape};
@@ -356,21 +356,19 @@ fn fit_history_ad<D: CommunityPresenceDeps>(
 /// Diff against `known_members` to emit `MemberDiscovered` events
 /// for newly-seen pseudonyms, then ask the host to upsert every row
 /// (and delete banned-out members) in one batched SQLite transaction.
-pub fn persist_discovered_registry_members<D, S1, S2>(
+pub fn persist_discovered_registry_members<D, S>(
     deps: &D,
     community_id: &str,
     discovered_members: &[DiscoveredRow],
-    member_roles: &HashMap<String, Vec<u32>, S1>,
-    banned_members: &HashSet<String, S2>,
+    banned_members: &HashSet<String, S>,
 ) where
     D: CommunityPresenceDeps,
-    S1: BuildHasher,
-    S2: BuildHasher,
+    S: BuildHasher,
 {
     let rows: Vec<DiscoveredMemberRow> = discovered_members
         .iter()
         .map(|(segment_index, subkey, presence)| {
-            discovered_member_row(presence, *segment_index, *subkey, member_roles)
+            discovered_member_row(presence, *segment_index, *subkey)
         })
         .collect();
 
@@ -402,23 +400,16 @@ pub fn persist_discovered_registry_members<D, S1, S2>(
 }
 
 /// The roster row for one registry `presence` at `segment_index`/`subkey`,
-/// with its roles from `member_roles` (the base role `0` when absent).
+/// (its roles are the merged role assignments, never stored on the row).
 #[must_use]
-pub fn discovered_member_row<S: BuildHasher>(
+pub fn discovered_member_row(
     presence: &MemberPresence,
     segment_index: u32,
     subkey: u32,
-    member_roles: &HashMap<String, Vec<u32>, S>,
 ) -> DiscoveredMemberRow {
-    let pseudonym_hex = hex::encode(presence.pseudonym_key.0);
-    let role_ids = member_roles
-        .get(&pseudonym_hex)
-        .cloned()
-        .unwrap_or_else(|| vec![0]);
     DiscoveredMemberRow {
-        pseudonym_key: pseudonym_hex,
+        pseudonym_key: hex::encode(presence.pseudonym_key.0),
         display_name: presence.display_name.clone(),
-        role_ids,
         subkey_index: subkey,
         segment_index,
         bio: presence.bio.clone(),

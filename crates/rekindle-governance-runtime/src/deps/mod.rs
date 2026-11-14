@@ -303,12 +303,11 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// records to read from the DHT.
     fn list_registries_with_my_pseudonym(&self) -> Vec<(String, String, Option<String>)>;
 
-    /// Apply recovered member state for one community: writes
-    /// `my_subkey_index` if missing, updates `my_role_ids` if the DHT
-    /// view is richer, then persists both to SQLite so the next login
-    /// can skip the recovery step. Matches the pre-Phase-23 semantics
-    /// of the inline body.
-    fn apply_recovered_member_state(&self, community_id: &str, subkey_index: u32, role_ids: &[u32]);
+    /// Apply recovered member state for one community: adopts
+    /// `my_subkey_index` and persists it to SQLite so the next login can
+    /// skip the recovery step. Our roles are the merged role assignments
+    /// (the projection), never recovered here.
+    fn apply_recovered_member_state(&self, community_id: &str, subkey_index: u32);
 
     /// If the community has a `slot_seed` + `my_subkey_index` but no
     /// `slot_keypair`, derive the keypair now via the existing
@@ -451,25 +450,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// position slot.
     fn role_table_summary(&self, community_id: &str) -> (Vec<u32>, i32);
 
-    /// Apply a role-assignment delta: append `role_id` to
-    /// `community_members.role_ids` for the given pseudonym; if
-    /// `is_self`, also append to `community.my_role_ids`.
-    async fn apply_role_assignment(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        role_id: u32,
-        is_self: bool,
-    ) -> Result<(), GovernanceRuntimeError>;
-
-    async fn apply_role_unassignment(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        role_id: u32,
-        is_self: bool,
-    ) -> Result<(), GovernanceRuntimeError>;
-
     /// Insert a new role into AppState + DB. The `RoleSnapshotInsert`
     /// is fully populated; adapter mirrors into `community.roles` (sort
     /// by position) + `community_roles` SQLite row.
@@ -487,15 +467,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         role_id: u32,
         patch: crate::roles::RoleSnapshotPatch,
-    ) -> Result<(), GovernanceRuntimeError>;
-
-    /// Remove `role_id` from AppState + DB + every member row that
-    /// references it. Also drops the role from `my_role_ids` if
-    /// present.
-    async fn apply_role_delete(
-        &self,
-        community_id: &str,
-        role_id: u32,
     ) -> Result<(), GovernanceRuntimeError>;
 }
 

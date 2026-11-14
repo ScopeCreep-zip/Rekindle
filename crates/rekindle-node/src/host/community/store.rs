@@ -321,16 +321,25 @@ impl CommunityStore {
             .unwrap_or(0)
     }
 
-    /// Replace the merged per-member role map.
-    pub fn set_member_roles(&self, community_id: &str, roles: HashMap<String, Vec<u32>>) {
-        self.write(community_id, |c| c.member_roles = roles);
+    /// Our role ids: the merged role assignments as the projection laid
+    /// them down (`projection::project_my_roles`).
+    #[must_use]
+    pub fn my_role_ids(&self, community_id: &str) -> Vec<u32> {
+        self.read(community_id, |c| c.my_role_ids.clone())
+            .unwrap_or_default()
     }
 
-    /// Snapshot the merged per-member role map.
+    /// Every member's role ids (pseudonym hex → sorted legacy ids), from
+    /// the merged role assignments (plan E3.2, D15); never a cache.
     #[must_use]
-    pub fn member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
-        self.read(community_id, |c| c.member_roles.clone())
-            .unwrap_or_default()
+    pub fn member_role_ids(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
+        self.read(community_id, |c| {
+            c.governance_state
+                .as_ref()
+                .map(crate::host::adapters::governance::projection::member_role_ids)
+        })
+        .flatten()
+        .unwrap_or_default()
     }
 
     /// Record that a channel finished its initial history catch-up.
@@ -363,7 +372,6 @@ impl CommunityStore {
         self.write(&membership.governance_key, |c| {
             c.name.clone_from(&membership.community_name);
             c.my_pseudonym_key = Some(membership.pseudonym_key.clone());
-            c.my_role_ids.clone_from(&membership.role_ids);
             c.member_registry_key =
                 (!membership.registry_key.is_empty()).then(|| membership.registry_key.clone());
             c.my_subkey_index = Some(membership.slot_index);
@@ -401,17 +409,9 @@ impl CommunityStore {
         self.map.read().get(community_id)?.genesis_cert.clone()
     }
 
-    /// Our role ids, as the session changed them.
-    pub fn set_my_role_ids(&self, community_id: &str, role_ids: &[u32]) {
-        self.update(community_id, |c| c.my_role_ids = role_ids.to_vec());
-    }
-
-    /// The slot index and role ids the registry knows for us.
-    pub fn set_slot_and_roles(&self, community_id: &str, slot_index: u32, role_ids: &[u32]) {
-        self.update(community_id, |c| {
-            c.my_subkey_index = Some(slot_index);
-            c.my_role_ids = role_ids.to_vec();
-        });
+    /// The slot index the registry knows for us.
+    pub fn set_my_slot(&self, community_id: &str, slot_index: u32) {
+        self.update(community_id, |c| c.my_subkey_index = Some(slot_index));
     }
 
     /// The MEK generation and member registry a JoinAccepted carried.
@@ -467,21 +467,12 @@ impl CommunityStore {
         });
     }
 
-    /// A member finished onboarding with `role_ids`; ours when `is_self`.
-    pub fn note_onboarding_completion(
-        &self,
-        community_id: &str,
-        pseudonym_hex: &str,
-        role_ids: &[u32],
-        is_self: bool,
-    ) {
-        self.update(community_id, |c| {
-            c.member_roles
-                .insert(pseudonym_hex.to_string(), role_ids.to_vec());
-            if is_self {
-                c.onboarding_complete = true;
-            }
-        });
+    /// A member finished onboarding; ours when `is_self`. Its roles are
+    /// the merged role assignments, not stored here.
+    pub fn note_onboarding_completion(&self, community_id: &str, is_self: bool) {
+        if is_self {
+            self.update(community_id, |c| c.onboarding_complete = true);
+        }
     }
 
     /// The member registry key and our pseudonym.

@@ -18,6 +18,8 @@
 //!                                      through rekindle_db::erase (I14).
 //!     cargo xtask check-e2e-server-release
 //!                                      The E2E bridge never builds in release.
+//!     cargo xtask check-role-ids       Role ids are written only by the
+//!                                      governance projection (RV7 M1).
 //!     cargo xtask check-veilid-dht-calls
 //!                                      Veilid DHT/route calls only in their
 //!                                      owners (record pool, RouteImports,
@@ -84,6 +86,7 @@ mod no_emitter;
 mod no_managed_db;
 mod pair_model;
 mod platform_floor;
+mod role_ids;
 mod sec_styles;
 mod sec_surfaces;
 mod sqlite;
@@ -128,6 +131,8 @@ enum Command {
     CheckKeyErasure,
     /// Verify the E2E bridge cannot be built into a release bundle.
     CheckE2eServerRelease,
+    /// Verify role ids are written only by the governance projection (no caches).
+    CheckRoleIds,
     /// Verify every Veilid DHT and private-route call stays in its owner.
     CheckVeilidDhtCalls,
     /// Verify SQL lives only in the storage crates (rekindle-db, -vault, -asql).
@@ -221,6 +226,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "no-emitter",
                     Box::new(|| no_emitter::check_no_emitter(&root)),
                 ),
+                ("role-ids", Box::new(|| role_ids::check_role_ids(&root))),
                 (
                     "capnp-bounds",
                     Box::new(|| capnp_bounds::check_capnp_bounds(&root)),
@@ -319,6 +325,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),
         Command::CheckE2eServerRelease => e2e_release::check_e2e_server_release(&root),
+        Command::CheckRoleIds => role_ids::check_role_ids(&root),
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
         Command::CheckSqlite => sqlite::check_sqlite(&root),
         Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),

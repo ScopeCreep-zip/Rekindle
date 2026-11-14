@@ -272,13 +272,8 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.list_registries_with_my_pseudonym_impl()
     }
 
-    fn apply_recovered_member_state(
-        &self,
-        community_id: &str,
-        subkey_index: u32,
-        role_ids: &[u32],
-    ) {
-        self.apply_recovered_member_state_impl(community_id, subkey_index, role_ids);
+    fn apply_recovered_member_state(&self, community_id: &str, subkey_index: u32) {
+        self.apply_recovered_member_state_impl(community_id, subkey_index);
     }
 
     fn try_derive_slot_keypair_if_ready(&self, community_id: &str) {
@@ -412,28 +407,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.role_table_summary_impl(community_id)
     }
 
-    async fn apply_role_assignment(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        role_id: u32,
-        is_self: bool,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.apply_role_assignment_impl(community_id, pseudonym_key, role_id, is_self)
-            .await
-    }
-
-    async fn apply_role_unassignment(
-        &self,
-        community_id: &str,
-        pseudonym_key: &str,
-        role_id: u32,
-        is_self: bool,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.apply_role_unassignment_impl(community_id, pseudonym_key, role_id, is_self)
-            .await
-    }
-
     /// No local mirror to update: the definition is already carried by
     /// the governance entry that triggered this call, and
     /// `role_current_definition` reads it back from the merged CRDT
@@ -455,13 +428,5 @@ impl GovernanceRuntimeDeps for HostGovernance {
         _patch: RoleSnapshotPatch,
     ) -> Result<(), GovernanceRuntimeError> {
         Ok(())
-    }
-
-    async fn apply_role_delete(
-        &self,
-        community_id: &str,
-        role_id: u32,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.apply_role_delete_impl(community_id, role_id).await
     }
 }

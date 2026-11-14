@@ -37,7 +37,6 @@ pub(super) fn load_membership(host: &crate::host::Host) {
     let membership = CommunityMembership {
         governance_key: "c1".into(),
         pseudonym_key: "cd".repeat(32),
-        role_ids: vec![0],
         registry_key: "registry".into(),
         slot_index: 0,
         community_name: "C".into(),

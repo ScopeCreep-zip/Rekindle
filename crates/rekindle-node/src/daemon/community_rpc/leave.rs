@@ -110,7 +110,6 @@ mod tests {
         CommunityMembership {
             governance_key: GOV.into(),
             pseudonym_key: "cd".repeat(32),
-            role_ids: Vec::new(),
             registry_key: "VLD0:reg:key".into(),
             slot_index: 3,
             community_name: "test".into(),

@@ -181,7 +181,7 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
         .as_deref()
         == Some(sender_pseudonym);
 
-    deps.persist_onboarding_completion(community_id, sender_pseudonym, &final_role_ids, is_self);
+    deps.persist_onboarding_completion(community_id, sender_pseudonym, is_self);
     if is_self {
         deps.push_onboarding_complete_to_sync(community_id);
     }

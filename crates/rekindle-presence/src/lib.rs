@@ -18,10 +18,9 @@ pub mod poll_buckets;
 pub mod status;
 
 pub use community::{
-    compute_merged_roles, compute_profile_diff, compute_rebuild_plan, discovered_member_row,
-    explain_route_for_peer, gossip_degree, parse_and_classify_row,
-    persist_discovered_registry_members, presence_poll_tick, presence_poll_tick_public,
-    random_peer_sample, role_ids_from_governance, route_for_peer, run_initial_sync,
+    compute_profile_diff, compute_rebuild_plan, discovered_member_row, explain_route_for_peer,
+    gossip_degree, parse_and_classify_row, persist_discovered_registry_members, presence_poll_tick,
+    presence_poll_tick_public, random_peer_sample, route_for_peer, run_initial_sync,
     start_presence_poll, steady_poll_duration, write_our_presence, ClassifiedRow, DiscoveredRow,
     GossipOverlayPlan, GossipOverlaySnapshot, GossipRebuildOutcome, MemberProfileSnapshot,
     PresenceWrite, ProfileDiffOutcome, RouteRefusal, MAX_SYNC_ATTEMPTS, RAPID_TICKS,

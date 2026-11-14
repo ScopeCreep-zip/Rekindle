@@ -110,35 +110,11 @@ pub(crate) async fn load(
         governance
             .threads
             .retain(|id, _| !state.held_threads.contains(id));
-        sync_my_roles(state, &governance);
+        super::projection::project_my_roles(state, &governance);
         state.governance_state = Some(governance);
         state.genesis_cert = Some(cert);
     }
     Ok(states)
-}
-
-/// Our role ids from the merged role assignments.
-fn sync_my_roles(
-    state: &mut CommunityState,
-    governance: &rekindle_governance::state::GovernanceState,
-) {
-    let Some(pseudonym) = state
-        .my_pseudonym_key
-        .as_deref()
-        .and_then(|hex_key| hex::decode(hex_key).ok())
-        .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok())
-        .map(rekindle_types::id::PseudonymKey)
-    else {
-        return;
-    };
-    if let Some(role_ids) = governance.role_assignments.get(&pseudonym) {
-        state.my_role_ids = role_ids
-            .iter()
-            .copied()
-            .map(rekindle_types::id::RoleId::to_legacy_u32)
-            .collect();
-        state.my_role_ids.sort_unstable();
-    }
 }
 
 /// The session's membership, a projection of the store's entry (plan E3.1:
@@ -147,7 +123,6 @@ pub(crate) fn membership(state: &CommunityState) -> CommunityMembership {
     CommunityMembership {
         governance_key: state.id.clone(),
         pseudonym_key: state.my_pseudonym_key.clone().unwrap_or_default(),
-        role_ids: state.my_role_ids.clone(),
         registry_key: state.member_registry_key.clone().unwrap_or_default(),
         slot_index: state.my_subkey_index.unwrap_or(0),
         community_name: state.name.clone(),
@@ -200,7 +175,8 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
         banner_hash: community.banner_hash.clone(),
         channels,
         categories: categories_of(id, &load.categories),
-        my_role_ids: community.my_role_ids.clone(),
+        // Laid down by the projection from the merged role assignments.
+        my_role_ids: Vec::new(),
         roles: roles_of(id, &load.roles),
         dht_owner_keypair: community.dht_owner_keypair.clone(),
         my_pseudonym_key: community.my_pseudonym_key.clone(),

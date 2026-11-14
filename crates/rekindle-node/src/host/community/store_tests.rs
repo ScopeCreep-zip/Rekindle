@@ -70,8 +70,6 @@ fn set_members_replaces_the_roster_and_the_known_members() {
     assert_eq!(store.known_members("c1"), HashSet::from(["bb".to_string()]));
     assert_eq!(store.member_count("c1"), 1);
     assert_eq!(store.member_count("c2"), 0);
-    store.set_member_roles("c1", HashMap::from([("bb".to_string(), vec![3])]));
-    assert_eq!(store.member_roles("c1")["bb"], vec![3]);
     store.mark_channel_synced("c1", "ch");
     assert!(store.map().read()["c1"].synced_channels.contains("ch"));
 }
@@ -80,7 +78,6 @@ fn membership(me: &PseudonymKey) -> CommunityMembership {
     CommunityMembership {
         governance_key: "gov-key".into(),
         pseudonym_key: hex::encode(me.0),
-        role_ids: vec![0],
         registry_key: "reg-key".into(),
         slot_index: 0,
         community_name: "Team".into(),
@@ -248,4 +245,49 @@ fn a_timed_out_members_thread_is_held_and_another_members_post_admitted() {
         &BlockList::default(),
     );
     assert_eq!(verdict, Verdict::Admit);
+}
+
+/// Role ids, a member's and ours, follow a later `RoleUnassignment`
+/// (review RV7 M1). The daemon presence adapter used to read member roles
+/// from the store's `member_roles` map and ours from the session
+/// membership's `role_ids`, caches an onboarding answer wrote and no
+/// received op cleared, so a role unassigned after onboarding stayed. Now
+/// both are the merged role assignments: `member_role_ids` (the presence
+/// scan's, the mention view's and the member list's source) and
+/// `my_role_ids` (the projection's, `project_my_roles`).
+#[test]
+fn member_and_own_roles_follow_a_later_role_unassignment() {
+    let store = CommunityStore::new(new_map());
+    let (me, bob) = (PseudonymKey([1; 32]), PseudonymKey([2; 32]));
+    store.install_membership(&membership(&me), None, None);
+    let (everyone, moderator) = (RoleId::from_legacy_u32(0), RoleId::from_legacy_u32(5));
+    let assigned = |held: &[RoleId]| {
+        let mut gov = GovernanceState::default();
+        for member in [&me, &bob] {
+            gov.role_assignments
+                .insert(member.clone(), held.iter().copied().collect());
+        }
+        gov
+    };
+    store.project_governance("gov-key", assigned(&[everyone, moderator]), 0);
+    // Onboarding completes while the role is held: the old cache writers.
+    store.note_onboarding_completion("gov-key", false);
+    store.note_onboarding_completion("gov-key", true);
+    assert_eq!(store.my_role_ids("gov-key"), vec![0, 5]);
+    assert_eq!(
+        store.member_role_ids("gov-key")[&hex::encode(bob.0)],
+        vec![0, 5]
+    );
+
+    // The creator's later RoleUnassignment, merged.
+    store.project_governance("gov-key", assigned(&[everyone]), 0);
+    assert_eq!(store.my_role_ids("gov-key"), vec![0]);
+    assert_eq!(
+        store.member_role_ids("gov-key")[&hex::encode(bob.0)],
+        vec![0]
+    );
+    assert_eq!(
+        store.member_role_ids("gov-key")[&hex::encode(me.0)],
+        vec![0]
+    );
 }

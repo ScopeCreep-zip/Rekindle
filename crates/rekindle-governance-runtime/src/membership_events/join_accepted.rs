@@ -30,7 +30,6 @@ fn member_rows(members: &[MemberSummary]) -> Vec<MemberUpsertRow> {
         .map(|m| MemberUpsertRow {
             pseudonym_hex: m.pseudonym_key.clone(),
             display_name: m.display_name.clone(),
-            role_ids: m.role_ids.clone(),
             joined_at: m.joined_at,
             subkey_index: m.subkey_index,
             onboarding_complete: m.onboarding_complete,

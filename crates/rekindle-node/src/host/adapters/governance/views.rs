@@ -221,25 +221,9 @@ impl HostGovernance {
         let governance = self.governance_state_impl(community).unwrap_or_default();
         let departed = super::projection::departed(&governance);
         // A member's roles are the merged role assignments (plan E3.2, D15),
-        // as our own are (`projection::project_my_roles`): the roster row's
-        // `role_ids` is a cache an onboarding answer or a roles event writes
-        // and no received op clears, so a later unassignment would not leave
-        // the list.
-        let roles_of = |pseudonym: &str| -> Vec<u32> {
-            let mut roles: Vec<u32> = governance
-                .role_assignments
-                .iter()
-                .find(|(p, _)| hex::encode(p.0) == pseudonym)
-                .map(|(_, held)| {
-                    held.iter()
-                        .copied()
-                        .map(rekindle_types::id::RoleId::to_legacy_u32)
-                        .collect()
-                })
-                .unwrap_or_default();
-            roles.sort_unstable();
-            roles
-        };
+        // as our own are (`projection::project_my_roles`), built once for
+        // the list (review RV7 L4); no row caches them.
+        let role_ids_of = super::projection::member_role_ids(&governance);
         let timeout_until = |pseudonym: &str| {
             governance
                 .timeouts
@@ -267,7 +251,10 @@ impl HostGovernance {
                     .get(&row.pseudonym_key)
                     .cloned()
                     .unwrap_or_else(|| profile_view(None, None, None, Vec::new(), None, None));
-                let role_ids = roles_of(&row.pseudonym_key);
+                let role_ids = role_ids_of
+                    .get(&row.pseudonym_key)
+                    .cloned()
+                    .unwrap_or_default();
                 CommunityMemberView {
                     display_role: display_role_name(&role_ids, &overlay.roles),
                     display_name: row.display_name.unwrap_or_default(),

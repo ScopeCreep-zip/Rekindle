@@ -24,7 +24,6 @@ impl HostGovernance {
         community_id: &str,
         pseudonym_hex: &str,
         display_name: &str,
-        role_ids: &[u32],
         status: &str,
         route_blob: Option<&[u8]>,
     ) {
@@ -48,16 +47,15 @@ impl HostGovernance {
         let Some((owner, db)) = self.owner_and_db() else {
             return;
         };
-        let (community, pseudonym, name, roles) = (
+        let (community, pseudonym, name) = (
             community_id.to_string(),
             pseudonym_hex.to_string(),
             display_name.to_string(),
-            role_ids.to_vec(),
         );
         let joined_at = self.ctx.clock.now_secs().cast_signed();
         db.fire("member joined", move |conn| {
             rekindle_db::repo::members::insert_if_absent(
-                conn, &owner, &community, &pseudonym, &name, &roles, joined_at,
+                conn, &owner, &community, &pseudonym, &name, joined_at,
             )
         });
     }

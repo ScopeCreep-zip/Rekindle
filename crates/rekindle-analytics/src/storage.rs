@@ -126,7 +126,7 @@ fn community_metadata_bytes(conn: &Connection, owner_key: &str, community_id: &s
     let community_row: i64 = conn
         .query_row(
             "SELECT COALESCE(LENGTH(name), 0) + COALESCE(LENGTH(description), 0) \
-                  + COALESCE(LENGTH(my_role_ids), 0) + COALESCE(LENGTH(dht_record_key), 0) \
+                  + COALESCE(LENGTH(dht_record_key), 0) \
                   + ?3 \
                FROM communities WHERE owner_key = ?1 AND id = ?2",
             rusqlite::params![owner_key, community_id, ROW_OVERHEAD_BYTES],

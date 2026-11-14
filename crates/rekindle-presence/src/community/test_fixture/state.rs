@@ -27,7 +27,6 @@ pub struct MockState {
     pub bans: HashSet<String>,
     pub segments: Vec<SegmentDescriptor>,
     pub segment_raw: HashMap<String, Vec<(u32, Vec<u8>)>>,
-    pub member_roles: HashMap<String, Vec<u32>>,
     pub offline_diff: Vec<String>,
     /// The prior overlay's reachable peers `reachable_mesh_peers` returns.
     pub reachable_mesh_peers: std::collections::HashSet<String>,
@@ -67,8 +66,7 @@ pub struct MockState {
     pub calls_governance_bans: Vec<String>,
     pub calls_segment_descriptors: Vec<String>,
     pub calls_scan_segment: Vec<(String, u32, String, Option<u32>)>,
-    pub calls_merge_roles: Vec<(String, usize, String)>,
-    pub calls_apply_member_state: Vec<(String, usize, usize)>,
+    pub calls_apply_member_state: Vec<(String, usize)>,
     pub calls_read_profiles: Vec<String>,
     pub calls_apply_profiles: Vec<(String, usize, bool)>,
     pub calls_extend_online: Vec<(String, usize, String, u64)>,

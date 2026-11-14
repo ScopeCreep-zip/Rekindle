@@ -191,13 +191,7 @@ impl HostGovernance {
         &self,
         community_id: &str,
     ) -> Result<(), OnboardingRefusal> {
-        let (me_hex, me) = self.my_pseudonym(community_id)?;
-        let mut roles: Vec<u32> = self
-            .governance_state_impl(community_id)
-            .and_then(|g| g.role_assignments.get(&me).cloned())
-            .map(|held| held.into_iter().map(RoleId::to_legacy_u32).collect())
-            .unwrap_or_default();
-        roles.sort_unstable();
+        let (me_hex, _) = self.my_pseudonym(community_id)?;
         let failed = |e: String| OnboardingRefusal::Failed(GovernanceRuntimeError::Adapter(e));
         let owner = self
             .ctx
@@ -214,7 +208,7 @@ impl HostGovernance {
         .map_err(|e| failed(format!("onboarding completion not stored: {e}")))?;
         self.ctx
             .communities
-            .note_onboarding_completion(community_id, &me_hex, &roles, true);
+            .note_onboarding_completion(community_id, true);
         MembershipEventDeps::push_onboarding_complete_to_sync(self, community_id);
         Ok(())
     }

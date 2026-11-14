@@ -28,8 +28,8 @@ struct EntryAffects {
 fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
     match entry {
         // Role definition + archive change the role list itself;
-        // assignment/unassignment change a member's role_ids and are
-        // handled by `MemberRolesChanged` elsewhere.
+        // assignment/unassignment change only the merged role
+        // assignments, which every reader derives roles from.
         GovernanceEntry::RoleDefinition { .. } | GovernanceEntry::RoleArchived { .. } => {
             EntryAffects {
                 roles: true,

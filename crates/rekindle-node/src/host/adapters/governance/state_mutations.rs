@@ -35,18 +35,6 @@ impl HostGovernance {
                 .communities
                 .project_governance(community_id, state, now_secs);
         self.store_held_threads(community_id, &held, now_secs);
-        // The merged role assignments are authoritative for our own role
-        // list: the session's membership (which `CommunityInfo` and the
-        // permission checks read) and its stored row adopt them, so a role
-        // another member grants or revokes reaches us through the watch.
-        let roles = projected.my_role_ids.clone();
-        crate::host::session::update_roles(
-            &self.ctx.session,
-            &self.ctx.db,
-            &self.ctx.communities,
-            community_id,
-            move |mine| *mine = roles,
-        );
         self.refresh_files(community_id);
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
@@ -111,7 +99,6 @@ impl HostGovernance {
         let membership = SessionMembership {
             governance_key: community.id.clone(),
             pseudonym_key: community.my_pseudonym_hex.clone(),
-            role_ids: community.creator_role_ids.clone(),
             registry_key: community.registry_key.clone(),
             // Origin always takes slot 0 of the genesis segment.
             slot_index: 0,
@@ -171,20 +158,15 @@ impl HostGovernance {
     }
 
     /// Apply state recovered from the registry for the logged-in user:
-    /// adopt the slot index and role IDs the DHT knows for us.
-    pub(super) fn apply_recovered_member_state_impl(
-        &self,
-        community_id: &str,
-        subkey_index: u32,
-        role_ids: &[u32],
-    ) {
-        crate::host::session::update_slot_and_roles(
+    /// adopt the slot index the DHT knows for us. Our role ids are the
+    /// merged role assignments, which the projection lays down.
+    pub(super) fn apply_recovered_member_state_impl(&self, community_id: &str, subkey_index: u32) {
+        crate::host::session::update_slot(
             &self.ctx.session,
             &self.ctx.db,
             &self.ctx.communities,
             community_id,
             subkey_index,
-            role_ids,
         );
     }
 

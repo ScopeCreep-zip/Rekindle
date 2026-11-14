@@ -34,8 +34,8 @@ fn open_db() -> Connection {
 fn add_member(conn: &Connection, pseudonym: &str, joined_at: i64) {
     conn.execute(
         "INSERT INTO community_members \
-         (owner_key, community_id, pseudonym_key, display_name, role_ids, joined_at) \
-         VALUES ('owner_pk', 'c1', ?1, 'name', '[1]', ?2)",
+         (owner_key, community_id, pseudonym_key, display_name, joined_at) \
+         VALUES ('owner_pk', 'c1', ?1, 'name', ?2)",
         rusqlite::params![pseudonym, joined_at],
     )
     .expect("insert member");

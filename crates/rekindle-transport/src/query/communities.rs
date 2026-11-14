@@ -106,6 +106,7 @@ pub fn community_detail(
     member_count: u32,
     channels: Vec<ChannelOverviewDisplay>,
     roles: Vec<RoleDisplay>,
+    our_roles: Vec<u32>,
     meta: CommunityMetaSummary,
 ) -> CommunityDetail {
     CommunityDetail {
@@ -118,6 +119,6 @@ pub fn community_detail(
         channels,
         roles,
         our_pseudonym: membership.pseudonym_key.clone(),
-        our_roles: membership.role_ids.clone(),
+        our_roles,
     }
 }

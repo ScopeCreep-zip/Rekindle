@@ -146,46 +146,13 @@ pub fn record_channels(
     changed
 }
 
-/// Apply `f` to our role list in the community and store it if it changed.
-pub fn update_roles(
-    session: &RwLock<Option<Session>>,
-    db: &DbHandle,
-    communities: &CommunityStore,
-    community_id: &str,
-    f: impl FnOnce(&mut Vec<u32>),
-) {
-    let roles = {
-        let mut guard = session.write();
-        let Some(membership) = guard
-            .as_mut()
-            .and_then(|s| s.communities.get_mut(community_id))
-        else {
-            return;
-        };
-        let before = membership.role_ids.clone();
-        f(&mut membership.role_ids);
-        if membership.role_ids == before {
-            return;
-        }
-        membership.role_ids.clone()
-    };
-    communities.set_my_role_ids(community_id, &roles);
-    if let Some((owner, db)) = owner_and_db(session, db) {
-        let community = community_id.to_string();
-        db.fire("my role ids", move |conn| {
-            repo::communities::set_my_role_ids(conn, &owner, &community, &roles)
-        });
-    }
-}
-
-/// Adopt the slot index and role ids the registry knows for us.
-pub fn update_slot_and_roles(
+/// Adopt the slot index the registry knows for us.
+pub fn update_slot(
     session: &RwLock<Option<Session>>,
     db: &DbHandle,
     communities: &CommunityStore,
     community_id: &str,
     slot_index: u32,
-    role_ids: &[u32],
 ) {
     let changed = {
         let mut guard = session.write();
@@ -195,26 +162,24 @@ pub fn update_slot_and_roles(
         else {
             return;
         };
-        let changed = membership.slot_index != slot_index || membership.role_ids != role_ids;
+        let changed = membership.slot_index != slot_index;
         membership.slot_index = slot_index;
-        membership.role_ids = role_ids.to_vec();
         changed
     };
     if !changed {
         return;
     }
-    communities.set_slot_and_roles(community_id, slot_index, role_ids);
+    communities.set_my_slot(community_id, slot_index);
     if let Some((owner, db)) = owner_and_db(session, db) {
-        let (community, roles) = (community_id.to_string(), role_ids.to_vec());
-        db.fire("slot and roles", move |conn| {
+        let community = community_id.to_string();
+        db.fire("slot", move |conn| {
             repo::communities::set(
                 conn,
                 &owner,
                 &community,
                 repo::communities::Column::MySubkeyIndex,
                 slot_index,
-            )?;
-            repo::communities::set_my_role_ids(conn, &owner, &community, &roles)
+            )
         });
     }
 }
@@ -327,7 +292,6 @@ pub fn record_membership(
             &repo::communities::NewCommunity {
                 id: &row.governance_key,
                 name: &row.community_name,
-                my_role_ids: &row.role_ids,
                 joined_at,
                 dht_owner_keypair: dht_owner_keypair.as_deref(),
                 my_pseudonym_key: &row.pseudonym_key,

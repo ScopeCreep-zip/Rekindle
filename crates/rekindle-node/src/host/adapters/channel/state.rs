@@ -151,12 +151,15 @@ impl HostChannel {
         let Some(community) = map.get(community_id) else {
             return MemberMentionView::default();
         };
+        let mut roles = community
+            .governance_state
+            .as_ref()
+            .map(crate::host::adapters::governance::projection::member_role_ids)
+            .unwrap_or_default();
         MemberMentionView {
             display_name: (community.member_profiles.get(pseudonym_hex))
                 .and_then(|p| p.display_name.clone()),
-            role_ids: (community.member_roles.get(pseudonym_hex))
-                .cloned()
-                .unwrap_or_default(),
+            role_ids: roles.remove(pseudonym_hex).unwrap_or_default(),
         }
     }
 
@@ -168,13 +171,17 @@ impl HostChannel {
         let Some(community) = map.get(community_id) else {
             return HashMap::new();
         };
+        // Roles are the merged role assignments (plan E3.2, D15), built once.
+        let mut roles = community
+            .governance_state
+            .as_ref()
+            .map(crate::host::adapters::governance::projection::member_role_ids)
+            .unwrap_or_default();
         (community.member_profiles.iter())
             .map(|(pseudonym, profile)| {
                 let view = MemberMentionView {
                     display_name: profile.display_name.clone(),
-                    role_ids: (community.member_roles.get(pseudonym))
-                        .cloned()
-                        .unwrap_or_default(),
+                    role_ids: roles.remove(pseudonym).unwrap_or_default(),
                 };
                 (pseudonym.clone(), view)
             })

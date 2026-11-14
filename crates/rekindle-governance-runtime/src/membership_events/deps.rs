@@ -21,7 +21,6 @@ use crate::deps::GovernanceRuntimeDeps;
 pub struct MemberUpsertRow {
     pub pseudonym_hex: String,
     pub display_name: String,
-    pub role_ids: Vec<u32>,
     pub joined_at: u64,
     pub subkey_index: u32,
     pub onboarding_complete: bool,
@@ -43,19 +42,6 @@ pub struct SlotGrantUpdate {
 /// `GovernanceRuntimeDeps` already provides.
 #[async_trait]
 pub trait MembershipEventDeps: GovernanceRuntimeDeps {
-    // ---------- Roles ----------
-
-    /// Replace `role_ids` for a member in `community_members`; if
-    /// `is_self`, also update `community.my_role_ids` (in-memory + the
-    /// `communities` row). Fire-and-forget SQLite write (`db_fire`).
-    fn persist_member_roles(
-        &self,
-        community_id: &str,
-        pseudonym_hex: &str,
-        role_ids: &[u32],
-        is_self: bool,
-    );
-
     // ---------- JoinAccepted ----------
 
     /// Set `mek_generation` + `member_registry_key` on the in-memory
@@ -104,16 +90,10 @@ pub trait MembershipEventDeps: GovernanceRuntimeDeps {
 
     // ---------- Onboarding ----------
 
-    /// Set `member_roles[pseudonym] = role_ids`; if `is_self`, flip
-    /// `onboarding_complete = true` (in-memory + the `community_members`
-    /// row). Fire-and-forget SQLite write (`db_fire`).
-    fn persist_onboarding_completion(
-        &self,
-        community_id: &str,
-        pseudonym_hex: &str,
-        role_ids: &[u32],
-        is_self: bool,
-    );
+    /// Mark the member's onboarding complete (in-memory when `is_self`,
+    /// and the `community_members` row). Its roles are the merged role
+    /// assignments, not stored here. Fire-and-forget SQLite write.
+    fn persist_onboarding_completion(&self, community_id: &str, pseudonym_hex: &str, is_self: bool);
 
     /// Fire-and-forget: push our own onboarding completion into the
     /// personal SMPL ReadState so paired devices stop showing the wizard

@@ -300,33 +300,16 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             .cloned()
             .unwrap_or_default()
     }
-    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
-        let mut st = self.state.lock();
-        st.calls_merge_roles
-            .push((community_id.to_string(), 0, String::new()));
-        st.member_roles.clone()
-    }
-    fn read_governance_role_assignments(
-        &self,
-        _community_id: &str,
-    ) -> HashMap<rekindle_types::id::PseudonymKey, HashSet<rekindle_types::id::RoleId>> {
-        HashMap::new()
-    }
-    fn read_my_role_ids(&self, _community_id: &str) -> Vec<u32> {
-        Vec::new()
-    }
     fn apply_member_state_update(
         &self,
         community_id: &str,
-        merged_member_roles: HashMap<String, Vec<u32>>,
         known_member_keys: HashSet<String>,
         _banned_members: &HashSet<String>,
     ) {
-        self.state.lock().calls_apply_member_state.push((
-            community_id.to_string(),
-            merged_member_roles.len(),
-            known_member_keys.len(),
-        ));
+        self.state
+            .lock()
+            .calls_apply_member_state
+            .push((community_id.to_string(), known_member_keys.len()));
     }
     fn read_member_profile_snapshot(
         &self,

@@ -4,7 +4,7 @@
 //! AppState + SQLite mirror that the deps adapter holds.
 //!
 //! Crate side: governance entry construction + lamport coordination
-//! + random unique role id allocation + my_role_ids invariant logic.
+//! + random unique role id allocation. Role sets are the merged role assignments.
 //! Deps side: AppState mutation + DB persists (each Tier-9 adapter
 //! decides how to map the abstract `RoleStateChange` to its concrete
 //! `state.communities` write + DB row update).
@@ -67,14 +67,9 @@ pub async fn assign_role<D: GovernanceRuntimeDeps>(
         },
     )
     .await?;
-
-    let is_self = deps
-        .community_membership(community_id)
-        .and_then(|m| m.my_pseudonym_hex)
-        .as_deref()
-        == Some(pseudonym_key);
-    deps.apply_role_assignment(community_id, pseudonym_key, role_id, is_self)
-        .await
+    // Every reader derives the member's roles, and ours, from the merged
+    // role assignments (plan E3.2, D15): nothing else to store.
+    Ok(())
 }
 
 pub async fn unassign_role<D: GovernanceRuntimeDeps>(
@@ -92,14 +87,9 @@ pub async fn unassign_role<D: GovernanceRuntimeDeps>(
         },
     )
     .await?;
-
-    let is_self = deps
-        .community_membership(community_id)
-        .and_then(|m| m.my_pseudonym_hex)
-        .as_deref()
-        == Some(pseudonym_key);
-    deps.apply_role_unassignment(community_id, pseudonym_key, role_id, is_self)
-        .await
+    // Every reader derives the member's roles, and ours, from the merged
+    // role assignments (plan E3.2, D15): nothing else to store.
+    Ok(())
 }
 
 /// Allocate a fresh u32 role id that's not already in use. Caller
@@ -215,8 +205,8 @@ pub async fn delete_role<D: GovernanceRuntimeDeps>(
         },
     )
     .await?;
-
-    deps.apply_role_delete(community_id, role_id).await
+    // The merge drops the deleted role from every assignment.
+    Ok(())
 }
 
 #[cfg(test)]

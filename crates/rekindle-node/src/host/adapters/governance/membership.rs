@@ -60,38 +60,6 @@ enum ColumnValue {
 
 #[async_trait]
 impl MembershipEventDeps for HostGovernance {
-    fn persist_member_roles(
-        &self,
-        community_id: &str,
-        pseudonym_hex: &str,
-        role_ids: &[u32],
-        is_self: bool,
-    ) {
-        if is_self && !role_ids.is_empty() {
-            let roles = role_ids.to_vec();
-            crate::host::session::update_roles(
-                &self.ctx.session,
-                &self.ctx.db,
-                &self.ctx.communities,
-                community_id,
-                move |mine| *mine = roles,
-            );
-        }
-        let Some((owner, db)) = self.owner_and_db() else {
-            return;
-        };
-        let (community, pseudonym, roles) = (
-            community_id.to_string(),
-            pseudonym_hex.to_string(),
-            role_ids.to_vec(),
-        );
-        db.fire("member roles", move |conn| {
-            rekindle_db::repo::members::set_role_ids(
-                conn, &owner, &community, &pseudonym, &roles, false,
-            )
-        });
-    }
-
     async fn set_mek_generation_and_registry(
         &self,
         community_id: &str,
@@ -131,7 +99,6 @@ impl MembershipEventDeps for HostGovernance {
                         &rekindle_db::repo::members::AcceptedMember {
                             pseudonym_key: &m.pseudonym_hex,
                             display_name: &m.display_name,
-                            role_ids: &m.role_ids,
                             joined_at: m.joined_at.cast_signed(),
                             subkey_index: m.subkey_index,
                             onboarding_complete: m.onboarding_complete,
@@ -226,26 +193,18 @@ impl MembershipEventDeps for HostGovernance {
         &self,
         community_id: &str,
         pseudonym_hex: &str,
-        role_ids: &[u32],
         is_self: bool,
     ) {
-        self.ctx.communities.note_onboarding_completion(
-            community_id,
-            pseudonym_hex,
-            role_ids,
-            is_self,
-        );
+        self.ctx
+            .communities
+            .note_onboarding_completion(community_id, is_self);
         let Some((owner, db)) = self.owner_and_db() else {
             return;
         };
-        let (community, pseudonym, roles) = (
-            community_id.to_string(),
-            pseudonym_hex.to_string(),
-            role_ids.to_vec(),
-        );
+        let (community, pseudonym) = (community_id.to_string(), pseudonym_hex.to_string());
         db.fire("onboarding completion", move |conn| {
-            rekindle_db::repo::members::set_role_ids(
-                conn, &owner, &community, &pseudonym, &roles, true,
+            rekindle_db::repo::members::set_onboarding_complete(
+                conn, &owner, &community, &pseudonym,
             )
         });
     }

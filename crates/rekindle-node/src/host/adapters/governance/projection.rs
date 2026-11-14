@@ -25,9 +25,6 @@ pub struct GovernanceProjected {
     /// segment's records, a channel-segment record) that the previous state
     /// did not.
     pub new_watch_targets: bool,
-    /// Our role ids as the merged role assignments name them (empty when
-    /// they name none for us), which the session's membership adopts.
-    pub my_role_ids: Vec<u32>,
 }
 
 /// Every record the community's state names to watch: channel logs,
@@ -137,8 +134,15 @@ fn project_roles_and_categories(cs: &mut CommunityState, gov: &GovernanceState) 
     cs.categories.sort_by_key(|category| category.sort_order);
 }
 
+/// A role set as the sorted legacy ids every reader shows.
+fn legacy_role_ids(held: &HashSet<RoleId>) -> Vec<u32> {
+    let mut ids: Vec<u32> = held.iter().copied().map(RoleId::to_legacy_u32).collect();
+    ids.sort_unstable();
+    ids
+}
+
 /// Our role ids from the merged role assignments.
-fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
+pub(crate) fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
     let me = cs
         .my_pseudonym_key
         .as_deref()
@@ -147,15 +151,19 @@ fn project_my_roles(cs: &mut CommunityState, gov: &GovernanceState) {
         .map(PseudonymKey);
     cs.my_role_ids = me
         .and_then(|me| gov.role_assignments.get(&me))
-        .map(|role_ids| {
-            role_ids
-                .iter()
-                .copied()
-                .map(RoleId::to_legacy_u32)
-                .collect()
-        })
+        .map(legacy_role_ids)
         .unwrap_or_default();
-    cs.my_role_ids.sort_unstable();
+}
+
+/// Every member's role ids by hex pseudonym, from the merged role
+/// assignments (plan E3.2, D15), built once per read. The member list, the
+/// presence scan and the channel adapter read roles only from here or from
+/// [`project_my_roles`]; no row or map caches them (review RV7 M1).
+pub(crate) fn member_role_ids(gov: &GovernanceState) -> HashMap<String, Vec<u32>> {
+    gov.role_assignments
+        .iter()
+        .map(|(pseudonym, held)| (hex::encode(pseudonym.0), legacy_role_ids(held)))
+        .collect()
 }
 
 /// The members merged governance has departed, by hex pseudonym: a banned
@@ -218,10 +226,7 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
         .collect();
     cs.governance_state = Some(gov);
     let new_watch_targets = !watch_targets(cs).is_subset(&prior);
-    GovernanceProjected {
-        new_watch_targets,
-        my_role_ids: cs.my_role_ids.clone(),
-    }
+    GovernanceProjected { new_watch_targets }
 }
 
 /// The SQLite snapshot of a projected community at `lamport_clock`; `None`
@@ -310,15 +315,12 @@ pub fn snapshot(cs: &CommunityState, lamport_clock: i64) -> Option<StoredGoverna
             &b.target_id,
         ))
     });
-    let mut my_role_ids = cs.my_role_ids.clone();
-    my_role_ids.sort_unstable();
     let metadata = gov.metadata.as_ref();
     Some(StoredGovernance {
         name: cs.name.clone(),
         description: cs.description.clone(),
         icon_hash: metadata.and_then(|m| m.icon_hash.clone()),
         banner_hash: metadata.and_then(|m| m.banner_hash.clone()),
-        my_role_ids,
         mek_generation,
         lamport_clock,
         channels,

@@ -18,7 +18,6 @@ use rekindle_presence::deps::{
     CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, PresenceError,
     SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
 };
-use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::presence::{
     EncryptedHistoryRanges, EncryptedSessionExtras, HistoryRange, MemberSession,
     PresenceSharingPolicy, SessionExtras,
@@ -174,37 +173,16 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
         Ok(Some(descriptor.registry_key))
     }
 
-    // ---------- Roles ----------
-
-    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
-        self.member_roles_impl(community_id)
-    }
-
-    fn read_governance_role_assignments(
-        &self,
-        community_id: &str,
-    ) -> HashMap<PseudonymKey, HashSet<RoleId>> {
-        self.governance_role_assignments_impl(community_id)
-    }
-
-    fn read_my_role_ids(&self, community_id: &str) -> Vec<u32> {
-        self.my_role_ids_impl(community_id)
-    }
-
     fn apply_member_state_update(
         &self,
-        community_id: &str,
-        merged_member_roles: HashMap<String, Vec<u32>>,
+        _community_id: &str,
         _known_member_keys: HashSet<String>,
         _banned_members: &HashSet<String>,
     ) {
-        // Only the role map is stored: the known-member set and ban list
-        // are already covered — the roster is replaced wholesale by
-        // `persist_discovered_member_rows`, and bans come from the
-        // governance CRDT rather than a second local copy.
-        self.ctx
-            .communities
-            .set_member_roles(community_id, merged_member_roles);
+        // Nothing to store: the roster is replaced wholesale by
+        // `persist_discovered_member_rows`, bans come from the governance
+        // CRDT, and member roles are the merged role assignments every
+        // reader derives (`CommunityStore::member_role_ids`, plan E3.2 D15).
     }
 
     // ---------- Gossip overlay ----------

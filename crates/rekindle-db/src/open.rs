@@ -205,7 +205,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// friendship ends.
 /// 121: `app_settings.notification_content` (E5.2): what an OS notification
 /// shows (name and message, name only, or nothing).
-pub const SCHEMA_VERSION: i64 = 121;
+/// 122 (plan E3.2, review RV7 M1): `communities.my_role_ids` and
+/// `community_members.role_ids` are dropped. Role ids, ours and every
+/// member's, are the merged governance's role assignments; no row caches
+/// them.
+pub const SCHEMA_VERSION: i64 = 122;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

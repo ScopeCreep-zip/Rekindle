@@ -9,7 +9,6 @@ fn membership() -> CommunityMembership {
     CommunityMembership {
         governance_key: "gov-key".into(),
         pseudonym_key: "cd".repeat(32),
-        role_ids: vec![0, 7],
         registry_key: "reg-key".into(),
         slot_index: 3,
         community_name: "Team".into(),
@@ -80,9 +79,6 @@ async fn writes_come_back_in_the_next_projection() {
         .unwrap()
         .unwrap();
     assert_eq!(member_record_owner.as_slice(), b"mr-kp");
-    update_roles(&session, &f.db, &communities, "gov-key", |roles| {
-        roles.push(9);
-    });
     // The community store holds what the governance adapter reads (B2b).
     {
         let map = communities.map().read();
@@ -92,7 +88,9 @@ async fn writes_come_back_in_the_next_projection() {
             Some("cd".repeat(32).as_str())
         );
         assert_eq!(stored.governance_clock, 12);
-        assert_eq!(stored.my_role_ids, vec![0, 7, 9]);
+        // Our role ids are the projection's alone (review RV7 M1): a
+        // membership brings none.
+        assert!(stored.my_role_ids.is_empty());
         assert_eq!(stored.my_subkey_index, Some(3));
         assert_eq!(stored.my_segment_index, Some(1));
         assert_eq!(stored.slot_seed.as_deref(), Some("09".repeat(32).as_str()));
@@ -125,7 +123,6 @@ async fn writes_come_back_in_the_next_projection() {
     assert_eq!(m.slot_index, 3);
     assert_eq!(m.segment_index, Some(1));
     assert_eq!(m.lamport_counter, 12);
-    assert_eq!(m.role_ids, vec![0, 7, 9]);
     assert_eq!(m.community_name, "Team");
     let bob = &reloaded.friends["bob"];
     assert_eq!(bob.mailbox_dht_key.as_deref(), Some("bob-mailbox"));

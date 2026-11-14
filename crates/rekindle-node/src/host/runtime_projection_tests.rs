@@ -23,7 +23,6 @@ async fn a_rebuild_result_projects_channels_and_roles_into_the_store_and_sqlite(
             &rekindle_db::repo::communities::NewCommunity {
                 id: "c1",
                 name: "C",
-                my_role_ids: &[],
                 joined_at: 1,
                 dht_owner_keypair: None,
                 my_pseudonym_key: "",

@@ -391,32 +391,15 @@ impl CommunityPresenceDeps for PresenceAdapter {
         super::scan::scan_segment_raw(&self.state, registry_key, max_subkey, skip_subkey).await
     }
 
-    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
-        super::member_state::read_existing_member_roles(&self.state, community_id)
-    }
-
-    fn read_governance_role_assignments(
-        &self,
-        community_id: &str,
-    ) -> HashMap<rekindle_types::id::PseudonymKey, HashSet<rekindle_types::id::RoleId>> {
-        super::member_state::read_governance_role_assignments(&self.state, community_id)
-    }
-
-    fn read_my_role_ids(&self, community_id: &str) -> Vec<u32> {
-        super::member_state::read_my_role_ids(&self.state, community_id)
-    }
-
     fn apply_member_state_update(
         &self,
         community_id: &str,
-        merged_member_roles: HashMap<String, Vec<u32>>,
         known_member_keys: HashSet<String>,
         banned_members: &HashSet<String>,
     ) {
         super::member_state::apply_member_state_update(
             &self.state,
             community_id,
-            merged_member_roles,
             known_member_keys,
             banned_members,
         );

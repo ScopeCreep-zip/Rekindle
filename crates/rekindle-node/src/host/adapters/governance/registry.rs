@@ -2,7 +2,7 @@
 //! E3.1 B2d), on both hosts: the members a create or join discovered in the
 //! registry, and the registry owner keypair hydration recovers from the vault.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use rekindle_governance_runtime::deps::DiscoveredMember;
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
@@ -21,19 +21,10 @@ impl HostGovernance {
         community_id: &str,
         members: &[DiscoveredMember],
     ) {
-        let roles: HashMap<String, Vec<u32>> = members
-            .iter()
-            .map(|m| (hex::encode(m.presence.pseudonym_key.0), m.role_ids.clone()))
-            .collect();
         let rows: Vec<_> = members
             .iter()
             .map(|m| {
-                rekindle_presence::discovered_member_row(
-                    &m.presence,
-                    m.segment_index,
-                    m.slot_index,
-                    &roles,
-                )
+                rekindle_presence::discovered_member_row(&m.presence, m.segment_index, m.slot_index)
             })
             .collect();
         let candidates = rows.iter().map(|r| r.pseudonym_key.clone()).collect();

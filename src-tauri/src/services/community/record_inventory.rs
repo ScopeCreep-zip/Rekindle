@@ -139,7 +139,6 @@ mod tests {
             registry_owner_keypair: None,
             slot_seed: None,
             known_members: HashSet::new(),
-            member_roles: HashMap::new(),
             channel_sequences: HashMap::new(),
             pending_syncs: HashMap::new(),
             watched_records: HashSet::new(),

@@ -1,4 +1,4 @@
-//! Member rows: owner scoping, rescans, roles, onboarding, timeouts.
+//! Member rows: owner scoping, rescans, no cached roles, onboarding, timeouts.
 use super::*;
 use crate::repo::communities::{self, NewCommunity};
 use crate::repo::fixture::{self, OWNER};
@@ -19,7 +19,6 @@ fn conn_with_community() -> Connection {
             &NewCommunity {
                 id: "c1",
                 name: "One",
-                my_role_ids: &[0, 1],
                 joined_at: 0,
                 dht_owner_keypair: None,
                 my_pseudonym_key: "me",
@@ -38,7 +37,6 @@ fn discovered(pseudonym_key: &str, name: &str, subkey: u32) -> DiscoveredMemberR
     DiscoveredMemberRow {
         pseudonym_key: pseudonym_key.into(),
         display_name: Some(name.into()),
-        role_ids: vec![0, 1],
         subkey_index: subkey,
         segment_index: 0,
         bio: None,
@@ -82,42 +80,39 @@ fn a_rescan_updates_profile_fields_but_keeps_joined_at() {
 }
 
 #[test]
-fn roles_are_added_removed_and_dropped_everywhere() {
+fn no_member_or_community_row_stores_role_ids() {
+    // A member's roles, and ours, are the merged governance's role
+    // assignments (plan E3.2, D15; review RV7 M1): no row caches them.
     let conn = conn_with_community();
-    insert_if_absent(&conn, OWNER, "c1", "bob", "Bob", &[0, 1], 1).unwrap();
-    insert_if_absent(&conn, OWNER, "c1", "me", "Me", &[0, 1], 1).unwrap();
-    add_role(&conn, OWNER, "c1", "bob", 5).unwrap();
-    add_role(&conn, OWNER, "c1", "bob", 5).unwrap();
-    add_role(&conn, OWNER, "c1", "ghost", 5).unwrap();
+    insert_if_absent(&conn, OWNER, "c1", "bob", "Bob", 1).unwrap();
     assert_eq!(
-        role_ids(&conn, OWNER, "c1", "bob").unwrap(),
-        Some(vec![0, 1, 5])
+        roster(&conn, OWNER, "c1").unwrap(),
+        [RosterRow {
+            pseudonym_key: "bob".into(),
+            display_name: Some("Bob".into()),
+        }]
     );
-    assert_eq!(role_ids(&conn, OWNER, "c1", "ghost").unwrap(), None);
-    remove_role(&conn, OWNER, "c1", "bob", 0).unwrap();
-    assert_eq!(
-        role_ids(&conn, OWNER, "c1", "bob").unwrap(),
-        Some(vec![1, 5])
-    );
-    remove_role_everywhere(&conn, OWNER, "c1", 1).unwrap();
-    assert_eq!(role_ids(&conn, OWNER, "c1", "bob").unwrap(), Some(vec![5]));
-    assert_eq!(role_ids(&conn, OWNER, "c1", "me").unwrap(), Some(vec![0]));
-    assert_eq!(
-        communities::my_role_ids(&conn, OWNER, "c1").unwrap(),
-        Some(vec![0])
-    );
-    assert_eq!(
-        communities::my_role_ids(&conn, OTHER, "c1").unwrap(),
-        Some(vec![0, 1])
-    );
+    for table in ["community_members", "communities"] {
+        let columns: Vec<String> = conn
+            .prepare(&format!("SELECT name FROM pragma_table_info('{table}')"))
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(
+            !columns.iter().any(|c| c.contains("role_ids")),
+            "{table}: {columns:?}"
+        );
+    }
 }
 
 #[test]
 fn onboarding_from_another_device_marks_only_our_own_row() {
     let conn = conn_with_community();
-    insert_if_absent(&conn, OWNER, "c1", "me", "Me", &[0], 1).unwrap();
-    insert_if_absent(&conn, OWNER, "c1", "bob", "Bob", &[0], 1).unwrap();
-    insert_if_absent(&conn, OTHER, "c1", "me", "Me", &[0], 1).unwrap();
+    insert_if_absent(&conn, OWNER, "c1", "me", "Me", 1).unwrap();
+    insert_if_absent(&conn, OWNER, "c1", "bob", "Bob", 1).unwrap();
+    insert_if_absent(&conn, OTHER, "c1", "me", "Me", 1).unwrap();
     set_my_onboarding_complete(&conn, OWNER, "c1").unwrap();
     let done = |owner: &str, pseudonym: &str| -> i64 {
         conn.query_row(

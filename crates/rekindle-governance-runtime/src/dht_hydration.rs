@@ -25,7 +25,7 @@
 
 use crate::event::GovernanceRuntimeEvent;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
-use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
+use rekindle_types::id::ChannelId;
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
 
@@ -160,7 +160,7 @@ fn channel_id_from_hex(id_hex: &str) -> Option<ChannelId> {
 }
 
 /// One community's member state from the DHT (plan E3.1 C2c: the Host's
-/// per-community login stage, which a reconnect or a wake re-runs): our slot and roles from its registry, its slot keypair, and
+/// per-community login stage, which a reconnect or a wake re-runs): our slot from its registry, its slot keypair, and
 /// its registry keypair from the vault when login did not load it.
 pub async fn hydrate_one_community<D: GovernanceRuntimeDeps>(deps: &D, community: &str) {
     let registry = deps
@@ -171,18 +171,7 @@ pub async fn hydrate_one_community<D: GovernanceRuntimeDeps>(deps: &D, community
         let gov_state = deps.governance_state(community_id).unwrap_or_default();
         if let Some(subkey) = crate::roster::find_my_slot(deps, registry_key, pk, &gov_state).await
         {
-            let role_ids = gov_state
-                .role_assignments
-                .get(&PseudonymKey::from_hex_lossy(pk))
-                .map(|roles| {
-                    roles
-                        .iter()
-                        .copied()
-                        .map(RoleId::to_legacy_u32)
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            deps.apply_recovered_member_state(community_id, subkey, &role_ids);
+            deps.apply_recovered_member_state(community_id, subkey);
         }
     }
     if registry.is_some() {

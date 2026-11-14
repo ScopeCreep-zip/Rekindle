@@ -45,15 +45,6 @@ fn random_channel_id(rng: &dyn rekindle_utils::RandomSource) -> ChannelId {
     ChannelId(rekindle_utils::random::id_bytes_16_from(rng))
 }
 
-/// Map a `RoleId` to the legacy u32 form the src-tauri `RoleDefinition`
-/// uses for `my_role_ids`. Mirrors `super::join::helpers::role_id_to_legacy_u32`
-/// in src-tauri — first 4 LE bytes of the 16-byte RoleId.
-fn role_id_to_legacy_u32(role_id: &RoleId) -> u32 {
-    let mut bytes = [0u8; 4];
-    bytes.copy_from_slice(&role_id.0[..4]);
-    u32::from_le_bytes(bytes)
-}
-
 /// The genesis ops' bodies, the creator's ops #0…n in this order. The
 /// admission mode is not among them: `GenesisCert.policy` pins it (plan
 /// E3.2 decision (b)).
@@ -350,7 +341,6 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     };
     deps.insert_community_mek(&anchor_key, mek_snapshot.clone());
 
-    let creator_role_ids = vec![0u32, role_id_to_legacy_u32(&OWNER_ROLE_ID)];
     let insert = CommunityInsert {
         id: anchor_key.clone(),
         name: name.to_string(),
@@ -363,7 +353,6 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         my_pseudonym_hex: my_pseudo_hex.clone(),
         mek: mek_snapshot,
         governance_state: gov_state,
-        creator_role_ids: creator_role_ids.clone(),
         genesis_cert: cert_bytes,
         member_record: member_key.clone(),
         member_record_owner_keypair: k_m_text,
@@ -413,7 +402,6 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
             segment_index: 0,
             slot_index: CREATOR_SLOT,
             presence: presence.clone(),
-            role_ids: creator_role_ids,
         }],
     );
 
@@ -441,25 +429,6 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn role_id_to_legacy_u32_owner() {
-        // Owner role is all-0xFF → u32 first 4 LE bytes = 0xFFFFFFFF.
-        assert_eq!(role_id_to_legacy_u32(&OWNER_ROLE_ID), u32::MAX);
-    }
-
-    #[test]
-    fn role_id_to_legacy_u32_everyone() {
-        // @everyone is all-zero → u32 = 0.
-        assert_eq!(role_id_to_legacy_u32(&RoleId([0u8; 16])), 0);
-    }
-
-    #[test]
-    fn role_id_to_legacy_u32_arbitrary_bytes() {
-        let mut bytes = [0u8; 16];
-        bytes[..4].copy_from_slice(&0xDEAD_BEEFu32.to_le_bytes());
-        assert_eq!(role_id_to_legacy_u32(&RoleId(bytes)), 0xDEAD_BEEF);
-    }
 
     #[test]
     fn random_channel_id_is_16_bytes_and_random() {

@@ -1,9 +1,8 @@
 //! Reads over session and runtime state.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use rekindle_presence::deps::{PresenceCredentials, SegmentDescriptor, SelfPresenceSnapshot};
-use rekindle_types::id::{PseudonymKey, RoleId};
 
 use super::DaemonPresenceAdapter;
 
@@ -162,31 +161,6 @@ impl DaemonPresenceAdapter {
             .communities
             .governance_state(community_id)
             .map(|s| s.bans.iter().map(|p| hex::encode(p.0)).collect())
-            .unwrap_or_default()
-    }
-
-    pub(super) fn member_roles_impl(&self, community_id: &str) -> HashMap<String, Vec<u32>> {
-        self.ctx.communities.member_roles(community_id)
-    }
-
-    pub(super) fn governance_role_assignments_impl(
-        &self,
-        community_id: &str,
-    ) -> HashMap<PseudonymKey, HashSet<RoleId>> {
-        self.ctx
-            .communities
-            .governance_state(community_id)
-            .map(|s| s.role_assignments.clone())
-            .unwrap_or_default()
-    }
-
-    pub(super) fn my_role_ids_impl(&self, community_id: &str) -> Vec<u32> {
-        self.ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.community(community_id))
-            .map(|m| m.role_ids.clone())
             .unwrap_or_default()
     }
 

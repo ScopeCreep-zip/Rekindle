@@ -206,7 +206,6 @@ mod tests {
             &NewCommunity {
                 id: "c1",
                 name: "C",
-                my_role_ids: &[0],
                 joined_at: 1,
                 dht_owner_keypair: None,
                 my_pseudonym_key: "p",

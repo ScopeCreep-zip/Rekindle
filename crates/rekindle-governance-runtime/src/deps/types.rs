@@ -105,7 +105,6 @@ pub struct DiscoveredMember {
     pub segment_index: u32,
     pub slot_index: u32,
     pub presence: rekindle_types::presence::MemberPresence,
-    pub role_ids: Vec<u32>,
 }
 
 /// Fields needed to insert a freshly-created community (origin flow)
@@ -127,7 +126,6 @@ pub struct CommunityInsert {
     pub my_pseudonym_hex: String,
     pub mek: MekSnapshot,
     pub governance_state: GovernanceState,
-    pub creator_role_ids: Vec<u32>,
     /// The pinned `GenesisCert` as `A`/0 holds it
     /// (`rekindle_codec::governance_op::genesis::encode_genesis`), stored
     /// in `communities.genesis_cert`.

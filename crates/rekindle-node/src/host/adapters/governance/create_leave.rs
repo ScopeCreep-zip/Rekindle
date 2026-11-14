@@ -15,9 +15,6 @@ use rekindle_types::id::ChannelId;
 
 use super::HostGovernance;
 
-/// The creator's roles: the owner role and `@everyone`.
-const CREATOR_ROLE_IDS: [u32; 2] = [0, u32::MAX];
-
 /// How long a left community's tasks get to stop.
 const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
@@ -74,7 +71,6 @@ impl HostGovernance {
                 &cid,
                 &pseudonym,
                 &display_name,
-                &CREATOR_ROLE_IDS,
                 joined_at,
             )
         })

@@ -133,6 +133,7 @@ pub(crate) fn handle_info(
         member_count,
         channels,
         roles,
+        ctx.communities.my_role_ids(&membership.governance_key),
         meta,
     ))
 }

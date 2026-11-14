@@ -40,7 +40,6 @@ pub mod presence_keys;
 pub mod read_markers;
 pub mod received_dm;
 pub mod retry_requests;
-mod role_ids;
 pub mod search;
 pub mod send_log;
 pub mod session_reset_requests;

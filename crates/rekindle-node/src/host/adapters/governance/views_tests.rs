@@ -31,8 +31,14 @@ fn the_view_names_our_role_and_carries_our_standing() {
     let mut state = CommunityState::new("gk");
     state.name = "Raiders".into();
     state.roles = vec![owner_role()];
-    state.my_role_ids = vec![0];
     state.my_pseudonym_key = Some("ab".repeat(32));
+    // Our role ids are the projection's (review RV7 M1).
+    let mut gov = rekindle_governance::state::GovernanceState::default();
+    gov.role_assignments.insert(
+        rekindle_types::id::PseudonymKey([0xab; 32]),
+        std::collections::HashSet::from([rekindle_types::id::RoleId::from_legacy_u32(0)]),
+    );
+    crate::host::adapters::governance::projection::project_my_roles(&mut state, &gov);
     state.mek_generation = 3;
     let view = community_view(&state);
     assert_eq!(view.name, "Raiders");

@@ -123,9 +123,6 @@ pub struct CommunityMembership {
     /// Our pseudonym public key for this community (hex).
     pub pseudonym_key: String,
 
-    /// Our role IDs in this community.
-    pub role_ids: Vec<u32>,
-
     /// Member registry DHT key for this community.
     pub registry_key: String,
 
@@ -185,7 +182,6 @@ mod tests {
         CommunityMembership {
             governance_key: "VLD0:gov:key".into(),
             pseudonym_key: "pseudonym_hex".into(),
-            role_ids: vec![1, 2],
             registry_key: "VLD0:reg:key".into(),
             slot_index: 3,
             community_name: "dev-team".into(),

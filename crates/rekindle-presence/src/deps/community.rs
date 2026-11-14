@@ -280,34 +280,15 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
         skip_subkey: Option<u32>,
     ) -> Vec<(u32, Vec<u8>)>;
 
-    /// Snapshot the in-memory `community.member_roles` map for
-    /// `community_id` (read-only). The crate orchestrator composes
-    /// this with the governance assignments + local role-ids to
-    /// produce the merged map via
-    /// [`crate::community::role_merge::compute_merged_roles`].
-    fn read_existing_member_roles(&self, community_id: &str) -> HashMap<String, Vec<u32>>;
-
-    /// Snapshot the merged-governance `role_assignments` map
-    /// (keyed by pseudonym) for `community_id`. Returns empty when
-    /// the community has no governance state loaded yet.
-    fn read_governance_role_assignments(
-        &self,
-        community_id: &str,
-    ) -> HashMap<rekindle_types::id::PseudonymKey, HashSet<rekindle_types::id::RoleId>>;
-
-    /// Local user's role-ids for `community_id` (the authoritative
-    /// override that overrides governance-state lag).
-    fn read_my_role_ids(&self, community_id: &str) -> Vec<u32>;
-
     /// Apply the post-scan member-state update: drop bans from
     /// every in-memory collection, extend `known_members` with the
-    /// freshly-scanned keys, replace `member_roles` with the
-    /// merged map. The crate orchestrator computes the inputs;
-    /// this method does the AppState write under one lock.
+    /// freshly-scanned keys. Member roles are the merged governance's
+    /// role assignments, which no scan writes. The crate orchestrator
+    /// computes the inputs; this method does the state write under one
+    /// lock.
     fn apply_member_state_update(
         &self,
         community_id: &str,
-        merged_member_roles: HashMap<String, Vec<u32>>,
         known_member_keys: HashSet<String>,
         banned_members: &HashSet<String>,
     );

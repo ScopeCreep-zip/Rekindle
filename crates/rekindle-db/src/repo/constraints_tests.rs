@@ -78,10 +78,8 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("messages", "conversation_type", "'group'"),
     ("messages", "send_state", "'sending'"),
     ("messages", "attachment_json", "'not json'"),
-    ("communities", "my_role_ids", "'[0'"),
     ("communities", "presence_policy", "'{'"),
     ("channels", "channel_type", "'unknown'"),
-    ("community_members", "role_ids", "'0,1'"),
     ("community_members", "badges", "'early'"),
     ("channel_overwrites", "target_type", "'everyone'"),
     ("audit_entries", "payload_json", "'}'"),
@@ -174,15 +172,8 @@ fn a_corrupt_json_or_enum_value_is_a_read_error() {
     let conn = seeded();
     conn.pragma_update(None, "ignore_check_constraints", true)
         .unwrap();
-    conn.execute("UPDATE communities SET my_role_ids = 'x'", [])
+    conn.execute("UPDATE communities SET presence_policy = '{\"no\": 1'", [])
         .unwrap();
-    assert!(crate::repo::communities::load_all(&conn, OWNER).is_err());
-
-    conn.execute(
-        "UPDATE communities SET my_role_ids = '[0]', presence_policy = '{\"no\": 1'",
-        [],
-    )
-    .unwrap();
     let err = crate::repo::communities::load_all(&conn, OWNER)
         .unwrap_err()
         .to_string();
@@ -196,11 +187,4 @@ fn a_corrupt_json_or_enum_value_is_a_read_error() {
         .unwrap_err()
         .to_string();
     assert!(err.contains("badges"), "{err}");
-
-    conn.execute(
-        "UPDATE community_members SET badges = '[]', role_ids = '0'",
-        [],
-    )
-    .unwrap();
-    assert!(crate::repo::members::roster(&conn, OWNER, "c").is_err());
 }

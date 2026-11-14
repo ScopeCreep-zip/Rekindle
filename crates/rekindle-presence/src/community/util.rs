@@ -3,24 +3,10 @@
 //! Decomposed out of `presence_poll_tick` so the orchestrator stays
 //! under the per-file LoC cap (Invariant 1).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::hash::BuildHasher;
 
-use rekindle_types::id::RoleId;
 use rekindle_utils::RandomSource;
-
-/// Convert a governance-state set of `RoleId`s into the sorted
-/// `Vec<u32>` shape the in-memory member roles map uses. Stable
-/// ordering keeps SQLite role_ids_json deterministic.
-#[must_use]
-pub fn role_ids_from_governance<S: BuildHasher>(assigned: &HashSet<RoleId, S>) -> Vec<u32> {
-    let mut ids: Vec<u32> = assigned
-        .iter()
-        .map(|role_id| u32::from_le_bytes([role_id.0[0], role_id.0[1], role_id.0[2], role_id.0[3]]))
-        .collect();
-    ids.sort_unstable();
-    ids
-}
 
 /// Architecture §3 — pick a uniformly-random `d`-sized subset of
 /// the online members for the gossip fan-out, drawn from `rng` (the
@@ -61,27 +47,6 @@ where
 mod tests {
     use super::*;
     use rekindle_utils::OsRandom;
-
-    #[test]
-    fn role_ids_from_governance_sorts_ascending() {
-        let mut set: HashSet<RoleId> = HashSet::new();
-        let role = |first: u8| {
-            let mut bytes = [0u8; 16];
-            bytes[0] = first;
-            RoleId(bytes)
-        };
-        set.insert(role(7));
-        set.insert(role(2));
-        set.insert(role(5));
-        let ids = role_ids_from_governance(&set);
-        assert_eq!(ids, vec![2, 5, 7]);
-    }
-
-    #[test]
-    fn role_ids_from_governance_empty_returns_empty() {
-        let set: HashSet<RoleId> = HashSet::new();
-        assert!(role_ids_from_governance(&set).is_empty());
-    }
 
     #[test]
     fn random_peer_sample_empty_set_returns_empty() {

@@ -9,9 +9,6 @@ use rekindle_types::invite::InviteLink;
 
 use super::HostGovernance;
 
-/// A joiner's roles before governance grants any: none.
-const JOINER_ROLE_IDS: [u32; 0] = [];
-
 /// One lock per community a join is in flight for (review RV7 M3): a
 /// second join of it waits for the first and answers its membership.
 #[derive(Default)]
@@ -53,7 +50,6 @@ impl HostGovernance {
         let membership = rekindle_transport::session::CommunityMembership {
             governance_key: id.clone(),
             pseudonym_key: pseudonym.clone(),
-            role_ids: Vec::new(),
             slot_index: outcome.claimed.local_subkey,
             registry_key: outcome.claimed.registry_key.clone(),
             community_name: outcome.invite.community_name.clone(),
@@ -317,7 +313,6 @@ impl HostGovernance {
                 &cid,
                 &pk,
                 &display_name,
-                &JOINER_ROLE_IDS,
                 joined_at,
             )
         })
