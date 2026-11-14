@@ -69,6 +69,23 @@ pub fn enqueue_with_echo(
     Ok(seq)
 }
 
+/// Store `rows`, in order, each at the end of its stream with no echo, in
+/// one transaction: all or none (an invite's `InviteCreated` and its
+/// revoke-unless-landed row, review RV4 M3). Returns each row's
+/// `stream_seq`.
+///
+/// # Errors
+/// A write failed; nothing is stored.
+pub fn enqueue_all(conn: &Connection, rows: &[NewRow<'_>]) -> rusqlite::Result<Vec<i64>> {
+    let tx = conn.unchecked_transaction()?;
+    let seqs = rows
+        .iter()
+        .map(|row| append(&tx, row, None))
+        .collect::<rusqlite::Result<Vec<i64>>>()?;
+    tx.commit()?;
+    Ok(seqs)
+}
+
 /// Store `row` at the end of its stream, with its local echo if any (written
 /// `queued` under the row's client id and seq), inside the caller's
 /// transaction (a friend's removal stores its `Unfriended` row with the

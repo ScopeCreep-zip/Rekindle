@@ -149,6 +149,11 @@ async fn a_governance_command_answers_pending_within_the_bound() {
 /// answers the same membership and mints no second record. Once the fault
 /// lifts the op lands: a later op of the joiner, behind it on the same
 /// stream, lands.
+///
+/// Revert run (review RV7 L2, 2026-11-14): with the guard off
+/// (`already_joined` never answering) the repeated join runs the stages
+/// again and is refused (a second member record's set lands below
+/// consensus), so it fails before the count of minted ops is reached.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
     let mut community = Community::create(2, 229).await;
@@ -160,6 +165,7 @@ async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
     let join = IpcRequest::Community(CommunityRequest::Lifecycle(
         LifecycleRequest::CommunityJoin { invite: link },
     ));
+    let events = community.nodes[1].events().await;
     let joined = community.nodes[1].ok(join.clone()).await;
     assert_eq!(joined["pending"], true, "the join is pending: {joined}");
     let again = community.nodes[1].ok(join).await;
@@ -167,6 +173,27 @@ async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
         (&again["slot"], &again["segment"], &again["pending"]),
         (&joined["slot"], &joined["segment"], &joined["pending"]),
         "a repeated join answers the same membership: {joined} / {again}"
+    );
+    // Each run of the join stages mints one member record and its one
+    // `MemberJoined` (RV7 review L2): the repeat minted neither.
+    let minted = std::cell::RefCell::new(Vec::<String>::new());
+    events.any(|e| {
+        if let rekindle_types::subscription_events::SubscriptionEvent::Governance(
+            rekindle_types::subscription_events::GovernanceEvent::OpPublication { op, .. },
+        ) = e
+        {
+            let mut minted = minted.borrow_mut();
+            if !minted.contains(op) {
+                minted.push(op.clone());
+            }
+        }
+        false
+    });
+    let minted = minted.into_inner();
+    assert_eq!(
+        minted.len(),
+        1,
+        "one MemberJoined and one member record: {minted:?}"
     );
     let listed = community.nodes[1]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(

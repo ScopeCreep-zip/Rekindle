@@ -64,16 +64,25 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     write(deps, community_id, entry, OpLanding::FirstAttempt).await
 }
 
-/// [`write_entry`], answering only once the op landed on `M`/2 with our
-/// frontier on `M`/3, else [`GovernanceRuntimeError::NotYetPublished`]
-/// with the op queued: for what a joiner must find on the DHT before we
-/// hand it out, the invite link (plan E3.2 S6 (4)).
-pub async fn write_entry_landed<D: GovernanceRuntimeDeps>(
+/// [`write_entry`] for an invite's `InviteCreated` (of `invite_id`),
+/// answering only once the op landed on `M`/2 with our frontier on `M`/3,
+/// else [`GovernanceRuntimeError::NotYetPublished`] with the op queued: a
+/// joiner must find it on the DHT before we hand the link out (plan E3.2
+/// S6 (4)). Its revoke is queued with it, in one transaction, and goes
+/// unless the link is handed out (review RV4 M3, [`OpLanding::InviteLanded`]).
+pub async fn write_invite_created<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,
+    invite_id: [u8; 16],
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
-    write(deps, community_id, entry, OpLanding::Landed).await
+    write(
+        deps,
+        community_id,
+        entry,
+        OpLanding::InviteLanded { invite_id },
+    )
+    .await
 }
 
 /// [`write_entry`], returning once the op is queued on our stream, behind

@@ -6,6 +6,7 @@ import GameServerList from "../../components/community/GameServerList";
 import ForumChannelView from "../../components/community/ForumChannelView";
 import StagePanel from "../../components/community/StagePanel";
 import WelcomeScreen from "../../components/community/WelcomeScreen";
+import GovernancePublicationStatus from "../../components/community/GovernancePublicationStatus";
 import { communityState } from "../../stores/community.store";
 import {
   handleAddGameServer,
@@ -29,6 +30,9 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
   const vm = props.vm;
   return (
     <div class="community-main" id="main-content" tabindex="-1">
+      <Show when={vm.activeCommunity()}>
+        {(community) => <GovernancePublicationStatus communityId={community().id} />}
+      </Show>
       <Show when={vm.showServers() && vm.activeCommunity()}>
         <GameServerList
           servers={vm.gameServers()}

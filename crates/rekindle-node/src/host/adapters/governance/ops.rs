@@ -41,6 +41,27 @@ fn fate_of(state: OpState) -> OpFate {
     }
 }
 
+/// The verdicts of `mine`'s ops among `ops`, by hash (hex).
+fn own_states(ops: Vec<StoredOp>, mine: Option<&str>) -> Vec<(String, OpState)> {
+    ops.into_iter()
+        .filter(|op| mine == Some(op.author.as_str()))
+        .map(|op| (hex::encode(op.op_hash), op.state))
+        .collect()
+}
+
+fn outcome_of(
+    published: &crate::host::adapters::outbox::Published,
+) -> rekindle_governance_runtime::OpOutcome {
+    match published {
+        crate::host::adapters::outbox::Published::Landed => {
+            rekindle_governance_runtime::OpOutcome::Landed
+        }
+        crate::host::adapters::outbox::Published::Queued(_) => {
+            rekindle_governance_runtime::OpOutcome::Pending
+        }
+    }
+}
+
 pub(super) fn pseudonym_of(hex_key: &str) -> Option<PseudonymKey> {
     let bytes = hex::decode(hex_key).ok()?;
     Some(PseudonymKey(<[u8; 32]>::try_from(bytes).ok()?))
@@ -180,22 +201,38 @@ impl HostGovernance {
     ) -> Result<(), GovernanceRuntimeError> {
         let (owner, db) = self.op_store()?;
         let community = community_id.to_owned();
-        db.call(move |conn| {
-            let tx = conn.unchecked_transaction()?;
-            for verdict in &fates {
-                repo::set_state(
-                    &tx,
-                    &owner,
-                    &community,
-                    &verdict.hash.0,
-                    state_of(verdict.fate),
-                    verdict.lamport,
-                )?;
-            }
-            tx.commit()
-        })
-        .await
-        .map_err(|e| adapter("governance op fates", e))
+        let mine = self
+            .ctx
+            .communities
+            .map()
+            .read()
+            .get(community_id)
+            .and_then(|c| c.my_pseudonym_key.clone());
+        let (before, after) = db
+            .call(move |conn| {
+                let tx = conn.unchecked_transaction()?;
+                let mine = mine.as_deref();
+                let before = own_states(repo::list(&tx, &owner, &community, None)?, mine);
+                for verdict in &fates {
+                    repo::set_state(
+                        &tx,
+                        &owner,
+                        &community,
+                        &verdict.hash.0,
+                        state_of(verdict.fate),
+                        verdict.lamport,
+                    )?;
+                }
+                let after = own_states(repo::list(&tx, &owner, &community, None)?, mine);
+                tx.commit()?;
+                Ok((before, after))
+            })
+            .await
+            .map_err(|e| adapter("governance op fates", e))?;
+        // An own op the converged set refuses (or reinstates) is announced
+        // (review RV7 M2).
+        self.announce_verdicts(community_id, &before, &after).await;
+        Ok(())
     }
 
     /// The op at `op_ref.author_seq` of its author's op log: chain seq
@@ -255,9 +292,9 @@ impl HostGovernance {
             .outbox
             .governance_ops()
             .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
-        let pending = match landing {
+        let outcome = match landing {
             rekindle_governance_runtime::OpLanding::FirstAttempt => {
-                let (published, landing) = ops
+                let published = ops
                     .publish_answer(
                         community_id,
                         &record,
@@ -269,16 +306,18 @@ impl HostGovernance {
                 if let crate::host::adapters::outbox::Published::Queued(reason) = &published {
                     tracing::info!(community = %community_id, %reason, "governance op pending, queued on the outbox");
                 }
-                landing
+                outcome_of(&published)
             }
             // Bounded by the command's deadline (the client's
-            // `NETWORK_COMMAND_DEADLINE`, answered before it): the invite link.
-            rekindle_governance_runtime::OpLanding::Landed => {
+            // `NETWORK_COMMAND_DEADLINE`, answered before it): the invite
+            // link, with its revoke-unless-landed row (review RV4 M3).
+            rekindle_governance_runtime::OpLanding::InviteLanded { invite_id } => {
                 let published = ops
-                    .publish_landed(
+                    .publish_invite_created(
                         community_id,
                         &record,
                         encoded.clone(),
+                        invite_id,
                         rekindle_types::config::NETWORK_ANSWER_DEADLINE,
                     )
                     .await
@@ -290,20 +329,14 @@ impl HostGovernance {
                     self.gossip_op(community_id, encoded);
                     return Err(GovernanceRuntimeError::NotYetPublished);
                 }
-                None
+                rekindle_governance_runtime::OpOutcome::Landed
             }
-            rekindle_governance_runtime::OpLanding::Queued => Some(
-                ops.queue_watched(community_id, &record, encoded.clone())
+            rekindle_governance_runtime::OpLanding::Queued => {
+                ops.queue(community_id, &record, encoded.clone())
                     .await
-                    .map_err(|e| adapter("queue op", e))?,
-            ),
-        };
-        let outcome = match pending {
-            Some(landing) => {
-                self.announce_landing(community_id, &encoded, landing);
+                    .map_err(|e| adapter("queue op", e))?;
                 rekindle_governance_runtime::OpOutcome::Pending
             }
-            None => rekindle_governance_runtime::OpOutcome::Landed,
         };
         self.gossip_op(community_id, encoded);
         Ok(outcome)
@@ -316,44 +349,6 @@ impl HostGovernance {
             &rekindle_codec::community::envelope::CommunityEnvelope::Control(
                 rekindle_codec::community::envelope::ControlPayload::GovernanceOp { op: encoded },
             ),
-        );
-    }
-
-    /// A `Pending` op (applied, gossiped, queued): announce it now, and its
-    /// landing when a retry lands it (`GovernanceEvent::OpPublication`), so
-    /// every frontend shows it pending with no retry (plan E3.2 S6b). A
-    /// landing the outbox stops before is announced by no one: the row
-    /// stays and lands after the next unlock.
-    fn announce_landing(
-        &self,
-        community_id: &str,
-        encoded: &[u8],
-        landing: tokio::sync::oneshot::Receiver<()>,
-    ) {
-        let Ok(decoded) = rekindle_codec::governance_op::decode_op(encoded) else {
-            return;
-        };
-        let op =
-            hex::encode(rekindle_governance::op::op_hash(&decoded.unsigned, &decoded.op.sig).0);
-        let publication = |landed| {
-            rekindle_types::subscription_events::SubscriptionEvent::Governance(
-                rekindle_types::subscription_events::GovernanceEvent::OpPublication {
-                    community: community_id.to_owned(),
-                    op: op.clone(),
-                    landed,
-                },
-            )
-        };
-        self.ctx.publish_event(publication(false));
-        let landed = publication(true);
-        let ctx = std::sync::Arc::clone(&self.ctx);
-        rekindle_governance_runtime::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
-            "governance op landing",
-            async move {
-                if landing.await.is_ok() {
-                    ctx.publish_event(landed);
-                }
-            },
         );
     }
 

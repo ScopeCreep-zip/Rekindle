@@ -284,6 +284,7 @@ impl Host {
             friend_store: RwLock::new(None),
             friend_stores: rekindle_transport::operations::friend::FriendStores::default(),
             outbox: crate::host::adapters::outbox::OutboxSlot::default(),
+            community_joins: super::adapters::governance::JoinLocks::default(),
             friend_watches: super::adapters::friends::FriendWatches::default(),
             own_profile_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),

@@ -302,6 +302,18 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
     return;
   }
 
+  if ("opPublication" in g) {
+    const { community, op, state } = g.opPublication;
+    // A landed op leaves the map; pending and failed ones stay shown.
+    setCommunityState("opPublications", community, (prev) => {
+      const next = { ...(prev ?? {}) };
+      if (state.kind === "landed") delete next[op];
+      else next[op] = state;
+      return next;
+    });
+    return;
+  }
+
   if ("inviteRevoked" in g || "inviteExpired" in g) {
     const { community, codeHash } = "inviteRevoked" in g ? g.inviteRevoked : g.inviteExpired;
     setCommunityState("communityInvites", community, (prev) =>

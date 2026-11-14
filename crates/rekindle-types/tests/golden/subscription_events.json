@@ -549,8 +549,11 @@
     "governance": {
       "opPublication": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
-        "landed": false,
-        "op": "8888888888888888888888888888888888888888888888888888888888888888"
+        "op": "8888888888888888888888888888888888888888888888888888888888888888",
+        "state": {
+          "kind": "failed",
+          "reason": "refused at convergence"
+        }
       }
     }
   },

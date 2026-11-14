@@ -28,7 +28,7 @@ pub use call::{CallEvent, DirectCallInfo};
 pub use channel::ChannelMessageEvent;
 pub use crypto::CryptoEvent;
 pub use friend::FriendEvent;
-pub use governance::GovernanceEvent;
+pub use governance::{GovernanceEvent, OpPublicationState};
 pub use group_dm::{GroupDmEvent, GroupDmMember};
 pub use membership::MembershipEvent;
 pub use network::{NetworkEvent, RouteAvailability};

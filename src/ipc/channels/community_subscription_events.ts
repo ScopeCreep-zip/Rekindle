@@ -186,6 +186,7 @@ export type GovernanceEvent =
   | { rolesChanged: { community: string; roles: RoleDisplay[] } }
   | { segmentsChanged: { community: string; segments: SegmentDescriptor[] } }
   | { bansChanged: { community: string } }
+  | { opPublication: { community: string; op: string; state: OpPublicationState } }
   | {
       inviteCreated: {
         community: string;
@@ -210,6 +211,14 @@ export type GovernanceEvent =
       };
     }
   | { governanceRebuilt: { community: string } };
+
+/** Where one of our governance ops stands, decided by the backend
+ *  (`GovernanceEvent::OpPublication`): pending while queued, landed once on
+ *  our member record and applied, failed with the community's reason. */
+export type OpPublicationState =
+  | { kind: "pending" }
+  | { kind: "landed" }
+  | { kind: "failed"; reason: string };
 
 /** Social events — reactions, pins, threads, scheduled events, servers. */
 export type SocialEvent =

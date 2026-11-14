@@ -6,7 +6,9 @@
 //! on `M`/2 and `M`/3 ([`Published::Landed`]), or with the reason it did
 //! not ([`Published::Queued`]: the row stays and the outbox retries it, so
 //! the op is ours and the action stands): a joiner's walk reads what is on
-//! the DHT.
+//! the DHT. An invite's `InviteCreated` goes in one transaction with its
+//! revoke-unless-landed row behind it (review RV4 M3), so no crash or
+//! storage error between the two leaves a live invite nobody was handed.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -17,15 +19,42 @@ use rekindle_outbox::{AttemptOutcome, Deadline, Entry, Outbox, OutboxRow, Stream
 use super::{HostOutbox, OutboxSlot, StreamSender};
 use crate::host::adapters::governance::HostGovernance;
 
-/// The payload: `community length (u16 BE) ‖ community ‖ record length
-/// (u16 BE) ‖ record ‖ encoded op`.
+/// A row's payload: `tag ‖ community length (u16 BE) ‖ community ‖ …`, the
+/// rest by the tag: [`OP_ROW`] `record length (u16 BE) ‖ record ‖ encoded
+/// op`, [`REVOKE_ROW`] the invite id (16 bytes).
+const OP_ROW: u8 = 0;
+const REVOKE_ROW: u8 = 1;
+
+/// The client id of `invite_id`'s revoke-unless-landed row.
+fn revoke_client_id(invite_id: [u8; 16]) -> String {
+    format!("revoke-unless-landed:{}", hex::encode(invite_id))
+}
+
+/// Whether `client_id` is an op row's (an op's hash), not a revoke row's.
+pub(super) fn is_op_row(client_id: &str) -> bool {
+    !client_id.starts_with("revoke-unless-landed:")
+}
+
+fn push_text(out: &mut Vec<u8>, text: &str) -> Option<()> {
+    out.extend_from_slice(&u16::try_from(text.len()).ok()?.to_be_bytes());
+    out.extend_from_slice(text.as_bytes());
+    Some(())
+}
+
 fn encode(community: &str, record: &str, op: &[u8]) -> Option<Vec<u8>> {
-    let mut out = Vec::with_capacity(4 + community.len() + record.len() + op.len());
-    for text in [community, record] {
-        out.extend_from_slice(&u16::try_from(text.len()).ok()?.to_be_bytes());
-        out.extend_from_slice(text.as_bytes());
-    }
+    let mut out = Vec::with_capacity(5 + community.len() + record.len() + op.len());
+    out.push(OP_ROW);
+    push_text(&mut out, community)?;
+    push_text(&mut out, record)?;
     out.extend_from_slice(op);
+    Some(out)
+}
+
+fn encode_revoke(community: &str, invite_id: [u8; 16]) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(19 + community.len());
+    out.push(REVOKE_ROW);
+    push_text(&mut out, community)?;
+    out.extend_from_slice(&invite_id);
     Some(out)
 }
 
@@ -35,10 +64,38 @@ fn take_text(payload: &[u8]) -> Option<(&str, &[u8])> {
     Some((text, payload.get(2 + len..)?))
 }
 
-fn decode(payload: &[u8]) -> Option<(&str, &str, &[u8])> {
-    let (community, rest) = take_text(payload)?;
-    let (record, op) = take_text(rest)?;
-    Some((community, record, op))
+/// A decoded row.
+#[derive(Debug, PartialEq, Eq)]
+enum RowBody<'a> {
+    Op {
+        community: &'a str,
+        record: &'a str,
+        op: &'a [u8],
+    },
+    RevokeUnlessLanded {
+        community: &'a str,
+        invite_id: [u8; 16],
+    },
+}
+
+fn decode(payload: &[u8]) -> Option<RowBody<'_>> {
+    let (&tag, rest) = payload.split_first()?;
+    let (community, rest) = take_text(rest)?;
+    match tag {
+        OP_ROW => {
+            let (record, op) = take_text(rest)?;
+            Some(RowBody::Op {
+                community,
+                record,
+                op,
+            })
+        }
+        REVOKE_ROW => Some(RowBody::RevokeUnlessLanded {
+            community,
+            invite_id: rest.try_into().ok()?,
+        }),
+        _ => None,
+    }
 }
 
 /// Whether a published op landed, for its publisher.
@@ -110,12 +167,6 @@ impl OpWaiters {
         }
     }
 
-    /// Whether an op of ours in `community` answered `Pending` this session
-    /// and has not landed yet.
-    fn pending(&self, community: &str) -> bool {
-        self.landing.lock().keys().any(|(c, _)| c == community)
-    }
-
     /// The outbox stopped: every publisher hears it (the rows stay).
     pub(super) fn clear(&self) {
         self.first.lock().clear();
@@ -140,9 +191,10 @@ pub struct GovernanceOps {
 
 impl GovernanceOps {
     /// Queue `op` (encoded) for `record`'s op log in `community` and wait
-    /// for its first attempt for at most `within` (plan E3.2 S6b, RV4 review M2): the
-    /// answer, and, when it is [`Published::Queued`], the landing to wait on
-    /// (it fires when a retry lands the op; dropped if the outbox stops).
+    /// for its first attempt for at most `within` (plan E3.2 S6b, RV4 review
+    /// M2). [`Published::Queued`]: the row stays and the outbox lands it; its
+    /// state reaches the frontends as `GovernanceEvent::OpPublication`
+    /// (`governance_publication`).
     ///
     /// # Errors
     /// The op does not decode, a key is too long, the storage failed, or
@@ -153,10 +205,9 @@ impl GovernanceOps {
         record: &str,
         op: Vec<u8>,
         within: std::time::Duration,
-    ) -> Result<(Published, Option<tokio::sync::oneshot::Receiver<()>>), String> {
+    ) -> Result<Published, String> {
         let (entry, client_id) = row(community, record, &op)?;
         let first = self.waiters.wait(community, &client_id);
-        let landed = self.waiters.wait_landed(community, &client_id);
         self.enqueue(entry, community, &client_id).await?;
         let first = match tokio::time::timeout(within, first).await {
             Ok(Ok(first)) => first,
@@ -164,26 +215,19 @@ impl GovernanceOps {
             Err(_) => Err(format!("no first attempt within {within:?}")),
         };
         Ok(match first {
-            Ok(()) => (Published::Landed, None),
-            Err(reason) => (Published::Queued(reason), Some(landed)),
+            Ok(()) => Published::Landed,
+            Err(reason) => Published::Queued(reason),
         })
     }
 
     /// Queue `op` and return once its row is stored, behind our earlier ops
-    /// on the stream, with the landing to wait on.
+    /// on the stream.
     ///
     /// # Errors
     /// As [`publish_answer`](Self::publish_answer).
-    pub async fn queue_watched(
-        &self,
-        community: &str,
-        record: &str,
-        op: Vec<u8>,
-    ) -> Result<tokio::sync::oneshot::Receiver<()>, String> {
+    pub async fn queue(&self, community: &str, record: &str, op: Vec<u8>) -> Result<(), String> {
         let (entry, client_id) = row(community, record, &op)?;
-        let landed = self.waiters.wait_landed(community, &client_id);
-        self.enqueue(entry, community, &client_id).await?;
-        Ok(landed)
+        self.enqueue(entry, community, &client_id).await
     }
 
     /// Queue `op` as [`publish_answer`](Self::publish_answer) does, and wait until it
@@ -214,11 +258,75 @@ impl GovernanceOps {
         }
     }
 
-    /// Whether an op of ours in `community` is pending: answered `Pending`
-    /// this session and not landed yet.
-    #[must_use]
-    pub fn pending(&self, community: &str) -> bool {
-        self.waiters.pending(community)
+    /// [`publish_landed`](Self::publish_landed) for an invite's
+    /// `InviteCreated` (`op`, of `invite_id`): its row and a
+    /// revoke-unless-landed row behind it are stored in one transaction, the
+    /// second due after `within`. Landed: the revoke row is discarded before
+    /// the answer, so the link is handed out only with no revoke behind it.
+    /// Otherwise it stays: whatever stops the caller (a crash, the outbox
+    /// stopping, a storage error writing the tombstone) the outbox revokes
+    /// the invite once its op lands (review RV4 M3).
+    ///
+    /// # Errors
+    /// As [`publish_answer`](Self::publish_answer), or the revoke row was not
+    /// discarded (the link is not handed out).
+    pub async fn publish_invite_created(
+        &self,
+        community: &str,
+        record: &str,
+        op: Vec<u8>,
+        invite_id: [u8; 16],
+        within: std::time::Duration,
+    ) -> Result<Published, String> {
+        let (entry, client_id) = row(community, record, &op)?;
+        let revoke_id = revoke_client_id(invite_id);
+        let revoke = Entry {
+            kind: StreamKind::GovernanceOp,
+            scope: community.to_owned(),
+            client_id: revoke_id.clone(),
+            payload: encode_revoke(community, invite_id).ok_or("community key too long")?,
+            deadline: Deadline::Horizon,
+        };
+        let created_row = self.outbox.new_row(entry);
+        let mut revoke_row = self.outbox.new_row(revoke);
+        let after = i64::try_from(within.as_millis()).unwrap_or(i64::MAX);
+        revoke_row.next_at = revoke_row.next_at.saturating_add(after);
+        let landed = self.waiters.wait_landed(community, &client_id);
+        if let Err(error) = self
+            .outbox
+            .deps()
+            .insert_all(vec![created_row, revoke_row])
+            .await
+        {
+            self.waiters.forget(community, &client_id);
+            return Err(error.to_string());
+        }
+        self.outbox.wake();
+        let waited = tokio::time::timeout(within, landed).await;
+        self.waiters.forget(community, &client_id);
+        match waited {
+            Ok(Ok(())) => {
+                self.outbox
+                    .discard(&revoke_id)
+                    .await
+                    .map_err(|e| format!("the invite's revoke row stays: {e}"))?;
+                Ok(Published::Landed)
+            }
+            Ok(Err(_)) => Err("the outbox stopped before the op landed".to_owned()),
+            Err(_) => Ok(Published::Queued(format!("not landed within {within:?}"))),
+        }
+    }
+
+    /// Whether the op `client_id` (its hash, hex) is still queued on its
+    /// stream: stored, not landed, not failed. Durable across restarts.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn is_queued(&self, client_id: &str) -> Result<bool, String> {
+        let row = rekindle_outbox::OutboxDeps::row(self.outbox.deps(), client_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(row.is_some_and(|r| rekindle_outbox::state::is_unsettled(r.state)))
     }
 
     async fn enqueue(&self, entry: Entry, community: &str, client_id: &str) -> Result<(), String> {
@@ -259,26 +367,48 @@ struct GovernanceOpSender {
 #[async_trait]
 impl StreamSender for GovernanceOpSender {
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
-        let Some((community, record, op)) = decode(&row.payload) else {
-            if let Some(community) = row.stream.split_once(':').map(|(_, scope)| scope) {
-                self.waiters
-                    .failed(community, "unreadable governance op row");
-            }
-            return AttemptOutcome::Wedged("unreadable governance op row".into());
-        };
-        match self
-            .governance
-            .append_own_op(community, record, op.to_vec())
-            .await
-        {
-            Ok(()) => {
-                self.waiters.landed(community, &row.client_id);
-                AttemptOutcome::Sent
-            }
-            Err(error) => {
-                tracing::debug!(community, %error, "governance op not appended yet");
-                self.waiters.failed(community, &error);
-                AttemptOutcome::Deferred
+        match decode(&row.payload) {
+            Some(RowBody::Op {
+                community,
+                record,
+                op,
+            }) => match self
+                .governance
+                .append_own_op(community, record, op.to_vec())
+                .await
+            {
+                Ok(()) => {
+                    self.waiters.landed(community, &row.client_id);
+                    AttemptOutcome::Sent
+                }
+                Err(error) => {
+                    tracing::debug!(community, %error, "governance op not appended yet");
+                    self.waiters.failed(community, &error);
+                    AttemptOutcome::Deferred
+                }
+            },
+            // Its `InviteCreated` landed ahead of it and the link was never
+            // handed out (the answer discards this row first): revoke it.
+            Some(RowBody::RevokeUnlessLanded {
+                community,
+                invite_id,
+            }) => match self
+                .governance
+                .revoke_unhanded_invite(community, invite_id)
+                .await
+            {
+                Ok(()) => AttemptOutcome::Sent,
+                Err(error) => {
+                    tracing::debug!(community, %error, "unhanded invite not revoked yet");
+                    AttemptOutcome::Deferred
+                }
+            },
+            None => {
+                if let Some(community) = row.stream.split_once(':').map(|(_, scope)| scope) {
+                    self.waiters
+                        .failed(community, "unreadable governance op row");
+                }
+                AttemptOutcome::Wedged("unreadable governance op row".into())
             }
         }
     }
@@ -313,7 +443,24 @@ mod tests {
         let payload = super::encode("VLD0:a", "VLD0:m", &[1, 2, 3]).unwrap();
         assert_eq!(
             super::decode(&payload),
-            Some(("VLD0:a", "VLD0:m", &[1u8, 2, 3][..]))
+            Some(super::RowBody::Op {
+                community: "VLD0:a",
+                record: "VLD0:m",
+                op: &[1u8, 2, 3][..],
+            })
         );
+    }
+
+    #[test]
+    fn a_revoke_row_payload_round_trips() {
+        let payload = super::encode_revoke("VLD0:a", [7; 16]).unwrap();
+        assert_eq!(
+            super::decode(&payload),
+            Some(super::RowBody::RevokeUnlessLanded {
+                community: "VLD0:a",
+                invite_id: [7; 16],
+            })
+        );
+        assert!(!super::is_op_row(&super::revoke_client_id([7; 16])));
     }
 }

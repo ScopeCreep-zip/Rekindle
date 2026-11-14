@@ -1,6 +1,7 @@
 import { Component, For, Show, createSignal } from "solid-js";
 import StatusDot from "../../status/StatusDot";
 import RoleTag from "../RoleTag";
+import GovernancePublicationStatus from "../GovernancePublicationStatus";
 import type { Community, Member, Role } from "../../../stores/community.store";
 import {
   handleRemoveCommunityMember,
@@ -104,6 +105,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
 
   return (
     <div class="settings-section">
+      <GovernancePublicationStatus communityId={props.community.id} />
       <Show when={expansionBannerVariant() !== null}>
         <div
           class={`plate-gate-banner plate-gate-banner-${expansionBannerVariant()}`}

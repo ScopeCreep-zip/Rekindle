@@ -50,6 +50,7 @@ pub(crate) mod game_servers;
 mod invite_expiry;
 mod invites;
 mod join;
+pub(crate) use join::JoinLocks;
 mod lifecycle;
 pub(crate) mod loader;
 pub(crate) mod login_stage;
@@ -65,6 +66,7 @@ pub(crate) mod onboarding_map;
 mod ops;
 pub(crate) mod pins;
 pub mod projection;
+mod publication;
 mod registry;
 pub(crate) mod search;
 

@@ -54,14 +54,18 @@ pub enum GovernanceEvent {
         categories: Vec<CategoryDisplay>,
     },
 
-    /// One of our governance ops answered `Pending` (`landed: false`, applied,
-    /// gossiped and queued on the governance-op stream) or has since landed
-    /// on our member record (`landed: true`); `op` is its hash, hex. The UI
-    /// shows a pending op as pending, with no retry (plan E3.2 S6b).
+    /// Where one of our governance ops stands (`op` is its hash, hex), from
+    /// the backend: `Pending` while it is applied, gossiped and queued on
+    /// the governance-op stream (announced again at every unlock while its
+    /// row is queued), `Landed` once it is on our member record and the
+    /// converged op set applies it, `Failed` when the community refused or
+    /// quarantined it at convergence, or its row expired, wedged or was
+    /// discarded. The UI shows a pending op as pending, with no retry
+    /// (plan E3.2 S6b, review RV7 M2).
     OpPublication {
         community: String,
         op: String,
-        landed: bool,
+        state: OpPublicationState,
     },
 
     /// The role table changed — the full new table, not a delta.
@@ -131,6 +135,18 @@ pub enum GovernanceEvent {
     /// and permissions together, so re-reading is the correct response
     /// rather than shipping four lists.
     GovernanceRebuilt { community: String },
+}
+
+/// An own governance op's publication state ([`GovernanceEvent::OpPublication`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind", content = "reason")]
+pub enum OpPublicationState {
+    /// Applied, gossiped and queued; the outbox lands it, never the user.
+    Pending,
+    /// On our member record, and the converged op set applies it.
+    Landed,
+    /// It will not stand, for the reason given.
+    Failed(String),
 }
 
 impl GovernanceEvent {

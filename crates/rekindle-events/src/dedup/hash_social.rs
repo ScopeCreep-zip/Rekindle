@@ -1,7 +1,7 @@
 //! Content hashers for governance-state-change and social (reactions,
 //! pins, threads, events, game servers) subscription events.
 
-use rekindle_types::subscription_events::{GovernanceEvent, SocialEvent};
+use rekindle_types::subscription_events::{GovernanceEvent, OpPublicationState, SocialEvent};
 
 pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
     // Community first, since every variant has one.
@@ -76,10 +76,17 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         GovernanceEvent::BansChanged { .. } => {
             h.update(b"bans");
         }
-        GovernanceEvent::OpPublication { op, landed, .. } => {
+        GovernanceEvent::OpPublication { op, state, .. } => {
             h.update(b"op_publication|");
             h.update(op.as_bytes());
-            h.update(&[u8::from(*landed)]);
+            match state {
+                OpPublicationState::Pending => h.update(b"|pending"),
+                OpPublicationState::Landed => h.update(b"|landed"),
+                OpPublicationState::Failed(reason) => {
+                    h.update(b"|failed|");
+                    h.update(reason.as_bytes())
+                }
+            };
         }
         GovernanceEvent::InviteCreated { code_hash, .. } => {
             h.update(b"invite_new|");

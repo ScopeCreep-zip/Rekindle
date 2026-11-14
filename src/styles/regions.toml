@@ -446,6 +446,8 @@
 '.plate-gate-banner-text' = { on = ["--color-xfire-bg-panel"] }
 '.plate-gate-banner-btn' = { on = ["--color-xfire-accent"] }
 '.plate-gate-status' = { on = ["--color-xfire-bg-panel"] }
+'.governance-publication-pending' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg"] }
+'.governance-publication-failed' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg"] }
 '.message-forwarded-header' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-forwarded-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.forward-dialog-title' = { on = ["--color-xfire-bg"] }

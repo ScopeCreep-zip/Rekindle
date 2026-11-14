@@ -257,6 +257,8 @@ pub struct DaemonContext {
     pub friend_stores: rekindle_transport::operations::friend::FriendStores,
     /// The unlocked identity's outbox (plan E2.5, D22).
     pub(crate) outbox: crate::host::adapters::outbox::OutboxSlot,
+    /// One lock per community a join is in flight for (review RV7 M3).
+    pub(crate) community_joins: crate::host::adapters::governance::JoinLocks,
     /// Each watched friend's profile lease (it carries the watch), and the
     /// friends whose watch failed, polled instead (plan E2.1).
     pub(crate) friend_watches: crate::host::adapters::friends::FriendWatches,

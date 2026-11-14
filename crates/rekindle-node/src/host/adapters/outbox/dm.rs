@@ -54,6 +54,7 @@ impl OutboxSlot {
             Arc::clone(&self.senders),
         );
         let changes = host.subscribe();
+        let governance_changes = host.subscribe();
         let outbox = Arc::new(Outbox::new(host));
         self.senders
             .install(StreamKind::Dm, Arc::new(DmSender(HostFriends::of(ctx))));
@@ -65,16 +66,28 @@ impl OutboxSlot {
             StreamKind::GroupDm,
             Arc::new(GroupSender(HostFriends::of(ctx))),
         );
-        self.install_governance_op_sender(crate::host::adapters::governance::HostGovernance::new(
+        let governance = crate::host::adapters::governance::HostGovernance::new(
             ctx.this.upgrade().expect("a context in use is alive"),
-        ));
+        );
+        self.install_governance_op_sender(governance.clone());
         *self.current.write() = Some(Arc::clone(&outbox));
         let friends = HostFriends::of(ctx);
+        let states_outbox = Arc::clone(&outbox);
         scope
             .spawn_with_token("outbox", move |stop| async move { outbox.run(stop).await })
             .and_then(|()| {
                 scope.spawn_with_token("outbox states", move |stop| {
                     publish_states(friends, changes, stop)
+                })
+            })
+            .and_then(|()| {
+                scope.spawn_with_token("governance op states", move |stop| {
+                    super::governance_publication::publish_governance_states(
+                        governance,
+                        states_outbox,
+                        governance_changes,
+                        stop,
+                    )
                 })
             })
             .map_err(|e| e.to_string())

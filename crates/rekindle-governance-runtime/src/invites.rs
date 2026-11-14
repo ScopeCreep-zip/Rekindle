@@ -143,7 +143,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     let expires_at = expires_in_seconds.map(|s| deps.clock().now_secs() + s);
     // The link is handed out only once its op and our frontier are on `M`
     // (plan E3.2 S6 (4)): a joiner walks what is on the DHT.
-    let created = apply::write_entry_landed(
+    let created = apply::write_invite_created(
         deps,
         community_id,
         GovernanceEntry::InviteCreated {
@@ -153,12 +153,14 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
             expires_at,
             secrets_record_key: secrets_record_key.clone(),
         },
+        invite_id,
     )
     .await;
     if let Err(GovernanceRuntimeError::NotYetPublished) = created {
         // Refused, but the op is queued and lands later: its tombstone goes
-        // on the same stream behind it, so the invite never becomes usable
-        // and its quota slot frees once both land (S6b).
+        // on the same stream behind it now, so the invite is never listed or
+        // usable and its quota slot frees once both land (S6b). Should this
+        // write fail, the revoke row queued with the op revokes it.
         apply::write_entry_queued(
             deps,
             community_id,

@@ -12,6 +12,19 @@ use super::HostGovernance;
 /// A joiner's roles before governance grants any: none.
 const JOINER_ROLE_IDS: [u32; 0] = [];
 
+/// One lock per community a join is in flight for (review RV7 M3): a
+/// second join of it waits for the first and answers its membership.
+#[derive(Default)]
+pub(crate) struct JoinLocks(
+    parking_lot::Mutex<std::collections::HashMap<String, std::sync::Arc<tokio::sync::Mutex<()>>>>,
+);
+
+impl JoinLocks {
+    fn of(&self, community: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+        std::sync::Arc::clone(self.0.lock().entry(community.to_owned()).or_default())
+    }
+}
+
 impl HostGovernance {
     /// Join the community `link` opens.
     ///
@@ -20,10 +33,14 @@ impl HostGovernance {
     /// or storing the membership failed.
     pub(crate) async fn join(&self, link: &InviteLink) -> Result<CommunityJoined, String> {
         let id = link.anchor.as_str().to_owned();
-        // Idempotent (RV4 review M1): a join answered `Pending`, or repeated,
-        // finds our membership and answers it, and never mints a second
-        // member record or `MemberJoined`.
-        if let Some(joined) = self.already_joined(&id) {
+        // Idempotent (RV4 review M1, RV7 M3): a join answered `Pending`,
+        // repeated or concurrent (the lock holds the second until the first
+        // is recorded) finds us a current member and answers it, and never
+        // mints a second member record or `MemberJoined`. A member kicked or
+        // banned is no current member, so it joins again.
+        let lock = self.ctx.community_joins.of(&id);
+        let _joining = lock.lock().await;
+        if let Some(joined) = self.already_joined(&id).await {
             return Ok(joined);
         }
         let outcome = rekindle_governance_runtime::join_flow::run_join_stages(self, link)
@@ -44,6 +61,11 @@ impl HostGovernance {
             channel_record_keys: std::collections::HashMap::new(),
             segment_index: Some(outcome.claimed.segment_index),
             lamport_counter: 0,
+            // No key yet: 0 is the sentinel for "no community key held",
+            // never a generation (the genesis key is
+            // `GENESIS_MEK_GENERATION`, 1). The key arrives through
+            // `recover_behind_meks`; any "behind" test is
+            // `local < governance.mek_generation` (review RV7 L1).
             mek_generation: 0,
         };
         let joined_at = self.ctx.clock.now_ms_i64();
@@ -97,24 +119,69 @@ impl HostGovernance {
         })
     }
 
-    /// Our membership of `id` when we already hold one: its stored state,
-    /// pending while our `MemberJoined` is still on the governance-op stream.
-    fn already_joined(&self, id: &str) -> Option<CommunityJoined> {
-        let map = self.ctx.communities.map().read();
-        let community = map.get(id)?;
-        let pending = self
-            .ctx
-            .outbox
-            .governance_ops()
-            .is_some_and(|ops| ops.pending(id));
-        Some(CommunityJoined {
-            governance_key: id.to_owned(),
-            name: community.name.clone(),
-            segment: community.my_segment_index.unwrap_or_default(),
-            slot: community.my_subkey_index.unwrap_or_default(),
-            known_members: u32::try_from(community.members.len()).unwrap_or(u32::MAX),
-            pending,
-        })
+    /// Our membership of `id` when the merged state shows us a current
+    /// member (in `members`, not `removed` or banned): its stored state,
+    /// pending while our own `MemberJoined` is still queued on the
+    /// governance-op stream (review RV7 M3).
+    async fn already_joined(&self, id: &str) -> Option<CommunityJoined> {
+        let (joined, mine) = {
+            let map = self.ctx.communities.map().read();
+            let community = map.get(id)?;
+            let gov = community.governance_state.as_ref()?;
+            let mine = community
+                .my_pseudonym_key
+                .as_deref()
+                .and_then(super::ops::pseudonym_of)?;
+            let current = gov.members.contains_key(&mine)
+                && !gov.removed.contains_key(&mine)
+                && !gov.bans.contains(&mine);
+            if !current {
+                return None;
+            }
+            let joined = CommunityJoined {
+                governance_key: id.to_owned(),
+                name: community.name.clone(),
+                segment: community.my_segment_index.unwrap_or_default(),
+                slot: community.my_subkey_index.unwrap_or_default(),
+                known_members: u32::try_from(community.members.len()).unwrap_or(u32::MAX),
+                pending: false,
+            };
+            (joined, mine)
+        };
+        let pending = self.member_joined_queued(id, &mine).await;
+        Some(CommunityJoined { pending, ..joined })
+    }
+
+    /// Whether our own latest `MemberJoined` of `id` is still queued.
+    async fn member_joined_queued(
+        &self,
+        id: &str,
+        mine: &rekindle_types::id::PseudonymKey,
+    ) -> bool {
+        let Ok(held) = self.governance_ops_impl(id).await else {
+            return false;
+        };
+        let set = rekindle_governance_runtime::op_log::verify_held(id, &held);
+        let Some(op) = set
+            .ops
+            .iter()
+            .filter(|op| {
+                op.author() == mine
+                    && matches!(
+                        op.body(),
+                        rekindle_types::governance::GovernanceEntry::MemberJoined { .. }
+                    )
+            })
+            .max_by_key(|op| op.lamport())
+        else {
+            return false;
+        };
+        let Some(ops) = self.ctx.outbox.governance_ops() else {
+            return false;
+        };
+        ops.is_queued(&hex::encode(op.hash().0))
+            .await
+            .unwrap_or(false)
     }
 
     /// Our `M` in §4.4's order: the card (`M`/0), our `MemberJoined` on

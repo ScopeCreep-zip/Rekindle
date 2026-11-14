@@ -442,4 +442,20 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
   }
 
+
+  .governance-publication {
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    font-size: 10px;
+    border-left: 2px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
+
+  .governance-publication-pending {
+    color: var(--color-xfire-text-dim);
+  }
+
+  .governance-publication-failed {
+    color: var(--color-xfire-danger-text);
+  }
+
 }

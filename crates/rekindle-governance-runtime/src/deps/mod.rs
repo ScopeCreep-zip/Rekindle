@@ -419,7 +419,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// [`OpLanding::FirstAttempt`] waits for the first attempt, at most
     /// `GOVERNANCE_ANSWER_BOUND`; [`OpLanding::Queued`] only for the row.
     /// A `Pending` op is announced (`GovernanceEvent::OpPublication`) when it
-    /// lands. [`OpLanding::Landed`] (the invite link, S6 (4)) waits through
+    /// lands. [`OpLanding::InviteLanded`] (the invite link, S6 (4)) waits through
     /// the retries up to the command's deadline and is
     /// [`GovernanceRuntimeError::NotYetPublished`] if it has not landed.
     async fn publish_governance_op(
@@ -507,9 +507,11 @@ pub enum OpLanding {
     /// stands, the outbox lands it, and the answer is `Pending`.
     FirstAttempt,
     /// The op on `M`/2 and our frontier on `M`/3, through the retries: only
-    /// for what a joiner must find on the DHT before we hand it out (an
-    /// invite link, S6 (4)).
-    Landed,
+    /// for what a joiner must find on the DHT before we hand it out, an
+    /// invite's `InviteCreated` (S6 (4)). Stored in one transaction with a
+    /// revoke of `invite_id` that the outbox writes once the op landed
+    /// unless the answer handed the link out (review RV4 M3).
+    InviteLanded { invite_id: [u8; 16] },
     /// Queued on the stream, not waited for: the outbox lands it behind our
     /// earlier ops (one stream per author, so the order holds).
     Queued,

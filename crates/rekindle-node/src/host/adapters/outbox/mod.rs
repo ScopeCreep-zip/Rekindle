@@ -8,6 +8,7 @@ mod channel_post;
 mod dht_write;
 mod dm;
 mod governance_op;
+mod governance_publication;
 mod media_key;
 mod senders;
 #[cfg(test)]
@@ -111,6 +112,45 @@ impl HostOutbox {
         })
         .await
         .map_err(|e| storage(&e))
+    }
+
+    /// Store `rows` in one transaction (all or none), publish each as
+    /// `queued`; the caller wakes the engine (review RV4 M3).
+    ///
+    /// # Errors
+    /// The storage failed; nothing was stored.
+    pub(super) async fn insert_all(&self, rows: Vec<NewOutboxRow>) -> Result<(), OutboxError> {
+        let (db, owner) = self.db()?;
+        let stored = rows.clone();
+        let seqs = db
+            .call(move |conn| {
+                let new: Vec<repo::NewRow<'_>> = stored
+                    .iter()
+                    .map(|row| repo::NewRow {
+                        owner_key: &owner,
+                        stream: &row.stream,
+                        client_id: &row.client_id,
+                        kind: row.kind.as_str(),
+                        payload: &row.payload,
+                        next_at: row.next_at,
+                        deadline: row.deadline,
+                    })
+                    .collect();
+                repo::enqueue_all(conn, &new)
+            })
+            .await
+            .map_err(|e| storage(&e))?;
+        for (row, stream_seq) in rows.into_iter().zip(seqs) {
+            let _ = self.changes.send(StateChange {
+                stream: row.stream,
+                stream_seq,
+                client_id: row.client_id,
+                kind: row.kind,
+                state: SendState::Queued,
+                wedge_reason: None,
+            });
+        }
+        Ok(())
     }
 
     /// The open database and the owner its rows belong to.

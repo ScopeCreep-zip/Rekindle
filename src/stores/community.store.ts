@@ -1,3 +1,4 @@
+import type { OpPublicationState } from "../ipc/channels/community_subscription_events";
 import { createStore } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type { GameInfo, InviteDto, OnboardingConfig, WelcomeScreen } from "../ipc/commands/dto";
@@ -261,6 +262,9 @@ export interface CommunityState {
   gameServers: Record<string, GameServer[]>;
   communityInvites: Record<string, InviteDto[]>;
   voiceChannels: Record<string, VoiceChannelState>;
+  /** Our governance ops not yet landed, per community then op hash, as the
+   *  backend announces them (pending, or failed with its reason). */
+  opPublications: Record<string, Record<string, OpPublicationState>>;
 }
 
 const [communityState, setCommunityState] = createStore<CommunityState>({
@@ -274,6 +278,7 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
   gameServers: {},
   communityInvites: {},
   voiceChannels: {},
+  opPublications: {},
 });
 
 export { communityState, setCommunityState };

@@ -2,7 +2,7 @@
 
 use rekindle_types::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDisplay};
 use rekindle_types::presence::SegmentDescriptor;
-use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{GovernanceEvent, OpPublicationState, SubscriptionEvent};
 
 use crate::{channel, community, id, pk, rk, text, Sample};
 
@@ -64,7 +64,7 @@ fn structure() -> Vec<Sample> {
             GovernanceEvent::OpPublication {
                 community: community(),
                 op: "8".repeat(64),
-                landed: false,
+                state: OpPublicationState::Failed(text("refused at convergence")),
             },
         ),
         ev(

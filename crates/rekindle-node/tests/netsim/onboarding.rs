@@ -61,6 +61,10 @@ fn prompt(role_id: u32) -> OnboardingConfigDto {
 /// take themselves; a member answers it, and both members see it hold the
 /// role (granted by the creator on the answers). The creator's later
 /// unassignment wins on both. The member cannot set the prompt.
+///
+/// Revert run (review RV7 L3, 2026-11-14): with 1f06f6a4's `views.rs`
+/// reverted (the member list's role ids read from the roster row's cache)
+/// it fails at "the later unassignment wins on node 1".
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn onboarding_role_assignment() {
     let community = Community::of(2, 83).await;
