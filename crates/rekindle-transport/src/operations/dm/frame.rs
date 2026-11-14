@@ -16,7 +16,9 @@ use rekindle_codec::capnp_codec::direct::{
     Carrier, ContentHint, DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, PqPrekey,
     PreKeyInitBody, RatchetBody, RatchetHeader, SealedBody, SealedContent,
 };
-use rekindle_crypto::signal::{Header, PqPrekeyId, PreKeyBundle, PreKeyInit, RatchetMessage};
+use rekindle_crypto::signal::{
+    Header, Outgoing, PqPrekeyId, PreKeyBundle, PreKeyInit, RatchetMessage,
+};
 use rekindle_crypto::{presession, CryptoError, Identity};
 use rekindle_db::ratchet::{self, PeerAddress, RatchetError};
 use rekindle_types::domains;
@@ -181,8 +183,8 @@ pub async fn ratchet_frame_at(
         ratchet::encrypt_and_record_outbound(&db, &local, &peer, &plaintext, &ad_extra(type_id))
             .await
     };
-    let message = match encrypted {
-        Ok(message) => message,
+    let outgoing = match encrypted {
+        Ok(outgoing) => outgoing,
         Err(RatchetError::Crypto(CryptoError::NoSession(_)))
             if type_id != DmTypeId::Typing
                 && crate::operations::friend::state::is_accepted(host, to) =>
@@ -213,11 +215,35 @@ pub async fn ratchet_frame_at(
         }
         Err(e) => return Err(ratchet_error(to, e)),
     };
-    Ok(DmFrame {
-        type_id,
-        sender: local.owner(),
-        body: FrameBody::Ratchet(ratchet_body(message)),
-    })
+    Ok(outgoing_frame(local.owner(), type_id, outgoing))
+}
+
+/// The frame of a `type_id` message from `sender`: a ratchet frame, or,
+/// while the peer has not acknowledged the session, a PreKeyInit frame
+/// whose first payload is this message (plan E2.5h: the peer can open the
+/// session from any message until it answers). Only a kind that may open a
+/// session is wrapped (the codec's allowlist, plan audit G1): any other
+/// could open nothing on a peer without the session, so it rides the
+/// pending session as a ratchet message.
+#[must_use]
+pub fn outgoing_frame(sender: [u8; 32], type_id: DmTypeId, outgoing: Outgoing) -> DmFrame {
+    match outgoing {
+        Outgoing::PreKey(init) if !type_id.is_first_payload() => DmFrame {
+            type_id,
+            sender,
+            body: FrameBody::Ratchet(ratchet_body(init.message)),
+        },
+        Outgoing::Message(message) => DmFrame {
+            type_id,
+            sender,
+            body: FrameBody::Ratchet(ratchet_body(message)),
+        },
+        Outgoing::PreKey(init) => DmFrame {
+            type_id: DmTypeId::PreKeyInit,
+            sender,
+            body: FrameBody::PreKeyInit(init_body(init, type_id)),
+        },
+    }
 }
 
 /// Open a session with `to` from its `bundle`, carrying `first` (an accept,

@@ -171,11 +171,11 @@ impl<'a> Reader<'a> {
         Ok(self.array::<1>()?[0])
     }
 
-    fn u16(&mut self) -> Result<u16, CryptoError> {
+    pub(crate) fn u16(&mut self) -> Result<u16, CryptoError> {
         Ok(u16::from_be_bytes(self.array()?))
     }
 
-    fn u32(&mut self) -> Result<u32, CryptoError> {
+    pub(crate) fn u32(&mut self) -> Result<u32, CryptoError> {
         Ok(u32::from_be_bytes(self.array()?))
     }
 

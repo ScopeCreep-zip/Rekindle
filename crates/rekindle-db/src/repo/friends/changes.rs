@@ -24,23 +24,6 @@ pub(crate) fn atomically<T>(
     Ok(value)
 }
 
-/// Delete every ratchet session with `peer`: the friendship that carried
-/// them ended. It marks the connection erased, so the WAL is truncated
-/// after the outermost commit, wherever that is (`crate::erase`; RV5 M3).
-/// The ratchet tables key both sides by lowercase hex.
-pub(super) fn delete_sessions(
-    conn: &Connection,
-    owner_key: &str,
-    peer: &str,
-) -> rusqlite::Result<()> {
-    crate::erase::delete(
-        conn,
-        "DELETE FROM ratchet_sessions WHERE owner_key = ?1 AND peer_identity = ?2",
-        params![owner_key.to_ascii_lowercase(), peer.to_ascii_lowercase()],
-    )?;
-    Ok(())
-}
-
 /// The record keys a friend names; `None` keeps the stored one.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RecordKeys<'a> {
@@ -98,7 +81,8 @@ pub fn accept_with_records(
 }
 
 /// Block `public_key`: the friend, their request, everything queued to
-/// them and every session with them go, and the block is stored.
+/// them go, and the block is stored; the sessions with them stay (plan
+/// E2.5h).
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -113,7 +97,6 @@ pub fn block(
         delete(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
         outbox::delete_to_peer(conn, owner_key, public_key)?;
-        delete_sessions(conn, owner_key, public_key)?;
         blocked::insert(conn, owner_key, public_key, display_name, blocked_at)
     })
 }
@@ -150,10 +133,9 @@ pub fn forget(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
     })
 }
 
-/// Our request to `public_key` was cancelled: their row and any session
-/// with them go. A pending request normally has none, but one kept from an
-/// ended friendship would refuse the next friendship's first contact (live
-/// A/B 2026-10-23).
+/// Our request to `public_key` was cancelled: their row goes. Any session
+/// with them stays (plan E2.5h: sessions are erased only by eviction from
+/// the archive or an identity reset).
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -165,12 +147,12 @@ pub fn cancel_request(
     atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         super::nickname::clear(conn, owner_key, public_key)?;
-        delete_sessions(conn, owner_key, public_key)
+        Ok(())
     })
 }
 
-/// `public_key` removed us: their row, their request, everything queued to
-/// them and every session with them go.
+/// `public_key` removed us: their row, their request and everything queued
+/// to them go; the sessions with them stay (plan E2.5h).
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -179,14 +161,14 @@ pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusql
         forget(conn, owner_key, public_key)?;
         super::nickname::clear(conn, owner_key, public_key)?;
         outbox::delete_to_peer(conn, owner_key, public_key)?;
-        delete_sessions(conn, owner_key, public_key)
+        Ok(())
     })
 }
 
 /// Forget the friends we removed once no send to them is unsettled (their
 /// `Unfriended` row was acknowledged or failed at its deadline, plan
-/// E2.5): their rows, the rest of their streams and their sessions; their
-/// keys.
+/// E2.5): their rows and the rest of their streams; their keys. The
+/// sessions with them stay (plan E2.5h).
 ///
 /// # Errors
 /// The query or a delete failed; nothing is kept.
@@ -205,7 +187,6 @@ pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Ve
             outbox::delete_to_peer(conn, owner_key, public_key)?;
             delete(conn, owner_key, public_key)?;
             super::nickname::clear(conn, owner_key, public_key)?;
-            delete_sessions(conn, owner_key, public_key)?;
         }
         Ok(done)
     })
@@ -245,41 +226,40 @@ mod tests {
 
     const BOB: &str = "bb";
 
-    /// I14: a change that deletes sessions truncates the WAL once it
-    /// commits, so the erased chain keys are in no `-wal` frame.
-    #[tokio::test]
-    async fn ending_a_friendship_truncates_the_wal() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("o.db");
-        let db = crate::open(&path, &[7; 32]).unwrap();
-        let wal_len = || {
-            std::fs::metadata(dir.path().join("o.db-wal"))
-                .unwrap()
-                .len()
-        };
-        db.call(|c| {
-            crate::repo::identity::insert(c, OWNER, "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa")?;
-            super::super::insert_pending_out(c, OWNER, BOB, "Bob", 1)?;
-            c.execute(
-                "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
-                 VALUES (?1, ?2, 'd', x'00', 1)",
-                params![OWNER.to_ascii_lowercase(), BOB],
-            )
-        })
-        .await
-        .unwrap();
-        assert!(wal_len() > 0, "storing the session wrote WAL frames");
-        db.call(|c| cancel_request(c, OWNER, BOB)).await.unwrap();
-        // The truncation is queued behind the erasing call (RV5 M4).
-        db.call(|_| Ok(())).await.unwrap();
-        assert_eq!(wal_len(), 0);
+    fn sessions(conn: &Connection) -> i64 {
+        conn.query_row("SELECT COUNT(*) FROM ratchet_sessions", [], |r| r.get(0))
+            .unwrap()
     }
 
-    /// I14 on every erasing entry point: each one that deletes a stored
-    /// session leaves the `-wal` file empty; one that erased nothing (an
-    /// expiry tick with nothing expired) runs no checkpoint (RV5).
+    /// Plan E2.5h: remove, block and re-add never delete sessions; their
+    /// keys are erased only by eviction from the archive or an identity
+    /// reset.
+    #[test]
+    fn ending_a_friendship_keeps_its_sessions() {
+        let conn = conn();
+        conn.execute(
+            "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
+             VALUES (?1, ?2, 'd', x'00', 1)",
+            params![OWNER.to_ascii_lowercase(), BOB],
+        )
+        .unwrap();
+        super::super::insert_pending_out(&conn, OWNER, BOB, "Bob", 1).unwrap();
+        cancel_request(&conn, OWNER, BOB).unwrap();
+        insert_accepted(&conn, OWNER, BOB, "Bob", 2).unwrap();
+        unfriended(&conn, OWNER, BOB).unwrap();
+        insert_accepted(&conn, OWNER, BOB, "Bob", 3).unwrap();
+        set_state(&conn, OWNER, BOB, FriendshipState::Removing).unwrap();
+        forget_removed(&conn, OWNER).unwrap();
+        insert_accepted(&conn, OWNER, BOB, "Bob", 4).unwrap();
+        block(&conn, OWNER, BOB, "Bob", 5).unwrap();
+        assert_eq!(sessions(&conn), 1);
+    }
+
+    /// I14 (RV5) with plan E2.5h: ending, cancelling or re-adding a
+    /// friendship erases no session, so none of these changes runs a
+    /// checkpoint, and the stored session is still there afterwards.
     #[tokio::test]
-    async fn every_erasing_change_truncates_only_when_it_erased() {
+    async fn ending_a_friendship_erases_nothing_and_truncates_nothing() {
         type Change = fn(&Connection) -> rusqlite::Result<()>;
         let cases: [(&str, Change, Change); 7] = [
             ("cancel_request", pending, |c| cancel_request(c, OWNER, BOB)),
@@ -310,22 +290,21 @@ mod tests {
             })
             .await
             .unwrap();
-            assert!(wal_len() > 0, "{name}: the setup wrote WAL frames");
-            db.call(move |c| change(c)).await.unwrap();
-            db.call(|_| Ok(())).await.unwrap();
-            assert_eq!(wal_len(), 0, "{name}: erased a session, so truncated");
-            // Nothing left to erase: the same change again checkpoints nothing.
-            db.call(|c| c.execute_batch("CREATE TABLE IF NOT EXISTS t (x)"))
-                .await
-                .unwrap();
             let written = wal_len();
-            assert!(written > 0);
-            db.call(|c| super::super::delete_pending_out_before(c, OWNER, 5).map(drop))
+            assert!(written > 0, "{name}: the setup wrote WAL frames");
+            db.call(move |c| change(c)).await.unwrap();
+            let kept = db
+                .call(|c| {
+                    c.query_row("SELECT COUNT(*) FROM ratchet_sessions", [], |r| {
+                        r.get::<_, i64>(0)
+                    })
+                })
                 .await
                 .unwrap();
+            assert_eq!(kept, 1, "{name}: the session stays");
             assert!(
                 wal_len() >= written,
-                "{name}: an empty expiry tick truncated"
+                "{name}: erased nothing, yet truncated"
             );
         }
     }

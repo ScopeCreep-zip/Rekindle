@@ -211,3 +211,22 @@ pub async fn retry(host: &dyn FriendHost, peer: &str) -> Result<(), FriendError>
     }
     Ok(())
 }
+
+/// Plan E2.5h: a message from `peer` tripped the session archive's breaker
+/// (the two sides kept switching between sessions), so no session with them
+/// is active. It is shown on the friend's row, never ended silently: the
+/// next message the user sends opens a new session from their record.
+pub(crate) fn session_ended(host: &dyn FriendHost, peer: &str) {
+    let reason = "the secure session kept switching between keys and was ended; \
+                  your next message opens a new one"
+        .to_string();
+    tracing::warn!(peer = %peer, "session archive breaker: the active session was archived");
+    state::update(host, peer, |f| {
+        f.handshake_retrying = false;
+        f.handshake_error = Some(reason.clone());
+    });
+    host.publish(SubscriptionEvent::Friend(FriendEvent::HandshakeFailed {
+        peer_key: peer.to_string(),
+        reason,
+    }));
+}

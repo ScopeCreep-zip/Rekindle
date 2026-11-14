@@ -12,17 +12,17 @@
 
 use rekindle_codec::capnp_codec::direct::{
     DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, PreKeyInitBody, RatchetBody, SealedBody,
-    SealedContent,
 };
-use rekindle_crypto::{presession, CryptoError, Identity};
+use rekindle_crypto::CryptoError;
 use rekindle_db::ratchet::{self, RatchetError};
 use rekindle_db::repo::unprocessed::UnprocessedKey;
-use rekindle_types::message::{ENVELOPE_FRESHNESS_WINDOW_MS, ENVELOPE_MAX_FUTURE_SKEW_MS};
 
 use super::admission;
 use super::replay::Sighting;
+pub use super::sealed_open::open_presession;
+use super::sealed_open::{open_verified, verify_presession};
 use crate::operations::dm::frame::{
-    ad_extra, init_from_body, peer_address, ratchet_message, sealed_info, Nonce,
+    ad_extra, init_from_body, peer_address, ratchet_message, Nonce,
 };
 use crate::operations::friend::{state, FriendHost};
 
@@ -135,7 +135,13 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
         FrameBody::PreKeyInit(init) => init.first_type_id,
         FrameBody::Ratchet(_) | FrameBody::Sealed(_) => frame.type_id,
     };
-    let init = matches!(frame.body, FrameBody::PreKeyInit(_));
+    // A PreKeyInit for a session we hold is a message on it (plan E2.5h:
+    // the peer wraps every message until we answer), admitted as its kind
+    // is, not as a session opening.
+    let init = match &frame.body {
+        FrameBody::PreKeyInit(body) => !known_init(host, &sender_hex, body.base_key).await?,
+        FrameBody::Ratchet(_) | FrameBody::Sealed(_) => false,
+    };
     // The full key: the log scrubber turns it into a per-process tag (B19).
     tracing::debug!(from = %sender_hex, ?kind, init, "1:1 frame received");
     let status = admission::unblocked(host, &sender_hex)
@@ -158,6 +164,22 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
             open_init(host, frame.sender, sender_hex, &init, status).await
         }
     }
+}
+
+/// Whether a session we hold with `sender_hex` has `base_key`.
+async fn known_init(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    base_key: [u8; 32],
+) -> Result<bool, Dropped> {
+    ratchet::is_known_init(
+        &host.db().or_failed()?,
+        &host.local_party().or_failed()?.owner(),
+        &peer_address(sender_hex).or_refused()?,
+        base_key,
+    )
+    .await
+    .or_failed()
 }
 
 /// A sealed frame: it opens to us ([`open_presession`]), and it was not
@@ -240,80 +262,6 @@ fn settle(host: &dyn FriendHost, opened: &Opened) {
     host.stores().replay.lock().settle(&sender, &nonce);
 }
 
-/// The content of a sealed frame from `sender` to `identity` at `now_ms`:
-/// its signature names us as the recipient and verifies under the sender,
-/// it opens, and it is fresh.
-///
-/// # Errors
-/// Why it was refused.
-pub fn open_presession(
-    identity: &Identity,
-    sender: &[u8; 32],
-    type_id: DmTypeId,
-    sealed: &SealedBody,
-    now_ms: u64,
-) -> Result<SealedContent, &'static str> {
-    verify_presession(identity, sender, type_id, sealed)?;
-    open_verified(identity, sender, type_id, sealed, now_ms)
-}
-
-fn signed_seal(sealed: &SealedBody) -> presession::SignedSeal {
-    presession::SignedSeal {
-        enc: sealed.enc,
-        ciphertext: sealed.ciphertext.clone(),
-        signature: sealed.signature,
-    }
-}
-
-/// Whether a sealed frame of a sealed kind is signed by `sender` for us
-/// (`rekindle_crypto::presession`, before anything is decrypted).
-fn verify_presession(
-    identity: &Identity,
-    sender: &[u8; 32],
-    type_id: DmTypeId,
-    sealed: &SealedBody,
-) -> Result<(), &'static str> {
-    sealed_info(type_id).ok_or("not a sealed kind")?;
-    presession::verify(
-        &identity.public_key_bytes(),
-        sender,
-        type_id.as_u16(),
-        &signed_seal(sealed),
-    )
-    .map_err(presession::Refused::as_str)
-}
-
-/// The fresh content of a sealed frame whose signature verified.
-fn open_verified(
-    identity: &Identity,
-    sender: &[u8; 32],
-    type_id: DmTypeId,
-    sealed: &SealedBody,
-    now_ms: u64,
-) -> Result<SealedContent, &'static str> {
-    let info = sealed_info(type_id).ok_or("not a sealed kind")?;
-    let plaintext = presession::open(
-        identity,
-        sender,
-        type_id.as_u16(),
-        info,
-        &signed_seal(sealed),
-    )
-    .map_err(presession::Refused::as_str)?;
-    let content = SealedContent::decode(&plaintext).map_err(|_| "content does not decode")?;
-    if !fresh(content.sent_at_ms, now_ms) {
-        return Err("stale");
-    }
-    Ok(content)
-}
-
-/// Whether a frame sent at `sent_at` is inside the freshness window at
-/// `now`, allowing the sender's clock to run a little ahead.
-fn fresh(sent_at: u64, now: u64) -> bool {
-    sent_at <= now.saturating_add(ENVELOPE_MAX_FUTURE_SKEW_MS)
-        && now.saturating_sub(sent_at) <= ENVELOPE_FRESHNESS_WINDOW_MS
-}
-
 /// A ratchet message under our session with the sender.
 async fn open_ratchet(
     host: &dyn FriendHost,
@@ -359,7 +307,7 @@ async fn open_ephemeral(
     body: &RatchetBody,
     local: &ratchet::LocalParty,
 ) -> Result<Opened, Dropped> {
-    let plaintext = match ratchet::decrypt_ephemeral(
+    let ephemeral = match ratchet::decrypt_ephemeral(
         &host.db().or_failed()?,
         local,
         &peer_address(&sender_hex).or_refused()?,
@@ -368,7 +316,7 @@ async fn open_ephemeral(
     )
     .await
     {
-        Ok(plaintext) => plaintext,
+        Ok(ephemeral) => ephemeral,
         Err(RatchetError::Crypto(CryptoError::DuplicateMessage)) => {
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
             return Err(Dropped::Duplicate {
@@ -381,7 +329,10 @@ async fn open_ephemeral(
         }
     };
     crate::operations::prekeys::acknowledged(host, &sender_hex);
-    let content = DmContent::decode(&plaintext).or_refused()?;
+    if ephemeral.ended_session {
+        crate::operations::prekeys::session_ended(host, &sender_hex);
+    }
+    let content = DmContent::decode(&ephemeral.plaintext).or_refused()?;
     let body = decode_body(&sender_hex, type_id, &content.payload).or_refused()?;
     Ok(Opened {
         sender_hex,
@@ -411,12 +362,13 @@ async fn open_init(
         &local,
         &peer_address(&sender_hex).or_refused()?,
         init_from_body(sender, init),
-        // Only an accept of the reset we asked for may replace an
-        // established session (ruling Q1; plan audit G2).
-        if init.first_type_id == DmTypeId::SessionResetAccept {
-            ratchet::Reinitiation::Requested
-        } else {
-            ratchet::Reinitiation::Refused
+        // Only an accept of the reset we asked for, or of the friendship
+        // we asked for, may replace an established session (ruling Q1;
+        // plan audit G2; plan E2.5h).
+        match init.first_type_id {
+            DmTypeId::SessionResetAccept => ratchet::Reinitiation::Requested,
+            DmTypeId::FriendAccept => ratchet::Reinitiation::Befriended,
+            _ => ratchet::Reinitiation::Refused,
         },
         &ad_extra(init.first_type_id),
         init.first_type_id.as_u16(),
@@ -506,6 +458,9 @@ fn recorded(
         }
     };
     debug_assert_eq!(inbound.key.peer_identity, sender);
+    if inbound.ended_session {
+        crate::operations::prekeys::session_ended(host, &sender_hex);
+    }
     let content = match DmContent::decode(&inbound.plaintext) {
         Ok(content) => content,
         Err(e) => {

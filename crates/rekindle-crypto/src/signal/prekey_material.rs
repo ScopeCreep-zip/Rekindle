@@ -112,7 +112,7 @@ mod tests {
         )
         .unwrap();
         let (_, init) = SessionRecord::new(bob.public_key_bytes())
-            .initiate(&alice, &bundle, b"hi", b"", &rng)
+            .initiate(&alice, &bundle, b"hi", b"", 1_000, &rng)
             .unwrap();
         assert_eq!(init.one_time_prekey_id, Some(7));
         assert_eq!(init.signed_prekey_id, 5);

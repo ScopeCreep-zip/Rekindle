@@ -261,7 +261,7 @@ fn with_no_unused_slot_the_pick_is_the_head_alone() {
     assert_eq!(pick, Pick::LastResortOnly);
     let bundle = view.bundle(&pick).unwrap();
     let (_, init) = SessionRecord::new(bob.public_key_bytes())
-        .initiate(&alice, &bundle, b"hi", b"", &rng)
+        .initiate(&alice, &bundle, b"hi", b"", 1_000, &rng)
         .unwrap();
     assert_eq!(init.one_time_prekey_id, None);
     assert_eq!(

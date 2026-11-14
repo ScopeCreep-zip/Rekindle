@@ -35,3 +35,23 @@ pub async fn has_session(
     let (owner, peer) = (*owner, peer.clone());
     in_transaction(db, move |conn| Ok(load(conn, &owner, &peer)?.has_active())).await
 }
+
+/// Whether a session we hold with `peer` has `base_key`: a PreKeyInit with
+/// it is a message on that session (a retransmission, or one the peer sent
+/// before we answered, plan E2.5h), judged as a ratchet message of its kind,
+/// not as a session opening.
+///
+/// # Errors
+/// The database refused.
+pub async fn is_known_init(
+    db: &Db,
+    owner: &[u8; 32],
+    peer: &PeerAddress,
+    base_key: [u8; 32],
+) -> Result<bool, RatchetError> {
+    let (owner, peer) = (*owner, peer.clone());
+    in_transaction(db, move |conn| {
+        Ok(load(conn, &owner, &peer)?.has_base_key(&base_key))
+    })
+    .await
+}

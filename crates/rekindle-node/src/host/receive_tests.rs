@@ -4,7 +4,7 @@
 //! no session is opened again or fails visibly.
 
 use rekindle_codec::capnp_codec::direct::{
-    ContentHint, DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, Typing,
+    ContentHint, DirectBody, DmContent, DmTypeId, FrameBody, FriendAccept, Typing,
 };
 use rekindle_crypto::signal::prekey_record::base_key_hash;
 use rekindle_crypto::Identity;
@@ -131,7 +131,7 @@ async fn an_ephemeral_kind_leaves_no_unprocessed_row() {
 /// Bob's ratchet message to Ann whose content is `content` (any bytes).
 async fn ratcheted(other: &Host, owner: [u8; 32], content: &[u8]) -> Vec<u8> {
     let local = HostFriends::of(&other.ctx).local_party().unwrap();
-    let message = rekindle_db::ratchet::encrypt_and_record_outbound(
+    let outgoing = rekindle_db::ratchet::encrypt_and_record_outbound(
         &other.ctx.db.current().unwrap(),
         &local,
         &PeerAddress::sole_device(owner),
@@ -140,11 +140,11 @@ async fn ratcheted(other: &Host, owner: [u8; 32], content: &[u8]) -> Vec<u8> {
     )
     .await
     .unwrap();
-    wire(&DmFrame {
-        type_id: DmTypeId::DmText,
-        sender: local.owner(),
-        body: FrameBody::Ratchet(frame::ratchet_body(message)),
-    })
+    wire(&frame::outgoing_frame(
+        local.owner(),
+        DmTypeId::DmText,
+        outgoing,
+    ))
     .unwrap()
 }
 

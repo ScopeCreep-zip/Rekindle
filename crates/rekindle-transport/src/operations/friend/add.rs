@@ -209,7 +209,6 @@ async fn setup_invite_contact(host: &dyn FriendHost, blob: &InviteBlob) {
     let Ok(node) = host.node() else {
         return;
     };
-    state::forget_session(host, &blob.public_key).await;
     let Ok(records) = node.require_records() else {
         return;
     };

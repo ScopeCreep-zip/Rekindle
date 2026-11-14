@@ -21,7 +21,7 @@
 
 use std::sync::Arc;
 
-use rekindle_crypto::signal::{PreKeyBundle, PreKeyInit, RatchetMessage, SessionRecord};
+use rekindle_crypto::signal::{Outgoing, PreKeyBundle, PreKeyInit, RatchetMessage, SessionRecord};
 use rekindle_crypto::{CryptoError, Identity};
 use rekindle_utils::random::RandomSource;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -33,7 +33,10 @@ use crate::Db;
 use rekindle_crypto::signal::prekey_record::Publish;
 
 mod peek;
-pub use peek::{has_session, is_established};
+mod tx;
+pub use peek::{has_session, is_established, is_known_init};
+use tx::ended;
+pub(crate) use tx::in_transaction;
 
 #[cfg(test)]
 mod accept_tests;
@@ -79,10 +82,20 @@ impl LocalParty {
 }
 
 /// A decrypted inbound message, recorded in `unprocessed` under `key`.
+/// `ended_session`: the decrypt tripped the archive's breaker (plan E2.5h),
+/// so no session is active and the caller shows it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inbound {
     pub key: UnprocessedKey,
     pub plaintext: Vec<u8>,
+    pub ended_session: bool,
+}
+
+/// A decrypted ephemeral message; `ended_session` as for [`Inbound`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ephemeral {
+    pub plaintext: Vec<u8>,
+    pub ended_session: bool,
 }
 
 /// An accepted PreKeyInit: its first message, and the refilled slots of
@@ -161,6 +174,7 @@ pub async fn initiate_and_record_outbound(
             &bundle,
             &plaintext,
             &ad_extra,
+            local.now_ms,
             local.rng.as_ref(),
         )?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
@@ -173,24 +187,28 @@ pub async fn initiate_and_record_outbound(
     .await
 }
 
-/// Encrypt under the active session with `peer`.
+/// Encrypt under the active session with `peer`: a ratchet message, or,
+/// while they have not acknowledged the session, the message wrapped in
+/// its PreKeyInit (plan E2.5h).
 ///
 /// # Errors
-/// See [`RatchetError`]; no session is [`CryptoError::NoSession`].
+/// See [`RatchetError`]; no session, or one unacknowledged past
+/// `PREKEY_WRAP_MAX_AGE_MS`, is [`CryptoError::NoSession`].
 pub async fn encrypt_and_record_outbound(
     db: &Db,
     local: &LocalParty,
     peer: &PeerAddress,
     plaintext: &[u8],
     ad_extra: &[u8],
-) -> Result<RatchetMessage, RatchetError> {
+) -> Result<Outgoing, RatchetError> {
     let (local, peer) = (local.clone(), peer.clone());
     let (plaintext, ad_extra) = (plaintext.to_vec(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
         let owner = local.owner();
-        let (next, message) = load(conn, &owner, &peer)?.encrypt(&plaintext, &ad_extra)?;
+        let (next, outgoing) =
+            load(conn, &owner, &peer)?.encrypt(&plaintext, &ad_extra, local.now_ms)?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
-        Ok(message)
+        Ok(outgoing)
     })
     .await
 }
@@ -209,13 +227,15 @@ pub async fn encrypt_record_and_log_outbound(
     plaintext: &[u8],
     ad_extra: &[u8],
     type_id: u16,
-) -> Result<RatchetMessage, RatchetError> {
+) -> Result<Outgoing, RatchetError> {
     let (local, peer) = (local.clone(), peer.clone());
     let (plaintext, ad_extra) = (plaintext.to_vec(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
         let owner = local.owner();
-        let (next, message) = load(conn, &owner, &peer)?.encrypt(&plaintext, &ad_extra)?;
+        let (next, outgoing) =
+            load(conn, &owner, &peer)?.encrypt(&plaintext, &ad_extra, local.now_ms)?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
+        let message = outgoing.message();
         let sent = crate::repo::send_log::LoggedSend {
             peer: peer.identity,
             msg_id: rekindle_crypto::replay::ratchet_message_id(
@@ -228,7 +248,7 @@ pub async fn encrypt_record_and_log_outbound(
             sent_at: local.now_ms,
         };
         crate::repo::send_log::insert(conn, &owner, &sent)?;
-        Ok(message)
+        Ok(outgoing)
     })
     .await
 }
@@ -250,14 +270,13 @@ pub async fn decrypt_and_record_inbound(
     let (local, peer, ad_extra) = (local.clone(), peer.clone(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
         let owner = local.owner();
-        let (next, plaintext) = load(conn, &owner, &peer)?.decrypt(
-            &message,
-            &ad_extra,
-            local.now_ms,
-            local.rng.as_ref(),
-        )?;
+        let record = load(conn, &owner, &peer)?;
+        let (next, plaintext) =
+            record.decrypt(&message, &ad_extra, local.now_ms, local.rng.as_ref())?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
-        record_inbound(conn, &local, &peer, &message, type_id, plaintext)
+        let mut inbound = record_inbound(conn, &local, &peer, &message, type_id, plaintext)?;
+        inbound.ended_session = ended(&record, &next);
+        Ok(inbound)
     })
     .await
 }
@@ -276,18 +295,19 @@ pub async fn decrypt_ephemeral(
     peer: &PeerAddress,
     message: RatchetMessage,
     ad_extra: &[u8],
-) -> Result<Vec<u8>, RatchetError> {
+) -> Result<Ephemeral, RatchetError> {
     let (local, peer, ad_extra) = (local.clone(), peer.clone(), ad_extra.to_vec());
     in_transaction(db, move |conn| {
         let owner = local.owner();
-        let (next, plaintext) = load(conn, &owner, &peer)?.decrypt(
-            &message,
-            &ad_extra,
-            local.now_ms,
-            local.rng.as_ref(),
-        )?;
+        let record = load(conn, &owner, &peer)?;
+        let (next, plaintext) =
+            record.decrypt(&message, &ad_extra, local.now_ms, local.rng.as_ref())?;
         store(conn, &owner, &peer, &next, local.now_ms)?;
-        Ok(plaintext)
+        let ended_session = ended(&record, &next);
+        Ok(Ephemeral {
+            plaintext,
+            ended_session,
+        })
     })
     .await
 }
@@ -301,31 +321,40 @@ pub enum Reinitiation {
     Refused,
     /// Yes: the init answers a session reset we asked for (B11).
     Requested,
+    /// Yes: the init is the `FriendAccept` of a friendship the user asked
+    /// for (the friend gate admits it only from a peer we sent a request
+    /// to, or befriended), so a session kept from an ended friendship does
+    /// not refuse it (plan E2.5h: removal never deletes sessions).
+    Befriended,
 }
 
-/// Accept `peer`'s PreKeyInit (plan E2.4 B8): build the session from the
-/// prekeys it names and decrypt its first message; only then, in the same
-/// transaction, consume the one-time keys it used, record a last-resort
-/// use, store the session, refill the consumed slot and record the
-/// plaintext in `unprocessed` as `type_id`. A failure stores nothing. The
-/// commit truncates the WAL (`crate::erase`): the erased one-time
-/// secrets and the replaced session must not linger in `-wal` frames.
+/// Accept `peer`'s PreKeyInit (plan E2.4 B8, E2.5h). An init whose base key
+/// is a session's we hold is decrypted by that session in place, with no
+/// prekey consumed. Otherwise the order is: build the session from the
+/// prekeys it names and decrypt its first message without touching the
+/// record; commit it (active or archived, the crossing tiebreak); the
+/// ML-KEM replay gate; the identity; store the session; consume the
+/// one-time keys and refill the slot; record the plaintext in
+/// `unprocessed` as `type_id`. All of it is one transaction, so a failure
+/// stores nothing. The commit truncates the WAL (`crate::erase`): the
+/// erased one-time secrets and any session evicted from the archive must
+/// not linger in `-wal` frames.
 ///
 /// # Errors
 /// See [`RatchetError`]:
-/// - an init whose base key is already a session's is
+/// - an init for a session we hold whose message was already decrypted is
 ///   [`CryptoError::DuplicateMessage`] (B4), dropped silently;
 /// - an init under another identity than `peer`'s is
 ///   [`CryptoError::IdentityAddressMismatch`];
-/// - an init over an established session, unless `reinit` is
-///   [`Reinitiation::Requested`], is [`RatchetError::EstablishedSession`]
-///   (ruling Q1: nothing re-initiates silently);
-/// - a last-resort-only init seen before is
-///   [`RatchetError::ReplayedLastResortInit`] (B9), dropped silently;
+/// - a new session over an established one, unless `reinit` allows it, is
+///   [`RatchetError::EstablishedSession`] (ruling Q1: nothing re-initiates
+///   silently);
 /// - a consumed, unknown or archived prekey is
-///   [`RatchetError::UnknownPrekey`] (B5).
-///
-/// Every refusal comes before a prekey is looked up.
+///   [`RatchetError::UnknownPrekey`] (B5);
+/// - a last-resort-only init seen before is
+///   [`RatchetError::ReplayedLastResortInit`] (B9), dropped silently. It is
+///   judged after the first message decrypts, so an unauthenticated init
+///   cannot probe the replay set.
 pub async fn accept_init(
     db: &Db,
     local: &LocalParty,
@@ -339,14 +368,23 @@ pub async fn accept_init(
     in_transaction(db, move |conn| {
         let owner = local.owner();
         let record = load(conn, &owner, &peer)?;
-        if record.has_base_key(&init.base_key) {
-            return Err(CryptoError::DuplicateMessage.into());
-        }
         if init.identity_key != peer.identity {
             return Err(CryptoError::IdentityAddressMismatch {
                 address: hex::encode(peer.identity),
             }
             .into());
+        }
+        if record.has_base_key(&init.base_key) {
+            let (next, plaintext) =
+                record.receive_known_init(&init, &ad_extra, local.now_ms, local.rng.as_ref())?;
+            store(conn, &owner, &peer, &next, local.now_ms)?;
+            let mut inbound =
+                record_inbound(conn, &local, &peer, &init.message, type_id, plaintext)?;
+            inbound.ended_session = ended(&record, &next);
+            return Ok(Accepted {
+                inbound,
+                refills: Vec::new(),
+            });
         }
         if reinit == Reinitiation::Refused && record.is_established() {
             return Err(RatchetError::EstablishedSession);
@@ -362,9 +400,6 @@ pub async fn accept_init(
         {
             return Err(RatchetError::UnrequestedReset);
         }
-        if prekeys::is_last_resort_only(&init) && prekeys::lr_init_seen(conn, &owner, &init)? {
-            return Err(RatchetError::ReplayedLastResortInit);
-        }
         let secrets = prekeys::responder_secrets(conn, &owner, &init)?;
         let (next, plaintext) = record.insert_from_init(
             &init,
@@ -373,16 +408,20 @@ pub async fn accept_init(
             local.now_ms,
             local.rng.as_ref(),
         )?;
-        let consumed = prekeys::consume_one_time(conn, &owner, &init, local.now_ms)?;
+        if prekeys::is_last_resort_only(&init) && prekeys::lr_init_seen(conn, &owner, &init)? {
+            return Err(RatchetError::ReplayedLastResortInit);
+        }
         prekeys::record_lr_init(conn, &owner, &init, local.now_ms)?;
-        store(conn, &owner, &peer, &next, local.now_ms)?;
         signal_identities::ensure(conn, &owner, &peer.identity)?;
+        store(conn, &owner, &peer, &next, local.now_ms)?;
+        let consumed = prekeys::consume_one_time(conn, &owner, &init, local.now_ms)?;
         let owner_text = identity_text(&owner);
         let refills = consumed
             .into_iter()
             .map(|subkey| prekeys::fill_slot(conn, &owner_text, &local, subkey))
             .collect::<Result<_, _>>()?;
-        let inbound = record_inbound(conn, &local, &peer, &init.message, type_id, plaintext)?;
+        let mut inbound = record_inbound(conn, &local, &peer, &init.message, type_id, plaintext)?;
+        inbound.ended_session = ended(&record, &next);
         Ok(Accepted { inbound, refills })
     })
     .await
@@ -390,8 +429,9 @@ pub async fn accept_init(
 
 /// B6: the peer refused the prekeys our init with `base_key_hash` named.
 /// Discard that session, but only while it is our unanswered init (nothing
-/// decrypted under it): then the archived session it replaced is active
-/// again, and `true`. Anything else changes nothing.
+/// decrypted under it), and `true`: no session is active then (an archived
+/// one is never made active again, plan E2.5h), and the discarded keys are
+/// erased. Anything else changes nothing.
 ///
 /// # Errors
 /// The database refused.
@@ -420,9 +460,11 @@ pub async fn discard_pending_init(
     .await
 }
 
-/// End every session with `peer` (an unfriend, a block, a removal): the
-/// next message to them initiates from their prekey record. Unprocessed messages
-/// from them stay for their apply, which the friend gate then judges.
+/// End every session with `peer`: a pairwise session with a former group
+/// member who is no friend of ours (plan E2.6). Never a removal, block or
+/// re-add of a friend, which keep their sessions (plan E2.5h). The deleted
+/// keys are erased through `crate::erase`, so the WAL is truncated after
+/// the commit.
 ///
 /// # Errors
 /// The database refused.
@@ -438,26 +480,6 @@ pub async fn forget(db: &Db, owner: &[u8; 32], peer: &[u8; 32]) -> Result<(), Ra
     })
     .await
     .map_err(RatchetError::from)
-}
-
-/// Run `step` in one transaction on the `Db` thread; it commits only when
-/// `step` succeeds.
-pub(crate) async fn in_transaction<T, F>(db: &Db, step: F) -> Result<T, RatchetError>
-where
-    T: Send + 'static,
-    F: FnOnce(&Connection) -> Result<T, RatchetError> + Send + 'static,
-{
-    db.call(move |conn| {
-        let tx = conn.transaction()?;
-        match step(&tx) {
-            Ok(value) => {
-                tx.commit()?;
-                Ok(Ok(value))
-            }
-            Err(e) => Ok(Err(e)),
-        }
-    })
-    .await?
 }
 
 /// The stored record for `peer`, or an empty one.
@@ -539,5 +561,9 @@ fn record_inbound(
         &plaintext,
         local.now_ms,
     )?;
-    Ok(Inbound { key, plaintext })
+    Ok(Inbound {
+        key,
+        plaintext,
+        ended_session: false,
+    })
 }

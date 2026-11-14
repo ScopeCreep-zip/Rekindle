@@ -18,9 +18,7 @@
 
 use std::time::Duration;
 
-use rekindle_codec::capnp_codec::direct::{
-    DirectBody, DmFrame, DmTypeId, FrameBody, RatchetBody, RetryRequest,
-};
+use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, RatchetBody, RetryRequest};
 use rekindle_crypto::replay::ratchet_message_id;
 use rekindle_db::ratchet::{self, RatchetError};
 use rekindle_db::repo::{retry_requests, send_log};
@@ -176,7 +174,7 @@ pub(super) async fn on_retry_request(
     let Some(type_id) = DmTypeId::from_u16(logged.type_id) else {
         return true;
     };
-    let message = match ratchet::encrypt_record_and_log_outbound(
+    let outgoing = match ratchet::encrypt_record_and_log_outbound(
         &db,
         &local,
         &address,
@@ -186,17 +184,13 @@ pub(super) async fn on_retry_request(
     )
     .await
     {
-        Ok(message) => message,
+        Ok(outgoing) => outgoing,
         Err(e) => {
             tracing::warn!(to = %sender, error = %e, "resend refused: no current session");
             return true;
         }
     };
-    let resent = DmFrame {
-        type_id,
-        sender: local.owner(),
-        body: FrameBody::Ratchet(frame::ratchet_body(message)),
-    };
+    let resent = frame::outgoing_frame(local.owner(), type_id, outgoing);
     if let Err(e) = dm::send_frame(host, sender, &resent).await {
         tracing::warn!(to = %sender, error = %e, "resend not delivered");
     }

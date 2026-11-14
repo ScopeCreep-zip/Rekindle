@@ -69,7 +69,8 @@ impl Side {
 
     /// Send `plaintext` to `to` at `step`.
     fn send(&mut self, to: &mut Self, step: usize, plaintext: &[u8]) {
-        let (record, message) = self.record.encrypt(plaintext, AD).unwrap();
+        let (record, outgoing) = self.record.encrypt(plaintext, AD, NOW).unwrap();
+        let message = outgoing.message().clone();
         self.record = record;
         to.inbox.pending.push((step, message, plaintext.to_vec()));
     }
@@ -146,8 +147,8 @@ fn converge(alice: &mut Side, bob: &mut Side) {
     bob.send(alice, 0, b"pong");
     alice.flush();
     assert_eq!(
-        alice.record.active.as_ref().unwrap().base_key(),
-        bob.record.active.as_ref().unwrap().base_key()
+        alice.record.active.as_ref().unwrap().state.base_key(),
+        bob.record.active.as_ref().unwrap().state.base_key()
     );
 }
 
@@ -171,7 +172,7 @@ proptest! {
         let a_keys = BobKeys::new();
         let b_keys = BobKeys::new();
         let (alice, init) = SessionRecord::new(b_keys.identity.public_key_bytes())
-            .initiate(&a_keys.identity, &b_keys.bundle(one_time), b"init", AD, &TestRandom::new(1))
+            .initiate(&a_keys.identity, &b_keys.bundle(one_time), b"init", AD, NOW, &TestRandom::new(1))
             .unwrap();
         let (bob, first) = SessionRecord::new(a_keys.identity.public_key_bytes())
             .insert_from_init(
@@ -197,10 +198,10 @@ proptest! {
         let a_keys = BobKeys::new();
         let b_keys = BobKeys::new();
         let (a_record, a_init) = SessionRecord::new(b_keys.identity.public_key_bytes())
-            .initiate(&a_keys.identity, &b_keys.bundle(true), b"a", AD, &TestRandom::new(3))
+            .initiate(&a_keys.identity, &b_keys.bundle(true), b"a", AD, NOW, &TestRandom::new(3))
             .unwrap();
         let (b_record, b_init) = SessionRecord::new(a_keys.identity.public_key_bytes())
-            .initiate(&b_keys.identity, &a_keys.bundle(true), b"b", AD, &TestRandom::new(4))
+            .initiate(&b_keys.identity, &a_keys.bundle(true), b"b", AD, NOW, &TestRandom::new(4))
             .unwrap();
         let mut a = (side(a_record), &a_keys, a_init);
         let mut b = (side(b_record), &b_keys, b_init);

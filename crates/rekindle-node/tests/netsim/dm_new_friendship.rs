@@ -13,7 +13,7 @@ use rekindle_netsim::latency::{MESSAGE, SET};
 use rekindle_netsim::{Fault, Netsim};
 use rekindle_types::message::{SendState, CALL_TIMEOUT_MS, DM_ACK_DELAY_MAX_MS};
 
-use crate::harness::{eventually, start, SimNode};
+use crate::harness::{eventually, start, SimNode, PASSPHRASE};
 use crate::pair::{befriend, is_accepted_friend, key, send, talk, LIMIT};
 
 const BODIES: [&str; 3] = ["one", "two", "three"];
@@ -238,5 +238,89 @@ async fn a_lost_first_ack_is_answered_again_at_the_re_hint() {
         "settled by the re-ack within {bound:?} (after {:?}): {:?}",
         started.elapsed(),
         states(&nodes[0], &jon).await
+    );
+}
+
+/// Review LV22: a re-hinted entry followed by its chain copy appears once
+/// and is acknowledged under its chain seq. Jon's acks are lost and his DHT
+/// is off, so Ida's first re-ask re-hints the entry (framed afresh, a new
+/// ratchet message, so the ratchet's duplicate detection does not see it);
+/// then his unlock's chain diff reads the same entry. The copies are one
+/// message by its stream entry, and the diff's `through` settles her row.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_re_hint_then_its_chain_copy_is_one_message_acked_by_its_chain_seq() {
+    let (sim, nodes, ida, jon) = new_friends(103).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    assert!(
+        eventually(&sim, first_reask(), || has(
+            &nodes[0],
+            &jon,
+            "hello: 0 to 1",
+            true,
+            Some(SendState::Delivered)
+        ))
+        .await,
+        "hello settled"
+    );
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: true,
+    });
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 1000,
+    });
+    send(&nodes[0], &jon, "solo").await;
+    assert!(
+        eventually(&sim, SET.min / 2, || has(
+            &nodes[1], &ida, "solo", false, None
+        ))
+        .await,
+        "Jon shows it at its hint"
+    );
+    // Past the first re-ask: its re-hint reached Jon, its ack lost too.
+    tokio::time::sleep(first_reask() + ack_window() + MESSAGE.max * 2).await;
+    assert!(
+        !has(&nodes[0], &jon, "solo", true, Some(SendState::Delivered)).await,
+        "no ack reached Ida"
+    );
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 0,
+    });
+    sim.fault(Fault::DhtOffline {
+        node: 1,
+        offline: false,
+    });
+    // Jon's unlock catches up (`catch_up_all`) and reads the chain copy.
+    nodes[1].ok(IpcRequest::Lock).await;
+    nodes[1]
+        .ok(IpcRequest::Unlock {
+            identity: jon.clone(),
+            passphrase: PASSPHRASE.into(),
+        })
+        .await;
+    assert!(
+        eventually(&sim, LIMIT, || has(
+            &nodes[0],
+            &jon,
+            "solo",
+            true,
+            Some(SendState::Delivered)
+        ))
+        .await,
+        "settled by Jon's ack: {:?}",
+        states(&nodes[0], &jon).await
+    );
+    let copies = history(&nodes[1], &ida)
+        .await
+        .iter()
+        .filter(|m| !m.is_own && m.body == "solo")
+        .count();
+    assert_eq!(
+        copies,
+        1,
+        "one message: {:?}",
+        states(&nodes[1], &ida).await
     );
 }

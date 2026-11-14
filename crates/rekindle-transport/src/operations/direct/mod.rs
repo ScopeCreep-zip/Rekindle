@@ -9,6 +9,7 @@ pub mod frame;
 mod handlers;
 pub mod replay;
 pub mod retry_requests;
+mod sealed_open;
 
 pub use frame::{Dropped, Opened};
 use rekindle_codec::capnp_codec::direct::DirectBody;

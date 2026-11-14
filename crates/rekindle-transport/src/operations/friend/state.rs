@@ -219,8 +219,9 @@ fn stored(result: Result<(), FriendError>) -> bool {
     }
 }
 
-/// End every ratchet session with `peer` (an unfriend, a block, a
-/// removal): a later message to them opens a new one. Logged on failure.
+/// End every ratchet session with `peer`, a former group member who is no
+/// friend of ours: a later message to them opens a new one. A removal, a
+/// block or a re-add never ends sessions (plan E2.5h). Logged on failure.
 pub(crate) async fn forget_session(host: &dyn FriendHost, peer: &str) {
     let (Ok(db), Ok(local), Ok(theirs)) = (
         host.db(),
@@ -249,8 +250,9 @@ pub(crate) async fn write_forget(host: &dyn FriendHost, public_key: &str) -> boo
     )
 }
 
-/// `public_key` removed us: their row, their request, their queue and the
-/// sessions with them, in one transaction; whether it was stored.
+/// `public_key` removed us: their row, their request and their queue, in
+/// one transaction (the sessions with them stay, plan E2.5h); whether it
+/// was stored.
 pub(crate) async fn write_unfriended(host: &dyn FriendHost, public_key: &str) -> bool {
     let Ok(owner) = owner(host) else {
         return false;

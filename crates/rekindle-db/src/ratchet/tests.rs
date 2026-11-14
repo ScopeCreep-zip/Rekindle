@@ -36,6 +36,8 @@ async fn send(from: &Party, to: &Party, plaintext: &[u8]) -> RatchetMessage {
     encrypt_and_record_outbound(&from.db, &from.local, &to.address(), plaintext, AD_EXTRA)
         .await
         .unwrap()
+        .message()
+        .clone()
 }
 
 async fn receive(
@@ -436,6 +438,7 @@ async fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
             &bob.bundle(Some(FIRST_SLOT)).await,
             b"x",
             AD_EXTRA,
+            carol.local.now_ms,
             carol.local.rng.as_ref(),
         )
         .unwrap();
@@ -504,7 +507,9 @@ async fn a_logged_message_is_resent_only_on_its_ratchet_key() {
         DM,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .message()
+    .clone();
     let msg_id = ratchet_message_id(&lost.header.dh, lost.header.n);
     let (owner, peer) = (alice.local.owner(), bob.local.owner());
 
@@ -534,7 +539,9 @@ async fn a_logged_message_is_resent_only_on_its_ratchet_key() {
         logged.type_id,
     )
     .await
-    .unwrap();
+    .unwrap()
+    .message()
+    .clone();
     assert_ne!(
         (resent.header.dh, resent.header.n),
         (lost.header.dh, lost.header.n)

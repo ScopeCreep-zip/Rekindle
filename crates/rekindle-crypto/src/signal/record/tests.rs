@@ -27,7 +27,7 @@ fn establish(
 ) -> (SessionRecord, SessionRecord, PreKeyInit) {
     let rng = TestRandom::new(1);
     let (alice_record, init) = SessionRecord::new(bob.identity.public_key_bytes())
-        .initiate(alice, bundle, b"hello", AD, &rng)
+        .initiate(alice, bundle, b"hello", AD, NOW, &rng)
         .unwrap();
     let (bob_record, first) =
         accept(&SessionRecord::new(alice.public_key_bytes()), bob, &init).unwrap();
@@ -50,12 +50,15 @@ fn accept(
 }
 
 fn send(record: &mut SessionRecord, plaintext: &[u8]) -> RatchetMessage {
-    let (next, message) = record.encrypt(plaintext, AD).unwrap();
+    let (next, outgoing) = record.encrypt(plaintext, AD, NOW).unwrap();
     *record = next;
-    message
+    outgoing.message().clone()
 }
 
-fn receive(record: &mut SessionRecord, message: &RatchetMessage) -> Result<Vec<u8>, CryptoError> {
+pub(super) fn receive(
+    record: &mut SessionRecord,
+    message: &RatchetMessage,
+) -> Result<Vec<u8>, CryptoError> {
     let (next, plaintext) = record.decrypt(
         message,
         AD,
@@ -117,7 +120,7 @@ fn the_stored_form_round_trips_and_rejects_corruption() {
 fn encrypt_without_a_session_fails() {
     let record = SessionRecord::new([4; 32]);
     assert!(matches!(
-        record.encrypt(b"x", AD),
+        record.encrypt(b"x", AD, NOW),
         Err(CryptoError::NoSession(_))
     ));
 }
@@ -139,6 +142,7 @@ fn bundle_handouts_complete_independently() {
                     &bob.handout(i),
                     b"hi",
                     AD,
+                    NOW,
                     &TestRandom::new(seed(10, i)),
                 )
                 .unwrap()
@@ -167,10 +171,24 @@ fn crossing_first_messages_both_decrypt_and_converge() {
     let b_keys = BobKeys::new();
     let rng = TestRandom::new(5);
     let (a, a_init) = SessionRecord::new(b_keys.identity.public_key_bytes())
-        .initiate(&a_keys.identity, &b_keys.bundle(true), b"from a", AD, &rng)
+        .initiate(
+            &a_keys.identity,
+            &b_keys.bundle(true),
+            b"from a",
+            AD,
+            NOW,
+            &rng,
+        )
         .unwrap();
     let (b, b_init) = SessionRecord::new(a_keys.identity.public_key_bytes())
-        .initiate(&b_keys.identity, &a_keys.bundle(true), b"from b", AD, &rng)
+        .initiate(
+            &b_keys.identity,
+            &a_keys.bundle(true),
+            b"from b",
+            AD,
+            NOW,
+            &rng,
+        )
         .unwrap();
     let (mut a, from_b) = accept(&a, &a_keys, &b_init).unwrap();
     let (mut b, from_a) = accept(&b, &b_keys, &a_init).unwrap();
@@ -190,8 +208,8 @@ fn crossing_first_messages_both_decrypt_and_converge() {
         round_trip(&mut b, &mut a);
     }
     assert_eq!(
-        a.active.as_ref().unwrap().base_key(),
-        b.active.as_ref().unwrap().base_key()
+        a.active.as_ref().unwrap().state.base_key(),
+        b.active.as_ref().unwrap().state.base_key()
     );
 }
 
@@ -205,7 +223,7 @@ fn a_changed_identity_is_refused_on_both_sides() {
     let mallory = BobKeys::new();
 
     let forged = mallory.bundle(true);
-    let Err(err) = a.initiate(&alice, &forged, b"x", AD, &TestRandom::new(6)) else {
+    let Err(err) = a.initiate(&alice, &forged, b"x", AD, NOW, &TestRandom::new(6)) else {
         panic!("a bundle under another key must be refused");
     };
     assert!(
@@ -219,6 +237,7 @@ fn a_changed_identity_is_refused_on_both_sides() {
             &bob.bundle(false),
             b"x",
             AD,
+            NOW,
             &TestRandom::new(7),
         )
         .unwrap();
@@ -249,6 +268,7 @@ fn a_session_with_ourselves_is_refused() {
         &bob.bundle(false),
         b"x",
         AD,
+        NOW,
         &TestRandom::new(8),
     ) else {
         panic!("a bundle under our own key must be refused");
@@ -257,7 +277,14 @@ fn a_session_with_ourselves_is_refused() {
 
     let alice = Identity::generate();
     let (_, mut init) = SessionRecord::new(bob.identity.public_key_bytes())
-        .initiate(&alice, &bob.bundle(false), b"x", AD, &TestRandom::new(9))
+        .initiate(
+            &alice,
+            &bob.bundle(false),
+            b"x",
+            AD,
+            NOW,
+            &TestRandom::new(9),
+        )
         .unwrap();
     init.identity_key = bob.identity.public_key_bytes();
     let Err(err) = accept(&ours, &bob, &init) else {
@@ -274,7 +301,14 @@ fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
     let bob = BobKeys::new();
     let alice = Identity::generate();
     let (_, init) = SessionRecord::new(bob.identity.public_key_bytes())
-        .initiate(&alice, &bob.bundle(true), b"first", AD, &TestRandom::new(9))
+        .initiate(
+            &alice,
+            &bob.bundle(true),
+            b"first",
+            AD,
+            NOW,
+            &TestRandom::new(9),
+        )
         .unwrap();
     assert!(init.one_time_prekey_id.is_some());
     let empty = SessionRecord::new(alice.public_key_bytes());
@@ -297,24 +331,34 @@ fn one_time_keys_are_consumed_only_after_the_first_decrypt() {
 }
 
 /// Re-initiations archive the old sessions, at most the bound, and a
-/// message that only an archived session decrypts promotes it.
+/// message that only an archived session decrypts is decrypted there,
+/// leaving the active session as it was (plan E2.5h: never promoted).
 #[test]
-fn inactive_sessions_are_bounded_and_promoted_on_use() {
+fn inactive_sessions_are_bounded_and_decrypt_in_place() {
     let bob = BobKeys::new();
     let alice = Identity::generate();
     let (mut a, mut b, _) = establish(&alice, &bob, &bob.bundle(false));
     let old_session = send(&mut a, b"old");
-    let old_base = *b.active.as_ref().unwrap().base_key();
+    let old_base = *b.active.as_ref().unwrap().state.base_key();
 
     let (mut a2, init) = a
-        .initiate(&alice, &bob.bundle(false), b"new", AD, &TestRandom::new(20))
+        .initiate(
+            &alice,
+            &bob.bundle(false),
+            b"new",
+            AD,
+            NOW,
+            &TestRandom::new(20),
+        )
         .unwrap();
     let (next, _) = accept(&b, &bob, &init).unwrap();
     b = next;
+    assert_eq!(*b.active.as_ref().unwrap().state.base_key(), init.base_key);
     assert_eq!(receive(&mut b, &old_session).unwrap(), b"old");
-    assert_eq!(*b.active.as_ref().unwrap().base_key(), old_base);
+    assert_eq!(*b.active.as_ref().unwrap().state.base_key(), init.base_key);
+    assert_eq!(*b.inactive[0].state.base_key(), old_base);
     round_trip(&mut a2, &mut b);
-    assert_eq!(*b.active.as_ref().unwrap().base_key(), init.base_key);
+    assert_eq!(*b.active.as_ref().unwrap().state.base_key(), init.base_key);
 
     for i in 0..MAX_INACTIVE_SESSIONS + 3 {
         let (next_a, init) = a2
@@ -323,6 +367,7 @@ fn inactive_sessions_are_bounded_and_promoted_on_use() {
                 &bob.bundle(false),
                 b"again",
                 AD,
+                NOW,
                 &TestRandom::new(seed(30, i)),
             )
             .unwrap();
@@ -335,8 +380,9 @@ fn inactive_sessions_are_bounded_and_promoted_on_use() {
     assert_eq!(b.inactive.len(), MAX_INACTIVE_SESSIONS);
 }
 
-/// B6: only our unanswered init is pending, and discarding it restores
-/// the session it replaced.
+/// B6: only our unanswered init is pending, and discarding it leaves no
+/// active session: the one it replaced stays archived (plan E2.5h, never
+/// promoted) and still decrypts in place.
 #[test]
 fn only_an_unanswered_init_is_pending_and_it_can_be_discarded() {
     let (alice, bob) = (Identity::generate(), BobKeys::new());
@@ -350,16 +396,20 @@ fn only_an_unanswered_init_is_pending_and_it_can_be_discarded() {
     assert_eq!(alice_record.pending_init(), None);
     assert!(alice_record.without_pending(&init.base_key).is_none());
 
-    // A second init replaces the answered session; discarding it brings
-    // that session back.
+    // A second init replaces the answered session; discarding it leaves
+    // that session archived.
     let rng = TestRandom::new(9);
     let (retry, second) = alice_record
-        .initiate(&alice, &bob.bundle(false), b"again", AD, &rng)
+        .initiate(&alice, &bob.bundle(false), b"again", AD, NOW, &rng)
         .unwrap();
     assert!(retry.without_pending(&[0; 32]).is_none());
-    let mut restored = retry.without_pending(&second.base_key).unwrap();
-    assert_eq!(restored.pending_init(), None);
-    round_trip(&mut restored, &mut bob_record);
+    let mut discarded = retry.without_pending(&second.base_key).unwrap();
+    assert_eq!(discarded.pending_init(), None);
+    assert!(!discarded.has_active());
+    assert!(!discarded.has_base_key(&second.base_key));
+    let late = send(&mut bob_record, b"late");
+    assert_eq!(receive(&mut discarded, &late).unwrap(), b"late");
+    assert!(!discarded.has_active());
 }
 
 /// G2: a session is established once something decrypted under it; our
