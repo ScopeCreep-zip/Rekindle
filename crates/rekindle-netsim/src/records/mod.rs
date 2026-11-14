@@ -70,7 +70,7 @@ mod stores;
 mod watch_tests;
 pub(crate) mod watches;
 
-pub(crate) use replicas::{reachable, reaches, Replica};
+pub(crate) use replicas::{reachable, reaches, Replica, GET_COUNT};
 
 /// A get's answer over the `reach` replicas with no local copy.
 pub(crate) fn get_from(record: &NetRecord, reach: &[usize], subkey: u32) -> Option<RecordValue> {

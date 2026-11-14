@@ -1,7 +1,11 @@
 //! The faults a scenario puts in force (plan C9.3) and how the sim
 //! applies them; split from `lib.rs` along its seam.
 
+use rekindle_records::port::RecordSchema;
+
 use super::{pair, toggle, Netsim, PortEvent};
+use crate::network::{Faults, NetRecord};
+use crate::records::GET_COUNT;
 
 /// A fault to put in force (plan C9.3).
 #[derive(Debug, Clone)]
@@ -14,6 +18,23 @@ pub enum Fault {
     /// replica accepts it and nothing is stored, as a Veilid `set_value`
     /// can), until [`Fault::Heal`]; its other writes are unaffected.
     WriteFails { node: usize, of: Writes },
+    /// Every set by the node that `of` selects reaches only the
+    /// `accepting` replicas closest to the record, which store it, until
+    /// [`Fault::Heal`]. `0 < accepting < get_value_count`: Veilid counts a
+    /// set that times out or exhausts with fewer than `get_value_count`
+    /// `consensus_nodes` as offline (`storage_manager/mod.rs:781-811`,
+    /// `set_value.rs:596-632`), and one with more as landed, so only
+    /// fewer is below consensus. With
+    /// `AllowOffline(false)` the writer stores and queues nothing locally
+    /// (`local_record_store_interface.rs:60-63`) and hears `TryAgain`,
+    /// which `set_dht_value` answers as `Ok(None)` (`set_value.rs:170`),
+    /// while a reader whose fanout reaches an accepting replica sees the
+    /// value.
+    WritePartial {
+        node: usize,
+        of: Writes,
+        accepting: usize,
+    },
     /// The two groups cannot exchange app messages or calls, and neither
     /// reaches the record replicas placed beside the other's nodes (a
     /// stale read or a set below consensus follows from which replicas a
@@ -80,24 +101,81 @@ pub enum Fault {
     ReplicaChurn { key: String, count: usize },
 }
 
-/// Which of a node's sets [`Fault::WriteFails`] refuses: the network
-/// refusing that writer's sets, chosen by what they write.
+/// Which of a node's sets [`Fault::WriteFails`] or [`Fault::WritePartial`]
+/// refuses: the network refusing that writer's sets, chosen by what they
+/// write.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Writes {
     /// Every set of this record.
     Record(String),
-    /// Every set of this subkey, in any record: a record the node creates
-    /// mid-scenario (a joiner's member record) is covered before its key
-    /// is known.
-    Subkey(u32),
+    /// Every set of this subkey in the records `record` selects (any
+    /// record when `None`): a record the node creates mid-scenario (a
+    /// joiner's member record) is covered before its key is known.
+    Subkey {
+        subkey: u32,
+        record: Option<Records>,
+    },
+}
+
+/// Which records a [`Writes::Subkey`] covers.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Records {
+    /// This record only.
+    Key(String),
+    /// The records the writing node created with this many owner subkeys
+    /// and no members (`DFLT(n)`): a joiner's own member record is
+    /// `DFLT(8)`, and the channel, presence and other records it writes
+    /// are not.
+    CreatedDflt(u16),
 }
 
 impl Writes {
-    pub(crate) fn selects(&self, key: &str, subkey: u32) -> bool {
+    pub(crate) fn selects(
+        &self,
+        node: usize,
+        key: &str,
+        subkey: u32,
+        record: Option<&NetRecord>,
+    ) -> bool {
         match self {
-            Self::Record(record) => record == key,
-            Self::Subkey(selected) => *selected == subkey,
+            Self::Record(selected) => selected == key,
+            Self::Subkey {
+                subkey: selected,
+                record: of,
+            } => {
+                *selected == subkey
+                    && match of {
+                        None => true,
+                        Some(Records::Key(selected)) => selected == key,
+                        Some(Records::CreatedDflt(subkeys)) => record.is_some_and(|r| {
+                            r.creator == node
+                                && r.schema
+                                    == (RecordSchema::Dflt {
+                                        owner_subkeys: *subkeys,
+                                    })
+                        }),
+                    }
+            }
         }
+    }
+}
+
+impl Faults {
+    /// How many replicas take `node`'s set of `key`/`subkey`: `None` when
+    /// no write fault selects it, else the fewest any selecting fault
+    /// allows (`0` for [`Fault::WriteFails`]).
+    pub(crate) fn accepting(
+        &self,
+        node: usize,
+        key: &str,
+        subkey: u32,
+        record: Option<&NetRecord>,
+    ) -> Option<usize> {
+        self.write_limits
+            .iter()
+            .filter(|((n, of), _)| *n == node && of.selects(node, key, subkey, record))
+            .map(|(_, accepting)| *accepting)
+            .min()
     }
 }
 
@@ -112,7 +190,28 @@ impl Netsim {
                 toggle(&mut self.net.inner.lock().faults.dht_offline, node, offline);
             }
             Fault::WriteFails { node, of } => {
-                self.net.inner.lock().faults.write_fails.insert((node, of));
+                self.net
+                    .inner
+                    .lock()
+                    .faults
+                    .write_limits
+                    .insert((node, of), 0);
+            }
+            Fault::WritePartial {
+                node,
+                of,
+                accepting,
+            } => {
+                assert!(
+                    (1..GET_COUNT).contains(&accepting),
+                    "a partial write is accepted by 0 < k < get_value_count replicas"
+                );
+                self.net
+                    .inner
+                    .lock()
+                    .faults
+                    .write_limits
+                    .insert((node, of), accepting);
             }
             Fault::Partition { a, b } => {
                 let mut inner = self.net.inner.lock();
@@ -174,7 +273,7 @@ impl Netsim {
             let mut inner = self.net.inner.lock();
             inner.faults.partitions.clear();
             inner.faults.dht_offline.clear();
-            inner.faults.write_fails.clear();
+            inner.faults.write_limits.clear();
             let mut nodes: Vec<usize> = inner.faults.not_ready.iter().copied().collect();
             nodes.sort_unstable();
             nodes

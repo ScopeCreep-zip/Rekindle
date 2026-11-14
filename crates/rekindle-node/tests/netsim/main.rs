@@ -30,6 +30,7 @@ mod friends;
 mod friends_key_receipt;
 mod game_servers;
 mod gate;
+mod governance_partial;
 mod governance_publication;
 mod governance_queued;
 mod governance_warm_restore;

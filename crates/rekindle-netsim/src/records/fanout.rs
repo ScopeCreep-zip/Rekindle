@@ -201,13 +201,16 @@ pub(crate) fn set_now(
 }
 
 /// `node`'s set of `ours` at `key`/`subkey`, over `span` from now: each RPC
-/// lands as it arrives; returns at the span's end.
+/// lands as it arrives; returns at the span's end. With `accepting`, only
+/// that many of the closest replicas it reaches answer
+/// ([`crate::Fault::WritePartial`]); the rest never do.
 pub(crate) async fn run(
     net: &Network,
     node: usize,
     (key, subkey): (&str, u32),
     ours: &RecordValue,
     span: Duration,
+    accepting: Option<usize>,
 ) -> SetFanout {
     let end = Instant::now() + span;
     let (schema, reach) = {
@@ -215,7 +218,8 @@ pub(crate) async fn run(
         inner.records.get(key).map_or_else(
             || (None, Vec::new()),
             |r| {
-                let reach = reachable(&r.replicas, &inner.faults.partitions, node);
+                let mut reach = reachable(&r.replicas, &inner.faults.partitions, node);
+                reach.truncate(accepting.unwrap_or(usize::MAX));
                 (Some(r.schema.clone()), reach)
             },
         )

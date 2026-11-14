@@ -19,8 +19,8 @@ use std::time::Duration;
 
 use rekindle_ipc::protocol::{ChannelRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_netsim::{Fault, Writes};
-use rekindle_types::dht_layout::community_anchor;
+use rekindle_netsim::{Fault, Records, Writes};
+use rekindle_types::dht_layout::{community_anchor, member_record};
 
 use crate::harness::{eventually, Community};
 
@@ -142,8 +142,10 @@ async fn a_governance_command_answers_pending_within_the_bound() {
     );
 }
 
-/// A join whose `MemberJoined` cannot land (every set node 1 makes of an op
-/// log head, `M`/2, is refused, so its card lands and its op does not)
+/// A join whose `MemberJoined` cannot land (every set node 1 makes of the
+/// op log head, `M`/2, of a `DFLT(8)` record it created, its own member
+/// record, is refused, so its card lands and its op does not, while its
+/// other records' writes are untouched)
 /// answers Ok, pending, with its local side done and the op queued (plan
 /// E3.2 S6b, RV4 review M1). The join is idempotent: asked again, it
 /// answers the same membership and mints no second record. Once the fault
@@ -159,7 +161,10 @@ async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
     let mut community = Community::create(2, 229).await;
     community.sim.fault(Fault::WriteFails {
         node: 1,
-        of: Writes::Subkey(rekindle_types::dht_layout::member_record::GOV_HEAD),
+        of: Writes::Subkey {
+            subkey: member_record::GOV_HEAD,
+            record: Some(Records::CreatedDflt(member_record::SUBKEY_COUNT)),
+        },
     });
     let link = community.invite().await;
     let join = IpcRequest::Community(CommunityRequest::Lifecycle(

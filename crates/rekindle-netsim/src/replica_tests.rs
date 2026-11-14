@@ -143,3 +143,74 @@ async fn a_partition_splits_the_replicas() {
         (vec![Some(0)], vec![Some(1)])
     );
 }
+
+/// RV4 L3: a set that only `k` replicas accept (`Fault::WritePartial`) is
+/// `BelowConsensus` with nothing stored locally (`AllowOffline(false)`,
+/// `local_record_store_interface.rs:60-63`), the `k` closest replicas hold
+/// it, so another node's get already sees it, and once the fault lifts the
+/// same value re-sent lands on them unchanged (`set_value.rs:700-719`).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_set_two_replicas_accept_is_below_consensus_yet_readable() {
+    let (sim, nodes) = Netsim::nodes(3, 43);
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, key, _) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 2 }, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
+        SetOutcome::Landed
+    );
+    sim.fault(Fault::WritePartial {
+        node: 0,
+        of: Writes::Subkey {
+            subkey: 1,
+            record: Some(crate::Records::CreatedDflt(2)),
+        },
+        accepting: 2,
+    });
+    assert_eq!(
+        pool.set(lease, 1, b"op".to_vec(), None).await.unwrap(),
+        SetOutcome::BelowConsensus
+    );
+    // Subkey 0 is outside the filter and still lands.
+    assert_eq!(
+        pool.set(lease, 0, b"v1".to_vec(), None).await.unwrap(),
+        SetOutcome::Landed
+    );
+    let local = pool
+        .inspect(lease, Some(&[1u32][..]), ReportScope::Local)
+        .await
+        .unwrap();
+    assert_eq!(local.local_seqs, vec![None], "nothing stored locally");
+    let holders: Vec<usize> = sim
+        .replica_values(&key, 1)
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.as_ref().is_some_and(|v| v.data == b"op"))
+        .map(|(r, _)| r)
+        .collect();
+    assert_eq!(holders, vec![0, 1], "the two closest replicas took it");
+
+    let reader = nodes[1].ports.records.start_session().unwrap();
+    let opened = reader.acquire(&key, None).await.unwrap();
+    assert_eq!(
+        reader.get(opened, 1, true).await.unwrap().map(|v| v.data),
+        Some(b"op".to_vec()),
+        "a reader reaching an accepting replica sees the value"
+    );
+
+    sim.fault(Fault::Heal);
+    assert_eq!(
+        pool.set(lease, 1, b"op".to_vec(), None).await.unwrap(),
+        SetOutcome::Landed,
+        "the retry meets its own value and lands"
+    );
+    let held = sim
+        .replica_values(&key, 1)
+        .into_iter()
+        .flatten()
+        .filter(|v| v.data == b"op" && v.seq == 0)
+        .count();
+    assert!(held >= 5, "one value at one seq: {held}");
+}

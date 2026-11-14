@@ -73,8 +73,9 @@ pub(crate) struct Faults {
     pub try_again: HashMap<usize, u32>,
     /// Nodes whose DHT calls all fail, as with no connection.
     pub dht_offline: HashSet<usize>,
-    /// The node's sets that land below consensus.
-    pub write_fails: HashSet<(usize, crate::faults::Writes)>,
+    /// The node's sets that land below consensus, and how many replicas
+    /// still take each (`0` for [`crate::Fault::WriteFails`]).
+    pub write_limits: HashMap<(usize, crate::faults::Writes), usize>,
     /// Detached nodes: no watch change, app message or call reaches them,
     /// and they send none.
     pub detached: HashSet<usize>,
