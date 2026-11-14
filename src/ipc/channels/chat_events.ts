@@ -129,6 +129,7 @@ export type FriendEvent =
   | { keyChanged: { peerKey: string; newKey: string } }
   | { handshakeFailed: { peerKey: string; reason: string } }
   | { handshakeRetrying: { peerKey: string } }
+  | { reachability: { peerKey: string; reachable: boolean } }
   | { identityPinMismatch: { peerKey: string; displayName: string } }
   | { identityPinRestored: { peerKey: string } }
   | { verificationChanged: { peerKey: string; verified: boolean } }

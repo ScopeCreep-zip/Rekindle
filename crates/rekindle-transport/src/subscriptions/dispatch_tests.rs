@@ -125,6 +125,15 @@ impl AppMessagePort for Replies {
         Ok(Vec::new())
     }
 
+    async fn call_own(
+        &self,
+        _class: rekindle_records::port::RouteClass,
+        _profile: &rekindle_types::config::SafetyProfile,
+        _message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError> {
+        Ok(Vec::new())
+    }
+
     async fn reply(&self, _call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
         self.0.lock().push(message);
         Ok(())

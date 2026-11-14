@@ -185,7 +185,7 @@ mod tests {
         assert_eq!(set.await.unwrap().unwrap(), SetOutcome::Landed);
         send.await.unwrap().unwrap();
         assert!(
-            matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message } if message == b"hi")
+            matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"hi")
         );
         assert_eq!(sim.app_sets(0), 1);
         pump.abort();

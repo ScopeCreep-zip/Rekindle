@@ -1,0 +1,208 @@
+//! The owner side (plan RH1r-c O1–O5): self-test our inbound routes and
+//! republish a replacement. Two tasks per node: [`run_self_tests`] and
+//! [`run_publisher`], the one writer of our personal route blob.
+
+use std::collections::HashSet;
+use std::sync::Arc;
+
+use rekindle_records::port::RouteClass;
+use rekindle_route::liveness::{
+    SelfTest, PROBE_TIMEOUT, PUBLISH_RETRY_JITTER_MS, PUBLISH_RETRY_MIN, RETEST_JITTER_MS,
+    SELF_TEST_JITTER_MS, SILENCE_TRIGGER,
+};
+use tokio::sync::watch;
+use tokio::time::Instant;
+
+use super::{Liveness, TESTED};
+use crate::shared::SharedState;
+
+/// How often the self-test loop looks at its schedule.
+const SELF_TEST_TICK: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The session the publisher writes our blob into.
+pub(crate) type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::Session>>>;
+
+impl Liveness {
+    /// One round trip through our route of `class` (O1, O6): `true` when
+    /// our own probe came back within [`PROBE_TIMEOUT`].
+    pub(crate) async fn self_test(&self, class: RouteClass) -> bool {
+        let (nonce, datagram) = self.probe();
+        self.outstanding.lock().insert(nonce);
+        let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        let answer = tokio::time::timeout(
+            PROBE_TIMEOUT,
+            self.messages.call_own(class, &profile, datagram.clone()),
+        )
+        .await;
+        self.outstanding.lock().remove(&nonce);
+        let ok = matches!(&answer, Ok(Ok(reply)) if *reply == datagram);
+        tracing::debug!(?class, ok, "own route self-test");
+        ok
+    }
+
+    /// Whether `class` is due a self-test at `now`.
+    fn due(&self, class: RouteClass, now: Instant) -> bool {
+        let expecting = class == RouteClass::General && self.expecting();
+        let mut classes = self.classes.lock();
+        let Some(state) = classes.get_mut(&class) else {
+            return false;
+        };
+        // Media is tested only while a call carries media over it.
+        if class == RouteClass::Media
+            && state
+                .heard
+                .is_none_or(|at| now.duration_since(at) >= SILENCE_TRIGGER)
+        {
+            return false;
+        }
+        state
+            .rules
+            .should_test(now, expecting, || self.jitter(SELF_TEST_JITTER_MS))
+    }
+
+    /// Record the test of `class` that ran at `now`.
+    fn record(&self, class: RouteClass, now: Instant, ok: bool) -> SelfTest {
+        let period = self.jitter(SELF_TEST_JITTER_MS);
+        let retest = self.jitter(RETEST_JITTER_MS);
+        self.classes
+            .lock()
+            .get_mut(&class)
+            .map_or(SelfTest::Healthy, |s| {
+                s.rules.tested(now, ok, period, retest)
+            })
+    }
+}
+
+/// Self-test our inbound routes until shutdown (O1, O2, O5); a dead one is
+/// replaced, and the replacement is tested before it is published (O3) or,
+/// for Media, before the old one is released (O4).
+pub(crate) async fn run_self_tests(live: Arc<Liveness>, mut offers: Offers) {
+    let mut healing: HashSet<RouteClass> = HashSet::new();
+    loop {
+        tokio::select! {
+            () = tokio::time::sleep(SELF_TEST_TICK) => {}
+            () = live.network_changed.notified() => {}
+            changed = offers.changed() => if changed.is_err() { return },
+        }
+        for class in TESTED {
+            let now = Instant::now();
+            if !live.track(class, now) {
+                continue;
+            }
+            if class == RouteClass::Media && healing.remove(&class) {
+                // The Media replacement is live: test it, then release the
+                // old one (no record names a Media route).
+                if live.self_test(class).await {
+                    live.routes.release_retired_own(class);
+                } else {
+                    live.routes.replace_own_class(class);
+                    healing.insert(class);
+                }
+                continue;
+            }
+            if !live.due(class, now) {
+                continue;
+            }
+            let ok = live.self_test(class).await;
+            match live.record(class, Instant::now(), ok) {
+                SelfTest::Dead => {
+                    tracing::warn!(?class, "own route failed its self-tests; replacing it");
+                    if class == RouteClass::General {
+                        live.heal_pending.lock().insert(class);
+                    } else {
+                        healing.insert(class);
+                    }
+                    live.routes.replace_own_class(class);
+                }
+                SelfTest::Retry => tracing::info!(?class, "own route self-test failed"),
+                SelfTest::Healthy => {}
+            }
+        }
+    }
+}
+
+/// What the publisher waits on: the latest General blob to publish; the
+/// tasks end when the route follower drops its sender.
+pub(crate) type Offers = watch::Receiver<Option<Vec<u8>>>;
+
+/// Publish each new General blob to the profile's route subkey and the
+/// mailbox (the DHT gives each write the next seq): a replacement from a
+/// failed self-test is tested first, and a republish is debounced, kept
+/// [`rekindle_route::liveness::PUBLISH_GAP`] apart and retried after a
+/// miss; once one lands, the routes it replaced are released (O3, O4).
+pub(crate) async fn run_publisher(
+    live: Arc<Liveness>,
+    mut offers: Offers,
+    session: SharedSession,
+    shared: Arc<SharedState>,
+) {
+    loop {
+        if offers.changed().await.is_err() {
+            return;
+        }
+        let Some(blob) = offers.borrow_and_update().clone() else {
+            continue;
+        };
+        let heal = live.heal_pending.lock().remove(&RouteClass::General);
+        if heal && live.self_tests && !live.self_test(RouteClass::General).await {
+            tracing::warn!("replacement route failed its self-test; replacing it again");
+            live.heal_pending.lock().insert(RouteClass::General);
+            live.routes.replace_own_class(RouteClass::General);
+            continue;
+        }
+        live.track(RouteClass::General, Instant::now());
+        // Only a heal's republish is paced (O3): a route Veilid replaced, a
+        // renew or the first blob goes at once, as before RH1r-c.
+        let now = Instant::now();
+        let mut at = if heal { live.publish_at(now) } else { now };
+        loop {
+            tokio::select! {
+                () = tokio::time::sleep_until(at) => {}
+                changed = offers.changed() => {
+                    if changed.is_err() { return }
+                    // A newer blob supersedes this one; keep the heal mark.
+                    if heal { live.heal_pending.lock().insert(RouteClass::General); }
+                    offers.mark_changed();
+                    break;
+                }
+            }
+            match crate::broadcast::node::publish_personal_route(&session, &shared, &blob).await {
+                None => break,
+                Some(landed) => {
+                    live.published(Instant::now());
+                    if landed {
+                        live.routes.release_retired_own(RouteClass::General);
+                        break;
+                    }
+                    if !heal {
+                        // The record pool re-pushes its held writes itself.
+                        break;
+                    }
+                    let retry = PUBLISH_RETRY_MIN + live.jitter(PUBLISH_RETRY_JITTER_MS);
+                    tracing::info!(
+                        retry_ms = retry.as_millis(),
+                        "replacement route publish missed; retrying"
+                    );
+                    at = Instant::now() + retry;
+                }
+            }
+        }
+    }
+}
+
+impl Liveness {
+    /// When a publish asked for now may go.
+    fn publish_at(&self, now: Instant) -> Instant {
+        self.classes
+            .lock()
+            .get(&RouteClass::General)
+            .map_or(now, |s| s.rules.publish_at(now))
+    }
+
+    /// A publish went out at `now`.
+    fn published(&self, now: Instant) {
+        if let Some(state) = self.classes.lock().get_mut(&RouteClass::General) {
+            state.rules.published(now);
+        }
+    }
+}

@@ -121,6 +121,7 @@ function applyFriendEvent(friend: FriendEvent): void {
           displayName: displayName || existing.displayName,
           handshakeError: null,
           handshakeRetrying: false,
+          unreachable: false,
         }),
       );
     }
@@ -183,6 +184,14 @@ function applyFriendEvent(friend: FriendEvent): void {
     // A block also removes the friend (`removed`); an unblock adds no row,
     // so the list is re-read from the Host.
     if (!friend.blockChanged.blocked) handleRefreshFriends();
+    return;
+  }
+  if ("reachability" in friend) {
+    // The backend's route liveness verdict (plan RH1r-c S4).
+    const { peerKey, reachable } = friend.reachability;
+    if (friendsState.friends[peerKey]) {
+      setFriendsState("friends", peerKey, "unreachable", !reachable);
+    }
     return;
   }
   if ("handshakeRetrying" in friend) {

@@ -177,7 +177,7 @@ async fn a_first_hop_failure_recompiles_and_kills_nothing() {
         .unwrap();
     assert!(matches!(
         recv(&mut nodes[1]).await,
-        PortEvent::AppMessage { message } if message == vec![2]
+        PortEvent::AppMessage { message, .. } if message == vec![2]
     ));
     sim.quiesce().await;
     assert!(nodes[0].events.try_recv().is_err(), "no dead_routes");
@@ -458,7 +458,7 @@ async fn drop_from_loses_only_what_the_node_sends() {
         .await
         .unwrap();
     assert!(
-        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message } if message == b"in")
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"in")
     );
     let caller = nodes[0].ports.messages.clone();
     let (target, call_profile) = (one.clone(), profile.clone());
@@ -496,7 +496,7 @@ async fn drop_from_loses_only_what_the_node_sends() {
         .await
         .unwrap();
     assert!(
-        matches!(recv(&mut nodes[0]).await, PortEvent::AppMessage { message } if message == b"out")
+        matches!(recv(&mut nodes[0]).await, PortEvent::AppMessage { message, .. } if message == b"out")
     );
 }
 

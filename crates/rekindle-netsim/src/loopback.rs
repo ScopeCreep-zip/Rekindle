@@ -27,6 +27,17 @@
 //! - **offline never blames:** while the node is Offline a failure is
 //!   deferred and retested (`ping_validator.rs:813-829`); here a node that
 //!   is detached, DHT-offline or not ready runs no test.
+//! - **silent death** ([`crate::Fault::RouteSilentDeath`], live finding
+//!   75): the route breaks while the node's online detector says Offline,
+//!   so each failed test is deferred, not counted (`ping_validator.rs:815-826`:
+//!   Offline defers without the cap that bounds Degraded), and no one hears
+//!   of it. It ends one of two ways: the owner releases the route (its run
+//!   goes with it), or the detector leaves Offline, which takes an answer
+//!   to a question sent after it went Offline
+//!   (`network_manager/online_detector.rs:1338-1350`), here the round trip
+//!   that proves a returned readiness or a reattach ([`crate::attach`]).
+//!   From then on the failures count, and 3 (Ordered) or 5 (Unordered)
+//!   kill the route (`route_spec_store/mod.rs:51-63`).
 
 use std::time::Duration;
 
@@ -101,8 +112,12 @@ impl Network {
                 if offline || now < run.next_test {
                     continue;
                 }
-                run.failures += 1;
                 run.next_test = now + crate::RPC_TIMEOUT + ROUTE_TEST_TICK;
+                if inner.faults.detector_offline.contains(&route.node) {
+                    // Deferred and retested (`ping_validator.rs:815-826`).
+                    continue;
+                }
+                run.failures += 1;
                 if run.failures >= threshold(route.ordering) {
                     inner.faults.loopback.remove(&id);
                     inner.routes.remove(&id);
@@ -141,6 +156,20 @@ impl Network {
         ids.sort();
         for id in ids {
             inner.faults.loopback.insert(id, LoopbackRun::new(false));
+        }
+    }
+
+    /// [`crate::Fault::RouteSilentDeath`]: `node`'s live route of `class`
+    /// breaks now, and its online detector says Offline.
+    pub(crate) fn silence_route(&self, node: usize, class: RouteClass) {
+        self.break_route(node, class);
+        self.inner.lock().faults.detector_offline.insert(node);
+    }
+
+    /// `node` drops its own import of route `id` (a loopback test's).
+    pub(crate) fn forget_import(&self, node: usize, id: &str) {
+        if let Some(slot) = self.inner.lock().nodes.get_mut(node) {
+            slot.imported.remove(id);
         }
     }
 

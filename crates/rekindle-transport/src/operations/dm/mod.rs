@@ -11,6 +11,7 @@ pub mod outbox;
 mod outgoing;
 pub(crate) mod receipts;
 pub mod route;
+pub(crate) mod route_health;
 mod send;
 pub mod stream;
 mod typing;

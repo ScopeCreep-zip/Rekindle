@@ -129,6 +129,44 @@ impl RouteAllocator for VeilidRouteAllocator {
     }
 }
 
+/// An app call from us to our own route `id` (its `blob`), over `context`,
+/// whose safety route is that same route: Veilid's loopback (plan RH1r-c
+/// O6). A target must be a route in the remote cache
+/// (`rpc_processor/destination.rs:328-366`), so our own blob is imported
+/// for the call through the one importer ([`RouteImports::loopback_import`]);
+/// Veilid accepts it (`route_remote.rs:28-53` checks only the first hop).
+/// The import shares the route's id (both hash the route's keys,
+/// `route_remote.rs:191-221`, `route_allocate.rs:971-990`) and a release
+/// prefers the remote entry (`route_spec_store/mod.rs:227-233`), so an
+/// import this call made is released at once after it, whatever the
+/// outcome: otherwise our later release of the route would drop the import
+/// and leak the allocation.
+///
+/// # Errors
+/// The import or the call failed (a timeout is a failed round trip).
+pub async fn loopback_call(
+    api: &veilid_core::VeilidAPI,
+    imports: &crate::dht::route_imports::RouteImports,
+    context: &veilid_core::RoutingContext,
+    blob: &[u8],
+    message: Vec<u8>,
+) -> Result<Vec<u8>, rekindle_records::port::PortError> {
+    use rekindle_records::port::PortError;
+    let (imported, owned) = imports
+        .loopback_import(blob)
+        .map_err(|e| PortError::Routing(e.to_string()))?;
+    let answer = context
+        .app_call(veilid_core::Target::RouteId(imported.clone()), message)
+        .await
+        .map_err(|e| PortError::Send(e.to_string()));
+    if owned {
+        if let Err(e) = api.release_private_route(imported) {
+            tracing::debug!(error = %e, "releasing the own route import failed");
+        }
+    }
+    answer
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

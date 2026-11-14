@@ -197,12 +197,15 @@ async fn messages_and_calls_reach_the_route_s_owner() {
         .await
         .unwrap();
     assert!(
-        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message } if message == b"hello")
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"hello")
     );
 
     let caller = nodes[0].ports.messages.clone();
     let call = tokio::spawn(async move { caller.call(&target, &profile, b"ping".to_vec()).await });
-    let PortEvent::AppCall { call_id, message } = recv(&mut nodes[1]).await else {
+    let PortEvent::AppCall {
+        call_id, message, ..
+    } = recv(&mut nodes[1]).await
+    else {
         panic!("expected a call");
     };
     assert_eq!(message, b"ping");

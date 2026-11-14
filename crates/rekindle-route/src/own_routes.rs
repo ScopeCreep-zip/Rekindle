@@ -72,6 +72,10 @@ struct Slot<Id> {
     /// A want or a death arrived while the task ran: run another pass.
     again: AtomicBool,
     current: Mutex<Option<Live<Id>>>,
+    /// Routes [`OwnRoutes::replace`] took out of service that peers may
+    /// still hold: kept allocated until [`OwnRoutes::release_retired`]
+    /// (plan RH1r-c O4).
+    retiring: Mutex<Vec<Live<Id>>>,
     state: watch::Sender<RouteState>,
 }
 
@@ -83,6 +87,7 @@ impl<Id> Slot<Id> {
             running: AtomicBool::new(false),
             again: AtomicBool::new(false),
             current: Mutex::new(None),
+            retiring: Mutex::new(Vec::new()),
             state: watch::channel(RouteState::Idle).0,
         }
     }
@@ -205,6 +210,8 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     pub fn on_dead(self: &Arc<Self>, dead: &[A::Id]) {
         for class in CLASSES {
             let slot = self.slot(class);
+            // Veilid released a dead retiring route itself.
+            slot.retiring.lock().retain(|live| !dead.contains(&live.id));
             let died = {
                 let mut current = slot.current.lock();
                 let hit = current.as_ref().is_some_and(|live| dead.contains(&live.id));
@@ -219,6 +226,39 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 self.start(class);
             }
         }
+    }
+
+    /// Replace our live route of `class`, which our own self-test found
+    /// dead (plan RH1r-c O3) though Veilid has not reported it: a new one
+    /// is allocated, and the old one stays allocated, out of service, while
+    /// a peer may still send to it, until [`Self::release_retired`] (O4).
+    pub fn replace(self: &Arc<Self>, class: RouteClass) {
+        let slot = self.slot(class);
+        let Some(old) = slot.current.lock().take() else {
+            return;
+        };
+        tracing::info!(
+            ?class,
+            "own route failed its self-test; allocating a replacement"
+        );
+        slot.retiring.lock().push(old);
+        slot.state.send_replace(RouteState::Allocating);
+        self.start(class);
+    }
+
+    /// Release the routes of `class` that [`Self::replace`] retired, once
+    /// their replacement is published (O4).
+    pub fn release_retired(&self, class: RouteClass) {
+        let retired: Vec<Live<A::Id>> = std::mem::take(&mut *self.slot(class).retiring.lock());
+        for live in retired {
+            self.alloc.release(&live.id);
+        }
+    }
+
+    /// How many retired routes of `class` are still allocated.
+    #[must_use]
+    pub fn retiring(&self, class: RouteClass) -> usize {
+        self.slot(class).retiring.lock().len()
     }
 
     /// Release every live route and stop wanting them (logout, exit). An
@@ -237,6 +277,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
         if let Some(live) = slot.current.lock().take() {
             self.alloc.release(&live.id);
         }
+        self.release_retired(class);
         slot.state.send_replace(RouteState::Idle);
     }
 

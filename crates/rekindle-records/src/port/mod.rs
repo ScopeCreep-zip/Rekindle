@@ -64,12 +64,19 @@ pub enum PortError {
 /// What happened on the network, as the transport dispatches it.
 #[derive(Debug, Clone)]
 pub enum PortEvent {
-    /// A fire-and-forget message.
-    AppMessage { message: Vec<u8> },
-    /// A request awaiting [`AppMessagePort::reply`].
+    /// A fire-and-forget message; `route` is our private route it came in
+    /// over, by id text (Veilid's `VeilidAppMessage::route_id`, set from
+    /// the route that decrypted it), `None` when sent to us directly.
+    AppMessage {
+        message: Vec<u8>,
+        route: Option<String>,
+    },
+    /// A request awaiting [`AppMessagePort::reply`]; `route` as for
+    /// `AppMessage`.
     AppCall {
         call_id: AppCallId,
         message: Vec<u8>,
+        route: Option<String>,
     },
     /// A watched record changed.
     ValueChange(ValueChange),

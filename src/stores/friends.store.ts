@@ -28,6 +28,8 @@ export interface Friend {
   handshakeError: string | null;
   /** Our first contact is being resent from a fresh key (plan E2.4, B6). */
   handshakeRetrying: boolean;
+  /// The peer's route does not answer (plan RH1r-c S4).
+  unreachable: boolean;
   /** Their keys are not signed by the identity we know: a trust alert on
    *  the row, and the chat refuses to send (plan E2.4, B3). */
   identityPinMismatch: boolean;

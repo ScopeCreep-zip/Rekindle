@@ -1,7 +1,7 @@
 //! The faults a scenario puts in force (plan C9.3) and how the sim
 //! applies them; split from `lib.rs` along its seam.
 
-use rekindle_records::port::RecordSchema;
+use rekindle_records::port::{RecordSchema, RouteClass};
 
 use super::{pair, toggle, Netsim, PortEvent};
 use crate::network::{Faults, NetRecord};
@@ -74,6 +74,18 @@ pub enum Fault {
     /// The node's own routes die: the owner hears of it, its importers do
     /// not (their sends are lost until they fetch the new route).
     RouteDeath { node: usize },
+    /// The node's live own route of `class` stops delivering, and no one is
+    /// told: the live case of finding 75. The route breaks as under
+    /// [`Fault::LoopbackFailures`] while the node's online detector says
+    /// Offline, so Veilid defers each failed loopback test instead of
+    /// counting it (0.5.8 `routing_table/tasks/ping_validator.rs:815-826`),
+    /// and never tells an importer. The route stays allocated and
+    /// published: what is sent into it, or over it as a safety route, is
+    /// lost (a call times out), and no `RouteChange` reaches the owner. It
+    /// ends when the owner releases the route, or when a round trip proves
+    /// the node's network (a returned readiness, a reattach) and the
+    /// loopback failures, counted again, kill it ([`crate::loopback`]).
+    RouteSilentDeath { node: usize, class: RouteClass },
     /// The first hop of the node's safety route fails on its next app
     /// message or call: that send fails `NoConnection`, which our port
     /// reports as a `Send` error (our side: the peer's route is kept,
@@ -283,6 +295,7 @@ impl Netsim {
             }
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),
+            Fault::RouteSilentDeath { node, class } => self.net.silence_route(node, class),
             Fault::RouteLinkFailure { node } => {
                 self.net.inner.lock().faults.link_failure.insert(node);
             }

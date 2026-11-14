@@ -32,14 +32,16 @@ impl TransportNode {
 }
 
 /// Republish our personal route blob to the profile's route subkey and
-/// the mailbox. Without an unlocked session, or before its own-records
-/// stage has the keys, there is nothing to write to: that stage publishes
-/// the then-current blob itself (`rekindle_node::host::own_records`).
-async fn publish_personal_route(
+/// the mailbox: `Some(true)` when both landed, `Some(false)` when one
+/// missed (the liveness publisher retries it, plan RH1r-c O3). Without an
+/// unlocked session, or before its own-records stage has the keys, there
+/// is nothing to write to (`None`): that stage publishes the then-current
+/// blob itself (`rekindle_node::host::own_records`).
+pub(crate) async fn publish_personal_route(
     session: &Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
     shared: &Arc<SharedState>,
     blob: &[u8],
-) {
+) -> Option<bool> {
     let (profile_key, mailbox_key) = {
         let guard = session.read();
         match guard.as_ref() {
@@ -47,15 +49,14 @@ async fn publish_personal_route(
                 s.identity.profile_dht_key.clone(),
                 s.identity.mailbox_dht_key.clone(),
             ),
-            None => return,
+            None => return None,
         }
     };
     if profile_key.is_empty() && mailbox_key.is_empty() {
-        return;
+        return None;
     }
-    let Some(pool) = shared.records() else {
-        return;
-    };
+    let pool = shared.records()?;
+    let mut landed = true;
     if !profile_key.is_empty() {
         match rekindle_protocol::dht::profile::set_own_profile_subkey(
             pool.as_ref(),
@@ -67,12 +68,16 @@ async fn publish_personal_route(
         {
             Ok(outcome) if !outcome.missed() => {}
             Ok(outcome) => {
+                landed = false;
                 tracing::warn!(
                     ?outcome,
                     "personal route: profile republish not at consensus"
                 );
             }
-            Err(e) => tracing::warn!(error = %e, "personal route: profile republish failed"),
+            Err(e) => {
+                landed = false;
+                tracing::warn!(error = %e, "personal route: profile republish failed");
+            }
         }
     }
     if !mailbox_key.is_empty() {
@@ -85,15 +90,20 @@ async fn publish_personal_route(
         {
             Ok(outcome) if !outcome.missed() => {}
             Ok(outcome) => {
+                landed = false;
                 tracing::warn!(
                     ?outcome,
                     "personal route: mailbox republish not at consensus"
                 );
             }
-            Err(e) => tracing::warn!(error = %e, "personal route: mailbox republish failed"),
+            Err(e) => {
+                landed = false;
+                tracing::warn!(error = %e, "personal route: mailbox republish failed");
+            }
         }
     }
-    tracing::info!(blob_len = blob.len(), "personal route republished");
+    tracing::info!(blob_len = blob.len(), landed, "personal route republished");
+    Some(landed)
 }
 
 /// Told when a route changed (the handler's network status), when the node
@@ -109,20 +119,22 @@ pub(super) fn notify_handler<H: InboundHandler>(handler: Arc<H>) -> OnRoutesChan
     })
 }
 
-/// Follow our routes until shutdown, on both hosts (plan E1.1: the one
-/// republisher): every change is reported, a new general blob is
-/// republished to the session's profile and mailbox; the watchdog tick wants
+/// Follow our routes until shutdown, on both hosts (plan E1.1): every
+/// change is reported, and a new general blob is offered to the one
+/// republisher (`liveness::owner::run_publisher`, plan RH1r-c), which
+/// paces it into the session's profile and mailbox; dropping `offers` at
+/// shutdown ends it and the self-tests. The watchdog tick wants
 /// both classes again, a no-op while a route is live or allocating, so a
 /// class whose allocation failed for good is retried. Routes are wanted from
-/// node-ready, unlocked or not (C7.9b). They are never rotated on a timer
-/// (veilid-core tests their health and reports death in `RouteChange`).
+/// node-ready, unlocked or not (C7.9b). They are never rotated on a timer;
+/// a route Veilid reports dead in `RouteChange` is replaced by `OwnRoutes`,
+/// and one our self-test finds dead by the liveness tasks (RH1r-c).
 pub(super) async fn run_route_publisher(
     on_change: Option<OnRoutesChanged>,
     routes: Arc<dyn RoutePort>,
     watchdog_secs: u64,
     mut shutdown_rx: mpsc::Receiver<()>,
-    session: Arc<parking_lot::RwLock<Option<crate::session::Session>>>,
-    shared: Arc<SharedState>,
+    offers: tokio::sync::watch::Sender<Option<Vec<u8>>>,
 ) {
     let mut general = routes.own_state(RouteClass::General);
     let mut media = routes.own_state(RouteClass::Media);
@@ -140,7 +152,7 @@ pub(super) async fn run_route_publisher(
                     on_change().await;
                 }
                 if let RouteState::Available { blob } = state {
-                    publish_personal_route(&session, &shared, &blob).await;
+                    offers.send_replace(Some(blob));
                 }
             }
             changed = media.changed() => {

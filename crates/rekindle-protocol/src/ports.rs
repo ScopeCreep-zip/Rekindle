@@ -118,6 +118,10 @@ impl RoutePort for VeilidRoutes {
         self.own.blob(class)
     }
 
+    fn own_id(&self, class: RouteClass) -> Option<String> {
+        self.own.id(class).map(|id| id.to_string())
+    }
+
     fn own_state(&self, class: RouteClass) -> watch::Receiver<RouteState> {
         self.own.state(class)
     }
@@ -140,6 +144,14 @@ impl RoutePort for VeilidRoutes {
 
     fn release_own_class(&self, class: RouteClass) {
         self.own.release(class);
+    }
+
+    fn replace_own_class(&self, class: RouteClass) {
+        self.own.replace(class);
+    }
+
+    fn release_retired_own(&self, class: RouteClass) {
+        self.own.release_retired(class);
     }
 
     fn on_dead_own(&self, dead: &[String]) {
@@ -168,12 +180,18 @@ impl RoutePort for VeilidRoutes {
 pub struct VeilidMessages {
     api: VeilidAPI,
     own: Arc<OwnRoutes<VeilidRouteAllocator>>,
+    /// The one importer, for a loopback self-test's import of our own route.
+    imports: Arc<RouteImports>,
 }
 
 impl VeilidMessages {
     #[must_use]
-    pub fn new(api: VeilidAPI, own: Arc<OwnRoutes<VeilidRouteAllocator>>) -> Self {
-        Self { api, own }
+    pub fn new(
+        api: VeilidAPI,
+        own: Arc<OwnRoutes<VeilidRouteAllocator>>,
+        imports: Arc<RouteImports>,
+    ) -> Self {
+        Self { api, own, imports }
     }
 
     fn context(&self, profile: &SafetyProfile) -> Result<RoutingContext, PortError> {
@@ -301,6 +319,22 @@ impl AppMessagePort for VeilidMessages {
             .map_err(|e| send_error(&e))
     }
 
+    async fn call_own(
+        &self,
+        class: RouteClass,
+        profile: &SafetyProfile,
+        message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError> {
+        check_message_len(&message)?;
+        let Some(blob) = self.own.blob(class) else {
+            return Err(PortError::Routing(format!(
+                "our {class:?} route is not available"
+            )));
+        };
+        let context = self.pinned(profile, class)?;
+        crate::own_routes::loopback_call(&self.api, &self.imports, &context, &blob, message).await
+    }
+
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
         self.api
             .app_call_reply(OperationId::new(call_id.0), message)
@@ -355,10 +389,12 @@ pub fn to_port_event(update: VeilidUpdate) -> Option<PortEvent> {
     Some(match update {
         VeilidUpdate::AppMessage(msg) => PortEvent::AppMessage {
             message: msg.message().to_vec(),
+            route: msg.route_id().map(ToString::to_string),
         },
         VeilidUpdate::AppCall(call) => PortEvent::AppCall {
             call_id: AppCallId(call.id().as_u64()),
             message: call.message().to_vec(),
+            route: call.route_id().map(ToString::to_string),
         },
         VeilidUpdate::ValueChange(change) => PortEvent::ValueChange(value_change(&change)),
         VeilidUpdate::RouteChange(change) => PortEvent::RouteChange {
@@ -428,6 +464,7 @@ impl VeilidPorts {
         )
         .await?;
         let own = OwnRoutes::new(VeilidRouteAllocator::new(api.clone()), ready.clone());
+        let imports = Arc::new(RouteImports::new(api.clone()));
         let ports = PortSet {
             records: Arc::new(VeilidRecords::new(
                 api.clone(),
@@ -435,11 +472,8 @@ impl VeilidPorts {
                 ready,
                 RecordCloser::new(),
             )),
-            routes: Arc::new(VeilidRoutes::new(
-                Arc::new(RouteImports::new(api.clone())),
-                Arc::clone(&own),
-            )),
-            messages: Arc::new(VeilidMessages::new(api.clone(), own)),
+            routes: Arc::new(VeilidRoutes::new(Arc::clone(&imports), Arc::clone(&own))),
+            messages: Arc::new(VeilidMessages::new(api.clone(), own, imports)),
             lifecycle: Some(Arc::new(VeilidLifecycle::new(api))),
         };
         Ok((ports, event_rx))

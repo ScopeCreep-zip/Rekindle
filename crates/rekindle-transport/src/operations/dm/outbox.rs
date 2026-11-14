@@ -284,9 +284,16 @@ enum Framed {
 pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -> Vec<Attempt> {
     let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
     let mut chained: Vec<(usize, Vec<u8>, Vec<u8>, DmTypeId)> = Vec::new();
+    // Route liveness (plan RH1r-c S1–S4): every row here waits for the
+    // peer's `DmAck`, so its sends count against their route, and a suspect
+    // round runs first when one is due. While the peer shows unreachable
+    // the hints wait for their backoff step; the chain appends never do.
+    let hint = super::route_health::before_send(host, to).await;
     for row in rows {
         if landed(row) {
-            rehint(host, to, row).await;
+            if hint {
+                rehint(host, to, row).await;
+            }
             outcomes.push(Some(Attempt::Sent));
             continue;
         }
@@ -296,7 +303,10 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
             // then) like any `dm` row.
             Ok(Framed::Record(datagram, type_id)) => {
                 match send::route_send_datagram(host, to, &datagram, type_id, true).await {
-                    Ok(true) => Attempt::Sent,
+                    Ok(true) => {
+                        super::route_health::sent(host, to, type_id);
+                        Attempt::Sent
+                    }
                     Ok(false) => {
                         tracing::debug!(to = %to, ?type_id, "dm row deferred: no usable route");
                         Attempt::Deferred
@@ -323,9 +333,13 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     // stream's appender ([`append`]), so the peer has each message without
     // waiting on a DHT write, its own or an earlier one's (live A/B finding
     // 42, the DM pump); an ack that beats the landing waits on the row.
-    for (i, hint, chain, type_id) in chained {
-        if let Err(e) = send::route_send_datagram(host, to, &hint, type_id, true).await {
-            tracing::debug!(to = %to, error = %e, "chain entry hint not sent");
+    for (i, datagram, chain, type_id) in chained {
+        if hint {
+            match send::route_send_datagram(host, to, &datagram, type_id, true).await {
+                Ok(true) => super::route_health::sent(host, to, type_id),
+                Ok(false) => {}
+                Err(e) => tracing::debug!(to = %to, error = %e, "chain entry hint not sent"),
+            }
         }
         outcomes[i] = Some(Attempt::Appending(chain));
     }
@@ -353,11 +367,11 @@ async fn rehint(host: &dyn FriendHost, to: &str, row: &RowAttempt<'_>) {
                 ..
             }
             | Framed::Record(datagram, type_id),
-        ) => {
-            if let Err(e) = send::route_send_datagram(host, to, &datagram, type_id, true).await {
-                tracing::debug!(to = %to, error = %e, "landed entry re-hint not sent");
-            }
-        }
+        ) => match send::route_send_datagram(host, to, &datagram, type_id, true).await {
+            Ok(true) => super::route_health::sent(host, to, type_id),
+            Ok(false) => {}
+            Err(e) => tracing::debug!(to = %to, error = %e, "landed entry re-hint not sent"),
+        },
         Err(outcome) => {
             tracing::debug!(to = %to, ?outcome, "landed entry re-hint not framed");
         }

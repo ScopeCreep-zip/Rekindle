@@ -107,6 +107,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
                 requestSendState={friend.requestSendState}
                 handshakeError={friend.handshakeError}
                 handshakeRetrying={friend.handshakeRetrying}
+                unreachable={friend.unreachable}
                 identityPinMismatch={friend.identityPinMismatch}
                 selected={props.selectedKey === friend.publicKey}
                 onDoubleClick={props.onDoubleClick}

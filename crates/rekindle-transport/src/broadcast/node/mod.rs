@@ -18,6 +18,8 @@ use crate::shared::{SharedState, TransportNotification, TransportSnapshot};
 mod lifecycle;
 mod routes;
 
+pub(crate) use routes::publish_personal_route;
+
 /// The top-level transport node. Holds the ports and all subsystems. There
 /// is exactly one of these per application lifetime.
 pub struct TransportNode {
@@ -33,6 +35,10 @@ pub struct TransportNode {
     peer_registry: Arc<parking_lot::RwLock<PeerRegistry>>,
     relay: RelayState,
     shared_state: Arc<SharedState>,
+    /// Route liveness (plan RH1r-c): self-tests, the sender rules.
+    liveness: Arc<crate::liveness::Liveness>,
+    /// The liveness publisher and self-test tasks.
+    liveness_handles: Vec<tokio::task::JoinHandle<()>>,
 }
 
 impl TransportNode {
@@ -178,6 +184,12 @@ impl TransportNode {
     }
 
     // ── Introspection (for CLI/TUI) ─────────────────────────────────
+
+    /// Route liveness (plan RH1r-c).
+    #[must_use]
+    pub fn liveness(&self) -> &Arc<crate::liveness::Liveness> {
+        &self.liveness
+    }
 
     /// Observable shared state (attachment, uptime, subscribers).
     pub fn shared(&self) -> &Arc<SharedState> {

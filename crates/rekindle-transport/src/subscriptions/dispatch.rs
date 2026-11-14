@@ -30,6 +30,7 @@ use crate::crypto::envelope::{Addressing, SignedPayload};
 use crate::frame;
 use crate::gossip::DedupCache;
 use crate::handler::InboundHandler;
+use crate::liveness::ProbeAnswer;
 use crate::operations::direct::{CALL_DEADLINE, NAK};
 use crate::shared::{AttachmentState, SharedState};
 use crate::subscriptions::value_changes::ValueChanges;
@@ -40,6 +41,8 @@ pub(crate) struct RouteOwners {
     pub routes: Arc<dyn RoutePort>,
     /// The peers' cached route blobs.
     pub peers: Arc<parking_lot::RwLock<crate::broadcast::peer_registry::PeerRegistry>>,
+    /// Route liveness: what arrives over our routes, and our probes.
+    pub liveness: Arc<crate::liveness::Liveness>,
 }
 
 /// Run the inbound dispatch loop until a shutdown signal is received, then
@@ -113,10 +116,32 @@ async fn dispatch_event<H: InboundHandler>(
         value_changes,
     } = *ctx;
     match event {
-        PortEvent::AppMessage { message } => {
+        PortEvent::AppMessage { message, route } => {
+            // Arrival over our route proves its inbound path (RH1r-c O1):
+            // Veilid names the route that decrypted it.
+            routes.liveness.heard_over(route.as_deref());
             dispatch_app_message(handler, dedup, &message).await;
         }
-        PortEvent::AppCall { call_id, message } => {
+        PortEvent::AppCall {
+            call_id,
+            message,
+            route,
+        } => {
+            match routes.liveness.answer_probe(&message) {
+                ProbeAnswer::NotProbe => {}
+                // A liveness probe: ours echoes; another's is refused.
+                ProbeAnswer::Echo(echo) => {
+                    if let Err(e) = messages.reply(call_id, echo).await {
+                        warn!(error = %e, "failed to answer our own route probe");
+                    }
+                    return;
+                }
+                ProbeAnswer::Refuse => {
+                    reply_nak(messages, call_id).await;
+                    return;
+                }
+            }
+            routes.liveness.heard_over(route.as_deref());
             dispatch_app_call(handler, messages, call_id, &message).await;
         }
         PortEvent::ValueChange(change) => {
@@ -132,7 +157,14 @@ async fn dispatch_event<H: InboundHandler>(
             median_latency_us,
         } => {
             let att_state = AttachmentState::from_veilid_string(&state);
+            // A reattach, or the public internet ready again, tests our
+            // routes at once (RH1r-c O5).
+            let regained = (is_attached && !shared.is_attached())
+                || (public_internet_ready && !shared.public_internet_ready());
             let changed = shared.set_attachment(att_state, is_attached, public_internet_ready);
+            if regained {
+                routes.liveness.network_changed();
+            }
             // 0.5.7's richer attachment signal — recorded so readiness
             // checks and status surfaces can use real peer counts instead
             // of inferring health from the attachment enum alone.

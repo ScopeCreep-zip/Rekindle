@@ -53,13 +53,8 @@ pub(crate) fn cached_target(node: &TransportNode, peer: &str) -> Option<PeerTarg
 /// friend's, or a group member's from the roster we hold; and
 /// cache it.
 pub async fn fetch_from_profile(host: &dyn FriendHost, peer: &str) -> Option<Vec<u8>> {
-    // A friend's profile, else the roster's for a group member who is not
-    // our friend (plan E2.6): the record their route is published on.
-    let profile_key = match state::friend(host, peer).and_then(|f| f.dht_record_key) {
-        Some(key) => key,
-        None => crate::operations::group_dm::member_profile(host, peer).await?,
-    };
     let node = host.node().ok()?;
+    let profile_key = profile_key(host, peer).await?;
     let records = node.require_records().ok()?;
     let blob = rekindle_protocol::dht::profile::read_profile_subkey(
         records.as_ref(),
@@ -72,9 +67,42 @@ pub async fn fetch_from_profile(host: &dyn FriendHost, peer: &str) -> Option<Vec
     if blob.is_empty() {
         return None;
     }
+    // A route we suspected stays out of use for its failure cache, unless
+    // its probe answers (plan RH1r-c S2).
+    if node.liveness().failure_cached(peer, &blob) {
+        tracing::debug!(peer = %peer, "profile route is the one we suspect; not using it");
+        return None;
+    }
     cache(&node, peer, blob.clone());
     tracing::debug!(peer = %peer, "fetched fresh route blob from DHT inline");
     Some(blob)
+}
+
+/// The profile record a peer's route is published on: a friend's, else
+/// the roster's for a group member who is not our friend (plan E2.6).
+async fn profile_key(host: &dyn FriendHost, peer: &str) -> Option<String> {
+    match state::friend(host, peer).and_then(|f| f.dht_record_key) {
+        Some(key) => Some(key),
+        None => crate::operations::group_dm::member_profile(host, peer).await,
+    }
+}
+
+/// The peer's route blob and its record seq, read from the network and not
+/// cached (plan RH1r-c S2: the caller takes it only under a higher seq).
+pub(crate) async fn read_profile_route(
+    host: &dyn FriendHost,
+    peer: &str,
+) -> Option<(Vec<u8>, u32)> {
+    let profile_key = profile_key(host, peer).await?;
+    let records = host.node().ok()?.require_records().ok()?;
+    rekindle_protocol::dht::profile::read_profile_subkey_seq(
+        records.as_ref(),
+        &profile_key,
+        rekindle_protocol::dht::profile::SUBKEY_ROUTE_BLOB,
+    )
+    .await
+    .ok()?
+    .filter(|(blob, _)| !blob.is_empty())
 }
 
 /// Read the friend's current route from their mailbox record and cache it.

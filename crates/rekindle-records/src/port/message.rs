@@ -80,6 +80,25 @@ pub trait AppMessagePort: Send + Sync {
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError>;
 
+    /// A round trip through our own live route of `class` (plan RH1r-c
+    /// O1, O6): `message` is called to our route with the same route as
+    /// the safety route, so it leaves through the route's hops and comes
+    /// back in through them, and our own dispatch answers it. Veilid's own
+    /// loopback test takes this path (`routing_table/tasks/ping_validator.rs`
+    /// `:498-514`): the private route is also the safety route
+    /// (`route_spec_store/route_compile.rs:385-400`), the hop turns it
+    /// around (`rpc_processor/rpc_route.rs:292-320`) and the answer comes
+    /// back over the route (`rpc_processor/destination.rs:467-480`).
+    ///
+    /// # Errors
+    /// `Routing` while our route of `class` is not live; otherwise as for
+    /// `call` (a timeout is a failed test).
+    async fn call_own(
+        &self,
+        class: RouteClass,
+        profile: &rekindle_types::config::SafetyProfile,
+        message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError>;
     /// Answer the inbound call `call_id`.
     ///
     /// # Errors

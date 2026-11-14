@@ -218,7 +218,7 @@ pub(super) async fn route_send_datagram(
         return Ok(false);
     }
     if refresh_and_send(host, to, &datagram).await {
-        tracing::debug!(to = %to, "frame sent via veilid (after inline route refresh)");
+        tracing::debug!(to = %to, ?kind, "frame sent via veilid (after inline route refresh)");
         return Ok(true);
     }
     if failure.is_none() {

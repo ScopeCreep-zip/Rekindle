@@ -142,6 +142,11 @@ impl Netsim {
             toggle(&mut inner.faults.detached, node, detached);
             inner.faults.not_ready.remove(&node);
             inner.faults.ready_pending.remove(&node);
+            if !detached {
+                // Reattaching proves the network by a round trip
+                // (`online_detector.rs:1346-1348`, [`crate::loopback`]).
+                inner.faults.detector_offline.remove(&node);
+            }
         }
         if detached {
             self.net.step_down(node);

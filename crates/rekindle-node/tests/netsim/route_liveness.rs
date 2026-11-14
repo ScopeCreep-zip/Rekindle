@@ -1,0 +1,161 @@
+//! Route liveness (plan RH1r-c; live finding 75; research batch 12). A's
+//! General route stops delivering with no word from Veilid
+//! ([`Fault::RouteSilentDeath`], as live: its loopback failures dropped
+//! while Offline, `ping_validator.rs:666-690`). A finds it by its own
+//! round-trip self-test and republishes a replacement; B, whose sends go
+//! unanswered, re-reads A's route at a bounded rate. A healthy, busy route
+//! is never probed.
+
+use std::time::Duration;
+
+use rekindle_netsim::Fault;
+use rekindle_records::port::RouteClass;
+use rekindle_types::message::SendState;
+
+use crate::harness::{eventually, start, SimNode};
+use crate::pair::{befriend, key, send, talk, LIMIT};
+
+async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
+    let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
+        node.ok(rekindle_ipc::protocol::IpcRequest::DmHistory {
+            peer_key: peer.to_string(),
+            limit: 100,
+            before: None,
+        })
+        .await,
+    )
+    .expect("the history");
+    history
+        .iter()
+        .any(|m| m.is_own && m.body == body && m.send_state == SendState::Delivered)
+}
+
+/// A's self-probes: calls from A to A (`0<-0 AppCall`).
+fn self_probes(sim: &rekindle_netsim::Netsim) -> usize {
+    sim.trace()
+        .of(0)
+        .filter(|e| e.starts_with("0<-0 AppCall"))
+        .count()
+}
+
+async fn friends(seed: u64) -> (rekindle_netsim::Netsim, Vec<SimNode>) {
+    let (sim, mut nodes) = start(2, seed).await;
+    for (node, name) in nodes.iter_mut().zip(["Ada", "Bo"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    (sim, nodes)
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_silently_dead_inbound_route_is_found_and_replaced_and_the_acks_arrive() {
+    let (sim, nodes) = friends(121).await;
+    let bo = key(&nodes[1]);
+    sim.fault(Fault::RouteSilentDeath {
+        node: 0,
+        class: RouteClass::General,
+    });
+    // Bo's acks of these go into Ada's dead route until she replaces it.
+    for i in 0..3 {
+        send(&nodes[0], &bo, &format!("into the dark {i}")).await;
+    }
+    for i in 0..3 {
+        let body = format!("into the dark {i}");
+        assert!(
+            eventually(&sim, Duration::from_secs(200), || delivered(
+                &nodes[0], &bo, &body
+            ))
+            .await,
+            "{body} was acked within about 3 minutes"
+        );
+    }
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_reconnect_self_tests_at_once_and_replaces_a_dead_route() {
+    let (sim, _nodes) = friends(122).await;
+    let before = sim.route_blobs(0);
+    assert!(!before.is_empty());
+    sim.fault(Fault::RouteSilentDeath {
+        node: 0,
+        class: RouteClass::General,
+    });
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: false,
+    });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: true,
+    });
+    // Well inside the 40-53 s schedule and three failures: only the
+    // reconnect's immediate test finds it this soon.
+    assert!(
+        eventually(&sim, Duration::from_secs(30), || {
+            let now = sim.route_blobs(0);
+            let replaced = !now.is_empty() && now.iter().all(|b| !before.contains(b));
+            async move { replaced }
+        })
+        .await,
+        "the dead route was replaced and released after the reconnect"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute() {
+    let (sim, nodes) = friends(123).await;
+    let ada = key(&nodes[0]);
+    sim.fault(Fault::RouteSilentDeath {
+        node: 0,
+        class: RouteClass::General,
+    });
+    // A suspect round re-reads Ada's route and, finding the record Bo
+    // holds, probes it with one app call; nothing else of Bo's calls here.
+    let calls = sim.app_calls(1);
+    for i in 0..9 {
+        send(&nodes[1], &ada, &format!("unanswered {i}")).await;
+    }
+    // The round runs before Bo's next attempt to Ada once eight sends went
+    // unanswered: the next of these rows' re-hints, within their re-ask
+    // wait (and inside the 55 s ack deadline of a route not yet proven).
+    assert!(
+        eventually(&sim, Duration::from_secs(60), || {
+            let now = sim.app_calls(1);
+            async move { now > calls }
+        })
+        .await,
+        "eight unanswered sends began a suspect round"
+    );
+    let first = sim.app_calls(1);
+    for i in 0..9 {
+        send(&nodes[1], &ada, &format!("still unanswered {i}")).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    }
+    assert!(
+        sim.app_calls(1) <= first + 1,
+        "no more than one more suspect round in the next minute"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_healthy_busy_route_is_never_probed_and_an_idle_one_is() {
+    let (sim, nodes) = friends(124).await;
+    let ada = key(&nodes[0]);
+    let probes = self_probes(&sim);
+    for i in 0..30 {
+        send(&nodes[1], &ada, &format!("busy {i}")).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
+    }
+    assert_eq!(self_probes(&sim), probes, "a busy route is never probed");
+    assert!(
+        eventually(&sim, Duration::from_secs(60), || {
+            let now = self_probes(&sim);
+            async move { now > probes }
+        })
+        .await,
+        "an idle route is tested within its period"
+    );
+    assert!(eventually(&sim, LIMIT, || delivered(&nodes[1], &ada, "busy 29")).await);
+}

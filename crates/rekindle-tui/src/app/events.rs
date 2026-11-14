@@ -407,6 +407,7 @@ impl App {
             }
             SubscriptionEvent::Friend(
                 FriendEvent::HandshakeRetrying { .. }
+                | FriendEvent::Reachability { .. }
                 | FriendEvent::IdentityPinRestored { .. }
                 | FriendEvent::BlockChanged { .. }
                 | FriendEvent::GroupChanged { .. }

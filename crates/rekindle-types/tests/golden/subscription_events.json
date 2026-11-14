@@ -392,6 +392,14 @@
       }
     }
   },
+  "friend.reachability": {
+    "friend": {
+      "reachability": {
+        "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "reachable": false
+      }
+    }
+  },
   "friend.rejected": {
     "friend": {
       "rejected": {

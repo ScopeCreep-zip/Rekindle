@@ -18,6 +18,15 @@ pub const DIRECT_TAG: u8 = b'D';
 /// (allocated E2.3; E3.2's `governanceOp`/`headAdvanced` ride it).
 pub const GOSSIP_TAG: u8 = b'G';
 
+/// A route liveness probe (plan RH1r-c, allocated there): 16 random bytes
+/// follow. Our own self-test calls our route with it and our dispatch
+/// echoes a nonce it issued; any other is answered with a NAK, so a peer's
+/// probe of our route learns only that the call arrived, as any call does.
+pub const LIVENESS_TAG: u8 = b'L';
+
+/// The length of a liveness probe: the tag and its nonce.
+pub const LIVENESS_PROBE_LEN: usize = 17;
+
 /// What an inbound datagram carries, by its first byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ingress<'a> {

@@ -32,6 +32,7 @@ pub mod error;
 pub mod frame;
 pub mod gossip;
 pub mod handler;
+pub mod liveness;
 pub mod operations;
 pub mod payload;
 pub mod query;

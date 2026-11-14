@@ -196,6 +196,7 @@ fn friend_peer(e: &FriendEvent) -> &str {
         | FriendEvent::KeyChanged { peer_key, .. }
         | FriendEvent::HandshakeFailed { peer_key, .. }
         | FriendEvent::HandshakeRetrying { peer_key }
+        | FriendEvent::Reachability { peer_key, .. }
         | FriendEvent::IdentityPinMismatch { peer_key, .. }
         | FriendEvent::IdentityPinRestored { peer_key }
         | FriendEvent::VerificationChanged { peer_key, .. }

@@ -153,7 +153,10 @@ impl FakeMessages {
             self.node,
             to,
             "AppMessage",
-            PortEvent::AppMessage { message },
+            PortEvent::AppMessage {
+                message,
+                route: Some(target.as_str().to_string()),
+            },
             true,
             delay,
         );
@@ -174,6 +177,9 @@ impl FakeMessages {
     ) -> Result<Vec<u8>, PortError> {
         check_message_len(&message)?;
         self.net.awake(self.node).await;
+        if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
+            slot.app_calls += 1;
+        }
         let Some(to) = self.route_owner(target, pinned)? else {
             // Into a released route: no answer comes back.
             tokio::time::sleep(call_timeout(profile)).await;
@@ -206,6 +212,7 @@ impl FakeMessages {
             PortEvent::AppCall {
                 call_id: AppCallId(call_id),
                 message,
+                route: Some(target.as_str().to_string()),
             },
             true,
             there,
@@ -296,6 +303,23 @@ impl AppMessagePort for FakeMessages {
         let pinned = self.pinned(class)?;
         self.call_over(target, profile, Some(&pinned), message)
             .await
+    }
+
+    async fn call_own(
+        &self,
+        class: RouteClass,
+        profile: &SafetyProfile,
+        message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError> {
+        // As `VeilidMessages`: import our own route for the call, call it
+        // with itself as the safety route, and drop the import.
+        let own = self.pinned(class)?;
+        self.net.import_route(self.node, &own);
+        let answer = self
+            .call_over(&PeerTarget::new(own.clone()), profile, Some(&own), message)
+            .await;
+        self.net.forget_import(self.node, &own);
+        answer
     }
 
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {

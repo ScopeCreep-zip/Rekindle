@@ -341,7 +341,10 @@ impl Netsim {
             from,
             to,
             "AppMessage",
-            PortEvent::AppMessage { message },
+            PortEvent::AppMessage {
+                message,
+                route: None,
+            },
             true,
         );
     }
@@ -454,6 +457,12 @@ impl Netsim {
     #[must_use]
     pub fn app_sets(&self, node: usize) -> u64 {
         self.net.inner.lock().nodes[node].app_sets
+    }
+
+    /// How many app calls node `node` made, of any kind.
+    #[must_use]
+    pub fn app_calls(&self, node: usize) -> u64 {
+        self.net.inner.lock().nodes[node].app_calls
     }
 
     /// Each replica's value at `key`/`subkey`, in placement order.

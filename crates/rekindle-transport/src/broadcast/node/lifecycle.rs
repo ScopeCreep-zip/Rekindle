@@ -14,6 +14,7 @@ use crate::error::{Result, TransportError};
 use crate::handler::InboundHandler;
 use crate::shared::SharedState;
 use crate::subscriptions::dispatch;
+use rekindle_utils::RandomSource;
 
 type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::Session>>>;
 
@@ -32,6 +33,7 @@ impl TransportNode {
         config: TransportConfig,
         handler: Arc<H>,
         session: SharedSession,
+        rng: Arc<dyn RandomSource>,
     ) -> Result<Self> {
         info!(namespace = %config.namespace, "starting transport node");
 
@@ -60,7 +62,7 @@ impl TransportNode {
         )
         .await?;
 
-        let (node, shutdown_rx) = Self::outbound(config, ports, shared_state);
+        let (node, shutdown_rx) = Self::outbound(config, ports, shared_state, rng, true);
         let node = node.run_inbound(shutdown_rx, events, handler, session);
         info!("transport node started");
         Ok(node)
@@ -74,9 +76,10 @@ impl TransportNode {
         events: mpsc::Receiver<PortEvent>,
         handler: Arc<H>,
         session: SharedSession,
+        rng: Arc<dyn RandomSource>,
     ) -> Self {
         info!(namespace = %config.namespace, "transport node on supplied ports");
-        let (node, shutdown_rx) = Self::outbound(config, ports, SharedState::new());
+        let (node, shutdown_rx) = Self::outbound(config, ports, SharedState::new(), rng, true);
         node.run_inbound(shutdown_rx, events, handler, session)
     }
 
@@ -92,7 +95,10 @@ impl TransportNode {
     /// which deletes this mode when the GUI's Host starts its own node.
     pub fn adopt_outbound(config: TransportConfig, ports: PortSet, session: SharedSession) -> Self {
         info!(namespace = %config.namespace, "transport node (outbound-only) on the host's ports");
-        let mut node = Self::outbound(config, ports, SharedState::new()).0;
+        // No dispatch here answers our own probes, so this node never
+        // self-tests its routes (plan RH1r-c); its jitter is OS entropy.
+        let rng: Arc<dyn RandomSource> = Arc::new(rekindle_utils::OsRandom);
+        let mut node = Self::outbound(config, ports, SharedState::new(), rng, false).0;
         node.spawn_route_publisher(None, session);
         node
     }
@@ -104,6 +110,8 @@ impl TransportNode {
         config: TransportConfig,
         mut ports: PortSet,
         shared_state: Arc<SharedState>,
+        rng: Arc<dyn RandomSource>,
+        self_tests: bool,
     ) -> (Self, mpsc::Receiver<()>) {
         ports.messages = crate::broadcast::deadline::Bounded::wrap(ports.messages);
         let config = Arc::new(config);
@@ -116,7 +124,15 @@ impl TransportNode {
         // Our routes are wanted from node-ready, before any login (C7.9b):
         // a login is reachable at once. Their owner waits for readiness.
         ports.routes.want_own();
+        let liveness = crate::liveness::Liveness::new(
+            rng,
+            Arc::clone(&ports.routes),
+            Arc::clone(&ports.messages),
+            self_tests,
+        );
         let node = Self {
+            liveness,
+            liveness_handles: Vec::new(),
             ports,
             config,
             shutdown_tx,
@@ -149,6 +165,7 @@ impl TransportNode {
                 dispatch::RouteOwners {
                     routes: Arc::clone(&self.ports.routes),
                     peers: Arc::clone(&self.peer_registry),
+                    liveness: Arc::clone(&self.liveness),
                 },
             )
             .in_current_span(),
@@ -165,14 +182,29 @@ impl TransportNode {
         session: SharedSession,
     ) {
         let (ra_tx, ra_rx) = mpsc::channel(1);
+        let (offers, offered) = tokio::sync::watch::channel(None);
+        self.liveness_handles.push(tokio::spawn(
+            crate::liveness::owner::run_publisher(
+                Arc::clone(&self.liveness),
+                offered.clone(),
+                session,
+                Arc::clone(&self.shared_state),
+            )
+            .in_current_span(),
+        ));
+        if self.liveness.self_tests() {
+            self.liveness_handles.push(tokio::spawn(
+                crate::liveness::owner::run_self_tests(Arc::clone(&self.liveness), offered)
+                    .in_current_span(),
+            ));
+        }
         self.route_publisher_handle = Some(tokio::spawn(
             run_route_publisher(
                 on_change,
                 Arc::clone(&self.ports.routes),
                 self.config.route_watchdog_secs,
                 ra_rx,
-                session,
-                Arc::clone(&self.shared_state),
+                offers,
             )
             .in_current_span(),
         ));
@@ -193,6 +225,10 @@ impl TransportNode {
             let _ = tx.send(()).await;
         }
         if let Some(h) = self.route_publisher_handle.take() {
+            let _ = h.await;
+        }
+        // The follower dropped its offers: the liveness tasks end.
+        for h in std::mem::take(&mut self.liveness_handles) {
             let _ = h.await;
         }
 

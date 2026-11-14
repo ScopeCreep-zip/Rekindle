@@ -12,9 +12,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use rekindle_db::lock::NodeLock;
-use rekindle_db::paths::DataRoot;
-use rekindle_db::DbHandle;
+use rekindle_db::{lock::NodeLock, paths::DataRoot, DbHandle};
 use rekindle_idempotency::attempts::AttemptLimiter;
 use rekindle_transport::crypto::mek::MekCache;
 use rekindle_transport::{Session, TransportConfig, TransportNode};
@@ -244,12 +242,15 @@ impl Host {
                     &policy,
                 );
                 let (handler, handler_transport) = daemon_handler();
-                // A daemon without its transport cannot do anything it
-                // exists for; it exits non-zero and its supervisor retries.
-                let node =
-                    TransportNode::start(transport_config, handler, Arc::clone(&stores.session))
-                        .await
-                        .map_err(|e| anyhow::anyhow!("transport node did not start: {e}"))?;
+                // Without its transport a daemon exits; its supervisor retries.
+                let node = TransportNode::start(
+                    transport_config,
+                    handler,
+                    Arc::clone(&stores.session),
+                    Arc::clone(&rng),
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!("transport node did not start: {e}"))?;
                 let node = Arc::new(node);
                 *handler_transport.write() = Some(Arc::downgrade(&node));
                 tracing::info!("transport node started");
@@ -267,6 +268,7 @@ impl Host {
                     events,
                     handler,
                     Arc::clone(&stores.session),
+                    Arc::clone(&rng),
                 ));
                 *handler_transport.write() = Some(Arc::downgrade(&node));
                 tracing::info!("transport node on supplied ports");

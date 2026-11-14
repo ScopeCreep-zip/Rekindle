@@ -95,6 +95,12 @@ pub enum FriendEvent {
     /// key" until the session opens or [`Self::HandshakeFailed`].
     /// Triggered by: their signed `PreKeyRejected`.
     HandshakeRetrying { peer_key: String },
+    /// Whether the peer's route answers (plan RH1r-c S4): after six suspect
+    /// rounds without an answer the row reads "unreachable"; messages still
+    /// go through the durable chain. Any authenticated frame from the peer
+    /// makes it reachable again.
+    /// Triggered by: the sender's route liveness rules.
+    Reachability { peer_key: String, reachable: bool },
     /// A friend's prekey record is not signed by the identity we hold for
     /// them, so no session was opened and nothing was trusted; only the
     /// user can resolve it (plan E2.4, B3).

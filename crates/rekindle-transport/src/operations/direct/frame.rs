@@ -239,6 +239,7 @@ fn open_sealed(
         forget(host, &sender, &content.nonce);
         return Err(Dropped::Refused);
     };
+    crate::operations::dm::route_health::heard(host, &sender_hex);
     Ok(Opened {
         sender_hex,
         type_id,
@@ -294,7 +295,10 @@ async fn open_ratchet(
     .await;
     match &inbound {
         // They answered under the session: our first contact landed.
-        Ok(_) => crate::operations::prekeys::acknowledged(host, &sender_hex),
+        Ok(_) => {
+            crate::operations::prekeys::acknowledged(host, &sender_hex);
+            crate::operations::dm::route_health::heard(host, &sender_hex);
+        }
         // User content that did not open is asked for again after their
         // CaughtUp (plan E2.5, D24).
         Err(e) if super::retry_requests::requestable(type_id, e) => {
@@ -337,6 +341,7 @@ async fn open_ephemeral(
             return Err(Dropped::Refused);
         }
     };
+    crate::operations::dm::route_health::heard(host, &sender_hex);
     crate::operations::prekeys::acknowledged(host, &sender_hex);
     if ephemeral.ended_session {
         crate::operations::prekeys::session_ended(host, &sender_hex);

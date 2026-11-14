@@ -24,6 +24,7 @@ interface BuddyItemProps {
   requestSendState?: string;
   handshakeError: string | null;
   handshakeRetrying: boolean;
+  unreachable: boolean;
   identityPinMismatch: boolean;
   selected: boolean;
   onDoubleClick: (publicKey: string, displayName: string) => void;
@@ -102,6 +103,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
           <Tooltip text={identityPinMismatchText(props.displayName)}>
             <div class="buddy-identity-mismatch" role="alert">Identity key mismatch</div>
           </Tooltip>
+        </Show>
+        <Show when={props.unreachable}>
+          <div class="buddy-handshake-retrying">Unreachable — messages wait in the outbox</div>
         </Show>
         <Show when={props.handshakeRetrying && !props.handshakeError}>
           <div class="buddy-handshake-retrying">Retrying with a fresh key</div>

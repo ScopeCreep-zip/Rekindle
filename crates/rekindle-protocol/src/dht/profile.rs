@@ -151,6 +151,24 @@ pub async fn read_profile_subkey(
         .map(|v| v.data))
 }
 
+/// One subkey of a profile with its seq (the record's write count, which
+/// only grows), or `None` if it has not been published; read from the
+/// network (plan RH1r-c S2: a re-read route is taken only under a higher
+/// seq).
+///
+/// # Errors
+/// The record could not be opened or read.
+pub async fn read_profile_subkey_seq(
+    pool: &dyn RecordPort,
+    key: &str,
+    subkey: u32,
+) -> Result<Option<(Vec<u8>, u32)>, ProtocolError> {
+    Ok(pool
+        .read_once(key, subkey, true)
+        .await?
+        .map(|v| (v.data, v.seq)))
+}
+
 /// The status subkey's payload: the status byte, then `now_ms` (the
 /// caller's clock).
 #[must_use]

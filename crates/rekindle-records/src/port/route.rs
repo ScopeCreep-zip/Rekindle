@@ -90,6 +90,10 @@ pub trait RoutePort: Send + Sync {
     /// Our live route of `class`, if any.
     fn own_blob(&self, class: RouteClass) -> Option<Vec<u8>>;
 
+    /// Our live route of `class` by id text, as an inbound event's `route`
+    /// names it.
+    fn own_id(&self, class: RouteClass) -> Option<String>;
+
     /// Our route of `class`, to follow.
     fn own_state(&self, class: RouteClass) -> watch::Receiver<RouteState>;
 
@@ -108,6 +112,16 @@ pub trait RoutePort: Send + Sync {
 
     /// Release our route of `class` and stop wanting it.
     fn release_own_class(&self, class: RouteClass);
+
+    /// Replace our live route of `class`, which our self-test found dead
+    /// though the network has not said so (plan RH1r-c O3): allocate a new
+    /// one and keep the old one allocated, out of service, until
+    /// [`release_retired_own`](Self::release_retired_own) (O4).
+    fn replace_own_class(&self, class: RouteClass);
+
+    /// Release the routes of `class` that a replacement retired, once the
+    /// replacement is published (O4).
+    fn release_retired_own(&self, class: RouteClass);
 
     /// Our routes the network reported dead, by id text: forget them
     /// without releasing, and allocate replacements.

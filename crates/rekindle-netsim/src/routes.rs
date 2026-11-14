@@ -403,6 +403,10 @@ impl RoutePort for FakeRoutes {
         self.own.blob(class)
     }
 
+    fn own_id(&self, class: RouteClass) -> Option<String> {
+        self.own.id(class)
+    }
+
     fn own_state(&self, class: RouteClass) -> watch::Receiver<RouteState> {
         self.own.state(class)
     }
@@ -425,6 +429,14 @@ impl RoutePort for FakeRoutes {
 
     fn release_own_class(&self, class: RouteClass) {
         self.own.release(class);
+    }
+
+    fn replace_own_class(&self, class: RouteClass) {
+        self.own.replace(class);
+    }
+
+    fn release_retired_own(&self, class: RouteClass) {
+        self.own.release_retired(class);
     }
 
     fn on_dead_own(&self, dead: &[String]) {

@@ -255,6 +255,14 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"hs_retry|");
             h.update(peer_key.as_bytes());
         }
+        FriendEvent::Reachability {
+            peer_key,
+            reachable,
+        } => {
+            h.update(b"reach|");
+            h.update(peer_key.as_bytes());
+            h.update(&[u8::from(*reachable)]);
+        }
         FriendEvent::IdentityPinMismatch { peer_key, .. } => {
             h.update(b"pin_mismatch|");
             h.update(peer_key.as_bytes());

@@ -87,6 +87,7 @@ pub async fn initialize_node(
         messages: Arc::new(rekindle_protocol::ports::VeilidMessages::new(
             api.clone(),
             Arc::clone(&own_routes),
+            Arc::clone(&route_imports),
         )),
         lifecycle: None,
     };

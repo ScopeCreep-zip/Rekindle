@@ -75,6 +75,7 @@ mod rich_messaging;
 mod role_assign;
 mod rotation;
 mod route_link_failure;
+mod route_liveness;
 mod scenarios;
 mod sending_route;
 mod smoke;

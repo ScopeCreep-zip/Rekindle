@@ -1,0 +1,112 @@
+//! A peer's route health around each 1:1 fast-path send (plan RH1r-c
+//! S1–S6; `crate::liveness::peer`): count the sends that expect an
+//! answer, run a suspect round when one is due, and hold the fast path back
+//! while the peer is unreachable. The durable chain (the outbox's appends)
+//! is never gated here: it is the guaranteed path, the route only the fast
+//! one (S6).
+
+use rekindle_codec::capnp_codec::direct::DmTypeId;
+use rekindle_route::liveness::Fetched;
+use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
+
+use super::route;
+use crate::broadcast::node::TransportNode;
+use crate::operations::friend::FriendHost;
+
+/// Whether a send of `kind` is answered by the peer (a `DmAck`, a reply or
+/// a receipt), so its silence counts against their route (S1): not an ack
+/// itself, nor an ephemeral frame.
+fn expects_answer(kind: DmTypeId) -> bool {
+    kind != DmTypeId::DmAck && !kind.is_ephemeral()
+}
+
+/// Before a fast-path send to `to`: run a suspect round when one is due
+/// (S2, S3). `false` while the peer is unreachable and its backoff step is
+/// not up (S4).
+pub(crate) async fn before_send(host: &dyn FriendHost, to: &str) -> bool {
+    let Ok(node) = host.node() else {
+        return true;
+    };
+    if node.liveness().round_due(to) {
+        suspect_round(host, &node, to).await;
+    }
+    node.liveness().fast_path_allowed(to)
+}
+
+/// A send of `kind` to `to` left over the fast path.
+pub(crate) fn sent(host: &dyn FriendHost, to: &str, kind: DmTypeId) {
+    if let (true, Ok(node)) = (expects_answer(kind), host.node()) {
+        node.liveness().sent(to);
+    }
+}
+
+/// An authenticated frame from `peer` arrived (S5).
+pub(crate) fn heard(host: &dyn FriendHost, peer: &str) {
+    if let Ok(node) = host.node() {
+        if node.liveness().heard(peer) {
+            reachability(host, peer, true);
+        }
+    }
+}
+
+fn reachability(host: &dyn FriendHost, peer: &str, reachable: bool) {
+    tracing::info!(peer = %peer, reachable, "peer route reachability changed");
+    host.publish(SubscriptionEvent::Friend(FriendEvent::Reachability {
+        peer_key: peer.to_string(),
+        reachable,
+    }));
+}
+
+/// One suspect round (S2): re-read the peer's route record; a strictly
+/// higher seq replaces the cached route; the record we hold is probed once.
+/// The held route stays in use when nothing newer is published, whether
+/// the probe answers or not, and with no record to re-read: a probe whose
+/// answer was lost on its way back (a one-way loss) cannot be told from a
+/// dead route, and with no newer record there is nothing to use instead,
+/// so dropping it would only lose the fast path; the owner's republish is
+/// the heal (S6). The round still counts toward unreachable (S4), and the
+/// held blob stays failure-cached for 120 s, so a refresh after a send
+/// error does not take it back.
+async fn suspect_round(host: &dyn FriendHost, node: &TransportNode, to: &str) {
+    let live = node.liveness();
+    let held = route::cached(node, to);
+    if live.begin_round(to, held.clone()) {
+        reachability(host, to, false);
+    }
+    let Some((blob, seq)) = route::read_profile_route(host, to).await else {
+        tracing::debug!(to = %to, "suspect route: no route record to re-read");
+        return;
+    };
+    let fetched = live.observe(to, seq);
+    let same = held.as_deref() == Some(blob.as_slice());
+    match fetched {
+        Fetched::Newer if !same => {
+            tracing::info!(to = %to, seq, "suspect route: the peer republished; using it");
+            route::cache(node, to, blob);
+        }
+        Fetched::Stale => tracing::debug!(to = %to, seq, "suspect route: stale record ignored"),
+        Fetched::Newer | Fetched::Same => probe(host, node, to, blob).await,
+    }
+}
+
+/// Probe the peer's route once with an `app_call` (S2): any answer, a NAK
+/// included, shows it delivers and clears its failure cache; with no
+/// answer it stays failure-cached, and in use ([`suspect_round`]).
+async fn probe(host: &dyn FriendHost, node: &TransportNode, to: &str, blob: Vec<u8>) {
+    let live = node.liveness();
+    let Some(target) = route::import(node, to, &blob) else {
+        return;
+    };
+    match node.caller().call_direct(&target, live.peer_probe()).await {
+        Ok(_) => {
+            tracing::info!(to = %to, "suspect route answered its probe");
+            route::cache(node, to, blob);
+            if live.probe_answered(to) {
+                reachability(host, to, true);
+            }
+        }
+        Err(e) => {
+            tracing::info!(to = %to, error = %e, "suspect route did not answer its probe");
+        }
+    }
+}

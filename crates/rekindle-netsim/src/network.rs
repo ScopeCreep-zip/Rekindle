@@ -113,6 +113,11 @@ pub(crate) struct Faults {
     pub ready_pending: HashSet<usize>,
     /// Nodes whose process is suspended ([`crate::Fault::Sleep`]).
     pub asleep: HashSet<usize>,
+    /// Nodes whose online detector says Offline since a
+    /// [`crate::Fault::RouteSilentDeath`]: their loopback failures are
+    /// deferred, not counted, until a round trip proves the network again
+    /// ([`crate::loopback`]).
+    pub detector_offline: HashSet<usize>,
 }
 
 /// Each node's side of the network.
@@ -144,6 +149,9 @@ pub(crate) struct NodeSlot {
     /// The sets the node's app asked for (`DhtPort::set`), for a scenario
     /// that a stall starts no burst of writes.
     pub app_sets: u64,
+    /// How many app calls the node made: an observation, never a
+    /// behaviour.
+    pub app_calls: u64,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// The attachment state last queued for the node ([`crate::attach`]).
@@ -200,6 +208,7 @@ impl NodeSlot {
             app_inspects: HashMap::new(),
             app_gets: HashMap::new(),
             app_sets: 0,
+            app_calls: 0,
             pools: Vec::new(),
             state: "detached",
             public_ready: false,
@@ -442,6 +451,10 @@ impl Network {
                     // reports it, a round trip after the fault ([`crate::attach`]).
                     if *pir && inner.faults.ready_pending.remove(&p.to) {
                         inner.faults.not_ready.remove(&p.to);
+                        // The round trip that proved it brings the online
+                        // detector back from Offline
+                        // (`online_detector.rs:1346-1348`, [`crate::loopback`]).
+                        inner.faults.detector_offline.remove(&p.to);
                     }
                 }
             }
