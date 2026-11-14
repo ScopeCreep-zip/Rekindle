@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use rekindle_ipc::protocol::{ChannelRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_netsim::{Fault, Writes};
+use rekindle_netsim::{Fault, Records, Writes};
+use rekindle_types::dht_layout::member_record;
 use rekindle_types::subscription_events::{GovernanceEvent, OpPublicationState, SubscriptionEvent};
 
 use crate::harness::{eventually, Community, Events, PASSPHRASE};
@@ -152,7 +153,10 @@ async fn concurrent_joins_mint_one_member_joined() {
     let link = community.invite().await;
     community.sim.fault(Fault::WriteFails {
         node: 1,
-        of: Writes::Subkey(rekindle_types::dht_layout::member_record::GOV_HEAD),
+        of: Writes::Subkey {
+            subkey: member_record::GOV_HEAD,
+            record: Some(Records::CreatedDflt(member_record::SUBKEY_COUNT)),
+        },
     });
     let joiner = &community.nodes[1];
     let events = joiner.events().await;
