@@ -11,6 +11,16 @@ use rekindle_utils::random::RandomSource;
 /// peer's `DmAck` may take to come back (live A/B finding 49).
 pub const DM_RETRY_FLOOR: Duration = Duration::from_millis(DM_ACK_DELAY_MAX_MS + CALL_TIMEOUT_MS);
 
+/// The shortest wait before a `friend_handshake` row is sent again: the
+/// longest its answer may take to come back. The peer answers at once (an
+/// `UnfriendedAck`, an accept) from its own outbox, so the round trip is
+/// two app messages, bounded by the call timeout `CALL_TIMEOUT_MS`
+/// (Veilid's `rpc.timeout_ms`). A shorter retry re-sends an `Unfriended`
+/// whose ack is still on its way into the session the peer just deleted
+/// (netsim `removal_ack`, RV5: the 1-2 s first step came before a 1.4 s
+/// round trip).
+pub const HANDSHAKE_RETRY_FLOOR: Duration = Duration::from_millis(CALL_TIMEOUT_MS);
+
 /// When a `dm` row that reached `sent` (its entry landed, or its
 /// `StreamRecord` left) is first asked for again if no ack covers it
 /// (register 2026-10-24): two of the longest an ack may take, its 2–10 s
@@ -144,7 +154,13 @@ impl StreamKind {
                 }
             }
             Self::GroupDm | Self::GovernanceOp => (1, 300),
-            Self::FriendHandshake => (2, 900),
+            Self::FriendHandshake => {
+                return OutboxRetry::Backoff {
+                    base: Duration::from_secs(2),
+                    cap: Duration::from_secs(900),
+                    floor: HANDSHAKE_RETRY_FLOOR,
+                }
+            }
             Self::DhtWrite => (1, 60),
             // C7.22's 1/2/4/8/15 s: a call key is useless late.
             Self::MediaKey => (1, 15),

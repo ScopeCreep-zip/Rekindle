@@ -90,9 +90,7 @@ pub(crate) async fn on_unfriended(host: &dyn FriendHost, sender: &str) -> bool {
     if let Err(e) = presence_key::rotate(host, sender).await {
         tracing::warn!(error = %e, "presence key not rotated after peer unfriended us");
     }
-    if let Err(e) = list_record::push(host).await {
-        tracing::warn!(error = %e, "failed to update DHT friend list after peer unfriended us");
-    }
+    list_record::queued(host, "their removal of us");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: sender.to_string(),
     }));
@@ -125,18 +123,21 @@ pub(super) async fn accept_crossing_request(
             let name = req.display_name.to_string();
             let profile = Some(req.profile_dht_key.to_string()).filter(|k| !k.is_empty());
             let mailbox = Some(req.mailbox_dht_key.to_string()).filter(|k| !k.is_empty());
+            let list = super::super::list_record::list_write(host);
             state::db_call!(host, "store accepted state", move |conn| {
-                let keys = rekindle_db::repo::friends::RecordKeys {
-                    profile: profile.as_deref(),
-                    mailbox: mailbox.as_deref(),
-                };
-                rekindle_db::repo::friends::accept_with_records(
-                    conn,
-                    &owner,
-                    &pk,
-                    Some(&name),
-                    keys,
-                )
+                rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+                    let keys = rekindle_db::repo::friends::RecordKeys {
+                        profile: profile.as_deref(),
+                        mailbox: mailbox.as_deref(),
+                    };
+                    rekindle_db::repo::friends::accept_with_records(
+                        conn,
+                        &owner,
+                        &pk,
+                        Some(&name),
+                        keys,
+                    )
+                })
             })
             .await
         }
@@ -176,7 +177,7 @@ pub(super) async fn accept_crossing_request(
     if !req.profile_dht_key.is_empty() {
         host.watch_friend(req.sender_hex, req.profile_dht_key).await;
     }
-    list_record::push_soon(host, "a cross request");
+    list_record::queued(host, "a cross request");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: req.sender_hex.to_string(),
         display_name: Some(req.display_name.to_string()),

@@ -84,9 +84,13 @@ pub async fn add(
         display_name.to_string(),
         code.profile_key.as_str().to_string(),
     );
-    state::db_call!(host, "store friend", move |conn| {
-        rekindle_db::repo::friends::insert_pending_out(conn, &ok, &pk, &dn, now)?;
-        rekindle_db::repo::friends::set_record_keys(conn, &ok, &pk, Some(&prof), None)
+    // The friend, their record and the end of an ended friendship's
+    // handshake rows: one transaction.
+    let list = super::list_record::list_write(host);
+    let ended = state::db_call!(host, "store friend", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &ok, list, |conn| {
+            rekindle_db::repo::friends::add_by_code(conn, &ok, &pk, &dn, now, &prof)
+        })
     })
     .await?;
     let mut friend = FriendState::new(
@@ -96,11 +100,8 @@ pub async fn add(
     );
     friend.dht_record_key = Some(code.profile_key.as_str().to_string());
     state::put(host, friend);
-    state::after_commit(
-        "settle_ended_handshakes",
-        public_key,
-        state::settle_ended_handshakes(host, public_key).await,
-    );
+    state::echo_failed(host, public_key, ended, "superseded by a new friendship");
+    super::list_record::queued(host, "our request");
 
     let auth = RequestAuth::Token(code.token.as_str().to_string());
     let committed = dm::send_friend_request(host, public_key, message, auth).await;
@@ -154,16 +155,19 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     let now = host.clock().now_ms_i64();
     let (ok, pk, dn) = (owner, blob.public_key.clone(), blob.display_name.clone());
     let (profile_key, mailbox_key) = (blob.profile_dht_key.clone(), blob.mailbox_dht_key.clone());
-    state::db_call!(host, "store friend", move |conn| {
-        rekindle_db::repo::friends::replace_with_invited(
-            conn,
-            &ok,
-            &pk,
-            &dn,
-            now,
-            &profile_key,
-            &mailbox_key,
-        )
+    let list = super::list_record::list_write(host);
+    let ended = state::db_call!(host, "store invited friend", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &ok, list, |conn| {
+            rekindle_db::repo::friends::replace_with_invited(
+                conn,
+                &ok,
+                &pk,
+                &dn,
+                now,
+                &profile_key,
+                &mailbox_key,
+            )
+        })
     })
     .await?;
     let mut friend = FriendState::new(
@@ -174,11 +178,13 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     friend.dht_record_key = Some(blob.profile_dht_key.clone());
     friend.mailbox_dht_key = Some(blob.mailbox_dht_key.clone());
     state::put(host, friend);
-    state::after_commit(
-        "settle_ended_handshakes",
+    state::echo_failed(
+        host,
         &blob.public_key,
-        state::settle_ended_handshakes(host, &blob.public_key).await,
+        ended,
+        "superseded by a new friendship",
     );
+    super::list_record::queued(host, "an invite");
 
     setup_invite_contact(host, &blob).await;
     let committed = super::inbox::redeem(host, &blob, invite_id, "Added via invite link").await;

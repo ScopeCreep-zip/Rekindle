@@ -52,12 +52,15 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         named(&answer.profile_dht_key),
         named(&answer.mailbox_dht_key),
     );
-    state::db_call!(host, "store accepted friend", move |conn| {
-        let keys = rekindle_db::repo::friends::RecordKeys {
-            profile: profile_key.as_deref(),
-            mailbox: mailbox_key.as_deref(),
-        };
-        rekindle_db::repo::friends::accept_request(conn, &ok, &pk, &dn, now, keys)
+    let list = super::list_record::list_write(host);
+    let ended = state::db_call!(host, "store accepted friend", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &ok, list, |conn| {
+            let keys = rekindle_db::repo::friends::RecordKeys {
+                profile: profile_key.as_deref(),
+                mailbox: mailbox_key.as_deref(),
+            };
+            rekindle_db::repo::friends::accept_request(conn, &ok, &pk, &dn, now, keys)
+        })
     })
     .await?;
 
@@ -75,11 +78,7 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     friend.mailbox_dht_key = named(&answer.mailbox_dht_key);
     let profile_key = friend.dht_record_key.clone();
     state::put(host, friend);
-    state::after_commit(
-        "settle_ended_handshakes",
-        public_key,
-        state::settle_ended_handshakes(host, public_key).await,
-    );
+    state::echo_failed(host, public_key, ended, "superseded by a new friendship");
 
     // Our accept opens the session from their record (the profile their
     // request named; plan E2.4, B2). A failure shows on their row with
@@ -93,7 +92,7 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     if let Some(invite_id) = &answer.invite_id {
         invites::mark_accepted(host, invite_id);
     }
-    super::list_record::push_soon(host, "our accept");
+    super::list_record::queued(host, "our accept");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: public_key.to_string(),
         display_name: Some(display_name.to_string()),
@@ -118,15 +117,11 @@ pub async fn reject(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     let owner = state::owner(host)?;
     let answer = pending_request(host, public_key).await?;
     let pk = public_key.to_string();
-    state::db_call!(host, "remove pending request", move |conn| {
-        rekindle_db::repo::pending_requests::delete(conn, &owner, &pk)
+    let failed = state::db_call!(host, "remove pending request", move |conn| {
+        rekindle_db::repo::friends::reject_request(conn, &owner, &pk)
     })
     .await?;
-    state::after_commit(
-        "discard_pending_dms",
-        public_key,
-        state::discard_pending_dms(host, public_key, "the request was rejected").await,
-    );
+    state::echo_failed(host, public_key, failed, "the request was rejected");
     if let Some(invite_id) = &answer.invite_id {
         invites::mark_rejected(host, invite_id);
     }
@@ -154,23 +149,18 @@ pub async fn cancel(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         ));
     }
     let pk = public_key.to_string();
-    state::db_call!(host, "cancel the request", move |conn| {
-        rekindle_db::repo::friends::cancel_request(conn, &owner, &pk)
+    // Our `FriendRequest` row goes with the request, in its commit
+    // (finding 70), not at the next add.
+    let list = super::list_record::list_write(host);
+    let failed = state::db_call!(host, "cancel the request", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+            rekindle_db::repo::friends::cancel_request(conn, &owner, &pk)
+        })
     })
     .await?;
     state::take(host, public_key);
-    state::after_commit(
-        "discard_pending_dms",
-        public_key,
-        state::discard_pending_dms(host, public_key, "the request was cancelled").await,
-    );
-    // Our `FriendRequest` row goes with the request (finding 70), not at
-    // the next add.
-    state::after_commit(
-        "discard_handshakes",
-        public_key,
-        state::discard_handshakes(host, public_key, "the request was cancelled").await,
-    );
+    state::echo_failed(host, public_key, failed, "the request was cancelled");
+    super::list_record::queued(host, "a cancel");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));
@@ -189,28 +179,26 @@ const REQUEST_LIFETIME_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 pub async fn expire_stale_requests(host: &dyn FriendHost) -> Result<(), FriendError> {
     let owner = state::owner(host)?;
     let cutoff = host.clock().now_ms_i64() - REQUEST_LIFETIME_MS;
+    let list = super::list_record::list_write(host);
     let (incoming, outgoing) = state::db_call!(host, "expire stale requests", move |conn| {
         let incoming =
             rekindle_db::repo::pending_requests::delete_received_before(conn, &owner, cutoff)?;
-        let outgoing = rekindle_db::repo::friends::delete_pending_out_before(conn, &owner, cutoff)?;
+        let outgoing = rekindle_db::repo::friends::expire_pending_out(conn, &owner, cutoff, list)?;
         Ok((incoming, outgoing))
     })
     .await?;
     if incoming > 0 {
         tracing::info!(deleted = incoming, "expired stale incoming friend requests");
     }
-    for public_key in &outgoing {
+    for (public_key, failed) in &outgoing {
         state::take(host, public_key);
-        state::after_commit(
-            "discard_pending_dms",
-            public_key,
-            state::discard_pending_dms(host, public_key, "the request expired").await,
-        );
+        state::echo_failed(host, public_key, failed.clone(), "the request expired");
         host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: public_key.clone(),
         }));
     }
     if !outgoing.is_empty() {
+        super::list_record::queued(host, "an expiry");
         tracing::info!(count = outgoing.len(), "expired stale pending-out friends");
     }
     Ok(())

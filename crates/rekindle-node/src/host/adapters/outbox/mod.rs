@@ -5,7 +5,7 @@
 //! Host's event mapping subscribes to.
 
 mod channel_post;
-mod dht_write;
+pub(crate) mod dht_write;
 mod dm;
 mod governance_op;
 mod governance_publication;
@@ -87,7 +87,8 @@ impl HostOutbox {
     }
 
     /// Mark `peer` removing and store `unfriended`, its `Unfriended` row,
-    /// in one transaction (plan audit D-1).
+    /// and the friend list's row (`list`), in one transaction (plan audit
+    /// D-1, review RV5 item 5).
     ///
     /// # Errors
     /// The storage failed; nothing was stored.
@@ -95,7 +96,8 @@ impl HostOutbox {
         &self,
         peer: &str,
         unfriended: NewOutboxRow,
-    ) -> Result<(), OutboxError> {
+        list: repo::ListWrite,
+    ) -> Result<Vec<repo::Row>, OutboxError> {
         let (db, owner) = self.db()?;
         let peer = peer.to_owned();
         db.call(move |conn| {
@@ -108,7 +110,9 @@ impl HostOutbox {
                 next_at: unfriended.next_at,
                 deadline: unfriended.deadline,
             };
-            rekindle_db::repo::friends::mark_removing(conn, &owner, &peer, &row)
+            rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+                rekindle_db::repo::friends::mark_removing(conn, &owner, &peer, &row)
+            })
         })
         .await
         .map_err(|e| storage(&e))
@@ -164,7 +168,7 @@ fn storage(e: &impl std::fmt::Display) -> OutboxError {
     OutboxError::Storage(e.to_string())
 }
 
-fn row_of(row: repo::Row) -> Result<OutboxRow, OutboxError> {
+pub(super) fn row_of(row: repo::Row) -> Result<OutboxRow, OutboxError> {
     let kind = StreamKind::parse(&row.kind)
         .ok_or_else(|| OutboxError::Storage(format!("unknown stream kind {}", row.kind)))?;
     Ok(OutboxRow {

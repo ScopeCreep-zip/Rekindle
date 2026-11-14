@@ -13,8 +13,9 @@ mod participant;
 mod presence;
 mod records;
 pub use changes::{
-    accept_request, accept_with_records, block, cancel_request, forget, forget_removed,
-    mark_removing, replace_with_invited, unfriended, RecordKeys,
+    accept_request, accept_with_records, add_by_code, block, cancel_request, changing_list,
+    expire_pending_out, forget, forget_removed, mark_removing, reject_request,
+    replace_with_invited, unfriended, RecordKeys,
 };
 pub use listing::added_at;
 pub(crate) use nickname::rekey as rekey_nickname;
@@ -68,28 +69,6 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Frie
     rows
 }
 
-/// A friend we are removing who is added again: the removal ends here.
-/// Its row goes, and so does what is still queued to them (the
-/// `Unfriended` notice must not follow the new request out). The sessions
-/// with them stay: the new friendship's accept replaces the active one
-/// (plan E2.5h, `Reinitiation::Befriended`).
-fn end_removal(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
-    let removing = conn
-        .query_row(
-            "SELECT 1 FROM friends \
-             WHERE owner_key = ?1 AND public_key = ?2 AND friendship_state = 'removing'",
-            params![owner_key, public_key],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_some();
-    if removing {
-        crate::repo::outbox::delete_to_peer(conn, owner_key, public_key)?;
-        delete(conn, owner_key, public_key)?;
-    }
-    Ok(())
-}
-
 /// Record an outgoing request: a `pending_out` row, unless the friend is
 /// already there (a friend we are removing is added afresh).
 ///
@@ -101,15 +80,15 @@ pub fn insert_pending_out(
     public_key: &str,
     display_name: &str,
     added_at: i64,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<super::outbox::Row>> {
     changes::atomically(conn, |conn| {
-        end_removal(conn, owner_key, public_key)?;
+        let ended = changes::end_removal(conn, owner_key, public_key)?;
         conn.execute(
             "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
              VALUES (?1, ?2, ?3, ?4, 'pending_out')",
             params![owner_key, public_key, display_name, added_at],
         )?;
-        Ok(())
+        Ok(ended)
     })
 }
 
@@ -124,15 +103,15 @@ pub fn insert_accepted(
     public_key: &str,
     display_name: &str,
     added_at: i64,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<super::outbox::Row>> {
     changes::atomically(conn, |conn| {
-        end_removal(conn, owner_key, public_key)?;
+        let ended = changes::end_removal(conn, owner_key, public_key)?;
         conn.execute(
             "INSERT OR IGNORE INTO friends (owner_key, public_key, display_name, added_at, friendship_state) \
              VALUES (?1, ?2, ?3, ?4, 'accepted')",
             params![owner_key, public_key, display_name, added_at],
         )?;
-        Ok(())
+        Ok(ended)
     })
 }
 
@@ -145,8 +124,8 @@ fn replace_with_invited_rows(
     added_at: i64,
     profile_key: &str,
     mailbox_key: &str,
-) -> rusqlite::Result<()> {
-    end_removal(conn, owner_key, public_key)?;
+) -> rusqlite::Result<Vec<super::outbox::Row>> {
+    let ended = changes::end_removal(conn, owner_key, public_key)?;
     delete(conn, owner_key, public_key)?;
     conn.execute(
         "INSERT INTO friends (owner_key, public_key, display_name, added_at, dht_record_key, \
@@ -160,7 +139,7 @@ fn replace_with_invited_rows(
             mailbox_key
         ],
     )?;
-    Ok(())
+    Ok(ended)
 }
 
 /// Delete the friend's row.
@@ -178,7 +157,8 @@ pub fn delete(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
     crate::repo::stream_cursors::reset(conn, owner_key, "dm", public_key)
 }
 
-/// Delete the outgoing requests sent before `cutoff`; their keys.
+/// Delete the outgoing requests sent before `cutoff`; their keys, each
+/// with the rows to them the expiry failed in the same transaction.
 ///
 /// # Errors
 /// The query or a delete failed.
@@ -186,19 +166,22 @@ pub fn delete_pending_out_before(
     conn: &Connection,
     owner_key: &str,
     cutoff: i64,
-) -> rusqlite::Result<Vec<String>> {
+) -> rusqlite::Result<Vec<(String, Vec<super::outbox::Row>)>> {
     changes::atomically(conn, |conn| {
-        let expired = conn
+        let expired: Vec<String> = conn
             .prepare(
                 "SELECT public_key FROM friends \
                  WHERE owner_key = ?1 AND friendship_state = 'pending_out' AND added_at < ?2",
             )?
             .query_map(params![owner_key, cutoff], |row| row.get(0))?
             .collect::<rusqlite::Result<Vec<String>>>()?;
-        for public_key in &expired {
-            changes::cancel_request(conn, owner_key, public_key)?;
-        }
-        Ok(expired)
+        expired
+            .into_iter()
+            .map(|public_key| {
+                let failed = changes::cancel_request(conn, owner_key, &public_key)?;
+                Ok((public_key, failed))
+            })
+            .collect()
     })
 }
 
@@ -481,7 +464,11 @@ mod tests {
         insert_pending_out(&conn, OWNER, "new", "New", 100).unwrap();
         insert_accepted(&conn, OWNER, "friend", "Friend", 1).unwrap();
         assert_eq!(
-            delete_pending_out_before(&conn, OWNER, 50).unwrap(),
+            delete_pending_out_before(&conn, OWNER, 50)
+                .unwrap()
+                .into_iter()
+                .map(|(key, _)| key)
+                .collect::<Vec<_>>(),
             ["old"]
         );
         let mut left: Vec<String> = load_all(&conn, OWNER)

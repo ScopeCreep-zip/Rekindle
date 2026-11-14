@@ -1,8 +1,10 @@
 //! Our friend-list record: the Cap'n Proto `FriendEntry` list both hosts
 //! read (`rekindle_protocol::dht::friends`), written through the session's
-//! record pool, which holds it writable from unlock (plan C7.4).
+//! record pool, which holds it writable from unlock (plan C7.4), by the
+//! outbox's `dht_write` friend-list row (D22).
 
 use rekindle_codec::friend::FriendEntry;
+use rekindle_records::port::SetOutcome;
 use rekindle_types::friend::FriendshipState;
 
 use super::error::FriendError;
@@ -11,13 +13,14 @@ use super::state;
 
 /// Write the friends we keep to our friend-list record, each with the
 /// `added_at` its stored row holds; friends being removed are dropped.
-/// Built from local state alone, so no network read can lose the write:
-/// the pool's held write owns the value reaching consensus, and a lock
-/// keeps what it still holds as a `dht_write` outbox row (D22 layering).
+/// Built from local state alone, so no network read can lose the write.
+/// Called only by the `dht_write` stream's friend-list row ([`queued`]),
+/// which owns retry until the outcome is `Landed` (D22).
 ///
 /// # Errors
-/// The rows could not be read, or the record could not be written.
-pub async fn push(host: &dyn FriendHost) -> Result<(), FriendError> {
+/// The rows could not be read, there is no record or pool yet, or the
+/// record could not be written.
+pub async fn write(host: &dyn FriendHost) -> Result<SetOutcome, FriendError> {
     let key = state::own_identity(host)?.friend_list_dht_key;
     if key.is_empty() {
         return Err(FriendError::NotReady("no friend list DHT key".to_string()));
@@ -51,26 +54,40 @@ pub async fn push(host: &dyn FriendHost) -> Result<(), FriendError> {
     let outcome =
         rekindle_protocol::dht::friends::write_friend_list(records.as_ref(), &key, &entries)
             .await
-            .map_err(|e| FriendError::Failed(format!("failed to push friend list update: {e}")))?;
-    if outcome.missed() {
-        tracing::warn!(?outcome, "friend list update not stored at consensus");
-    }
-    tracing::debug!(
-        count = entries.len(),
-        ?outcome,
-        "pushed friend list update to DHT"
-    );
-    Ok(())
+            .map_err(|e| FriendError::Failed(format!("failed to write the friend list: {e}")))?;
+    Ok(outcome)
 }
 
-/// Write our friend-list record off the caller's path, on the session
-/// scope (live A/B finding 50: an accept never pushed it, so it never
-/// listed the friend). `after` names the change for the log.
-pub(crate) fn push_soon(host: &dyn FriendHost, after: &'static str) {
-    let owned = host.owned();
-    host.scope().spawn_or_drop("friend list push", async move {
-        if let Err(e) = push(owned.as_ref()).await {
-            tracing::warn!(error = %e, after, "failed to update DHT friend list");
-        }
-    });
+/// How long a friend-list row waits before its first attempt: a burst of
+/// friend changes (an accept and its cross request, a removal and its
+/// rotations) supersedes one row and writes the record once, and the
+/// change's own frames (an `UnfriendedAck`, a `FriendAccept`) leave before
+/// the record write competes with them for the node.
+const LIST_SETTLE_MS: i64 = 2_000;
+
+/// The friend-list row a change queues in its own transaction
+/// (`rekindle_db::repo::friends::changing_list`): now, by the session's
+/// clock, due after [`LIST_SETTLE_MS`], with the `DELIVERY_HORIZON`
+/// deadline (D24).
+pub(crate) fn list_write(host: &dyn FriendHost) -> rekindle_db::repo::outbox::ListWrite {
+    let at = host.clock().now_ms_i64();
+    let horizon =
+        i64::try_from(rekindle_crypto::horizon::DELIVERY_HORIZON.as_millis()).unwrap_or(i64::MAX);
+    rekindle_db::repo::outbox::ListWrite {
+        at,
+        due: at.saturating_add(LIST_SETTLE_MS),
+        deadline: at.saturating_add(horizon),
+    }
+}
+
+/// A change committed our friend list's row with it (review RV5 item 5,
+/// live A/B finding 50; `after` names it for the log): wake the outbox,
+/// whose `dht_write` stream writes the list from local state off the pump
+/// and keeps the row across a lock or crash until it lands. With no
+/// outbox running the row waits for the next unlock.
+pub(crate) fn queued(host: &dyn FriendHost, after: &'static str) {
+    match host.outbox() {
+        Ok(outbox) => outbox.wake(),
+        Err(e) => tracing::debug!(error = %e, after, "friend list row waits for the outbox"),
+    }
 }

@@ -242,12 +242,14 @@ pub(crate) async fn write_forget(host: &dyn FriendHost, public_key: &str) -> boo
         return false;
     };
     let pk = public_key.to_string();
-    stored(
-        db_call!(host, "forget friend", move |conn| {
+    let list = super::list_record::list_write(host);
+    let failed = db_call!(host, "forget friend", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
             rekindle_db::repo::friends::forget(conn, &owner, &pk)
         })
-        .await,
-    )
+    })
+    .await;
+    stored(failed.map(|rows| echo_failed(host, public_key, rows, "the friendship ended")))
 }
 
 /// `public_key` removed us: their row, their request and their queue, in
@@ -258,12 +260,14 @@ pub(crate) async fn write_unfriended(host: &dyn FriendHost, public_key: &str) ->
         return false;
     };
     let pk = public_key.to_string();
-    stored(
-        db_call!(host, "forget the friend who removed us", move |conn| {
+    let list = super::list_record::list_write(host);
+    let failed = db_call!(host, "forget the friend who removed us", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
             rekindle_db::repo::friends::unfriended(conn, &owner, &pk)
         })
-        .await,
-    )
+    })
+    .await;
+    stored(failed.map(|rows| echo_failed(host, public_key, rows, "the friend removed us")))
 }
 
 /// Their `UnfriendedAck`: our `Unfriended` row to `public_key` settles
@@ -286,73 +290,35 @@ pub(crate) async fn acknowledge_unfriended(host: &dyn FriendHost, public_key: &s
     }
 }
 
-/// A clean-up step that runs after the friend change it follows has
-/// committed (a discard, a settle): its failure is logged and the caller
-/// goes on, so every later step (the in-memory state, the event, the next
-/// expired peer) still runs and the committed change is never reported as
-/// failed (review RV3). Its rows stay for the next ending or add.
-pub(crate) fn after_commit(step: &'static str, peer: &str, result: Result<(), FriendError>) {
-    if let Err(e) = result {
-        tracing::warn!(peer = %peer, error = %e, step, "a clean-up after a committed friend change failed");
-    }
-}
-
-/// The friendship with `peer`, or our attempt at one, ended (`why`: a
-/// cancel, a reject, a removal, a block, an expiry): our pending messages
-/// to them are discarded through the outbox, each settling `failed` with
-/// the reason, so none reaches a later friendship and none holds the
-/// stream (live A/B findings 31, 35; Signal and Matrix drop undelivered
-/// sends to a removed contact). Every ending path calls it.
-///
-/// # Errors
-/// The outbox is not running or its storage failed.
-pub(crate) async fn discard_pending_dms(
+/// The rows to `peer` a committed friend change failed in its own
+/// transaction (a cancel, a reject, a removal, a block, an expiry, or a new
+/// friendship over an ended one; review RV5 item 3): their echoes go to the
+/// outbox's subscribers, each `failed` with `why` (a message's as "not
+/// delivered: …"), so the windows and the engine learn what the commit
+/// already stored (live A/B findings 31, 35, 38, 70; Signal and Matrix drop
+/// undelivered sends to a removed contact). The only step after the
+/// commit: with no outbox running the stored state stands and is what the
+/// next hydrate shows.
+pub(crate) fn echo_failed(
     host: &dyn FriendHost,
     peer: &str,
+    failed: Vec<rekindle_db::repo::outbox::Row>,
     why: &str,
-) -> Result<(), FriendError> {
-    let reason = format!("not delivered: {why}");
-    let discarded = host.outbox()?.discard_to(peer, &reason).await?;
-    if discarded > 0 {
-        tracing::info!(peer = %peer, discarded, why, "pending messages discarded");
+) {
+    if failed.is_empty() {
+        return;
     }
-    Ok(())
-}
-
-/// A new friendship with `peer` starts (our request is about to be
-/// committed, or our accept): every handshake row to them still pending
-/// from a friendship that ended (a pending `Unfriended`, an old
-/// `FriendsKey`) settles `failed` through the outbox's discard, so a stale
-/// removal framed under the ended session can never end the new
-/// friendship (live A/B finding 38). Called before the new friendship's
-/// own rows are committed, so none of them is discarded.
-///
-/// # Errors
-/// The outbox is not running or its storage failed.
-pub(crate) async fn settle_ended_handshakes(
-    host: &dyn FriendHost,
-    peer: &str,
-) -> Result<(), FriendError> {
-    discard_handshakes(host, peer, "superseded by a new friendship").await
-}
-
-/// Every unsettled row of our `friend_handshake` stream to `peer` settles
-/// `failed` with `reason` and leaves it: a new friendship supersedes them
-/// ([`settle_ended_handshakes`]), or our request was cancelled (live A/B
-/// finding 70).
-///
-/// # Errors
-/// The outbox is not open or its storage failed.
-pub(crate) async fn discard_handshakes(
-    host: &dyn FriendHost,
-    peer: &str,
-    reason: &str,
-) -> Result<(), FriendError> {
-    let settled = host.outbox()?.discard_handshakes_to(peer, reason).await?;
-    if settled > 0 {
-        tracing::info!(peer = %peer, settled, reason, "handshake rows settled");
-    }
-    Ok(())
+    let outbox = match host.outbox() {
+        Ok(outbox) => outbox,
+        Err(e) => {
+            tracing::warn!(peer = %peer, error = %e, why, "failed rows stored; no outbox to echo them");
+            return;
+        }
+    };
+    tracing::info!(peer = %peer, count = failed.len(), why, "rows failed with the friendship");
+    let (dms, handshakes): (Vec<_>, Vec<_>) = failed.into_iter().partition(|row| row.kind == "dm");
+    outbox.echo_failed(dms, &format!("not delivered: {why}"));
+    outbox.echo_failed(handshakes, why);
 }
 
 /// The friendship with `peer`, whom we asked, opened (their `FriendAccept`,

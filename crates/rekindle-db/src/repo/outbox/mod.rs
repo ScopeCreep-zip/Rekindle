@@ -377,7 +377,11 @@ mod reads;
 use reads::parse_state;
 pub use reads::{due, expired, get, get_by_seq, next_wake, prefix_rows, stream_rows};
 
+mod ending;
 mod receipts;
+pub use ending::{
+    fail_to_peer, queue_friend_list, supersede, Ended, ListWrite, FRIEND_LIST_STREAM,
+};
 pub use receipts::{
     deliver_chain_through, deliver_seq, land, note_ack, read_through, reschedule_queued, Landing,
 };

@@ -401,15 +401,29 @@ impl DmOutbox for DmStream {
         to: &str,
         client_id: String,
         payload: Vec<u8>,
-    ) -> Result<(), FriendError> {
+        list: rekindle_db::repo::outbox::ListWrite,
+    ) -> Result<Vec<rekindle_db::repo::outbox::Row>, FriendError> {
         let row = self.0.new_row(handshake_entry(to, client_id, payload));
-        self.0
-            .deps()
-            .mark_removing(to, row)
-            .await
-            .map_err(|e| failed(&e))?;
+        let failed_rows =
+            (self.0.deps().mark_removing(to, row, list).await).map_err(|e| failed(&e))?;
         self.0.wake();
-        Ok(())
+        Ok(failed_rows)
+    }
+
+    fn echo_failed(&self, rows: Vec<rekindle_db::repo::outbox::Row>, reason: &str) {
+        let rows: Vec<_> = rows
+            .into_iter()
+            .filter_map(|row| {
+                super::row_of(row)
+                    .inspect_err(|e| tracing::warn!(error = %e, "a failed row not echoed"))
+                    .ok()
+            })
+            .collect();
+        self.0.echo_failed(&rows, reason);
+    }
+
+    fn wake(&self) {
+        self.0.wake();
     }
 
     async fn acknowledge_client(&self, client_id: &str) -> Result<bool, FriendError> {
@@ -435,18 +449,6 @@ impl DmOutbox for DmStream {
 
     async fn discard(&self, client_id: &str) -> Result<bool, FriendError> {
         self.0.discard(client_id).await.map_err(|e| failed(&e))
-    }
-
-    async fn discard_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError> {
-        let discarded = self.0.discard_streams(StreamKind::Dm, peer, reason).await;
-        discarded.map_err(|e| failed(&e))
-    }
-
-    async fn discard_handshakes_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError> {
-        let discarded = (self.0)
-            .discard_streams(StreamKind::FriendHandshake, peer, reason)
-            .await;
-        discarded.map_err(|e| failed(&e))
     }
 
     async fn receipt_handshakes_to(

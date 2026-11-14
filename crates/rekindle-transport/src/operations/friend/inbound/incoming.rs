@@ -234,12 +234,15 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
             let pk = a.sender_hex.to_string();
             let profile = Some(a.profile_dht_key.to_string()).filter(|k| !k.is_empty());
             let mailbox = Some(a.mailbox_dht_key.to_string()).filter(|k| !k.is_empty());
+            let list = crate::operations::friend::list_record::list_write(host);
             state::db_call!(host, "store accepted friend", move |conn| {
-                let keys = rekindle_db::repo::friends::RecordKeys {
-                    profile: profile.as_deref(),
-                    mailbox: mailbox.as_deref(),
-                };
-                rekindle_db::repo::friends::accept_with_records(conn, &owner, &pk, None, keys)
+                rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+                    let keys = rekindle_db::repo::friends::RecordKeys {
+                        profile: profile.as_deref(),
+                        mailbox: mailbox.as_deref(),
+                    };
+                    rekindle_db::repo::friends::accept_with_records(conn, &owner, &pk, None, keys)
+                })
             })
             .await
         }
@@ -266,7 +269,7 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
     crate::operations::friend::presence_key::send(host, a.sender_hex).await;
     let display_name = state::friend(host, a.sender_hex)
         .map_or_else(|| a.sender_hex.to_string(), |f| f.display_name);
-    crate::operations::friend::list_record::push_soon(host, "their accept");
+    crate::operations::friend::list_record::queued(host, "their accept");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: a.sender_hex.to_string(),
         display_name: Some(display_name),

@@ -55,16 +55,19 @@ fn mentions(events: &[String], needle: &str) -> usize {
     events.iter().filter(|e| e.contains(needle)).count()
 }
 
-/// The rows `owner`'s outbox holds.
-async fn queued(host: &Host, owner: [u8; 32]) -> i64 {
+/// The rows `owner`'s outbox holds for its peers.
+async fn queued(host: &Host, owner: [u8; 32]) -> usize {
     let owner = hex::encode(owner);
-    host.ctx
+    let rows = host
+        .ctx
         .db
         .current()
         .unwrap()
-        .call(move |conn| rekindle_db::repo::outbox::unsettled_count(conn, &owner))
+        .call(move |conn| rekindle_db::repo::outbox::prefix_rows(conn, &owner, ""))
         .await
-        .unwrap()
+        .unwrap();
+    // The friend list's own `dht_write` row is not a send to a peer.
+    rows.iter().filter(|row| row.kind != "dht_write").count()
 }
 
 /// Ann and Bob, each the other's accepted friend, with the session Bob

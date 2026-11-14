@@ -24,8 +24,11 @@ pub async fn set_nickname(
         )));
     }
     let (pk, nick) = (public_key.to_string(), nickname.map(str::to_string));
+    let list = super::list_record::list_write(host);
     state::db_call!(host, "store nickname", move |conn| {
-        rekindle_db::repo::friends::set_nickname(conn, &owner, &pk, nick.as_deref())
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+            rekindle_db::repo::friends::set_nickname(conn, &owner, &pk, nick.as_deref())
+        })
     })
     .await?;
     state::update(host, public_key, |f| {
@@ -36,7 +39,7 @@ pub async fn set_nickname(
     // every other friend-list write (`list_record`), never a network read
     // written back, which could replace a held push with a stale list and
     // drop a new friend from the record (review RV3 problem 6).
-    super::list_record::push_soon(host, "a nickname edit");
+    super::list_record::queued(host, "a nickname edit");
     host.publish(SubscriptionEvent::Friend(FriendEvent::NicknameChanged {
         peer_key: public_key.to_string(),
         nickname: nickname.map(str::to_string),
@@ -96,11 +99,15 @@ pub async fn rename_group(
     let old = group_name(host, group_id).await?;
     let owner = state::owner(host)?;
     let new = name.to_string();
+    let list = super::list_record::list_write(host);
     state::db_call!(host, "rename friend group", move |conn| {
-        rekindle_db::repo::friend_groups::rename(conn, &owner, group_id, &new)
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+            rekindle_db::repo::friend_groups::rename(conn, &owner, group_id, &new)
+        })
     })
     .await?;
     relabel(host, &old, Some(name));
+    super::list_record::queued(host, "a group rename");
     Ok(())
 }
 
@@ -112,11 +119,15 @@ pub async fn rename_group(
 pub async fn delete_group(host: &dyn FriendHost, group_id: i64) -> Result<(), FriendError> {
     let old = group_name(host, group_id).await?;
     let owner = state::owner(host)?;
+    let list = super::list_record::list_write(host);
     state::db_call!(host, "delete friend group", move |conn| {
-        rekindle_db::repo::friend_groups::delete(conn, &owner, group_id)
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+            rekindle_db::repo::friend_groups::delete(conn, &owner, group_id)
+        })
     })
     .await?;
     relabel(host, &old, None);
+    super::list_record::queued(host, "a group delete");
     Ok(())
 }
 
@@ -140,14 +151,17 @@ pub async fn move_to_group(
     };
     let owner = state::owner(host)?;
     let pk = public_key.to_string();
+    let list = super::list_record::list_write(host);
     state::db_call!(host, "move friend to group", move |conn| {
-        rekindle_db::repo::friends::set(
-            conn,
-            &owner,
-            &pk,
-            rekindle_db::repo::friends::Column::GroupId,
-            group_id,
-        )
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+            rekindle_db::repo::friends::set(
+                conn,
+                &owner,
+                &pk,
+                rekindle_db::repo::friends::Column::GroupId,
+                group_id,
+            )
+        })
     })
     .await?;
     state::update(host, public_key, |f| f.group.clone_from(&group));
@@ -156,5 +170,6 @@ pub async fn move_to_group(
         group_label: rekindle_types::dto::friends::group_label(group.as_deref()),
         group,
     }));
+    super::list_record::queued(host, "a group move");
     Ok(())
 }

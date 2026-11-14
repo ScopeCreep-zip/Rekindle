@@ -3,10 +3,14 @@
 //! it is already inside one.
 
 use rekindle_types::friend_store::FriendshipState;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension as _};
 
-use super::{delete, insert_accepted, replace_with_invited_rows, set_record_keys, set_state};
-use crate::repo::{blocked, outbox, pending_requests};
+use super::{
+    delete, insert_accepted, insert_pending_out, replace_with_invited_rows, set_record_keys,
+    set_state,
+};
+use crate::repo::outbox::{self, fail_to_peer, Ended, Row};
+use crate::repo::{blocked, pending_requests};
 
 /// Run `change` atomically: in a transaction of its own, or in the
 /// caller's when `conn` is already inside one (a `Transaction` derefs to
@@ -22,6 +26,85 @@ pub(crate) fn atomically<T>(
     let value = change(&tx)?;
     tx.commit()?;
     Ok(value)
+}
+
+/// A new friendship with `public_key` starts (a request, an invite, an
+/// accept): every handshake row to them framed under an ended one settles
+/// `failed` in this transaction (an `Unfriended` awaiting its ack, an old
+/// `FriendsKey`; live A/B finding 38) and is returned for the echo; a
+/// friend still pending or accepted keeps every row (that friendship goes
+/// on).
+///
+/// A friend we are removing who is added again ends the removal here: its
+/// row goes, and so does what is still queued to them (the `Unfriended`
+/// notice must not follow the new request out). The sessions with them
+/// stay: the new friendship's accept replaces the active one (plan E2.5h,
+/// `Reinitiation::Befriended`).
+pub(super) fn end_removal(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<Vec<Row>> {
+    let stored: Option<String> = conn
+        .query_row(
+            "SELECT friendship_state FROM friends WHERE owner_key = ?1 AND public_key = ?2",
+            params![owner_key, public_key],
+            |row| row.get(0),
+        )
+        .optional()?;
+    // A friendship that is still starting or open keeps every row it
+    // committed: only one that ended (no row left, or one we are removing)
+    // has rows to fail.
+    let ended = match stored.as_deref() {
+        None | Some("removing") => fail_to_peer(conn, owner_key, public_key, Ended::Handshakes)?,
+        Some(_) => return Ok(Vec::new()),
+    };
+    if stored.is_some() {
+        outbox::delete_to_peer(conn, owner_key, public_key)?;
+        delete(conn, owner_key, public_key)?;
+    }
+    Ok(ended)
+}
+
+/// Run `change`, a change of our friend list, and queue the list's
+/// `dht_write` row in the same transaction (review RV5 item 5, D22: the
+/// row is written with the change), so no crash between the two loses
+/// the change's write.
+///
+/// # Errors
+/// The change or the row failed; nothing is kept.
+pub fn changing_list<T>(
+    conn: &Connection,
+    owner_key: &str,
+    list: outbox::ListWrite,
+    change: impl FnOnce(&Connection) -> rusqlite::Result<T>,
+) -> rusqlite::Result<T> {
+    atomically(conn, |conn| {
+        let value = change(conn)?;
+        outbox::queue_friend_list(conn, owner_key, list)?;
+        Ok(value)
+    })
+}
+
+/// [`super::delete_pending_out_before`], queueing the friend list's row in
+/// the same transaction when a request expired (the 3-minute tick that
+/// expires nothing queues nothing).
+///
+/// # Errors
+/// A read or write failed; nothing is kept.
+pub fn expire_pending_out(
+    conn: &Connection,
+    owner_key: &str,
+    cutoff: i64,
+    list: outbox::ListWrite,
+) -> rusqlite::Result<Vec<(String, Vec<Row>)>> {
+    atomically(conn, |conn| {
+        let expired = super::delete_pending_out_before(conn, owner_key, cutoff)?;
+        if !expired.is_empty() {
+            outbox::queue_friend_list(conn, owner_key, list)?;
+        }
+        Ok(expired)
+    })
 }
 
 /// The record keys a friend names; `None` keeps the stored one.
@@ -43,11 +126,49 @@ pub fn accept_request(
     display_name: &str,
     added_at: i64,
     keys: RecordKeys<'_>,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
-        insert_accepted(conn, owner_key, public_key, display_name, added_at)?;
+        let ended = insert_accepted(conn, owner_key, public_key, display_name, added_at)?;
         pending_requests::delete(conn, owner_key, public_key)?;
-        set_record_keys(conn, owner_key, public_key, keys.profile, keys.mailbox)
+        set_record_keys(conn, owner_key, public_key, keys.profile, keys.mailbox)?;
+        Ok(ended)
+    })
+}
+
+/// We ask `public_key` by their friend code: a `pending_out` row naming
+/// the profile record the code gave, with the handshake rows of an ended
+/// friendship failed ([`end_removal`]), in one transaction; those rows.
+///
+/// # Errors
+/// A write failed; nothing is kept.
+pub fn add_by_code(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+    display_name: &str,
+    added_at: i64,
+    profile_key: &str,
+) -> rusqlite::Result<Vec<Row>> {
+    atomically(conn, |conn| {
+        let ended = insert_pending_out(conn, owner_key, public_key, display_name, added_at)?;
+        set_record_keys(conn, owner_key, public_key, Some(profile_key), None)?;
+        Ok(ended)
+    })
+}
+
+/// We reject `public_key`'s request: it goes, and our pending messages to
+/// them fail with it, in one transaction; those rows.
+///
+/// # Errors
+/// A write failed; nothing is kept.
+pub fn reject_request(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<Vec<Row>> {
+    atomically(conn, |conn| {
+        pending_requests::delete(conn, owner_key, public_key)?;
+        fail_to_peer(conn, owner_key, public_key, Ended::Dms)
     })
 }
 
@@ -81,8 +202,8 @@ pub fn accept_with_records(
 }
 
 /// Block `public_key`: the friend, their request, everything queued to
-/// them go, and the block is stored; the sessions with them stay (plan
-/// E2.5h).
+/// them (each row failed onto its echo) go, and the block is stored; the
+/// failed rows. The sessions with them stay (plan E2.5h).
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -92,18 +213,22 @@ pub fn block(
     public_key: &str,
     display_name: &str,
     blocked_at: i64,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
-        outbox::delete_to_peer(conn, owner_key, public_key)?;
-        blocked::insert(conn, owner_key, public_key, display_name, blocked_at)
+        let failed = fail_to_peer(conn, owner_key, public_key, Ended::Both)?;
+        blocked::insert(conn, owner_key, public_key, display_name, blocked_at)?;
+        Ok(failed)
     })
 }
 
 /// We remove `public_key`: the row is `removing`, their request goes, and
 /// the `Unfriended` notice is stored as `unfriended`, a row of their
-/// `friend_handshake` stream (plan E2.5): one transaction.
+/// `friend_handshake` stream (plan E2.5), and our pending messages and
+/// handshake rows to them fail first, so the notice never waits behind a
+/// row of the friendship it ends (a `FriendsKey` whose receipt is lost):
+/// one transaction; the failed rows.
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -112,30 +237,35 @@ pub fn mark_removing(
     owner_key: &str,
     public_key: &str,
     unfriended: &outbox::NewRow<'_>,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
         set_state(conn, owner_key, public_key, FriendshipState::Removing)?;
         super::nickname::clear(conn, owner_key, public_key)?;
         super::clear_presence_key(conn, owner_key, public_key)?;
         pending_requests::delete(conn, owner_key, public_key)?;
-        outbox::append(conn, unfriended, None).map(drop)
+        let failed = fail_to_peer(conn, owner_key, public_key, Ended::Both)?;
+        outbox::append(conn, unfriended, None)?;
+        Ok(failed)
     })
 }
 
-/// Forget `public_key`: their row and their request.
+/// Forget `public_key`: their row and their request, and our pending
+/// messages to them fail; the failed rows.
 ///
 /// # Errors
 /// A write failed; nothing is kept.
-pub fn forget(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
+pub fn forget(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
-        pending_requests::delete(conn, owner_key, public_key)
+        pending_requests::delete(conn, owner_key, public_key)?;
+        fail_to_peer(conn, owner_key, public_key, Ended::Dms)
     })
 }
 
-/// Our request to `public_key` was cancelled: their row goes. Any session
-/// with them stays (plan E2.5h: sessions are erased only by eviction from
-/// the archive or an identity reset).
+/// Our request to `public_key` was cancelled: their row, our rows to them
+/// (failed onto their echoes, returned) go. Any session with them stays
+/// (plan E2.5h: sessions are erased only by eviction from the archive or
+/// an identity reset).
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -143,25 +273,35 @@ pub fn cancel_request(
     conn: &Connection,
     owner_key: &str,
     public_key: &str,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
         delete(conn, owner_key, public_key)?;
         super::nickname::clear(conn, owner_key, public_key)?;
-        Ok(())
+        fail_to_peer(conn, owner_key, public_key, Ended::Both)
     })
 }
 
-/// `public_key` removed us: their row, their request and everything queued
-/// to them go; the sessions with them stay (plan E2.5h).
+/// `public_key` removed us: their row, their request, everything queued to
+/// them (failed onto its echo, returned) go; the sessions with them stay
+/// (plan E2.5h).
 ///
 /// # Errors
 /// A write failed; nothing is kept.
-pub fn unfriended(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite::Result<()> {
+pub fn unfriended(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
-        forget(conn, owner_key, public_key)?;
+        let mut failed = forget(conn, owner_key, public_key)?;
         super::nickname::clear(conn, owner_key, public_key)?;
-        outbox::delete_to_peer(conn, owner_key, public_key)?;
-        Ok(())
+        failed.extend(fail_to_peer(
+            conn,
+            owner_key,
+            public_key,
+            Ended::Handshakes,
+        )?);
+        Ok(failed)
     })
 }
 
@@ -193,7 +333,7 @@ pub fn forget_removed(conn: &Connection, owner_key: &str) -> rusqlite::Result<Ve
 }
 
 /// Replace any row for the friend with a `pending_out` row carrying the
-/// record keys an invite named.
+/// record keys an invite named; the handshake rows it ended ([`end_removal`]).
 ///
 /// # Errors
 /// A write failed; nothing is kept.
@@ -205,7 +345,7 @@ pub fn replace_with_invited(
     added_at: i64,
     profile_key: &str,
     mailbox_key: &str,
-) -> rusqlite::Result<()> {
+) -> rusqlite::Result<Vec<Row>> {
     atomically(conn, |conn| {
         replace_with_invited_rows(
             conn,
@@ -220,184 +360,4 @@ pub fn replace_with_invited(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::repo::fixture::{conn, OWNER};
-
-    const BOB: &str = "bb";
-
-    fn sessions(conn: &Connection) -> i64 {
-        conn.query_row("SELECT COUNT(*) FROM ratchet_sessions", [], |r| r.get(0))
-            .unwrap()
-    }
-
-    /// Plan E2.5h: remove, block and re-add never delete sessions; their
-    /// keys are erased only by eviction from the archive or an identity
-    /// reset.
-    #[test]
-    fn ending_a_friendship_keeps_its_sessions() {
-        let conn = conn();
-        conn.execute(
-            "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
-             VALUES (?1, ?2, 'd', x'00', 1)",
-            params![OWNER.to_ascii_lowercase(), BOB],
-        )
-        .unwrap();
-        super::super::insert_pending_out(&conn, OWNER, BOB, "Bob", 1).unwrap();
-        cancel_request(&conn, OWNER, BOB).unwrap();
-        insert_accepted(&conn, OWNER, BOB, "Bob", 2).unwrap();
-        unfriended(&conn, OWNER, BOB).unwrap();
-        insert_accepted(&conn, OWNER, BOB, "Bob", 3).unwrap();
-        set_state(&conn, OWNER, BOB, FriendshipState::Removing).unwrap();
-        forget_removed(&conn, OWNER).unwrap();
-        insert_accepted(&conn, OWNER, BOB, "Bob", 4).unwrap();
-        block(&conn, OWNER, BOB, "Bob", 5).unwrap();
-        assert_eq!(sessions(&conn), 1);
-    }
-
-    /// I14 (RV5) with plan E2.5h: ending, cancelling or re-adding a
-    /// friendship erases no session, so none of these changes runs a
-    /// checkpoint, and the stored session is still there afterwards.
-    #[tokio::test]
-    async fn ending_a_friendship_erases_nothing_and_truncates_nothing() {
-        type Change = fn(&Connection) -> rusqlite::Result<()>;
-        let cases: [(&str, Change, Change); 7] = [
-            ("cancel_request", pending, |c| cancel_request(c, OWNER, BOB)),
-            ("block", accepted, |c| block(c, OWNER, BOB, "Bob", 2)),
-            ("unfriended", accepted, |c| unfriended(c, OWNER, BOB)),
-            ("forget_removed", removing, |c| {
-                forget_removed(c, OWNER).map(drop)
-            }),
-            ("expiry", pending, |c| {
-                super::super::delete_pending_out_before(c, OWNER, 5).map(drop)
-            }),
-            ("insert_accepted", removing, |c| {
-                insert_accepted(c, OWNER, BOB, "Bob", 3)
-            }),
-            ("insert_pending_out", removing, |c| {
-                super::super::insert_pending_out(c, OWNER, BOB, "Bob", 3)
-            }),
-        ];
-        for (name, setup, change) in cases {
-            let dir = tempfile::tempdir().unwrap();
-            let db = crate::open(&dir.path().join("o.db"), &[7; 32]).unwrap();
-            let wal = dir.path().join("o.db-wal");
-            let wal_len = || std::fs::metadata(&wal).unwrap().len();
-            db.call(move |c| {
-                crate::repo::identity::insert(c, OWNER, "me", 0, "aaaaaaaaaaaaaaaaaaaaaaaaaa")?;
-                setup(c)?;
-                store_session(c)
-            })
-            .await
-            .unwrap();
-            let written = wal_len();
-            assert!(written > 0, "{name}: the setup wrote WAL frames");
-            db.call(move |c| change(c)).await.unwrap();
-            let kept = db
-                .call(|c| {
-                    c.query_row("SELECT COUNT(*) FROM ratchet_sessions", [], |r| {
-                        r.get::<_, i64>(0)
-                    })
-                })
-                .await
-                .unwrap();
-            assert_eq!(kept, 1, "{name}: the session stays");
-            assert!(
-                wal_len() >= written,
-                "{name}: erased nothing, yet truncated"
-            );
-        }
-    }
-
-    fn pending(c: &Connection) -> rusqlite::Result<()> {
-        super::super::insert_pending_out(c, OWNER, BOB, "Bob", 1)
-    }
-
-    fn accepted(c: &Connection) -> rusqlite::Result<()> {
-        insert_accepted(c, OWNER, BOB, "Bob", 1)
-    }
-
-    fn removing(c: &Connection) -> rusqlite::Result<()> {
-        insert_accepted(c, OWNER, BOB, "Bob", 1)?;
-        set_state(c, OWNER, BOB, FriendshipState::Removing)
-    }
-
-    fn store_session(c: &Connection) -> rusqlite::Result<()> {
-        c.execute(
-            "INSERT INTO ratchet_sessions (owner_key, peer_identity, peer_device, record, updated_at) \
-             VALUES (?1, ?2, 'd', x'00', 1)",
-            params![OWNER.to_ascii_lowercase(), BOB],
-        )
-        .map(drop)
-    }
-
-    fn state_of(conn: &Connection) -> Option<String> {
-        conn.query_row(
-            "SELECT friendship_state FROM friends WHERE owner_key = ?1 AND public_key = ?2",
-            params![OWNER, BOB],
-            |row| row.get(0),
-        )
-        .ok()
-    }
-
-    fn fail_on(conn: &Connection, table: &str) {
-        conn.execute_batch(&format!(
-            "CREATE TEMP TRIGGER injected BEFORE INSERT ON {table} \
-             BEGIN SELECT RAISE(ABORT, 'injected'); END;"
-        ))
-        .unwrap();
-    }
-
-    #[test]
-    fn a_failed_block_keeps_the_friend() {
-        let conn = conn();
-        insert_accepted(&conn, OWNER, BOB, "Bob", 1).unwrap();
-        fail_on(&conn, "blocked_users");
-        assert!(block(&conn, OWNER, BOB, "Bob", 2).is_err());
-        assert_eq!(state_of(&conn).as_deref(), Some("accepted"));
-        conn.execute_batch("DROP TRIGGER injected").unwrap();
-        block(&conn, OWNER, BOB, "Bob", 2).unwrap();
-        assert_eq!(state_of(&conn), None);
-        assert!(blocked::is_blocked(&conn, OWNER, BOB).unwrap());
-    }
-
-    #[test]
-    fn a_failed_removal_leaves_the_friend_accepted() {
-        let conn = conn();
-        insert_accepted(&conn, OWNER, BOB, "Bob", 1).unwrap();
-        let stream = format!("friend_handshake:{BOB}");
-        let row = outbox::NewRow {
-            owner_key: OWNER,
-            stream: &stream,
-            client_id: "unfriended:bb",
-            kind: "friend_handshake",
-            payload: b"{}",
-            next_at: 2,
-            deadline: 9,
-        };
-        fail_on(&conn, "outbox");
-        assert!(mark_removing(&conn, OWNER, BOB, &row).is_err());
-        assert_eq!(state_of(&conn).as_deref(), Some("accepted"));
-        conn.execute_batch("DROP TRIGGER injected").unwrap();
-        mark_removing(&conn, OWNER, BOB, &row).unwrap();
-        assert_eq!(state_of(&conn).as_deref(), Some("removing"));
-        assert_eq!(outbox::unsettled_count(&conn, OWNER).unwrap(), 1);
-    }
-
-    #[test]
-    fn a_failed_accept_keeps_the_request_and_the_pending_friend() {
-        let conn = conn();
-        super::super::insert_pending_out(&conn, OWNER, BOB, "Bob", 1).unwrap();
-        conn.execute_batch(
-            "CREATE TEMP TRIGGER injected BEFORE UPDATE ON friends \
-             WHEN NEW.dht_record_key IS NOT NULL BEGIN SELECT RAISE(ABORT, 'injected'); END;",
-        )
-        .unwrap();
-        let keys = RecordKeys {
-            profile: Some("profile"),
-            mailbox: None,
-        };
-        assert!(accept_with_records(&conn, OWNER, BOB, Some("Bobby"), keys).is_err());
-        assert_eq!(state_of(&conn).as_deref(), Some("pending_out"));
-    }
-}
+mod tests;

@@ -93,7 +93,10 @@ pub(crate) async fn run(
                 if let Err(e) = super::adapters::channel::start_settle(ctx, &scope, &pool) {
                     tracing::warn!(error = %e, "channel delivery settle not started");
                 }
-                ctx.outbox.restore_unsent(pool).await;
+                let list = super::adapters::outbox::dht_write::HostListWriter(
+                    super::adapters::friends::HostFriends::of(ctx),
+                );
+                ctx.outbox.restore_unsent(pool, Arc::new(list)).await;
             }
             Err(e) => {
                 tracing::warn!(error = %e, "record pool not started — staying locked");

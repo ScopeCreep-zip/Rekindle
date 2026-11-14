@@ -1,6 +1,7 @@
 //! Answering friend requests through the Host (review RV3): an answer to a
 //! request that is not there stores nothing (638ae37b), and a cancelled
-//! request takes its `FriendRequest` row with it (a3a553d1).
+//! request takes its `FriendRequest` row with it (a3a553d1), in its own
+//! commit (RV5 item 3).
 
 use rekindle_crypto::Identity;
 use rekindle_transport::operations::friend::{self, FriendError};
@@ -90,5 +91,66 @@ async fn a_cancelled_request_takes_its_request_row_with_it() {
         .await
         .unwrap();
     assert!(left.is_empty(), "{left:?}");
+    assert_eq!(stored(&host, owner).await, 0);
+}
+
+/// Review RV5 item 3: the rows a cancel ends go in the cancel's own
+/// commit, so a failure after it (here no outbox is running, as after a
+/// crash or a lock right after the commit) leaves no row live for the
+/// friendship that ended.
+#[tokio::test]
+async fn a_cancel_whose_outbox_is_gone_after_the_commit_leaves_no_row() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let (o, bob) = (
+        hex::encode(owner),
+        hex::encode(Identity::generate().public_key_bytes()),
+    );
+    let db = host.ctx.db.current().unwrap();
+    let (o2, bob2) = (o.clone(), bob.clone());
+    db.call(move |conn| {
+        rekindle_db::repo::friends::insert_pending_out(conn, &o2, &bob2, "Bob", 1)?;
+        for (kind, id) in [("dm", "dm-1"), ("friend_handshake", "request")] {
+            let stream = format!("{kind}:{bob2}");
+            let row = rekindle_db::repo::outbox::NewRow {
+                owner_key: &o2,
+                stream: &stream,
+                client_id: id,
+                kind,
+                payload: b"frame",
+                next_at: 0,
+                deadline: i64::MAX,
+            };
+            rekindle_db::repo::outbox::enqueue_with_echo(conn, &row, None)?;
+        }
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let loaded = super::session::load(&db, &host.ctx.vault, &o, host.ctx.rng.as_ref(), 0)
+        .await
+        .unwrap();
+    host.ctx.session.write().as_mut().unwrap().friends = loaded.friends;
+    host.ctx.outbox.stop();
+
+    friend::cancel(&HostFriends::of(&host.ctx), &bob)
+        .await
+        .unwrap();
+    let left = db
+        .call(move |conn| rekindle_db::repo::outbox::prefix_rows(conn, &o, ""))
+        .await
+        .unwrap();
+    // The friend list's own row, committed with the cancel, stays.
+    let to_bob: Vec<_> = left
+        .iter()
+        .filter(|row| row.stream.ends_with(&bob))
+        .collect();
+    assert!(
+        to_bob.is_empty(),
+        "every row to Bob went with the cancel: {to_bob:?}"
+    );
+    assert!(left
+        .iter()
+        .any(|row| row.stream == rekindle_db::repo::outbox::FRIEND_LIST_STREAM));
     assert_eq!(stored(&host, owner).await, 0);
 }

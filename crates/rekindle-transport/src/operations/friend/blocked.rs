@@ -34,18 +34,21 @@ pub async fn block(host: &dyn FriendHost, public_key: &str) -> Result<(), Friend
     let owner = state::owner(host)?;
     let now = host.clock().now_ms_i64();
     let name = state::known_name(host, &owner, public_key).await?;
-    // Settled before the block's transaction deletes their queue, so each
-    // message shows failed rather than vanishing.
-    state::discard_pending_dms(host, public_key, "the user was blocked").await?;
     let pk = public_key.to_string();
-    // The friend, their request, their queue, the sessions and the block:
-    // one transaction (plan audit D-1).
-    state::db_call!(host, "block user", move |conn| {
-        rekindle_db::repo::friends::block(conn, &owner, &pk, &name, now)
+    // The friend, their request, their queue (each row failed onto its
+    // echo, so a message shows failed rather than vanishing), the sessions
+    // and the block: one transaction (plan audit D-1).
+    let list = super::list_record::list_write(host);
+    let failed = state::db_call!(host, "block user", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+            rekindle_db::repo::friends::block(conn, &owner, &pk, &name, now)
+        })
     })
     .await?;
+    state::echo_failed(host, public_key, failed, "the user was blocked");
 
     state::take(host, public_key);
+    super::list_record::queued(host, "a block");
     if let Ok(node) = host.node() {
         dm::route::invalidate(&node, public_key);
     }

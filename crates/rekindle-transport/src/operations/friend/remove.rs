@@ -26,11 +26,14 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     // D-1): the row keeps the friend's routing information until it
     // settles, across a restart too.
     let payload = dm::handshake::payload(host, public_key, &DirectBody::Unfriended).await?;
-    host.outbox()?
+    // Our pending messages to them fail in the same transaction.
+    let failed = host
+        .outbox()?
         .enqueue_removal(
             public_key,
             dm::handshake::unfriended_client_id(public_key),
             payload,
+            list_record::list_write(host),
         )
         .await?;
     host.audit(
@@ -43,11 +46,7 @@ pub async fn remove(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         // The friendship ended: so did our name for them (finding 79).
         f.nickname = None;
     });
-    state::after_commit(
-        "discard_pending_dms",
-        public_key,
-        state::discard_pending_dms(host, public_key, "the friend was removed").await,
-    );
+    state::echo_failed(host, public_key, failed, "the friend was removed");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
     }));
@@ -72,15 +71,14 @@ async fn has_session(host: &dyn FriendHost, public_key: &str) -> Result<bool, Fr
 /// and nobody is told.
 async fn forget_untold(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
     let (owner, peer) = (state::owner(host)?, public_key.to_string());
-    state::db_call!(host, "forget a friend with no session", move |conn| {
-        rekindle_db::repo::friends::forget(conn, &owner, &peer)
+    let list = super::list_record::list_write(host);
+    let failed = state::db_call!(host, "forget a friend with no session", move |conn| {
+        rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
+            rekindle_db::repo::friends::forget(conn, &owner, &peer)
+        })
     })
     .await?;
-    state::after_commit(
-        "discard_pending_dms",
-        public_key,
-        state::discard_pending_dms(host, public_key, "the friend was removed").await,
-    );
+    state::echo_failed(host, public_key, failed, "the friend was removed");
     state::take(host, public_key);
     host.audit(
         rekindle_audit::AuditKind::FriendRemoved,
@@ -104,9 +102,7 @@ fn cleanup(host: &dyn FriendHost, public_key: &str) {
         .spawn_or_drop("friend removal cleanup", async move {
             let host = owned.as_ref();
             host.unwatch_friend(&peer).await;
-            if let Err(e) = list_record::push(host).await {
-                tracing::warn!(error = %e, "failed to update DHT friend list after removal");
-            }
+            list_record::queued(host, "a removal");
         });
 }
 

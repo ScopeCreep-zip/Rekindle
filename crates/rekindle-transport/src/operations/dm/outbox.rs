@@ -67,8 +67,9 @@ pub trait DmOutbox: Send + Sync {
         client_id: String,
         payload: Vec<u8>,
     ) -> Result<i64, FriendError>;
-    /// Mark `to` removing and commit our `Unfriended` frame to them, in one
-    /// transaction (plan audit D-1).
+    /// Mark `to` removing, fail our pending messages to them and commit our
+    /// `Unfriended` frame to them and the friend list's row (`list`), in one
+    /// transaction (plan audit D-1, review RV5 items 3 and 5); the failed rows, for [`Self::echo_failed`].
     ///
     /// # Errors
     /// The storage failed; nothing was committed.
@@ -77,7 +78,17 @@ pub trait DmOutbox: Send + Sync {
         to: &str,
         client_id: String,
         payload: Vec<u8>,
-    ) -> Result<(), FriendError>;
+        list: rekindle_db::repo::outbox::ListWrite,
+    ) -> Result<Vec<rekindle_db::repo::outbox::Row>, FriendError>;
+    /// Rows a committed friend change already failed and deleted in its own
+    /// transaction (`rekindle_db::repo::outbox::fail_to_peer`): each one's
+    /// `failed` state, with `reason`, goes to the subscribers, and the
+    /// engine is woken so the streams behind them go on. Storage is not
+    /// touched.
+    fn echo_failed(&self, rows: Vec<rekindle_db::repo::outbox::Row>, reason: &str);
+    /// A row was committed outside the engine (the friend list's, with
+    /// the change that queued it): attempt the due rows now.
+    fn wake(&self);
     /// The peer acknowledged row `client_id` by a frame naming no stream
     /// seq (`UnfriendedAck`); `false` when no row waits.
     ///
@@ -89,22 +100,6 @@ pub trait DmOutbox: Send + Sync {
     /// # Errors
     /// The storage failed.
     async fn discard(&self, client_id: &str) -> Result<bool, FriendError>;
-    /// The friendship (or the attempt at one) with `peer` ended: every
-    /// unsettled row of our `dm` stream to them settles `failed` with
-    /// `reason` and leaves it (live A/B findings 31, 35); how many.
-    ///
-    /// # Errors
-    /// The storage failed.
-    async fn discard_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError>;
-    /// A new friendship with `peer` starts: every unsettled row of our
-    /// `friend_handshake` stream to them, framed under the friendship that
-    /// ended (an `Unfriended` awaiting its ack, an old `FriendsKey`),
-    /// settles `failed` with `reason` and leaves it (live A/B finding 38);
-    /// how many.
-    ///
-    /// # Errors
-    /// The storage failed.
-    async fn discard_handshakes_to(&self, peer: &str, reason: &str) -> Result<usize, FriendError>;
     /// `peer`'s answer proves our handshake rows to them whose client ids
     /// start with `client_prefix` arrived (their `FriendAccept` answers our
     /// `FriendRequest`, whose receipts may all have been lost): each
