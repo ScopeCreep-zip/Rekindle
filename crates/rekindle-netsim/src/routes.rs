@@ -96,18 +96,18 @@ pub enum RouteOrdering {
 
 impl RouteOrdering {
     /// The ordering our allocator asks for `class`, as
-    /// `rekindle-protocol` `own_routes.rs:43-51,77-85` asks it today:
-    /// General is `new_private_route`, whose default spec is PreferOrdered
-    /// (`veilid_api/types/safety.rs:16-17`, `api.rs:763-765`); Media and
-    /// Sending are PreferUnordered. A preference names the route's one
-    /// ordering (`safety.rs:24-28` `preferred_ordering`). The netsim cannot
-    /// link that crate (ADR 0014), so this follows it by hand: plan VU5
-    /// (decision 2) makes Sending PreferOrdered, and this row with it.
+    /// `rekindle-protocol` `own_routes.rs` (`media_private_spec`,
+    /// `sending_private_spec`) asks it: General is `new_private_route`,
+    /// whose default spec is PreferOrdered (`veilid_api/types/safety.rs:16-17`,
+    /// `api.rs:763-765`); Sending is PreferOrdered (plan VU decision 2) and
+    /// Media PreferUnordered. A preference names the route's one ordering
+    /// (`safety.rs:24-29` `preferred_ordering`). The netsim cannot link that
+    /// crate (ADR 0014), so this follows it by hand.
     #[must_use]
     pub fn of(class: RouteClass) -> Self {
         match class {
-            RouteClass::General => Self::Ordered,
-            RouteClass::Media | RouteClass::Sending => Self::Unordered,
+            RouteClass::General | RouteClass::Sending => Self::Ordered,
+            RouteClass::Media => Self::Unordered,
         }
     }
 }
