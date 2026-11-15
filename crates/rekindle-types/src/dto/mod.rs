@@ -11,5 +11,6 @@ pub mod group_dm;
 pub mod identity;
 pub mod onboarding;
 pub mod presence;
+pub mod skin;
 
 pub use command::{CommandError, Done};

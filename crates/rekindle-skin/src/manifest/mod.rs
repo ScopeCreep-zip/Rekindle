@@ -1,0 +1,219 @@
+//! Validator step 2: `manifest.json` and its text rules (plan E7.7.1).
+//!
+//! The format major is read first, from the `format` key alone, so a
+//! manifest of an unknown major is refused as such and never partly read.
+//! The manifest is then parsed with `deny_unknown_fields`, and each field
+//! checked: `id`, `name` (≤ 64 scalars, NFC, no control or bidi
+//! characters), `description` (≤ 280), `license` (an SPDX expression or the
+//! full text), `source`, `author` with `signature`, and the variants (one or
+//! more, one per base and contrast, each naming a root token file the
+//! package holds). The regions, icons and sounds maps are checked against
+//! the registry and the images and sounds by the later validator steps.
+
+mod text;
+
+use std::collections::HashSet;
+
+use rekindle_types::dto::skin::{
+    SkinBase, SkinContrast, SkinError, SkinLicense, SkinManifest, SkinRule, SKIN_FORMAT_MAJOR,
+    SKIN_FORMAT_PREFIX,
+};
+use serde::Deserialize;
+
+use crate::limits::MAX_MANIFEST_BYTES;
+use crate::package::{is_root_json, Package, MANIFEST};
+use text::TextRule;
+
+const NAME: TextRule = TextRule {
+    max_scalars: 64,
+    may_be_empty: false,
+    line_feeds: false,
+};
+const DESCRIPTION: TextRule = TextRule {
+    max_scalars: 280,
+    may_be_empty: true,
+    line_feeds: true,
+};
+/// A licence's full text: bounded by the manifest's own size.
+const LICENSE_TEXT: TextRule = TextRule {
+    max_scalars: 64 * 1024,
+    may_be_empty: false,
+    line_feeds: true,
+};
+const ID_MAX: usize = 64;
+const ED25519_KEY_HEX: usize = 64;
+const ED25519_SIGNATURE_HEX: usize = 128;
+const BLAKE3_HEX: usize = 64;
+
+/// Only the format key, every other key ignored, to read the major first.
+#[derive(Deserialize)]
+struct FormatProbe {
+    format: String,
+}
+
+fn refuse(rule: SkinRule) -> SkinError {
+    SkinError::new(MANIFEST, rule)
+}
+
+fn bad_value(field: &str, expected: &str) -> SkinError {
+    refuse(SkinRule::BadValue {
+        field: field.to_owned(),
+        expected: expected.to_owned(),
+    })
+}
+
+fn syntax(e: &serde_json::Error) -> SkinError {
+    refuse(SkinRule::ManifestSyntax {
+        detail: e.to_string(),
+    })
+}
+
+/// Parses and checks the package's manifest.
+///
+/// # Errors
+/// The first rule the manifest breaks; the entry is `manifest.json`, or the
+/// token file a variant names when the package lacks it.
+pub fn parse(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
+    let bytes = package
+        .get(MANIFEST)
+        .ok_or_else(|| refuse(SkinRule::MissingManifest))?;
+    let size = bytes.len() as u64;
+    if size > MAX_MANIFEST_BYTES {
+        return Err(refuse(SkinRule::ManifestTooLarge {
+            size,
+            max: MAX_MANIFEST_BYTES,
+        }));
+    }
+    let probe: FormatProbe = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
+    check_format(&probe.format)?;
+    let manifest: SkinManifest = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
+    check_fields(&manifest)?;
+    check_variants(package, &manifest)?;
+    Ok(manifest)
+}
+
+fn check_format(format: &str) -> Result<(), SkinError> {
+    let expected = "rekindle-skin/<major>, the major a decimal integer";
+    let digits = format
+        .strip_prefix(SKIN_FORMAT_PREFIX)
+        .filter(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
+        .filter(|d| *d == "0" || !d.starts_with('0'))
+        .ok_or_else(|| bad_value("format", expected))?;
+    let major: u32 = digits.parse().map_err(|_| bad_value("format", expected))?;
+    if major != SKIN_FORMAT_MAJOR {
+        return Err(refuse(SkinRule::UnsupportedFormat { major }));
+    }
+    Ok(())
+}
+
+/// Lowercase ASCII letters, digits, `-` and `.`, starting with a letter or
+/// digit, 1–64 bytes.
+fn is_id(s: &str) -> bool {
+    let b = s.as_bytes();
+    !b.is_empty()
+        && b.len() <= ID_MAX
+        && b[0].is_ascii_alphanumeric()
+        && b.iter()
+            .all(|&c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'-' || c == b'.')
+}
+
+fn is_lower_hex(s: &str, len: usize) -> bool {
+    s.len() == len
+        && s.bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+}
+
+fn check_fields(m: &SkinManifest) -> Result<(), SkinError> {
+    let id_rule = "1-64 of a-z 0-9 . -, starting with a letter or digit";
+    if !is_id(&m.id) {
+        return Err(bad_value("id", id_rule));
+    }
+    text::check("name", &m.name, NAME).map_err(refuse)?;
+    text::check("description", &m.description, DESCRIPTION).map_err(refuse)?;
+    match &m.license {
+        SkinLicense::Spdx(expr) => {
+            spdx::Expression::parse_mode(expr, spdx::ParseMode::STRICT).map_err(|e| {
+                refuse(SkinRule::BadSpdx {
+                    detail: e.to_string(),
+                })
+            })?;
+        }
+        SkinLicense::Text(full) => text::check("license", full, LICENSE_TEXT).map_err(refuse)?,
+    }
+    if let Some(source) = &m.source {
+        if !is_id(&source.format) {
+            return Err(bad_value("source.format", id_rule));
+        }
+        if !is_lower_hex(&source.hash, BLAKE3_HEX) {
+            return Err(bad_value(
+                "source.hash",
+                "a BLAKE3 hash, 64 lowercase hex digits",
+            ));
+        }
+    }
+    if let Some(author) = &m.author {
+        if !is_lower_hex(author, ED25519_KEY_HEX) {
+            return Err(bad_value(
+                "author",
+                "an Ed25519 public key, 64 lowercase hex digits",
+            ));
+        }
+    }
+    if let Some(signature) = &m.signature {
+        if m.author.is_none() {
+            return Err(bad_value("signature", "an author key beside it"));
+        }
+        if !is_lower_hex(signature, ED25519_SIGNATURE_HEX) {
+            return Err(bad_value(
+                "signature",
+                "an Ed25519 signature, 128 lowercase hex digits",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn base_name(base: SkinBase) -> &'static str {
+    match base {
+        SkinBase::Light => "light",
+        SkinBase::Dark => "dark",
+    }
+}
+
+fn contrast_name(contrast: SkinContrast) -> &'static str {
+    match contrast {
+        SkinContrast::Standard => "standard",
+        SkinContrast::High => "high",
+    }
+}
+
+/// One or more variants, at most one per base and contrast, each naming a
+/// root `*.json` token file (not the manifest) that the package holds.
+fn check_variants(package: &Package<'_>, m: &SkinManifest) -> Result<(), SkinError> {
+    if m.variants.is_empty() {
+        return Err(refuse(SkinRule::NoVariants));
+    }
+    let mut seen = HashSet::new();
+    for (i, v) in m.variants.iter().enumerate() {
+        if !seen.insert((v.base, v.contrast)) {
+            return Err(refuse(SkinRule::DuplicateVariant {
+                base: base_name(v.base).to_owned(),
+                contrast: contrast_name(v.contrast).to_owned(),
+            }));
+        }
+        let field = format!("variants[{i}].tokens");
+        if !is_root_json(&v.tokens) || v.tokens == MANIFEST {
+            return Err(bad_value(
+                &field,
+                "a token file (*.json) at the package root",
+            ));
+        }
+        if package.get(&v.tokens).is_none() {
+            return Err(SkinError::new(
+                v.tokens.as_str(),
+                SkinRule::MissingEntry { field },
+            ));
+        }
+    }
+    Ok(())
+}
