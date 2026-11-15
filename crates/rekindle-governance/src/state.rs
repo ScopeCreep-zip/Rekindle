@@ -319,6 +319,16 @@ pub struct RsvpState {
 }
 
 impl GovernanceState {
+    /// How many members the merge counts: every admitted `MemberJoined`
+    /// author, and the cert's creator (MSC4289: no op makes it one) unless
+    /// it departed.
+    #[must_use]
+    pub fn member_count(&self) -> usize {
+        let creator = (self.creator.as_ref())
+            .filter(|c| !self.members.contains_key(*c) && !self.is_departed(c));
+        self.members.len() + usize::from(creator.is_some())
+    }
+
     /// Whether `member` has departed: banned, or once joined (it has an op
     /// log here or was removed) and now neither a member nor pending, so
     /// removed or left and not re-joined.

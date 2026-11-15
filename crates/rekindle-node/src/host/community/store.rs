@@ -314,11 +314,17 @@ impl CommunityStore {
         }
     }
 
-    /// How many members the community knows.
+    /// How many members the merged governance counts (its `MemberJoined`
+    /// set, plan E3.2), never the presence roster, which lists only the
+    /// members a scan or gossip reached (A/B finding R1-7: 1 shown of 2).
     #[must_use]
     pub fn member_count(&self, community_id: &str) -> usize {
-        self.read(community_id, |c| c.known_members.len())
-            .unwrap_or(0)
+        self.read(community_id, |c| {
+            c.governance_state
+                .as_ref()
+                .map_or(0, GovernanceState::member_count)
+        })
+        .unwrap_or(0)
     }
 
     /// Our role ids: the merged role assignments as the projection laid

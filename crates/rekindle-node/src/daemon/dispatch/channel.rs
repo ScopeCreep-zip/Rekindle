@@ -140,6 +140,7 @@ pub(crate) fn channel_overviews(
     let Some(gov) = ctx.communities.governance_state(community_id) else {
         return Vec::new();
     };
+    let keys = rekindle_governance_runtime::deps::GovernanceRuntimeDeps::keys(&super::adapter(ctx));
     let mut out: Vec<ChannelOverviewDisplay> = gov
         .channels
         .iter()
@@ -149,10 +150,12 @@ pub(crate) fn channel_overviews(
             kind: channel.channel_type.clone(),
             category_id: channel.category_id.map(|c| hex::encode(c.0)),
             topic: channel.topic.clone().unwrap_or_default(),
-            // The daemon holds no per-channel MEK generation of its own;
-            // `mek_cache` tracks it per (community, channel) and the
-            // reader consults that when it decrypts.
-            mek_generation: 0,
+            // The generation of the text key we hold for the channel (its
+            // `scope_for_text`), the one a send seals with; 0 when none is
+            // held (A/B finding R1-7: 0 shown while 1-3 was held).
+            mek_generation: keys
+                .current_epoch(community_id, keys.scope_for_text(community_id, *channel_id))
+                .map_or(0, |epoch| epoch.0),
             // v1.0 per-member DhtLog spine. Nothing writes one any more.
             log_key: None,
             sort_order: u16::try_from(channel.position).unwrap_or(u16::MAX),

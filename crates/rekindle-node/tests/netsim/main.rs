@@ -9,6 +9,7 @@ mod backfill_gate;
 mod channel_delete_container_not_empty;
 mod channel_post_both_ways;
 mod community_block_drops;
+mod community_info_counts;
 mod community_policy;
 mod crossing_request;
 mod dm_ack_loss;
