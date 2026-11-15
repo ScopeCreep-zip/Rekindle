@@ -317,4 +317,43 @@ pub enum SkinRule {
     SoundDecode { detail: String },
     #[error("sound encode: {detail}")]
     SoundEncode { detail: String },
+    #[error("{token} is translucent; text grounds and fills are opaque")]
+    TranslucentGround { token: String },
+    #[error(
+        "{token}: luminance {luminance_x1000}/1000 is on the wrong side of 179/1000 for base {declared}"
+    )]
+    BaseMismatch {
+        declared: String,
+        token: String,
+        luminance_x1000: u32,
+    },
+    #[error(
+        "{rule}: {token} on {ground} is {measured_x100}/100:1, at least {required_x100}/100:1 is required"
+    )]
+    Contrast {
+        rule: String,
+        token: String,
+        ground: String,
+        measured_x100: u32,
+        required_x100: u32,
+    },
+    #[error(
+        "D1: danger.fill is OKLCH hue {hue_x10}/10°, chroma {chroma_x1000}/1000; danger is hue 12°–36°, chroma ≥ 0.06"
+    )]
+    DangerNotRed { hue_x10: u32, chroma_x1000: u32 },
+    #[error(
+        "D3: accent.fill is OKLCH hue {hue_x10}/10°, chroma {chroma_x1000}/1000, in the red (danger) category"
+    )]
+    AccentIsRed { hue_x10: u32, chroma_x1000: u32 },
+    #[error(
+        "{rule}: {a} and {b} are ΔE00 {measured_x10}/10 apart under {vision} vision, at least {required_x10}/10 is required"
+    )]
+    TooClose {
+        rule: String,
+        a: String,
+        b: String,
+        vision: String,
+        measured_x10: u32,
+        required_x10: u32,
+    },
 }

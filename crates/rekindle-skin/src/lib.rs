@@ -16,6 +16,8 @@
 //!   re-encoded to canonical PNG or GIF (validator step 4).
 //! * [`sounds::validate`]: every sound cue decoded and re-encoded to PCM16
 //!   WAV (validator step 5).
+//! * [`access::validate`]: accessibility and anti-spoofing on a resolved
+//!   variant, measured on composited colours (validator step 6).
 //! * [`registry`]: the closed token registry, and [`generate`], the
 //!   artefacts `cargo xtask gen-skin-registry` writes from it.
 //!
@@ -25,6 +27,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod access;
 mod colour;
 pub mod generate;
 pub mod images;
