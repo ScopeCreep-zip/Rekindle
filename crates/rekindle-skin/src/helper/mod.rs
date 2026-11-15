@@ -26,7 +26,7 @@ use crate::output::Canonical;
 pub const HELPER_NAME: &str = "rekindle-skin-helper";
 /// The wall clock a validation may take before the helper is killed: over
 /// [`CPU_SECONDS`], so a busy helper meets its CPU cap first.
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+pub const HELPER_TIMEOUT: Duration = Duration::from_secs(30);
 /// The CPU seconds the helper may spend (`RLIMIT_CPU` soft; SIGXCPU).
 pub const CPU_SECONDS: u64 = 20;
 /// The helper's address space on Linux (`RLIMIT_AS`): the 16 MiB input,
@@ -35,7 +35,7 @@ pub const CPU_SECONDS: u64 = 20;
 pub const ADDRESS_SPACE_BYTES: u64 = 1024 * 1024 * 1024;
 /// How much of the helper's stderr a failure keeps.
 const MAX_STDERR_BYTES: u64 = 16 * 1024;
-const POLL_INTERVAL: Duration = Duration::from_millis(10);
+const EXIT_POLL: Duration = Duration::from_millis(10);
 
 /// A validation that did not produce a canonical package.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -90,7 +90,7 @@ impl HelperOpts {
         }
         Ok(Self {
             path,
-            timeout: DEFAULT_TIMEOUT,
+            timeout: HELPER_TIMEOUT,
         })
     }
 }
@@ -191,7 +191,7 @@ fn wait(child: &mut Child, timeout: Duration) -> Result<ExitStatus, HelperError>
                 kill(child);
                 return Err(HelperError::TimedOut(timeout));
             }
-            Ok(None) => std::thread::sleep(POLL_INTERVAL),
+            Ok(None) => std::thread::sleep(EXIT_POLL),
             Err(e) => {
                 kill(child);
                 return Err(HelperError::Pipe(format!("waiting for the helper: {e}")));

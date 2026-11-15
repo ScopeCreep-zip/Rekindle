@@ -17,7 +17,7 @@ use crate::limits::MAX_PACKAGE_BYTES;
 use crate::output::Canonical;
 
 /// The first four bytes of every answer.
-pub const MAGIC: [u8; 4] = *b"RKSH";
+pub const FRAME_MAGIC: [u8; 4] = *b"RKSH";
 /// The frame version this crate writes and reads.
 pub const VERSION: u8 = 1;
 const TAG_CANONICAL: u8 = 0;
@@ -30,11 +30,11 @@ const MAX_REFUSAL_BYTES: usize = 64 * 1024;
 pub const MAX_FRAME_BYTES: u64 = 10 + 32 + MAX_PACKAGE_BYTES;
 
 /// What the helper answered.
-pub type Answer = Result<Canonical, SkinError>;
+pub type HelperAnswer = Result<Canonical, SkinError>;
 
 fn frame(tag: u8, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(HEADER + payload.len());
-    out.extend_from_slice(&MAGIC);
+    out.extend_from_slice(&FRAME_MAGIC);
     out.push(VERSION);
     out.push(tag);
     // A payload is at most MAX_FRAME_BYTES, far under u32::MAX.
@@ -46,7 +46,7 @@ fn frame(tag: u8, payload: &[u8]) -> Vec<u8> {
 
 /// `answer` as one frame.
 #[must_use]
-pub fn encode(answer: &Answer) -> Vec<u8> {
+pub fn encode(answer: &HelperAnswer) -> Vec<u8> {
     match answer {
         Ok(c) => {
             let mut payload = Vec::with_capacity(32 + c.bytes.len());
@@ -66,11 +66,11 @@ pub fn encode(answer: &Answer) -> Vec<u8> {
 ///
 /// # Errors
 /// What is wrong with the stream, as text for [`super::HelperError::Malformed`].
-pub fn decode(stream: &[u8]) -> Result<Answer, String> {
+pub fn decode(stream: &[u8]) -> Result<HelperAnswer, String> {
     let (header, payload) = stream
         .split_at_checked(HEADER)
         .ok_or_else(|| format!("{} bytes, shorter than the header", stream.len()))?;
-    if header[..4] != MAGIC {
+    if header[..4] != FRAME_MAGIC {
         return Err("not a helper answer (magic)".to_owned());
     }
     if header[4] != VERSION {

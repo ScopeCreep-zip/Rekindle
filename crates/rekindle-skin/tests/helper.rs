@@ -19,7 +19,7 @@ const DARK: &[u8] =
 fn real() -> HelperOpts {
     HelperOpts {
         path: PathBuf::from(env!("CARGO_BIN_EXE_rekindle-skin-helper")),
-        timeout: helper::DEFAULT_TIMEOUT,
+        timeout: helper::HELPER_TIMEOUT,
     }
 }
 
@@ -116,7 +116,6 @@ fn a_helper_that_exits_non_zero_after_answering_is_a_crash() {
 fn malformed_helper_output_is_refused() {
     for (name, out) in [
         ("garbage", "not a frame"),
-        ("version", "RKSH\\002\\001\\002\\000\\000\\000{}"),
         ("truncated", "RKSH\\001\\000\\377\\000\\000\\000abc"),
         ("empty", ""),
     ] {
@@ -140,5 +139,19 @@ fn the_frame_refuses_a_wrong_hash_or_trailing_bytes() {
     assert!(frame::decode(&flipped).is_err());
     let mut longer = good;
     longer.push(0);
+    assert!(frame::decode(&longer).is_err());
+}
+
+#[test]
+fn the_frame_refuses_another_version_or_trailing_bytes_after_a_refusal() {
+    let refusal = validate::run(&common::package(&common::manifest(), &[])).unwrap_err();
+    let good = frame::encode(&Err(refusal.clone()));
+    assert_eq!(frame::decode(&good), Ok(Err(refusal)));
+    let mut version = good.clone();
+    version[4] = frame::VERSION + 1;
+    assert!(frame::decode(&version).is_err());
+    // JSON admits trailing white space: only the length refuses it.
+    let mut longer = good;
+    longer.push(b' ');
     assert!(frame::decode(&longer).is_err());
 }
