@@ -44,6 +44,7 @@ impl Netsim {
                 store: usize::MAX / 2 + usize::try_from(inner.lru).unwrap_or(0),
                 used: 0,
                 values: vec![None; subkeys],
+                nonces: vec![None; subkeys],
                 watches: Vec::new(),
             };
             record.replicas.insert(i, fresh);

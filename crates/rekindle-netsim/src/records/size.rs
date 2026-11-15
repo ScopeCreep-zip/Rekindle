@@ -126,6 +126,8 @@ mod tests {
         dht.set(&record.key, 0, vec![1; 4_112], Some(&writer))
             .await
             .unwrap();
+        // The set's RPCs still in flight at its return land (`records/fanout.rs`).
+        tokio::time::sleep(crate::latency::SET_RPC.max).await;
         let err = dht
             .set(&record.key, 0, vec![2; 4_113], Some(&writer))
             .await

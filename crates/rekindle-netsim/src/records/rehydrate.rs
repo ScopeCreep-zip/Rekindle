@@ -27,7 +27,8 @@
 //!   (`offline_subkey_writes.rs:47-74`); a replica holding a newer value
 //!   restarts the fanout on it ([`super::fanout`]), and a value the
 //!   fanout ended on that is not ours becomes the local copy (`:84-93`).
-//!   Fewer than [`GET_COUNT`] accepts keeps the subkey queued
+//!   A push that did not land (fewer than
+//!   [`super::replicas::GET_COUNT`] accepts, [`super::fanout`]) keeps the subkey queued
 //!   (`check_fanout_finished_without_consensus`, `mod.rs:781-820`), else it
 //!   is done.
 //!
@@ -37,7 +38,7 @@
 //! that keeps it short does not keep the network busy; it still retries at
 //! every tick.
 
-use super::replicas::{self, newest_seq, GET_COUNT, SET_COUNT};
+use super::replicas::{self, newest_seq, SET_COUNT};
 use super::{reachable, stores, subkey_count, watches};
 use crate::network::{Inner, Network};
 
@@ -98,8 +99,7 @@ fn rehydrate(inner: &mut Inner, node: usize, key: &str) {
 
 /// One push of `node`'s local copy of `key`'s `subkey`.
 fn push(inner: &mut Inner, node: usize, key: &str, subkey: u32) {
-    let local = (key.to_string(), subkey);
-    let Some(ours) = inner.nodes[node].local.get(&local).cloned() else {
+    let Some(ours) = super::replicas::local(inner, node, key, subkey) else {
         return;
     };
     let reach = reach_of(inner, node, key);
@@ -117,12 +117,12 @@ fn push(inner: &mut Inner, node: usize, key: &str, subkey: u32) {
     stores::touch(inner, key, &reach);
     stores::admit(inner, key, &fanout.stored);
     if fanout.value != ours {
-        inner.nodes[node]
-            .local
-            .insert(local.clone(), fanout.value.clone());
+        super::replicas::keep(inner, node, key, subkey, &fanout.value);
     }
-    if fanout.accepted < GET_COUNT {
-        inner.nodes[node].pushes.insert(local, Some(reach));
+    if !fanout.landed() {
+        inner.nodes[node]
+            .pushes
+            .insert((key.to_string(), subkey), Some(reach));
     }
 }
 

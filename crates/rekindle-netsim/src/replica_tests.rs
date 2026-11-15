@@ -11,7 +11,10 @@ use super::*;
 /// (`set_value.rs:170-171,205-221,487-494,709-719`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_partial_set_comes_back_as_our_own_stale_value() {
-    let (sim, nodes) = Netsim::nodes(3, 41);
+    // Five nodes: alone, node 0 reaches two replicas, fewer than the
+    // `get_value_count` 3 a set that misses consensus still lands at
+    // (0.5.8 `storage_manager/mod.rs:990-1030`).
+    let (sim, nodes) = Netsim::nodes(5, 41);
     let pool = nodes[0].ports.records.start_session().unwrap();
     let (lease, key, _) = pool
         .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
@@ -26,7 +29,7 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
     // `set_value_count`.
     sim.fault(Fault::Partition {
         a: vec![0],
-        b: vec![1, 2],
+        b: vec![1, 2, 3, 4],
     });
     assert_eq!(
         pool.set(lease, 0, b"partial".to_vec(), None).await.unwrap(),
@@ -43,12 +46,13 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
         .flatten()
         .filter(|v| v.data == b"partial")
         .count();
-    assert!((1..5).contains(&partial), "{partial} replicas took it");
+    assert!((1..3).contains(&partial), "{partial} replicas took it");
 
     sim.fault(Fault::Heal);
-    // The retry goes out at seq 1 again and meets the partial value; its six
-    // lanes race it (`records/fanout.rs`), so Veilid's three outcomes are
-    // all possible, and the seed fixes which.
+    // The retry goes out at seq 1 again, a fresh encryption, and meets the
+    // partial value; the tally settles it (0.5.8 `value_tally.rs:90-106`):
+    // a partial holder answering first beats ours (nobody holds ours yet),
+    // else ours gathers more holders; the seed fixes which.
     let at_one = |data: &[u8]| {
         sim.replica_values(&key, 0)
             .into_iter()
@@ -65,11 +69,8 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
                 b"partial"
             );
         }
-        // The two values at seq 1 restarted each other until the span ended.
-        SetOutcome::BelowConsensus => {
-            assert!(at_one(b"next") > 0 && at_one(b"partial") > 0);
-        }
-        // Five replicas took "next" first: seq 1 stays split.
+        // Ours settled over the partial rival: `Some(ours)`, which the pool
+        // reads as landed (0.5.8 `set_value.rs:753-760`).
         SetOutcome::Landed => {
             assert!(at_one(b"next") >= 5 && at_one(b"partial") > 0);
         }
@@ -105,7 +106,8 @@ async fn an_identical_re_push_behind_the_network_is_superseded() {
 /// side that reaches consensus lands, and a node reads what its side holds.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_partition_splits_the_replicas() {
-    let (sim, nodes) = Netsim::nodes(3, 43);
+    // Five nodes, as in `a_partial_set_comes_back_as_our_own_stale_value`.
+    let (sim, nodes) = Netsim::nodes(5, 43);
     let (a, b) = (
         nodes[0].ports.records.start_session().unwrap(),
         nodes[1].ports.records.start_session().unwrap(),
@@ -120,7 +122,7 @@ async fn a_partition_splits_the_replicas() {
 
     sim.fault(Fault::Partition {
         a: vec![0],
-        b: vec![1, 2],
+        b: vec![1, 2, 3, 4],
     });
     assert_eq!(
         a.set(lease, 0, b"lone".to_vec(), None).await.unwrap(),

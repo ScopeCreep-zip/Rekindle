@@ -1,104 +1,161 @@
-//! A set's fanout over a record's replicas (plan E2.B slices S4 and S11,
-//! MED-1 and MED-2), after the pinned veilid-core (`~/veilid/veilid-core/src`):
+//! A set's fanout over a record's replicas (plan E2.B slices S4 and S11;
+//! plan VU2 items 1, 9 and 13), after veilid-core 0.5.8 (Rekindle's fork,
+//! ADR 0017; `veilid-core/src`):
 //!
 //! - **lanes:** at most [`LANES`] set RPCs are in flight at once
-//!   (`set_value_fanout`, `veilid_config.rs:915`; `fanout_call.rs:630-640`
-//!   spins up one task per lane), sent in placement order over the replicas
-//!   the node reaches; each arrives at its replica a drawn
+//!   (`set_value_fanout`, `veilid_config.rs:1012`), and no more than
+//!   [`SET_COUNT`] counting the accepts, until a lane in flight passes the
+//!   slow threshold [`STRAGGLER_FLOOR`] (`set_value.rs:676`
+//!   `ThrottleAtConsensus`, `fanout_queue.rs:500-552`), sent in closeness order
+//!   over the replicas the node reaches; each arrives at its replica a drawn
 //!   [`latency::SET_RPC`] after it left, and **the replica stores it then**
-//!   (readers and watchers see it from that moment, not when the call
-//!   returns). A replica the node no longer reaches at arrival, or an RPC
-//!   arriving while the node is offline, is lost;
-//! - **a replica's answer** (`storage_manager/set_value.rs:700-719`): it keeps
-//!   the first value it receives at a seq, answers the same value as a
-//!   success and anything older or same-seq different with what it holds;
-//!   a value past the size rule is an invalid message ([`super::size`]);
-//! - **the fanout's side** (`set_value.rs:465-500`): an answer older than
-//!   the fanout's value is stale; a newer one, or a same-seq different one,
-//!   restarts the fanout on it ("accept all conflicts in an attempt to
-//!   resolve them"): every accepted replica is queued again
-//!   (`fanout_call.rs:438-442`, `fanout_queue.rs:491-498`) and the answering
-//!   one counts as accepted. An accept of a value the fanout has since left
-//!   queues that replica again. Concurrent fanouts at one seq therefore
-//!   interleave replica by replica, in arrival order, and can split the
-//!   replicas with neither side at consensus;
+//!   (readers and watchers see it from that moment), and its answer is read
+//!   then. An RPC whose replica the node no longer reaches at arrival, or
+//!   arriving while the node is offline, is lost: no answer comes, and its
+//!   lane waits [`RPC_TIMEOUT`] (`veilid_config.rs:944`), or the straggler
+//!   cut below;
+//! - **a replica's answer** (`storage_manager/set_value.rs:819-842`): it
+//!   keeps the first value it receives at a seq, answers the same value
+//!   (ciphertext included, [`super::replicas::Cipher`]) as a success and
+//!   anything older or same-seq different with what it holds; a value past
+//!   the size rule is an invalid message ([`super::size`]);
+//! - **the fanout's side** (`set_value.rs:24-115`): a [`Tally`] counts the
+//!   holders of each value at the fanout's seq. An answer older than the
+//!   fanout's value is stale; a newer one restarts the fanout on it (every
+//!   accepted, conflicting and stale replica is queued again,
+//!   `fanout_call.rs:567-573`); a same-seq rival is a conflict unless it now
+//!   beats the fanout's value, when the fanout switches to it (the
+//!   conflicting replicas are queued again and the accepted ones become
+//!   conflicts, `fanout_call.rs:579-585`). An accept of a value the fanout
+//!   has since left counts as a rival holder;
 //! - **done** at [`SET_COUNT`] accepts (`set_value_count`,
-//!   `veilid_config.rs:914`); RPCs still in flight then land on their
-//!   replicas, their answers unread. Before consensus Veilid's deadline stays
-//!   a full timeout past the last accept (`fanout_call.rs:423-446,642-656`),
-//!   so a split keeps restarting; the model's bound is the call's drawn span
-//!   ([`latency::SET`], the measured set), and the call returns at its end.
+//!   `veilid_config.rs:1011`): the call returns then; RPCs still in flight
+//!   land on their replicas, their answers unread. Otherwise it ends when
+//!   every reached replica answered (exhausted), or at [`SET_TIMEOUT`] past
+//!   the last accept (`fanout_call.rs:552-555`, `veilid_config.rs:1010`).
+//!   While no queued replica is left and the lanes in flight cannot bring the
+//!   accepts to consensus, a silent lane is cut after the larger of
+//!   [`STRAGGLER_FLOOR`] and three times the slowest answer
+//!   (`fanout_queue.rs:11-13,662-751`, `fanout_call.rs:105-110`);
+//! - **landed** at consensus, or at an end by timeout or exhaustion with
+//!   at least [`GET_COUNT`] accepts (`storage_manager/mod.rs:990-1030`);
+//!   then the settled value is the local copy and the call returns it when
+//!   it is not the value asked for or some replica holds a rival at its seq
+//!   (`set_value.rs:753-760`). Below that nothing is stored
+//!   (`local_record_store_interface.rs:61-62`).
 //!   A fanout nobody waits on (a rehydration push) runs in one step, bounded
-//!   by [`max_rpcs`], the RPCs that span holds.
+//!   by [`max_rpcs`].
 
 use std::collections::VecDeque;
+use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_records::port::{DhtCallError, DhtErrorKind, RecordSchema, RecordValue};
+use rekindle_records::port::{DhtCallError, DhtErrorKind, RecordSchema};
 use tokio::time::Instant;
 
-use super::replicas::{Replica, SET_COUNT};
+use super::replicas::{self, Cipher, Replica, Tally, GET_COUNT, SET_COUNT};
 use super::{reachable, reaches, size, stores, watches};
 use crate::latency;
 use crate::network::Network;
 
-/// Set RPCs in flight at once: `set_value_fanout` (`veilid_config.rs:915`).
+/// Set RPCs in flight at once: `set_value_fanout` (`veilid_config.rs:1012`).
 pub(crate) const LANES: usize = 6;
+/// An RPC nobody answers times out: `rpc.timeout_ms` (`veilid_config.rs:944`).
+pub(crate) const RPC_TIMEOUT: Duration = Duration::from_secs(5);
+/// A set's deadline past its last accept: `set_value_timeout_ms`
+/// (`veilid_config.rs:1010`).
+pub(crate) const SET_TIMEOUT: Duration = Duration::from_secs(10);
+/// The least a straggler that can no longer complete consensus is waited
+/// for: 33 % of [`RPC_TIMEOUT`] (`fanout_call.rs:105-110`).
+pub(crate) const STRAGGLER_FLOOR: Duration = Duration::from_millis(1_650);
+/// The multiple of the slowest answer a straggler is waited for
+/// (`fanout_queue.rs:11-13`).
+const STRAGGLER_RTT_FACTOR: u32 = 3;
 
-/// The RPCs one set's span holds: [`LANES`] × [`latency::SET`]'s max over
+/// The RPCs one unawaited fanout holds: [`LANES`] × [`SET_TIMEOUT`] over
 /// [`latency::SET_RPC`]'s min.
 pub(crate) fn max_rpcs() -> usize {
-    let rounds = latency::SET.max.as_millis() / latency::SET_RPC.min.as_millis();
+    let rounds = SET_TIMEOUT.as_millis() / latency::SET_RPC.min.as_millis();
     LANES.saturating_mul(usize::try_from(rounds).unwrap_or(usize::MAX))
 }
 
 /// What a set's fanout did.
 pub(crate) struct SetFanout {
-    /// The value the fanout ended on: the writer's own, or one a replica
-    /// restarted it on.
-    pub value: RecordValue,
+    /// The value the fanout ended on: the writer's own, or one it switched
+    /// or restarted to.
+    pub value: Cipher,
     /// Whether [`SET_COUNT`] replicas accepted `value`.
     pub consensus: bool,
     /// How many replicas accepted `value`.
     pub accepted: usize,
+    /// Whether a replica holds another value at `value`'s seq.
+    pub conflicted: bool,
     /// The replicas that stored a value in this fanout, in order (one may
     /// appear twice: a restart sent it another value).
     pub stored: Vec<usize>,
 }
 
-/// A replica's answer to a set (`set_value.rs:700-719`).
+impl SetFanout {
+    /// Whether the set landed (see the module notes).
+    pub(crate) fn landed(&self) -> bool {
+        self.consensus || self.accepted >= GET_COUNT
+    }
+}
+
+/// A replica's answer to a set (`set_value.rs:819-842`).
 enum Offer {
     Stored,
     Same,
-    Ignored(RecordValue),
+    Ignored(Cipher),
 }
 
-fn offer(slot: &mut Option<RecordValue>, value: &RecordValue) -> Offer {
-    match slot {
-        Some(held) if held == value => Offer::Same,
-        Some(held) if held.seq >= value.seq => Offer::Ignored(held.clone()),
+fn offer(replica: &mut Replica, subkey: usize, value: &Cipher) -> Offer {
+    match replica.cipher(subkey) {
+        Some(held) if held == *value => Offer::Same,
+        Some(held) if held.value.seq >= value.value.seq => Offer::Ignored(held),
         _ => {
-            *slot = Some(value.clone());
+            replica.put(subkey, value);
             Offer::Stored
         }
     }
 }
 
+/// `value` reaches replica `r`: its answer, or `None` for an invalid
+/// message (past the size rule).
+fn deliver(
+    schema: &RecordSchema,
+    replicas: &mut [Replica],
+    r: usize,
+    subkey: usize,
+    value: &Cipher,
+) -> Option<Offer> {
+    let replica = replicas
+        .get_mut(r)
+        .filter(|x| size::admits(schema, &x.values, subkey, &value.value))?;
+    Some(offer(replica, subkey, value))
+}
+
 /// One fanout's state (see the module notes).
 pub(crate) struct Fanout {
-    ctx: RecordValue,
+    ctx: Cipher,
     queue: VecDeque<usize>,
     accepted: Vec<usize>,
+    conflict: Vec<usize>,
+    stale: Vec<usize>,
+    tally: Tally,
     stored: Vec<usize>,
     sent: usize,
 }
 
 impl Fanout {
-    pub(crate) fn new(reach: &[usize], ours: &RecordValue) -> Self {
+    pub(crate) fn new(reach: &[usize], ours: &Cipher) -> Self {
         Self {
             ctx: ours.clone(),
             queue: reach.iter().copied().collect(),
             accepted: Vec::new(),
+            conflict: Vec::new(),
+            stale: Vec::new(),
+            tally: Tally::default(),
             stored: Vec::new(),
             sent: 0,
         }
@@ -109,7 +166,7 @@ impl Fanout {
     }
 
     /// The next replica to send to and the value it carries.
-    pub(crate) fn next(&mut self) -> Option<(usize, RecordValue)> {
+    pub(crate) fn next(&mut self) -> Option<(usize, Cipher)> {
         if self.done() {
             return None;
         }
@@ -118,11 +175,55 @@ impl Fanout {
         Some((r, self.ctx.clone()))
     }
 
-    fn accept(&mut self, r: usize, sent: &RecordValue) {
-        if *sent == self.ctx {
-            self.accepted.push(r);
+    /// Queue `rs` again, in closeness order.
+    fn requeue(&mut self, rs: Vec<usize>) {
+        self.queue.extend(rs);
+        self.queue.make_contiguous().sort_unstable();
+    }
+
+    fn accept(&mut self, r: usize) {
+        self.tally.add(&self.ctx, r);
+        self.accepted.push(r);
+    }
+
+    /// `value`, a rival of the fanout's at its seq, is held by `r`
+    /// (`set_value.rs:96-111`).
+    fn rival(&mut self, value: Cipher, r: usize) {
+        self.tally.add(&value, r);
+        if !self.tally.beats(&value, &self.ctx) {
+            self.conflict.push(r);
+            return;
+        }
+        self.ctx = value;
+        let conflict = std::mem::take(&mut self.conflict);
+        self.requeue(conflict);
+        self.conflict = std::mem::take(&mut self.accepted);
+        self.accepted.push(r);
+    }
+
+    /// `r` answered the set of `sent` with `answer` (`set_value.rs:24-94`).
+    fn classify(&mut self, r: usize, sent: &Cipher, answer: Offer) {
+        let held = match answer {
+            Offer::Stored | Offer::Same => sent.clone(),
+            Offer::Ignored(held) => held,
+        };
+        if held == self.ctx {
+            self.accept(r);
+        } else if held.value.seq < self.ctx.value.seq {
+            self.stale.push(r);
+        } else if held.value.seq > self.ctx.value.seq {
+            self.ctx = held;
+            self.tally.clear();
+            let again: Vec<usize> = self
+                .accepted
+                .drain(..)
+                .chain(self.conflict.drain(..))
+                .chain(self.stale.drain(..))
+                .collect();
+            self.requeue(again);
+            self.accept(r);
         } else {
-            self.queue.push_back(r);
+            self.rival(held, r);
         }
     }
 
@@ -134,42 +235,33 @@ impl Fanout {
         replicas: &mut [Replica],
         r: usize,
         subkey: usize,
-        sent: &RecordValue,
+        sent: &Cipher,
     ) -> bool {
-        let Some(slot) = replicas
-            .get_mut(r)
-            .filter(|x| size::admits(schema, &x.values, subkey, sent))
-            .and_then(|x| x.values.get_mut(subkey))
-        else {
+        let Some(answer) = deliver(schema, replicas, r, subkey, sent) else {
             return false;
         };
-        let answer = offer(slot, sent);
         let stored = matches!(answer, Offer::Stored);
         if stored {
             self.stored.push(r);
         }
-        if self.done() {
-            return stored;
-        }
-        match answer {
-            Offer::Stored | Offer::Same => self.accept(r, sent),
-            Offer::Ignored(held) if held == self.ctx => self.accepted.push(r),
-            Offer::Ignored(held) if held.seq >= self.ctx.seq => {
-                self.ctx = held;
-                for a in self.accepted.drain(..).rev() {
-                    self.queue.push_front(a);
-                }
-                self.accepted.push(r);
-            }
-            Offer::Ignored(_) => {}
+        if !self.done() {
+            self.classify(r, sent, answer);
         }
         stored
+    }
+
+    /// Whether the straggler cut applies: no replica is left queued and the
+    /// `in_flight` lanes cannot bring the accepts to consensus
+    /// (`fanout_queue.rs:662-705`).
+    fn cut(&self, in_flight: usize) -> bool {
+        self.queue.is_empty() && self.accepted.len() + in_flight < SET_COUNT
     }
 
     pub(crate) fn finish(self) -> SetFanout {
         SetFanout {
             consensus: self.done(),
             accepted: self.accepted.len(),
+            conflicted: self.tally.conflicted(&self.ctx),
             value: self.ctx,
             stored: self.stored,
         }
@@ -182,14 +274,14 @@ pub(crate) fn set_now(
     replicas: &mut [Replica],
     reach: &[usize],
     subkey: usize,
-    ours: &RecordValue,
+    ours: &Cipher,
 ) -> SetFanout {
     let mut fanout = Fanout::new(reach, ours);
     let bound = max_rpcs();
     // Lane by lane in waves: a wave's RPCs all land, those after consensus
     // too, their answers unread.
     while fanout.sent < bound {
-        let wave: Vec<(usize, RecordValue)> = (0..LANES).map_while(|_| fanout.next()).collect();
+        let wave: Vec<(usize, Cipher)> = (0..LANES).map_while(|_| fanout.next()).collect();
         if wave.is_empty() {
             break;
         }
@@ -200,100 +292,222 @@ pub(crate) fn set_now(
     fanout.finish()
 }
 
-/// `node`'s set of `ours` at `key`/`subkey`, over `span` from now: each RPC
-/// lands as it arrives; returns at the span's end. With `accepting`, only
-/// that many of the closest replicas it reaches answer
-/// ([`crate::Fault::WritePartial`]); the rest never do.
+/// One set RPC in flight.
+struct Lane {
+    sent: Instant,
+    at: Instant,
+    r: usize,
+    value: Cipher,
+    /// Whether an answer comes (else the lane waits for its timeout or cut).
+    answers: bool,
+}
+
+/// `node`'s set of `ours` at `key`/`subkey`: each RPC lands as it arrives;
+/// returns when the fanout ends (see the module notes). With `accepting`,
+/// only that many of the closest replicas it reaches answer
+/// ([`crate::Fault::WritePartial`]); the others never do.
 pub(crate) async fn run(
-    net: &Network,
+    net: &Arc<Network>,
     node: usize,
     (key, subkey): (&str, u32),
-    ours: &RecordValue,
-    span: Duration,
+    ours: &Cipher,
     accepting: Option<usize>,
 ) -> SetFanout {
-    let end = Instant::now() + span;
     let (schema, reach) = {
         let inner = net.inner.lock();
         inner.records.get(key).map_or_else(
             || (None, Vec::new()),
             |r| {
-                let mut reach = reachable(&r.replicas, &inner.faults.partitions, node);
-                reach.truncate(accepting.unwrap_or(usize::MAX));
+                let reach = reachable(&r.replicas, &inner.faults.partitions, node);
                 (Some(r.schema.clone()), reach)
             },
         )
     };
+    let answering: Vec<usize> = reach
+        .iter()
+        .copied()
+        .take(accepting.unwrap_or(usize::MAX))
+        .collect();
     let mut fanout = Fanout::new(&reach, ours);
-    let mut flight: Vec<(Instant, usize, RecordValue)> = Vec::new();
+    let mut lanes: Vec<Lane> = Vec::new();
+    let mut last_accept = Instant::now();
+    let mut slowest: Option<Duration> = None;
     while let Some(schema) = &schema {
+        if fanout.done() {
+            break;
+        }
+        let now = Instant::now();
+        let counted = |lanes: &[Lane]| {
+            lanes
+                .iter()
+                .filter(|l| now < l.sent + STRAGGLER_FLOOR)
+                .count()
+        };
         if watches::online(&net.inner.lock(), node) {
-            while flight.len() < LANES {
+            while lanes.len() < LANES && fanout.accepted.len() + counted(&lanes) < SET_COUNT {
                 let Some((r, value)) = fanout.next() else {
                     break;
                 };
-                let at = Instant::now() + net.latency.draw(node, latency::SET_RPC);
-                flight.push((at, r, value));
+                let sent = Instant::now();
+                let at = sent + net.latency.draw(node, latency::SET_RPC);
+                let answers = answering.contains(&r);
+                lanes.push(Lane {
+                    sent,
+                    at,
+                    r,
+                    value,
+                    answers,
+                });
             }
         }
-        let Some(i) = (0..flight.len()).min_by_key(|i| (flight[*i].0, flight[*i].1)) else {
+        let wait = match slowest {
+            Some(s) if fanout.cut(lanes.len()) => STRAGGLER_FLOOR.max(s * STRAGGLER_RTT_FACTOR),
+            _ => RPC_TIMEOUT,
+        };
+        let due = |l: &Lane| if l.answers { l.at } else { l.sent + wait };
+        let Some(i) = (0..lanes.len()).min_by_key(|i| (due(&lanes[*i]), lanes[*i].r)) else {
             break;
         };
-        if flight[i].0 > end {
+        // A lane in flight past the slow threshold stops holding back the
+        // next dispatch (`fanout_queue.rs:500-552`, `fanout_call.rs:105-110`).
+        let slow = lanes
+            .iter()
+            .map(|l| l.sent + STRAGGLER_FLOOR)
+            .filter(|t| *t > now && !fanout.queue.is_empty())
+            .min();
+        let deadline = last_accept + SET_TIMEOUT;
+        let next = slow.map_or(due(&lanes[i]), |t| t.min(due(&lanes[i])));
+        if next > deadline {
+            tokio::time::sleep_until(deadline).await;
             break;
         }
-        let (at, r, value) = flight.swap_remove(i);
-        tokio::time::sleep_until(at).await;
+        if next < due(&lanes[i]) {
+            tokio::time::sleep_until(next).await;
+            continue;
+        }
+        tokio::time::sleep_until(due(&lanes[i])).await;
+        let mut lane = lanes.swap_remove(i);
+        if !lane.answers {
+            continue;
+        }
         let mut guard = net.inner.lock();
         let inner = &mut *guard;
-        if !watches::online(inner, node) {
+        if !arrives(inner, node, key, lane.r) {
+            // Lost on the way: no answer comes.
+            lane.answers = false;
+            lanes.push(lane);
             continue;
         }
         let Some(record) = inner.records.get_mut(key) else {
             break;
         };
-        let home = record.replicas.get(r).map(|x| x.home);
-        if !home.is_some_and(|h| reaches(&inner.faults.partitions, node, h)) {
-            continue;
-        }
-        if fanout.arrive(schema, &mut record.replicas, r, subkey as usize, &value) {
-            watches::mark(record, &[r], subkey, node);
-            stores::admit(inner, key, &[r]);
+        let before = fanout.accepted.len();
+        if fanout.arrive(
+            schema,
+            &mut record.replicas,
+            lane.r,
+            subkey as usize,
+            &lane.value,
+        ) {
+            watches::mark(record, &[lane.r], subkey, node);
+            stores::admit(inner, key, &[lane.r]);
         } else {
-            stores::touch(inner, key, &[r]);
+            stores::touch(inner, key, &[lane.r]);
+        }
+        slowest = slowest.max(Some(lane.at - lane.sent));
+        if fanout.accepted.len() > before {
+            last_accept = lane.at;
         }
     }
-    tokio::time::sleep_until(end).await;
+    let tail: Vec<Lane> = lanes.into_iter().filter(|l| l.answers).collect();
+    if let (Some(schema), false) = (schema, tail.is_empty()) {
+        tokio::spawn(land_tail(
+            Arc::clone(net),
+            node,
+            (key.to_string(), subkey),
+            schema,
+            tail,
+        ));
+    }
     fanout.finish()
 }
 
-/// At consensus the fanout's value is stored in `node`'s local store,
-/// within the record's total (`record_store/record.rs:105-129`); `Some` is
-/// that value when it is not ours. Below consensus nothing is stored
+/// Whether an RPC from `node` arriving now at `key`'s replica `r` is
+/// received: the node is online and still reaches it.
+fn arrives(inner: &crate::network::Inner, node: usize, key: &str, r: usize) -> bool {
+    let home = inner
+        .records
+        .get(key)
+        .and_then(|record| record.replicas.get(r))
+        .map(|x| x.home);
+    watches::online(inner, node) && home.is_some_and(|h| reaches(&inner.faults.partitions, node, h))
+}
+
+/// The RPCs still in flight when a set returned land at their arrival,
+/// their answers unread (`fanout_call.rs:630-656`).
+async fn land_tail(
+    net: Arc<Network>,
+    node: usize,
+    (key, subkey): (String, u32),
+    schema: RecordSchema,
+    mut tail: Vec<Lane>,
+) {
+    tail.sort_by_key(|l| (l.at, l.r));
+    for lane in tail {
+        tokio::time::sleep_until(lane.at).await;
+        let mut guard = net.inner.lock();
+        let inner = &mut *guard;
+        if !arrives(inner, node, &key, lane.r) {
+            continue;
+        }
+        let Some(record) = inner.records.get_mut(&key) else {
+            return;
+        };
+        let answer = deliver(
+            &schema,
+            &mut record.replicas,
+            lane.r,
+            subkey as usize,
+            &lane.value,
+        );
+        if matches!(answer, Some(Offer::Stored)) {
+            watches::mark(record, &[lane.r], subkey, node);
+            stores::admit(inner, &key, &[lane.r]);
+        } else {
+            stores::touch(inner, &key, &[lane.r]);
+        }
+    }
+}
+
+/// A landed fanout's value is stored in `node`'s local store, within the
+/// record's total (`record_store/record.rs:105-129`); `Some` is that value
+/// when it is not ours or some replica holds a rival at its seq
+/// (`set_value.rs:753-760`). A set that did not land stores nothing
 /// (`local_record_store_interface.rs:61-62`).
 pub(crate) fn commit(
     net: &Network,
     node: usize,
     (key, subkey): (&str, u32),
-    ours: &RecordValue,
+    ours: &Cipher,
     fanout: &SetFanout,
-) -> Result<Option<RecordValue>, DhtCallError> {
-    if !fanout.consensus {
+) -> Result<Option<rekindle_records::port::RecordValue>, DhtCallError> {
+    if !fanout.landed() {
         return Ok(None);
     }
     let mut inner = net.inner.lock();
-    let local = &mut inner.nodes[node].local;
-    let others: usize = local
+    let others: usize = inner.nodes[node]
+        .local
         .iter()
         .filter(|((k, s), _)| k == key && *s != subkey)
         .map(|(_, v)| v.data.len())
         .sum();
-    if others + fanout.value.data.len() > size::MAX_RECORD_DATA_SIZE {
+    if others + fanout.value.value.data.len() > size::MAX_RECORD_DATA_SIZE {
         return Err(DhtCallError {
             kind: DhtErrorKind::Internal,
             message: format!("record exceeds maximum data size: {key}"),
         });
     }
-    local.insert((key.to_string(), subkey), fanout.value.clone());
-    Ok(Some(fanout.value.clone()).filter(|value| value != ours))
+    replicas::keep(&mut inner, node, key, subkey, &fanout.value);
+    let settled = fanout.value.value.clone();
+    Ok((fanout.conflicted || settled != ours.value).then_some(settled))
 }

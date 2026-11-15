@@ -154,6 +154,9 @@ pub(crate) struct NodeSlot {
     /// fed only by rehydration): the reach of the last attempt that left
     /// the subkey queued, `None` before any.
     pub pushes: BTreeMap<(String, u32), Option<Vec<usize>>>,
+    /// The nonce of each local copy, with the value it was recorded for
+    /// ([`crate::records`]' `replicas::Cipher`).
+    pub nonces: HashMap<(String, u32), (RecordValue, u64)>,
 }
 
 impl NodeSlot {
@@ -179,6 +182,7 @@ impl NodeSlot {
             route_epoch: 0,
             rehydrations: BTreeSet::new(),
             pushes: BTreeMap::new(),
+            nonces: HashMap::new(),
         }
     }
 }
@@ -204,6 +208,9 @@ pub(crate) struct Inner {
     pub lru: u64,
     /// Per node: inbound RPCs its full queue dropped.
     pub rpc_dropped: HashMap<usize, u64>,
+    /// The last nonce an encryption drew ([`crate::records`]'
+    /// `replicas::Cipher`; 0 is a scenario's injected value).
+    pub last_nonce: u64,
 }
 
 /// The network, shared by every node's ports.

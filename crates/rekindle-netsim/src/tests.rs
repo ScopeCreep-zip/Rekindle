@@ -445,11 +445,18 @@ async fn outside_writes_check_the_writer_and_a_conflict_keeps_its_seq() {
     assert_eq!(held.len(), 10);
     assert!(held.contains(&(0, b"rival".to_vec())));
     assert!(held.contains(&(0, b"first".to_vec())));
-    // Both nodes keep the value they hold at that seq.
-    assert_eq!(
-        b.get(theirs, 0, true).await.unwrap().unwrap().data,
-        b"first"
-    );
+    // A forced get settles the split by the tally, stopping at three
+    // holders of its value, and keeps the seq (0.5.8 `get_value.rs:44-90`).
+    let values: Vec<Vec<u8>> = sim
+        .replica_values(&key, 0)
+        .into_iter()
+        .flatten()
+        .map(|v| v.data)
+        .collect();
+    let settled = b.get(theirs, 0, true).await.unwrap().unwrap();
+    assert_eq!(settled.seq, 0);
+    assert!(settled.data == b"rival" || settled.data == b"first");
+    assert!(values.iter().filter(|v| **v == settled.data).count() >= 3);
 
     sim.forge_write(&key, 0, b"forged".to_vec(), &owner)
         .unwrap();

@@ -3,7 +3,6 @@
 //! cite.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use rekindle_records::port::{DhtBackend, DhtErrorKind, RecordSchema, ReportScope, SchemaMember};
 
@@ -114,7 +113,7 @@ async fn a_set_in_flight_is_an_offline_subkey() {
     let b = dht(&sim, &nodes[0]);
     let k = key.clone();
     let set = tokio::spawn(async move { b.set(&k, 1, vec![1], None).await });
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(crate::latency::SET_RPC.min / 2).await;
     let during = a.inspect(&key, None, ReportScope::Local).await.unwrap();
     assert_eq!(during.offline_subkeys, vec![1]);
     set.await.unwrap().unwrap();
