@@ -287,6 +287,7 @@ impl App {
                     .map(|c| super::CachedCommunity {
                         governance_key: c.governance_key.clone(),
                         name: c.name.clone(),
+                        our_pseudonym: c.our_pseudonym.clone(),
                     })
                     .collect();
             }

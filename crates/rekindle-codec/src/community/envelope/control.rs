@@ -266,10 +266,6 @@ pub enum ControlPayload {
         minutes_until_start: u32,
     },
 
-    // ── Kicked notification ──
-    /// Notification: you were kicked from the community.
-    KickedNotification,
-
     // ── AutoMod / Raid notifications ──
     /// Raid alert broadcast to all members (owners/admins should act).
     RaidAlert { active: bool },

@@ -86,6 +86,7 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
         MembershipEvent::Kicked {
             community,
             target_pseudonym,
+            ..
         } => {
             h.update(b"kicked|");
             h.update(community.as_bytes());
@@ -95,6 +96,7 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
         MembershipEvent::Banned {
             community,
             target_pseudonym,
+            ..
         } => {
             h.update(b"banned|");
             h.update(community.as_bytes());

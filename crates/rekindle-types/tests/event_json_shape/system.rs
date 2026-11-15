@@ -10,7 +10,6 @@ pub const NAMES: &[&str] = &[
     "raidDetected",
     "autoModAlert",
     "channelLockdown",
-    "kicked",
     "bootstrapRequested",
     "bootstrapReceived",
     "syncRequested",
@@ -25,7 +24,6 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::RaidDetected { .. } => "raidDetected",
         SystemEvent::AutoModAlert { .. } => "autoModAlert",
         SystemEvent::ChannelLockdown { .. } => "channelLockdown",
-        SystemEvent::Kicked { .. } => "kicked",
         SystemEvent::BootstrapRequested { .. } => "bootstrapRequested",
         SystemEvent::BootstrapReceived { .. } => "bootstrapReceived",
         SystemEvent::SyncRequested { .. } => "syncRequested",
@@ -84,12 +82,6 @@ fn alerts() -> Vec<Sample> {
             SystemEvent::ChannelLockdown {
                 community: community(),
                 locked: true,
-            },
-        ),
-        ev(
-            "kicked",
-            SystemEvent::Kicked {
-                community: community(),
             },
         ),
     ]

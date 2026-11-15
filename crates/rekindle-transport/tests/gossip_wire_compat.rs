@@ -182,7 +182,6 @@ fn directed_payloads_are_not_forwarded() {
         reason: "no".into()
     })
     .is_directed());
-    assert!(CommunityEnvelope::Control(ControlPayload::KickedNotification).is_directed());
 
     // A channel message notification is exactly what *must* be
     // forwarded — the epidemic wave is how it reaches members outside

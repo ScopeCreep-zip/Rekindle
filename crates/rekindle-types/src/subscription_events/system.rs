@@ -45,9 +45,6 @@ pub enum SystemEvent {
     /// A channel was locked or unlocked (lockdown mode).
     /// Triggered by: gossip `ControlPayload::ChannelLockdown`.
     ChannelLockdown { community: String, locked: bool },
-    /// We were kicked from a community.
-    /// Triggered by: gossip `ControlPayload::KickedNotification`.
-    Kicked { community: String },
     /// A bootstrap request was received (operator processing a new joiner).
     /// Triggered by: gossip `ControlPayload::BootstrapRequest`.
     BootstrapRequested {

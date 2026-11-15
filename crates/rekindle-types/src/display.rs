@@ -22,6 +22,21 @@ pub struct CommunityOverview {
     pub member_count: u32,
     pub channel_count: u32,
     pub our_pseudonym: String,
+    /// Set when we were removed: the community is read-only history.
+    #[serde(default)]
+    pub removed: Option<CommunityRemovalDisplay>,
+}
+
+/// Our own removal from a community (plan E3.2 S9 own removal).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityRemovalDisplay {
+    /// Banned, not only kicked.
+    pub banned: bool,
+    /// The remover's pseudonym, when the merged op names one.
+    pub by: Option<String>,
+    /// The display name on the remover's verified card, when held.
+    pub by_name: Option<String>,
 }
 
 /// Detailed community info for the info command and TUI view.
@@ -37,6 +52,9 @@ pub struct CommunityDetail {
     pub roles: Vec<RoleDisplay>,
     pub our_pseudonym: String,
     pub our_roles: Vec<u32>,
+    /// Set when we were removed: the community is read-only history.
+    #[serde(default)]
+    pub removed: Option<CommunityRemovalDisplay>,
 }
 
 // ── Channel ─────────────────────────────────────────────────────────────

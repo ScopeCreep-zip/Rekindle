@@ -86,6 +86,8 @@ pub struct App {
 pub(crate) struct CachedCommunity {
     pub governance_key: String,
     pub name: String,
+    /// Our pseudonym there, to tell our own removal from another's.
+    pub our_pseudonym: String,
 }
 
 /// Minimal identity cache for dashboard display.
@@ -228,5 +230,33 @@ impl App {
             .iter()
             .find(|c| c.governance_key == governance_key)
             .map_or(governance_key, |c| c.name.as_str())
+    }
+
+    /// Whether `pseudonym` is ours in `governance_key`.
+    pub(crate) fn is_own_pseudonym(&self, governance_key: &str, pseudonym: &str) -> bool {
+        self.cached_communities
+            .iter()
+            .any(|c| c.governance_key == governance_key && c.our_pseudonym == pseudonym)
+    }
+
+    /// The toast for a kick or ban: ours names the community and the
+    /// remover (plan E3.2 S9 own removal), another's the member.
+    pub(crate) fn removal_toast(
+        &self,
+        community: &str,
+        target: &str,
+        removed_by_name: Option<&str>,
+        verb: &str,
+    ) -> String {
+        if !self.is_own_pseudonym(community, target) {
+            return format!("{} was {verb}", crate::helpers::abbreviate_key(target));
+        }
+        let by = removed_by_name
+            .map(|n| format!(" by {n}"))
+            .unwrap_or_default();
+        format!(
+            "You were {verb} from {}{by}",
+            self.community_name(community)
+        )
     }
 }

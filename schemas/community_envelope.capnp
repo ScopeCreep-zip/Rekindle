@@ -385,8 +385,6 @@ struct EventReminderPayload @0xea0023000000a000 {
     minutesUntilStart    @2 :UInt32;
 }
 
-# `KickedNotification` — unit variant (no payload).
-
 struct RaidAlertPayload @0xea0024000000a000 {
     active               @0 :Bool;
 }
@@ -759,7 +757,7 @@ struct ControlPayload @0xeaffffff00000001 {
         eventReminder            @34 :EventReminderPayload;
         # Unit variant — no payload bytes; presence of ordinal is the
         # signal.
-        kickedNotification       @35 :Void;
+        obsolete35               @35 :Void;
         raidAlert                @36 :RaidAlertPayload;
         channelLockdown          @37 :ChannelLockdownPayload;
         systemMessage            @38 :SystemMessagePayload;

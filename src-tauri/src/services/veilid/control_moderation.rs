@@ -230,15 +230,9 @@ fn remove_member_from_local_state(
             .and_then(|cs| cs.my_pseudonym_key.clone())
     };
 
+    // Our own removal is the Host's, from the merged governance (plan E3.2
+    // S9 own removal): unauthenticated gossip naming us changes nothing.
     if my_pseudonym.as_deref() == Some(&target_pseudonym) {
-        crate::event_dispatch::emit_subscription(
-            app_handle,
-            &rekindle_types::subscription_events::SubscriptionEvent::System(
-                rekindle_types::subscription_events::SystemEvent::Kicked {
-                    community: community_id.to_string(),
-                },
-            ),
-        );
         return;
     }
 

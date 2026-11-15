@@ -137,7 +137,6 @@ impl SubscriptionEvent {
                 | SystemEvent::RaidDetected { community, .. }
                 | SystemEvent::AutoModAlert { community, .. }
                 | SystemEvent::ChannelLockdown { community, .. }
-                | SystemEvent::Kicked { community }
                 | SystemEvent::BootstrapRequested { community, .. }
                 | SystemEvent::BootstrapReceived { community }
                 | SystemEvent::SyncRequested { community, .. }

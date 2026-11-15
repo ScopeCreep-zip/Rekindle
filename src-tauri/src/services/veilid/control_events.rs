@@ -85,16 +85,6 @@ pub(crate) async fn handle_control_events_and_threads(
                 ),
             );
         }
-        ControlPayload::KickedNotification => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::System(
-                    rekindle_types::subscription_events::SystemEvent::Kicked {
-                        community: community_id.to_string(),
-                    },
-                ),
-            );
-        }
         payload @ ControlPayload::SubmitOnboardingAnswers { .. } => {
             super::control::host_membership(state, community_id, sender_pseudonym, &payload).await;
         }
