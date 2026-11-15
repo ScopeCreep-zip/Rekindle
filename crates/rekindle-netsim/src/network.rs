@@ -355,12 +355,18 @@ impl Network {
             now >= due
         };
         if tick {
-            // The storage manager's tick. Veilid 0.5.8 checks the outbound
-            // watches first, then offline writes and rehydration
-            // (`storage_manager/tasks/mod.rs:140-153`); the netsim runs
-            // rehydration first (VU6 citation sweep finding).
-            self.tick_rehydration();
+            // The storage manager's tick (Veilid 0.5.8
+            // `storage_manager/tasks/mod.rs:140-157`): inside one
+            // `dht_is_online()` gate, the outbound watch check, then the
+            // offline subkey writes, then rehydration, then the value-changed
+            // sends. Each step skips a node whose DHT is offline itself.
+            // Rehydration's `background_transactions_allowed()` always holds
+            // here: only Veilid's DHT transactions defer it
+            // (`transaction.rs:115,811,1352`, `mod.rs:927-936`), and the port
+            // has none.
             self.tick_watches();
+            self.tick_rehydration();
+            self.tick_value_changes();
             self.tick_route_tests();
         }
         let (batch, senders) = {

@@ -255,3 +255,84 @@ async fn death_is_empty_subkeys_count_zero_no_value() {
     a.set(&key, 1, b"z".to_vec(), None).await.unwrap();
     assert!(tick(&sim, &mut nodes, 1).await.is_empty());
 }
+
+/// What node `i`'s trace gained since it held `from` entries.
+fn heard_since(sim: &Netsim, i: usize, from: usize) -> Vec<String> {
+    let inner = sim.net.inner.lock();
+    inner.trace.of(i).skip(from).map(str::to_string).collect()
+}
+
+/// VU2 item 20: the storage tick checks the outbound watches before the
+/// offline subkey writes (0.5.8 `storage_manager/tasks/mod.rs:140-153`). A
+/// watch due to be placed and a queued push of a newer value fall on one
+/// tick: the watch lands first, its establishing inspection finds nothing
+/// newer, and the push's store marks it, so a replica reports the change.
+/// With the push first, the watch would land on the newer value and only
+/// the inspection would find it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_tick_places_watches_before_it_pushes_offline_writes() {
+    let (sim, nodes) = Netsim::nodes(2, 18);
+    let (key, a, _b) = seeded(&sim, &nodes).await;
+    let before: Vec<_> = sim.net.inner.lock().records[&key]
+        .replicas
+        .iter()
+        .map(|r| r.values.clone())
+        .collect();
+    // Node 0's local copy moves past the replicas', its push queued.
+    a.set(&key, 2, b"news".to_vec(), None).await.unwrap();
+    let from = {
+        let mut inner = sim.net.inner.lock();
+        let replicas = &mut inner.records.get_mut(&key).unwrap().replicas;
+        for (replica, values) in replicas.iter_mut().zip(before) {
+            replica.values = values;
+        }
+        inner.nodes[0].pushes.insert((key.clone(), 2), None);
+        inner.nodes[1]
+            .watches
+            .insert(key.clone(), Some(desired(&[0, 1, 2, 3])));
+        inner.trace.of(1).count()
+    };
+    sim.net.inner.lock().next_tick = Some(tokio::time::Instant::now());
+    sim.net.deliver();
+    for _ in 0..4 {
+        tokio::time::sleep(WATCH_TICK).await;
+        sim.net.deliver();
+    }
+    let heard = heard_since(&sim, 1, from);
+    assert!(
+        heard.iter().any(|e| e.contains(" ValueChange ")),
+        "{heard:?}"
+    );
+    assert!(
+        !heard.iter().any(|e| e.contains("ChangeInspect")),
+        "{heard:?}"
+    );
+    let local = sim.net.inner.lock().nodes[1].local[&(key.clone(), 2)].clone();
+    assert_eq!((local.seq, local.data.as_slice()), (1, &b"news"[..]));
+}
+
+/// VU2 item 20: the outbound watch check runs only while the node's DHT is
+/// online (0.5.8 `storage_manager/tasks/mod.rs:102,110,140-144`), and a
+/// watch's death is one of its operations (`watch_value.rs:1327-1348`): a
+/// watch cancelled offline dies at the first tick back online, and keeps no
+/// tick busy meanwhile.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_watch_cancelled_offline_dies_back_online() {
+    let (sim, mut nodes) = Netsim::nodes(2, 19);
+    let (key, _a, b) = seeded(&sim, &nodes).await;
+    b.watch(&key, Some(&[1]), None, None).await.unwrap();
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+    sim.net.inner.lock().faults.dht_offline.insert(1);
+    assert!(!b.cancel_watch(&key, Some(&[1])).await.unwrap());
+    assert!(tick(&sim, &mut nodes, 1).await.is_empty());
+    {
+        let inner = sim.net.inner.lock();
+        assert!(!crate::network::Network::watch_work(
+            &inner,
+            sim.net.now_us()
+        ));
+    }
+    sim.net.inner.lock().faults.dht_offline.remove(&1);
+    let heard = tick(&sim, &mut nodes, 1).await;
+    assert!(heard.len() == 1 && dead(&heard[0]), "{heard:?}");
+}

@@ -100,8 +100,7 @@ pub(super) fn pending(inner: &Inner, node: usize, now: u64) -> bool {
     let at = now.saturating_add_signed(slot.skew_ms.saturating_mul(1000));
     let on = watches::online(inner, node);
     let out = &slot.outbound;
-    (on && out.queue.values().any(|t| *t <= at))
-        || !out.rehints.is_empty()
+    (on && (out.queue.values().any(|t| *t <= at) || !out.rehints.is_empty()))
         || (out.was_online != on && !slot.watches.is_empty())
 }
 

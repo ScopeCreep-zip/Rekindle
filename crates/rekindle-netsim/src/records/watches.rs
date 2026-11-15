@@ -399,9 +399,10 @@ impl Network {
         inner.nodes.iter().enumerate().any(|(i, n)| {
             super::catchup::pending(inner, i, now)
                 || super::rehydrate::pending(inner, i)
-                || n.watches
-                    .values()
-                    .any(|d| d.as_ref().is_none_or(|d| d.expiration.is_some()))
+                || (online(inner, i)
+                    && n.watches
+                        .values()
+                        .any(|d| d.as_ref().is_none_or(|d| d.expiration.is_some())))
         }) || inner.records.values().any(|r| {
             r.replicas
                 .iter()
@@ -409,7 +410,12 @@ impl Network {
         })
     }
 
-    /// One watch tick (see the module notes), in key order for the seed.
+    /// The outbound watch check of every node (see the module notes), in
+    /// key order for the seed: Veilid's `check_outbound_watches_task`, which
+    /// runs only while the node's DHT is online (0.5.8
+    /// `storage_manager/tasks/mod.rs:102,110,140-144`), so an offline node's
+    /// watches neither die nor renew nor re-hint until it is back. The
+    /// readiness edge is the node's own, not the task's: it is seen offline too.
     pub(crate) fn tick_watches(&self) {
         let now = self.now_us();
         let mut out: Vec<Out> = Vec::new();
@@ -423,6 +429,9 @@ impl Network {
                     continue;
                 }
                 super::catchup::readiness(inner, node, now);
+                if !online(inner, node) {
+                    continue;
+                }
                 let mut keys: Vec<String> = inner.nodes[node].watches.keys().cloned().collect();
                 keys.sort();
                 for key in keys {
@@ -448,6 +457,21 @@ impl Network {
                     out.push((node, node, "Rehint", PortEvent::ValueChange(change)));
                 }
             }
+        }
+        self.send_out(out);
+        self.send_inspected(inspected);
+    }
+
+    /// Every replica sends its watches' changes (Veilid's
+    /// `send_value_changes_task`, last in the storage tick, 0.5.8
+    /// `storage_manager/tasks/mod.rs:155-156`), then the watchers renew
+    /// their dead value-changed routes.
+    pub(crate) fn tick_value_changes(&self) {
+        let now = self.now_us();
+        let mut out: Vec<Out> = Vec::new();
+        {
+            let mut guard = self.inner.lock();
+            let inner = &mut *guard;
             let mut keys: Vec<String> = inner.records.keys().cloned().collect();
             keys.sort();
             for key in keys {
@@ -495,6 +519,11 @@ impl Network {
             }
             renew_routes(inner, now);
         }
+        self.send_out(out);
+    }
+
+    /// Send what a tick queued, once the lock is released.
+    fn send_out(&self, out: Vec<Out>) {
         for (from, to, label, event) in out {
             // A change is an RPC to the watcher; a death is the node's own.
             let delay = if from == to {
@@ -504,6 +533,5 @@ impl Network {
             };
             self.send_after(from, to, label, event, false, delay);
         }
-        self.send_inspected(inspected);
     }
 }
