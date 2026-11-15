@@ -1,9 +1,9 @@
 //! The community anchor `A` and a `MemberRecord` `M(p)` (plan E3.2) over the
 //! production pool: only the record's owner writes it, and `owner_of`
 //! answers the owner the record's descriptor names, on the creator and on
-//! a node that opens it from the network (veilid-core 0.5.8
-//! `storage_manager/create_record.rs:95-113`,
-//! `veilid_api/types/dht/derivation.rs:57-83`: the record key hashes the owner and the descriptor is signed by it).
+//! a node that opens it from the network (Veilid 0.5.8 `storage_manager/
+//! create_record.rs:83-113`, `veilid_api/types/dht/derivation.rs:57-83`:
+//! the record key hashes the owner and the descriptor is signed by it).
 
 use rekindle_records::port::{PortError, RecordPort, SetOutcome};
 use rekindle_records::schema;

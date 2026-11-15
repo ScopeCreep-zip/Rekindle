@@ -163,7 +163,7 @@ async fn a_watcher_hears_another_node_s_write() {
     a.set(lease, 2, b"later".to_vec(), None).await.unwrap();
     sim.quiesce().await;
     // The close ends the watch with the death shape and nothing after it
-    // (`close_record.rs:116-120`, `watch_value.rs:697-703`).
+    // (Veilid 0.5.8 `close_record.rs:116-120`, `watch_value.rs:782-789`).
     match nodes[1].events.try_recv() {
         Ok(PortEvent::ValueChange(change)) => {
             assert!(change.subkeys.is_empty() && change.count == 0 && change.value.is_none());

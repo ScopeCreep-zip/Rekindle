@@ -225,7 +225,7 @@ impl Netsim {
     /// newest seq the replicas hold, stored on every replica that holds
     /// nothing at that seq yet (the replicas the first writer's fanout did
     /// not reach). A replica keeps the first value it got at a seq
-    /// (`set_value.rs:709-719`), and so does a node's local copy.
+    /// (Veilid 0.5.8 `set_value.rs:832-843`), and so does a node's local copy.
     ///
     /// # Errors
     /// As [`forge_write`](Self::forge_write); also when the subkey holds
@@ -281,7 +281,7 @@ impl Netsim {
                 data,
                 writer: records::public_text(&public),
             };
-            // Each replica checks the size rule (`set_value.rs:759`).
+            // Each replica checks the size rule (Veilid 0.5.8 `set_value.rs:880-891`).
             if !records::size::fits(&record.schema, &value) {
                 return Err(PortError::Dht("value too big".into()));
             }

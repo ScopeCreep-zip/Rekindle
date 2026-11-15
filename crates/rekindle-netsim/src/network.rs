@@ -27,7 +27,7 @@ use crate::trace::Trace;
 
 /// The per-node event queue's bound, as the Veilid one (`UPDATE_QUEUE`).
 pub(crate) const EVENT_QUEUE: usize = 4096;
-/// A node's inbound RPC queue: `rpc.queue_size` (`veilid_config.rs:849`).
+/// A node's inbound RPC queue: `rpc.queue_size` (Veilid 0.5.8 `veilid_config.rs:941`).
 pub(crate) const RPC_QUEUE: usize = 1024;
 
 /// A record on the simulated DHT.
@@ -82,8 +82,8 @@ pub(crate) struct Faults {
     /// and they send none.
     pub detached: HashSet<usize>,
     /// Attached nodes whose public internet is not ready: their DHT calls
-    /// answer "try again" and no watch is placed (Veilid's storage manager
-    /// gates on `RoutingDomainReadyEvent`, `storage_manager/mod.rs:887-898`).
+    /// answer "try again" and no watch is placed (Veilid 0.5.8's storage
+    /// manager gates on `RoutingDomainReadyEvent`, `storage_manager/mod.rs:1096-1113`).
     pub not_ready: HashSet<usize>,
     /// Unordered node pairs that cannot reach each other: no app message
     /// or call passes, and neither reaches the replicas beside the other.
@@ -123,7 +123,7 @@ pub(crate) struct NodeSlot {
     /// local store).
     pub local: HashMap<(String, u32), RecordValue>,
     /// The records in the node's local store (created or opened here):
-    /// opening one again needs no network (`open_record.rs:27-44`).
+    /// opening one again needs no network (Veilid 0.5.8 `open_record.rs:53-83`).
     pub known: HashSet<String>,
     /// The node's open records and the writer keypair each is open with
     /// (node-wide, as Veilid's `opened_records`).
@@ -175,11 +175,11 @@ pub(crate) struct NodeSlot {
     /// The nonce of each local copy, with the value it was recorded for
     /// ([`crate::records`]' `replicas::Cipher`).
     pub nonces: HashMap<(String, u32), (RecordValue, u64)>,
-    /// Records this node created this session (Veilid's
-    /// `locally_created_records`, `create_record.rs:30-34`).
+    /// Records this node created this session (Veilid
+    /// 0.5.8's `locally_created_records`, `create_record.rs:30-34`).
     pub created: HashSet<String>,
-    /// When each record's last rehydration check completed (Veilid's
-    /// `rehydration_checked`, `rehydrate.rs:26-42`).
+    /// When each record's last rehydration check completed (Veilid
+    /// 0.5.8's `rehydration_checked`, `rehydrate.rs:26-42`).
     pub rehydration_checked: HashMap<String, tokio::time::Instant>,
 }
 
@@ -355,8 +355,10 @@ impl Network {
             now >= due
         };
         if tick {
-            // The storage manager's tick: offline writes and rehydration run
-            // before the watch tasks (`tasks/mod.rs:119-125`).
+            // The storage manager's tick. Veilid 0.5.8 checks the outbound
+            // watches first, then offline writes and rehydration
+            // (`storage_manager/tasks/mod.rs:140-153`); the netsim runs
+            // rehydration first (VU6 citation sweep finding).
             self.tick_rehydration();
             self.tick_watches();
             self.tick_route_tests();
@@ -373,8 +375,8 @@ impl Network {
             batch.retain(|p| !(p.droppable && inner.faults.detached.contains(&p.to)));
             batch.sort_by_key(|p| (p.from, p.to, p.rank));
             // A node's inbound RPC queue holds `rpc.queue_size` 1024
-            // (`veilid_config.rs:849`); past it the enqueue fails and the RPC
-            // is dropped (`rpc_worker.rs:158-163`).
+            // (Veilid 0.5.8 `veilid_config.rs:941`); past it the enqueue fails
+            // and the RPC is dropped (`rpc_worker.rs:166-172`).
             let mut queued: HashMap<usize, usize> = HashMap::new();
             let dropped = &mut inner.rpc_dropped;
             batch.retain(|p| {

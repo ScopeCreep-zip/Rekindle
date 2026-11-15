@@ -381,7 +381,7 @@ async fn an_unpinned_reply_route_released_mid_call_loses_the_answer() {
 /// A pinned call (RH1r): refused `Routing` while the caller's `Sending`
 /// route is not live; answered over it while it is; and its answer lost
 /// when the caller releases the route before the answer comes back
-/// (veilid `rpc_processor/destination.rs:477-497`: the reply private route
+/// (Veilid 0.5.8 `rpc_processor/destination.rs:477-497`: the reply private route
 /// is the preferred route).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_pinned_call_is_answered_over_its_sending_route() {

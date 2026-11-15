@@ -68,7 +68,7 @@ async fn attachment_steps_through_veilid_s_states() {
             "attached_full"
         ]
     );
-    // `is_attached` from AttachedWeak (`veilid_state.rs:31-41`).
+    // `is_attached` from AttachedWeak (Veilid 0.5.8 `veilid_state.rs:31-41`).
     assert!(!up[0].1);
     assert!(up[1..].iter().all(|s| s.1));
     assert!(ready(&sim, 0));

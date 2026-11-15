@@ -1,11 +1,11 @@
 //! Attachment on the simulated network (plan E2.B S9). Veilid reports two
 //! separate things. The attachment level (`AttachmentState`,
-//! `veilid_api/types/veilid_state.rs:6-24`) steps Attaching → AttachedWeak
+//! Veilid 0.5.8 `veilid_api/types/veilid_state.rs:6-24`) steps Attaching → AttachedWeak
 //! … AttachedFull as the routing table fills, and Detaching → Detached on
 //! the way down; `is_attached` holds from AttachedWeak to AttachedFull
 //! (`veilid_state.rs:31-41`). Public-internet readiness
-//! (`RoutingDomainReadyEvent`, `routing_table/health.rs:255-287`) gates the
-//! DHT (`storage_manager/mod.rs:887-898`) while the node stays attached;
+//! (`RoutingDomainReadyEvent`, `routing_table/health.rs:270-306`) gates the
+//! DHT (`storage_manager/mod.rs:1096-1113`) while the node stays attached;
 //! that split is the live log's "PublicInternet ready / unavailable" flap.
 //!
 //! Production turns each `VeilidUpdate::Attachment` into a
@@ -41,7 +41,7 @@ use crate::{toggle, Netsim};
 pub const ATTACH_STEP: Duration = Duration::from_millis(250);
 
 /// The shortest stall after which Veilid re-sends the attachment state: half
-/// the RPC timeout (`network_manager/online_detector.rs:63`).
+/// the RPC timeout (Veilid 0.5.8 `network_manager/online_detector.rs:63`).
 pub const LOCAL_STALL_MIN: Duration = Duration::from_millis(2_500);
 
 /// The round trip that proves a returned public internet: two
