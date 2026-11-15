@@ -148,7 +148,7 @@ fn common_fields(out: &mut Vec<u8>, flags: u16, crc: u32, size: u32) {
 }
 
 /// `files` as a stored zip (APPNOTE 6.3.10 §4.3), in key order.
-fn zip(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<u8>, SkinError> {
+pub(crate) fn zip(files: &BTreeMap<String, Vec<u8>>) -> Result<Vec<u8>, SkinError> {
     let mut out = Vec::new();
     let mut central = Vec::new();
     for (name, data) in files {

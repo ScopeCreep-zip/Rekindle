@@ -41,6 +41,9 @@
 //!                                      are current (plan E7.7.1).
 //!     cargo xtask gen-skin-registry    Write the skin registry's generated
 //!                                      CSS, TS, TUI palettes and schema.
+//!     cargo xtask import-skin --format xfire-xml --from <dir> --builtin <id>
+//!                                      Import a legacy skin as a built-in
+//!                                      pack and its NOTICE (plan E7.7.3).
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
 //!                                      placeholders to existing allows
@@ -82,6 +85,7 @@ mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
 mod gen_skin_registry;
+mod import_skin;
 mod intent_table;
 mod jsx;
 mod key_erasure;
@@ -164,6 +168,15 @@ enum Command {
     CheckSkinRegistry,
     /// Write the skin registry's generated CSS, TS, TUI palettes and JSON Schema.
     GenSkinRegistry,
+    /// Import a legacy skin tree as the built-in pack `crates/rekindle-skin/builtin/<id>.rkskin`.
+    ImportSkin {
+        #[arg(long, value_enum)]
+        format: import_skin::Format,
+        #[arg(long)]
+        from: PathBuf,
+        #[arg(long)]
+        builtin: String,
+    },
     /// Verify every transition reads a motion token and motion honours reduced motion.
     CheckMotion,
     /// Verify the macOS, WebKitGTK and Vite floors agree with the plan's E7.10 floor.
@@ -354,6 +367,11 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckContrastPairs => contrast_pairs::check_contrast_pairs(&root),
         Command::CheckSkinRegistry => gen_skin_registry::check_skin_registry(&root),
         Command::GenSkinRegistry => gen_skin_registry::gen_skin_registry(&root),
+        Command::ImportSkin {
+            format,
+            from,
+            builtin,
+        } => import_skin::import_skin(&root, *format, from, builtin),
         Command::CheckMotion => motion::check_motion(&root),
         Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
         Command::CheckBuiltCss { css } => platform_floor::check_built_css(&root, css),

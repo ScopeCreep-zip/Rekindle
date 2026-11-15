@@ -27,6 +27,8 @@
 //! * [`helper`]: the Host's way in: [`helper::validate`] runs the pipeline
 //!   in `rekindle-skin-helper` (`src/bin/`), a separate, OS-capped process,
 //!   under a wall-clock deadline.
+//! * [`import`]: legacy skin formats into a package that then passes
+//!   [`validate::run`] (plan E7.7.3).
 //! * [`registry`]: the closed token registry, and [`generate`], the
 //!   artefacts `cargo xtask gen-skin-registry` writes from it.
 //!
@@ -43,6 +45,7 @@ pub mod flash;
 pub mod generate;
 pub mod helper;
 pub mod images;
+pub mod import;
 pub mod manifest;
 pub mod output;
 pub mod package;
