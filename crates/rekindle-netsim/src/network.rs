@@ -44,10 +44,12 @@ pub(crate) struct NetRecord {
     pub replicas: Vec<Replica>,
 }
 
-/// A live private route: the node that owns it.
+/// A live private route: the node that owns it and the one ordering it
+/// carries ([`crate::routes::RouteOrdering`]).
 #[derive(Debug, Clone)]
 pub(crate) struct RouteEntry {
     pub node: usize,
+    pub ordering: crate::routes::RouteOrdering,
 }
 
 /// An event in flight.
@@ -101,6 +103,14 @@ pub(crate) struct Faults {
     pub send_hung: HashSet<usize>,
     /// Nodes whose next send fails at its own route's first hop.
     pub link_failure: HashSet<usize>,
+    /// Nodes on a network that blocks UDP ([`crate::Fault::UdpBlocked`]).
+    pub udp_blocked: HashSet<usize>,
+    /// Own routes failing their loopback tests, by route id
+    /// ([`crate::loopback`]).
+    pub loopback: HashMap<String, crate::loopback::LoopbackRun>,
+    /// Attached nodes whose public internet turned ready but has not yet
+    /// proven it by a round trip ([`crate::attach`]).
+    pub ready_pending: HashSet<usize>,
 }
 
 /// Each node's side of the network.
@@ -133,6 +143,12 @@ pub(crate) struct NodeSlot {
     pub pools: Vec<Weak<RecordPool>>,
     /// The attachment state last queued for the node ([`crate::attach`]).
     pub state: &'static str,
+    /// Whether the public internet was ready in the update last queued.
+    pub public_ready: bool,
+    /// When Veilid's automatic pool route that answers the node's unpinned
+    /// calls was last known valid, `None` before one is allocated
+    /// ([`crate::messages`]).
+    pub pool_reply_valid: Option<tokio::time::Instant>,
     /// When the node's next attachment update may arrive: one after
     /// another, in order.
     pub attach_next: tokio::time::Instant,
@@ -145,8 +161,9 @@ pub(crate) struct NodeSlot {
     /// The generation of Veilid's own value-changed route for the node's
     /// watches: a route death starts a new one ([`crate::records::watches`]).
     pub route_epoch: u64,
-    /// Per own route: the destinations of questions lost on it.
-    pub lost: HashMap<String, HashSet<String>>,
+    /// Per own route: the destinations of questions lost on it, each with
+    /// when it was lost ([`crate::routes`]).
+    pub lost: HashMap<String, HashMap<String, tokio::time::Instant>>,
     /// The node's queued rehydrations, by record key (Veilid's
     /// `rehydration_requests`, [`crate::records`]' rehydration).
     pub rehydrations: BTreeSet<String>,
@@ -171,6 +188,8 @@ impl NodeSlot {
             last_lag_inspect: None,
             pools: Vec::new(),
             state: "detached",
+            public_ready: false,
+            pool_reply_valid: None,
             attach_next: tokio::time::Instant::now(),
             imported: HashMap::new(),
             lost: HashMap::new(),
@@ -320,6 +339,7 @@ impl Network {
             // before the watch tasks (`tasks/mod.rs:119-125`).
             self.tick_rehydration();
             self.tick_watches();
+            self.tick_route_tests();
         }
         let (batch, senders) = {
             let mut inner = self.inner.lock();
@@ -371,6 +391,11 @@ impl Network {
                     if let Some(slot) = inner.nodes.get(p.to) {
                         slot.ready
                             .send_if_modified(|ready| std::mem::replace(ready, *pir) != *pir);
+                    }
+                    // A readiness that returned holds from the update that
+                    // reports it, a round trip after the fault ([`crate::attach`]).
+                    if *pir && inner.faults.ready_pending.remove(&p.to) {
+                        inner.faults.not_ready.remove(&p.to);
                     }
                 }
             }

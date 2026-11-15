@@ -180,6 +180,67 @@ async fn an_internet_ready_flap_gates_the_dht_while_attached() {
     assert_eq!(sim.network_get(&key, 0).unwrap().data, b"flap");
 }
 
+/// A stall of 2.5 s or more re-sends the unchanged attachment state
+/// (Veilid 0.5.8 `attachment_manager/mod.rs:557-581`, `:1036-1043`); a
+/// shorter one sends nothing.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_stall_re_sends_the_unchanged_attachment() {
+    let (sim, mut nodes) = Netsim::nodes(1, 24);
+    let _pump = sim.start();
+    attached(&mut nodes[0]).await;
+    sim.quiesce().await;
+    sim.fault(Fault::Stall { node: 0, ms: 2_499 });
+    sim.quiesce().await;
+    assert!(
+        nodes[0].events.try_recv().is_err(),
+        "under 2.5 s, no resend"
+    );
+    sim.fault(Fault::Stall { node: 0, ms: 2_500 });
+    let PortEvent::Attachment {
+        state,
+        is_attached,
+        public_internet_ready,
+        ..
+    } = recv(&mut nodes[0]).await
+    else {
+        panic!("expected an attachment update");
+    };
+    assert_eq!(
+        (state.as_str(), is_attached, public_internet_ready),
+        ("attached_full", true, true)
+    );
+    assert!(ready(&sim, 0));
+}
+
+/// A public internet that turns ready again is ready one round trip later
+/// (Veilid 0.5.8 `online_detector.rs:1337-1352`): the DHT keeps answering
+/// "try again" and the ready update arrives then.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn readiness_returns_after_a_round_trip() {
+    let (sim, mut nodes) = Netsim::nodes(1, 25);
+    let _pump = sim.start();
+    attached(&mut nodes[0]).await;
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: false,
+    });
+    sim.quiesce().await;
+    while nodes[0].events.try_recv().is_ok() {}
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: true,
+    });
+    let not_ready = |sim: &Netsim| sim.net.inner.lock().faults.not_ready.contains(&0);
+    tokio::time::sleep(crate::attach::READY_ROUND_TRIP.saturating_sub(Duration::from_millis(100)))
+        .await;
+    assert!(
+        not_ready(&sim) && !ready(&sim, 0),
+        "not before the round trip"
+    );
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    assert!(!not_ready(&sim) && ready(&sim, 0), "ready after it");
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_reply_to_an_expired_call_is_ignored() {
     let (sim, mut nodes) = Netsim::nodes(2, 24);

@@ -3,15 +3,28 @@
 //! ([`crate::latency::MESSAGE`]); a call's reply travels back one more
 //! latency later, who gives up after Veilid's reply timeout.
 //!
-//! The reply route (veilid `rpc_processor/destination.rs:467-508`): the
-//! callee answers over the reply private route the question named, which
-//! is the caller's preferred route when the call was pinned to one
+//! The reply route (Veilid 0.5.8 `rpc_processor/destination.rs:486-528`):
+//! the callee answers over the reply private route the question named,
+//! which is the caller's preferred route when the call was pinned to one
 //! ([`AppMessagePort::call_pinned`]); unpinned, it is an automatic pool
-//! route Veilid picked untested (`route_select.rs:283`,
-//! `private_route_management.rs:110-118`). So a pinned reply is lost when
-//! the pinned route is gone (released or dead) by then, and either reply
-//! crosses the network as any message does: lost to a partition, a
-//! detached caller, or the drop fault ([`Network::lost_in_transit`]).
+//! route of our 3-hop length (`route_select.rs:131-136`). The fork holds
+//! the selected route only through its assembly (`destination.rs:493-525`,
+//! `_held_reply_route`), so nothing holds it while the question is out.
+//! An automatic route whose length is neither default (1 hop, 2 unsafe,
+//! `route_spec_store/mod.rs:135-142`) is released by the management task
+//! the first time it needs testing (`private_route_management.rs:115-137`,
+//! the `else if v.is_automatic()` arm): once [`ROUTE_MIN_IDLE`] has passed
+//! since it was last known valid (`route_stats.rs:144-158`; an answer over
+//! it makes it valid, `:489-508`, a question sent over a route does not,
+//! `:511-517`). An answer that reaches a released route finds no route to
+//! validate (`route_validate.rs:22-33`, `rpc_route.rs:226-239`) and is
+//! dropped, so the caller times out. The pinned Sending route is published,
+//! so it is tested rather than released. So an unpinned reply is lost when
+//! its pool route crosses that mark mid-call ([`FakeMessages::reply_route_gone`]),
+//! a pinned reply when the pinned route is gone (released, dead) or broken
+//! ([`crate::loopback`]) by then, and either reply crosses the network as
+//! any message does: lost to a partition, a detached caller, or the drop
+//! fault ([`Network::lost_in_transit`]).
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,6 +37,7 @@ use rekindle_types::config::{SafetyProfile, ANONYMITY_HOP_FLOOR};
 use tokio::sync::oneshot;
 
 use crate::latency;
+use crate::loopback::ROUTE_MIN_IDLE;
 use crate::network::Network;
 use crate::routes::FakeAllocator;
 
@@ -71,9 +85,10 @@ impl FakeMessages {
     }
 
     /// The node owning `target`'s route, `None` when its owner released
-    /// it (what is sent is lost); `RouteUnusable` when this node's cache
-    /// does not resolve it (Veilid's `NoConnection`, [`crate::routes`]) or
-    /// the first hop of its own route fails ([`crate::Fault::RouteLinkFailure`]);
+    /// it or either route is broken end to end ([`crate::loopback`]: what
+    /// is sent is lost); `RouteUnusable` when this node's cache does not
+    /// resolve it (Veilid's `NoConnection`, [`crate::routes`]) or the first
+    /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`]);
     /// `Send` when this node is detached.
     fn route_owner(
         &self,
@@ -89,10 +104,15 @@ impl FakeMessages {
                 target.as_str()
             )));
         }
-        if self.net.first_hop_failed(self.node, pinned) {
+        if self.net.first_hop_failed(self.node) {
             return Err(PortError::RouteUnusable(
                 "no connection: the safety route's first hop failed".into(),
             ));
+        }
+        if self.net.route_broken(target.as_str())
+            || pinned.is_some_and(|id| self.net.route_broken(id))
+        {
+            return Ok(None);
         }
         Ok(self
             .net
@@ -167,6 +187,9 @@ impl FakeMessages {
             }
             id
         };
+        if pinned.is_none() {
+            self.net.select_pool_reply(self.node);
+        }
         let there = self.net.latency.draw(self.node, latency::MESSAGE);
         let back = self.net.latency.draw(self.node, latency::MESSAGE);
         self.net.send_after(
@@ -185,14 +208,18 @@ impl FakeMessages {
         // lost reply leaves the caller waiting out the timeout.
         let answered = tokio::time::timeout(call_timeout(profile), async {
             let reply = rx.await;
-            if self.reply_lost(to, pinned) {
+            let lost_on_the_way = {
+                let inner = self.net.inner.lock();
+                self.net.lost_in_transit(&inner, to, self.node)
+            };
+            tokio::time::sleep(back).await;
+            if lost_on_the_way || self.reply_route_gone(pinned) {
                 return std::future::pending().await;
             }
-            tokio::time::sleep(back).await;
             reply
         });
         if let Ok(Ok(reply)) = answered.await {
-            self.net.answered(self.node);
+            self.net.answered(self.node, pinned.is_none());
             Ok(reply)
         } else {
             self.net.inner.lock().calls.remove(&call_id);
@@ -201,14 +228,23 @@ impl FakeMessages {
         }
     }
 
-    /// Whether `from`'s answer to us is lost on its reply route: the
-    /// `pinned` route is no longer ours and live, or the answer is lost in
-    /// transit.
-    fn reply_lost(&self, from: usize, pinned: Option<&str>) -> bool {
+    /// Whether our reply route is gone as the answer reaches it: the
+    /// `pinned` route is no longer ours and live, or is broken; unpinned,
+    /// the pool reply route has been released ([`ROUTE_MIN_IDLE`] past its
+    /// last validity).
+    fn reply_route_gone(&self, pinned: Option<&str>) -> bool {
         let inner = self.net.inner.lock();
-        let route_gone =
-            pinned.is_some_and(|id| inner.routes.get(id).is_none_or(|r| r.node != self.node));
-        route_gone || self.net.lost_in_transit(&inner, from, self.node)
+        match pinned {
+            Some(id) => {
+                inner.routes.get(id).is_none_or(|r| r.node != self.node)
+                    || inner.faults.loopback.contains_key(id)
+            }
+            None => inner
+                .nodes
+                .get(self.node)
+                .and_then(|s| s.pool_reply_valid)
+                .is_none_or(|valid| valid.elapsed() >= ROUTE_MIN_IDLE),
+        }
     }
 }
 

@@ -20,17 +20,39 @@
 //!   that send fails `NoConnection` (`routing_context.rs:368-373`), which
 //!   our port maps to `RouteUnusable` (`rekindle-protocol` `ports.rs:179`).
 //!   A send to a resolved route the owner released leaves and is lost.
-//! - **own route death from use:** a question lost on the way (a call that
-//!   timed out) counts its destination on the asker's reply private route,
-//!   its own general route (`rpc_processor/mod.rs:1354-1365`); 5 distinct
-//!   destinations kill the route (`route_stats.rs:56-60`,
-//!   `mod.rs:46`), an answer clears them (`route_stats.rs:300-312`), and
-//!   the death is reported to the owner as `dead_routes` (`mod.rs:183-194`).
-//!   A send that fails at the safety route's first hop is a send failure
-//!   on that route (`rpc_processor/mod.rs:1255-1261`); one kills it
-//!   (`mod.rs:48`, `route_stats.rs:56-60`), reported as `dead_routes`, and
-//!   the send answers `NoConnection` ([`crate::Fault::RouteLinkFailure`]).
+//! - **own route death** (Veilid 0.5.8 at `/Users/kali/veilid-wt-058`):
+//!   only evidence spanning the route kills it (`route_stats.rs:19-29`
+//!   `means_route_dead`): a run of failed loopback tests (3 on an Ordered
+//!   route, 5 on an Unordered one, [`crate::loopback`]), or questions lost
+//!   to [`LOST_DESTINATIONS_INVALIDATE`] distinct destinations
+//!   (`route_stats.rs:134-141`). A lost question counts on the call's
+//!   safety and reply routes (`rpc_processor/mod.rs:1567-1640`): for a
+//!   pinned call that is the pinned route, once (the reply route equal to
+//!   the safety route is not counted twice, `:1621-1624`); for
+//!   an unpinned call they are Veilid's automatic pool routes
+//!   (`route_select.rs:131-136` asks our 3-hop length, which no own route
+//!   of the default 1-hop length matches), so no own route is charged. A
+//!   loss on a safety route enqueues an out-of-band loopback test
+//!   (`rpc_processor/mod.rs:1586-1600`) whose pass clears the lost
+//!   destinations (`route_stats.rs:536-543`): on a route that works, only
+//!   losses inside one test's span ([`OUT_OF_BAND_TEST`]) add up. An answer
+//!   clears them too (`route_stats.rs:489-508`). A death is reported to
+//!   the owner as `dead_routes` (`route_stats.rs:716-756`).
+//! - **first-hop send failure:** a send that fails at the safety route's
+//!   first hop answers `NoConnection` and records a send failure
+//!   (`rpc_processor/mod.rs:1433-1447`), which only asks for a recompile
+//!   (`route_stats.rs:31-35` `needs_recompile`, `route_compile.rs:672`): the
+//!   route lives and is not reported ([`crate::Fault::RouteLinkFailure`]).
 //!   A partition or drop loses a message in transit instead.
+//! - **one ordering per route:** a custom private route carries exactly its
+//!   spec's preferred ordering (`route_allocate.rs:897-936`
+//!   `SequenceOrderingSet::only`), every hop pair proven on that ordering's
+//!   own protocols from our own published peer info on (`:899-934`), and
+//!   `allocate_route` has no fallback to the other ordering (`:99-105`;
+//!   only pool selection retries, `route_select.rs`). So on a network that
+//!   blocks UDP an Unordered route cannot be allocated and answers
+//!   `TryAgain` ("unable to find any route at this time", `:268`)
+//!   ([`crate::Fault::UdpBlocked`]).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -54,8 +76,41 @@ pub(crate) const REMOTE_ROUTE_CACHE_SIZE: usize = 1024;
 pub(crate) const REMOTE_ROUTE_EXPIRY: Duration = Duration::from_secs(300);
 
 /// Distinct lost-question destinations that kill an own route
-/// (`route_spec_store/mod.rs:46`).
+/// (`route_spec_store/mod.rs:48`), each at full blame weight
+/// (`route_stats.rs:134-141`).
 pub(crate) const LOST_DESTINATIONS_INVALIDATE: usize = 5;
+
+/// How long after a loss on a working route its out-of-band loopback test
+/// passes and clears the lost destinations: the next management tick
+/// ([`crate::loopback::ROUTE_TEST_TICK`]) plus the loopback's round trip,
+/// two [`crate::latency::MESSAGE`] legs at their longest.
+pub(crate) const OUT_OF_BAND_TEST: Duration = Duration::from_millis(1_000 + 2 * 800);
+
+/// The one ordering a route carries (Veilid's `SequenceOrdering`): Ordered
+/// over TCP and WebSocket, Unordered over UDP.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RouteOrdering {
+    Ordered,
+    Unordered,
+}
+
+impl RouteOrdering {
+    /// The ordering our allocator asks for `class`, as
+    /// `rekindle-protocol` `own_routes.rs:43-51,77-85` asks it today:
+    /// General is `new_private_route`, whose default spec is PreferOrdered
+    /// (`veilid_api/types/safety.rs:16-17`, `api.rs:763-765`); Media and
+    /// Sending are PreferUnordered. A preference names the route's one
+    /// ordering (`safety.rs:24-28` `preferred_ordering`). The netsim cannot
+    /// link that crate (ADR 0014), so this follows it by hand: plan VU5
+    /// (decision 2) makes Sending PreferOrdered, and this row with it.
+    #[must_use]
+    pub fn of(class: RouteClass) -> Self {
+        match class {
+            RouteClass::General => Self::Ordered,
+            RouteClass::Media | RouteClass::Sending => Self::Unordered,
+        }
+    }
+}
 
 /// An entry of a node's remote route cache.
 #[derive(Debug, Clone, Copy)]
@@ -89,22 +144,28 @@ impl RouteAllocator for FakeAllocator {
 
     async fn allocate(&self, class: RouteClass) -> Result<(String, Vec<u8>), AllocError> {
         let n = self.next.fetch_add(1, Ordering::SeqCst);
-        let tag = match class {
-            RouteClass::General => "g",
-            RouteClass::Media => "m",
-            RouteClass::Sending => "s",
-        };
-        let id = format!("n{}-{tag}{n}", self.node);
+        let id = format!("n{}-{}{n}", self.node, class_tag(class));
         let blob = blob_of(&id);
+        let ordering = RouteOrdering::of(class);
         let mut inner = self.net.inner.lock();
         if inner.faults.dht_offline.contains(&self.node)
             || inner.faults.not_ready.contains(&self.node)
         {
             return Err(AllocError::TryAgain("offline".into()));
         }
-        inner
-            .routes
-            .insert(id.clone(), RouteEntry { node: self.node });
+        if ordering == RouteOrdering::Unordered && inner.faults.udp_blocked.contains(&self.node) {
+            // No hop pair is viable on UDP alone (`route_allocate.rs:897-934`).
+            return Err(AllocError::TryAgain(
+                "unable to find any route at this time".into(),
+            ));
+        }
+        inner.routes.insert(
+            id.clone(),
+            RouteEntry {
+                node: self.node,
+                ordering,
+            },
+        );
         Ok((id, blob))
     }
 
@@ -134,6 +195,21 @@ impl FakeRoutes {
             imports: Mutex::new(HashMap::new()),
         }
     }
+}
+
+/// The letter a route id names its class by: `n{node}-{tag}{n}`.
+pub(crate) fn class_tag(class: RouteClass) -> char {
+    match class {
+        RouteClass::General => 'g',
+        RouteClass::Media => 'm',
+        RouteClass::Sending => 's',
+    }
+}
+
+/// Whether route `id` is `node`'s route of the class `tag` names.
+pub(crate) fn is_class(id: &str, node: usize, tag: char) -> bool {
+    id.strip_prefix(&format!("n{node}-"))
+        .is_some_and(|rest| rest.starts_with(tag))
 }
 
 /// The blob of route `id`.
@@ -284,40 +360,49 @@ impl Network {
         true
     }
 
-    /// A question `node` asked of `destination` was lost: counted on its
-    /// reply private route, the `pinned` route when the call was pinned
-    /// (`rpc_processor/destination.rs:477-497`), else its own general
-    /// routes; the fifth distinct destination kills a route, reported to
-    /// `node` as `dead_routes`.
+    /// A question `node` asked of `destination` was lost: counted on the
+    /// `pinned` route when the call was pinned, on no own route otherwise
+    /// ([`routes`](crate::routes)). On a working route the losses older than
+    /// [`OUT_OF_BAND_TEST`] were cleared by the test the first of them
+    /// enqueued; on a broken one that test fails, run on the next tick
+    /// ([`crate::loopback`]). The fifth distinct destination kills the route,
+    /// reported to `node` as `dead_routes`.
     pub(crate) fn lost_question(&self, node: usize, destination: &str, pinned: Option<&str>) {
-        let dead: Vec<String> = {
+        let Some(id) = pinned else {
+            return;
+        };
+        let now = tokio::time::Instant::now();
+        let dead = {
             let mut guard = self.inner.lock();
             let inner = &mut *guard;
-            let own: Vec<String> = sent_over(&inner.routes, node, pinned);
+            if inner.routes.get(id).is_none_or(|r| r.node != node) {
+                return;
+            }
+            let broken = inner.faults.loopback.contains_key(id);
+            Network::test_soon(inner, id);
             let Some(slot) = inner.nodes.get_mut(node) else {
                 return;
             };
-            let dead: Vec<String> = own
-                .into_iter()
-                .filter(|id| {
-                    let lost = slot.lost.entry(id.clone()).or_default();
-                    lost.insert(destination.to_string());
-                    lost.len() >= LOST_DESTINATIONS_INVALIDATE
-                })
-                .collect();
-            for id in &dead {
+            let lost = slot.lost.entry(id.to_string()).or_default();
+            if !broken {
+                lost.retain(|_, at| now.duration_since(*at) < OUT_OF_BAND_TEST);
+            }
+            lost.insert(destination.to_string(), now);
+            let dead = lost.len() >= LOST_DESTINATIONS_INVALIDATE;
+            if dead {
                 slot.lost.remove(id);
                 inner.routes.remove(id);
+                inner.faults.loopback.remove(id);
             }
             dead
         };
-        if !dead.is_empty() {
+        if dead {
             self.send(
                 node,
                 node,
                 "RouteChange",
                 PortEvent::RouteChange {
-                    dead,
+                    dead: vec![id.to_string()],
                     dead_remote: Vec::new(),
                 },
                 false,
@@ -325,77 +410,41 @@ impl Network {
         }
     }
 
-    /// Whether `node`'s send fails at its own route's first hop
-    /// ([`crate::Fault::RouteLinkFailure`]): the fault is spent, and the
-    /// route it went out on (the `pinned` route, else the first live
-    /// general route) dies after this one failure, reported to `node` as
-    /// `dead_routes`.
-    pub(crate) fn first_hop_failed(&self, node: usize, pinned: Option<&str>) -> bool {
-        let dead: Vec<String> = {
-            let mut guard = self.inner.lock();
-            let inner = &mut *guard;
-            if !inner.faults.link_failure.remove(&node) {
-                return false;
-            }
-            let dead: Vec<String> = sent_over(&inner.routes, node, pinned)
-                .into_iter()
-                .take(1)
-                .collect();
-            for id in &dead {
-                inner.routes.remove(id);
-                if let Some(slot) = inner.nodes.get_mut(node) {
-                    slot.lost.remove(id);
-                }
-            }
-            dead
-        };
-        if !dead.is_empty() {
-            self.send(
-                node,
-                node,
-                "RouteChange",
-                PortEvent::RouteChange {
-                    dead,
-                    dead_remote: Vec::new(),
-                },
-                false,
-            );
-        }
-        true
+    /// Whether `node`'s send fails at its safety route's first hop
+    /// ([`crate::Fault::RouteLinkFailure`]): the fault is spent and the
+    /// send answers `NoConnection`; the route lives and is recompiled for
+    /// the next send, which may start at another first hop
+    /// (`route_stats.rs:31-35`, `route_compile.rs:672`).
+    pub(crate) fn first_hop_failed(&self, node: usize) -> bool {
+        self.inner.lock().faults.link_failure.remove(&node)
     }
 
-    /// An answer reached `node`: its own routes' lost destinations clear.
-    pub(crate) fn answered(&self, node: usize) {
+    /// An answer reached `node`: its own routes' lost destinations clear
+    /// (`route_stats.rs:489-508`), and the pool reply route it came over
+    /// (an unpinned call's, `pool`) is known valid now.
+    pub(crate) fn answered(&self, node: usize, pool: bool) {
         if let Some(slot) = self.inner.lock().nodes.get_mut(node) {
             slot.lost.clear();
+            if pool {
+                slot.pool_reply_valid = Some(tokio::time::Instant::now());
+            }
         }
     }
-}
 
-/// The live route a send of `node`'s went out on: `pinned` while live,
-/// else its general routes.
-fn sent_over(
-    routes: &HashMap<String, RouteEntry>,
-    node: usize,
-    pinned: Option<&str>,
-) -> Vec<String> {
-    match pinned {
-        Some(id) => routes
-            .get(id)
-            .filter(|r| r.node == node)
-            .map(|_| vec![id.to_string()])
-            .unwrap_or_default(),
-        None => own_general(routes, node),
+    /// `node` asks an unpinned question: Veilid selects its pool reply
+    /// route, allocating a new one when the last was released
+    /// ([`ROUTE_MIN_IDLE`](crate::loopback::ROUTE_MIN_IDLE) past its last
+    /// validity); a new route is tested on the next tick
+    /// (`private_route_management.rs:119-121`, never tested), so it counts
+    /// as valid from now.
+    pub(crate) fn select_pool_reply(&self, node: usize) {
+        if let Some(slot) = self.inner.lock().nodes.get_mut(node) {
+            let released = slot
+                .pool_reply_valid
+                .is_none_or(|valid| valid.elapsed() >= crate::loopback::ROUTE_MIN_IDLE);
+            if released {
+                slot.pool_reply_valid = Some(tokio::time::Instant::now());
+            }
+        }
     }
-}
-
-/// `node`'s live general routes, sorted.
-fn own_general(routes: &HashMap<String, RouteEntry>, node: usize) -> Vec<String> {
-    let mut ids: Vec<String> = routes
-        .iter()
-        .filter(|(id, r)| r.node == node && id.contains("-g"))
-        .map(|(id, _)| id.clone())
-        .collect();
-    ids.sort();
-    ids
 }
