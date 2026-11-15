@@ -1,9 +1,9 @@
 //! Lease bookkeeping for DHT records (plan C7.1, D4). Pure: no Veilid.
 //!
-//! veilid-core keeps **one** open-record entry per record per node, with no
+//! veilid-core 0.5.8 keeps **one** open-record entry per record per node, with no
 //! refcount: a re-open replaces the writer and the safety selection in
 //! place, and a close is node-wide and cancels the record's watch
-//! (`storage_manager/open_record.rs:155-169`, `close_record.rs:9-35`). Two
+//! (`storage_manager/open_record.rs:195-204`, `close_record.rs:9-35,116-120`). Two
 //! parts of the app that each open and close a record therefore close it
 //! under each other, and a read-only re-open of a record held writable
 //! downgrades it. The table below is the refcount Veilid does not keep: the
@@ -238,14 +238,14 @@ pub const VEILID_MAX_RECORD_DATA_SIZE: usize = 1_048_576;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchemaShape {
     /// Every subkey: DFLT `o_cnt`, or SMPL `o_cnt + Σ m_cnt`
-    /// (`veilid_api/types/dht/schema/smpl.rs:126-139`).
+    /// (0.5.8 `veilid_api/types/dht/schema/smpl.rs:126-139`).
     pub subkey_count: u32,
 }
 
 /// The largest value one subkey of `shape` accepts:
-/// `min(32768, 1 MiB / subkey_count)` (`storage_manager/schema.rs:59-64` for
-/// DFLT, `:100-104` for SMPL). Veilid adds no encryption overhead to it: the
-/// cap is plaintext bytes (`record_encryption.rs:23-50`).
+/// `min(32768, 1 MiB / subkey_count)` (0.5.8 `veilid_api/types/dht/derivation.rs:144-147`
+/// for DFLT, `:186-189` for SMPL). Veilid adds no encryption overhead to it: the
+/// cap is plaintext bytes (`record_encryption.rs:31-61`).
 #[must_use]
 pub const fn max_subkey_bytes(shape: SchemaShape) -> usize {
     if shape.subkey_count == 0 {

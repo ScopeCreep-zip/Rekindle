@@ -71,7 +71,7 @@ impl OpenIntent {
 }
 
 /// The kind of a DHT failure, one for one with veilid-core's
-/// `VeilidAPIError` (`veilid_api/error.rs:131-215`).
+/// `VeilidAPIError` (0.5.8 `veilid_api/types/error.rs:132-220`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DhtErrorKind {
     NotInitialized,

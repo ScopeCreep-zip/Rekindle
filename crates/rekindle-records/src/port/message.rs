@@ -66,8 +66,8 @@ pub trait AppMessagePort: Send + Sync {
     ) -> Result<(), PortError>;
 
     /// [`call`](Self::call) with our live route of `class` as the safety
-    /// route, so the answer comes back over it too (veilid
-    /// `rpc_processor/destination.rs:467-508`).
+    /// route, so the answer comes back over it too (veilid-core
+    /// 0.5.8 `rpc_processor/destination.rs:467-508`).
     ///
     /// # Errors
     /// `Routing` while our route of `class` is not live: there is no pool

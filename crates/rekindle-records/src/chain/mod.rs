@@ -240,7 +240,7 @@ async fn append_after(
             )
             .await?;
         // A newer `HEAD` than our copy won: Veilid stored it as our copy
-        // (`set_value.rs:741-746`), so the next round chains onto it. The
+        // (0.5.8 `set_value.rs:741-746`), so the next round chains onto it. The
         // page this round wrote is never named.
         if matches!(outcome, SetOutcome::Superseded(_)) && round < HEAD_ROUNDS {
             round += 1;

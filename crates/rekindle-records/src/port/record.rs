@@ -34,7 +34,7 @@ pub enum SetOutcome {
     /// writer are ours is `Landed` or `Unchanged`, never this.
     Superseded(RecordValue),
     /// The value equals the local copy: Veilid re-sent the stored bytes at
-    /// their seq (`set_value.rs:353-366`) and that re-push reached
+    /// their seq (0.5.8 `set_value.rs:353-366`) and that re-push reached
     /// consensus with no other value settling. The local seq did not move.
     Unchanged,
 }

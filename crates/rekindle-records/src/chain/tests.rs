@@ -123,7 +123,7 @@ impl RecordPort for MemPort {
             let key = Self::leased(&mem, lease)?;
             let local = mem.records[&key].1[subkey as usize].is_some();
             // Without a local copy a get goes to the network
-            // (`get_value.rs:161-169`), as a forced one does.
+            // (0.5.8 `get_value.rs:161-169`), as a forced one does.
             let network = force_refresh || !local;
             if network {
                 if let Some(data) = mem.remote.remove(&(key.clone(), subkey)) {
@@ -163,7 +163,7 @@ impl RecordPort for MemPort {
             return Err(PortError::NotWritable(key));
         }
         // A replica holding a newer value answers with it, and the set
-        // stores it as our copy (`set_value.rs:741-760`).
+        // stores it as our copy (0.5.8 `set_value.rs:741-760`).
         if let Some(rival) = mem.remote.remove(&(key.clone(), subkey)) {
             mem.records.get_mut(&key).unwrap().1[subkey as usize] = Some(rival.clone());
             return Ok(SetOutcome::Superseded(RecordValue {
