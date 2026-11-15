@@ -2,9 +2,9 @@
 //!
 //! VENDORED VERBATIM from `tokio-rusqlite` 0.7.0 (MIT, © 2022 Eray Karatay;
 //! see the crate `LICENSE`). The only change vs upstream is the dependency
-//! pin (`rusqlite 0.37` → `0.38`) in `Cargo.toml` — upstream is unmaintained
-//! and its `rusqlite ^0.37` pin conflicts with veilid-core 0.5.3's sqlite
-//! chain (`rusqlite 0.38`). The source below keeps upstream's battle-tested
+//! pin (`rusqlite 0.37` → `0.39`) in `Cargo.toml` — upstream is unmaintained
+//! and its `rusqlite ^0.37` pin conflicts with veilid-core 0.5.8's sqlite
+//! chain (`keyvaluedb-sqlite` 0.2.6 → `async-sqlite` 0.5.7 → `rusqlite 0.39`). The source below keeps upstream's battle-tested
 //! dedicated-thread + channel + close semantics; its two additions are
 //! [`Connection::call_detached`] and the call watch (below), neither of which
 //! changes how a call runs. Our

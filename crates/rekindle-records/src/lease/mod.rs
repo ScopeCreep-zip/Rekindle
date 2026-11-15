@@ -227,9 +227,11 @@ impl<W: Clone> LeaseTable<W> {
     }
 }
 
-/// veilid-core 0.5.7 `storage_manager/types/mod.rs:14`: no subkey holds more.
+/// veilid-core 0.5.8 `veilid_api/types/dht/mod.rs:36` (`MAX_SUBKEY_SIZE`):
+/// no subkey holds more.
 pub const VEILID_MAX_SUBKEY_SIZE: usize = 32_768;
-/// veilid-core 0.5.7 `storage_manager/types/mod.rs:16`: a record's total.
+/// veilid-core 0.5.8 `veilid_api/types/dht/mod.rs:38`
+/// (`MAX_RECORD_DATA_SIZE`): a record's total.
 pub const VEILID_MAX_RECORD_DATA_SIZE: usize = 1_048_576;
 
 /// A record schema, as far as its size limit depends on it.

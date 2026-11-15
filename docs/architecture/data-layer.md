@@ -303,8 +303,8 @@ desktop all access goes through
 `db_helpers::{db_call, db_fire}`. Read-only state
 lookups go through `state_helpers`.
 
-`rusqlite` 0.39 is used (not `sqlx`) to match `veilid-core` 0.5.7's
-`keyvaluedb-sqlite` → `async-sqlite` → `rusqlite` 0.39 chain; one
+`rusqlite` 0.39 is used (not `sqlx`) to match `veilid-core` 0.5.8's
+`keyvaluedb-sqlite` 0.2.6 → `async-sqlite` 0.5.7 → `rusqlite` 0.39 chain (the pinned fork, ADR 0017); one
 `libsqlite3-sys` (0.37, bundled SQLCipher) serves the whole process.
 
 ### Repositories

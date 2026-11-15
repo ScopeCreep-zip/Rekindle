@@ -11,7 +11,8 @@
 //! send does (`operations::dm::wire`, the `'D'` tag included).
 //!
 //! A `FriendRequest` goes by `app_call`, whose cap is the same 32,768 B
-//! (`~/veilid/veilid-core/src/rpc_processor/coders/operations/operation_app_call.rs:3-4`):
+//! (`~/veilid-wt-058/veilid-core/src/rpc_processor/coders/operations/operation_app_call.rs:3-4`,
+//! from `proto/veilid.capnp:33-34`):
 //! it is measured HPKE-sealed with each admission it can carry, the friend
 //! code's token or an invite (plan E2.5, D17); a redeemed invite's request
 //! is written into the invite's inbox, under the SMPL subkey cap.
@@ -127,8 +128,8 @@ async fn friend_request_fits_by_app_call_with_either_admission() {
 /// A redeemed invite's request is the same sealed frame written into the
 /// invite's inbox: it fits the writer's subkey, `min(MAX_SUBKEY_SIZE,
 /// MAX_RECORD_DATA_SIZE / 2)` = 32,768 B
-/// (`~/veilid/veilid-core/src/storage_manager/schema.rs` SMPL
-/// `max_value_len`, `storage_manager/types/mod.rs:14-16`).
+/// (`~/veilid-wt-058/veilid-core/src/veilid_api/types/dht/derivation.rs:184-189`
+/// SMPL `max_value_len`, `veilid_api/types/dht/mod.rs:36,38`).
 #[test]
 fn an_inbox_write_fits_the_smpl_subkey_cap() {
     let (alice, bob) = (Party::new(1), Party::new(2));

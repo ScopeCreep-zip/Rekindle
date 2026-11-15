@@ -1,24 +1,24 @@
 //! Watches on the simulated DHT (plan E2.B slice S5: M1, M8 and the death
-//! shape), after the pinned veilid-core (`~/veilid/veilid-core/src/
+//! shape), after the pinned veilid-core (`~/veilid-wt-058/veilid-core/src/
 //! storage_manager`):
 //!
 //! - **the call** records the node's desired watch and answers whether a
 //!   watch is wanted (`count` 0 cancels and answers `false`); a non-zero
 //!   expiration sooner than the RPC timeout from now is `InvalidArgument`
-//!   "expiration is too soon" (`watch_value.rs:224-300`). Nobody accepting
+//!   "expiration is too soon" (`watch_value.rs:290-363`). Nobody accepting
 //!   it is not an error of the call: the outbound watch reconciles later
-//!   (`outbound_watch_manager/outbound_watch.rs:185-215`);
+//!   (`outbound_watch_manager/outbound_watch.rs:258-311`);
 //! - **placement:** the node's watch sits on up to [`GET_COUNT`] reachable
-//!   replicas, its consensus count (`watch_value.rs:1185`), placed at the
+//!   replicas, its consensus count (`watch_value.rs:1334`), placed at the
 //!   call and reconciled every [`WATCH_TICK`] (`CHECK_OUTBOUND_WATCHES_INTERVAL_SECS`,
 //!   `constants.rs:16`). A replica refuses a watch past
 //!   [`MEMBER_WATCH_LIMIT`] per member, or past [`PUBLIC_WATCH_LIMIT`]
 //!   anonymous watches per record; a member is the owner or a SMPL member the
 //!   node opened the record as (`record_store/record_store_inner/
-//!   inbound_watches_interface.rs:75-138`, `veilid_config.rs:921-922`). A
+//!   inbound_watches_interface.rs:76-141`, `veilid_config.rs:1019-1020`). A
 //!   replica clamps the expiration to [`MAX_WATCH_EXPIRATION`] (none is the
 //!   max) and refuses one sooner than [`MIN_WATCH_EXPIRATION`]
-//!   (`record_store/inbound_watch.rs:70-89`, `storage_manager/mod.rs:361-367`);
+//!   (`record_store/inbound_watch.rs:70-89`, `storage_manager/mod.rs:441-447`);
 //!   a reachable node renews its watches before they lapse, an unreachable
 //!   one loses them;
 //! - **a change:** a replica that stores a new value marks the subkey on
@@ -28,9 +28,9 @@
 //!   `set_value.rs:917`), never the same target under safety routes;
 //!   every [`WATCH_TICK`] (`SEND_VALUE_CHANGES_INTERVAL_SECS`, `constants.rs:14`)
 //!   it sends each watch its changed subkeys, with the value only when one
-//!   subkey changed, and counts the watch down (`:228-273`,
+//!   subkey changed, and counts the watch down (`:232-277`,
 //!   `inbound_watch.rs:124-140`). An identical re-push stores nothing and
-//!   marks nothing (`set_value.rs:700-719`);
+//!   marks nothing (`set_value.rs:823-842`);
 //! - **the watcher** drops the value when more than one subkey changed or the
 //!   first it watches is not the first changed; drops a value not newer than
 //!   its local copy and that subkey with it (nothing when none is left);
@@ -40,12 +40,12 @@
 //!   marks). A detached, offline or sleeping node, or one a partition cuts
 //!   from the replica, receives nothing; a change
 //!   goes over the watcher's value-changed route
-//!   (`watch_value.rs:23`, `rpc_value_changed.rs`), is lost when that route
+//!   (`watch_value.rs:24`, `rpc_value_changed.rs`), is lost when that route
 //!   died, and the watcher re-watches on the next check tick
-//!   (`outbound_watch.rs:272-275`);
+//!   (`outbound_watch.rs:349-352`);
 //! - **death:** a cancelled, closed (`close_record.rs:116-120`), expired or
-//!   counted-out watch (`outbound_watch.rs:89-115`) ends at the next tick
-//!   with empty subkeys, count 0 and no value (`watch_value.rs:697-703`).
+//!   counted-out watch (`outbound_watch.rs:162-188`) ends at the next tick
+//!   with empty subkeys, count 0 and no value (`watch_value.rs:781-787`).
 
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -57,14 +57,14 @@ use super::{reachable, reaches};
 use crate::network::{Inner, NetRecord, Network};
 
 /// Anonymous watches per record per replica (`public_watch_limit`,
-/// `veilid_config.rs:921`).
+/// `veilid_config.rs:1019`).
 pub(crate) const PUBLIC_WATCH_LIMIT: usize = 32;
 /// Watches per member per record per replica (`member_watch_limit`,
-/// `veilid_config.rs:922`).
+/// `veilid_config.rs:1020`).
 pub(crate) const MEMBER_WATCH_LIMIT: usize = 8;
-/// `max_watch_expiration_ms` (`veilid_config.rs:920`).
+/// `max_watch_expiration_ms` (`veilid_config.rs:1017`).
 pub(crate) const MAX_WATCH_EXPIRATION: Duration = Duration::from_millis(600_000);
-/// `rpc.timeout_ms` (`veilid_config.rs:852`, `storage_manager/mod.rs:366-367`).
+/// `rpc.timeout_ms` (`veilid_config.rs:944`, `storage_manager/mod.rs:446-447`).
 pub(crate) const MIN_WATCH_EXPIRATION: Duration = Duration::from_millis(5_000);
 /// The send-changes and check-watches tick (`constants.rs:14,16`).
 pub(crate) const WATCH_TICK: Duration = Duration::from_secs(1);
@@ -241,7 +241,7 @@ pub(crate) fn held(inner: &Inner, node: usize, key: &str) -> usize {
     })
 }
 
-/// The last change of a dead watch (`watch_value.rs:697-703`).
+/// The last change of a dead watch (`watch_value.rs:781-787`).
 pub(crate) fn death(key: &str) -> PortEvent {
     PortEvent::ValueChange(ValueChange {
         key: key.to_string(),
@@ -260,7 +260,7 @@ fn drop_replica_watches(inner: &mut Inner, node: usize, key: &str) {
 }
 
 /// After the tick's sends, an online, awake watcher whose value-changed
-/// route died re-watches with its new one (`outbound_watch.rs:272-275`);
+/// route died re-watches with its new one (`outbound_watch.rs:349-352`);
 /// changes sent before then were lost, so its fallback timer resets
 /// ([`super::outbound::route_lost`]).
 fn renew_routes(inner: &mut Inner, now: u64) {
@@ -305,7 +305,7 @@ pub(super) fn receive(
     // A valid push resets the silence timer (`watch_value.rs:1931-1936`).
     super::outbound::pushed(inner, node, key, now);
     // A watched value past the size rule makes the change invalid
-    // (`watch_value.rs:1934-1946`): it is dropped.
+    // (`watch_value.rs:2188-2200`): it is dropped.
     if let (Some(v), Some(record)) = (&value, inner.records.get(key)) {
         if !super::size::fits(&record.schema, &v.value) {
             return None;

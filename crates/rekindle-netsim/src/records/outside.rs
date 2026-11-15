@@ -1,10 +1,10 @@
 //! What happens to a record's replicas from outside the app (plan E2.B
 //! slice S11, MED-3 and MED-4), after the pinned veilid-core
-//! (`~/veilid/veilid-core/src`):
+//! (`~/veilid-wt-058/veilid-core/src`):
 //!
 //! - **churn:** a record's replicas are the [`super::replicas::REPLICAS`]
 //!   nodes closest to its key that a fanout counts (`consensus_width`,
-//!   `rpc_processor/fanout/fanout_call.rs:292-330`); nodes joining closer to
+//!   `rpc_processor/fanout/fanout_call.rs:399-451`); nodes joining closer to
 //!   the key push the farthest out. [`crate::Fault::ReplicaChurn`] puts
 //!   `count` empty stores closest (placement order is closeness) and drops
 //!   the `count` farthest, their values and watches with them; each
@@ -16,7 +16,7 @@
 //!   schema admits sending one value at one seq to some replicas and
 //!   another to others; each replica applies its own rule: the size rule
 //!   ([`super::size`]) and the first value at a seq wins
-//!   (`storage_manager/set_value.rs:700-719`).
+//!   (`storage_manager/set_value.rs:823-842`).
 
 use rekindle_records::port::{PortError, RecordValue};
 

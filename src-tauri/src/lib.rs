@@ -47,9 +47,12 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     platform::linux_display_setup();
 
-    // Suppress Veilid's noisy internal ERROR logs (e.g. "no compatible crypto
-    // kinds in route" from stale route imports — our code handles these gracefully).
-    // The veilid_api target only emits import/routing errors we already catch.
+    // Rekindle's own targets at info, everything else (Veilid included) at
+    // warn: the daemon's filter (`rekindle-node/src/host/mod.rs`). Veilid's
+    // log targets are facilities, not its crate path (`veilid_log!` uses the
+    // module's `impl_veilid_log_facility!`, `veilid-core/src/logging/
+    // macros.rs:6-11`: `rtab`, `stor`, `net`, `rpc`, `tstore`, `fanout`,
+    // `attach`, `crypto`, …), so a `veilid_core=` directive matches nothing.
     // ANSI color only on a real terminal — fmt() defaults to ANSI even when
     // piped, which fills the dev-wrapper log files (scripts/linux-dev.sh,
     // scripts/mac-dev-app.sh) with escape codes.
@@ -61,9 +64,8 @@ pub fn run() {
             std::io::stdout,
         ))
         .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-                tracing_subscriber::EnvFilter::new("info,veilid_api=warn,veilid_core=warn")
-            }),
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("rekindle=info,warn")),
         )
         .with_ansi(std::io::IsTerminal::is_terminal(&std::io::stdout()))
         .init();

@@ -1,6 +1,6 @@
 //! A record writer's keypair as text, without Veilid (plan C9.1b): the
 //! form Veilid prints and parses, `KIND:<public>:<secret>` with each key
-//! base64url-nopad (`~/veilid` @0cd847de `crypto/types/keypair.rs`
+//! base64url-nopad (`~/veilid-wt-058` @91453e97 `crypto/types/keypair.rs`
 //! `BareKeyPair::encode`, `crypto_typed.rs` `Display`). The record ports
 //! carry keypairs this way, so the transport, the hosts and the netsim
 //! never build a Veilid type; `rekindle-protocol` tests that Veilid reads

@@ -46,8 +46,9 @@ pub fn build_veilid_config(
     // veilid-core 0.5.3's keyring-manager 0.7.1 reached secret-service's
     // BLOCKING zbus API on Linux and panicked inside our Tokio runtime
     // ("cannot start a runtime from within a runtime") before any
-    // fallback could run. 0.5.7 resolves keyring-manager 0.8.3, which is
-    // UNTESTED against that panic — retest protocol in
+    // fallback could run. 0.5.8 pins keyring-manager =0.10.0
+    // (veilid-core/Cargo.toml:194), UNTESTED against that panic — retest
+    // protocol in
     // docs/contributor/veilid-0.5.7-migration-plan.md §2.3. Low stakes:
     // this store only guards Veilid's own node/route secrets (they live
     // in `storage_dir` regardless); user identity keys are in the
@@ -58,11 +59,13 @@ pub fn build_veilid_config(
     // UPnP/IGD automatic port mapping. Defaults off; without it a NAT'd
     // node degrades gracefully to inbound relays via VICE. History and
     // the flip protocol: docs/contributor/veilid-0.5.7-gap-audit.md §1.1
-    // (the 0.5.3-era panic is gone in 0.5.7, but the
-    // restart-on-IGD-failure loop is not, and the original failure was
+    // (the 0.5.3-era panic is gone since 0.5.7, but the
+    // restart-on-IGD-failure loop is not: 0.5.8
+    // `network/native/tasks/upnp_task.rs:21-28`; the original failure was
     // never conclusively diagnosed — flip only under attachment-flap
-    // monitoring). Note: 0.5.7 silently disables UPnP whenever
-    // `privacy.require_inbound_relay` is set.
+    // monitoring). Note: Veilid silently disables UPnP whenever
+    // `privacy.require_inbound_relay` is set (0.5.8
+    // `network_manager/network/native/mod.rs:1367-1370`).
     vc.network.upnp = opts.upnp;
 
     // Inbound private-route hops. Default 1: compiled paths are
