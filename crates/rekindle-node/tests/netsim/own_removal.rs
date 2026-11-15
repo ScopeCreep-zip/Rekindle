@@ -3,15 +3,35 @@
 //! announces `MembershipEvent::Kicked` naming the remover, marks the
 //! community removed in `community info` (by whom), forgets the
 //! community's keys, refuses its own sends, and keeps its history; the
-//! other members see nothing new from it.
+//! other members see nothing new from it. A/B finding R3-2: the history it
+//! keeps stays readable as it was (no row it opened turns undecryptable,
+//! after the kick or after a relogin), and nothing posted after the kick
+//! is opened.
 
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
-use crate::harness::{eventually, Community};
+use crate::harness::{eventually, Community, PASSPHRASE};
 use crate::moderation::listed;
+
+/// The posts the member read before its removal.
+const KEPT: [&str; 2] = ["bea before the kick", "ann before the kick"];
+
+/// Whether node `i`'s history holds every body of `bodies` opened
+/// (`decryptionFailed=false`) within `limit`.
+async fn opened(community: &Community, i: usize, bodies: &[&str], limit: Duration) -> bool {
+    eventually(&community.sim, limit, || async {
+        community.history(i, None, 100).await.is_ok_and(|page| {
+            bodies.iter().all(|body| {
+                page.iter()
+                    .any(|m| m["body"] == *body && m["decryptionFailed"] == false)
+            })
+        })
+    })
+    .await
+}
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
@@ -28,6 +48,15 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
             .reads(0, "bea before the kick", Duration::from_secs(120))
             .await,
         "the creator reads the member's post"
+    );
+    community
+        .post(0, "ann before the kick")
+        .await
+        .expect("the creator posts");
+    assert!(
+        opened(&community, 1, &KEPT, Duration::from_secs(120)).await,
+        "the member opens both posts before the kick: {:?}",
+        community.history(1, None, 100).await
     );
     assert!(
         !community
@@ -94,6 +123,15 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
             .await,
         "the kicked member keeps its history"
     );
+    assert!(
+        opened(&community, 1, &KEPT, Duration::from_secs(1)).await,
+        "the kicked member's kept history stays readable (R3-2): {:?}",
+        community.history(1, None, 100).await
+    );
+    community
+        .post(0, "ann after the kick")
+        .await
+        .expect("the creator posts after the kick");
 
     // Long past a presence beat and a keepalive round: the others see
     // nothing new of it.
@@ -111,4 +149,33 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
             "node {reader} shows nothing new of the kicked member"
         );
     }
+
+    // A relogin reloads the vault's keys: the kept history reads as it was,
+    // and the post made after the kick is still not opened.
+    let bea_key = community.nodes[1].public_key.clone().expect("an identity");
+    community.nodes[1].ok(IpcRequest::Lock).await;
+    community.nodes[1]
+        .ok(IpcRequest::Unlock {
+            identity: bea_key,
+            passphrase: PASSPHRASE.into(),
+        })
+        .await;
+    assert!(
+        opened(&community, 1, &KEPT, Duration::from_secs(120)).await,
+        "the kept history stays readable after a relogin (R3-2): {:?}",
+        community.history(1, None, 100).await
+    );
+    assert!(
+        community
+            .reads(2, "ann after the kick", Duration::from_secs(60))
+            .await,
+        "a remaining member reads the post made after the kick"
+    );
+    community.sim.quiesce().await;
+    assert!(
+        !community
+            .history_holds(1, "ann after the kick", Duration::from_secs(10))
+            .await,
+        "nothing posted after the kick is opened by the kicked member"
+    );
 }

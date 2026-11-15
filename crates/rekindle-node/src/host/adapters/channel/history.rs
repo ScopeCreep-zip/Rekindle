@@ -24,7 +24,8 @@ fn stored(e: impl std::fmt::Display) -> ChannelError {
 impl HostChannel {
     /// The latest `limit` messages of `channel_id` in `community_id`, only
     /// those older than `before` when given: our rows and the record's,
-    /// merged, oldest first.
+    /// merged, oldest first. A community we were removed from answers our
+    /// rows only.
     ///
     /// # Errors
     /// We may not read the channel's history, no identity is unlocked, or
@@ -49,6 +50,15 @@ impl HostChannel {
             .into_iter()
             .map(|row| stored_view(row, &owner, &me))
             .collect();
+        if self.ctx().communities.own_removal(community_id).is_some() {
+            // A community we were removed from is read-only history (plan
+            // E3.2 S9): our rows as they were when we opened them. The
+            // record is not read again, so its keys leaving memory never
+            // marks a kept row undecryptable (A/B R3-2), and nothing posted
+            // after the removal is opened, even under a key we still hold.
+            history::merge_message_lists(&mut messages, Vec::new(), limit);
+            return Ok(messages);
+        }
         let record =
             history::read_channel_record(self, community_id, channel_id, before, limit).await?;
         let incoming = (self.store_record_messages(&owner, community_id, channel_id, record))
