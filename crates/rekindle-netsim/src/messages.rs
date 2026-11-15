@@ -138,6 +138,7 @@ impl FakeMessages {
         message: Vec<u8>,
     ) -> Result<(), PortError> {
         check_message_len(&message)?;
+        self.net.awake(self.node).await;
         let Some(to) = self.route_owner(target, pinned)? else {
             // Dispatched into a released route: lost, and still "sent".
             return Ok(());
@@ -172,6 +173,7 @@ impl FakeMessages {
         message: Vec<u8>,
     ) -> Result<Vec<u8>, PortError> {
         check_message_len(&message)?;
+        self.net.awake(self.node).await;
         let Some(to) = self.route_owner(target, pinned)? else {
             // Into a released route: no answer comes back.
             tokio::time::sleep(call_timeout(profile)).await;
@@ -298,6 +300,7 @@ impl AppMessagePort for FakeMessages {
 
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
         check_message_len(&message)?;
+        self.net.awake(self.node).await;
         let tx = {
             let mut inner = self.net.inner.lock();
             if inner.faults.detached.contains(&self.node) {

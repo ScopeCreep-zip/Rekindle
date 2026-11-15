@@ -253,6 +253,8 @@ pub struct Network {
     pub(crate) busy: Arc<Busy>,
     /// Wakes the pump when an event is queued.
     pub(crate) wake: Notify,
+    /// Changes when a node falls asleep or wakes ([`crate::sleep`]).
+    pub(crate) woke: tokio::sync::watch::Sender<()>,
 }
 
 impl Network {
@@ -264,6 +266,7 @@ impl Network {
             epoch: tokio::time::Instant::now(),
             busy: Arc::default(),
             wake: Notify::new(),
+            woke: tokio::sync::watch::Sender::new(()),
         })
     }
 

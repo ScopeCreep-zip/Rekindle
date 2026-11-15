@@ -117,7 +117,11 @@ impl RecordStore for FakeRecords {
                 .get(self.node)
                 .ok_or_else(|| PortError::Node("no such node".into()))?;
             (
-                dht::SimDht::new(self.node, Arc::clone(&self.net), Arc::clone(&self.rng)),
+                crate::sleep::Sleepable::new(
+                    self.node,
+                    Arc::clone(&self.net),
+                    dht::SimDht::new(self.node, Arc::clone(&self.net), Arc::clone(&self.rng)),
+                ),
                 slot.ready.subscribe(),
             )
         };

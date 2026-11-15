@@ -147,6 +147,8 @@ impl RouteAllocator for FakeAllocator {
     type Id = String;
 
     async fn allocate(&self, class: RouteClass) -> Result<(String, Vec<u8>), AllocError> {
+        // A suspended process allocates nothing ([`crate::sleep`]).
+        self.net.awake(self.node).await;
         let n = self.next.fetch_add(1, Ordering::SeqCst);
         let id = format!("n{}-{}{n}", self.node, class_tag(class));
         let blob = blob_of(&id);

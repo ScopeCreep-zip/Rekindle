@@ -113,14 +113,15 @@ pub enum Fault {
     /// attachment update with `is_attached` still true.
     InternetReady { node: usize, ready: bool },
     /// The node's process is suspended (a desktop sleep) or resumes: while
-    /// asleep its storage manager's tick does not run and nothing sent to
-    /// it arrives (a value-changed push, an app message or call), and it
-    /// stays attached, with no Offline transition. Veilid 0.5.8 has no
+    /// asleep its storage manager's tick does not run, nothing sent to it
+    /// arrives (a value-changed push, an app message or call), its own DHT
+    /// calls, sends and route allocations park until the wake and its wall
+    /// clock stands still, then jumps across the sleep ([`crate::sleep`]);
+    /// it stays attached, with no Offline transition. Veilid 0.5.8 has no
     /// tick-lag sweep (0.5.7's `CHANGE_INSPECT_LAG` is gone from
     /// `storage_manager/constants.rs`): a missed push surfaces through the
     /// fallback timer, on the node's wall clock
-    /// (`records/outbound.rs`). Pair it with [`Fault::ClockSkew`] for the
-    /// wall clock jump of a sleep the monotonic clock did not see.
+    /// (`records/outbound.rs`).
     Sleep { node: usize, asleep: bool },
     /// Nodes join closer to `key`: `count` of its replicas are pushed out
     /// for empty stores, their watches gone (`records/outside.rs`).
@@ -292,7 +293,11 @@ impl Netsim {
             Fault::InternetReady { node, ready } => self.internet_ready(node, ready),
             Fault::ReplicaChurn { key, count } => self.churn(&key, count),
             Fault::Sleep { node, asleep } => {
+                if let Some(clock) = self.clocks.lock().get(node) {
+                    clock.freeze(asleep);
+                }
                 toggle(&mut self.net.inner.lock().faults.asleep, node, asleep);
+                self.net.sleep_changed();
             }
         }
     }

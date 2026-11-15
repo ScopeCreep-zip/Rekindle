@@ -30,6 +30,7 @@ mod messages;
 mod network;
 mod records;
 mod routes;
+mod sleep;
 mod trace;
 
 #[cfg(test)]
