@@ -71,7 +71,7 @@ async fn a_reattached_node_hears_the_changes_it_missed() {
     });
     let changes = heard(&sim, &mut nodes, 1).await;
     // Several newer subkeys: the range with no value and no read
-    // (0.5.8 `watch_value.rs:1497-1507`); the local copy stays.
+    // (0.5.8 `watch_value.rs:1492-1501`); the local copy stays.
     assert_eq!(changes.len(), 1, "{changes:?}");
     assert_eq!(changes[0].subkeys, vec![1, 2]);
     assert_eq!(changes[0].value, None);
@@ -257,15 +257,15 @@ async fn a_known_record_opens_and_reads_offline() {
         node: 1,
         offline: true,
     });
-    // A record in the local store opens with no network (`open_record.rs:27-40`).
+    // A record in the local store opens with no network (0.5.8 `open_record.rs:54-81`).
     b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
         .await
         .unwrap();
-    // A local get answers offline; a forced one is `TryAgain` (`get_value.rs:78-92`).
+    // A local get answers offline; a forced one is `TryAgain` (0.5.8 `get_value.rs:160-172`).
     assert_eq!(b.get(&key, 2, false).await.unwrap().unwrap().data, vec![0]);
     let forced = b.get(&key, 2, true).await.unwrap_err();
     assert_eq!(forced.kind, DhtErrorKind::TryAgain);
-    // An unknown record needs the network (`open_record.rs:41-44`).
+    // An unknown record needs the network (0.5.8 `open_record.rs:84-86`).
     let open = b
         .open(&unknown, None, rekindle_records::port::OpenIntent::Hold)
         .await

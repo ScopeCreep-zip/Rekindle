@@ -7,17 +7,17 @@
 //! - **the fallback inspection** is a silence timer per watch: due once the
 //!   current interval has passed since the latest of establishment, the
 //!   last fallback inspection and the last push the node received
-//!   (`outbound_watch_state.rs:347-372`, a push touches it at
+//!   (0.5.8 `outbound_watch_state.rs:345-367`, a push touches it at
 //!   `watch_value.rs:1931-1936`). The interval starts at
 //!   [`FALLBACK_INTERVAL`], doubles on each inspection that finds nothing
-//!   up to [`MAX_INSPECT_INTERVAL`] (`:141-146`,
+//!   up to [`MAX_INSPECT_INTERVAL`] (`:150-156`,
 //!   `note_change_inspect_outcome`, `watch_value.rs:2368-2397`) and resets
 //!   on a productive inspection, a parameter change or a newly holding node
 //!   (`watch_value.rs:1305-1315`); a dead value-changed route resets it
-//!   with this watch's phase of the base interval (`:147-160`,
+//!   with this watch's phase of the base interval (`:157-168`,
 //!   `watch_value.rs:961-972`). At the ceiling, a watch at consensus that
 //!   heard a push since its last inspection waits for its renewal window
-//!   (`:374-402`). An unestablished watch is inspected every
+//!   (`:369-400`). An unestablished watch is inspected every
 //!   [`MAX_INSPECT_INTERVAL`] (`outbound_watch.rs:100-104`);
 //! - **report marks:** a subkey reported to the app is marked unread
 //!   (`:51-55`). A value-carrying report marks with no copies owed
@@ -25,19 +25,19 @@
 //!   marked and counts a copy on the rest (`:251-266`,
 //!   `report_value_change_hint`, `watch_value.rs:1993-2050`), sending
 //!   nothing when none is news. Only a get that reaches the network clears
-//!   a mark (`get_value.rs:196-197`, `consume_watch_read_subkeys`,
+//!   a mark (`get_value.rs:199-200`, `consume_watch_read_subkeys`,
 //!   `watch_value.rs:2275-2296`); a local read leaves it. A cleared mark
 //!   with copies owed queues one re-hint, sent as a range-only report on
 //!   the next check tick (`tasks/check_outbound_watches.rs:97-103`,
 //!   `send_pending_rehints`, `watch_value.rs:2298-2320`). Change-inspection
 //!   reports bypass the marks (`report_change_inspect`,
-//!   `watch_value.rs:1523-1578`).
+//!   `watch_value.rs:1523-1573`).
 //!
 //! Not modelled: the spread after a Degraded period (the netsim has no
 //! Degraded state; its Offline return sweeps every watch,
 //! [`super::catchup`]), the survival stretch under measured loss
-//! (`outbound_watch_state.rs:175-193`) and the forced reconcile a
-//! productive inspection asks for (`watch_value.rs:1560-1566`).
+//! (`outbound_watch_state.rs:176-194`) and the forced reconcile a
+//! productive inspection asks for (`watch_value.rs:1559-1561`).
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::time::Duration;
@@ -140,7 +140,7 @@ impl WatchState {
         }
     }
 
-    /// `fallback_inspect_interval` (`outbound_watch_state.rs:413-418`).
+    /// `fallback_inspect_interval` (0.5.8 `outbound_watch_state.rs:411-416`).
     pub(crate) fn interval(&self) -> u64 {
         self.interval
             .unwrap_or(micros(FALLBACK_INTERVAL))
@@ -155,7 +155,7 @@ impl WatchState {
             .fold(self.established, u64::max)
     }
 
-    /// `needs_fallback_inspect` (`:349-360`).
+    /// `needs_fallback_inspect` (`:347-359`).
     fn needs(&self, at: u64) -> bool {
         if self.not_before.is_some_and(|t| at < t) {
             return false;
@@ -163,13 +163,13 @@ impl WatchState {
         at >= self.reference().saturating_add(self.interval())
     }
 
-    /// `pushed_since_fallback` (`:404-410`).
+    /// `pushed_since_fallback` (`:404-409`).
     fn pushed_since_fallback(&self) -> bool {
         let since = self.last_fallback.unwrap_or(self.established);
         self.last_push.is_some_and(|t| t >= since)
     }
 
-    /// `fallback_inspect_due` (`:374-402`), with the renewal window over
+    /// `fallback_inspect_due` (`:377-400`), with the renewal window over
     /// the node's own renewal (the netsim renews on every tick it reaches a
     /// replica, Veilid only inside the window: `renewed` keeps Veilid's).
     fn due(&self, at: u64, held: usize) -> bool {
@@ -190,13 +190,13 @@ impl WatchState {
             >= self.renewed.saturating_add(micros(MAX_WATCH_EXPIRATION))
     }
 
-    /// `back_off_fallback_inspect` (`:141-146`).
+    /// `back_off_fallback_inspect` (`:150-156`).
     fn back_off(&mut self) {
         let doubled = self.interval().saturating_mul(2);
         self.interval = Some(doubled.min(micros(MAX_INSPECT_INTERVAL)));
     }
 
-    /// `reset_fallback_inspect_backoff` (`:147-160`).
+    /// `reset_fallback_inspect_backoff` (`:157-168`).
     fn reset(&mut self, spread_from: Option<u64>) {
         self.interval = None;
         self.not_before = spread_from.map(|at| {

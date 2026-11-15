@@ -91,7 +91,7 @@ async fn several_changed_subkeys_are_a_range_with_no_value() {
     a.set(&key, 1, b"x".to_vec(), None).await.unwrap();
     a.set(&key, 3, b"y".to_vec(), None).await.unwrap();
     // A set returns at consensus; its RPCs still in flight land after
-    // (`records/fanout.rs`, 0.5.8 `fanout_call.rs:630-656`).
+    // (`records/fanout.rs`, 0.5.8 `fanout_call.rs:466-471,624-626`).
     tokio::time::sleep(crate::latency::SET_RPC.max).await;
     let heard = tick(&sim, &mut nodes, 1).await;
     assert!(!heard.is_empty());

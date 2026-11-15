@@ -28,7 +28,7 @@
 //!   `set_value.rs:917`), never the same target under safety routes;
 //!   every [`WATCH_TICK`] (`SEND_VALUE_CHANGES_INTERVAL_SECS`, `constants.rs:14`)
 //!   it sends each watch its changed subkeys, with the value only when one
-//!   subkey changed, and counts the watch down (`:232-277`,
+//!   subkey changed, and counts the watch down (`inbound_watches_interface.rs:232-277`,
 //!   `inbound_watch.rs:124-140`). An identical re-push stores nothing and
 //!   marks nothing (`set_value.rs:823-842`);
 //! - **the watcher** drops the value when more than one subkey changed or the
@@ -291,7 +291,7 @@ fn renew_routes(inner: &mut Inner, now: u64) {
 /// An event the tick sends once the lock is released.
 type Out = (usize, usize, &'static str, PortEvent);
 
-/// The watcher's side of one change (`watch_value.rs:1866-1998`).
+/// The watcher's side of one change (0.5.8 `watch_value.rs:1819-1939,2080-2262`).
 pub(super) fn receive(
     inner: &mut Inner,
     node: usize,
@@ -313,7 +313,7 @@ pub(super) fn receive(
     }
     let desired = inner.nodes[node].watches.get_mut(key)?.as_mut()?;
     let watched = desired.subkeys.clone();
-    // The per-node state takes the replica's count (`watch_value.rs:1882-1891`).
+    // The per-node state takes the replica's count (0.5.8 `watch_value.rs:1890-1929`).
     desired.count = count;
     let first = *subkeys.first()?;
     if subkeys.len() > 1 {

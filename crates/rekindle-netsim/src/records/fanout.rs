@@ -33,7 +33,7 @@
 //!   that did not time out or disqualify: those take no slot, so the window
 //!   widens past a silent or invalid replica (`fanout_call.rs:401-441`; an
 //!   invalid answer disqualifies, `set_value.rs:534-537`,
-//!   `fanout_call.rs:591-592`). Here every replica of a record sits inside
+//!   `fanout_call.rs:586-588`). Here every replica of a record sits inside
 //!   that window ([`super::replicas::REPLICAS`] is the width) and silent or
 //!   invalid ones never count, so the fanout counts accepts from any
 //!   replica it reaches; the netsim places no stores past the tenth, so it
@@ -195,7 +195,7 @@ impl Fanout {
     }
 
     /// `value`, a rival of the fanout's at its seq, is held by `r`
-    /// (`set_value.rs:96-111`).
+    /// (0.5.8 `set_value.rs:94-109`).
     fn rival(&mut self, value: Cipher, r: usize) {
         self.tally.add(&value, r);
         if !self.tally.beats(&value, &self.ctx) {
@@ -209,7 +209,7 @@ impl Fanout {
         self.accepted.push(r);
     }
 
-    /// `r` answered the set of `sent` with `answer` (`set_value.rs:24-94`).
+    /// `r` answered the set of `sent` with `answer` (0.5.8 `set_value.rs:24-90`).
     fn classify(&mut self, r: usize, sent: &Cipher, answer: Offer) {
         let held = match answer {
             Offer::Stored | Offer::Same => sent.clone(),
@@ -452,7 +452,7 @@ fn arrives(inner: &crate::network::Inner, node: usize, key: &str, r: usize) -> b
 }
 
 /// The RPCs still in flight when a set returned land at their arrival,
-/// their answers unread (`fanout_call.rs:630-656`).
+/// their answers unread (0.5.8 `fanout_call.rs:466-471,624-626`).
 async fn land_tail(
     net: Arc<Network>,
     node: usize,

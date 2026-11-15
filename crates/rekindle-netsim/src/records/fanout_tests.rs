@@ -109,7 +109,7 @@ async fn race(seed: u64) -> (Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>, Vec<u8>)
 /// VU2 item 1: two writers' same-seq fanouts no longer split the replicas
 /// until the deadline (0.5.7 restarted on every rival); each tallies the
 /// holders and switches to a rival held by more or closer replicas
-/// (0.5.8 `set_value.rs:96-111`, `value_tally.rs:90-106`). A call that met
+/// (0.5.8 `set_value.rs:94-109`, `value_tally.rs:90-106`). A call that met
 /// a rival returns `Some`, its own value included (`set_value.rs:753-760`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn concurrent_same_seq_sets_settle_by_the_tally() {
@@ -248,7 +248,7 @@ async fn a_set_exhausted_at_three_holders_lands() {
 /// VU2 item 2: a forced get takes a same-seq rival over the local copy
 /// (one holder beats a local floor nobody holds), but not while a write of
 /// ours waits; without force the local copy answers (0.5.8
-/// `get_value.rs:44-90,600-659`).
+/// `get_value.rs:49-88,600-649`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_same_seq_rival_replaces_the_local_copy_only_on_force_with_nothing_pending() {
     let (sim, nodes) = Netsim::nodes(2, 72);

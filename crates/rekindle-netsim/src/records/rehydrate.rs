@@ -7,7 +7,7 @@
 //!   its last check is past [`REHYDRATE_RECHECK`] ([`on_open`]); a create or
 //!   an open from the network queues none. A set refused
 //!   offline (`allow_offline` false, as the pool always sends) queues
-//!   nothing (`local_record_store_interface.rs:61-62`): the push queue is
+//!   nothing (0.5.8 `local_record_store_interface.rs:61-62`): the push queue is
 //!   fed by rehydration only (`rehydrate.rs:284,325`), so it never doubles
 //!   the pool's own durable re-push;
 //! - **the tick:** every second (`OFFLINE_SUBKEY_WRITES_INTERVAL_SECS`,
@@ -17,18 +17,18 @@
 //!   `tasks/rehydrate_records.rs:17-29`), in key order for the seed. An
 //!   offline node pushes nothing (`tasks/offline_subkey_writes.rs:43-46`)
 //!   and keeps its requests (`TryAgain` re-queued, `rehydrate.rs:176-177`,
-//!   `rehydrate_records.rs:55-64`);
+//!   `rehydrate_records.rs:56-64`);
 //! - **which subkeys:** an inspect in the set scope over the replicas the
 //!   node reaches (`inspect_record.rs:425-434`): with no reached replica
 //!   holding the record, every local subkey; else each local subkey newer
 //!   than the network's newest seq, or at it or older with fewer than
-//!   [`SET_COUNT`] replicas at that seq (`rehydrate.rs:241-255,367-402`).
+//!   [`SET_COUNT`] replicas at that seq (`rehydrate.rs:241-255,371-405`).
 //!   A replica with no value at a subkey is no evidence for it: it counts
 //!   toward no seq (`inspect_record.rs:638-652,695-705`);
 //! - **the push:** a queued subkey is sent as a set of its local copy
-//!   (`offline_subkey_writes.rs:47-95`); a replica holding a newer value
+//!   (`tasks/offline_subkey_writes.rs:47-99`); a replica holding a newer value
 //!   restarts the fanout on it ([`super::fanout`]), and a value the
-//!   fanout ended on that is not ours becomes the local copy (`:111-120`).
+//!   fanout ended on that is not ours becomes the local copy (`:111-119`).
 //!   A push that did not land (fewer than
 //!   [`super::replicas::GET_COUNT`] accepts, [`super::fanout`]) keeps the subkey queued
 //!   (`check_fanout_finished_without_consensus`, `mod.rs:990-1029`), else it

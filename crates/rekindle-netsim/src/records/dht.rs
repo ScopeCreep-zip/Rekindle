@@ -25,14 +25,14 @@
 //!   what it returns is [`super::fanout`];
 //! - a get over the network settles on the replicas' tally and keeps the
 //!   local copy unless the settled value replaces it ([`super::replicas`],
-//!   0.5.8 `get_value.rs:600-659`);
+//!   0.5.8 `get_value.rs:600-649`);
 //! - an inspect in the local scope never leaves the node; any other is
 //!   `TryAgain` offline (`inspect_record.rs:312-313`) or with no replica
 //!   reached (0.5.8 `inspect_record.rs:346-349`); UpdateSet reports
 //!   each local seq + 1, and the Update scopes' network seqs start from the
-//!   local result, the Sync ones' from nothing (`:315-332`), then take the
+//!   local result, the Sync ones' from nothing (`:316-332`), then take the
 //!   newest seq of the replicas the node reaches; `offline_subkeys` is the
-//!   node's own push queue plus its sets in flight (`:284-288`);
+//!   node's own push queue plus its sets in flight (`:284-290`);
 //! - a create checks the schema as Veilid ([`super::validate_schema`]);
 //! - a watch's expiration is absolute: too soon on the node's own clock
 //!   (its skew), clamped by each replica on true time;
@@ -489,7 +489,7 @@ impl DhtBackend for SimDht {
         };
         let slot = &inner.nodes[self.node];
         // UpdateSet simulates a set: each local seq + 1
-        // (`inspect_record.rs:315-321`).
+        // (0.5.8 `inspect_record.rs:316-321`).
         let bump = u32::from(scope == ReportScope::UpdateSet);
         let local_seqs: Vec<Option<u32>> = subkeys
             .iter()
@@ -505,7 +505,7 @@ impl DhtBackend for SimDht {
             reachable(&record.replicas, &inner.faults.partitions, self.node)
         };
         // The fanout starts from the local result for the Update scopes,
-        // from nothing for the Sync ones (`:217-228`); Local reports none.
+        // from nothing for the Sync ones (`:328-332`); Local reports none.
         let from_local = matches!(scope, ReportScope::UpdateGet | ReportScope::UpdateSet);
         let network_seqs = subkeys
             .iter()
@@ -517,7 +517,7 @@ impl DhtBackend for SimDht {
             })
             .collect();
         // Its own offline queue, queued or in flight, and the sets in
-        // flight (`inspect_record.rs:284-288`).
+        // flight (0.5.8 `inspect_record.rs:284-290`).
         let offline_subkeys = subkeys
             .iter()
             .copied()

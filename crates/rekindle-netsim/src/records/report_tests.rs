@@ -92,7 +92,7 @@ async fn update_scopes_start_from_the_local_result() {
         seqs(ReportScope::UpdateSet).await,
         (vec![Some(1)], vec![Some(1)])
     );
-    // Only UpdateSet bumps (`inspect_record.rs:208-215`); a Sync scope
+    // Only UpdateSet bumps (0.5.8 `inspect_record.rs:316-321`); a Sync scope
     // reports the network's own seq.
     assert_eq!(
         seqs(ReportScope::SyncSet).await,

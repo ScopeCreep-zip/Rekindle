@@ -26,12 +26,12 @@
 //! - a set's fanout, and a replica's answer to it, are [`super::fanout`];
 //! - a get starts from the local value, which only sets the floor (no
 //!   node's answer stands behind it), takes a newer seq at once, and at the
-//!   newest seq settles a split by the tally (`get_value.rs:44-90`); it is
+//!   newest seq settles a split by the tally (0.5.8 `get_value.rs:49-88`); it is
 //!   done at [`GET_COUNT`] holders of its value (`get_value_count`,
 //!   `veilid_config.rs:1008`). The settled value replaces the local copy
 //!   when its seq is newer, or at the same seq only on a forced refresh
 //!   with no write of ours waiting; otherwise the get returns the local copy
-//!   (`get_value.rs:600-659`).
+//!   (`get_value.rs:600-649`).
 
 use std::collections::HashSet;
 
@@ -315,7 +315,7 @@ pub(crate) fn refresh(
     });
     super::stores::touch(inner, key, &reach);
     // A get that reached the network consumes its report mark
-    // (0.5.8 `get_value.rs:196-197`, [`super::outbound`]).
+    // (0.5.8 `get_value.rs:199-200`, [`super::outbound`]).
     super::outbound::read_back(inner, node, key, subkey);
     let found = inner.records.get(key).and_then(|r| {
         settle(
@@ -330,7 +330,7 @@ pub(crate) fn refresh(
         if found.value.seq != l.value.seq {
             return found.value.seq > l.value.seq;
         }
-        // `get_result_replaces_local` (`get_value.rs:636-659`).
+        // `get_result_replaces_local` (0.5.8 `get_value.rs:633-649`).
         force
             && found != *l
             && !inner.nodes[node]

@@ -142,7 +142,7 @@ impl RecordStore for FakeRecords {
 const CRYPTO_KIND: [u8; 4] = *b"VLD0";
 
 /// A schema's compiled bytes, as Veilid's `DHTSchema::compile`
-/// (`schema/dflt.rs:48-55`, `schema/smpl.rs:106-122`): the kind's four
+/// (`schema/dflt.rs:48-55`, `schema/smpl.rs:105-121`): the kind's four
 /// bytes, `o_cnt` little-endian, then each SMPL member's id and `m_cnt`
 /// little-endian.
 pub(crate) fn schema_bytes(schema: &RecordSchema) -> Vec<u8> {
@@ -168,10 +168,11 @@ pub(crate) fn schema_bytes(schema: &RecordSchema) -> Vec<u8> {
 }
 
 /// A record key in Veilid's text form, derived as Veilid derives it
-/// (`storage_manager/record_key.rs:67-94`): the opaque key is BLAKE3 over
-/// the crypto kind, the owner's public key and the compiled schema, and the
-/// key text is `VLD0:<opaque>:<encryption key>`, both base64url without
-/// padding (`crypto_typed.rs:76-81`, `record_key.rs:61-67`).
+/// (0.5.8 `veilid_api/types/dht/derivation.rs:4-29,56-82`): the opaque
+/// key is BLAKE3 over the crypto kind, the owner's public key and the
+/// compiled schema, and the key text is `VLD0:<opaque>:<encryption key>`,
+/// both base64url without padding (`crypto_typed.rs:76-81`,
+/// `crypto/types/record_key.rs:60-67`).
 pub(crate) fn record_key_text(
     owner: &[u8; 32],
     schema: &RecordSchema,
@@ -190,7 +191,8 @@ pub(crate) fn record_key_text(
 
 /// A record key text in canonical form, or `None` when it is not
 /// `VLD0:<opaque>` or `VLD0:<opaque>:<encryption key>` with each part 32
-/// bytes (`record_key.rs:100-122`, `check_record_key`).
+/// bytes (0.5.8 `crypto/types/record_key.rs:100-126`;
+/// `check_dht_record_key`, `veilid_api/types/dht/derivation.rs:32-54`).
 pub(crate) fn canonical_key_text(key: &str) -> Option<String> {
     let part = |text: &str| {
         URL_SAFE_NO_PAD
@@ -209,7 +211,7 @@ pub(crate) fn canonical_key_text(key: &str) -> Option<String> {
 }
 
 /// A fresh record encryption key from the node's generator, as Veilid's
-/// `random_shared_secret` in `create_record.rs:88-89`.
+/// `random_shared_secret` in 0.5.8 `create_record.rs:93`.
 pub(crate) fn new_encryption_key(rng: &dyn RandomSource) -> [u8; 32] {
     let mut bytes = [0u8; 32];
     rng.fill(&mut bytes);
@@ -266,7 +268,7 @@ fn subkey_count(schema: &RecordSchema) -> u32 {
 }
 
 /// Veilid's schema checks (`schema/mod.rs:22-24`, `schema/dflt.rs:30-35`,
-/// `schema/smpl.rs:31,49-90`): 1 to 1024 subkeys, DFLT `o_cnt > 0`; SMPL at
+/// `schema/smpl.rs:30,47-90`): 1 to 1024 subkeys, DFLT `o_cnt > 0`; SMPL at
 /// most 256 members and 256 writers (the owner when it has subkeys, and
 /// each member with subkeys).
 pub(crate) fn validate_schema(schema: &RecordSchema) -> Result<(), String> {

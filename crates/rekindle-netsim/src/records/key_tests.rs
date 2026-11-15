@@ -1,5 +1,5 @@
 //! A record key binds its owner, schema and encryption key, as Veilid
-//! derives it (`storage_manager/record_key.rs:67-94`).
+//! derives it (0.5.8 `veilid_api/types/dht/derivation.rs:4-29,56-82`).
 
 use std::sync::Arc;
 

@@ -7,7 +7,7 @@
 //!   `watch_value.rs:2444-2468`), when its fallback silence timer is due
 //!   ([`super::outbound`], `tasks/check_outbound_watches.rs:8-68`), and
 //!   when the watch's parameters change or a replica newly holds it
-//!   (`watch_value.rs:1317-1325`). 0.5.7's tick-lag sweep is gone (0.5.8
+//!   (`watch_value.rs:1318-1322`). 0.5.7's tick-lag sweep is gone (0.5.8
 //!   `constants.rs` has no `CHANGE_INSPECT_LAG`). Queued inspections run at
 //!   the next watch tick, the oldest first, at most [`MAX_IN_FLIGHT`] at
 //!   once (`outbound_watch_manager/mod.rs:371-395`), and none while the
@@ -15,7 +15,7 @@
 //!   `check_outbound_watches.rs:105-173`). One that no replica answers is
 //!   queued again after [`CHANGE_INSPECT_RETRY_INTERVAL`], doubling per
 //!   failure up to [`MAX_INSPECT_INTERVAL`] (`requeue_failed_change_inspect`,
-//!   `watch_value.rs:2403-2442`; `failure_backoff`,
+//!   `watch_value.rs:2403-2435`; `failure_backoff`,
 //!   `network_manager/online_detector.rs:117-131`, survival 1);
 //! - **what:** an inspect of the watched subkeys over the replicas the node
 //!   reaches gives the subkeys where the network is ahead of the local copy
@@ -23,7 +23,7 @@
 //!   it. One newer subkey is read (a network get, stored locally when its
 //!   seq moved) and reported with its value when newer than the local seq;
 //!   several are reported as the range with no value and no read
-//!   (`watch_value.rs:1433-1520`). Each report counts the watch down.
+//!   (`watch_value.rs:1433-1516`). Each report counts the watch down.
 //!   Nothing newer reports nothing.
 //!
 //! An inspection's answer arrives after an inspect's latency, plus a get's
@@ -170,7 +170,7 @@ fn requeue_failed(inner: &mut Inner, node: usize, key: &str, at: u64) {
     enqueue_at(inner, node, key, at.saturating_add(delay));
 }
 
-/// One inspection of `node`'s watch on `key` (`watch_value.rs:1433-1520`):
+/// One inspection of `node`'s watch on `key` (0.5.8 `watch_value.rs:1433-1516`):
 /// `None` when no replica answered (a failure), else what it reports and
 /// when its answer is in.
 fn inspect(
