@@ -240,8 +240,10 @@ pub(crate) fn duplicate(host: &dyn FriendHost, from: &str, digest: &[u8; 32]) {
 
 /// D23's receiver rule on an applied entry's chain seq
 /// (`repo::stream_cursors::step`), whatever path brought it; a gap is held
-/// for the chain diff the hint started. So `DmAck.through`, the cursor, is
-/// the highest contiguous chain seq applied by any path.
+/// for the chain diff the hint started, and a seq applied past it is
+/// remembered, so the cursor absorbs it when the gap fills (E2.5i R1-3).
+/// So `DmAck.through`, the cursor read at the flush, is the highest
+/// contiguous chain seq applied by any path.
 async fn step_cursor(host: &dyn FriendHost, from: &str, chain_seq: u64) {
     if chain_seq == 0 {
         return;
@@ -256,7 +258,7 @@ async fn step_cursor(host: &dyn FriendHost, from: &str, chain_seq: u64) {
     .await;
     match stepped {
         Ok(at) if chain_seq > at + 1 => {
-            tracing::debug!(from = %from, chain_seq, cursor = at, "hint past a gap: held for the diff");
+            tracing::debug!(from = %from, chain_seq, cursor = at, "applied past a gap: remembered, the gap held for the diff");
         }
         Ok(_) => {}
         Err(e) => tracing::debug!(from = %from, error = %e, "chain cursor not stepped"),
@@ -369,35 +371,58 @@ pub async fn flush_held(host: &dyn FriendHost) {
 
 /// `from` acknowledged entries of our stream to them.
 pub(crate) async fn on_ack(host: &dyn FriendHost, from: &str, ack: &DmAck) {
-    let outbox = match host.outbox() {
-        Ok(outbox) => outbox,
-        Err(e) => {
-            tracing::debug!(error = %e, "DmAck with no outbox");
-            return;
+    match host.outbox() {
+        Ok(outbox) => {
+            let ingested = ingest(outbox.as_ref(), from, ack).await;
+            tracing::debug!(from = %from, through = ack.through,
+                through_raised = ingested.through_raised, covered = ?ack.stream_seqs,
+                settled = ?ingested.settled, unmatched = ?ingested.unmatched, "DmAck ingested");
         }
-    };
-    let mut through_raised = 0;
-    if ack.through > 0 {
-        match outbox.acknowledge_chain_through(from, ack.through).await {
-            Ok(n) => through_raised = n,
-            Err(e) => tracing::warn!(from = %from, error = %e, "DmAck through not applied"),
-        }
+        Err(e) => tracing::debug!(error = %e, "DmAck with no outbox"),
     }
-    let (mut settled, mut unmatched) = (Vec::new(), Vec::new());
+}
+
+/// What one `DmAck` settled.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Ingested {
+    /// The seqs it named that settled a row or raised an echo.
+    settled: Vec<u64>,
+    /// The seqs it named that found neither: already settled (a re-ack)
+    /// or never ours.
+    unmatched: Vec<u64>,
+    /// How many entries its `through` raised beyond those.
+    through_raised: usize,
+}
+
+/// Apply `ack` from `from`: the seqs it names first, then `through`.
+/// `through` covers most of them, and applied first it left each named seq
+/// finding no row and no echo to raise, logged `unmatched` though it was
+/// delivered (E2.5i R2-3, R2-6).
+async fn ingest(outbox: &dyn super::outbox::DmOutbox, from: &str, ack: &DmAck) -> Ingested {
+    let mut out = Ingested::default();
     for seq in &ack.stream_seqs {
         let Ok(stream_seq) = i64::try_from(*seq) else {
-            unmatched.push(*seq);
+            out.unmatched.push(*seq);
             continue;
         };
         match outbox.acknowledge(from, stream_seq).await {
-            Ok(true) => settled.push(*seq),
-            Ok(false) => unmatched.push(*seq),
+            Ok(true) => out.settled.push(*seq),
+            Ok(false) => out.unmatched.push(*seq),
             Err(e) => tracing::warn!(from = %from, error = %e, "DmAck not applied"),
         }
     }
-    tracing::debug!(from = %from, through = ack.through, through_raised,
-        covered = ?ack.stream_seqs, ?settled, ?unmatched, "DmAck ingested");
+    if ack.through > 0 {
+        match outbox.acknowledge_chain_through(from, ack.through).await {
+            Ok(n) => out.through_raised = n,
+            Err(e) => tracing::warn!(from = %from, error = %e, "DmAck through not applied"),
+        }
+    }
+    out
 }
+
+#[cfg(test)]
+#[path = "ack_ingest_tests.rs"]
+mod ingest_tests;
 
 #[cfg(test)]
 mod tests {
