@@ -216,6 +216,15 @@ impl AppMessagePort for Bounded {
         .await
     }
 
+    async fn call_own(
+        &self,
+        class: RouteClass,
+        profile: &SafetyProfile,
+        message: Vec<u8>,
+    ) -> Result<Vec<u8>, PortError> {
+        within(profile, self.inner.call_own(class, profile, message)).await
+    }
+
     async fn reply(&self, call_id: AppCallId, message: Vec<u8>) -> Result<(), PortError> {
         self.inner.reply(call_id, message).await
     }
@@ -296,6 +305,14 @@ mod tests {
         ) -> Result<Vec<u8>, PortError> {
             std::future::pending().await
         }
+        async fn call_own(
+            &self,
+            _: RouteClass,
+            _: &SafetyProfile,
+            _: Vec<u8>,
+        ) -> Result<Vec<u8>, PortError> {
+            std::future::pending().await
+        }
         async fn reply(&self, _: AppCallId, _: Vec<u8>) -> Result<(), PortError> {
             Ok(())
         }
@@ -313,6 +330,11 @@ mod tests {
         assert!(matches!(pinned, Err(PortError::Send(ref m)) if m.contains("timed out")));
         assert_eq!(started.elapsed(), app_call_deadline(&profile));
         assert!(port.call(&target, &profile, vec![1]).await.is_err());
+        // The owner's route self-test (plan RH1r-c O1) is a call like any.
+        let started = tokio::time::Instant::now();
+        let own = port.call_own(RouteClass::General, &profile, vec![1]).await;
+        assert!(matches!(own, Err(PortError::Send(ref m)) if m.contains("timed out")));
+        assert_eq!(started.elapsed(), app_call_deadline(&profile));
     }
 
     #[tokio::test(start_paused = true)]
