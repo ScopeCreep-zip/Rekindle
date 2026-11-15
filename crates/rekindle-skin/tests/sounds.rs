@@ -182,3 +182,71 @@ fn manifest_sounds_name_held_files_under_sounds() {
     assert_eq!(err.entry, "sounds/ding.wav");
     assert!(matches!(err.rule, SkinRule::MissingEntry { .. }));
 }
+
+/// CRC-8, polynomial 0x07 (FLAC frame header).
+fn crc8(bytes: &[u8]) -> u8 {
+    bytes.iter().fold(0u8, |mut crc, byte| {
+        crc ^= byte;
+        for _ in 0..8 {
+            crc = if crc & 0x80 == 0 {
+                crc << 1
+            } else {
+                (crc << 1) ^ 0x07
+            };
+        }
+        crc
+    })
+}
+
+/// CRC-16, polynomial 0x8005 (FLAC frame footer).
+fn crc16(bytes: &[u8]) -> u16 {
+    bytes.iter().fold(0u16, |mut crc, byte| {
+        crc ^= u16::from(*byte) << 8;
+        for _ in 0..8 {
+            crc = if crc & 0x8000 == 0 {
+                crc << 1
+            } else {
+                (crc << 1) ^ 0x8005
+            };
+        }
+        crc
+    })
+}
+
+/// A mono 8 kHz 16-bit FLAC of `frames` frames of 4096 constant samples,
+/// whose STREAMINFO leaves the total sample count unknown (0, RFC 9639
+/// §8.2): only counting the decoded frames bounds its length.
+fn flac(frames: u8) -> Vec<u8> {
+    let mut out = b"fLaC".to_vec();
+    out.extend_from_slice(&[0x80, 0, 0, 34]); // last block, STREAMINFO, 34 bytes
+    out.extend_from_slice(&4096u16.to_be_bytes());
+    out.extend_from_slice(&4096u16.to_be_bytes());
+    out.extend_from_slice(&[0; 6]); // frame sizes unknown
+    let packed: u64 = (8000 << 44) | (15 << 36); // rate, mono, 16 bits, total 0
+    out.extend_from_slice(&packed.to_be_bytes());
+    out.extend_from_slice(&[0; 16]); // MD5 unknown
+    for number in 0..frames {
+        // Sync + fixed blocking; 4096 samples, 8 kHz; mono, 16 bits; number.
+        let mut frame = vec![0xff, 0xf8, 0xc4, 0x08, number];
+        frame.push(crc8(&frame));
+        frame.extend_from_slice(&[0x00, 0x01, 0x00]); // CONSTANT subframe, 256
+        let footer = crc16(&frame);
+        frame.extend_from_slice(&footer.to_be_bytes());
+        out.extend_from_slice(&frame);
+    }
+    out
+}
+
+#[test]
+fn a_flac_of_unknown_length_is_bounded_by_counting_its_frames() {
+    let out = run(&[Entry::file("sounds/ok.flac", &flac(2))]).unwrap();
+    let reader = hound::WavReader::new(Cursor::new(&out["sounds/ok.flac"])).unwrap();
+    assert_eq!((reader.spec().sample_rate, reader.duration()), (8000, 8192));
+    // Ten frames are 40 960 samples, past 5 s at 8 kHz.
+    assert_eq!(
+        refused(&[Entry::file("sounds/long.flac", &flac(10))]),
+        SkinRule::SoundTooLong {
+            max_seconds: MAX_SOUND_SECONDS
+        }
+    );
+}
