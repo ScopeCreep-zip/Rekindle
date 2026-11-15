@@ -281,4 +281,40 @@ pub enum SkinRule {
     AliasCycle { token: String },
     #[error("{token}: the alias names {target}, which the file does not define")]
     UnresolvedAlias { token: String, target: String },
+    #[error("expected {expected}")]
+    UnsupportedEntryType { expected: String },
+    #[error("{format} images are refused; skins carry PNG and GIF only")]
+    RefusedImageFormat { format: String },
+    #[error("declared {declared}, but the bytes are {found}")]
+    ImageKindMismatch { declared: String, found: String },
+    #[error("an animated PNG (APNG); a skin's animations are GIFs")]
+    AnimatedPng,
+    #[error("{width} × {height} px; at most {max} × {max}")]
+    ImageSide { width: u32, height: u32, max: u32 },
+    #[error("a frame is larger than {max} × {max} px")]
+    ImageFrameSide { max: u32 },
+    #[error("{pixels} pixels; at most {max}")]
+    ImagePixels { pixels: u64, max: u64 },
+    #[error("more than {max} frames")]
+    TooManyFrames { max: u32 },
+    #[error("decoding needs more than {max} bytes")]
+    ImageAllocation { max: u64 },
+    #[error("the images hold at least {pixels} pixels together; at most {max}")]
+    ImagesTotalPixels { pixels: u64, max: u64 },
+    #[error("image decode: {detail}")]
+    ImageDecode { detail: String },
+    #[error("image encode: {detail}")]
+    ImageEncode { detail: String },
+    #[error("{count} sound cues, the limit is {max}")]
+    TooManySoundCues { count: u64, max: u64 },
+    #[error("longer than {max_seconds} s")]
+    SoundTooLong { max_seconds: u32 },
+    #[error("sample rate {rate} Hz, at most {max}")]
+    SampleRateTooHigh { rate: u32, max: u32 },
+    #[error("{channels} channels, at most {max}")]
+    TooManyChannels { channels: u32, max: u32 },
+    #[error("sound decode: {detail}")]
+    SoundDecode { detail: String },
+    #[error("sound encode: {detail}")]
+    SoundEncode { detail: String },
 }

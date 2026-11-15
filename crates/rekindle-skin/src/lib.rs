@@ -12,6 +12,10 @@
 //! * [`tokens::parse`]: a variant's token file (restricted DTCG 2025.10),
 //!   checked against [`registry`], and [`tokens::emit`], the numeric
 //!   re-emitter.
+//! * [`images::validate`]: every picture decoded under limits and
+//!   re-encoded to canonical PNG or GIF (validator step 4).
+//! * [`sounds::validate`]: every sound cue decoded and re-encoded to PCM16
+//!   WAV (validator step 5).
 //! * [`registry`]: the closed token registry, and [`generate`], the
 //!   artefacts `cargo xtask gen-skin-registry` writes from it.
 //!
@@ -23,12 +27,14 @@
 
 mod colour;
 pub mod generate;
+pub mod images;
 pub mod manifest;
 pub mod package;
 pub mod registry;
+pub mod sounds;
 pub mod tokens;
 
-/// The package bounds of the §6 limits ledger.
+/// The package, image and sound bounds of the §6 limits ledger.
 pub mod limits {
     /// A whole package.
     pub const MAX_PACKAGE_BYTES: u64 = 16 * 1024 * 1024;
@@ -36,4 +42,24 @@ pub mod limits {
     pub const MAX_ENTRIES: u64 = 512;
     /// `manifest.json`.
     pub const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
+    /// An image's longest side, px (≤ 2048²).
+    pub const MAX_IMAGE_SIDE: u32 = 2048;
+    /// An image's pixels (≤ 4 Mpx).
+    pub const MAX_IMAGE_PIXELS: u64 = 4_000_000;
+    /// An animated GIF's frames.
+    pub const MAX_IMAGE_FRAMES: u32 = 128;
+    /// Every image's pixels together, each animation frame counted
+    /// (≤ 64 Mpx total).
+    pub const MAX_TOTAL_IMAGE_PIXELS: u64 = 64_000_000;
+    /// What decoding one still image may hold: a 4 Mpx RGBA16 buffer
+    /// (32 MB) and the decoder's own state.
+    pub const MAX_IMAGE_ALLOC: u64 = 64 * 1024 * 1024;
+    /// Sound cues (files under `sounds/`).
+    pub const MAX_SOUND_CUES: u64 = 64;
+    /// A cue's length, seconds.
+    pub const MAX_SOUND_SECONDS: u32 = 5;
+    /// A cue's sample rate, Hz.
+    pub const MAX_SAMPLE_RATE: u32 = 48_000;
+    /// A cue's channels.
+    pub const MAX_SOUND_CHANNELS: u32 = 2;
 }

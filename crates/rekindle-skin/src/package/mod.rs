@@ -45,6 +45,11 @@ impl<'a> Package<'a> {
     pub fn get(&self, name: &str) -> Option<&'a [u8]> {
         self.files.get(name).copied()
     }
+
+    /// Every file, by name in byte order, with its data.
+    pub fn files(&self) -> impl Iterator<Item = (&str, &'a [u8])> + '_ {
+        self.files.iter().map(|(name, data)| (name.as_str(), *data))
+    }
 }
 
 /// Walks `bytes` as a skin package.

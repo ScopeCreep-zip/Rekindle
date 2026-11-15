@@ -13,7 +13,9 @@
 //!   ([`ImageError::TooLarge`]); decoding then runs under `image::Limits`
 //!   (`max_image_width`, `max_image_height`, `max_alloc`, which `image`
 //!   hands on to the `png` crate as `png::Limits`), and an animated GIF's
-//!   frames are counted and their memory summed.
+//!   frames are counted and their memory summed. [`read_header`] reads
+//!   the size alone (and whether a PNG is animated), so a caller can sum
+//!   several images before decoding any.
 //! * The output is re-encoded ([`encode_png`], [`encode_gif`],
 //!   [`encode_webp`]): pixels only, no metadata carried over.
 //!
@@ -27,9 +29,9 @@ mod encode;
 mod error;
 mod kind;
 
-pub use decode::{decode_limited, DecodeLimits, Decoded, Frames};
+pub use decode::{decode_limited, read_header, DecodeLimits, Decoded, Frames, Header};
 pub use encode::{encode_gif, encode_png, encode_webp, fit_within, fit_within_box};
 pub use error::{ImageError, TooLarge};
-pub use image::{DynamicImage, Frame, RgbaImage};
+pub use image::{DynamicImage, Frame, Rgba, RgbaImage};
 pub use kind::kind_of;
 pub use rekindle_types::image_kind::ImageKind;

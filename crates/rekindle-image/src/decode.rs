@@ -3,6 +3,7 @@
 use std::io::Cursor;
 
 use image::codecs::gif::GifDecoder;
+use image::codecs::png::PngDecoder;
 use image::error::LimitErrorKind;
 use image::{AnimationDecoder, DynamicImage, Frame, ImageDecoder, ImageFormat, ImageReader};
 use rekindle_types::image_kind::ImageKind;
@@ -94,6 +95,76 @@ impl Decoded {
     }
 }
 
+/// What an image's header says, read without decoding a pixel.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Header {
+    /// The width, px (a GIF's logical screen).
+    pub width: u32,
+    /// The height, px.
+    pub height: u32,
+    /// A PNG that carries an `acTL` chunk before its first `IDAT`: an
+    /// animated PNG (APNG spec §4), which a still decode would show as its
+    /// default image only. Always `false` for the other kinds.
+    pub animated_png: bool,
+}
+
+impl Header {
+    /// Width × height.
+    #[must_use]
+    pub fn pixels(&self) -> u64 {
+        u64::from(self.width) * u64::from(self.height)
+    }
+}
+
+/// Read the header of `bytes`, which the caller declares to be `declared`,
+/// holding at most `max_alloc` bytes: a caller summing several images'
+/// sizes reads every header before decoding any of them.
+///
+/// # Errors
+/// [`ImageError::KindMismatch`] when the bytes are another kind (or none),
+/// [`ImageError::TooLarge`] past `max_alloc`, and [`ImageError::Decode`]
+/// when the header is malformed.
+pub fn read_header(
+    bytes: &[u8],
+    declared: ImageKind,
+    max_alloc: u64,
+) -> Result<Header, ImageError> {
+    let limits = DecodeLimits {
+        max_width: u32::MAX,
+        max_height: u32::MAX,
+        max_pixels: u64::MAX,
+        max_alloc,
+        frames: Frames::First,
+    };
+    if !has_magic(bytes, declared) {
+        return Err(ImageError::KindMismatch {
+            declared,
+            found: kind_of(bytes),
+        });
+    }
+    let (width, height) = header_dimensions(bytes, format_of(declared), &limits)?;
+    let animated_png = declared == ImageKind::Png && {
+        let mut header_limits = image::Limits::no_limits();
+        header_limits.max_alloc = Some(max_alloc);
+        PngDecoder::with_limits(Cursor::new(bytes), header_limits)
+            .and_then(|decoder| decoder.is_apng())
+            .map_err(|e| refused(e, &limits))?
+    };
+    Ok(Header {
+        width,
+        height,
+        animated_png,
+    })
+}
+
+fn format_of(kind: ImageKind) -> ImageFormat {
+    match kind {
+        ImageKind::Png => ImageFormat::Png,
+        ImageKind::Jpeg => ImageFormat::Jpeg,
+        ImageKind::Gif => ImageFormat::Gif,
+    }
+}
+
 /// Decode `bytes`, which the caller declares to be `declared`.
 ///
 /// The magic bytes must be `declared`'s, and only `declared`'s decoder
@@ -116,11 +187,7 @@ pub fn decode_limited(
             found: kind_of(bytes),
         });
     }
-    let format = match declared {
-        ImageKind::Png => ImageFormat::Png,
-        ImageKind::Jpeg => ImageFormat::Jpeg,
-        ImageKind::Gif => ImageFormat::Gif,
-    };
+    let format = format_of(declared);
     let (width, height) = header_dimensions(bytes, format, limits)?;
     limits.check(width, height)?;
     if let (ImageKind::Gif, Frames::AtMost(max_frames)) = (declared, limits.frames) {

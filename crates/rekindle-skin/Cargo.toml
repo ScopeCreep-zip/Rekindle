@@ -12,10 +12,15 @@ workspace = true
 
 [dependencies]
 crc32fast = "1.5"
+# PCM16 WAV writer for the re-encoded sound cues (Apache-2.0).
+hound = "3.5"
+rekindle-image = { path = "../rekindle-image" }
 rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 spdx = "0.10"
+# Sound decoders: WAV (PCM), Ogg Vorbis and FLAC only, pure Rust (MPL-2.0).
+symphonia = { version = "0.5", default-features = false, features = [ "wav", "pcm", "ogg", "vorbis", "flac" ] }
 unicode-normalization = "0.1.25"
 
 [[test]]

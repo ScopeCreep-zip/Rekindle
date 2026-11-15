@@ -2,6 +2,8 @@
 //! Verify), and the minimal valid package.
 
 mod common;
+mod images;
 mod manifest;
 mod package;
+mod sounds;
 mod tokens;
