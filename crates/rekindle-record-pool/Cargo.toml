@@ -7,6 +7,11 @@ description = "The session's DHT record pool over the Veilid-free DhtBackend por
 [lints]
 workspace = true
 
+[features]
+# `test_support::MemDht`: other crates' tests drive their callers through a
+# real pool over it.
+test-support = []
+
 [dependencies]
 async-trait = "0.1"
 futures = { workspace = true }

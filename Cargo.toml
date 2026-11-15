@@ -136,6 +136,13 @@ libcrux-ml-kem = "=0.0.9"
 [profile.dev.package.argon2]
 opt-level = 3
 
+# veilid-core 0.5.8 holds monomorphic entry points for its hot dependencies
+# (lz4 among them) in veilid-core-optimized, "compiled at full optimization
+# in every build profile" (its Cargo.toml); a package override reaches only
+# the package's own code, so name it here for Rekindle's dev builds.
+[profile.dev.package.veilid-core-optimized]
+opt-level = 3
+
 [workspace.lints.rust]
 warnings = "deny"
 unused-imports = "deny"
@@ -168,12 +175,15 @@ undocumented-unsafe-blocks = "deny" # every unsafe block needs // SAFETY: commen
 print-stdout = "warn"               # prefer tracing over println!
 print-stderr = "warn"               # prefer tracing over eprintln!
 
-# veilid-core 0.5.7 plus one fix, pinned by commit, until a Veilid release
-# carries it: a route chosen for a reply or a safety route is held until it
-# is used, and a release of a held route drains instead of removing it
-# ("Invalid target: route key does not exist", dropped rehydration
-# requests). Branch rekindle/v0.5.7-route-drain = the upstream v0.5.7 tree
-# (f5cdcca) + that commit; the same commit is the upstream MR. Keep
-# deny.toml's allow-git in sync.
+# veilid-core 0.5.8 plus one fix, pinned by commit, until a Veilid release
+# carries it (ADR 0017): a route chosen for a reply or a safety route is held
+# until it is used, and a release of a held route drains instead of removing
+# it ("Invalid target: route key does not exist", dropped rehydration
+# requests); a route marked for release is not saved. Branch
+# rekindle/v0.5.8-route-drain = the upstream v0.5.8 tree (snapshot dcf0b315)
+# + that commit (91453e97); the same change is the upstream MR. Keep
+# deny.toml's allow-git and .cargo/config.toml in sync. 0.5.8's table-store
+# migration is one-way: a 0.5.7 build cannot open its storage (SCHEMA_VERSION
+# resets all three stores together on the bump).
 [patch.crates-io]
-veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "0cd847debfaee427eeceeb5046ad48cd85540d63" }
+veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "91453e97e8ef467aa7c7c3b5e871a7ed5738f941" }

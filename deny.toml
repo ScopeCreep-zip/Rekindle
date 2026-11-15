@@ -116,15 +116,15 @@ deny = [
     # { name = "chacha20poly1305",  wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
     # { name = "hkdf",              wrappers = ["rekindle-secrets"], reason = "Tier 2 sole crypto boundary." },
     #
-    # ─── Veilid centralisation (PENDING enforcement) ────────────────────
+    # ─── Veilid boundary (ADR 0014, PENDING enforcement here) ──────────
     #
-    # Only `rekindle-transport` (daemon track) and `rekindle-protocol`
-    # (desktop track) may import veilid-core directly. Several crates
-    # still violate this (rekindle-records, rekindle-route,
-    # rekindle-sync, rekindle-voice, rekindle-node) — same situation
-    # as the crypto rule.
+    # The boundary is transitive: only `rekindle-protocol`,
+    # `rekindle-transport`, `rekindle-node` and, until F1,
+    # `rekindle-desktop` may link veilid-core (ADR 0021 keeps the record
+    # pool's logic Veilid-free). `cargo xtask check` enforces it today;
+    # this entry would let cargo-deny enforce the direct-dependency half.
     #
-    # { name = "veilid-core",       wrappers = ["rekindle-transport", "rekindle-protocol"], reason = "Veilid integration is centralised." },
+    # { name = "veilid-core",       wrappers = ["rekindle-protocol", "rekindle-transport", "rekindle-node", "rekindle-desktop"], reason = "ADR 0014: the Veilid boundary is transitive." },
 ]
 skip = [
     # Tolerated duplicates. Each entry must be revisited when the
@@ -152,8 +152,9 @@ allow-git = [
     # Pinned git deps already in Cargo.toml. Keep this list in sync
     # with `[patch.crates-io]` and any `git = "..."` entries.
     "https://github.com/mcginty/snow",
-    # veilid-core 0.5.7 + the route select/release drain fix, until a Veilid
-    # release carries it (plan C7.18 note, root Cargo.toml [patch.crates-io]).
+    # veilid-core 0.5.8 + the route select/release drain fix (branch
+    # rekindle/v0.5.8-route-drain, rev 91453e97), until a Veilid release
+    # carries it (ADR 0017, root Cargo.toml [patch.crates-io]).
     "https://github.com/radicalkjax/veilid.git",
 ]
 

@@ -20,6 +20,8 @@ pub fn parse_record_key(key: &str) -> Result<veilid_core::RecordKey, ProtocolErr
 }
 
 #[cfg(test)]
+mod contested_tests;
+#[cfg(test)]
 mod tests {
     use base64::Engine;
 

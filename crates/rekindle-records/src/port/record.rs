@@ -19,16 +19,19 @@ pub struct RecordValue {
 /// What a write did on the network.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SetOutcome {
-    /// Stored at consensus.
+    /// Stored at consensus (ours settled, possibly over a rival at its
+    /// seq, which is only logged).
     Landed,
     /// The fanout finished below consensus; nothing was stored or queued.
     BelowConsensus,
     /// The node is offline; nothing was stored or queued.
     Offline,
-    /// The network already holds a newer value, returned here.
+    /// The write settled on another value (newer, or a rival at our seq
+    /// that won the tally), returned here. A settled value whose data and
+    /// writer are ours is `Landed` or `Unchanged`, never this.
     Superseded(RecordValue),
-    /// The value equals the local copy; it was re-pushed and no newer value
-    /// came back. It proves nothing about the network copy.
+    /// The value equals the local copy; it was re-pushed and no other value
+    /// settled. It proves nothing about the network copy.
     Unchanged,
 }
 

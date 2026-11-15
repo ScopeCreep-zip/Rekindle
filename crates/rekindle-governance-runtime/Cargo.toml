@@ -37,6 +37,8 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
+# The member record's writes driven through a real pool (plan VU1).
+rekindle-record-pool = { path = "../rekindle-record-pool", features = [ "test-support" ] }
 rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" ] }
 mockall = "0.13"
 tokio = { workspace = true, features = [ "macros", "rt-multi-thread", "test-util" ] }

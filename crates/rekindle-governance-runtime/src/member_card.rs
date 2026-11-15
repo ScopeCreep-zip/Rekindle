@@ -98,7 +98,8 @@ async fn write_subkey(
     let written = port.set(lease, subkey, bytes, Some(own.writer)).await;
     port.release(lease).await;
     match written.map_err(|e| format!("write member record subkey {subkey}: {e}"))? {
-        SetOutcome::Landed => Ok(()),
+        // An identical rewrite (`Unchanged`) is ours on the network too.
+        SetOutcome::Landed | SetOutcome::Unchanged => Ok(()),
         other => Err(format!(
             "member record subkey {subkey} not stored: {other:?}"
         )),
@@ -279,3 +280,7 @@ pub async fn refresh_pending_cards<D: crate::deps::GovernanceRuntimeDeps>(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "member_card_tests.rs"]
+mod tests;

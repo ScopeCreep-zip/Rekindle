@@ -16,8 +16,8 @@ use rekindle_types::config::{
 };
 use veilid_core::{
     AllowOffline, BareMemberId, DHTRecordDescriptor, DHTRecordReport, DHTReportScope, DHTSchema,
-    DHTSchemaSMPLMember, KeyPair, RecordKey, RoutingContext, SafetySelection, SafetySpec,
-    Sequencing, SetDHTValueOptions, Stability, Timestamp, ValueData, ValueSeqNum,
+    DHTSchemaSMPLMember, KeyPair, OpenDHTRecordOptions, RecordKey, RoutingContext, SafetySelection,
+    SafetySpec, Sequencing, SetDHTValueOptions, Stability, Timestamp, ValueData, ValueSeqNum,
     ValueSubkeyRangeSet, VeilidAPIError, VeilidValueChange, CRYPTO_KIND_VLD0,
 };
 
@@ -249,8 +249,13 @@ impl DhtBackend for VeilidDht {
         writer: Option<&WriterKey>,
     ) -> Result<RecordDescriptor, DhtCallError> {
         let writer = writer.map(keypair).transpose()?;
+        // Rehydrate on reopen, Veilid's default and 0.5.7's only behaviour;
+        // plan VU3 chooses per open intent (Hold / Check).
+        let options = OpenDHTRecordOptions {
+            rehydrate: Some(true),
+        };
         self.rc
-            .open_dht_record(record_key(key)?, writer)
+            .open_dht_record(record_key(key)?, writer, Some(options))
             .await
             .map(|d| descriptor(&d))
             .map_err(|e| dht_error(&e))
@@ -292,6 +297,7 @@ impl DhtBackend for VeilidDht {
                 Some(SetDHTValueOptions {
                     writer,
                     allow_offline: Some(AllowOffline(false)),
+                    min_seqnum: None,
                 }),
             )
             .await

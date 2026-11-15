@@ -127,8 +127,9 @@ pub async fn enqueue_inbox(
 /// another requester's request.
 pub const INBOX_TAKEN: &str = "the invite was already used";
 
-/// One write of an invite's redemption: stored (or already ours) settles
-/// it `sent`; a miss is attempted again; an inbox holding another value
+/// One write of an invite's redemption: stored (or already ours, which the
+/// pool reports as `Landed` or `Unchanged` even over a rival) settles it
+/// `sent`; a miss is attempted again; an inbox holding another value
 /// fails it visibly ([`INBOX_TAKEN`]), as does a write the schema or
 /// writer refuses ([`refuses`]); any other error is attempted again.
 async fn attempt_inbox(
@@ -148,7 +149,6 @@ async fn attempt_inbox(
         .await
     {
         Ok(SetOutcome::Landed | SetOutcome::Unchanged) => Attempt::Sent,
-        Ok(SetOutcome::Superseded(value)) if value.data == frame => Attempt::Sent,
         Ok(SetOutcome::Superseded(_)) => Attempt::Wedged(INBOX_TAKEN.to_owned()),
         Ok(outcome @ (SetOutcome::BelowConsensus | SetOutcome::Offline)) => {
             tracing::debug!(?outcome, "inbox write deferred");

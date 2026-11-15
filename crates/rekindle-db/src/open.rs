@@ -209,7 +209,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// `community_members.role_ids` are dropped. Role ids, ours and every
 /// member's, are the merged governance's role assignments; no row caches
 /// them.
-pub const SCHEMA_VERSION: i64 = 122;
+/// 123 (plan VU1): Veilid 0.5.8's table-store migration is one-way; the bump
+/// resets DB, vault and Veilid storage together.
+pub const SCHEMA_VERSION: i64 = 123;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
@@ -303,6 +305,8 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 #[cfg(test)]
 mod tests {
+    use rusqlite::OptionalExtension;
+
     use super::*;
 
     #[tokio::test]
@@ -346,6 +350,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pragmas, (2, 1, 1, 0));
+    }
+
+    /// The linked SQLite is SQLCipher: `bundled-sqlcipher-vendored-openssl`
+    /// must keep winning feature unification over the `bundled` that
+    /// veilid-core's keyvaluedb-sqlite → async-sqlite chain asks for (plan
+    /// VU1, synthesis #17). Stock SQLite answers no row to this pragma.
+    #[tokio::test]
+    async fn the_linked_sqlite_is_sqlcipher() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = open(&dir.path().join("pk.db"), &[7; 32]).unwrap();
+        let version: Option<String> = db
+            .call(|c| {
+                c.query_row("PRAGMA cipher_version", [], |r| r.get(0))
+                    .optional()
+            })
+            .await
+            .unwrap();
+        assert!(
+            version.is_some_and(|v| !v.is_empty()),
+            "PRAGMA cipher_version is empty: the build links stock SQLite"
+        );
     }
 
     #[test]

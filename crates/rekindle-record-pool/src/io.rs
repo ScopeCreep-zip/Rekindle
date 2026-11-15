@@ -73,21 +73,25 @@ impl RecordPool {
         Ok(report.local_seqs.first().copied().flatten())
     }
 
-    /// Whether the local copy of `subkey` already holds `data` from the
-    /// writer this write would sign with (the explicit one, else the
-    /// lease's). Veilid does not advance the seq for such a write.
+    /// The public key a write would sign with: the explicit writer, else
+    /// the lease's.
+    fn signer(&self, key: &str, writer: Option<&WriterKey>) -> Option<String> {
+        match writer {
+            Some(w) => Some(w.public.clone()),
+            None => self.table.lock().writer(key).map(|w| w.public.clone()),
+        }
+    }
+
+    /// Whether the local copy of `subkey` already holds `data` from
+    /// `signer`. Veilid does not advance the seq for such a write.
     async fn is_local_copy(
         &self,
         key: &str,
         subkey: u32,
         data: &[u8],
-        writer: Option<&WriterKey>,
+        signer: Option<&str>,
     ) -> Result<bool, DhtCallError> {
-        let writer = match writer {
-            Some(w) => Some(w.public.clone()),
-            None => self.table.lock().writer(key).map(|w| w.public.clone()),
-        };
-        let Some(writer) = writer else {
+        let Some(signer) = signer else {
             return Ok(false);
         };
         let k = key.to_string();
@@ -96,7 +100,7 @@ impl RecordPool {
                 backend.get(&k, subkey, false).await
             })
             .await?;
-        Ok(local.is_some_and(|v| v.data == data && v.writer == writer))
+        Ok(local.is_some_and(|v| v.data == data && v.writer == signer))
     }
 
     /// Write a subkey, with `writer` when it differs from the lease's.
@@ -127,32 +131,57 @@ impl RecordPool {
             .local_seq(&key, subkey)
             .await
             .map_err(|e| to_port(&e))?;
+        let signer = self.signer(&key, writer.as_ref());
         // Only a subkey with a local copy is compared: veilid-core's get
         // with no local value goes to the network even without
         // `force_refresh` (`get_value.rs:72-92`), a full fanout online and
         // `TryAgain` offline.
         let identical = before.is_some()
             && self
-                .is_local_copy(&key, subkey, &data, writer.as_ref())
+                .is_local_copy(&key, subkey, &data, signer.as_deref())
                 .await
                 .map_err(|e| to_port(&e))?;
         let k = key.clone();
+        let sent = data.clone();
         let result = self
             .run("dht set", move |backend| async move {
                 backend.set(&k, subkey, data, writer.as_ref()).await
             })
             .await;
         match result {
-            Ok(Some(newer)) => Ok(SetOutcome::Superseded(newer)),
+            // Veilid 0.5.8 returns the value the set settled on whenever it
+            // differs from ours *or* some node holds a rival at its seq
+            // (`set_value.rs:753-760`). Ours settling is a stored write; the
+            // rival is only logged (plan VU decision 4).
+            Ok(Some(settled))
+                if signer.as_deref() == Some(settled.writer.as_str()) && settled.data == sent =>
+            {
+                tracing::debug!(
+                    key,
+                    subkey,
+                    seq = settled.seq,
+                    "dht set: our value settled; the subkey is contested"
+                );
+                let after = self
+                    .local_seq(&key, subkey)
+                    .await
+                    .map_err(|e| to_port(&e))?;
+                Ok(if after.is_some() && after != before {
+                    SetOutcome::Landed
+                } else {
+                    SetOutcome::Unchanged
+                })
+            }
+            Ok(Some(rival)) => Ok(SetOutcome::Superseded(rival)),
             Ok(None) => {
                 let after = self
                     .local_seq(&key, subkey)
                     .await
                     .map_err(|e| to_port(&e))?;
                 Ok(if identical {
-                    // Same data and writer: Veilid kept the seq and re-pushed
-                    // the copy (`set_value.rs:212-218`); `Ok(None)` is the
-                    // same whether that reached consensus or not.
+                    // Same data and writer: Veilid kept the seq and re-sent
+                    // the stored bytes (`set_value.rs:353-366`); `Ok(None)`
+                    // is the same whether that reached consensus or not.
                     SetOutcome::Unchanged
                 } else if after.is_some() && after != before {
                     SetOutcome::Landed

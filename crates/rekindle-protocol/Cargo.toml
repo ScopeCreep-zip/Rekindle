@@ -40,3 +40,5 @@ veilid-core = { version = "0.5", default-features = true }
 # Display/Debug output of veilid-core key types (this crate is one of the
 # two allowed to depend on veilid-core).
 rekindle-utils = { path = "../rekindle-utils", features = [ "log-scrub" ] }
+# Channel posts and the profile driven through a real pool (plan VU1).
+rekindle-record-pool = { path = "../rekindle-record-pool", features = [ "test-support" ] }

@@ -118,7 +118,10 @@ pub trait DhtBackend: Send + Sync {
     ) -> Result<Option<RecordValue>, DhtCallError>;
 
     /// Write a subkey as `writer` (the open's writer when `None`), never
-    /// offline: `Some` is a newer value the network holds.
+    /// offline: `Some` is the value the write settled on, returned when it
+    /// differs from ours or when some node holds a rival at its seq, so it
+    /// can be ours (Veilid 0.5.8 `set_value.rs:753-760`). The pool tells
+    /// the two apart ([`SetOutcome`]).
     async fn set(
         &self,
         key: &str,
