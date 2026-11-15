@@ -46,6 +46,7 @@ mod invisible_game;
 mod invite_expiry;
 mod invite_join_leave;
 mod invite_unpublished;
+mod kick_rotates_once;
 mod kicked_slot_write;
 mod logout_unlock;
 mod logs;

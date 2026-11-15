@@ -32,6 +32,7 @@
 
 mod cache;
 mod deps_impl;
+mod rotated;
 
 use std::sync::Arc;
 
@@ -166,6 +167,7 @@ impl DaemonMekAdapter {
 /// through `wait_for_rotation_slot` instead of duplicating the work.
 pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
     tracing::info!("MEK rotation worker started");
+    let mut rotated = rotated::RotatedDepartures::default();
     while let Some(Some(request)) = ctx.shutdown.run_until(rx.recv()).await {
         // A rotation belongs to the unlock that queued it: dropped while
         // locked, and cut off when a lock starts (it needs the signing key).
@@ -180,62 +182,43 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
         }
         let adapter = DaemonMekAdapter::new(Arc::clone(&ctx));
         let community = &request.community_id;
-        let rotation = async {
-            match &request.kind {
-                MekRotationKind::Departure {
-                    departed_pseudonym_hex,
-                } => {
-                    rekindle_mek_rotation::rotate_text_mek_for_departure(
-                        &adapter,
-                        &request.community_id,
-                        departed_pseudonym_hex,
-                    )
+        let outcome = match &request.kind {
+            MekRotationKind::Manual { scope } => {
+                rekindle_mek_rotation::rotate_mek_on_request(&adapter, community, *scope).await
+            }
+            MekRotationKind::Kick {
+                kicker_pseudonym_hex,
+                ..
+            } if !may_kick(&ctx, community, kicker_pseudonym_hex) => {
+                tracing::debug!(community = %community, "kick from a member without KICK_MEMBERS — no rotation");
+                continue;
+            }
+            MekRotationKind::Departure {
+                departed_pseudonym_hex: departed,
+            }
+            | MekRotationKind::Kick {
+                target_pseudonym_hex: departed,
+                ..
+            } => {
+                let membership = membership_of(&ctx, community, departed);
+                let generation = rekindle_mek_rotation::ChannelMekCache::current_generation(
+                    adapter.cache.as_ref(),
+                    community,
+                    rekindle_types::channel_keys::KeyScope::Community,
+                );
+                if rotated.is_spent(community, departed, membership, generation) {
+                    tracing::debug!(community = %community, "departure already rotated for — repeat dropped");
+                    continue;
+                }
+                rotated.record(community, departed, membership, generation);
+                rekindle_mek_rotation::rotate_text_mek_for_departure(&adapter, community, departed)
                     .await
-                }
-                MekRotationKind::Kick {
-                    target_pseudonym_hex,
-                    kicker_pseudonym_hex,
-                } => {
-                    let kicker =
-                        rekindle_types::id::PseudonymKey::from_hex_lossy(kicker_pseudonym_hex);
-                    let authorized = ctx
-                        .communities
-                        .governance_state(&request.community_id)
-                        .is_some_and(|state| {
-                            rekindle_types::permissions::Permissions(
-                                rekindle_governance::permissions::compute_permissions(
-                                    &kicker, None, &state, 0,
-                                ),
-                            )
-                            .has(rekindle_types::permissions::KICK_MEMBERS)
-                        });
-                    if authorized {
-                        rekindle_mek_rotation::rotate_text_mek_for_departure(
-                            &adapter,
-                            &request.community_id,
-                            target_pseudonym_hex,
-                        )
-                        .await
-                    } else {
-                        tracing::debug!(community = %community, "kick from a member without KICK_MEMBERS — no rotation");
-                        Ok(())
-                    }
-                }
-                MekRotationKind::Manual { scope } => {
-                    rekindle_mek_rotation::rotate_mek_on_request(
-                        &adapter,
-                        &request.community_id,
-                        *scope,
-                    )
-                    .await
-                }
             }
         };
         // A lock or exit closes the unlock scope, and the rotation stops at
         // its next safe point (the cascade wait or the next recipient): an
         // unrotated key is the same outcome as a rotation nobody was online
         // to receive, which the protocol repairs. No Veilid call is cut.
-        let outcome = rotation.await;
         if unlock.is_closed() {
             tracing::debug!(community = %community, "rotation stopped by lock");
         }
@@ -252,6 +235,34 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
         }
     }
     tracing::info!("MEK rotation worker stopped");
+}
+
+/// Whether `kicker` holds KICK_MEMBERS under the merged governance: gossip
+/// is unauthenticated as to authority, so an unchecked kick would let
+/// anyone force rotations (and mark a departure rotated for).
+fn may_kick(ctx: &DaemonContext, community_id: &str, kicker_hex: &str) -> bool {
+    let kicker = rekindle_types::id::PseudonymKey::from_hex_lossy(kicker_hex);
+    ctx.communities
+        .governance_state(community_id)
+        .is_some_and(|state| {
+            rekindle_types::permissions::Permissions(
+                rekindle_governance::permissions::compute_permissions(&kicker, None, &state, 0),
+            )
+            .has(rekindle_types::permissions::KICK_MEMBERS)
+        })
+}
+
+/// The departed member's membership as this copy of its departure sees
+/// it: its `MemberJoined` stamp while the merged governance still lists it.
+fn membership_of(
+    ctx: &DaemonContext,
+    community_id: &str,
+    departed_hex: &str,
+) -> rotated::Membership {
+    let departed = rekindle_types::id::PseudonymKey::from_hex_lossy(departed_hex);
+    ctx.communities
+        .governance_state(community_id)
+        .and_then(|state| state.members.get(&departed).map(|m| m.joined))
 }
 
 /// Whether `request` is for a community we were removed from, or for our
