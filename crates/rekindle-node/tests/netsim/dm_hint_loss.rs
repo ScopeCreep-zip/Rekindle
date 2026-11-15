@@ -10,7 +10,7 @@ use rekindle_ipc::protocol::IpcRequest;
 use rekindle_netsim::Fault;
 
 use crate::harness::{eventually, start, SimNode, PASSPHRASE};
-use crate::pair::{befriend, key, retired, send, talk, unretired, LIMIT};
+use crate::pair::{befriend, key, retired, send, talk, talk_until_watched, unretired, LIMIT};
 
 async fn received(node: &SimNode, peer: &str) -> Vec<String> {
     let history: Vec<rekindle_types::dto::dm::DmMessage> = serde_json::from_value(
@@ -203,10 +203,12 @@ async fn a_retired_stretch_is_a_stored_history_gap() {
     // (it is placed when her participant record reaches him), and then his
     // hint diff reads it first and no change of it reaches him; once the
     // watch is held, the next entry's change does (at the replica's next
-    // tick, so Jon stays online until it has).
-    talk(&sim, &nodes[0], &nodes[1], "watched").await;
+    // tick, so Jon stays online until it has). On 0.5.8's timing which
+    // entry is the first watched is a race (`talk_until_watched`).
     assert!(
-        eventually(&sim, LIMIT, || async { !unretired(&sim, 1).is_empty() }).await,
+        !talk_until_watched(&sim, &nodes[0], &nodes[1])
+            .await
+            .is_empty(),
         "a change of Ida's chain reached Jon"
     );
     let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
@@ -308,9 +310,12 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
     // Jon (finding F8, as above). The hint now leaves while the append is
     // in flight (live A/B finding 42), so `talk` returns before the entry
     // lands; Jon stays online until a change of the chain reached him.
-    talk(&sim, &nodes[0], &nodes[1], "watched").await;
+    // On 0.5.8's timing which entry is the first watched is a race
+    // (`talk_until_watched`).
     assert!(
-        eventually(&sim, LIMIT, || async { !unretired(&sim, 1).is_empty() }).await,
+        !talk_until_watched(&sim, &nodes[0], &nodes[1])
+            .await
+            .is_empty(),
         "a change of Ida's chain reached Jon"
     );
     let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));

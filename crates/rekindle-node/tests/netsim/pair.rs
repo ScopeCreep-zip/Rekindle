@@ -132,6 +132,29 @@ pub fn unretired(sim: &rekindle_netsim::Netsim, reader: usize) -> Vec<String> {
     keys
 }
 
+/// Talk until a watched change of `a`'s chain reaches `b` and return the
+/// unretired records it names ([`unretired`]). `b`'s watch on the chain is
+/// placed once `a`'s participant record (a StreamRecord row, behind the
+/// first message's ack) reaches him; an entry landing before that is read
+/// by his hint diff and reported by no change. On Veilid 0.5.8 a set lands
+/// in 0.33-1.42 s, as fast as or faster than the hint (app message
+/// 0.2-0.9 s), so which round's entry is the first one watched is a race;
+/// each round's change comes at the replica's next watch tick.
+pub async fn talk_until_watched(sim: &Netsim, a: &SimNode, b: &SimNode) -> Vec<String> {
+    for round in 0..4 {
+        talk(sim, a, b, &format!("watched {round}")).await;
+        let reader = b.index;
+        if eventually(sim, Duration::from_secs(15), || async {
+            !unretired(sim, reader).is_empty()
+        })
+        .await
+        {
+            break;
+        }
+    }
+    unretired(sim, b.index)
+}
+
 /// Whether one of `keys` now carries a retire mark: the writer's chain is
 /// retired on the network.
 pub fn retired(sim: &rekindle_netsim::Netsim, keys: &[String]) -> bool {
