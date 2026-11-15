@@ -87,6 +87,29 @@ const fn fixed(mut e: TokenEntry) -> TokenEntry {
     e
 }
 
+/// The strength of a status or danger tint under a label: `dark` thousandths
+/// on the dark bases, and solid on the light ones, where white on any
+/// lighter composite of the light status colours falls under 4.5:1 (plan
+/// E7.7.1b; `d3-distinctness.md` §6.1 measures D4 on the composited fill).
+const fn fraction(id: &'static str, css: &'static str, dark: i64) -> TokenEntry {
+    let solid = DefaultValue::Number(1000);
+    let d = DefaultValue::Number(dark);
+    TokenEntry {
+        id,
+        css,
+        ty: TokenType::Fraction { min: 0, max: 1000 },
+        defaults: Defaults {
+            dark: d,
+            light: solid,
+            hc_dark: d,
+            hc_light: solid,
+        },
+        derivation: None,
+        constraints: NONE,
+        class: Class::Themeable,
+    }
+}
+
 /// Follows `of` when a skin sets `of` and omits this token.
 const fn same_as(mut e: TokenEntry, of: &'static str) -> TokenEntry {
     e.derivation = Some(Derivation::Mix {
@@ -196,7 +219,7 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "text.secondary",
         "--color-xfire-text-secondary",
-        c4("#a0a0a0", "#595959", "#ffffff", "#000000"),
+        c4("#a0a0a0", "#545454", "#ffffff", "#000000"),
         TEXT,
     ),
     row("accent.fill", "--color-xfire-accent", c1("#167bc0"), NONE),
@@ -252,7 +275,7 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "text.dim",
         "--color-xfire-text-dim",
-        c4("#8fb9d7", "#2d5f80", "#ffffff", "#000000"),
+        c4("#8fb9d7", "#0d4363", "#ffffff", "#000000"),
         TEXT,
     ),
     row(
@@ -271,7 +294,7 @@ pub const ENTRIES: &[TokenEntry] = &[
         row(
             "text.timestamp",
             "--color-xfire-text-timestamp",
-            c4("#a0a0a0", "#595959", "#ffffff", "#000000"),
+            c4("#a0a0a0", "#545454", "#ffffff", "#000000"),
             TEXT,
         ),
         "text.secondary",
@@ -279,7 +302,7 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "status.online",
         "--color-xfire-online",
-        c2("#53d769", "#008a2e"),
+        c2("#53d769", "#00892d"),
         GRAPHIC,
     ),
     row(
@@ -291,7 +314,7 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "status.ingame",
         "--color-xfire-ingame",
-        c2("#4fc3f7", "#0080ab"),
+        c2("#4fc3f7", "#007faa"),
         GRAPHIC,
     ),
     row(
@@ -348,7 +371,7 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "success.text",
         "--color-xfire-success",
-        c2("#51e385", "#006b25"),
+        c2("#51e385", "#00631d"),
         TEXT,
     ),
     row(
@@ -360,15 +383,30 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "titlebar.start",
         "--color-xfire-titlebar-start",
-        c1("#0f1a3a"),
+        c2("#0f1a3a", "#dbe7f6"),
         NONE,
     ),
     row(
         "titlebar.end",
         "--color-xfire-titlebar-end",
-        c1("#1a2a5e"),
+        c2("#1a2a5e", "#c3d6ef"),
         NONE,
     ),
+    same_as(
+        row(
+            "titlebar.text",
+            "--color-xfire-titlebar-text",
+            c4("#e7e7e7", "#000000", "#ffffff", "#000000"),
+            &[Constraint {
+                on: &["titlebar.start", "titlebar.end"],
+                min_ratio_x100: 450,
+            }],
+        ),
+        "text.primary",
+    ),
+    fraction("tint.fill-strong", "--tint-fill-strong", 800),
+    fraction("tint.fill", "--tint-fill", 600),
+    fraction("tint.fill-soft", "--tint-fill-soft", 500),
     fixed(row("shadow", "--color-xfire-shadow", c1("#000000"), NONE)),
     fixed(row(
         "scrim.fill",

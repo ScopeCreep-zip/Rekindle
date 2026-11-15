@@ -13,7 +13,13 @@ use super::value::emit_thousandths;
 use crate::registry::{font, TokenEntry, TokenType};
 
 /// The characters a colour, dimension or number value may emit.
-pub const ALPHABET: &str = "#0123456789abcdef.px-";
+pub const ALPHABET: &str = "#0123456789abcdef.px-%";
+
+/// Thousandths as a decimal number (`600` → `0.6`), for the JSON Schema.
+#[must_use]
+pub fn thousandths_number(t: i64) -> String {
+    emit_thousandths(t)
+}
 
 /// Whether `s` is drawn from [`ALPHABET`].
 #[must_use]
@@ -38,6 +44,9 @@ pub fn css_value(e: &TokenEntry, v: &TokenValue) -> Option<String> {
         }
         (TokenType::Number { min, max }, TokenValue::Number(t)) if (min..=max).contains(t) => {
             Some(emit_thousandths(*t))
+        }
+        (TokenType::Fraction { min, max }, TokenValue::Number(t)) if (min..=max).contains(t) => {
+            Some(format!("{}%", emit_thousandths(*t * 100)))
         }
         (TokenType::FontFamily, TokenValue::FontFamily(name)) => {
             font(name).map(|f| f.stack.to_owned())

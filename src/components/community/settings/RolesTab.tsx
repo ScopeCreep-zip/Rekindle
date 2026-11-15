@@ -11,6 +11,7 @@ import {
   handleDeleteRole,
 } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
+import { tokenVar } from "../../../styles/generated/tokens";
 import {
   ICON_SAVE,
   ICON_DELETE,
@@ -121,7 +122,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
             >
               <span
                 class="settings-role-color"
-                style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : "var(--color-xfire-text-dim)" }}
+                style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : tokenVar("text.dim") }}
               />
               <RoleTag name={role.name} color={role.color} />
               <span class="settings-role-position">pos: {role.position}</span>

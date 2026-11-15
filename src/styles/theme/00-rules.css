@@ -113,7 +113,7 @@
     align-items: center;
     justify-content: center;
     border-radius: 2px;
-    color: color-mix(in srgb, var(--color-xfire-text) 60%, transparent);
+    color: color-mix(in srgb, var(--color-xfire-titlebar-text) 60%, transparent);
     font-size: 10px;
     cursor: pointer;
     border: none;
@@ -122,12 +122,12 @@
   }
 
   .xfire-titlebar-btn:hover {
-    color: var(--color-xfire-text);
+    color: var(--color-xfire-titlebar-text);
     background: color-mix(in srgb, var(--color-xfire-overlay) 10%, transparent);
   }
 
   .xfire-titlebar-btn-close:hover {
-    background: color-mix(in srgb, var(--color-xfire-danger) 80%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-strong), transparent);
     color: var(--color-xfire-danger-fg);
   }
 
@@ -228,7 +228,7 @@
 
   .form-btn-danger {
     padding: 6px 12px;
-    background: color-mix(in srgb, var(--color-xfire-danger) 60%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill), transparent);
     color: var(--color-xfire-danger-fg);
     border: none;
     border-radius: 0.25rem;

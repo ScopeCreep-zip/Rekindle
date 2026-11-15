@@ -4,12 +4,12 @@
   }
 
   .voice-btn-active {
-    background: color-mix(in srgb, var(--color-xfire-danger) 60%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill), transparent);
     color: var(--color-xfire-danger-fg);
   }
 
   .voice-btn-disconnect {
-    background: color-mix(in srgb, var(--color-xfire-danger) 50%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
     color: var(--color-xfire-danger-fg);
   }
 

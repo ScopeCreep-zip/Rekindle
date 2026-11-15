@@ -41,6 +41,13 @@ pub enum TokenType {
         min: i64,
         max: i64,
     },
+    /// A share of the whole in thousandths within `min..=max` (a DTCG
+    /// number, `0.6`), emitted as a CSS percentage (`60%`): the strength of
+    /// a `color-mix(in srgb, <fill> <share>, transparent)` tint.
+    Fraction {
+        min: i64,
+        max: i64,
+    },
     FontFamily,
 }
 
@@ -51,7 +58,7 @@ impl TokenType {
         match self {
             Self::Color => "color",
             Self::Dimension { .. } => "dimension",
-            Self::Number { .. } => "number",
+            Self::Number { .. } | Self::Fraction { .. } => "number",
             Self::FontFamily => "fontFamily",
         }
     }

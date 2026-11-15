@@ -122,16 +122,15 @@ fn read_dimmers(text: &str) -> Result<BTreeMap<String, Dimmer>> {
 }
 
 /// `expr N%` → (`expr`, N); `expr` → (`expr`, none).
-fn pct_part(part: &str) -> Result<(String, Option<f64>), String> {
+fn pct_part(
+    tokens: &BTreeMap<String, String>,
+    part: &str,
+) -> Result<(String, Option<f64>), String> {
     let part = part.trim();
     match part.rsplit_once(' ') {
-        Some((expr, pct)) if pct.ends_with('%') => pct
-            .trim_end_matches('%')
-            .parse::<f64>()
-            .ok()
-            .filter(|n| (0.0..=100.0).contains(n))
-            .map(|n| (expr.trim().to_string(), Some(n)))
-            .ok_or_else(|| format!("`{pct}` is not a percentage")),
+        Some((expr, pct)) if pct.ends_with('%') || grounds::share_token(pct).is_some() => {
+            grounds::share(tokens, pct).map(|n| (expr.trim().to_string(), Some(n)))
+        }
         _ => Ok((part.to_string(), None)),
     }
 }
@@ -158,7 +157,7 @@ pub(crate) fn paint(
             if !reads_token(tokens, &part) {
                 continue;
             }
-            let (expr, _) = pct_part(&part)?;
+            let (expr, _) = pct_part(tokens, &part)?;
             match paint(tokens, &expr)? {
                 Some(Paint::Opaque(c)) => stops.push(c),
                 _ => return Err(unsupported()),
@@ -180,7 +179,7 @@ pub(crate) fn paint(
     if space.trim() != "in srgb" {
         return Err(unsupported());
     }
-    let ((top, pa), (under, pb)) = (pct_part(a)?, pct_part(b)?);
+    let ((top, pa), (under, pb)) = (pct_part(tokens, a)?, pct_part(tokens, b)?);
     let pct = match (pa, pb) {
         (Some(p), _) => p,
         (None, Some(q)) => 100.0 - q,
@@ -215,7 +214,7 @@ fn begins_with(
             let Some((tint, p)) = parsed.tints.first() else {
                 return Ok(false);
             };
-            Ok(close(token(tokens, tint)?, *rgb) && (f64::from(*p) - pct).abs() < 0.5)
+            Ok(close(token(tokens, tint)?, *rgb) && (grounds::share(tokens, p)? - pct).abs() < 0.5)
         }
     }
 }

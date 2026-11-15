@@ -93,9 +93,14 @@
     font-weight: 600;
   }
 
-  .chat-message-sender-self,
-  .xfire-titlebar-text {
+  .chat-message-sender-self {
     color: var(--color-xfire-text);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .xfire-titlebar-text {
+    color: var(--color-xfire-titlebar-text);
     font-size: 11px;
     font-weight: 600;
   }

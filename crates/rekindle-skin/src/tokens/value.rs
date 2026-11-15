@@ -16,7 +16,9 @@ pub(super) fn parse(token: &str, ty: TokenType, v: &Value) -> Result<TokenValue,
     match ty {
         TokenType::Color => color(token, v),
         TokenType::Dimension { min, max } => dimension(token, v, min, max),
-        TokenType::Number { min, max } => number(token, v, min, max),
+        TokenType::Number { min, max } | TokenType::Fraction { min, max } => {
+            number(token, v, min, max)
+        }
         TokenType::FontFamily => v
             .as_str()
             .and_then(font)

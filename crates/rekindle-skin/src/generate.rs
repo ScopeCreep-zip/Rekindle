@@ -27,6 +27,7 @@ fn css_syntax(ty: TokenType) -> Option<&'static str> {
         TokenType::Color => Some("<color>"),
         TokenType::Dimension { .. } => Some("<length>"),
         TokenType::Number { .. } => Some("<number>"),
+        TokenType::Fraction { .. } => Some("<percentage>"),
         TokenType::FontFamily => None,
     }
 }
@@ -154,6 +155,11 @@ pub fn tui_palette(base: Base) -> String {
     out
 }
 
+/// Thousandths as the JSON number a token file states.
+fn emit_fraction(t: i64) -> Value {
+    serde_json::from_str(&crate::tokens::emit::thousandths_number(t)).unwrap_or(Value::Null)
+}
+
 fn value_schema(ty: TokenType) -> Value {
     let alias = json!({ "type": "string", "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$" });
     let concrete = match ty {
@@ -171,6 +177,9 @@ fn value_schema(ty: TokenType) -> Value {
             "properties": { "value": { "type": "integer", "minimum": min, "maximum": max },
                             "unit": { "const": "px" } } }),
         TokenType::Number { .. } => json!({ "type": "number", "multipleOf": 0.001 }),
+        TokenType::Fraction { min, max } => json!({
+            "type": "number", "multipleOf": 0.001,
+            "minimum": emit_fraction(min), "maximum": emit_fraction(max) }),
         TokenType::FontFamily => {
             json!({ "enum": FONTS.iter().map(|f| f.name).collect::<Vec<_>>() })
         }

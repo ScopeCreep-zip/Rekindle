@@ -86,7 +86,7 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-danger) 50%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
     color: var(--color-xfire-text-on-fill);
     font-family: var(--font-family-xfire);
   }

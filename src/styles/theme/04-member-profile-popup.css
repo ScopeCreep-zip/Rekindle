@@ -379,7 +379,7 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-online) 60%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-online) var(--tint-fill), transparent);
     color: var(--color-xfire-text-on-fill);
     font-family: var(--font-family-xfire);
     margin-left: auto;
@@ -396,7 +396,7 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-danger) 50%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-danger) var(--tint-fill-soft), transparent);
     color: var(--color-xfire-danger-fg);
     font-family: var(--font-family-xfire);
   }
@@ -412,7 +412,7 @@
     border: none;
     border-radius: 3px;
     cursor: pointer;
-    background: color-mix(in srgb, var(--color-xfire-offline) 60%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-offline) var(--tint-fill), transparent);
     color: var(--color-xfire-text-on-fill);
     font-family: var(--font-family-xfire);
   }

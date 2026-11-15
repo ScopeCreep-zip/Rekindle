@@ -28,6 +28,8 @@ use crate::css;
 
 pub(crate) const MAP: &str = "src/styles/regions.toml";
 pub(crate) const TOKEN_FILE: &str = "src/styles/global.css";
+/// The registry tokens `global.css` imports (`cargo xtask gen-skin-registry`).
+pub(crate) const GENERATED_TOKENS: &str = "src/styles/generated/tokens.css";
 
 /// One rule's text colour, as written, for one of its selectors.
 pub(crate) struct TextRule {
@@ -75,13 +77,47 @@ pub(crate) fn text_token_selectors(sheets: &[(String, String)]) -> BTreeMap<Stri
     out
 }
 
-/// The `--color-*` tokens `@theme` defines, with their default values.
+/// A colour token, or a tint share (`--tint-*`, a registry percentage a
+/// ground's tint may read).
+fn is_pair_token(prop: &str) -> bool {
+    prop.starts_with("--color-") || prop.starts_with(TINT_SHARE)
+}
+
+/// The prefix of the registry's tint-share tokens.
+const TINT_SHARE: &str = "--tint-";
+
+/// A tint's share in percent: `N%`, or `var(--tint-…)` read from `tokens`.
+pub(crate) fn share(tokens: &BTreeMap<String, String>, word: &str) -> Result<f64, String> {
+    let value = match share_token(word) {
+        Some(name) => tokens
+            .get(name)
+            .ok_or_else(|| format!("`{name}` is not a registry tint share"))?
+            .as_str(),
+        None => word,
+    };
+    value
+        .trim()
+        .strip_suffix('%')
+        .and_then(|n| n.parse::<f64>().ok())
+        .filter(|n| (0.0..=100.0).contains(n))
+        .ok_or_else(|| format!("`{word}` is not a percentage"))
+}
+
+/// The token of `var(--tint-…)`, if `word` is one.
+pub(crate) fn share_token(word: &str) -> Option<&str> {
+    word.strip_prefix("var(")
+        .and_then(|w| w.strip_suffix(')'))
+        .filter(|name| name.starts_with(TINT_SHARE))
+}
+
+/// The `--color-*` tokens `@theme` defines, with their default values,
+/// and the `--tint-*` shares.
 pub(crate) fn theme_colours(global: &str) -> BTreeMap<String, String> {
     css::blocks(global)
         .into_iter()
         .filter(|b| b.prelude == "@theme")
         .flat_map(|b| b.decls)
-        .filter(|d| d.prop.starts_with("--color-"))
+        .filter(|d| is_pair_token(&d.prop))
         .map(|d| (d.prop, d.value))
         .collect()
 }
@@ -96,7 +132,7 @@ pub(crate) fn light_base_colours(global: &str) -> BTreeMap<String, String> {
         .into_iter()
         .filter(|b| b.prelude == LIGHT_BASE && b.in_layer("xfire-defaults"))
         .flat_map(|b| b.decls)
-        .filter(|d| d.prop.starts_with("--color-"))
+        .filter(|d| is_pair_token(&d.prop))
         .map(|d| (d.prop, d.value))
         .collect()
 }
@@ -107,7 +143,8 @@ fn theme_tokens(global: &str) -> BTreeSet<String> {
 
 /// A declared ground: its tints from the top down, over a base token.
 pub(crate) struct Ground<'a> {
-    pub tints: Vec<(&'a str, u8)>,
+    /// Each tint's token and share (`N%` or `var(--tint-…)`).
+    pub tints: Vec<(&'a str, &'a str)>,
     pub base: &'a str,
 }
 
@@ -120,11 +157,15 @@ pub(crate) fn parse_ground(ground: &str) -> Result<Ground<'_>, String> {
         let (Some(token), Some(pct), None) = (words.next(), words.next(), words.next()) else {
             return Err(format!("`{tint}` is not `<token> <N>%`"));
         };
-        let pct = pct
+        let literal = pct
             .strip_suffix('%')
             .and_then(|n| n.parse::<u8>().ok())
-            .filter(|n| (1..=100).contains(n))
-            .ok_or_else(|| format!("`{pct}` is not a percentage 1–100%"))?;
+            .is_some_and(|n| (1..=100).contains(&n));
+        if !literal && share_token(pct).is_none() {
+            return Err(format!(
+                "`{pct}` is not a percentage 1–100% or `var(--tint-…)`"
+            ));
+        }
         tints.push((token, pct));
         rest = under.trim();
     }
@@ -140,7 +181,7 @@ fn ground_problem(ground: &str, tokens: &BTreeSet<String>) -> Option<String> {
     parsed
         .tints
         .iter()
-        .map(|(token, _)| *token)
+        .flat_map(|(token, pct)| std::iter::once(*token).chain(share_token(pct)))
         .chain(std::iter::once(parsed.base))
         .find(|token| !tokens.contains(*token))
         .map(|token| format!("`{token}` is not a `@theme` colour token"))
@@ -258,14 +299,18 @@ fn compare(
     problems
 }
 
-/// The stylesheets, `global.css`'s source and the map's text.
+/// The stylesheets, the token source (the generated registry tokens, then
+/// `global.css` with its `@layer sec` tokens) and the map's text.
 pub(crate) fn read_inputs(root: &Path) -> Result<(Vec<(String, String)>, String, String)> {
     let sheets = css::stylesheets(root)?;
-    let global = sheets
-        .iter()
-        .find(|(rel, _)| rel == TOKEN_FILE)
-        .map(|(_, src)| src.clone())
-        .ok_or_else(|| anyhow!("{TOKEN_FILE} not found"))?;
+    let find = |file: &str| {
+        sheets
+            .iter()
+            .find(|(rel, _)| rel == file)
+            .map(|(_, src)| src.clone())
+            .ok_or_else(|| anyhow!("{file} not found"))
+    };
+    let global = format!("{}\n{}", find(GENERATED_TOKENS)?, find(TOKEN_FILE)?);
     let map_text =
         std::fs::read_to_string(root.join(MAP)).with_context(|| format!("reading {MAP}"))?;
     Ok((sheets, global, map_text))
@@ -380,9 +425,12 @@ mod tests {
     #[test]
     fn a_ground_parses_top_down() {
         let g = parse_ground("--a 10% over --b 5% over --c").unwrap();
-        assert_eq!(g.tints, vec![("--a", 10), ("--b", 5)]);
+        assert_eq!(g.tints, vec![("--a", "10%"), ("--b", "5%")]);
         assert_eq!(g.base, "--c");
         assert!(parse_ground("--a 101% over --c").is_err());
+        let g = parse_ground("--a var(--tint-fill) over --c").unwrap();
+        assert_eq!(g.tints, vec![("--a", "var(--tint-fill)")]);
+        assert!(parse_ground("--a var(--color-a) over --c").is_err());
     }
 
     #[test]

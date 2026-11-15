@@ -401,7 +401,7 @@
     font-weight: 600;
     border: none;
     border-radius: 3px;
-    background: color-mix(in srgb, var(--color-xfire-online) 60%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-online) var(--tint-fill), transparent);
     color: var(--color-xfire-text-on-fill);
     cursor: pointer;
     font-family: var(--font-family-xfire);

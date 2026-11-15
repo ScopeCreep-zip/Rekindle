@@ -41,6 +41,10 @@ export type SkinTokenId =
   | "success.fill"
   | "titlebar.start"
   | "titlebar.end"
+  | "titlebar.text"
+  | "tint.fill-strong"
+  | "tint.fill"
+  | "tint.fill-soft"
   | "shadow"
   | "scrim.fill"
   | "scrim.danger-text"
@@ -97,6 +101,10 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "success.fill": "--color-xfire-success-fill",
   "titlebar.start": "--color-xfire-titlebar-start",
   "titlebar.end": "--color-xfire-titlebar-end",
+  "titlebar.text": "--color-xfire-titlebar-text",
+  "tint.fill-strong": "--tint-fill-strong",
+  "tint.fill": "--tint-fill",
+  "tint.fill-soft": "--tint-fill-soft",
   "shadow": "--color-xfire-shadow",
   "scrim.fill": "--color-xfire-scrim",
   "scrim.danger-text": "--color-xfire-scrim-danger-text",

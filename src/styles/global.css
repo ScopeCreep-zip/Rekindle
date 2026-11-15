@@ -3,7 +3,7 @@
  * `@layer theme, base, components, utilities;`
  * (`node_modules/tailwindcss/index.css:1`); naming `utilities` here keeps it
  * below `a11y` and `sec` instead of appended after them.
- *   theme           Tailwind `@theme` tokens (the defaults below)
+ *   theme           Tailwind `@theme` tokens (the generated dark defaults)
  *   base            element resets
  *   xfire-defaults  per-base default values that differ from the dark ones
  *   skin            a skin's generated tokens (E7.7.2), never element styles
@@ -13,7 +13,15 @@
  *   sec             security surfaces; nothing overrides it */
 @layer theme, base, xfire-defaults, skin, components, utilities, a11y, sec;
 @import "tailwindcss" source(none);
+/* The skin tokens: the dark defaults as `@theme`, the light base under
+ * `@layer xfire-defaults`, and `--chrome-height`. One source of truth,
+ * generated from `rekindle-skin::registry` (`cargo xtask
+ * gen-skin-registry`, plan E7.7.1). */
+@import "./generated/tokens.css";
 @source "../";
+/* The generated token map names each role as a string (`"shadow"`), which
+ * Tailwind would read as a utility class. */
+@source not "./generated";
 /* The Xfire skin, split into ordered parts. It was one 7,926-line file,
  * which the 600-line ceiling could not cover. Import order IS cascade
  * order within a layer, so these must stay sorted: parts `00`-`15`, `90`
@@ -61,140 +69,6 @@
   font-weight: normal;
   font-style: normal;
   font-display: block;
-}
-
-@theme {
-  --color-xfire-bg-dark: #0a0a0a;
-  --color-xfire-bg-panel: #1e1e1e;
-  --color-xfire-bg-input: #1e1e1e;
-  --color-xfire-bg-status: #181818;
-  --color-xfire-bg: #0a0a0a;
-  --color-xfire-bg-primary: #141414;
-  --color-xfire-bg-secondary: #1a1a1a;
-  --color-xfire-bg-tertiary: #252525;
-  --color-xfire-border: #2a2a2a;
-  /* A form control's boundary (WCAG 1.4.11): 3.13:1 on bg-panel, 3.9:1 on
-   * bg-dark (plan E7.7.0b). */
-  --color-xfire-control-border: #6b6b6b;
-  --color-xfire-text-primary: #e7e7e7;
-  --color-xfire-text-secondary: #a0a0a0;
-  /* Accent as a fill. #177cc1 carried white text at 4.48:1; the minimal
-   * Oklab-lightness step that reaches 4.5:1 is #167bc0 (4.54:1). */
-  --color-xfire-accent: #167bc0;
-  /* Accent as text on a ground (VS Code `textLink.foreground` vs
-   * `button.background`). 5.83 / 5.43 / 5.13 / 4.91 / 4.52 on bg-dark,
-   * bg-primary, bg-secondary, bg-panel, bg-tertiary. */
-  --color-xfire-accent-text: #3491d8;
-  /* Text and glyphs on an accent fill. */
-  --color-xfire-accent-fg: #ffffff;
-  /* Destructive and alert fills carrying text. #ef4444 (busy) carried white
-   * at 3.76:1; the minimal Oklab-lightness step to 4.5:1 is #df3337. */
-  --color-xfire-danger: #df3337;
-  --color-xfire-danger-fg: #ffffff;
-  /* Error and destructive text on a ground (as accent/accent-text). busy
-   * #ef4444 read 4.43:1 on bg-panel and 3.70 on its own tints; the minimal
-   * Oklab-lightness step that passes every declared ground is #ff5955
-   * (worst 4.52 on the busy tints, 4.69 on a selected buddy row). */
-  --color-xfire-danger-text: #ff5955;
-  /* Text on status fills, scrims and toasts. */
-  --color-xfire-text-on-fill: #ffffff;
-  --color-xfire-text: #e7e7e7;
-  --color-xfire-text-dim: #8fb9d7;
-  --color-xfire-text-clan: #1ba1fd;
-  --color-xfire-text-status: #969696;
-  --color-xfire-text-timestamp: #a0a0a0;
-  --color-xfire-online: #53d769;
-  --color-xfire-away: #ffcc00;
-  --color-xfire-ingame: #4fc3f7;
-  /* The status colours as text (as accent/accent-text): the same values on
-   * the dark base; the light base gives them 4.5:1 values of their own. */
-  --color-xfire-online-text: #53d769;
-  --color-xfire-away-text: #ffcc00;
-  --color-xfire-ingame-text: #4fc3f7;
-  --color-xfire-busy: #ef4444;
-  --color-xfire-offline: #7d7d7d;
-  /* The offline grey as text. #7d7d7d read 4.05:1 on bg-panel and 3.51 on
-   * a selected buddy row; the minimal step up is #909090 (4.53 there). The
-   * invite badge's own tint drops from 30% to 12% to stay at 4.5:1. */
-  --color-xfire-offline-text: #909090;
-  --color-xfire-link: #5fa8d3;
-  --color-xfire-focus-outline: #5fa8d3;
-  /* Positive state (invite answered, event live): text and its own tint.
-   * #4ade80 read 4.41:1 on its 30% tint over bg-tertiary; minimal step up. */
-  --color-xfire-success: #51e385;
-  /* Positive fills carrying white text (success toast, call-stage join).
-   * White on online #53d769 read 1.86:1; darkening the fill is the
-   * smaller Oklab-lightness change (-0.23, against -0.58 for darkening
-   * the text), gamut-mapped by chroma: #00892d, 4.55:1. */
-  --color-xfire-success-fill: #00892d;
-  --color-xfire-titlebar-start: #0f1a3a;
-  --color-xfire-titlebar-end: #1a2a5e;
-  /* Mixed with `transparent` at the alpha each use needs. */
-  --color-xfire-shadow: #000000;
-  --color-xfire-scrim: #000000;
-  /* Red text on a scrim (the muted badge on a video tile). A scrim is dark
-   * on every base, so this is not `danger-text`, which the light base
-   * darkens. */
-  --color-xfire-scrim-danger-text: #ff5955;
-  /* The ground behind a video frame, black on every base, as in every
-   * player. */
-  --color-xfire-video-backing: #000000;
-  /* Hover, pressed and raised overlays over a ground, mixed with
-   * `transparent` (`color-mix(in srgb, var(--color-xfire-overlay) 5%,
-   * transparent)`): toward the text, so white on the dark base and black
-   * on the light one. */
-  --color-xfire-overlay: #ffffff;
-  /* A ground recessed away from the text: black on the dark base, white on
-   * the light one. */
-  --color-xfire-shade: #000000;
-  /* The step a fill carrying `accent-fg` (white) takes on hover. It
-   * follows the fill's own text, not the base, so it is black on both. */
-  --color-xfire-fill-shade: #000000;
-  --color-xfire-thread-tag: #ffd479;
-  /* Mention text, also mixed into its own tint. The old pairs read 2.2,
-   * 2.04 and 1.66:1 (dark-on-dark); each is the minimal Oklab-lightness
-   * step up from its old text colour to 4.5:1 on its tint over every
-   * ground (everyone #c2570a, role #6f42c1, self #b3261e). */
-  --color-xfire-mention-everyone: #ffa170;
-  --color-xfire-mention-role: #b59aff;
-  --color-xfire-mention-self: #ffaea1;
-  --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
-  --font-family-icons: "Symbols Nerd Font Mono";
-}
-
-/* Values that differ on a light base (registry defaults, E7.7.1). A light
- * skin declares `base: light` and the apply step sets `data-skin-base` on
- * the root (E7.7.2). Until the registry gives the light base its own
- * grounds, these are calibrated on white and on the tints the rules lay
- * over it (`cargo xtask check-contrast-pairs`, light pass), the hardest
- * being a selected row (accent 30% over white). Each is the minimal
- * Oklab-lightness step down from the dark default, gamut-mapped by chroma:
- * - status graphics, 3:1 on the selected row (4.49-4.54 on white): online
- *   #008a2e, away #927300, in-game #0080ab, busy #df3337, offline #767676
- *   (E7.7.0's #13ac3e / #b59000 / #1e9fd2 reached 3:1 on white only);
- * - status text, 4.5:1 on every declared ground: online-text #00892e
- *   (4.55 on white), away-text #6e5600 (4.51 on its own 34% tint),
- *   ingame-text #006285 (4.55 on the selected row);
- * - danger-text #b4001a (4.53 on the busy 30% tint) and offline-text
- *   #5b5b5b (4.54 on the selected row), down from E7.7.0a's #df3337 and
- *   #767676, which read 3.0 there;
- * - the overlay turns black and the shade white (toward and away from the
- *   text). */
-@layer xfire-defaults {
-  :root[data-skin-base="light"] {
-    --color-xfire-online: #008a2e;
-    --color-xfire-away: #927300;
-    --color-xfire-ingame: #0080ab;
-    --color-xfire-busy: #df3337;
-    --color-xfire-offline: #767676;
-    --color-xfire-online-text: #007427;
-    --color-xfire-away-text: #6e5600;
-    --color-xfire-ingame-text: #006285;
-    --color-xfire-danger-text: #b4001a;
-    --color-xfire-offline-text: #5b5b5b;
-    --color-xfire-overlay: #000000;
-    --color-xfire-shade: #ffffff;
-  }
 }
 
 /* Security surfaces (plan E7.7.0): reserved tokens, defined only here, in
@@ -366,14 +240,6 @@
  * "things that float" meant finding all eight. */
 :root {
   --shadow-elevated: 0 4px 12px color-mix(in srgb, var(--color-xfire-shadow) 40%, transparent);
-}
-
-/* Architecture §32 — single chrome-height token. Titlebar, status bar,
- * menu bar, channel header, member-list header, chat-peer-status, and
- * BottomActionBar all converge on this size. Replaces ad-hoc 28px
- * literals scattered through `xfire-theme.css`. */
-:root {
-  --chrome-height: 28px;
 }
 
 @layer base {

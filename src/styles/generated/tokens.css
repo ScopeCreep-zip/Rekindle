@@ -198,6 +198,26 @@
   inherits: true;
   initial-value: #1a2a5e;
 }
+@property --color-xfire-titlebar-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e7e7e7;
+}
+@property --tint-fill-strong {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 80%;
+}
+@property --tint-fill {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 60%;
+}
+@property --tint-fill-soft {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 50%;
+}
 @property --color-xfire-shadow {
   syntax: "<color>";
   inherits: true;
@@ -299,6 +319,10 @@
   --color-xfire-success-fill: #00892d;
   --color-xfire-titlebar-start: #0f1a3a;
   --color-xfire-titlebar-end: #1a2a5e;
+  --color-xfire-titlebar-text: #e7e7e7;
+  --tint-fill-strong: 80%;
+  --tint-fill: 60%;
+  --tint-fill-soft: 50%;
   --color-xfire-shadow: #000000;
   --color-xfire-scrim: #000000;
   --color-xfire-scrim-danger-text: #ff5955;
@@ -328,17 +352,17 @@
     --color-xfire-border: #d4d4d4;
     --color-xfire-control-border: #767676;
     --color-xfire-text-primary: #1a1a1a;
-    --color-xfire-text-secondary: #595959;
+    --color-xfire-text-secondary: #545454;
     --color-xfire-accent-text: #0a5a9c;
     --color-xfire-danger-text: #b4001a;
     --color-xfire-text: #1a1a1a;
-    --color-xfire-text-dim: #2d5f80;
+    --color-xfire-text-dim: #0d4363;
     --color-xfire-text-clan: #0a5a9c;
     --color-xfire-text-status: #595959;
-    --color-xfire-text-timestamp: #595959;
-    --color-xfire-online: #008a2e;
+    --color-xfire-text-timestamp: #545454;
+    --color-xfire-online: #00892d;
     --color-xfire-away: #927300;
-    --color-xfire-ingame: #0080ab;
+    --color-xfire-ingame: #007faa;
     --color-xfire-online-text: #007427;
     --color-xfire-away-text: #6e5600;
     --color-xfire-ingame-text: #006285;
@@ -347,7 +371,13 @@
     --color-xfire-offline-text: #5b5b5b;
     --color-xfire-link: #0a5a9c;
     --color-xfire-focus-outline: #0b5cad;
-    --color-xfire-success: #006b25;
+    --color-xfire-success: #00631d;
+    --color-xfire-titlebar-start: #dbe7f6;
+    --color-xfire-titlebar-end: #c3d6ef;
+    --color-xfire-titlebar-text: #000000;
+    --tint-fill-strong: 100%;
+    --tint-fill: 100%;
+    --tint-fill-soft: 100%;
     --color-xfire-overlay: #000000;
     --color-xfire-shade: #ffffff;
     --color-xfire-thread-tag: #7a5500;
