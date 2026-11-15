@@ -301,6 +301,31 @@ async fn a_full_store_evicts_its_least_recently_used_record() {
     assert!(copies(&sim, &key, 0) >= 5);
 }
 
+/// VU2 item 18: a rehydration of a record the node's local store does not
+/// hold is `KeyNotFound` and dropped unchecked, reached or not (0.5.8
+/// `rehydrate.rs:155-165`, `tasks/rehydrate_records.rs:65-66`).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_rehydration_of_a_record_not_held_locally_is_dropped() {
+    let (sim, nodes) = Netsim::nodes(2, 37);
+    let b = dht(&sim, &nodes[1]);
+    let theirs = b
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap()
+        .key;
+    let ghost = "VLD0:ghost".to_string();
+    {
+        let mut inner = sim.net.inner.lock();
+        inner.nodes[0].rehydrations.insert(theirs.clone());
+        inner.nodes[0].rehydrations.insert(ghost.clone());
+    }
+    tick(&sim);
+    let inner = sim.net.inner.lock();
+    assert!(inner.nodes[0].rehydrations.is_empty());
+    assert!(!inner.nodes[0].rehydration_checked.contains_key(&theirs));
+    assert!(!inner.nodes[0].rehydration_checked.contains_key(&ghost));
+}
+
 /// VU2 item 17: a replica that reports no seq for a subkey is no evidence
 /// for it (0.5.8 `inspect_record.rs:638-652`, `:695-705`): with three of the
 /// ten holding our value and seven empty, the subkey is short of consensus

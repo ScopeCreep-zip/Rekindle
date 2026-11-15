@@ -87,8 +87,17 @@ pub(super) fn pending(inner: &Inner, node: usize) -> bool {
 /// One rehydration of `key` on `node`: queue the subkeys to push, and mark
 /// the record checked. With no replica reached its inspect answers
 /// `TryAgain` (0.5.8 `inspect_record.rs:346-349`) and the request stays
-/// queued (`tasks/rehydrate_records.rs:45-60`).
+/// queued (`tasks/rehydrate_records.rs:56-64`). A record the node's local
+/// store does not hold answers `KeyNotFound` (0.5.8 `rehydrate.rs:155-165`)
+/// and its request is dropped, unchecked (`rehydrate_records.rs:65-66`).
+/// The `TryAgain` of an inspect pre-empted by foreground work
+/// (`rehydrate.rs:197-211`) cannot happen here: the inspect takes no
+/// simulated time, so no foreground call overlaps it.
 fn rehydrate(inner: &mut Inner, node: usize, key: &str) {
+    if !inner.nodes[node].known.contains(key) {
+        inner.nodes[node].rehydrations.remove(key);
+        return;
+    }
     let reach = reach_of(inner, node, key);
     if reach.is_empty() {
         return;
