@@ -1,14 +1,15 @@
-//! A first-hop link failure on a node's own route (plan E2.B close-out):
-//! Veilid counts a send that fails at its safety route's first hop as a
-//! send failure on that route, and one kills it (`route_spec_store/mod.rs:48`,
-//! `route_stats.rs:56-60`), reported to the owner as `dead_routes`. Our
-//! `OwnRoutes` forgets the dead route and allocates another, the new blob
-//! is published, and the pair keeps talking.
+//! A first-hop link failure on a node's safety route (plan E2.B close-out,
+//! premise rewritten for Veilid 0.5.8 at VU2c): the send fails
+//! `NoConnection` (our `RouteUnusable`), and Veilid counts it as a send
+//! failure, which only recompiles the route (`route_stats.rs:19-35`:
+//! `needs_recompile`, not `means_route_dead`; `route_compile.rs:672`). No
+//! `dead_routes` is reported and no route is reallocated: the message still
+//! arrives (the sender's outbox retries it) and the pair keeps talking on
+//! the routes it had.
 //!
-//! The work after the failure runs in tasks the Host spawned (the dispatch
-//! loop hears the death, `OwnRoutes` reallocates), which run in the node's
-//! span: every WARN or ERROR of the run counts under a node, none under
-//! `None`. A stray untagged app message makes Xan's dispatch loop (a task
+//! The work after the failure runs in tasks the Host spawned, which run in
+//! the node's span: every WARN or ERROR of the run counts under a node,
+//! none under `None`. A stray untagged app message makes Xan's dispatch loop (a task
 //! spawned at unlock) warn, and that warning counts under Xan.
 
 use rekindle_netsim::Fault;
@@ -18,7 +19,7 @@ use crate::logs;
 use crate::pair::{befriend, holds_message, key, send, talk, LIMIT};
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_first_hop_failure_reallocates_and_keeps_delivering() {
+async fn a_first_hop_failure_recompiles_and_keeps_delivering() {
     let (sim, mut nodes) = start(2, 92).await;
     for (node, name) in nodes.iter_mut().zip(["Wes", "Xan"]) {
         node.unlock_new_identity(name).await;
@@ -32,17 +33,14 @@ async fn a_first_hop_failure_reallocates_and_keeps_delivering() {
     send(&nodes[0], &xan, body).await;
     assert!(
         eventually(&sim, LIMIT, || holds_message(&nodes[1], &wes, body)).await,
-        "Xan reads {body:?} after Wes's route died at its first hop"
-    );
-    assert!(
-        eventually(&sim, LIMIT, || {
-            let fresh = sim.route_blobs(0).iter().any(|b| !routes.contains(b));
-            async move { fresh }
-        })
-        .await,
-        "Wes reallocated its dead route"
+        "Xan reads {body:?} after Wes's send failed at its first hop"
     );
     talk(&sim, &nodes[0], &nodes[1], "after").await;
+    assert_eq!(
+        sim.route_blobs(0),
+        routes,
+        "Wes's route lived: recompiled, never reallocated"
+    );
     let xan_warns = |c: &std::collections::BTreeMap<Option<usize>, logs::Counts>| {
         c.get(&Some(1)).copied().unwrap_or_default().warn
     };

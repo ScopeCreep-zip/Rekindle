@@ -75,12 +75,31 @@ pub enum Fault {
     /// The node's own routes die: the owner hears of it, its importers do
     /// not (their sends are lost until they fetch the new route).
     RouteDeath { node: usize },
-    /// The first hop of the node's own route fails on its next app message
-    /// or call: the send fails `NoConnection` (our port's `RouteUnusable`),
-    /// one send failure kills that route (`route_spec_store/mod.rs:48`,
-    /// `route_stats.rs:56-60`), and the owner hears `dead_routes`. Its
-    /// next route starts at another hop, so the fault ends with the route.
+    /// The first hop of the node's safety route fails on its next app
+    /// message or call: that send fails `NoConnection` (our port's
+    /// `RouteUnusable`). Veilid 0.5.8 counts it as a send failure, which
+    /// only recompiles the route (`route_stats.rs:19-35`: not
+    /// `means_route_dead`, but `needs_recompile`, `route_compile.rs:672`):
+    /// the route lives, nobody hears `dead_routes`, and the next send goes
+    /// out on the recompiled route ([`routes`](crate::routes)).
     RouteLinkFailure { node: usize },
+    /// The node's own route of `class` stops carrying traffic end to end:
+    /// what is sent over it or to it is lost, its loopback tests fail, and
+    /// a run of 3 (Ordered) or 5 (Unordered) kills it, reported to the
+    /// owner as `dead_routes` ([`crate::loopback`]).
+    LoopbackFailures {
+        node: usize,
+        class: rekindle_records::port::RouteClass,
+    },
+    /// The node's network blocks UDP (or stops blocking it): it cannot
+    /// allocate an Unordered route (no fallback to Ordered,
+    /// [`routes`](crate::routes)), and its live Unordered routes fail end
+    /// to end as [`Fault::LoopbackFailures`] until UDP returns or they die.
+    UdpBlocked { node: usize, blocked: bool },
+    /// The node's process stalled `ms` (a suspended or starved executor).
+    /// From 2.5 s on, Veilid 0.5.8's attachment manager sends the
+    /// unchanged attachment state again ([`attach`](crate::attach)).
+    Stall { node: usize, ms: u64 },
     /// The node detaches (or reattaches): its DHT calls fail, it neither
     /// sends nor receives app messages or calls (a call to it times out),
     /// no watch change reaches it, and it hears Detaching then Detached
@@ -259,6 +278,9 @@ impl Netsim {
             Fault::RouteLinkFailure { node } => {
                 self.net.inner.lock().faults.link_failure.insert(node);
             }
+            Fault::LoopbackFailures { node, class } => self.net.break_route(node, class),
+            Fault::UdpBlocked { node, blocked } => self.net.block_udp(node, blocked),
+            Fault::Stall { node, ms } => self.stall(node, std::time::Duration::from_millis(ms)),
             Fault::Detach { node, detached } => self.detach(node, detached),
             Fault::InternetReady { node, ready } => self.internet_ready(node, ready),
             Fault::ReplicaChurn { key, count } => self.churn(&key, count),

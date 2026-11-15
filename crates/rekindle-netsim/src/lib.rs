@@ -25,6 +25,7 @@ mod clock;
 mod faults;
 mod idle;
 pub mod latency;
+mod loopback;
 mod messages;
 mod network;
 mod records;

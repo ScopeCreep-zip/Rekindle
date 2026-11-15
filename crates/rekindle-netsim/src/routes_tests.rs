@@ -8,6 +8,11 @@ use rekindle_types::config::SafetyProfile;
 use crate::tests::{attached, recv};
 use crate::{Fault, Netsim, Node};
 
+/// Whether the route `blob` names is live on the network.
+fn live(sim: &Netsim, blob: &[u8]) -> bool {
+    crate::routes::route_id(blob).is_some_and(|id| sim.net.inner.lock().routes.contains_key(&id))
+}
+
 async fn own_blob(node: &Node) -> Vec<u8> {
     node.ports.routes.want_own();
     node.ports.routes.available_own(RouteClass::General).await
@@ -79,13 +84,15 @@ async fn an_idle_import_expires_after_five_minutes() {
         .unwrap();
 }
 
-/// Calls lost to 5 distinct destinations kill the asker's own route,
-/// reported to it as dead (`route_stats.rs:56-60`).
+/// Pinned calls lost to 5 distinct destinations inside one out-of-band
+/// test's span kill the pinned route, reported to its owner as dead
+/// (Veilid 0.5.8 `route_stats.rs:134-141`); spaced past that span, the
+/// passing test clears them each time (`:536-543`), and unpinned losses
+/// charge no own route (they count on Veilid's pool routes).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn five_lost_questions_kill_the_askers_route() {
+async fn five_lost_questions_kill_only_a_pinned_route_inside_one_test() {
     let (sim, mut nodes) = Netsim::nodes(6, 23);
     let _pump = sim.start();
-    let mine = own_blob(&nodes[0]).await;
     let mut targets = Vec::new();
     for i in 1..6 {
         let blob = own_blob(&nodes[i]).await;
@@ -96,30 +103,55 @@ async fn five_lost_questions_kill_the_askers_route() {
         targets.push(nodes[0].ports.routes.import(&blob).unwrap());
     }
     attached(&mut nodes[0]).await;
+    nodes[0].ports.routes.want_own();
+    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
+    let sending = nodes[0]
+        .ports
+        .routes
+        .available_own(RouteClass::Sending)
+        .await;
     let profile = SafetyProfile::default_dht();
-    for (n, target) in targets.iter().enumerate() {
-        assert!(nodes[0]
-            .ports
-            .messages
-            .call(target, &profile, vec![1])
+    let messages = nodes[0].ports.messages.clone();
+    for target in &targets {
+        assert!(messages.call(target, &profile, vec![1]).await.is_err());
+        assert!(messages
+            .call_pinned(target, &profile, RouteClass::Sending, vec![1])
             .await
             .is_err());
-        if n < 4 {
-            assert!(nodes[0].events.try_recv().is_err());
-        }
+    }
+    sim.quiesce().await;
+    assert!(
+        !matches!(
+            nodes[0].events.try_recv(),
+            Ok(PortEvent::RouteChange { .. })
+        ),
+        "spaced losses are cleared by each passing test"
+    );
+    let calls = targets.iter().map(|target| {
+        let messages = messages.clone();
+        let (target, profile) = (target.clone(), profile.clone());
+        tokio::spawn(async move {
+            messages
+                .call_pinned(&target, &profile, RouteClass::Sending, vec![2])
+                .await
+        })
+    });
+    for call in calls.collect::<Vec<_>>() {
+        assert!(call.await.unwrap().is_err());
     }
     let PortEvent::RouteChange { dead, .. } = recv(&mut nodes[0]).await else {
         panic!("expected a route change");
     };
     assert_eq!(dead.len(), 1);
-    assert!(sim.route_blobs(0).iter().all(|b| *b != mine));
+    assert!(!live(&sim, &sending));
 }
 
-/// A send failing at the first hop of the sender's own route fails
-/// `RouteUnusable` and kills that route after one failure, reported to it
-/// as dead (`route_spec_store/mod.rs:48`); the next send goes out.
+/// A send failing at the first hop of the sender's safety route fails
+/// `RouteUnusable`, and the route lives: Veilid 0.5.8 recompiles it
+/// (`route_stats.rs:19-35`), reports nothing, and the next send goes out
+/// on it.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn one_first_hop_failure_kills_the_senders_route() {
+async fn a_first_hop_failure_recompiles_and_kills_nothing() {
     let (sim, mut nodes) = Netsim::nodes(2, 24);
     let _pump = sim.start();
     let mine = own_blob(&nodes[0]).await;
@@ -137,11 +169,6 @@ async fn one_first_hop_failure_kills_the_senders_route() {
             .await,
         Err(PortError::RouteUnusable(_))
     ));
-    let PortEvent::RouteChange { dead, dead_remote } = recv(&mut nodes[0]).await else {
-        panic!("expected a route change");
-    };
-    assert_eq!((dead.len(), dead_remote.len()), (1, 0));
-    assert!(sim.route_blobs(0).iter().all(|b| *b != mine));
     nodes[0]
         .ports
         .messages
@@ -152,6 +179,147 @@ async fn one_first_hop_failure_kills_the_senders_route() {
         recv(&mut nodes[1]).await,
         PortEvent::AppMessage { message } if message == vec![2]
     ));
+    sim.quiesce().await;
+    assert!(nodes[0].events.try_recv().is_err(), "no dead_routes");
+    assert!(sim.route_blobs(0).contains(&mine));
+}
+
+/// A route that stops carrying traffic dies by its loopback tests: first
+/// tested 30 s after it broke, then once per RPC timeout and tick, and the
+/// third failure kills an Ordered route, the fifth an Unordered one
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:51-63`).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn loopback_failures_kill_ordered_after_3_and_unordered_after_5() {
+    let (sim, mut nodes) = Netsim::nodes(1, 25);
+    let _pump = sim.start();
+    attached(&mut nodes[0]).await;
+    nodes[0].ports.routes.want_own();
+    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
+    for class in [RouteClass::General, RouteClass::Sending] {
+        nodes[0].ports.routes.available_own(class).await;
+    }
+    sim.quiesce().await;
+    while nodes[0].events.try_recv().is_ok() {}
+    for (class, tests) in [(RouteClass::General, 3u32), (RouteClass::Sending, 5)] {
+        let old = nodes[0].ports.routes.own_blob(class).unwrap();
+        sim.fault(Fault::LoopbackFailures { node: 0, class });
+        let death = Duration::from_secs(30) + Duration::from_secs(6) * (tests - 1);
+        tokio::time::sleep(death.saturating_sub(Duration::from_secs(2))).await;
+        assert!(live(&sim, &old), "{class:?} lives until test {tests}");
+        tokio::time::sleep(Duration::from_secs(4)).await;
+        assert!(!live(&sim, &old), "{class:?} dies at test {tests}");
+    }
+}
+
+/// A node whose network blocks UDP cannot allocate an Unordered route
+/// (today's Sending and Media, `RouteOrdering::of`): one ordering per
+/// route, no fallback (Veilid 0.5.8 `route_allocate.rs:897-936`); General
+/// (Ordered) allocates. Its live Sending route dies after 5 failed tests.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_udp_blocked_node_allocates_no_unordered_route() {
+    let (sim, mut nodes) = Netsim::nodes(1, 26);
+    let _pump = sim.start();
+    attached(&mut nodes[0]).await;
+    nodes[0].ports.routes.want_own();
+    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
+    let sending = nodes[0]
+        .ports
+        .routes
+        .available_own(RouteClass::Sending)
+        .await;
+    sim.fault(Fault::UdpBlocked {
+        node: 0,
+        blocked: true,
+    });
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    assert!(!live(&sim, &sending), "the UDP route died");
+    // The Host forwards each death to `OwnRoutes`, which tries to reallocate.
+    while let Ok(event) = nodes[0].events.try_recv() {
+        if let PortEvent::RouteChange { dead, .. } = event {
+            nodes[0].ports.routes.on_dead_own(&dead);
+        }
+    }
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    assert!(nodes[0]
+        .ports
+        .routes
+        .own_blob(RouteClass::Sending)
+        .is_none());
+    assert!(nodes[0].ports.routes.own_blob(RouteClass::Media).is_none());
+    assert!(nodes[0]
+        .ports
+        .routes
+        .own_blob(RouteClass::General)
+        .is_some());
+    sim.fault(Fault::UdpBlocked {
+        node: 0,
+        blocked: false,
+    });
+    let back = tokio::time::timeout(
+        Duration::from_secs(300),
+        nodes[0].ports.routes.available_own(RouteClass::Sending),
+    )
+    .await;
+    assert!(back.is_ok(), "UDP back, Sending allocates");
+}
+
+/// An unpinned call's reply route is a Veilid pool route nothing holds
+/// mid-call: crossing 30 s since it was last valid while the question is
+/// out, it is released and the answer is lost; a pinned call at the same
+/// moment is answered over the published Sending route (plan VU2 item 14).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_unpinned_reply_route_released_mid_call_loses_the_answer() {
+    let (sim, mut nodes) = Netsim::nodes(2, 27);
+    let _pump = sim.start();
+    let blob = own_blob(&nodes[1]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    nodes[0].ports.routes.want_own();
+    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
+    nodes[0]
+        .ports
+        .routes
+        .available_own(RouteClass::Sending)
+        .await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    let profile = SafetyProfile::default_dht();
+    let messages = nodes[0].ports.messages.clone();
+    for pinned in [false, true] {
+        let ask = || {
+            let (caller, to, profile) = (messages.clone(), target.clone(), profile.clone());
+            tokio::spawn(async move {
+                if pinned {
+                    caller
+                        .call_pinned(&to, &profile, RouteClass::Sending, vec![1])
+                        .await
+                } else {
+                    caller.call(&to, &profile, vec![1]).await
+                }
+            })
+        };
+        for late in [false, true] {
+            if late {
+                // The first answer made the reply route valid as it arrived.
+                tokio::time::sleep(Duration::from_millis(29_700)).await;
+            }
+            let call = ask();
+            let PortEvent::AppCall { call_id, .. } = recv(&mut nodes[1]).await else {
+                panic!("expected a call");
+            };
+            nodes[1]
+                .ports
+                .messages
+                .reply(call_id, b"a".to_vec())
+                .await
+                .unwrap();
+            let answer = call.await.unwrap();
+            assert_eq!(
+                answer.is_ok(),
+                pinned || !late,
+                "pinned {pinned}, crossing the mark {late}: {answer:?}"
+            );
+        }
+    }
 }
 
 /// A pinned call (RH1r): refused `Routing` while the caller's `Sending`
