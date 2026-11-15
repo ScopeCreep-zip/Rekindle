@@ -372,6 +372,12 @@ impl Netsim {
             .unwrap_or(0)
     }
 
+    /// How many sets node `node`'s app has asked for, of any record.
+    #[must_use]
+    pub fn app_sets(&self, node: usize) -> u64 {
+        self.net.inner.lock().nodes[node].app_sets
+    }
+
     /// Each replica's value at `key`/`subkey`, in placement order.
     #[must_use]
     pub fn replica_values(&self, key: &str, subkey: u32) -> Vec<Option<RecordValue>> {

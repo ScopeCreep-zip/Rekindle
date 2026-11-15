@@ -137,6 +137,9 @@ pub(crate) struct NodeSlot {
     /// The inspects the node's app asked for (`DhtPort::inspect`), by
     /// record key, for a scenario that a record is never polled.
     pub app_inspects: HashMap<String, u64>,
+    /// The sets the node's app asked for (`DhtPort::set`), for a scenario
+    /// that a stall starts no burst of writes.
+    pub app_sets: u64,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// The attachment state last queued for the node ([`crate::attach`]).
@@ -191,6 +194,7 @@ impl NodeSlot {
             watches: HashMap::new(),
             outbound: crate::records::outbound::OutboundWatches::default(),
             app_inspects: HashMap::new(),
+            app_sets: 0,
             pools: Vec::new(),
             state: "detached",
             public_ready: false,
