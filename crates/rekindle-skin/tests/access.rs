@@ -240,9 +240,10 @@ fn check(base: Base, skin: &[(&str, TokenValue)]) -> Vec<SkinRule> {
 }
 
 #[test]
-fn dark_defaults_pass() {
-    assert_eq!(check(Base::Dark, &[]), vec![]);
-    assert_eq!(check(Base::HcDark, &[]), vec![]);
+fn defaults_pass_on_every_base() {
+    for base in [Base::Dark, Base::Light, Base::HcDark, Base::HcLight] {
+        assert_eq!(check(base, &[]), vec![], "{base:?}");
+    }
 }
 
 #[test]

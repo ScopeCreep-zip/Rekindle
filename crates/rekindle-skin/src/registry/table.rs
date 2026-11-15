@@ -251,7 +251,7 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "danger.text",
         "--color-xfire-danger-text",
-        c4("#ff5955", "#b4001a", "#ff8a80", "#8a0000"),
+        c4("#ff5955", "#b00019", "#ff8a80", "#8a0000"),
         TEXT,
     ),
     fixed(row(
@@ -299,22 +299,24 @@ pub const ENTRIES: &[TokenEntry] = &[
         ),
         "text.secondary",
     ),
+    // The light status colours reach 3.1:1 on the selected row (accent 30 %
+    // over white, step 6 S3) and 21 ΔE00 apart (S1), d3 §5 and §7.3.
     row(
         "status.online",
         "--color-xfire-online",
-        c2("#53d769", "#00892d"),
+        c2("#53d769", "#00872c"),
         GRAPHIC,
     ),
     row(
         "status.away",
         "--color-xfire-away",
-        c2("#ffcc00", "#927300"),
+        c2("#ffcc00", "#8f7000"),
         GRAPHIC,
     ),
     row(
         "status.ingame",
         "--color-xfire-ingame",
-        c2("#4fc3f7", "#007faa"),
+        c2("#4fc3f7", "#0078b4"),
         GRAPHIC,
     ),
     row(
@@ -326,7 +328,7 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "status.away-text",
         "--color-xfire-away-text",
-        c2("#ffcc00", "#6e5600"),
+        c2("#ffcc00", "#6a5300"),
         TEXT,
     ),
     row(
@@ -338,13 +340,13 @@ pub const ENTRIES: &[TokenEntry] = &[
     row(
         "status.busy",
         "--color-xfire-busy",
-        c2("#ef4444", "#df3337"),
+        c2("#ef4444", "#da3034"),
         GRAPHIC,
     ),
     row(
         "status.offline",
         "--color-xfire-offline",
-        c2("#7d7d7d", "#767676"),
+        c2("#7d7d7d", "#737373"),
         GRAPHIC,
     ),
     row(
