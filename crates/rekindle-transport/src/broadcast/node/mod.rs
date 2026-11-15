@@ -67,8 +67,9 @@ impl TransportNode {
         self.ports.routes.own_blob(RouteClass::Media)
     }
 
-    /// Unlock: want both route classes (plan C7.9d; nothing is allocated
-    /// while locked).
+    /// Want both node-held route classes again after a lock released them
+    /// (C7.9b: wanted from node-ready, unlocked or not, so the next login
+    /// is reachable at once with routes no other identity used).
     pub fn want_routes(&self) {
         self.ports.routes.want_own();
     }

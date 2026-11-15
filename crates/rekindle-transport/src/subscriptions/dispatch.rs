@@ -42,7 +42,9 @@ pub(crate) struct RouteOwners {
     pub peers: Arc<parking_lot::RwLock<crate::broadcast::peer_registry::PeerRegistry>>,
 }
 
-/// Run the inbound dispatch loop until a shutdown signal is received.
+/// Run the inbound dispatch loop until a shutdown signal is received, then
+/// receive without dispatching through the network's `Shutdown`
+/// ([`super::drain`]).
 pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     handler: Arc<H>,
     config: Arc<TransportConfig>,
@@ -74,6 +76,10 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
                 }
             }
         }
+        // Stopping: dispatch nothing more, but keep the receiver until
+        // Veilid's last update, `Shutdown` (live R3-6); the node's
+        // `shutdown` signals again once the network stopped.
+        super::drain::drain_through_shutdown(&mut events, &mut shutdown_rx, &shared).await;
     };
     // The value changes' worker runs beside the loop in this task and ends
     // with it: at shutdown a change still reading the network is dropped

@@ -181,7 +181,8 @@ impl TransportNode {
 
     /// Graceful shutdown: stop the route publisher and dispatch, release
     /// our routes, and — when this node started the network itself — detach
-    /// and stop it. An adopted node's network is stopped by its owner.
+    /// and stop it, the dispatch loop receiving its updates through
+    /// `Shutdown`. An adopted node's network is stopped by its owner.
     ///
     /// # Errors
     /// The network refused to detach; it was stopped all the same.
@@ -195,15 +196,14 @@ impl TransportNode {
             let _ = h.await;
         }
 
+        // Dispatch stops; the loop keeps receiving until the network's last
+        // update (`Shutdown`), so nothing Veilid sends while it detaches
+        // and stops is dropped on a gone consumer (live R3-6).
         let _ = self.shutdown_tx.send(()).await;
-        if let Some(handle) = self.dispatch_handle.take() {
-            if let Err(e) = handle.await {
-                warn!(error = %e, "dispatch loop join failed");
-            }
-        }
 
-        // Release our live routes before detach; a dead one was already
-        // forgotten (plan C7.9a).
+        // Release our live routes before detach, an allocation in flight
+        // awaited (not cut) and released; a dead one was already forgotten
+        // (plan C7.9a).
         self.ports.routes.shutdown_own().await;
 
         // The network is stopped even when the detach fails: a skipped
@@ -218,6 +218,15 @@ impl TransportNode {
                 warn!(error = %e, "detach failed; stopping the network anyway");
             }
             lifecycle.shutdown().await;
+        }
+        // The network stopped (or is its owner's): Veilid's updates are all
+        // queued, `Shutdown` last (`core_context.rs:194-230`), so the drain
+        // takes them without waiting and the loop ends.
+        let _ = self.shutdown_tx.send(()).await;
+        if let Some(handle) = self.dispatch_handle.take() {
+            if let Err(e) = handle.await {
+                warn!(error = %e, "dispatch loop join failed");
+            }
         }
 
         info!("transport node shutdown complete");
