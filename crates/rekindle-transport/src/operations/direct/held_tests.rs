@@ -3,13 +3,13 @@ use rekindle_types::friend::FriendshipState;
 
 use super::*;
 
-const NOW: u64 = 1_000_000_000;
+const HELD_AT: u64 = 1_000_000_000;
 
 fn opened(peer: &str, seq: u64) -> Opened {
     Opened {
         sender_hex: peer.to_string(),
         type_id: DmTypeId::DmText,
-        sent_at_ms: NOW,
+        sent_at_ms: HELD_AT,
         body: DirectBody::SessionResetAccept,
         unprocessed: None,
         nonce: None,
@@ -52,30 +52,30 @@ fn a_peer_holds_at_most_its_cap_and_others_keep_theirs() {
     let mut held = HeldMessages::default();
     for seq in 0..MAX_HELD_PER_PEER {
         let seq = u64::try_from(seq).expect("fits");
-        assert!(held.hold(opened("ida", seq), NOW).is_ok());
+        assert!(held.hold(opened("ida", seq), HELD_AT).is_ok());
     }
     let refused = held
-        .hold(opened("ida", 9_999), NOW)
+        .hold(opened("ida", 9_999), HELD_AT)
         .expect_err("past the cap");
     assert_eq!(refused.stream_seq, 9_999, "the newest is handed back");
     assert_eq!(held.len("ida"), MAX_HELD_PER_PEER);
-    assert!(held.hold(opened("jon", 1), NOW).is_ok());
+    assert!(held.hold(opened("jon", 1), HELD_AT).is_ok());
 }
 
 #[test]
 fn take_returns_the_live_in_order_and_the_expired_apart() {
     let mut held = HeldMessages::default();
-    held.hold(opened("ida", 1), NOW).expect("held");
-    held.hold(opened("ida", 2), NOW + HELD_EXPIRY_MS)
+    held.hold(opened("ida", 1), HELD_AT).expect("held");
+    held.hold(opened("ida", 2), HELD_AT + HELD_EXPIRY_MS)
         .expect("held");
-    held.hold(opened("ida", 3), NOW + HELD_EXPIRY_MS + 1)
+    held.hold(opened("ida", 3), HELD_AT + HELD_EXPIRY_MS + 1)
         .expect("held");
-    let (live, expired) = held.take("ida", NOW + HELD_EXPIRY_MS + 1);
+    let (live, expired) = held.take("ida", HELD_AT + HELD_EXPIRY_MS + 1);
     let seqs = |v: &[Opened]| v.iter().map(|o| o.stream_seq).collect::<Vec<_>>();
     assert_eq!(seqs(&live), [2, 3]);
     assert_eq!(seqs(&expired), [1]);
     assert_eq!(held.len("ida"), 0, "taken");
-    let (live, expired) = held.take("ida", NOW);
+    let (live, expired) = held.take("ida", HELD_AT);
     assert!(live.is_empty() && expired.is_empty());
 }
 
