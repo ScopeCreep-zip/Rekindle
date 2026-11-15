@@ -7,7 +7,7 @@
 //! network blocks UDP, [`crate::Fault::UdpBlocked`]) fails, and the run of
 //! failures kills it:
 //! - **when tested:** a published route is tested once it needs testing
-//!   (`routing_domains/public_internet/controller/private_route_management.rs:113-121`): idle for
+//!   (`routing_domains/public_internet/controller/private_route_management.rs:114-121`): idle for
 //!   [`ROUTE_MIN_IDLE`] since it was last known valid, or at once after a
 //!   failure (`route_stats.rs:144-158`) or a question lost on it, which
 //!   enqueues an out-of-band test (`rpc_processor/mod.rs:1586-1600`). The
@@ -36,11 +36,11 @@ use crate::network::Network;
 use crate::routes::RouteOrdering;
 
 /// A published route is tested after this long without being known valid
-/// (`route_spec_store/mod.rs:46` `ROUTE_MIN_IDLE_TIME_MS`).
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:46` `ROUTE_MIN_IDLE_TIME_MS`).
 pub(crate) const ROUTE_MIN_IDLE: Duration = Duration::from_secs(30);
 
 /// The private route management task's period
-/// (`routing_domains/public_internet/controller/mod.rs:23`).
+/// (Veilid 0.5.8 `routing_domains/public_internet/controller/mod.rs:23`).
 pub(crate) const ROUTE_TEST_TICK: Duration = Duration::from_secs(1);
 
 /// A run of failing loopback tests on one own route.
@@ -68,7 +68,7 @@ impl LoopbackRun {
 }
 
 /// The run of loopback failures that kills a route of `ordering`
-/// (`route_spec_store/mod.rs:51-63`).
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:51-63`).
 pub(crate) fn threshold(ordering: RouteOrdering) -> usize {
     match ordering {
         RouteOrdering::Ordered => 3,
@@ -177,7 +177,7 @@ impl Network {
     }
 
     /// A question lost on broken route `id` enqueues an out-of-band test
-    /// (`rpc_processor/mod.rs:1586-1600`): it runs on the next tick.
+    /// (Veilid 0.5.8 `rpc_processor/mod.rs:1586-1600`): it runs on the next tick.
     pub(crate) fn test_soon(inner: &mut crate::network::Inner, id: &str) {
         if let Some(run) = inner.faults.loopback.get_mut(id) {
             run.next_test = run

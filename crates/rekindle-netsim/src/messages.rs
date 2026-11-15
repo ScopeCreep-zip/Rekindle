@@ -42,13 +42,13 @@ use crate::network::Network;
 use crate::routes::FakeAllocator;
 
 /// Veilid's default RPC timeout (`network.rpc.timeout_ms`,
-/// `veilid_config.rs:852`).
+/// Veilid 0.5.8 `veilid_config.rs:944`).
 pub const RPC_TIMEOUT: Duration = Duration::from_millis(5_000);
 
 /// The reply deadline of an app call over `profile`'s safety route:
 /// Veilid 0.5.8's `get_safety_selection_timeout`
 /// (`rpc_processor/mod.rs:1985-1994`) is `routed_timeout`
-/// (`:109-117`): the RPC timeout plus 10% of it (500 ms) per hop past 4 of
+/// (`:107-117`): the RPC timeout plus 10% of it (500 ms) per hop past 4 of
 /// twice the safety hop count, with the hop count floor-clamped as our
 /// transport sends it.
 #[must_use]
@@ -58,7 +58,7 @@ pub fn call_timeout(profile: &SafetyProfile) -> Duration {
 }
 
 /// What a detached node's sends answer: its RPC processor is shut down
-/// (`rpc_app_message.rs:18`, `rpc_app_call.rs:18`, `:167`: `TryAgain`
+/// (Veilid 0.5.8 `rpc_app_message.rs:18`, `rpc_app_call.rs:18`, `:167`: `TryAgain`
 /// "not started up"), which our Veilid port maps to `Send`
 /// (`rekindle-protocol` `ports.rs` `send_error`).
 fn not_started() -> PortError {
@@ -158,7 +158,7 @@ impl FakeMessages {
             delay,
         );
         // The statement returns once it is on its way: the first hop
-        // (`rpc_processor/mod.rs:1882-1926`).
+        // (Veilid 0.5.8 `rpc_processor/mod.rs:2262-2320`).
         tokio::time::sleep(self.net.latency.draw(self.node, latency::FIRST_HOP)).await;
         Ok(())
     }
@@ -314,8 +314,8 @@ impl AppMessagePort for FakeMessages {
                 Ok(())
             }
             // An expired call's reply is ignored: its waiter is gone
-            // (`rpc_app_call.rs:162-170`, `RPCError::ignore`), which the API
-            // answers `Generic` (`rpc_processor/error.rs:82`) and our port
+            // (Veilid 0.5.8 `rpc_app_call.rs:162-170`, `RPCError::ignore`), which the API
+            // answers `Generic` (`rpc_processor/error.rs:83`) and our port
             // `Send`.
             None => Err(PortError::Send(format!("no call {}", call_id.0))),
         }

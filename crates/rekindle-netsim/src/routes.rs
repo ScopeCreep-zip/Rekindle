@@ -3,22 +3,23 @@
 //! ready gating, backoff) over [`FakeAllocator`]; peers' routes import from
 //! their blobs.
 //!
-//! The pinned veilid-core (`routing_table/route_spec_store`):
+//! Veilid 0.5.8 (`routing_table/route_spec_store`):
 //! - **import:** any well-formed blob imports, live or not
 //!   (`route_remote.rs:28-53`); it enters the importer's remote route cache
 //!   (re-importing touches it, and unexpires an expired one,
 //!   `route_spec_store_cache.rs:371-394`), which holds 1024 entries
-//!   (`mod.rs:40`); one pushed out by LRU is reported to the importer as
+//!   (`mod.rs:42`); one pushed out by LRU is reported to the importer as
 //!   `dead_remote` (`route_spec_store_cache.rs:293-311`), and so is one
-//!   removed (`:398-414`). The owner's route dying is never told to an
-//!   importer: Veilid has no message for it (`mod.rs:183-194` reports only
-//!   the node's own cache).
+//!   removed (`:397-415`). The owner's route dying is never told to an
+//!   importer: Veilid has no message for it (`mod.rs:235-251`
+//!   `send_route_update` reports only the node's own cache).
 //! - **resolve:** a send looks the route up in the cache, touching it; an
 //!   entry unused for 5 minutes has expired and does not resolve
-//!   (`mod.rs:42`, `remote_route_cache_entry.rs:131-135`,
+//!   (`mod.rs:44`, `remote_route_cache_entry.rs:131-135`,
 //!   `route_spec_store_cache.rs:331-343`), nor does one never imported:
-//!   that send fails `NoConnection` (`routing_context.rs:368-373`), which
-//!   our port maps to `RouteUnusable` (`rekindle-protocol` `ports.rs:179`).
+//!   that send fails `NoConnection` (`rpc_processor/destination.rs:362-371`,
+//!   `rpc_processor/error.rs:81`), which our port maps to `RouteUnusable`
+//!   (`rekindle-protocol` `ports.rs:233-245`).
 //!   A send to a resolved route the owner released leaves and is lost.
 //! - **own route death** (Veilid 0.5.8 at `/Users/kali/veilid-wt-058`):
 //!   only evidence spanning the route kills it (`route_stats.rs:19-29`
@@ -73,14 +74,15 @@ pub const FORGETS_PEER_ROUTE: &str = "forgets a peer route";
 /// The blob prefix: a blob is this, then the route id.
 const BLOB_PREFIX: &str = "netsim-route:";
 
-/// The remote route cache's size (`route_spec_store/mod.rs:40`).
+/// The remote route cache's size (Veilid 0.5.8 `route_spec_store/mod.rs:42`).
 pub(crate) const REMOTE_ROUTE_CACHE_SIZE: usize = 1024;
 
-/// An unused remote route expires after this (`route_spec_store/mod.rs:42`).
+/// An unused remote route expires after this (Veilid 0.5.8
+/// `route_spec_store/mod.rs:44`).
 pub(crate) const REMOTE_ROUTE_EXPIRY: Duration = Duration::from_secs(300);
 
 /// Distinct lost-question destinations that kill an own route
-/// (`route_spec_store/mod.rs:48`), each at full blame weight
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:48`), each at full blame weight
 /// (`route_stats.rs:134-141`).
 pub(crate) const LOST_DESTINATIONS_INVALIDATE: usize = 5;
 
@@ -102,7 +104,8 @@ impl RouteOrdering {
     /// The ordering our allocator asks for `class`, as
     /// `rekindle-protocol` `own_routes.rs` (`media_private_spec`,
     /// `sending_private_spec`) asks it: General is `new_private_route`,
-    /// whose default spec is PreferOrdered (`veilid_api/types/safety.rs:16-17`,
+    /// whose default spec is PreferOrdered (Veilid 0.5.8
+/// `veilid_api/types/safety.rs:16-17`,
     /// `api.rs:763-765`); Sending is PreferOrdered (plan VU decision 2) and
     /// Media PreferUnordered. A preference names the route's one ordering
     /// (`safety.rs:24-29` `preferred_ordering`). The netsim cannot link that
@@ -160,7 +163,7 @@ impl RouteAllocator for FakeAllocator {
             return Err(AllocError::TryAgain("offline".into()));
         }
         if ordering == RouteOrdering::Unordered && inner.faults.udp_blocked.contains(&self.node) {
-            // No hop pair is viable on UDP alone (`route_allocate.rs:897-934`).
+            // No hop pair is viable on UDP alone (Veilid 0.5.8 `route_allocate.rs:897-934`).
             return Err(AllocError::TryAgain(
                 "unable to find any route at this time".into(),
             ));
@@ -308,7 +311,7 @@ impl RoutePort for FakeRoutes {
 
 impl Network {
     /// `node` imports route `id` into its remote route cache: a new entry,
-    /// or a touch that unexpires (`route_spec_store_cache.rs:371-394`); a
+    /// or a touch that unexpires (Veilid 0.5.8 `route_spec_store_cache.rs:371-394`); a
     /// full cache pushes its least recently used entry out, reported to
     /// `node` as `dead_remote` (`:293-311`).
     pub(crate) fn import_route(&self, node: usize, id: &str) {
@@ -351,7 +354,7 @@ impl Network {
 
     /// Whether `node`'s cache resolves route `id` for a send, touching it:
     /// not when never imported or idle past [`REMOTE_ROUTE_EXPIRY`]
-    /// (`route_spec_store_cache.rs:331-343`).
+    /// (Veilid 0.5.8 `route_spec_store_cache.rs:331-343`).
     pub(crate) fn resolve_route(&self, node: usize, id: &str) -> bool {
         let now = self.now_us();
         let mut inner = self.inner.lock();
@@ -426,13 +429,13 @@ impl Network {
     /// ([`crate::Fault::RouteLinkFailure`]): the fault is spent and the
     /// send answers `NoConnection`; the route lives and is recompiled for
     /// the next send, which may start at another first hop
-    /// (`route_stats.rs:31-35`, `route_compile.rs:672`).
+    /// (Veilid 0.5.8 `route_stats.rs:31-35`, `route_compile.rs:672`).
     pub(crate) fn first_hop_failed(&self, node: usize) -> bool {
         self.inner.lock().faults.link_failure.remove(&node)
     }
 
     /// An answer reached `node`: its own routes' lost destinations clear
-    /// (`route_stats.rs:489-508`), and the pool reply route it came over
+    /// (Veilid 0.5.8 `route_stats.rs:489-508`), and the pool reply route it came over
     /// (an unpinned call's, `pool`) is known valid now.
     pub(crate) fn answered(&self, node: usize, pool: bool) {
         if let Some(slot) = self.inner.lock().nodes.get_mut(node) {
@@ -447,7 +450,7 @@ impl Network {
     /// route, allocating a new one when the last was released
     /// ([`ROUTE_MIN_IDLE`](crate::loopback::ROUTE_MIN_IDLE) past its last
     /// validity); a new route is tested on the next tick
-    /// (`private_route_management.rs:119-121`, never tested), so it counts
+    /// (Veilid 0.5.8 `private_route_management.rs:119-121`, never tested), so it counts
     /// as valid from now.
     pub(crate) fn select_pool_reply(&self, node: usize) {
         if let Some(slot) = self.inner.lock().nodes.get_mut(node) {

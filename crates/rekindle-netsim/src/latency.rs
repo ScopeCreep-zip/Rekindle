@@ -22,11 +22,11 @@
 //! | get, inspect finding no value | [`DEADLINE`] 10.8–11.1 s | measured: the presence scan's 255-subkey inspect of a registry where no other row was written yet, from its row write to `read_changed … present=[]` (03:12:01.223 → :12.308, :17.813 → :28.724, :29.148 → :40.003, :40.415 → :51.229: 10.81–11.09 s); derived: an unwritten subkey has no consensus, so the fanout runs to `get_value_timeout_ms` 10 000 (`veilid_config.rs:1007`) |
 //! | watch | [`WATCH`] 1–3 s | derived: a watch is one fanout to the record's nodes (`storage_manager/watch_value.rs`), as a get |
 //! | create | [`CREATE`] 5–20 ms | derived: `storage_manager/create_record.rs` makes the record locally with no fanout; the live ~10 s between creates is the first set, charged as a set |
-//! | an app message's send returning | [`FIRST_HOP`] 40–120 ms | derived: one hop at the 80 ms median; the send waits for the first hop (`rpc_processor/mod.rs:1882-1926`) |
+//! | an app message's send returning | [`FIRST_HOP`] 40–120 ms | derived: one hop at the 80 ms median; the send waits for the first hop (`rpc_processor/mod.rs:2262-2320`) |
 //! | app message, one way; an app call is two | [`MESSAGE`] 0.2–0.8 s | derived, not measured: our safety route (3–4 hops, `messages.rs` [`crate::call_timeout`]) plus the peer's 1-hop private route, at the 80 ms median hop latency the netsim reports in its attachment |
 //!
 //! Concurrency: calls on one node's `(record, subkey)` serialize, as
-//! Veilid's per-subkey lock does (`storage_manager/set_value.rs:52`,
+//! Veilid's per-subkey lock does (`storage_manager/set_value.rs:176-183`,
 //! `record_lock_table`); calls on different subkeys overlap; at most
 //! [`max_concurrent`] calls of a node run at once (the
 //! `VeilidStartupOptions` default for `network.dht.max_concurrent_operations`)
@@ -34,8 +34,8 @@
 //! waiting on its subkey holds no slot.
 //!
 //! Faults compose: a node whose DHT is offline fails at once, as Veilid
-//! checks `dht_is_online()` before any fanout (`set_value.rs:109`,
-//! `open_record.rs:48`, `watch_value.rs:716`); a "try again" answer costs
+//! checks `dht_is_online()` before any fanout (`set_value.rs:248`,
+//! `open_record.rs:86`, `watch_value.rs:1048`); a "try again" answer costs
 //! the call's latency first, as a fanout that failed ran to its end.
 //! A watch change is an RPC from the replica to the watcher: it arrives one
 //! [`MESSAGE`] after the replica's tick sends it. Attachment events carry
@@ -98,7 +98,7 @@ pub const CREATE: Span = Span::ms(5, 20);
 /// An app message, one way.
 pub const MESSAGE: Span = Span::ms(200, 800);
 /// An app message's send returning: one hop at the 80 ms median hop
-/// latency the netsim reports (derived; `rpc_processor/mod.rs:1882-1926`
+/// latency the netsim reports (derived; Veilid 0.5.8 `rpc_processor/mod.rs:2262-2320`
 /// awaits the send to the first hop).
 pub const FIRST_HOP: Span = Span::ms(40, 120);
 

@@ -10,7 +10,7 @@ use super::*;
 /// pool's `Offline`, with the local seq not moved; the replicas that took
 /// it keep it, and the next set (another value at the same seq) comes back
 /// superseded by that partial value
-/// (`set_value.rs:170-171,205-221,487-494,709-719`).
+/// (`set_value.rs:224-241,561-623,753-757`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_partial_set_comes_back_as_our_own_stale_value() {
     // Five nodes: alone, node 0 reaches two replicas, fewer than the
@@ -82,7 +82,7 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
 
 /// Item 15: an identical re-push that ends below consensus is not
 /// `Unchanged`. Veilid re-sends the stored bytes at their seq
-/// (`set_value.rs:353-366`) and, short of consensus with
+/// (0.5.8 `set_value.rs:353-366`) and, short of consensus with
 /// `AllowOffline(false)`, answers `TryAgain` (`set_value.rs:731-738` →
 /// `local_record_store_interface.rs:60-62`), so the pool reports it
 /// `Offline`; healed, the same re-push reaches consensus and is
@@ -115,7 +115,7 @@ async fn an_identical_re_push_below_consensus_answers_try_again() {
 }
 
 /// H2: re-pushing the local copy unchanged while a replica holds a newer
-/// value returns that value (`set_value.rs:211-218,417-494`), now the local
+/// value returns that value (0.5.8 `set_value.rs:353-366,561-623,753-757`), now the local
 /// copy, never `Unchanged`.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn an_identical_re_push_behind_the_network_is_superseded() {
@@ -187,9 +187,9 @@ async fn a_partition_splits_the_replicas() {
 
 /// RV4 L3: a set that only `k` replicas accept (`Fault::WritePartial`) is
 /// `Offline` (Veilid's `TryAgain`) with nothing stored locally (`AllowOffline(false)`,
-/// `local_record_store_interface.rs:60-63`), the `k` closest replicas hold
+/// 0.5.8 `local_record_store_interface.rs:60-63`), the `k` closest replicas hold
 /// it, so another node's get already sees it, and once the fault lifts the
-/// same value re-sent lands on them unchanged (`set_value.rs:700-719`).
+/// same value re-sent lands on them unchanged (`set_value.rs:353-366,698-746`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_set_two_replicas_accept_is_below_consensus_yet_readable() {
     let (sim, nodes) = Netsim::nodes(3, 43);

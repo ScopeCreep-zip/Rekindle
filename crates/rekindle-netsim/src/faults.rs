@@ -22,8 +22,8 @@ pub enum Fault {
     /// `accepting` replicas closest to the record, which store it, until
     /// [`Fault::Heal`]. `0 < accepting < get_value_count`: Veilid counts a
     /// set that times out or exhausts with fewer than `get_value_count`
-    /// `consensus_nodes` as offline (`storage_manager/mod.rs:781-811`,
-    /// `set_value.rs:596-632`), and one with more as landed, so only
+    /// `consensus_nodes` as offline (0.5.8 `storage_manager/mod.rs:990-1030`,
+    /// `set_value.rs:711-738`), and one with more as landed, so only
     /// fewer is below consensus. With
     /// `AllowOffline(false)` the writer stores and queues nothing locally
     /// (`local_record_store_interface.rs:60-62`) and hears `TryAgain`
@@ -57,19 +57,19 @@ pub enum Fault {
     /// A call to the node's routes never resolves: no answer and no
     /// Veilid `Timeout`, as a call stuck before Veilid's answer wait
     /// (route resolution, rendering, the first hop's send, none bounded:
-    /// `rpc_processor/mod.rs:1718-1830`; live finding 78). The question is
+    /// Veilid 0.5.8 `rpc_processor/mod.rs:2038-2104`; live finding 78). The question is
     /// lost; only the caller's own deadline ends it.
     CallHangs { node: usize, hangs: bool },
     /// An app message to the node's routes is never dispatched: the send
     /// neither returns nor fails, as a send stuck in the stages before the
     /// first hop takes it (destination, render and safety-route compile,
-    /// `send_envelope`, none bounded: `rpc_processor/mod.rs:1882-1926`).
+    /// `send_envelope`, none bounded: Veilid 0.5.8 `rpc_processor/mod.rs:2196-2269`).
     /// The message is lost; only the sender's own deadline ends the send.
     SendHangs { node: usize, hangs: bool },
     /// The node's clock runs this far from simulated true time.
     ClockSkew { node: usize, ms: i64 },
     /// The node's watch on `key` dies: Veilid sends a last change with
-    /// empty subkeys, `count == 0` and no value (`watch_value.rs:697-703`).
+    /// empty subkeys, `count == 0` and no value (0.5.8 `watch_value.rs:782-789`).
     WatchDeath { node: usize, key: String },
     /// The node's own routes die: the owner hears of it, its importers do
     /// not (their sends are lost until they fetch the new route).
