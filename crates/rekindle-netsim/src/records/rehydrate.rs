@@ -22,8 +22,9 @@
 //!   node reaches (`inspect_record.rs:425-434`): with no reached replica
 //!   holding the record, every local subkey; else each local subkey newer
 //!   than the network's newest seq, or at it or older with fewer than
-//!   [`SET_COUNT`] replicas at that seq (`rehydrate.rs:241-255,367-402`,
-//!   `inspect_record.rs:645-703`);
+//!   [`SET_COUNT`] replicas at that seq (`rehydrate.rs:241-255,367-402`).
+//!   A replica with no value at a subkey is no evidence for it: it counts
+//!   toward no seq (`inspect_record.rs:638-652,695-705`);
 //! - **the push:** a queued subkey is sent as a set of its local copy
 //!   (`offline_subkey_writes.rs:47-95`); a replica holding a newer value
 //!   restarts the fanout on it ([`super::fanout`]), and a value the

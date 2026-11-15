@@ -300,3 +300,29 @@ async fn a_full_store_evicts_its_least_recently_used_record() {
     tick(&sim);
     assert!(copies(&sim, &key, 0) >= 5);
 }
+
+/// VU2 item 17: a replica that reports no seq for a subkey is no evidence
+/// for it (0.5.8 `inspect_record.rs:638-652`, `:695-705`): with three of the
+/// ten holding our value and seven empty, the subkey is short of consensus
+/// and the rehydration queues its push.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_empty_replica_does_not_count_toward_a_rehydration_tally() {
+    let (sim, nodes) = Netsim::nodes(2, 36);
+    let a = dht(&sim, &nodes[0]);
+    let key = seeded(&sim, &a).await;
+    {
+        let mut inner = sim.net.inner.lock();
+        let ours = inner.nodes[0].local[&(key.clone(), 0)].clone();
+        let record = inner.records.get_mut(&key).unwrap();
+        for (i, replica) in record.replicas.iter_mut().enumerate() {
+            replica.values[0] = (i < 3).then(|| ours.clone());
+        }
+    }
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
+    tick(&sim);
+    assert!(sim.net.inner.lock().nodes[0]
+        .pushes
+        .contains_key(&(key.clone(), 0)));
+}
