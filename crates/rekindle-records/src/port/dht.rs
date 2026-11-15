@@ -29,8 +29,8 @@ pub struct RecordDescriptor {
     pub owner: Option<WriterKey>,
     /// The owner's public key text, which the record key hashes and the
     /// descriptor's signature is made with
-    /// (`storage_manager/create_record.rs:88-104`, `record_key.rs:67-94`,
-    /// fork 0cd847de): a reader that compares it with the key it expects
+    /// (veilid-core 0.5.8 `storage_manager/create_record.rs:95-113`,
+    /// `veilid_api/types/dht/derivation.rs:57-83`): a reader that compares it with the key it expects
     /// pins the record to that owner.
     pub owner_public: String,
     /// The schema's subkey count.

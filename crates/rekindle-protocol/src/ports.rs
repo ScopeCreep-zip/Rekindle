@@ -382,7 +382,17 @@ pub fn to_port_event(update: VeilidUpdate) -> Option<PortEvent> {
                 .unwrap_or_default(),
         },
         VeilidUpdate::Shutdown => PortEvent::Shutdown,
-        _ => return None,
+        // Every other variant of veilid-core 0.5.8's `VeilidUpdate`
+        // (`veilid_api/types/veilid_state.rs:358-377`, not `non_exhaustive`)
+        // is named, so a new upstream variant fails this match at compile
+        // time instead of vanishing (plan VU6).
+        // Veilid's logs reach our tracing subscriber directly; this is the
+        // `ApiTracingLayer` copy (`core_context.rs:100`), not installed.
+        VeilidUpdate::Log(_)
+        // Peer and byte counts; readiness comes from `Attachment`.
+        | VeilidUpdate::Network(_)
+        // Echoes the config we started the node with.
+        | VeilidUpdate::Config(_) => return None,
     })
 }
 

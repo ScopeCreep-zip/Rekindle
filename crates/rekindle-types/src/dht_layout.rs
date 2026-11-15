@@ -15,16 +15,17 @@
 
 /// Largest `app_message` / `app_call` payload Veilid accepts:
 /// `MAX_APP_MESSAGE_MESSAGE_LEN` and `MAX_APP_CALL_Q_MESSAGE_LEN`, both
-/// 32,768 bytes (`veilid-core/src/rpc_processor/coders/operations/
-/// operation_app_message.rs:3`, `operation_app_call.rs:3-4`, fork
-/// 0cd847de). Every encoded envelope a peer sends must fit, so the
-/// sender refuses a larger one before Veilid sees it (plan C7.25).
+/// 32,768 bytes (veilid-core 0.5.8 `rpc_processor/coders/operations/
+/// operation_app_message.rs:3`, `operation_app_call.rs:3`, from
+/// `proto/veilid.capnp:32-33`). Every encoded envelope a peer sends must
+/// fit, so the sender refuses a larger one before Veilid sees it (plan
+/// C7.25).
 pub const MAX_APP_MESSAGE_LEN: usize = 32_768;
 
 /// Largest value any DHT subkey holds: Veilid's `MAX_SUBKEY_SIZE`, 32,768
-/// bytes (`veilid-core/src/storage_manager/types/mod.rs:14-16`, fork
-/// 0cd847de). A record's per-subkey cap is this or its share of the
-/// record's data cap, whichever is smaller (see [`prekeys`]).
+/// bytes (veilid-core 0.5.8 `veilid_api/types/dht/mod.rs:36`). A record's
+/// per-subkey cap is this or its share of the record's data cap, whichever
+/// is smaller (see [`prekeys`]).
 pub const MAX_SUBKEY_SIZE: usize = 32_768;
 
 /// Maximum member slots per registry segment.
@@ -144,8 +145,8 @@ pub mod prekeys {
     /// Largest value an owner subkey of the record accepts:
     /// `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / o_cnt)` =
     /// `min(32,768, 1,048,576 / 101)` = 10,381 bytes
-    /// (`veilid-core/src/storage_manager/schema.rs:61-64`, with the two
-    /// constants at `storage_manager/types/mod.rs:14-16`, fork 0cd847de).
+    /// (veilid-core 0.5.8 `veilid_api/types/dht/derivation.rs:145-148`, with
+    /// the two constants at `veilid_api/types/dht/mod.rs:36,38`).
     /// Every head, slot and device list must fit.
     pub const MAX_SUBKEY_VALUE_LEN: usize = 10_381;
 
@@ -179,8 +180,8 @@ pub mod dm_participant {
 /// `SMPL(o_cnt: 1, [oneTimeWriter])`, a single-use capability. The invite
 /// carries the one-time writer's keypair, so exactly one requester can
 /// write [`request_inbox::REQUEST`]; Veilid refuses any other writer
-/// (`veilid-core/src/storage_manager/schema.rs` `check_subkey_value_data`,
-/// "wrong writer", fork 0cd847de). The owner subkey is the inviter's: it
+/// (veilid-core 0.5.8 `veilid_api/types/dht/derivation.rs:208,233`
+/// `check_subkey_value_data_smpl`, "wrong writer"). The owner subkey is the inviter's: it
 /// writes [`request_inbox::OPENED`] there once at creation, which puts the
 /// record on the network, so the requester's write finds its descriptor.
 pub mod request_inbox {
@@ -201,8 +202,8 @@ pub mod request_inbox {
     /// Largest value the writer's subkey accepts:
     /// `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / subkey_count)` =
     /// `min(32,768, 1,048,576 / 2)` = 32,768 bytes
-    /// (`veilid-core/src/storage_manager/schema.rs` SMPL `max_value_len`,
-    /// constants at `storage_manager/types/mod.rs:14-16`, fork 0cd847de).
+    /// (veilid-core 0.5.8 `veilid_api/types/dht/derivation.rs:186-189` SMPL
+    /// `max_value_len`, constants at `veilid_api/types/dht/mod.rs:36,38`).
     pub const MAX_SUBKEY_VALUE_LEN: usize = 32_768;
 }
 
@@ -244,8 +245,8 @@ pub mod member_record {
     /// Largest value a subkey of the record accepts:
     /// `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / o_cnt)` =
     /// `min(32,768, 1,048,576 / 8)` = 32,768 bytes
-    /// (`veilid-core/src/storage_manager/schema.rs:61-64`, with the two
-    /// constants at `storage_manager/types/mod.rs:14-16`, fork 0cd847de).
+    /// (veilid-core 0.5.8 `veilid_api/types/dht/derivation.rs:145-148`, with
+    /// the two constants at `veilid_api/types/dht/mod.rs:36,38`).
     pub const MAX_SUBKEY_VALUE_LEN: usize = 32_768;
 }
 
