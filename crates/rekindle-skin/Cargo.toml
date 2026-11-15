@@ -21,9 +21,20 @@ rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 spdx = "0.10"
+# The helper process's typed failure.
+thiserror = { workspace = true }
 # Sound decoders: WAV (PCM), Ogg Vorbis and FLAC only, pure Rust (MPL-2.0).
 symphonia = { version = "0.5", default-features = false, features = [ "wav", "pcm", "ogg", "vorbis", "flac" ] }
 unicode-normalization = "0.1.25"
+
+# The helper's own OS caps through a safe setrlimit (MIT): RLIMIT_AS and
+# RLIMIT_CPU on Linux, RLIMIT_CPU on macOS (plan E7.7.1 "Helper process").
+[target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
+rlimit = "0.11"
+
+[[bin]]
+name = "rekindle-skin-helper"
+path = "src/bin/rekindle-skin-helper.rs"
 
 [[test]]
 name = "skin"

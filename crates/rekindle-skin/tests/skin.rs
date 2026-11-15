@@ -3,6 +3,7 @@
 
 mod access;
 mod common;
+mod helper;
 mod images;
 mod manifest;
 mod output;

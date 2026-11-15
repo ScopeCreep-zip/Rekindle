@@ -23,10 +23,15 @@
 //!   on every animation.
 //! * [`output`]: step 7, the BLAKE3-addressed canonical package and a
 //!   variant's `tokens.css` body.
+//! * [`validate::run`]: steps 1–7 in order, what the helper process runs.
+//! * [`helper`]: the Host's way in: [`helper::validate`] runs the pipeline
+//!   in `rekindle-skin-helper` (`src/bin/`), a separate, OS-capped process,
+//!   under a wall-clock deadline.
 //! * [`registry`]: the closed token registry, and [`generate`], the
 //!   artefacts `cargo xtask gen-skin-registry` writes from it.
 //!
-//! Tier 3: no Veilid, no Tauri, no `unsafe`, no file or network I/O.
+//! Tier 3: no Veilid, no Tauri, no `unsafe`, no file or network I/O; the
+//! one process [`helper`] starts and its pipes are the only exception.
 //!
 //! [`SkinError`]: rekindle_types::dto::skin::SkinError
 
@@ -36,6 +41,7 @@ pub mod access;
 mod colour;
 pub mod flash;
 pub mod generate;
+pub mod helper;
 pub mod images;
 pub mod manifest;
 pub mod output;
@@ -44,6 +50,7 @@ pub mod regions;
 pub mod registry;
 pub mod sounds;
 pub mod tokens;
+pub mod validate;
 
 /// The package, image and sound bounds of the §6 limits ledger.
 pub mod limits {
