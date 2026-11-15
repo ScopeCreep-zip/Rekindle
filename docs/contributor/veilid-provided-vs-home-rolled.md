@@ -1,5 +1,10 @@
 # What we hand-roll that veilid-core already provides
 
+> **Historical (2026-11-15).** This document was written against veilid-core 0.5.7. Rekindle now pins
+> veilid-core 0.5.8 plus one fix from the fork (ADR 0017, rev `91453e97`); the 0.5.8 analysis is
+> `.claude/plans/standards-remediation/evidence/veilid-0.5.8/` (synthesis and slice reports 1–6) and plan step VU.
+> Line citations here are 0.5.7's.
+
 > **Superseded in part.** This document was written without accounting
 > for the bring-your-own-protocol goal (SimpleX / Matrix / atproto
 > alongside Veilid). Under BYOP, §3's suggestion to adopt
