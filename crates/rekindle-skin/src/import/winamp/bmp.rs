@@ -33,6 +33,10 @@ fn u32_at(b: &[u8], at: usize) -> Option<u32> {
     Some(u32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?))
 }
 
+fn i32_at(b: &[u8], at: usize) -> Option<i32> {
+    Some(i32::from_le_bytes(b.get(at..at + 4)?.try_into().ok()?))
+}
+
 struct Header {
     width: u32,
     height: u32,
@@ -43,26 +47,26 @@ struct Header {
     data: usize,
 }
 
-fn header(file: &str, b: &[u8]) -> Result<Header, ImportError> {
+fn header(file: &str, bytes: &[u8]) -> Result<Header, ImportError> {
     let trunc = || bad(file, "truncated header");
-    if b.get(..2) != Some(b"BM") {
+    if bytes.get(..2) != Some(b"BM") {
         return Err(bad(file, "no BM signature"));
     }
-    let data = u32_at(b, 10).ok_or_else(trunc)? as usize;
-    let size = u32_at(b, FILE_HEADER).ok_or_else(trunc)? as usize;
+    let data = u32_at(bytes, 10).ok_or_else(trunc)? as usize;
+    let size = u32_at(bytes, FILE_HEADER).ok_or_else(trunc)? as usize;
     if !matches!(size, 40 | 108 | 124) {
         return Err(bad(file, format!("header size {size} is refused")));
     }
-    let w = u32_at(b, FILE_HEADER + 4).ok_or_else(trunc)? as i32;
-    let h = u32_at(b, FILE_HEADER + 8).ok_or_else(trunc)? as i32;
-    let bits = u16_at(b, FILE_HEADER + 14).ok_or_else(trunc)?;
-    let compression = u32_at(b, FILE_HEADER + 16).ok_or_else(trunc)?;
-    let used = u32_at(b, FILE_HEADER + 32).ok_or_else(trunc)?;
-    let (width, height) = (w.unsigned_abs(), h.unsigned_abs());
-    if w <= 0 || h == 0 || width > MAX_IMAGE_SIDE || height > MAX_IMAGE_SIDE {
+    let sw = i32_at(bytes, FILE_HEADER + 4).ok_or_else(trunc)?;
+    let sh = i32_at(bytes, FILE_HEADER + 8).ok_or_else(trunc)?;
+    let bits = u16_at(bytes, FILE_HEADER + 14).ok_or_else(trunc)?;
+    let compression = u32_at(bytes, FILE_HEADER + 16).ok_or_else(trunc)?;
+    let used = u32_at(bytes, FILE_HEADER + 32).ok_or_else(trunc)?;
+    let (width, height) = (sw.unsigned_abs(), sh.unsigned_abs());
+    if sw <= 0 || sh == 0 || width > MAX_IMAGE_SIDE || height > MAX_IMAGE_SIDE {
         return Err(bad(
             file,
-            format!("{w}x{h} is outside 1..={MAX_IMAGE_SIDE}"),
+            format!("{sw}x{sh} is outside 1..={MAX_IMAGE_SIDE}"),
         ));
     }
     if u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS {
@@ -72,7 +76,7 @@ fn header(file: &str, b: &[u8]) -> Result<Header, ImportError> {
         (1 | 4 | 8 | 24 | 32, BI_RGB) | (8, BI_RLE8) => {}
         _ => return Err(bad(file, format!("{bits}-bit compression {compression}"))),
     }
-    if compression == BI_RLE8 && h < 0 {
+    if compression == BI_RLE8 && sh < 0 {
         return Err(bad(file, "a top-down RLE8 bitmap"));
     }
     let mut palette = Vec::new();
@@ -84,14 +88,14 @@ fn header(file: &str, b: &[u8]) -> Result<Header, ImportError> {
         }
         let at = FILE_HEADER + size;
         for i in 0..n as usize {
-            let e = b.get(at + i * 4..at + i * 4 + 3).ok_or_else(trunc)?;
+            let e = bytes.get(at + i * 4..at + i * 4 + 3).ok_or_else(trunc)?;
             palette.push([e[2], e[1], e[0]]);
         }
     }
     Ok(Header {
         width,
         height,
-        top_down: h < 0,
+        top_down: sh < 0,
         bits,
         compression,
         palette,
@@ -171,7 +175,7 @@ fn uncompressed(
     Ok(())
 }
 
-fn rle8(file: &str, h: &Header, data: &[u8], out: &mut RgbaImage) -> Result<(), ImportError> {
+fn rle8(file: &str, hdr: &Header, data: &[u8], out: &mut RgbaImage) -> Result<(), ImportError> {
     let (mut x, mut i, mut at) = (0u32, 0u32, 0usize);
     let next = |at: &mut usize| -> Result<u8, ImportError> {
         let v = *data
@@ -181,10 +185,10 @@ fn rle8(file: &str, h: &Header, data: &[u8], out: &mut RgbaImage) -> Result<(), 
         Ok(v)
     };
     let mut put = |x: &mut u32, i: u32, index: u8| -> Result<(), ImportError> {
-        if *x >= h.width || i >= h.height {
+        if *x >= hdr.width || i >= hdr.height {
             return Err(bad(file, "RLE8 run past the bitmap"));
         }
-        out.put_pixel(*x, h.row(i), h.colour(file, index)?);
+        out.put_pixel(*x, hdr.row(i), hdr.colour(file, index)?);
         *x += 1;
         Ok(())
     };
@@ -205,7 +209,7 @@ fn rle8(file: &str, h: &Header, data: &[u8], out: &mut RgbaImage) -> Result<(), 
             2 => {
                 x += u32::from(next(&mut at)?);
                 i += u32::from(next(&mut at)?);
-                if x > h.width || i > h.height {
+                if x > hdr.width || i > hdr.height {
                     return Err(bad(file, "RLE8 delta past the bitmap"));
                 }
             }
@@ -219,7 +223,7 @@ fn rle8(file: &str, h: &Header, data: &[u8], out: &mut RgbaImage) -> Result<(), 
                 }
             }
         }
-        if i > h.height {
+        if i > hdr.height {
             return Err(bad(file, "RLE8 rows past the bitmap"));
         }
     }
