@@ -18,6 +18,9 @@ crc32fast = "1.5"
 hound = "3.5"
 # The Xfire XML-era importer's reader (MIT): no DTD, no entity resolution.
 quick-xml = "0.38"
+# The Winamp importer inflates its legacy archive (MIT; already in the tree
+# through png). Deflate is inflated only there.
+miniz_oxide = "0.8"
 rekindle-image = { path = "../rekindle-image" }
 rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }

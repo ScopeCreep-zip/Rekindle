@@ -7,6 +7,7 @@
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
+use rekindle_skin::import::winamp::{self, Outcome};
 use rekindle_skin::import::{xfire_xml, Imported, Tree};
 use walkdir::WalkDir;
 
@@ -18,6 +19,28 @@ pub const BUILTIN_DIR: &str = "crates/rekindle-skin/builtin";
 pub enum Format {
     /// Xfire XML era (Carbon Fiber, Symbiosis).
     XfireXml,
+    /// Winamp classic `.wsz` (`--from` is the archive file).
+    WinampWsz,
+}
+
+/// A `.wsz` as a built-in: a draft's suggestions are accepted, like the
+/// walk on every built-in, each change printed and recorded in the NOTICE.
+fn winamp_pack(from: &Path, id: &str) -> Result<Imported> {
+    let bytes = std::fs::read(from).with_context(|| format!("reading {}", from.display()))?;
+    Ok(
+        match winamp::import(&bytes, id).map_err(|e| anyhow!("{e}"))? {
+            Outcome::Passed(i) => i,
+            Outcome::Draft(d) => {
+                for c in &d.failures {
+                    println!(
+                        "    draft: {} {} on {} fails {}; suggested {:?} -> {:?}",
+                        c.fg, c.rule, c.ground, c.token, c.original, c.new
+                    );
+                }
+                d.suggested
+            }
+        },
+    )
 }
 
 /// Every regular file under `dir`, keyed by its `/`-separated relative path.
@@ -60,11 +83,11 @@ pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result
     if !is_id(id) {
         bail!("--builtin {id}: 1-64 of a-z 0-9 -");
     }
-    let tree = read_tree(from)?;
     let Imported {
         canonical, notice, ..
     } = match format {
-        Format::XfireXml => xfire_xml::import(&tree, id).map_err(|e| anyhow!("{e}"))?,
+        Format::XfireXml => xfire_xml::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?,
+        Format::WinampWsz => winamp_pack(from, id)?,
     };
     let dir = root.join(BUILTIN_DIR);
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;

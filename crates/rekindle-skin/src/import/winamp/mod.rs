@@ -1,0 +1,322 @@
+//! The Winamp classic `.wsz` importer (plan E7.7.3 item 3): a
+//! "Winamp-flavoured Rekindle skin" per `skins/research/d1-skeuo-winamp.md`
+//! §2.
+//!
+//! * [`archive`]: the zip, under the legacy limits; only GEN.BMP,
+//!   GENEX.BMP, TITLEBAR.BMP and PLEDIT.TXT are inflated. REGION.TXT, the
+//!   cursors (`.cur`/`.ani`, CVE-2007-0038), TEXT.BMP and `WINAMPMB.TXT`
+//!   are never read past their names.
+//! * [`bmp`]: the bounded BMP decoder, RLE8 included (only here).
+//! * [`sprites`]: the 39 mapped sprites. GEN.BMP builds `window.frame`
+//!   and `titlebar`, active (`_SELECTED`) as `normal` and plain as
+//!   `windowInactive`; TITLEBAR's buttons and GENEX's buttons and
+//!   scrollbars are decoded and checked but their regions are not registry
+//!   slots yet, so the NOTICE names each as not mapped.
+//! * [`pledit`]: PLEDIT.TXT owns the list tokens; GENEX's 22 colour pixels
+//!   the rest ([`sprites::GENEX_COLOURS`]).
+//!
+//! A user import whose package fails the validator is an [`ImportDraft`]:
+//! the package as imported, every failing pair with its suggested passing
+//! colour (the walk's [`walk::Change`]), and the package with every
+//! suggestion accepted. The editor draft type does not exist yet; this is
+//! its input.
+
+pub mod archive;
+pub mod bmp;
+mod notice;
+pub mod pledit;
+pub mod sprites;
+
+use std::collections::BTreeMap;
+
+use rekindle_image::{encode_png, DynamicImage, RgbaImage};
+use rekindle_types::dto::skin::{
+    RegionFit, RegionSpec, RegionState, SkinBase, SkinContrast, SkinLicense, SkinManifest,
+    SkinSource, SkinVariant, TokenValue, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
+};
+
+use super::walk::{self, settle};
+use super::{ImportError, Imported, Tree};
+use crate::colour;
+use crate::output::{token_file, zip};
+use crate::package::MANIFEST;
+use crate::registry::Base;
+use sprites::{Sprite, Target, SPRITES};
+
+/// The `source.format` of an imported package.
+pub const WINAMP_WSZ_FORMAT: &str = "winamp-wsz";
+const TOKENS: &str = "tokens.json";
+const FRAME: [&str; 2] = [
+    "assets/window-frame.png",
+    "assets/window-frame-inactive.png",
+];
+const TITLE: [&str; 2] = ["assets/titlebar.png", "assets/titlebar-inactive.png"];
+
+/// One colour the skin defines and what it became.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColourRow {
+    pub source: String,
+    pub value: [u8; 3],
+    pub target: Target,
+}
+
+/// What the importer read, before the package is built.
+#[derive(Debug)]
+pub struct Read {
+    pub colours: Vec<ColourRow>,
+    pub tokens: BTreeMap<String, TokenValue>,
+    /// Every mapped sprite and whether its sheet held it.
+    pub sprites: Vec<(Sprite, bool)>,
+    /// `window.frame` and `titlebar`, each [active, inactive].
+    pub frame: Option<[RgbaImage; 2]>,
+    pub title: Option<[RgbaImage; 2]>,
+    /// PLEDIT.TXT keys that are not colours we know.
+    pub unknown: Vec<String>,
+    /// Entries never read past their names.
+    pub ignored: Vec<String>,
+}
+
+/// A user import that fails the validator.
+#[derive(Debug)]
+pub struct ImportDraft {
+    /// The package as imported (a zip that fails [`crate::validate::run`]).
+    pub package: Vec<u8>,
+    /// Every failing pair, with its suggested passing colour.
+    pub failures: Vec<walk::Change>,
+    /// The package with every suggestion accepted.
+    pub suggested: Imported,
+}
+
+/// A passing import or a draft.
+#[derive(Debug)]
+pub enum Outcome {
+    Passed(Imported),
+    Draft(Box<ImportDraft>),
+}
+
+fn sheet(tree: &Tree, name: &str) -> Result<Option<RgbaImage>, ImportError> {
+    tree.get(name).map(|b| bmp::decode(name, b)).transpose()
+}
+
+fn colour_rows(tree: &Tree, genex: Option<&RgbaImage>) -> (Vec<ColourRow>, Vec<String>) {
+    let mut rows = Vec::new();
+    let mut unknown = Vec::new();
+    if let Some(bytes) = tree.get("pledit.txt") {
+        for line in pledit::lines(bytes) {
+            match (pledit::target(&line.key), pledit::rgb(&line.value)) {
+                (Some(target), Some(value)) => rows.push(ColourRow {
+                    source: format!("PLEDIT.TXT {}", line.key),
+                    value,
+                    target,
+                }),
+                _ => unknown.push(format!("{}={}", line.key, line.value)),
+            }
+        }
+    }
+    if let Some(g) = genex.filter(|g| g.width() > 90) {
+        for (x, what, target) in sprites::GENEX_COLOURS {
+            let p = g.get_pixel(x, 0).0;
+            rows.push(ColourRow {
+                source: format!("GENEX x={x} {what}"),
+                value: [p[0], p[1], p[2]],
+                target,
+            });
+        }
+    }
+    (rows, unknown)
+}
+
+/// Reads a `.wsz` archive.
+///
+/// # Errors
+/// What [`archive::unpack`] refuses, a refused bitmap, a sheet too small.
+pub fn read(wsz: &[u8]) -> Result<Read, ImportError> {
+    let (tree, ignored) = archive::unpack(wsz)?;
+    let mut sheets = BTreeMap::new();
+    for name in ["gen.bmp", "genex.bmp", "titlebar.bmp"] {
+        if let Some(img) = sheet(&tree, name)? {
+            sheets.insert(name, img);
+        }
+    }
+    let mut decoded = Vec::new();
+    let mut seen = Vec::new();
+    for sprite in SPRITES {
+        let img = sheets.get(sprite.sheet);
+        if let Some(img) = img {
+            decoded.push((sprite, sprites::crop(img, &sprite)?));
+        }
+        seen.push((sprite, img.is_some()));
+    }
+    let (colours, unknown) = colour_rows(&tree, sheets.get("genex.bmp"));
+    let mut tokens = BTreeMap::new();
+    for row in &colours {
+        if let Target::Tokens(ids) = row.target {
+            for id in ids {
+                tokens.insert((*id).to_owned(), walk::color(row.value));
+            }
+        }
+    }
+    let has_gen = sheets.contains_key("gen.bmp");
+    let ground = match tokens.get("bg.panel") {
+        Some(TokenValue::Color { r, g, b, .. }) => [*r, *g, *b, 255],
+        _ => [0; 4],
+    };
+    let frame = has_gen.then(|| {
+        [
+            sprites::frame(&decoded, "_SELECTED", ground),
+            sprites::frame(&decoded, "", ground),
+        ]
+    });
+    let title = has_gen.then(|| {
+        [
+            sprites::titlebar(&decoded, "_SELECTED"),
+            sprites::titlebar(&decoded, ""),
+        ]
+    });
+    if let Some(backing) = title.as_ref().and_then(|[a, _]| sprites::dominant(a)) {
+        for id in ["titlebar.start", "titlebar.end"] {
+            tokens.insert(id.to_owned(), walk::color(backing));
+        }
+    }
+    Ok(Read {
+        colours,
+        tokens,
+        sprites: seen,
+        frame,
+        title,
+        unknown,
+        ignored,
+    })
+}
+
+fn base_of(tokens: &BTreeMap<String, TokenValue>) -> (SkinBase, Base) {
+    let ground = tokens.get("bg.panel").and_then(|v| match v {
+        TokenValue::Color { r, g, b, .. } => Some([*r, *g, *b]),
+        _ => None,
+    });
+    if ground.is_some_and(|g| colour::luminance(g) > 0.179) {
+        (SkinBase::Light, Base::Light)
+    } else {
+        (SkinBase::Dark, Base::Dark)
+    }
+}
+
+fn region(
+    paths: [&str; 2],
+    insets: rekindle_types::dto::skin::Insets,
+    backing: Option<&str>,
+) -> RegionSpec {
+    RegionSpec {
+        image: paths[0].to_owned(),
+        fit: RegionFit::NineSlice(insets),
+        states: BTreeMap::from([(RegionState::WindowInactive, paths[1].to_owned())]),
+        tint: None,
+        mask: None,
+        text_backing: backing.map(str::to_owned),
+    }
+}
+
+fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
+    let mut regions = BTreeMap::new();
+    if read.frame.is_some() {
+        regions.insert(
+            "window.frame".to_owned(),
+            region(FRAME, sprites::FRAME_INSETS, None),
+        );
+    }
+    if read.title.is_some() {
+        regions.insert(
+            "titlebar".to_owned(),
+            region(TITLE, sprites::TITLE_INSETS, Some("titlebar.start")),
+        );
+    }
+    SkinManifest {
+        format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
+        id: id.to_owned(),
+        name: id.to_owned(),
+        description: "Imported from a Winamp classic skin; see the NOTICE beside the package."
+            .to_owned(),
+        license: SkinLicense::Text(
+            "Third-party Winamp skin art. Not covered by Rekindle's MIT licence; provenance and \
+             every change are in the NOTICE beside the package."
+                .to_owned(),
+        ),
+        source: Some(SkinSource {
+            format: WINAMP_WSZ_FORMAT.to_owned(),
+            hash: source.to_owned(),
+        }),
+        author: None,
+        signature: None,
+        variants: vec![SkinVariant {
+            base,
+            contrast: SkinContrast::Standard,
+            tokens: TOKENS.to_owned(),
+        }],
+        regions,
+        icons: BTreeMap::new(),
+        sounds: BTreeMap::new(),
+    }
+}
+
+fn png(file: &str, img: &RgbaImage) -> Result<Vec<u8>, ImportError> {
+    encode_png(&DynamicImage::ImageRgba8(img.clone())).map_err(|e| ImportError::Image {
+        file: file.to_owned(),
+        detail: e.to_string(),
+    })
+}
+
+/// Imports the `.wsz` bytes as the package `id`: a passing package, or a
+/// draft naming every failing pair.
+///
+/// # Errors
+/// What [`read`] refuses, an image that does not encode, a refusal that is
+/// not a contrast pair or that the walk cannot settle.
+pub fn import(wsz: &[u8], id: &str) -> Result<Outcome, ImportError> {
+    let read = read(wsz)?;
+    let source = blake3::hash(wsz).to_hex().to_string();
+    let (skin_base, base) = base_of(&read.tokens);
+    let manifest_json =
+        serde_json::to_vec(&manifest(id, &read, &source, skin_base)).map_err(|e| {
+            ImportError::Xml {
+                file: MANIFEST.to_owned(),
+                detail: e.to_string(),
+            }
+        })?;
+    let mut images = BTreeMap::new();
+    for (paths, imgs) in [(FRAME, &read.frame), (TITLE, &read.title)] {
+        if let Some(imgs) = imgs {
+            for (p, img) in paths.iter().zip(imgs) {
+                images.insert((*p).to_owned(), png(p, img)?);
+            }
+        }
+    }
+    let build = |tokens: &BTreeMap<String, TokenValue>| {
+        let mut files = images.clone();
+        files.insert(MANIFEST.to_owned(), manifest_json.clone());
+        files.insert(
+            TOKENS.to_owned(),
+            token_file(TOKENS, tokens).map_err(ImportError::Refused)?,
+        );
+        zip(&files).map_err(ImportError::Refused)
+    };
+    let package = build(&read.tokens)?;
+    let mut tokens = read.tokens.clone();
+    let (canonical, changes) = settle(&mut tokens, base, build)?;
+    let notice = notice::render(id, &read, &source, &changes);
+    let imported = Imported {
+        canonical,
+        notice,
+        changes,
+    };
+    if imported.changes.is_empty() {
+        return Ok(Outcome::Passed(imported));
+    }
+    Ok(Outcome::Draft(Box::new(ImportDraft {
+        package,
+        failures: imported.changes.clone(),
+        suggested: imported,
+    })))
+}
+
+#[cfg(test)]
+mod tests;

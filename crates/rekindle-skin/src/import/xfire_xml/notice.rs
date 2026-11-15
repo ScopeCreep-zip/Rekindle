@@ -4,17 +4,10 @@
 
 use std::fmt::Write as _;
 
+use super::super::notice;
 use super::super::walk::Change;
 use super::colours::Target;
 use super::{Read, XFIRE_XML_FORMAT};
-
-fn hex(c: [u8; 3]) -> String {
-    format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
-}
-
-fn ratio(x100: u32) -> String {
-    format!("{}.{:02}:1", x100 / 100, x100 % 100)
-}
 
 fn target(t: Target) -> String {
     match t {
@@ -79,26 +72,10 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
         s,
         "  sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read."
     );
-    let _ = writeln!(
-        s,
-        "\nContrast changes (minimal Oklab-lightness walk; {} made)",
-        changes.len()
+    notice::changes(
+        &mut s,
+        "Contrast changes (minimal Oklab-lightness walk)",
+        changes,
     );
-    for c in changes {
-        let after = c.after_x100.map_or_else(|| "passes".to_owned(), ratio);
-        let _ = writeln!(
-            s,
-            "  {}: {} -> {} ({} {} on {}: {} -> {}, required {})",
-            c.token,
-            hex(c.original),
-            hex(c.new),
-            c.rule,
-            c.fg,
-            c.ground,
-            ratio(c.before_x100),
-            after,
-            ratio(c.required_x100)
-        );
-    }
     s
 }

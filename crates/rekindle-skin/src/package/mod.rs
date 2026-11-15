@@ -11,7 +11,7 @@
 //! [`crate::limits`].
 
 mod path;
-mod zip;
+pub(crate) mod zip;
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 

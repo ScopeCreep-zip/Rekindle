@@ -4,14 +4,17 @@
 //! only here; nothing of them reaches a frontend but the canonical package.
 //!
 //! * [`xfire_xml`]: the Xfire XML era (Carbon Fiber, Symbiosis).
+//! * [`winamp`]: Winamp classic `.wsz` (a "Winamp-flavoured Rekindle skin").
 //! * [`walk`]: the minimal Oklab-lightness walk a built-in that fails the
 //!   validator is adjusted by, every change recorded.
 //!
 //! The crate does no file I/O: the caller (`cargo xtask import-skin`, the
 //! helper) hands the tree over as a map of relative paths to bytes.
 
+mod notice;
 mod tree;
 pub mod walk;
+pub mod winamp;
 pub mod xfire_xml;
 
 use std::collections::BTreeMap;
@@ -34,6 +37,8 @@ pub enum ImportError {
     NonZeroAlpha { name: String, alpha: i32 },
     #[error("{name}: {value} is not RGBA(r,g,b,a) with r, g, b in 0-255")]
     BadColour { name: String, value: String },
+    #[error("{entry}: legacy archive refused: {detail}")]
+    Archive { entry: String, detail: String },
     #[error("{file}: image: {detail}")]
     Image { file: String, detail: String },
     #[error("the package is refused: {0}")]

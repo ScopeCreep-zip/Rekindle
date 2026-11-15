@@ -14,11 +14,11 @@ const LOCAL_LEN: usize = 30;
 const MAX_COMMENT: usize = 0xFFFF;
 
 /// General purpose flag bits (APPNOTE §4.4.4).
-pub(super) const FLAG_ENCRYPTED: u16 = 1;
-pub(super) const FLAG_DATA_DESCRIPTOR: u16 = 1 << 3;
-pub(super) const FLAG_UTF8: u16 = 1 << 11;
+pub(crate) const FLAG_ENCRYPTED: u16 = 1;
+pub(crate) const FLAG_DATA_DESCRIPTOR: u16 = 1 << 3;
+pub(crate) const FLAG_UTF8: u16 = 1 << 11;
 
-pub(super) fn malformed(entry: &str, detail: &str) -> SkinError {
+pub(crate) fn malformed(entry: &str, detail: &str) -> SkinError {
     SkinError::new(
         entry,
         SkinRule::MalformedZip {
@@ -43,7 +43,7 @@ fn usize_of(v: u32) -> usize {
 }
 
 /// Where the central directory is and how many records it holds.
-pub(super) struct Directory {
+pub(crate) struct Directory {
     pub offset: usize,
     pub end: usize,
     pub count: usize,
@@ -53,7 +53,7 @@ pub(super) struct Directory {
 /// comment length reaches exactly the end of the buffer. A single disk,
 /// matching counts, and a central directory that ends where the record
 /// begins.
-pub(super) fn directory(bytes: &[u8]) -> Result<Directory, SkinError> {
+pub(crate) fn directory(bytes: &[u8]) -> Result<Directory, SkinError> {
     let pkg = SkinError::PACKAGE;
     let last = bytes
         .len()
@@ -88,7 +88,7 @@ pub(super) fn directory(bytes: &[u8]) -> Result<Directory, SkinError> {
 }
 
 /// One central directory header.
-pub(super) struct Central<'a> {
+pub(crate) struct Central<'a> {
     pub name: &'a [u8],
     pub made_by: u16,
     pub flags: u16,
@@ -101,7 +101,7 @@ pub(super) struct Central<'a> {
 }
 
 /// Reads the central header at `at`; returns it and the next header's offset.
-pub(super) fn central(bytes: &[u8], at: usize) -> Result<(Central<'_>, usize), SkinError> {
+pub(crate) fn central(bytes: &[u8], at: usize) -> Result<(Central<'_>, usize), SkinError> {
     let bad = || malformed(SkinError::PACKAGE, "truncated central directory header");
     if u32_at(bytes, at) != Some(CENTRAL_SIG) {
         return Err(malformed(
@@ -142,7 +142,7 @@ pub(super) fn central(bytes: &[u8], at: usize) -> Result<(Central<'_>, usize), S
 /// Checks the local header against its central record and returns the
 /// byte range of the entry's data, which must end before the central
 /// directory.
-pub(super) fn local_data(
+pub(crate) fn local_data(
     bytes: &[u8],
     entry: &str,
     c: &Central<'_>,
