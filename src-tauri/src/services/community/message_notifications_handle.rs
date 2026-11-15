@@ -103,7 +103,9 @@ pub async fn handle_message_notification(
             );
             return Ok(());
         }
-        Ingested::Duplicate | Ingested::Dropped(_) => return Ok(()),
+        // Removed: nothing of a community we were removed from is shown,
+        // and no key is asked for (plan E3.2 S9, R3-1).
+        Ingested::Duplicate | Ingested::Dropped(_) | Ingested::Removed => return Ok(()),
     };
     let sender_pseudonym = message.sender_pseudonym.clone();
     emit_message_received(
