@@ -445,10 +445,22 @@ impl HostGovernance {
 /// attempt whose write landed but whose acknowledgement was lost left the op
 /// at chain seq `op.seq + 1` or later, so the log after `op.seq` is read
 /// first and an entry with this op's hash settles the attempt without a
-/// second append. `true`: this call appended it.
+/// second append, once the head naming it is at consensus. `true`: this
+/// call appended it.
+///
+/// Readable is not landed: a head write that ended below consensus stays on
+/// the replicas that took it (`set_value.rs:24-115`) and a reader reaching
+/// them reads the op, while nothing else republishes it, since Veilid never
+/// rehydrates a record created this session (`open_record.rs:62-81`). So a
+/// found op's head is written again: the same data and writer resend the
+/// stored bytes at their seq (`set_value.rs:353-366`), and a fanout that
+/// still ends below consensus answers `TryAgain`
+/// (`local_record_store_interface.rs:60-63`), which fails this attempt and
+/// leaves the row to its retry.
 ///
 /// # Errors
-/// The op does not decode, or the read or the append failed.
+/// The op does not decode, or the read, the append or the head's
+/// republication failed.
 pub(crate) async fn append_op_once(
     port: &dyn rekindle_records::port::RecordPort,
     record: &str,
@@ -466,12 +478,33 @@ pub(crate) async fn append_op_once(
             .is_ok_and(|d| rekindle_governance::op::op_hash(&d.unsigned, &d.op.sig) == hash)
     });
     if logged {
+        republish_head(port, record, writer).await?;
         return Ok(false);
     }
     rekindle_records::chain::append_at(port, record, GOV_HEAD, writer, &[op])
         .await
         .map(|_| true)
         .map_err(|e| format!("append op: {e}"))
+}
+
+/// Write `record`'s op-log head again with the value just read from the
+/// network (see [`append_op_once`]).
+async fn republish_head(
+    port: &dyn rekindle_records::port::RecordPort,
+    record: &str,
+    writer: &str,
+) -> Result<(), String> {
+    let Some(head) = port
+        .read_once(record, GOV_HEAD, false)
+        .await
+        .map_err(|e| format!("read op-log head: {e}"))?
+    else {
+        return Ok(());
+    };
+    port.write_once(record, GOV_HEAD, head.data, Some(writer))
+        .await
+        .and_then(|outcome| outcome.require_stored(GOV_HEAD))
+        .map_err(|e| format!("republish op-log head: {e}"))
 }
 
 #[cfg(test)]

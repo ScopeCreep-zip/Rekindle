@@ -315,9 +315,9 @@ impl CommunityPresenceDeps for PresenceAdapter {
                 seq: newer.seq,
                 data: newer.data,
             }),
-            missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => Err(PresenceError::Dht(
-                format!("presence not stored ({missed:?})"),
-            )),
+            missed @ SetOutcome::Offline => Err(PresenceError::Dht(format!(
+                "presence not stored ({missed:?})"
+            ))),
         }
     }
 

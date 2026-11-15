@@ -26,9 +26,8 @@ pub enum Fault {
     /// `set_value.rs:596-632`), and one with more as landed, so only
     /// fewer is below consensus. With
     /// `AllowOffline(false)` the writer stores and queues nothing locally
-    /// (`local_record_store_interface.rs:60-63`) and hears `TryAgain`,
-    /// which `set_dht_value` answers as `Ok(None)` (`set_value.rs:170`),
-    /// while a reader whose fanout reaches an accepting replica sees the
+    /// (`local_record_store_interface.rs:60-62`) and hears `TryAgain`
+    /// (0.5.8 `set_value.rs:731-738`), never `Ok(None)`, while a reader whose fanout reaches an accepting replica sees the
     /// value.
     WritePartial {
         node: usize,

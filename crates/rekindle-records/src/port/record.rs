@@ -22,16 +22,20 @@ pub enum SetOutcome {
     /// Stored at consensus (ours settled, possibly over a rival at its
     /// seq, which is only logged).
     Landed,
-    /// The fanout finished below consensus; nothing was stored or queued.
-    BelowConsensus,
-    /// The node is offline; nothing was stored or queued.
+    /// The write did not reach consensus: the node is offline, or the
+    /// fanout ended below consensus, which Veilid also calls offline
+    /// (`was_offline`) and answers with the same `TryAgain` (0.5.8
+    /// `set_value.rs:710-738` → `local_record_store_interface.rs:60-62`,
+    /// `AllowOffline(false)`). Nothing was stored locally or queued; the
+    /// replicas that took a partial value keep it (`set_value.rs:24-115`).
     Offline,
     /// The write settled on another value (newer, or a rival at our seq
     /// that won the tally), returned here. A settled value whose data and
     /// writer are ours is `Landed` or `Unchanged`, never this.
     Superseded(RecordValue),
-    /// The value equals the local copy; it was re-pushed and no other value
-    /// settled. It proves nothing about the network copy.
+    /// The value equals the local copy: Veilid re-sent the stored bytes at
+    /// their seq (`set_value.rs:353-366`) and that re-push reached
+    /// consensus with no other value settling. The local seq did not move.
     Unchanged,
 }
 
@@ -39,10 +43,7 @@ impl SetOutcome {
     /// The write did not reach consensus, or lost to a newer value.
     #[must_use]
     pub fn missed(&self) -> bool {
-        matches!(
-            self,
-            Self::BelowConsensus | Self::Offline | Self::Superseded(_)
-        )
+        matches!(self, Self::Offline | Self::Superseded(_))
     }
 
     /// `Ok` unless the write [`missed`](Self::missed).

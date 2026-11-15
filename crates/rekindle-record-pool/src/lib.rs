@@ -13,11 +13,11 @@
 //!   every record goes through it, so no record is ever re-opened at
 //!   Veilid's 1-hop default (V19).
 //! - **Honest writes.** `set` passes `allow_offline: false` and reports a
-//!   [`SetOutcome`]. veilid returns `Ok(None)` both for a write that landed
-//!   and for one below consensus that stored nothing (`set_value.rs:170`);
-//!   the local sequence number tells them apart (VeilidChat
-//!   `dht_record.dart` `_localSubkeySeq`). Writes are not retried here: the
-//!   outbox owns durability (D22).
+//!   [`SetOutcome`]. veilid returns `Ok(None)` only for ours at
+//!   consensus; a write below consensus stores nothing and answers
+//!   `TryAgain` (0.5.8 `set_value.rs:731-738` →
+//!   `local_record_store_interface.rs:60-62`), reported `Offline`. Writes
+//!   are not retried here: the outbox owns durability (D22).
 //! - **One retry layer.** Opens, reads and inspects retry `TryAgain`,
 //!   `KeyNotFound` and `TransactionNotFound`, waiting for
 //!   `public_internet_ready`, within a 30 s budget (VeilidChat

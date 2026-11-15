@@ -8,8 +8,9 @@ use rekindle_records::port::{
 use super::{range, to_port, RecordPool};
 use rekindle_records::port::PortError;
 
-/// How the pool reports a set that failed: `TryAgain` is the node being offline (nothing stored
-/// or queued), anything else is the error.
+/// How the pool reports a set that failed: `TryAgain` is a write short of consensus, the node
+/// offline or the fanout below consensus, which Veilid answers alike (`set_value.rs:710-738`);
+/// nothing was stored locally or queued. Anything else is the error.
 ///
 /// # Errors
 /// Every kind but `TryAgain`, as [`to_port`](crate::to_port).
@@ -173,22 +174,16 @@ impl RecordPool {
                 })
             }
             Ok(Some(rival)) => Ok(SetOutcome::Superseded(rival)),
-            Ok(None) => {
-                let after = self
-                    .local_seq(&key, subkey)
-                    .await
-                    .map_err(|e| to_port(&e))?;
-                Ok(if identical {
-                    // Same data and writer: Veilid kept the seq and re-sent
-                    // the stored bytes (`set_value.rs:353-366`); `Ok(None)`
-                    // is the same whether that reached consensus or not.
-                    SetOutcome::Unchanged
-                } else if after.is_some() && after != before {
-                    SetOutcome::Landed
-                } else {
-                    SetOutcome::BelowConsensus
-                })
-            }
+            // `None` is ours at consensus: below it Veilid answers
+            // `TryAgain` and stores nothing (`set_value.rs:731-738` →
+            // `local_record_store_interface.rs:60-62`), mapped by
+            // `set_failed`. An identical value kept its seq and re-sent the
+            // stored bytes (`set_value.rs:353-366`).
+            Ok(None) => Ok(if identical {
+                SetOutcome::Unchanged
+            } else {
+                SetOutcome::Landed
+            }),
             Err(e) => set_failed(&e),
         }
     }

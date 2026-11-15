@@ -150,7 +150,7 @@ async fn attempt_inbox(
     {
         Ok(SetOutcome::Landed | SetOutcome::Unchanged) => Attempt::Sent,
         Ok(SetOutcome::Superseded(_)) => Attempt::Wedged(INBOX_TAKEN.to_owned()),
-        Ok(outcome @ (SetOutcome::BelowConsensus | SetOutcome::Offline)) => {
+        Ok(outcome @ SetOutcome::Offline) => {
             tracing::debug!(?outcome, "inbox write deferred");
             Attempt::Deferred
         }

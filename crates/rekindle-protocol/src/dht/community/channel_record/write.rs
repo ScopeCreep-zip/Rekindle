@@ -370,7 +370,7 @@ async fn append_entry(
         let bytes = encode_trimmed(&author_pseudonym, pseudonym_signing_key, &mut entries)?;
         match pool.set_durable(lease, subkey, bytes, Some(writer)).await? {
             SetOutcome::Landed | SetOutcome::Unchanged => return Ok(AppendOutcome::Stored),
-            SetOutcome::BelowConsensus | SetOutcome::Offline => return Ok(AppendOutcome::Held),
+            SetOutcome::Offline => return Ok(AppendOutcome::Held),
             SetOutcome::Superseded(newer) => {
                 let theirs = decode_own_page(&newer.data, &author_pseudonym).unwrap_or_default();
                 entries = merge_entries(theirs, entries);
