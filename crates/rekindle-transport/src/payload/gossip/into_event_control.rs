@@ -92,12 +92,16 @@ pub fn control_into_event(
             SubscriptionEvent::Membership(MembershipEvent::Kicked {
                 community: c(),
                 target_pseudonym,
+                removed_by: None,
+                removed_by_name: None,
             })
         }
         ControlPayload::Ban { target_pseudonym } => {
             SubscriptionEvent::Membership(MembershipEvent::Banned {
                 community: c(),
                 target_pseudonym,
+                removed_by: None,
+                removed_by_name: None,
             })
         }
         ControlPayload::Unban { target_pseudonym } => {
@@ -294,7 +298,6 @@ pub fn control_into_event(
         | ControlPayload::SystemMessage { .. }
         | ControlPayload::RaidAlert { .. }
         | ControlPayload::ChannelLockdown { .. }
-        | ControlPayload::KickedNotification
         // Stage signalling. These are gossiped decisions every member
         // observes, not local session state — the desktop surfaced them
         // and the daemon dropped them, so a TUI could not render a

@@ -270,29 +270,33 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::Membership(MembershipEvent::Kicked {
+                ref community,
                 ref target_pseudonym,
+                ref removed_by_name,
                 ..
             }) => {
-                self.notifications.push(
-                    format!(
-                        "{} was kicked",
-                        crate::helpers::abbreviate_key(target_pseudonym)
-                    ),
-                    ToastLevel::Warning,
+                let toast = self.removal_toast(
+                    community,
+                    target_pseudonym,
+                    removed_by_name.as_deref(),
+                    "kicked",
                 );
+                self.notifications.push(toast, ToastLevel::Warning);
                 Some(Action::Render)
             }
             SubscriptionEvent::Membership(MembershipEvent::Banned {
+                ref community,
                 ref target_pseudonym,
+                ref removed_by_name,
                 ..
             }) => {
-                self.notifications.push(
-                    format!(
-                        "{} was banned",
-                        crate::helpers::abbreviate_key(target_pseudonym)
-                    ),
-                    ToastLevel::Warning,
+                let toast = self.removal_toast(
+                    community,
+                    target_pseudonym,
+                    removed_by_name.as_deref(),
+                    "banned",
                 );
+                self.notifications.push(toast, ToastLevel::Warning);
                 Some(Action::Render)
             }
             SubscriptionEvent::Friend(FriendEvent::Rejected { .. }) => {
@@ -368,16 +372,6 @@ impl App {
                     ToastLevel::Success
                 };
                 self.notifications.push(msg.into(), level);
-                Some(Action::Render)
-            }
-            SubscriptionEvent::System(SystemEvent::Kicked { ref community }) => {
-                self.notifications.push(
-                    format!(
-                        "You were kicked from {}",
-                        crate::helpers::abbreviate_key(community)
-                    ),
-                    ToastLevel::Error,
-                );
                 Some(Action::Render)
             }
 

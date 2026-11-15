@@ -19,7 +19,7 @@ use rekindle_types::id::ThreadId;
 
 use rekindle_db::repo::communities::snapshot::StoredGovernance;
 
-use super::state::{CommunityState, MemberRecord};
+use super::state::{CommunityState, MemberRecord, OwnRemoval};
 use crate::host::adapters::governance::projection::{self, GovernanceProjected};
 
 /// Every joined community, keyed by governance key.
@@ -516,6 +516,35 @@ impl CommunityStore {
     /// the store holds (insert-only, as the session records it).
     pub fn note_channel_record_key(&self, community_id: &str, channel_id: &str, record_key: &str) {
         self.update(community_id, |c| note_record_key(c, channel_id, record_key));
+    }
+
+    /// Note our own removal (plan E3.2 S9 own removal): whether the
+    /// community was not marked removed before.
+    pub fn note_own_removal(&self, community_id: &str, removal: OwnRemoval) -> bool {
+        self.write(community_id, |c| c.own_removal.replace(removal).is_none())
+    }
+
+    /// Clear our removal mark: the merged state no longer removes us (the
+    /// removal was void, strong removal). Whether it was marked.
+    pub fn clear_own_removal(&self, community_id: &str) -> bool {
+        self.read(community_id, |c| c.own_removal.is_some()) == Some(true)
+            && self.write(community_id, |c| c.own_removal.take().is_some())
+    }
+
+    /// The lock over whether the community's network side is torn down for
+    /// our removal.
+    #[must_use]
+    pub fn removal_gate(
+        &self,
+        community_id: &str,
+    ) -> Option<std::sync::Arc<tokio::sync::Mutex<bool>>> {
+        self.read(community_id, |c| std::sync::Arc::clone(&c.removal_gate))
+    }
+
+    /// Our own removal from the community, if the merge found one.
+    #[must_use]
+    pub fn own_removal(&self, community_id: &str) -> Option<OwnRemoval> {
+        self.read(community_id, |c| c.own_removal.clone()).flatten()
     }
 
     /// Drop a community — on leave.

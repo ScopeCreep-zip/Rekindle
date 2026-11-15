@@ -112,10 +112,6 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(b"|");
             h.update(&[u8::from(*locked)]);
         }
-        SystemEvent::Kicked { community } => {
-            h.update(b"kicked|");
-            h.update(community.as_bytes());
-        }
         SystemEvent::BootstrapRequested {
             community,
             joiner_pseudonym,

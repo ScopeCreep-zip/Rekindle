@@ -123,10 +123,12 @@ pub fn apply(
             MembershipEvent::Kicked {
                 community,
                 target_pseudonym,
+                ..
             }
             | MembershipEvent::Banned {
                 community,
                 target_pseudonym,
+                ..
             },
         ) => {
             state

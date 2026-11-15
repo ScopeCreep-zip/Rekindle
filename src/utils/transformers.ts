@@ -163,6 +163,7 @@ export function transformCommunityDetail(c: {
   onboardingComplete?: boolean;
   myBio?: string | null; myPronouns?: string | null;
   myThemeColor?: number | null; myBadges?: string[];
+  removed?: { banned: boolean; by: string | null; byName: string | null } | null;
 }): Community {
   return {
     id: c.id, name: c.name, description: c.description ?? null,
@@ -184,6 +185,7 @@ export function transformCommunityDetail(c: {
     myPronouns: c.myPronouns ?? null,
     myThemeColor: c.myThemeColor ?? null,
     myBadges: c.myBadges ?? [],
+    removed: c.removed ?? null,
   };
 }
 

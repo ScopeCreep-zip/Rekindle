@@ -111,6 +111,14 @@ pub(crate) async fn load(
             .threads
             .retain(|id, _| !state.held_threads.contains(id));
         super::projection::project_my_roles(state, &governance);
+        // A community we were removed from stays as read-only history: the
+        // unlock stages start none of its loops (plan E3.2 S9 own removal).
+        state.own_removal = (state.my_pseudonym_key.as_deref())
+            .and_then(|me| crate::host::community::OwnRemoval::of(&governance, me));
+        // Nothing of it starts, so its network side counts as torn down: a
+        // later merge that voids the removal restores it.
+        state.removal_gate =
+            std::sync::Arc::new(tokio::sync::Mutex::new(state.own_removal.is_some()));
         state.governance_state = Some(governance);
         state.genesis_cert = Some(cert);
     }

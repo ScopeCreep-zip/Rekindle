@@ -90,16 +90,28 @@ pub enum MembershipEvent {
         pseudonym: String,
     },
     /// A member was kicked (immediate removal, can rejoin).
-    /// Triggered by: gossip `ControlPayload::Kick`.
+    /// Triggered by: gossip `ControlPayload::Kick`, and by the Host when the
+    /// merged governance names our own pseudonym in a `MemberRemoved`.
     Kicked {
         community: String,
         target_pseudonym: String,
+        /// The remover's pseudonym, when the merged op names it: our own
+        /// removal (plan E3.2 S9 own removal) carries it; gossip carries none.
+        removed_by: Option<String>,
+        /// The display name on the remover's verified card, when held.
+        removed_by_name: Option<String>,
     },
     /// A member was banned (permanent removal, cannot rejoin).
-    /// Triggered by: gossip `ControlPayload::Ban`.
+    /// Triggered by: gossip `ControlPayload::Ban`, and by the Host when the
+    /// merged governance bans our own pseudonym.
     Banned {
         community: String,
         target_pseudonym: String,
+        /// The remover's pseudonym, when the merged op names it: our own
+        /// removal (plan E3.2 S9 own removal) carries it; gossip carries none.
+        removed_by: Option<String>,
+        /// The display name on the remover's verified card, when held.
+        removed_by_name: Option<String>,
     },
     /// A member was unbanned.
     /// Triggered by: gossip `ControlPayload::Unban`.

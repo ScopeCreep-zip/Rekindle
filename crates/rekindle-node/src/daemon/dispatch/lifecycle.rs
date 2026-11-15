@@ -58,9 +58,14 @@ pub(crate) async fn daemon_stages(
 ) -> Result<(), IpcResponse> {
     let transport = ctx.transport.read().clone();
     let session = ctx.session.read().clone();
-    let (Some(transport), Some(session)) = (transport, session) else {
+    let (Some(transport), Some(mut session)) = (transport, session) else {
         return Ok(());
     };
+    // A community we were removed from is read-only history: no watches,
+    // mesh or presence for it (plan E3.2 S9 own removal).
+    session
+        .communities
+        .retain(|id, _| ctx.communities.own_removal(id).is_none());
     // The communities' records, leases and keepalive are the Host's
     // network stage (plan E3.1 C2a, `host::adapters::governance::login_stage`).
 

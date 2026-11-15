@@ -8,6 +8,6 @@ mod store_tests;
 
 pub use state::{
     display_role_name, CategoryInfo, ChannelInfo, ChannelType, CommunityRecords, CommunityState,
-    GossipOverlay, MemberProfileSnapshot, MemberRecord, OnlineMember, RoleDefinition,
+    GossipOverlay, MemberProfileSnapshot, MemberRecord, OnlineMember, OwnRemoval, RoleDefinition,
 };
 pub use store::{new_map, CommunityMap, CommunityStore};

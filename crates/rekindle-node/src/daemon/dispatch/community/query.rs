@@ -82,12 +82,35 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         })
         .collect();
 
-    IpcResponse::ok(&rekindle_transport::list_communities(
+    let mut overviews = rekindle_transport::list_communities(
         &memberships,
         &member_counts,
         &channel_counts,
         &metadata,
-    ))
+    );
+    for overview in &mut overviews {
+        overview.removed = removal_display(ctx, &overview.governance_key);
+    }
+    IpcResponse::ok(&overviews)
+}
+
+/// Our removal from `community`, as list and info show it (plan E3.2 S9
+/// own removal).
+fn removal_display(
+    ctx: &DaemonContext,
+    community: &str,
+) -> Option<rekindle_types::display::CommunityRemovalDisplay> {
+    let removal = ctx.communities.own_removal(community)?;
+    let by_name =
+        (removal.by.as_ref()).and_then(|by| ctx.communities.member_card_name(community, by));
+    Some(rekindle_types::display::CommunityRemovalDisplay {
+        banned: removal.banned,
+        by: removal
+            .by
+            .as_ref()
+            .map(rekindle_types::id::PseudonymKey::to_hex),
+        by_name,
+    })
 }
 
 pub(crate) fn handle_info(
@@ -128,14 +151,16 @@ pub(crate) fn handle_info(
         })
         .unwrap_or_default();
 
-    IpcResponse::ok(&rekindle_transport::community_detail(
+    let mut detail = rekindle_transport::community_detail(
         &membership,
         member_count,
         channels,
         roles,
         ctx.communities.my_role_ids(&membership.governance_key),
         meta,
-    ))
+    );
+    detail.removed = removal_display(ctx, &membership.governance_key);
+    IpcResponse::ok(&detail)
 }
 
 /// Every joined community as its window renders it (plan E3.1 D1b).

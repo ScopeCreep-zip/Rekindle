@@ -10,6 +10,34 @@ use serde::{Deserialize, Serialize};
 
 pub use rekindle_types::presence::OnlineMember;
 
+/// We were removed from a community: kicked (`MemberRemoved`) or banned
+/// (`BanEntry`), and by whom (plan E3.2 S9 own removal).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnRemoval {
+    pub banned: bool,
+    /// The removal's author, when the merge names one (the creator's
+    /// departure has none).
+    pub by: Option<rekindle_types::id::PseudonymKey>,
+}
+
+impl OwnRemoval {
+    /// Our removal in `governance`, if `me` (our pseudonym, hex) departed
+    /// by a removal: a `MemberLeft` of ours is a leave, not a removal.
+    #[must_use]
+    pub fn of(governance: &rekindle_governance::state::GovernanceState, me: &str) -> Option<Self> {
+        let me = hex::decode(me)
+            .ok()
+            .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+            .map(rekindle_types::id::PseudonymKey)?;
+        let banned = governance.bans.contains(&me);
+        let removed = governance.is_departed(&me) && governance.removed.contains_key(&me);
+        (banned || removed).then(|| Self {
+            banned,
+            by: governance.removed_by.get(&me).cloned(),
+        })
+    }
+}
+
 /// A joined community's state.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +209,18 @@ pub struct CommunityState {
     /// started (once per session, from `leases::records_ready`).
     #[serde(skip)]
     pub loops_started: bool,
+
+    /// Our own removal, from the merged governance (plan E3.2 S9 own
+    /// removal): the community is read-only history. Set by the unlock
+    /// loader's merge and by every projection that finds us departed.
+    #[serde(skip)]
+    pub own_removal: Option<OwnRemoval>,
+
+    /// Whether the community's network side is torn down for our removal,
+    /// behind the lock that orders a teardown and a restore (a removal the
+    /// merge later voids, plan E3.2 S9 own removal and strong removal).
+    #[serde(skip)]
+    pub removal_gate: std::sync::Arc<tokio::sync::Mutex<bool>>,
 
     /// Our locally persisted RSVPs for scheduled events.
     #[serde(skip)]

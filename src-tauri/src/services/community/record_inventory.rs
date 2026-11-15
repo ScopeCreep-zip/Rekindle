@@ -131,6 +131,8 @@ mod tests {
             parked_mek_requests: Vec::new(),
             governance_key: Some("gov-key".to_string()),
             governance_state: gov,
+            own_removal: None,
+            removal_gate: std::sync::Arc::default(),
             message_clock: 0,
             governance_clock: 0,
             gossip: None,

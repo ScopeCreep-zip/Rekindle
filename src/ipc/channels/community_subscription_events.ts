@@ -22,8 +22,8 @@ export type MembershipEvent =
   | { joined: { community: string; pseudonym: string; displayName: string; roleIds: number[] } }
   | { left: { community: string; pseudonym: string } }
   | { removed: { community: string; pseudonym: string } }
-  | { kicked: { community: string; targetPseudonym: string } }
-  | { banned: { community: string; targetPseudonym: string } }
+  | { kicked: { community: string; targetPseudonym: string; removedBy: string | null; removedByName: string | null } }
+  | { banned: { community: string; targetPseudonym: string; removedBy: string | null; removedByName: string | null } }
   | { unbanned: { community: string; targetPseudonym: string } }
   | { timedOut: { community: string; targetPseudonym: string; durationSeconds: number; reason: string | null } }
   | { timeoutRemoved: { community: string; targetPseudonym: string } }
@@ -47,7 +47,6 @@ export type MembershipEvent =
 
 /** System-level signals from the daemon vocabulary. */
 export type SystemEvent =
-  | { kicked: { community: string } }
   /** `community` is null for a device-wide announcement. */
   | { announcement: { community: string | null; body: string; timestamp: number } }
   /** A moderator's decision, gossiped to everyone. */

@@ -104,7 +104,25 @@ impl HostChannel {
         body: &str,
         reply_to: Option<String>,
     ) -> Result<ChannelSendResult, ChannelError> {
+        self.refuse_removed(community_id)?;
         rekindle_channel::send_channel_message(self, community_id, channel_id, body, reply_to).await
+    }
+
+    /// Refuse a write to a community we were removed from: it is read-only
+    /// history (plan E3.2 S9 own removal). Reads stay allowed.
+    ///
+    /// # Errors
+    /// `PermissionDenied` once the merge found our removal.
+    pub(crate) fn refuse_removed(&self, community_id: &str) -> Result<(), ChannelError> {
+        match self.ctx().communities.own_removal(community_id) {
+            Some(removal) if removal.banned => Err(ChannelError::PermissionDenied(
+                "you were banned from this community".into(),
+            )),
+            Some(_) => Err(ChannelError::PermissionDenied(
+                "you were removed from this community".into(),
+            )),
+            None => Ok(()),
+        }
     }
 
     /// Forward our stored copy of a message into another channel (plan
@@ -117,6 +135,7 @@ impl HostChannel {
         &self,
         params: rekindle_channel::ForwardChannelMessageParams<'_>,
     ) -> Result<ChannelSendResult, ChannelError> {
+        self.refuse_removed(params.dest_community)?;
         rekindle_channel::forward_channel_message(self, params).await
     }
 }
@@ -141,6 +160,9 @@ struct PostReissuer(HostChannel);
 impl Reissuer for PostReissuer {
     async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
         let post = post_of_row(row)?;
+        self.0
+            .refuse_removed(&post.community)
+            .map_err(|e| e.to_string())?;
         rekindle_channel::reissue::reissue_channel_post(&self.0, &post)
             .await
             .map(drop)

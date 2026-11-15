@@ -174,7 +174,6 @@ pub fn encode_control_payload(
         CP::EventReminder { .. } => {
             write_event_reminder(b.reborrow().init_event_reminder(), payload);
         }
-        CP::KickedNotification => b.reborrow().set_kicked_notification(()),
         CP::RaidAlert { .. } => write_raid_alert(b.reborrow().init_raid_alert(), payload),
         CP::ChannelLockdown { .. } => {
             write_channel_lockdown(b.reborrow().init_channel_lockdown(), payload);
@@ -308,7 +307,6 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
             read_submit_onboarding_answers(p.map_err(|e| capnp_err(&e))?)
         }
         Which::EventReminder(p) => read_event_reminder(p.map_err(|e| capnp_err(&e))?),
-        Which::KickedNotification(()) => Ok(ControlPayload::KickedNotification),
         Which::RaidAlert(p) => Ok(read_raid_alert(p.map_err(|e| capnp_err(&e))?)),
         Which::ChannelLockdown(p) => Ok(read_channel_lockdown(p.map_err(|e| capnp_err(&e))?)),
         Which::SystemMessage(p) => read_system_message(p.map_err(|e| capnp_err(&e))?),
@@ -347,10 +345,14 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::VideoFragment(p) => read_video_fragment(p.map_err(|e| capnp_err(&e))?),
         Which::VideoParityFragment(p) => read_video_parity_fragment(p.map_err(|e| capnp_err(&e))?),
         Which::KeyframeRequest(p) => read_keyframe_request(p.map_err(|e| capnp_err(&e))?),
-        // Removed variants (plan E4.3.3): skipped like an unknown one.
-        Which::Obsolete43(()) | Which::Obsolete61(()) | Which::Obsolete63(()) => Err(
-            CodecError::UnknownVariant("obsolete control payload".to_string()),
-        ),
+        // Removed variants (plan E4.3.3; @35 by E3.2 S9 own removal):
+        // skipped like an unknown one.
+        Which::Obsolete35(())
+        | Which::Obsolete43(())
+        | Which::Obsolete61(())
+        | Which::Obsolete63(()) => Err(CodecError::UnknownVariant(
+            "obsolete control payload".to_string(),
+        )),
         Which::MediaCapabilities(p) => read_media_capabilities(p.map_err(|e| capnp_err(&e))?),
         Which::TopologyChange(p) => read_topology_change(p.map_err(|e| capnp_err(&e))?),
         Which::LinkPreview(p) => read_link_preview(p.map_err(|e| capnp_err(&e))?),

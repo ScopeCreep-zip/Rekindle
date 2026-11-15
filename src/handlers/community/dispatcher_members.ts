@@ -33,16 +33,6 @@ export function reduceSubscriptionMembership(
   event: CommunitySubscriptionEvent,
 ): void {
   if ("system" in event) {
-    const sys = event.system;
-    if ("kicked" in sys) {
-      // We were removed from the community.
-      const communityId = sys.kicked.community;
-      setCommunityState("communities", communityId, undefined!);
-      if (communityState.activeCommunity === communityId) {
-        setCommunityState("activeCommunity", null);
-        setCommunityState("activeChannel", null);
-      }
-    }
     return;
   }
   if ("governance" in event) {
@@ -68,6 +58,29 @@ export function reduceSubscriptionMembership(
         }),
       ]);
     }
+    return;
+  }
+
+  if ("kicked" in m || "banned" in m) {
+    const banned = "banned" in m;
+    const r = "banned" in m ? m.banned : m.kicked;
+    const c = communityState.communities[r.community];
+    if (!c) return;
+    if (c.myPseudonymKey === r.targetPseudonym) {
+      // Our own removal, from the Host's merged governance (plan E3.2 S9):
+      // the community stays as read-only history.
+      setCommunityState("communities", r.community, "removed", {
+        banned,
+        by: r.removedBy,
+        byName: r.removedByName,
+      });
+      const by = r.removedByName ? ` by ${r.removedByName}` : "";
+      addToast(`You were ${banned ? "banned" : "removed"} from ${c.name}${by}`, "error");
+      return;
+    }
+    setCommunityState("communities", r.community, "members", (prev) =>
+      prev.filter((x) => x.pseudonymKey !== r.targetPseudonym),
+    );
     return;
   }
 
@@ -366,6 +379,7 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
           setCommunityState("communities", community, "categories", detail.categories ?? []);
           setCommunityState("communities", community, "myRoleIds", detail.myRoleIds ?? [0]);
           setCommunityState("communities", community, "mekGeneration", detail.mekGeneration ?? 0);
+          setCommunityState("communities", community, "removed", detail.removed ?? null);
         }
       })
       .catch(() => {});

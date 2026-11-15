@@ -144,6 +144,8 @@ fn moderation() -> Vec<Sample> {
             MembershipEvent::Kicked {
                 community: community(),
                 target_pseudonym: pk('e'),
+                removed_by: None,
+                removed_by_name: None,
             },
         ),
         ev(
@@ -151,6 +153,8 @@ fn moderation() -> Vec<Sample> {
             MembershipEvent::Banned {
                 community: community(),
                 target_pseudonym: pk('e'),
+                removed_by: Some(pk('f')),
+                removed_by_name: Some("Mod".into()),
             },
         ),
         ev(

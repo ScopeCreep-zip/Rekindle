@@ -29,6 +29,9 @@ impl HostGovernance {
             community_id,
             &state,
         );
+        let removal = (self.ctx.communities.map().read().get(community_id))
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .and_then(|me| crate::host::community::OwnRemoval::of(&state, &me));
         let now_secs = self.ctx.clock.now_secs();
         let (projected, held) =
             self.ctx
@@ -38,6 +41,10 @@ impl HostGovernance {
         self.refresh_files(community_id);
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
+        }
+        match removal {
+            Some(removal) => self.on_own_removal(community_id, &removal),
+            None => self.on_not_removed(community_id),
         }
     }
 

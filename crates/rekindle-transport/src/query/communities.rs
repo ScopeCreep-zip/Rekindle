@@ -93,6 +93,7 @@ pub fn list_communities<S: std::hash::BuildHasher>(
                 .copied()
                 .unwrap_or_default(),
             our_pseudonym: m.pseudonym_key.clone(),
+            removed: None,
         });
     }
 
@@ -120,5 +121,6 @@ pub fn community_detail(
         roles,
         our_pseudonym: membership.pseudonym_key.clone(),
         our_roles,
+        removed: None,
     }
 }

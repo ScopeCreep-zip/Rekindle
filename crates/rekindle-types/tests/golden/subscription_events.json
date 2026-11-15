@@ -921,6 +921,8 @@
     "membership": {
       "banned": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "removedBy": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "removedByName": "Mod",
         "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       }
     }
@@ -978,6 +980,8 @@
     "membership": {
       "kicked": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "removedBy": null,
+        "removedByName": null,
         "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
       }
     }
@@ -1668,13 +1672,6 @@
       "channelLockdown": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "locked": true
-      }
-    }
-  },
-  "system.kicked": {
-    "system": {
-      "kicked": {
-        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
       }
     }
   },

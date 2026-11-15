@@ -110,7 +110,6 @@ impl CommunityEnvelope {
                 | ControlPayload::AdminKeypairGrant { .. }
                 | ControlPayload::MekTransfer(_)
                 | ControlPayload::MekTransferAck(_)
-                | ControlPayload::KickedNotification
                 // Answers to one peer's question.
                 | ControlPayload::SyncResponse { .. }
                 | ControlPayload::BootstrapResponseV2 { .. }

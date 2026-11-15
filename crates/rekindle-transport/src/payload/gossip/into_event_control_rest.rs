@@ -266,9 +266,6 @@ pub fn control_into_event_rest(
                 locked,
             })
         }
-        ControlPayload::KickedNotification => {
-            SubscriptionEvent::System(SystemEvent::Kicked { community: c() })
-        }
 
         // Unreachable: every variant above the split is routed here by
         // `into_event`, whose match is exhaustive — a new `ControlPayload`

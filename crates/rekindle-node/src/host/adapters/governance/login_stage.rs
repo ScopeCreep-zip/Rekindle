@@ -79,8 +79,11 @@ async fn run(governance: &HostGovernance, stop: &CancellationToken) {
         .communities
         .map()
         .read()
-        .keys()
-        .cloned()
+        .iter()
+        // A community we were removed from is read-only history: none of
+        // its records open again (plan E3.2 S9 own removal).
+        .filter(|(_, c)| c.own_removal.is_none())
+        .map(|(id, _)| id.clone())
         .collect();
     communities.sort();
     for community_id in &communities {
@@ -97,6 +100,12 @@ async fn run(governance: &HostGovernance, stop: &CancellationToken) {
         communities = communities.len(),
         "communities hydrated, rebuilt and republished"
     );
+}
+
+/// One community's stage, outside the login: a community restored after
+/// its removal turned out void (`own_removal.rs`).
+pub(super) async fn bring_up(governance: &HostGovernance, community_id: &str) {
+    community(governance, community_id, &CancellationToken::new()).await;
 }
 
 /// One community's stage: open and hand over its records, hydrate its
