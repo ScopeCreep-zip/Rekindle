@@ -117,6 +117,22 @@ async fn a_change_missed_in_a_sleep_arrives_by_the_fallback_inspection() {
         eventually(&sim, LIMIT, || shows("Kim")).await,
         "Lev shows Kim"
     );
+    // Lev shows Kim from the friendship before his watch on her profile is
+    // placed. The watch's first inspection (a new holder, 0.5.8
+    // `watch_value.rs:1166-1171`) reports every subkey ahead of Lev's copy
+    // as a range with no value when more than one is (`:1433-1520`), and
+    // the Host reads that hint (`read_changed`). With 0.5.8's latency (a
+    // watch is a fanout of SET-like RPCs, an inspect 0.40-0.65 s) that
+    // lands after `shows` holds; a sleep begun first would have the rename
+    // reach Lev by this first inspection, not the fallback under test. So
+    // the watch settles first, and from then on nothing may inspect.
+    tokio::time::sleep(Duration::from_secs(15)).await;
+    let inspected = sim.app_inspects(1, &profile);
+    let fallbacks = || {
+        let entry = format!("1<-1 ChangeInspect {profile}");
+        sim.trace().of(1).filter(|e| *e == entry).count()
+    };
+    let fallen = fallbacks();
     sim.fault(Fault::Sleep {
         node: 1,
         asleep: true,
@@ -135,5 +151,15 @@ async fn a_change_missed_in_a_sleep_arrives_by_the_fallback_inspection() {
         eventually(&sim, Duration::from_secs(330), || shows("Kimberly")).await,
         "Lev shows the rename within the fallback ceiling"
     );
-    assert_eq!(sim.app_inspects(1, &profile), 0, "no app inspect polled it");
+    // Kim's heartbeat also rewrites her status while Lev sleeps, so the
+    // fallback reports two subkeys: a range with no value (0.5.8
+    // `watch_value.rs:1433-1520`), which the Host reads once. Each read
+    // answers a fallback report; none is a poll (D4).
+    let reports = fallbacks() - fallen;
+    assert!(reports >= 1, "the fallback inspection reported the rename");
+    assert!(
+        sim.app_inspects(1, &profile) - inspected <= u64::try_from(reports).unwrap_or(u64::MAX),
+        "no app inspect polled it: {} reads for {reports} fallback reports",
+        sim.app_inspects(1, &profile) - inspected
+    );
 }
