@@ -3,9 +3,11 @@
 //! (`~/veilid-wt-058/veilid-core/src`):
 //!
 //! - **churn:** a record's replicas are the [`super::replicas::REPLICAS`]
-//!   nodes closest to its key that a fanout counts (`consensus_width`,
-//!   `rpc_processor/fanout/fanout_call.rs:399-451`); nodes joining closer to
-//!   the key push the farthest out. [`crate::Fault::ReplicaChurn`] puts
+//!   (`consensus_width`) nodes closest to its key; a fanout's window is the
+//!   `consensus_width` closest that neither timed out nor disqualified
+//!   (0.5.8 `rpc_processor/fanout/fanout_call.rs:401-441`), so a churned-out
+//!   or silent replica takes no slot ([`super::fanout`]); nodes joining
+//!   closer to the key push the farthest out. [`crate::Fault::ReplicaChurn`] puts
 //!   `count` empty stores closest (placement order is closeness) and drops
 //!   the `count` farthest, their values and watches with them; each
 //!   newcomer sits on the side of the replica it displaced. A watcher's

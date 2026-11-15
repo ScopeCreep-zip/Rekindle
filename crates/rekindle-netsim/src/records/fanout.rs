@@ -29,7 +29,15 @@
 //!   conflicts, `fanout_call.rs:579-585`). An accept of a value the fanout
 //!   has since left counts as a rival holder;
 //! - **done** at [`SET_COUNT`] accepts (`set_value_count`,
-//!   `veilid_config.rs:1011`): the call returns then; RPCs still in flight
+//!   `veilid_config.rs:1011`) within the `consensus_width` closest nodes
+//!   that did not time out or disqualify: those take no slot, so the window
+//!   widens past a silent or invalid replica (`fanout_call.rs:401-441`; an
+//!   invalid answer disqualifies, `set_value.rs:534-537`,
+//!   `fanout_call.rs:591-592`). Here every replica of a record sits inside
+//!   that window ([`super::replicas::REPLICAS`] is the width) and silent or
+//!   invalid ones never count, so the fanout counts accepts from any
+//!   replica it reaches; the netsim places no stores past the tenth, so it
+//!   cannot widen further. The call returns then; RPCs still in flight
 //!   land on their replicas, their answers unread. Otherwise it ends when
 //!   every reached replica answered (exhausted), or at [`SET_TIMEOUT`] past
 //!   the last accept (`fanout_call.rs:552-555`, `veilid_config.rs:1010`).

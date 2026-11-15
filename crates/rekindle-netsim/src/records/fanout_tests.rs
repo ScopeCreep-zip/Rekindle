@@ -279,3 +279,26 @@ async fn a_same_seq_rival_replaces_the_local_copy_only_on_force_with_nothing_pen
     assert_eq!(a.get(&key, 0, true).await.unwrap().unwrap().data, b"rival");
     assert_eq!(a.get(&key, 0, false).await.unwrap().unwrap().data, b"rival");
 }
+
+/// VU2 item 16: a timed-out node takes no consensus slot (0.5.8
+/// `rpc_processor/fanout/fanout_call.rs:401-441`): with the closest eight
+/// silent, the five after them make consensus, though three of them sit
+/// past the tenth. The fanout's queue is closeness order, so a window that
+/// let a silent node hold its slot would count only two.
+#[test]
+fn silent_replicas_take_no_consensus_slot() {
+    let schema = RecordSchema::Dflt { owner_subkeys: 1 };
+    let mut replicas = super::replicas::place("k", 10, 1);
+    replicas.extend(super::replicas::place("k2", 10, 1).into_iter().take(5));
+    let reach: Vec<usize> = (0..replicas.len()).collect();
+    let ours = cipher(0, b"v", 2);
+    let mut fanout = super::fanout::Fanout::new(&reach, &ours);
+    while let Some((r, value)) = fanout.next() {
+        if r >= 8 {
+            fanout.arrive(&schema, &mut replicas, r, 0, &value);
+        }
+    }
+    let done = fanout.finish();
+    assert!(done.consensus, "accepted {}", done.accepted);
+    assert_eq!(done.stored, vec![8, 9, 10, 11, 12]);
+}

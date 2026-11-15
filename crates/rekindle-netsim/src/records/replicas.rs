@@ -3,7 +3,8 @@
 //! `veilid-core/src`):
 //!
 //! - every record lives on [`REPLICAS`] stores, Veilid's `consensus_width`
-//!   (the closest nodes to the key a fanout counts, `veilid_config.rs:1013`);
+//!   (`veilid_config.rs:1013`: the closest nodes to the key a fanout counts,
+//!   less those that time out or disqualify, `fanout_call.rs:401-441`);
 //! - **placement:** replica `r` sits beside simulated node
 //!   `(offset + r) % n`, where `n` is the node count when the record is
 //!   created and `offset` folds the record key's text (the key comes from
