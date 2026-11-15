@@ -125,6 +125,7 @@ type LockKey = (usize, String, u32);
 pub(crate) struct Latency {
     seed: u64,
     rngs: Mutex<HashMap<usize, StdRng>>,
+    streams: Mutex<HashMap<(usize, u64), StdRng>>,
     locks: Mutex<HashMap<LockKey, Arc<tokio::sync::Mutex<()>>>>,
     caps: Mutex<HashMap<usize, Arc<Semaphore>>>,
 }
@@ -134,6 +135,7 @@ impl Latency {
         Self {
             seed,
             rngs: Mutex::new(HashMap::new()),
+            streams: Mutex::new(HashMap::new()),
             locks: Mutex::new(HashMap::new()),
             caps: Mutex::new(HashMap::new()),
         }
@@ -145,9 +147,21 @@ impl Latency {
         let rng = rngs.entry(node).or_insert_with(|| {
             StdRng::seed_from_u64(self.seed ^ 0x6c61_7465_6e63_7900 ^ (node as u64).rotate_left(32))
         });
-        let (lo, hi) = (span.min.as_micros(), span.max.as_micros());
-        let micros = if hi > lo { rng.gen_range(lo..=hi) } else { lo };
-        Duration::from_micros(u64::try_from(micros).unwrap_or(u64::MAX))
+        uniform(rng, span)
+    }
+
+    /// A duration from `span`, drawn from `node`'s generator for `stream`:
+    /// for calls whose tasks wake together in an order the seed does not
+    /// fix (tokio wakes a watch's waiters in a random order), each draws
+    /// from its own stream so the seed fixes its durations all the same.
+    pub(crate) fn draw_stream(&self, node: usize, stream: u64, span: Span) -> Duration {
+        let mut streams = self.streams.lock();
+        let rng = streams.entry((node, stream)).or_insert_with(|| {
+            StdRng::seed_from_u64(
+                self.seed ^ 0x7374_7265_616d_0000 ^ (node as u64).rotate_left(32) ^ stream,
+            )
+        });
+        uniform(rng, span)
     }
 
     /// Wait for `subkeys` of `key` on `node`, then a slot under the cap,
@@ -190,6 +204,13 @@ impl Latency {
             _permit: permit,
         }
     }
+}
+
+/// A duration uniform over `span`.
+fn uniform(rng: &mut StdRng, span: Span) -> Duration {
+    let (lo, hi) = (span.min.as_micros(), span.max.as_micros());
+    let micros = if hi > lo { rng.gen_range(lo..=hi) } else { lo };
+    Duration::from_micros(u64::try_from(micros).unwrap_or(u64::MAX))
 }
 
 #[cfg(test)]

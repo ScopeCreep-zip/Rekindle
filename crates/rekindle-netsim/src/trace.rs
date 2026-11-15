@@ -11,6 +11,24 @@ impl Trace {
         self.0.push((node, event));
     }
 
+    /// Insert an entry at `index` (an entry pushed at the same instant as
+    /// others, put in its canonical place among them).
+    pub(crate) fn insert(&mut self, index: usize, node: usize, event: String) {
+        self.0.insert(index, (node, event));
+    }
+
+    /// How many entries there are.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Whether there are none.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// The entries, in order.
     #[must_use]
     pub fn entries(&self) -> &[(usize, String)] {

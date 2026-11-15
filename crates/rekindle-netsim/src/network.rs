@@ -228,6 +228,9 @@ pub(crate) struct Inner {
     pub next_call: u64,
     pub faults: Faults,
     pub trace: Trace,
+    /// The run of own-route allocation entries at the trace's end: their
+    /// instant, first index and end ([`crate::routes`]' `InFlight`).
+    pub alloc_tail: Option<(tokio::time::Instant, usize, usize)>,
     /// When the next watch tick runs.
     pub next_tick: Option<tokio::time::Instant>,
     /// The DHT stores' use counter (each store's record LRU,

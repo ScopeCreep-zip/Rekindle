@@ -54,6 +54,20 @@
 //!   blocks UDP an Unordered route cannot be allocated and answers
 //!   `TryAgain` ("unable to find any route at this time", `:268`)
 //!   ([`crate::Fault::UdpBlocked`]).
+//! - **allocation takes the route's test:** `new_custom_private_route`
+//!   (`veilid_api/api.rs:812-842`) allocates locally (`route_allocate.rs:99-136`:
+//!   a lock, keys, hop selection, no RPC) and then tests the route over the
+//!   network before it returns the blob (`api.rs:831`,
+//!   `route_test.rs:62-69`): one loopback status call over the route and
+//!   up to three direct-target status calls, all at once, waiting for every
+//!   probe (`route_test.rs:228-338`). So an allocation costs
+//!   [`route_test_duration`]; a node gone offline or not ready by the
+//!   test's end fails it, `TryAgain` ("allocated route failed to test",
+//!   `api.rs:832-836`). It is traced: [`ALLOCATION_STARTS`],
+//!   [`ALLOCATION_ENDS`], and [`ALLOCATION_CUT`] when the call is dropped
+//!   mid-flight (a shutdown that cancels it, a node that stops), as
+//!   Veilid's `DurationRecorder` dropped unfinished logs an error
+//!   (`logging/duration_recorder.rs:84-90`).
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -70,6 +84,27 @@ use crate::network::{Network, RouteEntry};
 /// The trace entry of a node forgetting a peer's route after a send to it
 /// failed `RouteUnusable` (`RoutePort::invalidate_after_send_failure`).
 pub const FORGETS_PEER_ROUTE: &str = "forgets a peer route";
+
+/// The trace entry of an own-route allocation starting:
+/// `"{ALLOCATION_STARTS}: {class:?}"` ([`allocation_entry`]).
+pub const ALLOCATION_STARTS: &str = "own route allocation starts";
+/// The trace entry of an own-route allocation returning (a route or an
+/// error).
+pub const ALLOCATION_ENDS: &str = "own route allocation ends";
+/// The trace entry of an own-route allocation dropped before it returned.
+pub const ALLOCATION_CUT: &str = "own route allocation cut";
+
+/// The trace entry `event` (one of the `ALLOCATION_*`) of `class`.
+#[must_use]
+pub fn allocation_entry(event: &str, class: RouteClass) -> String {
+    format!("{event}: {class:?}")
+}
+
+/// The probes of an allocated route's test: one loopback plus
+/// `ROUTE_TEST_DIRECT_CANDIDATE_COUNT` (3) direct targets (Veilid 0.5.8
+/// `route_test.rs:4`, `:289-304`); the simulated network always knows
+/// enough peers for all three.
+pub(crate) const ROUTE_TEST_PROBES: usize = 4;
 
 /// The blob prefix: a blob is this, then the route id.
 const BLOB_PREFIX: &str = "netsim-route:";
@@ -152,20 +187,47 @@ impl RouteAllocator for FakeAllocator {
     async fn allocate(&self, class: RouteClass) -> Result<(String, Vec<u8>), AllocError> {
         // A suspended process allocates nothing ([`crate::sleep`]).
         self.net.awake(self.node).await;
+        let mut flight = InFlight::start(self.node, class, &self.net);
+        let result = self.allocate_and_test(class).await;
+        flight.end();
+        result
+    }
+
+    fn release(&self, id: &String) {
+        self.net.inner.lock().routes.remove(id);
+    }
+}
+
+impl FakeAllocator {
+    /// Veilid's `allocate_route` (local: it fails at once when no route can
+    /// be built), then the route's test over the network.
+    async fn allocate_and_test(&self, class: RouteClass) -> Result<(String, Vec<u8>), AllocError> {
+        let ordering = RouteOrdering::of(class);
+        {
+            let inner = self.net.inner.lock();
+            if inner.faults.dht_offline.contains(&self.node)
+                || inner.faults.not_ready.contains(&self.node)
+            {
+                return Err(AllocError::TryAgain("offline".into()));
+            }
+            if ordering == RouteOrdering::Unordered && inner.faults.udp_blocked.contains(&self.node)
+            {
+                // No hop pair is viable on UDP alone (Veilid 0.5.8 `route_allocate.rs:897-934`).
+                return Err(AllocError::TryAgain(
+                    "unable to find any route at this time".into(),
+                ));
+            }
+        }
+        tokio::time::sleep(route_test_duration(&self.net, self.node, class)).await;
         let n = self.next.fetch_add(1, Ordering::SeqCst);
         let id = format!("n{}-{}{n}", self.node, class_tag(class));
-        let blob = blob_of(&id);
-        let ordering = RouteOrdering::of(class);
         let mut inner = self.net.inner.lock();
         if inner.faults.dht_offline.contains(&self.node)
             || inner.faults.not_ready.contains(&self.node)
         {
-            return Err(AllocError::TryAgain("offline".into()));
-        }
-        if ordering == RouteOrdering::Unordered && inner.faults.udp_blocked.contains(&self.node) {
-            // No hop pair is viable on UDP alone (Veilid 0.5.8 `route_allocate.rs:897-934`).
+            // The loopback could not come back (Veilid 0.5.8 `api.rs:832-836`).
             return Err(AllocError::TryAgain(
-                "unable to find any route at this time".into(),
+                "allocated route failed to test".into(),
             ));
         }
         inner.routes.insert(
@@ -175,11 +237,84 @@ impl RouteAllocator for FakeAllocator {
                 ordering,
             },
         );
+        let blob = blob_of(&id);
         Ok((id, blob))
     }
+}
 
-    fn release(&self, id: &String) {
-        self.net.inner.lock().routes.remove(id);
+/// How long `node`'s route test takes: its [`ROUTE_TEST_PROBES`] status
+/// calls run at once and the test waits for all of them
+/// (Veilid 0.5.8 `route_test.rs:300-327`); each is a question and its
+/// answer, two [`crate::latency::MESSAGE`] legs as an app call's
+/// (`messages.rs` `call_over`). Drawn from the class's own stream: the
+/// classes' allocations start together on node-ready, in the order tokio
+/// wakes them.
+pub(crate) fn route_test_duration(net: &Network, node: usize, class: RouteClass) -> Duration {
+    let stream = u64::from(class_tag(class));
+    let leg = || {
+        net.latency
+            .draw_stream(node, stream, crate::latency::MESSAGE)
+    };
+    (0..ROUTE_TEST_PROBES)
+        .map(|_| leg() + leg())
+        .max()
+        .unwrap_or_default()
+}
+
+/// An allocation in flight: traced at its start and end, and as cut when
+/// dropped before its end.
+struct InFlight<'a> {
+    node: usize,
+    class: RouteClass,
+    net: &'a Network,
+    ended: bool,
+}
+
+impl<'a> InFlight<'a> {
+    fn start(node: usize, class: RouteClass, net: &'a Network) -> Self {
+        let flight = Self {
+            node,
+            class,
+            net,
+            ended: false,
+        };
+        flight.push(ALLOCATION_STARTS);
+        flight
+    }
+
+    fn end(&mut self) {
+        self.ended = true;
+        self.push(ALLOCATION_ENDS);
+    }
+
+    /// Trace `event`. Allocations that start (or are cut) together run in
+    /// the order tokio wakes them, which the seed does not fix, so a run of
+    /// these entries at one instant is kept sorted.
+    fn push(&self, event: &str) {
+        let entry = (self.node, allocation_entry(event, self.class));
+        let now = tokio::time::Instant::now();
+        let mut guard = self.net.inner.lock();
+        let inner = &mut *guard;
+        let len = inner.trace.len();
+        let start = match inner.alloc_tail {
+            Some((at, start, end)) if at == now && end == len => start,
+            _ => len,
+        };
+        let place = start
+            + inner.trace.entries()[start..]
+                .iter()
+                .filter(|e| **e <= entry)
+                .count();
+        inner.trace.insert(place, entry.0, entry.1);
+        inner.alloc_tail = Some((now, start, len + 1));
+    }
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        if !self.ended {
+            self.push(ALLOCATION_CUT);
+        }
     }
 }
 

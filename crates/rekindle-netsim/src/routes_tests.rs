@@ -499,3 +499,47 @@ async fn drop_from_loses_only_what_the_node_sends() {
         matches!(recv(&mut nodes[0]).await, PortEvent::AppMessage { message } if message == b"out")
     );
 }
+
+/// An allocation runs its route's test before it returns (Veilid 0.5.8
+/// `veilid_api/api.rs:812-842`): four status calls at once, each a
+/// question and its answer, so between two and eight `MESSAGE` legs' worth
+/// of simulated time. It is traced from start to end, and a call dropped
+/// mid-flight is traced as cut and leaves no route behind.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_allocation_takes_its_route_test_and_a_drop_is_traced_as_cut() {
+    use crate::latency::MESSAGE;
+    use crate::{
+        allocation_entry, FakeAllocator, ALLOCATION_CUT, ALLOCATION_ENDS, ALLOCATION_STARTS,
+    };
+    use rekindle_route::own_routes::RouteAllocator;
+
+    let (sim, _nodes) = Netsim::nodes(1, 24);
+    let alloc = FakeAllocator::new(0, std::sync::Arc::clone(&sim.net));
+    let start = tokio::time::Instant::now();
+    alloc.allocate(RouteClass::General).await.expect("a route");
+    let took = start.elapsed();
+    assert!(
+        took >= MESSAGE.min * 2 && took <= MESSAGE.max * 2,
+        "the route test's round trips, not instant: {took:?}"
+    );
+    let general: Vec<String> = sim.trace().of(0).map(ToString::to_string).collect();
+    assert_eq!(
+        general,
+        [
+            allocation_entry(ALLOCATION_STARTS, RouteClass::General),
+            allocation_entry(ALLOCATION_ENDS, RouteClass::General),
+        ]
+    );
+    let routes = sim.net.inner.lock().routes.len();
+    let cut = tokio::time::timeout(MESSAGE.min, alloc.allocate(RouteClass::Media)).await;
+    assert!(cut.is_err(), "still testing at one leg's shortest");
+    assert_eq!(
+        sim.trace().of(0).last(),
+        Some(allocation_entry(ALLOCATION_CUT, RouteClass::Media).as_str())
+    );
+    assert_eq!(
+        sim.net.inner.lock().routes.len(),
+        routes,
+        "a cut allocation leaves no route"
+    );
+}
