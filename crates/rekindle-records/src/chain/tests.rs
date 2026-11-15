@@ -22,6 +22,11 @@ struct Mem {
     records: HashMap<String, (String, Vec<Option<Vec<u8>>>)>,
     /// Lease → (record key, writer keypair).
     leases: HashMap<u64, (String, Option<String>)>,
+    /// Values the network holds newer than the local copy (another writer's).
+    remote: HashMap<(String, u32), Vec<u8>>,
+    /// A read that goes to the network never answers (an unwritten subkey's
+    /// fanout running to its timeout, on an internet that stays unready).
+    stall_network: bool,
 }
 
 #[derive(Default)]
@@ -39,6 +44,22 @@ impl MemPort {
     fn overwrite(&self, key: &str, subkey: u32, data: Vec<u8>) {
         let mut mem = self.0.lock();
         mem.records.get_mut(key).unwrap().1[subkey as usize] = Some(data);
+    }
+
+    /// The network holds `data` at `key`/`subkey`, newer than our copy.
+    fn write_remote(&self, key: &str, subkey: u32, data: Vec<u8>) {
+        self.0.lock().remote.insert((key.to_owned(), subkey), data);
+    }
+
+    fn stall_network(&self, stall: bool) {
+        self.0.lock().stall_network = stall;
+    }
+
+    fn leased(mem: &Mem, lease: LeaseId) -> Result<String, PortError> {
+        mem.leases
+            .get(&lease.0)
+            .map(|l| l.0.clone())
+            .ok_or(PortError::LeaseNotHeld(lease.0))
     }
 }
 
@@ -90,14 +111,28 @@ impl RecordPort for MemPort {
         &self,
         lease: LeaseId,
         subkey: u32,
-        _force_refresh: bool,
+        force_refresh: bool,
     ) -> Result<Option<RecordValue>, PortError> {
+        let stalls = {
+            let mut mem = self.0.lock();
+            let key = Self::leased(&mem, lease)?;
+            let local = mem.records[&key].1[subkey as usize].is_some();
+            // Without a local copy a get goes to the network
+            // (`get_value.rs:161-169`), as a forced one does.
+            let network = force_refresh || !local;
+            if network {
+                if let Some(data) = mem.remote.remove(&(key.clone(), subkey)) {
+                    mem.records.get_mut(&key).unwrap().1[subkey as usize] = Some(data);
+                }
+            }
+            network && mem.stall_network
+        };
+        if stalls {
+            std::future::pending::<()>().await;
+        }
         let mem = self.0.lock();
-        let (key, _) = mem
-            .leases
-            .get(&lease.0)
-            .ok_or(PortError::LeaseNotHeld(lease.0))?;
-        let (owner, subkeys) = &mem.records[key];
+        let key = Self::leased(&mem, lease)?;
+        let (owner, subkeys) = &mem.records[&key];
         Ok(subkeys[subkey as usize].clone().map(|data| RecordValue {
             seq: 0,
             data,
@@ -118,11 +153,21 @@ impl RecordPort for MemPort {
             .get(&lease.0)
             .cloned()
             .ok_or(PortError::LeaseNotHeld(lease.0))?;
-        let (owner, subkeys) = mem.records.get_mut(&key).unwrap();
+        let owner = mem.records[&key].0.clone();
         if writer.map(str::to_owned).or(held).as_deref() != Some(owner.as_str()) {
             return Err(PortError::NotWritable(key));
         }
-        subkeys[subkey as usize] = Some(data);
+        // A replica holding a newer value answers with it, and the set
+        // stores it as our copy (`set_value.rs:741-760`).
+        if let Some(rival) = mem.remote.remove(&(key.clone(), subkey)) {
+            mem.records.get_mut(&key).unwrap().1[subkey as usize] = Some(rival.clone());
+            return Ok(SetOutcome::Superseded(RecordValue {
+                seq: 1,
+                data: rival,
+                writer: owner,
+            }));
+        }
+        mem.records.get_mut(&key).unwrap().1[subkey as usize] = Some(data);
         Ok(SetOutcome::Landed)
     }
 
@@ -138,11 +183,29 @@ impl RecordPort for MemPort {
 
     async fn inspect(
         &self,
-        _: LeaseId,
-        _: Option<&[u32]>,
-        _: ReportScope,
+        lease: LeaseId,
+        subkeys: Option<&[u32]>,
+        scope: ReportScope,
     ) -> Result<RecordReport, PortError> {
-        Err(unused())
+        if scope != ReportScope::Local {
+            return Err(unused());
+        }
+        let mem = self.0.lock();
+        let key = Self::leased(&mem, lease)?;
+        let local = &mem.records[&key].1;
+        let subkeys: Vec<u32> = subkeys.map_or_else(
+            || (0..u32::try_from(local.len()).unwrap()).collect(),
+            <[u32]>::to_vec,
+        );
+        Ok(RecordReport {
+            local_seqs: subkeys
+                .iter()
+                .map(|s| local[*s as usize].as_ref().map(|_| 0))
+                .collect(),
+            network_seqs: vec![None; subkeys.len()],
+            offline_subkeys: Vec::new(),
+            subkeys,
+        })
     }
 
     async fn read_changed(
@@ -397,4 +460,67 @@ async fn an_op_log_chains_on_the_member_records_gov_head() {
         .unwrap();
     assert_eq!(seqs(&read), vec![2, 3]);
     assert_eq!((read.last_seq, read.retired_gap), (3, None));
+}
+
+/// E2.5i: an append reads its own `HEAD` from the local copy. A chain's
+/// first append has no `HEAD` anywhere, and a read that asks the network
+/// for it waits out the fanout (`get_value_timeout_ms`, then the pool's
+/// readiness wait); here it never answers, so an append that asks hangs.
+#[tokio::test]
+async fn an_append_never_asks_the_network_for_its_own_head() {
+    let (port, key, owner) = participant().await;
+    port.stall_network(true);
+    let first = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        append(&port, &key, &owner, &entries(1..=1)),
+    )
+    .await
+    .expect("the first append does not wait on the network")
+    .unwrap();
+    let second = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        append(&port, &key, &owner, &entries(2..=3)),
+    )
+    .await
+    .expect("a later append reads its HEAD locally")
+    .unwrap();
+    assert_eq!(
+        (first.first_seq, second.first_seq, second.last_seq),
+        (1, 2, 3)
+    );
+}
+
+/// E2.5i: a `HEAD` newer than our copy (another device's append) wins the
+/// write; the append chains onto it in the next round instead of failing.
+/// Only the write reveals it: reads that go to the network never answer.
+#[tokio::test]
+async fn an_append_superseded_by_a_newer_head_chains_onto_it() {
+    let (port, key, owner) = participant().await;
+    let ours = append(&port, &key, &owner, &entries(1..=2)).await.unwrap();
+    // Another writer appended 3..=4 after our copy was taken.
+    let theirs = append(&port, &key, &owner, &entries(3..=4)).await.unwrap();
+    port.overwrite(
+        &key,
+        dm_participant::HEAD,
+        super::page::encode_head(&ours).unwrap(),
+    );
+    port.write_remote(
+        &key,
+        dm_participant::HEAD,
+        super::page::encode_head(&theirs).unwrap(),
+    );
+
+    port.stall_network(true);
+    let appended = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        append(&port, &key, &owner, &entries(5..=5)),
+    )
+    .await
+    .expect("the append does not wait on the network")
+    .unwrap();
+    port.stall_network(false);
+    assert_eq!((appended.first_seq, appended.last_seq), (5, 5));
+    assert_eq!(head(&port, &key).await.unwrap(), Some(appended));
+    let read = read_after(&port, &key, 0).await.unwrap();
+    assert_eq!(seqs(&read), vec![1, 2, 3, 4, 5]);
 }

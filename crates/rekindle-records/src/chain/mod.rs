@@ -29,8 +29,14 @@ use rekindle_codec::capnp_codec::chain::ChainPage;
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_types::dht_layout::dm_participant;
 
-use crate::port::{PortError, RecordPort};
+use crate::lease::LeaseId;
+use crate::port::{PortError, RecordPort, RecordValue, ReportScope, SetOutcome};
 use crate::schema;
+
+/// Rounds of an append whose `HEAD` write a newer `HEAD` superseded: each
+/// round chains onto the one that won, as the record pool's read-merge-write
+/// appends do (`CAS_ROUNDS`).
+const HEAD_ROUNDS: usize = 3;
 
 /// A chain operation failed, or a remote value was refused.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -176,7 +182,38 @@ async fn append_after(
     if entries.is_empty() {
         return Err(ChainError::EmptyAppend);
     }
-    let prev = head_at(port, record, head_subkey).await?;
+    let mut round = 1;
+    loop {
+        let prev = own_head_at(port, record, head_subkey).await?;
+        let newest = write_page(port, prev, expected, entries).await?;
+        let outcome = port
+            .write_once(
+                record,
+                head_subkey,
+                page::encode_head(&newest)?,
+                Some(writer),
+            )
+            .await?;
+        // A newer `HEAD` than our copy won: Veilid stored it as our copy
+        // (`set_value.rs:741-746`), so the next round chains onto it. The
+        // page this round wrote is never named.
+        if matches!(outcome, SetOutcome::Superseded(_)) && round < HEAD_ROUNDS {
+            round += 1;
+            continue;
+        }
+        outcome.require_stored(head_subkey)?;
+        return Ok(newest);
+    }
+}
+
+/// Write `entries` as the sealed page after `prev`, starting at chain seq
+/// `expected` when given.
+async fn write_page(
+    port: &dyn RecordPort,
+    prev: Option<PagePointer>,
+    expected: Option<u64>,
+    entries: &[Vec<u8>],
+) -> Result<PagePointer, ChainError> {
     let first_seq = prev.as_ref().map_or(0, |p| p.last_seq) + 1;
     if let Some(expected) = expected.filter(|e| *e != first_seq) {
         return Err(ChainError::SeqMoved {
@@ -196,21 +233,50 @@ async fn append_after(
         first_seq,
         entries: entries.to_vec(),
     })?;
-    let page_key = write_sealed_page(port, bytes).await?;
-    let newest = PagePointer {
-        page_key,
+    Ok(PagePointer {
+        page_key: write_sealed_page(port, bytes).await?,
         first_seq,
         last_seq,
-    };
-    port.write_once(
-        record,
-        head_subkey,
-        page::encode_head(&newest)?,
-        Some(writer),
-    )
-    .await?
-    .require_stored(head_subkey)?;
-    Ok(newest)
+    })
+}
+
+/// The writer's own `HEAD`, from its local copy, never the network: the
+/// append's `HEAD` write is the check against a newer one ([`append_after`]).
+///
+/// A get with no local copy goes to the network whatever its refresh mode
+/// (0.5.8 `get_value.rs:161-169`), and an unwritten subkey has no value to
+/// reach consensus on, so that fanout runs to `get_value_timeout_ms`, 10 s
+/// (`veilid_config.rs:1007`): a chain's first append waited that long, and
+/// past it on an unready internet (the pool's retry waits for readiness),
+/// before it wrote anything (E2.5i). The write needs no read first: its seq
+/// follows our copy (`set_value.rs:346-385`), and a replica holding a newer
+/// value, or another at that seq, answers with it (`set_value.rs:825-845`),
+/// which the set stores as our copy and reports as
+/// [`SetOutcome::Superseded`] (`set_value.rs:741-760`).
+async fn own_head_at(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+) -> Result<Option<PagePointer>, ChainError> {
+    let lease = port.acquire(record, None).await?;
+    let local = local_value(port, lease, head_subkey).await;
+    port.release(lease).await;
+    local?.map(|v| page::decode_head(&v.data)).transpose()
+}
+
+/// The leased record's local copy of `subkey`, `None` when there is none.
+async fn local_value(
+    port: &dyn RecordPort,
+    lease: LeaseId,
+    subkey: u32,
+) -> Result<Option<RecordValue>, PortError> {
+    let report = port
+        .inspect(lease, Some(&[subkey]), ReportScope::Local)
+        .await?;
+    if report.local_seqs.first().copied().flatten().is_none() {
+        return Ok(None);
+    }
+    port.get(lease, subkey, false).await
 }
 
 /// `entries` cut, in order, into the fewest runs that each fit one page
