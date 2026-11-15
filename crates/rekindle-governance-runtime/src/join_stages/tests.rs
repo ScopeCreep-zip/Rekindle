@@ -47,7 +47,7 @@ async fn slot_claim_steps_over_contended_subkeys() {
     deps.expect_scope()
         .returning(move || std::sync::Arc::clone(&scope));
     deps.expect_acquire_record()
-        .returning(|_, _| Ok(rekindle_records::lease::LeaseId(1)));
+        .returning(|_, _, _| Ok(rekindle_records::lease::LeaseId(1)));
     deps.expect_release_record().returning(|_| ());
     deps.expect_our_route_blob().returning(|| vec![7; 18]);
     // Every subkey free at inspect time — the contention only shows
@@ -113,7 +113,7 @@ async fn slot_claim_gives_up_after_the_attempt_cap() {
     deps.expect_scope()
         .returning(move || std::sync::Arc::clone(&scope));
     deps.expect_acquire_record()
-        .returning(|_, _| Ok(rekindle_records::lease::LeaseId(1)));
+        .returning(|_, _, _| Ok(rekindle_records::lease::LeaseId(1)));
     deps.expect_release_record().returning(|_| ());
     deps.expect_our_route_blob().returning(|| vec![7; 18]);
     deps.expect_inspect_dht_record_present_subkeys()

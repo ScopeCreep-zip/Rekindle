@@ -6,6 +6,7 @@
 //! perform perfectly well, and `active_voice_channel` is blocked by
 //! missing local state rather than a missing subsystem.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::{HashMap, HashSet};
 
 use async_trait::async_trait;
@@ -156,6 +157,7 @@ impl CommunityPresenceDeps for DaemonPresenceAdapter {
             node.as_ref(),
             &descriptor.registry_key,
             creds.slot_keypair_str.as_deref(),
+            OpenIntent::Hold,
         )
         .await
         .map_err(|e| format!("open registry: {e}"))?;

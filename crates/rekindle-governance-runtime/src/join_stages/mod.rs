@@ -11,6 +11,7 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::invite_quota;
 use rekindle_governance::permissions::compute_permissions;
 use rekindle_governance::state::{GovernanceState, SegmentState};
+use rekindle_records::port::OpenIntent;
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::id::PseudonymKey;
@@ -161,7 +162,10 @@ async fn try_claim_in_candidates<D: GovernanceRuntimeDeps>(
 
     let mut last_full_segment: Option<u32> = None;
     for candidate in &candidates {
-        let lease = match deps.acquire_record(&candidate.registry_key, None).await {
+        let lease = match deps
+            .acquire_record(&candidate.registry_key, None, OpenIntent::Check)
+            .await
+        {
             Ok(lease) => lease,
             Err(e) => {
                 tracing::warn!(
@@ -432,7 +436,10 @@ pub async fn collect_initial_presence_state<D: GovernanceRuntimeDeps>(
     // anyone who claimed a slot after our Step 7 inspect.
     const SCAN_PARALLELISM: usize = 16;
     // One borrow for the whole scan, released once every read is done.
-    let Ok(lease) = deps.acquire_record(registry_key, None).await else {
+    let Ok(lease) = deps
+        .acquire_record(registry_key, None, OpenIntent::Check)
+        .await
+    else {
         return presence;
     };
     let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(SCAN_PARALLELISM));

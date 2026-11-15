@@ -18,7 +18,9 @@ async fn churned_replicas_lose_their_watches_and_the_watch_is_placed_again() {
         .await
         .unwrap();
     a.set(&record.key, 0, b"v0".to_vec(), None).await.unwrap();
-    b.open(&record.key, None).await.unwrap();
+    b.open(&record.key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert!(b.watch(&record.key, None, None, None).await.unwrap());
     assert_eq!(
         crate::records::watches::held(&sim.net.inner.lock(), 1, &record.key),

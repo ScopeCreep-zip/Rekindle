@@ -27,7 +27,9 @@ async fn watched(sim: &Netsim, nodes: &mut [Node]) -> (String, SimDht, SimDht) {
     for subkey in 0..4 {
         a.set(&key, subkey, vec![0], None).await.unwrap();
     }
-    b.open(&key, None).await.unwrap();
+    b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     for subkey in 0..4 {
         b.get(&key, subkey, true).await.unwrap();
     }
@@ -224,7 +226,9 @@ async fn at_most_16_inspections_run_at_once() {
             .unwrap()
             .key;
         a.set(&key, 0, vec![0], None).await.unwrap();
-        b.open(&key, None).await.unwrap();
+        b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+            .await
+            .unwrap();
         assert!(b.watch(&key, None, None, None).await.unwrap());
         keys.push(key);
     }
@@ -254,13 +258,18 @@ async fn a_known_record_opens_and_reads_offline() {
         offline: true,
     });
     // A record in the local store opens with no network (`open_record.rs:27-40`).
-    b.open(&key, None).await.unwrap();
+    b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     // A local get answers offline; a forced one is `TryAgain` (`get_value.rs:78-92`).
     assert_eq!(b.get(&key, 2, false).await.unwrap().unwrap().data, vec![0]);
     let forced = b.get(&key, 2, true).await.unwrap_err();
     assert_eq!(forced.kind, DhtErrorKind::TryAgain);
     // An unknown record needs the network (`open_record.rs:41-44`).
-    let open = b.open(&unknown, None).await.unwrap_err();
+    let open = b
+        .open(&unknown, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap_err();
     assert_eq!(open.kind, DhtErrorKind::TryAgain);
 }
 
@@ -274,7 +283,9 @@ async fn a_local_get_with_no_copy_is_try_again_offline() {
         .unwrap()
         .key;
     a.set(&key, 0, vec![1], None).await.unwrap();
-    b.open(&key, None).await.unwrap();
+    b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: true,

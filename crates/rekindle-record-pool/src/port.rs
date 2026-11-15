@@ -6,8 +6,8 @@ use std::sync::Arc;
 
 use rekindle_records::lease::LeaseId;
 use rekindle_records::port::{
-    PortError, RecordPort, RecordReport, RecordSchema, RecordValue, ReportScope, SetOutcome,
-    Settled, UnsentWrite, ValueChange, ValueChangeReport, WriterKey,
+    OpenIntent, PortError, RecordPort, RecordReport, RecordSchema, RecordValue, ReportScope,
+    SetOutcome, Settled, UnsentWrite, ValueChange, ValueChangeReport, WriterKey,
 };
 
 use super::RecordPool;
@@ -22,12 +22,17 @@ impl RecordPool {
 
 #[async_trait::async_trait]
 impl RecordPort for RecordPool {
-    async fn acquire(&self, key: &str, writer_text: Option<&str>) -> Result<LeaseId, PortError> {
+    async fn acquire(
+        &self,
+        key: &str,
+        writer_text: Option<&str>,
+        intent: OpenIntent,
+    ) -> Result<LeaseId, PortError> {
         let key = self
             .backend
             .check_key(key)
             .map_err(|e| PortError::KeyText(e.message))?;
-        RecordPool::acquire(self, &key, self.writer(writer_text)?).await
+        RecordPool::acquire(self, &key, self.writer(writer_text)?, intent).await
     }
 
     async fn create(
@@ -98,6 +103,14 @@ impl RecordPort for RecordPool {
         subkeys: &[u32],
     ) -> Result<Vec<(u32, RecordValue)>, PortError> {
         RecordPool::read_changed(self, lease, subkeys).await
+    }
+
+    async fn read_hinted(
+        &self,
+        lease: LeaseId,
+        subkeys: &[u32],
+    ) -> Result<Vec<(u32, RecordValue)>, PortError> {
+        RecordPool::read_hinted(self, lease, subkeys).await
     }
 
     async fn rehydrate(&self, lease: LeaseId) -> Result<(), PortError> {

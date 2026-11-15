@@ -65,6 +65,7 @@
 //! member free any other member's slot and collide two members onto it.
 //! Tracked separately; this module reclaims what is already provable.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::HashSet;
 
 use rekindle_governance::state::GovernanceState;
@@ -95,7 +96,10 @@ pub(super) async fn reclaimable_slots<D: GovernanceRuntimeDeps>(
     let mut out = Vec::new();
     // An unborrowable registry reclaims nothing: no slot is evidence of
     // vacancy.
-    let Ok(lease) = deps.acquire_record(registry_key, None).await else {
+    let Ok(lease) = deps
+        .acquire_record(registry_key, None, OpenIntent::Check)
+        .await
+    else {
         return out;
     };
     for &subkey in occupied {

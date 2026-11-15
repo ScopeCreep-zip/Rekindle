@@ -17,6 +17,7 @@
 //! community key (§4.4 step 6), and E3.4 builds the beat engine that
 //! rewrites it.
 
+use rekindle_records::port::OpenIntent;
 use std::future::Future;
 
 use rekindle_codec::member_record::{
@@ -92,7 +93,7 @@ async fn write_subkey(
     bytes: Vec<u8>,
 ) -> Result<(), String> {
     let lease = port
-        .acquire(own.record, Some(own.writer))
+        .acquire(own.record, Some(own.writer), OpenIntent::Hold)
         .await
         .map_err(|e| format!("open member record: {e}"))?;
     let written = port.set(lease, subkey, bytes, Some(own.writer)).await;
@@ -182,7 +183,7 @@ async fn read_pinned(
     subkey: u32,
 ) -> Result<Option<Vec<u8>>, String> {
     let lease = port
-        .acquire(member.record, None)
+        .acquire(member.record, None, OpenIntent::Check)
         .await
         .map_err(|e| format!("open member record: {e}"))?;
     let owner = port.owner_of(lease);

@@ -42,6 +42,8 @@
 mod call;
 mod closer;
 mod durable;
+#[cfg(test)]
+mod intent_tests;
 mod io;
 pub mod keepalive;
 mod port;
@@ -77,7 +79,7 @@ use rekindle_records::lease::{
 };
 use rekindle_records::port::PortError;
 use rekindle_records::port::{
-    DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, RecordSchema, WriterKey,
+    DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, RecordSchema, WriterKey,
 };
 use tokio_util::sync::CancellationToken;
 
@@ -376,7 +378,11 @@ impl RecordPool {
     }
 
     /// Borrow `key`, writable with `writer` when given. Opens are serialized
-    /// per record, so two borrowers never race Veilid's record lock.
+    /// per record, so two borrowers never race Veilid's record lock. A
+    /// first open takes `intent` ([`OpenIntent`]); a borrow of a record
+    /// already open makes no Veilid call and keeps the first open's choice;
+    /// a writer upgrade re-opens as [`OpenIntent::Hold`], since a writer
+    /// is custody (`evidence/veilid-0.5.8/1-dht-values.md` §A).
     ///
     /// # Errors
     /// The record cannot be opened within the retry budget.
@@ -384,15 +390,16 @@ impl RecordPool {
         &self,
         key: &str,
         writer: Option<WriterKey>,
+        intent: OpenIntent,
     ) -> Result<LeaseId, PortError> {
         let name = key.to_string();
         let lock = self.key_lock(&name);
         let _serial = lock.lock().await;
         let (id, plan) = self.table.lock().acquire(&name, writer);
-        let open_with = match &plan {
+        let (open_with, intent) = match &plan {
             OpenPlan::AlreadyOpen => return Ok(id),
-            OpenPlan::Open { writer } => writer.clone(),
-            OpenPlan::Upgrade { writer } => Some(writer.clone()),
+            OpenPlan::Open { writer } => (writer.clone(), intent),
+            OpenPlan::Upgrade { writer } => (Some(writer.clone()), OpenIntent::Hold),
         };
         // An ended session may still be closing this record: opening it now
         // would be undone by that close.
@@ -407,7 +414,7 @@ impl RecordPool {
                 "dht open",
                 move |backend| {
                     let (k, w) = (k.clone(), open_with.clone());
-                    async move { backend.open(&k, w.as_ref()).await }
+                    async move { backend.open(&k, w.as_ref(), intent).await }
                 },
                 unclaimed,
             )

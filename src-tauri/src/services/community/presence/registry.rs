@@ -7,6 +7,7 @@
 //! AppState-specific bookkeeping field) and the surrounding lock
 //! ordering is intricate.
 
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 
 use crate::services::presence_adapter::build_adapter;
@@ -40,7 +41,7 @@ pub(crate) async fn ensure_registry_open(
         return Ok(());
     }
     let lease = state_helpers::record_pool(state)?
-        .acquire(registry_key, writer.as_deref())
+        .acquire(registry_key, writer.as_deref(), OpenIntent::Hold)
         .await
         .map_err(|e| format!("presence_poll: failed to open registry: {e}"))?;
     if let Some(cs) = state.communities.write().get_mut(community_id) {

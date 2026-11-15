@@ -8,7 +8,7 @@
 //! What the errors mean (retry, offline, closed) is the pool's.
 
 use rekindle_records::port::{
-    DhtBackend, DhtCallError, DhtErrorKind, PortError, RecordDescriptor, RecordReport,
+    DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, PortError, RecordDescriptor, RecordReport,
     RecordSchema, RecordValue, ReportScope, ValueChange, WriterKey,
 };
 use rekindle_types::config::{
@@ -247,12 +247,14 @@ impl DhtBackend for VeilidDht {
         &self,
         key: &str,
         writer: Option<&WriterKey>,
+        intent: OpenIntent,
     ) -> Result<RecordDescriptor, DhtCallError> {
         let writer = writer.map(keypair).transpose()?;
-        // Rehydrate on reopen, Veilid's default and 0.5.7's only behaviour;
-        // plan VU3 chooses per open intent (Hold / Check).
+        // Hold asks a re-open of a stored record to rehydrate, Check never
+        // does (plan VU decision 1); Veilid still skips a record created
+        // this session or rehydrated within 300 s (`open_record.rs:62-81`).
         let options = OpenDHTRecordOptions {
-            rehydrate: Some(true),
+            rehydrate: Some(intent.rehydrates()),
         };
         self.rc
             .open_dht_record(record_key(key)?, writer, Some(options))

@@ -156,7 +156,10 @@ mod tests {
             }
         }
         let other = SimDht::new(1, Arc::clone(&sim.net), Arc::clone(&nodes[1].rng));
-        other.open(&record.key, None).await.unwrap();
+        other
+            .open(&record.key, None, rekindle_records::port::OpenIntent::Hold)
+            .await
+            .unwrap();
         assert_eq!(other.get(&record.key, 0, true).await.unwrap(), None);
     }
 

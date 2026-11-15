@@ -41,7 +41,9 @@ async fn watched(sim: &Netsim, nodes: &mut [Node]) -> (String, SimDht, SimDht) {
     for subkey in 0..4 {
         a.set(&key, subkey, vec![0], None).await.unwrap();
     }
-    b.open(&key, None).await.unwrap();
+    b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     for subkey in 0..4 {
         b.get(&key, subkey, true).await.unwrap();
     }

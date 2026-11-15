@@ -19,6 +19,7 @@
 //! coordinate-wise join. This module is just the orchestration that wires
 //! the new SMPL records into governance.
 
+use rekindle_records::port::OpenIntent;
 use rekindle_secrets::derive;
 use rekindle_secrets::keys::SlotSeed;
 use rekindle_types::governance::GovernanceEntry;
@@ -227,7 +228,7 @@ pub async fn open_new_segments<D: GovernanceRuntimeDeps>(deps: &D, community_id:
         if crate::join_gate::should_stop(deps) {
             break;
         }
-        match deps.acquire_record(&key, None).await {
+        match deps.acquire_record(&key, None, OpenIntent::Hold).await {
             Ok(lease) => leases.segments.push(lease),
             Err(e) => tracing::debug!(
                 community = %community_id,

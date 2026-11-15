@@ -118,8 +118,9 @@ impl GovernanceRuntimeDeps for HostGovernance {
         &self,
         record_key: &str,
         writer: Option<String>,
+        intent: rekindle_records::port::OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError> {
-        self.acquire_record_impl(record_key, writer).await
+        self.acquire_record_impl(record_key, writer, intent).await
     }
 
     async fn release_record(&self, lease: LeaseId) {

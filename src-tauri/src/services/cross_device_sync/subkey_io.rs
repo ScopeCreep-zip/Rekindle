@@ -5,6 +5,7 @@
 //! subkey index bound into the AAD. Reads decrypt and merge into the
 //! supplied local document; writes serialize, encrypt, and `set_dht_value`.
 
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 
 use rekindle_records::lease::LeaseId;
@@ -30,7 +31,11 @@ async fn borrow(
 ) -> Result<(Arc<dyn RecordPort>, LeaseId), String> {
     let pool = state_helpers::record_pool(state)?;
     let lease = pool
-        .acquire(&handle.record_key, Some(&handle.owner_keypair_hex))
+        .acquire(
+            &handle.record_key,
+            Some(&handle.owner_keypair_hex),
+            OpenIntent::Hold,
+        )
         .await
         .map_err(|e| format!("open personal sync record: {e}"))?;
     Ok((pool, lease))

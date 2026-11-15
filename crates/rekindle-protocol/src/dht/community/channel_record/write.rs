@@ -1,5 +1,6 @@
 //! Channel record writes: record creation and per-member entry appends.
 
+use rekindle_records::port::OpenIntent;
 use rekindle_records::port::{RecordPort, SetOutcome};
 
 use crate::error::ProtocolError;
@@ -261,7 +262,9 @@ async fn write_member_entry(
     // every subsequent legitimate write we make.
     // Borrowed writable with our slot writer, so a write restored after a
     // re-login (which keeps no writer) re-pushes as us (plan C7.13).
-    let lease = pool.acquire(channel_key, Some(writer)).await?;
+    let lease = pool
+        .acquire(channel_key, Some(writer), OpenIntent::Hold)
+        .await?;
     let written = append_entry(
         pool,
         lease,

@@ -10,6 +10,7 @@
 //! re-opened on the maintenance tick with backoff; once it opens, what
 //! changed meanwhile is read (plan E2.6).
 
+use rekindle_records::port::OpenIntent;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -266,7 +267,7 @@ pub(super) async fn watch_participant(host: &HostFriends, peer: &str, record: &s
         let mut retries = host.ctx().friend_stores.watch_retries.lock();
         retries.failed(record, target, now, rng);
     };
-    let lease = match pool.acquire(record, None).await {
+    let lease = match pool.acquire(record, None, OpenIntent::Hold).await {
         Ok(lease) => lease,
         Err(e) => return failed(&e, "opened"),
     };

@@ -5,6 +5,7 @@
 //! author's `M`/2 chain, and our op queued on the governance-op outbox
 //! stream.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::BTreeMap;
 
 use rekindle_db::repo::governance_ops::{self as repo, AuthorHead, OpState, StoredOp};
@@ -423,7 +424,7 @@ impl HostGovernance {
         let bytes = rekindle_codec::governance_op::encode_frontier(&heads)
             .map_err(|e| format!("frontier: {e}"))?;
         let lease = self
-            .acquire_record(record, Some(writer.to_owned()))
+            .acquire_record(record, Some(writer.to_owned()), OpenIntent::Hold)
             .await
             .map_err(|e| format!("open member record: {e}"))?;
         let written = self

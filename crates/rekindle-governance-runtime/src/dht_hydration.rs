@@ -25,6 +25,7 @@
 
 use crate::event::GovernanceRuntimeEvent;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
+use rekindle_records::port::OpenIntent;
 use rekindle_types::id::ChannelId;
 
 use crate::deps::{CommunityDhtOpenSetup, GovernanceRuntimeDeps};
@@ -59,7 +60,11 @@ async fn acquire_records_concurrent<D: GovernanceRuntimeDeps>(
                     )),
                 );
             }
-            (key, deps.acquire_record(key, writer.clone()).await)
+            (
+                key,
+                deps.acquire_record(key, writer.clone(), OpenIntent::Hold)
+                    .await,
+            )
         });
     }
     let mut taken = Vec::new();
@@ -96,7 +101,10 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
         return;
     }
     let mut leases = CommunityLeases::default();
-    match deps.acquire_record(&rec.governance_key, None).await {
+    match deps
+        .acquire_record(&rec.governance_key, None, OpenIntent::Hold)
+        .await
+    {
         Ok(lease) => leases.governance = Some(lease),
         Err(error) => {
             tracing::debug!(
@@ -109,7 +117,7 @@ pub async fn open_and_track_one_community<D: GovernanceRuntimeDeps>(
     }
     if let Some(reg_key) = &rec.registry_key {
         match deps
-            .acquire_record(reg_key, rec.registry_writer.clone())
+            .acquire_record(reg_key, rec.registry_writer.clone(), OpenIntent::Hold)
             .await
         {
             Ok(lease) => leases.registry = Some(lease),
@@ -270,11 +278,11 @@ pub async fn republish_active_records<D: GovernanceRuntimeDeps>(deps: &D) {
         if crate::join_gate::should_stop(deps) {
             return;
         }
-        // Opening a local record queues its rehydration
-        // (`storage_manager/open_record.rs:27-44`), which runs from the
-        // local store even after the record closes (`rehydrate.rs:118-131`),
-        // so the borrow ends at once.
-        match deps.acquire_record(key, None).await {
+        // Opening a local record as Hold queues its rehydration when it was
+        // not created this session and its last check is 300 s old (0.5.8
+        // `storage_manager/open_record.rs:62-81`); it runs from the local
+        // store even after the record closes, so the borrow ends at once.
+        match deps.acquire_record(key, None, OpenIntent::Hold).await {
             Ok(lease) => {
                 deps.release_record(lease).await;
                 rehydrated += 1;

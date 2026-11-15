@@ -13,8 +13,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{
-    DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, RecordReport, RecordSchema,
-    RecordValue, ReportScope, WriterKey,
+    DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, RecordReport,
+    RecordSchema, RecordValue, ReportScope, WriterKey,
 };
 
 use crate::{RecordCloser, RecordPool};
@@ -45,6 +45,10 @@ struct MemRecord {
 struct MemState {
     records: HashMap<String, MemRecord>,
     created: u32,
+    /// Every open, with its intent, in order.
+    opens: Vec<(String, OpenIntent)>,
+    /// Every get, as `(key, subkey, force_refresh)`, in order.
+    gets: Vec<(String, u32, bool)>,
 }
 
 /// One node's in-memory record store. A writer's keypair text is also its
@@ -82,6 +86,18 @@ impl MemDht {
     /// Whether sets fail with `TryAgain` (the node is offline).
     pub fn offline(&self, offline: bool) {
         *self.offline.lock() = offline;
+    }
+
+    /// Every open so far, with its intent, in order.
+    #[must_use]
+    pub fn opens(&self) -> Vec<(String, OpenIntent)> {
+        self.state.lock().opens.clone()
+    }
+
+    /// Every get so far, as `(key, subkey, force_refresh)`, in order.
+    #[must_use]
+    pub fn gets(&self) -> Vec<(String, u32, bool)> {
+        self.state.lock().gets.clone()
     }
 
     /// The stored value of `key`'s `subkey`.
@@ -142,8 +158,10 @@ impl DhtBackend for MemDht {
         &self,
         key: &str,
         writer: Option<&WriterKey>,
+        intent: OpenIntent,
     ) -> Result<RecordDescriptor, DhtCallError> {
         let mut state = self.state.lock();
+        state.opens.push((key.to_string(), intent));
         let record = state
             .records
             .entry(key.to_string())
@@ -167,8 +185,12 @@ impl DhtBackend for MemDht {
         &self,
         key: &str,
         subkey: u32,
-        _force_refresh: bool,
+        force_refresh: bool,
     ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.state
+            .lock()
+            .gets
+            .push((key.to_string(), subkey, force_refresh));
         Ok(self.value(key, subkey))
     }
 

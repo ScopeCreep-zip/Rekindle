@@ -1,4 +1,5 @@
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::OpenIntent;
 use rekindle_records::port::{RecordPort, SetOutcome};
 
 use crate::error::ProtocolError;
@@ -40,7 +41,9 @@ pub async fn open_mailbox_writable(
     key: &str,
     identity_keypair: &str,
 ) -> Result<LeaseId, ProtocolError> {
-    let lease = pool.acquire(key, Some(identity_keypair)).await?;
+    let lease = pool
+        .acquire(key, Some(identity_keypair), OpenIntent::Hold)
+        .await?;
     tracing::debug!(key, "opened mailbox DHT record (writable)");
     Ok(lease)
 }
@@ -72,7 +75,7 @@ pub async fn update_mailbox_route(
     mailbox_key: &str,
     route_blob: &[u8],
 ) -> Result<SetOutcome, ProtocolError> {
-    let lease = pool.acquire(mailbox_key, None).await?;
+    let lease = pool.acquire(mailbox_key, None, OpenIntent::Hold).await?;
     let outcome = pool
         .set_durable(lease, MAILBOX_SUBKEY_ROUTE_BLOB, route_blob.to_vec(), None)
         .await;

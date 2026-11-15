@@ -104,11 +104,15 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
 
     /// Borrow `record_key`, writable with `writer` (the string form of
     /// [`Self::format_writer_keypair`]) when given. The writer is sticky:
-    /// a later read-only borrow never downgrades it.
+    /// a later read-only borrow never downgrades it. `intent` is the
+    /// borrow's role ([`rekindle_records::port::OpenIntent`]): `Hold` for
+    /// the community's session leases and our own slots, `Check` for
+    /// probes and one-shot reads.
     async fn acquire_record(
         &self,
         record_key: &str,
         writer: Option<String>,
+        intent: rekindle_records::port::OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError>;
 
     /// End a borrow; the record closes when it was the last.

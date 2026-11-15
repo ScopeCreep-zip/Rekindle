@@ -4,6 +4,7 @@
 //! table hit with no Veilid call.
 
 use rekindle_records::lease::CommunityLeases;
+use rekindle_records::port::OpenIntent;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
@@ -13,7 +14,9 @@ pub(crate) async fn inspect_local_seqs<D: GovernanceRuntimeDeps>(
     deps: &D,
     record_key: &str,
 ) -> Result<Vec<Option<u64>>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
+    let lease = deps
+        .acquire_record(record_key, None, OpenIntent::Check)
+        .await?;
     let seqs = deps.inspect_dht_record_local_seqs(lease).await;
     deps.release_record(lease).await;
     seqs
@@ -24,7 +27,9 @@ pub(crate) async fn inspect_present_subkeys<D: GovernanceRuntimeDeps>(
     deps: &D,
     record_key: &str,
 ) -> Result<Vec<u32>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
+    let lease = deps
+        .acquire_record(record_key, None, OpenIntent::Check)
+        .await?;
     let present = deps.inspect_dht_record_present_subkeys(lease).await;
     deps.release_record(lease).await;
     present

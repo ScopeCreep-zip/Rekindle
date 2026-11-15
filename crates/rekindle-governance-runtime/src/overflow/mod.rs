@@ -35,6 +35,7 @@
 //!
 //! Tier 7 helper — pure partitioning + deps-mediated DHT I/O, no Veilid types.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::HashSet;
 
 use rekindle_records::lease::LeaseId;
@@ -88,6 +89,7 @@ pub trait OverflowIo: Send + Sync {
         &self,
         record_key: &str,
         writer: Option<String>,
+        intent: OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError>;
     async fn release_record(&self, lease: LeaseId);
     async fn get_dht_value(
@@ -115,8 +117,9 @@ impl<D: GovernanceRuntimeDeps> OverflowIo for D {
         &self,
         record_key: &str,
         writer: Option<String>,
+        intent: OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError> {
-        GovernanceRuntimeDeps::acquire_record(self, record_key, writer).await
+        GovernanceRuntimeDeps::acquire_record(self, record_key, writer, intent).await
     }
     async fn release_record(&self, lease: LeaseId) {
         GovernanceRuntimeDeps::release_record(self, lease).await;
@@ -155,7 +158,9 @@ pub(crate) async fn read_subkey<D: OverflowIo + ?Sized>(
     subkey: u32,
     force_refresh: bool,
 ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record_key, None).await?;
+    let lease = deps
+        .acquire_record(record_key, None, OpenIntent::Check)
+        .await?;
     let value = deps.get_dht_value(lease, subkey, force_refresh).await;
     deps.release_record(lease).await;
     value
@@ -349,7 +354,7 @@ pub async fn write_overflow_page<D: OverflowIo>(
         });
     }
     let lease = deps
-        .acquire_record(record_key, Some(writer.clone()))
+        .acquire_record(record_key, Some(writer.clone()), OpenIntent::Hold)
         .await?;
     let written = write_and_read_back(deps, lease, &bytes, writer).await;
     deps.release_record(lease).await;

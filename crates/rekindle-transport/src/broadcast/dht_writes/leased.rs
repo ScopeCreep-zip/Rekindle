@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use rekindle_records::port::{RecordPort, ReportScope};
+use rekindle_records::port::{OpenIntent, RecordPort, ReportScope};
 
 use super::super::node::TransportNode;
 use super::seqs_as_opt_u64;
@@ -17,13 +17,14 @@ fn pool(node: &TransportNode) -> Result<Arc<dyn RecordPort>> {
 }
 
 /// Borrow `record_key`, writable with `writer` (keypair string form) when
-/// given.
+/// given, opened for `intent` ([`OpenIntent`]).
 pub async fn acquire_str(
     node: &TransportNode,
     record_key: &str,
     writer: Option<&str>,
+    intent: OpenIntent,
 ) -> Result<LeaseId> {
-    Ok(pool(node)?.acquire(record_key, writer).await?)
+    Ok(pool(node)?.acquire(record_key, writer, intent).await?)
 }
 
 /// End a borrow; the record closes when it was the last. A no-op once the

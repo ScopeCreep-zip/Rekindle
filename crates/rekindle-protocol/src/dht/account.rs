@@ -1,4 +1,5 @@
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::OpenIntent;
 use rekindle_records::port::{RecordPort, SetOutcome};
 
 use crate::error::ProtocolError;
@@ -76,7 +77,9 @@ impl AccountRecord {
         owner_keypair: &str,
         encryption_key: DhtRecordKey,
     ) -> Result<Self, ProtocolError> {
-        let lease = pool.acquire(key, Some(owner_keypair)).await?;
+        let lease = pool
+            .acquire(key, Some(owner_keypair), OpenIntent::Hold)
+            .await?;
         tracing::debug!(key, "AccountRecord opened");
         Ok(Self {
             lease,

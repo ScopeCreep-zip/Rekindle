@@ -1,5 +1,6 @@
 //! Channel record reads: watching and merged multi-writer history.
 
+use rekindle_records::port::OpenIntent;
 use rekindle_records::port::RecordPort;
 
 use crate::error::ProtocolError;
@@ -27,7 +28,7 @@ pub async fn read_all_channel_entries(
         .iter()
         .map(|slot| u32::from(CHANNEL_OWNER_SUBKEY_COUNT) + slot)
         .collect();
-    let lease = pool.acquire(channel_key, None).await?;
+    let lease = pool.acquire(channel_key, None, OpenIntent::Check).await?;
     let read = pool.read_changed(lease, &subkeys).await;
     pool.release(lease).await;
 

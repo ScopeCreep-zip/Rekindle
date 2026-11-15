@@ -153,7 +153,10 @@ async fn a_partition_splits_the_replicas() {
         .await
         .unwrap();
     a.set(lease, 0, b"v0".to_vec(), None).await.unwrap();
-    let theirs = b.acquire(&key, None).await.unwrap();
+    let theirs = b
+        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert_eq!(b.get(theirs, 0, true).await.unwrap().unwrap().seq, 0);
 
     sim.fault(Fault::Partition {
@@ -231,7 +234,10 @@ async fn a_set_two_replicas_accept_is_below_consensus_yet_readable() {
     assert_eq!(holders, vec![0, 1], "the two closest replicas took it");
 
     let reader = nodes[1].ports.records.start_session().unwrap();
-    let opened = reader.acquire(&key, None).await.unwrap();
+    let opened = reader
+        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert_eq!(
         reader.get(opened, 1, true).await.unwrap().map(|v| v.data),
         Some(b"op".to_vec()),

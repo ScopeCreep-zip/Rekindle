@@ -37,6 +37,39 @@ pub struct RecordDescriptor {
     pub subkey_count: u32,
 }
 
+/// Why a record is opened (plan VU decision 1, ADR 0021 amendment): the
+/// role decides whether a re-open of a record this node already stores
+/// asks Veilid to check that the network still carries it.
+///
+/// Veilid 0.5.8 queues that rehydration on a re-open only when the open
+/// asks for it (`OpenDHTRecordOptions::rehydrate`,
+/// `veilid_api/types/dht/open_dht_record_options.rs:6-10`), the record was
+/// not created by this node this session (`locally_created_records`,
+/// `storage_manager/open_record.rs:62-68`, filled by `create_record.rs`),
+/// and the last rehydration of it finished at least 60 RPC timeouts ago
+/// (300 s at the 5 s default; `storage_manager/mod.rs:178-198`,
+/// `open_record.rs:69-80`). A first open of a record not stored locally
+/// never rehydrates: it inspects for the descriptor and answers `TryAgain`
+/// when no node answered (`open_record.rs:83-111`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenIntent {
+    /// Custody: our own records, the keepalive's warming, and the long-lived
+    /// leases a watch or a sweep holds. A re-open asks for rehydration.
+    Hold,
+    /// A check: a one-shot read, inspect or write, or an existence probe.
+    /// A re-open never asks for rehydration, so a probe announces no
+    /// interest to storage nodes.
+    Check,
+}
+
+impl OpenIntent {
+    /// Whether an open with this intent asks Veilid to rehydrate.
+    #[must_use]
+    pub fn rehydrates(self) -> bool {
+        matches!(self, Self::Hold)
+    }
+}
+
 /// The kind of a DHT failure, one for one with veilid-core's
 /// `VeilidAPIError` (`veilid_api/error.rs:131-215`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,11 +132,14 @@ pub trait DhtBackend: Send + Sync {
         owner: Option<&WriterKey>,
     ) -> Result<RecordDescriptor, DhtCallError>;
 
-    /// Open a record, writable with `writer` when given.
+    /// Open a record, writable with `writer` when given; `intent` says
+    /// whether a re-open of a locally stored record asks for rehydration
+    /// ([`OpenIntent`]).
     async fn open(
         &self,
         key: &str,
         writer: Option<&WriterKey>,
+        intent: OpenIntent,
     ) -> Result<RecordDescriptor, DhtCallError>;
 
     /// Close a record (node-wide; it cancels the record's watch).

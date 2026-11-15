@@ -25,6 +25,7 @@
 //! Matrix full-state /sync). `inspect(UpdateGet)` is Veilid's native seq-diff
 //! primitive for exactly this; we pull only the subkeys that actually moved.
 
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 
 use crate::state::AppState;
@@ -45,7 +46,7 @@ pub(super) async fn scan_segment_raw(
     // registry), then one authoritative network-fanout inspect over the
     // segment range, which yields the local-vs-network seq vectors we diff
     // below.
-    let lease = match pool.acquire(registry_key, None).await {
+    let lease = match pool.acquire(registry_key, None, OpenIntent::Check).await {
         Ok(lease) => lease,
         Err(error) => {
             tracing::debug!(registry_key, %error, "scan_segment_raw: registry not open — skipping");

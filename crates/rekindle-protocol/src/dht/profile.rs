@@ -1,4 +1,5 @@
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::OpenIntent;
 use rekindle_records::port::{RecordPort, SetOutcome};
 
 use crate::error::ProtocolError;
@@ -64,7 +65,9 @@ pub async fn open_profile(
     key: &str,
     owner_keypair: &str,
 ) -> Result<LeaseId, ProtocolError> {
-    let lease = pool.acquire(key, Some(owner_keypair)).await?;
+    let lease = pool
+        .acquire(key, Some(owner_keypair), OpenIntent::Hold)
+        .await?;
     tracing::info!(key, "profile record reopened");
     Ok(lease)
 }
@@ -110,7 +113,7 @@ pub async fn set_own_profile_subkey(
     subkey: u32,
     value: Vec<u8>,
 ) -> Result<SetOutcome, ProtocolError> {
-    let lease = pool.acquire(key, None).await?;
+    let lease = pool.acquire(key, None, OpenIntent::Hold).await?;
     let outcome = pool.set_durable(lease, subkey, value, None).await;
     pool.release(lease).await;
     Ok(outcome?)

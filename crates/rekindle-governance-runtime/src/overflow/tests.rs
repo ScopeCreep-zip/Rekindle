@@ -132,6 +132,7 @@ impl OverflowIo for MockDht {
         &self,
         record_key: &str,
         _writer: Option<String>,
+        _intent: rekindle_records::port::OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError> {
         let id = self
             .next_lease

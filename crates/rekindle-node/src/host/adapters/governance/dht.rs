@@ -92,9 +92,10 @@ impl HostGovernance {
         &self,
         record_key: &str,
         writer: Option<String>,
+        intent: rekindle_records::port::OpenIntent,
     ) -> Result<LeaseId, GovernanceRuntimeError> {
         let node = self.transport()?;
-        dht_writes::acquire_str(&node, record_key, writer.as_deref())
+        dht_writes::acquire_str(&node, record_key, writer.as_deref(), intent)
             .await
             .map_err(|e| dht_err("acquire record", e))
     }

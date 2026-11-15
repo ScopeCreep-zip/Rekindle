@@ -36,6 +36,7 @@
 //! merges (a channel slot) learns there that its held value was replaced
 //! and its entries did not land (plan C7.13).
 
+use rekindle_records::port::OpenIntent;
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -320,7 +321,7 @@ impl RecordPool {
             if writer.is_none() && !self.writable(&slot.0) {
                 continue;
             }
-            let pushed = match self.acquire(&slot.0, None).await {
+            let pushed = match self.acquire(&slot.0, None, OpenIntent::Hold).await {
                 Ok(lease) => {
                     let outcome = self.set(lease, slot.1, data.clone(), writer).await;
                     self.release(lease).await;

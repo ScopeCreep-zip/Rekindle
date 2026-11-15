@@ -66,13 +66,19 @@ async fn a_reopen_rehydrates_only_when_asked_unmade_here_and_past_the_recheck() 
         .await
         .unwrap()
         .key;
-    a.open(&made_here, None).await.unwrap();
+    a.open(&made_here, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert!(!queued(&sim, &made_here), "created this session");
 
     let key = seeded(&sim, &a).await;
-    a.open_with(&key, None, false).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Check)
+        .await
+        .unwrap();
     assert!(!queued(&sim, &key), "not asked");
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert!(queued(&sim, &key));
     tick(&sim);
     assert!(!queued(&sim, &key), "checked");
@@ -80,10 +86,14 @@ async fn a_reopen_rehydrates_only_when_asked_unmade_here_and_past_the_recheck() 
         super::rehydrate::REHYDRATE_RECHECK.saturating_sub(std::time::Duration::from_secs(1)),
     )
     .await;
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert!(!queued(&sim, &key), "inside the recheck window");
     tokio::time::advance(std::time::Duration::from_secs(1)).await;
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert!(queued(&sim, &key), "past it");
 }
 
@@ -119,9 +129,14 @@ async fn no_replica_reached_is_try_again() {
         .await
         .unwrap_err();
     assert_eq!(err.kind, DhtErrorKind::TryAgain);
-    let err = a.open(&unknown, None).await.unwrap_err();
+    let err = a
+        .open(&unknown, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap_err();
     assert_eq!(err.kind, DhtErrorKind::TryAgain);
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     tick(&sim);
     assert!(sim.net.inner.lock().nodes[0].rehydrations.contains(&key));
 }
@@ -132,7 +147,9 @@ async fn an_open_of_a_held_record_pushes_what_the_replicas_lost() {
     let a = dht(&sim, &nodes[0]);
     let key = seeded(&sim, &a).await;
     wipe(&sim, &key);
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     // The first tick finds what to push, the next pushes it.
     tick(&sim);
     assert_eq!(copies(&sim, &key, 0), 0);
@@ -158,7 +175,9 @@ async fn a_set_refused_offline_queues_nothing() {
         node: 0,
         offline: false,
     });
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     tick(&sim);
     tick(&sim);
     assert_eq!(copies(&sim, &key, 1), 0);
@@ -175,7 +194,9 @@ async fn an_offline_open_rehydrates_once_back_online() {
         node: 0,
         offline: true,
     });
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     tick(&sim);
     tick(&sim);
     assert_eq!(copies(&sim, &key, 0), 0);
@@ -197,7 +218,9 @@ async fn a_push_short_of_consensus_stays_queued_until_the_cut_heals() {
         a: vec![0],
         b: (1..10).collect(),
     });
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     tick(&sim);
     tick(&sim);
     assert!(copies(&sim, &key, 0) < 3);
@@ -270,7 +293,9 @@ async fn a_full_store_evicts_its_least_recently_used_record() {
     let key = keys[evicted].clone();
     assert!(copies(&sim, &key, 0) < had, "evicted from a store");
     assert!(a.get(&key, 0, true).await.unwrap().is_some());
-    a.open(&key, None).await.unwrap();
+    a.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     tick(&sim);
     tick(&sim);
     assert!(copies(&sim, &key, 0) >= 5);

@@ -2,7 +2,8 @@
 
 use rekindle_records::lease::{LeaseId, SubkeySet};
 use rekindle_records::port::{
-    DhtCallError, DhtErrorKind, RecordReport, RecordValue, ReportScope, SetOutcome, WriterKey,
+    DhtCallError, DhtErrorKind, OpenIntent, RecordReport, RecordValue, ReportScope, SetOutcome,
+    WriterKey,
 };
 
 use super::{range, to_port, RecordPool};
@@ -188,11 +189,16 @@ impl RecordPool {
         }
     }
 
-    /// Re-open the leased record with its sticky writer: a re-open of a
-    /// local record is what queues Veilid's rehydration
-    /// (`open_record.rs:27-44`), so nothing is downgraded and the watch
-    /// survives. The port's `rehydrate` then pulls what the network holds
-    /// newer.
+    /// Re-open the leased record with its sticky writer, as
+    /// [`OpenIntent::Hold`], so nothing is downgraded and the watch
+    /// survives. A re-open is the only app-side trigger of Veilid's
+    /// rehydration (the others are debug, the `TryAgain` retry and a
+    /// transaction commit), and 0.5.8 queues one only when the open asks
+    /// for it, the record was not created by this node this session, and
+    /// the last rehydration of it finished at least 60 RPC timeouts (300 s)
+    /// ago (`storage_manager/open_record.rs:62-81`, `mod.rs:178-198`,
+    /// `tasks/rehydrate_records.rs:50-52`). The port's `rehydrate` then
+    /// pulls what the network holds newer, whether or not one was queued.
     ///
     /// # Errors
     /// The lease is not held, or the open failed within the retry budget.
@@ -203,7 +209,7 @@ impl RecordPool {
         let _serial = lock.lock().await;
         self.run_retrying("dht rehydrate open", move |backend| {
             let (k, w) = (key.clone(), writer.clone());
-            async move { backend.open(&k, w.as_ref()).await }
+            async move { backend.open(&k, w.as_ref(), OpenIntent::Hold).await }
         })
         .await
         .map(drop)

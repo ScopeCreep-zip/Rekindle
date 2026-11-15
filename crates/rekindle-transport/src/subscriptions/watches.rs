@@ -9,6 +9,7 @@
 //! itself, and the pool re-arms a dead one while it is held (plan C7.8), so
 //! nothing here renews.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::HashMap;
 
 use parking_lot::RwLock;
@@ -150,13 +151,16 @@ pub async fn establish_watch_as(
     kind: WatchKind,
     writer: Option<&str>,
 ) -> bool {
-    let lease = match crate::broadcast::dht_writes::acquire_str(node, record_key, writer).await {
-        Ok(lease) => lease,
-        Err(e) => {
-            warn!(record_key, error = %e, "watch: cannot open record");
-            return false;
-        }
-    };
+    let lease =
+        match crate::broadcast::dht_writes::acquire_str(node, record_key, writer, OpenIntent::Hold)
+            .await
+        {
+            Ok(lease) => lease,
+            Err(e) => {
+                warn!(record_key, error = %e, "watch: cannot open record");
+                return false;
+            }
+        };
 
     let active = match crate::broadcast::dht_writes::watch_leased(node, lease, subkeys).await {
         Ok(()) => true,

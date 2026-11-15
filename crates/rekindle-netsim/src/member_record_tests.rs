@@ -46,7 +46,10 @@ async fn a_foreign_key_fails_against_the_anchor_and_owner_of_names_its_owner() {
     only_the_owner_writes(a.as_ref(), lease, community_anchor::GENESIS_CERT).await;
     a.release(lease).await;
     assert!(matches!(a.owner_of(lease), Err(PortError::LeaseNotHeld(_))));
-    let theirs = b.acquire(&key, None).await.unwrap();
+    let theirs = b
+        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert_eq!(b.owner_of(theirs).unwrap(), owner);
     let (foreign, _) = keypair(10);
     assert!(matches!(
@@ -82,7 +85,10 @@ async fn a_foreign_key_fails_against_a_member_record_and_owner_of_names_its_owne
     ] {
         only_the_owner_writes(a.as_ref(), lease, subkey).await;
     }
-    let theirs = b.acquire(&key, None).await.unwrap();
+    let theirs = b
+        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     assert_eq!(b.owner_of(theirs).unwrap(), public_text(&k_m_public));
     let (foreign, foreign_public) = keypair(10);
     assert_ne!(b.owner_of(theirs).unwrap(), public_text(&foreign_public));

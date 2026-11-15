@@ -8,6 +8,7 @@
 //! member count answerable without a DHT read, and what the v1.0 member
 //! index was substituting for.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::HashMap;
 
 use rekindle_presence::deps::{DiscoveredMemberRow, PresenceError, RowWrite};
@@ -50,7 +51,7 @@ impl DaemonPresenceAdapter {
         };
         // One borrow per segment for the whole scan: a table hit while the
         // community holds the record (plan C7.7g).
-        let lease = match pool.acquire(registry_key, None).await {
+        let lease = match pool.acquire(registry_key, None, OpenIntent::Check).await {
             Ok(lease) => lease,
             Err(error) => {
                 tracing::debug!(registry = %registry_key, %error, "presence scan: segment not open");
@@ -96,6 +97,7 @@ impl DaemonPresenceAdapter {
             node.as_ref(),
             registry_key,
             Some(writer_keypair_str),
+            OpenIntent::Hold,
         )
         .await
         .map_err(|e| PresenceError::Dht(format!("open registry: {e}")))?;

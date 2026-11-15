@@ -7,6 +7,7 @@
 //! subkey, merges into local state, and emits a `cross-device-sync`
 //! Tauri event so the frontend re-hydrates.
 
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 
 use rekindle_secrets::sync_key::{decrypt_subkey, SyncKey};
@@ -33,7 +34,11 @@ pub async fn start_personal_sync_watch(state: &Arc<AppState>, pool: &Db) -> Resu
     }
     let record_pool = state_helpers::record_pool(state)?;
     let lease = record_pool
-        .acquire(&handle.record_key, Some(&handle.owner_keypair_hex))
+        .acquire(
+            &handle.record_key,
+            Some(&handle.owner_keypair_hex),
+            OpenIntent::Hold,
+        )
         .await
         .map_err(|e| format!("open personal sync record: {e}"))?;
     if let Err(e) = record_pool

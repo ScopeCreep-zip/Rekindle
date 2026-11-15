@@ -9,6 +9,7 @@ use rekindle_presence::{
     SetFriendStatusOutcome, UserStatusKind,
 };
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::OpenIntent;
 use rekindle_types::friend::{FriendshipState, GameInfoState, UserStatus};
 use rekindle_types::subscription_events::{
     FriendEvent, GameActivity, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
@@ -214,7 +215,7 @@ impl FriendPresenceDeps for HostFriends {
 
     async fn acquire_friend_record(&self, dht_record_key: &str) -> Result<LeaseId, PresenceError> {
         self.records()?
-            .acquire(dht_record_key, None)
+            .acquire(dht_record_key, None, OpenIntent::Hold)
             .await
             .map_err(|e| match e {
                 rekindle_records::port::PortError::KeyText(reason) => {

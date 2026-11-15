@@ -5,6 +5,7 @@
 use rekindle_codec::governance_op::genesis::decode_genesis;
 use rekindle_crypto::keypair_text::public_key_text;
 use rekindle_governance::genesis::verify_genesis;
+use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::community_anchor;
 use rekindle_types::governance::GenesisCert;
 
@@ -21,7 +22,7 @@ pub async fn read_pinned<D: GovernanceRuntimeDeps>(
     deps: &D,
     anchor: &str,
 ) -> Result<(GenesisCert, Vec<u8>), GovernanceRuntimeError> {
-    let lease = deps.acquire_record(anchor, None).await?;
+    let lease = deps.acquire_record(anchor, None, OpenIntent::Check).await?;
     let read = deps
         .get_dht_value(lease, community_anchor::GENESIS_CERT, true)
         .await;

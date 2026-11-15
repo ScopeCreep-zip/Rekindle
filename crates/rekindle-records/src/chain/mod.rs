@@ -25,6 +25,7 @@ mod page;
 #[cfg(test)]
 mod tests;
 
+use crate::port::OpenIntent;
 use rekindle_codec::capnp_codec::chain::ChainPage;
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_types::dht_layout::dm_participant;
@@ -302,7 +303,7 @@ async fn own_head_at(
     record: &str,
     head_subkey: u32,
 ) -> Result<Option<PagePointer>, ChainError> {
-    let lease = port.acquire(record, None).await?;
+    let lease = port.acquire(record, None, OpenIntent::Check).await?;
     let local = local_value(port, lease, head_subkey).await;
     port.release(lease).await;
     local?.map(|v| page::decode_head(&v.data)).transpose()

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use crate::lease::LeaseId;
 
-use super::PortError;
+use super::{OpenIntent, PortError};
 
 /// A stored subkey value: its sequence number, bytes and writer key.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,6 +159,24 @@ pub struct UnsentWrite {
 }
 
 /// A watched record changed.
+///
+/// **A hint obliges a network read of the hinted subkeys** (plan VU3,
+/// Veilid 0.5.8 report marks). Veilid marks every subkey it reports to us
+/// as reported and unread, a value-carrying report included
+/// (`outbound_watch_manager/outbound_watch_state.rs:51-55,268-273`,
+/// `watch_value.rs:1960-1964,2014-2019`). A later range-only report (a
+/// storage node coalescing several changed subkeys into one push, which
+/// drops the value, or a re-hint) reports only the subkeys not marked and
+/// counts a copy on the rest (`outbound_watch_state.rs:251-266`), and
+/// sends nothing when none is news (`watch_value.rs:2020-2022`). Only a get
+/// that reaches the network clears a mark (`get_value.rs:199-200`,
+/// `consume_watch_read_subkeys`, `watch_value.rs:2275-2297`); a local read,
+/// or using [`value`](Self::value), leaves it. So a handler reads every
+/// subkey in [`subkeys`](Self::subkeys), the one whose value came with the
+/// change too, with [`RecordPort::read_hinted`]; otherwise a later change
+/// of a subkey it skipped can arrive in a coalesced push and never be
+/// reported. Change-inspection reports bypass the marks
+/// (`watch_value.rs:1520-1566`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ValueChange {
     pub key: String,
@@ -184,8 +202,17 @@ pub struct ValueChangeReport {
 /// watched; durable writes re-pushed until they land.
 #[async_trait::async_trait]
 pub trait RecordPort: Send + Sync {
-    /// Borrow `key`, writable with the `writer` keypair when given.
-    async fn acquire(&self, key: &str, writer: Option<&str>) -> Result<LeaseId, PortError>;
+    /// Borrow `key`, writable with the `writer` keypair when given. The
+    /// first borrower's `intent` opens the record ([`OpenIntent`]: `Hold`
+    /// for our own records and long-lived leases, `Check` for one-shot
+    /// reads and probes); a borrow of a record already open keeps that
+    /// open, and a writer upgrade re-opens it as `Hold`.
+    async fn acquire(
+        &self,
+        key: &str,
+        writer: Option<&str>,
+        intent: OpenIntent,
+    ) -> Result<LeaseId, PortError>;
 
     /// Create a record (owned by `owner`, a fresh keypair when `None`) and
     /// hold it writable: the lease, the record key and the owner keypair.
@@ -244,8 +271,26 @@ pub trait RecordPort: Send + Sync {
     ) -> Result<RecordReport, PortError>;
 
     /// The values of `subkeys` an inspect says exist, fetching from the
-    /// network only what changed.
+    /// network only what changed. Never for a [`ValueChange`]'s subkeys:
+    /// a local read leaves Veilid's report mark ([`read_hinted`](Self::read_hinted)).
     async fn read_changed(
+        &self,
+        lease: LeaseId,
+        subkeys: &[u32],
+    ) -> Result<Vec<(u32, RecordValue)>, PortError>;
+
+    /// [`read_changed`](Self::read_changed)'s hinted mode, for the subkeys
+    /// a [`ValueChange`] named: every one is read from the network
+    /// (`force_refresh`), which clears its report mark, so the next change
+    /// of it is reported even when it arrives in a coalesced push. No
+    /// inspect runs first: a hinted subkey holds a value, and an inspect
+    /// whose replica has not caught up would answer "nothing newer" and
+    /// turn the read local. A subkey whose read fails or finds no value is
+    /// left out.
+    ///
+    /// # Errors
+    /// Every read failed: the caller keeps the copy it already has.
+    async fn read_hinted(
         &self,
         lease: LeaseId,
         subkeys: &[u32],
@@ -261,8 +306,13 @@ pub trait RecordPort: Send + Sync {
     /// The subkey cap of the leased record's values.
     fn subkey_cap(&self, lease: LeaseId) -> Result<usize, PortError>;
 
-    /// Re-open the leased record with its writer (the network's only
-    /// rehydration trigger), then fetch the subkeys the network holds newer.
+    /// Re-open the leased record with its writer as [`OpenIntent::Hold`],
+    /// then fetch the subkeys the network holds newer. The re-open is the
+    /// only app-side trigger of Veilid's rehydration, and in 0.5.8 it
+    /// queues one only when requested, the record was not created by this
+    /// node this session, and the last rehydration finished at least
+    /// 300 s ago (`storage_manager/open_record.rs:62-81`); the fetch runs
+    /// either way.
     async fn rehydrate(&self, lease: LeaseId) -> Result<(), PortError>;
 
     /// A value change for the pool to account for (watches it re-arms).
@@ -292,20 +342,22 @@ pub trait RecordPort: Send + Sync {
     /// finished. Returns how many records it held.
     fn end(&self) -> usize;
 
-    /// Read one subkey of `key` on a borrow of its own.
+    /// Read one subkey of `key` on a borrow of its own, opened as
+    /// [`OpenIntent::Check`].
     async fn read_once(
         &self,
         key: &str,
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<RecordValue>, PortError> {
-        let lease = self.acquire(key, None).await?;
+        let lease = self.acquire(key, None, OpenIntent::Check).await?;
         let read = self.get(lease, subkey, force_refresh).await;
         self.release(lease).await;
         read
     }
 
-    /// Write one subkey of `key` on a borrow of its own, as `writer`.
+    /// Write one subkey of `key` on a borrow of its own, as `writer`,
+    /// opened as [`OpenIntent::Check`].
     async fn write_once(
         &self,
         key: &str,
@@ -313,20 +365,21 @@ pub trait RecordPort: Send + Sync {
         data: Vec<u8>,
         writer: Option<&str>,
     ) -> Result<SetOutcome, PortError> {
-        let lease = self.acquire(key, None).await?;
+        let lease = self.acquire(key, None, OpenIntent::Check).await?;
         let written = self.set(lease, subkey, data, writer).await;
         self.release(lease).await;
         written
     }
 
-    /// Inspect `key` on a borrow of its own.
+    /// Inspect `key` on a borrow of its own, opened as
+    /// [`OpenIntent::Check`].
     async fn inspect_once(
         &self,
         key: &str,
         subkeys: Option<&[u32]>,
         scope: ReportScope,
     ) -> Result<RecordReport, PortError> {
-        let lease = self.acquire(key, None).await?;
+        let lease = self.acquire(key, None, OpenIntent::Check).await?;
         let report = self.inspect(lease, subkeys, scope).await;
         self.release(lease).await;
         report

@@ -4,6 +4,7 @@
 //! adapter. Delegation only: the channel half is [`HostChannel`]'s, the
 //! governance half [`HostGovernance`]'s, the rows `rows`'.
 
+use rekindle_records::port::OpenIntent;
 use std::path::Path;
 
 use async_trait::async_trait;
@@ -253,7 +254,7 @@ impl FilesDeps for HostFiles {
         let pool = self.records()?;
         // One borrow, one inspect, and a read of only the subkeys that hold
         // a value (plan C9.1e).
-        let lease = (pool.acquire(channel_log_key, None).await)
+        let lease = (pool.acquire(channel_log_key, None, OpenIntent::Check).await)
             .map_err(|e| transport(format!("open channel record: {e}")))?;
         let subkeys: Vec<u32> = (0..CHANNEL_SLOTS).collect();
         let values = pool.read_changed(lease, &subkeys).await;

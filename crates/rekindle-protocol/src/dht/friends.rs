@@ -1,5 +1,6 @@
 use rekindle_codec::capnp_codec;
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::OpenIntent;
 use rekindle_records::port::{RecordPort, SetOutcome};
 
 use crate::error::ProtocolError;
@@ -41,7 +42,9 @@ pub async fn open_friend_list(
     key: &str,
     owner_keypair: &str,
 ) -> Result<LeaseId, ProtocolError> {
-    let lease = pool.acquire(key, Some(owner_keypair)).await?;
+    let lease = pool
+        .acquire(key, Some(owner_keypair), OpenIntent::Hold)
+        .await?;
     tracing::debug!(key, "friend list record reopened");
     Ok(lease)
 }
@@ -74,7 +77,7 @@ pub async fn write_friend_list(
     friends: &[FriendEntry],
 ) -> Result<SetOutcome, ProtocolError> {
     let data = capnp_codec::friend::encode_friend_list(friends);
-    let lease = pool.acquire(key, None).await?;
+    let lease = pool.acquire(key, None, OpenIntent::Hold).await?;
     let outcome = pool.set_durable(lease, 0, data, None).await;
     pool.release(lease).await;
     Ok(outcome?)

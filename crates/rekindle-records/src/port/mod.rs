@@ -10,7 +10,7 @@ mod message;
 mod record;
 mod route;
 
-pub use dht::{DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, WriterKey};
+pub use dht::{DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, WriterKey};
 pub use message::{check_message_len, AppCallId, AppMessagePort};
 pub use record::{
     RecordPort, RecordReport, RecordSchema, RecordStore, RecordValue, ReportScope, SchemaMember,

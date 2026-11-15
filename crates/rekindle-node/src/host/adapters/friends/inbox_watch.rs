@@ -3,6 +3,7 @@
 //! while the invite is `pending` and re-watched at unlock. A change is
 //! opened as any inbound 1:1 frame (`operations::friend::inbox::received`).
 
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 
 use rekindle_records::lease::LeaseId;
@@ -55,7 +56,7 @@ pub(super) async fn rewatch_pending(host: &HostFriends) {
         return;
     };
     for key in keys {
-        match pool.acquire(&key, None).await {
+        match pool.acquire(&key, None, OpenIntent::Hold).await {
             Ok(lease) => hold(host, &pool, &key, lease).await,
             Err(e) => tracing::warn!(error = %e, "invite inbox not reopened"),
         }

@@ -7,6 +7,7 @@
 //! checked by `rekindle_crypto` before anything is used.
 
 use rekindle_records::lease::LeaseId;
+use rekindle_records::port::OpenIntent;
 use rekindle_records::port::{RecordPort, SetOutcome};
 use rekindle_types::dht_layout::prekeys::{self as layout, is_slot};
 use rekindle_types::dht_layout::profile::PREKEY_RECORDS;
@@ -47,7 +48,9 @@ pub async fn open_prekey_record(
     key: &str,
     owner_keypair: &str,
 ) -> Result<LeaseId, ProtocolError> {
-    Ok(pool.acquire(key, Some(owner_keypair)).await?)
+    Ok(pool
+        .acquire(key, Some(owner_keypair), OpenIntent::Hold)
+        .await?)
 }
 
 /// Write the head (needs the session's writable lease). Durable: a miss is
@@ -138,7 +141,7 @@ pub async fn read_device_list(
 /// # Errors
 /// The record could not be opened or read.
 pub async fn read_record(pool: &dyn RecordPort, key: &str) -> Result<RecordRead, ProtocolError> {
-    let lease = pool.acquire(key, None).await?;
+    let lease = pool.acquire(key, None, OpenIntent::Check).await?;
     // The head, then each slot `FIRST_SLOT..FIRST_SLOT + SLOT_COUNT`.
     let subkeys: Vec<u32> = std::iter::once(layout::HEAD)
         .chain((0..layout::SLOT_COUNT).map(|i| layout::FIRST_SLOT + i))

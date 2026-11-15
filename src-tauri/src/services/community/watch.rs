@@ -1,3 +1,4 @@
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 
 use rekindle_sync::watch::WatchManager;
@@ -138,7 +139,7 @@ pub async fn hold_unheld_records(
         let is_registry = registry_key.as_deref() == Some(record_key.as_str());
         let writer = is_registry.then(|| registry_writer.clone()).flatten();
         let Some(acquired) = stop
-            .run_until_cancelled(pool.acquire(&record_key, writer.as_deref()))
+            .run_until_cancelled(pool.acquire(&record_key, writer.as_deref(), OpenIntent::Hold))
             .await
         else {
             break;

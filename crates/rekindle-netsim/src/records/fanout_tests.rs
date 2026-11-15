@@ -79,7 +79,13 @@ async fn race(seed: u64) -> (Option<Vec<u8>>, Option<Vec<u8>>, Vec<u8>, Vec<u8>)
         keypair: sim.owner_keypair(&record.key).unwrap(),
         public: String::new(),
     };
-    b.open(&record.key, Some(&owner)).await.unwrap();
+    b.open(
+        &record.key,
+        Some(&owner),
+        rekindle_records::port::OpenIntent::Hold,
+    )
+    .await
+    .unwrap();
     b.get(&record.key, 0, true).await.unwrap();
     let (ra, rb) = tokio::join!(
         a.set(&record.key, 0, b"a".to_vec(), None),
@@ -149,12 +155,16 @@ async fn drop_from_leaves_the_dht_untouched() {
         holding(&sim, &theirs, b"b0", 0) >= 5,
         "its set reached the replicas"
     );
-    a.open(&theirs, None).await.unwrap();
+    a.open(&theirs, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     let read = a.get(&theirs, 0, true).await.unwrap().expect("its value");
     assert_eq!(read.data, b"b0");
     let ours = a.create(&schema, None).await.unwrap().key;
     a.set(&ours, 0, b"a0".to_vec(), None).await.unwrap();
-    b.open(&ours, None).await.unwrap();
+    b.open(&ours, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
     let read = b.get(&ours, 0, true).await.unwrap().expect("our value");
     assert_eq!(read.data, b"a0");
 }

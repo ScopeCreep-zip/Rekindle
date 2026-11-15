@@ -14,6 +14,7 @@
 //! `rotate_text_mek_for_departure` does.
 
 use parking_lot::RwLock;
+use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
 use tracing::info;
 
@@ -156,9 +157,13 @@ async fn release_registry_slot(
     // A table hit while the community holds its registry (the slot writer
     // is already its sticky writer); the write names the slot keypair
     // either way, and a miss is an error, never a queued write.
-    let lease =
-        crate::broadcast::dht_writes::acquire_str(node, &membership.registry_key, Some(&slot_kp))
-            .await?;
+    let lease = crate::broadcast::dht_writes::acquire_str(
+        node,
+        &membership.registry_key,
+        Some(&slot_kp),
+        OpenIntent::Check,
+    )
+    .await?;
     let written = write_tombstone(
         node,
         lease,

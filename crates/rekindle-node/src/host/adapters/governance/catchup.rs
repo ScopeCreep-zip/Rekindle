@@ -4,6 +4,7 @@
 //! ask the best peer per channel for what we lack (`SyncRequest`). It runs
 //! on the community's scope, so leaving or locking stops it.
 
+use rekindle_records::port::OpenIntent;
 use std::collections::HashMap;
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
@@ -100,7 +101,7 @@ impl HostGovernance {
             .filter_map(|slot| u32::try_from(slot).ok())
             .collect();
         let lease = pool
-            .acquire(registry_key, None)
+            .acquire(registry_key, None, OpenIntent::Check)
             .await
             .map_err(|e| format!("registry open failed: {e}"))?;
         let rows = pool.read_changed(lease, &all_slots).await;

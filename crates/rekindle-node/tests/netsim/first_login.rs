@@ -4,6 +4,7 @@
 //! the unlock, and another node reads the profile then. The live log of
 //! 2026-10-21 took ~3 min, each write awaited after the one before.
 
+use rekindle_records::port::OpenIntent;
 use std::time::Duration;
 
 use rekindle_ipc::protocol::IpcRequest;
@@ -63,7 +64,7 @@ async fn a_fresh_identity_publishes_within_two_set_latencies() {
     );
     let pool = reader.ports.records.start_session().expect("a session");
     let lease = pool
-        .acquire(&profile, None)
+        .acquire(&profile, None, OpenIntent::Check)
         .await
         .expect("open the profile");
     let read = pool.get(lease, 0, true).await.expect("read the profile");

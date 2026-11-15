@@ -21,6 +21,7 @@ use rekindle_crypto::keypair_text;
 use rekindle_governance::merge;
 use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance::state::GovernanceState;
+use rekindle_records::port::OpenIntent;
 use rekindle_records::schema;
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_types::dht_layout::member_record;
@@ -93,7 +94,7 @@ pub async fn read_frontier<D: GovernanceRuntimeDeps>(
     deps: &D,
     record: &str,
 ) -> Result<Vec<OpRef>, GovernanceRuntimeError> {
-    let lease = deps.acquire_record(record, None).await?;
+    let lease = deps.acquire_record(record, None, OpenIntent::Check).await?;
     let read = deps
         .get_dht_value(lease, member_record::FRONTIER, true)
         .await;

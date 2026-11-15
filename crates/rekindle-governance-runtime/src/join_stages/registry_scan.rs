@@ -12,6 +12,7 @@
 //! its own rule while sharing the I/O.
 
 use crate::deps::GovernanceRuntimeDeps;
+use rekindle_records::port::OpenIntent;
 
 /// Fetch every occupied slot's raw bytes, lowest subkey first.
 ///
@@ -34,7 +35,10 @@ pub(crate) async fn fetch_occupied<D: GovernanceRuntimeDeps>(
     let mut rows = Vec::with_capacity(occupied.len());
     // One borrow for the whole scan: a record the community does not hold
     // yet is opened once, not once per slot.
-    let Ok(lease) = deps.acquire_record(registry_key, None).await else {
+    let Ok(lease) = deps
+        .acquire_record(registry_key, None, OpenIntent::Check)
+        .await
+    else {
         return rows;
     };
     for &subkey in occupied {

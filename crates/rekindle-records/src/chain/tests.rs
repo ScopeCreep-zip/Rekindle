@@ -65,7 +65,12 @@ impl MemPort {
 
 #[async_trait::async_trait]
 impl RecordPort for MemPort {
-    async fn acquire(&self, key: &str, writer: Option<&str>) -> Result<LeaseId, PortError> {
+    async fn acquire(
+        &self,
+        key: &str,
+        writer: Option<&str>,
+        _: crate::port::OpenIntent,
+    ) -> Result<LeaseId, PortError> {
         let mut mem = self.0.lock();
         if !mem.records.contains_key(key) {
             return Err(PortError::Dht(format!("no record {key}")));
@@ -209,6 +214,14 @@ impl RecordPort for MemPort {
     }
 
     async fn read_changed(
+        &self,
+        _: LeaseId,
+        _: &[u32],
+    ) -> Result<Vec<(u32, RecordValue)>, PortError> {
+        Err(unused())
+    }
+
+    async fn read_hinted(
         &self,
         _: LeaseId,
         _: &[u32],

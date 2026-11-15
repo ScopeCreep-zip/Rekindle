@@ -52,8 +52,8 @@ use std::sync::Arc;
 
 use rekindle_crypto::keypair_text::keypair_text_from_signing;
 use rekindle_records::port::{
-    DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, RecordReport, RecordSchema,
-    RecordValue, ReportScope, WriterKey,
+    DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, RecordReport,
+    RecordSchema, RecordValue, ReportScope, WriterKey,
 };
 use rekindle_utils::RandomSource;
 
@@ -361,10 +361,11 @@ impl DhtBackend for SimDht {
         &self,
         key: &str,
         writer: Option<&WriterKey>,
+        intent: OpenIntent,
     ) -> Result<RecordDescriptor, DhtCallError> {
-        // The production backend opens with `rehydrate: Some(true)`
-        // (`rekindle-protocol` `VeilidDht::open`) until plan VU3's intent.
-        self.open_with(key, writer, true).await
+        // As the production backend maps it (`rekindle-protocol`
+        // `VeilidDht::open`): Hold asks for rehydration, Check never does.
+        self.open_with(key, writer, intent.rehydrates()).await
     }
 
     async fn close(&self, key: &str) -> Result<(), DhtCallError> {

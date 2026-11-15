@@ -8,8 +8,8 @@ use std::time::Duration;
 
 use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{
-    DhtBackend, DhtCallError, DhtErrorKind, RecordDescriptor, RecordReport, RecordSchema,
-    RecordValue, ReportScope, ValueChange, WriterKey,
+    DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, RecordReport,
+    RecordSchema, RecordValue, ReportScope, ValueChange, WriterKey,
 };
 
 use crate::{RecordCloser, RecordPool};
@@ -53,6 +53,7 @@ impl DhtBackend for TestDht {
         &self,
         key: &str,
         _writer: Option<&WriterKey>,
+        _intent: OpenIntent,
     ) -> Result<RecordDescriptor, DhtCallError> {
         if self.opens.fetch_add(1, Ordering::SeqCst) < self.open_failures {
             return Err(DhtCallError {
@@ -153,7 +154,10 @@ async fn pass(d: Duration) {
 async fn a_dead_watch_re_arms_with_backoff_and_is_forgiven_after_five_minutes() {
     let backend = Arc::new(TestDht::default());
     let pool = pool_on(Arc::clone(&backend));
-    let lease = pool.acquire(LEASED_RECORD, None).await.expect("open");
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect("open");
     pool.watch_all(lease).await.expect("watch");
     assert_eq!(backend.watches.load(Ordering::SeqCst), 1);
 
@@ -182,7 +186,10 @@ async fn a_dead_watch_re_arms_with_backoff_and_is_forgiven_after_five_minutes() 
 async fn a_watch_released_during_its_backoff_is_not_re_armed() {
     let backend = Arc::new(TestDht::default());
     let pool = pool_on(Arc::clone(&backend));
-    let lease = pool.acquire(LEASED_RECORD, None).await.expect("open");
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect("open");
     pool.watch_all(lease).await.expect("watch");
     pool.on_value_change(&death());
     pool.release(lease).await;
@@ -198,7 +205,7 @@ async fn an_open_retries_transient_errors_one_second_apart_within_the_budget() {
     });
     let pool = pool_on(Arc::clone(&backend));
     let started = tokio::time::Instant::now();
-    pool.acquire(LEASED_RECORD, None)
+    pool.acquire(LEASED_RECORD, None, OpenIntent::Hold)
         .await
         .expect("open after retries");
     assert_eq!(backend.opens.load(Ordering::SeqCst), 4);
@@ -210,7 +217,7 @@ async fn an_open_retries_transient_errors_one_second_apart_within_the_budget() {
     });
     let pool = pool_on(Arc::clone(&failing));
     let err = pool
-        .acquire(LEASED_RECORD, None)
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
         .await
         .expect_err("budget spent");
     assert!(matches!(
@@ -222,7 +229,10 @@ async fn an_open_retries_transient_errors_one_second_apart_within_the_budget() {
 #[tokio::test(start_paused = true)]
 async fn owner_of_names_the_opened_descriptor_s_owner_while_the_lease_is_held() {
     let pool = pool_on(Arc::new(TestDht::default()));
-    let lease = pool.acquire(LEASED_RECORD, None).await.unwrap();
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .unwrap();
     assert_eq!(pool.owner_of(lease).unwrap(), "VLD0:test-owner");
     pool.release(lease).await;
     assert!(matches!(

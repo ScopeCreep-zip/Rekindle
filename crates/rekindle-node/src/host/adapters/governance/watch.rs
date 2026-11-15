@@ -5,6 +5,7 @@
 //! Nothing polls a watched record: no timed inspect backs this up.
 
 use rekindle_records::lease::CommunityLeases;
+use rekindle_records::port::OpenIntent;
 use rekindle_transport::broadcast::dht_writes;
 use rekindle_types::id::ChannelId;
 
@@ -69,7 +70,14 @@ impl HostGovernance {
             let Some(channel) = ChannelId::from_hex(&channel_id) else {
                 continue;
             };
-            match dht_writes::acquire_str(&transport, &record_key, writer.as_deref()).await {
+            match dht_writes::acquire_str(
+                &transport,
+                &record_key,
+                writer.as_deref(),
+                OpenIntent::Hold,
+            )
+            .await
+            {
                 Ok(lease) => {
                     leases.channels.insert(channel, lease);
                     keys.push(record_key);
