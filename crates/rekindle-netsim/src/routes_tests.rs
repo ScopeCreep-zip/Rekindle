@@ -147,7 +147,7 @@ async fn five_lost_questions_kill_only_a_pinned_route_inside_one_test() {
 }
 
 /// A send failing at the first hop of the sender's safety route fails
-/// `RouteUnusable`, and the route lives: Veilid 0.5.8 recompiles it
+/// `Send` (our side: the peer's route is kept), and our route lives: Veilid 0.5.8 recompiles it
 /// (`route_stats.rs:19-35`), reports nothing, and the next send goes out
 /// on it.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -167,7 +167,7 @@ async fn a_first_hop_failure_recompiles_and_kills_nothing() {
             .messages
             .send(&target, &profile, vec![1])
             .await,
-        Err(PortError::RouteUnusable(_))
+        Err(PortError::Send(_))
     ));
     nodes[0]
         .ports
@@ -186,21 +186,20 @@ async fn a_first_hop_failure_recompiles_and_kills_nothing() {
 
 /// A route that stops carrying traffic dies by its loopback tests: first
 /// tested 30 s after it broke, then once per RPC timeout and tick, and the
-/// third failure kills an Ordered route, the fifth an Unordered one
-/// (Veilid 0.5.8 `route_spec_store/mod.rs:51-63`).
+/// third failure kills an Ordered route (General), the fifth an Unordered
+/// one (Media) (Veilid 0.5.8 `route_spec_store/mod.rs:51-54`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn loopback_failures_kill_ordered_after_3_and_unordered_after_5() {
     let (sim, mut nodes) = Netsim::nodes(1, 25);
     let _pump = sim.start();
     attached(&mut nodes[0]).await;
     nodes[0].ports.routes.want_own();
-    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
-    for class in [RouteClass::General, RouteClass::Sending] {
+    for class in [RouteClass::General, RouteClass::Media] {
         nodes[0].ports.routes.available_own(class).await;
     }
     sim.quiesce().await;
     while nodes[0].events.try_recv().is_ok() {}
-    for (class, tests) in [(RouteClass::General, 3u32), (RouteClass::Sending, 5)] {
+    for (class, tests) in [(RouteClass::General, 3u32), (RouteClass::Media, 5)] {
         let old = nodes[0].ports.routes.own_blob(class).unwrap();
         sim.fault(Fault::LoopbackFailures { node: 0, class });
         let death = Duration::from_secs(30) + Duration::from_secs(6) * (tests - 1);
@@ -212,55 +211,112 @@ async fn loopback_failures_kill_ordered_after_3_and_unordered_after_5() {
 }
 
 /// A node whose network blocks UDP cannot allocate an Unordered route
-/// (today's Sending and Media, `RouteOrdering::of`): one ordering per
-/// route, no fallback (Veilid 0.5.8 `route_allocate.rs:897-936`); General
-/// (Ordered) allocates. Its live Sending route dies after 5 failed tests.
+/// (Media, `RouteOrdering::of`): one ordering per route, no fallback
+/// (Veilid 0.5.8 `route_allocate.rs:99-105`, `:936`). Its live Media route
+/// dies after 5 failed tests; General and Sending (Ordered, plan VU
+/// decision 2) live on, and Sending allocates while UDP is blocked.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_udp_blocked_node_allocates_no_unordered_route() {
     let (sim, mut nodes) = Netsim::nodes(1, 26);
     let _pump = sim.start();
     attached(&mut nodes[0]).await;
     nodes[0].ports.routes.want_own();
-    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
-    let sending = nodes[0]
+    let media = nodes[0].ports.routes.available_own(RouteClass::Media).await;
+    let general = nodes[0]
         .ports
         .routes
-        .available_own(RouteClass::Sending)
+        .available_own(RouteClass::General)
         .await;
     sim.fault(Fault::UdpBlocked {
         node: 0,
         blocked: true,
     });
     tokio::time::sleep(Duration::from_secs(60)).await;
-    assert!(!live(&sim, &sending), "the UDP route died");
+    assert!(!live(&sim, &media), "the UDP route died");
+    assert!(live(&sim, &general), "the Ordered route lives");
     // The Host forwards each death to `OwnRoutes`, which tries to reallocate.
     while let Ok(event) = nodes[0].events.try_recv() {
         if let PortEvent::RouteChange { dead, .. } = event {
             nodes[0].ports.routes.on_dead_own(&dead);
         }
     }
+    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
+    let sending = tokio::time::timeout(
+        Duration::from_secs(120),
+        nodes[0].ports.routes.available_own(RouteClass::Sending),
+    )
+    .await;
+    assert!(sending.is_ok(), "Sending (Ordered) allocates without UDP");
     tokio::time::sleep(Duration::from_secs(120)).await;
-    assert!(nodes[0]
-        .ports
-        .routes
-        .own_blob(RouteClass::Sending)
-        .is_none());
     assert!(nodes[0].ports.routes.own_blob(RouteClass::Media).is_none());
-    assert!(nodes[0]
-        .ports
-        .routes
-        .own_blob(RouteClass::General)
-        .is_some());
     sim.fault(Fault::UdpBlocked {
         node: 0,
         blocked: false,
     });
     let back = tokio::time::timeout(
         Duration::from_secs(300),
-        nodes[0].ports.routes.available_own(RouteClass::Sending),
+        nodes[0].ports.routes.available_own(RouteClass::Media),
     )
     .await;
-    assert!(back.is_ok(), "UDP back, Sending allocates");
+    assert!(back.is_ok(), "UDP back, Media allocates");
+}
+
+/// R2-1: a pinned call over an Unordered route whose UDP path fails is
+/// lost without an error, the question never reaching the callee (the
+/// reply route fixes the safety route, Veilid 0.5.8
+/// `route_compile.rs:436-447`, and Check #3b does not move it, `:568-569`),
+/// while one pinned to an Ordered route lands. This is why Sending is
+/// Ordered (plan VU decision 2).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_failed_udp_path_loses_calls_pinned_to_an_unordered_route_only() {
+    let (sim, mut nodes) = Netsim::nodes(2, 28);
+    let _pump = sim.start();
+    let blob = own_blob(&nodes[1]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    nodes[0].ports.routes.want_own();
+    nodes[0].ports.routes.want_own_class(RouteClass::Sending);
+    for class in [RouteClass::Media, RouteClass::Sending] {
+        nodes[0].ports.routes.available_own(class).await;
+    }
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    sim.fault(Fault::UdpBlocked {
+        node: 0,
+        blocked: true,
+    });
+    let profile = SafetyProfile::default_dht();
+    let messages = nodes[0].ports.messages.clone();
+    let lost = messages
+        .call_pinned(&target, &profile, RouteClass::Media, vec![1])
+        .await;
+    assert!(
+        lost.is_err(),
+        "the question over the failed UDP path is lost"
+    );
+    sim.quiesce().await;
+    assert!(
+        !matches!(nodes[1].events.try_recv(), Ok(PortEvent::AppCall { .. })),
+        "no question reached the callee"
+    );
+    let (caller, to) = (messages.clone(), target.clone());
+    let call = tokio::spawn(async move {
+        caller
+            .call_pinned(&to, &profile, RouteClass::Sending, vec![2])
+            .await
+    });
+    let PortEvent::AppCall { call_id, .. } = recv(&mut nodes[1]).await else {
+        panic!("expected a call");
+    };
+    nodes[1]
+        .ports
+        .messages
+        .reply(call_id, b"a".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        call.await.unwrap().is_ok(),
+        "the Ordered route's call lands"
+    );
 }
 
 /// An unpinned call's reply route is a Veilid pool route nothing holds

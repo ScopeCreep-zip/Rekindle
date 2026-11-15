@@ -29,31 +29,61 @@ use rekindle_types::config::ANONYMITY_HOP_FLOOR;
 
 /// The spec of our `Sending` route (plan E4.3 RH2, built at RH1r): 3 hops
 /// ([`ANONYMITY_HOP_FLOOR`], the depth RH1a gives every inbound route),
-/// LowLatency, PreferUnordered. `new_custom_private_route` allocates it
-/// `DirectionSet::all()` and marks it published (`api.rs:437-467`), so it
-/// serves as a safety route and Veilid retests it
-/// (`private_route_management.rs:105-107`). We never publish its blob,
-/// but every callee receives it: a call pinned to it
-/// (`SafetySpec.preferred_route`) takes it first
-/// (`route_select.rs:124-152`), and Veilid assembles the same route as
-/// the call's `RespondTo` reply route (`rpc_processor/destination.rs:466-508`),
-/// so its answer comes back over it. Every peer we call while it lives
-/// holds the same blob, so two callees can link their calls to one sender
-/// route (threat model L2).
+/// LowLatency, PreferOrdered (plan VU decision 2). `new_custom_private_route`
+/// allocates it `DirectionSet::all()` and marks it published
+/// (veilid-core 0.5.8 `api.rs:785-857`), so it serves as a safety route and
+/// Veilid retests it (`private_route_management.rs:113-120`). We never
+/// publish its blob, but every callee receives it: a call pinned to it
+/// (`SafetySpec.preferred_route`) takes it first, whatever the call's own
+/// sequencing (`route_select.rs:148-180`), and Veilid assembles the same
+/// route as the call's `RespondTo` reply route
+/// (`rpc_processor/destination.rs:486-528`), so its answer comes back over
+/// it. Every peer we call while it lives holds the same blob, so two
+/// callees can link their calls to one sender route (threat model L2).
+///
+/// Why Ordered: Veilid 0.5.8 gives a custom route exactly its spec's
+/// preferred ordering (`route_allocate.rs:936` `SequenceOrderingSet::only`,
+/// `safety.rs:24-29`), every hop pair proven on that ordering's protocols
+/// alone, with no fallback to the other ordering (`route_allocate.rs:99-105`).
+/// An Unordered Sending route rode UDP on every hop: on a network that blocks
+/// UDP it never allocates, and when its UDP path fails mid-session its
+/// questions are lost without an error while the call stays on it (a reply
+/// route fixes the safety route, `route_compile.rs:436-447`, and Check #3b
+/// does not move it, `:568-569`, `:607-616`) until loopback tests kill it
+/// (5 failures, `route_spec_store/mod.rs:51-54`): the lost FriendAccept
+/// calls of A/B round 2 (R2-1). Control traffic needs that reliability; the
+/// call's first hop follows the route's ordering (`route_compile.rs:106-110`
+/// `for_route_orderings`). Media keeps UDP.
 pub fn sending_private_spec() -> veilid_core::PrivateSpec {
     veilid_core::PrivateSpec {
         // Empty = all available crypto kinds, as the default does.
         crypto_kinds: Vec::new(),
         hop_count: usize::from(ANONYMITY_HOP_FLOOR),
         stability: veilid_core::Stability::LowLatency,
+        sequencing: veilid_core::Sequencing::PreferOrdered,
+    }
+}
+
+/// The spec of our `Media` route: the configured default hop count (0, as
+/// General), LowLatency, PreferUnordered, so its one ordering is UDP
+/// (`safety.rs:24-29`): media frames are `app_message`s that tolerate loss
+/// and must not queue behind a retransmit (plan VU decision 2).
+pub fn media_private_spec() -> veilid_core::PrivateSpec {
+    veilid_core::PrivateSpec {
+        // Empty = all available crypto kinds, as the default does.
+        crypto_kinds: Vec::new(),
+        // 0 = the configured default hop count, as General.
+        hop_count: 0,
+        stability: veilid_core::Stability::LowLatency,
         sequencing: veilid_core::Sequencing::PreferUnordered,
     }
 }
 
-/// The Veilid allocator: `new_private_route` for General, a LowLatency /
-/// PreferUnordered custom route for Media (same hop count, so anonymity is
-/// unchanged; only relay selection differs), and [`sending_private_spec`]
-/// for Sending.
+/// The Veilid allocator: `new_private_route` for General (the default
+/// spec, PreferOrdered, `safety.rs:16-17`), a LowLatency / PreferUnordered
+/// custom route for Media (same hop count, so anonymity is unchanged; only
+/// relay selection and its one ordering, UDP, differ), and
+/// [`sending_private_spec`] (PreferOrdered) for Sending.
 pub struct VeilidRouteAllocator {
     api: veilid_core::VeilidAPI,
 }
@@ -74,14 +104,7 @@ impl RouteAllocator for VeilidRouteAllocator {
             RouteClass::General => self.api.new_private_route().await,
             RouteClass::Media => {
                 self.api
-                    .new_custom_private_route(veilid_core::PrivateSpec {
-                        // Empty = all available crypto kinds, as the default does.
-                        crypto_kinds: Vec::new(),
-                        // 0 = the configured default hop count, as General.
-                        hop_count: 0,
-                        stability: veilid_core::Stability::LowLatency,
-                        sequencing: veilid_core::Sequencing::PreferUnordered,
-                    })
+                    .new_custom_private_route(media_private_spec())
                     .await
             }
             RouteClass::Sending => {
@@ -103,5 +126,31 @@ impl RouteAllocator for VeilidRouteAllocator {
         if let Err(e) = self.api.release_private_route(id.clone()) {
             tracing::debug!(route = %id, error = %e, "releasing own route failed");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use veilid_core::{SequenceOrdering, Sequencing};
+
+    /// Plan VU decision 2: Sending carries Ordered (TCP/WS), Media
+    /// Unordered (UDP); each custom route carries only its preference's
+    /// ordering (`route_allocate.rs:936`).
+    #[test]
+    fn sending_is_ordered_and_media_is_unordered() {
+        let sending = sending_private_spec();
+        assert_eq!(sending.sequencing, Sequencing::PreferOrdered);
+        assert_eq!(
+            sending.sequencing.preferred_ordering(),
+            SequenceOrdering::Ordered
+        );
+        assert_eq!(sending.hop_count, usize::from(ANONYMITY_HOP_FLOOR));
+        let media = media_private_spec();
+        assert_eq!(media.sequencing, Sequencing::PreferUnordered);
+        assert_eq!(
+            media.sequencing.preferred_ordering(),
+            SequenceOrdering::Unordered
+        );
     }
 }

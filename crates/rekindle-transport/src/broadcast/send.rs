@@ -13,9 +13,11 @@ use crate::crypto::envelope::{sign_payload, Addressing};
 use crate::error::{Result, TransportError};
 use crate::frame::{self, TypeId};
 
-/// A failed send as the transport reports it. An unusable route is
+/// A failed send as the transport reports it. An unusable peer route is
 /// forgotten first, so the next send imports the peer's current blob
-/// (plan C7.9e).
+/// (plan C7.9e). The port reports `RouteUnusable` only for the peer's side;
+/// a `NoConnection` from our own safety route arrives as `Send` and keeps
+/// the peer's route (plan VU5, `rekindle-protocol` `peer_route_unusable`).
 fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> TransportError {
     match e {
         PortError::RouteUnusable(reason) => {
@@ -107,8 +109,9 @@ impl AppCaller {
     /// Send a signed RPC request and await the response.
     ///
     /// Veilid bounds only the wait for the answer
-    /// (`rpc_processor::get_safety_selection_timeout`: 5 s plus 500 ms
-    /// per effective hop above four, 6–7 s at our 3–4-hop safety routes);
+    /// ([`crate::broadcast::deadline::answer_wait`], Veilid's
+    /// `routed_timeout`: 5 s plus 10% of it per effective hop above four,
+    /// 6–7 s at our 3–4-hop safety routes);
     /// the node's port bounds the whole call by our own deadline
     /// ([`crate::broadcast::deadline`], finding 78), as every call here.
     pub async fn call(

@@ -46,9 +46,11 @@ use crate::routes::FakeAllocator;
 pub const RPC_TIMEOUT: Duration = Duration::from_millis(5_000);
 
 /// The reply deadline of an app call over `profile`'s safety route:
-/// Veilid's `get_safety_selection_timeout` (`rpc_processor/mod.rs:1688-1703`)
-/// is the RPC timeout plus 500 ms per hop past 4 of twice the safety hop
-/// count, with the hop count floor-clamped as our transport sends it.
+/// Veilid 0.5.8's `get_safety_selection_timeout`
+/// (`rpc_processor/mod.rs:1985-1994`) is `routed_timeout`
+/// (`:109-117`): the RPC timeout plus 10% of it (500 ms) per hop past 4 of
+/// twice the safety hop count, with the hop count floor-clamped as our
+/// transport sends it.
 #[must_use]
 pub fn call_timeout(profile: &SafetyProfile) -> Duration {
     let hops = u32::from(profile.hop_count.max(ANONYMITY_HOP_FLOOR));
@@ -88,7 +90,8 @@ impl FakeMessages {
     /// it or either route is broken end to end ([`crate::loopback`]: what
     /// is sent is lost); `RouteUnusable` when this node's cache does not
     /// resolve it (Veilid's `NoConnection`, [`crate::routes`]) or the first
-    /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`]);
+    /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`], a
+    /// `Send` error: our side, the peer's route kept);
     /// `Send` when this node is detached.
     fn route_owner(
         &self,
@@ -105,7 +108,9 @@ impl FakeMessages {
             )));
         }
         if self.net.first_hop_failed(self.node) {
-            return Err(PortError::RouteUnusable(
+            // Our side: the port keeps the peer's route (`rekindle-protocol`
+            // `ports.rs` `peer_route_unusable`, plan VU5).
+            return Err(PortError::Send(
                 "no connection: the safety route's first hop failed".into(),
             ));
         }
