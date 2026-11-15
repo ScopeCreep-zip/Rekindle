@@ -195,6 +195,18 @@ pub fn value_change(change: &VeilidValueChange) -> ValueChange {
     }
 }
 
+/// The open options for `intent`. Hold asks a re-open of a stored record to
+/// rehydrate, Check never does (plan VU decision 1); Veilid still skips a
+/// record created this session or rehydrated within 300 s
+/// (`open_record.rs:62-81`). Public for the contract tests
+/// (`contract/veilid/`): Veilid's mock API ignores the option, so the
+/// mapping is checked here, not through an open.
+pub fn open_options(intent: OpenIntent) -> OpenDHTRecordOptions {
+    OpenDHTRecordOptions {
+        rehydrate: Some(intent.rehydrates()),
+    }
+}
+
 /// The pool's DHT backend: one routing context, its safety selection pinned.
 pub struct VeilidDht {
     rc: RoutingContext,
@@ -250,14 +262,8 @@ impl DhtBackend for VeilidDht {
         intent: OpenIntent,
     ) -> Result<RecordDescriptor, DhtCallError> {
         let writer = writer.map(keypair).transpose()?;
-        // Hold asks a re-open of a stored record to rehydrate, Check never
-        // does (plan VU decision 1); Veilid still skips a record created
-        // this session or rehydrated within 300 s (`open_record.rs:62-81`).
-        let options = OpenDHTRecordOptions {
-            rehydrate: Some(intent.rehydrates()),
-        };
         self.rc
-            .open_dht_record(record_key(key)?, writer, Some(options))
+            .open_dht_record(record_key(key)?, writer, Some(open_options(intent)))
             .await
             .map(|d| descriptor(&d))
             .map_err(|e| dht_error(&e))
