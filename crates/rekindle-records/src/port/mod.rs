@@ -31,8 +31,10 @@ pub enum PortError {
     Routing(String),
     #[error("message send failed: {0}")]
     Send(String),
-    /// The target route has no connection or is invalid: forget it and
-    /// re-import the peer's current blob.
+    /// The **peer's** target route is unusable (not resolvable): forget it
+    /// and re-import the peer's current blob. A failure on our own side
+    /// (our safety route's first hop, our node's state) is `Send` and keeps
+    /// the peer's route (plan VU5).
     #[error("route unusable: {0}")]
     RouteUnusable(String),
     #[error("message of {len} bytes exceeds the {max}-byte message limit")]

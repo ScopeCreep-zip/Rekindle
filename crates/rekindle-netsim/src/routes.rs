@@ -66,6 +66,10 @@ use tokio::sync::watch;
 
 use crate::network::{Network, RouteEntry};
 
+/// The trace entry of a node forgetting a peer's route after a send to it
+/// failed `RouteUnusable` (`RoutePort::invalidate_after_send_failure`).
+pub const FORGETS_PEER_ROUTE: &str = "forgets a peer route";
+
 /// The blob prefix: a blob is this, then the route id.
 const BLOB_PREFIX: &str = "netsim-route:";
 
@@ -245,8 +249,14 @@ impl RoutePort for FakeRoutes {
     }
 
     fn invalidate_after_send_failure(&self, target: &PeerTarget) {
-        // Forgotten, not released (as production).
+        // Forgotten, not released (as production). Traced, so a scenario
+        // can tell a peer's route forgotten from one kept.
         self.imports.lock().remove(target.as_str());
+        self.net
+            .inner
+            .lock()
+            .trace
+            .push(self.node, FORGETS_PEER_ROUTE.to_string());
     }
 
     fn own_blob(&self, class: RouteClass) -> Option<Vec<u8>> {

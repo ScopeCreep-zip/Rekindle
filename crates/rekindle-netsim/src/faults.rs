@@ -75,8 +75,10 @@ pub enum Fault {
     /// not (their sends are lost until they fetch the new route).
     RouteDeath { node: usize },
     /// The first hop of the node's safety route fails on its next app
-    /// message or call: that send fails `NoConnection` (our port's
-    /// `RouteUnusable`). Veilid 0.5.8 counts it as a send failure, which
+    /// message or call: that send fails `NoConnection`, which our port
+    /// reports as a `Send` error (our side: the peer's route is kept,
+    /// `rekindle-protocol` `ports.rs` `peer_route_unusable`, plan VU5).
+    /// Veilid 0.5.8 counts it as a send failure, which
     /// only recompiles the route (`route_stats.rs:19-35`: not
     /// `means_route_dead`, but `needs_recompile`, `route_compile.rs:672`):
     /// the route lives, nobody hears `dead_routes`, and the next send goes

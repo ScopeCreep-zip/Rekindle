@@ -90,7 +90,8 @@ impl FakeMessages {
     /// it or either route is broken end to end ([`crate::loopback`]: what
     /// is sent is lost); `RouteUnusable` when this node's cache does not
     /// resolve it (Veilid's `NoConnection`, [`crate::routes`]) or the first
-    /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`]);
+    /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`], a
+    /// `Send` error: our side, the peer's route kept);
     /// `Send` when this node is detached.
     fn route_owner(
         &self,
@@ -107,7 +108,9 @@ impl FakeMessages {
             )));
         }
         if self.net.first_hop_failed(self.node) {
-            return Err(PortError::RouteUnusable(
+            // Our side: the port keeps the peer's route (`rekindle-protocol`
+            // `ports.rs` `peer_route_unusable`, plan VU5).
+            return Err(PortError::Send(
                 "no connection: the safety route's first hop failed".into(),
             ));
         }

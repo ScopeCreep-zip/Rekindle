@@ -13,9 +13,11 @@ use crate::crypto::envelope::{sign_payload, Addressing};
 use crate::error::{Result, TransportError};
 use crate::frame::{self, TypeId};
 
-/// A failed send as the transport reports it. An unusable route is
+/// A failed send as the transport reports it. An unusable peer route is
 /// forgotten first, so the next send imports the peer's current blob
-/// (plan C7.9e).
+/// (plan C7.9e). The port reports `RouteUnusable` only for the peer's side;
+/// a `NoConnection` from our own safety route arrives as `Send` and keeps
+/// the peer's route (plan VU5, `rekindle-protocol` `peer_route_unusable`).
 fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> TransportError {
     match e {
         PortError::RouteUnusable(reason) => {

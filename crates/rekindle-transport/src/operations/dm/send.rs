@@ -201,9 +201,10 @@ pub(super) async fn route_send_datagram(
                 return Ok(true);
             }
             Err(e) => {
-                // Only an unusable route goes (plan audit G10), so the
-                // next attempt fetches a fresh one; a send that failed for
-                // any other reason keeps it.
+                // Only the peer's unusable route goes (plan audit G10), so
+                // the next attempt fetches a fresh one; a send that failed
+                // for any other reason, our own safety route's included
+                // (plan VU5), keeps it.
                 if matches!(e, crate::error::TransportError::RouteUnusable { .. }) {
                     route::invalidate(&node, to);
                 }

@@ -147,7 +147,7 @@ async fn five_lost_questions_kill_only_a_pinned_route_inside_one_test() {
 }
 
 /// A send failing at the first hop of the sender's safety route fails
-/// `RouteUnusable`, and the route lives: Veilid 0.5.8 recompiles it
+/// `Send` (our side: the peer's route is kept), and our route lives: Veilid 0.5.8 recompiles it
 /// (`route_stats.rs:19-35`), reports nothing, and the next send goes out
 /// on it.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -167,7 +167,7 @@ async fn a_first_hop_failure_recompiles_and_kills_nothing() {
             .messages
             .send(&target, &profile, vec![1])
             .await,
-        Err(PortError::RouteUnusable(_))
+        Err(PortError::Send(_))
     ));
     nodes[0]
         .ports
