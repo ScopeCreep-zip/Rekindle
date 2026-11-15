@@ -400,6 +400,20 @@ impl Netsim {
             .map_or_else(Vec::new, |s| s.unread.keys().copied().collect())
     }
 
+    /// Node `node`'s fallback inspection interval for its watch on `key`
+    /// (`fallback_inspect_interval`, 0.5.8 `outbound_watch_state.rs:413-418`):
+    /// 30 s, doubling on each inspection that finds nothing up to 300 s;
+    /// `None` before the watch is established.
+    #[must_use]
+    pub fn fallback_interval(&self, node: usize, key: &str) -> Option<std::time::Duration> {
+        let inner = self.net.inner.lock();
+        inner.nodes[node]
+            .outbound
+            .states
+            .get(key)
+            .map(|s| std::time::Duration::from_micros(s.interval()))
+    }
+
     /// How many subkeys node `node`'s Veilid left out of a range-only
     /// report of `key` because the app had not read them from the network
     /// since they were last reported (0.5.8 report marks,

@@ -36,7 +36,7 @@ fn game_seen(events: &Events, peer: &str, name: &str) -> bool {
     })
 }
 
-async fn profile_key(node: &SimNode) -> String {
+pub(crate) async fn profile_key(node: &SimNode) -> String {
     let code: rekindle_types::dto::friends::FriendCodeView =
         serde_json::from_value(node.ok(IpcRequest::FriendCode).await).expect("the code");
     code.profile_key
