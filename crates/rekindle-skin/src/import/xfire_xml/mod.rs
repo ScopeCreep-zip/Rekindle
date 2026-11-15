@@ -40,7 +40,7 @@ use crate::registry::Base;
 use colours::{absolute, parse_rgba, target, Target};
 
 /// The `source.format` of an imported package.
-pub const FORMAT: &str = "xfire-xml";
+pub const XFIRE_XML_FORMAT: &str = "xfire-xml";
 /// Where the window frame is read.
 pub const FRAME_SOURCE: &str = "Components/ChatWindow.xml";
 const FRAME_IMAGE: &str = "assets/window-frame.png";
@@ -283,7 +283,7 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
                 .to_owned(),
         ),
         source: Some(SkinSource {
-            format: FORMAT.to_owned(),
+            format: XFIRE_XML_FORMAT.to_owned(),
             hash: source.to_owned(),
         }),
         author: None,

@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 
 use super::super::walk::Change;
 use super::colours::Target;
-use super::{Read, FORMAT};
+use super::{Read, XFIRE_XML_FORMAT};
 
 fn hex(c: [u8; 3]) -> String {
     format!("#{:02x}{:02x}{:02x}", c[0], c[1], c[2])
@@ -32,7 +32,7 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
     let mut s = String::new();
     let _ = writeln!(
         s,
-        "builtin:{id}: imported by `cargo xtask import-skin --format {FORMAT}`"
+        "builtin:{id}: imported by `cargo xtask import-skin --format {XFIRE_XML_FORMAT}`"
     );
     let _ = writeln!(
         s,

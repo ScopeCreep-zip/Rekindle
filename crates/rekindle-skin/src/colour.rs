@@ -33,7 +33,8 @@ pub fn over(top: [u8; 4], under: [u8; 3]) -> [u8; 3] {
     [m[0], m[1], m[2]]
 }
 
-fn linear(c: u8) -> f64 {
+/// The sRGB transfer function, one channel to linear light (WCAG 2.2).
+pub(crate) fn linear(c: u8) -> f64 {
     let c = f64::from(c) / 255.0;
     if c <= 0.04045 {
         c / 12.92

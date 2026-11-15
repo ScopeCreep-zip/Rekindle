@@ -43,15 +43,6 @@ pub struct Change {
 const MAX_CHANGES: usize = 64;
 const STEPS: u32 = 20;
 
-fn to_linear(c: u8) -> f64 {
-    let c = f64::from(c) / 255.0;
-    if c <= 0.04045 {
-        c / 12.92
-    } else {
-        ((c + 0.055) / 1.055).powf(2.4)
-    }
-}
-
 fn to_gamma(c: f64) -> u8 {
     let c = c.clamp(0.0, 1.0);
     let v = if c <= 0.003_130_8 {
@@ -92,7 +83,7 @@ fn mat(m: &Matrix, v: [f64; 3]) -> [f64; 3] {
 /// Gamma-encoded sRGB to Oklab `[L, a, b]`.
 #[must_use]
 pub fn oklab(rgb: [u8; 3]) -> [f64; 3] {
-    let lin = rgb.map(to_linear);
+    let lin = rgb.map(crate::colour::linear);
     let lms = mat(&TO_LMS, lin).map(f64::cbrt);
     mat(&TO_OKLAB, lms)
 }
