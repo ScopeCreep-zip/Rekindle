@@ -107,8 +107,9 @@ impl AppCaller {
     /// Send a signed RPC request and await the response.
     ///
     /// Veilid bounds only the wait for the answer
-    /// (`rpc_processor::get_safety_selection_timeout`: 5 s plus 500 ms
-    /// per effective hop above four, 6–7 s at our 3–4-hop safety routes);
+    /// ([`crate::broadcast::deadline::answer_wait`], Veilid's
+    /// `routed_timeout`: 5 s plus 10% of it per effective hop above four,
+    /// 6–7 s at our 3–4-hop safety routes);
     /// the node's port bounds the whole call by our own deadline
     /// ([`crate::broadcast::deadline`], finding 78), as every call here.
     pub async fn call(

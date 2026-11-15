@@ -2,13 +2,13 @@
 //!
 //! Veilid times out only the wait for an answer: `rpc_call_app_call` awaits
 //! `wait_for_reply`, which waits `get_safety_selection_timeout`
-//! (`rpc_processor/mod.rs:1688-1704`, `:580-640`). Everything before it is
+//! (veilid-core 0.5.8 `rpc_processor/mod.rs:1985-1994`, `:637-700`). Everything before it is
 //! unbounded: the destination and its reply route are resolved
 //! (`get_destination`, `get_destination_respond_to`), the question is
 //! rendered and its safety route compiled (`render_signed_operation`), and
 //! the envelope goes to the first hop (`send_envelope`), each an `.await`
-//! with no deadline of its own (`rpc_processor/mod.rs:1718-1830`,
-//! `rpc_app_call.rs:21-36`). A call stuck in one of them never resolves:
+//! with no deadline of its own (`rpc_processor/mod.rs:2008-2105`,
+//! `rpc_app_call.rs:20-36`). A call stuck in one of them never resolves:
 //! live, a receipted `FriendRequest` to a dead route logged
 //! "1:1 app_call sent" and then neither an answer nor a Timeout for 14+
 //! minutes, and its handshake row and the stream behind it waited with it.
@@ -23,13 +23,13 @@
 //!
 //! Dropping the Veilid future at the bound does not cancel the question:
 //! Veilid spawns the answer wait into its reply pool so that a dropped caller
-//! leaves it to finish (`rpc_processor/mod.rs:606-614`). Veilid logs the
+//! leaves it to finish (`rpc_processor/mod.rs:662-677`). Veilid logs the
 //! dropped call's `DurationRecorder` (`logging/duration_recorder.rs:84-90`);
 //! that line appears only for a call Veilid itself left unresolved.
 //!
 //! An `app_message` goes through the same unbounded stages (destination,
 //! render and safety-route compile, `send_envelope` to the first hop:
-//! `rpc_processor/mod.rs:1882-1926`) and has no answer wait at all, so a
+//! `rpc_processor/mod.rs:2196`) and has no answer wait at all, so a
 //! send is bounded at [`app_message_deadline`]. A send that hits it is a
 //! send error, `PortError::Send`, as Veilid's own send errors are, and its
 //! callers handle it as they handle those.
@@ -49,16 +49,29 @@ use rekindle_types::config::{SafetyProfile, ANONYMITY_HOP_FLOOR};
 use rekindle_types::message::CALL_TIMEOUT_MS;
 use tracing::{debug, warn};
 
+/// Percent of `rpc.timeout_ms` Veilid allows per route hop past those the
+/// base timeout covers (`ROUTE_HOP_ALLOWANCE_PERCENT`, veilid-core 0.5.8
+/// `rpc_processor/mod.rs:102`).
+const ROUTE_HOP_ALLOWANCE_PERCENT: u64 = 10;
+
+/// Route hops the base RPC timeout already covers
+/// (`ROUTE_HOPS_IN_BASE_TIMEOUT`, `rpc_processor/mod.rs:104`).
+const ROUTE_HOPS_IN_BASE_TIMEOUT: u64 = 4;
+
 /// Veilid's wait for one answer at `profile`'s hop count, floor-clamped as
-/// the port clamps it: `rpc.timeout_ms` (`CALL_TIMEOUT_MS`) plus 500 ms for
-/// each effective hop (twice the safety route's) above four
-/// (`get_safety_selection_timeout`, `rpc_processor/mod.rs:1688-1704`); 6 s at
-/// our 3-hop floor, 7 s at Veilid's 4-hop maximum (`max_route_hop_count`,
-/// `veilid_config.rs:853`).
+/// the port clamps it: `routed_timeout(timeout, 2 * hops)`
+/// (`get_safety_selection_timeout`, veilid-core 0.5.8
+/// `rpc_processor/mod.rs:1985-1994`), which is `rpc.timeout_ms`
+/// (`CALL_TIMEOUT_MS`) plus 10% of it for each effective hop (twice the
+/// safety route's) above four (`routed_timeout`, `:109-117`). At our 5 s
+/// timeout that is 500 ms a hop: 6 s at our 3-hop floor, 7 s at Veilid's
+/// 4-hop maximum (`max_route_hop_count`, `veilid_config.rs:945`).
 #[must_use]
 pub fn answer_wait(profile: &SafetyProfile) -> Duration {
     let hops = u64::from(profile.hop_count.max(ANONYMITY_HOP_FLOOR));
-    Duration::from_millis(CALL_TIMEOUT_MS + 500 * (2 * hops).saturating_sub(4))
+    let excess = (2 * hops).saturating_sub(ROUTE_HOPS_IN_BASE_TIMEOUT);
+    let allowance = CALL_TIMEOUT_MS * ROUTE_HOP_ALLOWANCE_PERCENT / 100;
+    Duration::from_millis(CALL_TIMEOUT_MS + allowance * excess)
 }
 
 /// Our bound on one outbound `app_call` at `profile`: Veilid's answer wait
@@ -216,6 +229,22 @@ mod tests {
         SafetyProfile {
             hop_count,
             ..rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile()
+        }
+    }
+
+    /// `answer_wait` equals Veilid 0.5.8's `routed_timeout(timeout_ms,
+    /// 2 * hops)` (`rpc_processor/mod.rs:109-117`, 10% of the timeout per
+    /// hop past 4) at every hop count Veilid allows, and at our 5 s timeout
+    /// that is the 500 ms per hop 0.5.7 added as a constant.
+    #[test]
+    fn the_answer_wait_is_veilids_routed_timeout() {
+        assert_eq!(CALL_TIMEOUT_MS, 5_000, "Veilid's rpc.timeout_ms");
+        for hops in 1..=4u8 {
+            let effective = (2 * u64::from(hops.max(ANONYMITY_HOP_FLOOR))).saturating_sub(4);
+            let routed = CALL_TIMEOUT_MS + CALL_TIMEOUT_MS * 10 / 100 * effective;
+            assert_eq!(answer_wait(&at(hops)), Duration::from_millis(routed));
+            let legacy = CALL_TIMEOUT_MS + 500 * effective;
+            assert_eq!(answer_wait(&at(hops)), Duration::from_millis(legacy));
         }
     }
 

@@ -46,9 +46,11 @@ use crate::routes::FakeAllocator;
 pub const RPC_TIMEOUT: Duration = Duration::from_millis(5_000);
 
 /// The reply deadline of an app call over `profile`'s safety route:
-/// Veilid's `get_safety_selection_timeout` (`rpc_processor/mod.rs:1688-1703`)
-/// is the RPC timeout plus 500 ms per hop past 4 of twice the safety hop
-/// count, with the hop count floor-clamped as our transport sends it.
+/// Veilid 0.5.8's `get_safety_selection_timeout`
+/// (`rpc_processor/mod.rs:1985-1994`) is `routed_timeout`
+/// (`:109-117`): the RPC timeout plus 10% of it (500 ms) per hop past 4 of
+/// twice the safety hop count, with the hop count floor-clamped as our
+/// transport sends it.
 #[must_use]
 pub fn call_timeout(profile: &SafetyProfile) -> Duration {
     let hops = u32::from(profile.hop_count.max(ANONYMITY_HOP_FLOOR));
