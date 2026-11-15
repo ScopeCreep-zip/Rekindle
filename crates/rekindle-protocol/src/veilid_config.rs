@@ -96,6 +96,15 @@ pub fn build_veilid_config(
     // node should serve until #492 lands.
     vc.capabilities.disable = vec![veilid_core::VEILID_CAPABILITY_DHT];
 
+    // While attached, keep a hidden app from being throttled (plan VU
+    // decision 5): Veilid holds a foreground guard while the node is not
+    // Detached (`attachment_manager/mod.rs:603-620`; on macOS
+    // `beginActivityWithOptions(UserInitiatedAllowingIdleSystemSleep)`,
+    // veilid-tools `app_lifecycle/macos.rs:65-66`). Without it a hidden tray
+    // app is App-Napped, its ticks stall and Veilid re-sends its attachment
+    // after every stall (synthesis #6, #13). Pinned, not left to a default.
+    vc.attachment.app_lifecycle.prefer_foreground = true;
+
     vc
 }
 
@@ -137,6 +146,14 @@ mod tests {
         let opts = VeilidStartupOptions::default();
         let vc = build_veilid_config("rekindle", "rekindle", "/tmp/x", &opts);
         assert!(!vc.network.upnp, "UPnP stays off by default");
+        assert!(
+            vc.attachment.app_lifecycle.prefer_foreground,
+            "a hidden app keeps its foreground guard while attached"
+        );
+        assert!(
+            !vc.network.routing_table.serve_direct_bootstrap,
+            "an app node does not serve its peer set"
+        );
         assert!(vc.protected_store.always_use_insecure_storage);
         assert!(!vc.protected_store.allow_insecure_fallback);
         assert_eq!(vc.network.rpc.default_route_hop_count, 1);

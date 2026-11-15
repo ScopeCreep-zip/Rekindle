@@ -2349,9 +2349,9 @@ dependencies = [
 
 [[package]]
 name = "dispatch2"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89a09f22a6c6069a18470eb92d2298acf25463f14256d24778e1230d789a2aec"
+checksum = "1e0e367e4e7da84520dedcac1901e4da967309406d1e51017ae1abfb97adbd38"
 dependencies = [
  "bitflags 2.13.0",
  "block2",
@@ -10421,14 +10421,17 @@ dependencies = [
  "android_logger",
  "async-lock",
  "async_executors",
+ "block2",
  "bytes",
  "cfg-if",
  "ctrlc",
+ "dispatch2",
  "event-listener",
  "flume",
  "fn_name",
  "futures-util",
  "getrandom 0.2.17",
+ "gloo-events",
  "hex",
  "httparse",
  "indent",
@@ -10438,6 +10441,10 @@ dependencies = [
  "log",
  "netlink-packet-route",
  "netlink-sys",
+ "objc2",
+ "objc2-app-kit",
+ "objc2-foundation",
+ "objc2-ui-kit",
  "parking_lot 0.12.5",
  "pin-project-lite",
  "rand 0.8.5",
@@ -10456,6 +10463,8 @@ dependencies = [
  "tracing-subscriber",
  "veilid-hashlink",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
  "winapi",
  "windows 0.62.2",
 ]
