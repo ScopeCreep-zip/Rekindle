@@ -6,5 +6,6 @@ mod common;
 mod images;
 mod manifest;
 mod package;
+mod regions;
 mod sounds;
 mod tokens;

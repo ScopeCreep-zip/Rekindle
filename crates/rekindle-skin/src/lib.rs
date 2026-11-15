@@ -18,6 +18,9 @@
 //!   WAV (validator step 5).
 //! * [`access::validate`]: accessibility and anti-spoofing on a resolved
 //!   variant, measured on composited colours (validator step 6).
+//! * [`regions::validate`]: text over every region image (WCAG F83) on a
+//!   resolved variant, and [`flash`], the WCAG 2.3.1 flash test step 4 runs
+//!   on every animation.
 //! * [`registry`]: the closed token registry, and [`generate`], the
 //!   artefacts `cargo xtask gen-skin-registry` writes from it.
 //!
@@ -29,10 +32,12 @@
 
 pub mod access;
 mod colour;
+pub mod flash;
 pub mod generate;
 pub mod images;
 pub mod manifest;
 pub mod package;
+pub mod regions;
 pub mod registry;
 pub mod sounds;
 pub mod tokens;

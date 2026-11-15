@@ -13,7 +13,8 @@
 //! with `max_alloc`, which reaches the `png` crate as `png::Limits`, and the
 //! GIF frame counter, each frame past the first counted against the total)
 //! and re-encoded: a PNG to an RGBA8 PNG, a GIF to a looping GIF of its
-//! composited frames. No chunk, extension, comment, EXIF or ICC profile of
+//! composited frames, after the flash test ([`crate::flash`], WCAG 2.3.1:
+//! at most three flashes a second). No chunk, extension, comment, EXIF or ICC profile of
 //! the source survives (Chromium's `ImageSanitizer`).
 //!
 //! The manifest's region images, state images and masks must name files
@@ -28,6 +29,7 @@ use rekindle_image::{
 };
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule};
 
+use crate::flash::{self, MAX_FLASHES_PER_SECOND};
 use crate::limits::{
     MAX_IMAGE_ALLOC, MAX_IMAGE_FRAMES, MAX_IMAGE_PIXELS, MAX_IMAGE_SIDE, MAX_TOTAL_IMAGE_PIXELS,
 };
@@ -196,6 +198,13 @@ fn canonical_gif(bytes: &[u8], pixels: u64, budget: &mut Budget) -> Result<Vec<u
     };
     let extra = u64::try_from(frames.len() - 1).unwrap_or(u64::MAX);
     budget.total = budget.total.saturating_add(extra.saturating_mul(pixels));
+    let flashes = flash::max_flashes(&frames);
+    if flashes > MAX_FLASHES_PER_SECOND {
+        return Err(SkinRule::Flashing {
+            flashes,
+            max: MAX_FLASHES_PER_SECOND,
+        });
+    }
     encode_gif(frames).map_err(rule_of)
 }
 

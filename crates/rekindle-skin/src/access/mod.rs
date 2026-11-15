@@ -123,7 +123,7 @@ fn describe(v: &Variant<'_>, ground: &Ground) -> String {
 }
 
 /// `x` scaled and floored, so a measured value never prints at its floor.
-fn scaled(x: f64, by: f64) -> u32 {
+pub(crate) fn scaled(x: f64, by: f64) -> u32 {
     let v = (x * by).floor();
     if v <= 0.0 {
         0

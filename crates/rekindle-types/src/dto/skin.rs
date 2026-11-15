@@ -305,6 +305,8 @@ pub enum SkinRule {
     ImageDecode { detail: String },
     #[error("image encode: {detail}")]
     ImageEncode { detail: String },
+    #[error("{flashes} flashes in one second; at most {max} (WCAG 2.3.1)")]
+    Flashing { flashes: u32, max: u32 },
     #[error("{count} sound cues, the limit is {max}")]
     TooManySoundCues { count: u64, max: u64 },
     #[error("longer than {max_seconds} s")]
@@ -334,6 +336,33 @@ pub enum SkinRule {
         rule: String,
         token: String,
         ground: String,
+        measured_x100: u32,
+        required_x100: u32,
+    },
+    #[error("{region}: not a region slot of the registry")]
+    UnknownRegion { region: String },
+    #[error("{region} carries text and needs a textBacking colour token")]
+    MissingTextBacking { region: String },
+    #[error("{region}: nine-slice insets {top}/{right}/{bottom}/{left} leave no middle in a {width} × {height} image")]
+    NineSliceInsets {
+        region: String,
+        top: u16,
+        right: u16,
+        bottom: u16,
+        left: u16,
+        width: u32,
+        height: u32,
+    },
+    #[error(
+        "F83: {token} on {region} ({backing} over the image) in the {window} window at {width} × {height} px is {measured_x100}/100:1 at the worst pixel, at least {required_x100}/100:1 is required"
+    )]
+    TextOverBitmap {
+        region: String,
+        token: String,
+        backing: String,
+        window: String,
+        width: u32,
+        height: u32,
         measured_x100: u32,
         required_x100: u32,
     },
