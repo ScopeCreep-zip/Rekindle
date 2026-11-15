@@ -10,6 +10,7 @@
 //! - `events/` — typed event enums per domain (channel, typing, presence, etc.)
 //! - `state` — mutable state: unread, typing, presence, voice
 //! - `watches` — DHT watch lifecycle: create, renew, route ValueChange
+//! - `value_changes` — the value changes' own worker, off the dispatch loop
 //! - `gossip_handler` — inbound gossip processing (all 52 ControlPayload variants)
 
 pub mod cold_start;
@@ -28,6 +29,7 @@ mod manager_network;
 mod manager_setup;
 pub mod poll;
 mod read_state;
+mod value_changes;
 pub mod watches;
 
 pub use cold_start::ColdStartBuffer;

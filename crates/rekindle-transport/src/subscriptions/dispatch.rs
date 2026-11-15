@@ -32,6 +32,7 @@ use crate::gossip::DedupCache;
 use crate::handler::InboundHandler;
 use crate::operations::direct::{CALL_DEADLINE, NAK};
 use crate::shared::{AttachmentState, SharedState};
+use crate::subscriptions::value_changes::ValueChanges;
 
 /// The route owners the dispatch loop reports `RouteChange` to.
 pub(crate) struct RouteOwners {
@@ -52,29 +53,59 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     routes: RouteOwners,
 ) {
     let mut dedup = DedupCache::new(config.dedup_cache_capacity);
+    let (value_changes, worker) = ValueChanges::new(Arc::clone(&handler));
     info!("transport dispatch loop started");
 
-    loop {
-        tokio::select! {
-            Some(event) = events.recv() => {
-                dispatch_event(&handler, &mut dedup, messages.as_ref(), &shared, &routes, event).await;
-            }
-            _ = shutdown_rx.recv() => {
-                info!("transport dispatch loop shutting down");
-                break;
+    let dispatch = async {
+        loop {
+            tokio::select! {
+                Some(event) = events.recv() => {
+                    let ctx = DispatchCtx {
+                        messages: messages.as_ref(),
+                        shared: &shared,
+                        routes: &routes,
+                        value_changes: &value_changes,
+                    };
+                    dispatch_event(&handler, &mut dedup, &ctx, event).await;
+                }
+                _ = shutdown_rx.recv() => {
+                    info!("transport dispatch loop shutting down");
+                    break;
+                }
             }
         }
+    };
+    // The value changes' worker runs beside the loop in this task and ends
+    // with it: at shutdown a change still reading the network is dropped
+    // with the node.
+    tokio::select! {
+        () = dispatch => {}
+        () = worker => {}
     }
+}
+
+/// What the loop lends each event's dispatch.
+struct DispatchCtx<'a> {
+    messages: &'a dyn AppMessagePort,
+    shared: &'a SharedState,
+    routes: &'a RouteOwners,
+    /// The value changes' own worker: their handlers read the DHT, so
+    /// they never run in this loop.
+    value_changes: &'a ValueChanges,
 }
 
 async fn dispatch_event<H: InboundHandler>(
     handler: &Arc<H>,
     dedup: &mut DedupCache,
-    messages: &dyn AppMessagePort,
-    shared: &SharedState,
-    routes: &RouteOwners,
+    ctx: &DispatchCtx<'_>,
     event: PortEvent,
 ) {
+    let DispatchCtx {
+        messages,
+        shared,
+        routes,
+        value_changes,
+    } = *ctx;
     match event {
         PortEvent::AppMessage { message } => {
             dispatch_app_message(handler, dedup, &message).await;
@@ -83,7 +114,7 @@ async fn dispatch_event<H: InboundHandler>(
             dispatch_app_call(handler, messages, call_id, &message).await;
         }
         PortEvent::ValueChange(change) => {
-            dispatch_value_change(handler, shared, change).await;
+            dispatch_value_change(shared, value_changes, change);
         }
         PortEvent::Attachment {
             state,
@@ -381,9 +412,9 @@ async fn dispatch_bare_attachment_request<H: InboundHandler>(
     }
 }
 
-async fn dispatch_value_change<H: InboundHandler>(
-    handler: &Arc<H>,
+fn dispatch_value_change(
     shared: &SharedState,
+    value_changes: &ValueChanges,
     change: rekindle_records::port::ValueChange,
 ) {
     // The pool is the one owner of watch death (plan C7.8): it re-arms the
@@ -394,11 +425,10 @@ async fn dispatch_value_change<H: InboundHandler>(
     }
 
     // A watch's last notification (`count == 0`) can still carry changes.
+    // The handler reads the network, so it runs on the value changes' own
+    // worker, never ahead of an app message in this loop.
     if !change.subkeys.is_empty() {
-        let first_value = change.value.map(|v| v.data);
-        handler
-            .on_value_change(&change.key, change.subkeys, first_value)
-            .await;
+        value_changes.queue(change);
     }
 }
 
