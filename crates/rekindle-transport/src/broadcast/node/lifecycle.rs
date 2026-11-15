@@ -184,7 +184,7 @@ impl TransportNode {
     /// and stop it. An adopted node's network is stopped by its owner.
     ///
     /// # Errors
-    /// The network refused to detach.
+    /// The network refused to detach; it was stopped all the same.
     pub async fn shutdown(mut self) -> Result<()> {
         info!("transport node shutting down");
 
@@ -206,17 +206,23 @@ impl TransportNode {
         // forgotten (plan C7.9a).
         self.ports.routes.shutdown_own().await;
 
+        // The network is stopped even when the detach fails: a skipped
+        // `shutdown()` leaves the table store and Veilid 0.5.8's namespace
+        // lock held (`table_store/native.rs:113-145`), so no later start in
+        // this process could open it (synthesis #12). `shutdown()` is
+        // idempotent (`veilid_api/api.rs:84-104`).
+        let mut detached = Ok(());
         if let Some(lifecycle) = self.ports.lifecycle.take() {
-            lifecycle
-                .detach()
-                .await
-                .map_err(|e| TransportError::ShutdownFailed {
-                    reason: e.to_string(),
-                })?;
+            detached = lifecycle.detach().await;
+            if let Err(e) = &detached {
+                warn!(error = %e, "detach failed; stopping the network anyway");
+            }
             lifecycle.shutdown().await;
         }
 
         info!("transport node shutdown complete");
-        Ok(())
+        detached.map_err(|e| TransportError::ShutdownFailed {
+            reason: e.to_string(),
+        })
     }
 }

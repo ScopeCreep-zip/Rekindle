@@ -299,16 +299,29 @@ impl VeilidLifecycle {
 #[async_trait::async_trait]
 impl NodeLifecycle for VeilidLifecycle {
     async fn detach(&self) -> Result<(), PortError> {
-        self.api
-            .detach()
-            .await
-            .map_err(|e| PortError::Node(format!("detach: {e}")))
+        detach_result(self.api.detach().await)
     }
 
     async fn shutdown(&self) {
         self.api.clone().shutdown().await;
     }
 }
+
+/// A detach's answer as the port reports it. Veilid 0.5.8 refuses a detach
+/// of a node already `Detached` with a generic "Not attached"
+/// (`attachment_manager/mod.rs:527-528`); the node is where the caller
+/// wants it, so that is success.
+fn detach_result(answer: veilid_core::VeilidAPIResult<()>) -> Result<(), PortError> {
+    match answer {
+        Ok(()) => Ok(()),
+        Err(VeilidAPIError::Generic { message }) if message == NOT_ATTACHED => Ok(()),
+        Err(e) => Err(PortError::Node(format!("detach: {e}"))),
+    }
+}
+
+/// Veilid's refusal of a detach of a detached node
+/// (`attachment_manager/mod.rs:528`).
+const NOT_ATTACHED: &str = "Not attached";
 
 /// A Veilid update as the transport dispatches it, or `None` for one it
 /// does not act on.
@@ -446,5 +459,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A detach of a node already detached is success; any other refusal is
+    /// the port's error (plan VU4, synthesis #12).
+    #[test]
+    fn not_attached_is_a_successful_detach() {
+        use veilid_core::VeilidAPIError;
+        assert!(super::detach_result(Ok(())).is_ok());
+        assert!(super::detach_result(Err(VeilidAPIError::generic("Not attached"))).is_ok());
+        assert!(super::detach_result(Err(VeilidAPIError::not_initialized())).is_err());
+        assert!(super::detach_result(Err(VeilidAPIError::generic("other"))).is_err());
     }
 }
