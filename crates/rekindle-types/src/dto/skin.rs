@@ -259,4 +259,26 @@ pub enum SkinRule {
     DuplicateVariant { base: String, contrast: String },
     #[error("{field} names an entry the package lacks")]
     MissingEntry { field: String },
+    #[error("token file JSON: {detail}")]
+    TokenSyntax { detail: String },
+    #[error("{count} tokens, the limit is {max}")]
+    TooManyTokens { count: u64, max: u64 },
+    #[error("{token}: not a name of the closed token registry")]
+    UnknownToken { token: String },
+    #[error("{token}: a fixed token no skin sets")]
+    FixedToken { token: String },
+    #[error("{token}: `{key}` is not a key of the token profile")]
+    TokenKey { token: String, key: String },
+    #[error("{token}: the registry types it {expected}, the file {found}")]
+    TokenTypeMismatch {
+        token: String,
+        expected: String,
+        found: String,
+    },
+    #[error("{token}: expected {expected}")]
+    BadTokenValue { token: String, expected: String },
+    #[error("{token}: the alias chain returns to itself")]
+    AliasCycle { token: String },
+    #[error("{token}: the alias names {target}, which the file does not define")]
+    UnresolvedAlias { token: String, target: String },
 }

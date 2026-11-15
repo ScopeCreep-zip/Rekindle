@@ -9,6 +9,11 @@
 //!
 //! * [`package::read`]: the outer size and the strict in-memory zip walk.
 //! * [`manifest::parse`]: `manifest.json` and its text rules.
+//! * [`tokens::parse`]: a variant's token file (restricted DTCG 2025.10),
+//!   checked against [`registry`], and [`tokens::emit`], the numeric
+//!   re-emitter.
+//! * [`registry`]: the closed token registry, and [`generate`], the
+//!   artefacts `cargo xtask gen-skin-registry` writes from it.
 //!
 //! Tier 3: no Veilid, no Tauri, no `unsafe`, no file or network I/O.
 //!
@@ -16,8 +21,12 @@
 
 #![forbid(unsafe_code)]
 
+mod colour;
+pub mod generate;
 pub mod manifest;
 pub mod package;
+pub mod registry;
+pub mod tokens;
 
 /// The package bounds of the §6 limits ledger.
 pub mod limits {
