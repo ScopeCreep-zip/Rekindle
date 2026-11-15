@@ -16,6 +16,8 @@ use rekindle_types::subscription_events::{
 use crate::harness::{eventually, start, Events, SimNode};
 use crate::pair::{befriend, friends, key, LIMIT};
 
+use rekindle_types::dht_layout::profile::STATUS;
+
 fn status_seen(events: &Events, peer: &str, status: &str) -> bool {
     events.any(|event| {
         matches!(event, SubscriptionEvent::Presence(PresenceEvent::FriendChanged {
@@ -45,7 +47,10 @@ async fn profile_key(node: &SimNode) -> String {
 /// and unread. Kim then writes her game (4) and status (2) together; a
 /// replica that coalesces them pushes {2, 4} with no value, and 0.5.8
 /// reports only 4 until Lev reads 2 from the network. Lev must still show
-/// the new status at that hint, not a fallback inspection later.
+/// the new status at that hint, not a fallback inspection later. The proof
+/// that the race ran: a coalesced push of Kim's profile reached Lev, and
+/// before it Lev had read the reported status from the network, so no
+/// report mark could hold it back (`ValueChange`'s contract, plan VU3).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_coalesced_hint_still_shows_a_subkey_reported_before() {
     let (sim, mut nodes) = start(2, 131).await;
@@ -54,6 +59,7 @@ async fn a_coalesced_hint_still_shows_a_subkey_reported_before() {
     }
     befriend(&sim, &nodes[0], &nodes[1]).await;
     let kim = key(&nodes[0]);
+    let profile = profile_key(&nodes[0]).await;
     let events = nodes[1].events().await;
     nodes[0]
         .ok(IpcRequest::PresenceSet {
@@ -64,6 +70,16 @@ async fn a_coalesced_hint_still_shows_a_subkey_reported_before() {
         eventually(&sim, LIMIT, || async { status_seen(&events, &kim, "away") }).await,
         "Lev sees Kim away by the watch"
     );
+    // Lev read the reported status from the network, so no mark holds it
+    // back from the next coalesced report (`ValueChange`'s contract).
+    assert!(
+        eventually(&sim, Duration::from_secs(5), || async {
+            !sim.unread_marks(1, &profile).contains(&STATUS)
+        })
+        .await,
+        "Lev's Veilid still holds Kim's status as reported and unread: {:?}",
+        sim.unread_marks(1, &profile)
+    );
     let game = IpcRequest::GamePresenceSet {
         game_name: "CS2".into(),
         game_id: Some(7),
@@ -73,6 +89,7 @@ async fn a_coalesced_hint_still_shows_a_subkey_reported_before() {
     let busy = IpcRequest::PresenceSet {
         status: SessionStatus::Busy,
     };
+    let coalesced = sim.coalesced_pushes(1, &profile);
     tokio::join!(nodes[0].ok(game), nodes[0].ok(busy));
     assert!(
         eventually(&sim, LIMIT, || async { game_seen(&events, &kim, "CS2") }).await,
@@ -86,6 +103,10 @@ async fn a_coalesced_hint_still_shows_a_subkey_reported_before() {
         })
         .await,
         "Lev shows Kim busy at the hint that showed her game"
+    );
+    assert!(
+        sim.coalesced_pushes(1, &profile) > coalesced,
+        "a replica coalesced Kim's two writes into one push to Lev"
     );
 }
 

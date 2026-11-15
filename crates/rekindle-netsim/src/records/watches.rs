@@ -318,6 +318,11 @@ pub(super) fn receive(
     let first = *subkeys.first()?;
     if subkeys.len() > 1 {
         value = None;
+        *inner.nodes[node]
+            .outbound
+            .coalesced
+            .entry(key.to_string())
+            .or_default() += 1;
     }
     let mut reportable: BTreeSet<u32> = subkeys.intersection(&watched).copied().collect();
     if reportable.first() != Some(&first) {

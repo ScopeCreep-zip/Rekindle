@@ -75,6 +75,11 @@ async fn a_range_hint_on_an_unread_subkey_waits_for_a_network_read() {
         (heard[0].subkeys.clone(), heard[0].value.clone()),
         (vec![2], None)
     );
+    // The scenario-facing tallies saw both: a coalesced push, and 3 left
+    // out of its report (every holding replica pushed, so at least one).
+    assert!(sim.coalesced_pushes(1, &key) >= 1);
+    assert!(sim.suppressed_hints(1, &key) >= 1);
+    assert_eq!(sim.unread_marks(1, &key), vec![2, 3]);
     // A local read leaves the mark: nothing owed, a later range still drops 3.
     b.get(&key, 3, false).await.unwrap();
     assert!(tick(&sim, &mut nodes, 1).await.is_empty());

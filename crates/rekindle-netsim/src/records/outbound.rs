@@ -83,6 +83,14 @@ pub(crate) struct OutboundWatches {
     pub rehints: BTreeMap<String, BTreeSet<u32>>,
     /// Whether the node's DHT was online at the last watch tick.
     pub was_online: bool,
+    /// Per record, the range-only pushes naming more than one subkey that
+    /// reached a watch (a replica coalesced them), for a scenario's proof;
+    /// kept after the watch ends.
+    pub coalesced: BTreeMap<String, u64>,
+    /// Per record, the subkeys a range-only report left out because their
+    /// mark was still unread (copies counted, `:251-266`); kept after the
+    /// watch ends.
+    pub suppressed: BTreeMap<String, u64>,
     /// The last node clock reading (µs), so it never runs backwards.
     clock: u64,
 }
@@ -97,6 +105,8 @@ impl Default for OutboundWatches {
             unestablished: HashMap::new(),
             rehints: BTreeMap::new(),
             was_online: true,
+            coalesced: BTreeMap::new(),
+            suppressed: BTreeMap::new(),
             clock: 0,
         }
     }
@@ -290,10 +300,16 @@ pub(crate) fn hinted(
     key: &str,
     subkeys: &BTreeSet<u32>,
 ) -> BTreeSet<u32> {
-    match inner.nodes[node].outbound.states.get_mut(key) {
+    let out = &mut inner.nodes[node].outbound;
+    let news = match out.states.get_mut(key) {
         Some(s) => s.mark_hinted(subkeys),
         None => subkeys.clone(),
+    };
+    let left_out = (subkeys.len() - news.len()) as u64;
+    if left_out > 0 {
+        *out.suppressed.entry(key.to_string()).or_default() += left_out;
     }
+    news
 }
 
 /// `node` read `key`/`subkey` from the network: its mark is consumed, and

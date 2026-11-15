@@ -372,6 +372,48 @@ impl Netsim {
             .unwrap_or(0)
     }
 
+    /// How many range-only pushes naming more than one subkey (a replica
+    /// coalesced the changes) reached node `node`'s watch on `key`.
+    #[must_use]
+    pub fn coalesced_pushes(&self, node: usize, key: &str) -> u64 {
+        let inner = self.net.inner.lock();
+        inner.nodes[node]
+            .outbound
+            .coalesced
+            .get(key)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// The subkeys of `key` node `node`'s Veilid reported to its app and
+    /// the app has not read from the network since (0.5.8 report marks,
+    /// `outbound_watch_state.rs:51-55`): a later range-only report leaves
+    /// them out.
+    #[must_use]
+    pub fn unread_marks(&self, node: usize, key: &str) -> Vec<u32> {
+        let inner = self.net.inner.lock();
+        inner.nodes[node]
+            .outbound
+            .states
+            .get(key)
+            .map_or_else(Vec::new, |s| s.unread.keys().copied().collect())
+    }
+
+    /// How many subkeys node `node`'s Veilid left out of a range-only
+    /// report of `key` because the app had not read them from the network
+    /// since they were last reported (0.5.8 report marks,
+    /// `outbound_watch_state.rs:251-266`).
+    #[must_use]
+    pub fn suppressed_hints(&self, node: usize, key: &str) -> u64 {
+        let inner = self.net.inner.lock();
+        inner.nodes[node]
+            .outbound
+            .suppressed
+            .get(key)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Each replica's value at `key`/`subkey`, in placement order.
     #[must_use]
     pub fn replica_values(&self, key: &str, subkey: u32) -> Vec<Option<RecordValue>> {
