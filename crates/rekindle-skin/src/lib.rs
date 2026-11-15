@@ -21,6 +21,8 @@
 //! * [`regions::validate`]: text over every region image (WCAG F83) on a
 //!   resolved variant, and [`flash`], the WCAG 2.3.1 flash test step 4 runs
 //!   on every animation.
+//! * [`output`]: step 7, the BLAKE3-addressed canonical package and a
+//!   variant's `tokens.css` body.
 //! * [`registry`]: the closed token registry, and [`generate`], the
 //!   artefacts `cargo xtask gen-skin-registry` writes from it.
 //!
@@ -36,6 +38,7 @@ pub mod flash;
 pub mod generate;
 pub mod images;
 pub mod manifest;
+pub mod output;
 pub mod package;
 pub mod regions;
 pub mod registry;

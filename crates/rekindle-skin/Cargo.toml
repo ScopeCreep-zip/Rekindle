@@ -11,6 +11,8 @@ autotests = false
 workspace = true
 
 [dependencies]
+# The canonical package's content address (step 7).
+blake3 = "1"
 crc32fast = "1.5"
 # PCM16 WAV writer for the re-encoded sound cues (Apache-2.0).
 hound = "3.5"
@@ -26,3 +28,6 @@ unicode-normalization = "0.1.25"
 [[test]]
 name = "skin"
 path = "tests/skin.rs"
+
+[dev-dependencies]
+blake3 = "1"

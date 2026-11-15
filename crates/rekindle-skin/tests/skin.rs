@@ -5,6 +5,7 @@ mod access;
 mod common;
 mod images;
 mod manifest;
+mod output;
 mod package;
 mod regions;
 mod sounds;
