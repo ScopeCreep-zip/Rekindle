@@ -58,7 +58,7 @@ pub fn call_timeout(profile: &SafetyProfile) -> Duration {
 }
 
 /// What a detached node's sends answer: its RPC processor is shut down
-/// (Veilid 0.5.8 `rpc_app_message.rs:18`, `rpc_app_call.rs:18`, `:167`: `TryAgain`
+/// (Veilid 0.5.8 `rpc_app_message.rs:18`, `rpc_app_call.rs:18`, `:165`: `TryAgain`
 /// "not started up"), which our Veilid port maps to `Send`
 /// (`rekindle-protocol` `ports.rs` `send_error`).
 fn not_started() -> PortError {
