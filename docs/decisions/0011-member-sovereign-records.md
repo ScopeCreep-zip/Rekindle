@@ -10,6 +10,16 @@
   creator set (`additionalCreators`) and a `predecessor`, and a creator-signed `CommunitySuccessor`
   op is the recovery and ownership-transfer path (Q3); an `ApprovalRequired` community admits a
   joiner by a reader-validated `MemberApproved`, and channel keys are withheld until then (Q6).
+- **Amended 2026-11-14** (plan step VU, Veilid 0.5.8; citations below re-read in the pinned fork at
+  `91453e97`, ADR 0017): 0.5.8 adds `SetDHTValueOptions.min_seqnum` ("raise the sequence number to at
+  least this", `veilid_api/types/dht/set_dht_value_options.rs:12-18`; applied at
+  `storage_manager/set_value.rs:384-385`), so the "0.5.7 lacks `minSeqnum`" ground under R2 is gone. **R2
+  stays rejected on its other grounds:** a join waits for an existing member to mint the next epoch (not
+  self-sovereign) and each epoch costs O(N) rewrites. The insider-lock threat in the context below gets
+  **easier**, which strengthens this decision: any holder of a well-known writer key now locks a subkey with
+  one write at `min_seqnum = ValueSeqNum::MAX`, no walk up the sequence numbers needed, and a storage node
+  refuses every successor while it holds that value (`set_value.rs:797-804`). 0.5.8 also makes the
+  local seq bump `saturating_next` (`value_seq_num.rs:35-39`), which saturates at MAX instead of failing.
   The 2026-10-04 text is kept; the amended passages say what changed.
 - **Amended 2026-10-24** (plan E3.2 S7c and S7d-keys premise check; ADR 0022, Proposed): directory pages hold 128
   entries (Discovery), conflicting pseudonym-signed successors are not offered (Successor community), record data is
@@ -24,9 +34,11 @@ pseudonym signature".
 
 Signatures prevent forgery. They do not prevent **erasure or permanent locking**:
 
-- veilid-core 0.5.7 storage nodes accept any signed value with a higher sequence number
-  (`storage_manager/set_value.rs:702-720`).
-- `ValueSeqNum::MAX = u32::MAX − 1`, and `next()` fails at MAX (`value_seq_num.rs:16,25-30`).
+- veilid-core storage nodes accept any signed value with a higher sequence number (0.5.8:
+  `storage_manager/set_value.rs:797-809`, `inbound_set_value`; 0.5.7: `:702-720`).
+- `ValueSeqNum::MAX = u32::MAX − 1`, and `next()` fails at MAX (0.5.8:
+  `veilid_api/types/dht/value_seq_num.rs:15,23-33`; 0.5.7: `:16,25-30`). In 0.5.8 one write with
+  `min_seqnum = MAX` reaches it directly (amendment above).
 - Veilid's developer book warns about exactly this pattern: a well-known writer key lets "anyone
   … [write] a subkey at the maximum sequence number and [close] it to future writes".
 
@@ -40,7 +52,7 @@ There are two further constraints:
   because it is hashed to form part of the record key"), so per-member keys cannot be added to an
   existing SMPL record.
 - Record keys are not re-derivable: every create adds a random encryption key
-  (`create_record.rs:86-95`).
+  (`create_record.rs:86-95`; 0.5.8 `:89-93`).
 
 ## Decision drivers
 
@@ -54,7 +66,8 @@ There are two further constraints:
 - **R1 — Keep `slot_seed` and verify payload signatures.** Stops forgery, not erasure or locking.
 - **R2 — VeilidChat-style per-epoch SMPL rosters with per-member keys.** A join must wait for an
   existing member to mint the next epoch, which is not self-sovereign. Each epoch costs O(N)
-  rewrites, and sealing needs `minSeqnum`, which 0.5.7 lacks.
+  rewrites, and sealing needs `minSeqnum`, which 0.5.7 lacked (0.5.8 adds it; R2 stays rejected on the
+  first two grounds, see the 2026-11-14 amendment).
 - **R3 — Joiner-minted SMPL segments.** O(N) migration per join, and concurrent joins fork.
 - **R4 — Slots pre-assigned at invite time.** Turns the inviter into a privileged, must-be-online
   minter.

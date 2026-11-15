@@ -6,6 +6,8 @@
   put the pool on the `rekindle_records::port::DhtBackend` trait.
 - **Related:** [0009](0009-crate-harvest-tiers.md) (tiers; a crate at an existing tier),
   [0014](0014-veilid-boundary-is-transitive.md) (the transitive Veilid boundary, rule B22).
+- **Amended 2026-11-15** (plan step VU, Veilid 0.5.8 = the pinned fork at `91453e97`, ADR 0017; decisions 1, 4
+  and 6; see "Port contracts after Veilid 0.5.8" below).
 
 ## Context and problem statement
 
@@ -43,3 +45,35 @@ paused clock drives it.
 - Good: the netsim (E2.B S3 onward) runs `RecordPool` over a simulated `DhtBackend`; the fake pool goes.
 - Good: the pool's unit tests run on an in-crate test backend, with no Veilid node.
 - Neutral: one more crate at an existing tier (ADR 0009 needs no ADR for that; this one records the 0014 change).
+
+## Port contracts after Veilid 0.5.8 (amendment 2026-11-15)
+
+Veilid 0.5.8 changed four contracts below the `DhtBackend` port. The port stays Veilid-free; each change is
+recorded here because the netsim's `SimDht` must honour it too (citations are the 0.5.8 fork tree).
+
+- **Open intent (plan VU decision 1, built at VU3).** `DhtBackend::open(key, writer, intent: OpenIntent)`, with
+  `OpenIntent { Hold, Check }` in `rekindle-records/src/port/dht.rs`. `Hold` (own records, the keepalive, the
+  leases a watch or a sweep holds) maps to `OpenDHTRecordOptions { rehydrate: Some(true) }`; `Check`
+  (`read_once`, `inspect_once`, existence probes) maps to `rehydrate: Some(false)`, so a probe never counts as
+  interest. Veilid queues a rehydration on a re-open only when asked, for a record not created by this node this
+  session, at most once per 300 s (`storage_manager/open_record.rs:62-81`, `storage_manager/mod.rs:178-198`). The
+  intent is plumbed through `RecordPool::acquire` and `RecordPort::{acquire, read_once, inspect_once,
+  write_once}`.
+- **`SetOutcome` meanings (decision 4, VU1 and VU2 item 15).** 0.5.8's set returns the settled value whenever it
+  differs from ours **or** another node holds a rival at its seq (`storage_manager/set_value.rs:753-756`). The pool
+  classifies `Ok(Some(v))` in one place (`rekindle-record-pool/src/io.rs`): `Some(ours)` (our data and writer) is
+  `Landed` (or `Unchanged` when the local seq did not move), logged at debug as contested; `Superseded` is only a
+  different value. `Ok(None)` is ours at consensus. A set below consensus with `AllowOffline(false)` is a
+  `TryAgain` that stores nothing (`set_value.rs:731-738` → `local_record_store_interface.rs:60-62`), mapped to
+  `Offline`; `SetOutcome::BelowConsensus` is deleted.
+- **The hint contract (VU3).** A watch hint obliges a network read of the hinted subkeys. Veilid marks every
+  reported subkey as reported and unread, and a later coalesced (range-only) push reports only unmarked subkeys;
+  only a get that reaches the network clears a mark (`outbound_watch_manager/outbound_watch_state.rs:251-273`,
+  `get_value.rs:199-200`, `watch_value.rs:2275-2297`). Every `ValueChange` handler therefore reads with
+  `RecordPort::read_hinted`, which force-reads each hinted subkey (`rekindle-records/src/port/record.rs`, the
+  `ValueChange` and `read_hinted` docs).
+- **Veilid `mock-api` stays out of the default test graph (decision 6).** Cargo's feature unification would mock
+  the real node in every crate built with it, and it is no netsim replacement. Its use is a separate contract-test
+  workspace `contract/veilid/`, excluded from the root workspace, that tests `rekindle-protocol`'s real adapters
+  (the `DhtBackend` impl, the `VeilidAPIError` → port error mapping, `VeilidUpdate` → `PortEvent`): the code the
+  netsim bypasses. **That workspace is not built yet** (as of 2026-11-15); its CI job joins at plan phase F.
