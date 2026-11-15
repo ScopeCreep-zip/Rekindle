@@ -305,3 +305,34 @@ fn member_and_own_roles_follow_a_later_role_unassignment() {
         vec![0]
     );
 }
+
+/// A peer judges a frame by its author (a relay keeps the author's
+/// signature): it refuses one from a departed member, every frame once we
+/// were removed ourselves, and leaves a community it does not hold to that
+/// community's own handlers (plan E3.2 S9, A/B R3-1/R3-3).
+#[test]
+fn traffic_from_a_departed_author_or_after_our_removal_is_refused() {
+    let store = CommunityStore::new(new_map());
+    let member = PseudonymKey([3; 32]);
+    let departed = PseudonymKey([4; 32]);
+    let mut governance = GovernanceState::default();
+    governance.bans.insert(departed.clone());
+    store.set_governance_state("c1", governance);
+    assert!(store.takes_traffic_from("c1", &member));
+    assert!(
+        !store.takes_traffic_from("c1", &departed),
+        "a departed author"
+    );
+    assert!(
+        store.takes_traffic_from("unheld", &departed),
+        "not ours to judge"
+    );
+    store.note_own_removal(
+        "c1",
+        super::OwnRemoval {
+            banned: false,
+            by: None,
+        },
+    );
+    assert!(!store.takes_traffic_from("c1", &member), "we were removed");
+}
