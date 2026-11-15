@@ -137,6 +137,10 @@ pub(crate) struct NodeSlot {
     /// The inspects the node's app asked for (`DhtPort::inspect`), by
     /// record key, for a scenario that a record is never polled.
     pub app_inspects: HashMap<String, u64>,
+    /// The gets the node's app sent to the network (`DhtPort::get` not
+    /// answered from the local copy), by record key, for a scenario that a
+    /// read costs only the gets it needs.
+    pub app_gets: HashMap<String, u64>,
     /// The sets the node's app asked for (`DhtPort::set`), for a scenario
     /// that a stall starts no burst of writes.
     pub app_sets: u64,
@@ -194,6 +198,7 @@ impl NodeSlot {
             watches: HashMap::new(),
             outbound: crate::records::outbound::OutboundWatches::default(),
             app_inspects: HashMap::new(),
+            app_gets: HashMap::new(),
             app_sets: 0,
             pools: Vec::new(),
             state: "detached",
@@ -483,4 +488,9 @@ pub(crate) fn pair(a: usize, b: usize) -> (usize, usize) {
     } else {
         (b, a)
     }
+}
+
+/// One more of `key` in a per-record tally (`app_inspects`, `app_gets`).
+pub fn tally(counts: &mut HashMap<String, u64>, key: &str) {
+    *counts.entry(key.to_string()).or_default() += 1;
 }

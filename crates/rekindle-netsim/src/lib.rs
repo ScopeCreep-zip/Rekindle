@@ -384,6 +384,16 @@ impl Netsim {
             .unwrap_or(0)
     }
 
+    /// How many gets of `key` node `node`'s app sent to the network.
+    #[must_use]
+    pub fn app_gets(&self, node: usize, key: &str) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .app_gets
+            .get(key)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// How many range-only pushes naming more than one subkey (a replica
     /// coalesced the changes) reached node `node`'s watch on `key`.
     #[must_use]

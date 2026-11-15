@@ -239,8 +239,7 @@ impl RecordView {
         &self.slots
     }
 
-    /// The one-time ids the record lists: a `prekey_slots_used` row for
-    /// any other id is swept.
+    /// The one-time ids of the verified slots the view holds.
     pub fn listed_opk_ids(&self) -> impl Iterator<Item = u32> + '_ {
         self.slots.iter().map(|(_, slot)| slot.opk_id)
     }

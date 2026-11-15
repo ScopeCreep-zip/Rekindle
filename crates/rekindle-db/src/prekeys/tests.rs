@@ -166,8 +166,8 @@ async fn the_status_counts_fresh_and_consumed_slots() {
     );
 }
 
-/// The used slots are listed per peer device and swept once the peer's
-/// record no longer lists them.
+/// The used slots are listed per peer device and swept by age, per
+/// device (R1-8: the peer's record is read one slot at a time).
 #[tokio::test]
 async fn used_slots_are_listed_and_swept_per_device() {
     let alice = Party::new(6);
@@ -177,9 +177,13 @@ async fn used_slots_are_listed_and_swept_per_device() {
         identity: [7; 32],
         device: "phone".into(),
     };
-    for (peer, id) in [(&bob, 11), (&bob, 12), (&bob_phone, 13)] {
+    for (peer, id, at) in [
+        (&bob, 11, 1_000),
+        (&bob, 12, 5_000),
+        (&bob_phone, 13, 1_000),
+    ] {
         let (db, peer) = (alice.db.clone(), peer.clone());
-        db.call(move |c| insert_slot_used(c, &owner, &peer, id, 1_000))
+        db.call(move |c| insert_slot_used(c, &owner, &peer, id, at))
             .await
             .unwrap();
     }
@@ -192,7 +196,7 @@ async fn used_slots_are_listed_and_swept_per_device() {
         [11, 12]
     );
     assert_eq!(
-        sweep_used_slots(&alice.db, &owner, &bob, vec![12, 99])
+        sweep_used_slots(&alice.db, &owner, &bob, 2_000)
             .await
             .unwrap(),
         1

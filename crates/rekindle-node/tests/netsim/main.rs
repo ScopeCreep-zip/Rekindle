@@ -21,6 +21,7 @@ mod dm_hint_loss;
 mod dm_new_friendship;
 mod events;
 mod expressions;
+mod first_contact_reads;
 mod first_contact_receipt;
 mod first_contact_retry;
 mod first_login;

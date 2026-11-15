@@ -393,6 +393,7 @@ impl DhtBackend for SimDht {
         if !force_refresh && local.is_some() {
             return Ok(local);
         }
+        crate::network::tally(&mut self.net.inner.lock().nodes[self.node].app_gets, key);
         let span = self.read_span(key, Some(&[subkey]));
         let _slot = self.network(span, key, &[subkey]).await?;
         let mut inner = self.net.inner.lock();
@@ -451,10 +452,10 @@ impl DhtBackend for SimDht {
         subkeys: Option<&[u32]>,
         scope: ReportScope,
     ) -> Result<RecordReport, DhtCallError> {
-        *self.net.inner.lock().nodes[self.node]
-            .app_inspects
-            .entry(key.to_string())
-            .or_default() += 1;
+        crate::network::tally(
+            &mut self.net.inner.lock().nodes[self.node].app_inspects,
+            key,
+        );
         self.opened(key)?;
         let _slot = if scope == ReportScope::Local {
             None

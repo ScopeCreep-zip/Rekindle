@@ -10,8 +10,8 @@ use crate::repo::identity_text;
 use crate::Db;
 
 /// Record that we initiated to `peer` from its slot `opk_id` (B2), inside
-/// the initiate's transaction: the pick never chooses it again while the
-/// peer's record lists it.
+/// the initiate's transaction: the pick never chooses it again until the
+/// row is swept by age ([`sweep_used_slots`]).
 pub(crate) fn insert_slot_used(
     conn: &Connection,
     owner: &[u8; 32],
@@ -61,8 +61,10 @@ pub async fn used_slots(
         .await?)
 }
 
-/// Forget the used slots `peer`'s record no longer lists (`listed`, from
-/// the force-refreshed read B2 makes); how many went.
+/// Forget the used slots of `peer` recorded before `before_ms`; how many
+/// went. B2 reads one slot of a peer's record, not its whole listing
+/// (R1-8), so a row is swept by age: the caller passes its clock less
+/// `OPK_STALE_MS`, the most a slot stays listed after it was minted.
 ///
 /// # Errors
 /// The database failed.
@@ -70,32 +72,22 @@ pub async fn sweep_used_slots(
     db: &Db,
     owner: &[u8; 32],
     peer: &PeerAddress,
-    listed: Vec<u32>,
+    before_ms: i64,
 ) -> Result<usize, RatchetError> {
     let (owner, identity, device) = (
         identity_text(owner),
         identity_text(&peer.identity),
         peer.device.clone(),
     );
-    in_transaction(db, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT opk_id FROM prekey_slots_used \
-             WHERE owner_key = ?1 AND peer = ?2 AND device_id = ?3",
-        )?;
-        let stored = stmt
-            .query_map(params![owner, identity, device], |row| row.get::<_, u32>(0))?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        let mut gone = 0;
-        for id in stored.into_iter().filter(|id| !listed.contains(id)) {
-            gone += conn.execute(
+    Ok(db
+        .call(move |conn| {
+            conn.execute(
                 "DELETE FROM prekey_slots_used \
-                 WHERE owner_key = ?1 AND peer = ?2 AND device_id = ?3 AND opk_id = ?4",
-                params![owner, identity, device, id],
-            )?;
-        }
-        Ok(gone)
-    })
-    .await
+                 WHERE owner_key = ?1 AND peer = ?2 AND device_id = ?3 AND used_at < ?4",
+                params![owner, identity, device, before_ms],
+            )
+        })
+        .await?)
 }
 
 /// Whether a `PreKeyRejected` may go (B5).

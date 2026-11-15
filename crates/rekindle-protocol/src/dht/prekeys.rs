@@ -7,14 +7,13 @@
 //! checked by `rekindle_crypto` before anything is used.
 
 use rekindle_records::lease::LeaseId;
-use rekindle_records::port::OpenIntent;
-use rekindle_records::port::{RecordPort, SetOutcome};
+use rekindle_records::port::{OpenIntent, RecordPort, ReportScope, SetOutcome};
 use rekindle_types::dht_layout::prekeys::{self as layout, is_slot};
 use rekindle_types::dht_layout::profile::PREKEY_RECORDS;
 
 use crate::error::ProtocolError;
 
-/// A peer's prekey record as read: the head and every slot it holds.
+/// Our own prekey record as read back: the head and every slot it holds.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct RecordRead {
     pub head: Option<Vec<u8>>,
@@ -135,8 +134,9 @@ pub async fn read_device_list(
     super::profile::read_profile_subkey(pool, profile_key, PREKEY_RECORDS, force_refresh).await
 }
 
-/// A peer's prekey record: the head and every slot it holds, the subkeys
-/// the network holds newer fetched from it (B2's force-refresh read).
+/// Our own prekey record read back: the head and every slot it holds, the
+/// subkeys the network holds newer fetched from it (B1's reconcile). A
+/// peer's record is read with [`PeerRecord`], one slot at a time.
 ///
 /// # Errors
 /// The record could not be opened or read.
@@ -158,4 +158,109 @@ pub async fn read_record(pool: &dyn RecordPort, key: &str) -> Result<RecordRead,
     }
     read.slots.sort_unstable_by_key(|(subkey, _)| *subkey);
     Ok(read)
+}
+
+/// A peer's prekey record opened for a first contact (plan E2.4 B2, R1-8):
+/// one inspect over the head and every slot, then the head and **one**
+/// slot read, never the whole record. A first contact holds none of it
+/// locally, so each subkey read is a network get; reading all 101 cost
+/// ten waves of gets before the PreKeyInit could go. Signal's bundle
+/// carries one one-time prekey (PQXDH §3.3); the caller draws the slot
+/// among [`present_slots`](Self::present_slots) and reads another only
+/// when the drawn one does not decode, verify or is one it used.
+///
+/// Every read plans from the one inspect, as `read_changed` does: a
+/// subkey the network holds newer is fetched from it, one whose local
+/// copy is current is read locally. [`close`](Self::close) returns the
+/// borrow.
+pub struct PeerRecord<'a> {
+    pool: &'a dyn RecordPort,
+    lease: LeaseId,
+    /// `(subkey, network holds newer)` of each subkey that holds a value.
+    present: Vec<(u32, bool)>,
+}
+
+impl<'a> PeerRecord<'a> {
+    /// Borrow the record at `key` and inspect its head and slots once.
+    ///
+    /// # Errors
+    /// The record could not be opened, or no node answered the inspect.
+    pub async fn open(pool: &'a dyn RecordPort, key: &str) -> Result<Self, ProtocolError> {
+        let lease = pool.acquire(key, None, OpenIntent::Check).await?;
+        let subkeys: Vec<u32> = std::iter::once(layout::HEAD)
+            .chain((0..layout::SLOT_COUNT).map(|i| layout::FIRST_SLOT + i))
+            .collect();
+        let report = match pool
+            .inspect(lease, Some(&subkeys), ReportScope::UpdateGet)
+            .await
+        {
+            Ok(report) => report,
+            Err(e) => {
+                pool.release(lease).await;
+                return Err(e.into());
+            }
+        };
+        let present: Vec<(u32, bool)> = report
+            .subkeys
+            .iter()
+            .zip(report.local_seqs.iter().zip(&report.network_seqs))
+            .filter(|(_, (local, network))| local.is_some() || network.is_some())
+            .map(|(subkey, (local, network))| (*subkey, network > local))
+            .collect();
+        tracing::debug!(key = %key, present = present.len(), "peer prekey record inspected");
+        Ok(Self {
+            pool,
+            lease,
+            present,
+        })
+    }
+
+    /// The slots the inspect shows holding a value, in subkey order.
+    #[must_use]
+    pub fn present_slots(&self) -> Vec<u32> {
+        self.present
+            .iter()
+            .map(|(subkey, _)| *subkey)
+            .filter(|subkey| is_slot(*subkey))
+            .collect()
+    }
+
+    /// The head; `None` when the inspect shows none.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub async fn head(&self) -> Result<Option<Vec<u8>>, ProtocolError> {
+        self.read(layout::HEAD).await
+    }
+
+    /// One slot, `subkey` among [`present_slots`](Self::present_slots);
+    /// `None` for any other subkey.
+    ///
+    /// # Errors
+    /// The read failed.
+    pub async fn slot(&self, subkey: u32) -> Result<Option<Vec<u8>>, ProtocolError> {
+        if !is_slot(subkey) {
+            return Ok(None);
+        }
+        self.read(subkey).await
+    }
+
+    async fn read(&self, subkey: u32) -> Result<Option<Vec<u8>>, ProtocolError> {
+        let Some(&(_, newer)) = self.present.iter().find(|(s, _)| *s == subkey) else {
+            return Ok(None);
+        };
+        let value = self.pool.get(self.lease, subkey, newer).await?;
+        tracing::debug!(
+            subkey,
+            from_network = newer,
+            found = value.is_some(),
+            "peer prekey subkey read"
+        );
+        Ok(value.map(|v| v.data))
+    }
+
+    /// Return the borrow.
+    pub async fn close(self) {
+        self.pool.release(self.lease).await;
+    }
 }
