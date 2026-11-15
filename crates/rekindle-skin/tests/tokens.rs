@@ -155,6 +155,8 @@ fn numbers_take_at_most_three_decimals_and_their_range() {
         p(json!(1.25)).expect("ok")["test.ratio"],
         TokenValue::Number(1250)
     );
+    // A fourth decimal is refused even when the value is in range.
+    assert!(p(json!(0.0005)).is_err());
     assert!(p(json!(1.2345)).is_err());
     assert!(p(json!(2.001)).is_err());
     assert!(p(json!(-0.5)).is_err());
