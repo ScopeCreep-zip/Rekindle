@@ -295,6 +295,11 @@ pub(crate) fn check_theme_literals(root: &Path) -> Result<()> {
             .unwrap_or(&path)
             .display()
             .to_string();
+        // Generated from the registry, whose numbers are the tokens; staleness is
+        // `check-skin-registry`'s.
+        if rel.starts_with(crate::gen_skin_registry::GENERATED_STYLES) {
+            continue;
+        }
         let src = std::fs::read_to_string(&path).with_context(|| format!("reading {rel}"))?;
         if path
             .extension()

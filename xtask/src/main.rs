@@ -37,6 +37,10 @@
 //!                                      declares its ground.
 //!     cargo xtask check-contrast-pairs Every declared pair reads 4.5:1
 //!                                      (graphics 3:1) on each base.
+//!     cargo xtask check-skin-registry  The skin registry's generated files
+//!                                      are current (plan E7.7.1).
+//!     cargo xtask gen-skin-registry    Write the skin registry's generated
+//!                                      CSS, TS, TUI palettes and schema.
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
 //!                                      placeholders to existing allows
@@ -77,6 +81,7 @@ mod e2e_release;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
+mod gen_skin_registry;
 mod intent_table;
 mod jsx;
 mod key_erasure;
@@ -155,6 +160,10 @@ enum Command {
     CheckDeclaredGrounds,
     /// Verify every declared text-on-ground pair reads 4.5:1 (graphics 3:1) on each base.
     CheckContrastPairs,
+    /// Verify the skin registry's generated files are current and its defaults meet their constraints.
+    CheckSkinRegistry,
+    /// Write the skin registry's generated CSS, TS, TUI palettes and JSON Schema.
+    GenSkinRegistry,
     /// Verify every transition reads a motion token and motion honours reduced motion.
     CheckMotion,
     /// Verify the macOS, WebKitGTK and Vite floors agree with the plan's E7.10 floor.
@@ -280,6 +289,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "contrast-pairs",
                     Box::new(|| contrast_pairs::check_contrast_pairs(&root)),
                 ),
+                (
+                    "skin-registry",
+                    Box::new(|| gen_skin_registry::check_skin_registry(&root)),
+                ),
                 ("motion", Box::new(|| motion::check_motion(&root))),
                 (
                     "platform-floor",
@@ -339,6 +352,8 @@ fn dispatch(cmd: &Command) -> Result<()> {
         }
         Command::CheckDeclaredGrounds => declared_grounds::check_declared_grounds(&root),
         Command::CheckContrastPairs => contrast_pairs::check_contrast_pairs(&root),
+        Command::CheckSkinRegistry => gen_skin_registry::check_skin_registry(&root),
+        Command::GenSkinRegistry => gen_skin_registry::gen_skin_registry(&root),
         Command::CheckMotion => motion::check_motion(&root),
         Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
         Command::CheckBuiltCss { css } => platform_floor::check_built_css(&root, css),

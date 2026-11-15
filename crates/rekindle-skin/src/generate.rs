@@ -233,7 +233,11 @@ pub fn json_schema() -> String {
     }
     root["$schema"] = json!("https://json-schema.org/draft/2020-12/schema");
     root["title"] = json!("A rekindle-skin/1 token file");
-    root["description"] = json!(HEADER);
+    root["$comment"] = json!(HEADER);
+    root["description"] = json!(
+        "A variant's token file (restricted DTCG 2025.10): every themeable id of the closed \
+         registry, typed; unknown keys are refused."
+    );
     let mut s = serde_json::to_string_pretty(&root).expect("a JSON value serialises");
     s.push('\n');
     s

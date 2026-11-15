@@ -35,3 +35,6 @@ toml_edit = "0.22"
 syn = { version = "2", features = ["full", "parsing", "printing", "visit"] }
 quote = "1"
 proc-macro2 = "1"
+# `gen-skin-registry` / `check-skin-registry` (plan E7.7.1) write and compare
+# the closed token registry's artefacts from the crate that owns it.
+rekindle-skin = { path = "../crates/rekindle-skin" }

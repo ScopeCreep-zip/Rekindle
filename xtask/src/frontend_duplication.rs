@@ -172,6 +172,9 @@ pub fn collect_frontend_duplication(root: &Path) -> Result<Vec<Offender>> {
             .unwrap_or(&path)
             .display()
             .to_string();
+        if rel.starts_with(crate::gen_skin_registry::GENERATED_STYLES) {
+            continue;
+        }
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -214,6 +217,9 @@ pub fn collect_frontend_duplication(root: &Path) -> Result<Vec<Offender>> {
             .unwrap_or(&path)
             .display()
             .to_string();
+        if rel.starts_with(crate::gen_skin_registry::GENERATED_STYLES) {
+            continue;
+        }
         let Ok(text) = std::fs::read_to_string(&path) else {
             continue;
         };

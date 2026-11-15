@@ -11617,6 +11617,7 @@ dependencies = [
  "ignore",
  "proc-macro2",
  "quote",
+ "rekindle-skin",
  "serde",
  "serde_json",
  "syn 2.0.114",
