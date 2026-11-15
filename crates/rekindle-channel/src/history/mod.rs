@@ -138,8 +138,12 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
 
 /// Merge `incoming` into `existing`, one message per message id (or, with
 /// none, per timestamp, sender and body): a collision keeps the existing
-/// row and takes the incoming one's id, failure flag, reactions, pin and
-/// poll. Sorted by timestamp, cut to the latest `limit` (at least one).
+/// row and takes the incoming one's id, reactions, pin and poll. An opened
+/// copy is never marked undecryptable by one that did not open: our stored
+/// rows were opened when stored, and a record read lacking that generation
+/// says nothing about them (A/B R3-9); an opened copy clears a failed
+/// record-only row and gives it its body. Sorted by timestamp, cut to the
+/// latest `limit` (at least one).
 pub fn merge_message_lists(
     existing: &mut Vec<ChannelMessageView>,
     incoming: Vec<ChannelMessageView>,
@@ -171,7 +175,10 @@ fn merge_fields(existing: &mut ChannelMessageView, incoming: &ChannelMessageView
             .server_message_id
             .clone_from(&incoming.server_message_id);
     }
-    existing.decryption_failed |= incoming.decryption_failed;
+    if existing.decryption_failed && !incoming.decryption_failed {
+        existing.decryption_failed = false;
+        existing.body.clone_from(&incoming.body);
+    }
     existing.reactions = merge_reactions(existing.reactions.take(), incoming.reactions.clone());
     if incoming.pinned == Some(true) {
         existing.pinned = Some(true);
@@ -215,5 +222,57 @@ fn identity(message: &ChannelMessageView) -> String {
             "ts:{}:{}:{}",
             message.timestamp, message.sender_id, message.body
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::merge_message_lists;
+    use rekindle_types::dto::channel_message::ChannelMessageView;
+    use rekindle_types::message::SendState;
+
+    fn view(id: &str, body: &str, decryption_failed: bool) -> ChannelMessageView {
+        ChannelMessageView {
+            id: 0,
+            sender_id: "author".into(),
+            body: body.into(),
+            decryption_failed,
+            automod_blurred: false,
+            timestamp: 1,
+            is_own: false,
+            server_message_id: Some(id.into()),
+            reactions: None,
+            pinned: None,
+            poll: None,
+            forwarded_from_author: None,
+            attachment: None,
+            flags: 0,
+            send_state: SendState::Delivered,
+        }
+    }
+
+    /// A record read that cannot open a body (its generation is not held)
+    /// never marks the row we stored when we opened it undecryptable.
+    #[test]
+    fn a_failed_copy_never_flips_an_opened_row() {
+        let mut rows = vec![view("m1", "hello", false)];
+        merge_message_lists(&mut rows, vec![view("m1", "", true)], 10);
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].decryption_failed);
+        assert_eq!(rows[0].body, "hello");
+    }
+
+    /// Two record copies of one message: the opened one wins, body and all.
+    #[test]
+    fn an_opened_copy_clears_a_failed_record_only_row() {
+        let mut rows = Vec::new();
+        merge_message_lists(
+            &mut rows,
+            vec![view("m1", "", true), view("m1", "hello", false)],
+            10,
+        );
+        assert_eq!(rows.len(), 1);
+        assert!(!rows[0].decryption_failed);
+        assert_eq!(rows[0].body, "hello");
     }
 }
