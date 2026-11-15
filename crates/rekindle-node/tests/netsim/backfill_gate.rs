@@ -7,28 +7,47 @@
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
+use rekindle_netsim::Fault;
 use rekindle_types::governance::AutoModAction;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, Community, SimNode};
+use crate::moderation::listed;
 
 const LIMIT: Duration = Duration::from_secs(180);
 
+/// The banned member is cut off while it is banned, so it posts before it
+/// can learn its ban (once it knows, its own Host refuses the send, plan
+/// E3.2 S9 own removal); the post lands in its slot of the channel record,
+/// which the readers' backfill reads once the partition heals, as
+/// `kicked_slot_write.rs` stages a removed member's write.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn banned_post_not_backfilled() {
     let community = Community::of(3, 253).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
     let bea = community.pseudonym(1).await;
+    community.sim.fault(Fault::Partition {
+        a: vec![0, 2],
+        b: vec![1],
+    });
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Ban {
                 community: community.governance_key.clone(),
-                target_pseudonym: bea,
+                target_pseudonym: bea.clone(),
                 reason: None,
             },
         )))
         .await;
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    for reader in [0, 2] {
+        assert!(
+            eventually(&community.sim, LIMIT, || async {
+                listed(&community, reader, &bea).await.is_none()
+            })
+            .await,
+            "node {reader} merges the ban"
+        );
+    }
     community
         .post(1, "from bea, banned")
         .await
@@ -37,6 +56,8 @@ async fn banned_post_not_backfilled() {
         community.history_holds(1, "from bea, banned", LIMIT).await,
         "the post is in bea's record"
     );
+    community.sim.fault(Fault::Heal);
+    community.sim.quiesce().await;
     community.post(0, "from ann").await.expect("ann posts");
     assert!(
         community.history_holds(2, "from ann", LIMIT).await,
