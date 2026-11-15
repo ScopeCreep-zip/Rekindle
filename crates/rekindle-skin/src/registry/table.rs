@@ -13,7 +13,7 @@
 //! `@layer a11y`); they are the defaults a high-contrast skin variant
 //! resolves against.
 
-use super::{Class, Constraint, DefaultValue, Defaults, Derivation, Entry, TokenType};
+use super::{Class, Constraint, DefaultValue, Defaults, Derivation, TokenEntry, TokenType};
 
 const fn digit(b: u8) -> u32 {
     match b {
@@ -70,8 +70,8 @@ const fn row(
     css: &'static str,
     defaults: Defaults,
     constraints: &'static [Constraint],
-) -> Entry {
-    Entry {
+) -> TokenEntry {
+    TokenEntry {
         id,
         css,
         ty: TokenType::Color,
@@ -82,13 +82,13 @@ const fn row(
     }
 }
 
-const fn fixed(mut e: Entry) -> Entry {
+const fn fixed(mut e: TokenEntry) -> TokenEntry {
     e.class = Class::Fixed;
     e
 }
 
 /// Follows `of` when a skin sets `of` and omits this token.
-const fn same_as(mut e: Entry, of: &'static str) -> Entry {
+const fn same_as(mut e: TokenEntry, of: &'static str) -> TokenEntry {
     e.derivation = Some(Derivation::Mix {
         a: of,
         b: of,
@@ -120,7 +120,7 @@ const GRAPHIC: &[Constraint] = &[Constraint {
 }];
 const NONE: &[Constraint] = &[];
 
-pub const ENTRIES: &[Entry] = &[
+pub const ENTRIES: &[TokenEntry] = &[
     row(
         "bg.dark",
         "--color-xfire-bg-dark",
@@ -433,7 +433,7 @@ pub const ENTRIES: &[Entry] = &[
         c2("#ffaea1", "#a3261b"),
         TEXT,
     ),
-    Entry {
+    TokenEntry {
         id: "font.family",
         css: "--font-family-xfire",
         ty: TokenType::FontFamily,
@@ -442,7 +442,7 @@ pub const ENTRIES: &[Entry] = &[
         constraints: NONE,
         class: Class::Themeable,
     },
-    Entry {
+    TokenEntry {
         id: "font.icons",
         css: "--font-family-icons",
         ty: TokenType::FontFamily,
@@ -451,7 +451,7 @@ pub const ENTRIES: &[Entry] = &[
         constraints: NONE,
         class: Class::Fixed,
     },
-    Entry {
+    TokenEntry {
         id: "size.chrome-height",
         css: "--chrome-height",
         ty: TokenType::Dimension { min: 20, max: 40 },

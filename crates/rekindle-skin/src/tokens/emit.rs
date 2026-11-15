@@ -10,7 +10,7 @@ use std::fmt::Write as _;
 use rekindle_types::dto::skin::TokenValue;
 
 use super::value::emit_thousandths;
-use crate::registry::{font, Entry, TokenType};
+use crate::registry::{font, TokenEntry, TokenType};
 
 /// The characters a colour, dimension or number value may emit.
 pub const ALPHABET: &str = "#0123456789abcdef.px-";
@@ -24,7 +24,7 @@ pub fn in_alphabet(s: &str) -> bool {
 /// The CSS value of `v`, or `None` when it does not fit `e`'s type (a value
 /// [`super::parse`] or the registry produced always fits).
 #[must_use]
-pub fn css_value(e: &Entry, v: &TokenValue) -> Option<String> {
+pub fn css_value(e: &TokenEntry, v: &TokenValue) -> Option<String> {
     match (e.ty, v) {
         (TokenType::Color, TokenValue::Color { r, g, b, a }) => Some(if *a == 255 {
             format!("#{r:02x}{g:02x}{b:02x}")
@@ -50,7 +50,7 @@ pub fn css_value(e: &Entry, v: &TokenValue) -> Option<String> {
 /// `None` when a pair does not fit, which [`crate::registry::resolve`]'s
 /// output never does; nothing is emitted partly.
 #[must_use]
-pub fn declarations(resolved: &[(&Entry, TokenValue)], indent: usize) -> Option<String> {
+pub fn declarations(resolved: &[(&TokenEntry, TokenValue)], indent: usize) -> Option<String> {
     let pad = " ".repeat(indent);
     let mut out = String::new();
     for (e, v) in resolved {

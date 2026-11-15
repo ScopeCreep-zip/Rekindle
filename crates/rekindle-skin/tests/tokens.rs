@@ -2,7 +2,7 @@
 //! defaults (plan E7.7.1).
 
 use rekindle_skin::registry::{
-    self, constraint_failures, resolve, Base, Class, DefaultValue, Defaults, Entry, TokenType,
+    self, constraint_failures, resolve, Base, Class, DefaultValue, Defaults, TokenEntry, TokenType,
     ENTRIES,
 };
 use rekindle_skin::tokens::emit::{css_value, in_alphabet};
@@ -10,7 +10,7 @@ use rekindle_skin::tokens::{parse, parse_with};
 use rekindle_types::dto::skin::{SkinRule, TokenValue};
 use serde_json::{json, Value};
 
-const NUM: Entry = Entry {
+const NUM: TokenEntry = TokenEntry {
     id: "test.ratio",
     css: "--test-ratio",
     ty: TokenType::Number { min: 0, max: 2000 },

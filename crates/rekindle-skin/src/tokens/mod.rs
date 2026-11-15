@@ -29,7 +29,7 @@ use std::collections::BTreeMap;
 use rekindle_types::dto::skin::{SkinError, SkinRule, TokenValue};
 use serde_json::{Map, Value};
 
-use crate::registry::{entry_in, Class, Entry, ENTRIES};
+use crate::registry::{entry_in, Class, TokenEntry, ENTRIES};
 
 /// The one `$extensions` namespace a token file may use.
 pub const EXTENSIONS_NAMESPACE: &str = "app.rekindle";
@@ -59,7 +59,7 @@ pub fn parse(entry: &str, bytes: &[u8]) -> Result<BTreeMap<String, TokenValue>, 
 /// # Errors
 /// The first rule the file breaks, with `entry` as the error's entry.
 pub fn parse_with(
-    table: &[Entry],
+    table: &[TokenEntry],
     entry: &str,
     bytes: &[u8],
 ) -> Result<BTreeMap<String, TokenValue>, SkinError> {
@@ -201,7 +201,11 @@ fn alias_target(v: &Value) -> Option<&str> {
 
 /// Follows `path`'s alias chain to a concrete value and parses it as `e`'s
 /// type.
-fn resolve(path: &str, e: &Entry, raw: &BTreeMap<String, Raw<'_>>) -> Result<TokenValue, SkinRule> {
+fn resolve(
+    path: &str,
+    e: &TokenEntry,
+    raw: &BTreeMap<String, Raw<'_>>,
+) -> Result<TokenValue, SkinRule> {
     let mut seen = vec![path];
     let mut cur = &raw[path];
     let mut ty = cur.ty;

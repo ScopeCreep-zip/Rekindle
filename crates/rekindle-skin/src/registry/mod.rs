@@ -212,7 +212,7 @@ pub enum Class {
 
 /// One registry row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Entry {
+pub struct TokenEntry {
     /// The DTCG path, dot-separated (`bg.panel`).
     pub id: &'static str,
     /// The CSS custom property the app reads.
@@ -228,7 +228,7 @@ pub struct Entry {
 /// `token on ground: ratio < floor`. Text and grounds are composited over
 /// the ground (alpha resolved), as the app paints them.
 #[must_use]
-pub fn constraint_failures(table: &[Entry], base: Base) -> Vec<String> {
+pub fn constraint_failures(table: &[TokenEntry], base: Base) -> Vec<String> {
     let resolved = resolve(table, base, &BTreeMap::new());
     let colour_of = |id: &str| {
         resolved
@@ -265,7 +265,7 @@ pub fn constraint_failures(table: &[Entry], base: Base) -> Vec<String> {
 
 /// The row of `id` in `table`.
 #[must_use]
-pub fn entry_in<'a>(table: &'a [Entry], id: &str) -> Option<&'a Entry> {
+pub fn entry_in<'a>(table: &'a [TokenEntry], id: &str) -> Option<&'a TokenEntry> {
     table.iter().find(|e| e.id == id)
 }
 
@@ -274,10 +274,10 @@ pub fn entry_in<'a>(table: &'a [Entry], id: &str) -> Option<&'a Entry> {
 /// `skin` holds only ids of `table` (what [`crate::tokens::parse`] returns).
 #[must_use]
 pub fn resolve<'a>(
-    table: &'a [Entry],
+    table: &'a [TokenEntry],
     base: Base,
     skin: &BTreeMap<String, TokenValue>,
-) -> Vec<(&'a Entry, TokenValue)> {
+) -> Vec<(&'a TokenEntry, TokenValue)> {
     let mut resolved: BTreeMap<&str, TokenValue> = BTreeMap::new();
     for e in table.iter().filter(|e| e.derivation.is_none()) {
         let v = skin
