@@ -293,3 +293,34 @@ async fn a_local_get_with_no_copy_is_try_again_offline() {
     let err = b.get(&key, 0, false).await.unwrap_err();
     assert_eq!(err.kind, DhtErrorKind::TryAgain);
 }
+
+/// Owed re-hints are sent by `send_pending_rehints` in the outbound watch
+/// check (`watch_value.rs:2298-2320`, `tasks/check_outbound_watches.rs:97-103`),
+/// which runs only inside the tick's `dht_is_online()` gate
+/// (`storage_manager/tasks/mod.rs:140-144`): an offline node's owed re-hint
+/// is no work for the pump and waits for its return.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_offline_node_s_owed_rehint_waits_for_its_return() {
+    let (sim, mut nodes) = Netsim::nodes(2, 27);
+    let (key, _a, _b) = watched(&sim, &mut nodes).await;
+    let now = sim.net.now_us();
+    {
+        let mut inner = sim.net.inner.lock();
+        inner.nodes[1]
+            .outbound
+            .rehints
+            .insert(key.clone(), [0].into());
+        inner.faults.dht_offline.insert(1);
+    }
+    // The tick sees the edge offline; the re-hint is kept and is no work.
+    sim.net.tick_watches();
+    {
+        let inner = sim.net.inner.lock();
+        assert!(!inner.nodes[1].outbound.rehints.is_empty());
+        assert!(!super::catchup::pending(&inner, 1, now), "no work offline");
+    }
+    sim.net.inner.lock().faults.dht_offline.remove(&1);
+    assert!(super::catchup::pending(&sim.net.inner.lock(), 1, now));
+    sim.net.tick_watches();
+    assert!(sim.net.inner.lock().nodes[1].outbound.rehints.is_empty());
+}
