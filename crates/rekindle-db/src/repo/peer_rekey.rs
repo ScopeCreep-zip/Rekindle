@@ -56,6 +56,8 @@ pub fn rotate_peer(
         for sql in [
             "UPDATE stream_cursors SET writer = ?3 \
              WHERE owner_key = ?1 AND stream = 'dm' AND writer = ?2",
+            "UPDATE stream_applied SET writer = ?3 \
+             WHERE owner_key = ?1 AND stream = 'dm' AND writer = ?2",
             "UPDATE received SET stream = 'dm:' || ?3 \
              WHERE owner_key = ?1 AND stream = 'dm:' || ?2",
             "UPDATE outbox_streams SET stream = 'dm:' || ?3 \
@@ -133,6 +135,7 @@ mod tests {
         for sql in [
             "INSERT INTO stream_cursors (owner_key, stream, writer, seq, updated_at) \
              VALUES (?1, 'dm', ?2, 4, 1)",
+            "INSERT INTO stream_applied (owner_key, stream, writer, seq) VALUES (?1, 'dm', ?2, 6)",
             "INSERT INTO received (owner_key, stream, client_id) VALUES (?1, 'dm:' || ?2, 'c')",
             "INSERT INTO chain_entries (owner_key, peer, chain_seq, stream_seq, appended_at) \
              VALUES (?1, ?2, 1, 1, 1)",
@@ -177,6 +180,12 @@ mod tests {
         assert_eq!(
             crate::repo::stream_cursors::get(&conn, &owner, "dm", &new).unwrap(),
             4
+        );
+        assert_eq!(
+            count(&format!(
+                "SELECT COUNT(*) FROM stream_applied WHERE writer = '{new}' AND seq = 6"
+            )),
+            1
         );
         assert_eq!(
             count(&format!(

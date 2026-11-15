@@ -913,6 +913,20 @@ CREATE TABLE IF NOT EXISTS stream_cursors (
     PRIMARY KEY (owner_key, stream, writer)
 );
 
+-- Per-writer seqs applied past a gap (plan E2.5, D23; E2.5i R1-3): an entry
+-- of `writer`'s chain on `stream` applied above its cursor's next (a hint
+-- that overtook an earlier one) is remembered here, so the cursor absorbs
+-- it the moment the gap below it fills and stays the highest contiguous
+-- seq applied by any path. Every row is above its cursor; the cursor's
+-- move deletes the rows it passes.
+CREATE TABLE IF NOT EXISTS stream_applied (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    stream TEXT NOT NULL,
+    writer TEXT NOT NULL,
+    seq INTEGER NOT NULL CHECK(seq >= 1),
+    PRIMARY KEY (owner_key, stream, writer, seq)
+);
+
 -- The entries of our DM chains (plan E2.5, D23/D24): which chain seq each
 -- `dm` outbox row's frame went to, and when it landed (NULL: its seq is
 -- assigned, sealed into its hint, and its append has not landed; finding 71
