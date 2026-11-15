@@ -136,11 +136,33 @@ pub async fn append(
     writer: &str,
     entries: &[Vec<u8>],
 ) -> Result<PagePointer, ChainError> {
-    append_at(port, participant, dm_participant::HEAD, writer, entries).await
+    append_after(
+        port,
+        participant,
+        dm_participant::HEAD,
+        writer,
+        None,
+        HeadRead::Local,
+        entries,
+    )
+    .await
+}
+
+/// Where an append reads the head it chains onto.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HeadRead {
+    /// A dm or group chain's `HEAD`, from our copy ([`own_head_at`]).
+    Local,
+    /// A member's op log head, from the network: every device of the member
+    /// holds `K_M(p)` (ADR 0022), so another device may have written the
+    /// next seq, and a write at a seq a rival holds is a fork (D15), not a
+    /// supersede.
+    Network,
 }
 
 /// [`append`] to the chain whose head is `record`/`head_subkey`; `writer`
-/// is `record`'s owner keypair.
+/// is `record`'s owner keypair. The head is read from the network
+/// ([`HeadRead::Network`]): this is the op log's append.
 ///
 /// # Errors
 /// As [`append`].
@@ -151,7 +173,16 @@ pub async fn append_at(
     writer: &str,
     entries: &[Vec<u8>],
 ) -> Result<PagePointer, ChainError> {
-    append_after(port, record, head_subkey, writer, None, entries).await
+    append_after(
+        port,
+        record,
+        head_subkey,
+        writer,
+        None,
+        HeadRead::Network,
+        entries,
+    )
+    .await
 }
 
 /// [`append_at`] with `entries` starting at exactly chain seq `first_seq`,
@@ -168,7 +199,16 @@ pub async fn append_exact(
     first_seq: u64,
     entries: &[Vec<u8>],
 ) -> Result<PagePointer, ChainError> {
-    append_after(port, record, head_subkey, writer, Some(first_seq), entries).await
+    append_after(
+        port,
+        record,
+        head_subkey,
+        writer,
+        Some(first_seq),
+        HeadRead::Local,
+        entries,
+    )
+    .await
 }
 
 async fn append_after(
@@ -177,6 +217,7 @@ async fn append_after(
     head_subkey: u32,
     writer: &str,
     expected: Option<u64>,
+    read: HeadRead,
     entries: &[Vec<u8>],
 ) -> Result<PagePointer, ChainError> {
     if entries.is_empty() {
@@ -184,7 +225,10 @@ async fn append_after(
     }
     let mut round = 1;
     loop {
-        let prev = own_head_at(port, record, head_subkey).await?;
+        let prev = match read {
+            HeadRead::Local => own_head_at(port, record, head_subkey).await?,
+            HeadRead::Network => head_at(port, record, head_subkey).await?,
+        };
         let newest = write_page(port, prev, expected, entries).await?;
         let outcome = port
             .write_once(

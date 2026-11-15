@@ -308,9 +308,14 @@ async fn a_retired_group_stretch_is_a_stored_history_gap() {
 /// outbox hands the stream's due run over at once and it lands on her
 /// group chain in as few pages as hold it (plan E2.B F2: an append per
 /// page, not per message), and every member reads each message in order.
-/// The first message sent while detached is the attempt in flight (it waits
-/// for readiness with only itself due), so the backlog is the rows behind
-/// it.
+/// The first message sent while detached is attempted alone; detached, its
+/// page set fails at once (0.5.8 `set_value.rs:247-255`), so it is due again
+/// with the backlog behind it and the whole run lands together.
+/// (Premise rewritten in E2.5i: it read that the first attempt "waits for
+/// readiness with only itself due" and so took a page of its own. That wait
+/// was the append's network read of its own `HEAD`; a dm or group chain's
+/// append now reads its local copy, `rekindle_records::chain`, and nothing of
+/// it waits on readiness.)
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_group_backlog_lands_in_as_few_pages_as_hold_it() {
     let (sim, mut nodes) = start(3, 97).await;
@@ -351,8 +356,8 @@ async fn a_group_backlog_lands_in_as_few_pages_as_hold_it() {
             reader.index
         );
     }
-    // The append in flight, then the backlog: eight short entries fit one
-    // page, ceil(8 / capacity) = 1.
+    // The first message and the backlog: nine short entries fit one page,
+    // ceil(9 / capacity) = 1.
     let appended = sim.single_subkey_values().len() - pages_before;
-    assert_eq!(appended, 1 + 1, "{appended} page appends");
+    assert_eq!(appended, 1, "{appended} page appends");
 }
