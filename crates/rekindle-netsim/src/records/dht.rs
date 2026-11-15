@@ -47,8 +47,7 @@
 //! ([`crate::latency`]) under the per-(node, record, subkey) locks and the
 //! node's DHT cap before its effect lands.
 
-use std::collections::BTreeSet;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use rekindle_crypto::keypair_text::keypair_text_from_signing;
 use rekindle_records::port::{
