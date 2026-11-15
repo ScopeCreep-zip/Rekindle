@@ -46,26 +46,21 @@ pub(crate) async fn handle_unlock(
     }
 }
 
-/// The daemon's stages of an unlock (`host::unlock` stage 4), until their
-/// ports: the subscription manager (E2.1/E3.1), the broadcast mesh (E3.1) and the
-/// presence polls (E3.4).
+/// The daemon's overlays of an unlock (`host::unlock` stage 3e''), until
+/// their ports: the subscription manager (E2.1/E3.1) and the broadcast mesh
+/// (E3.1). They run once the warm cache has restored the communities and
+/// before any stage that gossips (the communities' network stage, the
+/// community sync), so no send finds its overlay missing (live R1-13).
 ///
 /// # Errors
 /// The subscription loops could not start.
-pub(crate) async fn daemon_stages(
+pub(crate) async fn daemon_overlays(
     ctx: &DaemonContext,
     unlock_scope: &Arc<rekindle_lifecycle::SessionScope>,
 ) -> Result<(), IpcResponse> {
-    let transport = ctx.transport.read().clone();
-    let session = ctx.session.read().clone();
-    let (Some(transport), Some(mut session)) = (transport, session) else {
+    let Some((transport, session)) = unlocked_memberships(ctx) else {
         return Ok(());
     };
-    // A community we were removed from is read-only history: no watches,
-    // mesh or presence for it (plan E3.2 S9 own removal).
-    session
-        .communities
-        .retain(|id, _| ctx.communities.own_removal(id).is_none());
     // The communities' records, leases and keepalive are the Host's
     // network stage (plan E3.1 C2a, `host::adapters::governance::login_stage`).
 
@@ -113,9 +108,37 @@ pub(crate) async fn daemon_stages(
         bcast_mgr.register_mesh(&membership.governance_key);
     }
     *ctx.broadcast_mgr.write() = Some(bcast_mgr);
+    Ok(())
+}
 
-    // Presence polls last, after the signing key, subscriptions and the
-    // mesh: the poll signs its own row and broadcasts on its first tick.
+/// The session's transport and memberships, without the communities we
+/// were removed from: those are read-only history, with no watches, mesh
+/// or presence (plan E3.2 S9 own removal).
+fn unlocked_memberships(
+    ctx: &DaemonContext,
+) -> Option<(
+    Arc<rekindle_transport::TransportNode>,
+    rekindle_transport::Session,
+)> {
+    let transport = ctx.transport.read().clone();
+    let session = ctx.session.read().clone();
+    let (Some(transport), Some(mut session)) = (transport, session) else {
+        return None;
+    };
+    session
+        .communities
+        .retain(|id, _| ctx.communities.own_removal(id).is_none());
+    Some((transport, session))
+}
+
+/// The daemon's stage 4 of an unlock (`host::unlock`), until its port: the
+/// presence polls (E3.4), last, after the signing key and the overlays
+/// ([`daemon_overlays`]): the poll signs its own row and broadcasts on its
+/// first tick.
+pub(crate) fn request_presence_polls(ctx: &DaemonContext) {
+    let Some((_, session)) = unlocked_memberships(ctx) else {
+        return;
+    };
     let community_ids: Vec<String> = session.communities.keys().cloned().collect();
     if !community_ids.is_empty() {
         let count = community_ids.len();
@@ -127,7 +150,6 @@ pub(crate) async fn daemon_stages(
             tracing::info!(communities = count, "presence polls requested");
         }
     }
-    Ok(())
 }
 
 /// The daemon's half of a teardown (`host::unlock::teardown`), after the

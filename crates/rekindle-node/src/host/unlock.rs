@@ -12,9 +12,10 @@
 //!    (the STATUS publisher), idle, game, the audit check, the communities'
 //!    warm cache, then, once the network is ready, their network stage
 //!    (open, hydrate, rebuild, republish, history catch-up; both modes, when
-//!    the host has a transport);
-//! 4. subscriptions, the broadcast mesh and the presence polls (daemon
-//!    only, until E3.4 ports them);
+//!    the host has a transport); the daemon's subscriptions and broadcast
+//!    mesh come up after the warm cache, before the network stage and the
+//!    community sync gossip;
+//! 4. the presence polls (daemon only, until E3.4 ports them);
 //! 5. the shell's unported stages (`ShellHooks::unlocked`, shell only);
 //! 6. Operational.
 
@@ -212,6 +213,13 @@ pub(crate) async fn run(
     // 3e'. The stored MEKs of those communities and their channels (plan
     // E3.1 C2c), so a post or a read after a restart has its key.
     crate::daemon::dispatch::adapter(ctx).restore_stored_meks();
+    // 3e''. The daemon's overlays (subscriptions, the gossip mesh) before
+    // any stage that gossips (live R1-13).
+    if ctx.mode == HostMode::Daemon {
+        if let Err(refused) = crate::daemon::dispatch::daemon_overlays(ctx, &scope).await {
+            return fail(ctx, refused).await;
+        }
+    }
 
     // 3f. The communities' network stage (plan E3.1 C2a), after attach.
     if let Some(transport) = &transport {
@@ -243,9 +251,7 @@ pub(crate) async fn run(
 
     // 4. Daemon-only stages.
     if ctx.mode == HostMode::Daemon {
-        if let Err(refused) = crate::daemon::dispatch::daemon_stages(ctx, &scope).await {
-            return fail(ctx, refused).await;
-        }
+        crate::daemon::dispatch::request_presence_polls(ctx);
     }
 
     // 5. The shell's unported stages.
