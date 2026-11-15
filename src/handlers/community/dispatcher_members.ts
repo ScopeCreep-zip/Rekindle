@@ -379,6 +379,7 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
           setCommunityState("communities", community, "categories", detail.categories ?? []);
           setCommunityState("communities", community, "myRoleIds", detail.myRoleIds ?? [0]);
           setCommunityState("communities", community, "mekGeneration", detail.mekGeneration ?? 0);
+          setCommunityState("communities", community, "removed", detail.removed ?? null);
         }
       })
       .catch(() => {});

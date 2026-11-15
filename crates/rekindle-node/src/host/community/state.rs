@@ -216,9 +216,11 @@ pub struct CommunityState {
     #[serde(skip)]
     pub own_removal: Option<OwnRemoval>,
 
-    /// Whether this session ran the removal's local teardown (once).
+    /// Whether the community's network side is torn down for our removal,
+    /// behind the lock that orders a teardown and a restore (a removal the
+    /// merge later voids, plan E3.2 S9 own removal and strong removal).
     #[serde(skip)]
-    pub removal_torn_down: bool,
+    pub removal_gate: std::sync::Arc<tokio::sync::Mutex<bool>>,
 
     /// Our locally persisted RSVPs for scheduled events.
     #[serde(skip)]

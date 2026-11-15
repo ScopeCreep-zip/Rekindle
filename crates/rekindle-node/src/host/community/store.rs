@@ -518,14 +518,27 @@ impl CommunityStore {
         self.update(community_id, |c| note_record_key(c, channel_id, record_key));
     }
 
-    /// Note our own removal (plan E3.2 S9 own removal): `(newly, teardown)`,
-    /// whether the community was not marked removed before, and whether
-    /// this session's one local teardown is now due.
-    pub fn note_own_removal(&self, community_id: &str, removal: OwnRemoval) -> (bool, bool) {
-        self.write(community_id, |c| {
-            let newly = c.own_removal.replace(removal).is_none();
-            (newly, !std::mem::replace(&mut c.removal_torn_down, true))
-        })
+    /// Note our own removal (plan E3.2 S9 own removal): whether the
+    /// community was not marked removed before.
+    pub fn note_own_removal(&self, community_id: &str, removal: OwnRemoval) -> bool {
+        self.write(community_id, |c| c.own_removal.replace(removal).is_none())
+    }
+
+    /// Clear our removal mark: the merged state no longer removes us (the
+    /// removal was void, strong removal). Whether it was marked.
+    pub fn clear_own_removal(&self, community_id: &str) -> bool {
+        self.read(community_id, |c| c.own_removal.is_some()) == Some(true)
+            && self.write(community_id, |c| c.own_removal.take().is_some())
+    }
+
+    /// The lock over whether the community's network side is torn down for
+    /// our removal.
+    #[must_use]
+    pub fn removal_gate(
+        &self,
+        community_id: &str,
+    ) -> Option<std::sync::Arc<tokio::sync::Mutex<bool>>> {
+        self.read(community_id, |c| std::sync::Arc::clone(&c.removal_gate))
     }
 
     /// Our own removal from the community, if the merge found one.

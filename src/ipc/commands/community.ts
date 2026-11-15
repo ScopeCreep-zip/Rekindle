@@ -36,6 +36,7 @@ export const communityCommands = {
       myPronouns?: string | null;
       myThemeColor?: number | null;
       myBadges?: string[];
+      removed?: { banned: boolean; by: string | null; byName: string | null } | null;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{

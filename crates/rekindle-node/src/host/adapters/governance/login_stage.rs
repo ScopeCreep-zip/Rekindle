@@ -102,6 +102,12 @@ async fn run(governance: &HostGovernance, stop: &CancellationToken) {
     );
 }
 
+/// One community's stage, outside the login: a community restored after
+/// its removal turned out void (`own_removal.rs`).
+pub(super) async fn bring_up(governance: &HostGovernance, community_id: &str) {
+    community(governance, community_id, &CancellationToken::new()).await;
+}
+
 /// One community's stage: open and hand over its records, hydrate its
 /// member state, rebuild its governance (its GovernanceRebuilt and
 /// MembersRefreshed come from the rebuild itself, plan E3.1 C1), and

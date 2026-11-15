@@ -42,8 +42,9 @@ impl HostGovernance {
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
         }
-        if let Some(removal) = removal {
-            self.on_own_removal(community_id, &removal);
+        match removal {
+            Some(removal) => self.on_own_removal(community_id, &removal),
+            None => self.on_not_removed(community_id),
         }
     }
 
