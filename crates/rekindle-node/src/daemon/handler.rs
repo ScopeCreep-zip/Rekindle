@@ -163,11 +163,10 @@ impl InboundHandler for DaemonHandler {
         envelope: CommunityEnvelope,
         lamport_ts: u64,
     ) {
-        debug!(
-            community = community_id,
-            sender = %sender_pseudonym,
-            "handler: on_gossip"
-        );
+        debug!(community = community_id, sender = %sender_pseudonym, "handler: on_gossip");
+        if !self.takes_traffic(community_id, sender_pseudonym) {
+            return;
+        }
 
         // Mutual Aid §14.3 — plumbing, not news. Acted on by fetching
         // the record, never surfaced as a subscription event, so it is
@@ -378,6 +377,9 @@ impl InboundHandler for DaemonHandler {
     /// the transport already decremented has changed. That is what makes
     /// a relayed message still attributable to whoever wrote it.
     async fn on_gossip_forward(&self, envelope: &SignedEnvelope) {
+        if !self.takes_traffic(&envelope.community_id, &envelope.sender_pseudonym) {
+            return;
+        }
         crate::daemon::gossip::forward(&self.gossip_tx, envelope.clone());
     }
 
@@ -567,6 +569,14 @@ impl InboundHandler for DaemonHandler {
 }
 
 impl DaemonHandler {
+    /// Whether we take `author`'s gossip for the community, or relay it
+    /// (`CommunityStore::takes_traffic_from`).
+    fn takes_traffic(&self, community_id: &str, author: &str) -> bool {
+        let author = rekindle_types::id::PseudonymKey::from_hex_lossy(author);
+        (self.host.get().and_then(std::sync::Weak::upgrade))
+            .is_none_or(|ctx| ctx.communities.takes_traffic_from(community_id, &author))
+    }
+
     /// Hand a notified channel post to the Host's ingest (plan E3.1 F3).
     fn ingest_post(&self, community_id: &str, author: &str, post: (String, String, u32, u64)) {
         let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {

@@ -2,7 +2,7 @@
 //! own subscriber (`tracing::subscriber::set_default`, no global one, so
 //! parallel tests never share counts), which prints as `RUST_LOG` asks and
 //! counts every WARN and ERROR event by the node whose [`NODE_SPAN`] it ran
-//! in. The harness opens that span around a node's Host start and its
+//! in, keeping the text of every INFO, WARN and ERROR event. The harness opens that span around a node's Host start and its
 //! requests; a task the Host spawns runs in its spawner's span
 //! (`SessionScope` and the transport's loops instrument it), so its events
 //! count under that node too. Only an event outside every node span (a
@@ -34,8 +34,9 @@ pub struct Counts {
 }
 
 type Tally = Arc<Mutex<BTreeMap<Option<usize>, Counts>>>;
-/// Each WARN and ERROR event's text (its message and fields), by node.
-type Lines = Arc<Mutex<Vec<(Option<usize>, String)>>>;
+/// Each INFO, WARN and ERROR event's level and text (its message and
+/// fields), by node.
+type Lines = Arc<Mutex<Vec<(Option<usize>, Level, String)>>>;
 
 thread_local! {
     static RUN: RefCell<Option<(tracing::subscriber::DefaultGuard, Tally, Lines)>> =
@@ -73,6 +74,17 @@ pub fn counts() -> BTreeMap<Option<usize>, Counts> {
 
 /// The WARN and ERROR events so far that contain `needle`, any node.
 pub fn warned(needle: &str) -> Vec<String> {
+    lines(|_, level, text| level <= Level::WARN && text.contains(needle))
+}
+
+/// The INFO, WARN and ERROR events node `node` logged so far that contain
+/// every one of `needles`.
+pub fn logged(node: usize, needles: &[&str]) -> Vec<String> {
+    lines(|at, _, text| at == Some(node) && needles.iter().all(|n| text.contains(n)))
+}
+
+/// The captured events `keep` picks, each as `node …: text`.
+fn lines(keep: impl Fn(Option<usize>, Level, &str) -> bool) -> Vec<String> {
     RUN.with(|run| {
         run.borrow()
             .as_ref()
@@ -80,8 +92,8 @@ pub fn warned(needle: &str) -> Vec<String> {
                 lines
                     .lock()
                     .iter()
-                    .filter(|(_, text)| text.contains(needle))
-                    .map(|(node, text)| format!("node {node:?}: {text}"))
+                    .filter(|(node, level, text)| keep(*node, *level, text))
+                    .map(|(node, _, text)| format!("node {node:?}: {text}"))
                     .collect()
             })
             .unwrap_or_default()
@@ -140,7 +152,7 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
 
     fn on_event(&self, event: &Event<'_>, ctx: Context<'_, S>) {
         let level = *event.metadata().level();
-        if level != Level::WARN && level != Level::ERROR {
+        if level > Level::INFO {
             return;
         }
         let node = ctx.event_scope(event).and_then(|scope| {
@@ -151,7 +163,10 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
         });
         let mut text = Text::default();
         event.record(&mut text);
-        self.1.lock().push((node, text.0));
+        self.1.lock().push((node, level, text.0));
+        if level == Level::INFO {
+            return;
+        }
         let mut tally = self.0.lock();
         let counts = tally.entry(node).or_default();
         if level == Level::ERROR {

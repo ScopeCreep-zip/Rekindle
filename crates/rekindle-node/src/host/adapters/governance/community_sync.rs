@@ -111,7 +111,8 @@ pub(super) fn status_str(status: SessionStatus) -> &'static str {
 }
 
 impl HostGovernance {
-    /// The communities we hold governance for, with a pseudonym in each, in
+    /// The communities we hold governance for, with a pseudonym in each and
+    /// not removed from (a removed member sends nothing, plan E3.2 S9), in
     /// id order (the store's map has no order; the phase's sends must not
     /// depend on it).
     fn sync_targets(&self) -> Vec<String> {
@@ -122,6 +123,7 @@ impl HostGovernance {
             .read()
             .values()
             .filter(|c| c.governance_state.is_some() && c.my_pseudonym_key.is_some())
+            .filter(|c| c.own_removal.is_none())
             .map(|c| c.id.clone())
             .collect();
         targets.sort_unstable();

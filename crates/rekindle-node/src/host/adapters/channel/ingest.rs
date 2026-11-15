@@ -84,6 +84,9 @@ pub enum Ingested {
     Undecryptable,
     /// The gate dropped it.
     Dropped(GateReason),
+    /// We were removed from the community: nothing of it is opened or
+    /// stored, whichever path read it (plan E3.2 S9, R3-1).
+    Removed,
 }
 
 impl HostChannel {
@@ -181,6 +184,14 @@ impl HostChannel {
         post: ReceivedPost,
         backfill: bool,
     ) -> Result<Ingested, ChannelError> {
+        if self
+            .ctx()
+            .communities
+            .own_removal(&post.community_id)
+            .is_some()
+        {
+            return Ok(Ingested::Removed);
+        }
         let (owner, db) = self.owner_and_db()?;
         let message_id = (post.message.message_id.clone())
             .ok_or_else(|| ChannelError::Adapter("a received post has no message id".into()))?;

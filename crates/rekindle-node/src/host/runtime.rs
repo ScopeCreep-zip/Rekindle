@@ -19,6 +19,7 @@ use rekindle_idempotency::attempts::AttemptLimiter;
 use rekindle_transport::crypto::mek::MekCache;
 use rekindle_transport::{Session, TransportConfig, TransportNode};
 use rekindle_vault::VaultHandle;
+use tracing::Instrument as _;
 
 use super::{policy, signals, watchdog, ConfigFault};
 use crate::daemon::dispatch::DaemonContext;
@@ -355,28 +356,20 @@ impl Host {
         // the GUI's pipeline runs these stages (one owner per stage), so
         // their queues have no reader there.
         let workers = tokio_util::task::TaskTracker::new();
+        // Each in the Host's span, as a SessionScope task is.
         if mode == HostMode::Daemon {
-            workers.spawn(crate::daemon::mek_rotation::run_worker(
-                Arc::clone(&ctx),
-                mek_rotation_rx,
-            ));
-            workers.spawn(crate::daemon::gossip::run_worker(
-                Arc::clone(&ctx),
-                gossip_rx,
-            ));
-            workers.spawn(crate::daemon::presence_adapter::supervisor::run_supervisor(
-                Arc::clone(&ctx),
-                presence_start_rx,
-            ));
-            workers.spawn(crate::daemon::event_forward::run_forwarder(Arc::clone(
-                &ctx,
-            )));
+            use crate::daemon::{
+                event_forward, gossip, mek_rotation, presence_adapter::supervisor,
+            };
+            let c = || Arc::clone(&ctx);
+            workers.spawn(mek_rotation::run_worker(c(), mek_rotation_rx).in_current_span());
+            workers.spawn(gossip::run_worker(c(), gossip_rx).in_current_span());
+            workers.spawn(supervisor::run_supervisor(c(), presence_start_rx).in_current_span());
+            workers.spawn(event_forward::run_forwarder(c()).in_current_span());
         } else {
             // A panicked unlock task ends the session (`host::unlock`).
-            workers.spawn(super::unlock::run_panic_teardowns(
-                Arc::clone(&ctx),
-                unlock_panics_rx,
-            ));
+            let teardowns = super::unlock::run_panic_teardowns(Arc::clone(&ctx), unlock_panics_rx);
+            workers.spawn(teardowns.in_current_span());
         }
 
         let bus = if serve_bus {

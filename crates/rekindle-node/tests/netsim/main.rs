@@ -57,6 +57,7 @@ mod onboarding;
 mod one_community_rebuild;
 mod outbox_handshake;
 mod own_removal;
+mod own_removal_quiet;
 mod pair;
 mod pins;
 mod prekey_collision;

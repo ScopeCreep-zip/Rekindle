@@ -17,7 +17,8 @@ use super::HostGovernance;
 
 impl HostGovernance {
     /// The communities whose community key is absent or behind, with our
-    /// pseudonym in each.
+    /// pseudonym in each; never one we were removed from (plan E3.2 S9: it
+    /// asks no peer for a key).
     pub(crate) fn behind_meks(&self) -> Vec<(String, String)> {
         let keys = self.keys();
         self.ctx
@@ -25,6 +26,7 @@ impl HostGovernance {
             .map()
             .read()
             .values()
+            .filter(|c| c.own_removal.is_none())
             .filter_map(|c| {
                 let held = keys
                     .current_epoch(&c.id, KeyScope::Community)

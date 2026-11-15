@@ -174,6 +174,10 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
             tracing::debug!(community = %request.community_id, "locked — rotation request dropped");
             continue;
         }
+        if removed_from(&ctx, &request) {
+            tracing::debug!(community = %request.community_id, "removed — rotation request dropped");
+            continue;
+        }
         let adapter = DaemonMekAdapter::new(Arc::clone(&ctx));
         let community = &request.community_id;
         let rotation = async {
@@ -248,4 +252,24 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
         }
     }
     tracing::info!("MEK rotation worker stopped");
+}
+
+/// Whether `request` is for a community we were removed from, or for our
+/// own departure (its notice reaches us before the merge marks us
+/// removed): a removed member is no eligible rotator (ADR 0018) and
+/// evaluates no rotation (plan E3.2 S9 own removal, R3-3).
+fn removed_from(ctx: &DaemonContext, request: &MekRotationRequest) -> bool {
+    let departed = match &request.kind {
+        MekRotationKind::Departure {
+            departed_pseudonym_hex,
+        } => Some(departed_pseudonym_hex),
+        MekRotationKind::Kick {
+            target_pseudonym_hex,
+            ..
+        } => Some(target_pseudonym_hex),
+        MekRotationKind::Manual { .. } => None,
+    };
+    let me = ctx.my_pseudonym(&request.community_id);
+    ctx.communities.own_removal(&request.community_id).is_some()
+        || departed.is_some_and(|d| !me.is_empty() && d.eq_ignore_ascii_case(&me))
 }

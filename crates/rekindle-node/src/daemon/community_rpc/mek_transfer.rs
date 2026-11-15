@@ -56,6 +56,16 @@ pub(crate) fn handle_mek_transfer(
         };
     }
 
+    // Nothing is opened or stored for a community we were removed from,
+    // nor from a departed rotator (plan E3.2 S9, R3-1/R3-3).
+    let rotator = rekindle_types::id::PseudonymKey::from_hex_lossy(&transfer.sender_pseudonym);
+    if governance.is_some_and(|g| !g.takes_traffic_from(governance_key, &rotator)) {
+        tracing::debug!(community = %governance_key, "MEK transfer refused: removed or departed");
+        return CallResponse::Rejected {
+            reason: "removed".into(),
+        };
+    }
+
     let Some(signing_key_bytes) = super::get_signing_key(signing_key) else {
         tracing::warn!("daemon locked — cannot unwrap MEK transfer");
         return CallResponse::Rejected {

@@ -137,6 +137,12 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
     let adapter = Arc::new(DaemonGossipAdapter::new(Arc::clone(&ctx)));
     tracing::info!("gossip worker started");
     while let Some(Some(request)) = ctx.shutdown.run_until(rx.recv()).await {
+        if let Some(community) = removed_from(&ctx, &request) {
+            // Every sender checks the removal itself; this one is the
+            // backstop for a send queued before the teardown.
+            tracing::info!(community, "gossip: nothing sent for a removed community");
+            continue;
+        }
         let send = async {
             match request {
                 GossipRequest::Originate {
@@ -174,4 +180,18 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
         }
     }
     tracing::info!("gossip worker stopped");
+}
+
+/// The community `request` is for, when we were removed from it (plan
+/// E3.2 S9 own removal): a removed member sends nothing for it, neither
+/// its own gossip nor a relay of anyone's, as Signal's inactive group.
+fn removed_from<'r>(ctx: &DaemonContext, request: &'r GossipRequest) -> Option<&'r str> {
+    let community = match request {
+        GossipRequest::Originate { community_id, .. } => community_id,
+        GossipRequest::Forward(signed) => &signed.community_id,
+    };
+    ctx.communities
+        .own_removal(community)
+        .is_some()
+        .then_some(community.as_str())
 }

@@ -15,6 +15,7 @@ use parking_lot::RwLock;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
 use rekindle_transport::session::CommunityMembership;
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::id::ThreadId;
 
 use rekindle_db::repo::communities::snapshot::StoredGovernance;
@@ -545,6 +546,20 @@ impl CommunityStore {
     #[must_use]
     pub fn own_removal(&self, community_id: &str) -> Option<OwnRemoval> {
         self.read(community_id, |c| c.own_removal.clone()).flatten()
+    }
+
+    /// Whether we take `author`'s traffic for the community (gossip, its
+    /// relay, key transfers): never once we were removed from it, nor from
+    /// a member who departed (plan E3.2 S9, amended 2026-11-15). A relay
+    /// keeps its author's signature, so the author is who is judged. A
+    /// community the store does not hold is judged by its own handlers.
+    #[must_use]
+    pub fn takes_traffic_from(&self, community_id: &str, author: &PseudonymKey) -> bool {
+        self.read(community_id, |c| {
+            c.own_removal.is_none()
+                && !(c.governance_state.as_ref()).is_some_and(|state| state.is_departed(author))
+        })
+        .unwrap_or(true)
     }
 
     /// Drop a community — on leave.

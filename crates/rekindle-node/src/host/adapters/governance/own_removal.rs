@@ -162,6 +162,19 @@ impl HostGovernance {
         tracing::info!(community = %community_id, "removed community torn down; history kept");
     }
 
+    /// Whether we take `author`'s traffic for the community: not once we
+    /// were removed, nor a departed member's
+    /// ([`crate::host::community::store::CommunityStore::takes_traffic_from`]).
+    pub(crate) fn takes_traffic_from(
+        &self,
+        community_id: &str,
+        author: &rekindle_types::id::PseudonymKey,
+    ) -> bool {
+        self.ctx
+            .communities
+            .takes_traffic_from(community_id, author)
+    }
+
     /// Undo [`Self::tear_down_removed`] for a removal that turned out void:
     /// the vault's keys back into the caches, then the community brought up
     /// as the login stage brings each one up (records, watches, keepalive,

@@ -34,6 +34,11 @@ impl HostGovernance {
         let Some(community) = self.community_of_governance_record(record) else {
             return false;
         };
+        // A community we were removed from is read-only history: a late
+        // change opens nothing (plan E3.2 S9, R3-1).
+        if self.ctx.communities.own_removal(&community).is_some() {
+            return true;
+        }
         tracing::info!(%community, "governance record changed — rebuilding that community");
         rekindle_governance_runtime::rebuild_governance(self, &community).await;
         self.open_new_channel_records(&community).await;
