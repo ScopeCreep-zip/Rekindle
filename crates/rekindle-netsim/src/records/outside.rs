@@ -96,7 +96,7 @@ impl Netsim {
                 }
             }
         }
-        watches::mark(record, &stored, subkey, usize::MAX);
+        watches::mark(record, &stored, subkey);
         stores::admit(inner, key, &stored);
         Ok(stored.len())
     }

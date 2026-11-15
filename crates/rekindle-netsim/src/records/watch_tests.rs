@@ -118,6 +118,17 @@ fn desired(subkeys: &[u32]) -> Desired {
     }
 }
 
+/// The nonce of a pushed ciphertext no replica holds.
+const PUSHED_NONCE: u64 = 7;
+
+/// A pushed ciphertext of [`value`].
+fn pushed(seq: u32) -> crate::records::replicas::Cipher {
+    crate::records::replicas::Cipher {
+        value: value(seq),
+        nonce: PUSHED_NONCE,
+    }
+}
+
 fn value(seq: u32) -> RecordValue {
     RecordValue {
         seq,
@@ -136,20 +147,26 @@ async fn the_watcher_drops_a_value_it_may_not_report() {
         .insert(k.clone(), Some(desired(&[2, 3])));
     let set = |s: &[u32]| s.iter().copied().collect::<BTreeSet<u32>>();
     // The first changed subkey is not watched: the range, no value.
-    let change = watches::receive(&mut inner, 0, &k, (set(&[1, 2]), 9, None)).unwrap();
+    let change = watches::receive(&mut inner, 0, &k, (set(&[1, 2]), 9, None), 0).unwrap();
     assert_eq!((change.subkeys, change.value), (vec![2], None));
-    let change = watches::receive(&mut inner, 0, &k, (set(&[1]), 9, Some(value(0))));
+    let change = watches::receive(&mut inner, 0, &k, (set(&[1]), 9, Some(pushed(0))), 0);
     assert!(change.is_none(), "nothing watched changed");
     // Not newer than the local copy: dropped, and nothing is left.
     inner.nodes[0].local.insert((k.clone(), 2), value(4));
-    assert!(watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(value(4)))).is_none());
+    assert!(watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(pushed(4))), 0).is_none());
     // Newer: stored, then reported.
-    let change = watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(value(5)))).unwrap();
+    let change = watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(pushed(5))), 0).unwrap();
     assert_eq!(change.value, Some(value(5)));
     assert_eq!(inner.nodes[0].local[&(k.clone(), 2)], value(5));
+    // The local copy keeps the pushed ciphertext's nonce (`watch_value.rs:2080-2263`
+    // stores the replica's bytes), so a later rewrite resends those bytes.
+    assert_eq!(
+        crate::records::replicas::local(&inner, 0, &k, 2).map(|c| c.nonce),
+        Some(PUSHED_NONCE)
+    );
     // A node that watches nothing hears nothing.
     inner.nodes[0].watches.clear();
-    assert!(watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(value(6)))).is_none());
+    assert!(watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(pushed(6))), 0).is_none());
 }
 
 /// The replicas holding `node`'s watch on `key`.

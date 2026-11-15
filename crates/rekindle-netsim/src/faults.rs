@@ -111,10 +111,16 @@ pub enum Fault {
     /// answer "try again", its ready watch follows, and it hears an
     /// attachment update with `is_attached` still true.
     InternetReady { node: usize, ready: bool },
-    /// The node's storage-manager tick ran `ms` late (a suspended
-    /// process): past 2 s, an online node inspects every watch, at most
-    /// once per 30 s (`tasks/mod.rs:132-145`).
-    TickLag { node: usize, ms: u64 },
+    /// The node's process is suspended (a desktop sleep) or resumes: while
+    /// asleep its storage manager's tick does not run and nothing sent to
+    /// it arrives (a value-changed push, an app message or call), and it
+    /// stays attached, with no Offline transition. Veilid 0.5.8 has no
+    /// tick-lag sweep (0.5.7's `CHANGE_INSPECT_LAG` is gone from
+    /// `storage_manager/constants.rs`): a missed push surfaces through the
+    /// fallback timer, on the node's wall clock
+    /// (`records/outbound.rs`). Pair it with [`Fault::ClockSkew`] for the
+    /// wall clock jump of a sleep the monotonic clock did not see.
+    Sleep { node: usize, asleep: bool },
     /// Nodes join closer to `key`: `count` of its replicas are pushed out
     /// for empty stores, their watches gone (`records/outside.rs`).
     ReplicaChurn { key: String, count: usize },
@@ -284,9 +290,9 @@ impl Netsim {
             Fault::Detach { node, detached } => self.detach(node, detached),
             Fault::InternetReady { node, ready } => self.internet_ready(node, ready),
             Fault::ReplicaChurn { key, count } => self.churn(&key, count),
-            Fault::TickLag { node, ms } => self
-                .net
-                .tick_lag(node, std::time::Duration::from_millis(ms)),
+            Fault::Sleep { node, asleep } => {
+                toggle(&mut self.net.inner.lock().faults.asleep, node, asleep);
+            }
         }
     }
 

@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use rekindle_records::port::{DhtBackend, DhtErrorKind, PortEvent, RecordSchema, ValueChange};
 
+use super::catchup::MAX_IN_FLIGHT;
 use super::dht::SimDht;
+use super::outbound::WatchState;
 use crate::{Fault, Netsim, Node};
 
 fn dht(sim: &Netsim, node: &Node) -> SimDht {
@@ -66,12 +68,12 @@ async fn a_reattached_node_hears_the_changes_it_missed() {
         detached: false,
     });
     let changes = heard(&sim, &mut nodes, 1).await;
-    // The range of newer subkeys, the first one's value, stored before.
+    // Several newer subkeys: the range with no value and no read
+    // (0.5.8 `watch_value.rs:1497-1507`); the local copy stays.
     assert_eq!(changes.len(), 1, "{changes:?}");
     assert_eq!(changes[0].subkeys, vec![1, 2]);
-    let value = changes[0].value.clone().expect("the first subkey's value");
-    assert_eq!((value.seq, value.data), (1, vec![1]));
-    assert_eq!(b.get(&key, 1, false).await.unwrap().unwrap().seq, 1);
+    assert_eq!(changes[0].value, None);
+    assert_eq!(b.get(&key, 1, false).await.unwrap().unwrap().seq, 0);
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -85,7 +87,7 @@ async fn dht_back_online_with_nothing_newer_reports_nothing() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn heal_is_a_readiness_return_and_an_offline_inspection_retries() {
+async fn heal_is_a_readiness_return_and_an_offline_node_holds_its_inspections() {
     let (sim, mut nodes) = Netsim::nodes(2, 23);
     let (key, a, _b) = watched(&sim, &mut nodes).await;
     sim.fault(Fault::DhtOffline {
@@ -97,39 +99,143 @@ async fn heal_is_a_readiness_return_and_an_offline_inspection_retries() {
     let changes = heard(&sim, &mut nodes, 1).await;
     assert_eq!(changes.len(), 1, "{changes:?}");
     assert_eq!(changes[0].subkeys, vec![3]);
-    // A queued inspection that finds the node offline waits 5 s and runs.
+    // While offline the queue holds, unspent (0.5.8 `mod.rs:1129-1131`),
+    // and no fallback fires.
     super::catchup::enqueue(&mut sim.net.inner.lock(), 1, &key, sim.net.now_us());
+    let before = state(&sim, &key).last_fallback;
+    let queued = sim.net.inner.lock().nodes[1]
+        .outbound
+        .queue
+        .get(&key)
+        .copied();
     sim.net.inner.lock().faults.dht_offline.insert(1);
+    for _ in 0..400 {
+        step(&sim, &mut nodes, 1).await;
+    }
+    assert_eq!(
+        sim.net.inner.lock().nodes[1]
+            .outbound
+            .queue
+            .get(&key)
+            .copied(),
+        queued
+    );
+    assert_eq!(state(&sim, &key).last_fallback, before);
+    sim.net.inner.lock().faults.dht_offline.remove(&1);
+    step(&sim, &mut nodes, 1).await;
+    assert!(!sim.net.inner.lock().nodes[1]
+        .outbound
+        .queue
+        .contains_key(&key));
+}
+
+fn state(sim: &Netsim, key: &str) -> WatchState {
+    sim.net.inner.lock().nodes[1].outbound.states[key].clone()
+}
+
+/// One 1 s watch tick and its deliveries; what node `i` heard.
+async fn step(sim: &Netsim, nodes: &mut [Node], i: usize) -> Vec<ValueChange> {
     sim.net.inner.lock().next_tick = Some(tokio::time::Instant::now());
     sim.net.deliver();
-    sim.net.inner.lock().nodes[1].was_online = true;
-    sim.net.inner.lock().faults.dht_offline.remove(&1);
-    let queued = sim.net.inner.lock().nodes[1].inspects.get(&key).copied();
-    assert!(queued.is_some_and(|at| at > sim.net.now_us()), "{queued:?}");
+    tokio::time::advance(Duration::from_secs(1)).await;
+    sim.net.deliver();
+    let mut changes = Vec::new();
+    while let Ok(event) = nodes[i].events.try_recv() {
+        if let PortEvent::ValueChange(change) = event {
+            changes.push(change);
+        }
+    }
+    changes
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_tick_lag_inspects_every_watch_at_most_once_per_interval() {
+async fn the_fallback_backs_off_from_30_s_to_300_s_while_it_finds_nothing() {
     let (sim, mut nodes) = Netsim::nodes(2, 24);
+    let (key, _a, _b) = watched(&sim, &mut nodes).await;
+    let mut fired = Vec::new();
+    for _ in 0..1_400 {
+        assert!(step(&sim, &mut nodes, 1).await.is_empty());
+        let last = state(&sim, &key).last_fallback;
+        if last.is_some() && fired.last() != Some(&last) {
+            fired.push(last);
+        }
+    }
+    let gaps: Vec<u64> = fired
+        .windows(2)
+        .map(|w| (w[1].unwrap() - w[0].unwrap()) / 1_000_000)
+        .collect();
+    // The establishing inspection already backed 30 s off to 60 s
+    // (`note_change_inspect_outcome`, `watch_value.rs:2368-2397`).
+    assert_eq!(gaps[..4], [120, 240, 300, 300], "{gaps:?}");
+    assert_eq!(state(&sim, &key).interval(), 300_000_000);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_push_lost_in_a_sleep_surfaces_at_the_fallback_on_the_wall_clock() {
+    let (sim, mut nodes) = Netsim::nodes(2, 27);
     let (key, a, _b) = watched(&sim, &mut nodes).await;
-    // A change the watch never heard of (the local copy is behind).
-    let behind = |sim: &Netsim| {
-        sim.net.inner.lock().nodes[1]
-            .local
-            .remove(&(key.clone(), 0));
+    for _ in 0..200 {
+        step(&sim, &mut nodes, 1).await;
+    }
+    sim.fault(Fault::Sleep {
+        node: 1,
+        asleep: true,
+    });
+    a.set(&key, 0, vec![9], None).await.unwrap();
+    assert!(
+        step(&sim, &mut nodes, 1).await.is_empty(),
+        "the push is lost"
+    );
+    sim.fault(Fault::Sleep {
+        node: 1,
+        asleep: false,
+    });
+    // The wake: the wall clock jumped 10 min that the monotonic clock never
+    // saw, so the silent watch is due at once.
+    sim.fault(Fault::ClockSkew {
+        node: 1,
+        ms: 600_000,
+    });
+    let changes = step(&sim, &mut nodes, 1).await;
+    let changes = if changes.is_empty() {
+        heard(&sim, &mut nodes, 1).await
+    } else {
+        changes
     };
-    behind(&sim);
-    sim.fault(Fault::TickLag { node: 1, ms: 1_000 });
-    assert!(heard(&sim, &mut nodes, 1).await.is_empty());
-    sim.fault(Fault::TickLag { node: 1, ms: 3_000 });
-    let changes = heard(&sim, &mut nodes, 1).await;
     assert_eq!(changes.len(), 1, "{changes:?}");
     assert_eq!(changes[0].subkeys, vec![0]);
-    // Within 30 s a second lag inspects nothing.
-    behind(&sim);
-    sim.fault(Fault::TickLag { node: 1, ms: 3_000 });
-    assert!(sim.net.inner.lock().nodes[1].inspects.is_empty());
-    drop(a);
+    assert_eq!(
+        changes[0].value.as_ref().map(|v| v.data.clone()),
+        Some(vec![9])
+    );
+    // Productive: the backoff resets to 30 s.
+    assert_eq!(state(&sim, &key).interval(), 30_000_000);
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn at_most_16_inspections_run_at_once() {
+    let (sim, mut nodes) = Netsim::nodes(2, 28);
+    let (a, b) = (dht(&sim, &nodes[0]), dht(&sim, &nodes[1]));
+    let mut keys = Vec::new();
+    for _ in 0..20 {
+        let key = a
+            .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+            .await
+            .unwrap()
+            .key;
+        a.set(&key, 0, vec![0], None).await.unwrap();
+        b.open(&key, None).await.unwrap();
+        assert!(b.watch(&key, None, None, None).await.unwrap());
+        keys.push(key);
+    }
+    // Every watch was queued at its establishment; one tick starts 16.
+    sim.net.inner.lock().next_tick = Some(tokio::time::Instant::now());
+    sim.net.deliver();
+    let inner = sim.net.inner.lock();
+    assert_eq!(inner.nodes[1].outbound.in_flight.len(), MAX_IN_FLIGHT);
+    assert_eq!(inner.nodes[1].outbound.queue.len(), 20 - MAX_IN_FLIGHT);
+    drop(inner);
+    let _ = &mut nodes;
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

@@ -22,10 +22,11 @@
 //! - watches are per node, the union of the session's borrowers, held by
 //!   the replicas the node reaches within Veilid's limits, and end with the
 //!   death shape on cancel, close or expiry ([`watches`] cites Veilid);
-//! - a node inspects its watches when its DHT comes back online, after a
-//!   tick lag, and when a watch is established or newly held, reporting
-//!   what the network holds newer than its local copy ([`catchup`] cites
-//!   Veilid);
+//! - a node inspects its watches when its DHT comes back online, when a
+//!   watch's fallback silence timer is due, and when a watch is established
+//!   or newly held, reporting what the network holds newer than its local
+//!   copy; a range-only hint of a subkey already reported waits for a
+//!   network read of it ([`catchup`], [`outbound`] cite Veilid 0.5.8);
 //! - an open of a locally held record queues Veilid's rehydration, which
 //!   pushes the local subkeys the replicas lack ([`rehydrate`] cites
 //!   Veilid); each DHT store keeps at most Veilid's remote record count and
@@ -55,6 +56,9 @@ mod fanout;
 mod fanout_tests;
 #[cfg(test)]
 mod key_tests;
+pub(crate) mod outbound;
+#[cfg(test)]
+mod outbound_tests;
 mod outside;
 #[cfg(test)]
 mod outside_tests;

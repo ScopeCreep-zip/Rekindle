@@ -139,7 +139,7 @@ fn push(inner: &mut Inner, node: usize, key: &str, subkey: u32) {
         subkey as usize,
         &ours,
     );
-    watches::mark(record, &fanout.stored, subkey, node);
+    watches::mark(record, &fanout.stored, subkey);
     stores::touch(inner, key, &reach);
     stores::admit(inner, key, &fanout.stored);
     if fanout.value != ours {

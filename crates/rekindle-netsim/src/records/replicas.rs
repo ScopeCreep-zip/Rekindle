@@ -313,6 +313,9 @@ pub(crate) fn refresh(
         reachable(&r.replicas, &inner.faults.partitions, node)
     });
     super::stores::touch(inner, key, &reach);
+    // A get that reached the network consumes its report mark
+    // (0.5.8 `get_value.rs:196-197`, [`super::outbound`]).
+    super::outbound::read_back(inner, node, key, subkey);
     let found = inner.records.get(key).and_then(|r| {
         settle(
             &r.schema,

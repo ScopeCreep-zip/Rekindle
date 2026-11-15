@@ -72,3 +72,4 @@ mod smoke;
 mod stale_route_call;
 mod stall;
 mod udp_blocked;
+mod watch_fallback;

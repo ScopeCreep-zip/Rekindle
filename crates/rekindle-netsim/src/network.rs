@@ -111,6 +111,8 @@ pub(crate) struct Faults {
     /// Attached nodes whose public internet turned ready but has not yet
     /// proven it by a round trip ([`crate::attach`]).
     pub ready_pending: HashSet<usize>,
+    /// Nodes whose process is suspended ([`crate::Fault::Sleep`]).
+    pub asleep: HashSet<usize>,
 }
 
 /// Each node's side of the network.
@@ -129,16 +131,12 @@ pub(crate) struct NodeSlot {
     /// The node's desired watches, by record key; `None` is cancelled and
     /// dies at the next watch tick ([`crate::records::watches`]).
     pub watches: HashMap<String, Option<crate::records::watches::Desired>>,
-    /// The node's queued change inspections: record key → not before (µs)
-    /// (Veilid's `needs_change_inspection`, [`crate::records`]' catch-up).
-    pub inspects: HashMap<String, u64>,
+    /// The node's outbound watch manager: queued change inspections,
+    /// fallback timers, report marks ([`crate::records`]' catch-up).
+    pub outbound: crate::records::outbound::OutboundWatches,
     /// The inspects the node's app asked for (`DhtPort::inspect`), by
     /// record key, for a scenario that a record is never polled.
     pub app_inspects: HashMap<String, u64>,
-    /// Whether the node's DHT was online at the last watch tick.
-    pub was_online: bool,
-    /// When a tick lag last inspected every watch (µs).
-    pub last_lag_inspect: Option<u64>,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// The attachment state last queued for the node ([`crate::attach`]).
@@ -191,10 +189,8 @@ impl NodeSlot {
             known: HashSet::new(),
             opened: HashMap::new(),
             watches: HashMap::new(),
-            inspects: HashMap::new(),
+            outbound: crate::records::outbound::OutboundWatches::default(),
             app_inspects: HashMap::new(),
-            was_online: true,
-            last_lag_inspect: None,
             pools: Vec::new(),
             state: "detached",
             public_ready: false,
@@ -322,7 +318,9 @@ impl Network {
         if from == to {
             return false;
         }
-        if inner.faults.partitions.contains(&pair(from, to)) || inner.faults.detached.contains(&to)
+        if inner.faults.partitions.contains(&pair(from, to))
+            || inner.faults.detached.contains(&to)
+            || inner.faults.asleep.contains(&to)
         {
             return true;
         }
@@ -431,7 +429,9 @@ impl Network {
     /// When the next event in flight arrives, if any is.
     pub(crate) fn next_due(&self) -> Option<tokio::time::Instant> {
         let inner = self.inner.lock();
-        let tick = inner.next_tick.filter(|_| Self::watch_work(&inner));
+        let tick = inner
+            .next_tick
+            .filter(|_| Self::watch_work(&inner, self.now_us()));
         inner.pending.iter().map(|p| p.due).chain(tick).min()
     }
 
