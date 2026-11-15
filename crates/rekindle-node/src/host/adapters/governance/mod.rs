@@ -64,6 +64,7 @@ mod membership_route;
 pub(crate) mod onboarding;
 pub(crate) mod onboarding_map;
 mod ops;
+mod own_removal;
 pub(crate) mod pins;
 pub mod projection;
 mod publication;

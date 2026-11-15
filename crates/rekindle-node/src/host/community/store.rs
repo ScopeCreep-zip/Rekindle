@@ -19,7 +19,7 @@ use rekindle_types::id::ThreadId;
 
 use rekindle_db::repo::communities::snapshot::StoredGovernance;
 
-use super::state::{CommunityState, MemberRecord};
+use super::state::{CommunityState, MemberRecord, OwnRemoval};
 use crate::host::adapters::governance::projection::{self, GovernanceProjected};
 
 /// Every joined community, keyed by governance key.
@@ -516,6 +516,22 @@ impl CommunityStore {
     /// the store holds (insert-only, as the session records it).
     pub fn note_channel_record_key(&self, community_id: &str, channel_id: &str, record_key: &str) {
         self.update(community_id, |c| note_record_key(c, channel_id, record_key));
+    }
+
+    /// Note our own removal (plan E3.2 S9 own removal): `(newly, teardown)`,
+    /// whether the community was not marked removed before, and whether
+    /// this session's one local teardown is now due.
+    pub fn note_own_removal(&self, community_id: &str, removal: OwnRemoval) -> (bool, bool) {
+        self.write(community_id, |c| {
+            let newly = c.own_removal.replace(removal).is_none();
+            (newly, !std::mem::replace(&mut c.removal_torn_down, true))
+        })
+    }
+
+    /// Our own removal from the community, if the merge found one.
+    #[must_use]
+    pub fn own_removal(&self, community_id: &str) -> Option<OwnRemoval> {
+        self.read(community_id, |c| c.own_removal.clone()).flatten()
     }
 
     /// Drop a community — on leave.

@@ -170,8 +170,11 @@ async fn kick_removes_member_and_refuses_its_key_request() {
     community.sim.quiesce().await;
     let general = community.general_id(1).await;
     let held_before = held_keys(&community, 1).await;
-    community.nodes[1]
-        .ok(IpcRequest::Community(CommunityRequest::Messages(
+    // The kicked member has left locally (plan E3.2 S9 own removal), so
+    // its request may be refused before it leaves; either way no
+    // responder answers it.
+    let _ = community.nodes[1]
+        .call(IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::MekRequest {
                 community: community.governance_key.clone(),
                 channel: general,

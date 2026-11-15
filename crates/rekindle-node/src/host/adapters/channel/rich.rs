@@ -99,6 +99,11 @@ impl HostChannel {
     }
 
     fn require(&self, community_id: &str, channel_id: &str, bits: u64) -> Result<(), ChannelError> {
+        // Reads of a community we were removed from stay open; every
+        // write is refused (plan E3.2 S9 own removal).
+        if bits != permissions::VIEW_CHANNELS {
+            self.refuse_removed(community_id)?;
+        }
         self.require_channel_permission(community_id, Some(channel_id), bits)
     }
 
@@ -129,6 +134,7 @@ impl HostChannel {
         community_id: &str,
         thread: NewThread<'_>,
     ) -> Result<String, ChannelError> {
+        self.refuse_removed(community_id)?;
         self.require(community_id, thread.channel_id, permissions::VIEW_CHANNELS)?;
         rekindle_channel::create_thread(
             self,

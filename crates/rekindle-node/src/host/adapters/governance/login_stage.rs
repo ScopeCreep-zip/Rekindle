@@ -79,8 +79,11 @@ async fn run(governance: &HostGovernance, stop: &CancellationToken) {
         .communities
         .map()
         .read()
-        .keys()
-        .cloned()
+        .iter()
+        // A community we were removed from is read-only history: none of
+        // its records open again (plan E3.2 S9 own removal).
+        .filter(|(_, c)| c.own_removal.is_none())
+        .map(|(id, _)| id.clone())
         .collect();
     communities.sort();
     for community_id in &communities {

@@ -185,7 +185,7 @@ impl HostGovernance {
     /// Every key of every scope of `community`, stored and live, ours and
     /// the shell's: a member who left keeps nothing that opens the
     /// community's past or future traffic.
-    fn forget_keys(&self, community: &str) {
+    pub(super) fn forget_keys(&self, community: &str) {
         let mut scopes = vec![KeyScope::Community];
         if let Some(c) = self.ctx.communities.map().read().get(community) {
             scopes.extend(
