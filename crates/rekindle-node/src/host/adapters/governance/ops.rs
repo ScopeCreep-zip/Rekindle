@@ -450,7 +450,8 @@ impl HostGovernance {
 /// call appended it.
 ///
 /// Readable is not landed: a head write that ended below consensus stays on
-/// the replicas that took it (0.5.8 `set_value.rs:24-115`) and a reader reaching
+/// the replicas that took it, each having stored it on arrival (0.5.8
+/// `inbound_set_value`, `set_value.rs:909-923`), and a reader reaching
 /// them reads the op, while nothing else republishes it, since Veilid never
 /// rehydrates a record created this session (`open_record.rs:62-81`). So a
 /// found op's head is written again: the same data and writer resend the

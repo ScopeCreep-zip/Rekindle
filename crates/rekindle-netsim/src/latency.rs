@@ -33,10 +33,13 @@
 //! and the excess queues. A subkey lock is taken before the cap, so a call
 //! waiting on its subkey holds no slot.
 //!
-//! Faults compose: a node whose DHT is offline fails at once, as Veilid
-//! checks `dht_is_online()` before any fanout (`set_value.rs:248`,
-//! `open_record.rs:86`, `watch_value.rs:1048`); a "try again" answer costs
-//! the call's latency first, as a fanout that failed ran to its end.
+//! Faults compose: a node whose DHT is offline fails a network call at
+//! once, as Veilid checks `dht_is_online()` before its fanout (0.5.8
+//! `set_value.rs:248`, `open_record.rs:86`). A watch call is not one:
+//! `watch_values` (`watch_value.rs:100-120`) never checks online and records
+//! the watch, and its reconcile skips while offline (`:1046-1049`), so an
+//! offline watch only skips the latency. A "try again" answer costs the
+//! call's latency first, as a fanout that failed ran to its end.
 //! A watch change is an RPC from the replica to the watcher: it arrives one
 //! [`MESSAGE`] after the replica's tick sends it. Attachment events carry
 //! no latency.

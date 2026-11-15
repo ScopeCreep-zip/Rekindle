@@ -27,7 +27,9 @@ pub enum SetOutcome {
     /// (`was_offline`) and answers with the same `TryAgain` (0.5.8
     /// `set_value.rs:710-738` → `local_record_store_interface.rs:60-62`,
     /// `AllowOffline(false)`). Nothing was stored locally or queued; the
-    /// replicas that took a partial value keep it (`set_value.rs:24-115`).
+    /// replicas that took a partial value keep it: a replica writes the
+    /// subkey when the set arrives, whatever the fanout ends on, and nothing
+    /// takes it back (`inbound_set_value`, `set_value.rs:909-923`).
     Offline,
     /// The write settled on another value (newer, or a rival at our seq
     /// that won the tally), returned here. A settled value whose data and

@@ -86,9 +86,12 @@ impl SharedState {
     /// Update attachment state and notify all subscribers.
     ///
     /// Called by the dispatch loop when a `PortEvent::Attachment` arrives.
-    /// Veilid 0.5.8 re-sends an unchanged attachment after any executor
-    /// stall of 2.5 s or more (veilid-core `attachment_manager/mod.rs:557-581`,
-    /// `:1038-1043`), so this is edge-triggered: the ready watch wakes its
+    /// Veilid 0.5.8 re-sends an unchanged attachment after an executor stall
+    /// whose tick lag exceeds `TICK_LAG_REPORT` (2 s) and is at least half the
+    /// RPC timeout (veilid-core `attachment_manager/mod.rs:24-25,557-581`,
+    /// `network_manager/online_detector.rs:63,711`), and to an app back from
+    /// the background (`attachment_manager/mod.rs:578-580,655-661,1039`), so
+    /// this is edge-triggered: the ready watch wakes its
     /// waiters (the record pool's durable repush, `durable.rs`) only when
     /// readiness changes, and subscribers hear only a changed state.
     /// Returns whether anything changed (the dispatch loop's edge).

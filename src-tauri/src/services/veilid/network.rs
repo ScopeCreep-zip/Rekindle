@@ -242,9 +242,12 @@ pub fn handle_attachment(
 ) {
     let attached = attachment.state.is_attached();
     let public_internet_ready = attachment.public_internet_ready;
-    // Veilid 0.5.8 re-sends an unchanged attachment after any executor
-    // stall of 2.5 s or more (attachment_manager/mod.rs:557-581,1039-1043),
-    // so readiness watchers wake only on a real edge (synthesis #6).
+    // Veilid 0.5.8 re-sends an unchanged attachment after an executor stall
+    // whose tick lag exceeds TICK_LAG_REPORT (2 s) and is at least half the
+    // RPC timeout (attachment_manager/mod.rs:24-25,557-581,
+    // online_detector.rs:63,711), and to an app back from the background
+    // (attachment_manager/mod.rs:578-580,655-661), so readiness watchers wake
+    // only on a real edge (synthesis #6).
     state.network_ready.send_if_modified(|ready| {
         let changed = *ready != public_internet_ready;
         *ready = public_internet_ready;
