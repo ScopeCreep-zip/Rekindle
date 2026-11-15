@@ -111,20 +111,27 @@ impl RecordPool {
         let pool = Arc::clone(self);
         self.scope
             .spawn_with_token_or_drop("dht watch re-arm", move |stop| async move {
-                if stop
-                    .run_until_cancelled(tokio::time::sleep(delay))
-                    .await
-                    .is_none()
-                {
-                    return;
+                // A drain (logout) stops it as it stops the re-push: the
+                // ending session re-arms nothing (live R1-2).
+                tokio::select! {
+                    () = stop.cancelled() => return,
+                    () = pool.repush_stop.cancelled() => return,
+                    () = tokio::time::sleep(delay) => {}
                 }
                 // Still wanted? The lease may have gone during the backoff.
                 let subkeys = pool.table.lock().watched(&key);
                 if subkeys.is_empty() {
                     return;
                 }
-                if let Err(e) = pool.apply_watch(&key, WatchPlan::Watch(subkeys)).await {
-                    tracing::warn!(record = %key, error = %e, "re-arming DHT watch failed");
+                match pool.apply_watch(&key, WatchPlan::Watch(subkeys)).await {
+                    Ok(()) => {}
+                    // Drained while the re-arm ran: the session ended.
+                    Err(PortError::Closed) => {
+                        tracing::debug!(record = %key, "session ended during a watch re-arm");
+                    }
+                    Err(e) => {
+                        tracing::warn!(record = %key, error = %e, "re-arming DHT watch failed");
+                    }
                 }
             });
         report

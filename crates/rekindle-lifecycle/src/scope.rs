@@ -300,6 +300,19 @@ impl SessionScope {
         tracing::debug!(scope = self.label, "scope finished");
     }
 
+    /// Cancel every task, refuse new ones, and wait up to `grace` for them
+    /// to stop, aborting none: whether they all did. A logout gives the
+    /// unlock's stages this before it drains their record pool, so a call
+    /// in flight lands and its task stops at the token instead of failing
+    /// on a pool that refuses it (plan VU4, live R1-2).
+    pub async fn stop_within(&self, grace: Duration) -> bool {
+        self.cancel.cancel();
+        self.trackers[0].close();
+        tokio::time::timeout(grace, self.trackers[0].wait())
+            .await
+            .is_ok()
+    }
+
     /// Cancel every task, refuse new ones, and wait up to `deadline` for
     /// them to stop. A task still running then is aborted, so no task of
     /// the scope outlives this call.
@@ -486,6 +499,28 @@ mod tests {
         parent.shutdown(Duration::from_secs(1)).await.unwrap();
         assert!(call.is_closed());
         assert_eq!(call.spawn("late", async {}), Err(ScopeClosed("late")));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn stop_within_waits_out_a_task_finishing_its_call_and_aborts_none() {
+        let scope = SessionScope::new("unlock", quiet());
+        let landed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = Arc::clone(&landed);
+        scope
+            .spawn("own records", async move {
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            })
+            .unwrap();
+        scope.spawn("stuck", std::future::pending()).unwrap();
+        assert!(!scope.stop_within(Duration::from_secs(1)).await);
+        assert!(landed.load(std::sync::atomic::Ordering::SeqCst));
+        assert_eq!(scope.running(), vec![("stuck", 1)], "nothing aborted");
+        assert_eq!(scope.spawn("late", async {}), Err(ScopeClosed("late")));
+        assert_eq!(
+            scope.shutdown(Duration::from_millis(10)).await,
+            Err(StuckTasks(vec!["stuck"]))
+        );
     }
 
     /// A parent past its deadline aborts its children's tasks too.

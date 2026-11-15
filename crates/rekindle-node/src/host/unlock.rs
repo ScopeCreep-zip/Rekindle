@@ -35,6 +35,13 @@ use crate::host::HostMode;
 /// How long the unlock scope's tasks get to stop at a teardown.
 const UNLOCK_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
+/// How long a teardown lets the unlock's stages stop at their token while
+/// the record pool still answers, before draining it: one Veilid 0.5.8 set
+/// in flight lands inside it (0.33-1.42 s live, the netsim's `latency::SET`
+/// calibration), so its stage stops instead of failing on a refused call
+/// (live R1-2).
+const STAGE_GRACE: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Run the unlock pipeline for `unlocked` (its vault and database are in
 /// the host's stores already): Locked → Resuming → Operational. Answers the
 /// opened identity (`dto::identity::IdentityView`), or the error a failed
@@ -343,12 +350,16 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
     if let Some(shell) = &shell {
         shell.ending().await;
     }
-    // The stop token first, so a task sees stop before any refused call;
-    // then draining the pool releases every task waiting on it, so the
-    // scope stops at once. Calls in flight run on (C7.6g).
+    // The stop token first, and the stages get [`STAGE_GRACE`] to stop at
+    // it while the pool still answers, so a call in flight lands rather
+    // than failing (R1-2); then draining the pool releases every task still
+    // waiting on it, so the scope stops at once. Calls in flight run on
+    // (C7.6g).
     let scope = ctx.unlock_scope.write().take();
     if let Some(scope) = &scope {
-        scope.token().cancel();
+        if !scope.stop_within(STAGE_GRACE).await {
+            tracing::debug!(running = ?scope.running(), "unlock stages still in a call at the grace's end");
+        }
     }
     let transport = ctx.transport.read().clone();
     if let Some(transport) = &transport {

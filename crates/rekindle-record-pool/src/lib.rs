@@ -144,7 +144,8 @@ pub struct RecordPool {
     admit: Mutex<Admit>,
     /// Cancelled by [`drain`](Self::drain): every wait then returns.
     waits: Mutex<CancellationToken>,
-    /// Stops the re-push task at drain.
+    /// Stops the pool's own background tasks at drain: the re-push and a
+    /// watch re-arm waiting out its backoff.
     repush_stop: CancellationToken,
     /// The node's closer: ends this pool's records, and holds a re-open of
     /// a record an ended session is still closing.

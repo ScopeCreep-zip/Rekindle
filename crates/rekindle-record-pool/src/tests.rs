@@ -197,6 +197,24 @@ async fn a_watch_released_during_its_backoff_is_not_re_armed() {
     assert_eq!(backend.watches.load(Ordering::SeqCst), 1);
 }
 
+/// A logout drains the pool during a re-arm's backoff: the ending session
+/// re-arms nothing (live R1-2).
+#[tokio::test(start_paused = true)]
+async fn a_drain_during_the_backoff_cancels_the_re_arm() {
+    let backend = Arc::new(TestDht::default());
+    let pool = pool_on(Arc::clone(&backend));
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Hold)
+        .await
+        .expect("open");
+    pool.watch_all(lease).await.expect("watch");
+    pool.on_value_change(&death());
+    pool.drain();
+    pool.admit_teardown();
+    pass(Duration::from_secs(5)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 1);
+}
+
 #[tokio::test(start_paused = true)]
 async fn an_open_retries_transient_errors_one_second_apart_within_the_budget() {
     let backend = Arc::new(TestDht {
