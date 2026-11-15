@@ -209,3 +209,33 @@ async fn sending_is_wanted_alone_and_released_alone() {
         "the other classes stay"
     );
 }
+
+/// Node shutdown with an allocation in flight (live A/B round 3 R3-6):
+/// the allocation is awaited, never cut, since Veilid logs ERROR for a
+/// dropped `new_custom_private_route` (0.5.8 `veilid_api/api.rs:812-842`,
+/// `logging/duration_recorder.rs:84-90`); its route is released when it
+/// lands, and only then does `shutdown` return, before the network stops.
+#[tokio::test]
+async fn shutdown_awaits_an_allocation_in_flight_and_releases_its_route() {
+    let mut fake = Fake::new(vec![Ok((9, b"late".to_vec()))]);
+    fake.gate = Some(tokio::sync::Semaphore::new(0));
+    let fake = Arc::new(fake);
+    let (routes, _ready) = owner(&fake, true);
+    routes.want(RouteClass::General);
+    settle().await;
+    let stopping = {
+        let routes = Arc::clone(&routes);
+        tokio::spawn(async move { routes.shutdown().await })
+    };
+    settle().await;
+    assert!(!stopping.is_finished(), "shutdown waits for the allocation");
+    fake.gate.as_ref().unwrap().add_permits(1);
+    stopping.await.expect("shutdown ends");
+    assert_eq!(
+        fake.calls.load(Ordering::SeqCst),
+        1,
+        "the allocation ran to its end"
+    );
+    assert_eq!(*fake.released.lock(), vec![9]);
+    assert_eq!(routes.blob(RouteClass::General), None);
+}

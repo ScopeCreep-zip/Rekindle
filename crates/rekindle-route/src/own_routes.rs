@@ -241,6 +241,8 @@ impl<A: RouteAllocator> OwnRoutes<A> {
     }
 
     /// Node shutdown (app exit): stop allocating and release every route.
+    /// An allocation in flight is awaited, not cut, and its route released
+    /// when it lands, so the caller may stop the network once this returns.
     pub async fn shutdown(&self) {
         self.scope.token().cancel();
         self.release_all();
@@ -323,13 +325,20 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             {
                 return;
             }
-            let Some(result) = stop.run_until_cancelled(self.alloc.allocate(class)).await else {
-                return;
-            };
+            // An allocation that started runs to its end, never cut at
+            // `stop`: Veilid's `new_custom_private_route` holds a
+            // `DurationRecorder` across the allocation and its test
+            // (0.5.8 `veilid_api/api.rs:812-842`), and dropping it unfinished
+            // logs ERROR "DurationRecorder dropped with no recording"
+            // (`logging/duration_recorder.rs:84-90`; live A/B round 3
+            // R3-6). Veilid bounds the call itself (the route test's RPC
+            // timeout), so [`shutdown`](Self::shutdown) waits for it.
+            let result = self.alloc.allocate(class).await;
             match result {
                 Ok((id, blob)) => {
-                    if !slot.wanted.load(Ordering::SeqCst) {
-                        // Released (logout) while allocating: not ours to keep.
+                    if stop.is_cancelled() || !slot.wanted.load(Ordering::SeqCst) {
+                        // Released (logout) or shut down while allocating:
+                        // not ours to keep.
                         self.alloc.release(&id);
                         return;
                     }
