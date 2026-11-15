@@ -242,7 +242,14 @@ pub fn handle_attachment(
 ) {
     let attached = attachment.state.is_attached();
     let public_internet_ready = attachment.public_internet_ready;
-    state.network_ready.send_replace(public_internet_ready);
+    // Veilid 0.5.8 re-sends an unchanged attachment after any executor
+    // stall of 2.5 s or more (attachment_manager/mod.rs:557-581,1039-1043),
+    // so readiness watchers wake only on a real edge (synthesis #6).
+    state.network_ready.send_if_modified(|ready| {
+        let changed = *ready != public_internet_ready;
+        *ready = public_internet_ready;
+        changed
+    });
     // The transport's readiness, which the Host's stages wait on (its login
     // stage and reconnect heal, plan E3.1 C2a/C2c): this shell runs the
     // node's update loop until E5.7.
@@ -260,8 +267,11 @@ pub fn handle_attachment(
         "network attachment changed"
     );
 
-    {
-        if let Some(ref mut node) = *state.node.write() {
+    let attached_edge = {
+        let mut guard = state.node.write();
+        // No node handle yet: the first update is the edge.
+        guard.as_mut().is_none_or(|node| {
+            let edge = node.is_attached != attached;
             node.attachment_state = state_str;
             node.is_attached = attached;
             node.public_internet_ready = public_internet_ready;
@@ -274,8 +284,9 @@ pub fn handle_attachment(
                 .median_latency
                 .map(veilid_core::TimestampDuration::as_u64)
                 .unwrap_or_default();
-        }
-    }
+            edge
+        })
+    };
     // Network readiness = the routing domain is up AND the routing table
     // holds at least one live peer. `public_internet_ready` in practice
     // implies bootstrap contact, so this rarely differs — but when it
@@ -291,6 +302,11 @@ pub fn handle_attachment(
 
     super::emit_network_status(app_handle, state);
 
+    // The OS notification is for an attached/detached edge only: an
+    // unchanged re-send after a stall (above) raises none.
+    if !attached_edge {
+        return;
+    }
     let status = if attached {
         "connected"
     } else {

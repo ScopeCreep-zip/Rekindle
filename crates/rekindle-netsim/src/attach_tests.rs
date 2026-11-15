@@ -273,3 +273,36 @@ fn the_call_timeout_follows_veilid_s_hop_rule() {
     profile.hop_count = 4;
     assert_eq!(call_timeout(&profile), Duration::from_secs(7));
 }
+
+/// A stall's re-sent attachment wakes no readiness waiter, so a held write
+/// keeps its backoff: the ready watch moves only on a changed readiness, as
+/// `rekindle-transport` `SharedState::set_attachment` sends it (plan VU4,
+/// synthesis #6), and the pool's durable repush (`durable.rs`) wakes on it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_stall_wakes_no_held_write() {
+    let (sim, mut nodes) = Netsim::nodes(1, 26);
+    let _pump = sim.start();
+    attached(&mut nodes[0]).await;
+    sim.quiesce().await;
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, key, _) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap();
+    sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Record(key),
+    });
+    let _ = pool.set_durable(lease, 0, b"held".to_vec(), None).await;
+    sim.quiesce().await;
+    let ready_rx = sim.net.inner.lock().nodes[0].ready.subscribe();
+    let sets = sim.app_sets(0);
+    assert!(sets >= 1, "the app's set is counted");
+    for _ in 0..3 {
+        sim.fault(Fault::Stall { node: 0, ms: 3_000 });
+        let _ = recv(&mut nodes[0]).await;
+        sim.quiesce().await;
+    }
+    assert!(!ready_rx.has_changed().unwrap(), "no readiness edge");
+    assert_eq!(sim.app_sets(0), sets, "no re-push burst per stall");
+}

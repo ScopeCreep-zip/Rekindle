@@ -55,9 +55,10 @@ pub fn import_route_blob(
         .map_err(|e| e.to_string())
 }
 
-/// A send to `route_id` failed with `NoConnection` or `InvalidTarget`: the
-/// route is unusable, so the importer forgets it (never releases: Veilid
-/// releases a dead remote route itself, plan C7.9e).
+/// A send to `route_id` showed the peer's route unusable
+/// (`rekindle_protocol::ports::peer_route_unusable`): the importer forgets
+/// it (never releases: Veilid releases a dead remote route itself, plan
+/// C7.9e).
 pub fn route_send_failed(state: &Arc<AppState>, route_id: &veilid_core::RouteId) {
     if let Ok(imports) = route_imports(state) {
         imports.invalidate_after_send_failure(route_id);
@@ -77,47 +78,75 @@ pub fn on_dead_remote_routes(state: &AppState, dead: &[String]) -> Vec<String> {
 }
 
 /// `app_call` a peer through its route blob: import (through the one
-/// importer), call on the safe routing context, and release the route if
-/// the call shows it unusable ([`route_send_failed`]).
+/// importer), call on the safe routing context within the transport's
+/// finding 78 bound (`rekindle_transport::broadcast::deadline`: Veilid
+/// bounds only the answer wait, never the stages before it), and forget
+/// the route if the call shows it unusable ([`route_send_failed`]). A call
+/// at the bound is a timeout, outcome unknown: the route stays.
 pub async fn call_route_blob(
     state: &Arc<AppState>,
     route_blob: &[u8],
     payload: Vec<u8>,
 ) -> Result<Vec<u8>, String> {
+    use rekindle_transport::broadcast::deadline::app_call_deadline;
     let route_id = import_route_blob(state, route_blob)?;
     let (_, rc) = safe_api_and_routing_context(state).ok_or("not attached")?;
-    let result = rc
-        .app_call(veilid_core::Target::RouteId(route_id.clone()), payload)
-        .await;
+    let deadline = app_call_deadline(&safe_profile());
+    let call = rc.app_call(veilid_core::Target::RouteId(route_id.clone()), payload);
+    let result = tokio::time::timeout(deadline, call)
+        .await
+        .map_err(|_| unresolved("app_call", deadline))?;
     settle_route(state, &route_id, result).map_err(|e| format!("app_call: {e}"))
 }
 
-/// `app_message` a peer through its route blob; as [`call_route_blob`].
+/// `app_message` a peer through its route blob; as [`call_route_blob`],
+/// within the transport's send bound (`app_message_deadline`, LV28).
 pub async fn message_route_blob(
     state: &Arc<AppState>,
     route_blob: &[u8],
     payload: Vec<u8>,
 ) -> Result<(), String> {
+    use rekindle_transport::broadcast::deadline::app_message_deadline;
     let route_id = import_route_blob(state, route_blob)?;
     let (_, rc) = safe_api_and_routing_context(state).ok_or("not attached")?;
-    let result = rc
-        .app_message(veilid_core::Target::RouteId(route_id.clone()), payload)
-        .await;
+    let deadline = app_message_deadline();
+    let send = rc.app_message(veilid_core::Target::RouteId(route_id.clone()), payload);
+    let result = tokio::time::timeout(deadline, send)
+        .await
+        .map_err(|_| unresolved("app_message", deadline))?;
     settle_route(state, &route_id, result).map_err(|e| format!("app_message: {e}"))
 }
 
-/// Release `route_id` when a send to it shows it unusable.
+/// The profile of [`safe_api_and_routing_context`]'s routing context.
+fn safe_profile() -> rekindle_types::config::SafetyProfile {
+    rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile()
+}
+
+/// The error of a send still unresolved at our `deadline`.
+fn unresolved(op: &str, deadline: std::time::Duration) -> String {
+    tracing::warn!(
+        op,
+        deadline_ms = deadline.as_millis(),
+        "route-blob send unresolved at our deadline: timed out, outcome unknown"
+    );
+    format!(
+        "{op}: timed out: unresolved after {} ms (outcome unknown)",
+        deadline.as_millis()
+    )
+}
+
+/// Forget `route_id` when a send to it shows the **peer's** route
+/// unusable; a `NoConnection` or `InvalidTarget` from our own safety route
+/// or node keeps it (plan VU5, synthesis #9).
 fn settle_route<T>(
     state: &Arc<AppState>,
     route_id: &veilid_core::RouteId,
     result: Result<T, veilid_core::VeilidAPIError>,
 ) -> Result<T, veilid_core::VeilidAPIError> {
-    if let Err(
-        veilid_core::VeilidAPIError::NoConnection { .. }
-        | veilid_core::VeilidAPIError::InvalidTarget { .. },
-    ) = &result
-    {
-        route_send_failed(state, route_id);
+    if let Err(e) = &result {
+        if rekindle_protocol::ports::peer_route_unusable(e) {
+            route_send_failed(state, route_id);
+        }
     }
     result
 }

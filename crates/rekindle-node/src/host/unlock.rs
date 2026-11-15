@@ -228,6 +228,12 @@ pub(crate) async fn run(
         .await;
     }
 
+    // 3h. The wake trigger (plan VU decision 8): a sleep the network did
+    // not see heals the friends and the communities on waking.
+    if transport.is_some() {
+        super::wake::start(ctx, &scope);
+    }
+
     // 4. Daemon-only stages.
     if ctx.mode == HostMode::Daemon {
         if let Err(refused) = crate::daemon::dispatch::daemon_stages(ctx, &scope).await {

@@ -83,17 +83,31 @@ impl SharedState {
     /// Update attachment state and notify all subscribers.
     ///
     /// Called by the dispatch loop when a `PortEvent::Attachment` arrives.
-    pub fn set_attachment(&self, state: AttachmentState, attached: bool, pir: bool) {
-        self.attachment.store(state as u8, Ordering::Release);
-        self.is_attached.store(attached, Ordering::Release);
-        self.public_internet_ready.store(pir, Ordering::Release);
-        self.ready.send_replace(pir);
+    /// Veilid 0.5.8 re-sends an unchanged attachment after any executor
+    /// stall of 2.5 s or more (veilid-core `attachment_manager/mod.rs:557-581`,
+    /// `:1039-1043`), so this is edge-triggered: the ready watch wakes its
+    /// waiters (the record pool's durable repush, `durable.rs`) only when
+    /// readiness changes, and subscribers hear only a changed state.
+    /// Returns whether anything changed (the dispatch loop's edge).
+    pub fn set_attachment(&self, state: AttachmentState, attached: bool, pir: bool) -> bool {
+        let prev_state = self.attachment.swap(state as u8, Ordering::AcqRel);
+        let prev_attached = self.is_attached.swap(attached, Ordering::AcqRel);
+        let prev_pir = self.public_internet_ready.swap(pir, Ordering::AcqRel);
+        self.ready.send_if_modified(|ready| {
+            let changed = *ready != pir;
+            *ready = pir;
+            changed
+        });
+        if prev_state == state as u8 && prev_attached == attached && prev_pir == pir {
+            return false;
+        }
 
         self.notify(&TransportNotification::AttachmentChanged {
             state,
             is_attached: attached,
             public_internet_ready: pir,
         });
+        true
     }
 
     /// Record the richer 0.5.7 attachment health signal (peer counts,
@@ -231,6 +245,28 @@ mod tests {
         }
         // Out of range falls back to Detached
         assert_eq!(AttachmentState::from_u8(255), AttachmentState::Detached);
+    }
+
+    #[test]
+    fn an_unchanged_attachment_resend_is_no_edge() {
+        let state = SharedState::new();
+        let mut ready = state.subscribe_ready();
+        let mut rx = state.subscribe();
+        state.set_attachment(AttachmentState::AttachedGood, true, true);
+        assert!(ready.has_changed().expect("sender alive"));
+        ready.borrow_and_update();
+        assert!(rx.try_recv().is_ok());
+
+        // Veilid 0.5.8's stall re-send: the same attachment again.
+        state.set_attachment(AttachmentState::AttachedGood, true, true);
+        assert!(!ready.has_changed().expect("sender alive"));
+        assert!(rx.try_recv().is_err());
+
+        // A state change with the same readiness notifies but wakes no
+        // readiness waiter.
+        state.set_attachment(AttachmentState::FullyAttached, true, true);
+        assert!(!ready.has_changed().expect("sender alive"));
+        assert!(rx.try_recv().is_ok());
     }
 
     #[tokio::test]

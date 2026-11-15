@@ -250,7 +250,7 @@ impl Host {
                         .await
                         .map_err(|e| anyhow::anyhow!("transport node did not start: {e}"))?;
                 let node = Arc::new(node);
-                *handler_transport.write() = Some(Arc::clone(&node));
+                *handler_transport.write() = Some(Arc::downgrade(&node));
                 tracing::info!("transport node started");
                 (HostMode::Daemon, Some(node))
             }
@@ -267,7 +267,7 @@ impl Host {
                     handler,
                     Arc::clone(&stores.session),
                 ));
-                *handler_transport.write() = Some(Arc::clone(&node));
+                *handler_transport.write() = Some(Arc::downgrade(&node));
                 tracing::info!("transport node on supplied ports");
                 (HostMode::Daemon, Some(node))
             }
@@ -337,7 +337,8 @@ impl Host {
             presence_start_tx,
             own_presence: super::own_presence::OwnPresence::new(
                 Arc::clone(&stores.session),
-                node.clone(),
+                // Weak: the Host's slot is the node's one owner (R1-16).
+                node.as_ref().map(Arc::downgrade),
                 Arc::clone(&journal),
                 Arc::clone(&clock),
             ),
@@ -581,8 +582,10 @@ async fn shutdown_transport(ctx: &Arc<DaemonContext>) {
                     tracing::warn!(error = %e, "transport shutdown error");
                 }
             }
+            // The handler and own presence hold the node weakly; a
+            // reference here leaks Veilid's storage and namespace lock.
             Err(arc) => {
-                tracing::warn!(
+                tracing::error!(
                     refs = Arc::strong_count(&arc),
                     "transport shutdown with outstanding references — dropping"
                 );

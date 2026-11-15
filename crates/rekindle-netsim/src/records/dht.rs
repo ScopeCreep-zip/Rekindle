@@ -413,6 +413,7 @@ impl DhtBackend for SimDht {
         data: Vec<u8>,
         writer: Option<&WriterKey>,
     ) -> Result<Option<RecordValue>, DhtCallError> {
+        self.net.inner.lock().nodes[self.node].app_sets += 1;
         let opened = self.opened(key)?;
         let writer = writer
             .map(|w| w.keypair.clone())

@@ -32,7 +32,11 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tokio-util = "0.7"
 tracing = { workspace = true }
-veilid-core = { version = "0.5", default-features = true }
+# `app-lifecycle` (plan VU decision 5): while attached, Veilid holds an App
+# Nap / power-throttling guard so a hidden tray app's ticks do not stall
+# (veilid-core `attachment_manager/mod.rs:603-620`). Features unify, so the
+# desktop and `rekindled` both get it.
+veilid-core = { version = "0.5", default-features = true, features = ["app-lifecycle"] }
 
 
 [dev-dependencies]

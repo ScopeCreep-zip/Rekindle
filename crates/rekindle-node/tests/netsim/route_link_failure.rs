@@ -1,6 +1,8 @@
 //! A first-hop link failure on a node's safety route (plan E2.B close-out,
 //! premise rewritten for Veilid 0.5.8 at VU2c): the send fails
-//! `NoConnection` (our `RouteUnusable`), and Veilid counts it as a send
+//! `NoConnection`, which our port reports as a send error on **our** side
+//! (plan VU5, synthesis #9: Wes keeps Xan's route, never forgets it and
+//! refetches it), and Veilid counts it as a send
 //! failure, which only recompiles the route (`route_stats.rs:19-35`:
 //! `needs_recompile`, not `means_route_dead`; `route_compile.rs:672`). No
 //! `dead_routes` is reported and no route is reallocated: the message still
@@ -12,7 +14,7 @@
 //! none under `None`. A stray untagged app message makes Xan's dispatch loop (a task
 //! spawned at unlock) warn, and that warning counts under Xan.
 
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, FORGETS_PEER_ROUTE};
 
 use crate::harness::{eventually, start};
 use crate::logs;
@@ -28,6 +30,13 @@ async fn a_first_hop_failure_recompiles_and_keeps_delivering() {
     talk(&sim, &nodes[0], &nodes[1], "before").await;
     let (wes, xan) = (key(&nodes[0]), key(&nodes[1]));
     let routes = sim.route_blobs(0);
+    let forgets = |sim: &rekindle_netsim::Netsim| {
+        sim.trace()
+            .of(0)
+            .filter(|e| *e == FORGETS_PEER_ROUTE)
+            .count()
+    };
+    let forgot = forgets(&sim);
     sim.fault(Fault::RouteLinkFailure { node: 0 });
     let body = "across the failed hop";
     send(&nodes[0], &xan, body).await;
@@ -40,6 +49,11 @@ async fn a_first_hop_failure_recompiles_and_keeps_delivering() {
         sim.route_blobs(0),
         routes,
         "Wes's route lived: recompiled, never reallocated"
+    );
+    assert_eq!(
+        forgets(&sim),
+        forgot,
+        "our first hop failed, not Xan's route: Wes kept it"
     );
     let xan_warns = |c: &std::collections::BTreeMap<Option<usize>, logs::Counts>| {
         c.get(&Some(1)).copied().unwrap_or_default().warn

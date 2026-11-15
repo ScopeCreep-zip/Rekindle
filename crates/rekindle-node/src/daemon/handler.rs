@@ -30,8 +30,10 @@ pub struct DaemonHandler {
     pub(crate) session: Arc<RwLock<Option<Session>>>,
     /// Signing key (shared with DaemonContext, passed to RPC handlers).
     pub(crate) signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
-    /// Transport node (shared with DaemonContext, passed to RPC handlers).
-    pub(crate) transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
+    /// Transport node, weak: the node's dispatch loop owns this handler, so
+    /// a strong reference here is a cycle that kept the node from being
+    /// shut down at exit (A/B R1-16 "outstanding references").
+    pub(crate) transport: Arc<RwLock<Option<std::sync::Weak<rekindle_transport::TransportNode>>>>,
     /// Pending community join completions (shared with DaemonContext).
     /// On JoinAccepted gossip, the handler completes the oneshot so the
     /// join handler unblocks immediately.
@@ -63,7 +65,7 @@ impl DaemonHandler {
         subscriptions: Arc<RwLock<Option<SubscriptionManager>>>,
         session: Arc<RwLock<Option<Session>>>,
         signing_key: Arc<RwLock<Option<crate::state::signing_key::SigningKeyHandle>>>,
-        transport: Arc<RwLock<Option<Arc<rekindle_transport::TransportNode>>>>,
+        transport: Arc<RwLock<Option<std::sync::Weak<rekindle_transport::TransportNode>>>>,
         pending_joins: Arc<
             parking_lot::Mutex<
                 std::collections::HashMap<
@@ -101,7 +103,12 @@ impl DaemonHandler {
     /// state lives on the transport's route owner, not the manager.
     fn route_status(&self) -> (bool, rekindle_types::subscription_events::RouteAvailability) {
         use rekindle_records::port::RouteClass;
-        let routes = self.transport.read().as_ref().map(|t| t.routes());
+        let routes = self
+            .transport
+            .read()
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+            .map(|t| t.routes());
         let Some(routes) = routes else {
             return (
                 false,
@@ -530,7 +537,12 @@ impl InboundHandler for DaemonHandler {
                     );
                 }
                 TransportEvent::RoutesChanged => {
-                    let Some(transport) = self.transport.read().clone() else {
+                    let Some(transport) = self
+                        .transport
+                        .read()
+                        .as_ref()
+                        .and_then(std::sync::Weak::upgrade)
+                    else {
                         return;
                     };
                     let shared = transport.shared();

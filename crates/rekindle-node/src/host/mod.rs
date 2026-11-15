@@ -61,6 +61,7 @@ pub(crate) mod unlocked;
 #[cfg(test)]
 pub(crate) mod fixture;
 mod signals;
+mod wake;
 pub mod watchdog;
 
 use rekindle_db::paths::DataRoot;

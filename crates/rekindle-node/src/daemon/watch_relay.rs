@@ -45,7 +45,12 @@ impl DaemonHandler {
         content_hash: &str,
         observer_pseudonym: &str,
     ) {
-        let Some(transport) = self.transport.read().clone() else {
+        let Some(transport) = self
+            .transport
+            .read()
+            .as_ref()
+            .and_then(std::sync::Weak::upgrade)
+        else {
             return;
         };
 

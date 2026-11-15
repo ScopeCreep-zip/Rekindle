@@ -211,12 +211,37 @@ impl VeilidMessages {
     }
 }
 
+/// Veilid's text when a send's target route is not in its remote route
+/// cache (never imported, expired or pushed out): veilid-core 0.5.8
+/// `rpc_processor/destination.rs:362-371` `RPCError::network`, which
+/// reaches the API as `NoConnection` with this message
+/// (`rpc_processor/error.rs:49-51`, `:81`).
+const REMOTE_ROUTE_UNRESOLVED: &str = "could not get remote private route";
+
+/// Whether a send's error shows the **peer's** route unusable, so its blob
+/// is forgotten and the peer's current one fetched (plan C7.9e). Only an
+/// unresolved remote route is the peer's side. Every other `NoConnection`
+/// and `InvalidTarget` is **ours**, and the peer's route stays: a send
+/// failing at our safety route's first hop answers `NoConnection` and only
+/// recompiles our route (`rpc_processor/mod.rs:2126-2145`,
+/// `route_stats.rs:31-35`); "no routing domain" and missing own peer info
+/// are our node's state (`:2071-2079`, `:1135-1153`); `InvalidTarget` is a
+/// local `ServiceUnavailable` such as our node info not yet published
+/// (`types/error.rs:313`, `destination.rs:456-460`) or our released route
+/// (plan VU5, synthesis #9).
+#[must_use]
+pub fn peer_route_unusable(e: &VeilidAPIError) -> bool {
+    matches!(e, VeilidAPIError::NoConnection { message } if message == REMOTE_ROUTE_UNRESOLVED)
+}
+
+/// A send's Veilid error as the port reports it: `RouteUnusable` only for
+/// the peer's side ([`peer_route_unusable`]); a failure on our side is a
+/// send error that keeps the peer's route.
 fn send_error(e: &VeilidAPIError) -> PortError {
-    match e {
-        VeilidAPIError::NoConnection { .. } | VeilidAPIError::InvalidTarget { .. } => {
-            PortError::RouteUnusable(e.to_string())
-        }
-        other => PortError::Send(other.to_string()),
+    if peer_route_unusable(e) {
+        PortError::RouteUnusable(e.to_string())
+    } else {
+        PortError::Send(e.to_string())
     }
 }
 
@@ -299,16 +324,29 @@ impl VeilidLifecycle {
 #[async_trait::async_trait]
 impl NodeLifecycle for VeilidLifecycle {
     async fn detach(&self) -> Result<(), PortError> {
-        self.api
-            .detach()
-            .await
-            .map_err(|e| PortError::Node(format!("detach: {e}")))
+        detach_result(self.api.detach().await)
     }
 
     async fn shutdown(&self) {
         self.api.clone().shutdown().await;
     }
 }
+
+/// A detach's answer as the port reports it. Veilid 0.5.8 refuses a detach
+/// of a node already `Detached` with a generic "Not attached"
+/// (`attachment_manager/mod.rs:527-528`); the node is where the caller
+/// wants it, so that is success.
+fn detach_result(answer: veilid_core::VeilidAPIResult<()>) -> Result<(), PortError> {
+    match answer {
+        Ok(()) => Ok(()),
+        Err(VeilidAPIError::Generic { message }) if message == NOT_ATTACHED => Ok(()),
+        Err(e) => Err(PortError::Node(format!("detach: {e}"))),
+    }
+}
+
+/// Veilid's refusal of a detach of a detached node
+/// (`attachment_manager/mod.rs:528`).
+const NOT_ATTACHED: &str = "Not attached";
 
 /// A Veilid update as the transport dispatches it, or `None` for one it
 /// does not act on.
@@ -402,6 +440,34 @@ impl VeilidPorts {
 mod tests {
     use rekindle_types::notification::AttachmentState;
 
+    /// Only the peer's unresolved route makes it `RouteUnusable`; a
+    /// `NoConnection` or `InvalidTarget` on our side keeps the peer's route
+    /// (plan VU5, synthesis #9).
+    #[test]
+    fn only_the_peers_unresolved_route_is_route_unusable() {
+        use rekindle_records::port::PortError;
+        use veilid_core::VeilidAPIError;
+
+        let peer = VeilidAPIError::no_connection(super::REMOTE_ROUTE_UNRESOLVED);
+        assert!(super::peer_route_unusable(&peer));
+        assert!(matches!(
+            super::send_error(&peer),
+            PortError::RouteUnusable(_)
+        ));
+        for ours in [
+            VeilidAPIError::no_connection("no routing domain"),
+            VeilidAPIError::no_connection("No peer info for stub private route"),
+            VeilidAPIError::invalid_target("Own node info must be published to use private route"),
+            VeilidAPIError::timeout(),
+        ] {
+            assert!(!super::peer_route_unusable(&ours), "{ours}");
+            assert!(
+                matches!(super::send_error(&ours), PortError::Send(_)),
+                "{ours}"
+            );
+        }
+    }
+
     /// Every attached state veilid-core can emit maps to an attached state
     /// on our side, through the string [`super::to_port_event`] carries.
     ///
@@ -446,5 +512,16 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// A detach of a node already detached is success; any other refusal is
+    /// the port's error (plan VU4, synthesis #12).
+    #[test]
+    fn not_attached_is_a_successful_detach() {
+        use veilid_core::VeilidAPIError;
+        assert!(super::detach_result(Ok(())).is_ok());
+        assert!(super::detach_result(Err(VeilidAPIError::generic("Not attached"))).is_ok());
+        assert!(super::detach_result(Err(VeilidAPIError::not_initialized())).is_err());
+        assert!(super::detach_result(Err(VeilidAPIError::generic("other"))).is_err());
     }
 }

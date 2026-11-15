@@ -56,7 +56,7 @@ pub use idle::SimIdle;
 pub use messages::{call_timeout, FakeMessages, RPC_TIMEOUT};
 pub use network::Network;
 pub use records::FakeRecords;
-pub use routes::{FakeAllocator, FakeRoutes};
+pub use routes::{FakeAllocator, FakeRoutes, FORGETS_PEER_ROUTE};
 pub use trace::Trace;
 
 use network::{pair, NodeSlot, EVENT_QUEUE};
@@ -412,6 +412,12 @@ impl Netsim {
             .get(key)
             .copied()
             .unwrap_or(0)
+    }
+
+    /// How many sets node `node`'s app has asked for, of any record.
+    #[must_use]
+    pub fn app_sets(&self, node: usize) -> u64 {
+        self.net.inner.lock().nodes[node].app_sets
     }
 
     /// Each replica's value at `key`/`subkey`, in placement order.

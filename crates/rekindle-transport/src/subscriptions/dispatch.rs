@@ -126,11 +126,17 @@ async fn dispatch_event<H: InboundHandler>(
             median_latency_us,
         } => {
             let att_state = AttachmentState::from_veilid_string(&state);
-            shared.set_attachment(att_state, is_attached, public_internet_ready);
+            let changed = shared.set_attachment(att_state, is_attached, public_internet_ready);
             // 0.5.7's richer attachment signal — recorded so readiness
             // checks and status surfaces can use real peer counts instead
             // of inferring health from the attachment enum alone.
             shared.set_network_health(reliable_peers, live_peers, network_size, median_latency_us);
+            // Veilid 0.5.8 re-sends an unchanged attachment after a stall
+            // (`attachment_manager/mod.rs:557-581`): the handler (friends'
+            // trigger, the frontends' network event) hears edges only.
+            if !changed {
+                return;
+            }
             handler
                 .on_event(TransportEvent::AttachmentChanged {
                     state,

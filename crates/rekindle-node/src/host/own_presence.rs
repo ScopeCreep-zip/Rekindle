@@ -100,7 +100,7 @@ pub(crate) struct OwnPresence {
     /// A details write failed: the retry task writes again.
     details_pending: Arc<std::sync::atomic::AtomicBool>,
     session: Arc<RwLock<Option<Session>>>,
-    transport: Option<Arc<TransportNode>>,
+    transport: Option<std::sync::Weak<TransportNode>>,
     journal: Arc<rekindle_events::SessionJournal>,
     clock: Arc<dyn rekindle_utils::Clock>,
 }
@@ -108,7 +108,7 @@ pub(crate) struct OwnPresence {
 impl OwnPresence {
     pub(crate) fn new(
         session: Arc<RwLock<Option<Session>>>,
-        transport: Option<Arc<TransportNode>>,
+        transport: Option<std::sync::Weak<TransportNode>>,
         journal: Arc<rekindle_events::SessionJournal>,
         clock: Arc<dyn rekindle_utils::Clock>,
     ) -> Self {
@@ -368,7 +368,12 @@ impl OwnPresence {
     /// or a profile.
     pub(crate) async fn publish_offline(&self) {
         if self.profile_dht_info().is_none()
-            || self.transport.as_ref().and_then(|t| t.records()).is_none()
+            || self
+                .transport
+                .as_ref()
+                .and_then(std::sync::Weak::upgrade)
+                .and_then(|t| t.records())
+                .is_none()
         {
             return;
         }
@@ -455,6 +460,7 @@ impl OwnPresence {
         let pool = self
             .transport
             .as_ref()
+            .and_then(std::sync::Weak::upgrade)
             .and_then(|t| t.records())
             .ok_or("record pool not running")?;
         let outcome = rekindle_protocol::dht::profile::set_own_profile_subkey(
@@ -496,6 +502,7 @@ impl StatusPublisherDeps for OwnPresence {
         let pool = self
             .transport
             .as_ref()
+            .and_then(std::sync::Weak::upgrade)
             .and_then(|t| t.records())
             .ok_or_else(|| PresenceError::Dht("record pool not running".into()))?;
         let outcome = rekindle_protocol::dht::profile::set_own_profile_status(
