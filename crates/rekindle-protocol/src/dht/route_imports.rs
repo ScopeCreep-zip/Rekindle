@@ -1,16 +1,16 @@
 //! `RouteImports`: the only importer of peers' private routes (plan C7.2, D4).
 //! One per node, for the life of the process.
 //!
-//! veilid-core's import is idempotent: "It is safe to import the same route
+//! veilid-core 0.5.8's import is idempotent: "It is safe to import the same route
 //! more than once and it will return the same route id"
 //! (`route_spec_store/route_remote.rs:21-28`). Imported routes live in a
 //! 1024-entry LRU with a 5-minute idle expiry that Veilid owns
-//! (`route_spec_store/mod.rs:39-42`). Releasing an imported id removes the
+//! (`route_spec_store/mod.rs:41-44`). Releasing an imported id removes the
 //! **shared** entry for every sender in the process and reports it as a dead
 //! remote route (`route_spec_store_cache.rs:398-415`). So this cache has no
 //! TTL and never releases: a dead route (reported, or failed on send) is only
 //! forgotten, since Veilid releases a dead remote route itself
-//! (`ping_validator.rs:610-628`) and a second release is an ERROR (plan
+//! (`ping_validator.rs:731-745`) and a second release is an ERROR (plan
 //! C7.9e, amending C7.2's single release).
 
 use std::collections::HashMap;
@@ -72,7 +72,7 @@ impl RouteImports {
     /// A send to `id` failed with `NoConnection` or `InvalidTarget`: the
     /// route is unusable, so forget it and the next send re-imports. It is
     /// not released: Veilid releases a dead remote route itself
-    /// (`ping_validator.rs:610-628`), and releasing an id it already
+    /// (`ping_validator.rs:731-745`), and releasing an id it already
     /// dropped is an `InvalidArgument` it logs at ERROR (plan C7.9e).
     pub fn invalidate_after_send_failure(&self, id: &RouteId) {
         if let Some(blob) = self.by_id.lock().remove(id) {

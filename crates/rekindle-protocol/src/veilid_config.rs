@@ -17,7 +17,7 @@ use veilid_core::VeilidConfig;
 /// non-default values to unless built with `footgun-config` (we are not).
 /// It is not an upper bound on a DHT call: before consensus a fanout's
 /// deadline moves to a full timeout past its last accepting node
-/// (`rpc_processor/fanout/fanout_call.rs:642-656`), plus the operation-gate
+/// (0.5.8 `rpc_processor/fanout/fanout_call.rs:809-826`), plus the operation-gate
 /// and record-lock waits. There is no cancellation API (veilid issue #516).
 pub const LONGEST_VEILID_CALL: Duration = Duration::from_secs(10);
 
@@ -91,9 +91,9 @@ pub fn build_veilid_config(
     // #492), and VeilidChat disables it on its nodes until then
     // (`veilid_support/lib/src/config.dart:230-234`). Disabled, the node
     // answers others' get/set/inspect/watch with "dht is not available"
-    // (`rpc_get_value.rs:191-198` and siblings) and fanouts skip it; our own
+    // (0.5.8 `rpc_get_value.rs:191-198` and siblings) and fanouts skip it; our own
     // DHT calls fan out to DHTV nodes as before, and the keepalive's
-    // rehydrate is an outbound set (`rehydrate.rs:50-57`), so mutual aid is
+    // rehydrate is an outbound set (`rehydrate.rs:318-330`), so mutual aid is
     // unchanged. It also stops this node caching others' records, whose
     // reads a caching node can observe (veilid #319). Not a knob: no app
     // node should serve until #492 lands.
@@ -101,7 +101,7 @@ pub fn build_veilid_config(
 
     // While attached, keep a hidden app from being throttled (plan VU
     // decision 5): Veilid holds a foreground guard while the node is not
-    // Detached (`attachment_manager/mod.rs:603-620`; on macOS
+    // Detached (0.5.8 `attachment_manager/mod.rs:603-620`; on macOS
     // `beginActivityWithOptions(UserInitiatedAllowingIdleSystemSleep)`,
     // veilid-tools `app_lifecycle/macos.rs:65-66`). Without it a hidden tray
     // app is App-Napped, its ticks stall and Veilid re-sends its attachment

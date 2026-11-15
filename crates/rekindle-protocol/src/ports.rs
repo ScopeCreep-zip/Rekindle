@@ -181,7 +181,7 @@ impl VeilidMessages {
     }
 
     /// The context of a send pinned to our live route of `class`
-    /// (`SafetySpec.preferred_route`, `safety.rs:273`); `Routing` while
+    /// (`SafetySpec.preferred_route`, 0.5.8 `safety.rs:273`); `Routing` while
     /// none is live, never a pool route in its place.
     fn pinned(
         &self,
@@ -223,7 +223,7 @@ const REMOTE_ROUTE_UNRESOLVED: &str = "could not get remote private route";
 /// unresolved remote route is the peer's side. Every other `NoConnection`
 /// and `InvalidTarget` is **ours**, and the peer's route stays: a send
 /// failing at our safety route's first hop answers `NoConnection` and only
-/// recompiles our route (`rpc_processor/mod.rs:2126-2145`,
+/// recompiles our route (0.5.8 `rpc_processor/mod.rs:2126-2145`,
 /// `route_stats.rs:31-35`); "no routing domain" and missing own peer info
 /// are our node's state (`:2071-2079`, `:1135-1153`); `InvalidTarget` is a
 /// local `ServiceUnavailable` such as our node info not yet published
@@ -345,7 +345,7 @@ fn detach_result(answer: veilid_core::VeilidAPIResult<()>) -> Result<(), PortErr
 }
 
 /// Veilid's refusal of a detach of a detached node
-/// (`attachment_manager/mod.rs:528`).
+/// (0.5.8 `attachment_manager/mod.rs:528`).
 const NOT_ATTACHED: &str = "Not attached";
 
 /// A Veilid update as the transport dispatches it, or `None` for one it

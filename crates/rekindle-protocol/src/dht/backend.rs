@@ -198,7 +198,7 @@ pub fn value_change(change: &VeilidValueChange) -> ValueChange {
 /// The open options for `intent`. Hold asks a re-open of a stored record to
 /// rehydrate, Check never does (plan VU decision 1); Veilid still skips a
 /// record created this session or rehydrated within 300 s
-/// (`open_record.rs:62-81`). Public for the contract tests
+/// (0.5.8 `open_record.rs:62-81`). Public for the contract tests
 /// (`contract/veilid/`): Veilid's mock API ignores the option, so the
 /// mapping is checked here, not through an open.
 pub fn open_options(intent: OpenIntent) -> OpenDHTRecordOptions {
