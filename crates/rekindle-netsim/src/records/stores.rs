@@ -1,20 +1,20 @@
 //! Each DHT store's record bound (plan E2.B slice S7, M5), after the pinned
-//! veilid-core (`~/veilid/veilid-core/src/storage_manager`):
+//! veilid-core (`~/veilid-wt-058/veilid-core/src/storage_manager`):
 //!
 //! - a remote record store keeps an LRU of its records
 //!   (`record_store/mod.rs:2-5`), bounded by `max_records`
 //!   (`record_store/record_store_limits.rs:13`), which a remote store takes
-//!   from `remote_max_records` (`mod.rs:384`). The replicas here are the
+//!   from `remote_max_records` (`mod.rs:464`). The replicas here are the
 //!   network's DHT nodes, so the bound is Veilid's default for them,
-//!   [`REMOTE_MAX_RECORDS`] (`veilid_config.rs:364`); Rekindle raises it only
+//!   [`REMOTE_MAX_RECORDS`] (`veilid_config.rs:356`); Rekindle raises it only
 //!   on its own app nodes, which do not serve the DHT
 //!   (`rekindle-protocol/src/veilid_config.rs`). The storage-space bound
 //!   (`record_store_limits.rs:17`, 256 MB) is far above what a scenario
 //!   stores and is not modeled;
 //! - a store uses a record when a call reads or writes it there
-//!   (`record_store_inner/record_index.rs:249,504` take it through the
+//!   (`record_store_inner/record_index.rs:251,592` take it through the
 //!   LRU's `get`); a record new to a full store evicts the least recently
-//!   used one (`record_index.rs:175-201`), whose values and watches are gone
+//!   used one (`record_index.rs:177-203`), whose values and watches are gone
 //!   from that store: a later get misses it there, and a rehydration push
 //!   can store it again ([`super::rehydrate`]).
 
@@ -23,7 +23,7 @@ use std::collections::BTreeSet;
 use super::replicas::Replica;
 use crate::network::Inner;
 
-/// `remote_max_records`'s default (`veilid_config.rs:364`).
+/// `remote_max_records`'s default (`veilid_config.rs:356`).
 pub(crate) const REMOTE_MAX_RECORDS: usize = 128;
 
 fn holds(replica: &Replica) -> bool {

@@ -2,21 +2,21 @@
 //! session pool, over the node's side of the simulated storage manager.
 //!
 //! The network side is the record's replicas (S4, [`super::replicas`]).
-//! Each call follows the pinned veilid-core (`~/veilid/veilid-core/src/
+//! Each call follows the pinned veilid-core (`~/veilid-wt-058/veilid-core/src/
 //! storage_manager`) where the pool depends on it:
 //!
 //! - every call but create needs the record open on the node, else
-//!   `InvalidArgument` "record not open" (`get_value.rs:67`,
-//!   `set_value.rs:74-76`, `inspect_record.rs:112`, `watch_value.rs:136`);
+//!   `InvalidArgument` "record not open" (`get_value.rs:150`,
+//!   `set_value.rs:198-200`, `inspect_record.rs:215`, `watch_value.rs:150`);
 //! - an open of a record in the node's local store is local (0.5.8
 //!   `open_record.rs:54-81`); any other open needs the network (`TryAgain`
 //!   offline, `:84-86`), stops at the first node with the descriptor
-//!   (latency [`latency::GET`], `:88-99`), answers `TryAgain` when no
+//!   (latency [`latency::GET`], `:89-106`), answers `TryAgain` when no
 //!   replica is reached and `KeyNotFound` when the reached ones hold
-//!   nothing (`:101-111`); a re-open replaces the writer;
+//!   nothing (`:108-119`); a re-open replaces the writer;
 //! - a get without `force_refresh` answers the local copy when there is one
-//!   (`get_value.rs:79-88`), else asks the network, `TryAgain` offline
-//!   (`:89-92`);
+//!   (`get_value.rs:162-168`), else asks the network, `TryAgain` offline
+//!   (`:169-172`);
 //! - a set signs with the given writer or the open's, else `Generic` "value
 //!   is not writable"; a writer the schema refuses is `Generic` "failed
 //!   schema validation"; the same data and writer resend the local copy,
@@ -27,12 +27,12 @@
 //!   local copy unless the settled value replaces it ([`super::replicas`],
 //!   0.5.8 `get_value.rs:600-659`);
 //! - an inspect in the local scope never leaves the node; any other is
-//!   `TryAgain` offline (`inspect_record.rs:205-206`) or with no replica
+//!   `TryAgain` offline (`inspect_record.rs:312-313`) or with no replica
 //!   reached (0.5.8 `inspect_record.rs:346-349`); UpdateSet reports
 //!   each local seq + 1, and the Update scopes' network seqs start from the
-//!   local result, the Sync ones' from nothing (`:208-228`), then take the
+//!   local result, the Sync ones' from nothing (`:315-332`), then take the
 //!   newest seq of the replicas the node reaches; `offline_subkeys` is the
-//!   node's own push queue plus its sets in flight (`:174-181`);
+//!   node's own push queue plus its sets in flight (`:284-288`);
 //! - a create checks the schema as Veilid ([`super::validate_schema`]);
 //! - a watch's expiration is absolute: too soon on the node's own clock
 //!   (its skew), clamped by each replica on true time;
@@ -200,7 +200,7 @@ impl SimDht {
     }
 
     /// Check a write against the record's schema, its writer and its size
-    /// (`set_value.rs:233-242`, [`super::size`]).
+    /// (`set_value.rs:396-405`, [`super::size`]).
     fn validate(
         &self,
         key: &str,
@@ -489,7 +489,7 @@ impl DhtBackend for SimDht {
         };
         let slot = &inner.nodes[self.node];
         // UpdateSet simulates a set: each local seq + 1
-        // (`inspect_record.rs:208-215`).
+        // (`inspect_record.rs:315-321`).
         let bump = u32::from(scope == ReportScope::UpdateSet);
         let local_seqs: Vec<Option<u32>> = subkeys
             .iter()
@@ -517,7 +517,7 @@ impl DhtBackend for SimDht {
             })
             .collect();
         // Its own offline queue, queued or in flight, and the sets in
-        // flight (`inspect_record.rs:174-181`).
+        // flight (`inspect_record.rs:284-288`).
         let offline_subkeys = subkeys
             .iter()
             .copied()
@@ -542,7 +542,7 @@ impl DhtBackend for SimDht {
         count: Option<u32>,
     ) -> Result<bool, DhtCallError> {
         let writer = self.opened(key)?;
-        // Checked on the node's own clock (`watch_value.rs:224-300`).
+        // Checked on the node's own clock (`watch_value.rs:290-363`).
         if watches::too_soon(expiration_us, self.net.node_now_us(self.node)) {
             return Err(error(
                 DhtErrorKind::InvalidArgument,

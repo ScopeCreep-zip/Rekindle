@@ -39,11 +39,14 @@ pub struct SharedState {
     is_attached: AtomicBool,
     /// Whether the public internet is reachable.
     public_internet_ready: AtomicBool,
-    /// Reliable peers in the routing table (0.5.7 attachment signal).
+    /// Reliable peers in the routing table (Veilid attachment signal since
+    /// 0.5.7; 0.5.8 `veilid_api/types/veilid_state.rs:134`).
     reliable_peer_count: AtomicU64,
-    /// Live peers — reliable, unreliable, and newly added (0.5.7).
+    /// Live peers — reliable, unreliable, and newly added
+    /// (`veilid_state.rs:136`).
     live_peer_count: AtomicU64,
-    /// Smoothed estimate of total reachable network size (0.5.7).
+    /// Smoothed estimate of total reachable network size
+    /// (`veilid_state.rs:138`).
     estimated_network_size: AtomicU64,
     /// Median p75 latency across reliable peers, in microseconds
     /// (0 = no samples yet).
@@ -110,7 +113,7 @@ impl SharedState {
         true
     }
 
-    /// Record the richer 0.5.7 attachment health signal (peer counts,
+    /// Record Veilid's richer attachment health signal (peer counts,
     /// network-size estimate, median latency). Called by the dispatch
     /// loop alongside [`set_attachment`](Self::set_attachment); readiness
     /// checks and status surfaces read these instead of inferring health

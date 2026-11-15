@@ -1,5 +1,5 @@
 //! Rehydration (plan E2.B slice S7, M5), after the pinned veilid-core
-//! (`~/veilid/veilid-core/src/storage_manager`):
+//! (`~/veilid-wt-058/veilid-core/src/storage_manager`):
 //!
 //! - **when:** an open of a record in the node's local store queues a
 //!   rehydration of every subkey at `set_value_count` consensus, when the
@@ -8,29 +8,29 @@
 //!   an open from the network queues none. A set refused
 //!   offline (`allow_offline` false, as the pool always sends) queues
 //!   nothing (`local_record_store_interface.rs:61-62`): the push queue is
-//!   fed by rehydration only (`rehydrate.rs:223,264`), so it never doubles
+//!   fed by rehydration only (`rehydrate.rs:284,325`), so it never doubles
 //!   the pool's own durable re-push;
 //! - **the tick:** every second (`OFFLINE_SUBKEY_WRITES_INTERVAL_SECS`,
 //!   `REHYDRATE_RECORDS_INTERVAL_SECS`, `constants.rs:8,37`) the node first
 //!   pushes its queued subkeys, then takes up to [`REHYDRATE_PER_TICK`]
-//!   requests (`constants.rs:41`, `tasks/mod.rs:119-125`,
-//!   `tasks/rehydrate_records.rs:17-28`), in key order for the seed. An
+//!   requests (`constants.rs:41`, `tasks/mod.rs:146-152`,
+//!   `tasks/rehydrate_records.rs:17-29`), in key order for the seed. An
 //!   offline node pushes nothing (`tasks/offline_subkey_writes.rs:43-46`)
-//!   and keeps its requests (`TryAgain` re-queued, `rehydrate.rs:136-138`,
-//!   `rehydrate_records.rs:45-55`);
+//!   and keeps its requests (`TryAgain` re-queued, `rehydrate.rs:176-177`,
+//!   `rehydrate_records.rs:55-64`);
 //! - **which subkeys:** an inspect in the set scope over the replicas the
-//!   node reaches (`inspect_record.rs:292-301`): with no reached replica
+//!   node reaches (`inspect_record.rs:425-434`): with no reached replica
 //!   holding the record, every local subkey; else each local subkey newer
 //!   than the network's newest seq, or at it or older with fewer than
-//!   [`SET_COUNT`] replicas at that seq (`rehydrate.rs:180-194,306-341`,
-//!   `inspect_record.rs:486-522`);
+//!   [`SET_COUNT`] replicas at that seq (`rehydrate.rs:241-255,367-402`,
+//!   `inspect_record.rs:645-703`);
 //! - **the push:** a queued subkey is sent as a set of its local copy
-//!   (`offline_subkey_writes.rs:47-74`); a replica holding a newer value
+//!   (`offline_subkey_writes.rs:47-95`); a replica holding a newer value
 //!   restarts the fanout on it ([`super::fanout`]), and a value the
-//!   fanout ended on that is not ours becomes the local copy (`:84-93`).
+//!   fanout ended on that is not ours becomes the local copy (`:111-120`).
 //!   A push that did not land (fewer than
 //!   [`super::replicas::GET_COUNT`] accepts, [`super::fanout`]) keeps the subkey queued
-//!   (`check_fanout_finished_without_consensus`, `mod.rs:781-820`), else it
+//!   (`check_fanout_finished_without_consensus`, `mod.rs:990-1029`), else it
 //!   is done.
 //!
 //! The push has no answer anything waits on, so its effect lands at the

@@ -26,9 +26,13 @@ pub(crate) fn tracked_record_keys(
 }
 
 /// The tracked records that have no active watch. Only these are inspected
-/// each tick: a watched record already gets Veilid's own fallback inspect
-/// every 30 s, so inspecting it here too only duplicated that (plan C7, v1
-/// R10).
+/// each tick: a watched record already gets Veilid's own fallback inspect,
+/// so inspecting it here too only duplicated that (plan C7, v1 R10). In
+/// Veilid 0.5.8 that fallback is a per-watch silence timer, not a fixed
+/// 30 s tick: due 30 s after the latest of establishment, the last
+/// inspection and the last push, doubling up to 300 s on each inspection
+/// that finds nothing (`storage_manager/outbound_watch_manager/
+/// outbound_watch_state.rs:141-146,347-372`, `watch_value.rs:2368-2397`).
 pub(crate) fn unwatched_record_keys(
     state: &Arc<AppState>,
     community_id: &str,
@@ -162,7 +166,7 @@ pub fn start_inspect_loop(state: Arc<AppState>, community_id: String) {
             }
             ticks += 1;
             // Periodic miss-rate summary (A8): the number that decides
-            // whether INSPECT_INTERVAL can be relaxed post-0.5.7.
+            // whether INSPECT_INTERVAL can be relaxed on Veilid 0.5.8.
             if ticks.is_multiple_of(10) {
                 let (clean, missed) = rekindle_sync::inspect::INSPECT_TELEMETRY.counts();
                 tracing::debug!(clean, missed, "inspect catch-up telemetry");

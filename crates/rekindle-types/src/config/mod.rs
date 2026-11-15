@@ -121,7 +121,9 @@ pub struct VeilidStartupOptions {
     /// Enable UPnP/IGD automatic port mapping.
     ///
     /// Default `false`. The 0.5.3-era panic that motivated disabling it is
-    /// gone in 0.5.7, but the restart-on-IGD-failure loop is not, and the
+    /// gone since 0.5.7, but the restart-on-IGD-failure loop is not (0.5.8:
+    /// a failed mapping renew sets `network_needs_restart`,
+    /// `network_manager/network/native/tasks/upnp_task.rs:21-28`), and the
     /// original failure was never conclusively diagnosed — see
     /// `docs/contributor/veilid-0.5.7-gap-audit.md` §1.1. Flip only under
     /// attachment-flap monitoring.
@@ -132,8 +134,9 @@ pub struct VeilidStartupOptions {
     /// ProtectedStore instead of the OS keyring.
     ///
     /// Default `true`: keyring-manager 0.7.1 panicked on Linux
-    /// (blocking zbus inside our Tokio runtime). 0.5.7 resolves
-    /// keyring-manager 0.8.3, which is UNTESTED against that panic — see
+    /// (blocking zbus inside our Tokio runtime). 0.5.8 pins
+    /// keyring-manager `=0.10.0` (`veilid-core/Cargo.toml:194`), which is
+    /// UNTESTED against that panic — see
     /// migration-plan §2.3 for the retest protocol. Low stakes either
     /// way: this store only guards Veilid's own node/route secrets; user
     /// identity keys live in the SQLCipher vault.
@@ -180,13 +183,16 @@ pub struct VeilidStartupOptions {
     /// also a storage node (developer book, "Configuring Veilid
     /// Applications"), and record survival depends on the nodes nearest a
     /// key holding it. At 128 the count cap binds long before
-    /// `remote_max_storage_space_mb` (256 MB): veilid-core 0.5.7's
-    /// `make_room_for_record` only makes room by bytes, so each record
-    /// past 128 is evicted by the LRU cache itself and logged as
-    /// `RecordIndex(remote): Consistency failure, not enough room made`.
-    /// With the count cap out of reach, eviction runs through the byte
-    /// accounting as designed (verified against veilid-core 0.5.7's
-    /// record-index tests; `evidence/veilid-remote-store-limits.md`).
+    /// `remote_max_storage_space_mb` (256 MB). veilid-core 0.5.7's
+    /// `make_room_for_record` made room by bytes only, so each record past
+    /// 128 was evicted by the LRU cache itself and logged as
+    /// `RecordIndex(remote): Consistency failure, not enough room made`
+    /// (verified against 0.5.7's record-index tests;
+    /// `evidence/veilid-remote-store-limits.md`). 0.5.8 also makes room by
+    /// count (`storage_manager/record_store/record_store_inner/record_index.rs:1724-1739`),
+    /// so the failure is gone, but at 128 records the count cap would still
+    /// bind long before the byte cap; with it out of reach, eviction runs
+    /// through the byte accounting as designed.
     ///
     /// While app nodes disable DHTV (plan C7.10, until veilid #492) this
     /// node stores no records for others, so the cap is not reached; it

@@ -2,14 +2,14 @@
 //! (plan C7.9a, D4 "own routes react to `RouteChange`"). One per node, like
 //! `RouteImports`.
 //!
-//! veilid-core 0.5.7, checked in source:
+//! veilid-core 0.5.8 (the pinned fork, ADR 0017), checked in source:
 //! - `RouteChange.dead_routes` lists routes that died **or were released**
-//!   (`veilid_state.rs:238-245`), so a dead route is forgotten, never
+//!   (`veilid_api/types/veilid_state.rs:272-278`), so a dead route is forgotten, never
 //!   released: releasing an id Veilid no longer knows is `InvalidArgument`,
-//!   logged at ERROR (`api.rs:516-531`).
+//!   logged at ERROR (`veilid_api/api.rs:894-920`).
 //! - Allocation returns `TryAgain` until PublicInternet peer info is
 //!   published, with too few nodes, or when the new route fails its test
-//!   (`route_allocate.rs:139-145`, `api.rs:447-457`). Only `TryAgain` is
+//!   (`route_allocate.rs:170-176,212`, `api.rs:831-839`). Only `TryAgain` is
 //!   retried; any other error is a visible failure.
 //! - A manual route has no lifetime: Veilid tests it and kills it on a
 //!   failed test, and persists it across restarts. So a route that is
