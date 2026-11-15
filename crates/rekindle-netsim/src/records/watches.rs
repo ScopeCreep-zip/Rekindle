@@ -97,7 +97,7 @@ fn micros(d: Duration) -> u64 {
     u64::try_from(d.as_micros()).unwrap_or(u64::MAX)
 }
 
-/// The too-soon check of the call (`watch_value.rs:269-278`).
+/// The too-soon check of the call (0.5.8 `watch_value.rs:336-343`).
 pub(crate) fn too_soon(expiration_us: Option<u64>, now: u64) -> bool {
     expiration_us.is_some_and(|e| e != 0 && e < now.saturating_add(micros(MIN_WATCH_EXPIRATION)))
 }
@@ -133,7 +133,7 @@ pub(crate) fn desire(
     let watches = &mut inner.nodes[node].watches;
     match desired {
         Some(d) => {
-            // A change of parameters is inspected (`watch_value.rs:1166-1171`).
+            // A change of parameters is inspected (0.5.8 `watch_value.rs:1317-1322`).
             let changed = watches.get(key).and_then(Option::as_ref).is_none_or(|old| {
                 (&old.subkeys, old.expiration, old.member) != (&d.subkeys, d.expiration, d.member)
             });
@@ -209,7 +209,7 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
             added = true;
         }
     }
-    // A replica newly holding the watch is inspected (`watch_value.rs:1166-1171`).
+    // A replica newly holding the watch is inspected (0.5.8 `watch_value.rs:1317-1322`).
     if added {
         super::outbound::established(inner, node, key, now);
         super::catchup::enqueue(inner, node, key, now);

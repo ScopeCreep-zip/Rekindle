@@ -76,7 +76,7 @@ fn try_again() -> DhtCallError {
 }
 
 /// A fanout no node answered proves nothing: `TryAgain` (0.5.8
-/// `open_record.rs:101-104`, `inspect_record.rs:346-349`). In the model a
+/// `open_record.rs:107-110`, `inspect_record.rs:346-349`). In the model a
 /// reachable replica always answers, so "no answer" is "none reached".
 fn no_answer(call: &str) -> DhtCallError {
     error(
@@ -100,7 +100,7 @@ pub(crate) struct SimDht {
 }
 
 /// Whether `node`'s DHT is off: no connection, or attached with the public
-/// internet not ready (`storage_manager/mod.rs:887-898`: Veilid's
+/// internet not ready (0.5.8 `storage_manager/mod.rs:906-908,1097-1103`: Veilid's
 /// `is_online` follows the routing domain's readiness).
 fn offline(faults: &crate::network::Faults, node: usize) -> bool {
     faults.dht_offline.contains(&node) || faults.not_ready.contains(&node)
@@ -259,8 +259,8 @@ impl SimDht {
         let known = self.net.inner.lock().nodes[self.node].known.contains(key);
         if !known {
             // Inspect subkey 0 for the descriptor, stopping at the first
-            // node that has it (`open_record.rs:84-99`); not found needs a
-            // node that said so (`:101-104`).
+            // node that has it (0.5.8 `open_record.rs:90-105`); not found needs a
+            // node that said so (`:107-110`).
             let _slot = self.network(latency::GET, key, &[]).await?;
             if self.reach(key).is_empty() {
                 return Err(no_answer("open"));
@@ -332,7 +332,7 @@ impl DhtBackend for SimDht {
         );
         let public =
             writer_public(&owner).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
-        // The encryption key after the owner, as `create_record.rs:79-89`.
+        // The encryption key after the owner, as 0.5.8 `create_record.rs:82-93`.
         let encryption_key = new_encryption_key(self.rng.as_ref());
         let key = record_key_text(&public, schema, &encryption_key);
         {
@@ -421,7 +421,7 @@ impl DhtBackend for SimDht {
         let public =
             writer_public(&writer).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
         self.validate(key, subkey, &public, data.len())?;
-        // In flight until it returns (`inspect_record.rs:169-171`).
+        // In flight until it returns (0.5.8 `inspect_record.rs:274-277,287-290`).
         let _setting = super::Setting::new(&self.net, self.node, key, subkey);
         if self.offline() {
             return Err(try_again());
