@@ -188,6 +188,31 @@ impl<D: OutboxDeps> Outbox<D> {
         }
     }
 
+    /// When a pass next has work on a stream with a row in flight, by
+    /// [`select_due`](Self::select_due)'s walk: an in-flight row's own
+    /// `next_at` (its re-hint past the deadline, or its re-schedule within
+    /// it), and each unsettled row past it, up to the first row still to send
+    /// that is not in flight, which holds the rest back. The store's
+    /// `next_wake` cannot see the appender: it counts every row behind a
+    /// `queued` one as blocked, so a re-hint due behind an append in flight
+    /// never woke a pass (E2.5i). Each of these rows is attempted or
+    /// re-scheduled when due, so a pass does not spin on it.
+    pub(crate) async fn busy_wake(&self) -> Result<Option<i64>, OutboxError> {
+        let mut wake: Option<i64> = None;
+        for stream in self.appends.streams() {
+            for row in self.deps.stream_rows(&stream).await? {
+                let in_flight = self.appends.in_flight(&row.client_id);
+                if in_flight || is_unsettled(row.state) {
+                    wake = Some(wake.map_or(row.next_at, |w| w.min(row.next_at)));
+                }
+                if !in_flight && row.state == SendState::Queued {
+                    break;
+                }
+            }
+        }
+        Ok(wake)
+    }
+
     /// The due rows to attempt now, read under the gate: a stream with a row
     /// in flight is walked past it (its later rows are due, unless a row
     /// still to send that is not due holds them back). An in-flight row

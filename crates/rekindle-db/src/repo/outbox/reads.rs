@@ -152,7 +152,11 @@ pub fn expired(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result
 
 /// When the engine next has work: the earliest `next_at` of an unblocked
 /// unsettled row, or the earliest deadline of any unsettled row. `None`
-/// when nothing is unsettled.
+/// when nothing is unsettled. A row behind a `queued` one counts as
+/// blocked: whether that one's append is in flight, which a pass walks
+/// past, only the engine knows, and it adds those streams' rows itself
+/// (`rekindle_outbox` `Outbox::busy_wake`, E2.5i). Counting them here would
+/// wake a pass for a row a deferred head still holds back, over and over.
 ///
 /// # Errors
 /// The query failed.

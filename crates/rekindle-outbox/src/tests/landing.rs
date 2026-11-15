@@ -180,3 +180,45 @@ async fn a_stream_stays_busy_while_its_append_runs_without_a_queued_row() {
         () = body => {}
     }
 }
+
+/// E2.5i: a row handed off behind an append in flight is re-hinted at its
+/// own `next_at`, and the pass returns that as its next wake, though the
+/// store counts the row as blocked behind the in-flight head.
+#[tokio::test]
+async fn a_rehint_behind_an_append_in_flight_wakes_a_pass() {
+    let o = outbox();
+    let _hold = held(&o);
+    o.enqueue(entry(StreamKind::Dm, "bob", "a"), ())
+        .await
+        .unwrap();
+    let frame = || AttemptOutcome::Appending(b"f".to_vec());
+    script(&o, [frame(), frame(), frame()]);
+    let next_at = |id: &str| {
+        let s = o.deps().store.lock();
+        s.rows.iter().find(|r| r.client_id == id).unwrap().next_at
+    };
+    let body = async {
+        o.pump().await.unwrap();
+        settle_tasks().await;
+        // b is handed off behind a's append, then a is re-scheduled within
+        // its deadline, past b's re-hint.
+        advance(
+            &o,
+            next_at("a") - o.deps().clock.0.load(Ordering::SeqCst) - 1,
+        );
+        o.enqueue(entry(StreamKind::Dm, "bob", "b"), ())
+            .await
+            .unwrap();
+        o.pump().await.unwrap();
+        settle_tasks().await;
+        advance(&o, 1);
+        let wake = o.pump().await.unwrap();
+        assert_eq!(appends(&o), 1, "a's append still runs");
+        assert!(next_at("b") < next_at("a"), "b's re-hint comes first");
+        assert_eq!(wake, Some(next_at("b")), "the pass wakes for b's re-hint");
+    };
+    tokio::select! {
+        () = o.append_loop() => unreachable!("the appender runs until its scope ends"),
+        () = body => {}
+    }
+}

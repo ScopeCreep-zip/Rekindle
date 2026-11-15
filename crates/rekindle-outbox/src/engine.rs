@@ -314,7 +314,9 @@ impl<D: OutboxDeps> Outbox<D> {
             self.fail(&row, DEADLINE_REASON.to_owned()).await?;
         }
         self.attempt_due(now, None).await?;
-        self.deps.next_wake().await
+        let stored = self.deps.next_wake().await?;
+        let busy = self.busy_wake().await?;
+        Ok(stored.into_iter().chain(busy).min())
     }
 
     /// Attempt every unsettled row of `kind` that no stream head blocks
