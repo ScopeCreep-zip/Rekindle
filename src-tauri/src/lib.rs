@@ -50,7 +50,7 @@ pub fn run() {
     // Rekindle's own targets at info, everything else (Veilid included) at
     // warn: the daemon's filter (`rekindle-node/src/host/mod.rs`). Veilid's
     // log targets are facilities, not its crate path (`veilid_log!` uses the
-    // module's `impl_veilid_log_facility!`, `veilid-core/src/logging/
+    // module's `impl_veilid_log_facility!`, 0.5.8 `veilid-core/src/logging/
     // macros.rs:6-11`: `rtab`, `stor`, `net`, `rpc`, `tstore`, `fanout`,
     // `attach`, `crypto`, …), so a `veilid_core=` directive matches nothing.
     // ANSI color only on a real terminal — fmt() defaults to ANSI even when

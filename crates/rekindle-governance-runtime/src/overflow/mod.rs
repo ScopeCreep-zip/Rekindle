@@ -16,15 +16,15 @@
 //! [`read_governance_with_overflow`] does exactly that on the read path;
 //! [`read_my_chain`] does it on the write path before re-compaction.
 //!
-//! ## Overflow-record lifecycle (grounded in veilid-core 0.5.2)
+//! ## Overflow-record lifecycle (veilid-core 0.5.8)
 //!
 //! An overflow record is a single-owner `DFLT(1)` record whose owner keypair is
 //! **derived** from the identity secret
 //! ([`derive::derive_governance_overflow_keypair`]) — that grants write
 //! authority on any device with no persisted keypair. The record **key** is NOT
 //! re-derivable: `create_dht_record` always mixes in a random encryption key
-//! (`storage_manager/create_record.rs:87`) and *refuses to re-create* a record
-//! for an existing owner+schema (`routing_context.rs:360`). So the key is
+//! (`storage_manager/create_record.rs:92-93`) and *refuses to re-create* a record
+//! for an existing owner+schema (`routing_context.rs:440`). So the key is
 //! captured once at create and persisted in the DHT chain (`overflow_next`) +
 //! the local Veilid store. The write path anchors a freshly-created key by
 //! writing the primary subkey's pointer immediately, so a later device or retry
@@ -52,8 +52,9 @@ use crate::error::GovernanceRuntimeError;
 const SMPL_SUBKEY_MAX_BYTES: usize = 1_048_576 / 255; // 4112
 
 /// `DFLT(1)` per-subkey cap: `min(MAX_SUBKEY_SIZE 32768, MAX_RECORD_DATA_SIZE
-/// 1_048_576 / o_cnt 1)` = 32768 (veilid-core `storage_manager/schema.rs:59`,
-/// `EncryptedValueData::MAX_LEN`).
+/// 1_048_576 / o_cnt 1)` = 32768 (veilid-core 0.5.8
+/// `veilid_api/types/dht/derivation.rs:144-147`, `EncryptedValueData::MAX_LEN`
+/// at `storage_manager/types/encrypted_value_data.rs:12`).
 const DFLT_SUBKEY_MAX_BYTES: usize = 32_768;
 
 /// Entry-bytes budget for page 0 — the primary SMPL governance subkey. Headroom

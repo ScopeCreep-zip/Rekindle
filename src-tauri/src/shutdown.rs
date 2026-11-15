@@ -12,7 +12,7 @@ use crate::state::SharedState;
 /// deadlines (`SESSION_STOP_DEADLINE`, the Offline write wait). Veilid's
 /// shutdown waits for its in-flight DHT calls (`startup_lock.shutdown()`),
 /// then flushes both record stores and saves its metadata
-/// (`storage_manager/mod.rs:509-550`); a fanout has no cancellation API
+/// (0.5.8 `storage_manager/mod.rs:635-678`); a fanout has no cancellation API
 /// (veilid #516) and can outlast `LONGEST_VEILID_CALL`. Cutting it off,
 /// as a 5 s cap did, skipped that flush: a write already on the network
 /// was missing locally after restart (plan C7.16), and an abort mid-commit

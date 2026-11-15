@@ -82,7 +82,7 @@ pub const DM_ACK_DELAY_MIN_MS: u64 = 2_000;
 pub const DM_ACK_DELAY_MAX_MS: u64 = 10_000;
 
 /// Veilid's RPC round-trip timeout, ms (`network.rpc.timeout_ms`, default
-/// 5 000, `veilid-core/src/veilid_config.rs:852`): one call's longest wait,
+/// 5 000, veilid-core 0.5.8 `veilid-core/src/veilid_config.rs:944`): one call's longest wait,
 /// as an ack's send (an `app_message` after an inline route refresh) may
 /// take.
 pub const CALL_TIMEOUT_MS: u64 = 5_000;
