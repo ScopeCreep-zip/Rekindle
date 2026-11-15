@@ -54,7 +54,9 @@ fn overflow_chain_keeps_order_and_skips_repeats() {
 }
 
 /// `set_members` replaces the roster wholesale and keeps `known_members`
-/// equal to its keys, which the member count reads.
+/// equal to its keys. The member count is the merged governance's
+/// (`GovernanceState::member_count`, A/B R1-7), not this roster's, so a
+/// community with no merged state counts none.
 #[test]
 fn set_members_replaces_the_roster_and_the_known_members() {
     let store = CommunityStore::new(new_map());
@@ -64,11 +66,11 @@ fn set_members_replaces_the_roster_and_the_known_members() {
             .collect::<HashMap<_, _>>()
     };
     store.set_members("c1", roster(&["aa", "bb"]));
-    assert_eq!(store.member_count("c1"), 2);
+    assert_eq!(store.members("c1").len(), 2);
     store.set_members("c1", roster(&["bb"]));
     assert_eq!(store.members("c1").len(), 1);
     assert_eq!(store.known_members("c1"), HashSet::from(["bb".to_string()]));
-    assert_eq!(store.member_count("c1"), 1);
+    assert_eq!(store.member_count("c1"), 0);
     assert_eq!(store.member_count("c2"), 0);
     store.mark_channel_synced("c1", "ch");
     assert!(store.map().read()["c1"].synced_channels.contains("ch"));
@@ -152,6 +154,18 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
     governance
         .role_assignments
         .insert(PseudonymKey([2; 32]), HashSet::from([role]));
+    // Both members admitted, as the merge of their `MemberJoined` ops leaves
+    // them: the member count is the merged state's (A/B R1-7).
+    for member in [me.clone(), PseudonymKey([2; 32])] {
+        governance.members.insert(
+            member,
+            rekindle_governance::state::MemberState {
+                member_record: String::new(),
+                member_record_owner: String::new(),
+                joined: rekindle_governance::fixture::stamp(1),
+            },
+        );
+    }
     let mut community = CommunityState::new("gov-key");
     community.governance_state = Some(governance);
     community.known_members = HashSet::from([hex::encode(me.0), hex::encode([2u8; 32])]);
