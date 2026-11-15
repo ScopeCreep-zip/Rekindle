@@ -1,7 +1,7 @@
 //! Open intent through the pool (plan VU3, decision 1): a one-shot read,
 //! inspect or write and an existence probe open as `Check`, which never
 //! asks Veilid to rehydrate; our own records, the keepalive and long-lived
-//! leases open as `Hold`, which does when it is due (`open_record.rs:62-81`,
+//! leases open as `Hold`, which does when it is due (0.5.8 `open_record.rs:62-81`,
 //! modelled and tested in the netsim's `rehydrate_tests`). A hinted read
 //! goes to the network for every subkey a value change named.
 

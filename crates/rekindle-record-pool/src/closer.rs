@@ -1,7 +1,7 @@
 //! `RecordCloser`: closes an ended session's records off the user's path
 //! (plan C7.6i). One per node, living as long as the node.
 //!
-//! veilid-core's `close_record` takes the record's lifetime lock for
+//! veilid-core 0.5.8's `close_record` takes the record's lifetime lock for
 //! writing, which waits for every get, set, inspect and watch in flight on
 //! that record through its network fanout (`record_lock_table/mod.rs:21-31`).
 //! At logout those calls are still running on the ended pool's scope, and

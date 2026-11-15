@@ -29,7 +29,7 @@ use rekindle_utils::RandomSource;
 use tokio_util::sync::CancellationToken;
 
 /// The shortest interval between warmings: Veilid's rehydration recheck
-/// window, 60 × the 5 s RPC timeout (`storage_manager/mod.rs:198`), which
+/// window, 60 × the 5 s RPC timeout (0.5.8 `storage_manager/mod.rs:198`), which
 /// Rekindle keeps (`veilid_config.rs` `the_call_timeout_is_veilids_rpc_timeout`).
 pub const BASE_INTERVAL: Duration = Duration::from_secs(300);
 /// Uniform jitter added to [`BASE_INTERVAL`], in seconds, never subtracted.
@@ -122,7 +122,7 @@ mod tests {
     use super::*;
 
     /// The cadence never undercuts Veilid's 300 s rehydration recheck
-    /// window (`storage_manager/mod.rs:198`), so no warming is a no-op.
+    /// window (0.5.8 `storage_manager/mod.rs:198`), so no warming is a no-op.
     #[test]
     fn the_cadence_stays_within_its_jitter_and_the_start_within_one_window() {
         for _ in 0..200 {

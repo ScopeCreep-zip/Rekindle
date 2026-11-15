@@ -3,7 +3,7 @@
 //!
 //! veilid-core keeps one open entry per record per node: a re-open replaces
 //! the writer **and** the safety selection, a close is node-wide and cancels
-//! the watch (`storage_manager/open_record.rs:155-169`, `close_record.rs`).
+//! the watch (0.5.8 `storage_manager/open_record.rs:195-204`, `close_record.rs:116-120`).
 //! The pool is the refcount Veilid does not keep
 //! ([`rekindle_records::lease::LeaseTable`]), and it owns the Veilid
 //! semantics that are easy to misread (`evidence/c7-pool-research.md` §2–§3):
@@ -59,7 +59,7 @@ mod watch;
 /// Bound on compare-and-swap rounds for a read-merge-write whose write keeps
 /// coming back `Superseded`: the channel append and the friend-inbox append.
 /// Veilid stores the newer value locally on each supersede
-/// (`set_value.rs:620-645`), so every round writes above what it lost to.
+/// (0.5.8 `set_value.rs:741-746`), so every round writes above what it lost to.
 pub const CAS_ROUNDS: usize = 3;
 
 pub use closer::RecordCloser;

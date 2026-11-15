@@ -10,7 +10,7 @@ use super::{range, to_port, RecordPool};
 use rekindle_records::port::PortError;
 
 /// How the pool reports a set that failed: `TryAgain` is a write short of consensus, the node
-/// offline or the fanout below consensus, which Veilid answers alike (`set_value.rs:710-738`);
+/// offline or the fanout below consensus, which Veilid answers alike (0.5.8 `set_value.rs:710-738`);
 /// nothing was stored locally or queued. Anything else is the error.
 ///
 /// # Errors
@@ -136,7 +136,7 @@ impl RecordPool {
         let signer = self.signer(&key, writer.as_ref());
         // Only a subkey with a local copy is compared: veilid-core's get
         // with no local value goes to the network even without
-        // `force_refresh` (`get_value.rs:72-92`), a full fanout online and
+        // `force_refresh` (0.5.8 `get_value.rs:159-171`), a full fanout online and
         // `TryAgain` offline.
         let identical = before.is_some()
             && self
@@ -176,7 +176,7 @@ impl RecordPool {
             }
             Ok(Some(rival)) => Ok(SetOutcome::Superseded(rival)),
             // `None` is ours at consensus: below it Veilid answers
-            // `TryAgain` and stores nothing (`set_value.rs:731-738` →
+            // `TryAgain` and stores nothing (0.5.8 `set_value.rs:731-738` →
             // `local_record_store_interface.rs:60-62`), mapped by
             // `set_failed`. An identical value kept its seq and re-sent the
             // stored bytes (`set_value.rs:353-366`).
