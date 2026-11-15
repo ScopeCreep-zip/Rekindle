@@ -31,7 +31,12 @@
 //!   subkey changed, and counts the watch down (`inbound_watches_interface.rs:232-277`,
 //!   `inbound_watch.rs:124-140`). An identical re-push stores nothing and
 //!   marks nothing (`set_value.rs:823-842`);
-//! - **the watcher** drops the value when more than one subkey changed or the
+//! - **the watcher** keeps a count per replica holding its watch: a push
+//!   above it is invalid and dropped, and that replica's watch is cancelled
+//!   at the next check; an equal one is a duplicate and goes on
+//!   (`watch_value.rs:1890-1929`, [`super::outbound::per_node_push`]). The
+//!   report's count stays one per watch (the netsim's stand-in for Veilid's
+//!   remaining count). It drops the value when more than one subkey changed or the
 //!   first it watches is not the first changed; drops a value not newer than
 //!   its local copy and that subkey with it (nothing when none is left);
 //!   stores a reported value before reporting it, else reports the range
@@ -88,7 +93,7 @@ pub(crate) struct ReplicaWatch {
     subkeys: BTreeSet<u32>,
     count: u32,
     expiration: u64,
-    changed: BTreeSet<u32>,
+    pub(crate) changed: BTreeSet<u32>,
     /// The watcher's value-changed route generation it was placed with.
     route: u64,
 }
@@ -172,13 +177,14 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
-    let (mut held, mut added) = (0, false);
+    let (mut held, mut added, mut accepted) = (0, false, Vec::new());
     for r in reachable(&record.replicas, &inner.faults.partitions, node) {
         let watches = &mut record.replicas[r].watches;
         if let Some(w) = watches.iter_mut().find(|w| w.node == node) {
             if w.member == d.member {
                 (w.subkeys, w.count, w.expiration) = (d.subkeys.clone(), d.count, expiration);
                 held += 1;
+                accepted.push(r);
             }
             continue;
         }
@@ -207,7 +213,11 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
             });
             held += 1;
             added = true;
+            accepted.push(r);
         }
+    }
+    for r in accepted {
+        super::outbound::per_node_placed(inner, node, key, r, d.count);
     }
     // A replica newly holding the watch is inspected (0.5.8 `watch_value.rs:1317-1322`).
     if added {
@@ -257,6 +267,22 @@ fn drop_replica_watches(inner: &mut Inner, node: usize, key: &str) {
             replica.watches.retain(|w| w.node != node);
         }
     }
+    super::outbound::per_node_ended(inner, node, key);
+}
+
+/// The node's finished per-node watches on `key` (count 0, a counted-out
+/// or invalid one) leave its state, and the replica's watch with them
+/// (Veilid's background process cancels it, `watch_value.rs:1903-1905`,
+/// `outbound_watch_manager/mod.rs:322-357`); the check re-places after.
+fn drop_finished(inner: &mut Inner, node: usize, key: &str) {
+    let finished = super::outbound::take_finished(inner, node, key);
+    if let Some(record) = inner.records.get_mut(key) {
+        for r in finished {
+            if let Some(replica) = record.replicas.get_mut(r) {
+                replica.watches.retain(|w| w.node != node);
+            }
+        }
+    }
 }
 
 /// After the tick's sends, an online, awake watcher whose value-changed
@@ -291,15 +317,22 @@ fn renew_routes(inner: &mut Inner, now: u64) {
 /// An event the tick sends once the lock is released.
 type Out = (usize, usize, &'static str, PortEvent);
 
-/// The watcher's side of one change (0.5.8 `watch_value.rs:1819-1939,2080-2262`).
+/// The watcher's side of one change from replica index `replica` (0.5.8
+/// `watch_value.rs:1819-1939,2080-2262`).
 pub(super) fn receive(
     inner: &mut Inner,
     node: usize,
     key: &str,
+    replica: usize,
     (subkeys, count, mut value): (BTreeSet<u32>, u32, Option<super::replicas::Cipher>),
     now: u64,
 ) -> Option<ValueChange> {
     if !matches!(inner.nodes[node].watches.get(key), Some(Some(_))) {
+        return None;
+    }
+    // The per-node count first: a count above it drops the change before
+    // the silence timer is touched (`watch_value.rs:1890-1936`).
+    if !super::outbound::per_node_push(inner, node, key, replica, count) {
         return None;
     }
     // A valid push resets the silence timer (`watch_value.rs:1931-1936`).
@@ -313,7 +346,8 @@ pub(super) fn receive(
     }
     let desired = inner.nodes[node].watches.get_mut(key)?.as_mut()?;
     let watched = desired.subkeys.clone();
-    // The per-node state takes the replica's count (0.5.8 `watch_value.rs:1890-1929`).
+    // The report carries the replica's count; one count per watch (Veilid
+    // keeps a remaining count beside the per-node ones, `:1959-1968`).
     desired.count = count;
     let first = *subkeys.first()?;
     if subkeys.len() > 1 {
@@ -441,6 +475,8 @@ impl Network {
                             watches.insert(key.clone(), None);
                         }
                     }
+                    drop_finished(inner, node, &key);
+                    let watches = &mut inner.nodes[node].watches;
                     if matches!(watches.get(&key), Some(None)) {
                         watches.remove(&key);
                         drop_replica_watches(inner, node, &key);
@@ -477,7 +513,7 @@ impl Network {
             for key in keys {
                 let mut sent = Vec::new();
                 if let Some(record) = inner.records.get_mut(&key) {
-                    for replica in &mut record.replicas {
+                    for (r, replica) in record.replicas.iter_mut().enumerate() {
                         let home = replica.home;
                         let ciphers: Vec<Option<super::replicas::Cipher>> =
                             (0..replica.values.len())
@@ -496,12 +532,12 @@ impl Network {
                                 (1, Some(s)) => ciphers.get(*s as usize).cloned().flatten(),
                                 _ => None,
                             };
-                            sent.push((home, w.node, w.route, (subkeys, w.count, value)));
+                            sent.push((home, r, w.node, w.route, (subkeys, w.count, value)));
                             w.count > 0
                         });
                     }
                 }
-                for (home, node, route, change) in sent {
+                for (home, r, node, route, change) in sent {
                     if !online(inner, node)
                         || super::outbound::asleep(inner, node)
                         || !reaches(&inner.faults.partitions, node, home)
@@ -512,7 +548,7 @@ impl Network {
                     if route != inner.nodes[node].route_epoch {
                         continue;
                     }
-                    if let Some(change) = receive(inner, node, &key, change, now) {
+                    if let Some(change) = receive(inner, node, &key, r, change, now) {
                         out.push((home, node, "ValueChange", PortEvent::ValueChange(change)));
                     }
                 }

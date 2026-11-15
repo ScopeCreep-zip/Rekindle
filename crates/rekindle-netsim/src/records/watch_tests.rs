@@ -147,17 +147,19 @@ async fn the_watcher_drops_a_value_it_may_not_report() {
     inner.nodes[0]
         .watches
         .insert(k.clone(), Some(desired(&[2, 3])));
+    crate::records::outbound::per_node_placed(&mut inner, 0, &k, 0, 9);
     let set = |s: &[u32]| s.iter().copied().collect::<BTreeSet<u32>>();
     // The first changed subkey is not watched: the range, no value.
-    let change = watches::receive(&mut inner, 0, &k, (set(&[1, 2]), 9, None), 0).unwrap();
+    let change = watches::receive(&mut inner, 0, &k, 0, (set(&[1, 2]), 9, None), 0).unwrap();
     assert_eq!((change.subkeys, change.value), (vec![2], None));
-    let change = watches::receive(&mut inner, 0, &k, (set(&[1]), 9, Some(pushed(0))), 0);
+    let change = watches::receive(&mut inner, 0, &k, 0, (set(&[1]), 9, Some(pushed(0))), 0);
     assert!(change.is_none(), "nothing watched changed");
     // Not newer than the local copy: dropped, and nothing is left.
     inner.nodes[0].local.insert((k.clone(), 2), value(4));
-    assert!(watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(pushed(4))), 0).is_none());
+    assert!(watches::receive(&mut inner, 0, &k, 0, (set(&[2]), 9, Some(pushed(4))), 0).is_none());
     // Newer: stored, then reported.
-    let change = watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(pushed(5))), 0).unwrap();
+    let change =
+        watches::receive(&mut inner, 0, &k, 0, (set(&[2]), 9, Some(pushed(5))), 0).unwrap();
     assert_eq!(change.value, Some(value(5)));
     assert_eq!(inner.nodes[0].local[&(k.clone(), 2)], value(5));
     // The local copy keeps the pushed ciphertext's nonce (`watch_value.rs:2080-2263`
@@ -168,7 +170,57 @@ async fn the_watcher_drops_a_value_it_may_not_report() {
     );
     // A node that watches nothing hears nothing.
     inner.nodes[0].watches.clear();
-    assert!(watches::receive(&mut inner, 0, &k, (set(&[2]), 9, Some(pushed(6))), 0).is_none());
+    assert!(watches::receive(&mut inner, 0, &k, 0, (set(&[2]), 9, Some(pushed(6))), 0).is_none());
+}
+
+/// 0.5.8 `watch_value.rs:1890-1929`: per replica, a lower count is taken,
+/// an equal one is a duplicate still reported, and a higher one is invalid:
+/// the change is dropped and that replica's watch is cancelled at the next
+/// check, which places a fresh one.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_push_whose_count_rose_is_dropped_and_its_replica_watch_cancelled() {
+    let (sim, nodes) = Netsim::nodes(2, 15);
+    let (key, _a, _b) = seeded(&sim, &nodes).await;
+    let now = sim.net.now_us();
+    let set = |s: &[u32]| s.iter().copied().collect::<BTreeSet<u32>>();
+    let r = {
+        let mut inner = sim.net.inner.lock();
+        let mut d = desired(&[1, 2, 3]);
+        d.count = 5;
+        watches::desire(&mut inner, 1, &key, Some(d), now);
+        let homes = homes(&inner, &key, 1);
+        let r = homes[0];
+        let other = homes[1];
+        assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), r)], 5);
+        // Lower: taken.
+        let heard = watches::receive(&mut inner, 1, &key, r, (set(&[1]), 4, None), now);
+        assert_eq!(heard.map(|c| c.subkeys), Some(vec![1]));
+        // Equal: a duplicate, still reported.
+        let heard = watches::receive(&mut inner, 1, &key, r, (set(&[2]), 4, None), now);
+        assert_eq!(heard.map(|c| c.subkeys), Some(vec![2]));
+        // Higher: dropped, that replica's count forced to 0.
+        let heard = watches::receive(&mut inner, 1, &key, r, (set(&[3]), 5, None), now);
+        assert!(heard.is_none(), "{heard:?}");
+        assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), r)], 0);
+        // Another replica's count is its own.
+        assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), other)], 5);
+        // A change pending on the cancelled watch goes with it.
+        watches::mark(inner.records.get_mut(&key).unwrap(), &[r, other], 3);
+        r
+    };
+    sim.net.tick_watches();
+    let inner = sim.net.inner.lock();
+    let replicas = &inner.records[&key].replicas;
+    let changed = |x: usize| {
+        replicas[x]
+            .watches
+            .iter()
+            .find(|w| w.node == 1)
+            .map(|w| w.changed.clone())
+    };
+    assert_eq!(changed(r), Some(BTreeSet::new()), "a fresh watch at {r}");
+    assert_eq!(inner.nodes[1].outbound.per_node[&(key.clone(), r)], 4);
+    assert!(changed(homes(&inner, &key, 1)[1]).is_some_and(|c| c.contains(&3)));
 }
 
 /// The replicas holding `node`'s watch on `key`.

@@ -91,6 +91,11 @@ pub(crate) struct OutboundWatches {
     /// mark was still unread (copies counted, `:251-266`); kept after the
     /// watch ends.
     pub suppressed: BTreeMap<String, u64>,
+    /// Per watched record and replica index, the count that replica's
+    /// watch holds as far as the node knows (`OutboundWatchPerNodeState::
+    /// count`, set to the remaining count at each accept, 0.5.8
+    /// `watch_value.rs:1245-1273`).
+    pub per_node: BTreeMap<(String, usize), u32>,
     /// The last node clock reading (µs), so it never runs backwards.
     clock: u64,
 }
@@ -107,6 +112,7 @@ impl Default for OutboundWatches {
             was_online: true,
             coalesced: BTreeMap::new(),
             suppressed: BTreeMap::new(),
+            per_node: BTreeMap::new(),
             clock: 0,
         }
     }
@@ -273,6 +279,65 @@ pub(crate) fn ended(inner: &mut Inner, node: usize, key: &str) {
     out.rehints.remove(key);
     out.queue.remove(key);
     out.failures.remove(key);
+}
+
+/// Replica `r` accepted (or renewed) `node`'s watch on `key` with `count`
+/// (`watch_value.rs:1245-1273`; a dead answer, count 0, inserts nothing).
+pub(crate) fn per_node_placed(inner: &mut Inner, node: usize, key: &str, r: usize, count: u32) {
+    if count > 0 {
+        let out = &mut inner.nodes[node].outbound;
+        out.per_node.insert((key.to_string(), r), count);
+    }
+}
+
+/// The per-node count rule of a push from replica `r` (0.5.8
+/// `watch_value.rs:1877-1930`): with no per-node state there is no
+/// callback; a count above the per-node count is invalid, forces that
+/// count to 0 (the next check drops the per-node watch, [`take_finished`])
+/// and drops the change; an equal count is a duplicate and goes on; a
+/// lower one is taken. Whether the change goes on.
+pub(crate) fn per_node_push(
+    inner: &mut Inner,
+    node: usize,
+    key: &str,
+    r: usize,
+    count: u32,
+) -> bool {
+    let out = &mut inner.nodes[node].outbound;
+    let Some(known) = out.per_node.get_mut(&(key.to_string(), r)) else {
+        return false;
+    };
+    if count > *known {
+        *known = 0;
+        return false;
+    }
+    *known = count;
+    true
+}
+
+/// The replicas whose per-node watch on `key` is finished (count 0),
+/// removed from the node's state (`update_per_node_states`,
+/// `outbound_watch_manager/mod.rs:313-358`).
+pub(crate) fn take_finished(inner: &mut Inner, node: usize, key: &str) -> Vec<usize> {
+    let out = &mut inner.nodes[node].outbound;
+    let finished: Vec<usize> = out
+        .per_node
+        .iter()
+        .filter(|((k, _), count)| k == key && **count == 0)
+        .map(|((_, r), _)| *r)
+        .collect();
+    for r in &finished {
+        out.per_node.remove(&(key.to_string(), *r));
+    }
+    finished
+}
+
+/// Every per-node state of `node`'s watch on `key` goes (the watch died).
+pub(crate) fn per_node_ended(inner: &mut Inner, node: usize, key: &str) {
+    inner.nodes[node]
+        .outbound
+        .per_node
+        .retain(|(k, _), _| k != key);
 }
 
 /// A push of `key` reached `node` (`watch_value.rs:1931-1936`).
