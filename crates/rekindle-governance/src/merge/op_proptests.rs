@@ -309,6 +309,27 @@ fn removal_invalidates_the_removed_managers_concurrent_actions() {
 }
 
 #[test]
+fn a_removal_names_its_author_as_the_remover() {
+    let mut ops = community();
+    let k = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(4));
+    let ban = op(
+        &pk(1),
+        6,
+        &[head(&ops)],
+        31,
+        GovernanceEntry::BanEntry {
+            target: pk(3),
+            reason: None,
+        },
+    );
+    ops.extend([k, ban]);
+    let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
+    assert_eq!(state.removed_by.get(&pk(4)), Some(&pk(2)), "kicked by 2");
+    assert_eq!(state.removed_by.get(&pk(3)), Some(&pk(1)), "banned by 1");
+    assert!(!state.removed_by.contains_key(&pk(2)));
+}
+
+#[test]
 fn rejoin_after_removal_is_allowed_and_concurrent_acts_stay_void() {
     let mut ops = community();
     let k = op(&pk(1), 6, &[head(&ops)], 40, kick(4));

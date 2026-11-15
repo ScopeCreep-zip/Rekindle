@@ -141,6 +141,21 @@ fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
     if let Some(gone) = gone {
         state.departed_at.insert(gone.clone(), op.op().issued_at);
     }
+    let remover_of = match op.body() {
+        GovernanceEntry::MemberRemoved { target, .. } => {
+            state.removed.get(target).is_some_and(|s| *s == op.stamp())
+        }
+        GovernanceEntry::BanEntry { target, .. } => state
+            .ban_stamps
+            .get(target)
+            .is_some_and(|s| *s == op.stamp()),
+        _ => false,
+    }
+    .then(|| crate::power::removal_target(op.body()))
+    .flatten();
+    if let Some(target) = remover_of {
+        state.removed_by.insert(target.clone(), op.author().clone());
+    }
     true
 }
 

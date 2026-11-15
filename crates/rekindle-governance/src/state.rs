@@ -51,6 +51,11 @@ pub struct GovernanceState {
     /// come after it.
     pub removed: HashMap<PseudonymKey, OpStamp>,
 
+    /// Who removed each member: the author of the latest merged
+    /// `MemberRemoved` naming it or `BanEntry` banning it. A removed member
+    /// reads it to show who removed it (plan E3.2 S9 own removal).
+    pub removed_by: HashMap<PseudonymKey, PseudonymKey>,
+
     /// Prospective members who wrote a `MemberJoined` and have not yet
     /// been approved or rejected. Grow-Only Set, cleared per target by a
     /// decision entry.
