@@ -49,6 +49,9 @@ pub struct Opened {
     /// The entry's seq on the sender's dm chain to us (finding 71 refined);
     /// 0 for a frame on no chain.
     pub chain_seq: u64,
+    /// Held until our request's accept lands ([`super::held`], plan E2.5i
+    /// R2-2): user content from a `PendingOut` peer, opened on its session.
+    pub held: bool,
 }
 
 /// Why an inbound frame did not open.
@@ -150,10 +153,13 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
             admission::Barred::Blocked => Dropped::Blocked,
             admission::Barred::Unreadable => Dropped::Failed,
         })?;
-    if !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
+    // User content from a peer we asked, ahead of their accept, opens on
+    // its session and is held (plan E2.5i R2-2); a sealed one never is.
+    let hold = super::held::holds(kind, status) && !matches!(frame.body, FrameBody::Sealed(_));
+    if !hold && !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
         return Err(Dropped::Refused);
     }
-    match frame.body {
+    let mut opened = match frame.body {
         FrameBody::Sealed(sealed) => {
             open_sealed(host, frame.sender, sender_hex, frame.type_id, &sealed)
         }
@@ -163,7 +169,9 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
         FrameBody::PreKeyInit(init) => {
             open_init(host, frame.sender, sender_hex, &init, status).await
         }
-    }
+    }?;
+    opened.held = hold;
+    Ok(opened)
 }
 
 /// Whether a session we hold with `sender_hex` has `base_key`.
@@ -240,6 +248,7 @@ fn open_sealed(
         body,
         unprocessed: None,
         nonce: Some(content.nonce),
+        held: false,
     })
 }
 
@@ -343,6 +352,7 @@ async fn open_ephemeral(
         body,
         unprocessed: None,
         nonce: None,
+        held: false,
     })
 }
 
@@ -482,6 +492,7 @@ fn recorded(
         body,
         unprocessed: Some(inbound.key),
         nonce: None,
+        held: false,
     })
 }
 
@@ -522,6 +533,7 @@ pub(crate) fn replayed(row: &rekindle_db::repo::unprocessed::Unprocessed) -> Opt
         body,
         unprocessed: Some(row.key),
         nonce: None,
+        held: false,
     })
 }
 

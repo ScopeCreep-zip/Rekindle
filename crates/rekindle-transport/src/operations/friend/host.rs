@@ -70,6 +70,9 @@ pub struct FriendStores {
     /// The watch opens that failed, retried on the maintenance tick until
     /// they open (plan E2.6).
     pub watch_retries: Mutex<super::watch_retry::WatchRetries>,
+    /// Messages from peers we asked, held until their accept lands (plan
+    /// E2.5i R2-2); their `unprocessed` rows outlive a lock.
+    pub held: Mutex<crate::operations::direct::held::HeldMessages>,
 }
 
 impl FriendStores {
@@ -85,6 +88,7 @@ impl FriendStores {
         self.acks.lock().clear();
         self.participant_gates.lock().clear();
         self.watch_retries.lock().clear();
+        self.held.lock().clear();
     }
 
     /// The gate around our participant record for `peer`.

@@ -7,6 +7,7 @@
 pub(crate) mod admission;
 pub mod frame;
 mod handlers;
+pub mod held;
 pub mod replay;
 pub mod retry_requests;
 mod sealed_open;
@@ -91,6 +92,11 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
             return Routed::Handled;
         }
     };
+    // Held: neither acknowledged nor remembered for a copy's re-ack.
+    if opened.held {
+        held::keep(host, opened).await;
+        return Routed::Handled;
+    }
     dm::ack::opened(host, &opened, digest);
     if opened.stream_seq > 0 {
         dm::stream::on_hint(host, &opened.sender_hex);
@@ -165,6 +171,10 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
             return Routed::Handled;
         }
     };
+    if opened.held && opened.sender_hex == writer {
+        held::keep(host, opened).await;
+        return Routed::Handled;
+    }
     dm::ack::opened(host, &opened, digest);
     if opened.sender_hex != writer {
         tracing::warn!(from = %writer, by = %opened.sender_hex, "dropping a chain entry by another sender");
@@ -205,6 +215,11 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
             };
         }
     };
+    // Held: its row is committed, so receipted; applied at the accept.
+    if opened.held {
+        held::keep(host, opened).await;
+        return Called::Answered(Vec::new());
+    }
     if matches!(opened.body, DirectBody::RelayOffer(_)) {
         frame::processed(host, &opened);
         return Called::Unported(Box::new(opened));
@@ -289,10 +304,18 @@ pub async fn replay_unprocessed(host: &dyn FriendHost) {
             frame::delete_unprocessed(host, row.key);
             continue;
         };
-        // Judged again: the sender may have been blocked or removed since.
-        if !admission::admitted(host, &opened.sender_hex, opened.type_id).await {
-            frame::processed(host, &opened);
-            continue;
+        // Judged again: the sender may have been blocked or removed since,
+        // or still be one we asked (held again, plan E2.5i R2-2).
+        match held::judge_replay(host, &opened).await {
+            held::Replay::Apply => {}
+            held::Replay::Hold => {
+                held::keep(host, opened).await;
+                continue;
+            }
+            held::Replay::Refuse => {
+                frame::processed(host, &opened);
+                continue;
+            }
         }
         if let Routed::Unported(opened) = handlers::handle(host, opened).await {
             tracing::debug!(from = %opened.sender_hex, kind = ?opened.type_id,

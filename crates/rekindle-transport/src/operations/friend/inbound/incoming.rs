@@ -274,6 +274,8 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
         peer_key: a.sender_hex.to_string(),
         display_name: Some(display_name),
     }));
+    // What they wrote before this accept reached us (plan E2.5i R2-2).
+    crate::operations::direct::held::release_soon(host, a.sender_hex);
     true
 }
 
