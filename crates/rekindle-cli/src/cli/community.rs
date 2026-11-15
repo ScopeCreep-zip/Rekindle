@@ -55,6 +55,13 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Forget a community you were removed from: its kept history and keys.
+    Forget {
+        /// Community name or governance key.
+        #[arg(long, short = 'c')]
+        community: String,
+    },
+
     /// List joined communities.
     List,
 

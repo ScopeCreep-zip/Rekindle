@@ -72,7 +72,26 @@ fn community_view(c: &CommunityState) -> CommunityView {
         my_pronouns: c.my_pronouns.clone(),
         my_theme_color: c.my_theme_color,
         my_badges: c.my_badges.clone(),
+        removed: None,
     }
+}
+
+/// Our removal from `community`, as every community read shows it (plan
+/// E3.2 S9 own removal, R3-5): who removed us, by pseudonym and card name.
+pub(crate) fn removal_display(
+    communities: &crate::host::community::store::CommunityStore,
+    community: &str,
+) -> Option<rekindle_types::display::CommunityRemovalDisplay> {
+    let removal = communities.own_removal(community)?;
+    let by_name = (removal.by.as_ref()).and_then(|by| communities.member_card_name(community, by));
+    Some(rekindle_types::display::CommunityRemovalDisplay {
+        banned: removal.banned,
+        by: removal
+            .by
+            .as_ref()
+            .map(rekindle_types::id::PseudonymKey::to_hex),
+        by_name,
+    })
 }
 
 /// What the store holds about a community's members, read in one lock.
@@ -180,6 +199,9 @@ impl HostGovernance {
             .values()
             .map(community_view)
             .collect();
+        for view in &mut views {
+            view.removed = removal_display(&self.ctx.communities, &view.id);
+        }
         views.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         views
     }

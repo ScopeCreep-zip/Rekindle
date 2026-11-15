@@ -55,6 +55,9 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityLeave { governance_key } => {
             community::handle_leave(ctx, state, &governance_key).await
         }
+        LifecycleRequest::CommunityForget { governance_key } => {
+            community::handle_forget(ctx, state, &governance_key).await
+        }
         LifecycleRequest::CommunityList => community::handle_list(ctx, state),
         LifecycleRequest::CommunityViews => community::handle_views(ctx, state),
         LifecycleRequest::CommunityMembers { governance_key } => {

@@ -226,3 +226,48 @@ impl HostGovernance {
         );
     }
 }
+
+/// Why a Forget was refused or failed.
+#[derive(Debug)]
+pub(crate) enum ForgetError {
+    /// We were not removed: a member leaves instead (a Forget writes no op).
+    NotRemoved,
+    Failed(String),
+}
+
+impl HostGovernance {
+    /// Forget a community we were removed from (plan E3.2 S9 R3-5, Element's
+    /// "Forget this room", Signal's delete after "removed you"): its kept
+    /// history, keys, rows and store entry go. No op is written and no one
+    /// is told: the removal already took us out, and the community was torn
+    /// down when it was seen (`own_removal.rs`).
+    ///
+    /// # Errors
+    /// [`ForgetError::NotRemoved`] for a community we still belong to;
+    /// otherwise forgetting its rows failed.
+    pub(crate) async fn forget(&self, community: &str) -> Result<(), ForgetError> {
+        let gate = self
+            .ctx
+            .communities
+            .removal_gate(community)
+            .ok_or(ForgetError::NotRemoved)?;
+        let _torn_down = gate.lock().await;
+        if self.ctx.communities.own_removal(community).is_none() {
+            return Err(ForgetError::NotRemoved);
+        }
+        self.forget_keys(community);
+        self.ctx.mek_cache.write().remove_community(community);
+        self.ctx.communities.remove(community);
+        crate::host::session::forget_membership(
+            &self.ctx.session,
+            &self.ctx.db,
+            &self.ctx.vault,
+            community,
+        )
+        .await
+        .map_err(|e| ForgetError::Failed(format!("community not forgotten: {e}")))?;
+        self.audit_left(community);
+        tracing::info!(community = %community, "removed community forgotten");
+        Ok(())
+    }
+}

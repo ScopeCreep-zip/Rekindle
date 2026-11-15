@@ -89,28 +89,12 @@ pub(crate) fn handle_list(ctx: &DaemonContext, state: DaemonState) -> IpcRespons
         &metadata,
     );
     for overview in &mut overviews {
-        overview.removed = removal_display(ctx, &overview.governance_key);
+        overview.removed = crate::host::adapters::governance::removal_display(
+            &ctx.communities,
+            &overview.governance_key,
+        );
     }
     IpcResponse::ok(&overviews)
-}
-
-/// Our removal from `community`, as list and info show it (plan E3.2 S9
-/// own removal).
-fn removal_display(
-    ctx: &DaemonContext,
-    community: &str,
-) -> Option<rekindle_types::display::CommunityRemovalDisplay> {
-    let removal = ctx.communities.own_removal(community)?;
-    let by_name =
-        (removal.by.as_ref()).and_then(|by| ctx.communities.member_card_name(community, by));
-    Some(rekindle_types::display::CommunityRemovalDisplay {
-        banned: removal.banned,
-        by: removal
-            .by
-            .as_ref()
-            .map(rekindle_types::id::PseudonymKey::to_hex),
-        by_name,
-    })
 }
 
 pub(crate) fn handle_info(
@@ -159,7 +143,10 @@ pub(crate) fn handle_info(
         ctx.communities.my_role_ids(&membership.governance_key),
         meta,
     );
-    detail.removed = removal_display(ctx, &membership.governance_key);
+    detail.removed = crate::host::adapters::governance::removal_display(
+        &ctx.communities,
+        &membership.governance_key,
+    );
     IpcResponse::ok(&detail)
 }
 

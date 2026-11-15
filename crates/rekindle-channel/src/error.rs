@@ -32,6 +32,11 @@ pub enum ChannelError {
     #[error("permission denied: {0}")]
     PermissionDenied(String),
 
+    /// We were removed from the community (plan E3.2 S9 own removal): it is
+    /// read-only history; rejoining takes a new invite.
+    #[error("you were {} this community", if *banned { "banned from" } else { "removed from" })]
+    Removed { banned: bool },
+
     #[error("slowmode active — wait {wait_ms}ms before sending again")]
     SlowmodeActive { wait_ms: u64 },
 

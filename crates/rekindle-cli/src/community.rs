@@ -59,6 +59,18 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
+        CommunityCmd::Forget { community } => {
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityForget {
+                        governance_key: community.clone(),
+                    },
+                )),
+            )
+            .await?;
+            format::print_structured(&value, mode)
+        }
         CommunityCmd::List => {
             let value = helpers::send(
                 client,
@@ -89,12 +101,17 @@ pub async fn dispatch(
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("?"),
                                 ),
+                                removal_text(c.get("removed")),
                             ]
                         })
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            table::print_table(&["Name", "Members", "Channels", "Key"], &rows, mode)
+            table::print_table(
+                &["Name", "Members", "Channels", "Key", "Standing"],
+                &rows,
+                mode,
+            )
         }
         CommunityCmd::Info { community, full } => {
             let value = helpers::send(
@@ -157,6 +174,8 @@ pub async fn dispatch(
                         .to_string(),
                 ),
             ];
+            let mut pairs = pairs;
+            pairs.push(("Standing", removal_text(value.get("removed"))));
             table::print_kv_table(&pairs, mode)?;
             if *full {
                 print_full_info(&value, mode)?;
@@ -323,4 +342,48 @@ fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>>
             ]
         })
         .collect()
+}
+
+/// A community's standing as list and info show it (plan E3.2 S9 R3-5):
+/// "member", or "removed"/"banned" with the remover's card name or short
+/// pseudonym when the merge names one.
+fn removal_text(removed: Option<&serde_json::Value>) -> String {
+    let Some(removed) = removed.filter(|r| !r.is_null()) else {
+        return "member".into();
+    };
+    let what = if removed.get("banned").and_then(serde_json::Value::as_bool) == Some(true) {
+        "banned"
+    } else {
+        "removed"
+    };
+    let by = (removed.get("byName").and_then(|v| v.as_str()))
+        .map(str::to_owned)
+        .or_else(|| {
+            (removed.get("by").and_then(|v| v.as_str())).map(rekindle_client::fmt::abbreviate_key)
+        });
+    match by {
+        Some(by) => format!("{what} by {by}"),
+        None => what.into(),
+    }
+}
+
+#[cfg(test)]
+mod removal_tests {
+    use super::removal_text;
+
+    #[test]
+    fn standing_names_who_removed_us() {
+        assert_eq!(removal_text(None), "member");
+        assert_eq!(removal_text(Some(&serde_json::Value::Null)), "member");
+        let kicked = serde_json::json!({ "banned": false, "by": "ab".repeat(32), "byName": null });
+        assert!(
+            removal_text(Some(&kicked)).starts_with("removed by "),
+            "{}",
+            removal_text(Some(&kicked))
+        );
+        let named = serde_json::json!({ "banned": true, "by": "ab".repeat(32), "byName": "Ann" });
+        assert_eq!(removal_text(Some(&named)), "banned by Ann");
+        let nobody = serde_json::json!({ "banned": false, "by": null, "byName": null });
+        assert_eq!(removal_text(Some(&nobody)), "removed");
+    }
 }

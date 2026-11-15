@@ -42,6 +42,13 @@ pub(super) fn selection(
             s.notifies = members(ctx, &id);
             s.subject = Subject::Community { id, name };
         }
+        LifecycleRequest::CommunityForget { governance_key } => {
+            // Only our own copy goes: no one is told (plan E3.2 S9 R3-5).
+            let (id, name) = community(ctx, governance_key)?;
+            s.facts.push(Fact::RejoinNeedsInvite);
+            s.reversibility = Reversibility::Never;
+            s.subject = Subject::Community { id, name };
+        }
         LifecycleRequest::CommunityUpdateInfo { governance_key, .. } => {
             let (id, name) = community(ctx, governance_key)?;
             s.reversibility = Reversibility::Undoable;

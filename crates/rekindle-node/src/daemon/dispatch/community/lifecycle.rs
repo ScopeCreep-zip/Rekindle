@@ -137,6 +137,32 @@ pub(crate) async fn handle_leave(
     }
 }
 
+/// Forget a community we were removed from (plan E3.2 S9 R3-5); 409 for
+/// one we still belong to.
+pub(crate) async fn handle_forget(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    governance_key: &str,
+) -> IpcResponse {
+    use crate::host::adapters::governance::ForgetError;
+    if !state.can_write() {
+        return state_error(state, "write");
+    }
+    let membership = match ctx.resolve_community(governance_key) {
+        Ok(m) => m,
+        Err(e) => return e,
+    };
+    match adapter(ctx).forget(&membership.governance_key).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "forgotten": membership.governance_key })),
+        Err(ForgetError::NotRemoved) => IpcResponse::error_with_remediation(
+            409,
+            "only a community you were removed from can be forgotten",
+            "leave it instead (rekindle community leave)",
+        ),
+        Err(ForgetError::Failed(e)) => IpcResponse::error(500, e),
+    }
+}
+
 pub(crate) async fn handle_update_info(
     ctx: &DaemonContext,
     state: DaemonState,

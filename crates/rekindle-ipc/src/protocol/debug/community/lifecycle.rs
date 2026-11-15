@@ -24,6 +24,10 @@ impl std::fmt::Debug for LifecycleRequest {
                 .debug_struct("CommunityLeave")
                 .field("governance_key", governance_key)
                 .finish(),
+            Self::CommunityForget { governance_key } => f
+                .debug_struct("CommunityForget")
+                .field("governance_key", governance_key)
+                .finish(),
             Self::CommunityList => write!(f, "CommunityList"),
             Self::CommunityViews => write!(f, "CommunityViews"),
             Self::CommunityMembers { governance_key } => f

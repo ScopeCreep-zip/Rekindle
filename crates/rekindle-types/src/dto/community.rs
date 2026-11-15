@@ -101,6 +101,10 @@ pub struct CommunityView {
     pub my_theme_color: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub my_badges: Vec<String>,
+    /// Set when we were removed (plan E3.2 S9 R3-5): the community is
+    /// read-only history, and the window names who removed us.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub removed: Option<crate::display::CommunityRemovalDisplay>,
 }
 
 /// One channel's unread messages and mentions after our read marker

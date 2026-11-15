@@ -115,12 +115,9 @@ impl HostChannel {
     /// `PermissionDenied` once the merge found our removal.
     pub(crate) fn refuse_removed(&self, community_id: &str) -> Result<(), ChannelError> {
         match self.ctx().communities.own_removal(community_id) {
-            Some(removal) if removal.banned => Err(ChannelError::PermissionDenied(
-                "you were banned from this community".into(),
-            )),
-            Some(_) => Err(ChannelError::PermissionDenied(
-                "you were removed from this community".into(),
-            )),
+            Some(removal) => Err(ChannelError::Removed {
+                banned: removal.banned,
+            }),
             None => Ok(()),
         }
     }
@@ -142,6 +139,9 @@ impl HostChannel {
 
 /// A send's refusal as the IPC reports it.
 pub(crate) fn refusal(error: &ChannelError) -> IpcResponse {
+    if let Some(removed) = removed_refusal(error, "channel send") {
+        return removed;
+    }
     let code = match error {
         ChannelError::PermissionDenied(_) => 403,
         ChannelError::ChannelNotFound(_) | ChannelError::CommunityNotFound(_) => 404,
@@ -150,6 +150,19 @@ pub(crate) fn refusal(error: &ChannelError) -> IpcResponse {
         _ => 500,
     };
     IpcResponse::error(code, format!("channel send: {error}"))
+}
+
+/// What a member removed from a community can do (plan E3.2 S9 R3-4,
+/// Element's "You were removed … Forget this room"): not unlock, which the
+/// CLI suggests for a bare 403.
+pub(crate) const REMOVED_REMEDIATION: &str =
+    "you can rejoin with a new invite, or forget the community (rekindle community forget)";
+
+/// `error` as a 403 naming what to do, when it is our own removal.
+pub(crate) fn removed_refusal(error: &ChannelError, what: &str) -> Option<IpcResponse> {
+    matches!(error, ChannelError::Removed { .. }).then(|| {
+        IpcResponse::error_with_remediation(403, format!("{what}: {error}"), REMOVED_REMEDIATION)
+    })
 }
 
 /// The outbox's Retry of a failed channel post: its write is made again

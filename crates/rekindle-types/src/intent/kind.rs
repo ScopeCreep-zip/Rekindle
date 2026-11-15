@@ -227,6 +227,9 @@ pub enum IntentKind {
     ApproveJoinRequest,
     // Destructive: Irreversible loss for others (daemon)
     TransferCommunityOwnership,
+    /// Delete a community we were removed from: its kept history and
+    /// every local trace (plan E3.2 S9 R3-5; Element's "Forget this room").
+    ForgetCommunity,
     // Protected: Identity and key material (daemon)
     ExportIdentity,
     ImportIdentity,
@@ -422,6 +425,7 @@ impl IntentKind {
             | Self::ClearVerification => IntentClass::TrustChanging,
             Self::BulkDeleteChannelMessages
             | Self::TransferCommunityOwnership
+            | Self::ForgetCommunity
             | Self::DeleteCommunity
             | Self::DeleteAccount => IntentClass::Destructive,
             Self::AcceptPairingCode

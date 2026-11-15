@@ -107,7 +107,7 @@ LifecycleRequest::CommunityJoin { invite } => InviteLink::parse(invite).map(drop
                 ),
             )
         }),
-LifecycleRequest::CommunityLeave { governance_key } | LifecycleRequest::CommunityInfo { governance_key } | LifecycleRequest::CommunityMembers { governance_key } | LifecycleRequest::CommunityPendingMembers { governance_key } => community(governance_key),
+LifecycleRequest::CommunityLeave { governance_key } | LifecycleRequest::CommunityForget { governance_key } | LifecycleRequest::CommunityInfo { governance_key } | LifecycleRequest::CommunityMembers { governance_key } | LifecycleRequest::CommunityPendingMembers { governance_key } => community(governance_key),
 LifecycleRequest::CommunityUpdateInfo {
             governance_key,
             name: community_name,

@@ -29,6 +29,10 @@ pub enum LifecycleRequest {
     /// Leave a community.
     CommunityLeave { governance_key: String },
 
+    /// Delete a community we were removed from: its kept history, keys
+    /// and every local row (plan E3.2 S9 R3-5).
+    CommunityForget { governance_key: String },
+
     /// List all joined communities.
     CommunityList,
 
@@ -105,6 +109,7 @@ impl LifecycleRequest {
             Self::CommunityCreate { .. } => ("CommunityCreate", Write, Authenticated),
             Self::CommunityJoin { .. } => ("CommunityJoin", Write, Authenticated),
             Self::CommunityLeave { .. } => ("CommunityLeave", Write, Authenticated),
+            Self::CommunityForget { .. } => ("CommunityForget", Write, Authenticated),
             Self::CommunityList => ("CommunityList", Query, Authenticated),
             Self::CommunityViews => ("CommunityViews", Query, Authenticated),
             Self::CommunityMembers { .. } => ("CommunityMembers", Query, Authenticated),
@@ -139,6 +144,7 @@ impl LifecycleRequest {
             Self::CommunityCreate { .. }
             | Self::CommunityJoin { .. }
             | Self::CommunityLeave { .. }
+            | Self::CommunityForget { .. }
             | Self::CommunityUpdateInfo { .. }
             | Self::InviteCreate { .. }
             | Self::InviteRevoke { .. } => Some(C::CommunitiesWrite),

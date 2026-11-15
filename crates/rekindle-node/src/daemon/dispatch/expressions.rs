@@ -13,6 +13,9 @@ use crate::daemon::DaemonState;
 use crate::host::adapters::channel::HostChannel;
 
 fn refused(e: &ChannelError, what: &str) -> IpcResponse {
+    if let Some(removed) = crate::host::adapters::channel::removed_refusal(e, what) {
+        return removed;
+    }
     let code = match e {
         ChannelError::PermissionDenied(_) => 403,
         ChannelError::CommunityNotFound(_) => 404,

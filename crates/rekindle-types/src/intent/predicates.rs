@@ -184,6 +184,7 @@ impl IntentKind {
             | Self::ClearGamePresence
             | Self::ApproveJoinRequest
             | Self::TransferCommunityOwnership
+            | Self::ForgetCommunity
             | Self::ExportIdentity
             | Self::ImportIdentity
             | Self::RotateIdentity
@@ -377,6 +378,7 @@ impl IntentKind {
             | Self::RevokeAgent
             | Self::ApproveJoinRequest
             | Self::TransferCommunityOwnership
+            | Self::ForgetCommunity
             | Self::ExportIdentity
             | Self::RotateIdentity
             | Self::WipeAllData

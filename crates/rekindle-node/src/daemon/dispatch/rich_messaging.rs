@@ -13,6 +13,9 @@ use super::{state_error, DaemonContext};
 
 /// A refusal or failure of `what` as the IPC reports it.
 fn refused(e: &ChannelError, what: &str) -> IpcResponse {
+    if let Some(removed) = crate::host::adapters::channel::removed_refusal(e, what) {
+        return removed;
+    }
     let code = match e {
         ChannelError::PermissionDenied(_) => 403,
         ChannelError::ChannelNotFound(_) | ChannelError::CommunityNotFound(_) => 404,
