@@ -75,7 +75,7 @@ MemoryMax=512M
 
 # ── Environment ───────────────────────────────────────────────────────
 
-Environment=RUST_LOG=info,veilid_core=warn
+Environment=RUST_LOG=rekindle=info,warn
 # Optional user override file (not required to exist).
 EnvironmentFile=-%h/.config/com.rekindle.app/daemon.env
 

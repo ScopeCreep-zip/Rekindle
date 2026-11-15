@@ -148,7 +148,7 @@ VOLUME [ \
 ENV HOME=/home/${USERNAME}
 ENV XDG_RUNTIME_DIR=/run/user/${USER_UID}
 ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/${USER_UID}/bus
-ENV RUST_LOG=info,rekindle=debug,veilid_core=warn
+ENV RUST_LOG=rekindle=debug,warn
 
 WORKDIR /home/${USERNAME}
 

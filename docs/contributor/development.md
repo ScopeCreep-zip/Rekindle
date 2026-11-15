@@ -368,7 +368,7 @@ and [`../architecture/services-pattern.md`](../architecture/services-pattern.md)
 |----------|---------|---------|
 | `VITE_E2E` | Enable E2E HTTP bridge mode | unset |
 | `VITE_PLAYWRIGHT` | Enable mock IPC mode | unset |
-| `RUST_LOG` | Tracing filter (default: `info,veilid_api=warn,veilid_core=warn`) | unset |
+| `RUST_LOG` | Tracing filter (default: `rekindle=info,warn`; Veilid logs under facility targets such as `rtab`, `stor`, `net`, `rpc`, never `veilid_core`) | unset |
 
 ## IDE Setup
 
