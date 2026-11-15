@@ -64,8 +64,9 @@ impl HostChannel {
     /// answer the record's messages as they may be shown. A post the gate
     /// drops is neither stored nor shown; one it hides is stored and shown
     /// blurred; one we hold carries its stored row's verdict. A message we
-    /// could not open is not judged or stored (its row would keep an empty
-    /// body after its key arrives) and shows only as undecryptable. Posts
+    /// could not open is not stored (its row would keep an empty body after
+    /// its key arrives); it passes the author checks and then shows only as
+    /// undecryptable, so a removed member's post never shows (R2-4). Posts
     /// are judged in the record's channel order.
     ///
     /// # Errors
@@ -94,8 +95,7 @@ impl HostChannel {
             })
             .await
             .map_err(stored)?;
-        let judged =
-            (record.iter().zip(&held)).any(|(m, h)| h.is_none() && !m.view.decryption_failed);
+        let judged = held.iter().any(Option::is_none);
         let inputs = if judged {
             Some(self.gate_inputs(owner, &db, community_id).await?)
         } else {
@@ -111,12 +111,37 @@ impl HostChannel {
                 shown.push(message);
                 continue;
             }
-            let Some(inputs) = inputs.as_ref().filter(|_| !message.view.decryption_failed) else {
+            let Some(inputs) = inputs.as_ref() else {
                 shown.push(message);
                 continue;
             };
             let timestamp_ms = u64::try_from(message.view.timestamp).unwrap_or(0);
             let sender = message.view.sender_id.as_str();
+            if message.view.decryption_failed {
+                // Not opened, so neither stored nor judged on its body; a
+                // refused author's post is not shown either (R2-4).
+                let author = GatedPost {
+                    community_id,
+                    channel_id,
+                    sender_pseudonym: sender,
+                    body: "",
+                    timestamp_ms,
+                    held_before_secs: None,
+                    backfill: true,
+                };
+                match self.author_refused(inputs, &author) {
+                    Some(reason) => {
+                        tracing::debug!(
+                            community_id,
+                            channel_id,
+                            ?reason,
+                            "backfilled post dropped"
+                        );
+                    }
+                    None => shown.push(message),
+                }
+                continue;
+            }
             let stored = self
                 .stored_before_secs(
                     owner,

@@ -147,13 +147,22 @@ impl CommunityPresenceDeps for PresenceAdapter {
         record_key: &str,
         messages: Vec<(u32, ChannelMessage)>,
     ) {
-        super::persist::insert_channel_catchup_messages(
-            &self.state,
-            &self.pool,
-            community_id,
-            channel_id,
-            record_key,
-            messages,
+        // The Host's ingest, so each post passes the D26 gate (its author
+        // checks first) before it is stored (A/B finding R2-4).
+        let state = std::sync::Arc::clone(&self.state);
+        let (community, channel, record) = (
+            community_id.to_owned(),
+            channel_id.to_owned(),
+            record_key.to_owned(),
+        );
+        crate::state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
+            "channel catch-up ingest",
+            async move {
+                let host = state.host.get().await;
+                (host.channel())
+                    .ingest_catchup(&community, &channel, &record, messages)
+                    .await;
+            },
         );
     }
 

@@ -43,6 +43,7 @@ mod invisible_game;
 mod invite_expiry;
 mod invite_join_leave;
 mod invite_unpublished;
+mod kicked_slot_write;
 mod logs;
 mod mod_report;
 mod moderation;

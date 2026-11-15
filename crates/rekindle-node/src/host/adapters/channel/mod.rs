@@ -32,6 +32,7 @@ mod events;
 pub(crate) mod history;
 pub mod ingest;
 mod persist;
+mod record_change;
 pub(crate) mod rich;
 pub mod stage_sound;
 mod state;

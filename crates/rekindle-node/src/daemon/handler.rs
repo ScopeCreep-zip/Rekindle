@@ -477,7 +477,17 @@ impl InboundHandler for DaemonHandler {
             Some(governance) => governance.on_watched_change(record_key).await,
             None => false,
         };
-        if !rebuilt {
+        // A channel record: each changed slot's posts pass the Host's
+        // ingest and its D26 gate (A/B finding R2-4).
+        let channel = match self.host.get().and_then(std::sync::Weak::upgrade) {
+            Some(ctx) if !rebuilt => {
+                crate::host::adapters::channel::HostChannel::new(&ctx)
+                    .on_record_change(record_key, &changed_subkeys)
+                    .await
+            }
+            _ => false,
+        };
+        if !rebuilt && !channel {
             if let Some(host) = self.friends() {
                 host.on_watched_change(record_key, &changed_subkeys, first_value.as_deref())
                     .await;

@@ -379,3 +379,24 @@ fn a_rejoined_member_is_admitted() {
     );
     assert_eq!(judge(&gov, &item("back", 150, 200)), Verdict::Admit);
 }
+
+/// The author checks refuse a departed author's post without its body
+/// (A/B finding R2-4): an undecryptable post is judged before it is shown.
+#[test]
+fn the_author_checks_refuse_a_departed_author_without_a_body() {
+    let gov = departed_state();
+    let live = item("", 150, 200);
+    assert_eq!(
+        author_refusal(&live, &gov, &BlockList::default()),
+        Some(GateReason::NotMember)
+    );
+    let old = GateItem {
+        backfill: true,
+        ..item("", 50, 200)
+    };
+    assert_eq!(author_refusal(&old, &gov, &BlockList::default()), None);
+    assert_eq!(
+        author_refusal(&item("", 150, 200), &state(), &BlockList::default()),
+        None
+    );
+}

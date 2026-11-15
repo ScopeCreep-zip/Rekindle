@@ -159,11 +159,28 @@ impl HostChannel {
             .collect())
     }
 
-    /// Ingest one received post: open, gate, store, publish.
+    /// Ingest one received post: gate its author, open, gate, store,
+    /// publish.
     ///
     /// # Errors
     /// No identity is unlocked, or the store failed.
     pub async fn ingest(&self, post: ReceivedPost) -> Result<Ingested, ChannelError> {
+        self.ingest_as(post, false).await
+    }
+
+    /// [`ingest`](Self::ingest), with `backfill` when the post was read from
+    /// history rather than received live ([`GateItem::backfill`]). The
+    /// author checks ([`ingest::author_refusal`]) run before the body is
+    /// opened, so a refused author's post is never stored or reported
+    /// undecryptable, whichever path read it (A/B finding R2-4).
+    ///
+    /// # Errors
+    /// No identity is unlocked, or the store failed.
+    pub(crate) async fn ingest_as(
+        &self,
+        post: ReceivedPost,
+        backfill: bool,
+    ) -> Result<Ingested, ChannelError> {
         let (owner, db) = self.owner_and_db()?;
         let message_id = (post.message.message_id.clone())
             .ok_or_else(|| ChannelError::Adapter("a received post has no message id".into()))?;
@@ -176,6 +193,20 @@ impl HostChannel {
             return Ok(Ingested::Duplicate);
         }
         let community = post.community_id.as_str();
+        let inputs = self.gate_inputs(&owner, &db, community).await?;
+        let author = GatedPost {
+            community_id: community,
+            channel_id: &post.channel_id,
+            sender_pseudonym: &post.message.sender_pseudonym,
+            body: "",
+            timestamp_ms: post.message.timestamp,
+            held_before_secs: None,
+            backfill,
+        };
+        if let Some(reason) = self.author_refused(&inputs, &author) {
+            tracing::debug!(community, channel = %post.channel_id, ?reason, "post dropped");
+            return Ok(Ingested::Dropped(reason));
+        }
         let Some(body) = ingest::open_body(
             self,
             community,
@@ -186,7 +217,8 @@ impl HostChannel {
         ) else {
             return Ok(Ingested::Undecryptable);
         };
-        let (blurred, report) = match self.judge(&owner, &db, &post, &body).await? {
+        let verdict = (self.judge_with(&inputs, &owner, &db, &post, &body, backfill)).await?;
+        let (blurred, report) = match verdict {
             Verdict::Admit => (false, None),
             Verdict::Report(GateReason::AutoMod { rule }) => (false, Some(rule)),
             Verdict::Report(reason) => (false, Some(format!("{reason:?}"))),
@@ -301,16 +333,18 @@ impl HostChannel {
         .await
     }
 
-    /// The gate's verdict on `post`, against the merged state, our block
-    /// list and the author's nearest stored post at or before it.
-    pub(crate) async fn judge(
+    /// The gate's verdict on `post`, against `inputs` (the merged state,
+    /// our block list and rules, read once by the caller) and the author's
+    /// nearest stored post at or before it.
+    pub(crate) async fn judge_with(
         &self,
+        inputs: &GateInputs,
         owner: &str,
         db: &rekindle_db::Db,
         post: &ReceivedPost,
         body: &str,
+        backfill: bool,
     ) -> Result<Verdict, ChannelError> {
-        let inputs = self.gate_inputs(owner, db, &post.community_id).await?;
         let held_before_secs = self
             .stored_before_secs(
                 owner,
@@ -322,7 +356,7 @@ impl HostChannel {
             )
             .await?;
         Ok(self.verdict(
-            &inputs,
+            inputs,
             &GatedPost {
                 community_id: &post.community_id,
                 channel_id: &post.channel_id,
@@ -330,7 +364,7 @@ impl HostChannel {
                 body,
                 timestamp_ms: post.message.timestamp,
                 held_before_secs,
-                backfill: false,
+                backfill,
             },
         ))
     }
@@ -408,7 +442,26 @@ impl HostChannel {
     /// whatever path brought it in (live ingest, notified fetch or the
     /// history backfill).
     pub(crate) fn verdict(&self, inputs: &GateInputs, post: &GatedPost<'_>) -> Verdict {
-        let item = GateItem {
+        ingest::gate(
+            &self.gate_item(post),
+            &inputs.gov,
+            &inputs.rules,
+            &inputs.blocked,
+        )
+    }
+
+    /// The gate's author checks alone ([`ingest::author_refusal`]): run on
+    /// a post before its body is opened, and on one no held key opens.
+    pub(crate) fn author_refused(
+        &self,
+        inputs: &GateInputs,
+        post: &GatedPost<'_>,
+    ) -> Option<GateReason> {
+        ingest::author_refusal(&self.gate_item(post), &inputs.gov, &inputs.blocked)
+    }
+
+    fn gate_item<'a>(&self, post: &GatedPost<'a>) -> GateItem<'a> {
+        GateItem {
             community_id: post.community_id,
             channel_id: post.channel_id,
             sender_pseudonym: post.sender_pseudonym,
@@ -417,8 +470,7 @@ impl HostChannel {
             held_before_secs: post.held_before_secs,
             now_secs: self.ctx().clock.now_secs(),
             backfill: post.backfill,
-        };
-        ingest::gate(&item, &inputs.gov, &inputs.rules, &inputs.blocked)
+        }
     }
 
     async fn store_received(

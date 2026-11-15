@@ -91,8 +91,12 @@ async fn host_under(dir: &tempfile::TempDir, gov: GovernanceState) -> (Arc<Host>
 
 async fn judge(host: &Host, owner: &str, post: &ReceivedPost, body: &str) -> Verdict {
     let db = host.ctx.db.current().unwrap();
-    HostChannel::new(&host.ctx)
-        .judge(owner, &db, post, body)
+    let channel = HostChannel::new(&host.ctx);
+    let inputs = channel
+        .gate_inputs(owner, &db, &post.community_id)
+        .await
+        .unwrap();
+    (channel.judge_with(&inputs, owner, &db, post, body, false))
         .await
         .unwrap()
 }

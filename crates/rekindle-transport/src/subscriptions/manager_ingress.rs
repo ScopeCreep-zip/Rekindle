@@ -8,7 +8,6 @@ use crate::gossip::GossipAdmission;
 use rekindle_codec::community::envelope::CommunityEnvelope;
 
 use super::events::{self, SubscriptionEvent};
-use crate::payload::dht_types::SLOTS_PER_SEGMENT;
 
 impl SubscriptionManager {
     /// Route a verified gossip envelope. Called by the daemon's
@@ -187,41 +186,12 @@ impl SubscriptionManager {
                     ));
                 }
             }
-            watches::WatchKind::ChannelRecord {
-                community,
-                channel_id,
-                segment_index,
-            } => {
-                // PATH 3 fired: someone wrote a message to this
-                // channel's segment record. The changed subkey is the
-                // author's slot within the segment; the ciphertext is
-                // in the record, not in this notification, so the
-                // reader fetches and decrypts.
-                for subkey in &changed_subkeys {
-                    self.process_event(SubscriptionEvent::ChannelMessage(
-                        events::ChannelMessageEvent::New {
-                            community: community.clone(),
-                            channel: channel_id.clone(),
-                            message_id: String::new(), // resolved by the reader
-                            // The global slot, not a pseudonym. A
-                            // segment record has 255 writers, so the
-                            // subkey names a slot; mapping that to its
-                            // holder needs the presence roster, which
-                            // lives a layer up. The reader resolves it
-                            // when it fetches the message.
-                            sender_pseudonym: format!(
-                                "slot:{}",
-                                segment_index * SLOTS_PER_SEGMENT + subkey
-                            ),
-                            sequence: 0,
-                            timestamp: self.clock.now_ms(),
-                            body: None,
-                            reply_to_message_id: None,
-                            automod_blurred: false,
-                        },
-                    ));
-                }
-            }
+            // PATH 3: a channel segment record's slot changed. The Host
+            // reads the slot and ingests each post through the D26 gate,
+            // publishing `ChannelMessageEvent::New` for what it admits; an
+            // event from here, before the gate, would show a removed
+            // member's write (A/B finding R2-4).
+            watches::WatchKind::ChannelRecord { .. } => {}
         }
     }
 }

@@ -179,19 +179,10 @@ pub fn gate(
     rules: &AutoModCompiledCache,
     blocked: &BlockList,
 ) -> Verdict {
-    if blocked.contains(item.sender_pseudonym) {
-        return Verdict::Drop(GateReason::Blocked);
+    if let Some(reason) = author_refusal(item, gov, blocked) {
+        return Verdict::Drop(reason);
     }
     let sender = PseudonymKey::from_hex_lossy(item.sender_pseudonym);
-    if gov.bans.contains(&sender) {
-        return Verdict::Drop(GateReason::Banned);
-    }
-    if not_member(gov, &sender, item) {
-        return Verdict::Drop(GateReason::NotMember);
-    }
-    if let Some(until_secs) = timed_out_until(gov, &sender, item.now_secs) {
-        return Verdict::Drop(GateReason::TimedOut { until_secs });
-    }
     let channel = ChannelId::from_hex(item.channel_id);
     if let Some(seconds) = slowmode_seconds(gov, channel.as_ref()) {
         let perms = compute_permissions(&sender, channel.as_ref(), gov, item.now_secs);
@@ -200,6 +191,30 @@ pub fn gate(
         }
     }
     automod(rules, item.body)
+}
+
+/// The gate's checks on the author alone (block list, ban, membership,
+/// timeout), which need no body: every ingest path runs them before it
+/// opens a post, so a post it refuses is never stored or shown, not even
+/// as undecryptable (A/B finding R2-4). `item.body` is not read.
+#[must_use]
+pub fn author_refusal(
+    item: &GateItem<'_>,
+    gov: &GovernanceState,
+    blocked: &BlockList,
+) -> Option<GateReason> {
+    if blocked.contains(item.sender_pseudonym) {
+        return Some(GateReason::Blocked);
+    }
+    let sender = PseudonymKey::from_hex_lossy(item.sender_pseudonym);
+    if gov.bans.contains(&sender) {
+        return Some(GateReason::Banned);
+    }
+    if not_member(gov, &sender, item) {
+        return Some(GateReason::NotMember);
+    }
+    timed_out_until(gov, &sender, item.now_secs)
+        .map(|until_secs| GateReason::TimedOut { until_secs })
 }
 
 /// A departed author's post (D26 reader-validates, register FX1): dropped
