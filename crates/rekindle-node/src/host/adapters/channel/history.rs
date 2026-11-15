@@ -5,7 +5,7 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::history::{self, RecordMessage};
-use rekindle_channel::ingest::{BatchWindows, GateReason, Verdict};
+use rekindle_channel::ingest::{BatchWindows, GateReason, SlotPosition, Verdict};
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_db::repo::messages::channel::{
     self as rows, ChannelMessageInsert, StoredChannelMessage,
@@ -138,6 +138,10 @@ impl HostChannel {
                     timestamp_ms,
                     held_before_secs: None,
                     backfill: true,
+                    slot: Some(SlotPosition {
+                        record_key: &message.record_key,
+                        seq: message.slot_seq,
+                    }),
                 };
                 match self.author_refused(inputs, &author) {
                     Some(reason) => {
@@ -173,6 +177,10 @@ impl HostChannel {
                     timestamp_ms,
                     held_before_secs: batch.held_before(sender, at_secs, stored),
                     backfill: true,
+                    slot: Some(SlotPosition {
+                        record_key: &message.record_key,
+                        seq: message.slot_seq,
+                    }),
                 },
             );
             batch.record(sender, at_secs, &verdict);

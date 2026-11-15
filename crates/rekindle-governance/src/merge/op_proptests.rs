@@ -53,6 +53,7 @@ fn kick(target: u8) -> GovernanceEntry {
     GovernanceEntry::MemberRemoved {
         target: pk(target),
         reason: None,
+        heads: Vec::new(),
     }
 }
 

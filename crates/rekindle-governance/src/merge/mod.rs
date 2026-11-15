@@ -141,6 +141,16 @@ fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
     if let Some(gone) = gone {
         state.departed_at.insert(gone.clone(), op.op().issued_at);
     }
+    match op.body() {
+        GovernanceEntry::MemberRemoved { target, heads, .. } => {
+            let heads = heads.iter().map(|h| (h.record_key.clone(), h.seq));
+            state.departed_heads.insert(target.clone(), heads.collect());
+        }
+        GovernanceEntry::MemberLeft {} => {
+            state.departed_heads.remove(op.author());
+        }
+        _ => {}
+    }
     let remover_of = match op.body() {
         GovernanceEntry::MemberRemoved { target, .. } => {
             state.removed.get(target).is_some_and(|s| *s == op.stamp())

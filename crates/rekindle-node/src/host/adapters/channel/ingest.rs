@@ -6,7 +6,7 @@
 //! `ChannelMessageEvent::New` and the channel's `UnreadChanged`.
 
 use rekindle_channel::error::ChannelError;
-use rekindle_channel::ingest::{self, BlockList, GateItem, GateReason, Verdict};
+use rekindle_channel::ingest::{self, BlockList, GateItem, GateReason, SlotPosition, Verdict};
 use std::sync::Arc;
 
 use rekindle_channel::{AutoModCompiledCache, ChannelMessagingDeps};
@@ -62,6 +62,8 @@ pub(crate) struct GatedPost<'a> {
     pub held_before_secs: Option<u64>,
     /// Read from history, not received live ([`GateItem::backfill`]).
     pub backfill: bool,
+    /// Where a history read found it ([`GateItem::slot`]).
+    pub slot: Option<SlotPosition<'a>>,
 }
 
 /// The community state a batch of posts is judged against
@@ -213,6 +215,10 @@ impl HostChannel {
             timestamp_ms: post.message.timestamp,
             held_before_secs: None,
             backfill,
+            // A live post, or the desktop's catch-up read, which does not
+            // carry the slot seq: a removed author's post is kept from
+            // history only by the read that knows it (A/B finding R3-8).
+            slot: None,
         };
         if let Some(reason) = self.author_refused(&inputs, &author) {
             tracing::debug!(community, channel = %post.channel_id, ?reason, "post dropped");
@@ -376,6 +382,7 @@ impl HostChannel {
                 timestamp_ms: post.message.timestamp,
                 held_before_secs,
                 backfill,
+                slot: None,
             },
         ))
     }
@@ -481,6 +488,7 @@ impl HostChannel {
             held_before_secs: post.held_before_secs,
             now_secs: self.ctx().clock.now_secs(),
             backfill: post.backfill,
+            slot: post.slot,
         }
     }
 

@@ -94,6 +94,7 @@ impl HostChannel {
             .into_iter()
             .map(|item| ChannelEntryItem {
                 subkey_index: item.subkey_index,
+                seq: item.seq,
                 entry: item.entry,
             })
             .collect())

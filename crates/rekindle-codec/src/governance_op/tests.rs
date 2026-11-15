@@ -101,6 +101,7 @@ fn member_bodies() -> Vec<GovernanceEntry> {
         E::MemberRemoved {
             target: pk(3),
             reason: None,
+            heads: Vec::new(),
         },
         E::MemberApproved { target: pk(4) },
         E::MemberRejected {

@@ -59,6 +59,8 @@ fn record_message() -> RecordMessage {
         lamport_ts: 1,
         mentions_me: false,
         attachment: Some(offer()),
+        record_key: "VLD0:ch".into(),
+        slot_seq: 0,
     }
 }
 

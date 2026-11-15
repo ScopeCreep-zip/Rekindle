@@ -63,3 +63,75 @@ async fn a_kicked_members_slot_write_is_stored_by_no_member() {
         );
     }
 }
+
+/// A/B finding R3-8: a kicked member back-dates a post into its slot after
+/// the kick (its clock an hour behind, so the post's `sent_at` precedes the
+/// removal). The history keeps a departed author's post by its causal
+/// position, the slot seq the removal recorded, never by the time the
+/// author wrote into it, so no reader shows or stores the back-dated post,
+/// while the member's genuine pre-kick post still shows.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
+    let community = Community::of(3, 157).await;
+    let bea = community.pseudonym(1).await;
+    let _ = community.post(1, "bea before the kick").await;
+    for reader in [0, 2] {
+        assert!(
+            community
+                .reads(reader, "bea before the kick", Duration::from_secs(120))
+                .await,
+            "node {reader} reads the member's post before the kick"
+        );
+    }
+    community.sim.fault(Fault::Partition {
+        a: vec![0, 2],
+        b: vec![1],
+    });
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Kick {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea.clone(),
+            },
+        )))
+        .await;
+    for reader in [0, 2] {
+        assert!(
+            crate::harness::eventually(&community.sim, Duration::from_secs(120), || async {
+                listed(&community, reader, &bea).await.is_none()
+            })
+            .await,
+            "node {reader} merges the kick"
+        );
+    }
+    community.sim.fault(Fault::ClockSkew {
+        node: 1,
+        ms: -3_600_000,
+    });
+    let _ = community.post(1, "bea back-dated before the kick").await;
+    community.sim.fault(Fault::Heal);
+    community.sim.quiesce().await;
+    for reader in [0, 2] {
+        assert!(
+            !community
+                .reads(
+                    reader,
+                    "bea back-dated before the kick",
+                    Duration::from_secs(120)
+                )
+                .await,
+            "node {reader} never shows the back-dated post"
+        );
+        let page = community.history(reader, None, 100).await.expect("history");
+        assert!(
+            page.iter()
+                .all(|m| m["body"].as_str() != Some("bea back-dated before the kick")),
+            "node {reader} holds no back-dated post: {page:?}"
+        );
+        assert!(
+            page.iter()
+                .any(|m| m["body"].as_str() == Some("bea before the kick")),
+            "node {reader} still shows the genuine pre-kick post: {page:?}"
+        );
+    }
+}

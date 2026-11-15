@@ -74,6 +74,7 @@ pub(crate) mod search;
 pub mod moderation;
 pub mod role_ops;
 mod roles;
+mod slot_heads;
 mod state_builder;
 mod state_mutations;
 mod state_reads;

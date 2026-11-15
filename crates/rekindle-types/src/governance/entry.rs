@@ -157,9 +157,18 @@ pub enum GovernanceEntry {
 
     /// A durable kick: removes `target` from the roster and drives MEK
     /// rotation (E3.5). Requires `KICK_MEMBERS` and outranking the target.
+    ///
+    /// `heads` records, per channel record, the seq of the target's slot
+    /// value as the remover held it: a departed author's post read from
+    /// history is kept only from a value at or below it, so a removed
+    /// member writing its still-writable slot cannot back-date a post into
+    /// members' history (A/B finding R3-8; Matrix judges history at the
+    /// event's causal position, not by its author-asserted time).
     MemberRemoved {
         target: PseudonymKey,
         reason: Option<String>,
+        #[serde(default)]
+        heads: Vec<SlotHead>,
     },
 
     /// Admit a pending member. Requires `KICK_MEMBERS`.
@@ -500,4 +509,12 @@ pub enum GovernanceEntry {
         /// Window length for the rate detector. Default 600 s.
         join_interval_seconds: u32,
     },
+}
+
+/// The seq of a member's slot value in one channel record, as a
+/// `MemberRemoved` records it (A/B finding R3-8).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SlotHead {
+    pub record_key: String,
+    pub seq: u32,
 }

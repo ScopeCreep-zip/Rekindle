@@ -45,8 +45,22 @@ pub struct GateItem<'a> {
     /// The receiver's clock, in seconds: a timeout ends by it.
     pub now_secs: u64,
     /// Read from history (the backfill), not received live: a departed
-    /// author's post dated before its departure stays readable.
+    /// author's post from before its departure stays readable.
     pub backfill: bool,
+    /// Where a backfilled post was read: the channel record and the seq
+    /// of the author's slot value holding it. A removed author's post is
+    /// kept from history only at or below the seq its removal recorded
+    /// (A/B finding R3-8); `None` (a live post, or a read that does not
+    /// know the seq) keeps none.
+    pub slot: Option<SlotPosition<'a>>,
+}
+
+/// A slot value's place in a channel record: the record and the value's
+/// seq, which only rises with each write of the slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SlotPosition<'a> {
+    pub record_key: &'a str,
+    pub seq: u32,
 }
 
 /// Why the gate hid or dropped a post.
@@ -218,15 +232,27 @@ pub fn author_refusal(
 }
 
 /// A departed author's post (D26 reader-validates, register FX1): dropped
-/// live, and from history unless dated before the author's departure (a
-/// kick keeps history, as a ban does not).
+/// live, and from history unless it predates the departure (a kick keeps
+/// history, as a ban does not).
 fn not_member(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>) -> bool {
-    gov.is_departed(sender)
-        && !(item.backfill
-            && gov
-                .departed_at
-                .get(sender)
-                .is_some_and(|at| item.sent_at_secs < *at))
+    gov.is_departed(sender) && !(item.backfill && predates_departure(gov, sender, item))
+}
+
+/// Whether a departed author's backfilled post predates its departure. A
+/// removed author's post is judged by its causal position, never by the
+/// time the author wrote into it: it is kept only from a slot value at or
+/// below the seq the removal recorded for that record, so a removed member
+/// writing its still-writable slot cannot back-date a post into history
+/// (A/B finding R3-8; Matrix judges history at the event's place in the
+/// DAG). A member who left of its own accord wrote its own departure and
+/// is judged by the departure's time.
+fn predates_departure(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>) -> bool {
+    match gov.departed_heads.get(sender) {
+        Some(heads) => item
+            .slot
+            .is_some_and(|slot| (heads.get(slot.record_key)).is_some_and(|head| slot.seq <= *head)),
+        None => (gov.departed_at.get(sender)).is_some_and(|at| item.sent_at_secs < *at),
+    }
 }
 
 fn slowmode_seconds(gov: &GovernanceState, channel: Option<&ChannelId>) -> Option<u32> {

@@ -210,6 +210,15 @@ struct MemberRemovedPayload {
     target               @0 :PseudonymKey;
     hasReason            @1 :Bool;
     reason               @2 :Text;
+    # The removed member's channel slots as the remover held them: a
+    # backfilled post of the member is kept only from a slot value at or
+    # below its recorded seq (A/B finding R3-8).
+    heads                @3 :List(SlotHeadPayload);
+}
+
+struct SlotHeadPayload {
+    recordKey            @0 :Text;
+    seq                  @1 :UInt32;
 }
 
 struct MemberApprovedPayload {

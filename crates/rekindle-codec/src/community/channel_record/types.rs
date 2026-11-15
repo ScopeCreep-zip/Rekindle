@@ -190,6 +190,8 @@ pub enum ChannelRecordEntry {
 #[derive(Debug, Clone)]
 pub struct ChannelRecordItem {
     pub subkey_index: u32,
+    /// The seq of the slot value it was read from.
+    pub seq: u32,
     pub entry: ChannelRecordEntry,
 }
 

@@ -5,7 +5,7 @@ use super::super::sub_types::pseudonym_key_from_capnp;
 use crate::capnp_codec::{capnp_err, text_to_string};
 use crate::community_governance_capnp::{self as schema_pkg};
 use crate::error::CodecError;
-use rekindle_types::governance::{GovernanceEntry, InviteProof};
+use rekindle_types::governance::{GovernanceEntry, InviteProof, SlotHead};
 
 pub(super) fn read_member_joined(
     p: schema_pkg::member_joined_payload::Reader<'_>,
@@ -41,7 +41,17 @@ pub(super) fn read_member_record_moved(
 pub(super) fn read_member_removed(
     p: schema_pkg::member_removed_payload::Reader<'_>,
 ) -> Result<GovernanceEntry, CodecError> {
+    let heads = (p.get_heads().map_err(|e| capnp_err(&e))?)
+        .iter()
+        .map(|h| {
+            Ok(SlotHead {
+                record_key: text_to_string(h.get_record_key().map_err(|e| capnp_err(&e))?)?,
+                seq: h.get_seq(),
+            })
+        })
+        .collect::<Result<Vec<_>, CodecError>>()?;
     Ok(GovernanceEntry::MemberRemoved {
+        heads,
         target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
         reason: if p.get_has_reason() {
             Some(text_to_string(p.get_reason().map_err(|e| capnp_err(&e))?)?)
@@ -75,4 +85,21 @@ pub(super) fn write_member_record_moved(
     p.set_member_record_owner(member_record_owner);
 }
 
-target_reason_writer!(write_member_removed, member_removed_payload);
+pub(super) fn write_member_removed(
+    mut p: schema_pkg::member_removed_payload::Builder<'_>,
+    target: &rekindle_types::id::PseudonymKey,
+    reason: Option<&str>,
+    heads: &[SlotHead],
+) {
+    super::super::sub_types::pseudonym_key_to_capnp(p.reborrow().init_target(), target);
+    p.set_has_reason(reason.is_some());
+    if let Some(r) = reason {
+        p.set_reason(r);
+    }
+    let mut list = p.init_heads(u32::try_from(heads.len()).unwrap_or(u32::MAX));
+    for (i, head) in (0u32..).zip(heads) {
+        let mut h = list.reborrow().get(i);
+        h.set_record_key(&head.record_key);
+        h.set_seq(head.seq);
+    }
+}

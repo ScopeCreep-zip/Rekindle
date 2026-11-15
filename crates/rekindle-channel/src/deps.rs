@@ -92,6 +92,8 @@ pub struct ChannelMessageRow {
 #[derive(Debug, Clone)]
 pub struct ChannelEntryItem {
     pub subkey_index: u32,
+    /// The seq of the slot value it was read from.
+    pub seq: u32,
     pub entry: ChannelRecordEntry,
 }
 

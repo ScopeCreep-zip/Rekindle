@@ -27,6 +27,7 @@ fn item(body: &str, sent_at_secs: u64, now_secs: u64) -> GateItem<'_> {
         held_before_secs: None,
         now_secs,
         backfill: false,
+        slot: None,
     }
 }
 
@@ -364,6 +365,36 @@ fn a_backfilled_post_dated_before_the_departure_stays_readable() {
     };
     assert_eq!(judge(&gov, &before), Verdict::Admit);
     assert_eq!(judge(&gov, &after), Verdict::Drop(GateReason::NotMember));
+}
+
+/// A removed author's backfilled post is kept by its slot position, not
+/// its own date (A/B finding R3-8): a value above the seq the removal
+/// recorded is dropped even when the post claims a time before the
+/// removal, and one at or below it stays readable.
+#[test]
+fn a_removed_authors_backfill_is_kept_by_slot_position_not_date() {
+    let mut gov = departed_state();
+    let ann = PseudonymKey::from_hex_lossy(ANN);
+    gov.departed_heads
+        .insert(ann, [("VLD0:ch".to_string(), 4)].into_iter().collect());
+    let at = |seq, record_key| GateItem {
+        backfill: true,
+        slot: Some(SlotPosition { record_key, seq }),
+        ..item("old", 50, 200)
+    };
+    assert_eq!(judge(&gov, &at(4, "VLD0:ch")), Verdict::Admit);
+    assert_eq!(judge(&gov, &at(3, "VLD0:ch")), Verdict::Admit);
+    for back_dated in [at(5, "VLD0:ch"), at(0, "VLD0:other")] {
+        assert_eq!(
+            judge(&gov, &back_dated),
+            Verdict::Drop(GateReason::NotMember)
+        );
+    }
+    let unknown = GateItem {
+        backfill: true,
+        ..item("old", 50, 200)
+    };
+    assert_eq!(judge(&gov, &unknown), Verdict::Drop(GateReason::NotMember));
 }
 
 #[test]

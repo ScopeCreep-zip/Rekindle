@@ -64,12 +64,16 @@ pub async fn remove_member<D: GovernanceRuntimeDeps>(
     pseudonym_hex: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, KICK_MEMBERS)?;
+    // The member's slot heads as we hold them: readers keep its posts
+    // from history by them, not by the time it claims (A/B R3-8).
+    let heads = deps.departed_slot_heads(community_id, pseudonym_hex).await;
     apply::write_entry(
         deps,
         community_id,
         GovernanceEntry::MemberRemoved {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
             reason: None,
+            heads,
         },
     )
     .await?;

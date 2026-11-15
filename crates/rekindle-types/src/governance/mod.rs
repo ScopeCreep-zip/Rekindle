@@ -19,7 +19,7 @@ mod tests;
 
 mod automod;
 pub use automod::AutoModAction;
-pub use entry::{AdmissionMode, GovernanceEntry};
+pub use entry::{AdmissionMode, GovernanceEntry, SlotHead};
 pub use mod_report::ModReportTarget;
 pub use onboarding::{
     GuideStep, OnboardingOption, OnboardingQuestion, WelcomeChannel, MAX_ONBOARDING_GUIDE_STEPS,

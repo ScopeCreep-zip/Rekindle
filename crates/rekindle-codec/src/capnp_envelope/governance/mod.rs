@@ -253,6 +253,10 @@ mod admission_wire_tests {
             round_trip(&GovernanceEntry::MemberRemoved {
                 target: pseudo(4),
                 reason,
+                heads: vec![rekindle_types::governance::SlotHead {
+                    record_key: "VLD0:channel".into(),
+                    seq: 7,
+                }],
             });
         }
     }

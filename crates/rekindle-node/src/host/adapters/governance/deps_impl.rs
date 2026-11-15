@@ -394,6 +394,15 @@ impl GovernanceRuntimeDeps for HostGovernance {
         }
     }
 
+    async fn departed_slot_heads(
+        &self,
+        community_id: &str,
+        target_hex: &str,
+    ) -> Vec<rekindle_types::governance::SlotHead> {
+        self.departed_slot_heads_impl(community_id, target_hex)
+            .await
+    }
+
     // ---------- Role mutations ----------
 
     fn role_current_definition(

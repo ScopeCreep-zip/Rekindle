@@ -47,6 +47,13 @@ pub struct GovernanceState {
     /// before it stays readable (register FX1, a removed member's posts).
     pub departed_at: HashMap<PseudonymKey, u64>,
 
+    /// The slot heads of each member whose latest merged departure is a
+    /// `MemberRemoved`: record key -> the seq of its slot value the
+    /// remover held. A backfilled post of the member is kept only from a
+    /// value at or below it (A/B finding R3-8); a member who left of its
+    /// own accord has no entry and is judged by `departed_at`.
+    pub departed_heads: HashMap<PseudonymKey, HashMap<String, u32>>,
+
     /// Highest `MemberRemoved` stamp per removed member; a re-join must
     /// come after it.
     pub removed: HashMap<PseudonymKey, OpStamp>,

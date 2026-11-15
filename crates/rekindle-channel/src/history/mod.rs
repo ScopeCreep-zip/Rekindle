@@ -33,6 +33,11 @@ pub struct RecordMessage {
     /// The attachment's offer embedded in the message, which the host
     /// stores as the attachment's record.
     pub attachment: Option<rekindle_types::attachment::AttachmentOffer>,
+    /// The channel record it was read from.
+    pub record_key: String,
+    /// The seq of its author's slot value it was read from: the gate keeps
+    /// a removed author's post by it (A/B finding R3-8).
+    pub slot_seq: u32,
 }
 
 /// The latest `limit` messages of `channel_id`'s record (only those older
@@ -66,20 +71,20 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
             ChannelRecordEntry::Message(message)
                 if before.is_none_or(|before| message.timestamp < before) =>
             {
-                Some((item.subkey_index, message))
+                Some((item.subkey_index, item.seq, message))
             }
             _ => None,
         })
         .collect();
     messages.sort_by(|a, b| {
-        (a.1.lamport_ts, &a.1.sender_pseudonym).cmp(&(b.1.lamport_ts, &b.1.sender_pseudonym))
+        (a.2.lamport_ts, &a.2.sender_pseudonym).cmp(&(b.2.lamport_ts, &b.2.sender_pseudonym))
     });
     let keep = usize::try_from(limit).unwrap_or(usize::MAX);
     let skip = messages.len().saturating_sub(keep);
     Ok(messages
         .into_iter()
         .skip(skip)
-        .map(|(subkey_index, message)| {
+        .map(|(subkey_index, slot_seq, message)| {
             let body = crate::text_keys::open_text(
                 deps,
                 community_id,
@@ -131,6 +136,8 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 lamport_ts: message.lamport_ts,
                 mentions_me,
                 attachment: message.attachment.clone(),
+                record_key: record_key.clone(),
+                slot_seq,
             }
         })
         .collect())

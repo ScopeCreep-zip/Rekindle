@@ -218,10 +218,15 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::MemberLeft {} => {
             b.reborrow().init_member_left();
         }
-        GovernanceEntry::MemberRemoved { target, reason } => write_member_removed(
+        GovernanceEntry::MemberRemoved {
+            target,
+            reason,
+            heads,
+        } => write_member_removed(
             b.reborrow().init_member_removed(),
             target,
             reason.as_deref(),
+            heads,
         ),
         GovernanceEntry::MemberApproved { target } => {
             write_member_approved(b.reborrow().init_member_approved(), target);

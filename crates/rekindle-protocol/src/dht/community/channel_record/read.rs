@@ -37,6 +37,7 @@ pub async fn read_all_channel_entries(
         if let Ok(entries) = decode_channel_entries(&value.data) {
             items.extend(entries.into_iter().map(|entry| ChannelRecordItem {
                 subkey_index,
+                seq: value.seq,
                 entry,
             }));
         }
