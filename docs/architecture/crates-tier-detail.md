@@ -255,6 +255,39 @@ Dependencies: `rekindle-types`, `image` (`png`, `jpeg`, `gif`, `webp`
 features: pure-Rust `png`, `zune-jpeg`, `gif`, `image-webp`), `thiserror`.
 `#![forbid(unsafe_code)]`; no Veilid, no Tauri.
 
+### rekindle-skin
+
+The skin package format `rekindle-skin/1` (plan E7.7.1). Every skin, the
+built-in ones included, passes this crate before a byte reaches a
+frontend; a refusal is `rekindle_types::dto::skin::SkinError { entry,
+rule }` and nothing is partly applied.
+
+- `package::read(bytes) -> Result<Package, SkinError>`: the outer size
+  (≤ 16 MiB) and the strict in-memory zip walk. Only stored entries are
+  read, so nothing is inflated. Each local header must repeat its central
+  record, and the CRC-32 is checked. Refused: encrypted entries, data
+  descriptors, symbolic links (Unix mode or Windows reparse point) and
+  special files, backslashes, absolute and drive paths, `..`, empty or `.`
+  components, names outside `manifest.json`, root `*.json` token files,
+  `assets/`, `sounds/` and `icons/`, duplicate names, names that collide by
+  case or NFC (Pidgin CVE-2014-3697), overlapping entries, > 512 entries, a
+  missing manifest.
+- `manifest::parse(&Package) -> Result<SkinManifest, SkinError>`: ≤ 64 KiB.
+  The format major is read first, so an unknown major is refused before any
+  other key; then `deny_unknown_fields`. Text rules: `name` ≤ 64 scalars,
+  `description` ≤ 280, both NFC with no control or bidi characters;
+  `license` a strict SPDX expression or the full text; the shapes of
+  `source`, `author` and `signature`; one variant or more, one per base and
+  contrast, each naming a root token file the package holds.
+- `limits`: the package bounds of the plan's §6 ledger.
+
+Tokens and the registry, images, sounds, accessibility checks and the
+`rekindle-skin-helper` binary are the rest of E7.7.1.
+
+Dependencies: `rekindle-types`, `crc32fast`, `serde`, `serde_json`,
+`spdx`, `unicode-normalization`. `#![forbid(unsafe_code)]`; no Veilid, no
+Tauri, no file or network I/O.
+
 ## Tier 4 — Routing & Lifecycle
 
 ### rekindle-route
