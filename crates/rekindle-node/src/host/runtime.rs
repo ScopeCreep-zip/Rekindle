@@ -337,8 +337,7 @@ impl Host {
             presence_start_tx,
             own_presence: super::own_presence::OwnPresence::new(
                 Arc::clone(&stores.session),
-                // Weak: the Host's `transport` slot is the node's one
-                // owner, so its shutdown unwraps it (VU4, R1-16).
+                // Weak: the Host's slot is the node's one owner (R1-16).
                 node.as_ref().map(Arc::downgrade),
                 Arc::clone(&journal),
                 Arc::clone(&clock),
@@ -583,9 +582,8 @@ async fn shutdown_transport(ctx: &Arc<DaemonContext>) {
                     tracing::warn!(error = %e, "transport shutdown error");
                 }
             }
-            // Nothing else holds the node strongly (the inbound handler
-            // and own presence hold it weakly); a reference here is a
-            // leak that keeps Veilid's storage and namespace lock held.
+            // The handler and own presence hold the node weakly; a
+            // reference here leaks Veilid's storage and namespace lock.
             Err(arc) => {
                 tracing::error!(
                     refs = Arc::strong_count(&arc),
