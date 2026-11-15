@@ -97,11 +97,9 @@ pub async fn set_leased_str(
             data: newer.data,
         })),
         SetOutcome::Landed | SetOutcome::Unchanged => Ok(None),
-        missed @ (SetOutcome::BelowConsensus | SetOutcome::Offline) => {
-            Err(TransportError::DhtError {
-                reason: format!("set: not stored ({missed:?})"),
-            })
-        }
+        missed @ SetOutcome::Offline => Err(TransportError::DhtError {
+            reason: format!("set: not stored ({missed:?})"),
+        }),
     }
 }
 

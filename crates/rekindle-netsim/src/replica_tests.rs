@@ -5,9 +5,11 @@ use rekindle_records::port::{RecordSchema, ReportScope, SetOutcome};
 
 use super::*;
 
-/// H1: a set below consensus is `BelowConsensus` with the local seq not
-/// moved, the replicas that took it keep it, and the next set (another
-/// value at the same seq) comes back superseded by that partial value
+/// H1: a set below consensus answers `TryAgain` (0.5.8
+/// `set_value.rs:731-738` → `local_record_store_interface.rs:60-62`), the
+/// pool's `Offline`, with the local seq not moved; the replicas that took
+/// it keep it, and the next set (another value at the same seq) comes back
+/// superseded by that partial value
 /// (`set_value.rs:170-171,205-221,487-494,709-719`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_partial_set_comes_back_as_our_own_stale_value() {
@@ -33,7 +35,7 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
     });
     assert_eq!(
         pool.set(lease, 0, b"partial".to_vec(), None).await.unwrap(),
-        SetOutcome::BelowConsensus
+        SetOutcome::Offline
     );
     let local = pool
         .inspect(lease, Some(&[0u32][..]), ReportScope::Local)
@@ -76,6 +78,40 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
         }
         other => panic!("unexpected {other:?}"),
     }
+}
+
+/// Item 15: an identical re-push that ends below consensus is not
+/// `Unchanged`. Veilid re-sends the stored bytes at their seq
+/// (`set_value.rs:353-366`) and, short of consensus with
+/// `AllowOffline(false)`, answers `TryAgain` (`set_value.rs:731-738` →
+/// `local_record_store_interface.rs:60-62`), so the pool reports it
+/// `Offline`; healed, the same re-push reaches consensus and is
+/// `Unchanged`.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_identical_re_push_below_consensus_answers_try_again() {
+    let (sim, nodes) = Netsim::nodes(5, 44);
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, _, _) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
+        SetOutcome::Landed
+    );
+    sim.fault(Fault::Partition {
+        a: vec![0],
+        b: vec![1, 2, 3, 4],
+    });
+    assert_eq!(
+        pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
+        SetOutcome::Offline
+    );
+    sim.fault(Fault::Heal);
+    assert_eq!(
+        pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
+        SetOutcome::Unchanged
+    );
 }
 
 /// H2: re-pushing the local copy unchanged while a replica holds a newer
@@ -126,7 +162,7 @@ async fn a_partition_splits_the_replicas() {
     });
     assert_eq!(
         a.set(lease, 0, b"lone".to_vec(), None).await.unwrap(),
-        SetOutcome::BelowConsensus
+        SetOutcome::Offline
     );
     // Node 1's side reaches none of the replicas that took "lone".
     let seen = b.get(theirs, 0, true).await.unwrap().unwrap();
@@ -147,7 +183,7 @@ async fn a_partition_splits_the_replicas() {
 }
 
 /// RV4 L3: a set that only `k` replicas accept (`Fault::WritePartial`) is
-/// `BelowConsensus` with nothing stored locally (`AllowOffline(false)`,
+/// `Offline` (Veilid's `TryAgain`) with nothing stored locally (`AllowOffline(false)`,
 /// `local_record_store_interface.rs:60-63`), the `k` closest replicas hold
 /// it, so another node's get already sees it, and once the fault lifts the
 /// same value re-sent lands on them unchanged (`set_value.rs:700-719`).
@@ -173,7 +209,7 @@ async fn a_set_two_replicas_accept_is_below_consensus_yet_readable() {
     });
     assert_eq!(
         pool.set(lease, 1, b"op".to_vec(), None).await.unwrap(),
-        SetOutcome::BelowConsensus
+        SetOutcome::Offline
     );
     // Subkey 0 is outside the filter and still lands.
     assert_eq!(

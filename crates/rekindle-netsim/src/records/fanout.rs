@@ -482,8 +482,10 @@ async fn land_tail(
 /// A landed fanout's value is stored in `node`'s local store, within the
 /// record's total (`record_store/record.rs:105-129`); `Some` is that value
 /// when it is not ours or some replica holds a rival at its seq
-/// (`set_value.rs:753-760`). A set that did not land stores nothing
-/// (`local_record_store_interface.rs:61-62`).
+/// (`set_value.rs:753-760`). A set that did not land stores nothing and,
+/// with the `AllowOffline(false)` every Rekindle set passes, answers
+/// `TryAgain` (0.5.8 `set_value.rs:731-738` →
+/// `local_record_store_interface.rs:60-62`), never `Ok(None)`.
 pub(crate) fn commit(
     net: &Network,
     node: usize,
@@ -492,7 +494,10 @@ pub(crate) fn commit(
     fanout: &SetFanout,
 ) -> Result<Option<rekindle_records::port::RecordValue>, DhtCallError> {
     if !fanout.landed() {
-        return Ok(None);
+        return Err(DhtCallError {
+            kind: DhtErrorKind::TryAgain,
+            message: "offline, try again later".into(),
+        });
     }
     let mut inner = net.inner.lock();
     let others: usize = inner.nodes[node]

@@ -129,7 +129,7 @@ impl RecordPool {
             Err(e) => return Err(e),
         };
         match outcome {
-            SetOutcome::BelowConsensus | SetOutcome::Offline => {
+            SetOutcome::Offline => {
                 self.hold(slot, data, writer);
             }
             // Returned to the caller, whose next write settles the slot
@@ -339,8 +339,7 @@ impl RecordPool {
             }
             match pushed {
                 // A miss, an unreachable record or a logout: try again later.
-                Ok(SetOutcome::BelowConsensus | SetOutcome::Offline)
-                | Err(PortError::Unreachable(_) | PortError::Closed) => {
+                Ok(SetOutcome::Offline) | Err(PortError::Unreachable(_) | PortError::Closed) => {
                     entry.attempts = entry.attempts.saturating_add(1);
                     entry.due = Instant::now() + backoff(entry.attempts);
                 }

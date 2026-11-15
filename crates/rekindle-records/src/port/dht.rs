@@ -121,7 +121,10 @@ pub trait DhtBackend: Send + Sync {
     /// offline: `Some` is the value the write settled on, returned when it
     /// differs from ours or when some node holds a rival at its seq, so it
     /// can be ours (Veilid 0.5.8 `set_value.rs:753-760`). The pool tells
-    /// the two apart ([`SetOutcome`]).
+    /// the two apart ([`SetOutcome`]). `None` is ours at consensus: a set
+    /// that ends below it stores nothing and answers
+    /// [`DhtErrorKind::TryAgain`] (`set_value.rs:731-738` →
+    /// `local_record_store_interface.rs:60-62`).
     async fn set(
         &self,
         key: &str,
