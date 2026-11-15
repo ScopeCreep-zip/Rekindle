@@ -157,6 +157,12 @@ pub(crate) struct NodeSlot {
     /// The nonce of each local copy, with the value it was recorded for
     /// ([`crate::records`]' `replicas::Cipher`).
     pub nonces: HashMap<(String, u32), (RecordValue, u64)>,
+    /// Records this node created this session (Veilid's
+    /// `locally_created_records`, `create_record.rs:30-34`).
+    pub created: HashSet<String>,
+    /// When each record's last rehydration check completed (Veilid's
+    /// `rehydration_checked`, `rehydrate.rs:26-42`).
+    pub rehydration_checked: HashMap<String, tokio::time::Instant>,
 }
 
 impl NodeSlot {
@@ -183,6 +189,8 @@ impl NodeSlot {
             rehydrations: BTreeSet::new(),
             pushes: BTreeMap::new(),
             nonces: HashMap::new(),
+            created: HashSet::new(),
+            rehydration_checked: HashMap::new(),
         }
     }
 }

@@ -2,9 +2,10 @@
 //! (`~/veilid/veilid-core/src/storage_manager`):
 //!
 //! - **when:** an open of a record in the node's local store queues a
-//!   rehydration of every subkey at `set_value_count` consensus
-//!   (`open_record.rs:31-38`, `add_rehydration_request` `rehydrate.rs:23-48`);
-//!   a create or an open from the network queues none. A set refused
+//!   rehydration of every subkey at `set_value_count` consensus, when the
+//!   open asks for it, the node did not create the record this session and
+//!   its last check is past [`REHYDRATE_RECHECK`] ([`on_open`]); a create or
+//!   an open from the network queues none. A set refused
 //!   offline (`allow_offline` false, as the pool always sends) queues
 //!   nothing (`local_record_store_interface.rs:61-62`): the push queue is
 //!   fed by rehydration only (`rehydrate.rs:223,264`), so it never doubles
@@ -45,9 +46,24 @@ use crate::network::{Inner, Network};
 /// `REHYDRATE_REQUESTS_PER_TICK` (`constants.rs:41`).
 pub(crate) const REHYDRATE_PER_TICK: usize = 4;
 
-/// `add_rehydration_request` for every subkey of `key` on `node`.
-pub(super) fn request(inner: &mut Inner, node: usize, key: &str) {
-    inner.nodes[node].rehydrations.insert(key.to_string());
+/// How long a completed rehydration check answers for a record: 60 RPC
+/// timeouts (`storage_manager/mod.rs:198`, `rpc.timeout_ms` 5 000).
+pub(crate) const REHYDRATE_RECHECK: std::time::Duration = std::time::Duration::from_secs(300);
+
+/// An open of `key`, held in `node`'s local store, with the `rehydrate`
+/// option: Veilid queues a rehydration of every subkey only when asked, for
+/// a record this node did not create this session, whose last check is
+/// older than [`REHYDRATE_RECHECK`] (0.5.8 `open_record.rs:62-81`,
+/// `rehydrate.rs:26-37`).
+pub(super) fn on_open(inner: &mut Inner, node: usize, key: &str, rehydrate: bool) {
+    let slot = &inner.nodes[node];
+    let due = slot
+        .rehydration_checked
+        .get(key)
+        .is_none_or(|at| tokio::time::Instant::now() >= *at + REHYDRATE_RECHECK);
+    if rehydrate && !slot.created.contains(key) && due {
+        inner.nodes[node].rehydrations.insert(key.to_string());
+    }
 }
 
 fn reach_of(inner: &Inner, node: usize, key: &str) -> Vec<usize> {
@@ -67,9 +83,19 @@ pub(super) fn pending(inner: &Inner, node: usize) -> bool {
             }))
 }
 
-/// One rehydration of `key` on `node`: queue the subkeys to push.
+/// One rehydration of `key` on `node`: queue the subkeys to push, and mark
+/// the record checked. With no replica reached its inspect answers
+/// `TryAgain` (0.5.8 `inspect_record.rs:346-349`) and the request stays
+/// queued (`tasks/rehydrate_records.rs:45-60`).
 fn rehydrate(inner: &mut Inner, node: usize, key: &str) {
     let reach = reach_of(inner, node, key);
+    if reach.is_empty() {
+        return;
+    }
+    inner.nodes[node].rehydrations.remove(key);
+    inner.nodes[node]
+        .rehydration_checked
+        .insert(key.to_string(), tokio::time::Instant::now());
     let Some(record) = inner.records.get(key) else {
         return;
     };
@@ -147,7 +173,6 @@ impl Network {
                 .cloned()
                 .collect();
             for key in due {
-                inner.nodes[node].rehydrations.remove(&key);
                 rehydrate(inner, node, &key);
             }
         }
