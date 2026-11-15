@@ -7,16 +7,19 @@
 //! # Calibration table
 //!
 //! Each duration is uniform over its [`Span`]. "Measured" numbers come from
-//! the live first-login dev log of 2026-10-21 (veilid-core at the pinned fork
-//! rev `0cd847de`, ADR 0017); "derived" numbers come from the pinned source
-//! in `~/veilid/veilid-core/src` and have no measurement yet.
+//! the live A/B round 2 log of 2026-11-15
+//! (`evidence/runs/2026-11-15-ab2-macA2-rekindled.log`, from 02:55:37;
+//! veilid-core 0.5.8 at Rekindle's fork rev `91453e97`, ADR 0017);
+//! "derived" numbers come from the 0.5.8 source in `veilid-core/src` and
+//! have no measurement yet.
 //!
 //! | Call | Span | Source |
 //! |------|------|--------|
-//! | set (`set`, `set_durable`) | [`SET`] 9–18 s | measured: 11 serial prekey sets 18:19:01.290 → 18:21:29.194 = 13.4 s each; the creates' first sets 9–11 s apart (18:18:40 → :51, 18:21:29 → :38). Derived shape: consensus needs `set_value_count` 5 accepts of `set_value_fanout` 6 within `set_value_timeout_ms` 10 000 (`veilid_config.rs:913-915`), and the deadline stays a full timeout past the last accept (`rpc_processor/fanout/fanout_call.rs:642-656`) |
-//! | one set RPC (lands on its replica) | [`SET_RPC`] 1–3 s | derived: the RPC path of a get's wave; the set's replicas take its value this far in, while the call itself returns at the end of its [`SET`] draw (`records/fanout.rs`) |
-//! | get, inspect, open of a value the network holds | [`GET`] 1–3 s | derived: one fanout wave of `get_value_fanout` 5, consensus at `get_value_count` 3 (`veilid_config.rs:910-912`), each RPC far below `rpc.timeout_ms` 5 000 (`:852`) |
-//! | get, inspect, open finding no value | [`DEADLINE`] 10.0–10.3 s | measured: the fresh prekey record's inspect 18:18:51.272 → 18:19:01.287 (`present=[]`); derived: no consensus is possible, so the fanout runs to `get_value_timeout_ms` 10 000 |
+//! | set reaching consensus (`set`, `set_durable`) | [`SET`] 0.33–1.42 s | measured: 26 presence status sets on the profile record, `publish_status: writing` → `published status to DHT` (e.g. 03:11:52.797 → :53.327, 03:12:52.797 → :53.230), 0.327–1.415 s, median 0.53 s; the mailbox create → its first set `Landed` 02:55:52.800 → :54.233 (1.43 s). Derived shape: 0.5.8 returns at `set_value_count` 5 accepts of `set_value_fanout` 6 (`veilid_config.rs:1011-1012`); the model's set ends at its fifth accept ([`crate::records`]' fanout), so [`SET`] states the measurement for budgets and the model draws [`SET_RPC`] |
+//! | one set RPC (lands on its replica, its answer read) | [`SET_RPC`] 0.2–0.8 s | derived: the fifth of six lanes' answers over this span is 0.63 s on average and at most 0.8 s, as the measured [`SET`]; a set's replicas take its value this far in |
+//! | a set that cannot reach consensus | its fanout's end | derived: exhausted at the last answer, a silent lane cut after max(1.65 s, 3 × the slowest answer) or timed out at `rpc.timeout_ms` 5 000, and `set_value_timeout_ms` 10 000 past the last accept (`fanout_call.rs:105-110,552-555`, `fanout_queue.rs:662-751`, `veilid_config.rs:944,1010`); no live sample (round 2 has no set below consensus) |
+//! | get, inspect, open of a value the network holds | [`GET`] 0.40–0.65 s | measured: the poll's 255-subkey inspects of the held registry (`inspect_ms` 401, 497, 622, 399 at 03:12:53, 03:13:53, 03:14:53, 03:16:33) and the presence scan's inspect after its row write once a member row existed (03:12:51.711 → :52.182, :52.590 → :53.100, :53.546 → :53.980: 0.43–0.51 s) |
+//! | get, inspect finding no value | [`DEADLINE`] 10.8–11.1 s | measured: the presence scan's 255-subkey inspect of a registry where no other row was written yet, from its row write to `read_changed … present=[]` (03:12:01.223 → :12.308, :17.813 → :28.724, :29.148 → :40.003, :40.415 → :51.229: 10.81–11.09 s); derived: an unwritten subkey has no consensus, so the fanout runs to `get_value_timeout_ms` 10 000 (`veilid_config.rs:1007`) |
 //! | watch | [`WATCH`] 1–3 s | derived: a watch is one fanout to the record's nodes (`storage_manager/watch_value.rs`), as a get |
 //! | create | [`CREATE`] 5–20 ms | derived: `storage_manager/create_record.rs` makes the record locally with no fanout; the live ~10 s between creates is the first set, charged as a set |
 //! | an app message's send returning | [`FIRST_HOP`] 40–120 ms | derived: one hop at the 80 ms median; the send waits for the first hop (`rpc_processor/mod.rs:1882-1926`) |
@@ -40,13 +43,13 @@
 //!
 //! # Recalibrating from a live log
 //!
-//! Run a dev build with `RUST_LOG=info`, unlock a fresh identity, and read
-//! the gaps between `prekey record created`, `prekey maintenance`,
-//! `profile record created` and `friend list record created`: the span
-//! between maintenance and the profile, over the slot count written
-//! serially, is one set; the record-created gaps are a first set each. Put
-//! the new bounds in [`SET`] (and the others), with the log's timestamps in
-//! the table above.
+//! Run `rekindled` with `RUST_LOG=debug` and read: a set from
+//! `publish_status: writing to DHT` to `published status to DHT` (one set
+//! of the held profile record); a get or inspect of held values from the
+//! poll's `inspect_ms`; a no-value inspect from a presence scan's `presence
+//! row written` to its next `read_changed … present=[]` while no other
+//! member wrote. Put the new bounds in [`SET`] (and the others), with the
+//! log's timestamps in the table above.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -79,16 +82,15 @@ impl Span {
     }
 }
 
-/// A set reaching consensus (see the table).
-pub const SET: Span = Span::ms(9_000, 18_000);
-/// One set RPC, from the node to a replica and its answer back: derived as
-/// [`GET`]'s wave (the same RPC path), so a set's value is on its first
-/// replicas 1–3 s in, as a reader sees it (`fanout_call.rs:630-656`).
-pub const SET_RPC: Span = Span::ms(1_000, 3_000);
+/// A set reaching consensus, as measured (see the table).
+pub const SET: Span = Span::ms(330, 1_420);
+/// One set RPC, from the node to a replica and its answer back (see the
+/// table).
+pub const SET_RPC: Span = Span::ms(200, 800);
 /// A get, inspect or open of a value the network holds.
-pub const GET: Span = Span::ms(1_000, 3_000);
-/// A get, inspect or open finding no value: the fanout's deadline.
-pub const DEADLINE: Span = Span::ms(10_000, 10_300);
+pub const GET: Span = Span::ms(400, 650);
+/// A get or inspect finding no value: the fanout's deadline.
+pub const DEADLINE: Span = Span::ms(10_800, 11_100);
 /// Establishing a watch.
 pub const WATCH: Span = Span::ms(1_000, 3_000);
 /// A local create.

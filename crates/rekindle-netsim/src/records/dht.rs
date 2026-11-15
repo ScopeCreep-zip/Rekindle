@@ -8,32 +8,27 @@
 //! - every call but create needs the record open on the node, else
 //!   `InvalidArgument` "record not open" (`get_value.rs:67`,
 //!   `set_value.rs:74-76`, `inspect_record.rs:112`, `watch_value.rs:136`);
-//! - an open of a record in the node's local store is local
-//!   (`open_record.rs:27-44`); any other open needs the network
-//!   (`TryAgain` offline, `:48-49`) and finds nothing for a record nobody
-//!   published (`KeyNotFound`, `:71-78`); a re-open replaces the writer;
+//! - an open of a record in the node's local store is local (0.5.8
+//!   `open_record.rs:54-81`); any other open needs the network (`TryAgain`
+//!   offline, `:84-86`), stops at the first node with the descriptor
+//!   (latency [`latency::GET`], `:88-99`), answers `TryAgain` when no
+//!   replica is reached and `KeyNotFound` when the reached ones hold
+//!   nothing (`:101-111`); a re-open replaces the writer;
 //! - a get without `force_refresh` answers the local copy when there is one
 //!   (`get_value.rs:79-88`), else asks the network, `TryAgain` offline
 //!   (`:89-92`);
 //! - a set signs with the given writer or the open's, else `Generic` "value
-//!   is not writable" (`set_value.rs:91-93`); a writer the schema refuses is
-//!   `Generic` "failed schema validation" (`set_value.rs:236-242`); the same
-//!   data and writer keep the seq (`:212-218`), anything else is local seq
-//!   + 1; offline with `allow_offline` false is `TryAgain` and stores
-//!   nothing (`set_value.rs:109-115`,
-//!   `local_record_store_interface.rs:61-62`); a fanout below consensus is
-//!   `Ok(None)` with the local copy untouched while the replicas that took
-//!   the value keep it (each takes it as its RPC arrives, [`super::fanout`];
-//!   `set_value.rs:170-171,596-623`,
-//!   `local_record_store_interface.rs:61-62`); at consensus the fanout's
-//!   value becomes the local copy and is returned when it is not the one
-//!   asked for (a newer value a replica held, `set_value.rs:620-645`), an
-//!   identical re-push included;
-//! - a get over the network takes the newest value the reached replicas
-//!   hold and stores it locally when its seq moved
-//!   (`get_value.rs:538-567`);
+//!   is not writable"; a writer the schema refuses is `Generic` "failed
+//!   schema validation"; the same data and writer resend the local copy,
+//!   anything else is local seq + 1 (0.5.8 `set_value.rs:353-366`); offline
+//!   is `TryAgain` and stores nothing; how the fanout settles, lands and
+//!   what it returns is [`super::fanout`];
+//! - a get over the network settles on the replicas' tally and keeps the
+//!   local copy unless the settled value replaces it ([`super::replicas`],
+//!   0.5.8 `get_value.rs:600-659`);
 //! - an inspect in the local scope never leaves the node; any other is
-//!   `TryAgain` offline (`inspect_record.rs:205-206`); UpdateSet reports
+//!   `TryAgain` offline (`inspect_record.rs:205-206`) or with no replica
+//!   reached (0.5.8 `inspect_record.rs:346-349`); UpdateSet reports
 //!   each local seq + 1, and the Update scopes' network seqs start from the
 //!   local result, the Sync ones' from nothing (`:208-228`), then take the
 //!   newest seq of the replicas the node reaches; `offline_subkeys` is the
@@ -41,8 +36,8 @@
 //! - a create checks the schema as Veilid ([`super::validate_schema`]);
 //! - a watch's expiration is absolute: too soon on the node's own clock
 //!   (its skew), clamped by each replica on true time;
-//! - an open of a locally held record queues a rehydration
-//!   ([`super::rehydrate`]); a call that reads or writes replicas uses the
+//! - an open of a locally held record may queue a rehydration
+//!   ([`super::rehydrate`]'s `on_open`); a call that reads or writes replicas uses the
 //!   record on their stores ([`super::stores`]);
 //! - a watch records the wanted state on the node, answers whether one is
 //!   wanted and is held by the replicas the node reaches; a close is
@@ -79,6 +74,16 @@ fn error(kind: DhtErrorKind, message: impl Into<String>) -> DhtCallError {
 
 fn try_again() -> DhtCallError {
     error(DhtErrorKind::TryAgain, "offline, try again later")
+}
+
+/// A fanout no node answered proves nothing: `TryAgain` (0.5.8
+/// `open_record.rs:101-104`, `inspect_record.rs:346-349`). In the model a
+/// reachable replica always answers, so "no answer" is "none reached".
+fn no_answer(call: &str) -> DhtCallError {
+    error(
+        DhtErrorKind::TryAgain,
+        format!("no node answered the {call}"),
+    )
 }
 
 fn not_open(key: &str) -> DhtCallError {
@@ -195,37 +200,6 @@ impl SimDht {
         })
     }
 
-    /// A get over the network: the newest value the reached replicas hold,
-    /// stored locally when its seq moved; the local copy after.
-    fn refresh(&self, key: &str, subkey: u32) -> Option<RecordValue> {
-        let mut inner = self.net.inner.lock();
-        let local = inner.nodes[self.node]
-            .local
-            .get(&(key.to_string(), subkey))
-            .cloned();
-        let reach = inner.records.get(key).map_or_else(Vec::new, |r| {
-            reachable(&r.replicas, &inner.faults.partitions, self.node)
-        });
-        stores::touch(&mut inner, key, &reach);
-        let found = inner.records.get(key).and_then(|r| {
-            replicas::get(
-                &r.schema,
-                &r.replicas,
-                &reach,
-                subkey as usize,
-                local.as_ref(),
-            )
-        });
-        if let Some(found) = &found {
-            if local.as_ref().is_none_or(|l| l.seq != found.seq) {
-                inner.nodes[self.node]
-                    .local
-                    .insert((key.to_string(), subkey), found.clone());
-            }
-        }
-        found
-    }
-
     /// Check a write against the record's schema, its writer and its size
     /// (`set_value.rs:233-242`, [`super::size`]).
     fn validate(
@@ -252,22 +226,68 @@ impl SimDht {
         Ok(())
     }
 
-    /// The value a write sends: the same data and writer keep the seq and
-    /// re-push the copy (`set_value.rs:205-222`), else local seq + 1.
-    fn ours(&self, key: &str, subkey: u32, data: Vec<u8>, public: &[u8; 32]) -> RecordValue {
+    /// The value a write sends: the same data and writer resend the local
+    /// copy's bytes at its seq (0.5.8 `set_value.rs:353-366`), else a fresh
+    /// encryption at local seq + 1, or seq 0 with no local copy
+    /// ([`replicas::encrypt`]).
+    fn ours(&self, key: &str, subkey: u32, data: Vec<u8>, public: &[u8; 32]) -> replicas::Cipher {
         let writer = public_text(public);
-        let local = self.net.inner.lock().nodes[self.node]
-            .local
-            .get(&(key.to_string(), subkey))
-            .cloned();
-        match local {
-            Some(l) if l.data == data && l.writer == writer => l,
-            local => RecordValue {
-                seq: local.map_or(0, |l| l.seq.saturating_add(1)),
-                data,
-                writer,
-            },
+        let mut inner = self.net.inner.lock();
+        match replicas::local(&inner, self.node, key, subkey) {
+            Some(l) if l.value.data == data && l.value.writer == writer => l,
+            local => replicas::encrypt(
+                &mut inner,
+                RecordValue {
+                    seq: local.map_or(0, |l| l.value.seq.saturating_add(1)),
+                    data,
+                    writer,
+                },
+            ),
         }
+    }
+}
+
+impl SimDht {
+    /// An open with Veilid's `rehydrate` option
+    /// (`OpenDHTRecordOptions`, 0.5.8 `open_record.rs:62-81`).
+    pub(crate) async fn open_with(
+        &self,
+        key: &str,
+        writer: Option<&WriterKey>,
+        rehydrate: bool,
+    ) -> Result<RecordDescriptor, DhtCallError> {
+        let writer = writer.map(|w| w.keypair.clone());
+        let known = self.net.inner.lock().nodes[self.node].known.contains(key);
+        if !known {
+            // Inspect subkey 0 for the descriptor, stopping at the first
+            // node that has it (`open_record.rs:84-99`); not found needs a
+            // node that said so (`:101-104`).
+            let _slot = self.network(latency::GET, key, &[]).await?;
+            if self.reach(key).is_empty() {
+                return Err(no_answer("open"));
+            }
+            if !self.held(key, None) {
+                return Err(error(DhtErrorKind::KeyNotFound, key.to_string()));
+            }
+        }
+        {
+            let mut inner = self.net.inner.lock();
+            if known {
+                rehydrate::on_open(&mut inner, self.node, key, rehydrate);
+            }
+            let slot = &mut inner.nodes[self.node];
+            slot.known.insert(key.to_string());
+            slot.opened.insert(key.to_string(), writer);
+        }
+        self.descriptor(key)
+    }
+
+    /// The replicas this node reaches for `key`.
+    fn reach(&self, key: &str) -> Vec<usize> {
+        let inner = self.net.inner.lock();
+        inner.records.get(key).map_or_else(Vec::new, |r| {
+            reachable(&r.replicas, &inner.faults.partitions, self.node)
+        })
     }
 }
 
@@ -331,6 +351,7 @@ impl DhtBackend for SimDht {
             inner.owners.insert(key.clone(), owner.clone());
             let slot = &mut inner.nodes[self.node];
             slot.known.insert(key.clone());
+            slot.created.insert(key.clone());
             slot.opened.insert(key.clone(), Some(owner));
         }
         self.descriptor(&key)
@@ -341,28 +362,9 @@ impl DhtBackend for SimDht {
         key: &str,
         writer: Option<&WriterKey>,
     ) -> Result<RecordDescriptor, DhtCallError> {
-        let writer = writer.map(|w| w.keypair.clone());
-        let known = self.net.inner.lock().nodes[self.node].known.contains(key);
-        if !known {
-            // Inspect subkey 0 on the network for the descriptor.
-            let span = self.read_span(key, Some(&[0]));
-            let _slot = self.network(span, key, &[]).await?;
-            if !self.held(key, None) {
-                return Err(error(DhtErrorKind::KeyNotFound, key.to_string()));
-            }
-        }
-        {
-            let mut inner = self.net.inner.lock();
-            if known {
-                // A record in the local store: Veilid checks the network
-                // against it in the background (`open_record.rs:31-38`).
-                rehydrate::request(&mut inner, self.node, key);
-            }
-            let slot = &mut inner.nodes[self.node];
-            slot.known.insert(key.to_string());
-            slot.opened.insert(key.to_string(), writer);
-        }
-        self.descriptor(key)
+        // The production backend opens with `rehydrate: Some(true)`
+        // (`rekindle-protocol` `VeilidDht::open`) until plan VU3's intent.
+        self.open_with(key, writer, true).await
     }
 
     async fn close(&self, key: &str) -> Result<(), DhtCallError> {
@@ -393,7 +395,14 @@ impl DhtBackend for SimDht {
         }
         let span = self.read_span(key, Some(&[subkey]));
         let _slot = self.network(span, key, &[subkey]).await?;
-        Ok(self.refresh(key, subkey))
+        let mut inner = self.net.inner.lock();
+        Ok(replicas::refresh(
+            &mut inner,
+            self.node,
+            key,
+            subkey,
+            force_refresh,
+        ))
     }
 
     async fn set(
@@ -417,9 +426,8 @@ impl DhtBackend for SimDht {
             return Err(try_again());
         }
         let _slot = self.net.latency.slot(self.node, key, &[subkey]).await;
-        let span = self.net.latency.draw(self.node, latency::SET);
         if self.fault_try_again() {
-            tokio::time::sleep(span).await;
+            tokio::time::sleep(self.net.latency.draw(self.node, latency::SET)).await;
             return Err(try_again());
         }
         let accepting = {
@@ -428,14 +436,8 @@ impl DhtBackend for SimDht {
                 .faults
                 .accepting(self.node, key, subkey, inner.records.get(key))
         };
-        if accepting == Some(0) {
-            // Below consensus: no replica accepted it, so nothing is
-            // stored (`fanout::commit`).
-            tokio::time::sleep(span).await;
-            return Ok(None);
-        }
         let ours = self.ours(key, subkey, data, &public);
-        let fanout = fanout::run(&self.net, self.node, (key, subkey), &ours, span, accepting).await;
+        let fanout = fanout::run(&self.net, self.node, (key, subkey), &ours, accepting).await;
         if self.offline() {
             return Err(try_again());
         }
@@ -458,6 +460,9 @@ impl DhtBackend for SimDht {
         } else {
             Some(self.network(self.read_span(key, subkeys), key, &[]).await?)
         };
+        if scope != ReportScope::Local && self.reach(key).is_empty() {
+            return Err(no_answer("inspect"));
+        }
         let mut inner = self.net.inner.lock();
         if scope != ReportScope::Local {
             let reach = inner.records.get(key).map_or_else(Vec::new, |r| {
