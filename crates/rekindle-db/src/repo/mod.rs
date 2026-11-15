@@ -84,6 +84,22 @@ pub(crate) mod fixture {
         crate::test_support::schema_conn(OWNER)
     }
 
+    /// The database file at `path` with the schema and [`OWNER`]'s
+    /// identity row, made on the first open and kept by a later one (a
+    /// restart).
+    pub fn conn_at(path: &std::path::Path) -> Connection {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();
+        conn.execute_batch(crate::SCHEMA).unwrap();
+        conn.execute(
+            "INSERT OR IGNORE INTO identity (public_key, display_name, created_at, \
+             friend_request_token) VALUES (?1, 'me', 0, 'aaaaaaaaaaaaaaaaaaaaaaaaaa')",
+            [OWNER],
+        )
+        .unwrap();
+        conn
+    }
+
     /// An in-memory database with the schema and an identity row for the
     /// key `owner` (the ratchet tables key their owner by its hex).
     pub fn identity_conn(owner: &[u8; 32]) -> Connection {

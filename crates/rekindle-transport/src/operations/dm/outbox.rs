@@ -341,6 +341,10 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
 /// chain. An acked row is gone from the outbox (`Outbox::acknowledge`), so
 /// it is never hinted again. It stays sent whatever the hint does.
 async fn rehint(host: &dyn FriendHost, to: &str, row: &RowAttempt<'_>) {
+    // The re-send's reason (E2.5i R1-3): the row landed and is still here,
+    // so no `DmAck` named its seq and none's `through` covered its entry.
+    tracing::debug!(to = %to, stream_seq = row.stream_seq,
+        "re-hint: landed, no DmAck names or covers it yet");
     match frame_row(host, to, row, false).await {
         Ok(
             Framed::Entry {

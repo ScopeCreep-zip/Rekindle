@@ -211,7 +211,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// them.
 /// 123 (plan VU1): Veilid 0.5.8's table-store migration is one-way; the bump
 /// resets DB, vault and Veilid storage together.
-pub const SCHEMA_VERSION: i64 = 123;
+/// 124 (plan E2.5i, R1-3): `stream_applied`, the seqs of a writer's chain
+/// applied past a gap, so the cursor absorbs them when the gap fills.
+pub const SCHEMA_VERSION: i64 = 124;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
