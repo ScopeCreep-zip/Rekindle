@@ -40,7 +40,7 @@ pub const NAK: &[u8] = b"N";
 /// failed on our side, a copy whose first is still in flight, our
 /// deadline). One byte, distinct from the receipt (empty), [`NAK`] and a
 /// `'D'` frame. Answering at once frees the Veilid RPC worker an
-/// unanswered call holds for `rpc.timeout_ms` (`rpc_app_call.rs:119-139`);
+/// unanswered call holds for `rpc.timeout_ms` (0.5.8 `rpc_app_call.rs:119-139`);
 /// the caller attempts its row again, as on a timeout, with no route
 /// refresh (the call reached us).
 pub const RETRY_LATER: &[u8] = b"R";
@@ -48,8 +48,8 @@ pub const RETRY_LATER: &[u8] = b"R";
 /// How long an inbound `app_call`'s reply may take before it is answered
 /// [`RETRY_LATER`] ([`Called::RetryLater`]; a deadline is no refusal), on
 /// both hosts. The work goes on to completion past it (review RV5 H1). Under Veilid's own wait for our answer, `rpc.timeout_ms`
-/// (`CALL_TIMEOUT_MS`, 5 s: `rpc_app_call.rs:133-136` waits
-/// `self.timeout`, set from `timeout_ms` at `rpc_processor/mod.rs:192`),
+/// (`CALL_TIMEOUT_MS`, 5 s: `rpc_app_call.rs:129-133` waits
+/// `self.timeout`, set from `timeout_ms` at `rpc_processor/mod.rs:222-223`),
 /// with a second for the reply to reach it, so ours fires first and the
 /// Host stops working on a call whose answer Veilid would discard.
 pub const CALL_DEADLINE: std::time::Duration =

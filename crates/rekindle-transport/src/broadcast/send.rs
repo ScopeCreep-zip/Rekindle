@@ -38,9 +38,9 @@ fn send_failure(routes: &dyn RoutePort, target: &PeerTarget, e: PortError) -> Tr
 /// The route a 1:1 `app_call`'s answer comes back over, for the trace: the
 /// call is pinned to our `Sending` route (`SafetySpec.preferred_route`), and
 /// Veilid names the preferred route as the question's reply private route
-/// (veilid `rpc_processor/destination.rs:477-497`, `route_select.rs:124-152`).
+/// (veilid-core 0.5.8 `rpc_processor/destination.rs:484-528`, `route_select.rs:148-180`).
 /// Unpinned, Veilid would pick an untested automatic pool route instead
-/// (`route_select.rs:283`), so a 1:1 call is never sent unpinned.
+/// (`route_select.rs:182-188,265-269`), so a 1:1 call is never sent unpinned.
 const REPLY_ROUTE: &str = "our Sending route (pinned)";
 
 /// Report of a broadcast operation.
