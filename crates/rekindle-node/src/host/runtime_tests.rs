@@ -122,13 +122,12 @@ struct Recorder(parking_lot::Mutex<Vec<String>>);
 
 /// A key reader over an empty cache: the test shells hold no keys.
 fn empty_channel_keys() -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
-    let cache = Arc::new(crate::daemon::mek_rotation::MekCacheAdapter::new(Arc::new(
-        parking_lot::RwLock::new(rekindle_transport::crypto::mek::MekCache::new()),
-    )));
-    Arc::new(rekindle_mek_rotation::MekKeyProvider::new(
-        cache.clone(),
-        cache,
-    ))
+    crate::daemon::mek_rotation::provider_over(
+        Arc::new(parking_lot::RwLock::new(
+            rekindle_transport::crypto::mek::MekCache::new(),
+        )),
+        rekindle_vault::new_handle(),
+    )
 }
 
 #[async_trait::async_trait]

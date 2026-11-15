@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use crate::daemon::dispatch::DaemonContext;
 
-pub use cache::{key_provider, MekCacheAdapter};
+pub use cache::{key_provider, provider_over, MekCacheAdapter};
 
 /// Why a MEK needs replacing.
 #[derive(Debug, Clone)]

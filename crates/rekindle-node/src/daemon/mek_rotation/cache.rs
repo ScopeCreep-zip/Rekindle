@@ -111,29 +111,25 @@ impl ChannelMekCache for MekCacheAdapter {
     }
 }
 
-/// The daemon's key history is its `MekCache`, which retains every
-/// generation it has held for the process lifetime. Persisted history
-/// (surviving a restart) arrives with the shared per-identity store
-/// (plan D-phase, step-19 item N1).
-impl rekindle_mek_rotation::MekHistory for MekCacheAdapter {
-    fn load(
-        &self,
-        community_id: &str,
-        scope: KeyScope,
-        generation: u64,
-    ) -> Option<MediaEncryptionKey> {
-        ChannelMekCache::get(self, community_id, scope, generation)
-    }
-}
-
 /// The key provider every daemon key consumer reads through (plan D6).
 pub fn key_provider(
     ctx: &crate::daemon::dispatch::DaemonContext,
 ) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
-    let cache = Arc::new(MekCacheAdapter::new(Arc::clone(&ctx.mek_cache)));
+    provider_over(Arc::clone(&ctx.mek_cache), ctx.vault.clone())
+}
+
+/// The provider over `mek_cache` and, for a generation it does not hold,
+/// `vault`: the cache keeps what this process installed, and an unlock
+/// restores only each scope's latest key, so older generations come from
+/// the vault, the store of record (A/B R3-9).
+#[must_use]
+pub fn provider_over(
+    mek_cache: Arc<RwLock<MekCache>>,
+    vault: rekindle_vault::VaultHandle,
+) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider> {
     Arc::new(rekindle_mek_rotation::MekKeyProvider::new(
-        cache.clone(),
-        cache,
+        Arc::new(MekCacheAdapter::new(mek_cache)),
+        Arc::new(crate::host::adapters::mek::VaultMekPersist::new(vault)),
     ))
 }
 
