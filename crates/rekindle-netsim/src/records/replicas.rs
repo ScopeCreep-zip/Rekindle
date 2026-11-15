@@ -2,9 +2,19 @@
 //! VU2 items 2 and 9), after veilid-core 0.5.8 (Rekindle's fork, ADR 0017;
 //! `veilid-core/src`):
 //!
-//! - every record lives on [`REPLICAS`] stores, Veilid's `consensus_width`
-//!   (`veilid_config.rs:1013`: the closest nodes to the key a fanout counts,
-//!   less those that time out or disqualify, `fanout_call.rs:401-441`);
+//! - every record has [`CANDIDATES`] stores, the closest nodes a fanout
+//!   starts from (`max_find_node_count`, `veilid_config.rs:1003`;
+//!   `fanout_call.rs:641-684`); a call's window is the [`REPLICAS`]
+//!   (`consensus_width`, `veilid_config.rs:1013`) closest of them that did
+//!   not time out or disqualify (`fanout_call.rs:395-441`). A store the node
+//!   does not reach is a timeout, so it takes no slot and the next
+//!   candidate fills it ([`reachable`]); a set fills a slot freed during
+//!   its fanout from the farther candidates ([`super::fanout`]), and a
+//!   candidate that takes a set holds the value for later reads like any
+//!   replica. The nodes Veilid's answers add past the first
+//!   [`CANDIDATES`] (`fanout_queue.rs:363-410`) are not modeled: a
+//!   scenario never cuts more than [`CANDIDATES`] − [`REPLICAS`] closer
+//!   stores off;
 //! - **placement:** replica `r` sits beside simulated node
 //!   `(offset + r) % n`, where `n` is the node count when the record is
 //!   created and `offset` folds the record key's text (the key comes from
@@ -39,8 +49,12 @@ use rekindle_records::port::{RecordSchema, RecordValue};
 
 use crate::network::{pair, Inner};
 
-/// Replicas per record: Veilid's `consensus_width` (`veilid_config.rs:1013`).
+/// A call's window: Veilid's `consensus_width` (`veilid_config.rs:1013`).
 pub(crate) const REPLICAS: usize = 10;
+/// Stores per record, in closeness order: the closest nodes a fanout
+/// starts from, `max_find_node_count` (`veilid_config.rs:1003`,
+/// `fanout_call.rs:641-684`).
+pub(crate) const CANDIDATES: usize = 20;
 /// Accepts a set needs: Veilid's `set_value_count` (`veilid_config.rs:1011`),
 /// used by [`super::fanout`].
 pub(crate) const SET_COUNT: usize = 5;
@@ -141,7 +155,7 @@ pub(crate) fn place(key: &str, nodes: usize, subkeys: usize) -> Vec<Replica> {
         acc.wrapping_mul(31).wrapping_add(usize::from(b))
     });
     let stores = nodes.max(1) * REPLICAS;
-    (0..REPLICAS)
+    (0..CANDIDATES)
         .map(|r| Replica {
             home: offset.wrapping_add(r) % nodes.max(1),
             store: offset.wrapping_add(r) % stores,
@@ -159,8 +173,9 @@ pub(crate) fn reaches(partitions: &HashSet<(usize, usize)>, node: usize, home: u
     node == usize::MAX || node == home || !partitions.contains(&pair(node, home))
 }
 
-/// The replicas `node` reaches, in placement order.
-pub(crate) fn reachable(
+/// Every candidate store `node` reaches, in placement order: a set's
+/// window then its reserve ([`super::fanout`]).
+pub(crate) fn candidates(
     replicas: &[Replica],
     partitions: &HashSet<(usize, usize)>,
     node: usize,
@@ -171,6 +186,18 @@ pub(crate) fn reachable(
         .filter(|(_, r)| reaches(partitions, node, r.home))
         .map(|(i, _)| i)
         .collect()
+}
+
+/// The replicas in `node`'s window: the [`REPLICAS`] closest it reaches
+/// (an unreached store times out and takes no slot, `fanout_call.rs:399-405`).
+pub(crate) fn reachable(
+    replicas: &[Replica],
+    partitions: &HashSet<(usize, usize)>,
+    node: usize,
+) -> Vec<usize> {
+    let mut reach = candidates(replicas, partitions, node);
+    reach.truncate(REPLICAS);
+    reach
 }
 
 impl Replica {

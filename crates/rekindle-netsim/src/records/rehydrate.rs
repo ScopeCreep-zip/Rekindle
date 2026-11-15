@@ -41,7 +41,7 @@
 //! every tick.
 
 use super::replicas::{self, newest_seq, SET_COUNT};
-use super::{reachable, stores, subkey_count, watches};
+use super::{candidates, reachable, stores, subkey_count, watches};
 use crate::network::{Inner, Network};
 
 /// `REHYDRATE_REQUESTS_PER_TICK` (`constants.rs:41`).
@@ -142,10 +142,11 @@ fn push(inner: &mut Inner, node: usize, key: &str, subkey: u32) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
+    let candidates = candidates(&record.replicas, &inner.faults.partitions, node);
     let fanout = super::fanout::set_now(
         &record.schema,
         &mut record.replicas,
-        &reach,
+        &candidates,
         subkey as usize,
         &ours,
     );

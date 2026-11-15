@@ -2,15 +2,16 @@
 //! slice S11, MED-3 and MED-4), after the pinned veilid-core
 //! (`~/veilid-wt-058/veilid-core/src`):
 //!
-//! - **churn:** a record's replicas are the [`super::replicas::REPLICAS`]
-//!   (`consensus_width`) nodes closest to its key; a fanout's window is the
+//! - **churn:** a record's stores are the [`super::replicas::CANDIDATES`]
+//!   nodes closest to its key; a fanout's window is the
 //!   `consensus_width` closest that neither timed out nor disqualified
 //!   (0.5.8 `rpc_processor/fanout/fanout_call.rs:401-441`), so a churned-out
 //!   or silent replica takes no slot ([`super::fanout`]); nodes joining
-//!   closer to the key push the farthest out. [`crate::Fault::ReplicaChurn`] puts
-//!   `count` empty stores closest (placement order is closeness) and drops
-//!   the `count` farthest, their values and watches with them; each
-//!   newcomer sits on the side of the replica it displaced. A watcher's
+//!   closer to the key push the farthest out. [`crate::Fault::ReplicaChurn`]
+//!   puts `count` empty stores closest (placement order is closeness) as the
+//!   window's `count` farthest leave the network, their values and watches
+//!   with them; the reserve past the window stays as it was. Each newcomer
+//!   sits on the side of the replica that left. A watcher's
 //!   check tick places its watch on the newcomers and inspects them
 //!   ([`super::watches`], [`super::catchup`]); rehydration and the pool's
 //!   writes refill them;
@@ -33,16 +34,18 @@ impl Netsim {
         let Some(record) = inner.records.get_mut(key) else {
             return;
         };
-        let count = count.min(record.replicas.len());
+        let window = super::replicas::REPLICAS.min(record.replicas.len());
+        let count = count.min(window);
         let subkeys = record.replicas.first().map_or(0, |r| r.values.len());
-        let gone: Vec<_> = record
+        let homes: Vec<usize> = record
             .replicas
-            .drain(record.replicas.len() - count..)
+            .drain(window - count..window)
+            .map(|r| r.home)
             .collect();
-        for (i, old) in gone.into_iter().enumerate() {
+        for (i, home) in homes.into_iter().enumerate() {
             inner.lru += 1;
             let fresh = super::Replica {
-                home: old.home,
+                home,
                 store: usize::MAX / 2 + usize::try_from(inner.lru).unwrap_or(0),
                 used: 0,
                 values: vec![None; subkeys],

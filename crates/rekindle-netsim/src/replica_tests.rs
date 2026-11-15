@@ -13,10 +13,12 @@ use super::*;
 /// (`set_value.rs:224-241,561-623,753-757`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_partial_set_comes_back_as_our_own_stale_value() {
-    // Five nodes: alone, node 0 reaches two replicas, fewer than the
-    // `get_value_count` 3 a set that misses consensus still lands at
-    // (0.5.8 `storage_manager/mod.rs:990-1030`).
-    let (sim, nodes) = Netsim::nodes(5, 41);
+    // Ten nodes: alone, node 0 reaches two of the 20 candidates, fewer than
+    // the `get_value_count` 3 a set that misses consensus still lands at
+    // (0.5.8 `storage_manager/mod.rs:990-1030`). An unreached candidate takes
+    // no window slot (`fanout_call.rs:399-405`), so every candidate beside
+    // node 0 is in its window.
+    let (sim, nodes) = Netsim::nodes(10, 41);
     let pool = nodes[0].ports.records.start_session().unwrap();
     let (lease, key, _) = pool
         .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
@@ -31,7 +33,7 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
     // `set_value_count`.
     sim.fault(Fault::Partition {
         a: vec![0],
-        b: vec![1, 2, 3, 4],
+        b: (1..10).collect(),
     });
     assert_eq!(
         pool.set(lease, 0, b"partial".to_vec(), None).await.unwrap(),
@@ -89,7 +91,8 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
 /// `Unchanged`.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn an_identical_re_push_below_consensus_answers_try_again() {
-    let (sim, nodes) = Netsim::nodes(5, 44);
+    // Ten nodes, as in `a_partial_set_comes_back_as_our_own_stale_value`.
+    let (sim, nodes) = Netsim::nodes(10, 44);
     let pool = nodes[0].ports.records.start_session().unwrap();
     let (lease, _, _) = pool
         .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
@@ -101,7 +104,7 @@ async fn an_identical_re_push_below_consensus_answers_try_again() {
     );
     sim.fault(Fault::Partition {
         a: vec![0],
-        b: vec![1, 2, 3, 4],
+        b: (1..10).collect(),
     });
     assert_eq!(
         pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
@@ -142,8 +145,8 @@ async fn an_identical_re_push_behind_the_network_is_superseded() {
 /// side that reaches consensus lands, and a node reads what its side holds.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_partition_splits_the_replicas() {
-    // Five nodes, as in `a_partial_set_comes_back_as_our_own_stale_value`.
-    let (sim, nodes) = Netsim::nodes(5, 43);
+    // Ten nodes, as in `a_partial_set_comes_back_as_our_own_stale_value`.
+    let (sim, nodes) = Netsim::nodes(10, 43);
     let (a, b) = (
         nodes[0].ports.records.start_session().unwrap(),
         nodes[1].ports.records.start_session().unwrap(),
@@ -161,7 +164,7 @@ async fn a_partition_splits_the_replicas() {
 
     sim.fault(Fault::Partition {
         a: vec![0],
-        b: vec![1, 2, 3, 4],
+        b: (1..10).collect(),
     });
     assert_eq!(
         a.set(lease, 0, b"lone".to_vec(), None).await.unwrap(),

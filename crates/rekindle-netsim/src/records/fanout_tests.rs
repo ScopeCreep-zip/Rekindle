@@ -221,10 +221,12 @@ fn a_fresh_encryption_of_the_held_value_is_a_rival() {
 }
 
 /// VU2 item 13: a set that ends exhausted at three or four accepts landed:
-/// it is stored locally (0.5.8 `storage_manager/mod.rs:990-1030`).
+/// it is stored locally (0.5.8 `storage_manager/mod.rs:990-1030`). Five
+/// nodes: alone, node 0 reaches four of the 20 candidates, all in its
+/// window (an unreached one takes no slot, `fanout_call.rs:399-405`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_set_exhausted_at_three_holders_lands() {
-    let (sim, nodes) = Netsim::nodes(3, 41);
+    let (sim, nodes) = Netsim::nodes(5, 41);
     let a = dht(&sim, &nodes, 0);
     let key = a
         .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
@@ -233,7 +235,7 @@ async fn a_set_exhausted_at_three_holders_lands() {
         .key;
     sim.fault(crate::Fault::Partition {
         a: vec![0],
-        b: vec![1, 2],
+        b: vec![1, 2, 3, 4],
     });
     let reached = sim.net.inner.lock().records[&key]
         .replicas
@@ -280,8 +282,8 @@ async fn a_same_seq_rival_replaces_the_local_copy_only_on_force_with_nothing_pen
     assert_eq!(a.get(&key, 0, false).await.unwrap().unwrap().data, b"rival");
 }
 
-/// VU2 item 16: a timed-out node takes no consensus slot (0.5.8
-/// `rpc_processor/fanout/fanout_call.rs:401-441`): with the closest eight
+/// VU2 items 16 and 19: a timed-out node takes no consensus slot (0.5.8
+/// `rpc_processor/fanout/fanout_call.rs:399-405`): with the closest eight
 /// silent, the five after them make consensus, though three of them sit
 /// past the tenth. The fanout's queue is closeness order, so a window that
 /// let a silent node hold its slot would count only two.
@@ -289,16 +291,89 @@ async fn a_same_seq_rival_replaces_the_local_copy_only_on_force_with_nothing_pen
 fn silent_replicas_take_no_consensus_slot() {
     let schema = RecordSchema::Dflt { owner_subkeys: 1 };
     let mut replicas = super::replicas::place("k", 10, 1);
-    replicas.extend(super::replicas::place("k2", 10, 1).into_iter().take(5));
     let reach: Vec<usize> = (0..replicas.len()).collect();
     let ours = cipher(0, b"v", 2);
     let mut fanout = super::fanout::Fanout::new(&reach, &ours);
     while let Some((r, value)) = fanout.next() {
         if r >= 8 {
             fanout.arrive(&schema, &mut replicas, r, 0, &value);
+        } else {
+            fanout.slot_freed();
         }
     }
     let done = fanout.finish();
     assert!(done.consensus, "accepted {}", done.accepted);
     assert_eq!(done.stored, vec![8, 9, 10, 11, 12]);
+}
+
+/// VU2 item 19: an answer that holds a slot keeps the reserve out: with
+/// each of the ten closest holding its own rival at the fanout's seq, the
+/// window is full of conflicts and the fanout is exhausted without
+/// consensus, nothing stored past the tenth (0.5.8 `fanout_call.rs:406-408`,
+/// `fanout_queue.rs:771-813`: a conflict holds its slot and the farther
+/// candidates disqualify).
+#[test]
+fn conflicts_in_the_window_keep_the_reserve_out() {
+    let schema = RecordSchema::Dflt { owner_subkeys: 1 };
+    let mut replicas = super::replicas::place("k", 10, 1);
+    for (nonce, r) in (10..).zip(replicas[..10].iter_mut()) {
+        r.put(0, &cipher(0, b"rival", nonce));
+    }
+    let reach: Vec<usize> = (0..replicas.len()).collect();
+    let done = super::fanout::set_now(&schema, &mut replicas, &reach, 0, &cipher(0, b"v", 2));
+    assert!(!done.consensus, "accepted {}", done.accepted);
+    assert!(done.stored.is_empty(), "{:?}", done.stored);
+    assert!(replicas[10..].iter().all(|r| r.values[0].is_none()));
+}
+
+/// The nodes beside the eight closest of `key`'s replicas.
+fn cut_closest(sim: &Netsim, key: &str) -> Vec<usize> {
+    let inner = sim.net.inner.lock();
+    let mut cut: Vec<usize> = inner.records[key].replicas[..8]
+        .iter()
+        .map(|r| r.home)
+        .collect();
+    cut.sort_unstable();
+    cut.dedup();
+    cut
+}
+
+/// VU2 item 19: with the eight closest replicas cut off by a partition, a
+/// set still reaches consensus among farther nodes on the writer's side
+/// (0.5.8 `fanout_call.rs:399-405`: an unreached node times out and takes
+/// no window slot, so the next candidate the queue holds fills it,
+/// `fanout_queue.rs:771-813`), and those nodes hold the value for a later
+/// read from that side. With only the ten closest placed, the writer
+/// reaches two and the set answers `TryAgain`.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_partition_cutting_the_closest_replicas_widens_the_window() {
+    let (sim, nodes) = Netsim::nodes(20, 73);
+    let a = dht(&sim, &nodes, 0);
+    let key = a
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap()
+        .key;
+    let cut = cut_closest(&sim, &key);
+    let side: Vec<usize> = (0..20).filter(|n| !cut.contains(n)).collect();
+    assert_eq!(side[0], 0, "the writer is on the far side of the cut");
+    let b = dht(&sim, &nodes, side[1]);
+    sim.fault(crate::Fault::Partition {
+        a: side,
+        b: cut.clone(),
+    });
+    assert_eq!(a.set(&key, 0, b"v".to_vec(), None).await.unwrap(), None);
+    tokio::time::sleep(latency::SET_RPC.max).await;
+    let held: Vec<usize> = sim
+        .replica_values(&key, 0)
+        .iter()
+        .enumerate()
+        .filter(|(_, v)| v.as_ref().is_some_and(|v| v.data == b"v"))
+        .map(|(i, _)| i)
+        .collect();
+    assert!(held.len() >= 5 && held.iter().all(|r| *r >= 8), "{held:?}");
+    b.open(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .await
+        .unwrap();
+    assert_eq!(b.get(&key, 0, true).await.unwrap().unwrap().data, b"v");
 }

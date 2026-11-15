@@ -205,8 +205,8 @@ impl Netsim {
     }
 
     /// A modified client's write: any writer the schema admits, bypassing
-    /// the app (plan C9.3). It reaches every replica and lands on each at
-    /// the newest seq any of them holds + 1.
+    /// the app (plan C9.3). It reaches every replica in the window and lands
+    /// on each at the newest seq any of them holds + 1.
     ///
     /// # Errors
     /// The record or subkey is unknown, or the schema does not admit the
@@ -222,8 +222,8 @@ impl Netsim {
     }
 
     /// A same-seq conflict (plan C9.3): a racing writer's value at the
-    /// newest seq the replicas hold, stored on every replica that holds
-    /// nothing at that seq yet (the replicas the first writer's fanout did
+    /// newest seq the replicas hold, stored on every window replica that
+    /// holds nothing at that seq yet (the replicas the first writer's fanout did
     /// not reach). A replica keeps the first value it got at a seq
     /// (Veilid 0.5.8 `set_value.rs:832-843`), and so does a node's local copy.
     ///
@@ -286,7 +286,14 @@ impl Netsim {
                 return Err(PortError::Dht("value too big".into()));
             }
             let mut stored = Vec::new();
-            for (r, replica) in record.replicas.iter_mut().enumerate() {
+            // A set reaches the window, never the reserve past it
+            // ([`records::REPLICAS`], 0.5.8 `fanout_call.rs:395-441`).
+            for (r, replica) in record
+                .replicas
+                .iter_mut()
+                .enumerate()
+                .take(records::REPLICAS)
+            {
                 if !records::size::within_total(&replica.values, at, &value) {
                     continue;
                 }
@@ -352,13 +359,14 @@ impl Netsim {
     }
 
     /// What a get from a node reaching every replica, with no local copy,
-    /// answers at `key`/`subkey`: the newest value, stopping at
-    /// `get_value_count` matching replicas (`records` cites Veilid).
+    /// answers at `key`/`subkey`: the newest value over the window,
+    /// stopping at `get_value_count` matching replicas (`records` cites
+    /// Veilid).
     #[must_use]
     pub fn network_get(&self, key: &str, subkey: u32) -> Option<RecordValue> {
         let inner = self.net.inner.lock();
         let record = inner.records.get(key)?;
-        let all: Vec<usize> = (0..record.replicas.len()).collect();
+        let all: Vec<usize> = (0..record.replicas.len().min(records::REPLICAS)).collect();
         records::get_from(record, &all, subkey)
     }
 

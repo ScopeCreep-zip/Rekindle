@@ -33,11 +33,17 @@
 //!   that did not time out or disqualify: those take no slot, so the window
 //!   widens past a silent or invalid replica (`fanout_call.rs:401-441`; an
 //!   invalid answer disqualifies, `set_value.rs:534-537`,
-//!   `fanout_call.rs:586-588`). Here every replica of a record sits inside
-//!   that window ([`super::replicas::REPLICAS`] is the width) and silent or
-//!   invalid ones never count, so the fanout counts accepts from any
-//!   replica it reaches; the netsim places no stores past the tenth, so it
-//!   cannot widen further. The call returns then; RPCs still in flight
+//!   `fanout_call.rs:586-588`). Here the queue starts as the window, the
+//!   [`super::replicas::REPLICAS`] closest candidates the node reaches (an
+//!   unreached store is a timeout before the call starts); each lane that
+//!   times out and each invalid answer moves the next reached candidate
+//!   from the reserve behind the window into the queue, so at most
+//!   `consensus_width` candidates ever hold a slot and every accept counts.
+//!   The reserve is asked only once a slot frees, never ahead of a slow
+//!   window lane (0.5.8 `fanout_queue.rs:447-465` would dispatch it after
+//!   the window's queued nodes, its accept counting only once a closer
+//!   node times out): a reserve answer can come later than in Veilid,
+//!   never earlier or counted where Veilid would not. The call returns then; RPCs still in flight
 //!   land on their replicas, their answers unread. Otherwise it ends when
 //!   every reached replica answered (exhausted), or at [`SET_TIMEOUT`] past
 //!   the last accept (`fanout_call.rs:552-555`, `veilid_config.rs:1010`).
@@ -61,8 +67,8 @@ use std::time::Duration;
 use rekindle_records::port::{DhtCallError, DhtErrorKind, RecordSchema};
 use tokio::time::Instant;
 
-use super::replicas::{self, Cipher, Replica, Tally, GET_COUNT, SET_COUNT};
-use super::{reachable, reaches, size, stores, watches};
+use super::replicas::{self, Cipher, Replica, Tally, GET_COUNT, REPLICAS, SET_COUNT};
+use super::{candidates, reaches, size, stores, watches};
 use crate::latency;
 use crate::network::Network;
 
@@ -147,6 +153,8 @@ fn deliver(
 pub(crate) struct Fanout {
     ctx: Cipher,
     queue: VecDeque<usize>,
+    /// The reached candidates past the window, closest first.
+    reserve: VecDeque<usize>,
     accepted: Vec<usize>,
     conflict: Vec<usize>,
     stale: Vec<usize>,
@@ -156,10 +164,14 @@ pub(crate) struct Fanout {
 }
 
 impl Fanout {
+    /// A fanout of `ours` over the `reach` candidates, closest first: the
+    /// first [`REPLICAS`] are the window, the rest its reserve.
     pub(crate) fn new(reach: &[usize], ours: &Cipher) -> Self {
+        let split = reach.len().min(REPLICAS);
         Self {
             ctx: ours.clone(),
-            queue: reach.iter().copied().collect(),
+            queue: reach[..split].iter().copied().collect(),
+            reserve: reach[split..].iter().copied().collect(),
             accepted: Vec::new(),
             conflict: Vec::new(),
             stale: Vec::new(),
@@ -181,6 +193,15 @@ impl Fanout {
         let r = self.queue.pop_front()?;
         self.sent += 1;
         Some((r, self.ctx.clone()))
+    }
+
+    /// A lane timed out or an answer was invalid: its node takes no slot,
+    /// so the next reached candidate takes one (`fanout_call.rs:399-405`,
+    /// `fanout_queue.rs:771-813`).
+    pub(crate) fn slot_freed(&mut self) {
+        if let Some(r) = self.reserve.pop_front() {
+            self.queue.push_back(r);
+        }
     }
 
     /// Queue `rs` again, in closeness order.
@@ -246,6 +267,9 @@ impl Fanout {
         sent: &Cipher,
     ) -> bool {
         let Some(answer) = deliver(schema, replicas, r, subkey, sent) else {
+            if !self.done() {
+                self.slot_freed();
+            }
             return false;
         };
         let stored = matches!(answer, Offer::Stored);
@@ -326,7 +350,7 @@ pub(crate) async fn run(
         inner.records.get(key).map_or_else(
             || (None, Vec::new()),
             |r| {
-                let reach = reachable(&r.replicas, &inner.faults.partitions, node);
+                let reach = candidates(&r.replicas, &inner.faults.partitions, node);
                 (Some(r.schema.clone()), reach)
             },
         )
@@ -396,6 +420,8 @@ pub(crate) async fn run(
         tokio::time::sleep_until(due(&lanes[i])).await;
         let mut lane = lanes.swap_remove(i);
         if !lane.answers {
+            // Timed out or cut: it takes no slot.
+            fanout.slot_freed();
             continue;
         }
         let mut guard = net.inner.lock();
