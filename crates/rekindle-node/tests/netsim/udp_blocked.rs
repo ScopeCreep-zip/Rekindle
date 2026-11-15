@@ -103,7 +103,7 @@ async fn a_failed_udp_path_loses_no_pinned_friend_accept_call() {
     let to_vic = calls(&sim, 0, 1);
     accept(&nodes[0], &nodes[1]).await;
     // One answer wait (5 s + 500 ms per effective hop past 4,
-    // `rpc_processor/mod.rs:100-117`) plus latency: a lost first call
+    // Veilid 0.5.8 `rpc_processor/mod.rs:100-117`) plus latency: a lost first call
     // would retry only after it.
     assert!(
         eventually(&sim, Duration::from_secs(6), || async {

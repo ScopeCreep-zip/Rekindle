@@ -1,7 +1,7 @@
 //! A governance op whose write only some replicas take (RV4 review L3,
 //! `Fault::WritePartial`): Veilid's `set_value` can end below consensus with
-//! the replicas it counted holding the value (`set_value.rs:596-632`,
-//! `storage_manager/mod.rs:781-811`), while the writer, with
+//! the replicas it counted holding the value (Veilid 0.5.8
+//! `set_value.rs:711-738`, `storage_manager/mod.rs:990-1030`), while the writer, with
 //! `AllowOffline(false)`, stores and queues nothing and hears `TryAgain`
 //! (`local_record_store_interface.rs:60-63`). So an op the writer answers
 //! pending may already be readable by a member whose fanout reaches those

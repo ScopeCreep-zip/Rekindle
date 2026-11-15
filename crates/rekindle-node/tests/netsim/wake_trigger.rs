@@ -3,7 +3,7 @@
 //! waking through the Host's tick-lag detector (a 5 s monotonic tick whose
 //! wall-clock gap is 30 s or more), not at the watch's fallback inspection,
 //! which after a quiet spell runs only every 300 s (0.5.8
-//! `outbound_watch_state.rs:141-146`, `max_watch_inspect_interval_ms`
+//! `outbound_watch_state.rs:150-156`, `max_watch_inspect_interval_ms`
 //! `veilid_config.rs:1018`) and 0.5.8 has no tick-lag sweep. `Fault::Sleep`
 //! freezes the node: its calls park, its wall clock stands still and jumps
 //! across the sleep on waking.

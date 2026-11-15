@@ -1,6 +1,6 @@
 //! RH1r (plan E4.3 RH2, built ahead): every 1:1 receipted call is pinned to
 //! our `Sending` route, wanted from unlock to lock, and its answer comes
-//! back over it (veilid `rpc_processor/destination.rs:477-497`). With the
+//! back over it (Veilid 0.5.8 `rpc_processor/destination.rs:477-497`). With the
 //! route live, each receipted row lands on its first call under the sim's normal
 //! conditions; a lock releases the route. An invite's
 //! request goes to its single-use inbox record, so the accept is the call.

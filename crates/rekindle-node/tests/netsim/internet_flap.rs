@@ -1,8 +1,8 @@
 //! The live log's "PublicInternet ready / unavailable" flap (plan E2.B S9,
 //! H5): a friend's public internet drops for a few seconds, several times,
 //! while the node stays attached (`RoutingDomainReadyEvent`,
-//! `routing_table/health.rs:255-287`; the DHT gate follows it,
-//! `storage_manager/mod.rs:887-898`). A message sent inside a flap is held,
+//! Veilid 0.5.8 `routing_table/health.rs:270-306`; the DHT gate follows it,
+//! `storage_manager/mod.rs:1096-1113`). A message sent inside a flap is held,
 //! not lost, and lands once the network is ready; the pair keeps talking
 //! after the flaps.
 //!
