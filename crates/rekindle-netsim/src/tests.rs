@@ -1,5 +1,6 @@
 //! The fakes against the Veilid behaviour the app depends on.
 
+use rekindle_records::port::OpenIntent;
 use std::time::Duration;
 
 use rekindle_records::port::{
@@ -44,18 +45,14 @@ async fn a_record_is_local_until_its_first_write_lands() {
         .await
         .unwrap();
     assert!(matches!(
-        b.acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
-            .await,
+        b.acquire(&key, None, OpenIntent::Hold).await,
         Err(PortError::Unreachable(_))
     ));
     assert_eq!(
         a.set(lease, 0, b"v".to_vec(), None).await.unwrap(),
         SetOutcome::Landed
     );
-    let theirs = b
-        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
-        .await
-        .unwrap();
+    let theirs = b.acquire(&key, None, OpenIntent::Hold).await.unwrap();
     let value = b.get(theirs, 0, true).await.unwrap().unwrap();
     assert_eq!((value.seq, value.data.as_slice()), (0, &b"v"[..]));
     assert_eq!(sim.network_get(&key, 0), Some(value));
@@ -115,7 +112,7 @@ async fn a_newer_network_value_supersedes_and_becomes_local() {
         .unwrap();
     a.set(lease, 0, b"first".to_vec(), None).await.unwrap();
     let theirs = b
-        .acquire(&key, Some(&owner), rekindle_records::port::OpenIntent::Hold)
+        .acquire(&key, Some(&owner), OpenIntent::Hold)
         .await
         .unwrap();
     match b.set(theirs, 0, b"second".to_vec(), None).await.unwrap() {
@@ -148,10 +145,7 @@ async fn a_watcher_hears_another_node_s_write() {
         .await
         .unwrap();
     a.set(lease, 0, b"seed".to_vec(), None).await.unwrap();
-    let theirs = b
-        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
-        .await
-        .unwrap();
+    let theirs = b.acquire(&key, None, OpenIntent::Hold).await.unwrap();
     b.watch(theirs, &[2]).await.unwrap();
     attached(&mut nodes[1]).await;
     a.set(lease, 2, b"news".to_vec(), None).await.unwrap();
@@ -430,10 +424,7 @@ async fn outside_writes_check_the_writer_and_a_conflict_keeps_its_seq() {
     });
     a.set(lease, 0, b"first".to_vec(), None).await.unwrap();
     sim.fault(Fault::Heal);
-    let theirs = b
-        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
-        .await
-        .unwrap();
+    let theirs = b.acquire(&key, None, OpenIntent::Hold).await.unwrap();
     assert_eq!(
         b.get(theirs, 0, true).await.unwrap().unwrap().data,
         b"first"
@@ -526,9 +517,7 @@ async fn only_the_one_time_writer_writes_a_request_inbox() {
     let schema = rekindle_records::schema::request_inbox(&writer_key);
     let (lease, key, _) = inviter.create(&schema, None).await.unwrap();
     assert!(matches!(
-        redeemer
-            .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
-            .await,
+        redeemer.acquire(&key, None, OpenIntent::Hold).await,
         Err(PortError::Unreachable(_))
     ));
     inviter
@@ -566,7 +555,7 @@ async fn only_the_one_time_writer_writes_a_request_inbox() {
         Err(PortError::Dht(_))
     ));
     let theirs = stranger
-        .acquire(&key, None, rekindle_records::port::OpenIntent::Hold)
+        .acquire(&key, None, OpenIntent::Hold)
         .await
         .unwrap();
     let value = stranger
