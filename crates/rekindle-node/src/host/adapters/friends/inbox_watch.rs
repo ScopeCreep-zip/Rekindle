@@ -92,12 +92,16 @@ impl HostFriends {
         let host = self.clone();
         self.scope()
             .spawn_or_drop("open invite inbox request", async move {
-                let value = match inline {
-                    Some(value) => Some(value),
-                    None => read(&host, lease).await,
-                };
-                if let Some(value) = value {
-                    inbox::received(&host, &value).await;
+                // The carried value first; the network read always runs, so
+                // Veilid's report mark clears (`ValueChange`'s contract), and
+                // a newer request it finds is handled too.
+                if let Some(value) = &inline {
+                    inbox::received(&host, value).await;
+                }
+                if let Some(value) = read(&host, lease).await {
+                    if inline.as_ref() != Some(&value) {
+                        inbox::received(&host, &value).await;
+                    }
                 }
             });
         true

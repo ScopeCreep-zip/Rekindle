@@ -72,14 +72,27 @@ impl HostFriends {
 
     /// Apply what changed on the profile record `lease` holds while no
     /// watch of ours fired for it.
+    /// No hint names these subkeys, so the read is by index
+    /// ([`RecordPort::read_changed`](rekindle_records::port::RecordPort::read_changed)).
     async fn apply_profile(&self, lease: LeaseId) {
-        let pool = self.node().ok().and_then(|node| node.records());
-        let Some(profile) = pool.as_ref().and_then(|pool| pool.key_of(lease)) else {
+        let Some(pool) = self.node().ok().and_then(|node| node.records()) else {
+            return;
+        };
+        let Some(profile) = pool.key_of(lease) else {
             return;
         };
         let subkeys = rekindle_presence::FRIEND_WATCH_SUBKEYS;
-        for (subkey, value) in read_changed(self, Some(lease), subkeys, None).await {
-            rekindle_presence::handle_value_change(self, &profile, &[subkey], &value);
+        let read = match pool.read_changed(lease, subkeys).await {
+            Ok(read) => read,
+            Err(e) => {
+                tracing::debug!(error = %e, "friend profile not read");
+                return;
+            }
+        };
+        for (subkey, value) in read {
+            if !value.data.is_empty() {
+                rekindle_presence::handle_value_change(self, &profile, &[subkey], &value.data);
+            }
         }
     }
 
@@ -171,7 +184,21 @@ impl HostFriends {
             .lock()
             .get(&friend)
             .copied();
-        for (subkey, value) in read_changed(self, lease, subkeys, inline).await {
+        // The value the change carried shows at once; then every hinted
+        // subkey, that one too, is read from the network, which clears
+        // Veilid's report mark so its next change is reported even in a
+        // coalesced push (`ValueChange`'s contract).
+        let first = subkeys
+            .first()
+            .copied()
+            .zip(inline.filter(|v| !v.is_empty()));
+        if let Some((subkey, value)) = first {
+            rekindle_presence::handle_value_change(self, record, &[subkey], value);
+        }
+        for (subkey, value) in read_hinted(self, lease, subkeys).await {
+            if first.is_some_and(|(s, v)| s == subkey && v == value.as_slice()) {
+                continue;
+            }
             rekindle_presence::handle_value_change(self, record, &[subkey], &value);
         }
         true
@@ -212,29 +239,28 @@ async fn diff_participant(host: &HostFriends, key: &str, record: &str) {
     }
 }
 
-/// Every changed subkey's value: the first from the change, the rest read
-/// through the friend's lease.
-async fn read_changed(
+/// Every hinted subkey's value, read from the network through the
+/// friend's lease ([`RecordPort::read_hinted`](rekindle_records::port::RecordPort::read_hinted)).
+async fn read_hinted(
     host: &HostFriends,
     lease: Option<LeaseId>,
     subkeys: &[u32],
-    inline: Option<&[u8]>,
 ) -> Vec<(u32, Vec<u8>)> {
-    let mut values = Vec::with_capacity(subkeys.len());
-    let mut rest = subkeys;
-    if let (Some((first, tail)), Some(value)) = (subkeys.split_first(), inline) {
-        values.push((*first, value.to_vec()));
-        rest = tail;
-    }
     let pool = host.node().ok().and_then(|node| node.records());
-    if let (false, Some(lease), Some(pool)) = (rest.is_empty(), lease, pool) {
-        match pool.read_changed(lease, rest).await {
-            Ok(read) => values.extend(read.into_iter().map(|(s, v)| (s, v.data))),
-            Err(e) => tracing::debug!(error = %e, "changed friend subkeys not read"),
+    let (false, Some(lease), Some(pool)) = (subkeys.is_empty(), lease, pool) else {
+        return Vec::new();
+    };
+    match pool.read_hinted(lease, subkeys).await {
+        Ok(read) => read
+            .into_iter()
+            .map(|(s, v)| (s, v.data))
+            .filter(|(_, value)| !value.is_empty())
+            .collect(),
+        Err(e) => {
+            tracing::debug!(error = %e, "hinted friend subkeys not read");
+            Vec::new()
         }
     }
-    values.retain(|(_, value)| !value.is_empty());
-    values
 }
 
 /// Each accepted friend's participant record we read their chain from.

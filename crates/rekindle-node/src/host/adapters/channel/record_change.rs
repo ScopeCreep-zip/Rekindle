@@ -44,8 +44,11 @@ impl HostChannel {
     }
 
     /// A watched change of `record_key`'s `subkeys`: when it is one of our
-    /// channel records, each changed slot is read and every post in it is
-    /// ingested (held posts are duplicates). Returns whether it was one.
+    /// channel records, every changed slot is read from the network
+    /// ([`RecordPort::read_hinted`](rekindle_records::port::RecordPort::read_hinted),
+    /// which clears Veilid's report mark, the `ValueChange` contract) and
+    /// every post in it is ingested (held posts are duplicates). Returns
+    /// whether it was one.
     pub async fn on_record_change(&self, record_key: &str, subkeys: &[u32]) -> bool {
         let Some((community, channel)) = self.channel_of_record(record_key) else {
             return false;
@@ -53,15 +56,27 @@ impl HostChannel {
         let Ok(pool) = self.records() else {
             return true;
         };
-        for &subkey in subkeys {
-            let value = match pool.read_once(record_key, subkey, true).await {
-                Ok(Some(value)) => value,
-                Ok(None) => continue,
-                Err(e) => {
-                    tracing::debug!(record_key, subkey, error = %e, "changed channel slot not read");
-                    continue;
-                }
-            };
+        // A table hit while the community holds the record for its watch.
+        let lease = match pool
+            .acquire(record_key, None, rekindle_records::port::OpenIntent::Check)
+            .await
+        {
+            Ok(lease) => lease,
+            Err(e) => {
+                tracing::debug!(record_key, error = %e, "changed channel record not opened");
+                return true;
+            }
+        };
+        let read = pool.read_hinted(lease, subkeys).await;
+        pool.release(lease).await;
+        let values = match read {
+            Ok(values) => values,
+            Err(e) => {
+                tracing::debug!(record_key, error = %e, "changed channel slots not read");
+                return true;
+            }
+        };
+        for (subkey, value) in values {
             let Ok(entries) = decode_channel_entries(&value.data) else {
                 continue;
             };

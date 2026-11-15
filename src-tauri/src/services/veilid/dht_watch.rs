@@ -84,31 +84,48 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
         }
     }
 
-    for &subkey in &subkeys {
-        let use_inline = Some(subkey) == first_subkey;
-        let value = if use_inline && inline_value.is_some() {
-            inline_value.clone().unwrap_or_default()
-        } else if let Some(ref record_pool) = record_pool {
-            match record_pool.read_once(&key, subkey, true).await {
-                Ok(Some(v)) => v.data,
-                Ok(None) => {
-                    tracing::debug!(subkey, key = %key, "subkey has no value");
+    // The carried value relays at once; then every hinted subkey, that one
+    // too, is read from the network, which clears Veilid's report mark so
+    // its next change is reported even in a coalesced push (the
+    // `ValueChange` contract, plan VU3).
+    let inline = first_subkey.zip(inline_value);
+    if let Some((subkey, value)) = &inline {
+        relay_watch_change(state, &key, *subkey, value);
+    }
+    let Some(record_pool) = record_pool else {
+        tracing::debug!(key = %key, "no record pool to read the hinted subkeys");
+        return;
+    };
+    let lease = match record_pool
+        .acquire(&key, None, rekindle_records::port::OpenIntent::Check)
+        .await
+    {
+        Ok(lease) => lease,
+        Err(e) => {
+            tracing::warn!(key = %key, error = %e, "hinted record not opened");
+            return;
+        }
+    };
+    let read = record_pool.read_hinted(lease, &subkeys).await;
+    record_pool.release(lease).await;
+    match read {
+        Ok(values) => {
+            for (subkey, value) in values {
+                if inline
+                    .as_ref()
+                    .is_some_and(|(s, v)| *s == subkey && *v == value.data)
+                {
                     continue;
                 }
-                Err(e) => {
-                    tracing::warn!(subkey, key = %key, error = %e, "failed to fetch subkey");
-                    continue;
-                }
+                // Mutual Aid (architecture §14.3): we hold a watch slot for
+                // this record, so gossip-relay the notification to community
+                // peers who may not; the receivers fetch the new value
+                // themselves via `get_dht_value` (no ciphertext crosses
+                // gossip).
+                relay_watch_change(state, &key, subkey, &value.data);
             }
-        } else {
-            tracing::debug!(subkey, "no routing context to fetch subkey value");
-            continue;
-        };
-        // Mutual Aid (architecture §14.3): we hold a watch slot for this
-        // record, so gossip-relay the notification to community peers
-        // who may not — the receivers fetch the new value themselves
-        // via `get_dht_value` (no ciphertext crosses gossip).
-        relay_watch_change(state, &key, subkey, &value);
+        }
+        Err(e) => tracing::warn!(key = %key, error = %e, "hinted subkeys not read"),
     }
 }
 
