@@ -68,3 +68,4 @@ mod scenarios;
 mod sending_route;
 mod smoke;
 mod stale_route_call;
+mod watch_fallback;

@@ -123,7 +123,7 @@ pub(crate) struct NodeSlot {
     pub watches: HashMap<String, Option<crate::records::watches::Desired>>,
     /// The node's outbound watch manager: queued change inspections,
     /// fallback timers, report marks ([`crate::records`]' catch-up).
-    pub outbound: crate::records::outbound::Outbound,
+    pub outbound: crate::records::outbound::OutboundWatches,
     /// The inspects the node's app asked for (`DhtPort::inspect`), by
     /// record key, for a scenario that a record is never polled.
     pub app_inspects: HashMap<String, u64>,
@@ -163,7 +163,7 @@ impl NodeSlot {
             known: HashSet::new(),
             opened: HashMap::new(),
             watches: HashMap::new(),
-            outbound: crate::records::outbound::Outbound::default(),
+            outbound: crate::records::outbound::OutboundWatches::default(),
             app_inspects: HashMap::new(),
             pools: Vec::new(),
             state: "detached",

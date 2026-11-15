@@ -65,7 +65,7 @@ pub(crate) fn micros(d: Duration) -> u64 {
 /// A node's outbound watch manager: its queued and running change
 /// inspections, each watch's state and its owed re-hints.
 #[derive(Debug)]
-pub(crate) struct Outbound {
+pub(crate) struct OutboundWatches {
     /// Queued change inspections: record key → not before (node clock µs)
     /// (`needs_change_inspection`).
     pub queue: HashMap<String, u64>,
@@ -87,7 +87,7 @@ pub(crate) struct Outbound {
     clock: u64,
 }
 
-impl Default for Outbound {
+impl Default for OutboundWatches {
     fn default() -> Self {
         Self {
             queue: HashMap::new(),
