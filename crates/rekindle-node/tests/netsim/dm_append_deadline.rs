@@ -38,14 +38,31 @@ async fn delivered(node: &SimNode, peer: &str, body: &str) -> bool {
         .any(|m| m.is_own && m.body == body && m.send_state == SendState::Delivered)
 }
 
-/// Ida's hint is lost and her append's `HEAD` read waits on an unready
-/// internet (the pool's readiness wait), so the append is still in flight
-/// at the first re-ask: that re-ask resends the hint, Jon has the message
-/// before the entry could land, and Ida's row settles delivered once it has.
+/// Ida's hint is lost and her internet is unready, so her entry cannot land:
+/// the row is due again and re-hinted, Jon has the message before the
+/// entry could land, and Ida's row settles delivered once it has.
+///
+/// The re-hint is the row's backoff after its hand-off (`Outbox::hand_off`,
+/// `DM_RETRY_FLOOR` plus the first step), past the append's deadline
+/// (`appender.rs` `select_due`), not the first re-ask of a `sent` row
+/// (`DM_FIRST_REASK`): this row never reached `sent`. The internet stays
+/// unready until that re-hint has been delivered.
+///
+/// Premise rewritten for Veilid 0.5.8 (E2.5i). It read: the internet returns
+/// at `DM_FIRST_REASK - GET.max - SET.min`, with a bound of `DM_FIRST_REASK`
+/// plus four message latencies, the append's network `HEAD` read waiting on
+/// readiness so the append stayed in flight across the re-ask. With 0.5.8's
+/// sets (VU2a `SET.min` 0.33 s) the append lands 1.06 s after the internet
+/// returns, inside that bound, so the window could not be staged; and the
+/// append no longer reads its own `HEAD` from the network (`rekindle-records`
+/// `chain::own_head_at`), so nothing of it waits on readiness: offline, its page set
+/// fails at once (0.5.8 `set_value.rs:247-255`) and the row is attempted again
+/// at its backoff. That the re-ask of an append still in flight resends only
+/// the hint is `rekindle-outbox`'s `reask_never_starts_second_append`.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn append_outlives_reask_then_maintenance_settles() {
-    use rekindle_netsim::latency::{GET, MESSAGE, SET};
-    use rekindle_outbox::DM_FIRST_REASK;
+    use rekindle_netsim::latency::{MESSAGE, SET};
+    use rekindle_outbox::{OutboxRetry, StreamKind, DM_APPEND_DEADLINE};
     let (sim, mut nodes) = start(2, 91).await;
     for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
         node.unlock_new_identity(name).await;
@@ -57,14 +74,19 @@ async fn append_outlives_reask_then_maintenance_settles() {
         eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "hello: 0 to 1")).await,
         "hello settled"
     );
-    // The internet comes back this long after the send: the append's
-    // `HEAD` read, then its page and `HEAD` sets, cannot land before the
-    // first re-ask plus a few message latencies.
-    let unready = DM_FIRST_REASK.saturating_sub(GET.max + SET.min);
-    let bound = DM_FIRST_REASK + MESSAGE.max * 4;
+    // The latest the handed-off row is due again (its first backoff step
+    // past the floor, `OutboxRetry::delay`), and so re-hinted.
+    let OutboxRetry::Backoff { base, floor, .. } = StreamKind::Dm.policy() else {
+        panic!("a dm row backs off");
+    };
+    let rehint = floor.max(DM_APPEND_DEADLINE) + base;
+    let bound = rehint + MESSAGE.max * 4;
+    // The internet comes back at the bound: the append's page and `HEAD`
+    // sets cannot land before it.
+    let unready = bound;
     assert!(
-        unready + GET.min + SET.min * 2 > bound,
-        "the append outlasts the re-ask"
+        unready + SET.min * 2 > bound,
+        "the entry cannot land before the re-hint is in"
     );
     sim.fault(Fault::InternetReady {
         node: 0,
