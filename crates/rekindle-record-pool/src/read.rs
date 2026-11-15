@@ -40,6 +40,16 @@
 //! `force_refresh`, never planned from an inspect: an inspect that reached
 //! a replica not yet caught up would turn it into a local read and leave
 //! the mark.
+//!
+//! An inspect's network seq is unauthenticated (threat model D8), so a
+//! claim that the forced get does not confirm is remembered and capped
+//! (`refetch.rs`): the same or a lower claim is never fetched again, a
+//! higher one once per backoff window. A capped subkey is read locally when
+//! we hold a copy, and not at all otherwise (a get with no local value
+//! would go to the network anyway). [`RecordPool::read_hinted`] is not
+//! capped.
+
+use std::collections::HashMap;
 
 use futures::stream::{FuturesUnordered, StreamExt};
 use rekindle_records::lease::{LeaseId, SubkeySet};
@@ -98,19 +108,24 @@ impl RecordPool {
                 .collect::<Vec<_>>(),
             "read_changed: inspected (subkey, local seq, network seq)",
         );
-        let plan = plan_reads(seqs);
+        let plan = self.capped(id, &seqs, plan_reads(seqs.iter().copied()));
 
         let sem = tokio::sync::Semaphore::new(READ_PARALLELISM);
         let mut reads = FuturesUnordered::new();
-        for (subkey, force_refresh) in plan {
+        for (subkey, claimed) in plan {
             let sem = &sem;
             reads.push(async move {
                 let _permit = sem.acquire().await;
-                (subkey, self.get(id, subkey, force_refresh).await)
+                (
+                    subkey,
+                    claimed,
+                    self.get(id, subkey, claimed.is_some()).await,
+                )
             });
         }
         let mut values = Vec::new();
-        while let Some((subkey, result)) = reads.next().await {
+        while let Some((subkey, claimed, result)) = reads.next().await {
+            self.settle_claim(id, subkey, claimed, &result);
             match result {
                 Ok(Some(value)) => values.push((subkey, value)),
                 Ok(None) => {}
@@ -121,6 +136,68 @@ impl RecordPool {
         }
         values.sort_by_key(|(subkey, _)| *subkey);
         Ok(values)
+    }
+
+    /// `plan` with D8's cap applied (`refetch.rs`): each read with the
+    /// network seq it fetches for (`Some` for a network read). A network
+    /// read of a capped claim becomes a local read, or no read when there
+    /// is no local copy.
+    fn capped(
+        &self,
+        id: LeaseId,
+        seqs: &[(u32, Option<u32>, Option<u32>)],
+        plan: Vec<(u32, bool)>,
+    ) -> Vec<(u32, Option<u32>)> {
+        let Some(key) = self.key_of(id) else {
+            return plan.into_iter().map(|(s, _)| (s, None)).collect();
+        };
+        let known: HashMap<u32, (Option<u32>, Option<u32>)> =
+            seqs.iter().map(|(s, l, n)| (*s, (*l, *n))).collect();
+        let now = tokio::time::Instant::now();
+        let unconfirmed = self.unconfirmed.lock();
+        plan.into_iter()
+            .filter_map(|(subkey, force_refresh)| {
+                let (local, network) = known.get(&subkey).copied().unwrap_or_default();
+                let claimed = network.filter(|_| force_refresh);
+                match claimed {
+                    Some(seq) if !unconfirmed.may_fetch(&key, subkey, seq, now) => {
+                        tracing::debug!(
+                            key,
+                            subkey,
+                            claimed = seq,
+                            ?local,
+                            "read_changed: an unconfirmed inspect seq is capped (D8)",
+                        );
+                        local.map(|_| (subkey, None))
+                    }
+                    _ => Some((subkey, claimed)),
+                }
+            })
+            .collect()
+    }
+
+    /// Record what a get of `subkey` said about a claim: `claimed` is the
+    /// network seq a forced read fetched for, `None` for any other get
+    /// (which still clears a claim its value reaches).
+    fn settle_claim(
+        &self,
+        id: LeaseId,
+        subkey: u32,
+        claimed: Option<u32>,
+        result: &Result<Option<RecordValue>, PortError>,
+    ) {
+        let Some(key) = self.key_of(id) else {
+            return;
+        };
+        let got = result.as_ref().ok().and_then(|v| v.as_ref().map(|v| v.seq));
+        let mut unconfirmed = self.unconfirmed.lock();
+        match (claimed, got) {
+            (Some(claimed), got) => {
+                unconfirmed.fetched(&key, subkey, claimed, got, tokio::time::Instant::now());
+            }
+            (None, Some(seq)) => unconfirmed.confirmed(&key, subkey, seq),
+            (None, None) => {}
+        }
     }
 
     /// [`read_changed`](Self::read_changed)'s hinted mode: every subkey a
@@ -150,6 +227,7 @@ impl RecordPool {
         let mut last_error = None;
         let mut answered = false;
         while let Some((subkey, result)) = reads.next().await {
+            self.settle_claim(id, subkey, None, &result);
             match result {
                 Ok(value) => {
                     answered = true;

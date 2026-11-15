@@ -49,6 +49,9 @@ struct MemState {
     opens: Vec<(String, OpenIntent)>,
     /// Every get, as `(key, subkey, force_refresh)`, in order.
     gets: Vec<(String, u32, bool)>,
+    /// Network seqs an inspect claims with no value behind them (a poisoned
+    /// 0.5.7 storage node, threat model D8), by `(key, subkey)`.
+    claims: HashMap<(String, u32), u32>,
 }
 
 /// One node's in-memory record store. A writer's keypair text is also its
@@ -92,6 +95,16 @@ impl MemDht {
     #[must_use]
     pub fn opens(&self) -> Vec<(String, OpenIntent)> {
         self.state.lock().opens.clone()
+    }
+
+    /// From now on an inspect of `key`'s `subkey` claims network seq `seq`
+    /// (when above what is stored), while a get still returns the stored
+    /// value: an inflated seq no value confirms (threat model D8).
+    pub fn claim(&self, key: &str, subkey: u32, seq: u32) {
+        self.state
+            .lock()
+            .claims
+            .insert((key.to_string(), subkey), seq);
     }
 
     /// Every get so far, as `(key, subkey, force_refresh)`, in order.
@@ -257,8 +270,16 @@ impl DhtBackend for MemDht {
             .iter()
             .map(|s| record.values.get(s).map(|v| v.seq))
             .collect();
+        let network_seqs = subkeys
+            .iter()
+            .zip(&local_seqs)
+            .map(|(s, local)| {
+                let claim = state.claims.get(&(key.to_string(), *s)).copied();
+                (*local).max(claim)
+            })
+            .collect();
         Ok(RecordReport {
-            network_seqs: local_seqs.clone(),
+            network_seqs,
             local_seqs,
             subkeys,
             offline_subkeys: Vec::new(),

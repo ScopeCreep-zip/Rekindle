@@ -48,6 +48,9 @@ mod io;
 pub mod keepalive;
 mod port;
 mod read;
+mod refetch;
+#[cfg(test)]
+mod refetch_tests;
 #[cfg(test)]
 mod set_tests;
 #[cfg(any(test, feature = "test-support"))]
@@ -135,6 +138,9 @@ pub struct RecordPool {
     records: Mutex<HashMap<String, OpenRecord>>,
     key_locks: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     rearm: Mutex<HashMap<String, watch::Rearm>>,
+    /// Inspect seqs no forced get confirmed, per open record (`refetch.rs`,
+    /// threat model D8).
+    unconfirmed: Mutex<refetch::Unconfirmed>,
     /// Durable writes that missed, held for re-push (`durable.rs`).
     held: Mutex<durable::HeldWrites>,
     held_changed: tokio::sync::Notify,
@@ -207,6 +213,7 @@ impl RecordPool {
             records: Mutex::new(HashMap::new()),
             key_locks: Mutex::new(HashMap::new()),
             rearm: Mutex::new(HashMap::new()),
+            unconfirmed: Mutex::new(refetch::Unconfirmed::default()),
             held: Mutex::new(durable::HeldWrites::new()),
             held_changed: tokio::sync::Notify::new(),
             settled: tokio::sync::broadcast::channel(256).0,
@@ -506,6 +513,7 @@ impl RecordPool {
             return;
         }
         self.rearm.lock().remove(name);
+        self.unconfirmed.lock().forget(name);
         let key = name.to_string();
         if let Err(e) = self
             .run("dht close", move |backend| async move {
@@ -534,6 +542,7 @@ impl RecordPool {
         self.repush_stop.cancel();
         self.table.lock().clear();
         self.rearm.lock().clear();
+        self.unconfirmed.lock().clear();
         let mut keys: Vec<String> = self.records.lock().drain().map(|(key, _)| key).collect();
         // One close order on every run.
         keys.sort_unstable();
