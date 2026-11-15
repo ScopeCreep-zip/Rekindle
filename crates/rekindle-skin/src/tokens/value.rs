@@ -58,24 +58,24 @@ fn color(token: &str, v: &Value) -> Result<TokenValue, SkinRule> {
         "#RRGGBB, #RRGGBBAA or {colorSpace: \"srgb\", components: [r, g, b], alpha?, hex?}";
     let rgba = match v {
         Value::String(s) => hex(s),
-        Value::Object(o) => {
+        Value::Object(obj) => {
             let known = ["colorSpace", "components", "alpha", "hex"];
-            let comps = o.get("components").and_then(Value::as_array);
+            let comps = obj.get("components").and_then(Value::as_array);
             let rgb: Option<Vec<u8>> = comps
                 .filter(|comp| comp.len() == 3)
                 .and_then(|comp| comp.iter().map(unit_byte).collect());
-            let alpha = match o.get("alpha") {
+            let alpha = match obj.get("alpha") {
                 None => Some(255),
-                Some(a) => unit_byte(a),
+                Some(alpha_value) => unit_byte(alpha_value),
             };
-            let shape_ok = o.keys().all(|k| known.contains(&k.as_str()))
-                && o.get("colorSpace").and_then(Value::as_str) == Some("srgb");
+            let shape_ok = obj.keys().all(|k| known.contains(&k.as_str()))
+                && obj.get("colorSpace").and_then(Value::as_str) == Some("srgb");
             match (shape_ok, rgb, alpha) {
                 (true, Some(rgb_bytes), Some(alpha_byte)) => {
                     let rgba = [rgb_bytes[0], rgb_bytes[1], rgb_bytes[2], alpha_byte];
-                    let hex_ok = match o.get("hex") {
+                    let hex_ok = match obj.get("hex") {
                         None => true,
-                        Some(h) => h
+                        Some(hex_value) => hex_value
                             .as_str()
                             .and_then(hex)
                             .is_some_and(|parsed| parsed[..3] == rgba[..3] && parsed[3] == 255),
@@ -87,8 +87,13 @@ fn color(token: &str, v: &Value) -> Result<TokenValue, SkinRule> {
         }
         _ => None,
     };
-    let [r, g, b, a] = rgba.ok_or_else(|| bad(token, expected))?;
-    Ok(TokenValue::Color { r, g, b, a })
+    let [red, green, blue, alpha] = rgba.ok_or_else(|| bad(token, expected))?;
+    Ok(TokenValue::Color {
+        r: red,
+        g: green,
+        b: blue,
+        a: alpha,
+    })
 }
 
 fn dimension(token: &str, v: &Value, min: i32, max: i32) -> Result<TokenValue, SkinRule> {
