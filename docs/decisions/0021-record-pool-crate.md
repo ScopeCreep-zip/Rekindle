@@ -76,4 +76,4 @@ recorded here because the netsim's `SimDht` must honour it too (citations are th
   the real node in every crate built with it, and it is no netsim replacement. Its use is a separate contract-test
   workspace `contract/veilid/`, excluded from the root workspace, that tests `rekindle-protocol`'s real adapters
   (the `DhtBackend` impl, the `VeilidAPIError` → port error mapping, `VeilidUpdate` → `PortEvent`): the code the
-  netsim bypasses. **That workspace is not built yet** (as of 2026-11-15); its CI job joins at plan phase F.
+  netsim bypasses. Built 2026-11-15 (`547880fa`; run `cargo test --manifest-path contract/veilid/Cargo.toml`). The 0.5.8 mock ignores `rehydrate` and never emits `RouteChange`, `Network` or `Log`, and answers an unresolved route `InvalidTarget`, so those contracts are tested on the values (`open_options`, veilid-core's own update values, the error value). Its CI job joins at plan phase F.
