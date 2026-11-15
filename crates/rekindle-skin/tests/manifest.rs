@@ -2,7 +2,9 @@
 
 use rekindle_skin::limits::MAX_MANIFEST_BYTES;
 use rekindle_skin::{manifest, package};
-use rekindle_types::dto::skin::{SkinBase, SkinError, SkinLicense, SkinManifest, SkinRule};
+use rekindle_types::dto::skin::{
+    SkinBase, SkinError, SkinLicense, SkinManifest, SkinRule, SKIN_FORMAT_PREFIX,
+};
 use serde_json::{json, Value};
 
 use crate::common::{self, Entry};
@@ -105,7 +107,7 @@ fn an_unknown_key_is_refused() {
 
 #[test]
 fn an_unknown_major_is_refused_before_any_other_key_is_read() {
-    let m = json!({ "format": "rekindle-skin/2", "futureKey": true });
+    let m = json!({ "format": format!("{SKIN_FORMAT_PREFIX}2"), "futureKey": true });
     assert_rule(
         &parse_with(&m, &[]).unwrap_err(),
         &SkinRule::UnsupportedFormat { major: 2 },
@@ -114,13 +116,13 @@ fn an_unknown_major_is_refused_before_any_other_key_is_read() {
 
 #[test]
 fn a_malformed_format_is_refused() {
-    for format in [
-        "other-skin/1",
-        "rekindle-skin/",
-        "rekindle-skin/01",
-        "rekindle-skin/1.0",
-        "rekindle-skin/+1",
-    ] {
+    // The domain-label gate keeps `rekindle-…/<n>` literals in the registry,
+    // so the malformed majors are built on the prefix constant.
+    for major in ["", "01", "1.0", "+1"] {
+        let format = format!("{SKIN_FORMAT_PREFIX}{major}");
+        bad_value(&refused_with("format", json!(format)), "format");
+    }
+    for format in ["other-skin/1", "rekindle-skin"] {
         bad_value(&refused_with("format", json!(format)), "format");
     }
 }

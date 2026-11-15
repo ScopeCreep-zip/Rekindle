@@ -1,6 +1,7 @@
 //! A test-only zip writer (PKWARE APPNOTE 6.3.10 §4.3) that can craft every
 //! case the walk refuses, plus the minimal valid skin.
 
+use rekindle_types::dto::skin::{SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX};
 use serde_json::{json, Value};
 
 /// Unix "made by" host, version 2.0.
@@ -139,7 +140,7 @@ pub fn zip(entries: &[Entry]) -> Vec<u8> {
 /// The minimal valid manifest.
 pub fn manifest() -> Value {
     json!({
-        "format": "rekindle-skin/1",
+        "format": format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
         "id": "classic-xfire",
         "name": "Classic Xfire",
         "description": "The 2008 Symbiosis look.",
