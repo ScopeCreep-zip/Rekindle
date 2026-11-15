@@ -398,12 +398,14 @@ async fn the_retire_tick_retires_a_quiet_conversation() {
 }
 
 /// Live A/B finding 42: the hint leaves while the chain append is in
-/// flight, so a message reaches the peer within a few message latencies,
-/// well under one DHT set; Jon's ack, which beats the append, waits on
-/// Ida's row until the append lands, and the row then settles delivered.
+/// flight, so a message reaches the peer within one message latency, before
+/// the append (a `HEAD` read and two sets) can have landed; Jon's ack waits
+/// on Ida's row until the append lands, and the row then settles delivered.
+/// On 0.5.8 one set (0.33-1.42 s) can beat a message (0.2-0.9 s), so the
+/// bound is the append's fastest whole run, not one set.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_message_arrives_before_its_append_lands() {
-    use rekindle_netsim::latency::{MESSAGE, SET};
+    use rekindle_netsim::latency::{GET, MESSAGE, SET};
     let (sim, mut nodes) = start(2, 75).await;
     for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
         node.unlock_new_identity(name).await;
@@ -417,10 +419,10 @@ async fn a_message_arrives_before_its_append_lands() {
         eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "hello: 0 to 1")).await,
         "hello settled"
     );
-    // The append is a `HEAD` read and two sets; the hint alone is a few
-    // message latencies.
-    let bound = SET.min / 2;
-    assert!(bound > MESSAGE.max * 4, "room for the hint and its framing");
+    // The append is a `HEAD` read and two sets; the hint alone is one
+    // message latency.
+    let bound = GET.min + SET.min * 2;
+    assert!(bound > MESSAGE.max, "room for the hint");
     send(&nodes[0], &jon, "fast").await;
     let sent = tokio::time::Instant::now();
     assert!(
