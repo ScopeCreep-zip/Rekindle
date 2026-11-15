@@ -296,7 +296,7 @@ impl Netsim {
             if stored.is_empty() {
                 return Err(PortError::Dht("every replica holds that seq".into()));
             }
-            records::watches::mark(record, &stored, subkey, usize::MAX);
+            records::watches::mark(record, &stored, subkey);
         }
         Ok(())
     }

@@ -216,6 +216,9 @@ impl SimDht {
                 local.as_ref(),
             )
         });
+        // A get that reached the network consumes its report mark
+        // (0.5.8 `get_value.rs:196-197`, [`super::outbound`]).
+        super::outbound::read_back(&mut inner, self.node, key, subkey);
         if let Some(found) = &found {
             if local.as_ref().is_none_or(|l| l.seq != found.seq) {
                 inner.nodes[self.node]

@@ -257,7 +257,7 @@ pub(crate) async fn run(
             continue;
         }
         if fanout.arrive(schema, &mut record.replicas, r, subkey as usize, &value) {
-            watches::mark(record, &[r], subkey, node);
+            watches::mark(record, &[r], subkey);
             stores::admit(inner, key, &[r]);
         } else {
             stores::touch(inner, key, &[r]);

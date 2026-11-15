@@ -22,7 +22,10 @@
 //!   a reachable node renews its watches before they lapse, an unreachable
 //!   one loses them;
 //! - **a change:** a replica that stores a new value marks the subkey on
-//!   every watch of it but the writer's (`inbound_watches_interface.rs:32-69`);
+//!   every watch of it, the writer's own included: Veilid skips only a
+//!   watch whose value-changed destination is the set's reply destination
+//!   (0.5.8 `record_store_inner/inbound_watches_interface.rs:41,56-60`,
+//!   `set_value.rs:917`), never the same target under safety routes;
 //!   every [`WATCH_TICK`] (`SEND_VALUE_CHANGES_INTERVAL_SECS`, `constants.rs:14`)
 //!   it sends each watch its changed subkeys, with the value only when one
 //!   subkey changed, and counts the watch down (`:228-273`,
@@ -32,8 +35,10 @@
 //!   first it watches is not the first changed; drops a value not newer than
 //!   its local copy and that subkey with it (nothing when none is left);
 //!   stores a reported value before reporting it, else reports the range
-//!   with no value (`watch_value.rs:1866-1998`). A detached or offline node,
-//!   or one a partition cuts from the replica, receives nothing; a change
+//!   with no value, only its subkeys not already reported and unread
+//!   (0.5.8 `watch_value.rs:2080-2263`, [`super::outbound`]'s report
+//!   marks). A detached, offline or sleeping node, or one a partition cuts
+//!   from the replica, receives nothing; a change
 //!   goes over the watcher's value-changed route
 //!   (`watch_value.rs:23`, `rpc_value_changed.rs`), is lost when that route
 //!   died, and the watcher re-watches on the next check tick
@@ -134,6 +139,7 @@ pub(crate) fn desire(
             });
             watches.insert(key.to_string(), Some(d));
             if changed {
+                super::outbound::params_changed(inner, node, key);
                 super::catchup::enqueue(inner, node, key, now);
             }
             place(inner, node, key, now);
@@ -205,17 +211,18 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
     }
     // A replica newly holding the watch is inspected (`watch_value.rs:1166-1171`).
     if added {
+        super::outbound::established(inner, node, key, now);
         super::catchup::enqueue(inner, node, key, now);
     }
 }
 
-/// The replicas at `stored` took a new value at `subkey`: mark it on their
-/// watches, all but `writer`'s.
-pub(crate) fn mark(record: &mut NetRecord, stored: &[usize], subkey: u32, writer: usize) {
+/// The replicas at `stored` took a new value at `subkey`: mark it on every
+/// watch of it, the writer's included.
+pub(crate) fn mark(record: &mut NetRecord, stored: &[usize], subkey: u32) {
     for r in stored {
         if let Some(replica) = record.replicas.get_mut(*r) {
             for w in &mut replica.watches {
-                if w.node != writer && w.subkeys.contains(&subkey) {
+                if w.subkeys.contains(&subkey) {
                     w.changed.insert(subkey);
                 }
             }
@@ -223,8 +230,8 @@ pub(crate) fn mark(record: &mut NetRecord, stored: &[usize], subkey: u32, writer
     }
 }
 
-/// How many replicas hold `node`'s watch on `key`.
-#[cfg(test)]
+/// How many replicas hold `node`'s watch on `key` (Veilid's per-node
+/// watches of the outbound watch).
 pub(crate) fn held(inner: &Inner, node: usize, key: &str) -> usize {
     inner.records.get(key).map_or(0, |r| {
         r.replicas
@@ -252,21 +259,32 @@ fn drop_replica_watches(inner: &mut Inner, node: usize, key: &str) {
     }
 }
 
-/// After the tick's sends, an online watcher whose value-changed route died
-/// re-watches with its new one (`outbound_watch.rs:272-275`); changes sent
-/// before then were lost.
-fn renew_routes(inner: &mut Inner) {
+/// After the tick's sends, an online, awake watcher whose value-changed
+/// route died re-watches with its new one (`outbound_watch.rs:272-275`);
+/// changes sent before then were lost, so its fallback timer resets
+/// ([`super::outbound::route_lost`]).
+fn renew_routes(inner: &mut Inner, now: u64) {
     let epochs: Vec<(u64, bool)> = (0..inner.nodes.len())
-        .map(|n| (inner.nodes[n].route_epoch, online(inner, n)))
+        .map(|n| {
+            let live = online(inner, n) && !super::outbound::asleep(inner, n);
+            (inner.nodes[n].route_epoch, live)
+        })
         .collect();
-    for record in inner.records.values_mut() {
+    let mut lost = BTreeSet::new();
+    for (key, record) in &mut inner.records {
         for replica in &mut record.replicas {
             for w in &mut replica.watches {
                 if let Some((epoch, true)) = epochs.get(w.node).copied() {
+                    if w.route != epoch {
+                        lost.insert((w.node, key.clone()));
+                    }
                     w.route = epoch;
                 }
             }
         }
+    }
+    for (node, key) in lost {
+        super::outbound::route_lost(inner, node, &key, now);
     }
 }
 
@@ -279,7 +297,13 @@ pub(super) fn receive(
     node: usize,
     key: &str,
     (subkeys, count, mut value): (BTreeSet<u32>, u32, Option<RecordValue>),
+    now: u64,
 ) -> Option<ValueChange> {
+    if !matches!(inner.nodes[node].watches.get(key), Some(Some(_))) {
+        return None;
+    }
+    // A valid push resets the silence timer (`watch_value.rs:1931-1936`).
+    super::outbound::pushed(inner, node, key, now);
     // A watched value past the size rule makes the change invalid
     // (`watch_value.rs:1934-1946`): it is dropped.
     if let (Some(v), Some(record)) = (&value, inner.records.get(key)) {
@@ -314,8 +338,12 @@ pub(super) fn receive(
     }
     if let Some(v) = &value {
         local.insert((key.to_string(), first), v.clone());
-    } else if reportable.is_empty() {
-        return None;
+        super::outbound::value_reported(inner, node, key, &reportable);
+    } else {
+        reportable = super::outbound::hinted(inner, node, key, &reportable);
+        if reportable.is_empty() {
+            return None;
+        }
     }
     Some(ValueChange {
         key: key.to_string(),
@@ -355,14 +383,15 @@ impl Network {
                 return;
             }
             drop_replica_watches(&mut inner, node, key);
+            super::outbound::ended(&mut inner, node, key);
         }
         self.send(node, node, "WatchDeath", death(key), false);
     }
 
     /// Whether a tick has work: a change to send, a watch to end or expire.
-    pub(crate) fn watch_work(inner: &Inner) -> bool {
+    pub(crate) fn watch_work(inner: &Inner, now: u64) -> bool {
         inner.nodes.iter().enumerate().any(|(i, n)| {
-            super::catchup::pending(inner, i)
+            super::catchup::pending(inner, i, now)
                 || super::rehydrate::pending(inner, i)
                 || n.watches
                     .values()
@@ -383,6 +412,10 @@ impl Network {
             let mut guard = self.inner.lock();
             let inner = &mut *guard;
             for node in 0..inner.nodes.len() {
+                // A suspended process runs no tick ([`crate::Fault::Sleep`]).
+                if super::outbound::asleep(inner, node) {
+                    continue;
+                }
                 super::catchup::readiness(inner, node, now);
                 let mut keys: Vec<String> = inner.nodes[node].watches.keys().cloned().collect();
                 keys.sort();
@@ -396,6 +429,7 @@ impl Network {
                     if matches!(watches.get(&key), Some(None)) {
                         watches.remove(&key);
                         drop_replica_watches(inner, node, &key);
+                        super::outbound::ended(inner, node, &key);
                         out.push((node, node, "WatchDeath", death(&key)));
                     } else {
                         place(inner, node, &key, now);
@@ -403,6 +437,9 @@ impl Network {
                 }
                 for (change, delay) in super::catchup::run(inner, &self.latency, node, now) {
                     inspected.push((node, change, delay));
+                }
+                for change in super::outbound::take_rehints(inner, node) {
+                    out.push((node, node, "Rehint", PortEvent::ValueChange(change)));
                 }
             }
             let mut keys: Vec<String> = inner.records.keys().cloned().collect();
@@ -431,19 +468,22 @@ impl Network {
                     }
                 }
                 for (home, node, route, change) in sent {
-                    if !online(inner, node) || !reaches(&inner.faults.partitions, node, home) {
+                    if !online(inner, node)
+                        || super::outbound::asleep(inner, node)
+                        || !reaches(&inner.faults.partitions, node, home)
+                    {
                         continue;
                     }
                     // Sent over a dead value-changed route: lost.
                     if route != inner.nodes[node].route_epoch {
                         continue;
                     }
-                    if let Some(change) = receive(inner, node, &key, change) {
+                    if let Some(change) = receive(inner, node, &key, change, now) {
                         out.push((home, node, "ValueChange", PortEvent::ValueChange(change)));
                     }
                 }
             }
-            renew_routes(inner);
+            renew_routes(inner, now);
         }
         for (from, to, label, event) in out {
             // A change is an RPC to the watcher; a death is the node's own.
