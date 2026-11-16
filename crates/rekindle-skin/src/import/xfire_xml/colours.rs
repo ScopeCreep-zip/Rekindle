@@ -119,12 +119,33 @@ pub const NAMES: &[(&str, Target)] = &[
     ("XfireLogoHoverCG", Target::Shift),
 ];
 
-/// The target of `name`; a name outside the table is dropped.
+impl Target {
+    /// The `NOTICE` text for this target.
+    #[must_use]
+    pub fn describe(self) -> String {
+        match self {
+            Self::Token(id) => format!("token {id}"),
+            Self::Fixed(id) => format!("registry-fixed {id} (a skin cannot set it)"),
+            Self::Shift => "image shift (baked)".to_owned(),
+            Self::NoRole(role) => format!("not mapped: no registry role {role} yet"),
+            Self::Dropped(why) => format!("dropped: {why}"),
+        }
+    }
+}
+
+/// The target of `name` in `table` (sorted by name); a name outside the
+/// table is dropped.
+#[must_use]
+pub fn target_in(table: &[(&str, Target)], name: &str) -> Target {
+    table
+        .binary_search_by(|(n, _)| (*n).cmp(name))
+        .map_or(Target::Dropped("not an Xfire colour name"), |i| table[i].1)
+}
+
+/// The target of `name` in the XML era's [`NAMES`].
 #[must_use]
 pub fn target(name: &str) -> Target {
-    NAMES
-        .binary_search_by(|(n, _)| (*n).cmp(name))
-        .map_or(Target::Dropped("not an Xfire colour name"), |i| NAMES[i].1)
+    target_in(NAMES, name)
 }
 
 /// `RGBA(r,g,b,a)` as signed channels; `a` must be 0 (or absent, as in

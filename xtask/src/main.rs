@@ -42,6 +42,7 @@
 //!     cargo xtask gen-skin-registry    Write the skin registry's generated
 //!                                      CSS, TS, TUI palettes and schema.
 //!     cargo xtask import-skin --format xfire-xml --from <dir> --builtin <id>
+//!     cargo xtask import-skin --format xfire-ini --from <dir> --builtin <id>
 //!     cargo xtask import-skin --format pidgin --from <theme dir> --builtin <id>
 //!     cargo xtask import-skin --format mumble --from <theme dir> --builtin <id>
 //!     cargo xtask import-skin --format teamspeak3 --from <style dir> --builtin <id>

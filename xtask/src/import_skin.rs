@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
 use rekindle_skin::import::{
-    mumble, pidgin, teamspeak, winamp, xfire_xml, Imported, Outcome, Tree,
+    mumble, pidgin, teamspeak, winamp, xfire_ini, xfire_xml, Imported, Outcome, Tree,
 };
 use walkdir::WalkDir;
 
@@ -20,6 +20,8 @@ pub const BUILTIN_DIR: &str = "crates/rekindle-skin/builtin";
 pub enum Format {
     /// Xfire XML era (Carbon Fiber, Symbiosis).
     XfireXml,
+    /// Xfire INI era (DoiDD): `version.ini`, `<LongName>.ini` and its theme.
+    XfireIni,
     /// Winamp classic `.wsz` (`--from` is the archive file).
     WinampWsz,
     /// Pidgin 2.x theme directory (`purple/{blist,status-icon,sound}/theme.xml`).
@@ -103,6 +105,9 @@ pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result
         canonical, notice, ..
     } = match format {
         Format::XfireXml => xfire_xml::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?,
+        Format::XfireIni => {
+            accept(xfire_ini::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
+        }
         Format::WinampWsz => winamp_pack(from, id)?,
         Format::Pidgin => {
             accept(pidgin::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?

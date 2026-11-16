@@ -6,18 +6,7 @@ use std::fmt::Write as _;
 
 use super::super::notice;
 use super::super::walk::Change;
-use super::colours::Target;
 use super::{Read, XFIRE_XML_FORMAT};
-
-fn target(t: Target) -> String {
-    match t {
-        Target::Token(id) => format!("token {id}"),
-        Target::Fixed(id) => format!("registry-fixed {id} (a skin cannot set it)"),
-        Target::Shift => "image shift (baked)".to_owned(),
-        Target::NoRole(role) => format!("not mapped: no registry role {role} yet"),
-        Target::Dropped(why) => format!("dropped: {why}"),
-    }
-}
 
 /// The NOTICE text, deterministic for one input.
 #[must_use]
@@ -48,7 +37,7 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
             s,
             "  {} RGBA({r},{g},{b},0) -> {}",
             c.name,
-            target(c.target)
+            c.target.describe()
         );
     }
     if let Some((img, i)) = &read.frame {

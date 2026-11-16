@@ -4,6 +4,7 @@
 //! only here; nothing of them reaches a frontend but the canonical package.
 //!
 //! * [`xfire_xml`]: the Xfire XML era (Carbon Fiber, Symbiosis).
+//! * [`xfire_ini`]: the Xfire INI era (DoiDD), a delta on `xfire_xml`.
 //! * [`winamp`]: Winamp classic `.wsz` (a "Winamp-flavoured Rekindle skin").
 //! * [`pidgin`]: Pidgin 2.x themes (buddy-list palette, status icons, sound
 //!   events).
@@ -22,6 +23,7 @@ pub mod qt;
 mod tree;
 pub mod walk;
 pub mod winamp;
+pub mod xfire_ini;
 pub mod xfire_xml;
 
 pub use qt::{mumble, teamspeak};
