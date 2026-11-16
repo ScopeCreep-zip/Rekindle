@@ -372,6 +372,21 @@ impl HostGovernance {
         record: &str,
         op: Vec<u8>,
     ) -> Result<(), String> {
+        let writer = self.member_record_writer(community_id)?;
+        let pool = self
+            .transport()
+            .map_err(|e| e.to_string())?
+            .require_records()
+            .map_err(|e| format!("record pool: {e}"))?;
+        append_op_once(&*pool, record, &writer, op).await?;
+        self.write_own_frontier(community_id, record, &writer).await
+    }
+
+    /// `K_M(p)`, our member record's owner, from the vault.
+    fn member_record_writer(
+        &self,
+        community_id: &str,
+    ) -> Result<zeroize::Zeroizing<String>, String> {
         let writer = {
             let guard = self.ctx.vault.lock();
             let vault = guard.as_ref().ok_or("no identity is unlocked")?;
@@ -386,17 +401,47 @@ impl HostGovernance {
                 String::from_utf8(bytes.to_vec()).map_err(|_| "member record owner is not text")?,
             )
         };
-        let pool = self
-            .transport()
-            .map_err(|e| e.to_string())?
-            .require_records()
-            .map_err(|e| format!("record pool: {e}"))?;
-        append_op_once(&*pool, record, &writer, op).await?;
-        self.write_own_frontier(community_id, record, &writer).await
+        Ok(writer)
     }
 
-    /// Write our `Frontier` (`M`/3) after an append: the heads of the op set
-    /// we hold, which a joiner's walk starts from.
+    /// Republish our `Frontier` (`M`/3) after a rebuild: the subkey is "the
+    /// DAG tips this member knows" (the member-record subkey table,
+    /// `evidence/slot-integrity.md` §4), and
+    /// the sweep and a joiner's walk read it to find heads they lack, so a
+    /// frontier written only after our own appends hid every op we merged
+    /// since (a member that joined before `X` never learned `X`). Written
+    /// only when the heads differ from the subkey's local value.
+    pub(crate) async fn republish_own_frontier(&self, community_id: &str) {
+        let record = {
+            let map = self.ctx.communities.map().read();
+            map.get(community_id).and_then(|c| {
+                let me = c.my_pseudonym_key.as_deref()?;
+                let state = c.governance_state.as_ref()?;
+                state
+                    .members
+                    .iter()
+                    .find(|(p, _)| hex::encode(p.0) == me)
+                    .map(|(_, m)| m.member_record.clone())
+            })
+        };
+        let Some(record) = record else {
+            return;
+        };
+        let written = match self.member_record_writer(community_id) {
+            Ok(writer) => {
+                self.write_own_frontier(community_id, &record, &writer)
+                    .await
+            }
+            Err(e) => Err(e),
+        };
+        if let Err(error) = written {
+            tracing::debug!(community = community_id, %error, "frontier not republished");
+        }
+    }
+
+    /// Write our `Frontier` (`M`/3): the heads of the op set we hold, which a
+    /// joiner's walk and the sweep start from; unchanged heads are not
+    /// written again.
     async fn write_own_frontier(
         &self,
         community_id: &str,
@@ -427,6 +472,19 @@ impl HostGovernance {
             .acquire_record(record, Some(writer.to_owned()), OpenIntent::Hold)
             .await
             .map_err(|e| format!("open member record: {e}"))?;
+        if let Ok(Some(current)) = self
+            .get_dht_value(
+                lease,
+                rekindle_types::dht_layout::member_record::FRONTIER,
+                false,
+            )
+            .await
+        {
+            if current == bytes {
+                self.release_record(lease).await;
+                return Ok(());
+            }
+        }
         let written = self
             .set_dht_value(
                 lease,

@@ -180,8 +180,8 @@ impl HostGovernance {
         keys
     }
 
-    /// Project the merged state and save its snapshot for the next
-    /// login's restore.
+    /// Project the merged state, save its snapshot for the next login's
+    /// restore, republish our frontier and move the watch ring.
     pub(super) async fn apply_governance_rebuild_result_impl(
         &self,
         community_id: &str,
@@ -189,6 +189,7 @@ impl HostGovernance {
     ) {
         self.set_governance_state_impl(community_id, gov_state);
         self.persist_governance_snapshot(community_id).await;
+        self.republish_own_frontier(community_id).await;
         self.rearm_watch_ring(community_id).await;
     }
 
