@@ -16,6 +16,7 @@
 //! `@layer sec` of `global.css` and no skin reaches them (plan E7.7.0).
 
 mod fonts;
+mod slots;
 mod table;
 
 use std::collections::BTreeMap;
@@ -23,6 +24,7 @@ use std::collections::BTreeMap;
 use rekindle_types::dto::skin::{SkinBase, SkinContrast, TokenValue};
 
 pub use fonts::{font, FontFace, FONTS};
+pub use slots::{IconSlot, SoundCue};
 pub use table::ENTRIES;
 
 use crate::colour;

@@ -69,7 +69,7 @@ fn every_optional_field_parses_and_round_trips() {
         "textBacking": "titlebar-start"
     }});
     m["icons"] = json!({ "status.online": "icons/online.png" });
-    m["sounds"] = json!({ "message.in": "sounds/in.wav" });
+    m["sounds"] = json!({ "message": "sounds/in.wav" });
     let parsed = parse_with(&m, &[Entry::file("light-hc.json", b"{}")]).unwrap();
     assert_eq!(serde_json::to_value(&parsed).unwrap(), m);
 }
@@ -286,4 +286,46 @@ fn a_variant_token_file_the_package_lacks_is_refused() {
 fn an_unknown_variant_key_is_refused() {
     let v = json!([{ "base": "dark", "contrast": "standard", "tokens": "dark.json", "css": "x" }]);
     syntax(&refused_with("variants", v));
+}
+
+#[test]
+fn an_unknown_icon_key_is_refused() {
+    let mut m = common::manifest();
+    m["icons"] = json!({ "status.available": "icons/a.png" });
+    let e = parse_with(&m, &[]).unwrap_err();
+    assert!(
+        matches!(&e.rule, SkinRule::UnknownIcon { icon } if icon == "status.available"),
+        "{e}"
+    );
+}
+
+#[test]
+fn an_unknown_sound_key_is_refused() {
+    let mut m = common::manifest();
+    m["sounds"] = json!({ "message.received": "sounds/in.wav" });
+    let e = parse_with(&m, &[]).unwrap_err();
+    assert!(
+        matches!(&e.rule, SkinRule::UnknownSoundCue { cue } if cue == "message.received"),
+        "{e}"
+    );
+}
+
+#[test]
+fn every_registry_icon_slot_and_sound_cue_is_a_key() {
+    use rekindle_skin::registry::{IconSlot, SoundCue};
+    let mut m = common::manifest();
+    let icons: serde_json::Map<_, _> = IconSlot::ALL
+        .iter()
+        .map(|s| (s.id().to_owned(), json!(format!("icons/{}.png", s.id()))))
+        .collect();
+    let sounds: serde_json::Map<_, _> = SoundCue::ALL
+        .iter()
+        .map(|c| (c.id().to_owned(), json!(format!("sounds/{}.wav", c.id()))))
+        .collect();
+    m["icons"] = icons.into();
+    m["sounds"] = sounds.into();
+    parse_with(&m, &[]).unwrap();
+    for c in SoundCue::ALL {
+        assert_eq!(serde_json::to_value(c).unwrap(), json!(c.id()));
+    }
 }

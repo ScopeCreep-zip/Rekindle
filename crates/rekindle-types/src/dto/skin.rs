@@ -52,6 +52,56 @@ pub struct SkinManifest {
     pub sounds: BTreeMap<String, String>,
 }
 
+/// A sound cue: the closed list of events a sound bank may voice (plan E5.2
+/// "Sound cues", E7.7.4). It lives in this tier so E5.2's `notify_policy`
+/// decides the same type a skin's bank is keyed by; "none" is the absence
+/// of a cue, no variant. The serde name is the cue's id: the key of a
+/// manifest's `sounds` and the stem of its `sounds/<id>.wav` entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SoundCue {
+    Message,
+    Mention,
+    SignOn,
+    SignOff,
+    Call,
+    Ringback,
+    Busy,
+}
+
+impl SoundCue {
+    /// Every cue, in the plan's order.
+    pub const ALL: [Self; 7] = [
+        Self::Message,
+        Self::Mention,
+        Self::SignOn,
+        Self::SignOff,
+        Self::Call,
+        Self::Ringback,
+        Self::Busy,
+    ];
+
+    /// The cue's id (its serde name).
+    #[must_use]
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Message => "message",
+            Self::Mention => "mention",
+            Self::SignOn => "sign-on",
+            Self::SignOff => "sign-off",
+            Self::Call => "call",
+            Self::Ringback => "ringback",
+            Self::Busy => "busy",
+        }
+    }
+
+    /// The cue whose id is `id`, if any.
+    #[must_use]
+    pub fn of(id: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.id() == id)
+    }
+}
+
 /// A skin's licence: an SPDX expression or the licence's full text (legacy
 /// packs carry restrictive terms no SPDX id names).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,6 +359,10 @@ pub enum SkinRule {
     Flashing { flashes: u32, max: u32 },
     #[error("{count} sound cues, the limit is {max}")]
     TooManySoundCues { count: u64, max: u64 },
+    #[error("icons.{icon}: not an icon slot of the registry")]
+    UnknownIcon { icon: String },
+    #[error("sounds.{cue}: not a sound cue of the registry")]
+    UnknownSoundCue { cue: String },
     #[error("longer than {max_seconds} s")]
     SoundTooLong { max_seconds: u32 },
     #[error("sample rate {rate} Hz, at most {max}")]

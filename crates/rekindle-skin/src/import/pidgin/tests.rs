@@ -132,6 +132,33 @@ fn a_minimal_theme_imports_and_validates() {
 }
 
 #[test]
+fn every_emitted_icon_and_sound_key_is_a_registry_id() {
+    use crate::registry::{IconSlot, SoundCue};
+    let icons: String = map::ICONS
+        .iter()
+        .map(|(id, _)| format!(r#"<icon id="{id}" file="16/available.png"/>"#))
+        .collect();
+    let sounds: String = map::SOUNDS
+        .iter()
+        .map(|(name, _)| format!(r#"<event name="{name}" file="login.wav"/>"#))
+        .collect();
+    let t = theme(&icons, &sounds);
+    let i = imported(import(&t, "synth").unwrap());
+    validate::run(&i.canonical.bytes).unwrap();
+    let m = manifest("synth", &read(&t).unwrap(), "", SkinBase::Dark);
+    assert_eq!(m.icons.len(), 5);
+    assert_eq!(m.sounds.len(), 4);
+    for (id, path) in &m.icons {
+        assert!(IconSlot::of(id).is_some(), "icon {id}");
+        assert_eq!(path, &format!("icons/{id}.png"));
+    }
+    for (id, path) in &m.sounds {
+        assert!(SoundCue::of(id).is_some(), "sound {id}");
+        assert_eq!(path, &format!("sounds/{id}.wav"));
+    }
+}
+
+#[test]
 fn an_entity_in_theme_xml_is_refused() {
     let mut t = theme(ICONS, SOUNDS);
     t.insert(

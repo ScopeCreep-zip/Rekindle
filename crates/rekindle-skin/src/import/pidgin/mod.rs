@@ -198,8 +198,7 @@ struct Entry<'a> {
 fn read_entries(read: &mut Read, tree: &Tree, dir: &str, entries: &[Entry<'_>], sound: bool) {
     for e in entries {
         let item = format!("{} {} file=\"{}\"", e.kind, e.key, e.file);
-        let table: &[(&str, Target)] = if sound { &map::SOUNDS } else { &map::ICONS };
-        let target = match map::lookup(table, e.key) {
+        let target = match map::entry_target(sound, e.key) {
             Target::Dropped(why) => {
                 read.drop(item, format!("dropped: {why}"));
                 continue;

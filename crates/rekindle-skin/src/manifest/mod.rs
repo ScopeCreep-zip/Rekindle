@@ -7,8 +7,9 @@
 //! characters), `description` (≤ 280), `license` (an SPDX expression or the
 //! full text), `source`, `author` with `signature`, and the variants (one or
 //! more, one per base and contrast, each naming a root token file the
-//! package holds). The regions, icons and sounds maps are checked against
-//! the registry and the images and sounds by the later validator steps.
+//! package holds). The icons and sounds keys are checked here against the
+//! registry's icon slots and sound cues; the regions map against the
+//! registry, and the images and sounds, by the later validator steps.
 
 mod text;
 
@@ -22,6 +23,7 @@ use serde::Deserialize;
 
 use crate::limits::MAX_MANIFEST_BYTES;
 use crate::package::{is_root_json, Package, MANIFEST};
+use crate::registry::{IconSlot, SoundCue};
 use text::TextRule;
 
 const NAME: TextRule = TextRule {
@@ -89,7 +91,20 @@ pub fn parse(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
     let manifest: SkinManifest = serde_json::from_slice(bytes).map_err(|e| syntax(&e))?;
     check_fields(&manifest)?;
     check_variants(package, &manifest)?;
+    check_keys(&manifest)?;
     Ok(manifest)
+}
+
+/// Every `icons` key an icon slot and every `sounds` key a sound cue of
+/// the registry.
+fn check_keys(m: &SkinManifest) -> Result<(), SkinError> {
+    if let Some(icon) = m.icons.keys().find(|k| IconSlot::of(k).is_none()) {
+        return Err(refuse(SkinRule::UnknownIcon { icon: icon.clone() }));
+    }
+    if let Some(cue) = m.sounds.keys().find(|k| SoundCue::of(k).is_none()) {
+        return Err(refuse(SkinRule::UnknownSoundCue { cue: cue.clone() }));
+    }
+    Ok(())
 }
 
 fn check_format(format: &str) -> Result<(), SkinError> {

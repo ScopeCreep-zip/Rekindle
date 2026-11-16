@@ -173,11 +173,11 @@ fn a_cue_of_another_type_than_declared_is_refused() {
 #[test]
 fn manifest_sounds_name_held_files_under_sounds() {
     let mut m = common::manifest();
-    m["sounds"] = json!({ "message.received": "assets/ding.wav" });
+    m["sounds"] = json!({ "message": "assets/ding.wav" });
     let err = run_with(&m, &[]).unwrap_err();
     assert_eq!(err.entry, "manifest.json");
     assert!(matches!(err.rule, SkinRule::BadValue { .. }));
-    m["sounds"] = json!({ "message.received": "sounds/ding.wav" });
+    m["sounds"] = json!({ "message": "sounds/ding.wav" });
     let err = run_with(&m, &[]).unwrap_err();
     assert_eq!(err.entry, "sounds/ding.wav");
     assert!(matches!(err.rule, SkinRule::MissingEntry { .. }));

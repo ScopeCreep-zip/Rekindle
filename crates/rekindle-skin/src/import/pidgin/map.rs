@@ -12,21 +12,33 @@
 //!   file>` (`sound-theme-loader.c:44-77`), event names from
 //!   `gtksound.c:59-71`.
 //!
-//! Rekindle's sound cue ids are E5.2's `SoundCue` (message, mention,
-//! sign-on, sign-off, call, ringback, busy); its status icon slots are the
-//! Rekindle statuses (online, away, busy, in game, offline), masked by the
-//! app-owned StatusDot shape (E7.7.1 "Icons").
+//! Icons fill the registry's [`IconSlot`]s and sounds its [`SoundCue`]s
+//! (`crate::registry`), typed so this table cannot name an id the
+//! manifest validator would refuse.
 
-/// What one Pidgin item became.
+use crate::registry::{IconSlot, SoundCue};
+
+/// What one Pidgin item became: a registry token (`&str`), icon slot or
+/// sound cue.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Target {
-    /// A registry token, status icon slot or sound cue id.
-    Mapped(&'static str),
+pub enum Target<T = &'static str> {
+    /// The registry entry it fills.
+    Mapped(T),
     /// Dropped, and why.
     Dropped(&'static str),
 }
 
 use Target::{Dropped, Mapped};
+
+impl<T> Target<T> {
+    /// The mapped entry through `f`; a drop stays a drop.
+    fn map<U>(self, f: impl FnOnce(T) -> U) -> Target<U> {
+        match self {
+            Mapped(t) => Mapped(f(t)),
+            Dropped(why) => Dropped(why),
+        }
+    }
+}
 
 const NO_GROUP: Target = Dropped("no group-header role yet");
 
@@ -70,16 +82,16 @@ pub const COLOURS: [(&str, &str, Target); 14] = [
 ];
 
 /// Status icon ids (Pidgin's status names) and the slot each fills.
-pub const ICONS: [(&str, Target); 9] = [
-    ("available", Mapped("status.online")),
-    ("away", Mapped("status.away")),
-    ("busy", Mapped("status.busy")),
-    ("offline", Mapped("status.offline")),
+pub const ICONS: [(&str, Target<IconSlot>); 9] = [
+    ("available", Mapped(IconSlot::Online)),
+    ("away", Mapped(IconSlot::Away)),
+    ("busy", Mapped(IconSlot::Busy)),
+    ("offline", Mapped(IconSlot::Offline)),
     (
         "extended-away",
         Dropped("Rekindle has no extended-away status"),
     ),
-    ("invisible", Dropped("Rekindle has no invisible status")),
+    ("invisible", Mapped(IconSlot::Invisible)),
     ("chat", Dropped("Rekindle has no chat status")),
     ("log-in", Dropped("not a status")),
     ("log-out", Dropped("not a status")),
@@ -87,11 +99,11 @@ pub const ICONS: [(&str, Target); 9] = [
 
 /// Sound events and the cue each plays. One file per cue: `message` takes
 /// `im_recv`, so the other receive events are dropped, not merged.
-pub const SOUNDS: [(&str, Target); 12] = [
-    ("login", Mapped("sign-on")),
-    ("logout", Mapped("sign-off")),
-    ("im_recv", Mapped("message")),
-    ("nick_said", Mapped("mention")),
+pub const SOUNDS: [(&str, Target<SoundCue>); 12] = [
+    ("login", Mapped(SoundCue::SignOn)),
+    ("logout", Mapped(SoundCue::SignOff)),
+    ("im_recv", Mapped(SoundCue::Message)),
+    ("nick_said", Mapped(SoundCue::Mention)),
     (
         "first_im_recv",
         Dropped("one file per cue: message takes im_recv"),
@@ -113,11 +125,21 @@ pub const SOUNDS: [(&str, Target); 12] = [
 
 /// The target of `key` in `table`, or dropped as unknown.
 #[must_use]
-pub fn lookup(table: &[(&str, Target)], key: &str) -> Target {
+pub fn lookup<T: Copy>(table: &[(&str, Target<T>)], key: &str) -> Target<T> {
     table
         .iter()
         .find(|(k, _)| *k == key)
         .map_or(Dropped("not a Pidgin id we know"), |(_, t)| *t)
+}
+
+/// The registry id a sound event (`sound`) or status icon `key` fills.
+#[must_use]
+pub fn entry_target(sound: bool, key: &str) -> Target {
+    if sound {
+        lookup(&SOUNDS, key).map(SoundCue::id)
+    } else {
+        lookup(&ICONS, key).map(IconSlot::id)
+    }
 }
 
 /// `#rgb` or `#rrggbb`. Pidgin's `gdk_rgba_parse` also takes colour names
