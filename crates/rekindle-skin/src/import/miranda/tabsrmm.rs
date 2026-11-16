@@ -1,7 +1,7 @@
 //! TabSRMM `.tsk` (`tabsrmm.tsk`, the engine's documented sample): item
 //! records `[%Item]` and image items `[$Name]`.
 
-use rekindle_image::Rgba;
+use rekindle_image::{Rgba, RgbaImage};
 use rekindle_types::dto::skin::RegionState;
 
 use super::super::walk;
@@ -114,28 +114,40 @@ fn margins(file: &str, s: &Section) -> Result<Option<[u32; 4]>, ImportError> {
     Ok(Some(m))
 }
 
-/// The slice the image item `s` gives `item`, or `None` (named in
+/// Fills the centre of a 9-slice with `rgb` (`FillColor`, `:348-353`).
+fn fill_centre(image: &mut RgbaImage, [left, top, right, bottom]: [u32; 4], rgb: [u8; 3]) {
+    let (width, height) = image.dimensions();
+    let [red, green, blue] = rgb;
+    for y in top..height - bottom {
+        for x in left..width - right {
+            image.put_pixel(x, y, Rgba([red, green, blue, 255]));
+        }
+    }
+}
+
+/// The slice the image item `sec` gives `item`, or `None` (named in
 /// `out.dropped`).
 fn slice(
     tree: &Tree,
     file: &str,
-    s: &Section,
+    sec: &Section,
     (item, slot, state): (&str, &'static str, RegionState),
     out: &mut Parsed,
 ) -> Result<Option<Slice>, ImportError> {
-    let name = &s.name;
-    let Some(raw) = s.get("Image") else {
+    let name = &sec.name;
+    let Some(raw) = sec.get("Image") else {
         out.dropped.push(format!("[{name}]: no Image="));
         return Ok(None);
     };
-    let Some(m) = margins(file, s)? else {
+    let Some(margin) = margins(file, sec)? else {
         out.dropped.push(format!(
-            "[{name}] Image={raw}: not divided (sizing margins are used only when all four are given)"
+            "[{name}] Image={raw}: not divided (sizing margins are used only when all four are \
+             given)"
         ));
         return Ok(None);
     };
     let (key, mut image) = match load(tree, raw, true) {
-        Ok(l) => l,
+        Ok(loaded) => loaded,
         Err(why) => {
             out.dropped.push(format!("[{name}] Image={raw}: {why}"));
             return Ok(None);
@@ -143,35 +155,29 @@ fn slice(
     };
     out.files.insert(key.clone());
     let source = format!("[{name}] {key} as {item}");
-    let insets = insets(&source, image.dimensions(), m)?;
-    if let Some(a) = s.get("Alpha") {
-        let a = number(file, &format!("[{name}] Alpha"), a)?;
-        if a > 100 {
+    let insets = insets(&source, image.dimensions(), margin)?;
+    if let Some(value) = sec.get("Alpha") {
+        let alpha = number(file, &format!("[{name}] Alpha"), value)?;
+        if alpha > 100 {
             return Err(ImportError::Format {
                 file: file.to_owned(),
-                detail: format!("[{name}] Alpha={a} is not a percent"),
+                detail: format!("[{name}] Alpha={alpha} is not a percent"),
             });
         }
-        fade(&mut image, a, 100);
+        fade(&mut image, alpha, 100);
     }
     // The colour key only makes sense for the container (`:340-346`).
-    if let Some(c) = s.get("ColorKey") {
+    if let Some(value) = sec.get("ColorKey") {
         if item.eq_ignore_ascii_case("Container") {
-            key_out(&mut image, hex_rgb(&format!("{name} ColorKey"), c)?);
+            key_out(&mut image, hex_rgb(&format!("{name} ColorKey"), value)?);
         } else {
             out.dropped
                 .push(format!("[{name}] ColorKey: {item} is not the container"));
         }
     }
-    if let Some(c) = s.get("FillColor") {
-        let [r, g, b] = hex_rgb(&format!("{name} FillColor"), c)?;
-        let (w, h) = image.dimensions();
-        let (l, t, rt, bt) = (m[0], m[1], m[2], m[3]);
-        for y in t..h - bt {
-            for x in l..w - rt {
-                image.put_pixel(x, y, Rgba([r, g, b, 255]));
-            }
-        }
+    if let Some(value) = sec.get("FillColor") {
+        let rgb = hex_rgb(&format!("{name} FillColor"), value)?;
+        fill_centre(&mut image, margin, rgb);
     }
     Ok(Some(Slice {
         slot,

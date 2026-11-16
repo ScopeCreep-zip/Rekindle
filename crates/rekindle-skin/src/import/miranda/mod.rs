@@ -249,18 +249,19 @@ fn assemble(slices: Vec<Slice>, dropped: &mut Vec<String>) -> BTreeMap<&'static 
 /// Not exactly one `.tsk` or `.msf`, a malformed skin file, a bad colour,
 /// a 9-slice whose insets leave no centre.
 pub fn read(tree: &Tree) -> Result<Read, ImportError> {
+    let engine_of = |path: &str| {
+        let ext = std::path::Path::new(path).extension()?.to_str()?;
+        if ext.eq_ignore_ascii_case("tsk") {
+            Some(Engine::TabSrmm)
+        } else if ext.eq_ignore_ascii_case("msf") {
+            Some(Engine::ClistModern)
+        } else {
+            None
+        }
+    };
     let skins: Vec<(&str, Engine)> = tree
         .keys()
-        .filter_map(|k| {
-            let l = k.to_ascii_lowercase();
-            if l.ends_with(".tsk") {
-                Some((k.as_str(), Engine::TabSrmm))
-            } else if l.ends_with(".msf") {
-                Some((k.as_str(), Engine::ClistModern))
-            } else {
-                None
-            }
-        })
+        .filter_map(|k| Some((k.as_str(), engine_of(k)?)))
         .collect();
     let [(file, engine)] = skins[..] else {
         return Err(ImportError::Format {
