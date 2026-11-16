@@ -117,6 +117,9 @@ labels! {
     /// (plan E3.2 S7), by the relaying member's pseudonym, over
     /// `community ‖ author ‖ memberRecord ‖ subkey ‖ seq`.
     HEAD_ADVANCED = "rekindle-head-advanced-v1";
+    /// BLAKE3 domain of the watch ring order (plan E3.2 S7, §4.5):
+    /// `r(p) = blake3(domain ‖ communityId ‖ p)`.
+    WATCH_RING = "rekindle-watch-ring-v1";
     /// Ed25519 signature prefix: a history ad (`M`/5, plan E3.2), by the
     /// pseudonym, over `community ‖ memberRecord ‖ mekGeneration ‖ sealed`.
     HISTORY_AD = "rekindle-history-ad-v1";

@@ -14,7 +14,7 @@ use rekindle_types::id::PseudonymKey;
 pub const RING_K: usize = 4;
 
 /// The ring's hash domain.
-pub const RING_DOMAIN: &[u8] = b"rekindle-watch-ring-v1";
+pub const RING_DOMAIN: &[u8] = rekindle_types::domains::WATCH_RING.as_bytes();
 
 /// `p`'s position on `community_id`'s ring. The domain and `p` are fixed
 /// length, so the concatenation is unambiguous.
