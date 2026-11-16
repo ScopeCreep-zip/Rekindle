@@ -371,6 +371,13 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// in-memory and on-disk state are both updated.
     async fn apply_governance_rebuild_result(&self, community_id: &str, gov_state: GovernanceState);
 
+    /// The lock that serializes `community_id`'s governance rebuilds (plan
+    /// E3.2 S7, D15: the state is a pure function of the op set, which only
+    /// grows): a rebuild reads the op set and then awaits its dep fetches,
+    /// so an older rebuild finishing last installed a state over a newer
+    /// one. Held from the op-set read to the install.
+    fn rebuild_lock(&self, community_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>>;
+
     // ---------- Governance ops (plan E3.2) ----------
 
     /// The community's pinned `GenesisCert`: `communities.genesis_cert`,

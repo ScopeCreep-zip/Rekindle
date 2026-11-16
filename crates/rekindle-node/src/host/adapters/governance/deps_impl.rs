@@ -318,6 +318,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
             .await;
     }
 
+    fn rebuild_lock(&self, community_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+        self.ctx.communities.rebuild_lock(community_id)
+    }
+
     // ---------- Governance ops ----------
 
     fn genesis_cert(&self, community_id: &str) -> Option<GenesisCert> {

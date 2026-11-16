@@ -210,6 +210,11 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
         return;
     }
     let community_id = &community.to_owned();
+    // Serialized per community from the op-set read to the install (D15:
+    // the state is a pure function of a grow-only op set, so the rebuild
+    // that reads last must install last).
+    let lock = deps.rebuild_lock(community_id);
+    let installing = lock.lock().await;
     let previous_bans = deps
         .governance_state(community_id)
         .map(|gov| gov.bans)
@@ -229,6 +234,7 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
         .collect();
     deps.apply_governance_rebuild_result(community_id, gov_state)
         .await;
+    drop(installing);
     deps.emit_event(GovernanceRuntimeEvent::GovernanceRebuilt {
         community_id: community_id.clone(),
     });

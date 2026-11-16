@@ -43,10 +43,18 @@ pub struct CommunityStore {
     /// S7): a move reads the merged member set and then awaits its opens
     /// and releases, so two concurrent moves (rebuilds from gossip, hints,
     /// the sweep) undid each other's assignments.
-    ring_moves: RingMoves,
+    ring_moves: CommunityLocks,
+    /// One lock per community serializing its governance rebuilds (S7):
+    /// an older rebuild finishing last installed over a newer one.
+    rebuilds: CommunityLocks,
 }
 
-type RingMoves = Arc<parking_lot::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>;
+type CommunityLocks = Arc<parking_lot::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>;
+
+/// `community_id`'s lock in `locks`, created on first use.
+fn community_lock(locks: &CommunityLocks, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+    Arc::clone(locks.lock().entry(community_id.to_string()).or_default())
+}
 
 impl CommunityStore {
     /// The store over `map` (the Host's `HostStores::communities`).
@@ -56,18 +64,20 @@ impl CommunityStore {
             map,
             member_cards: Arc::new(RwLock::new(BTreeMap::new())),
             ring_moves: Arc::default(),
+            rebuilds: Arc::default(),
         }
     }
 
     /// The lock that serializes `community_id`'s watch-ring moves.
     #[must_use]
     pub fn ring_move_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        Arc::clone(
-            self.ring_moves
-                .lock()
-                .entry(community_id.to_string())
-                .or_default(),
-        )
+        community_lock(&self.ring_moves, community_id)
+    }
+
+    /// The lock that serializes `community_id`'s governance rebuilds.
+    #[must_use]
+    pub fn rebuild_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        community_lock(&self.rebuilds, community_id)
     }
 
     /// The display name on `pseudonym`'s verified card.
