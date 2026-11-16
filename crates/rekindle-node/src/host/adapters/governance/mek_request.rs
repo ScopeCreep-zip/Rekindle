@@ -129,66 +129,98 @@ impl HostGovernance {
     }
 
     /// The inviter's half of a join (plan E3.2, D16): `joiner`'s
-    /// `MemberJoined` from its `BootstrapRequest` merged, so seal the
-    /// current community key to it by `MekTransfer` app_call to the route
-    /// it sent (never inside `bootstrapResponseV2`, D11). Spawned, so the
-    /// bootstrap reply is not held behind the delivery.
-    pub fn deliver_key_to_joiner<D>(
-        &self,
-        deps: std::sync::Arc<D>,
-        community_id: &str,
-        joiner: &rekindle_governance_runtime::BootstrapJoiner,
-    ) where
-        D: MekDistributeDeps + Send + Sync + 'static,
-    {
-        use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
-        let host = self.clone();
-        let community = community_id.to_owned();
-        let pseudonym_hex = joiner.pseudonym.clone();
-        let route_blob = joiner.route.clone();
-        self.scope()
-            .spawn_or_drop("joiner key delivery", async move {
-                let delivered = host
-                    .send_key_to_joiner(deps.as_ref(), &community, pseudonym_hex, route_blob)
-                    .await;
-                if let Err(error) = delivered {
-                    tracing::warn!(community = %community, %error, "joiner key not delivered");
-                }
-            });
-    }
-
-    async fn send_key_to_joiner<D: MekDistributeDeps>(
+    /// `MemberJoined` from its `BootstrapRequest` merged, so commit the
+    /// current community key, sealed to it, as a `mek_transfer` outbox row
+    /// (D22): `app_call`ed by `MekTransfer` to the route it sent (never
+    /// inside `bootstrapResponseV2`, D11), retried until its
+    /// `MekTransferAck` or its deadline, discarded if it departs. Only the
+    /// commit is awaited; the outbox sends it.
+    pub async fn deliver_key_to_joiner<D>(
         &self,
         deps: &D,
         community_id: &str,
-        pseudonym_hex: String,
-        route_blob: Vec<u8>,
+        joiner: &rekindle_governance_runtime::BootstrapJoiner,
+    ) where
+        D: MekDistributeDeps + Sync + ?Sized,
+    {
+        if let Err(error) = self.queue_key_for_joiner(deps, community_id, joiner).await {
+            tracing::warn!(community = %community_id, %error, "joiner key not queued");
+        }
+    }
+
+    async fn queue_key_for_joiner<D: MekDistributeDeps + Sync + ?Sized>(
+        &self,
+        deps: &D,
+        community_id: &str,
+        joiner: &rekindle_governance_runtime::BootstrapJoiner,
     ) -> Result<(), String> {
-        let joiner = pseudonym(&pseudonym_hex).ok_or("invalid joiner pseudonym")?;
-        if route_blob.is_empty() {
+        if joiner.route.is_empty() {
             return Err("the joiner sent no route".into());
         }
-        if !self.is_key_reader(community_id, &joiner) {
-            return Err(format!("{pseudonym_hex} is not a member"));
+        if !self.member_reads_keys(community_id, &joiner.pseudonym) {
+            return Err(format!("{} is not a member", joiner.pseudonym));
         }
         let mek = deps
             .cache()
             .current(community_id, KeyScope::Community)
             .ok_or_else(|| format!("no community key for {community_id}"))?;
-        rekindle_mek_rotation::distribute_mek(
+        let sealed = rekindle_mek_rotation::seal_mek_transfer(
             deps,
             community_id,
             KeyScope::Community,
             &mek,
-            &[RotationRecipient {
-                pseudonym_hex,
-                route_blob,
-            }],
+            &joiner.pseudonym,
         )
-        .await
         .map_err(|e| e.to_string())?;
-        tracing::info!(community = community_id, joiner = %hex::encode(joiner.0), "community key delivered to the joiner (D16)");
+        let transfers = self
+            .ctx
+            .outbox
+            .mek_transfers()
+            .ok_or("no identity is unlocked")?;
+        // One row per (member, generation): a joiner's repeated
+        // bootstrap does not queue the key twice.
+        let client_id = format!(
+            "MekTransfer:{community_id}:{}:{}",
+            joiner.pseudonym,
+            mek.generation()
+        );
+        transfers
+            .queue(
+                community_id,
+                &joiner.pseudonym,
+                &client_id,
+                &joiner.route,
+                &sealed,
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        tracing::info!(community = community_id, joiner = %joiner.pseudonym, "community key queued for the joiner (D16)");
         Ok(())
+    }
+
+    /// Whether `member_hex` is a key reader of `community_id`
+    /// ([`Self::is_key_reader`]); `false` for a malformed pseudonym.
+    pub(crate) fn member_reads_keys(&self, community_id: &str, member_hex: &str) -> bool {
+        pseudonym(member_hex).is_some_and(|p| self.is_key_reader(community_id, &p))
+    }
+
+    /// The route `member_hex`'s presence in `community_id` carries now.
+    pub(crate) fn member_route(&self, community_id: &str, member_hex: &str) -> Option<Vec<u8>> {
+        self.online_members_impl(community_id)
+            .into_iter()
+            .find(|m| m.pseudonym_hex == member_hex && !m.route_blob.is_empty())
+            .map(|m| m.route_blob)
+    }
+
+    /// `app_call` a member's route with `payload` (unframed, sealed).
+    pub(crate) async fn call_member(
+        &self,
+        route: &[u8],
+        payload: Vec<u8>,
+    ) -> Result<Vec<u8>, String> {
+        self.app_call_peer_impl(route, payload)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     /// Generation 0 is the current key, with its provenance (a rebuilt key

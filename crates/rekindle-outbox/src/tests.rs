@@ -583,6 +583,8 @@ mod fake_acks;
 
 mod independence;
 
+mod mek_transfer;
+
 /// Finding 70 refined: a request cancelled right after it was queued and
 /// attempted (its first send wedged it) leaves no handshake row.
 #[tokio::test]

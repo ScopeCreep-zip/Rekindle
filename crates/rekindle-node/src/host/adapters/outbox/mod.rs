@@ -10,6 +10,7 @@ mod dm;
 mod governance_op;
 mod governance_publication;
 mod media_key;
+mod mek_transfer;
 mod senders;
 #[cfg(test)]
 mod tests;
@@ -33,6 +34,7 @@ pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;
 pub use governance_op::{GovernanceOps, Published};
 pub use media_key::{MediaKeyCarrier, MediaKeyDelivery, MediaKeyStreams, SESSION_ENDED};
+pub use mek_transfer::MekTransfers;
 pub use senders::{Reissuer, Senders, StreamSender};
 
 /// How many state changes a slow subscriber may fall behind by.

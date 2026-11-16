@@ -446,7 +446,8 @@ impl InboundHandler for DaemonHandler {
                 .await
                 {
                     Ok(bytes) => {
-                        host.deliver_key_to_joiner(deps, &anchor, &joiner);
+                        host.deliver_key_to_joiner(deps.as_ref(), &anchor, &joiner)
+                            .await;
                         CallResponse::Ok(bytes)
                     }
                     Err(e) => CallResponse::Rejected {

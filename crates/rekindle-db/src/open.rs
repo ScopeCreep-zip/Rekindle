@@ -213,7 +213,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// resets DB, vault and Veilid storage together.
 /// 124 (plan E2.5i, R1-3): `stream_applied`, the seqs of a writer's chain
 /// applied past a gap, so the cursor absorbs them when the gap fills.
-pub const SCHEMA_VERSION: i64 = 124;
+/// 125 (plan E3.2 S7l, D16): `outbox.kind` admits `mek_transfer`, the
+/// sealed community key to one member, receipted and retried.
+pub const SCHEMA_VERSION: i64 = 125;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

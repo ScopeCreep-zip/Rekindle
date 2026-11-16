@@ -66,6 +66,7 @@ impl HostGovernance {
         self.ctx
             .communities
             .forget_member(community_id, pseudonym_hex);
+        self.discard_key_transfers(community_id, Some(pseudonym_hex));
         let Some((owner, db)) = self.owner_and_db() else {
             return;
         };
@@ -75,6 +76,26 @@ impl HostGovernance {
             rekindle_db::repo::members::delete(conn, &owner, &community, &pseudonym)?;
             rekindle_db::repo::members::record_leave(conn, &owner, &community, &pseudonym, left_at)
         });
+    }
+
+    /// The `mek_transfer` rows still queued for `member` of
+    /// `community_id` (D16), or for every member when we left: a key
+    /// never reaches one who departed.
+    pub(crate) fn discard_key_transfers(&self, community_id: &str, member: Option<&str>) {
+        let Some(transfers) = self.ctx.outbox.mek_transfers() else {
+            return;
+        };
+        let (community, member) = (community_id.to_owned(), member.map(str::to_owned));
+        self.scope()
+            .spawn_or_drop("key transfers discarded", async move {
+                let discarded = match &member {
+                    Some(member) => transfers.discard_member(&community, member).await,
+                    None => transfers.discard_community(&community).await,
+                };
+                if let Err(error) = discarded {
+                    tracing::warn!(community = %community, %error, "key transfers not discarded");
+                }
+            });
     }
 
     /// Announce our join to the community's mesh once its first peers have

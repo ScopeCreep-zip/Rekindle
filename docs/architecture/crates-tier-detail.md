@@ -352,8 +352,10 @@ Dependencies: `rekindle-records`, `rekindle-lifecycle` (`SessionScope`),
 
 The one owner of every send intent (plan E2.5, D22). A send is a row in an
 ordered stream `<kind>:<scope>` — kinds `dm`, `friend_handshake`,
-`dht_write`, `channel_post` and `media_key` (`group_dm` arrives at E2.6,
-`signaling` at E4.1) — written with its local echo in one transaction and
+`dht_write`, `channel_post`, `media_key`, `group_dm` (E2.6),
+`governance_op` and `mek_transfer` (E3.2: a community key sealed to one
+member, receipted by its `MekTransferAck`, discarded on a departure;
+`signaling` arrives at E4.1) — written with its local echo in one transaction and
 attempted by `next_at` until it settles. Modules: `state` (one vocabulary,
 `queued < sent < delivered < read` plus `failed`, merged monotonically;
 `delivered`/`read` only from a peer ack, `failed` only over an unsettled

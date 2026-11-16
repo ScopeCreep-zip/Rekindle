@@ -54,6 +54,7 @@ mod kick_rotates_once;
 mod kicked_slot_write;
 mod logout_unlock;
 mod logs;
+mod mek_transfer_retry;
 mod mod_report;
 mod moderation;
 mod no_timed_inspect;

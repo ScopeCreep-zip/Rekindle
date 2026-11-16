@@ -160,6 +160,7 @@ impl HostGovernance {
             rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
         }
         self.forget_keys(&id);
+        self.discard_key_transfers(&id, None);
         self.ctx.communities.remove(&id);
         crate::host::session::forget_membership(
             &self.ctx.session,

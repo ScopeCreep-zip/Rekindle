@@ -64,10 +64,16 @@ pub enum StreamKind {
     /// through the chain primitive); it settles `sent` when the log's head
     /// names it. No member acknowledges an op.
     GovernanceOp,
+    /// A community key sealed to one member (`MekTransfer`, plan E3.2
+    /// D16: the inviter's push to a joiner), on the stream of
+    /// `<community>:<peer>`: an `app_call` whose `MekTransferAck` reply
+    /// settles it `delivered`, retried until its deadline; the peer's
+    /// departure, or ours, discards the stream's rows.
+    MekTransfer,
 }
 
 impl StreamKind {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Dm,
         Self::GroupDm,
         Self::GovernanceOp,
@@ -75,6 +81,7 @@ impl StreamKind {
         Self::DhtWrite,
         Self::ChannelPost,
         Self::MediaKey,
+        Self::MekTransfer,
     ];
 
     /// The stored form.
@@ -88,6 +95,7 @@ impl StreamKind {
             Self::MediaKey => "media_key",
             Self::GroupDm => "group_dm",
             Self::GovernanceOp => "governance_op",
+            Self::MekTransfer => "mek_transfer",
         }
     }
 
@@ -154,7 +162,9 @@ impl StreamKind {
                 }
             }
             Self::GroupDm | Self::GovernanceOp => (1, 300),
-            Self::FriendHandshake => {
+            // A key transfer is a receipted control call, like a
+            // handshake frame: its peer may be offline for a while.
+            Self::FriendHandshake | Self::MekTransfer => {
                 return OutboxRetry::Backoff {
                     base: Duration::from_secs(2),
                     cap: Duration::from_secs(900),
@@ -223,6 +233,19 @@ mod group_dm_tests {
         assert!(!kind.awaits_ack());
         assert!(kind.user_retryable());
         assert!(matches!(kind.policy(), OutboxRetry::Backoff { .. }));
+    }
+
+    /// A key transfer settles on its receipt: no ack row, retryable,
+    /// backed off like a handshake frame.
+    #[test]
+    fn a_mek_transfer_row_settles_on_its_receipt_and_backs_off_like_a_handshake() {
+        let kind = StreamKind::MekTransfer;
+        assert_eq!(StreamKind::parse("mek_transfer"), Some(kind));
+        assert_eq!(kind.stream("c:p"), "mek_transfer:c:p");
+        assert!(!kind.awaits_ack());
+        assert_eq!(kind.first_reask(&rekindle_utils::OsRandom), None);
+        assert!(kind.user_retryable());
+        assert_eq!(kind.policy(), StreamKind::FriendHandshake.policy());
     }
 
     /// An op append settles on its log write, like a group send.

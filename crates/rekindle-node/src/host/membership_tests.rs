@@ -226,3 +226,90 @@ async fn an_invisible_member_sends_no_sync_request() {
         .contains_key("ch-a"));
     host.shutdown().await.unwrap();
 }
+
+/// D16 (register S7l, S7 review HIGH-1): the inviter's key for a joiner
+/// is a committed `mek_transfer` row (sealed, never the key), one per
+/// (joiner, generation), and the joiner's departure discards it.
+#[tokio::test]
+async fn the_joiner_s_key_is_a_committed_row_until_the_joiner_departs() {
+    use rekindle_governance::op::OpStamp;
+    use rekindle_types::id::PseudonymKey;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let joiner = hex::encode(
+        rekindle_crypto::group::pseudonym::derive_community_pseudonym(&[5; 32], "c1")
+            .verifying_key()
+            .to_bytes(),
+    );
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        c.my_pseudonym_key = Some(hex::encode([1; 32]));
+        let mut gov = rekindle_governance::state::GovernanceState::default();
+        gov.members.insert(
+            PseudonymKey::from_hex_lossy(&joiner),
+            rekindle_governance::state::MemberState {
+                member_record: "r".into(),
+                member_record_owner: "o".into(),
+                joined: OpStamp::MIN,
+            },
+        );
+        c.governance_state = Some(gov);
+    }
+    let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
+        &host.ctx.mek_cache,
+    ));
+    let key = rekindle_transport::crypto::mek::Mek::from_bytes([7; 32], 3);
+    rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, key);
+    let deps = crate::daemon::mek_rotation::DaemonMekAdapter::new(std::sync::Arc::clone(&host.ctx));
+    let bootstrap = rekindle_governance_runtime::BootstrapJoiner {
+        pseudonym: joiner.clone(),
+        member_joined: rekindle_types::governance::OpRef {
+            op_hash: OpStamp::MIN.hash,
+            author: PseudonymKey::from_hex_lossy(&joiner),
+            author_record: "r".into(),
+            author_seq: 1,
+        },
+        member_joined_op: Vec::new(),
+        route: b"route".to_vec(),
+    };
+    let governance = host.governance();
+    for _ in 0..2 {
+        governance
+            .deliver_key_to_joiner(&deps, "c1", &bootstrap)
+            .await;
+    }
+    let rows = || async {
+        let owner = owner.clone();
+        host.ctx
+            .db
+            .current()
+            .unwrap()
+            .call(move |c| rekindle_db::repo::outbox::prefix_rows(c, &owner, "mek_transfer:c1:"))
+            .await
+            .unwrap()
+    };
+    let queued = rows().await;
+    assert_eq!(queued.len(), 1, "one row per joiner and generation");
+    assert_eq!(queued[0].stream, format!("mek_transfer:c1:{joiner}"));
+    assert_eq!(queued[0].client_id, format!("MekTransfer:c1:{joiner}:3"));
+    assert!(
+        !queued[0].payload.windows(32).any(|w| w == [7; 32]),
+        "the row holds the sealed key, never the key"
+    );
+
+    governance.forget_member("c1", &joiner);
+    let mut left = queued.len();
+    for _ in 0..50 {
+        left = rows().await.len();
+        if left == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(left, 0, "the joiner's departure discards its row");
+    host.shutdown().await.unwrap();
+}

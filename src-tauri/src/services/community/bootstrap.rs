@@ -22,6 +22,8 @@ pub async fn build_bootstrap_response_v2(
     let pool = state.db.current().map_err(|e| e.to_string())?;
     let deps =
         crate::services::mek_adapter::MekAdapter::new(Arc::clone(state), app_handle.clone(), pool);
-    adapter.deliver_key_to_joiner(deps, anchor, joiner);
+    adapter
+        .deliver_key_to_joiner(deps.as_ref(), anchor, joiner)
+        .await;
     Ok(response)
 }
