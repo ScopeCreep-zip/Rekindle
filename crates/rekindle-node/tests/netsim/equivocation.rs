@@ -1,37 +1,52 @@
 //! Plan E3.2 S7 Verify (D15, register S7d): a restored backup equivocates.
-//! The creator's data root is copied, it creates a channel (an op at its
-//! next seq), the copy is put back, and it creates a different channel at
-//! that same seq. No key is touched: the fork is what a real restore does.
+//! The creator's data root is copied, it creates a role (an op at its
+//! next seq), the copy is put back, and while it is cut off from every peer
+//! (register S7f: once connected, a restore re-learns its own op from the
+//! peers' frontiers before writing) it creates a different role at that
+//! same seq, then the partition heals. No key is touched: the fork is what
+//! a real restore made off-line does.
 //! The other members detect it within one anti-entropy sweep and drop
 //! every op of that author from the fork on, the later ones too.
 
 use std::time::Duration;
 
 use rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD;
-use rekindle_ipc::protocol::{ChannelRequest, CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
+use rekindle_netsim::Fault;
 
 use crate::harness::{eventually, Community, PASSPHRASE};
 
 const SEEN: Duration = Duration::from_secs(180);
 
-async fn create_channel(community: &Community, i: usize, name: &str) {
+/// A role: a governance op and nothing else (a channel create still mints
+/// its SMPL record, which a node cut off from its peers cannot store).
+async fn create_role(community: &Community, i: usize, name: &str) {
     community.nodes[i]
-        .ok(IpcRequest::Community(CommunityRequest::Channels(
-            ChannelRequest::ChannelCreate {
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleCreate {
                 community: community.governance_key.clone(),
                 name: name.into(),
-                kind: "text".into(),
-                category: None,
-                topic: None,
-                slowmode_seconds: 0,
-                parent_voice_channel: None,
+                permissions: 0,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
             },
         )))
         .await;
 }
 
 async fn shows(community: &Community, i: usize, name: &str) -> bool {
-    community.info(i).await.to_string().contains(name)
+    community.nodes[i]
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::RoleList {
+                community: community.governance_key.clone(),
+            },
+        )))
+        .await
+        .to_string()
+        .contains(name)
 }
 
 async fn unlock(community: &Community, i: usize) {
@@ -51,7 +66,7 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
     community.nodes[0].ok(IpcRequest::Lock).await;
     let backup = crate::data_root::snapshot(&community.nodes[0]);
     unlock(&community, 0).await;
-    create_channel(&community, 0, "alpha").await;
+    create_role(&community, 0, "alpha").await;
     assert!(
         eventually(&community.sim, SEEN, || async {
             shows(&community, 1, "alpha").await && shows(&community, 2, "alpha").await
@@ -62,8 +77,13 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
 
     community.nodes[0].ok(IpcRequest::Lock).await;
     crate::data_root::restore(&community.nodes[0], &backup);
+    community.sim.fault(Fault::Partition {
+        a: vec![0],
+        b: vec![1, 2],
+    });
     unlock(&community, 0).await;
-    create_channel(&community, 0, "bravo").await;
+    create_role(&community, 0, "bravo").await;
+    community.sim.fault(Fault::Heal);
     // One sweep period plus the time an op takes to land everywhere.
     let detected = eventually(&community.sim, SWEEP_PERIOD + SEEN, || async {
         let mut clean = true;
@@ -86,7 +106,7 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
         );
     }
 
-    create_channel(&community, 0, "charlie").await;
+    create_role(&community, 0, "charlie").await;
     tokio::time::sleep(SWEEP_PERIOD * 2).await;
     for i in 1..3 {
         assert!(
