@@ -125,6 +125,7 @@ fn joined(key: &SigningKey, code_hash: Option<&str>) -> GovernanceOp {
                 code_hash: c.into(),
                 sig: vec![0; 64],
             }),
+            owner_proof: vec![0; 64],
         },
         sig: [0; 64],
     }

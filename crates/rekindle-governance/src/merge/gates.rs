@@ -78,8 +78,11 @@ fn backdated_join_gate(set: &OpSet<'_>, invalid: &mut [bool]) {
     }
 }
 
-/// A `MemberJoined` naming a member record another member already holds is
-/// refused (S7 review): a reader accepts data from `M(p)` only under the
+/// A `MemberJoined` or `MemberRecordMoved` naming a member record another
+/// member already holds is refused (S7 review). Every binding reaching the
+/// merge is proven by the record owner's `ownerProof` (`op::verify`), so
+/// only `K_M`'s holder can claim a record and this gate only keeps one
+/// holder from binding two pseudonyms to it: a reader accepts data from `M(p)` only under the
 /// binding in `p`'s own join (slot-integrity §4.2), so two members bound to
 /// one record would let either one's writes pass as the other's. The
 /// record goes to the first applied join in the op set's stamp order (the
@@ -90,7 +93,9 @@ fn record_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &mut
     let mut holder: BTreeMap<&str, &PseudonymKey> = BTreeMap::new();
     holder.insert(cert.creator_member_record.as_str(), &cert.creator_pseudonym);
     for (o, op) in set.ops.iter().enumerate() {
-        let GovernanceEntry::MemberJoined { member_record, .. } = op.body() else {
+        let (GovernanceEntry::MemberJoined { member_record, .. }
+        | GovernanceEntry::MemberRecordMoved { member_record, .. }) = op.body()
+        else {
             continue;
         };
         match holder.get(member_record.as_str()) {

@@ -197,11 +197,14 @@ struct MemberJoinedPayload {
     hasInviteProof       @2 :Bool;
     inviteCodeHash       @3 :Text;
     inviteSig            @4 :Data;
+    # K_M's binding proof (64 bytes; `MEMBER_RECORD_BINDING`).
+    ownerProof           @5 :Data;
 }
 
 struct MemberRecordMovedPayload {
     memberRecord         @0 :Text;
     memberRecordOwner    @1 :Text;
+    ownerProof           @2 :Data;
 }
 
 struct MemberLeftPayload {}

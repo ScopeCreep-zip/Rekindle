@@ -58,6 +58,7 @@ pub(super) fn apply_membership(
         GovernanceEntry::MemberRecordMoved {
             member_record,
             member_record_owner,
+            ..
         } => {
             if let Some(member) = state.members.get_mut(author) {
                 state

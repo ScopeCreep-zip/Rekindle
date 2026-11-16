@@ -201,19 +201,23 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             member_record,
             member_record_owner,
             invite_proof,
+            owner_proof,
         } => write_member_joined(
             b.reborrow().init_member_joined(),
             member_record,
             member_record_owner,
             invite_proof.as_ref(),
+            owner_proof,
         ),
         GovernanceEntry::MemberRecordMoved {
             member_record,
             member_record_owner,
+            owner_proof,
         } => write_member_record_moved(
             b.reborrow().init_member_record_moved(),
             member_record,
             member_record_owner,
+            owner_proof,
         ),
         GovernanceEntry::MemberLeft {} => {
             b.reborrow().init_member_left();

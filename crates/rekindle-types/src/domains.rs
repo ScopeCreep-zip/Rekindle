@@ -140,6 +140,11 @@ labels! {
     /// Ed25519 context: a joiner's invite proof over this label ‖ anchor ‖
     /// invite code hash ‖ member record key (plan E3.2).
     INVITE_PROOF = "rekindle-invite-proof-v1";
+    /// Ed25519 context: a member record owner `K_M`'s proof, in a
+    /// `MemberJoined` or `MemberRecordMoved`, that it binds its record to
+    /// the op's author: this label ‖ anchor ‖ author pseudonym ‖ member
+    /// record key (ADR 0011 "Binding", review S7m part 4).
+    MEMBER_RECORD_BINDING = "rekindle-member-record-binding-v1";
     /// Ed25519 context: the community's `GenesisCert`, signed by the anchor
     /// owner `K_A` and by the creator pseudonym over this label ‖ anchor ‖
     /// the canonical unsigned cert bytes (plan E3.2).

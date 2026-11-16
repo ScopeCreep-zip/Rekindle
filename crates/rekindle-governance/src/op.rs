@@ -28,6 +28,10 @@ impl OpStamp {
 pub enum OpRejection {
     BadSignature,
     BadInviteProof,
+    /// A `MemberJoined` or `MemberRecordMoved` whose record key is not the
+    /// one its owner key derives, or whose `ownerProof` is not that owner's
+    /// signature binding the record to the author (ADR 0011 "Binding").
+    BadOwnerProof,
     /// A dep (or the author's previous op) is not known yet: the op waits
     /// in `pending_deps` until it is fetched by its `OpRef`.
     MissingDep(OpHash),
@@ -92,6 +96,7 @@ impl VerifiedOp {
         verify_signature(&op.author.0, &op_signing_bytes(anchor, unsigned), &op.sig)
             .map_err(|_| OpRejection::BadSignature)?;
         check_invite_proof(anchor, &op)?;
+        check_owner_proof(anchor, &op)?;
         let mut lamport = 0;
         for dep in &op.deps {
             let found = known(&dep.op_hash).ok_or(OpRejection::MissingDep(dep.op_hash))?;
@@ -203,4 +208,42 @@ fn check_invite_proof(anchor: &str, op: &GovernanceOp) -> Result<(), OpRejection
         .map_err(|_| OpRejection::BadInviteProof)?;
     let bytes = invite_proof_bytes(anchor, &proof.code_hash, member_record);
     verify_signature(&op.author.0, &bytes, &sig).map_err(|_| OpRejection::BadInviteProof)
+}
+
+/// A `MemberJoined` or `MemberRecordMoved` binds a member record to its
+/// author only with the record owner's consent: the record key must be the
+/// one Veilid derives from `memberRecordOwner` for a DFLT member record
+/// (`rekindle_secrets::member_record::dflt_opaque_record_key`), and
+/// `ownerProof` must be that owner's signature over `anchor ‖ author ‖
+/// memberRecord`. Both keys are public once the record is, so without this
+/// anyone could name another's record and take it at merge.
+fn check_owner_proof(anchor: &str, op: &GovernanceOp) -> Result<(), OpRejection> {
+    use rekindle_secrets::member_record::{dflt_opaque_record_key, verify_member_record_binding};
+    use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
+    use rekindle_types::key_format::vld0_key_bytes;
+    let (GovernanceEntry::MemberJoined {
+        member_record: record,
+        member_record_owner: owner,
+        owner_proof: proof,
+        ..
+    }
+    | GovernanceEntry::MemberRecordMoved {
+        member_record: record,
+        member_record_owner: owner,
+        owner_proof: proof,
+    }) = &op.body
+    else {
+        return Ok(());
+    };
+    let owner = vld0_key_bytes(owner).ok_or(OpRejection::BadOwnerProof)?;
+    let opaque = vld0_key_bytes(record).ok_or(OpRejection::BadOwnerProof)?;
+    if opaque != dflt_opaque_record_key(&owner, SUBKEY_COUNT) {
+        return Err(OpRejection::BadOwnerProof);
+    }
+    let proof: [u8; 64] = proof
+        .as_slice()
+        .try_into()
+        .map_err(|_| OpRejection::BadOwnerProof)?;
+    verify_member_record_binding(&owner, anchor, &op.author.0, record, &proof)
+        .map_err(|_| OpRejection::BadOwnerProof)
 }

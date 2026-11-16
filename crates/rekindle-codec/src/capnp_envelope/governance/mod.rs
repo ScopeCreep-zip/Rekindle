@@ -242,11 +242,13 @@ mod admission_wire_tests {
                 member_record: "VLD0:m".into(),
                 member_record_owner: "owner".into(),
                 invite_proof: proof,
+                owner_proof: vec![7; 64],
             });
         }
         round_trip(&GovernanceEntry::MemberRecordMoved {
             member_record: "VLD0:n".into(),
             member_record_owner: "owner2".into(),
+            owner_proof: vec![6; 64],
         });
         round_trip(&GovernanceEntry::MemberLeft {});
         for reason in [None, Some(String::new()), Some("spam".into())] {

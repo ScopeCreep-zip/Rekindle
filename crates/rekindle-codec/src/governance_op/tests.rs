@@ -92,10 +92,12 @@ fn member_bodies() -> Vec<GovernanceEntry> {
                 code_hash: s("h"),
                 sig: vec![9; 64],
             }),
+            owner_proof: vec![7; 64],
         },
         E::MemberRecordMoved {
             member_record: s("VLD0:n"),
             member_record_owner: s("own2"),
+            owner_proof: vec![6; 64],
         },
         E::MemberLeft {},
         E::MemberRemoved {

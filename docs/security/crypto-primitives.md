@@ -43,6 +43,12 @@ Every sealed pre-session 1:1 frame signature (`DM_PRESESSION_SIG`) and `Identity
 Every prekey signature (`PREKEY_SPK_SIG`, `PREKEY_PQ_LR_SIG`, `PREKEY_PQ_OT_SIG`,
 `PREKEY_OPK_SIG`; the head's two keys sign its `issued_at` too) and every friend
 invite blob (`FRIEND_INVITE_SIG ‖` the JSON of every field but the signature).
+Every member record binding: a `MemberJoined` or `MemberRecordMoved` carries
+`ownerProof`, the record owner `K_M`'s signature over `MEMBER_RECORD_BINDING ‖
+anchor ‖ author pseudonym ‖ member record key`, and a reader accepts it only when
+the record key is the one Veilid derives from that owner key for a DFLT(8) record
+(BLAKE3 over `VLD0 ‖ owner ‖ DFLT ‖ o_cnt`), so only `K_M`'s holder can bind it
+(ADR 0011 "Binding").
 Per-community device keys (ADR 0022, Proposed; plan E3.2 S7d-keys) add the signature
 contexts `rekindle-gov-device-key-v1` (an endorsement, by the community pseudonym),
 `rekindle-gov-device-retired-v1` (a retirement, by the pseudonym),

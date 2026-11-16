@@ -144,12 +144,18 @@ pub enum GovernanceEntry {
         /// (`VLD0:<base64url>` text).
         member_record_owner: String,
         invite_proof: Option<super::op::InviteProof>,
+        /// `K_M`'s Ed25519 proof that it binds `member_record` to the
+        /// author (`MEMBER_RECORD_BINDING ‖ anchor ‖ author ‖
+        /// member_record`, `rekindle_secrets::member_record`); 64 bytes.
+        owner_proof: Vec<u8>,
     },
 
     /// The author moved to a new member record (self-authored).
     MemberRecordMoved {
         member_record: String,
         member_record_owner: String,
+        /// The new record owner's binding proof, as in `MemberJoined`.
+        owner_proof: Vec<u8>,
     },
 
     /// The author left the community (self-authored).

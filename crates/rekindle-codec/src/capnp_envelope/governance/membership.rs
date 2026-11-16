@@ -24,6 +24,7 @@ pub(super) fn read_member_joined(
             p.get_member_record_owner().map_err(|e| capnp_err(&e))?,
         )?,
         invite_proof,
+        owner_proof: p.get_owner_proof().map_err(|e| capnp_err(&e))?.to_vec(),
     })
 }
 
@@ -35,6 +36,7 @@ pub(super) fn read_member_record_moved(
         member_record_owner: text_to_string(
             p.get_member_record_owner().map_err(|e| capnp_err(&e))?,
         )?,
+        owner_proof: p.get_owner_proof().map_err(|e| capnp_err(&e))?.to_vec(),
     })
 }
 
@@ -66,7 +68,9 @@ pub(super) fn write_member_joined(
     member_record: &str,
     member_record_owner: &str,
     invite_proof: Option<&InviteProof>,
+    owner_proof: &[u8],
 ) {
+    p.set_owner_proof(owner_proof);
     p.set_member_record(member_record);
     p.set_member_record_owner(member_record_owner);
     p.set_has_invite_proof(invite_proof.is_some());
@@ -80,9 +84,11 @@ pub(super) fn write_member_record_moved(
     mut p: schema_pkg::member_record_moved_payload::Builder<'_>,
     member_record: &str,
     member_record_owner: &str,
+    owner_proof: &[u8],
 ) {
     p.set_member_record(member_record);
     p.set_member_record_owner(member_record_owner);
+    p.set_owner_proof(owner_proof);
 }
 
 pub(super) fn write_member_removed(

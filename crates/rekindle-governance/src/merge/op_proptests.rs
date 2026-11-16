@@ -25,6 +25,7 @@ fn joined(by: u8, code: Option<&str>) -> GovernanceEntry {
             code_hash: c.into(),
             sig: vec![0; 64],
         }),
+        owner_proof: vec![0; 64],
     }
 }
 
@@ -409,6 +410,7 @@ fn two_joins_naming_one_member_record_admit_only_the_first() {
             code_hash: "code".into(),
             sig: vec![0; 64],
         }),
+        owner_proof: vec![0; 64],
     };
     let base = community();
     let x = op(&pk(5), 0, &[head(&base)], 60, claim(5, "VLD0:shared"));
@@ -443,6 +445,38 @@ fn two_joins_naming_one_member_record_admit_only_the_first() {
         );
         assert!(outcome.refused.contains(&z.hash()));
     }
+}
+
+/// A `MemberRecordMoved` onto a record another member holds (or the
+/// creator's) is refused like a second join on it; the mover keeps its own.
+#[test]
+fn a_move_onto_a_held_member_record_is_refused() {
+    let claim = |record: &str| GovernanceEntry::MemberJoined {
+        member_record: record.into(),
+        member_record_owner: "owner".into(),
+        invite_proof: Some(InviteProof {
+            code_hash: "code".into(),
+            sig: vec![0; 64],
+        }),
+        owner_proof: vec![0; 64],
+    };
+    let moved = |record: &str| GovernanceEntry::MemberRecordMoved {
+        member_record: record.into(),
+        member_record_owner: "owner".into(),
+        owner_proof: vec![0; 64],
+    };
+    let mut ops = community();
+    let x = op(&pk(5), 0, &[head(&ops)], 60, claim("VLD0:mx"));
+    let y = op(&pk(6), 0, &[head(&ops)], 61, claim("VLD0:my"));
+    ops.extend([x.clone(), y.clone()]);
+    let onto_x = op(&pk(6), 1, &[&x, &y], 62, moved("VLD0:mx"));
+    let onto_creator = op(&pk(5), 1, &[&x, &y], 63, moved("VLD0:creator-record"));
+    ops.extend([onto_x.clone(), onto_creator.clone()]);
+    let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
+    assert!(outcome.refused.contains(&onto_x.hash()));
+    assert!(outcome.refused.contains(&onto_creator.hash()));
+    let record = |p: u8| outcome.state.members[&pk(p)].member_record.clone();
+    assert_eq!((record(5), record(6)), ("VLD0:mx".into(), "VLD0:my".into()));
 }
 
 #[test]

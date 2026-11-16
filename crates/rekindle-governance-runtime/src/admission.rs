@@ -35,7 +35,8 @@ pub struct PendingMember {
 }
 
 /// Announce our membership: our `MemberJoined` op, naming our member
-/// record and its owner. Self-authored by construction (the op's author is
+/// record and its owner, with `K_M`'s binding proof
+/// (`rekindle_secrets::member_record::sign_member_record_binding`). Self-authored by construction (the op's author is
 /// the joiner); under `ApprovalRequired` it stays pending until a
 /// `MemberApproved`.
 pub async fn announce_joined<D: GovernanceRuntimeDeps>(
@@ -44,6 +45,7 @@ pub async fn announce_joined<D: GovernanceRuntimeDeps>(
     member_record: &str,
     member_record_owner: &str,
     invite_proof: Option<InviteProof>,
+    owner_proof: [u8; 64],
 ) -> Result<(), GovernanceRuntimeError> {
     apply::write_entry(
         deps,
@@ -52,6 +54,7 @@ pub async fn announce_joined<D: GovernanceRuntimeDeps>(
             member_record: member_record.to_string(),
             member_record_owner: member_record_owner.to_string(),
             invite_proof,
+            owner_proof: owner_proof.to_vec(),
         },
     )
     .await?;

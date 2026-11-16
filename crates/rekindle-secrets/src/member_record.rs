@@ -87,6 +87,73 @@ pub fn open_member_record_field(
         .map_err(|e| CryptoError::Decryption(e.to_string()))
 }
 
+/// The opaque key Veilid gives a `VLD0` `DFLT(owner_subkeys)` record owned
+/// by `owner`: BLAKE3 over the crypto kind, the owner public key and the
+/// compiled schema (`storage_manager/record_key.rs:67-78`,
+/// `DHTSchemaDFLT::compile` `dflt.rs:48-55`, VLD0 `generate_hash`
+/// `vld0/mod.rs:332-337`). A member record's key names its owner.
+#[must_use]
+pub fn dflt_opaque_record_key(owner: &[u8; 32], owner_subkeys: u16) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"VLD0");
+    hasher.update(owner);
+    hasher.update(b"DFLT");
+    hasher.update(&owner_subkeys.to_le_bytes());
+    *hasher.finalize().as_bytes()
+}
+
+/// The bytes a member record's owner `K_M` signs to bind the record to a
+/// pseudonym (ADR 0011 "Binding"): `MEMBER_RECORD_BINDING ‖ u32be(len) ‖
+/// anchor ‖ author pseudonym ‖ u32be(len) ‖ member_record`.
+fn binding_bytes(anchor: &str, author: &[u8; 32], member_record: &str) -> Vec<u8> {
+    let label = rekindle_types::domains::MEMBER_RECORD_BINDING;
+    let mut out = Vec::with_capacity(label.len() + 40 + anchor.len() + member_record.len());
+    out.extend_from_slice(label.as_bytes());
+    out.extend_from_slice(
+        &u32::try_from(anchor.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    out.extend_from_slice(anchor.as_bytes());
+    out.extend_from_slice(author);
+    out.extend_from_slice(
+        &u32::try_from(member_record.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    out.extend_from_slice(member_record.as_bytes());
+    out
+}
+
+/// `K_M`'s proof that `member_record` belongs to `author` in community
+/// `anchor`: only the record's owner can bind it.
+#[must_use]
+pub fn sign_member_record_binding(
+    owner_secret: &[u8; 32],
+    anchor: &str,
+    author: &[u8; 32],
+    member_record: &str,
+) -> [u8; 64] {
+    use ed25519_dalek::Signer;
+    ed25519_dalek::SigningKey::from_bytes(owner_secret)
+        .sign(&binding_bytes(anchor, author, member_record))
+        .to_bytes()
+}
+
+/// Check `proof` against the record's owner public key.
+///
+/// # Errors
+/// The owner key is not a valid Ed25519 key or the proof does not verify.
+pub fn verify_member_record_binding(
+    owner: &[u8; 32],
+    anchor: &str,
+    author: &[u8; 32],
+    member_record: &str,
+    proof: &[u8; 64],
+) -> Result<(), CryptoError> {
+    crate::sign::verify_signature(owner, &binding_bytes(anchor, author, member_record), proof)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -218,6 +218,26 @@ pub fn record_key(s: &str) -> Result<RecordKeyStr, KeyFormatError> {
     Ok(RecordKeyStr(s.to_owned()))
 }
 
+/// The 32 bytes of a `VLD0:` key text's first segment: a public key's
+/// (`VLD0:<key>`) or a record key's opaque key (`VLD0:<opaque>[:<enc>]`).
+/// `None` for any other shape.
+#[must_use]
+pub fn vld0_key_bytes(s: &str) -> Option<[u8; 32]> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    let rest = s.strip_prefix(RECORD_KIND_PREFIX)?;
+    let mut segments = rest.split(':');
+    let first = segments.next()?;
+    check_b64url_segment(first, RECORD_KIND_PREFIX.len()).ok()?;
+    if let Some(enc) = segments.next() {
+        check_b64url_segment(enc, 0).ok()?;
+    }
+    if segments.next().is_some() {
+        return None;
+    }
+    URL_SAFE_NO_PAD.decode(first).ok()?.try_into().ok()
+}
+
 /// Validate an identity public key (64 lowercase hex).
 pub fn public_key_hex(s: &str) -> Result<PublicKeyHex, KeyFormatError> {
     check_lower_hex(s, 64)?;

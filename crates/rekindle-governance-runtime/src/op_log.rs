@@ -579,3 +579,7 @@ pub fn causal_past(ops: &[VerifiedOp], frontier: &[OpRef]) -> Vec<VerifiedOp> {
 #[cfg(test)]
 #[path = "op_log_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "record_binding_tests.rs"]
+mod record_binding_tests;

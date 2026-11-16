@@ -151,26 +151,39 @@ async fn create_member_record<D: GovernanceRuntimeDeps>(
 }
 
 /// Our op #0: `MemberJoined` with the invite proof (the joiner pseudonym
-/// over `INVITE_PROOF ‖ anchor ‖ code hash ‖ memberRecord`).
+/// over `INVITE_PROOF ‖ anchor ‖ code hash ‖ memberRecord`) and the owner
+/// proof (`K_M` over `MEMBER_RECORD_BINDING ‖ anchor ‖ pseudonym ‖
+/// memberRecord`, ADR 0011 "Binding").
 fn joined_op(
     anchor: &str,
     cert: &GenesisCert,
     state: &GovernanceState,
     set: &op_log::VerifiedSet,
     key: &SigningKey,
-    member: (&str, String),
+    member: (&JoinerRecord, String),
     code_hash: String,
     now_secs: u64,
 ) -> Result<HeldOp, GovernanceRuntimeError> {
-    let (record, owner) = member;
+    let (member, owner) = member;
+    let record = member.record_key.as_str();
     let sig = key
         .sign(&invite_proof_bytes(anchor, &code_hash, record))
         .to_bytes()
         .to_vec();
+    let (_, owner_secret) = keypair_text::parse_keypair_text(&member.owner_keypair)
+        .map_err(|e| GovernanceRuntimeError::Crypto(format!("member record owner: {e}")))?;
+    let owner_secret = Zeroizing::new(owner_secret);
+    let owner_proof = rekindle_secrets::member_record::sign_member_record_binding(
+        &owner_secret,
+        anchor,
+        &key.verifying_key().to_bytes(),
+        record,
+    );
     let body = GovernanceEntry::MemberJoined {
         member_record: record.to_owned(),
         member_record_owner: owner,
         invite_proof: Some(InviteProof { code_hash, sig }),
+        owner_proof: owner_proof.to_vec(),
     };
     let (op, encoded) = op_log::build_op(anchor, cert, state, set, key, body, now_secs)?;
     Ok(op_log::held(
@@ -230,7 +243,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         &gov_state,
         &set,
         &identity.pseudonym_signing,
-        (&member.record_key, member_owner),
+        (&member, member_owner),
         code_hash,
         now,
     )?;
