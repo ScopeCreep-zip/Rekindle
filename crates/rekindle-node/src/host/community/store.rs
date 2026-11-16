@@ -15,6 +15,7 @@ use locks::{CommunityLocks, FollowUp};
 use parking_lot::RwLock;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::rebuild_flight::RebuildFlight;
+use rekindle_governance_runtime::verify_cache::OpVerifyCache;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
 use rekindle_transport::session::CommunityMembership;
 use rekindle_types::id::ThreadId;
@@ -54,6 +55,9 @@ pub struct CommunityStore {
     /// One rebuild single flight per community (S7l): the triggers that
     /// arrive while a rebuild runs coalesce into one more.
     rebuild_flights: Arc<parking_lot::Mutex<BTreeMap<String, Arc<RebuildFlight>>>>,
+    /// One community's kept op verdicts (S7, R4-5): an op verifies once
+    /// per process, not on every read of the op set.
+    op_verify: Arc<parking_lot::Mutex<BTreeMap<String, Arc<OpVerifyCache>>>>,
     /// One lock per community serializing its `Frontier` (`M`/3) writes
     /// (S7l): `append_own_op` and the post-rebuild republish were two
     /// unsynchronized writers, so an older head set could land last.
@@ -73,6 +77,7 @@ impl CommunityStore {
             ring_moves: Arc::default(),
             rebuilds: Arc::default(),
             rebuild_flights: Arc::default(),
+            op_verify: Arc::default(),
             frontier_writes: Arc::default(),
             follow_ups: Arc::default(),
         }

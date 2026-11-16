@@ -44,7 +44,7 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
     // bootstrapResponseV2 delivers the rest).
     let (cert, _) = crate::genesis::read_pinned(deps, governance_key_str).await?;
     let held = deps.governance_ops(governance_key_str).await?;
-    let ops = crate::op_log::verify_held(governance_key_str, &held).ops;
+    let ops = crate::op_log::verify_held_with(deps, governance_key_str, &held).ops;
     let gov_state_v1 = merge::merge(&cert, &ops);
 
     // Pass 2: fetch every segment's governance record. CRDT idempotence +

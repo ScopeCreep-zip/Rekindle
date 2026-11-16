@@ -228,6 +228,9 @@ fn converging(
         .returning(move |_| Some(state.clone()));
     deps.expect_governance_ops()
         .returning(move |_| Ok(vec![held.clone()]));
+    let verdicts = std::sync::Arc::new(crate::verify_cache::OpVerifyCache::default());
+    deps.expect_op_verify_cache()
+        .returning(move |_| std::sync::Arc::clone(&verdicts));
     deps.expect_list_community_governance_targets()
         .times(rebuilds)
         .returning(Vec::new);

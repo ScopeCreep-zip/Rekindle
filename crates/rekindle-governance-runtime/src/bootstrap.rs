@@ -81,7 +81,7 @@ pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(anchor)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
-    let set = op_log::verify_held(anchor, &deps.governance_ops(anchor).await?);
+    let set = op_log::verify_held_with(deps, anchor, &deps.governance_ops(anchor).await?);
     let payload = ControlPayload::BootstrapResponseV2 {
         anchor: anchor.to_owned(),
         checkpoint_ref: None,

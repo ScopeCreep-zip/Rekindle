@@ -337,6 +337,13 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.ctx.communities.rebuild_flight(community_id)
     }
 
+    fn op_verify_cache(
+        &self,
+        community_id: &str,
+    ) -> std::sync::Arc<rekindle_governance_runtime::verify_cache::OpVerifyCache> {
+        self.ctx.communities.op_verify_cache(community_id)
+    }
+
     // ---------- Governance ops ----------
 
     fn genesis_cert(&self, community_id: &str) -> Option<GenesisCert> {

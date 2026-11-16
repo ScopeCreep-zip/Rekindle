@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use rekindle_governance_runtime::rebuild_flight::RebuildFlight;
+use rekindle_governance_runtime::verify_cache::OpVerifyCache;
 
 use super::CommunityStore;
 
@@ -43,6 +44,17 @@ impl CommunityStore {
     pub fn rebuild_flight(&self, community_id: &str) -> Arc<RebuildFlight> {
         Arc::clone(
             self.rebuild_flights
+                .lock()
+                .entry(community_id.to_string())
+                .or_default(),
+        )
+    }
+
+    /// `community_id`'s kept op verdicts, created on first use.
+    #[must_use]
+    pub fn op_verify_cache(&self, community_id: &str) -> Arc<OpVerifyCache> {
+        Arc::clone(
+            self.op_verify
                 .lock()
                 .entry(community_id.to_string())
                 .or_default(),
@@ -93,6 +105,7 @@ impl CommunityStore {
         self.ring_moves.lock().remove(community_id);
         self.rebuilds.lock().remove(community_id);
         self.rebuild_flights.lock().remove(community_id);
+        self.op_verify.lock().remove(community_id);
         self.frontier_writes.lock().remove(community_id);
         self.follow_ups.lock().remove(community_id);
         self.member_cards
@@ -106,6 +119,7 @@ impl CommunityStore {
         self.ring_moves.lock().clear();
         self.rebuilds.lock().clear();
         self.rebuild_flights.lock().clear();
+        self.op_verify.lock().clear();
         self.frontier_writes.lock().clear();
         self.follow_ups.lock().clear();
         self.member_cards.write().clear();
@@ -170,7 +184,12 @@ mod tests {
         let store = store_with("c");
         assert!(store.mark_follow_up("c"));
         let before = store.frontier_write_lock("c");
+        let verdicts = store.op_verify_cache("c");
         store.remove("c");
+        assert!(!std::sync::Arc::ptr_eq(
+            &verdicts,
+            &store.op_verify_cache("c")
+        ));
         assert!(!std::sync::Arc::ptr_eq(
             &before,
             &store.frontier_write_lock("c")

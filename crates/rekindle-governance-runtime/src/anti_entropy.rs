@@ -246,7 +246,7 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
         return Ok(());
     };
     let held = deps.governance_ops(community_id).await?;
-    let set = op_log::verify_held(community_id, &held);
+    let set = op_log::verify_held_with(deps, community_id, &held);
     // Heads and checksum from one merge of the op set, as the writer's
     // (`op_log::own_frontier`): a rebuild still pending is not a mismatch.
     let ours = op_log::own_frontier(&cert, &set);

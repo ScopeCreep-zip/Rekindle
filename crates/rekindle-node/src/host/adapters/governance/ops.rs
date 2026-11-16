@@ -466,7 +466,7 @@ impl HostGovernance {
             .governance_ops(community_id)
             .await
             .map_err(|e| format!("read op store: {e}"))?;
-        let set = op_log::verify_held(community_id, &held);
+        let set = op_log::verify_held_with(self, community_id, &held);
         // The heads and the checksum of the roster and role tables, both
         // from one merge of the op set (D15's convergence check, compared by
         // a reader whose heads equal these), never the installed state,

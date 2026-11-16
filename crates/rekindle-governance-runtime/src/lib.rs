@@ -52,6 +52,7 @@ pub(crate) mod records;
 pub mod roles;
 pub mod roster;
 pub mod segments;
+pub mod verify_cache;
 pub mod watch_ring;
 
 pub use apply::{write_entry, write_entry_queued, write_invite_created};

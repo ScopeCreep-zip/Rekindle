@@ -395,6 +395,14 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
     ) -> std::sync::Arc<crate::rebuild_flight::RebuildFlight>;
 
+    /// `community_id`'s kept op verdicts (plan E3.2 S7, R4-5): every read
+    /// of its op set verifies only the ops it has not verified before.
+    /// Created on first use, dropped with the community.
+    fn op_verify_cache(
+        &self,
+        community_id: &str,
+    ) -> std::sync::Arc<crate::verify_cache::OpVerifyCache>;
+
     // ---------- Governance ops (plan E3.2) ----------
 
     /// The community's pinned `GenesisCert`: `communities.genesis_cert`,

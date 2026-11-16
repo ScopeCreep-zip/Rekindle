@@ -13,12 +13,12 @@
 //!   decoded and verified in dependency order; a missing dep is fetched by
 //!   its `OpRef`; the verified set merges under the cert.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 use rekindle_codec::governance_op::{decode_op, encode_op, op_unsigned_bytes};
 use rekindle_governance::checksum::roster_checksum;
 use rekindle_governance::merge::{self, MergeOutcome};
-use rekindle_governance::op::{op_hash, op_signing_bytes, OpRejection, VerifiedOp};
+use rekindle_governance::op::{op_hash, op_signing_bytes, VerifiedOp};
 use rekindle_governance::state::GovernanceState;
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_types::dht_layout::member_record::MAX_FRONTIER_REFS;
@@ -29,6 +29,7 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
+pub use crate::verify_cache::verify_held_cached;
 
 /// An op's fate in the last merge, as `governance_ops.state` stores it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -67,51 +68,25 @@ pub struct VerifiedSet {
     pub missing: Vec<OpRef>,
 }
 
-/// Decode and verify `held` for community `anchor` in dependency order.
+/// Decode and verify `held` for community `anchor` in dependency order,
+/// with no kept verdicts: a read outside a community's lifetime (a test, a
+/// projection). A community's reads go through its
+/// [`OpVerifyCache`](crate::verify_cache::OpVerifyCache) instead
+/// ([`verify_held_cached`]).
 #[must_use]
 pub fn verify_held(anchor: &str, held: &[HeldOp]) -> VerifiedSet {
-    let mut set = VerifiedSet::default();
-    let mut waiting: Vec<(OpHash, GovernanceOp, Vec<u8>)> = Vec::new();
-    for op in held {
-        match decode_op(&op.encoded) {
-            Ok(decoded) if op_hash(&decoded.unsigned, &decoded.op.sig) == op.hash => {
-                waiting.push((op.hash, decoded.op, decoded.unsigned));
-            }
-            _ => set.quarantined.push(op.hash),
-        }
-    }
-    let mut known: HashMap<OpHash, VerifiedOp> = HashMap::new();
-    loop {
-        let mut progressed = Vec::new();
-        let mut still = Vec::new();
-        for (hash, op, unsigned) in waiting {
-            match VerifiedOp::verify(anchor, op.clone(), &unsigned, |h| known.get(h)) {
-                Ok(verified) => progressed.push(verified),
-                Err(OpRejection::MissingDep(_)) => still.push((hash, op, unsigned)),
-                Err(_) => set.quarantined.push(hash),
-            }
-        }
-        waiting = still;
-        if progressed.is_empty() {
-            break;
-        }
-        for verified in progressed {
-            set.ops.push(verified.clone());
-            known.insert(verified.hash(), verified);
-        }
-    }
-    let waiting_hashes: BTreeSet<OpHash> = waiting.iter().map(|(h, _, _)| *h).collect();
-    let mut missing: BTreeMap<OpHash, OpRef> = BTreeMap::new();
-    for (hash, op, _) in &waiting {
-        set.pending.push(*hash);
-        for dep in &op.deps {
-            if !known.contains_key(&dep.op_hash) && !waiting_hashes.contains(&dep.op_hash) {
-                missing.entry(dep.op_hash).or_insert_with(|| dep.clone());
-            }
-        }
-    }
-    set.missing = missing.into_values().collect();
-    set
+    verify_held_cached(anchor, held, &crate::verify_cache::OpVerifyCache::default())
+}
+
+/// [`verify_held`] through `community_id`'s kept verdicts
+/// (`GovernanceRuntimeDeps::op_verify_cache`).
+#[must_use]
+pub fn verify_held_with<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    held: &[HeldOp],
+) -> VerifiedSet {
+    verify_held_cached(community_id, held, &deps.op_verify_cache(community_id))
 }
 
 /// The member record an author's ops live in: the cert's for the
@@ -301,7 +276,7 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
     let mut held = deps.governance_ops(community_id).await?;
     let mut tried: BTreeSet<OpHash> = BTreeSet::new();
     loop {
-        let set = verify_held(community_id, &held);
+        let set = verify_held_with(deps, community_id, &held);
         let wanted: Vec<OpRef> = set
             .missing
             .iter()
@@ -438,7 +413,7 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
         fate: OpFate::PendingDeps,
     };
     held.push(op.clone());
-    let set = verify_held(community_id, &held);
+    let set = verify_held_with(deps, community_id, &held);
     if set.quarantined.contains(&hash) {
         return Ok(false);
     }
@@ -505,7 +480,7 @@ pub async fn walk<D: GovernanceRuntimeDeps>(
         if !fetched {
             return Ok(held);
         }
-        wanted = verify_held(anchor, &held).missing;
+        wanted = verify_held_with(deps, anchor, &held).missing;
     }
 }
 
@@ -550,7 +525,7 @@ pub async fn rebuild_at<D: GovernanceRuntimeDeps>(
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let held = deps.governance_ops(community_id).await?;
-    let set = verify_held(community_id, &held);
+    let set = verify_held_with(deps, community_id, &held);
     Ok(merge::merge(&cert, &causal_past(&set.ops, frontier)))
 }
 

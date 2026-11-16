@@ -143,7 +143,11 @@ async fn write<D: GovernanceRuntimeDeps>(
         .identity_secret()
         .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?;
     let key = derive::derive_community_pseudonym(&identity_secret, community_id);
-    let set = op_log::verify_held(community_id, &deps.governance_ops(community_id).await?);
+    let set = op_log::verify_held_with(
+        deps,
+        community_id,
+        &deps.governance_ops(community_id).await?,
+    );
     let (op, encoded) = op_log::build_op(
         community_id,
         &cert,

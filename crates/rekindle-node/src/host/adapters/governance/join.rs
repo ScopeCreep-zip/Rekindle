@@ -157,7 +157,7 @@ impl HostGovernance {
         let Ok(held) = self.governance_ops_impl(id).await else {
             return false;
         };
-        let set = rekindle_governance_runtime::op_log::verify_held(id, &held);
+        let set = rekindle_governance_runtime::op_log::verify_held_with(self, id, &held);
         let Some(op) = set
             .ops
             .iter()

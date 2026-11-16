@@ -224,7 +224,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     // The op set from the inviter's frontier, merged under the pinned cert.
     let start = read_frontier(deps, &invite.inviter_member_record).await?;
     let walked = op_log::walk(deps, anchor, &start).await?;
-    let set = op_log::verify_held(anchor, &walked);
+    let set = op_log::verify_held_with(deps, anchor, &walked);
     let gov_state = merge::merge(&cert, &set.ops);
 
     if gov_state.bans.contains(&identity.pseudo) {
