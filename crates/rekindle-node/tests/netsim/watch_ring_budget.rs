@@ -32,7 +32,27 @@ async fn forty_members_watch_each_member_record_four_times_and_none_is_refused()
     .await;
     let watched = census(&community);
     let counts: Vec<usize> = watched.values().map(BTreeSet::len).collect();
-    assert!(converged, "every M has 4 ring watchers: {counts:?}");
+    // Each node's merged member count and the records it watches, so a run
+    // that does not converge says whether the member sets or the ring
+    // differ.
+    let mut nodes = Vec::with_capacity(MEMBERS);
+    for i in 0..MEMBERS {
+        let members = community.info(i).await["memberCount"].clone();
+        let mine: Vec<&String> = watched
+            .iter()
+            .filter(|(_, nodes)| nodes.contains(&i))
+            .map(|(record, _)| record)
+            .collect();
+        nodes.push(format!(
+            "node {i}: members {members}, watches {}",
+            mine.len()
+        ));
+    }
+    assert!(
+        converged,
+        "every M has 4 ring watchers: {counts:?}\n{}",
+        nodes.join("\n")
+    );
     assert!(counts.iter().all(|n| *n <= 4), "{counts:?}");
     assert_eq!(
         community.sim.watch_refusals(),
