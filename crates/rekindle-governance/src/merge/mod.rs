@@ -17,7 +17,11 @@
 //! until the invalidated set is stable.
 //!
 //! **The creator** is the cert's `creator_pseudonym` (MSC4289): no op at
-//! any lamport becomes the creator.
+//! any lamport becomes the creator. The creator is a member from the start,
+//! bound to the cert's `creator_member_record` and its owner: the cert, not
+//! a `MemberJoined`, carries the creator's binding (the genesis ops are
+//! meta, roles, the owner assignment and `#general`), so a `MemberLeft`
+//! still removes it like any member.
 
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
@@ -95,6 +99,14 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
         mek_generation: crate::state::GENESIS_MEK_GENERATION,
         ..GovernanceState::default()
     };
+    state.members.insert(
+        cert.creator_pseudonym.clone(),
+        MemberState {
+            member_record: cert.creator_member_record.clone(),
+            member_record_owner: cert.creator_member_record_owner.clone(),
+            joined: OpStamp::MIN,
+        },
+    );
     let mut applied = vec![false; set.ops.len()];
     let mut order = Vec::new();
     let candidates = (0..set.ops.len()).filter(|&i| !invalid[i]);

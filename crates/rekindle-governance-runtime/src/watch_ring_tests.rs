@@ -72,3 +72,27 @@ fn a_join_moves_at_most_k_assignments() {
 fn a_member_not_admitted_watches_nobody() {
     assert!(ring_successors("A", &state(5), &PseudonymKey([99; 32]), RING_K).is_empty());
 }
+
+/// The creator is in its own ring: the merge binds it to the cert's member
+/// record (the genesis ops hold no `MemberJoined`), so with 5 members it
+/// watches 4 successors and its `M` has 4 watchers.
+#[test]
+fn the_creator_is_in_its_own_ring() {
+    use rekindle_governance::fixture::{at, merge_entries, meta};
+    let creator = PseudonymKey([200; 32]);
+    let mut merged = merge_entries(&creator, &[(creator.clone(), vec![at(1, meta("c"))])]);
+    let own = merged
+        .members
+        .get(&creator)
+        .map(|m| m.member_record.clone());
+    assert_eq!(own.as_deref(), Some("VLD0:creator-record"));
+    for (p, m) in state(4).members {
+        merged.members.insert(p, m);
+    }
+    assert_eq!(
+        ring_successors("A", &merged, &creator, RING_K).len(),
+        RING_K
+    );
+    let w = watchers(&merged);
+    assert_eq!(w.get("VLD0:creator-record").map_or(0, Vec::len), RING_K);
+}
