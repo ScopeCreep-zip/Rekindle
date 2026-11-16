@@ -106,6 +106,13 @@ async fn write<D: GovernanceRuntimeDeps>(
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
     refuse_out_of_bounds(&entry)?;
 
+    // Serialized with the rebuild (`dht_hydration`) from the state and
+    // op-set reads to the install (D15: the state is a pure function of a
+    // grow-only op set, so whoever reads last installs last; register S7l,
+    // HIGH-2). Never held across the publish, and no rebuild runs under it.
+    let lock = deps.rebuild_lock(community_id);
+    let installing = lock.lock().await;
+
     let gov_state = deps
         .governance_state(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string()))?;
@@ -160,6 +167,7 @@ async fn write<D: GovernanceRuntimeDeps>(
     let mut ops = set.ops;
     ops.push(op);
     deps.set_governance_state(community_id, merge::merge(&cert, &ops));
+    drop(installing);
 
     deps.emit_event(GovernanceRuntimeEvent::GovernanceEntryApplied {
         community_id: community_id.to_string(),
@@ -339,6 +347,45 @@ mod tests {
             Err(GovernanceRuntimeError::OutOfBounds {
                 field: "duration_seconds"
             })
+        ));
+    }
+
+    /// A write reads the state and op set only under the rebuild lock
+    /// (register S7l, HIGH-2): while a rebuild holds it, the write reads
+    /// nothing, so a rebuild that read an older op set cannot install over
+    /// the write's state.
+    #[tokio::test]
+    async fn a_write_waits_for_a_running_rebuild_before_reading_the_state() {
+        let held = std::sync::Arc::new(tokio::sync::Mutex::new(()));
+        let read = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let mut deps = crate::deps::MockGovernanceRuntimeDeps::new();
+        let lock = std::sync::Arc::clone(&held);
+        deps.expect_rebuild_lock()
+            .returning(move |_| std::sync::Arc::clone(&lock));
+        let seen = std::sync::Arc::clone(&read);
+        deps.expect_governance_state().returning(move |_| {
+            seen.store(true, std::sync::atomic::Ordering::SeqCst);
+            None
+        });
+        let deps = std::sync::Arc::new(deps);
+        let rebuilding = held.lock().await;
+        let writer = std::sync::Arc::clone(&deps);
+        let write = tokio::spawn(async move {
+            write_entry(writer.as_ref(), "community", GovernanceEntry::MemberLeft {}).await
+        });
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert!(
+            !read.load(std::sync::atomic::Ordering::SeqCst),
+            "the write read the state while a rebuild held the lock"
+        );
+        drop(rebuilding);
+        let written = write.await.unwrap();
+        assert!(read.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(matches!(
+            written,
+            Err(GovernanceRuntimeError::GovernanceStateMissing(_))
         ));
     }
 
