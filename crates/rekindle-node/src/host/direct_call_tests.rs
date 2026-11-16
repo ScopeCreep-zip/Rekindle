@@ -126,9 +126,22 @@ fn the_call_deadline_is_under_veilids_app_call_timeout() {
 #[derive(Clone, Default)]
 struct Captured(std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
 
-impl std::io::Write for Captured {
+thread_local! {
+    /// The buffer this thread's events are captured into, while armed.
+    static ARMED: std::cell::RefCell<Option<Captured>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Writes to the armed thread's buffer; on any other thread, nowhere.
+#[derive(Clone, Copy)]
+struct ToArmed;
+
+impl std::io::Write for ToArmed {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().extend_from_slice(buf);
+        ARMED.with(|armed| {
+            if let Some(captured) = armed.borrow().as_ref() {
+                captured.0.lock().extend_from_slice(buf);
+            }
+        });
         Ok(buf.len())
     }
 
@@ -137,36 +150,94 @@ impl std::io::Write for Captured {
     }
 }
 
-impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Captured {
+impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for ToArmed {
     type Writer = Self;
 
     fn make_writer(&'a self) -> Self::Writer {
-        self.clone()
+        *self
     }
+}
+
+/// Disarms this thread when dropped.
+struct Armed;
+
+impl Drop for Armed {
+    fn drop(&mut self) {
+        ARMED.with(|armed| armed.borrow_mut().take());
+    }
+}
+
+/// Capture this thread's DEBUG events, through the log scrubber every
+/// host installs, into `captured` until the guard drops.
+///
+/// Not a thread-local `set_default` subscriber: tracing-core 0.1.36 caches
+/// a callsite's interest at its first hit (`DefaultCallsite::register`,
+/// callsite.rs:308-321), and while one dispatcher is registered
+/// (`has_just_one`, callsite.rs:551-557) asks only the hitting thread's
+/// default (`Rebuilder::JustOne`, callsite.rs:544-549, 563-567). A thread
+/// with none answers `Interest::never` (dispatcher.rs:379-397,
+/// subscriber.rs:676-677), and the line is then skipped on every thread,
+/// ours too: a parallel test first reaching the line after our
+/// `set_default` lost it (1 run in 21). The callsite cannot be hit before
+/// installing either, as `level_enabled!` stops it while the max level is
+/// still OFF (metadata.rs:245). So the one global subscriber answers
+/// `Interest::sometimes` for every callsite (`DynFilterFn`, filter_fn.rs:
+/// 577-622; `Layered::pick_interest`, layered.rs:457-460) and decides per
+/// event whether this thread is armed.
+fn capture(captured: &Captured) -> Armed {
+    use tracing_subscriber::layer::SubscriberExt;
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .with_writer(rekindle_utils::log_scrub::ScrubbingMakeWriter::new(ToArmed))
+            .finish()
+            .with(tracing_subscriber::filter::dynamic_filter_fn(|_, _| {
+                ARMED.with(|armed| armed.borrow().is_some())
+            }));
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("no other subscriber in this test binary");
+    });
+    ARMED.with(|armed| *armed.borrow_mut() = Some(captured.clone()));
+    Armed
+}
+
+/// Feed `host` a request from a fresh sender on a new thread, unarmed, so
+/// the frame-received line is first hit there.
+fn receive_on_another_thread(host: &std::sync::Arc<super::Host>, owner: [u8; 32], nonce: u8) {
+    let sender = rekindle_crypto::Identity::generate();
+    let frame = sealed_request(&sender, owner, [nonce; 16], now_ms());
+    let datagram = rekindle_transport::operations::dm::wire(&frame).unwrap();
+    let host = std::sync::Arc::clone(host);
+    std::thread::spawn(move || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(async move { drop(host.receive_direct_call(&datagram).await) });
+    })
+    .join()
+    .unwrap();
 }
 
 /// B19 guard for `1145a7e6`: the frame-received debug line, through the
 /// log scrubber every host installs, holds no raw hex of the sender's key,
 /// neither the whole key nor a hand-cut prefix (an 8-hex cut passes the
-/// scrubber's 16-hex rule in the clear).
+/// scrubber's 16-hex rule in the clear). Another thread reaches the line
+/// first while we capture, the interleaving that lost it (see [`capture`]).
 #[tokio::test]
 async fn the_frame_received_line_holds_no_raw_sender_key() {
     let dir = tempfile::tempdir().unwrap();
     let (host, owner) = super::direct_tests::ann(&dir).await;
     let captured = Captured::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_ansi(false)
-        .with_writer(rekindle_utils::log_scrub::ScrubbingMakeWriter::new(
-            captured.clone(),
-        ))
-        .finish();
     let bob = rekindle_crypto::Identity::generate();
     let key = bob.public_key_bytes();
     let frame = sealed_request(&bob, owner, [10; 16], now_ms());
     let datagram = rekindle_transport::operations::dm::wire(&frame).unwrap();
     {
-        let _guard = tracing::subscriber::set_default(subscriber);
+        let _armed = capture(&captured);
+        receive_on_another_thread(&host, owner, 11);
         drop(host.receive_direct_call(&datagram).await);
     }
     let log = String::from_utf8(captured.0.lock().clone()).unwrap();
