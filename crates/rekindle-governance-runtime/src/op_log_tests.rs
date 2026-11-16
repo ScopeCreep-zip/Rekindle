@@ -159,3 +159,41 @@ fn a_gossiped_join_is_stored_only_against_a_live_invite_and_within_bounds() {
     };
     assert!(!receive_bounded(&oob, &state));
 }
+
+#[test]
+fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_stay_applied() {
+    let key = SigningKey::from_bytes(&[7; 32]);
+    let cert = cert(&key);
+    let state = GovernanceState::default();
+    let (first, first_bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &VerifiedSet::default(),
+        &key,
+        meta("a"),
+        5,
+    )
+    .unwrap();
+    let held_first = held(&first, "m".into(), first_bytes, OpFate::Applied);
+    let base = verify_held("A", std::slice::from_ref(&held_first));
+    // A restored backup: two different ops at seq 1, both after `first`.
+    let (left, left_bytes) = build_op("A", &cert, &state, &base, &key, meta("b"), 6).unwrap();
+    let (right, right_bytes) = build_op("A", &cert, &state, &base, &key, meta("c"), 7).unwrap();
+    assert_eq!((left.op().seq, right.op().seq), (1, 1));
+    let set = verify_held(
+        "A",
+        &[
+            held_first,
+            held(&left, "m".into(), left_bytes, OpFate::Applied),
+            held(&right, "m".into(), right_bytes, OpFate::Applied),
+        ],
+    );
+    let outcome = merge::merge_outcome(&cert, &set.ops);
+    assert_eq!(outcome.equivocators, vec![first.author().clone()]);
+    let verdicts = fates(&set, &outcome);
+    let of = |hash| verdicts.iter().find(|v| v.hash == hash).unwrap().fate;
+    assert_eq!(of(first.hash()), OpFate::Applied);
+    assert_eq!(of(left.hash()), OpFate::Equivocation);
+    assert_eq!(of(right.hash()), OpFate::Equivocation);
+}

@@ -29,7 +29,7 @@ pub struct SimNode {
     pub public_key: Option<String>,
     /// The node's route port, the one its Host holds, to read our routes.
     pub routes: Arc<dyn rekindle_records::port::RoutePort>,
-    _dir: tempfile::TempDir,
+    dir: tempfile::TempDir,
 }
 
 /// A request the host refused.
@@ -102,7 +102,7 @@ pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
             host,
             public_key: None,
             routes,
-            _dir: dir,
+            dir,
         });
     }
     let _pump = sim.start();
@@ -259,6 +259,11 @@ impl SimNode {
             );
             tokio::time::sleep(Duration::from_millis(250)).await;
         }
+    }
+
+    /// The node's data root directory ([`crate::data_root`] copies it).
+    pub fn root_dir(&self) -> &std::path::Path {
+        self.dir.path()
     }
 
     /// Whether the unlocked identity's profile and mailbox are published.

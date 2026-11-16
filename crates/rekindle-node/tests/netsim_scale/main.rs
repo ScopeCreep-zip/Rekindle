@@ -19,12 +19,18 @@ mod channel_post_both_ways;
 mod community_block_drops;
 #[path = "../netsim/community_policy.rs"]
 mod community_policy;
+#[path = "../netsim/data_root.rs"]
+mod data_root;
 #[path = "../netsim/dm_hint_loss.rs"]
 mod dm_hint_loss;
+#[path = "../netsim/equivocation.rs"]
+mod equivocation;
 #[path = "../netsim/events.rs"]
 mod events;
 #[path = "../netsim/expressions.rs"]
 mod expressions;
+#[path = "../netsim/first_contact_receipt.rs"]
+mod first_contact_receipt;
 #[path = "../netsim/first_contact_retry.rs"]
 mod first_contact_retry;
 #[path = "../netsim/first_login.rs"]

@@ -239,20 +239,22 @@ pub struct OpVerdict {
     pub lamport: Option<u64>,
 }
 
-/// The fate of every held op after `outcome`: an equivocator's ops are
-/// `Equivocation`, an op the merge refused (validation, strong removal, the
+/// The fate of every held op after `outcome`: an equivocator's ops from
+/// its fork on (the ones the merge dropped; its earlier ops stay applied,
+/// D15) are `Equivocation`, an op the merge refused (validation, strong removal, the
 /// invite and approval gates) is `Quarantined`, one the merge holds for a
 /// dep is `PendingDeps`, and only an applied op is `Applied`.
 #[must_use]
 pub fn fates(set: &VerifiedSet, outcome: &MergeOutcome) -> Vec<OpVerdict> {
     let refused: BTreeSet<OpHash> = outcome.refused.iter().copied().collect();
+    let applied: BTreeSet<OpHash> = outcome.applied.iter().copied().collect();
     let pending: BTreeSet<OpHash> = outcome.pending.iter().copied().collect();
     let mut out: Vec<OpVerdict> = set
         .ops
         .iter()
         .map(|op| {
             let hash = op.hash();
-            let fate = if outcome.equivocators.contains(op.author()) {
+            let fate = if outcome.equivocators.contains(op.author()) && !applied.contains(&hash) {
                 OpFate::Equivocation
             } else if refused.contains(&hash) {
                 OpFate::Quarantined
@@ -314,6 +316,13 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
         }
         if !fetched {
             let outcome = merge::merge_outcome(&cert, &set.ops);
+            for author in &outcome.equivocators {
+                tracing::warn!(
+                    community = community_id,
+                    author = %hex::encode(author.0),
+                    "governance equivocation: two ops at one seq; the author's ops from the fork on are dropped"
+                );
+            }
             deps.set_governance_op_fates(community_id, fates(&set, &outcome))
                 .await?;
             return Ok(outcome.state);
