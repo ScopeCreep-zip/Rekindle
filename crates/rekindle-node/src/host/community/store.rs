@@ -39,7 +39,14 @@ pub struct CommunityStore {
     /// The display names on members' verified cards (`M`/0), by community
     /// and pseudonym (plan E3.2).
     member_cards: Arc<RwLock<BTreeMap<(String, [u8; 32]), String>>>,
+    /// One lock per community serializing its watch-ring moves (plan E3.2
+    /// S7): a move reads the merged member set and then awaits its opens
+    /// and releases, so two concurrent moves (rebuilds from gossip, hints,
+    /// the sweep) undid each other's assignments.
+    ring_moves: RingMoves,
 }
+
+type RingMoves = Arc<parking_lot::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>;
 
 impl CommunityStore {
     /// The store over `map` (the Host's `HostStores::communities`).
@@ -48,7 +55,19 @@ impl CommunityStore {
         Self {
             map,
             member_cards: Arc::new(RwLock::new(BTreeMap::new())),
+            ring_moves: Arc::default(),
         }
+    }
+
+    /// The lock that serializes `community_id`'s watch-ring moves.
+    #[must_use]
+    pub fn ring_move_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(
+            self.ring_moves
+                .lock()
+                .entry(community_id.to_string())
+                .or_default(),
+        )
     }
 
     /// The display name on `pseudonym`'s verified card.

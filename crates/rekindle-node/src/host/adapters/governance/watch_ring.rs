@@ -52,12 +52,16 @@ impl HostGovernance {
     }
 
     /// Recompute `community_id`'s ring successors and move the watches that
-    /// changed: at most k per member-set change.
+    /// changed: at most k per member-set change. Moves are serialized per
+    /// community, and each reads the member set once it holds the lock, so
+    /// the move after the last merge leaves exactly that set's successors.
     pub(crate) async fn rearm_watch_ring(&self, community_id: &str) {
         let Ok(node) = self.transport() else {
             return;
         };
-        let (wanted, current): (BTreeSet<String>, BTreeSet<String>) = {
+        let lock = self.ctx.communities.ring_move_lock(community_id);
+        let _move = lock.lock().await;
+        let (wanted, current, members): (BTreeSet<String>, BTreeSet<String>, usize) = {
             let map = self.ctx.communities.map().read();
             let Some(community) = map.get(community_id) else {
                 return;
@@ -68,7 +72,15 @@ impl HostGovernance {
                     .collect(),
                 _ => BTreeSet::new(),
             };
-            (wanted, community.watch_ring.keys().cloned().collect())
+            let members = community
+                .governance_state
+                .as_ref()
+                .map_or(0, |s| s.members.len());
+            (
+                wanted,
+                community.watch_ring.keys().cloned().collect(),
+                members,
+            )
         };
         let mut gone: Vec<LeaseId> = Vec::new();
         {
@@ -115,11 +127,13 @@ impl HostGovernance {
         for lease in surplus {
             dht_writes::release(&node, lease).await;
         }
-        tracing::debug!(community_id, watched = wanted.len(), "watch ring re-armed");
+        tracing::debug!(community_id, members, watched = ?wanted, "watch ring re-armed");
     }
 
     /// Release `community_id`'s ring watches (leave).
     pub(crate) async fn release_watch_ring(&self, community_id: &str) {
+        let lock = self.ctx.communities.ring_move_lock(community_id);
+        let _move = lock.lock().await;
         let leases: Vec<LeaseId> = self
             .ctx
             .communities

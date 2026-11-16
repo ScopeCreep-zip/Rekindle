@@ -84,4 +84,3 @@ mod stall;
 mod udp_blocked;
 mod wake_trigger;
 mod watch_fallback;
-mod watch_ring_budget;

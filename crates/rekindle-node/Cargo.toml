@@ -12,6 +12,13 @@ workspace = true
 name = "rekindled"
 path = "src/bin/rekindled.rs"
 
+# The N = 40 netsim scenarios (plan E3.2 S7 Verify) run about 35 minutes,
+# so they build only with this feature, apart from `--test netsim`.
+[[test]]
+name = "netsim_scale"
+path = "tests/netsim_scale/main.rs"
+required-features = [ "netsim-scale" ]
+
 [dependencies]
 # Workspace crates. rekindle-node never imports veilid-core: it links Veilid
 # only through rekindle-transport (ADR 0014), which runs on the
@@ -119,6 +126,10 @@ hex = "0.4"
 # `forked_random::ForkedRandom`: each 1:1 step's generator (audit C-1); netsim
 # scenarios' outsiders also sign and wrap with it as a peer would.
 rekindle-secrets = { path = "../rekindle-secrets" }
+
+[features]
+# Builds the `netsim_scale` test target (see its `[[test]]`).
+netsim-scale = []
 
 [dev-dependencies]
 # The unsigned op fixtures the governance tests merge (`merge_entries`, `at`, `stamp`).
