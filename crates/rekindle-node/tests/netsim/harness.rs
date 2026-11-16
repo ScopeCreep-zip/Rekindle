@@ -378,11 +378,22 @@ impl Community {
 
     /// A one-use invite from node 0; kept as [`link`](Self::link).
     pub async fn invite(&mut self) -> String {
+        self.invite_for(1).await
+    }
+
+    /// Node `i` joins through a fresh invite, and lists the community.
+    pub async fn join(&mut self, i: usize) {
+        let link = self.invite().await;
+        self.join_with(i, link).await;
+    }
+
+    /// A `uses`-use invite from node 0; kept as [`link`](Self::link).
+    pub async fn invite_for(&mut self, uses: u32) -> String {
         let invite = self.nodes[0]
             .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::InviteCreate {
                     community: self.governance_key.clone(),
-                    max_uses: 1,
+                    max_uses: uses,
                     expires_seconds: None,
                 },
             )))
@@ -391,9 +402,9 @@ impl Community {
         self.link.clone()
     }
 
-    /// Node `i` joins through a fresh invite, and lists the community.
-    pub async fn join(&mut self, i: usize) {
-        let link = self.invite().await;
+    /// Node `i` joins through `link`, and lists the community and holds
+    /// its key.
+    pub async fn join_with(&mut self, i: usize, link: String) {
         self.nodes[i]
             .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityJoin { invite: link },

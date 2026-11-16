@@ -123,7 +123,9 @@ impl HostGovernance {
             }],
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+        tracing::info!(community = community_id, requester = %request.requester_pseudonym, "RequestMEK answered");
+        Ok(())
     }
 
     /// The inviter's half of a join (plan E3.2, D16): `joiner`'s
@@ -184,7 +186,9 @@ impl HostGovernance {
             }],
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+        tracing::info!(community = community_id, joiner = %hex::encode(joiner.0), "community key delivered to the joiner (D16)");
+        Ok(())
     }
 
     /// Generation 0 is the current key, with its provenance (a rebuilt key
