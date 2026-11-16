@@ -17,9 +17,9 @@ fn pk(b: u8) -> PseudonymKey {
     PseudonymKey([b; 32])
 }
 
-fn joined(code: Option<&str>) -> GovernanceEntry {
+fn joined(by: u8, code: Option<&str>) -> GovernanceEntry {
     GovernanceEntry::MemberJoined {
-        member_record: "VLD0:m".into(),
+        member_record: format!("VLD0:m{by}"),
         member_record_owner: "owner".into(),
         invite_proof: code.map(|c| InviteProof {
             code_hash: c.into(),
@@ -70,11 +70,11 @@ fn invite(max_uses: u32) -> GovernanceEntry {
 /// Creator 1; managers 2 (role 6) and 3 (role 5); member 4. Returns the
 /// ops and the head everyone has seen.
 fn community() -> Vec<VerifiedOp> {
-    let c0 = op(&pk(1), 0, &[], 0, joined(None));
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let c1 = op(&pk(1), 1, &[&c0], 1, invite(MAX_USES_PER_INVITE));
-    let a0 = op(&pk(2), 0, &[&c1], 2, joined(Some("code")));
-    let b0 = op(&pk(3), 0, &[&c1], 3, joined(Some("code")));
-    let d0 = op(&pk(4), 0, &[&c1], 4, joined(Some("code")));
+    let a0 = op(&pk(2), 0, &[&c1], 2, joined(2, Some("code")));
+    let b0 = op(&pk(3), 0, &[&c1], 3, joined(3, Some("code")));
+    let d0 = op(&pk(4), 0, &[&c1], 4, joined(4, Some("code")));
     let c2 = op(&pk(1), 2, &[&c1, &a0, &b0, &d0], 5, role(6, 6));
     let c3 = op(&pk(1), 3, &[&c2], 6, role(5, 5));
     let c4 = op(&pk(1), 4, &[&c3], 7, assign(2, 6));
@@ -98,7 +98,7 @@ fn every_variant_has_a_power_row() {
     // row per variant; the rows below pin the ones resolution relies on.
     assert_eq!(class_of(&kick(2)), OpClass::Power);
     assert_eq!(class_of(&assign(2, 6)), OpClass::Power);
-    assert_eq!(class_of(&joined(None)), OpClass::NonPower);
+    assert_eq!(class_of(&joined(1, None)), OpClass::NonPower);
     assert_eq!(class_of(&GovernanceEntry::MemberLeft {}), OpClass::NonPower);
     assert_eq!(class_of(&meta("x")), OpClass::NonPower);
 }
@@ -115,8 +115,8 @@ fn members_join_by_invite() {
 #[test]
 fn a_join_without_a_live_invite_is_refused() {
     let mut ops = community();
-    let stray = op(&pk(9), 0, &[head(&ops)], 20, joined(Some("other")));
-    let early = op(&pk(8), 0, &[find(&ops, 1, 0)], 21, joined(Some("code")));
+    let stray = op(&pk(9), 0, &[head(&ops)], 20, joined(9, Some("other")));
+    let early = op(&pk(8), 0, &[find(&ops, 1, 0)], 21, joined(8, Some("code")));
     ops.extend([stray, early]);
     let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
     assert!(!state.members.contains_key(&pk(9)), "unknown commitment");
@@ -131,7 +131,7 @@ fn a_join_without_a_live_invite_is_refused() {
 /// a backdated join can't slip under the expiry.
 #[test]
 fn a_join_backdated_before_its_deps_is_refused() {
-    let c0 = op(&pk(1), 0, &[], 0, joined(None));
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let expiring = GovernanceEntry::InviteCreated {
         invite_id: [7; 16],
         code_hash: "code".into(),
@@ -149,8 +149,8 @@ fn a_join_backdated_before_its_deps_is_refused() {
         late.hash(),
         late.lamport(),
     );
-    let honest = op(&pk(2), 0, &[&c1], 3, joined(Some("code")));
-    let backdated = op(&pk(3), 0, &[&late], 4, joined(Some("code")));
+    let honest = op(&pk(2), 0, &[&c1], 3, joined(2, Some("code")));
+    let backdated = op(&pk(3), 0, &[&late], 4, joined(3, Some("code")));
     let backdated = VerifiedOp::assume_verified(
         rekindle_types::governance::GovernanceOp {
             issued_at: 50,
@@ -241,16 +241,16 @@ fn a_departed_author_keeps_its_op_log_record() {
     assert!(!state.members.contains_key(&pk(4)), "the member left");
     assert_eq!(
         state.op_log_records.get(&pk(4)).map(String::as_str),
-        Some("VLD0:m")
+        Some("VLD0:m4")
     );
 }
 
 #[test]
 fn invite_max_uses_caps_joins() {
-    let c0 = op(&pk(1), 0, &[], 0, joined(None));
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let c1 = op(&pk(1), 1, &[&c0], 1, invite(1));
-    let a0 = op(&pk(2), 0, &[&c1], 2, joined(Some("code")));
-    let b0 = op(&pk(3), 0, &[&c1], 3, joined(Some("code")));
+    let a0 = op(&pk(2), 0, &[&c1], 2, joined(2, Some("code")));
+    let b0 = op(&pk(3), 0, &[&c1], 3, joined(3, Some("code")));
     let state = merge(&cert(&pk(1), AdmissionMode::Open), &[c0, c1, a0, b0]);
     let joined_count = [2, 3]
         .iter()
@@ -261,10 +261,10 @@ fn invite_max_uses_caps_joins() {
 
 #[test]
 fn approval_required_holds_joiners_pending() {
-    let c0 = op(&pk(1), 0, &[], 0, joined(None));
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let c1 = op(&pk(1), 1, &[&c0], 1, invite(MAX_USES_PER_INVITE));
-    let a0 = op(&pk(2), 0, &[&c1], 2, joined(Some("code")));
-    let b0 = op(&pk(3), 0, &[&c1], 3, joined(Some("code")));
+    let a0 = op(&pk(2), 0, &[&c1], 2, joined(2, Some("code")));
+    let b0 = op(&pk(3), 0, &[&c1], 3, joined(3, Some("code")));
     let a1 = op(&pk(2), 1, &[&a0, &b0], 4, assign(2, 6));
     let approve = op(
         &pk(1),
@@ -339,9 +339,9 @@ fn rejoin_after_removal_is_allowed_and_concurrent_acts_stay_void() {
         1,
         &[head(&ops), find(&ops, 4, 0)],
         41,
-        joined(Some("code")),
+        joined(4, Some("code")),
     );
-    let rejoin = op(&pk(4), 2, &[&k, &concurrent], 42, joined(Some("code")));
+    let rejoin = op(&pk(4), 2, &[&k, &concurrent], 42, joined(4, Some("code")));
     ops.extend([k.clone(), concurrent.clone()]);
     let removed = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
     assert!(!removed.members.contains_key(&pk(4)));
@@ -360,7 +360,7 @@ fn strong_removal_chains_transitively() {
     // member 4. B's removal of C is invalidated, so C stays a manager and
     // C's kick, no longer under a valid removal, applies.
     let mut ops = community();
-    let c_join = op(&pk(5), 0, &[head(&ops)], 50, joined(Some("code")));
+    let c_join = op(&pk(5), 0, &[head(&ops)], 50, joined(5, Some("code")));
     let c_role = op(&pk(1), 6, &[&c_join], 51, role(4, 4));
     let c_assign = op(&pk(1), 7, &[&c_role], 52, assign(5, 4));
     ops.extend([c_join, c_role, c_assign]);
@@ -382,9 +382,9 @@ fn strong_removal_chains_transitively() {
 
 #[test]
 fn an_invite_without_a_use_cap_is_refused() {
-    let c0 = op(&pk(1), 0, &[], 0, joined(None));
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let c1 = op(&pk(1), 1, &[&c0], 1, invite(0));
-    let a0 = op(&pk(2), 0, &[&c1], 2, joined(Some("code")));
+    let a0 = op(&pk(2), 0, &[&c1], 2, joined(2, Some("code")));
     let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &[c0, c1.clone(), a0]);
     assert!(
         outcome.refused.contains(&c1.hash()),
@@ -395,6 +395,54 @@ fn an_invite_without_a_use_cap_is_refused() {
         !outcome.state.members.contains_key(&pk(2)),
         "no live invite"
     );
+}
+
+/// Two members whose joins name one member record: only the first in the
+/// op set's stamp order holds it, the other's join is refused, alike in
+/// either arrival order; a join naming the creator's record is refused.
+#[test]
+fn two_joins_naming_one_member_record_admit_only_the_first() {
+    let claim = |by: u8, record: &str| GovernanceEntry::MemberJoined {
+        member_record: record.into(),
+        member_record_owner: format!("owner{by}"),
+        invite_proof: Some(InviteProof {
+            code_hash: "code".into(),
+            sig: vec![0; 64],
+        }),
+    };
+    let base = community();
+    let x = op(&pk(5), 0, &[head(&base)], 60, claim(5, "VLD0:shared"));
+    let y = op(&pk(6), 0, &[head(&base)], 61, claim(6, "VLD0:shared"));
+    let z = op(
+        &pk(7),
+        0,
+        &[head(&base)],
+        62,
+        claim(7, "VLD0:creator-record"),
+    );
+    let (first, second) = if x.stamp() < y.stamp() {
+        (&x, &y)
+    } else {
+        (&y, &x)
+    };
+    for order in [[&x, &y, &z], [&z, &y, &x]] {
+        let mut ops = base.clone();
+        ops.extend(order.iter().map(|o| (*o).clone()));
+        let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
+        let members = &outcome.state.members;
+        assert!(members.contains_key(first.author()), "the first holds it");
+        assert!(
+            !members.contains_key(second.author()),
+            "the second is refused"
+        );
+        assert!(outcome.refused.contains(&second.hash()));
+        assert!(outcome.applied.contains(&first.hash()));
+        assert!(
+            !members.contains_key(&pk(7)),
+            "the creator's record is held"
+        );
+        assert!(outcome.refused.contains(&z.hash()));
+    }
 }
 
 #[test]

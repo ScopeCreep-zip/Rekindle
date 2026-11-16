@@ -1,12 +1,13 @@
 //! The causal gates between resolution rounds (plan E3.2): strong removal
 //! (p2panda-auth), re-join after removal, approval under
 //! `ApprovalRequired` (Q6), invite proofs against the `InviteCreated`
-//! set and its `max_uses` cap, and joins backdated before their own deps
-//! (SEC-3).
+//! set and its `max_uses` cap, joins backdated before their own deps
+//! (SEC-3), and one member per member record.
 
 use std::collections::BTreeMap;
 
 use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry};
+use rekindle_types::id::PseudonymKey;
 
 use super::resolve::OpSet;
 use super::Round;
@@ -51,6 +52,7 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
         }
     }
     backdated_join_gate(set, &mut invalid);
+    record_gate(cert, set, round, &mut invalid);
     invite_gate(set, round, &mut invalid);
     invalid
 }
@@ -72,6 +74,31 @@ fn backdated_join_gate(set: &OpSet<'_>, invalid: &mut [bool]) {
             .max();
         if latest_dep.is_some_and(|at| op.op().issued_at < at) {
             invalid[o] = true;
+        }
+    }
+}
+
+/// A `MemberJoined` naming a member record another member already holds is
+/// refused (S7 review): a reader accepts data from `M(p)` only under the
+/// binding in `p`'s own join (slot-integrity §4.2), so two members bound to
+/// one record would let either one's writes pass as the other's. The
+/// record goes to the first applied join in the op set's stamp order (the
+/// cert's creator holds its own from the start), which every reader
+/// computes alike whatever order the ops arrived in; a member's own
+/// re-join on its record is not a second claim.
+fn record_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
+    let mut holder: BTreeMap<&str, &PseudonymKey> = BTreeMap::new();
+    holder.insert(cert.creator_member_record.as_str(), &cert.creator_pseudonym);
+    for (o, op) in set.ops.iter().enumerate() {
+        let GovernanceEntry::MemberJoined { member_record, .. } = op.body() else {
+            continue;
+        };
+        match holder.get(member_record.as_str()) {
+            Some(&held) => invalid[o] |= held != op.author(),
+            None if round.applied[o] && !invalid[o] => {
+                holder.insert(member_record.as_str(), op.author());
+            }
+            None => {}
         }
     }
 }
