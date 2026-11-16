@@ -6,7 +6,7 @@
 //! does, under `domains::HEAD_ADVANCED`.
 
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::dht_layout::member_record::{BEAT, GOV_HEAD, OUTBOX};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX};
 use rekindle_types::domains;
 
 use super::{check_len, check_size, put_lp, sign, verify};
@@ -15,9 +15,10 @@ use crate::member_record_capnp::head_advanced;
 use crate::CodecError;
 
 /// The `M` subkeys a hint names: the beat (status transitions only), the
-/// op-log head and the outbox. Subkey 6 (`MemberRoutes`) is reserved until
-/// E3.4.
-pub const RELAYED_SUBKEYS: [u32; 3] = [BEAT, GOV_HEAD, OUTBOX];
+/// op-log head, the frontier (the writer's commit point, written after the
+/// head, which a reader catches up from) and the outbox. Subkey 6
+/// (`MemberRoutes`) is reserved until E3.4.
+pub const RELAYED_SUBKEYS: [u32; 4] = [BEAT, GOV_HEAD, FRONTIER, OUTBOX];
 
 /// Largest encoded hint.
 pub const HEAD_ADVANCED_MAX_BYTES: usize = 512;
@@ -142,6 +143,18 @@ mod tests {
         assert_eq!(
             decode_head_advanced(&bytes, "c", &public).unwrap(),
             hint(GOV_HEAD)
+        );
+    }
+
+    /// The frontier (3), the writer's commit point, is a hinted subkey.
+    #[test]
+    fn a_frontier_hint_round_trips() {
+        let relayer = SigningKey::from_bytes(&[3; 32]);
+        let bytes = hint(FRONTIER).encode("c", &relayer).unwrap();
+        let public = relayer.verifying_key().to_bytes();
+        assert_eq!(
+            decode_head_advanced(&bytes, "c", &public).unwrap(),
+            hint(FRONTIER)
         );
     }
 

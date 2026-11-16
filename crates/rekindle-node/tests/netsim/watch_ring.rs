@@ -125,7 +125,7 @@ pub async fn ring_converges(members: usize, seed: u64) {
 }
 
 /// The creator's member record as the anchor's GenesisCert names it.
-fn creator_record(community: &Community) -> String {
+pub fn creator_record(community: &Community) -> String {
     let cert = community
         .sim
         .network_get(&community.governance_key, community_anchor::GENESIS_CERT)

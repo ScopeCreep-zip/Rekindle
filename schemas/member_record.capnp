@@ -101,7 +101,7 @@ struct HistoryRange {
 # ── The ring hint (plan E3.2 S7, evidence §4.3) ──────────────────────
 
 # A ring watcher saw `author`'s member record `memberRecord` advance
-# `subkey` (1, 2 or 4; 6 is reserved for E3.4's MemberRoutes) to `seq`.
+# `subkey` (1, 2, 3 or 4; 6 is reserved for E3.4's MemberRoutes) to `seq`.
 # No content: the recipient reads the writer-signed value. `sig` is the
 # relaying member's pseudonym over `rekindle-head-advanced-v1 ‖ community ‖
 # author ‖ memberRecord ‖ subkey ‖ seq`. Carried in `headAdvanced @76`.

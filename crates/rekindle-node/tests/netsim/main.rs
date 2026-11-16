@@ -76,6 +76,7 @@ mod removal_ack;
 mod resume_after_restart;
 mod rich_messaging;
 mod ring_census;
+mod ring_frontier;
 mod role_assign;
 mod rotation;
 mod route_link_failure;

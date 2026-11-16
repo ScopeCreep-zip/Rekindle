@@ -1,9 +1,10 @@
 //! The ring's `HeadAdvanced` hints (plan E3.2 S7, `evidence/slot-integrity.md`
 //! §4.3/§4.5), on both modes. A ring watcher that sees a member record it
 //! watches advance subkey 1 (the beat, on a status transition only), 2 (the
-//! op-log head) or 4 (the outbox) gossips a hint its pseudonym signs; 6 is
-//! reserved until E3.4. A recipient drops a hint from a non-member, then
-//! reads the writer-signed value: the ring arm's frontier read and rebuild.
+//! op-log head), 3 (the frontier) or 4 (the outbox) gossips a hint its
+//! pseudonym signs; 6 is reserved until E3.4. A recipient drops a hint from
+//! a non-member, then reads the writer-signed value; a frontier that moved
+//! is the ring arm's frontier read and rebuild.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_codec::member_record::head_advanced::{
@@ -13,7 +14,7 @@ use rekindle_codec::member_record::{beat::decode_presence_beat, RecordScope};
 use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::port::OpenIntent;
-use rekindle_types::dht_layout::member_record::{BEAT, GOV_HEAD};
+use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER};
 use rekindle_types::id::PseudonymKey;
 
 use super::moderation::pseudonym;
@@ -37,6 +38,7 @@ impl HostGovernance {
         community_id: &str,
         record: &str,
         subkeys: &[u32],
+        seqs: &[Option<u64>],
     ) {
         let relayed: Vec<u32> = RELAYED_SUBKEYS
             .iter()
@@ -58,9 +60,6 @@ impl HostGovernance {
                 .and_then(|c| c.watch_ring.get(record).copied())
         };
         let Some(lease) = lease else {
-            return;
-        };
-        let Ok(seqs) = self.inspect_dht_record_update_get_seqs(lease).await else {
             return;
         };
         let relayer = derive_community_pseudonym(&secret, community_id);
@@ -123,7 +122,7 @@ impl HostGovernance {
     /// A gossiped hint, in §4.3's order: dropped unless its relayer is a
     /// member, then unless `admit` (the relayer's gossip rate limit) takes
     /// it, then unless it verifies under the relayer, names a relayed
-    /// subkey (1, 2 or 4) and a member's own record. `true` when it passed
+    /// subkey (1, 2, 3 or 4) and a member's own record. `true` when it passed
     /// (the transport relays it); the record is then read off the relay
     /// path, and the seq recorded is the one read, never the hint's
     /// (register S7l).
@@ -187,9 +186,12 @@ impl HostGovernance {
     }
 
     /// Read the hinted subkey from the DHT (writer-signed, forced) and
-    /// record the seq the network holds; act only when it moved: an op-log
-    /// head (2) is caught up and the community rebuilt; a beat (1) or an
-    /// outbox (4) has no governance effect, so it is only recorded.
+    /// record the seq the network holds; act only when it moved: a
+    /// frontier (3), the writer's commit point, is caught up and the
+    /// community rebuilt, sharing the ring change's (record, frontier seq)
+    /// mark ([`HostGovernance::frontier_unread`], marked once caught up); an op-log head (2), a
+    /// beat (1) or an outbox (4) has no governance effect alone, so it is
+    /// only recorded.
     async fn read_hinted(&self, community_id: &str, hint: HeadAdvanced) {
         let record = hint.member_record.as_str();
         let Ok(lease) = self.acquire_record(record, None, OpenIntent::Check).await else {
@@ -207,13 +209,15 @@ impl HostGovernance {
         let Some(read) = read else {
             return;
         };
-        let moved = {
-            let mut map = self.ctx.communities.map().write();
-            map.get_mut(community_id)
-                .is_some_and(|c| c.head_hints.record_read(record, hint.subkey, read))
-        };
-        if moved && hint.subkey == GOV_HEAD {
-            self.refresh_member_record(community_id, record).await;
+        if hint.subkey == FRONTIER {
+            if self.frontier_unread(community_id, record, read) {
+                self.refresh_member_record(community_id, record).await;
+            }
+            return;
+        }
+        let mut map = self.ctx.communities.map().write();
+        if let Some(c) = map.get_mut(community_id) {
+            c.head_hints.record_read(record, hint.subkey, read);
         }
     }
 }
