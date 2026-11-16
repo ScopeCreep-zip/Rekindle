@@ -24,8 +24,9 @@ impl HostGovernance {
     /// the convergence rule (a restore racing a live rotation cannot clobber
     /// it), and the shell's cache told of each one taken
     /// (`ShellHooks::on_mek_installed`, until E3.5). A key the vault lacks
-    /// stays absent: `recover_behind_meks` re-acquires it from a peer;
-    /// minting one here would fork the community.
+    /// stays absent until a peer's `MekTransfer` brings it
+    /// (`recover_behind_meks` asks only for a held key behind its
+    /// generation); minting one here would fork the community.
     pub(crate) fn restore_stored_meks(&self) {
         let mut scopes: Vec<(String, KeyScope)> = self
             .ctx
@@ -55,7 +56,7 @@ impl HostGovernance {
                 .filter_map(|(community, scope)| {
                     let mek = rekindle_vault::typed::mek::load_latest_mek(vault, &community, scope);
                     if mek.is_none() && scope == KeyScope::Community {
-                        tracing::warn!(%community, "community key not in the vault — re-acquired from a peer");
+                        tracing::warn!(%community, "community key not in the vault — waiting for a peer's MekTransfer");
                     }
                     Some((community, scope, mek?))
                 })

@@ -121,11 +121,13 @@ async fn a_peer_join_is_known_and_counts_our_invite() {
     host.shutdown().await.unwrap();
 }
 
-/// The key catch-up (plan E3.1 C2b): a community whose key is absent or
-/// behind governance's generation is asked for; once the key at that
-/// generation is held, nothing is.
+/// The key catch-up (plan E3.1 C2b; register S7l HIGH-1): a community
+/// whose key is held behind governance's generation is asked for; one
+/// whose key was never held is not (the joiner's first key is the
+/// inviter's D16 push), and once the key at that generation is held,
+/// nothing is.
 #[tokio::test]
-async fn recover_behind_meks_asks_only_for_an_absent_or_behind_key() {
+async fn recover_behind_meks_asks_only_for_a_held_key_behind() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     let owner = create_ann(&host).await.public_key;
@@ -137,7 +139,10 @@ async fn recover_behind_meks_asks_only_for_an_absent_or_behind_key() {
         c.my_pseudonym_key = Some("me".into());
     }
     let governance = host.governance();
-    assert_eq!(governance.behind_meks(), vec![("c1".into(), "me".into())]);
+    assert!(
+        governance.behind_meks().is_empty(),
+        "no key held: the joiner waits for the inviter's push"
+    );
 
     let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
         &host.ctx.mek_cache,
@@ -145,8 +150,8 @@ async fn recover_behind_meks_asks_only_for_an_absent_or_behind_key() {
     let at = |generation| rekindle_transport::crypto::mek::Mek::from_bytes([7; 32], generation);
     rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(2));
     assert_eq!(
-        governance.behind_meks().len(),
-        1,
+        governance.behind_meks(),
+        vec![("c1".into(), "me".into())],
         "generation 2 is behind 3"
     );
     rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(3));

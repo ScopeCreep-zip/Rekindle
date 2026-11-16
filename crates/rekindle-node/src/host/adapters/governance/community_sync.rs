@@ -4,7 +4,7 @@
 //! then every [`TICK`]) it re-announces our presence and route to each
 //! community's gossip mesh and asks the mesh for each channel's messages
 //! since our newest. Its first tick with a route also asks for every
-//! community key we lack or hold behind ([`HostGovernance::recover_behind_meks`]).
+//! community key we hold behind ([`HostGovernance::recover_behind_meks`]).
 //!
 //! It reads no record (D4): a channel or governance record's change arrives
 //! by its watch, so the desktop's per-tick inspect of every channel record

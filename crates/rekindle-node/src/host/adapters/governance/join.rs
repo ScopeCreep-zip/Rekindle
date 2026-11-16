@@ -96,10 +96,10 @@ impl HostGovernance {
         self.announce_join(&id);
         // Our `MemberJoined` is on `M` (or queued there and gossiped to the
         // mesh): tell the inviter (it verifies and merges it), then continue
-        // the walk from its frontier.
+        // the walk from its frontier. The invite carries no community key
+        // (D11): the inviter pushes it by `MekTransfer` once it merged our
+        // `MemberJoined` (D16).
         self.bootstrap_from_inviter(&id, &outcome).await;
-        // The invite carries no community key (D11): ask for it.
-        self.recover_behind_meks();
         self.audit_joined(&id, &outcome.invite.community_name);
         tracing::info!(community = %id, "joined community");
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
