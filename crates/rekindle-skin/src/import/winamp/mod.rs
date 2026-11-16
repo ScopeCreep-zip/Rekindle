@@ -39,12 +39,11 @@ use rekindle_types::dto::skin::{
     SkinSource, SkinVariant, TokenValue, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
 };
 
-use super::walk::{self, settle};
-use super::{ImportError, Imported, Tree};
-use crate::colour;
+use super::walk;
+use super::{base_of, conclude, ImportError, Tree};
+pub use super::{ImportDraft, Outcome};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
-use crate::registry::Base;
 use sprites::{Sprite, Target, SPRITES};
 
 /// The `source.format` of an imported package.
@@ -80,27 +79,6 @@ pub struct Read {
     pub font: Option<pledit::Font>,
     /// Entries never read past their names.
     pub ignored: Vec<String>,
-}
-
-/// A user import that fails the validator.
-#[derive(Debug)]
-pub struct ImportDraft {
-    /// The package as imported (a zip that fails [`crate::validate::run`]).
-    pub package: Vec<u8>,
-    /// Every failing pair the walk settled, with its suggested passing colour.
-    pub failures: Vec<walk::Change>,
-    /// The refusal the walk cannot settle, with no suggestion.
-    pub unsettled: Option<walk::Unsettled>,
-    /// The package with every suggestion accepted; `None` when a refusal is
-    /// unsettled.
-    pub suggested: Option<Imported>,
-}
-
-/// A passing import or a draft.
-#[derive(Debug)]
-pub enum Outcome {
-    Passed(Imported),
-    Draft(Box<ImportDraft>),
 }
 
 fn sheet(tree: &Tree, name: &str) -> Result<Option<RgbaImage>, ImportError> {
@@ -212,18 +190,6 @@ pub fn read(wsz: &[u8]) -> Result<Read, ImportError> {
     })
 }
 
-fn base_of(tokens: &BTreeMap<String, TokenValue>) -> (SkinBase, Base) {
-    let ground = tokens.get("bg.panel").and_then(|v| match v {
-        TokenValue::Color { r, g, b, .. } => Some([*r, *g, *b]),
-        _ => None,
-    });
-    if ground.is_some_and(|g| colour::luminance(g) > 0.179) {
-        (SkinBase::Light, Base::Light)
-    } else {
-        (SkinBase::Dark, Base::Dark)
-    }
-}
-
 fn region(
     paths: [&str; 2],
     insets: rekindle_types::dto::skin::Insets,
@@ -321,35 +287,9 @@ pub fn import(wsz: &[u8], id: &str) -> Result<Outcome, ImportError> {
         );
         zip(&files).map_err(ImportError::Refused)
     };
-    let package = build(&read.tokens)?;
-    let mut tokens = read.tokens.clone();
-    let (settled, changes) = settle(&mut tokens, base, build)?;
-    let canonical = match settled {
-        walk::WalkResult::Passed(c) => c,
-        walk::WalkResult::Unsettled(u) => {
-            return Ok(Outcome::Draft(Box::new(ImportDraft {
-                package,
-                failures: changes,
-                unsettled: Some(u),
-                suggested: None,
-            })));
-        }
-    };
-    let notice = notice::render(id, &read, &source, &changes);
-    let imported = Imported {
-        canonical,
-        notice,
-        changes,
-    };
-    if imported.changes.is_empty() {
-        return Ok(Outcome::Passed(imported));
-    }
-    Ok(Outcome::Draft(Box::new(ImportDraft {
-        package,
-        failures: imported.changes.clone(),
-        unsettled: None,
-        suggested: Some(imported),
-    })))
+    conclude(read.tokens.clone(), base, build, |changes| {
+        notice::render(id, &read, &source, changes)
+    })
 }
 
 #[cfg(test)]

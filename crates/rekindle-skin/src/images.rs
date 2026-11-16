@@ -99,24 +99,7 @@ pub fn validate(
         }
         let refuse = |rule| SkinError::new(name, rule);
         let kind = declared_kind(name).map_err(refuse)?;
-        let header = read_header(bytes, kind, MAX_IMAGE_ALLOC).map_err(|e| refuse(rule_of(e)))?;
-        if header.animated_png {
-            return Err(refuse(SkinRule::AnimatedPng));
-        }
-        if header.width > MAX_IMAGE_SIDE || header.height > MAX_IMAGE_SIDE {
-            return Err(refuse(SkinRule::ImageSide {
-                width: header.width,
-                height: header.height,
-                max: MAX_IMAGE_SIDE,
-            }));
-        }
-        let pixels = header.pixels();
-        if pixels > MAX_IMAGE_PIXELS {
-            return Err(refuse(SkinRule::ImagePixels {
-                pixels,
-                max: MAX_IMAGE_PIXELS,
-            }));
-        }
+        let pixels = header_pixels(bytes, kind).map_err(refuse)?;
         total = total.saturating_add(pixels);
         if total > MAX_TOTAL_IMAGE_PIXELS {
             return Err(refuse(SkinRule::ImagesTotalPixels {
@@ -129,14 +112,59 @@ pub fn validate(
     let mut budget = Budget { total };
     let mut out = BTreeMap::new();
     for (name, bytes, kind, pixels) in checked {
-        let canonical = match kind {
-            ImageKind::Gif => canonical_gif(bytes, pixels, &mut budget),
-            _ => canonical_png(bytes),
-        }
-        .map_err(|rule| SkinError::new(name, rule))?;
+        let canonical = canonical(bytes, kind, pixels, &mut budget)
+            .map_err(|rule| SkinError::new(name, rule))?;
         out.insert(name.to_owned(), canonical);
     }
     Ok(out)
+}
+
+/// One image alone, as an importer checks a legacy file before it enters a
+/// package (plan E7.7.3): the same declared-type, header and decode rules
+/// as [`validate`], its own pixels the only ones counted. Returns the
+/// canonical bytes.
+///
+/// # Errors
+/// The first rule the image breaks.
+pub fn check(name: &str, bytes: &[u8]) -> Result<Vec<u8>, SkinRule> {
+    let kind = declared_kind(name)?;
+    let pixels = header_pixels(bytes, kind)?;
+    canonical(bytes, kind, pixels, &mut Budget { total: pixels })
+}
+
+/// The header's checks, before any pixel is decoded: returns its pixels.
+fn header_pixels(bytes: &[u8], kind: ImageKind) -> Result<u64, SkinRule> {
+    let header = read_header(bytes, kind, MAX_IMAGE_ALLOC).map_err(rule_of)?;
+    if header.animated_png {
+        return Err(SkinRule::AnimatedPng);
+    }
+    if header.width > MAX_IMAGE_SIDE || header.height > MAX_IMAGE_SIDE {
+        return Err(SkinRule::ImageSide {
+            width: header.width,
+            height: header.height,
+            max: MAX_IMAGE_SIDE,
+        });
+    }
+    let pixels = header.pixels();
+    if pixels > MAX_IMAGE_PIXELS {
+        return Err(SkinRule::ImagePixels {
+            pixels,
+            max: MAX_IMAGE_PIXELS,
+        });
+    }
+    Ok(pixels)
+}
+
+fn canonical(
+    bytes: &[u8],
+    kind: ImageKind,
+    pixels: u64,
+    budget: &mut Budget,
+) -> Result<Vec<u8>, SkinRule> {
+    match kind {
+        ImageKind::Gif => canonical_gif(bytes, pixels, budget),
+        _ => canonical_png(bytes),
+    }
 }
 
 /// The pixels counted so far: every header's, plus each animation's frames

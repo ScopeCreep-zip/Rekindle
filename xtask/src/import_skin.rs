@@ -7,8 +7,7 @@
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
-use rekindle_skin::import::winamp::{self, Outcome};
-use rekindle_skin::import::{xfire_xml, Imported, Tree};
+use rekindle_skin::import::{pidgin, winamp, xfire_xml, Imported, Outcome, Tree};
 use walkdir::WalkDir;
 
 /// Where built-in packs live (plan E7.7.1 "Built-in packs").
@@ -21,30 +20,35 @@ pub enum Format {
     XfireXml,
     /// Winamp classic `.wsz` (`--from` is the archive file).
     WinampWsz,
+    /// Pidgin 2.x theme directory (`purple/{blist,status-icon,sound}/theme.xml`).
+    Pidgin,
 }
 
-/// A `.wsz` as a built-in: a draft's suggestions are accepted, like the
-/// walk on every built-in, each change printed and recorded in the NOTICE.
+/// A user-format import as a built-in: a draft's suggestions are accepted,
+/// like the walk on every built-in, each change printed and recorded in the
+/// NOTICE.
+fn accept(outcome: Outcome) -> Result<Imported> {
+    Ok(match outcome {
+        Outcome::Passed(i) => i,
+        Outcome::Draft(d) => {
+            for c in &d.failures {
+                println!(
+                    "    draft: {} {} on {} fails {}; suggested {:?} -> {:?}",
+                    c.fg, c.rule, c.ground, c.token, c.original, c.new
+                );
+            }
+            match (d.suggested, d.unsettled) {
+                (Some(i), _) => i,
+                (None, Some(u)) => bail!("the walk cannot settle {}: {}", u.error, u.why),
+                (None, None) => bail!("a draft with neither a suggestion nor a failure"),
+            }
+        }
+    })
+}
+
 fn winamp_pack(from: &Path, id: &str) -> Result<Imported> {
     let bytes = std::fs::read(from).with_context(|| format!("reading {}", from.display()))?;
-    Ok(
-        match winamp::import(&bytes, id).map_err(|e| anyhow!("{e}"))? {
-            Outcome::Passed(i) => i,
-            Outcome::Draft(d) => {
-                for c in &d.failures {
-                    println!(
-                        "    draft: {} {} on {} fails {}; suggested {:?} -> {:?}",
-                        c.fg, c.rule, c.ground, c.token, c.original, c.new
-                    );
-                }
-                match (d.suggested, d.unsettled) {
-                    (Some(i), _) => i,
-                    (None, Some(u)) => bail!("the walk cannot settle {}: {}", u.error, u.why),
-                    (None, None) => bail!("a draft with neither a suggestion nor a failure"),
-                }
-            }
-        },
-    )
+    accept(winamp::import(&bytes, id).map_err(|e| anyhow!("{e}"))?)
 }
 
 /// Every regular file under `dir`, keyed by its `/`-separated relative path.
@@ -92,6 +96,9 @@ pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result
     } = match format {
         Format::XfireXml => xfire_xml::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?,
         Format::WinampWsz => winamp_pack(from, id)?,
+        Format::Pidgin => {
+            accept(pidgin::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
+        }
     };
     let dir = root.join(BUILTIN_DIR);
     std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;

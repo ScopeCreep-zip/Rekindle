@@ -83,13 +83,22 @@ pub fn validate(
     }
     let mut out = BTreeMap::new();
     for (name, bytes) in cues {
-        let wav = declared_kind(name)
-            .and_then(|kind| decode(bytes, kind))
-            .and_then(|pcm| encode(&pcm))
-            .map_err(|rule| SkinError::new(name, rule))?;
+        let wav = check(name, bytes).map_err(|rule| SkinError::new(name, rule))?;
         out.insert(name.to_owned(), wav);
     }
     Ok(out)
+}
+
+/// One cue alone, as an importer checks a legacy sound before it enters a
+/// package (plan E7.7.3): the declared container's reader, the track and
+/// length limits, and the PCM16 WAV re-encode of [`validate`].
+///
+/// # Errors
+/// The first rule the cue breaks.
+pub fn check(name: &str, bytes: &[u8]) -> Result<Vec<u8>, SkinRule> {
+    declared_kind(name)
+        .and_then(|kind| decode(bytes, kind))
+        .and_then(|pcm| encode(&pcm))
 }
 
 fn decode_error(detail: &dyn std::fmt::Display) -> SkinRule {

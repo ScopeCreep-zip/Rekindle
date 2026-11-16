@@ -42,6 +42,7 @@
 //!     cargo xtask gen-skin-registry    Write the skin registry's generated
 //!                                      CSS, TS, TUI palettes and schema.
 //!     cargo xtask import-skin --format xfire-xml --from <dir> --builtin <id>
+//!     cargo xtask import-skin --format pidgin --from <theme dir> --builtin <id>
 //!                                      Import a legacy skin as a built-in
 //!                                      pack and its NOTICE (plan E7.7.3).
 //!     cargo xtask retrofit-allow-reasons
