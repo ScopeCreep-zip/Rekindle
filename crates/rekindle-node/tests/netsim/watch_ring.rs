@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use parking_lot::Mutex;
 
+use rekindle_types::dht_layout::community_anchor;
 use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
@@ -113,6 +114,27 @@ pub async fn ring_converges(members: usize, seed: u64) {
         0,
         "no replica refused a watch"
     );
+    // The creator's own `M`, the GenesisCert's `creatorMemberRecord`, is
+    // one of the watched records and has its full ring of watchers.
+    let creator = creator_record(&community);
+    assert_eq!(
+        watched.get(&creator).map(BTreeSet::len),
+        Some(want),
+        "the creator's M {creator} has {want} ring watchers: {watched:?}"
+    );
+}
+
+/// The creator's member record as the anchor's GenesisCert names it.
+fn creator_record(community: &Community) -> String {
+    let cert = community
+        .sim
+        .network_get(&community.governance_key, community_anchor::GENESIS_CERT)
+        .expect("the anchor's GenesisCert");
+    rekindle_codec::governance_op::genesis::decode_genesis(&cert.data)
+        .expect("a GenesisCert")
+        .signed
+        .cert
+        .creator_member_record
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
