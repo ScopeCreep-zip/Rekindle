@@ -106,12 +106,56 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
         );
     }
 
+    // The fork's ops are dropped at one seq on each member; charlie, the
+    // equivocator's next op, must reach them and be dropped there too
+    // (its own WARN at the seq after the fork), not merely be missing.
+    let before: Vec<Vec<(String, u64)>> = (1..3).map(dropped).collect();
+    let fork: Vec<u64> = before
+        .iter()
+        .enumerate()
+        .map(|(k, ops)| {
+            let seq = ops.iter().map(|(_, seq)| *seq).min();
+            seq.unwrap_or_else(|| panic!("member {} drops the fork's ops", k + 1))
+        })
+        .collect();
     create_role(&community, 0, "charlie").await;
-    tokio::time::sleep(SWEEP_PERIOD * 2).await;
+    let quarantined = eventually(&community.sim, SWEEP_PERIOD * 2 + SEEN, || async {
+        (1..3).all(|i| {
+            dropped(i).iter().any(|(op, seq)| {
+                *seq == fork[i - 1] + 1 && !before[i - 1].iter().any(|(held, _)| held == op)
+            })
+        })
+    })
+    .await;
+    assert!(
+        quarantined,
+        "each member holds and drops charlie, the equivocator's later op: {:#?}",
+        crate::logs::warned(DROPPED)
+    );
     for i in 1..3 {
         assert!(
             !shows(&community, i, "charlie").await,
             "member {i} quarantines the equivocator's later op"
         );
     }
+}
+
+/// `op_log::rebuild_ops`'s WARN for an op it newly drops for its author's
+/// equivocation.
+const DROPPED: &str = "an op of an equivocating author is dropped";
+
+/// The ops member `i` dropped for equivocation, as (op hash hex, seq).
+fn dropped(i: usize) -> Vec<(String, u64)> {
+    let node = format!("node Some({i})");
+    crate::logs::warned(DROPPED)
+        .iter()
+        .filter(|line| line.starts_with(&node))
+        .filter_map(|line| {
+            let field = |name: &str| {
+                line.split_whitespace()
+                    .find_map(|t| t.strip_prefix(name).map(str::to_owned))
+            };
+            Some((field("op=")?, field("seq=")?.parse().ok()?))
+        })
+        .collect()
 }

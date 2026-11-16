@@ -326,9 +326,30 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
                     "governance equivocation: two ops at one seq; the author's ops from the fork on are dropped"
                 );
             }
-            deps.set_governance_op_fates(community_id, fates(&set, &outcome))
-                .await?;
+            let verdicts = fates(&set, &outcome);
+            warn_newly_dropped(community_id, &held, &verdicts);
+            deps.set_governance_op_fates(community_id, verdicts).await?;
             return Ok(outcome.state);
+        }
+    }
+}
+
+/// One WARN per op this merge newly drops for its author's equivocation
+/// (D15: the fork and every later op of that author), naming the op by
+/// its hash, author and seq; an op already held as dropped stays quiet.
+fn warn_newly_dropped(community_id: &str, held: &[HeldOp], verdicts: &[OpVerdict]) {
+    for verdict in verdicts.iter().filter(|v| v.fate == OpFate::Equivocation) {
+        let Some(op) = held.iter().find(|h| h.hash == verdict.hash) else {
+            continue;
+        };
+        if op.fate != OpFate::Equivocation {
+            tracing::warn!(
+                community = community_id,
+                op = %hex::encode(op.hash.0),
+                author = %hex::encode(op.author.0),
+                seq = op.seq,
+                "governance equivocation: an op of an equivocating author is dropped"
+            );
         }
     }
 }
