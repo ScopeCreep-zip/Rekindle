@@ -255,6 +255,9 @@ pub(crate) struct Inner {
     /// The last nonce an encryption drew ([`crate::records`]'
     /// `replicas::Cipher`; 0 is a scenario's injected value).
     pub last_nonce: u64,
+    /// Watches a replica refused at its watch limit (`Rejected`,
+    /// `inbound_watches_interface.rs:120-131`).
+    pub watch_refusals: u64,
 }
 
 /// The network, shared by every node's ports.

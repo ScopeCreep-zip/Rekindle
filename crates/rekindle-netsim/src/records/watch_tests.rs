@@ -244,6 +244,8 @@ async fn a_replica_refuses_watches_past_the_limits() {
         }
         assert_eq!(homes(&inner, &key, 1), vec![0, 1, 2]);
         assert_eq!(homes(&inner, &key, PUBLIC_WATCH_LIMIT + 1), vec![3, 4, 5]);
+        // Each full replica answered `Rejected` once.
+        assert_eq!(inner.watch_refusals, 3);
     }
     // A member has its own budget per member (a fresh record).
     let (key, _a, _b) = seeded(&sim, &nodes).await;
@@ -257,6 +259,7 @@ async fn a_replica_refuses_watches_past_the_limits() {
         watches::desire(&mut inner, node, &key, Some(member), now);
     }
     assert_eq!(homes(&inner, &key, MEMBER_WATCH_LIMIT), vec![3, 4, 5]);
+    assert_eq!(inner.watch_refusals, 6);
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

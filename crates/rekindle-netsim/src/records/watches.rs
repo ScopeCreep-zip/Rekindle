@@ -177,7 +177,7 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
     let Some(record) = inner.records.get_mut(key) else {
         return;
     };
-    let (mut held, mut added, mut accepted) = (0, false, Vec::new());
+    let (mut held, mut added, mut accepted, mut refused) = (0, false, Vec::new(), 0u64);
     for r in reachable(&record.replicas, &inner.faults.partitions, node) {
         let watches = &mut record.replicas[r].watches;
         if let Some(w) = watches.iter_mut().find(|w| w.node == node) {
@@ -214,11 +214,15 @@ fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
             held += 1;
             added = true;
             accepted.push(r);
+        } else {
+            // `InboundWatchValueResult::Rejected` (`:120-131`).
+            refused += 1;
         }
     }
     for r in accepted {
         super::outbound::per_node_placed(inner, node, key, r, d.count);
     }
+    inner.watch_refusals += refused;
     // A replica newly holding the watch is inspected (0.5.8 `watch_value.rs:1317-1322`).
     if added {
         super::outbound::established(inner, node, key, now);

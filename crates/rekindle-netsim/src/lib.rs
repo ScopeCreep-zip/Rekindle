@@ -33,6 +33,7 @@ mod records;
 mod routes;
 mod sleep;
 mod trace;
+mod watch_census;
 
 #[cfg(test)]
 mod attach_tests;
