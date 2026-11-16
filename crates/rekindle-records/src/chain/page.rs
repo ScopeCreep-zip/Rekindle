@@ -3,7 +3,7 @@
 //! is used. Nothing remote is trusted: a page that does not fit its pointer
 //! or the page before it is [`ChainError::Malformed`].
 
-use rekindle_codec::capnp_codec::chain::{self as wire, ChainPage, PagePointer};
+use rekindle_codec::capnp_codec::chain::{self as wire, ChainHead, ChainPage, PagePointer};
 use rekindle_types::dht_layout::dm_participant;
 
 use super::ChainError;
@@ -12,7 +12,7 @@ use crate::lease::{max_subkey_bytes, SchemaShape};
 /// The largest page: a DFLT(1) record's only subkey.
 pub(super) const PAGE_CAP: usize = max_subkey_bytes(SchemaShape { subkey_count: 1 });
 
-/// The largest participant record value (`HEAD`, `RETIRE_THROUGH`).
+/// The largest participant record value (`HEAD`).
 pub(super) const PARTICIPANT_CAP: usize = max_subkey_bytes(SchemaShape {
     subkey_count: dm_participant::SUBKEY_COUNT as u32,
 });
@@ -73,22 +73,9 @@ pub(super) fn runs(entries: &[Vec<u8>]) -> Result<Vec<&[Vec<u8>]>, ChainError> {
     Ok(out)
 }
 
-/// The `HEAD` value naming `newest`.
-pub(super) fn encode_head(newest: &PagePointer) -> Result<Vec<u8>, ChainError> {
-    fits(
-        "chain head",
-        wire::encode_chain_head(newest),
-        PARTICIPANT_CAP,
-    )
-}
-
-/// The `RETIRE_THROUGH` value.
-pub(super) fn encode_retire(through_seq: u64) -> Result<Vec<u8>, ChainError> {
-    fits(
-        "chain retire mark",
-        wire::encode_chain_retire(through_seq),
-        PARTICIPANT_CAP,
-    )
+/// The `HEAD` value: the newest page and the retire mark.
+pub(super) fn encode_head(head: &ChainHead) -> Result<Vec<u8>, ChainError> {
+    fits("chain head", wire::encode_chain_head(head), PARTICIPANT_CAP)
 }
 
 /// A pointer names a page and a non-empty range starting at 1 or later.
@@ -108,26 +95,25 @@ fn check_pointer(what: &'static str, p: &PagePointer) -> Result<(), ChainError> 
     Ok(())
 }
 
-/// A `HEAD` value read from the network.
-pub(super) fn decode_head(bytes: &[u8]) -> Result<PagePointer, ChainError> {
+/// A `HEAD` value read from the network: a mark past the newest page is
+/// malformed.
+pub(super) fn decode_head(bytes: &[u8]) -> Result<ChainHead, ChainError> {
     if bytes.len() > PARTICIPANT_CAP {
         return Err(malformed("chain head", "larger than the subkey limit"));
     }
     let head =
         wire::decode_chain_head(bytes).map_err(|e| malformed("chain head", e.to_string()))?;
-    check_pointer("chain head", &head)?;
-    Ok(head)
-}
-
-/// A `RETIRE_THROUGH` value read from the network.
-pub(super) fn decode_retire(bytes: &[u8]) -> Result<u64, ChainError> {
-    if bytes.len() > PARTICIPANT_CAP {
+    check_pointer("chain head", &head.newest)?;
+    if head.retired_through > head.newest.last_seq {
         return Err(malformed(
-            "chain retire mark",
-            "larger than the subkey limit",
+            "chain head",
+            format!(
+                "retires through {}, the chain ends at {}",
+                head.retired_through, head.newest.last_seq
+            ),
         ));
     }
-    wire::decode_chain_retire(bytes).map_err(|e| malformed("chain retire mark", e.to_string()))
+    Ok(head)
 }
 
 /// A page read from the network, checked against the pointer that led to

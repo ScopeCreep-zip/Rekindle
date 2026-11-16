@@ -132,7 +132,7 @@ ports. Modules: `chain` (plan E2.5, primitive N2: the append-only chain on
 `&dyn RecordPort` — a participant record's `HEAD` names the newest sealed
 DFLT(1) page, written once with its owner keypair dropped, each page names the
 one before it, and `read_after(cursor)` walks back to the cursor and stops at
-`RETIRE_THROUGH`, reporting a retired gap; pages are Cap'n Proto
+the retire mark carried in `HEAD`, reporting a retired gap; pages are Cap'n Proto
 `schemas/chain.capnp` through `rekindle-codec`), `lease` (lease ids, subkey sets, community leases),
 `lifecycle` (open / close / republish / refresh), `port` (plan C9.1: the
 `RecordPort`/`RecordStore`, `RoutePort` and `AppMessagePort` traits, with

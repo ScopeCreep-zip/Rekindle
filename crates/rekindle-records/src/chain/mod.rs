@@ -2,8 +2,11 @@
 //! kept on the DHT as a backward-linked list of sealed pages.
 //!
 //! - The writer's participant record (`dht_layout::dm_participant`) holds
-//!   the chain's `HEAD`, a pointer `{page_key, first_seq, last_seq}` to the
-//!   newest page, and `RETIRE_THROUGH`, the highest retired sequence number.
+//!   the chain's `HEAD`: a pointer `{page_key, first_seq, last_seq}` to the
+//!   newest page and the retire mark, the highest retired sequence number,
+//!   in one value, so a reader's diff costs one fanout (A/B finding R5-5:
+//!   a second subkey, empty until the first retire, cost a whole fanout
+//!   deadline on every diff). A retire rewrites `HEAD` naming the same page.
 //! - Each page is a DFLT(1) record created through [`RecordPort::create`],
 //!   written once, and sealed: its owner keypair is dropped after the write
 //!   and never stored, so nobody can rewrite it. A page names the page
@@ -26,8 +29,8 @@ mod page;
 mod tests;
 
 use crate::port::OpenIntent;
-use rekindle_codec::capnp_codec::chain::ChainPage;
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
+use rekindle_codec::capnp_codec::chain::{ChainHead, ChainPage};
 use rekindle_types::dht_layout::dm_participant;
 
 use crate::lease::LeaseId;
@@ -105,23 +108,31 @@ pub async fn head_at(
     record: &str,
     head_subkey: u32,
 ) -> Result<Option<PagePointer>, ChainError> {
+    Ok(read_head(port, record, head_subkey)
+        .await?
+        .map(|h| h.newest))
+}
+
+/// The whole head value of `record`/`head_subkey`, from the network.
+async fn read_head(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+) -> Result<Option<ChainHead>, ChainError> {
     port.read_once(record, head_subkey, true)
         .await?
         .map(|v| page::decode_head(&v.data))
         .transpose()
 }
 
-/// The highest retired sequence number (0: none).
+/// The highest retired sequence number (0: none), from `HEAD`.
 ///
 /// # Errors
-/// The read failed, or the mark is malformed.
+/// The read failed, or `HEAD` is malformed.
 pub async fn retired_through(port: &dyn RecordPort, participant: &str) -> Result<u64, ChainError> {
-    Ok(port
-        .read_once(participant, dm_participant::RETIRE_THROUGH, true)
+    Ok(read_head(port, participant, dm_participant::HEAD)
         .await?
-        .map(|v| page::decode_retire(&v.data))
-        .transpose()?
-        .unwrap_or(0))
+        .map_or(0, |h| h.retired_through))
 }
 
 /// Append `entries` as one new page, then point `HEAD` at it. `writer` is
@@ -228,16 +239,17 @@ async fn append_after(
     loop {
         let prev = match read {
             HeadRead::Local => own_head_at(port, record, head_subkey).await?,
-            HeadRead::Network => head_at(port, record, head_subkey).await?,
+            HeadRead::Network => read_head(port, record, head_subkey).await?,
         };
-        let newest = write_page(port, prev, expected, entries).await?;
+        // The new head keeps the retire mark of the head it follows.
+        let retired_through = prev.as_ref().map_or(0, |h| h.retired_through);
+        let newest = write_page(port, prev.map(|h| h.newest), expected, entries).await?;
+        let head = ChainHead {
+            newest,
+            retired_through,
+        };
         let outcome = port
-            .write_once(
-                record,
-                head_subkey,
-                page::encode_head(&newest)?,
-                Some(writer),
-            )
+            .write_once(record, head_subkey, page::encode_head(&head)?, Some(writer))
             .await?;
         // A newer `HEAD` than our copy won: Veilid stored it as our copy
         // (0.5.8 `set_value.rs:741-746`), so the next round chains onto it. The
@@ -247,7 +259,7 @@ async fn append_after(
             continue;
         }
         outcome.require_stored(head_subkey)?;
-        return Ok(newest);
+        return Ok(head.newest);
     }
 }
 
@@ -302,7 +314,7 @@ async fn own_head_at(
     port: &dyn RecordPort,
     record: &str,
     head_subkey: u32,
-) -> Result<Option<PagePointer>, ChainError> {
+) -> Result<Option<ChainHead>, ChainError> {
     let lease = port.acquire(record, None, OpenIntent::Check).await?;
     let local = local_value(port, lease, head_subkey).await;
     port.release(lease).await;
@@ -357,17 +369,12 @@ pub async fn read_after(
     participant: &str,
     cursor: u64,
 ) -> Result<ChainRead, ChainError> {
-    // Two subkeys, two fanouts: read at once (the mark, empty until the
-    // first retire, costs a whole fanout deadline).
-    let (newest, retired) =
-        tokio::try_join!(head(port, participant), retired_through(port, participant))?;
+    // One value, one fanout: the mark rides in `HEAD` (finding R5-5), and
+    // a mark past the newest page is refused as it is decoded.
+    let head = read_head(port, participant, dm_participant::HEAD).await?;
+    let retired = head.as_ref().map_or(0, |h| h.retired_through);
+    let newest = head.map(|h| h.newest);
     let last_seq = newest.as_ref().map_or(0, |p| p.last_seq);
-    if retired > last_seq {
-        return Err(ChainError::Malformed {
-            what: "chain retire mark",
-            reason: format!("retires through {retired}, the chain ends at {last_seq}"),
-        });
-    }
     let floor = cursor.max(retired);
     let entries = walk_down(port, newest, floor).await?;
     Ok(ChainRead {
@@ -432,7 +439,10 @@ async fn walk_down(
 }
 
 /// Retire every entry at or below `seq`: readers stop fetching them. The
-/// mark only moves up; a lower or equal `seq` writes nothing.
+/// mark only moves up; a lower or equal `seq` writes nothing. `HEAD` is
+/// rewritten naming the same newest page with the new mark, from the
+/// writer's own copy as an append reads it ([`own_head_at`]); a newer
+/// `HEAD` that wins is retired onto in the next round.
 ///
 /// # Errors
 /// `seq` is past the chain's end, a value is malformed, or the write did not
@@ -443,20 +453,33 @@ pub async fn retire_through(
     writer: &str,
     seq: u64,
 ) -> Result<(), ChainError> {
-    let last_seq = head(port, participant).await?.map_or(0, |p| p.last_seq);
-    if seq > last_seq {
-        return Err(ChainError::RetireBeyondHead { seq, last_seq });
-    }
-    if seq <= retired_through(port, participant).await? {
+    let mut round = 1;
+    loop {
+        let head = own_head_at(port, participant, dm_participant::HEAD).await?;
+        let last_seq = head.as_ref().map_or(0, |h| h.newest.last_seq);
+        let Some(head) = head.filter(|_| seq <= last_seq) else {
+            return Err(ChainError::RetireBeyondHead { seq, last_seq });
+        };
+        if seq <= head.retired_through {
+            return Ok(());
+        }
+        let marked = ChainHead {
+            newest: head.newest,
+            retired_through: seq,
+        };
+        let outcome = port
+            .write_once(
+                participant,
+                dm_participant::HEAD,
+                page::encode_head(&marked)?,
+                Some(writer),
+            )
+            .await?;
+        if matches!(outcome, SetOutcome::Superseded(_)) && round < HEAD_ROUNDS {
+            round += 1;
+            continue;
+        }
+        outcome.require_stored(dm_participant::HEAD)?;
         return Ok(());
     }
-    port.write_once(
-        participant,
-        dm_participant::RETIRE_THROUGH,
-        page::encode_retire(seq)?,
-        Some(writer),
-    )
-    .await?
-    .require_stored(dm_participant::RETIRE_THROUGH)?;
-    Ok(())
 }

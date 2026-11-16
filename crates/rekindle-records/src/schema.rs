@@ -73,8 +73,8 @@ pub fn prekeys() -> RecordSchema {
     }
 }
 
-/// A DM participant record (plan E2.5): the chain head and the retire
-/// mark, owned by a keypair only the participant holds.
+/// A DM participant record (plan E2.5): the chain head, which carries the
+/// retire mark, owned by a keypair only the participant holds.
 #[must_use]
 pub fn dm_participant() -> RecordSchema {
     RecordSchema::Dflt {

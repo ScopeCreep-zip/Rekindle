@@ -108,12 +108,12 @@ pub async fn talk(sim: &Netsim, a: &SimNode, b: &SimNode, tag: &str) {
 
 /// The records whose watched changes reached `reader` that carry no chain
 /// retire mark yet: the writer's chain records among them (a record's
-/// `RETIRE_THROUGH` subkey is empty until its first retire). A change comes
+/// `HEAD` carries retire mark 0 until its first retire; a record whose
+/// subkey 0 is no chain head is not a chain). A change comes
 /// from the replica that held the watch (Veilid's ValueChanged is the
 /// replica's RPC), not from the writer's node, or from the reader's own
 /// catch-up inspection (`ChangeInspect`, plan E2.B S6).
 pub fn unretired(sim: &rekindle_netsim::Netsim, reader: usize) -> Vec<String> {
-    use rekindle_types::dht_layout::dm_participant;
     let prefix = format!("{reader}<-");
     let mut keys: Vec<String> = sim
         .trace()
@@ -125,7 +125,7 @@ pub fn unretired(sim: &rekindle_netsim::Netsim, reader: usize) -> Vec<String> {
                 .or_else(|| rest.split_once(" ChangeInspect "))?;
             Some(key.to_string())
         })
-        .filter(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_none())
+        .filter(|k| chain_mark(sim, k) == Some(0))
         .collect();
     keys.sort();
     keys.dedup();
@@ -158,7 +158,16 @@ pub async fn talk_until_watched(sim: &Netsim, a: &SimNode, b: &SimNode) -> Vec<S
 /// Whether one of `keys` now carries a retire mark: the writer's chain is
 /// retired on the network.
 pub fn retired(sim: &rekindle_netsim::Netsim, keys: &[String]) -> bool {
-    use rekindle_types::dht_layout::dm_participant;
     keys.iter()
-        .any(|k| sim.network_get(k, dm_participant::RETIRE_THROUGH).is_some())
+        .any(|k| chain_mark(sim, k).is_some_and(|mark| mark > 0))
+}
+
+/// The retire mark in `key`'s chain `HEAD` on the network, `None` when it
+/// holds no chain head.
+fn chain_mark(sim: &rekindle_netsim::Netsim, key: &str) -> Option<u64> {
+    use rekindle_types::dht_layout::dm_participant;
+    let head = sim.network_get(key, dm_participant::HEAD)?;
+    rekindle_codec::capnp_codec::chain::decode_chain_head(&head.data)
+        .ok()
+        .map(|h| h.retired_through)
 }

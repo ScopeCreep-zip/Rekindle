@@ -184,19 +184,21 @@ fn a_full_voice_signaling_message_decodes() {
     voice::decode_signaling(&bytes).unwrap();
 }
 
-/// The chain head and retire are bounded by their schema: the longest
-/// record key spelling and the largest sequence numbers fit.
+/// The chain head is bounded by its schema: the longest record key
+/// spelling and the largest sequence numbers and retire mark fit.
 #[test]
-fn the_largest_chain_head_and_retire_decode() {
+fn the_largest_chain_head_decodes() {
     let pointer = chain::PagePointer {
         page_key: format!("VLD0:{}", hex(18, 48)),
         first_seq: u64::MAX - 1,
         last_seq: u64::MAX,
     };
-    let head = chain::encode_chain_head(&pointer);
-    assert_eq!(chain::decode_chain_head(&head).unwrap(), pointer);
-    let retire = chain::encode_chain_retire(u64::MAX);
-    assert_eq!(chain::decode_chain_retire(&retire).unwrap(), u64::MAX);
+    let head = chain::ChainHead {
+        newest: pointer,
+        retired_through: u64::MAX,
+    };
+    let bytes = chain::encode_chain_head(&head);
+    assert_eq!(chain::decode_chain_head(&bytes).unwrap(), head);
 }
 
 /// A page of the smallest entries a chain holds, sealed frames of a few

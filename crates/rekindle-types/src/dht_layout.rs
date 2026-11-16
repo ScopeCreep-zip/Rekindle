@@ -163,17 +163,16 @@ pub mod prekeys {
     }
 }
 
-/// Subkey layout for a DM participant record (plan E2.5): one DFLT(2)
+/// Subkey layout for a DM participant record (plan E2.5): one DFLT(1)
 /// record per participant per conversation, owned by a random keypair only
 /// that participant holds. It anchors the participant's append-only chain
-/// of sealed DFLT(1) pages (`rekindle_records::chain`).
+/// of sealed DFLT(1) pages (`rekindle_records::chain`). The retire mark
+/// rides in the head, so a reader's diff is one fanout (A/B finding R5-5).
 pub mod dm_participant {
-    /// The newest chain page: Cap'n Proto `ChainHead`.
+    /// The newest chain page and the retire mark: Cap'n Proto `ChainHead`.
     pub const HEAD: u32 = 0;
-    /// The highest retired sequence number: Cap'n Proto `ChainRetire`.
-    pub const RETIRE_THROUGH: u32 = 1;
     /// Total subkeys to allocate when creating the record.
-    pub const SUBKEY_COUNT: u16 = 2;
+    pub const SUBKEY_COUNT: u16 = 1;
 }
 
 /// Subkey layout for a friend invite's request inbox (plan E2.5, D17):
@@ -328,14 +327,13 @@ mod tests {
         assert!(!prekeys::is_slot(prekeys::slot_subkey(prekeys::SLOT_COUNT)));
     }
 
-    /// Pins the DM participant record: the head, then the retire mark.
+    /// Pins the DM participant record: the head alone, the retire mark in it.
     #[test]
     fn dm_participant_layout_is_pinned() {
         assert_eq!(dm_participant::HEAD, 0);
-        assert_eq!(dm_participant::RETIRE_THROUGH, 1);
         assert_eq!(
             u32::from(dm_participant::SUBKEY_COUNT),
-            dm_participant::RETIRE_THROUGH + 1
+            dm_participant::HEAD + 1
         );
     }
 

@@ -12,15 +12,13 @@ struct PagePointer {
     lastSeq @2 :UInt64;
 }
 
-# Participant record subkey 0 (dm_participant::HEAD): the newest page.
+# Participant record subkey 0 (dm_participant::HEAD): the newest page, and
+# the retire mark: every entry at or below `retiredThrough` is retired and
+# no longer fetched (0: none). One value, so a reader's diff is one fanout
+# (A/B finding R5-5). A member's op log head is never retired (0).
 struct ChainHead {
     newest @0 :PagePointer;
-}
-
-# Participant record subkey 1 (dm_participant::RETIRE_THROUGH): every entry
-# at or below `throughSeq` is retired and no longer fetched.
-struct ChainRetire {
-    throughSeq @0 :UInt64;
+    retiredThrough @1 :UInt64;
 }
 
 # A page's only subkey: its entries, from `firstSeq` up, and the page

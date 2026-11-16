@@ -18,6 +18,7 @@ mod dm_ack_through;
 mod dm_after_cancel;
 mod dm_append_deadline;
 mod dm_before_accept;
+mod dm_chain_watch;
 mod dm_hint_loss;
 mod dm_new_friendship;
 mod equivocation;

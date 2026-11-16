@@ -14,6 +14,14 @@ pub struct PagePointer {
     pub last_seq: u64,
 }
 
+/// A chain's head value: the newest page and the retire mark.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChainHead {
+    pub newest: PagePointer,
+    /// Every entry at or below it is retired (0: none).
+    pub retired_through: u64,
+}
+
 /// One sealed page: its entries from `first_seq` up, and the page before.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChainPage {
@@ -38,20 +46,21 @@ fn read_pointer(r: chain_capnp::page_pointer::Reader<'_>) -> Result<PagePointer,
     })
 }
 
-/// Participant record subkey `HEAD`: the newest page.
+/// Participant record subkey `HEAD`: the newest page and the retire mark.
 #[must_use]
-pub fn encode_chain_head(newest: &PagePointer) -> Vec<u8> {
+pub fn encode_chain_head(head: &ChainHead) -> Vec<u8> {
     let mut builder = capnp::message::Builder::new_default();
     {
-        let root = builder.init_root::<chain_capnp::chain_head::Builder<'_>>();
-        set_pointer(root.init_newest(), newest);
+        let mut root = builder.init_root::<chain_capnp::chain_head::Builder<'_>>();
+        root.set_retired_through(head.retired_through);
+        set_pointer(root.init_newest(), &head.newest);
     }
     pack(&builder)
 }
 
 /// # Errors
 /// The bytes are not a `ChainHead`, or it names no page.
-pub fn decode_chain_head(bytes: &[u8]) -> Result<PagePointer, CodecError> {
+pub fn decode_chain_head(bytes: &[u8]) -> Result<ChainHead, CodecError> {
     let reader = unpack_bounded(bytes, bounds::CHAIN_HEAD_BOUND)?;
     let r = reader
         .get_root::<chain_capnp::chain_head::Reader<'_>>()
@@ -61,27 +70,10 @@ pub fn decode_chain_head(bytes: &[u8]) -> Result<PagePointer, CodecError> {
             "chain head names no page".into(),
         ));
     }
-    read_pointer(r.get_newest().map_err(|e| capnp_err(&e))?)
-}
-
-/// Participant record subkey `RETIRE_THROUGH`.
-#[must_use]
-pub fn encode_chain_retire(through_seq: u64) -> Vec<u8> {
-    let mut builder = capnp::message::Builder::new_default();
-    builder
-        .init_root::<chain_capnp::chain_retire::Builder<'_>>()
-        .set_through_seq(through_seq);
-    pack(&builder)
-}
-
-/// # Errors
-/// The bytes are not a `ChainRetire`.
-pub fn decode_chain_retire(bytes: &[u8]) -> Result<u64, CodecError> {
-    let reader = unpack_bounded(bytes, bounds::CHAIN_RETIRE_BOUND)?;
-    let r = reader
-        .get_root::<chain_capnp::chain_retire::Reader<'_>>()
-        .map_err(|e| capnp_err(&e))?;
-    Ok(r.get_through_seq())
+    Ok(ChainHead {
+        newest: read_pointer(r.get_newest().map_err(|e| capnp_err(&e))?)?,
+        retired_through: r.get_retired_through(),
+    })
 }
 
 /// A page's only subkey.

@@ -111,14 +111,11 @@ pub const VOICE_SIGNALING_BOUND: Bound = Bound::packed(MAX_APP_MESSAGE_LEN);
 /// `DmFrame` (`direct.capnp`): one 1:1 datagram, an `app_message`.
 pub const DM_FRAME_BOUND: Bound = Bound::packed(MAX_APP_MESSAGE_LEN);
 
-/// `ChainHead` (`chain.capnp`): one `PagePointer`, two `UInt64`s and a
-/// record key's text (about 50 bytes). The root pointer, the head (one
-/// pointer word), the pointer struct (two data words and one pointer word)
+/// `ChainHead` (`chain.capnp`): one `PagePointer` (two `UInt64`s and a
+/// record key's text, about 50 bytes) and the retire mark. The root
+/// pointer, the head (one data and one pointer word), the pointer struct (two data words and one pointer word)
 /// and the text are under 16 words; 64 leaves room for any key spelling.
 pub const CHAIN_HEAD_BOUND: Bound = Bound::schema(64);
-
-/// `ChainRetire` (`chain.capnp`): one `UInt64`, one data word.
-pub const CHAIN_RETIRE_BOUND: Bound = Bound::schema(16);
 
 /// `ChainPage` (`chain.capnp`): one DHT subkey of entries.
 pub const CHAIN_PAGE_BOUND: Bound = Bound::packed(MAX_SUBKEY_SIZE);
@@ -255,10 +252,17 @@ mod tests {
     /// scanned, whatever it holds.
     #[test]
     fn input_over_the_byte_cap_is_refused_before_it_is_read() {
-        let mut retire = crate::capnp_codec::chain::encode_chain_retire(7);
-        assert!(chain::decode_chain_retire(&retire).is_ok());
-        retire.resize(super::CHAIN_RETIRE_BOUND.max_bytes + 1, 0);
-        let err = chain::decode_chain_retire(&retire).unwrap_err();
+        let mut head = chain::encode_chain_head(&chain::ChainHead {
+            newest: chain::PagePointer {
+                page_key: "k".into(),
+                first_seq: 1,
+                last_seq: 1,
+            },
+            retired_through: 7,
+        });
+        assert!(chain::decode_chain_head(&head).is_ok());
+        head.resize(super::CHAIN_HEAD_BOUND.max_bytes + 1, 0);
+        let err = chain::decode_chain_head(&head).unwrap_err();
         assert!(err.to_string().contains("the bound is"), "{err}");
         let long = vec![0u8; super::SIGNED_ENVELOPE_BOUND.max_bytes + 1];
         let err = decode_signed_envelope(&long).unwrap_err();
@@ -269,7 +273,6 @@ mod tests {
     #[test]
     fn every_decoder_refuses_a_message_one_word_over_its_bound() {
         let over = |words: usize| inflating_message(words + 1);
-        assert!(chain::decode_chain_retire(&over(super::CHAIN_RETIRE_BOUND.max_words)).is_err());
         assert!(chain::decode_chain_head(&over(super::CHAIN_HEAD_BOUND.max_words)).is_err());
         assert!(chain::decode_chain_page(&over(super::CHAIN_PAGE_BOUND.max_words)).is_err());
         assert!(presence::decode_update(&over(super::PRESENCE_BOUND.max_words)).is_err());

@@ -217,7 +217,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// sealed community key to one member, receipted and retried.
 /// 126 (plan E3.2 S9, R5-2): `communities.removed_by_name`, the remover's
 /// name as known when our removal merged, kept across teardown and restart.
-pub const SCHEMA_VERSION: i64 = 126;
+/// 127 (plan E2.5, R5-5): the DM participant record is DFLT(1): the chain's
+/// retire mark rides in `ChainHead`, the `RETIRE_THROUGH` subkey is gone.
+pub const SCHEMA_VERSION: i64 = 127;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

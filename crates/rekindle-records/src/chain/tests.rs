@@ -4,7 +4,7 @@
 use parking_lot::Mutex;
 use std::collections::HashMap;
 
-use rekindle_codec::capnp_codec::chain::{encode_chain_page, ChainPage};
+use rekindle_codec::capnp_codec::chain::{encode_chain_page, ChainHead, ChainPage};
 use rekindle_types::dht_layout::dm_participant;
 
 use super::{append, head, read_after, retire_through, ChainError, PagePointer};
@@ -354,6 +354,43 @@ async fn retire_stops_the_walk_and_reports_the_gap() {
     );
 }
 
+/// A head naming `newest` with nothing retired.
+fn unretired(newest: PagePointer) -> ChainHead {
+    ChainHead {
+        newest,
+        retired_through: 0,
+    }
+}
+
+/// Finding R5-5: the mark rides in `HEAD`, so an append after a retire
+/// keeps it, and a head whose mark is past its newest page is refused.
+#[tokio::test]
+async fn an_append_after_a_retire_keeps_the_mark() {
+    let (port, key, owner) = participant().await;
+    for batch in [1..=2, 3..=4] {
+        append(&port, &key, &owner, &entries(batch)).await.unwrap();
+    }
+    retire_through(&port, &key, &owner, 2).await.unwrap();
+    append(&port, &key, &owner, &entries(5..=5)).await.unwrap();
+    let read = read_after(&port, &key, 0).await.unwrap();
+    assert_eq!((seqs(&read), read.retired_gap), (vec![3, 4, 5], Some(2)));
+
+    let newest = head(&port, &key).await.unwrap().unwrap();
+    let past = ChainHead {
+        retired_through: newest.last_seq + 1,
+        newest,
+    };
+    port.overwrite(
+        &key,
+        dm_participant::HEAD,
+        rekindle_codec::capnp_codec::chain::encode_chain_head(&past),
+    );
+    assert!(matches!(
+        read_after(&port, &key, 0).await,
+        Err(ChainError::Malformed { .. })
+    ));
+}
+
 #[tokio::test]
 async fn pages_are_sealed_one_per_append() {
     let (port, key, owner) = participant().await;
@@ -515,12 +552,12 @@ async fn an_append_superseded_by_a_newer_head_chains_onto_it() {
     port.overwrite(
         &key,
         dm_participant::HEAD,
-        super::page::encode_head(&ours).unwrap(),
+        super::page::encode_head(&unretired(ours)).unwrap(),
     );
     port.write_remote(
         &key,
         dm_participant::HEAD,
-        super::page::encode_head(&theirs).unwrap(),
+        super::page::encode_head(&unretired(theirs)).unwrap(),
     );
 
     port.stall_network(true);
