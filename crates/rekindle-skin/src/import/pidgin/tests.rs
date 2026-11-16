@@ -49,7 +49,7 @@ const BLIST_XML: &str = r##"<?xml version="1.0"?>
   </buddys>
 </pidgin>"##;
 
-fn theme(icons: &str, sounds: &str) -> Tree {
+pub(crate) fn theme(icons: &str, sounds: &str) -> Tree {
     let mut t = Tree::new();
     t.insert("Synth/purple/blist/theme.xml".into(), BLIST_XML.into());
     t.insert(
@@ -70,12 +70,12 @@ fn theme(icons: &str, sounds: &str) -> Tree {
     t
 }
 
-const ICONS: &str = r#"<icon id="available" file="16/available.png"/>
+pub(crate) const ICONS: &str = r#"<icon id="available" file="16/available.png"/>
     <icon id="extended-away" file="16/available.png"/>"#;
-const SOUNDS: &str = r#"<event name="login" file="login.wav"/>
+pub(crate) const SOUNDS: &str = r#"<event name="login" file="login.wav"/>
     <event name="send_im" file="login.wav"/>"#;
 
-fn imported(outcome: Outcome) -> Imported {
+pub(crate) fn imported(outcome: Outcome) -> Imported {
     match outcome {
         Outcome::Passed(i) => i,
         Outcome::Draft(d) => {

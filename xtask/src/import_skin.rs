@@ -24,7 +24,8 @@ pub enum Format {
     XfireIni,
     /// Winamp classic `.wsz` (`--from` is the archive file).
     WinampWsz,
-    /// Pidgin 2.x theme directory (`purple/{blist,status-icon,sound}/theme.xml`).
+    /// Pidgin 2.x theme (`purple/{blist,status-icon,sound}/theme.xml`):
+    /// `--from` is the theme directory or its `.tgz`/`.tar.gz` archive.
     Pidgin,
     /// Mumble theme directory (`theme.ini`, its QSS `ApplicationPalette`,
     /// PNG/SVG icons).
@@ -62,6 +63,34 @@ fn accept(outcome: Outcome) -> Result<Imported> {
 fn winamp_pack(from: &Path, id: &str) -> Result<Imported> {
     let bytes = std::fs::read(from).with_context(|| format!("reading {}", from.display()))?;
     accept(winamp::import(&bytes, id).map_err(|e| anyhow!("{e}"))?)
+}
+
+/// A Pidgin theme from its directory or its `.tgz`/`.tar.gz` archive (the
+/// two extensions Pidgin's own theme installer unpacks).
+fn pidgin_pack(from: &Path, id: &str) -> Result<Imported> {
+    if from.is_dir() {
+        return accept(pidgin::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?);
+    }
+    let ext = |p: &Path| {
+        p.extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+    };
+    let archive = match ext(from).as_deref() {
+        Some("tgz") => true,
+        Some("gz") => from
+            .file_stem()
+            .is_some_and(|stem| ext(Path::new(stem)).as_deref() == Some("tar")),
+        _ => false,
+    };
+    if !archive {
+        bail!(
+            "--from {}: a theme directory or a .tgz/.tar.gz archive",
+            from.display()
+        );
+    }
+    let bytes = std::fs::read(from).with_context(|| format!("reading {}", from.display()))?;
+    accept(pidgin::import_archive(&bytes, id).map_err(|e| anyhow!("{e}"))?)
 }
 
 /// Every regular file under `dir`, keyed by its `/`-separated relative path.
@@ -112,9 +141,7 @@ pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result
             accept(xfire_ini::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
         }
         Format::WinampWsz => winamp_pack(from, id)?,
-        Format::Pidgin => {
-            accept(pidgin::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
-        }
+        Format::Pidgin => pidgin_pack(from, id)?,
         Format::Mumble => {
             accept(mumble::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
         }
@@ -151,5 +178,11 @@ mod tests {
         assert!(!is_id("../x"));
         assert!(!is_id("Carbon"));
         assert!(!is_id(""));
+    }
+
+    #[test]
+    fn a_pidgin_file_must_be_a_tgz() {
+        let e = pidgin_pack(Path::new("theme.zip"), "x").unwrap_err();
+        assert!(e.to_string().contains(".tgz/.tar.gz"), "{e}");
     }
 }

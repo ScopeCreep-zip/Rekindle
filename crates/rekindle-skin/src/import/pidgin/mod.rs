@@ -18,9 +18,17 @@
 //! or refused by its validator is dropped and named in the NOTICE; the rest
 //! builds the package, which settles to [`Outcome::Passed`] or an
 //! [`Outcome::Draft`] like every importer.
+//!
+//! Pidgin distributes themes as `.tgz`/`.tar.gz` archives (its theme
+//! installer, `gtkprefs.c` `theme_install_theme`, takes `.gz` and `.tgz`
+//! and unpacks them as gzip'd tar). [`unpack`] reads one in memory
+//! ([`gzip`], [`tar`]) into the same tree a theme directory gives, bounded
+//! by the same legacy limits before anything is allocated.
 
+pub mod gzip;
 pub mod map;
 mod notice;
+pub mod tar;
 
 use std::collections::BTreeMap;
 
@@ -30,7 +38,7 @@ use rekindle_types::dto::skin::{
 };
 
 use super::tree::{self, Node};
-use super::winamp::archive::{refused, MAX_UNCOMPRESSED_BYTES};
+use super::winamp::archive::{refused, MAX_ARCHIVE_BYTES, MAX_UNCOMPRESSED_BYTES};
 use super::{base_of, conclude, tree_hash, walk, ImportError, Outcome, Tree};
 use crate::limits::MAX_ENTRIES;
 use crate::output::{token_file, zip};
@@ -354,5 +362,34 @@ pub fn import(tree: &Tree, id: &str) -> Result<Outcome, ImportError> {
     })
 }
 
+/// A `.tgz`/`.tar.gz` theme archive as the tree its one top-level theme
+/// directory holds (that directory stripped, as a theme directory read
+/// from disk).
+///
+/// # Errors
+/// [`ImportError::Archive`] past [`MAX_ARCHIVE_BYTES`] or a decompressed
+/// cap, or for any refusal of [`gzip::gunzip`] or [`tar::read`].
+pub fn unpack(bytes: &[u8]) -> Result<Tree, ImportError> {
+    let size = bytes.len() as u64;
+    if size > MAX_ARCHIVE_BYTES {
+        return Err(refused(
+            "archive",
+            format!("{size} bytes is past {MAX_ARCHIVE_BYTES}"),
+        ));
+    }
+    let stream = gzip::gunzip(bytes, MAX_UNCOMPRESSED_BYTES)?;
+    tar::read(&stream, MAX_UNCOMPRESSED_BYTES)
+}
+
+/// Imports a `.tgz`/`.tar.gz` theme archive as the package `id`.
+///
+/// # Errors
+/// What [`unpack`] and [`import`] refuse.
+pub fn import_archive(bytes: &[u8], id: &str) -> Result<Outcome, ImportError> {
+    import(&unpack(bytes)?, id)
+}
+
 #[cfg(test)]
 pub(crate) mod tests;
+#[cfg(test)]
+mod tgz_tests;
