@@ -1,7 +1,9 @@
 //! Op-set preparation for `merge`: dedup, equivocation, causal completeness
 //! and the ancestry every resolution rule asks about (plan E3.2).
 
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
+use std::hash::{Hash, Hasher};
 
 use rekindle_types::governance::OpHash;
 use rekindle_types::id::PseudonymKey;
@@ -24,30 +26,54 @@ pub(super) struct OpSet<'a> {
 ///
 /// A dep is always earlier in stamp order than its dependant, so op `i`'s
 /// past holds only ops below `i`: row `i` stores the bits for `0..i` alone
-/// (a lower-triangular bit matrix, half the memory and work of a square one).
+/// (a lower-triangular bit matrix). Rows are built in stamp order on the
+/// first query that reaches them, so a merge pays only for the prefix of
+/// the matrix its rules ask about (all of it once a late op is queried).
 pub(super) struct Ancestry {
-    /// Where row `i`'s words start in `bits`.
+    /// Each op's deps, latest first, flattened: op `i`'s are
+    /// `deps[dep_at[i]..dep_at[i + 1]]`.
+    deps: Vec<usize>,
+    dep_at: Vec<usize>,
+    /// Where row `i`'s words start in `bits`; `row[i + 1]` is where it ends.
     row: Vec<usize>,
-    bits: Vec<u64>,
+    /// Rows `0..built`, in order.
+    bits: RefCell<Vec<u64>>,
+    built: Cell<usize>,
 }
 
 impl Ancestry {
-    fn new(n: usize) -> Self {
+    fn with_capacity(n: usize) -> Self {
         let mut row = Vec::with_capacity(n + 1);
-        let mut at = 0;
-        for i in 0..n {
-            row.push(at);
-            at += i.div_ceil(64);
-        }
-        row.push(at);
+        row.push(0);
+        let mut dep_at = Vec::with_capacity(n + 1);
+        dep_at.push(0);
         Self {
+            deps: Vec::with_capacity(2 * n),
+            dep_at,
             row,
-            bits: vec![0; at],
+            bits: RefCell::new(Vec::new()),
+            built: Cell::new(0),
         }
     }
 
+    /// Records the next op (in stamp order) and its deps.
+    fn push(&mut self, deps: &[usize]) {
+        let i = self.dep_at.len() - 1;
+        let from = self.deps.len();
+        self.deps.extend_from_slice(deps);
+        self.deps[from..].sort_unstable_by(|a, b| b.cmp(a));
+        self.dep_at.push(self.deps.len());
+        self.row.push(self.row[i] + i.div_ceil(64));
+    }
+
     pub fn contains(&self, i: usize, j: usize) -> bool {
-        j < i && self.bits[self.row[i] + j / 64] & (1 << (j % 64)) != 0
+        if j >= i {
+            return false;
+        }
+        if self.built.get() <= i {
+            self.build_through(i);
+        }
+        self.bits.borrow()[self.row[i] + j / 64] & (1 << (j % 64)) != 0
     }
 
     /// Neither op is in the other's causal past.
@@ -55,16 +81,40 @@ impl Ancestry {
         i != j && !self.contains(i, j) && !self.contains(j, i)
     }
 
-    /// Op `d` (a dep of `i`, so `d < i`) and its past join `i`'s past.
-    fn inherit(&mut self, i: usize, d: usize) {
-        debug_assert!(d < i, "a dep precedes its dependant in stamp order");
-        let (head, tail) = self.bits.split_at_mut(self.row[i]);
-        let from = &head[self.row[d]..self.row[d + 1]];
-        let to = &mut tail[..self.row[i + 1] - self.row[i]];
-        for (t, f) in to.iter_mut().zip(from) {
-            *t |= *f;
+    /// Builds rows up to and including `last`. Each row is the union of
+    /// its deps and their rows; a dep already in the row brings nothing
+    /// new (its past is in the row with it), so the latest dep goes first
+    /// and the rest are mostly skipped.
+    fn build_through(&self, last: usize) {
+        let mut bits = self.bits.borrow_mut();
+        for i in self.built.get()..=last {
+            bits.resize(self.row[i + 1], 0);
+            let (head, row) = bits.split_at_mut(self.row[i]);
+            for &d in &self.deps[self.dep_at[i]..self.dep_at[i + 1]] {
+                if row[d / 64] & (1 << (d % 64)) == 0 {
+                    for (t, f) in row.iter_mut().zip(&head[self.row[d]..self.row[d + 1]]) {
+                        *t |= *f;
+                    }
+                    row[d / 64] |= 1 << (d % 64);
+                }
+            }
         }
-        to[d / 64] |= 1 << (d % 64);
+        self.built.set(last + 1);
+    }
+}
+
+/// An op hash as the key of `prepare`'s dep index, hashed by its first
+/// eight bytes: the keys stored are hashes this reader computed (BLAKE3
+/// over the op), so no writer can choose them, and the keyed SipHash of
+/// eight bytes costs less than of thirty-two. Equality is the whole hash.
+#[derive(PartialEq, Eq)]
+struct IndexKey(OpHash);
+
+impl Hash for IndexKey {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        let mut lead = [0; 8];
+        lead.copy_from_slice(&self.0 .0[..8]);
+        state.write_u64(u64::from_le_bytes(lead));
     }
 }
 
@@ -92,9 +142,10 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
         }
     }
 
-    let mut index: HashMap<OpHash, usize> = HashMap::with_capacity(sorted.len());
+    let mut index: HashMap<IndexKey, usize> = HashMap::with_capacity(sorted.len());
     let mut kept: Vec<&VerifiedOp> = Vec::with_capacity(sorted.len());
-    let mut deps_of: Vec<Vec<usize>> = Vec::with_capacity(sorted.len());
+    let mut past = Ancestry::with_capacity(sorted.len());
+    let mut deps: Vec<usize> = Vec::new();
     let mut pending = Vec::new();
     for op in sorted {
         // An out-of-bounds op stays in the DAG (validation refuses it), so
@@ -105,31 +156,90 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
         {
             continue;
         }
-        let deps: Option<Vec<usize>> = op
-            .op()
-            .deps
-            .iter()
-            .map(|d| index.get(&d.op_hash).copied())
-            .collect();
-        let Some(deps) = deps else {
+        deps.clear();
+        let complete = op.op().deps.iter().all(|d| {
+            index
+                .get(&IndexKey(d.op_hash))
+                .map(|&i| deps.push(i))
+                .is_some()
+        });
+        if !complete {
             pending.push(op.hash());
             continue;
-        };
-        index.insert(op.hash(), kept.len());
-        kept.push(op);
-        deps_of.push(deps);
-    }
-
-    let mut past = Ancestry::new(kept.len());
-    for (i, deps) in deps_of.iter().enumerate() {
-        for &d in deps {
-            past.inherit(i, d);
         }
+        index.insert(IndexKey(op.hash()), kept.len());
+        kept.push(op);
+        past.push(&deps);
     }
     OpSet {
         ops: kept,
         past,
         pending,
         equivocators: fork_at.into_keys().map(PseudonymKey).collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use proptest::prelude::*;
+    use rekindle_types::id::PseudonymKey;
+
+    use super::prepare;
+    use crate::fixture::{meta, op};
+    use crate::op::VerifiedOp;
+
+    /// A DAG of `n` ops, op `k` citing the earlier ops `picks` selects.
+    fn dag(n: usize, picks: &[u64]) -> Vec<VerifiedOp> {
+        let mut ops: Vec<VerifiedOp> = Vec::new();
+        for k in 0..n {
+            let bits = picks[k % picks.len()].rotate_left(u32::try_from(k % 64).unwrap_or(0));
+            let deps: Vec<&VerifiedOp> = (0..k)
+                .filter(|&d| bits & (1 << ((k + 3 * d) % 64)) != 0 && k - d <= 70)
+                .map(|d| &ops[d])
+                .collect();
+            let author = PseudonymKey([u8::try_from(k % 251).unwrap_or(0); 32]);
+            let next = op(
+                &author,
+                u64::try_from(k).unwrap_or(0),
+                &deps,
+                k as u64,
+                meta("m"),
+            );
+            ops.push(next);
+        }
+        ops
+    }
+
+    proptest! {
+        /// R4-5: rows built on demand, in any query order, with the
+        /// contained-dep skip, equal causal reachability over the deps.
+        #[test]
+        fn ancestry_is_reachability_in_any_query_order(
+            n in 1usize..160,
+            picks in proptest::collection::vec(any::<u64>(), 1..8),
+            order in proptest::collection::vec(any::<u32>(), 1..400),
+        ) {
+            let ops = dag(n, &picks);
+            let set = prepare(&ops);
+            let at = |h| set.ops.iter().position(|o| o.hash() == h);
+            let mut reach = vec![vec![false; set.ops.len()]; set.ops.len()];
+            for i in 0..set.ops.len() {
+                for d in &set.ops[i].op().deps {
+                    let d = at(d.op_hash).unwrap_or(usize::MAX);
+                    prop_assert!(d < i);
+                    reach[i][d] = true;
+                    let below = reach[d].clone();
+                    for (r, b) in reach[i].iter_mut().zip(below) {
+                        *r |= b;
+                    }
+                }
+            }
+            let m = set.ops.len();
+            for q in order {
+                let q = q as usize;
+                let (i, j) = (q % m, (q / m) % m);
+                prop_assert_eq!(set.past.contains(i, j), reach[i][j], "contains({}, {})", i, j);
+            }
+        }
     }
 }

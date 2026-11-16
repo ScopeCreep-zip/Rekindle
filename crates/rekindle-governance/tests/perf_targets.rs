@@ -24,10 +24,10 @@ const ENTRY_COUNT: usize = 10_000;
 /// The spec target, asserted when built without debug assertions.
 const RELEASE_BUDGET_MS: u128 = 10;
 
-/// The debug guard: measured 37–39 ms on the Mac (M-series) after the
-/// R4-5 fix, so Linux's ~1.7× slower debug build (~65 ms) stays well
-/// under it while a several-fold regression still fails. Release measured
-/// 3.2–3.6 ms there.
+/// The debug guard. Measured after the second R4-5 pass: debug 22–24 ms on
+/// the Mac (M-series), so the Linux test machine (~3× the Mac's time; 59–71
+/// ms before that pass) stays well under it while a several-fold
+/// regression still fails. Release measured 1.5–1.8 ms on the Mac.
 const DEBUG_BUDGET_MS: u128 = 150;
 
 fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<Stamped>)> {

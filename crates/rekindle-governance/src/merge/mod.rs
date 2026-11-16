@@ -53,23 +53,15 @@ pub struct MergeOutcome {
 /// Merge `ops` under the pinned `cert` into a canonical state.
 #[must_use]
 pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
-    merge_outcome(cert, ops).state
+    let set = resolve::prepare(ops);
+    resolve_stable(cert, &set).state
 }
 
 /// [`merge`], with the fate of every op.
 #[must_use]
 pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     let set = resolve::prepare(ops);
-    let mut invalid = vec![false; set.ops.len()];
-    let mut round = resolve_round(cert, &set, &invalid);
-    for _ in 0..=set.ops.len() {
-        let next = gates::invalidated(cert, &set, &round);
-        if next == invalid {
-            break;
-        }
-        invalid = next;
-        round = resolve_round(cert, &set, &invalid);
-    }
+    let round = resolve_stable(cert, &set);
     let applied = round.order.iter().map(|&i| set.ops[i].hash()).collect();
     let refused = (0..set.ops.len())
         .filter(|&i| !round.applied[i])
@@ -82,6 +74,21 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
         pending: set.pending,
         equivocators: set.equivocators,
     }
+}
+
+/// Resolution rerun until the invalidated set is stable.
+fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> Round {
+    let mut invalid = vec![false; set.ops.len()];
+    let mut round = resolve_round(cert, set, &invalid);
+    for _ in 0..=set.ops.len() {
+        let next = gates::invalidated(cert, set, &round);
+        if next == invalid {
+            break;
+        }
+        invalid = next;
+        round = resolve_round(cert, set, &invalid);
+    }
+    round
 }
 
 /// One resolution pass with the ops in `invalid` left out.
