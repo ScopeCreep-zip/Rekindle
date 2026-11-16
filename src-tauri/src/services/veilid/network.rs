@@ -97,18 +97,22 @@ async fn community_call(
             anchor,
             member_joined,
             member_joined_op,
+            joiner_route,
         }))) => {
             let joiner = rekindle_governance_runtime::BootstrapJoiner {
                 pseudonym: joiner_pseudonym,
                 member_joined,
                 member_joined_op,
+                route: joiner_route,
             };
-            crate::services::community::build_bootstrap_response_v2(state, &anchor, &joiner)
-                .await
-                .unwrap_or_else(|e| {
-                    tracing::warn!(call_id = %call_id, error = %e, "bootstrap request refused");
-                    NAK.to_vec()
-                })
+            crate::services::community::build_bootstrap_response_v2(
+                app_handle, state, &anchor, &joiner,
+            )
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(call_id = %call_id, error = %e, "bootstrap request refused");
+                NAK.to_vec()
+            })
         }
         Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
             community_id,

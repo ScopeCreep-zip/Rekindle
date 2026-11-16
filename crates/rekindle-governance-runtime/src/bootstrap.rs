@@ -34,6 +34,9 @@ pub struct BootstrapJoiner {
     pub member_joined: OpRef,
     /// The encoded signed op `member_joined` names.
     pub member_joined_op: Vec<u8>,
+    /// The joiner's route, where the inviter delivers the community key
+    /// (D16).
+    pub route: Vec<u8>,
 }
 
 fn adapter(msg: impl Into<String>) -> GovernanceRuntimeError {
@@ -126,6 +129,7 @@ pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
         anchor: anchor.to_owned(),
         member_joined: joiner.member_joined.clone(),
         member_joined_op: joiner.member_joined_op.clone(),
+        joiner_route: joiner.route.clone(),
     });
     let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(&request)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("encode bootstrap request: {e}")))?;

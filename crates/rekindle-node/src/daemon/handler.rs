@@ -242,10 +242,8 @@ impl InboundHandler for DaemonHandler {
         // A signed governance op (plan E3.2, `governanceOp @74`).
         if let CommunityEnvelope::Control(ControlPayload::GovernanceOp { ref op }) = envelope {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
-                let deps = super::mek_rotation::DaemonMekAdapter::new(Arc::clone(&ctx));
                 let host = crate::host::adapters::governance::HostGovernance::new(ctx);
                 host.on_governance_op(community_id, op.clone()).await;
-                host.answer_parked_mek_requests(&deps, community_id).await;
             }
             return;
         }
@@ -407,6 +405,7 @@ impl InboundHandler for DaemonHandler {
                 anchor,
                 member_joined,
                 member_joined_op,
+                joiner_route,
             } => {
                 let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
                     return CallResponse::Rejected {
@@ -417,14 +416,19 @@ impl InboundHandler for DaemonHandler {
                     pseudonym: joiner_pseudonym,
                     member_joined,
                     member_joined_op,
+                    route: joiner_route,
                 };
+                let deps = Arc::new(super::mek_rotation::DaemonMekAdapter::new(Arc::clone(&ctx)));
                 let host = crate::host::adapters::governance::HostGovernance::new(ctx);
                 match rekindle_governance_runtime::build_bootstrap_response_v2(
                     &host, &anchor, &joiner,
                 )
                 .await
                 {
-                    Ok(bytes) => CallResponse::Ok(bytes),
+                    Ok(bytes) => {
+                        host.deliver_key_to_joiner(deps, &anchor, &joiner);
+                        CallResponse::Ok(bytes)
+                    }
                     Err(e) => CallResponse::Rejected {
                         reason: e.to_string(),
                     },

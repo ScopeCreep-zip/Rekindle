@@ -22,6 +22,7 @@ pub(super) fn write_bootstrap_request(
         anchor,
         member_joined,
         member_joined_op,
+        joiner_route,
     } = payload
     else {
         unreachable!("write_bootstrap_request: variant mismatch")
@@ -30,6 +31,7 @@ pub(super) fn write_bootstrap_request(
     p.set_anchor(anchor);
     write_op_ref(p.reborrow().init_member_joined(), member_joined);
     p.set_member_joined_op(member_joined_op);
+    p.set_joiner_route(joiner_route);
 }
 
 /// Refuses a frontier over `MAX_FRONTIER_REFS` heads or more than
@@ -117,6 +119,7 @@ pub(super) fn read_bootstrap_request(
             .get_member_joined_op()
             .map_err(|e| capnp_err(&e))?
             .to_vec(),
+        joiner_route: p.get_joiner_route().map_err(|e| capnp_err(&e))?.to_vec(),
     })
 }
 

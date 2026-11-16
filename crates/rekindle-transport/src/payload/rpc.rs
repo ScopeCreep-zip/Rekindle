@@ -138,6 +138,7 @@ pub enum InboundCall {
         anchor: String,
         member_joined: rekindle_types::governance::OpRef,
         member_joined_op: Vec<u8>,
+        joiner_route: Vec<u8>,
     },
 }
 

@@ -309,6 +309,9 @@ pub enum ControlPayload {
         member_joined: rekindle_types::governance::OpRef,
         /// The encoded signed op `member_joined` names.
         member_joined_op: Vec<u8>,
+        /// The joiner's route, where the inviter's `MekTransfer` of the
+        /// community key goes once the op merges (D16).
+        joiner_route: Vec<u8>,
     },
     /// The inviter's answer to a `BootstrapRequest` (plan E3.2): where the
     /// joiner's walk of the op DAG continues, constant in N. No keys (D11)

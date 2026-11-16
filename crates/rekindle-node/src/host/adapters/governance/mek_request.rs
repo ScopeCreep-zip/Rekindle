@@ -20,10 +20,6 @@ use rekindle_types::id::PseudonymKey;
 use super::moderation::pseudonym;
 use super::HostGovernance;
 
-/// The most `RequestMEK`s parked per community (gossip sender rate limits
-/// bound how fast a non-member can refill it).
-const PARKED_MEK_REQUESTS: usize = 32;
-
 /// One inbound `RequestMEK`, as the wire carries it.
 #[derive(Debug, Clone)]
 pub struct MekRequest {
@@ -96,7 +92,6 @@ impl HostGovernance {
             return Ok(());
         }
         if !self.is_key_reader(community_id, &requester) {
-            self.park_mek_request(community_id, request);
             return Err(format!(
                 "RequestMEK from {} refused: not a member",
                 request.requester_pseudonym
@@ -107,8 +102,6 @@ impl HostGovernance {
             .find(|r| r.pseudonym_hex == request.requester_pseudonym)
             .map(|r| r.route_blob)
         else {
-            // Its route reaches our overlay with a later presence row.
-            self.park_mek_request(community_id, request);
             return Err("requester not in online peer set".into());
         };
         let mek = Self::requested_key(deps, community_id, scope, request.needed_generation)
@@ -133,71 +126,65 @@ impl HostGovernance {
         .map_err(|e| e.to_string())
     }
 
-    /// Hold `request` until its requester's ops merge: one per requester,
-    /// the oldest dropped past `PARKED_MEK_REQUESTS`.
-    fn park_mek_request(&self, community_id: &str, request: &MekRequest) {
-        tracing::debug!(
-            community = community_id,
-            requester = %request.requester_pseudonym,
-            "RequestMEK parked",
-        );
-        let mut map = self.ctx.communities.map().write();
-        let Some(community) = map.get_mut(community_id) else {
-            return;
-        };
-        let parked = &mut community.parked_mek_requests;
-        parked.retain(|r| r.requester_pseudonym != request.requester_pseudonym);
-        if parked.len() >= PARKED_MEK_REQUESTS {
-            parked.remove(0);
-        }
-        parked.push(request.clone());
-    }
-
-    /// The overlay of `community_id` gained a reachable peer: catch
-    /// ourselves up (`catch_up_on_peer`) and answer what we parked for it.
-    pub fn on_mesh_peers_gained<D>(&self, deps: std::sync::Arc<D>, community_id: &str)
-    where
+    /// The inviter's half of a join (plan E3.2, D16): `joiner`'s
+    /// `MemberJoined` from its `BootstrapRequest` merged, so seal the
+    /// current community key to it by `MekTransfer` app_call to the route
+    /// it sent (never inside `bootstrapResponseV2`, D11). Spawned, so the
+    /// bootstrap reply is not held behind the delivery.
+    pub fn deliver_key_to_joiner<D>(
+        &self,
+        deps: std::sync::Arc<D>,
+        community_id: &str,
+        joiner: &rekindle_governance_runtime::BootstrapJoiner,
+    ) where
         D: MekDistributeDeps + Send + Sync + 'static,
     {
         use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
-        self.catch_up_on_peer(community_id);
         let host = self.clone();
         let community = community_id.to_owned();
+        let pseudonym_hex = joiner.pseudonym.clone();
+        let route_blob = joiner.route.clone();
         self.scope()
-            .spawn_or_drop("parked key requests", async move {
-                host.answer_parked_mek_requests(deps.as_ref(), &community)
+            .spawn_or_drop("joiner key delivery", async move {
+                let delivered = host
+                    .send_key_to_joiner(deps.as_ref(), &community, pseudonym_hex, route_blob)
                     .await;
+                if let Err(error) = delivered {
+                    tracing::warn!(community = %community, %error, "joiner key not delivered");
+                }
             });
     }
 
-    /// Answer the parked requests whose requester is now a member; run
-    /// after a gossiped op merged. The rest stay parked.
-    pub async fn answer_parked_mek_requests<D: MekDistributeDeps>(
+    async fn send_key_to_joiner<D: MekDistributeDeps>(
         &self,
         deps: &D,
         community_id: &str,
-    ) {
-        let parked = {
-            let mut map = self.ctx.communities.map().write();
-            let Some(community) = map.get_mut(community_id) else {
-                return;
-            };
-            std::mem::take(&mut community.parked_mek_requests)
-        };
-        // The membership read takes the store's lock: outside the write.
-        let (ready, waiting): (Vec<MekRequest>, Vec<MekRequest>) =
-            parked.into_iter().partition(|r| {
-                pseudonym(&r.requester_pseudonym)
-                    .is_some_and(|p| self.is_key_reader(community_id, &p))
-            });
-        for request in &waiting {
-            self.park_mek_request(community_id, request);
+        pseudonym_hex: String,
+        route_blob: Vec<u8>,
+    ) -> Result<(), String> {
+        let joiner = pseudonym(&pseudonym_hex).ok_or("invalid joiner pseudonym")?;
+        if route_blob.is_empty() {
+            return Err("the joiner sent no route".into());
         }
-        for request in ready {
-            if let Err(error) = self.answer_mek_request(deps, community_id, &request).await {
-                tracing::debug!(community = community_id, %error, "parked RequestMEK not answered");
-            }
+        if !self.is_key_reader(community_id, &joiner) {
+            return Err(format!("{pseudonym_hex} is not a member"));
         }
+        let mek = deps
+            .cache()
+            .current(community_id, KeyScope::Community)
+            .ok_or_else(|| format!("no community key for {community_id}"))?;
+        rekindle_mek_rotation::distribute_mek(
+            deps,
+            community_id,
+            KeyScope::Community,
+            &mek,
+            &[RotationRecipient {
+                pseudonym_hex,
+                route_blob,
+            }],
+        )
+        .await
+        .map_err(|e| e.to_string())
     }
 
     /// Generation 0 is the current key, with its provenance (a rebuilt key

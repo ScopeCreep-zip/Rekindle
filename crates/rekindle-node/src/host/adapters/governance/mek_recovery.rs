@@ -12,7 +12,6 @@ use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_types::channel_keys::KeyScope;
 
-use super::ops::pseudonym_of;
 use super::HostGovernance;
 
 impl HostGovernance {
@@ -45,47 +44,6 @@ impl HostGovernance {
         for (community_id, pseudonym) in self.behind_meks() {
             self.request_mek(&community_id, pseudonym);
         }
-    }
-
-    /// The overlay of `community_id` gained a reachable peer (plan E3.2
-    /// S6). While we lack its current key, gossip with no peers dropped
-    /// what the peer needs to answer us: our own ops (our `MemberJoined`
-    /// above all, which makes us a member in its merged state) and then
-    /// the key request. A member that holds the key sends nothing: its
-    /// ops are on its `M`/2, and the receiver's op store drops an op it
-    /// holds, so a re-sent op is never applied twice.
-    pub(crate) fn catch_up_on_peer(&self, community_id: &str) {
-        let Some((community, pseudonym)) = self
-            .behind_meks()
-            .into_iter()
-            .find(|(id, _)| id == community_id)
-        else {
-            return;
-        };
-        let Some(mine) = pseudonym_of(&pseudonym) else {
-            return;
-        };
-        let host = self.clone();
-        self.scope().spawn_or_drop("behind-community catch-up", async move {
-            match host.governance_ops(&community).await {
-                Ok(held) => {
-                    let mut own: Vec<_> = held.into_iter().filter(|op| op.author == mine).collect();
-                    own.sort_by_key(|op| op.seq);
-                    for op in own {
-                        host.send_to_mesh_impl(
-                            &community,
-                            &CommunityEnvelope::Control(ControlPayload::GovernanceOp {
-                                op: op.encoded,
-                            }),
-                        );
-                    }
-                }
-                Err(error) => {
-                    tracing::debug!(community = %community, %error, "catch-up: op store not read");
-                }
-            }
-            host.request_mek(&community, pseudonym);
-        });
     }
 
     fn request_mek(&self, community_id: &str, pseudonym: String) {

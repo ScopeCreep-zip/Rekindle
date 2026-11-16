@@ -79,11 +79,13 @@ pub(super) fn decode_bare_bootstrap_request(
             anchor,
             member_joined,
             member_joined_op,
+            joiner_route,
         }))) => Some(crate::payload::rpc::InboundCall::BootstrapRequest {
             joiner_pseudonym,
             anchor,
             member_joined,
             member_joined_op,
+            joiner_route,
         }),
         _ => None,
     }

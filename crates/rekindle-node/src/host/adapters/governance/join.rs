@@ -269,6 +269,7 @@ impl HostGovernance {
                 author_seq: joined.seq,
             },
             member_joined_op: joined.encoded.clone(),
+            route: self.our_route_blob_impl(),
         };
         let walked = match rekindle_governance_runtime::request_bootstrap(
             self,

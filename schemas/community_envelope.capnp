@@ -427,6 +427,10 @@ struct BootstrapRequestPayload @0xea002a000000a000 {
     # within the app_call reply window without a DHT read (its hash must
     # be `memberJoined.opHash`).
     memberJoinedOp       @3 :Data;
+    # The joiner's private route: the inviter delivers the community key
+    # to it by `MekTransfer` app_call once the op merges (D16), never in
+    # the response (D11).
+    joinerRoute          @4 :Data;
 }
 
 # The inviter's answer (plan E3.2): where the joiner's walk of the op DAG

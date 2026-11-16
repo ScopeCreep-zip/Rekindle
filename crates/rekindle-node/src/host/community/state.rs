@@ -80,12 +80,6 @@ pub struct CommunityState {
     /// adapter's `SegmentAdded` handler — see `rekindle_governance_runtime::segments`.
     #[serde(default)]
     pub segments: Vec<rekindle_types::presence::SegmentDescriptor>,
-    /// `RequestMEK`s from pseudonyms that are not members in our merged
-    /// state yet (plan E3.2 S6): gossip is unordered, so a joiner's request
-    /// can outrun its `MemberJoined` op. Answered once the op merges;
-    /// bounded by `PARKED_MEK_REQUESTS`, never persisted.
-    #[serde(skip)]
-    pub parked_mek_requests: Vec<crate::host::adapters::governance::MekRequest>,
     /// The watch ring (plan E3.2 S7): our ring successors' member records,
     /// each held read-only and watched, by record key.
     #[serde(skip)]

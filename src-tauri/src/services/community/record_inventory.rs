@@ -131,7 +131,6 @@ mod tests {
             my_subkey_index: None,
             my_segment_index: None,
             segments: Vec::new(),
-            parked_mek_requests: Vec::new(),
             watch_ring: std::collections::BTreeMap::new(),
             governance_key: Some("gov-key".to_string()),
             governance_state: gov,
