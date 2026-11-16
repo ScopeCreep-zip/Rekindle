@@ -195,7 +195,7 @@ impl DaemonContext {
                             static_key: msg.verified_sender_key,
                         };
                         let ctx = Arc::clone(self);
-                        in_flight.spawn(correlation, async move {
+                        in_flight.spawn(correlation, request.name(), async move {
                             ctx.call(request, &caller).await
                         });
                     }
@@ -229,12 +229,19 @@ impl DaemonContext {
 
     /// Answer every request still in flight: let them finish until
     /// [`REQUEST_DRAIN_DEADLINE`], then abort the rest and answer 503.
+    /// [`InFlight::drain`] logs which kinds it waited for and cut off.
     async fn drain(&self, client: &rekindle_ipc::client::BusClient, in_flight: &mut InFlight) {
-        let deadline = tokio::time::Instant::now() + REQUEST_DRAIN_DEADLINE;
-        while let Ok(Some(done)) = tokio::time::timeout_at(deadline, in_flight.next()).await {
-            self.answer(client, done).await;
+        let drained = in_flight
+            .drain(REQUEST_DRAIN_DEADLINE, |done| self.answer(client, done))
+            .await;
+        if !drained.waited.is_empty() {
+            tracing::info!(
+                answered = drained.waited.len() - drained.aborted.len(),
+                aborted = drained.aborted.len(),
+                "shutdown drain finished"
+            );
         }
-        for correlation in in_flight.abort_all().await {
+        for (correlation, _) in drained.aborted {
             respond(client, correlation, &shutting_down()).await;
         }
     }
