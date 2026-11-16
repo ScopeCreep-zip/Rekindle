@@ -5,13 +5,17 @@
 //! included); `watch_ring_budget` runs N = 40 in the scale target.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use std::time::Duration;
+
+use parking_lot::Mutex;
 
 use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
 
 use crate::harness::{eventually, Community};
+use crate::ring_census;
 
 /// One line per node: its `CommunityDetail.member_count`, its roster's
 /// size, the node indices missing from its roster, and how many records it
@@ -74,15 +78,24 @@ pub async fn ring_converges(members: usize, seed: u64) {
     let mut community = Community::create(members, seed).await;
     let uses = u32::try_from(members - 1).expect("a small count");
     let link = community.invite_for(uses).await;
-    for i in 1..members {
-        community.join_with(i, link.clone()).await;
-    }
     let want = 4.min(members - 1);
-    let converged = eventually(&community.sim, Duration::from_secs(600), || async {
-        let watched = census(&community);
-        watched.len() == members && watched.values().all(|nodes| nodes.len() == want)
-    })
-    .await;
+    let last = Arc::new(Mutex::new(String::from("census: none yet")));
+    let done = ring_census::guard(Arc::clone(&last));
+    let run = async {
+        for i in 1..members {
+            community.join_with(i, link.clone()).await;
+        }
+        eventually(&community.sim, Duration::from_secs(600), || async {
+            let watched = census(&community);
+            watched.len() == members && watched.values().all(|nodes| nodes.len() == want)
+        })
+        .await
+    };
+    let converged = tokio::select! {
+        converged = run => converged,
+        () = ring_census::every_minute(&community, Arc::clone(&last)) => unreachable!("the census never ends"),
+    };
+    drop(done);
     let watched = census(&community);
     let counts: Vec<usize> = watched.values().map(BTreeSet::len).collect();
     // Each node's member count, the nodes its roster lacks against the

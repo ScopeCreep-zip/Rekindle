@@ -21,6 +21,8 @@ mod community_block_drops;
 mod community_policy;
 #[path = "../netsim/data_root.rs"]
 mod data_root;
+#[path = "../netsim/dm_after_cancel.rs"]
+mod dm_after_cancel;
 #[path = "../netsim/dm_hint_loss.rs"]
 mod dm_hint_loss;
 #[path = "../netsim/equivocation.rs"]
@@ -87,6 +89,8 @@ mod read_marker_only_advances;
 mod resume_after_restart;
 #[path = "../netsim/rich_messaging.rs"]
 mod rich_messaging;
+#[path = "../netsim/ring_census.rs"]
+mod ring_census;
 #[path = "../netsim/role_assign.rs"]
 mod role_assign;
 #[path = "../netsim/rotation.rs"]
@@ -95,8 +99,12 @@ mod rotation;
 mod route_link_failure;
 #[path = "../netsim/scenarios.rs"]
 mod scenarios;
+#[path = "../netsim/sending_route.rs"]
+mod sending_route;
 #[path = "../netsim/smoke.rs"]
 mod smoke;
+#[path = "../netsim/stale_route_call.rs"]
+mod stale_route_call;
 #[path = "../netsim/watch_ring.rs"]
 mod watch_ring;
 #[path = "../netsim/watch_ring_budget.rs"]

@@ -409,7 +409,7 @@ impl Community {
 
     /// Node `i` joins through `link`, and lists the community and holds
     /// its key.
-    pub async fn join_with(&mut self, i: usize, link: String) {
+    pub async fn join_with(&self, i: usize, link: String) {
         self.nodes[i]
             .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
                 LifecycleRequest::CommunityJoin { invite: link },
