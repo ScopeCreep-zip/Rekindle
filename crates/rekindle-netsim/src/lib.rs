@@ -23,6 +23,7 @@ mod attach;
 mod busy;
 mod clock;
 mod faults;
+mod flight;
 mod idle;
 pub mod latency;
 mod loopback;

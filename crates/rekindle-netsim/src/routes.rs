@@ -79,6 +79,7 @@ use rekindle_records::port::{PeerTarget, PortError, PortEvent, RouteClass, Route
 use rekindle_route::own_routes::{AllocError, OwnRoutes, RouteAllocator};
 use tokio::sync::watch;
 
+use crate::flight::InFlight;
 use crate::network::{Network, RouteEntry};
 
 /// The trace entry of a node forgetting a peer's route after a send to it
@@ -259,63 +260,6 @@ pub(crate) fn route_test_duration(net: &Network, node: usize, class: RouteClass)
         .map(|_| leg() + leg())
         .max()
         .unwrap_or_default()
-}
-
-/// An allocation in flight: traced at its start and end, and as cut when
-/// dropped before its end.
-struct InFlight<'a> {
-    node: usize,
-    class: RouteClass,
-    net: &'a Network,
-    ended: bool,
-}
-
-impl<'a> InFlight<'a> {
-    fn start(node: usize, class: RouteClass, net: &'a Network) -> Self {
-        let flight = Self {
-            node,
-            class,
-            net,
-            ended: false,
-        };
-        flight.push(ALLOCATION_STARTS);
-        flight
-    }
-
-    fn end(&mut self) {
-        self.ended = true;
-        self.push(ALLOCATION_ENDS);
-    }
-
-    /// Trace `event`. Allocations that start (or are cut) together run in
-    /// the order tokio wakes them, which the seed does not fix, so a run of
-    /// these entries at one instant is kept sorted.
-    fn push(&self, event: &str) {
-        let entry = (self.node, allocation_entry(event, self.class));
-        let now = tokio::time::Instant::now();
-        let mut guard = self.net.inner.lock();
-        let inner = &mut *guard;
-        let len = inner.trace.len();
-        let start = match inner.alloc_tail {
-            Some((at, start, end)) if at == now && end == len => start,
-            _ => len,
-        };
-        let place = start
-            + inner.trace.entries()[start..]
-                .iter()
-                .filter(|e| **e <= entry)
-                .count();
-        inner.trace.insert(place, entry.0, entry.1);
-        inner.alloc_tail = Some((now, start, len + 1));
-    }
-}
-
-impl Drop for InFlight<'_> {
-    fn drop(&mut self) {
-        if !self.ended {
-            self.push(ALLOCATION_CUT);
-        }
-    }
 }
 
 /// A node's routes: peers' imported from their blobs, our own through
