@@ -7,9 +7,11 @@ use std::fmt::Write as _;
 
 use super::super::notice::{changes, hex};
 use super::super::walk::Change;
+use super::pledit::{self, FONT_TOKEN};
 use super::sprites::Target;
 use super::{Read, WINAMP_WSZ_FORMAT};
 use crate::regions::slot_of;
+use crate::registry::FONTS;
 
 fn target(t: Target) -> String {
     match t {
@@ -40,6 +42,9 @@ pub fn render(id: &str, read: &Read, source: &str, made: &[Change]) -> String {
             s,
             "  PLEDIT.TXT {line} -> dropped: not a colour key we read"
         );
+    }
+    if let Some(f) = &read.font {
+        let _ = writeln!(s, "  {}", font_line(f));
     }
     let _ = writeln!(s, "\nSprites (39 of Webamp's 228 map; d1 §2.3)");
     for (sprite, present) in &read.sprites {
@@ -78,4 +83,19 @@ pub fn render(id: &str, read: &Read, source: &str, made: &[Change]) -> String {
         made,
     );
     s
+}
+
+/// `Font=`: the token it became, or dropped with the allow-list named.
+fn font_line(f: &pledit::Font) -> String {
+    match f.face {
+        Some(face) => format!(
+            "PLEDIT.TXT Font={} -> token {FONT_TOKEN} ({})",
+            f.value, face.name
+        ),
+        None => format!(
+            "PLEDIT.TXT Font={} -> dropped: not on the bundled font allow-list ({})",
+            f.value,
+            FONTS.iter().map(|f| f.name).collect::<Vec<_>>().join(", ")
+        ),
+    }
 }

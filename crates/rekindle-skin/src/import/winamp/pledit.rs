@@ -1,19 +1,43 @@
 //! `PLEDIT.TXT`: the `[Text]` section's playlist colours (d1 §2.4; keys
 //! as Webamp reads them, `skinParserUtils.ts` `getPlaylistStyle`). Keys are
 //! case-insensitive; a value is `#RRGGBB` or `RRGGBB`. Only `[Text]` is read.
+//! `Font=` names a face: it becomes `font.family` only when the bundled
+//! allow-list (`registry::fonts`) carries it, and is dropped otherwise.
 
 use super::sprites::Target;
+use crate::registry::{FontFace, FONTS};
+
+/// The `[Text]` key naming the playlist face.
+pub const FONT_KEY: &str = "font";
+/// The token an allowed face becomes.
+pub const FONT_TOKEN: &str = "font.family";
 
 /// The keys and what each becomes (PLEDIT owns the list tokens).
-pub const KEYS: [(&str, Target); 7] = [
+pub const KEYS: [(&str, Target); 6] = [
     ("normal", Target::Tokens(&["text.base"])),
     ("current", Target::NoRole("list.selected.text")),
     ("normalbg", Target::NoRole("list.bg")),
     ("selectedbg", Target::NoRole("list.selected.bg")),
     ("mbfg", Target::Dropped("minibrowser")),
     ("mbbg", Target::Dropped("minibrowser")),
-    ("font", Target::Dropped("font family")),
 ];
+
+/// The `Font=` line and the allowed face it names, if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Font {
+    pub value: String,
+    pub face: Option<&'static FontFace>,
+}
+
+/// `value` against the allow-list, ignoring ASCII case (Winamp writes
+/// `Arial`, `Tahoma`, `verdana`): the allowed face, by its canonical name.
+#[must_use]
+pub fn font(value: &str) -> Font {
+    Font {
+        value: value.to_owned(),
+        face: FONTS.iter().find(|f| f.name.eq_ignore_ascii_case(value)),
+    }
+}
 
 /// One `[Text]` line: the key as written and its value.
 #[derive(Debug, Clone, PartialEq, Eq)]

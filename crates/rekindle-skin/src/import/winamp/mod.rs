@@ -76,6 +76,8 @@ pub struct Read {
     pub title: Option<[RgbaImage; 2]>,
     /// PLEDIT.TXT keys that are not colours we know.
     pub unknown: Vec<String>,
+    /// PLEDIT.TXT `Font=` and the allowed face it names.
+    pub font: Option<pledit::Font>,
     /// Entries never read past their names.
     pub ignored: Vec<String>,
 }
@@ -105,11 +107,18 @@ fn sheet(tree: &Tree, name: &str) -> Result<Option<RgbaImage>, ImportError> {
     tree.get(name).map(|b| bmp::decode(name, b)).transpose()
 }
 
-fn colour_rows(tree: &Tree, genex: Option<&RgbaImage>) -> (Vec<ColourRow>, Vec<String>) {
+type Rows = (Vec<ColourRow>, Vec<String>, Option<pledit::Font>);
+
+fn colour_rows(tree: &Tree, genex: Option<&RgbaImage>) -> Rows {
     let mut rows = Vec::new();
     let mut unknown = Vec::new();
+    let mut font = None;
     if let Some(bytes) = tree.get("pledit.txt") {
         for line in pledit::lines(bytes) {
+            if line.key.eq_ignore_ascii_case(pledit::FONT_KEY) {
+                font = Some(pledit::font(&line.value));
+                continue;
+            }
             match (pledit::target(&line.key), pledit::rgb(&line.value)) {
                 (Some(target), Some(value)) => rows.push(ColourRow {
                     source: format!("PLEDIT.TXT {}", line.key),
@@ -130,7 +139,7 @@ fn colour_rows(tree: &Tree, genex: Option<&RgbaImage>) -> (Vec<ColourRow>, Vec<S
             });
         }
     }
-    (rows, unknown)
+    (rows, unknown, font)
 }
 
 /// Reads a `.wsz` archive.
@@ -154,7 +163,7 @@ pub fn read(wsz: &[u8]) -> Result<Read, ImportError> {
         }
         seen.push((sprite, img.is_some()));
     }
-    let (colours, unknown) = colour_rows(&tree, sheets.get("genex.bmp"));
+    let (colours, unknown, font) = colour_rows(&tree, sheets.get("genex.bmp"));
     let mut tokens = BTreeMap::new();
     for row in &colours {
         if let Target::Tokens(ids) = row.target {
@@ -162,6 +171,12 @@ pub fn read(wsz: &[u8]) -> Result<Read, ImportError> {
                 tokens.insert((*id).to_owned(), walk::color(row.value));
             }
         }
+    }
+    if let Some(face) = font.as_ref().and_then(|f| f.face) {
+        tokens.insert(
+            pledit::FONT_TOKEN.to_owned(),
+            TokenValue::FontFamily(face.name.to_owned()),
+        );
     }
     let has_gen = sheets.contains_key("gen.bmp");
     let ground = match tokens.get("bg.panel") {
@@ -192,6 +207,7 @@ pub fn read(wsz: &[u8]) -> Result<Read, ImportError> {
         frame,
         title,
         unknown,
+        font,
         ignored,
     })
 }

@@ -328,3 +328,34 @@ fn rkskin_entries(pkg: &[u8]) -> Vec<(String, Vec<u8>)> {
     }
     out
 }
+
+#[test]
+fn pledit_font_is_checked_against_the_allow_list() {
+    let tree = |font: &str| {
+        Tree::from([(
+            "pledit.txt".to_owned(),
+            format!("[Text]\r\nNormal=#00FF00\r\nFont={font}\r\n").into_bytes(),
+        )])
+    };
+    let (_, unknown, font) = colour_rows(&tree("tahoma"), None);
+    assert!(unknown.is_empty());
+    assert_eq!(font.and_then(|f| f.face).map(|f| f.name), Some("Tahoma"));
+    let (_, unknown, font) = colour_rows(&tree("Arial"), None);
+    assert!(unknown.is_empty());
+    assert_eq!(
+        font.map(|f| (f.value, f.face)),
+        Some(("Arial".to_owned(), None))
+    );
+    // End to end: the synthetic skin names Arial; it is dropped and named.
+    let r = read(&skin([0xe7; 3])).unwrap();
+    assert!(!r.tokens.contains_key(pledit::FONT_TOKEN));
+    let Outcome::Passed(i) = import(&skin([0xe7; 3]), "w").unwrap() else {
+        panic!()
+    };
+    assert!(
+        i.notice
+            .contains("PLEDIT.TXT Font=Arial -> dropped: not on the bundled font allow-list"),
+        "{}",
+        i.notice
+    );
+}
