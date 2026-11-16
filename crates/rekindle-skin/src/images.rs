@@ -14,8 +14,10 @@
 //! GIF frame counter, each frame past the first counted against the total)
 //! and re-encoded: a PNG to an RGBA8 PNG, a GIF to a looping GIF of its
 //! composited frames, after the flash test ([`crate::flash`], WCAG 2.3.1:
-//! at most three flashes a second). No chunk, extension, comment, EXIF or ICC profile of
-//! the source survives (Chromium's `ImageSanitizer`).
+//! at most three general or red flashes a second, or a flashing area within
+//! the small-area threshold as the manifest draws the image). No chunk,
+//! extension, comment, EXIF or ICC profile of the source survives
+//! (Chromium's `ImageSanitizer`).
 //!
 //! The manifest's region images, state images and masks must name files
 //! under `assets/`, and its icons files under `icons/`, that the package
@@ -29,7 +31,7 @@ use rekindle_image::{
 };
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule};
 
-use crate::flash::{self, MAX_FLASHES_PER_SECOND};
+use crate::flash::{self, DrawnAs};
 use crate::limits::{
     MAX_IMAGE_ALLOC, MAX_IMAGE_FRAMES, MAX_IMAGE_PIXELS, MAX_IMAGE_SIDE, MAX_TOTAL_IMAGE_PIXELS,
 };
@@ -110,13 +112,34 @@ pub fn validate(
         checked.push((name, bytes, kind, pixels));
     }
     let mut budget = Budget { total };
+    let drawn = drawn_as(manifest);
     let mut out = BTreeMap::new();
     for (name, bytes, kind, pixels) in checked {
-        let canonical = canonical(bytes, kind, pixels, &mut budget)
+        let ways = drawn
+            .get(name)
+            .map_or(&[DrawnAs::UNBOUNDED][..], Vec::as_slice);
+        let canonical = canonical(bytes, kind, pixels, &mut budget, ways)
             .map_err(|rule| SkinError::new(name, rule))?;
         out.insert(name.to_owned(), canonical);
     }
     Ok(out)
+}
+
+/// Every way the manifest draws each image (WCAG 2.3.1's area is measured
+/// as rendered): a region's normal and state images and its mask take its
+/// fit. An image no region names (an icon) is [`DrawnAs::UNBOUNDED`].
+fn drawn_as(manifest: &SkinManifest) -> BTreeMap<&str, Vec<DrawnAs>> {
+    let mut out: BTreeMap<&str, Vec<DrawnAs>> = BTreeMap::new();
+    for region in manifest.regions.values() {
+        let way = DrawnAs::of(&region.fit);
+        let names = std::iter::once(&region.image)
+            .chain(region.states.values())
+            .chain(region.mask.as_ref());
+        for name in names {
+            out.entry(name.as_str()).or_default().push(way);
+        }
+    }
+    out
 }
 
 /// One image alone, as an importer checks a legacy file before it enters a
@@ -129,7 +152,13 @@ pub fn validate(
 pub fn check(name: &str, bytes: &[u8]) -> Result<Vec<u8>, SkinRule> {
     let kind = declared_kind(name)?;
     let pixels = header_pixels(bytes, kind)?;
-    canonical(bytes, kind, pixels, &mut Budget { total: pixels })
+    canonical(
+        bytes,
+        kind,
+        pixels,
+        &mut Budget { total: pixels },
+        &[DrawnAs::UNBOUNDED],
+    )
 }
 
 /// The header's checks, before any pixel is decoded: returns its pixels.
@@ -160,9 +189,10 @@ fn canonical(
     kind: ImageKind,
     pixels: u64,
     budget: &mut Budget,
+    drawn_as: &[DrawnAs],
 ) -> Result<Vec<u8>, SkinRule> {
     match kind {
-        ImageKind::Gif => canonical_gif(bytes, pixels, budget),
+        ImageKind::Gif => canonical_gif(bytes, pixels, budget, drawn_as),
         _ => canonical_png(bytes),
     }
 }
@@ -195,7 +225,12 @@ fn canonical_png(bytes: &[u8]) -> Result<Vec<u8>, SkinRule> {
 /// A GIF's composited frames as a looping GIF. The frames past the first
 /// may take only what is left of the total, so the frame limit is the
 /// smaller of [`MAX_IMAGE_FRAMES`] and what fits.
-fn canonical_gif(bytes: &[u8], pixels: u64, budget: &mut Budget) -> Result<Vec<u8>, SkinRule> {
+fn canonical_gif(
+    bytes: &[u8],
+    pixels: u64,
+    budget: &mut Budget,
+    drawn_as: &[DrawnAs],
+) -> Result<Vec<u8>, SkinRule> {
     let pixels = pixels.max(1);
     let left = MAX_TOTAL_IMAGE_PIXELS - budget.total;
     let fits = u32::try_from(1 + left / pixels).unwrap_or(u32::MAX);
@@ -226,13 +261,7 @@ fn canonical_gif(bytes: &[u8], pixels: u64, budget: &mut Budget) -> Result<Vec<u
     };
     let extra = u64::try_from(frames.len() - 1).unwrap_or(u64::MAX);
     budget.total = budget.total.saturating_add(extra.saturating_mul(pixels));
-    let flashes = flash::max_flashes(&frames);
-    if flashes > MAX_FLASHES_PER_SECOND {
-        return Err(SkinRule::Flashing {
-            flashes,
-            max: MAX_FLASHES_PER_SECOND,
-        });
-    }
+    flash::check(&frames, drawn_as)?;
     encode_gif(frames).map_err(rule_of)
 }
 

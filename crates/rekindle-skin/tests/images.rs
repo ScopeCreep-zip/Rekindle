@@ -86,11 +86,13 @@ fn png_header(width: u32, height: u32) -> Vec<u8> {
 fn gif(frames: usize, width: u32, height: u32) -> Vec<u8> {
     let frames = (0..frames)
         .map(|i| {
+            // A blue ramp: distinct frames that never flash (no saturated
+            // red, and under 0.10 of luminance), whatever the delays.
             let shade = u8::try_from(i % 256).unwrap();
             Frame::new(RgbaImage::from_pixel(
                 width,
                 height,
-                image_rgba([shade, 9, 9, 255]),
+                image_rgba([9, 9, shade, 255]),
             ))
         })
         .collect();

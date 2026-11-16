@@ -357,6 +357,8 @@ pub enum SkinRule {
     ImageEncode { detail: String },
     #[error("{flashes} flashes in one second; at most {max} (WCAG 2.3.1)")]
     Flashing { flashes: u32, max: u32 },
+    #[error("{flashes} red flashes in one second; at most {max} (WCAG 2.3.1)")]
+    RedFlashing { flashes: u32, max: u32 },
     #[error("{count} sound cues, the limit is {max}")]
     TooManySoundCues { count: u64, max: u64 },
     #[error("icons.{icon}: not an icon slot of the registry")]
