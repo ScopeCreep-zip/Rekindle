@@ -7,7 +7,7 @@ use super::*;
 use crate::import::Imported;
 use crate::validate;
 
-fn png(side: u32) -> Vec<u8> {
+pub(crate) fn png(side: u32) -> Vec<u8> {
     let img = RgbaImage::from_pixel(side, side, rekindle_image::Rgba([40, 200, 90, 255]));
     encode_png(&DynamicImage::ImageRgba8(img)).unwrap()
 }
@@ -86,7 +86,7 @@ fn imported(outcome: Outcome) -> Imported {
     }
 }
 
-fn has(notice: &str, item: &str, why: &str) -> bool {
+pub(crate) fn has(notice: &str, item: &str, why: &str) -> bool {
     notice.lines().any(|l| l.contains(item) && l.contains(why))
 }
 

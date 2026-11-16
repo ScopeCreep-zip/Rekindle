@@ -7,6 +7,9 @@
 //! * [`winamp`]: Winamp classic `.wsz` (a "Winamp-flavoured Rekindle skin").
 //! * [`pidgin`]: Pidgin 2.x themes (buddy-list palette, status icons, sound
 //!   events).
+//! * [`mumble`] and [`teamspeak`]: Mumble themes and TeamSpeak 3 styles,
+//!   one Qt-palette reader ([`qt`]) with two front-ends; SVG icons are
+//!   rasterised with every reference refused.
 //! * [`walk`]: the minimal Oklab-lightness walk a built-in that fails the
 //!   validator is adjusted by, every change recorded.
 //!
@@ -15,10 +18,13 @@
 
 mod notice;
 pub mod pidgin;
+pub mod qt;
 mod tree;
 pub mod walk;
 pub mod winamp;
 pub mod xfire_xml;
+
+pub use qt::{mumble, teamspeak};
 
 use std::collections::BTreeMap;
 
@@ -36,6 +42,8 @@ pub type Tree = BTreeMap<String, Vec<u8>>;
 pub enum ImportError {
     #[error("{file}: XML: {detail}")]
     Xml { file: String, detail: String },
+    #[error("{file}: {detail}")]
+    Format { file: String, detail: String },
     #[error("{file}: missing from the tree")]
     MissingFile { file: String },
     #[error("{name}: RGBA alpha {alpha} is not 0 (the byte is unused, COLORREF-style)")]

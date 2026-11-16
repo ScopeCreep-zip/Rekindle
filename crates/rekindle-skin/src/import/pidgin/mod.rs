@@ -86,8 +86,8 @@ impl Read {
     }
 }
 
-/// The legacy limits on the tree as a whole.
-fn check_limits(tree: &Tree) -> Result<(), ImportError> {
+/// The legacy limits on the tree as a whole (shared with the Qt importers).
+pub(crate) fn check_limits(tree: &Tree) -> Result<(), ImportError> {
     if tree.len() as u64 > MAX_ENTRIES {
         return Err(refused(
             "theme",
@@ -355,4 +355,4 @@ pub fn import(tree: &Tree, id: &str) -> Result<Outcome, ImportError> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

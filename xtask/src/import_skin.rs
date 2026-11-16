@@ -7,7 +7,9 @@
 use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
-use rekindle_skin::import::{pidgin, winamp, xfire_xml, Imported, Outcome, Tree};
+use rekindle_skin::import::{
+    mumble, pidgin, teamspeak, winamp, xfire_xml, Imported, Outcome, Tree,
+};
 use walkdir::WalkDir;
 
 /// Where built-in packs live (plan E7.7.1 "Built-in packs").
@@ -22,6 +24,12 @@ pub enum Format {
     WinampWsz,
     /// Pidgin 2.x theme directory (`purple/{blist,status-icon,sound}/theme.xml`).
     Pidgin,
+    /// Mumble theme directory (`theme.ini`, its QSS `ApplicationPalette`,
+    /// PNG/SVG icons).
+    Mumble,
+    /// TeamSpeak 3 style tree (`styles/<name>.qss` `QPalette::` overrides,
+    /// `styles/<name>/media/*.png`).
+    Teamspeak3,
 }
 
 /// A user-format import as a built-in: a draft's suggestions are accepted,
@@ -98,6 +106,12 @@ pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result
         Format::WinampWsz => winamp_pack(from, id)?,
         Format::Pidgin => {
             accept(pidgin::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
+        }
+        Format::Mumble => {
+            accept(mumble::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
+        }
+        Format::Teamspeak3 => {
+            accept(teamspeak::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
         }
     };
     let dir = root.join(BUILTIN_DIR);

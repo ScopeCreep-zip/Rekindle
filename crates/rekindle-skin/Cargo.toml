@@ -22,6 +22,13 @@ quick-xml = "0.38"
 # through png). Deflate is inflated only there.
 miniz_oxide = "0.8"
 rekindle-image = { path = "../rekindle-image" }
+# The Mumble/TeamSpeak importer rasterises SVG icons at import (MIT OR
+# Apache-2.0): no text, no system fonts, no raster-image decoders, no
+# svgz; every image href refused by our resolver (plan E7.7.3 item 5).
+resvg = { version = "0.45.1", default-features = false }
+# The same XML reader usvg uses, for the SVG pre-scan (node count, text and
+# reference refusal) before anything is rasterised (MIT OR Apache-2.0).
+roxmltree = "0.20"
 rekindle-types = { path = "../rekindle-types" }
 serde = { workspace = true }
 serde_json = { workspace = true }
