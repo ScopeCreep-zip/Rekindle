@@ -76,6 +76,7 @@ fn member_selection(
         | MemberRequest::Kick {
             community: target,
             target_pseudonym: member_pseudonym,
+            ..
         }
         | MemberRequest::Ban {
             community: target,

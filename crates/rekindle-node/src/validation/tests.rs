@@ -124,13 +124,15 @@ fn pseudonyms_and_ids_are_exact_hex() {
     assert!(!rejected(&IpcRequest::Community(
         CommunityRequest::Members(MemberRequest::Kick {
             community: "c".into(),
-            target_pseudonym: HEX64.into()
+            target_pseudonym: HEX64.into(),
+            reason: None,
         })
     )));
     assert!(rejected(&IpcRequest::Community(CommunityRequest::Members(
         MemberRequest::Kick {
             community: "c".into(),
-            target_pseudonym: "abcdef".into()
+            target_pseudonym: "abcdef".into(),
+            reason: None,
         }
     ))));
     assert!(!rejected(&IpcRequest::VoiceJoin {

@@ -184,6 +184,47 @@ pub fn update_slot(
     }
 }
 
+/// Keep the remover's display name with our own removal from the community
+/// (`communities.removed_by_name`, A/B R5-2), or clear it (`None`) when the
+/// removal turned out void.
+pub fn record_removed_by_name(
+    session: &RwLock<Option<Session>>,
+    db: &DbHandle,
+    community_id: &str,
+    name: Option<String>,
+) {
+    if let Some((owner, db)) = owner_and_db(session, db) {
+        let community = community_id.to_string();
+        db.fire("removed by name", move |conn| {
+            repo::communities::set(
+                conn,
+                &owner,
+                &community,
+                repo::communities::Column::RemovedByName,
+                name,
+            )
+        });
+    }
+}
+
+/// The display name `pseudonym_hex` has on our stored roster of the
+/// community: the name the member list shows (A/B R5-2).
+pub async fn roster_name(
+    session: &RwLock<Option<Session>>,
+    db: &DbHandle,
+    community_id: &str,
+    pseudonym_hex: &str,
+) -> Option<String> {
+    let (owner, db) = owner_and_db(session, db)?;
+    let (community, pseudonym) = (community_id.to_owned(), pseudonym_hex.to_owned());
+    db.call(move |conn| repo::members::display_name(conn, &owner, &community, &pseudonym))
+        .await
+        .map_err(|e| tracing::warn!(community = %community_id, error = %e, "roster name"))
+        .ok()
+        .flatten()
+        .filter(|name| !name.is_empty())
+}
+
 /// What a new membership stores beside the projection: the owner keypairs
 /// a created community has (none for a joined one).
 pub struct NewMembership {

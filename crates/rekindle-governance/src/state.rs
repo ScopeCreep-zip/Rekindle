@@ -63,6 +63,11 @@ pub struct GovernanceState {
     /// reads it to show who removed it (plan E3.2 S9 own removal).
     pub removed_by: HashMap<PseudonymKey, PseudonymKey>,
 
+    /// The reason the op recorded in `removed_by` gave, when it gave one:
+    /// the removed member shows it with the remover (A/B R5-2; Matrix
+    /// `m.room.member` `reason`).
+    pub removal_reasons: HashMap<PseudonymKey, String>,
+
     /// Prospective members who wrote a `MemberJoined` and have not yet
     /// been approved or rejected. Grow-Only Set, cleared per target by a
     /// decision entry.

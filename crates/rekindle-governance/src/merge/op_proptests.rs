@@ -321,7 +321,7 @@ fn a_removal_names_its_author_as_the_remover() {
         31,
         GovernanceEntry::BanEntry {
             target: pk(3),
-            reason: None,
+            reason: Some("spam".into()),
         },
     );
     ops.extend([k, ban]);
@@ -329,6 +329,15 @@ fn a_removal_names_its_author_as_the_remover() {
     assert_eq!(state.removed_by.get(&pk(4)), Some(&pk(2)), "kicked by 2");
     assert_eq!(state.removed_by.get(&pk(3)), Some(&pk(1)), "banned by 1");
     assert!(!state.removed_by.contains_key(&pk(2)));
+    // A/B R5-2: the removed member reads the reason the op gave.
+    assert_eq!(
+        state.removal_reasons.get(&pk(3)).map(String::as_str),
+        Some("spam")
+    );
+    assert!(
+        !state.removal_reasons.contains_key(&pk(4)),
+        "the kick gave none"
+    );
 }
 
 #[test]

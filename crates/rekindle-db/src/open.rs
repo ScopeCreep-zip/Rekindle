@@ -215,7 +215,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// applied past a gap, so the cursor absorbs them when the gap fills.
 /// 125 (plan E3.2 S7l, D16): `outbox.kind` admits `mek_transfer`, the
 /// sealed community key to one member, receipted and retried.
-pub const SCHEMA_VERSION: i64 = 125;
+/// 126 (plan E3.2 S9, R5-2): `communities.removed_by_name`, the remover's
+/// name as known when our removal merged, kept across teardown and restart.
+pub const SCHEMA_VERSION: i64 = 126;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

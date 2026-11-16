@@ -29,29 +29,115 @@ const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SES
 
 impl HostGovernance {
     /// React to `removal` (computed from the state just projected): mark
-    /// the community removed, announce it the first time, and bring the
-    /// network side in line.
+    /// the community removed, keep the remover's name with it, announce it
+    /// the first time, and bring the network side in line.
     pub(super) fn on_own_removal(&self, community_id: &str, removal: &OwnRemoval) {
-        if self
+        let (removal, unnamed) = self.with_kept_name(community_id, removal);
+        let first = self
             .ctx
             .communities
-            .note_own_removal(community_id, removal.clone())
-        {
+            .note_own_removal(community_id, removal.clone());
+        if first {
             tracing::info!(community = %community_id, banned = removal.banned, "removed from community");
-            self.ctx.publish_event(SubscriptionEvent::Membership(
-                self.removal_event(community_id, removal),
-            ));
         }
-        self.spawn_reconcile(community_id);
+        let this = self.clone();
+        let community = community_id.to_owned();
+        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
+            "own removal",
+            async move {
+                if let Some(by) = unnamed {
+                    this.keep_remover_name(&community, &by, removal.by_name.clone())
+                        .await;
+                }
+                if first {
+                    if let Some(removal) = this.ctx.communities.own_removal(&community) {
+                        this.ctx.publish_event(SubscriptionEvent::Membership(
+                            this.removal_event(&community, &removal),
+                        ));
+                    }
+                }
+                this.reconcile_removal(&community).await;
+            },
+        );
     }
 
     /// The state just projected does not remove us: a removal marked
-    /// before was void (strong removal), so the mark goes and the
-    /// community is restored.
+    /// before was void (strong removal), so the mark and the name kept with
+    /// it go and the community is restored.
     pub(super) fn on_not_removed(&self, community_id: &str) {
         if self.ctx.communities.clear_own_removal(community_id) {
+            crate::host::session::record_removed_by_name(
+                &self.ctx.session,
+                &self.ctx.db,
+                community_id,
+                None,
+            );
             tracing::info!(community = %community_id, "our removal was void; community restored");
             self.spawn_reconcile(community_id);
+        }
+    }
+
+    /// `removal` with the remover's name kept with the mark (or, after a
+    /// restart, with the community's row), else its card or profile now;
+    /// and the remover, when no name was kept yet (A/B R5-2).
+    fn with_kept_name(
+        &self,
+        community_id: &str,
+        removal: &OwnRemoval,
+    ) -> (OwnRemoval, Option<rekindle_types::id::PseudonymKey>) {
+        let mut removal = removal.clone();
+        let Some(by) = removal.by.clone() else {
+            return (removal, None);
+        };
+        let kept = (self.ctx.communities.own_removal(community_id))
+            .filter(|prior| prior.by.as_ref() == Some(&by))
+            .and_then(|prior| prior.by_name);
+        if kept.is_some() {
+            removal.by_name = kept;
+            return (removal, None);
+        }
+        removal.by_name = self.ctx.communities.removal_name_of(community_id, &by);
+        (removal, Some(by))
+    }
+
+    /// Keep the remover's display name as known when the removal was first
+    /// merged with the mark and the community's row, so the banner names
+    /// who removed us after the teardown and a restart (A/B R5-2, R3-5):
+    /// `known` (its card or profile), else the name our stored roster has
+    /// for it, the name the member list showed.
+    async fn keep_remover_name(
+        &self,
+        community_id: &str,
+        by: &rekindle_types::id::PseudonymKey,
+        known: Option<String>,
+    ) {
+        let name = match known {
+            Some(name) => Some(name),
+            None => {
+                crate::host::session::roster_name(
+                    &self.ctx.session,
+                    &self.ctx.db,
+                    community_id,
+                    &by.to_hex(),
+                )
+                .await
+            }
+        };
+        let Some(name) = name else {
+            return;
+        };
+        let communities = &self.ctx.communities;
+        let kept = communities.name_own_removal(community_id, by, name.clone())
+            || communities
+                .own_removal(community_id)
+                .is_some_and(|r| r.by_name.as_deref() == Some(name.as_str()));
+        if kept {
+            crate::host::session::record_removed_by_name(
+                &self.ctx.session,
+                &self.ctx.db,
+                community_id,
+                Some(name),
+            );
         }
     }
 
@@ -97,8 +183,7 @@ impl HostGovernance {
             .get(community_id)
             .and_then(|c| c.my_pseudonym_key.clone())
             .unwrap_or_default();
-        let removed_by_name = (removal.by.as_ref())
-            .and_then(|by| self.ctx.communities.member_card_name(community_id, by));
+        let removed_by_name = removal.by_name.clone();
         let removed_by = removal
             .by
             .as_ref()

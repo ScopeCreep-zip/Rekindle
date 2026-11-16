@@ -313,6 +313,7 @@ mod timeout_tests {
         let kick = IpcRequest::Community(CommunityRequest::Members(MemberRequest::Kick {
             community: "c".into(),
             target_pseudonym: "p".into(),
+            reason: None,
         }));
         let leave = IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityLeave {

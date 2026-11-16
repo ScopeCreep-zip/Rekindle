@@ -362,7 +362,11 @@ pub(super) async fn route_members(
         MemberRequest::Kick {
             community,
             target_pseudonym,
-        } => governance::handle_kick(ctx, state, &community, &target_pseudonym).await,
+            reason,
+        } => {
+            governance::handle_kick(ctx, state, &community, &target_pseudonym, reason.as_deref())
+                .await
+        }
         MemberRequest::Ban {
             community,
             target_pseudonym,

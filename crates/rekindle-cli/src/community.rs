@@ -361,9 +361,13 @@ fn removal_text(removed: Option<&serde_json::Value>) -> String {
         .or_else(|| {
             (removed.get("by").and_then(|v| v.as_str())).map(rekindle_client::fmt::abbreviate_key)
         });
-    match by {
+    let standing = match by {
         Some(by) => format!("{what} by {by}"),
         None => what.into(),
+    };
+    match (removed.get("reason").and_then(|v| v.as_str())).filter(|r| !r.is_empty()) {
+        Some(reason) => format!("{standing}: {reason}"),
+        None => standing,
     }
 }
 
@@ -383,6 +387,8 @@ mod removal_tests {
         );
         let named = serde_json::json!({ "banned": true, "by": "ab".repeat(32), "byName": "Ann" });
         assert_eq!(removal_text(Some(&named)), "banned by Ann");
+        let why = serde_json::json!({ "banned": false, "by": "ab".repeat(32), "byName": "Ann", "reason": "spam" });
+        assert_eq!(removal_text(Some(&why)), "removed by Ann: spam");
         let nobody = serde_json::json!({ "banned": false, "by": null, "byName": null });
         assert_eq!(removal_text(Some(&nobody)), "removed");
     }

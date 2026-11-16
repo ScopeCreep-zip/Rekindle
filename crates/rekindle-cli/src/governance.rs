@@ -176,13 +176,16 @@ pub async fn dispatch_moderate(
 ) -> anyhow::Result<()> {
     match cmd {
         ModerateCmd::Kick {
-            community, member, ..
+            community,
+            member,
+            reason,
         } => {
             let value = helpers::send(
                 client,
                 IpcRequest::Community(CommunityRequest::Members(MemberRequest::Kick {
                     community: community.clone(),
                     target_pseudonym: member.clone(),
+                    reason: reason.clone(),
                 })),
             )
             .await?;

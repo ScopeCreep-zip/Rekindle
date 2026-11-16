@@ -28,6 +28,9 @@ pub struct CommunityRow {
     /// Highest Lamport timestamp among the community's stored channel
     /// messages: where the message clock resumes.
     pub message_clock: u64,
+    /// The remover's display name as known when our removal was first
+    /// merged (plan E3.2 S9, A/B R5-2); `None` while we are a member.
+    pub removed_by_name: Option<String>,
 }
 
 /// Every community of `owner_key`.
@@ -43,7 +46,8 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
          (SELECT COALESCE(MAX(m.lamport_ts), 0) FROM messages m \
             JOIN channels ch ON ch.owner_key = m.owner_key AND ch.id = m.conversation_id \
            WHERE m.owner_key = c.owner_key AND m.conversation_type = 'channel' \
-             AND ch.community_id = c.id) \
+             AND ch.community_id = c.id), \
+         c.removed_by_name \
          FROM communities c \
          LEFT JOIN community_members cm \
            ON cm.owner_key = c.owner_key \
@@ -69,6 +73,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
                 presence_policy: crate::row::get_json_opt(row, "presence_policy")?,
                 governance_clock: crate::row::get_u64(row, 13)?,
                 message_clock: crate::row::get_u64(row, 14)?,
+                removed_by_name: row.get(15)?,
             })
         })?
         .collect();
@@ -170,6 +175,8 @@ pub enum Column {
     /// The pinned `GenesisCert` as the anchor holds it (plan E3.2):
     /// `rekindle_codec::governance_op::genesis::encode_genesis`.
     GenesisCert,
+    /// The remover's display name, kept with our own removal (A/B R5-2).
+    RemovedByName,
 }
 
 impl Column {
@@ -186,6 +193,7 @@ impl Column {
             Self::MySegmentIndex => "my_segment_index",
             Self::MekGeneration => "mek_generation",
             Self::GenesisCert => "genesis_cert",
+            Self::RemovedByName => "removed_by_name",
         }
     }
 }

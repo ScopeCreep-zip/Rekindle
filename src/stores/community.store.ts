@@ -199,7 +199,12 @@ export interface Community {
   myPseudonymKey: string | null;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
-  removed?: { banned: boolean; by: string | null; byName: string | null } | null;
+  removed?: {
+    banned: boolean;
+    by: string | null;
+    byName: string | null;
+    reason?: string | null;
+  } | null;
   mekGeneration: number;
   events: ScheduledEvent[];
   memberRegistryKey?: string;

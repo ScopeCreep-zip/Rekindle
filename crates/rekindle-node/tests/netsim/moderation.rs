@@ -155,6 +155,7 @@ async fn kick_removes_member_and_refuses_its_key_request() {
             MemberRequest::Kick {
                 community: community.governance_key.clone(),
                 target_pseudonym: bea.clone(),
+                reason: None,
             },
         )))
         .await;

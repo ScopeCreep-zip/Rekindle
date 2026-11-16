@@ -60,6 +60,7 @@ async fn a_kicked_member_sends_nothing_for_the_community() {
             MemberRequest::Kick {
                 community: community.governance_key.clone(),
                 target_pseudonym: bea,
+                reason: None,
             },
         )))
         .await;

@@ -223,6 +223,11 @@ CREATE TABLE IF NOT EXISTS communities (
     -- PresenceSharingPolicy; NULL falls back to the default-deny policy.
     -- Never published to the registry — this is the user's private choice.
     presence_policy TEXT CHECK(json_valid(presence_policy)),
+    -- Our own removal from the community (plan E3.2 S9, A/B R5-2): the
+    -- remover's display name as we knew it when the removal was first
+    -- merged, so the banner names who removed us after the teardown and a
+    -- restart. NULL while we are a member or the name was never known.
+    removed_by_name TEXT,
     PRIMARY KEY (owner_key, id)
 );
 

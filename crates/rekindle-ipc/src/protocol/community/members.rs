@@ -68,6 +68,9 @@ pub enum MemberRequest {
     Kick {
         community: String,
         target_pseudonym: String,
+        /// Why, shown to the removed member (the `MemberRemoved` op's
+        /// `reason`, A/B R5-2).
+        reason: Option<String>,
     },
 
     /// Ban a member (persist to governance + gossip broadcast).

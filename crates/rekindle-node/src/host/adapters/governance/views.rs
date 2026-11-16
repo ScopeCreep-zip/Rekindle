@@ -77,13 +77,16 @@ fn community_view(c: &CommunityState) -> CommunityView {
 }
 
 /// Our removal from `community`, as every community read shows it (plan
-/// E3.2 S9 own removal, R3-5): who removed us, by pseudonym and card name.
+/// E3.2 S9 own removal, R3-5, R5-2): who removed us, by pseudonym and the
+/// name kept with the removal (else its card or profile now), and why.
 pub(crate) fn removal_display(
     communities: &crate::host::community::store::CommunityStore,
     community: &str,
 ) -> Option<rekindle_types::display::CommunityRemovalDisplay> {
     let removal = communities.own_removal(community)?;
-    let by_name = (removal.by.as_ref()).and_then(|by| communities.member_card_name(community, by));
+    let by_name = removal.by_name.clone().or_else(|| {
+        (removal.by.as_ref()).and_then(|by| communities.removal_name_of(community, by))
+    });
     Some(rekindle_types::display::CommunityRemovalDisplay {
         banned: removal.banned,
         by: removal
@@ -91,6 +94,7 @@ pub(crate) fn removal_display(
             .as_ref()
             .map(rekindle_types::id::PseudonymKey::to_hex),
         by_name,
+        reason: removal.reason,
     })
 }
 

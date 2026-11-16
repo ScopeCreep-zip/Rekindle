@@ -18,6 +18,13 @@ pub struct OwnRemoval {
     /// The removal's author, when the merge names one (the creator's
     /// departure has none).
     pub by: Option<rekindle_types::id::PseudonymKey>,
+    /// The remover's display name as we knew it when the removal was first
+    /// merged (A/B R5-2): its verified card or its profile then, kept with
+    /// the removal (`communities.removed_by_name`) so the teardown and a
+    /// restart do not lose it. The merge does not set it.
+    pub by_name: Option<String>,
+    /// The reason the removal op gave (A/B R5-2).
+    pub reason: Option<String>,
 }
 
 impl OwnRemoval {
@@ -34,6 +41,8 @@ impl OwnRemoval {
         (banned || removed).then(|| Self {
             banned,
             by: governance.removed_by.get(&me).cloned(),
+            by_name: None,
+            reason: governance.removal_reasons.get(&me).cloned(),
         })
     }
 }

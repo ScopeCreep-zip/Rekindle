@@ -16,6 +16,9 @@ use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 use crate::harness::{eventually, Community, PASSPHRASE};
 use crate::moderation::listed;
 
+/// Why the creator kicks the member (A/B R5-2).
+const REASON: &str = "ab5 test";
+
 /// The posts the member read before its removal.
 const KEPT: [&str; 2] = ["bea before the kick", "ann before the kick"];
 
@@ -67,11 +70,19 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
         "the member holds the community's keys before the kick"
     );
 
+    // The name the member knows the creator by before the kick.
+    let ann_name = listed(&community, 1, &ann)
+        .await
+        .and_then(|m| m["displayName"].as_str().map(str::to_owned))
+        .filter(|name| !name.is_empty());
+    assert!(ann_name.is_some(), "the member lists the creator by name");
+
     community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::Kick {
                 community: community.governance_key.clone(),
                 target_pseudonym: bea.clone(),
+                reason: Some(REASON.into()),
             },
         )))
         .await;
@@ -100,6 +111,14 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
         Some(false),
         "a kick, not a ban"
     );
+    // A/B R5-2 (R3-5): the banner names who removed us and why, from the
+    // name the member knew the creator by when the kick merged.
+    let removed = &community.info(1).await["removed"];
+    assert!(
+        removed["byName"].is_string() && removed["byName"].as_str() == ann_name.as_deref(),
+        "the kicked member's info names the remover ({ann_name:?}): {removed}"
+    );
+    assert_eq!(removed["reason"].as_str(), Some(REASON), "{removed}");
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
             community
@@ -164,6 +183,12 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
         opened(&community, 1, &KEPT, Duration::from_secs(120)).await,
         "the kept history stays readable after a relogin (R3-2): {:?}",
         community.history(1, None, 100).await
+    );
+    let removed = &community.info(1).await["removed"];
+    assert!(
+        removed["byName"].as_str() == ann_name.as_deref()
+            && removed["reason"].as_str() == Some(REASON),
+        "the remover's name and the reason survive a relogin (R5-2): {removed}"
     );
     assert!(
         community

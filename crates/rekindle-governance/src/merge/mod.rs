@@ -177,8 +177,23 @@ fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
     .flatten();
     if let Some(target) = remover_of {
         state.removed_by.insert(target.clone(), op.author().clone());
+        match removal_reason(op.body()) {
+            Some(reason) => state
+                .removal_reasons
+                .insert(target.clone(), reason.to_owned()),
+            None => state.removal_reasons.remove(target),
+        };
     }
     true
+}
+
+/// The reason a removal op gives, when it gives one.
+fn removal_reason(entry: &GovernanceEntry) -> Option<&str> {
+    match entry {
+        GovernanceEntry::MemberRemoved { reason, .. }
+        | GovernanceEntry::BanEntry { reason, .. } => reason.as_deref().filter(|r| !r.is_empty()),
+        _ => None,
+    }
 }
 
 /// Apply a single governance entry, stamped by its op, to the state.

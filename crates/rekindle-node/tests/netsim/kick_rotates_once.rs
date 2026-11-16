@@ -41,6 +41,7 @@ async fn one_kick_rotates_the_key_once() {
             MemberRequest::Kick {
                 community: community.governance_key.clone(),
                 target_pseudonym: bea,
+                reason: None,
             },
         )))
         .await;

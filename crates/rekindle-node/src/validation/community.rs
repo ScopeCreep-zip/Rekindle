@@ -415,11 +415,7 @@ pub(super) fn check_members(request: &MemberRequest) -> Checked {
             community(c)?;
             pseudonym(member_pseudonym, "member pseudonym")
         }
-        MemberRequest::Kick {
-            community: c,
-            target_pseudonym,
-        }
-        | MemberRequest::Unban {
+        MemberRequest::Unban {
             community: c,
             target_pseudonym,
         }
@@ -430,7 +426,12 @@ pub(super) fn check_members(request: &MemberRequest) -> Checked {
             community(c)?;
             pseudonym(target_pseudonym, "target pseudonym")
         }
-        MemberRequest::Ban {
+        MemberRequest::Kick {
+            community: c,
+            target_pseudonym,
+            reason,
+        }
+        | MemberRequest::Ban {
             community: c,
             target_pseudonym,
             reason,

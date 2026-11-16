@@ -163,13 +163,14 @@ pub(crate) async fn handle_kick(
     state: DaemonState,
     community: &str,
     target: &str,
+    reason: Option<&str>,
 ) -> IpcResponse {
     let key = match writable(ctx, state, community) {
         Ok(k) => k,
         Err(e) => return e,
     };
-    match adapter(ctx).remove_member(&key, target).await {
-        Ok(()) => IpcResponse::ok(&serde_json::json!({ "kicked": target })),
+    match adapter(ctx).remove_member(&key, target, reason).await {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({ "kicked": target, "reason": reason })),
         Err(r) => moderation_refused(&r),
     }
 }

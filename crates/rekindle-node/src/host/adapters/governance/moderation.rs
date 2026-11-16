@@ -249,7 +249,7 @@ impl HostGovernance {
         Ok(())
     }
 
-    /// Remove `target` without barring return: the `MemberRemoved` op and
+    /// Remove `target` without barring return, giving `reason`: the `MemberRemoved` op and
     /// the departure rotation, the `Kick` notice to the mesh, and the
     /// member forgotten here.
     ///
@@ -260,9 +260,10 @@ impl HostGovernance {
         &self,
         community_id: &str,
         target: &str,
+        reason: Option<&str>,
     ) -> Result<(), ModerationRefusal> {
         self.moderate(community_id, target, ModerationAction::Remove)?;
-        moderation::remove_member(self, community_id, target).await?;
+        moderation::remove_member(self, community_id, target, reason).await?;
         let notice = CommunityEnvelope::Control(ControlPayload::Kick {
             target_pseudonym: target.to_owned(),
         });

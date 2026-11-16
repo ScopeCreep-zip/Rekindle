@@ -333,6 +333,8 @@ fn traffic_from_a_departed_author_or_after_our_removal_is_refused() {
         super::OwnRemoval {
             banned: false,
             by: None,
+            by_name: None,
+            reason: None,
         },
     );
     assert!(!store.takes_traffic_from("c1", &member), "we were removed");

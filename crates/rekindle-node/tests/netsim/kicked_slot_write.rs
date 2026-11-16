@@ -29,6 +29,7 @@ async fn a_kicked_members_slot_write_is_stored_by_no_member() {
             MemberRequest::Kick {
                 community: community.governance_key.clone(),
                 target_pseudonym: bea.clone(),
+                reason: None,
             },
         )))
         .await;
@@ -92,6 +93,7 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
             MemberRequest::Kick {
                 community: community.governance_key.clone(),
                 target_pseudonym: bea.clone(),
+                reason: None,
             },
         )))
         .await;

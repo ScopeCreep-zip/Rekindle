@@ -57,11 +57,13 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
 /// Remove a member without barring return: the durable kick
 /// `MemberRemoved`, which readers accept from a `KICK_MEMBERS` holder who
 /// outranks the target, and the departure rotation (ADR 0018) that the
-/// removal drives.
+/// removal drives. `reason` travels in the op; the removed member shows it
+/// (A/B R5-2).
 pub async fn remove_member<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     pseudonym_hex: &str,
+    reason: Option<&str>,
 ) -> Result<(), GovernanceRuntimeError> {
     deps.require_permission(community_id, KICK_MEMBERS)?;
     // The member's slot heads as we hold them: readers keep its posts
@@ -72,7 +74,7 @@ pub async fn remove_member<D: GovernanceRuntimeDeps>(
         community_id,
         GovernanceEntry::MemberRemoved {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
-            reason: None,
+            reason: reason.map(str::to_owned),
             heads,
         },
     )

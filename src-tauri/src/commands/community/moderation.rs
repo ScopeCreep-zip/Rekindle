@@ -14,6 +14,7 @@ use rekindle_types::dto::community::CommunityBanView;
 pub async fn remove_community_member(
     community_id: String,
     pseudonym_key: String,
+    reason: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<serde_json::Value>, CommandError> {
     host_call::call(
@@ -21,6 +22,7 @@ pub async fn remove_community_member(
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::Kick {
             community: community_id,
             target_pseudonym: pseudonym_key,
+            reason,
         })),
     )
     .await

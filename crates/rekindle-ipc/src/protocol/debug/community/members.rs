@@ -8,10 +8,12 @@ impl std::fmt::Debug for MemberRequest {
             Self::Kick {
                 community,
                 target_pseudonym,
+                reason,
             } => f
                 .debug_struct("Kick")
                 .field("community", community)
                 .field("target_pseudonym", target_pseudonym)
+                .field("reason", reason)
                 .finish(),
             Self::Ban {
                 community,

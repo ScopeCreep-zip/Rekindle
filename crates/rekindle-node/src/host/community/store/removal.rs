@@ -13,6 +13,32 @@ impl CommunityStore {
         self.write(community_id, |c| c.own_removal.replace(removal).is_none())
     }
 
+    /// Keep `name` as the name of our remover `by`, when the mark still
+    /// names `by` and holds no name (A/B R5-2): whether it was kept.
+    pub fn name_own_removal(&self, community_id: &str, by: &PseudonymKey, name: String) -> bool {
+        self.write(community_id, |c| match c.own_removal.as_mut() {
+            Some(removal) if removal.by.as_ref() == Some(by) && removal.by_name.is_none() => {
+                removal.by_name = Some(name);
+                true
+            }
+            _ => false,
+        })
+    }
+
+    /// The display name `by` goes by in the community as we know it now:
+    /// its verified card, else its profile (A/B R5-2: the remover is not
+    /// always a member whose card the admission queue read).
+    #[must_use]
+    pub fn removal_name_of(&self, community_id: &str, by: &PseudonymKey) -> Option<String> {
+        self.member_card_name(community_id, by).or_else(|| {
+            self.read(community_id, |c| {
+                (c.member_profiles.get(&by.to_hex())).and_then(|p| p.display_name.clone())
+            })
+            .flatten()
+            .filter(|name| !name.is_empty())
+        })
+    }
+
     /// Clear our removal mark: the merged state no longer removes us (the
     /// removal was void, strong removal). Whether it was marked.
     pub fn clear_own_removal(&self, community_id: &str) -> bool {

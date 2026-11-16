@@ -140,6 +140,7 @@ async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
             MemberRequest::Kick {
                 community: community.governance_key.clone(),
                 target_pseudonym: target.to_string(),
+                reason: None,
             },
         )))
     };

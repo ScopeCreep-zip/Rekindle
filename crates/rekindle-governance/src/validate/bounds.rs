@@ -71,6 +71,13 @@ pub fn out_of_bounds_field(entry: &GovernanceEntry) -> Option<&'static str> {
             ..
         } => welcome_screen_field(description, channels),
         GovernanceEntry::ModReport { reason, target, .. } => mod_report_field(reason, target),
+        // A removal's reason is shown to the removed member (A/B R5-2).
+        GovernanceEntry::MemberRemoved { reason, .. }
+        | GovernanceEntry::BanEntry { reason, .. }
+            if !opt_text_ok(reason.as_deref(), key_format::MAX_NOTE_LEN) =>
+        {
+            Some("reason")
+        }
         _ => None,
     }
 }

@@ -35,8 +35,12 @@ pub struct CommunityRemovalDisplay {
     pub banned: bool,
     /// The remover's pseudonym, when the merged op names one.
     pub by: Option<String>,
-    /// The display name on the remover's verified card, when held.
+    /// The remover's display name as known when the removal was first
+    /// merged (its verified card or profile), when known.
     pub by_name: Option<String>,
+    /// The reason the removal op gave (A/B R5-2; Element shows
+    /// "X removed you: reason").
+    pub reason: Option<String>,
 }
 
 /// Detailed community info for the info command and TUI view.

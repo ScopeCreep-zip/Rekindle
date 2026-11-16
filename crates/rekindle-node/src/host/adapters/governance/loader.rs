@@ -113,8 +113,17 @@ pub(crate) async fn load(
         super::projection::project_my_roles(state, &governance);
         // A community we were removed from stays as read-only history: the
         // unlock stages start none of its loops (plan E3.2 S9 own removal).
+        // The remover's name as known when the removal was first merged is
+        // kept with the row (A/B R5-2).
+        let kept_name = (load.communities.iter())
+            .find(|row| row.id == *community_id)
+            .and_then(|row| row.removed_by_name.clone());
         state.own_removal = (state.my_pseudonym_key.as_deref())
-            .and_then(|me| crate::host::community::OwnRemoval::of(&governance, me));
+            .and_then(|me| crate::host::community::OwnRemoval::of(&governance, me))
+            .map(|removal| crate::host::community::OwnRemoval {
+                by_name: kept_name,
+                ..removal
+            });
         // Nothing of it starts, so its network side counts as torn down: a
         // later merge that voids the removal restores it.
         state.removal_gate =
