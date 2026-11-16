@@ -111,6 +111,15 @@ async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute
         node: 0,
         class: RouteClass::General,
     });
+    // Unanswered: nothing of Ada's reaches Bo either. Her route's silence
+    // alone leaves Bo's sends answered, since she reads them from his chain
+    // and acks them over his route, and any authenticated frame resets his
+    // counters (plan RH1r-c S5; `direct/frame.rs` `open_ratchet`); healing
+    // that case is her own self-test's (O1, O2, S6).
+    sim.fault(Fault::DropFrom {
+        node: 0,
+        per_mille: 1000,
+    });
     // A suspect round re-reads Ada's route and, finding the record Bo
     // holds, probes it with one app call; nothing else of Bo's calls here.
     let calls = sim.app_calls(1);
@@ -149,8 +158,12 @@ async fn a_healthy_busy_route_is_never_probed_and_an_idle_one_is() {
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
     assert_eq!(self_probes(&sim), probes, "a busy route is never probed");
+    // Within its period of the last inbound (plan RH1r-c O1): a test that
+    // falls due inside the 40 s idle gate is skipped and rescheduled one
+    // period on, 40 s + U(0, 13.3 s), so the first idle test comes at most
+    // 40 + 40 + 13.3 s after the last arrival, which was 10 s before here.
     assert!(
-        eventually(&sim, Duration::from_secs(60), || {
+        eventually(&sim, Duration::from_secs(90), || {
             let now = self_probes(&sim);
             async move { now > probes }
         })
