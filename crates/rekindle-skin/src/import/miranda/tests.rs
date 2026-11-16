@@ -180,6 +180,17 @@ fn a_non_bitmap_image_is_dropped_and_named() {
     let imp = imported(import(&tree, "x").unwrap());
     assert!(imp.notice.contains("$$Window: back.tga: not a bitmap"));
     assert!(read(&tree).unwrap().regions.is_empty());
+    // A Clist_modern JPEG atlas: refused as the validator refuses JPEG.
+    let mut tree = msf_tree(&MSF.replace("atlas.png", "back.jpg"));
+    tree.insert(
+        "back.jpg".into(),
+        vec![0xFF, 0xD8, 0xFF, 0xE0, 0, 16, b'J', b'F', b'I', b'F', 0],
+    );
+    let imp = imported(import(&tree, "x").unwrap());
+    assert!(imp
+        .notice
+        .contains("$$Window: back.jpg: JPEG, which the image validator refuses"));
+    assert!(read(&tree).unwrap().regions.is_empty());
 }
 
 #[test]

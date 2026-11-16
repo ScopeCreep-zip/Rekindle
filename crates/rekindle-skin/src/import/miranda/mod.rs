@@ -20,7 +20,7 @@
 //! in the `NOTICE` as unmapped. 9-slice images become the region slots
 //! that exist (`window.frame`, `titlebar`, `titlebar.buttons`,
 //! `statusbar`); every other image item is named. Each image is decoded
-//! under the validator's image limits (PNG, GIF or JPEG; a TGA, an SVG or
+//! under the validator's image limits (PNG or GIF; JPEG is refused as step 4 refuses it; a TGA, an SVG or
 //! any other type is dropped and named, as is a path that leaves the skin
 //! or a missing file); insets that leave no centre refuse the import. The
 //! package goes through [`super::conclude`] (a draft names every failing
@@ -148,8 +148,13 @@ pub(crate) fn load(tree: &Tree, raw: &str, png_only: bool) -> Result<(String, Rg
     match kind_of(bytes) {
         None => {
             return Err(format!(
-                "{key}: not a bitmap the image validator decodes (PNG, GIF, JPEG)"
+                "{key}: not a bitmap the image validator decodes (PNG, GIF)"
             ))
+        }
+        // The validator refuses JPEG (plan E7.7.1 step 4); an importer
+        // decodes only what the plan names for it (Winamp's RLE BMP).
+        Some(ImageKind::Jpeg) => {
+            return Err(format!("{key}: JPEG, which the image validator refuses"));
         }
         Some(k) if png_only && k != ImageKind::Png => {
             return Err(format!("{key}: {k:?}, but TabSRMM images are PNG only"));
