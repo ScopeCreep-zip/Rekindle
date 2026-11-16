@@ -49,6 +49,10 @@
 //!     cargo xtask import-skin --format teamspeak3 --from <style dir> --builtin <id>
 //!                                      Import a legacy skin as a built-in
 //!                                      pack and its NOTICE (plan E7.7.3).
+//!     cargo xtask import-xfire-data --from <legacy/unpacked>
+//!                                      Write the Xfire game icons, the game
+//!                                      id mapping and the built-in sound
+//!                                      banks (plan E7.7.3).
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
 //!                                      placeholders to existing allows
@@ -91,6 +95,7 @@ mod frontend_boundaries;
 mod frontend_duplication;
 mod gen_skin_registry;
 mod import_skin;
+mod import_xfire_data;
 mod intent_table;
 mod jsx;
 mod key_erasure;
@@ -181,6 +186,11 @@ enum Command {
         from: PathBuf,
         #[arg(long)]
         builtin: String,
+    },
+    /// Write the Xfire game icons, game id mapping and sound banks from the owner's tree.
+    ImportXfireData {
+        #[arg(long)]
+        from: PathBuf,
     },
     /// Verify every transition reads a motion token and motion honours reduced motion.
     CheckMotion,
@@ -377,6 +387,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
             from,
             builtin,
         } => import_skin::import_skin(&root, *format, from, builtin),
+        Command::ImportXfireData { from } => import_xfire_data::import_xfire_data(&root, from),
         Command::CheckMotion => motion::check_motion(&root),
         Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
         Command::CheckBuiltCss { css } => platform_floor::check_built_css(&root, css),

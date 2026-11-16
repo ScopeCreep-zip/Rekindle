@@ -38,3 +38,15 @@ proc-macro2 = "1"
 # `gen-skin-registry` / `check-skin-registry` (plan E7.7.1) write and compare
 # the closed token registry's artefacts from the crate that owns it.
 rekindle-skin = { path = "../crates/rekindle-skin" }
+# `import-xfire-data` (plan E7.7.3 "Xfire app data"): `icons.dll` is read
+# as PE resource data, never loaded (MIT; std only, no mmap); the sound
+# packs' `sounds.xml` with the same XML reader rekindle-skin uses (MIT);
+# the packs inflated and CRC-checked (already in the tree through png);
+# provenance hashes; the icon PNG encoder; the bank's manifest types.
+pelite = { version = "0.10.0", default-features = false, features = ["std"] }
+quick-xml = "0.38"
+miniz_oxide = "0.8"
+crc32fast = "1.5"
+blake3 = "1"
+rekindle-image = { path = "../crates/rekindle-image" }
+rekindle-types = { path = "../crates/rekindle-types" }

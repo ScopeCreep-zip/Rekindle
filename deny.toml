@@ -39,6 +39,16 @@ ignore = [
 # licenses we accept in the dependency graph. Copyleft (GPL family),
 # OSL, RPSL, MS-RL, MS-PL, etc. are not on the allowlist; cargo-deny
 # will fail the check if they appear.
+#
+# Reviewed additions (plan E7.7.3, build-time importers only; neither is
+# linked into an app binary):
+#   pelite 0.10.0 (MIT; with dataview 1.1.0, pelite-macros 0.1.1 and
+#     no-std-compat 0.4.1, all MIT): xtask `import-xfire-data` reads
+#     `icons.dll` as PE resource data from its bytes, never loaded; built
+#     with `std` only, without the `mmap` (libc/winapi) feature.
+#   quick-xml 0.38 (MIT): rekindle-skin's legacy XML importers and the
+#     xtask's Xfire `sounds.xml` reader; no DTD or entity resolution (an
+#     entity reference refuses the file).
 
 [licenses]
 confidence-threshold = 0.93
