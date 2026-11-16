@@ -196,11 +196,13 @@ impl<D: OutboxDeps> Outbox<D> {
     /// `next_wake` cannot see the appender: it counts every row behind a
     /// `queued` one as blocked, so a re-hint due behind an append in flight
     /// never woke a pass (E2.5i). Each of these rows is attempted or
-    /// re-scheduled when due, so a pass does not spin on it.
+    /// re-scheduled when due, so a pass does not spin on it; a stream whose
+    /// attempt is running is left out (its end wakes the pump).
     pub(crate) async fn busy_wake(&self) -> Result<Option<i64>, OutboxError> {
         let mut wake: Option<i64> = None;
-        for stream in self.appends.streams() {
-            for row in self.deps.stream_rows(&stream).await? {
+        let attempting = self.attempting.streams();
+        for stream in self.appends.streams().difference(&attempting) {
+            for row in self.deps.stream_rows(stream).await? {
                 let in_flight = self.appends.in_flight(&row.client_id);
                 if in_flight || is_unsettled(row.state) {
                     wake = Some(wake.map_or(row.next_at, |w| w.min(row.next_at)));
@@ -219,18 +221,21 @@ impl<D: OutboxDeps> Outbox<D> {
     /// within its append's deadline is not attempted, and one whose
     /// `next_at` passed is scheduled again, so a pass does not spin on it;
     /// past the deadline a due one is attempted for its hint only
-    /// (`Outbox::attempt_all` starts no second append).
+    /// (`Outbox::attempt_run` starts no second append). A stream whose
+    /// attempt is running is skipped whole (plan E2.5j): its next run is
+    /// selected once that attempt settled.
     pub(crate) async fn select_due(
         &self,
         due: Vec<OutboxRow>,
         now: i64,
     ) -> Result<Vec<OutboxRow>, OutboxError> {
+        let attempting = self.attempting.streams();
         let streams = self.appends.streams();
         let mut rows: Vec<OutboxRow> = due
             .into_iter()
-            .filter(|row| !streams.contains(&row.stream))
+            .filter(|row| !streams.contains(&row.stream) && !attempting.contains(&row.stream))
             .collect();
-        for stream in &streams {
+        for stream in streams.difference(&attempting) {
             for row in self.deps.stream_rows(stream).await? {
                 if self.appends.in_flight(&row.client_id) {
                     if row.next_at > now {

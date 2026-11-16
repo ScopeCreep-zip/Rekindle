@@ -59,6 +59,7 @@ mod offline_day;
 mod onboarding;
 mod one_community_rebuild;
 mod outbox_handshake;
+mod outbox_stream_independence;
 mod own_removal;
 mod own_removal_quiet;
 mod pair;

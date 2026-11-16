@@ -52,6 +52,8 @@ struct Store {
     /// How many appends started, and what holds each until notified.
     appends: usize,
     hold: Option<Arc<tokio::sync::Notify>>,
+    /// Streams whose attempts never resolve (an unanswered call).
+    hang: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -284,8 +286,15 @@ impl OutboxDeps for Fake {
             .collect())
     }
     async fn attempt(&self, row: &OutboxRow) -> AttemptOutcome {
+        let hangs = {
+            let mut s = self.store.lock();
+            s.attempted.push(row.client_id.clone());
+            s.hang.contains(&row.stream)
+        };
+        if hangs {
+            std::future::pending::<()>().await;
+        }
         let mut s = self.store.lock();
-        s.attempted.push(row.client_id.clone());
         s.outcomes.pop_front().unwrap_or(AttemptOutcome::Sent)
     }
     async fn reissue(&self, row: &OutboxRow) -> Result<(), String> {
@@ -571,6 +580,8 @@ mod deadline;
 mod ack_order;
 
 mod fake_acks;
+
+mod independence;
 
 /// Finding 70 refined: a request cancelled right after it was queued and
 /// attempted (its first send wedged it) leaves no handshake row.
