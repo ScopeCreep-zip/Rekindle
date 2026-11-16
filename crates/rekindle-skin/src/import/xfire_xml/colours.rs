@@ -29,7 +29,8 @@ const XIG: Target = Target::Dropped("in-game overlay (E7.5 research)");
 const SERVERS: Target = Target::Dropped("server browser and file depth colours");
 
 /// Every Carbon Fiber name, the 62 of `Themes.xml:7-77` and the 9 its
-/// components reference undefined, in byte order.
+/// components reference undefined, and the two Symbiosis (Xfire's stock
+/// skin, `Themes.xml`) adds, in byte order.
 pub const NAMES: &[(&str, Target)] = &[
     ("BlackCG", Target::Dropped("XIG only")),
     ("ChatEditBGCG", Target::Token("bg.input")),
@@ -42,6 +43,9 @@ pub const NAMES: &[(&str, Target)] = &[
     ("ChatTitleCG", Target::Token("titlebar.text")),
     ("ChatViewBGCG", Target::Token("bg.panel")),
     ("DisabledText", Target::NoRole("text.disabled")),
+    // Symbiosis's spelling of the same role (its components' `Disabled`
+    // text states name it).
+    ("DisabledTextCG", Target::NoRole("text.disabled")),
     ("FriendNameCG", Target::Token("text.primary")),
     ("HeaderTextCG", Target::Token("text.secondary")),
     ("InfoViewBGCG", Target::Token("bg.secondary")),
@@ -103,6 +107,7 @@ pub const NAMES: &[(&str, Target)] = &[
     ("XIGActiveWindowTitleCG", XIG),
     ("XIGBarTextCG", XIG),
     ("XIGCaretCG", XIG),
+    ("XIGEditModeTitleCG", XIG),
     ("XIGFocusedColor", XIG),
     ("XIGFocusedColorCG", XIG),
     ("XIGLiveStatsTextCG", XIG),
@@ -210,12 +215,14 @@ mod tests {
     #[test]
     fn table_is_sorted_and_counts_hold() {
         assert!(NAMES.windows(2).all(|w| w[0].0 < w[1].0));
-        assert_eq!(NAMES.len(), 71);
+        assert_eq!(NAMES.len(), 73);
         let dropped = NAMES
             .iter()
             .filter(|(_, t)| matches!(t, Target::Dropped(_)))
             .count();
-        assert_eq!(dropped, 22);
+        assert_eq!(dropped, 23);
+        assert_eq!(target("DisabledTextCG"), Target::NoRole("text.disabled"));
+        assert_eq!(target("XIGEditModeTitleCG"), XIG);
     }
 
     #[test]

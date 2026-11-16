@@ -13,6 +13,11 @@
 //!   `nine-slice`, each piece shifted by its `Images` colour and keyed
 //!   (`#FF00FF` → alpha). Xfire draws one frame for every window; the
 //!   chat window's is the one whose pieces are typed `TopLeft` … in order.
+//! * Licence: a tree whose `Info.xml` names [`XFIRE_AUTHOR`] as its
+//!   original author is Xfire's own art, usable under the owner's
+//!   2026-10-15 ruling (Xfire is defunct); any other author's is
+//!   third-party work published without a licence. Both say Rekindle's MIT
+//!   licence does not cover the pack.
 //! * Triggers, layout tiles, other bitmaps, sounds, strings and HTML
 //!   templates are dropped and counted in the `NOTICE`.
 //! * The package then goes through [`crate::validate::run`]; a failing
@@ -45,6 +50,8 @@ pub const XFIRE_XML_FORMAT: &str = "xfire-xml";
 pub const FRAME_SOURCE: &str = "Components/ChatWindow.xml";
 const FRAME_IMAGE: &str = "assets/window-frame.png";
 const TOKENS: &str = "tokens.json";
+/// The original author `Info.xml` names on Xfire's own skins (Symbiosis).
+pub const XFIRE_AUTHOR: &str = "Xfire, Inc.";
 
 /// One colour of the theme and what it became.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +65,8 @@ pub struct ColourRow {
 #[derive(Debug)]
 pub struct Read {
     pub info: BTreeMap<String, String>,
+    /// `Info.xml`'s `<Author Type="Original">`.
+    pub original_author: Option<String>,
     pub colours: Vec<ColourRow>,
     pub tokens: BTreeMap<String, TokenValue>,
     pub frame: Option<(RgbaImage, rekindle_types::dto::skin::Insets)>,
@@ -220,24 +229,40 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
             components.push(xml(tree, f)?);
         }
     }
-    let info = match tree.get("Info.xml") {
-        Some(bytes) => tree::parse("Info.xml", bytes)?
-            .children
+    let info_xml = match tree.get("Info.xml") {
+        Some(bytes) => Some(tree::parse("Info.xml", bytes)?),
+        None => None,
+    };
+    let original_author = info_xml.as_ref().and_then(|n| {
+        n.children_named("Author")
+            .find(|a| a.attr("Type") == Some("Original"))
+            .map(|a| a.text.clone())
+    });
+    let info = info_xml.map_or_else(BTreeMap::new, |n| {
+        n.children
             .into_iter()
             .filter(|c| c.children.is_empty() && !c.text.is_empty())
             .fold(BTreeMap::new(), |mut m, c| {
                 m.entry(c.name).or_insert(c.text);
                 m
-            }),
-        None => BTreeMap::new(),
-    };
+            })
+    });
     Ok(Read {
         info,
+        original_author,
         colours,
         tokens,
         frame,
         dropped: count_dropped(tree, &components),
     })
+}
+
+impl Read {
+    /// Whether `Info.xml` names Xfire, Inc. as the original author.
+    #[must_use]
+    pub fn is_xfire_own(&self) -> bool {
+        self.original_author.as_deref() == Some(XFIRE_AUTHOR)
+    }
 }
 
 fn base_of(tokens: &BTreeMap<String, TokenValue>) -> (SkinBase, Base) {
@@ -277,11 +302,16 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
         name,
         description: "Imported from an Xfire XML-era skin; see the NOTICE beside the package."
             .to_owned(),
-        license: SkinLicense::Text(
+        license: SkinLicense::Text(if read.is_xfire_own() {
+            "Xfire, Inc.'s own skin art (Xfire is defunct), used under the Rekindle owner's \
+             2026-10-15 ruling. Not covered by Rekindle's MIT licence; provenance and every \
+             change are in the NOTICE beside the package."
+                .to_owned()
+        } else {
             "Third-party Xfire skin art, published without a licence. Not covered by Rekindle's \
              MIT licence; provenance and every change are in the NOTICE beside the package."
-                .to_owned(),
-        ),
+                .to_owned()
+        }),
         source: Some(SkinSource {
             format: XFIRE_XML_FORMAT.to_owned(),
             hash: source.to_owned(),

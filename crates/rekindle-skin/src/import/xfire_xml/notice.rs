@@ -25,10 +25,16 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
         let _ = writeln!(s, "  {k}: {v}");
     }
     let _ = writeln!(s, "  source tree BLAKE3: {source}");
+    let licence = if read.is_xfire_own() {
+        "The skin art and palette are Xfire, Inc.'s own work (Info.xml's original\n  \
+         author). Xfire is defunct; the Rekindle owner ruled on 2026-10-15 that\n  \
+         Xfire's own assets may be used, and replaces them with the same command."
+    } else {
+        "The skin art and palette are third-party work published without a licence."
+    };
     let _ = writeln!(
         s,
-        "\nLicence\n  The skin art and palette are third-party work published without a licence.\n  \
-         Rekindle's MIT LICENSE does not cover this pack.\n"
+        "\nLicence\n  {licence}\n  Rekindle's MIT LICENSE does not cover this pack.\n"
     );
     let _ = writeln!(s, "Colours ({} defined)", read.colours.len());
     for c in &read.colours {

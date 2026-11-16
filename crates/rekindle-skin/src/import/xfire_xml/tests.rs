@@ -113,3 +113,25 @@ fn a_failing_pair_is_walked_and_recorded() {
     assert!(a.notice.contains("status.offline-text: #0c3357 -> "));
     validate::run(&a.canonical.bytes).unwrap();
 }
+
+#[test]
+fn xfire_own_skins_carry_the_owner_ruling() {
+    let mut t = tree(PASSING);
+    let third = import(&t, "fixture").unwrap();
+    assert!(third.notice.contains("third-party work"));
+    assert!(!third.notice.contains("2026-10-15"));
+    t.insert(
+        "Info.xml".into(),
+        br#"<SkinDescription><Author Type="Contributor">Someone</Author><Author Type="Original">Xfire, Inc.</Author><Name>Fixture</Name></SkinDescription>"#.to_vec(),
+    );
+    let own = import(&t, "fixture").unwrap();
+    assert!(own.notice.contains("Xfire, Inc.'s own work"));
+    assert!(own.notice.contains("2026-10-15"));
+    assert!(own.notice.contains("MIT LICENSE does not cover"));
+    let manifest =
+        crate::manifest::parse(&crate::package::read(&own.canonical.bytes).unwrap()).unwrap();
+    assert!(matches!(
+        manifest.license,
+        SkinLicense::Text(ref s) if s.starts_with("Xfire, Inc.'s own skin art")
+    ));
+}
