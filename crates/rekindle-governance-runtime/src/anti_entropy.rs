@@ -103,7 +103,8 @@ pub async fn sweep<D: GovernanceRuntimeDeps>(
 }
 
 /// Inspect `record`; when its frontier seq moved, read the frontier and
-/// store every head not in `known`. Returns how many were stored.
+/// store every head not in `known`; the seq counts as read once all of
+/// them are stored. Returns how many were stored.
 ///
 /// # Errors
 /// The op store failed. An unreadable record is skipped.
@@ -151,16 +152,30 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
         );
         return Ok(0);
     };
+    // The seq is recorded as read only once every head we lacked is
+    // stored: a head that did not fetch keeps the frontier unread, so the
+    // next inspect reads it again although its seq has not moved.
     let mut stored = 0;
+    let mut complete = true;
     for op_ref in heads {
-        if !known.insert(op_ref.op_hash) {
+        if known.contains(&op_ref.op_hash) {
             continue;
         }
-        if let Some(op) = op_log::fetch_held(deps, &op_ref).await? {
-            deps.store_governance_op(community_id, &op).await?;
-            stored += 1;
+        match op_log::fetch_held(deps, &op_ref).await? {
+            Some(op) => {
+                deps.store_governance_op(community_id, &op).await?;
+                known.insert(op_ref.op_hash);
+                stored += 1;
+            }
+            None => complete = false,
         }
     }
-    seen.insert(record.to_owned(), seq);
+    if complete {
+        seen.insert(record.to_owned(), seq);
+    }
     Ok(stored)
 }
+
+#[cfg(test)]
+#[path = "anti_entropy_tests.rs"]
+mod tests;
