@@ -49,11 +49,12 @@ pub(crate) async fn handle_control_events_and_threads(
             }
         }
         ControlPayload::HeadAdvanced { hint } => {
-            // A ring watcher's hint (plan E3.2 S7).
+            // A ring watcher's hint (plan E3.2 S7): the desktop's gossip
+            // ingest rate-limits the sender before it gets here
+            // (`receiver_limits.rs`).
             if let Some(host) = state.host.current() {
                 host.governance()
-                    .on_head_advanced(community_id, sender_pseudonym, &hint)
-                    .await;
+                    .on_head_advanced(community_id, sender_pseudonym, &hint, |_| true);
             }
         }
         payload @ (ControlPayload::GameServerAdded { .. }

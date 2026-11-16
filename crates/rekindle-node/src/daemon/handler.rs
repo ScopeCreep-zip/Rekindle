@@ -248,16 +248,6 @@ impl InboundHandler for DaemonHandler {
             return;
         }
 
-        // A ring watcher's hint (plan E3.2 S7, `headAdvanced @76`).
-        if let CommunityEnvelope::Control(ControlPayload::HeadAdvanced { ref hint }) = envelope {
-            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
-                crate::host::adapters::governance::HostGovernance::new(ctx)
-                    .on_head_advanced(community_id, sender_pseudonym, hint)
-                    .await;
-            }
-            return;
-        }
-
         // A game server added or removed (plan E3.1 H1): stored when the
         // Host's adapter accepts it.
         if let CommunityEnvelope::Control(
@@ -389,6 +379,26 @@ impl InboundHandler for DaemonHandler {
             return;
         }
         crate::daemon::gossip::forward(&self.gossip_tx, envelope.clone());
+    }
+
+    /// A ring watcher's hint (plan E3.2 S7, `headAdvanced @76`): the
+    /// member gate, then the sender's rate limit, then the hint's own
+    /// signature; the verified read runs after, off the relay.
+    async fn on_head_advanced(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        hint: &[u8],
+    ) -> bool {
+        let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+            return false;
+        };
+        let governance = crate::host::adapters::governance::HostGovernance::new(ctx);
+        let admit = |sender: &str| match *self.subscriptions.read() {
+            Some(ref sub_mgr) => sub_mgr.admit(community_id, sender, 0),
+            None => false,
+        };
+        governance.on_head_advanced(community_id, sender_pseudonym, hint, admit)
     }
 
     async fn on_call(&self, _sender_pseudonym: Option<&str>, request: InboundCall) -> CallResponse {

@@ -103,6 +103,19 @@ pub trait InboundHandler: Send + Sync + 'static {
     /// forty-member community.
     fn on_gossip_forward(&self, envelope: &SignedEnvelope) -> impl Future<Output = ()> + Send;
 
+    /// A ring watcher's `HeadAdvanced` hint (plan E3.2 S7, `headAdvanced
+    /// @76`) arrived, its envelope verified: `true` when the hint passed
+    /// the member gate, the sender's gossip rate limit and its own
+    /// signature, so it is relayed one hop further. It is gated before it
+    /// is relayed, never relayed first (register S7l): a non-member's or a
+    /// flooder's hint stops at the first member.
+    fn on_head_advanced(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        hint: &[u8],
+    ) -> impl Future<Output = bool> + Send;
+
     /// An authenticated RPC request arrived, expecting a response.
     fn on_call(
         &self,

@@ -12,7 +12,8 @@ use rekindle_codec::member_record::head_advanced::{
 use rekindle_codec::member_record::{beat::decode_presence_beat, RecordScope};
 use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
-use rekindle_types::dht_layout::member_record::BEAT;
+use rekindle_records::port::OpenIntent;
+use rekindle_types::dht_layout::member_record::{BEAT, GOV_HEAD};
 use rekindle_types::id::PseudonymKey;
 
 use super::moderation::pseudonym;
@@ -119,13 +120,22 @@ impl HostGovernance {
             != Some(beat.status)
     }
 
-    /// A gossiped hint: dropped unless its relayer is a member, it verifies
-    /// under the relayer, and it names a member's own record; then the
-    /// writer-signed value is read and the community rebuilt, once per
-    /// (record, subkey, seq).
-    pub async fn on_head_advanced(&self, community_id: &str, sender_pseudonym: &str, hint: &[u8]) {
+    /// A gossiped hint, in §4.3's order: dropped unless its relayer is a
+    /// member, then unless `admit` (the relayer's gossip rate limit) takes
+    /// it, then unless it verifies under the relayer, names a relayed
+    /// subkey (1, 2 or 4) and a member's own record. `true` when it passed
+    /// (the transport relays it); the record is then read off the relay
+    /// path, and the seq recorded is the one read, never the hint's
+    /// (register S7l).
+    pub fn on_head_advanced(
+        &self,
+        community_id: &str,
+        sender_pseudonym: &str,
+        hint: &[u8],
+        admit: impl FnOnce(&str) -> bool,
+    ) -> bool {
         let Some(relayer) = pseudonym(sender_pseudonym) else {
-            return;
+            return false;
         };
         if !self.is_key_reader(community_id, &relayer) {
             tracing::debug!(
@@ -133,34 +143,102 @@ impl HostGovernance {
                 sender_pseudonym,
                 "head hint from a non-member dropped"
             );
-            return;
+            return false;
+        }
+        if !admit(sender_pseudonym) {
+            return false;
         }
         let Ok(hint) = decode_head_advanced(hint, community_id, &relayer.0) else {
             tracing::debug!(community_id, sender_pseudonym, "head hint did not verify");
-            return;
+            return false;
         };
+        if !RELAYED_SUBKEYS.contains(&hint.subkey) {
+            tracing::debug!(
+                community_id,
+                subkey = hint.subkey,
+                "head hint names no relayed subkey"
+            );
+            return false;
+        }
         if self.author_of_record(community_id, &hint.member_record)
             != Some(PseudonymKey(hint.author))
         {
             tracing::debug!(community_id, "head hint names no member's record");
+            return false;
+        }
+        let worth = self
+            .ctx
+            .communities
+            .map()
+            .read()
+            .get(community_id)
+            .is_some_and(|c| {
+                c.head_hints
+                    .worth_reading(&hint.member_record, hint.subkey, hint.seq)
+            });
+        if worth {
+            let host = self.clone();
+            let community = community_id.to_owned();
+            self.scope().spawn_or_drop("head hint read", async move {
+                host.read_hinted(&community, hint).await;
+            });
+        }
+        true
+    }
+
+    /// Read the hinted subkey from the DHT (writer-signed, forced) and
+    /// record the seq the network holds; act only when it moved: an op-log
+    /// head (2) is caught up and the community rebuilt; a beat (1) or an
+    /// outbox (4) has no governance effect, so it is only recorded.
+    async fn read_hinted(&self, community_id: &str, hint: HeadAdvanced) {
+        let record = hint.member_record.as_str();
+        let Ok(lease) = self.acquire_record(record, None, OpenIntent::Check).await else {
             return;
-        }
-        let fresh = {
-            let mut map = self.ctx.communities.map().write();
-            let Some(community) = map.get_mut(community_id) else {
-                return;
-            };
-            let seen = community
-                .head_hints
-                .entry((hint.member_record.clone(), hint.subkey))
-                .or_insert(0);
-            let fresh = hint.seq > *seen;
-            *seen = (*seen).max(hint.seq);
-            fresh
         };
-        if fresh {
-            self.refresh_member_record(community_id, &hint.member_record)
-                .await;
+        let read = match self.get_dht_value(lease, hint.subkey, true).await {
+            Ok(Some(_)) => self
+                .inspect_dht_record_update_get_seqs(lease)
+                .await
+                .ok()
+                .and_then(|seqs| seqs.get(hint.subkey as usize).copied().flatten()),
+            _ => None,
+        };
+        self.release_record(lease).await;
+        let Some(read) = read else {
+            return;
+        };
+        let moved = {
+            let mut map = self.ctx.communities.map().write();
+            map.get_mut(community_id)
+                .is_some_and(|c| c.head_hints.record_read(record, hint.subkey, read))
+        };
+        if moved && hint.subkey == GOV_HEAD {
+            self.refresh_member_record(community_id, record).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::host::community::state::HeadHints;
+
+    /// One member's `u64::MAX` hint must not mute a record (register S7l,
+    /// `evidence/slot-integrity.md` §4.3): the seq kept is the one read
+    /// from the DHT, so the record's next real advance is still read.
+    #[test]
+    fn a_hint_at_u64_max_does_not_mute_the_record() {
+        let mut hints = HeadHints::default();
+        assert!(hints.worth_reading("M", 2, u64::MAX));
+        assert!(hints.record_read("M", 2, 7), "the DHT held seq 7");
+        assert!(
+            hints.worth_reading("M", 2, 8),
+            "the record's real seq 8 is still read"
+        );
+        assert!(!hints.worth_reading("M", 2, 7), "seq 7 was read");
+        assert!(hints.record_read("M", 2, 8));
+        assert!(
+            !hints.record_read("M", 2, 8),
+            "an unmoved read is not acted on"
+        );
     }
 }

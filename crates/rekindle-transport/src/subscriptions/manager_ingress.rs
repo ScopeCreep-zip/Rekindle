@@ -45,26 +45,8 @@ impl SubscriptionManager {
         //
         // The guard is scoped so it drops before `process_event`, which
         // re-enters the manager.
-        let admission = {
-            let mut meshes = self.meshes().write();
-            match meshes.get_mut(community_id) {
-                Some(mesh) => mesh.admit_gossip(sender_pseudonym, lamport_ts),
-                // Gossip can arrive before `ensure_mesh` has run for this
-                // community. Nothing to meter it against, and the
-                // signature was already verified upstream, so admit it.
-                None => GossipAdmission::Accept,
-            }
-        };
-        match admission {
-            GossipAdmission::Accept => {}
-            GossipAdmission::RateLimited => {
-                debug!(
-                    community = community_id,
-                    sender = %sender_pseudonym,
-                    "sub: gossip dropped — sender over rate floor"
-                );
-                return false;
-            }
+        if !self.admit(community_id, sender_pseudonym, lamport_ts) {
+            return false;
         }
 
         // `None` for payloads that are not subscriber-facing — Mutual
@@ -76,6 +58,33 @@ impl SubscriptionManager {
             self.process_event(event);
         }
         true
+    }
+
+    /// The sender's per-mesh gossip rate limit and our Lamport merge: the
+    /// admission [`Self::on_gossip`] runs, and a `HeadAdvanced` hint's
+    /// before it is relayed (register S7l). `false` when over the floor.
+    pub fn admit(&self, community_id: &str, sender_pseudonym: &str, lamport_ts: u64) -> bool {
+        let admission = {
+            let mut meshes = self.meshes().write();
+            match meshes.get_mut(community_id) {
+                Some(mesh) => mesh.admit_gossip(sender_pseudonym, lamport_ts),
+                // Gossip can arrive before `ensure_mesh` has run for this
+                // community. Nothing to meter it against, and the
+                // signature was already verified upstream, so admit it.
+                None => GossipAdmission::Accept,
+            }
+        };
+        match admission {
+            GossipAdmission::Accept => true,
+            GossipAdmission::RateLimited => {
+                debug!(
+                    community = community_id,
+                    sender = %sender_pseudonym,
+                    "sub: gossip dropped — sender over rate floor"
+                );
+                false
+            }
+        }
     }
 
     /// Central event processing pipeline: enrich → state effects → dedup → emit.

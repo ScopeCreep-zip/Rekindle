@@ -72,6 +72,10 @@ impl InboundHandler for Recorder {
         self.seen.lock().push(Seen::Forward { ttl: envelope.ttl });
     }
 
+    async fn on_head_advanced(&self, _community: &str, _sender: &str, _hint: &[u8]) -> bool {
+        false
+    }
+
     async fn on_call(&self, _sender: Option<&str>, _request: InboundCall) -> CallResponse {
         CallResponse::Ack
     }

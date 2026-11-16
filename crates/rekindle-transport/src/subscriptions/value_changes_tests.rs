@@ -42,6 +42,10 @@ impl InboundHandler for Gated {
 
     async fn on_gossip_forward(&self, _envelope: &SignedEnvelope) {}
 
+    async fn on_head_advanced(&self, _community: &str, _sender: &str, _hint: &[u8]) -> bool {
+        false
+    }
+
     async fn on_call(&self, _sender: Option<&str>, _request: InboundCall) -> CallResponse {
         CallResponse::Ack
     }

@@ -89,9 +89,10 @@ pub struct CommunityState {
     #[serde(skip)]
     pub ring_beat_status:
         std::collections::BTreeMap<String, rekindle_types::presence::SessionStatus>,
-    /// The newest `HeadAdvanced` seq acted on per (member record, subkey).
+    /// The newest `HeadAdvanced` seq read from the DHT per (member record,
+    /// subkey).
     #[serde(skip)]
-    pub head_hints: std::collections::BTreeMap<(String, u32), u64>,
+    pub head_hints: HeadHints,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.
@@ -548,5 +549,37 @@ impl Default for GossipOverlay {
             needs_initial_sync: true,
             pending_mesh_broadcasts: VecDeque::with_capacity(16),
         }
+    }
+}
+
+/// The seqs `HeadAdvanced` hints were acted on at, per (member record,
+/// subkey): a seq is recorded only once read from the DHT, never from the
+/// hint (`evidence/slot-integrity.md` §4.3, "hints are self-verifying";
+/// register S7l), so one member's `u64::MAX` hint mutes nothing.
+#[derive(Debug, Clone, Default)]
+pub struct HeadHints(std::collections::BTreeMap<(String, u32), u64>);
+
+impl HeadHints {
+    /// Is a hint at `hinted` worth a read: above the seq last read?
+    /// Records nothing.
+    #[must_use]
+    pub fn worth_reading(&self, record: &str, subkey: u32, hinted: u64) -> bool {
+        hinted > self.read_at(record, subkey)
+    }
+
+    /// Record the seq the DHT read returned: `true` when it moved past
+    /// the last one read, so the hint is acted on.
+    pub fn record_read(&mut self, record: &str, subkey: u32, read: u64) -> bool {
+        let seen = self.0.entry((record.to_owned(), subkey)).or_insert(0);
+        let moved = read > *seen;
+        *seen = (*seen).max(read);
+        moved
+    }
+
+    fn read_at(&self, record: &str, subkey: u32) -> u64 {
+        self.0
+            .get(&(record.to_owned(), subkey))
+            .copied()
+            .unwrap_or(0)
     }
 }

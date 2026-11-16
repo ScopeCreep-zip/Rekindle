@@ -133,7 +133,7 @@ mod tests {
             segments: Vec::new(),
             watch_ring: std::collections::BTreeMap::new(),
             ring_beat_status: std::collections::BTreeMap::new(),
-            head_hints: std::collections::BTreeMap::new(),
+            head_hints: rekindle_node::host::community::state::HeadHints::default(),
             governance_key: Some("gov-key".to_string()),
             governance_state: gov,
             own_removal: None,
