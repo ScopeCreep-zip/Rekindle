@@ -8,7 +8,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, bail, Context, Result};
 use rekindle_skin::import::{
-    mumble, pidgin, teamspeak, winamp, xfire_ini, xfire_xml, Imported, Outcome, Tree,
+    miranda, mumble, pidgin, teamspeak, winamp, xfire_ini, xfire_xml, Imported, Outcome, Tree,
 };
 use walkdir::WalkDir;
 
@@ -32,6 +32,9 @@ pub enum Format {
     /// TeamSpeak 3 style tree (`styles/<name>.qss` `QPalette::` overrides,
     /// `styles/<name>/media/*.png`).
     Teamspeak3,
+    /// Miranda NG skin directory: one TabSRMM `.tsk` or Clist_modern `.msf`
+    /// and the images it names.
+    Miranda,
 }
 
 /// A user-format import as a built-in: a draft's suggestions are accepted,
@@ -117,6 +120,9 @@ pub fn import_skin(root: &Path, format: Format, from: &Path, id: &str) -> Result
         }
         Format::Teamspeak3 => {
             accept(teamspeak::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
+        }
+        Format::Miranda => {
+            accept(miranda::import(&read_tree(from)?, id).map_err(|e| anyhow!("{e}"))?)?
         }
     };
     let dir = root.join(BUILTIN_DIR);

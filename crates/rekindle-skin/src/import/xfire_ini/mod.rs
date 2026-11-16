@@ -98,7 +98,7 @@ pub struct Read {
 
 /// `raw` (a Windows path) as a tree key: `\` → `/`, relative, no `.`/`..`
 /// segment, matched exactly, else ASCII-case-insensitively (Windows).
-fn lookup<'t>(tree: &'t Tree, raw: &str) -> Result<(&'t str, &'t [u8]), ImportError> {
+pub(crate) fn lookup<'t>(tree: &'t Tree, raw: &str) -> Result<(&'t str, &'t [u8]), ImportError> {
     let path = raw.replace('\\', "/");
     if path.contains(':')
         || path

@@ -11,12 +11,15 @@
 //! * [`mumble`] and [`teamspeak`]: Mumble themes and TeamSpeak 3 styles,
 //!   one Qt-palette reader ([`qt`]) with two front-ends; SVG icons are
 //!   rasterised with every reference refused.
+//! * [`miranda`]: Miranda NG TabSRMM `.tsk` and Clist_modern `.msf` skins
+//!   (colours and 9-slice images).
 //! * [`walk`]: the minimal Oklab-lightness walk a built-in that fails the
 //!   validator is adjusted by, every change recorded.
 //!
 //! The crate does no file I/O: the caller (`cargo xtask import-skin`, the
 //! helper) hands the tree over as a map of relative paths to bytes.
 
+pub mod miranda;
 mod notice;
 pub mod pidgin;
 pub mod qt;

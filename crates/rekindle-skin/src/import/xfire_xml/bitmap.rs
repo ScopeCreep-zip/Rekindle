@@ -36,6 +36,17 @@ fn image_err(file: &str, detail: impl std::fmt::Display) -> ImportError {
 /// # Errors
 /// [`ImportError::Image`] for an unknown kind or a refused decode.
 pub fn decode(file: &str, bytes: &[u8]) -> Result<RgbaImage, ImportError> {
+    let mut image = decode_unkeyed(file, bytes)?;
+    colour_key(&mut image);
+    Ok(image)
+}
+
+/// Decodes `bytes` (GIF, PNG or JPEG, first frame) under the validator's
+/// image limits, with no colour key.
+///
+/// # Errors
+/// [`ImportError::Image`] for an unknown kind or a refused decode.
+pub fn decode_unkeyed(file: &str, bytes: &[u8]) -> Result<RgbaImage, ImportError> {
     let kind = kind_of(bytes).ok_or_else(|| image_err(file, "not an image"))?;
     let limits = DecodeLimits {
         max_width: MAX_IMAGE_SIDE,
@@ -44,18 +55,21 @@ pub fn decode(file: &str, bytes: &[u8]) -> Result<RgbaImage, ImportError> {
         max_alloc: MAX_IMAGE_ALLOC,
         frames: Frames::First,
     };
-    let mut image = decode_limited(bytes, kind, &limits)
+    Ok(decode_limited(bytes, kind, &limits)
         .map_err(|e| image_err(file, e))?
         .into_first()
-        .into_rgba8();
-    colour_key(&mut image);
-    Ok(image)
+        .into_rgba8())
 }
 
 /// Every opaque `#FF00FF` pixel becomes fully transparent.
 pub fn colour_key(image: &mut RgbaImage) {
+    key_out(image, COLOUR_KEY);
+}
+
+/// Every pixel of colour `key` becomes fully transparent.
+pub fn key_out(image: &mut RgbaImage, key: [u8; 3]) {
     for p in image.pixels_mut() {
-        if p.0[..3] == COLOUR_KEY {
+        if p.0[..3] == key {
             p.0 = [0, 0, 0, 0];
         }
     }
