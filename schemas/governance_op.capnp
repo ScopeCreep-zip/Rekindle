@@ -20,9 +20,13 @@ struct OpRef {
 
 # A member record's subkey 3 (`member_record::FRONTIER`): the heads of the
 # op set the member has seen, at most 64, in op-hash order. A joiner's walk
-# of the op DAG starts at the inviter's frontier.
+# of the op DAG starts at the inviter's frontier. `rosterChecksum` is
+# BLAKE3 derive_key(rekindle-gov-roster-checksum-v1) over the canonical
+# encoding of the member's merged roster and role tables (D15): a reader
+# whose heads equal these compares it with its own.
 struct Frontier {
   heads @0 :List(OpRef);
+  rosterChecksum @1 :Data;     # 32 bytes
 }
 
 struct GovernanceOp {

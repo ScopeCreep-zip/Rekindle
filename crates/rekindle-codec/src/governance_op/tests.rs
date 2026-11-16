@@ -496,12 +496,40 @@ fn a_full_frontier_round_trips_under_the_subkey_cap() {
             author_seq: u64::MAX - i as u64,
         })
         .collect();
-    let bytes = super::encode_frontier(&heads).unwrap();
+    let value = rekindle_types::governance::Frontier {
+        heads: heads.clone(),
+        roster_checksum: rekindle_types::governance::RosterChecksum([0x3C; 32]),
+    };
+    let bytes = super::encode_frontier(&value).unwrap();
     assert!(bytes.len() <= MAX_SUBKEY_VALUE_LEN);
-    assert_eq!(super::decode_frontier(&bytes).unwrap(), heads);
-    let mut over = heads.clone();
-    over.push(heads[0].clone());
+    assert_eq!(super::decode_frontier(&bytes).unwrap(), value);
+    let mut over = value.clone();
+    over.heads.push(heads[0].clone());
     assert!(super::encode_frontier(&over).is_err());
+}
+
+/// The roster checksum (D15) rides the frontier at its fresh ordinal and
+/// comes back byte for byte; a frontier without one is refused.
+#[test]
+fn a_frontier_carries_its_roster_checksum() {
+    use rekindle_types::governance::{Frontier, RosterChecksum};
+    let value = Frontier {
+        heads: vec![OpRef {
+            op_hash: OpHash([1; 32]),
+            author: pk(2),
+            author_record: "VLD0:m".into(),
+            author_seq: 3,
+        }],
+        roster_checksum: RosterChecksum(std::array::from_fn(|i| u8::try_from(i).unwrap())),
+    };
+    let bytes = super::encode_frontier(&value).unwrap();
+    assert_eq!(super::decode_frontier(&bytes).unwrap(), value);
+    let mut builder = capnp::message::Builder::new_default();
+    builder
+        .init_root::<crate::governance_op_capnp::frontier::Builder<'_>>()
+        .init_heads(0);
+    let unsummed = crate::capnp_codec::pack(&builder);
+    assert!(super::decode_frontier(&unsummed).is_err());
 }
 
 /// The gossip fast path (`governanceOp @74`): a signed op rides a

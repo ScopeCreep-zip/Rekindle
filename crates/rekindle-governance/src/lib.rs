@@ -12,6 +12,7 @@
 //! See architecture doc §4.4 for merge rules.
 //! See rekindle-architecture-v2.md §4.4 for field specifications.
 
+pub mod checksum;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod genesis;

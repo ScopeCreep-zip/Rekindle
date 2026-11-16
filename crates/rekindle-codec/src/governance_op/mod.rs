@@ -15,7 +15,7 @@ pub mod genesis;
 mod tests;
 
 use rekindle_types::dht_layout::member_record::{MAX_FRONTIER_REFS, MAX_SUBKEY_VALUE_LEN};
-use rekindle_types::governance::{GovernanceOp, OpHash, OpRef};
+use rekindle_types::governance::{Frontier, GovernanceOp, OpHash, OpRef, RosterChecksum};
 use rekindle_types::id::PseudonymKey;
 
 use crate::capnp_codec::{bounds, capnp_err, pack, text_to_string, unpack_bounded};
@@ -91,13 +91,14 @@ pub fn decode_op(data: &[u8]) -> Result<DecodedOp, CodecError> {
 
 /// Encode a member record's `Frontier` (`M`/3), refusing more than
 /// [`MAX_FRONTIER_REFS`] heads.
-pub fn encode_frontier(heads: &[OpRef]) -> Result<Vec<u8>, CodecError> {
-    check_len("frontier heads", heads.len(), MAX_FRONTIER_REFS)?;
+pub fn encode_frontier(value: &Frontier) -> Result<Vec<u8>, CodecError> {
+    check_len("frontier heads", value.heads.len(), MAX_FRONTIER_REFS)?;
     let mut builder = capnp::message::Builder::new_default();
-    let b = builder.init_root::<frontier::Builder<'_>>();
-    let count = u32::try_from(heads.len()).unwrap_or(u32::MAX);
+    let mut b = builder.init_root::<frontier::Builder<'_>>();
+    b.set_roster_checksum(&value.roster_checksum.0);
+    let count = u32::try_from(value.heads.len()).unwrap_or(u32::MAX);
     let mut list = b.init_heads(count);
-    for (i, head) in (0..count).zip(heads) {
+    for (i, head) in (0..count).zip(&value.heads) {
         write_op_ref(list.reborrow().get(i), head);
     }
     let out = pack(&builder);
@@ -105,8 +106,9 @@ pub fn encode_frontier(heads: &[OpRef]) -> Result<Vec<u8>, CodecError> {
     Ok(out)
 }
 
-/// Decode a member record's `Frontier` off the network.
-pub fn decode_frontier(data: &[u8]) -> Result<Vec<OpRef>, CodecError> {
+/// Decode a member record's `Frontier` off the network; a checksum that is
+/// not 32 bytes is refused.
+pub fn decode_frontier(data: &[u8]) -> Result<Frontier, CodecError> {
     check_size("frontier", data, MAX_SUBKEY_VALUE_LEN)?;
     let message = unpack_bounded(data, bounds::GOVERNANCE_OP_BOUND)?;
     let r = message
@@ -119,7 +121,14 @@ pub fn decode_frontier(data: &[u8]) -> Result<Vec<OpRef>, CodecError> {
             "frontier has {count} heads, the bound is {MAX_FRONTIER_REFS}"
         )));
     }
-    heads.iter().map(read_op_ref).collect()
+    let roster_checksum = RosterChecksum(fixed(
+        data_field(r.get_roster_checksum())?,
+        "frontier roster checksum",
+    )?);
+    Ok(Frontier {
+        heads: heads.iter().map(read_op_ref).collect::<Result<_, _>>()?,
+        roster_checksum,
+    })
 }
 
 /// One encoder for both forms, so they differ only in `sig`.

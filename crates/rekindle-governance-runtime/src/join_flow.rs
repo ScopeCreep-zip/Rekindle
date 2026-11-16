@@ -103,6 +103,7 @@ pub async fn read_frontier<D: GovernanceRuntimeDeps>(
         GovernanceRuntimeError::Adapter(format!("member record {record} has no frontier"))
     })?;
     rekindle_codec::governance_op::decode_frontier(&bytes)
+        .map(|frontier| frontier.heads)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("frontier of {record}: {e}")))
 }
 

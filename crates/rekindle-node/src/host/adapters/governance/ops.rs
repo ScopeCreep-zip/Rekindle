@@ -470,8 +470,14 @@ impl HostGovernance {
             .await
             .map_err(|e| format!("read op store: {e}"))?;
         let set = op_log::verify_held(community_id, &held);
-        let heads = op_log::frontier_refs(&cert, &state, &set);
-        let bytes = rekindle_codec::governance_op::encode_frontier(&heads)
+        // The heads and the checksum of the roster and role tables we
+        // merged (D15's convergence check, compared by a reader whose heads
+        // equal these).
+        let frontier = rekindle_types::governance::Frontier {
+            heads: op_log::frontier_refs(&cert, &state, &set),
+            roster_checksum: rekindle_governance::checksum::roster_checksum(&state),
+        };
+        let bytes = rekindle_codec::governance_op::encode_frontier(&frontier)
             .map_err(|e| format!("frontier: {e}"))?;
         let lease = self
             .acquire_record(record, Some(writer.to_owned()), OpenIntent::Hold)

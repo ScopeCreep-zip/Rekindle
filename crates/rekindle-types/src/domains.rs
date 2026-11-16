@@ -134,6 +134,9 @@ labels! {
     GOV_OP = "rekindle-gov-op-v1";
     /// BLAKE3 `derive_key` context: a governance op's hash over its signed bytes.
     GOV_OP_HASH = "rekindle-gov-op-hash-v1";
+    /// BLAKE3 `derive_key` context: a `Frontier`'s roster checksum over the
+    /// canonical encoding of the merged roster and role tables (D15).
+    GOV_ROSTER_CHECKSUM = "rekindle-gov-roster-checksum-v1";
     /// Ed25519 context: a joiner's invite proof over this label ‖ anchor ‖
     /// invite code hash ‖ member record key (plan E3.2).
     INVITE_PROOF = "rekindle-invite-proof-v1";

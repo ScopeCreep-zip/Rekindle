@@ -28,6 +28,22 @@ pub struct OpRef {
     pub author_seq: u64,
 }
 
+/// BLAKE3 over the canonical encoding of a merged state's roster and role
+/// tables (`domains::GOV_ROSTER_CHECKSUM`, D15's convergence check, Tox
+/// `peers_checksum`): two members holding the same op set compute the same
+/// one (`rekindle_governance::checksum::roster_checksum`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct RosterChecksum(pub [u8; 32]);
+
+/// A member record's subkey 3 (`member_record::FRONTIER`): the heads of
+/// the op set its member has seen, in op-hash order, and the checksum of
+/// the roster and role tables that member merged from it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Frontier {
+    pub heads: Vec<OpRef>,
+    pub roster_checksum: RosterChecksum,
+}
+
 /// One signed governance op.
 #[derive(Debug, Clone, PartialEq)]
 pub struct GovernanceOp {

@@ -5,16 +5,20 @@
 //! read; a changed frontier is read and every head we do not hold is fetched
 //! by its `OpRef` and stored. The rebuild that follows merges them, which
 //! records an equivocating author's ops as `Equivocation` (D15): a forked
-//! chain shows up as two ops cited by different frontiers. These records are
+//! chain shows up as two ops cited by different frontiers. A frontier whose
+//! heads equal ours carries the roster checksum its member merged; one that
+//! differs from ours logs a WARN and rebuilds our state (D15's convergence
+//! check, [`check_convergence`]). These records are
 //! deliberately unwatched by most members (the ring watches 4 of them), so
 //! this is the one app inspect D4 allows.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
+use rekindle_governance::checksum::roster_checksum;
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::member_record;
-use rekindle_types::governance::OpHash;
+use rekindle_types::governance::{Frontier, OpHash};
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
@@ -104,7 +108,8 @@ pub async fn sweep<D: GovernanceRuntimeDeps>(
 
 /// Inspect `record`; when its frontier seq moved, read the frontier and
 /// store every head not in `known`; the seq counts as read once all of
-/// them are stored. Returns how many were stored.
+/// them are stored. A frontier that added nothing is checked for
+/// convergence ([`check_convergence`]). Returns how many were stored.
 ///
 /// # Errors
 /// The op store failed. An unreadable record is skipped.
@@ -144,7 +149,7 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
     let Some((seq, Ok(Some(bytes)))) = read else {
         return Ok(0);
     };
-    let Ok(heads) = rekindle_codec::governance_op::decode_frontier(&bytes) else {
+    let Ok(frontier) = rekindle_codec::governance_op::decode_frontier(&bytes) else {
         tracing::debug!(
             community = community_id,
             record,
@@ -157,11 +162,11 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
     // next inspect reads it again although its seq has not moved.
     let mut stored = 0;
     let mut complete = true;
-    for op_ref in heads {
+    for op_ref in &frontier.heads {
         if known.contains(&op_ref.op_hash) {
             continue;
         }
-        match op_log::fetch_held(deps, &op_ref).await? {
+        match op_log::fetch_held(deps, op_ref).await? {
             Some(op) => {
                 deps.store_governance_op(community_id, &op).await?;
                 known.insert(op_ref.op_hash);
@@ -171,9 +176,51 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
         }
     }
     if complete {
+        if stored == 0 {
+            check_convergence(deps, community_id, record, &frontier).await?;
+        }
         seen.insert(record.to_owned(), seq);
     }
     Ok(stored)
+}
+
+/// D15's convergence check: when `frontier`'s heads are exactly the heads
+/// we publish, its roster checksum must equal the one of our merged state;
+/// a mismatch is logged and our state rebuilt from the op set
+/// ([`crate::rebuild_governance`]). Heads that differ say nothing.
+///
+/// # Errors
+/// The op store failed.
+async fn check_convergence<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    record: &str,
+    frontier: &Frontier,
+) -> Result<(), GovernanceRuntimeError> {
+    let Some(cert) = deps.genesis_cert(community_id) else {
+        return Ok(());
+    };
+    let state = deps.governance_state(community_id).unwrap_or_default();
+    let held = deps.governance_ops(community_id).await?;
+    let set = op_log::verify_held(community_id, &held);
+    let ours: BTreeSet<OpHash> = op_log::frontier_refs(&cert, &state, &set)
+        .iter()
+        .map(|r| r.op_hash)
+        .collect();
+    let theirs: BTreeSet<OpHash> = frontier.heads.iter().map(|r| r.op_hash).collect();
+    if ours != theirs {
+        return Ok(());
+    }
+    if roster_checksum(&state) == frontier.roster_checksum {
+        return Ok(());
+    }
+    tracing::warn!(
+        community = community_id,
+        record,
+        "sweep: equal heads, different roster checksum; rebuilding the governance state"
+    );
+    crate::rebuild_governance(deps, community_id).await;
+    Ok(())
 }
 
 #[cfg(test)]

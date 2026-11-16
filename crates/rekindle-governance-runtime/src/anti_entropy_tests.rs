@@ -1,19 +1,23 @@
 //! A frontier whose heads did not all fetch stays unread: the next
-//! inspect reads it again although its seq has not moved.
+//! inspect reads it again although its seq has not moved. A frontier with
+//! our heads and another roster checksum rebuilds our state (D15).
 
 use super::*;
 use crate::deps::MockGovernanceRuntimeDeps;
 use rekindle_records::lease::LeaseId;
-use rekindle_types::governance::OpRef;
+use rekindle_types::governance::{Frontier, OpRef, RosterChecksum};
 use rekindle_types::id::PseudonymKey;
 
 fn frontier() -> Vec<u8> {
-    rekindle_codec::governance_op::encode_frontier(&[OpRef {
-        op_hash: OpHash([7; 32]),
-        author: PseudonymKey([1; 32]),
-        author_record: "VLD0:m".into(),
-        author_seq: 0,
-    }])
+    rekindle_codec::governance_op::encode_frontier(&Frontier {
+        heads: vec![OpRef {
+            op_hash: OpHash([7; 32]),
+            author: PseudonymKey([1; 32]),
+            author_record: "VLD0:m".into(),
+            author_seq: 0,
+        }],
+        roster_checksum: RosterChecksum([0; 32]),
+    })
     .expect("frontier encodes")
 }
 
@@ -72,12 +76,15 @@ fn fetchable() -> (Vec<u8>, Vec<u8>) {
     let unsigned = rekindle_codec::governance_op::op_unsigned_bytes(&op);
     let hash = rekindle_governance::op::op_hash(&unsigned, &op.sig);
     let encoded = rekindle_codec::governance_op::encode_op(&op).expect("op encodes");
-    let frontier = rekindle_codec::governance_op::encode_frontier(&[OpRef {
-        op_hash: hash,
-        author: PseudonymKey([1; 32]),
-        author_record: "VLD0:m".into(),
-        author_seq: 0,
-    }])
+    let frontier = rekindle_codec::governance_op::encode_frontier(&Frontier {
+        heads: vec![OpRef {
+            op_hash: hash,
+            author: PseudonymKey([1; 32]),
+            author_record: "VLD0:m".into(),
+            author_seq: 0,
+        }],
+        roster_checksum: RosterChecksum([0; 32]),
+    })
     .expect("frontier encodes");
     (encoded, frontier)
 }
@@ -122,5 +129,95 @@ async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read(
         );
     }
     assert_eq!(stored, [0, 1, 0]);
+    assert_eq!(seen.get("VLD0:m"), Some(&5));
+}
+
+/// `deps` holding one signed op of ours, whose record's frontier names
+/// exactly that op as its head with `checksum`; the rebuild entry point
+/// ([`crate::rebuild_governance`]) is reached `rebuilds` times, seen
+/// through its first call (the joined-community check, which ends it here).
+/// Returns `deps` and the op set's hashes, our `known`.
+fn converging(
+    checksum: RosterChecksum,
+    rebuilds: usize,
+) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>) {
+    use rekindle_secrets::ed25519_dalek::SigningKey;
+    let key = SigningKey::from_bytes(&[9; 32]);
+    let cert = rekindle_types::governance::GenesisCert {
+        name: "c".into(),
+        policy: rekindle_types::governance::AdmissionMode::Open,
+        initial_roles: Vec::new(),
+        creator_pseudonym: PseudonymKey(key.verifying_key().to_bytes()),
+        creator_member_record: "VLD0:m".into(),
+        creator_member_record_owner: "o".into(),
+        created_at: 1,
+    };
+    let state = rekindle_governance::state::GovernanceState::default();
+    let (op, encoded) = op_log::build_op(
+        "A",
+        &cert,
+        &state,
+        &op_log::VerifiedSet::default(),
+        &key,
+        rekindle_governance::fixture::meta("a"),
+        5,
+    )
+    .expect("op builds");
+    let held = op_log::held(&op, "VLD0:m".into(), encoded, op_log::OpFate::Applied);
+    let known = BTreeSet::from([op.hash()]);
+    let bytes = rekindle_codec::governance_op::encode_frontier(&Frontier {
+        heads: vec![op.op_ref("VLD0:m")],
+        roster_checksum: checksum,
+    })
+    .expect("frontier encodes");
+    let mut deps = MockGovernanceRuntimeDeps::new();
+    deps.expect_acquire_record()
+        .returning(|_, _, _| Ok(LeaseId(1)));
+    deps.expect_release_record().returning(|_| ());
+    deps.expect_inspect_dht_record_update_get_seqs()
+        .returning(|_| {
+            let mut seqs = vec![None; member_record::SUBKEY_COUNT as usize];
+            seqs[member_record::FRONTIER as usize] = Some(5);
+            Ok(seqs)
+        });
+    deps.expect_get_dht_value()
+        .times(1)
+        .returning(move |_, _, _| Ok(Some(bytes.clone())));
+    deps.expect_genesis_cert()
+        .returning(move |_| Some(cert.clone()));
+    deps.expect_governance_state()
+        .returning(move |_| Some(state.clone()));
+    deps.expect_governance_ops()
+        .returning(move |_| Ok(vec![held.clone()]));
+    deps.expect_list_community_governance_targets()
+        .times(rebuilds)
+        .returning(Vec::new);
+    (deps, known)
+}
+
+/// Equal heads with another roster checksum: our merge disagrees with a
+/// peer holding the same op set, so the state is rebuilt, once, and the
+/// seq is read.
+#[tokio::test]
+async fn equal_heads_with_another_checksum_rebuild_the_state() {
+    let (deps, mut known) = converging(RosterChecksum([0xEE; 32]), 1);
+    let mut seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
+        .await
+        .expect("inspected");
+    assert_eq!(stored, 0);
+    assert_eq!(seen.get("VLD0:m"), Some(&5));
+}
+
+/// Equal heads with our own checksum: nothing to rebuild.
+#[tokio::test]
+async fn equal_heads_with_our_checksum_do_not_rebuild() {
+    let ours = roster_checksum(&rekindle_governance::state::GovernanceState::default());
+    let (deps, mut known) = converging(ours, 0);
+    let mut seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
+        .await
+        .expect("inspected");
+    assert_eq!(stored, 0);
     assert_eq!(seen.get("VLD0:m"), Some(&5));
 }
