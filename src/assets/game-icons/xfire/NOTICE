@@ -1,0 +1,41 @@
+Xfire game icons: `<xfire_id>.png`, one per Xfire game id (plan E7.2 "Game icons").
+
+Provenance
+  Imported by `cargo xtask import-xfire-data` (plan E7.7.3) from the project owner's
+  Xfire install tree, git commit ba066924 ("xfire re'd"; removed from the tree by
+  5a20b508), restored into the git-ignored `legacy/unpacked/`:
+    legacy/unpacked/icons.dll  BLAKE3 8549bfd584579bde833d6fe4095d224edd8c2a06e859a57d1ebd829257e5f34c
+    legacy/unpacked/xfire_games.ini  BLAKE3 e07ee92fc304a5947e10895b3e33f387737d7246dc89736584a5c4d72c2c5e90
+
+Licence
+  This is Xfire, Inc. content; Xfire is defunct. The project owner ruled on 2026-10-15
+  that Xfire's own assets may be used in Rekindle. Rekindle's MIT LICENSE does not cover
+  it.
+
+How they were made
+  `icons.dll` is read as PE resource data with `pelite`, never loaded. Its named resource
+  type `ICONS` holds 3845 whole `.ICO` files named `XF_<SHORTNAME>.ICO`; an Xfire game's
+  icon is the one named by the first `ShortName` of its `xfire_games.ini` sections, in file
+  order. Each `.ICO`'s largest image is kept: a PNG copied, a DIB converted with its AND
+  mask (a 32-bit DIB's own alpha when any is set).
+  3827 files written; 36 Xfire games have no icon; 19 icons name no game and are not
+  written:
+    XF_COHEU.ICO
+    XF_ETQWOB.ICO
+    XF_EXFTEMP.ICO
+    XF_FCIVBETA.ICO
+    XF_GOIO.ICO
+    XF_HPACS.ICO
+    XF_LCYSPC.ICO
+    XF_LOCK.ICO
+    XF_MGTASA.ICO
+    XF_MM4-5.ICO
+    XF_MOSBCONF.ICO
+    XF_PRTGLXY.ICO
+    XF_PSUSP.ICO
+    XF_SCLOTC.ICO
+    XF_TWTCH2.ICO
+    XF_UA.ICO
+    XF_UNKNOWN.ICO
+    XF_UT2K464.ICO
+    XF_XFPMSN.ICO

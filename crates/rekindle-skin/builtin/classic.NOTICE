@@ -1,0 +1,32 @@
+Built-in sound bank `builtin:classic` (`classic.rkskin`, BLAKE3 495878159fc794af99b61b56ab6d35128f53ce199f6a30a15b2c24872768d32d): Xfire's "Classic sound pack".
+
+Provenance
+  Imported by `cargo xtask import-xfire-data` (plan E7.7.3) from the project owner's
+  Xfire install tree, git commit ba066924 ("xfire re'd"; removed from the tree by
+  5a20b508), restored into the git-ignored `legacy/unpacked/`:
+    legacy/unpacked/sounds/classic.zip  BLAKE3 182140985b321b46c14a05b44f76fb4feb7e7811e3c00572fcbb736650af7c43
+
+Licence
+  This is Xfire, Inc. content; Xfire is defunct. The project owner ruled on 2026-10-15
+  that Xfire's own assets may be used in Rekindle. Rekindle's MIT LICENSE does not cover
+  it.
+
+How it was made
+  Each cue is the file `sounds.xml` names for its Xfire sound type, re-encoded to PCM16
+  WAV by the skin validator. Xfire had no mention or busy sound: mention plays "Receive
+  Message" (Xfire's sound for every incoming message) and busy plays "Call End". The
+  package's one variant has an empty token file (the registry defaults).
+    message <- recv.wav
+    mention <- recv.wav
+    sign-on <- online.wav
+    sign-off <- offline.wav
+    call <- ringing.wav
+    ringback <- callerring.wav
+    busy <- hangup.wav
+  Xfire sound types with no Rekindle cue (not imported):
+    In-game Receive Message (igrecv.wav)
+    Send Message (send.wav)
+    User Arrived (entroom.wav)
+    User Left (leftroom.wav)
+    Call Start (pickup.wav)
+    Screenshot (screenshot.wav)
