@@ -1,9 +1,12 @@
 //! A frontier whose heads did not all fetch stays unread: the next
 //! inspect reads it again although its seq has not moved. A frontier with
-//! our heads and another roster checksum rebuilds our state (D15).
+//! our heads and another roster checksum rebuilds our state (D15); one with
+//! the checksum of our op set's merge does not, even while our installed
+//! state lags the op set.
 
 use super::*;
 use crate::deps::MockGovernanceRuntimeDeps;
+use rekindle_governance::checksum::roster_checksum;
 use rekindle_records::lease::LeaseId;
 use rekindle_types::governance::{Frontier, OpRef, RosterChecksum};
 use rekindle_types::id::PseudonymKey;
@@ -132,13 +135,24 @@ async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read(
     assert_eq!(seen.get("VLD0:m"), Some(&5));
 }
 
+/// The roster checksum a peer's frontier carries in [`converging`].
+enum Peer {
+    /// The checksum of the merge of the op set it shares with us.
+    Merged,
+    /// Another checksum: its merge disagrees with ours.
+    Other,
+}
+
 /// `deps` holding one signed op of ours, whose record's frontier names
-/// exactly that op as its head with `checksum`; the rebuild entry point
-/// ([`crate::rebuild_governance`]) is reached `rebuilds` times, seen
-/// through its first call (the joined-community check, which ends it here).
-/// Returns `deps` and the op set's hashes, our `known`.
+/// exactly that op as its head with `peer`'s checksum; the installed state
+/// is that op set's merge, or with `stale` the empty state of a rebuild
+/// still pending; the rebuild entry point ([`crate::rebuild_governance`])
+/// is reached `rebuilds` times, seen through its first call (the
+/// joined-community check, which ends it here). Returns `deps` and the op
+/// set's hashes, our `known`.
 fn converging(
-    checksum: RosterChecksum,
+    peer: &Peer,
+    stale: bool,
     rebuilds: usize,
 ) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>) {
     use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -163,6 +177,17 @@ fn converging(
         5,
     )
     .expect("op builds");
+    let merged = rekindle_governance::merge::merge(&cert, std::slice::from_ref(&op));
+    assert_ne!(
+        roster_checksum(&merged),
+        roster_checksum(&state),
+        "the op changes the roster, so a stale state's checksum differs"
+    );
+    let checksum = match peer {
+        Peer::Merged => roster_checksum(&merged),
+        Peer::Other => RosterChecksum([0xEE; 32]),
+    };
+    let state = if stale { state } else { merged };
     let held = op_log::held(&op, "VLD0:m".into(), encoded, op_log::OpFate::Applied);
     let known = BTreeSet::from([op.hash()]);
     let bytes = rekindle_codec::governance_op::encode_frontier(&Frontier {
@@ -200,7 +225,7 @@ fn converging(
 /// seq is read.
 #[tokio::test]
 async fn equal_heads_with_another_checksum_rebuild_the_state() {
-    let (deps, mut known) = converging(RosterChecksum([0xEE; 32]), 1);
+    let (deps, mut known) = converging(&Peer::Other, false, 1);
     let mut seen = SeenFrontiers::new();
     let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
         .await
@@ -212,12 +237,65 @@ async fn equal_heads_with_another_checksum_rebuild_the_state() {
 /// Equal heads with our own checksum: nothing to rebuild.
 #[tokio::test]
 async fn equal_heads_with_our_checksum_do_not_rebuild() {
-    let ours = roster_checksum(&rekindle_governance::state::GovernanceState::default());
-    let (deps, mut known) = converging(ours, 0);
+    let (deps, mut known) = converging(&Peer::Merged, false, 0);
     let mut seen = SeenFrontiers::new();
     let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
         .await
         .expect("inspected");
     assert_eq!(stored, 0);
     assert_eq!(seen.get("VLD0:m"), Some(&5));
+}
+
+/// Equal heads with the checksum of our op set's merge while our installed
+/// state lags it (a rebuild still pending): heads and checksum both come
+/// from that one merge, as the writer's do, so nothing warns or rebuilds.
+#[tokio::test]
+async fn a_pending_rebuild_with_equal_heads_does_not_rebuild() {
+    let (deps, mut known) = converging(&Peer::Merged, true, 0);
+    let mut seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
+        .await
+        .expect("inspected");
+    assert_eq!(stored, 0);
+    assert_eq!(seen.get("VLD0:m"), Some(&5));
+}
+
+/// The frontier we write carries the checksum of the merge of the op set
+/// its heads come from, not the installed state's.
+#[test]
+fn our_frontier_carries_the_checksum_of_its_heads_merge() {
+    use rekindle_secrets::ed25519_dalek::SigningKey;
+    let key = SigningKey::from_bytes(&[9; 32]);
+    let cert = rekindle_types::governance::GenesisCert {
+        name: "c".into(),
+        policy: rekindle_types::governance::AdmissionMode::Open,
+        initial_roles: Vec::new(),
+        creator_pseudonym: PseudonymKey(key.verifying_key().to_bytes()),
+        creator_member_record: "VLD0:m".into(),
+        creator_member_record_owner: "o".into(),
+        created_at: 1,
+    };
+    let (op, encoded) = op_log::build_op(
+        "A",
+        &cert,
+        &rekindle_governance::state::GovernanceState::default(),
+        &op_log::VerifiedSet::default(),
+        &key,
+        rekindle_governance::fixture::meta("a"),
+        5,
+    )
+    .expect("op builds");
+    let held = [op_log::held(
+        &op,
+        "VLD0:m".into(),
+        encoded,
+        op_log::OpFate::Applied,
+    )];
+    let set = op_log::verify_held("A", &held);
+    let frontier = op_log::own_frontier(&cert, &set);
+    assert_eq!(frontier.heads, vec![op.op_ref("VLD0:m")]);
+    assert_eq!(
+        frontier.roster_checksum,
+        roster_checksum(&rekindle_governance::merge::merge(&cert, &set.ops))
+    );
 }

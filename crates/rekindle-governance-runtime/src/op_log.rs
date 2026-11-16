@@ -16,12 +16,15 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rekindle_codec::governance_op::{decode_op, encode_op, op_unsigned_bytes};
+use rekindle_governance::checksum::roster_checksum;
 use rekindle_governance::merge::{self, MergeOutcome};
 use rekindle_governance::op::{op_hash, op_signing_bytes, OpRejection, VerifiedOp};
 use rekindle_governance::state::GovernanceState;
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_types::dht_layout::member_record::MAX_FRONTIER_REFS;
-use rekindle_types::governance::{GenesisCert, GovernanceEntry, GovernanceOp, OpHash, OpRef};
+use rekindle_types::governance::{
+    Frontier, GenesisCert, GovernanceEntry, GovernanceOp, OpHash, OpRef,
+};
 use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
@@ -482,6 +485,21 @@ pub async fn walk<D: GovernanceRuntimeDeps>(
             return Ok(held);
         }
         wanted = verify_held(anchor, &held).missing;
+    }
+}
+
+/// Our whole `Frontier` (`M`/3), heads and D15's roster checksum, both from
+/// one merge of the verified set `set`: the state a rebuild of that set
+/// installs ([`rebuild_ops`]). The writer publishes it and a reader
+/// compares a peer's frontier against it, so a state whose rebuild is
+/// still pending (the installed state behind the op store) neither
+/// publishes nor compares a checksum of fewer ops than its heads name.
+#[must_use]
+pub fn own_frontier(cert: &GenesisCert, set: &VerifiedSet) -> Frontier {
+    let merged = merge::merge(cert, &set.ops);
+    Frontier {
+        heads: frontier_refs(cert, &merged, set),
+        roster_checksum: roster_checksum(&merged),
     }
 }
 

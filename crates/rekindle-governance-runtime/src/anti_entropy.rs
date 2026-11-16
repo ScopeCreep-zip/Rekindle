@@ -15,7 +15,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
-use rekindle_governance::checksum::roster_checksum;
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::governance::{Frontier, OpHash};
@@ -185,7 +184,8 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
 }
 
 /// D15's convergence check: when `frontier`'s heads are exactly the heads
-/// we publish, its roster checksum must equal the one of our merged state;
+/// we publish, its roster checksum must equal the one of the merge of our
+/// op set (both from [`op_log::own_frontier`]);
 /// a mismatch is logged and our state rebuilt from the op set
 /// ([`crate::rebuild_governance`]). Heads that differ say nothing.
 ///
@@ -200,18 +200,16 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
     let Some(cert) = deps.genesis_cert(community_id) else {
         return Ok(());
     };
-    let state = deps.governance_state(community_id).unwrap_or_default();
     let held = deps.governance_ops(community_id).await?;
     let set = op_log::verify_held(community_id, &held);
-    let ours: BTreeSet<OpHash> = op_log::frontier_refs(&cert, &state, &set)
-        .iter()
-        .map(|r| r.op_hash)
-        .collect();
-    let theirs: BTreeSet<OpHash> = frontier.heads.iter().map(|r| r.op_hash).collect();
-    if ours != theirs {
+    // Heads and checksum from one merge of the op set, as the writer's
+    // (`op_log::own_frontier`): a rebuild still pending is not a mismatch.
+    let ours = op_log::own_frontier(&cert, &set);
+    let heads = |f: &Frontier| -> BTreeSet<OpHash> { f.heads.iter().map(|r| r.op_hash).collect() };
+    if heads(&ours) != heads(frontier) {
         return Ok(());
     }
-    if roster_checksum(&state) == frontier.roster_checksum {
+    if ours.roster_checksum == frontier.roster_checksum {
         return Ok(());
     }
     tracing::warn!(

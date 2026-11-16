@@ -454,29 +454,24 @@ impl HostGovernance {
         use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
         let lock = self.ctx.communities.frontier_write_lock(community_id);
         let _writing = lock.lock().await;
-        let (cert, state) = {
+        let cert = {
             let map = self.ctx.communities.map().read();
             let community = map.get(community_id).ok_or("community not found")?;
-            (
-                community
-                    .genesis_cert
-                    .clone()
-                    .ok_or("no genesis cert is pinned")?,
-                community.governance_state.clone().unwrap_or_default(),
-            )
+            community
+                .genesis_cert
+                .clone()
+                .ok_or("no genesis cert is pinned")?
         };
         let held = self
             .governance_ops(community_id)
             .await
             .map_err(|e| format!("read op store: {e}"))?;
         let set = op_log::verify_held(community_id, &held);
-        // The heads and the checksum of the roster and role tables we
-        // merged (D15's convergence check, compared by a reader whose heads
-        // equal these).
-        let frontier = rekindle_types::governance::Frontier {
-            heads: op_log::frontier_refs(&cert, &state, &set),
-            roster_checksum: rekindle_governance::checksum::roster_checksum(&state),
-        };
+        // The heads and the checksum of the roster and role tables, both
+        // from one merge of the op set (D15's convergence check, compared by
+        // a reader whose heads equal these), never the installed state,
+        // which lags the op store while a rebuild is pending.
+        let frontier = op_log::own_frontier(&cert, &set);
         let bytes = rekindle_codec::governance_op::encode_frontier(&frontier)
             .map_err(|e| format!("frontier: {e}"))?;
         let lease = self
