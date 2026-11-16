@@ -452,7 +452,10 @@ impl<D: OutboxDeps> Outbox<D> {
         if let Err(e) = self.reconcile().await {
             tracing::warn!(error = %e, "outbox startup reconcile failed");
         }
+        // `biased`: the pump, then the appenders, on every poll (as the
+        // pump's own select).
         tokio::select! {
+            biased;
             () = self.pump_loop(&stop) => {}
             () = self.append_loop() => {}
         }
@@ -485,15 +488,21 @@ impl<D: OutboxDeps> Outbox<D> {
                     None => std::future::pending().await,
                 }
             };
+            // `biased`: the branches are polled in this order, never in
+            // tokio's per-process random one, so which of a stop, an
+            // attempt's end, a wake and the timer ready at one instant is
+            // taken (and whether the attempts are polled at all this turn)
+            // is the same on every run (ADR 0021: one seed, one trace).
             tokio::select! {
+                biased;
                 () = stop.cancelled() => return,
-                () = self.wake.notified() => {}
-                () = sleep => {}
                 Some(ended) = running.next(), if !running.is_empty() => {
                     if let Err(e) = ended {
                         tracing::warn!(error = %e, "outbox attempt not stored");
                     }
                 }
+                () = self.wake.notified() => {}
+                () = sleep => {}
             }
         }
     }

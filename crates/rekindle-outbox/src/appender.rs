@@ -145,9 +145,11 @@ impl<D: OutboxDeps> Outbox<D> {
             for (stream, jobs) in self.appends.take_ready() {
                 running.push(self.append_run(stream, jobs));
             }
+            // `biased`, as the pump's: one order on every run.
             tokio::select! {
-                () = self.appends.wake.notified() => {}
+                biased;
                 Some(()) = running.next(), if !running.is_empty() => {}
+                () = self.appends.wake.notified() => {}
             }
         }
     }

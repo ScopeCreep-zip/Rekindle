@@ -63,7 +63,15 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
 
     let dispatch = async {
         loop {
+            // `biased` (here and below): the branches in this order on
+            // every poll, never tokio's per-runtime random draw, so one
+            // seed gives one order of events in the netsim (ADR 0021).
             tokio::select! {
+                biased;
+                _ = shutdown_rx.recv() => {
+                    info!("transport dispatch loop shutting down");
+                    break;
+                }
                 Some(event) = events.recv() => {
                     let ctx = DispatchCtx {
                         messages: messages.as_ref(),
@@ -72,10 +80,6 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
                         value_changes: &value_changes,
                     };
                     dispatch_event(&handler, &mut dedup, &ctx, event).await;
-                }
-                _ = shutdown_rx.recv() => {
-                    info!("transport dispatch loop shutting down");
-                    break;
                 }
             }
         }
@@ -88,6 +92,7 @@ pub(crate) async fn run_dispatch_loop<H: InboundHandler>(
     // with it: at shutdown a change still reading the network is dropped
     // with the node.
     tokio::select! {
+        biased;
         () = dispatch => {}
         () = worker => {}
     }

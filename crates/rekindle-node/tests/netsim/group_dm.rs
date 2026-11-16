@@ -361,3 +361,31 @@ async fn a_group_backlog_lands_in_as_few_pages_as_hold_it() {
     let appended = sim.single_subkey_values().len() - pages_before;
     assert_eq!(appended, 1, "{appended} page appends");
 }
+
+/// One seed, one trace (ADR 0021, C9.3) through the outbox's concurrent
+/// stream attempts (E2.5j): Ann's group send goes out as each member's
+/// direct frame and as her chain append at once, and the order Cid sees
+/// them in is the seed's, never tokio's `select!` draw. Each run is a
+/// runtime of its own, so each has another `select!` seed.
+#[test]
+fn a_group_send_has_one_trace_per_seed() {
+    fn run() -> [u8; 32] {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .start_paused(true)
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let (sim, mut nodes) = start(3, 93).await;
+            let gid = three_members(&sim, &mut nodes).await;
+            send(&nodes[0], &gid, "traced").await;
+            assert!(eventually(&sim, LIMIT, || reads(&nodes[2], &gid, "traced")).await);
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            sim.trace().hash()
+        })
+    }
+    let first = run();
+    for _ in 0..3 {
+        assert_eq!(run(), first, "one seed, one trace");
+    }
+}
