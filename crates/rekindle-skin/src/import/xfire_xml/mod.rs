@@ -336,7 +336,16 @@ pub fn import(tree: &Tree, id: &str) -> Result<Imported, ImportError> {
         zip(&files).map_err(ImportError::Refused)
     };
     let mut tokens = read.tokens.clone();
-    let (canonical, changes) = settle(&mut tokens, base, build)?;
+    let (settled, changes) = settle(&mut tokens, base, build)?;
+    let canonical = match settled {
+        walk::Settled::Passed(c) => c,
+        walk::Settled::Unsettled(u) => {
+            return Err(ImportError::Unsettled {
+                error: u.error,
+                why: u.why,
+            })
+        }
+    };
     let notice = notice::render(id, &read, &source, &changes);
     Ok(Imported {
         canonical,

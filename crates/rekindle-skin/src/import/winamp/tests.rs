@@ -134,9 +134,14 @@ fn genex(colours: &[[u8; 3]; 22]) -> Vec<u8> {
 }
 
 fn skin(window_text: [u8; 3]) -> Vec<u8> {
+    skin_on(window_text, [0x20, 0x20, 0x20])
+}
+
+/// A skin with `window_text` on the window background `window_bg`.
+fn skin_on(window_text: [u8; 3], window_bg: [u8; 3]) -> Vec<u8> {
     let mut c = [[0x24, 0x24, 0x3c]; 22];
     c[0] = [0, 0, 0];
-    c[2] = [0x20, 0x20, 0x20];
+    c[2] = window_bg;
     c[4] = window_text;
     let gen = bmp8(
         180,
@@ -198,7 +203,8 @@ fn a_failing_wsz_is_a_draft_naming_the_pair() {
     };
     assert!(validate::run(&d.package).is_err());
     assert!(d.failures.iter().any(|c| c.original == [0x50, 0x50, 0x70]));
-    validate::run(&d.suggested.canonical.bytes).unwrap();
+    assert!(d.unsettled.is_none());
+    validate::run(&d.suggested.unwrap().canonical.bytes).unwrap();
 }
 
 #[test]
@@ -230,4 +236,20 @@ fn cursors_and_region_txt_are_never_read() {
         ["gen.bmp", "genex.bmp", "pledit.txt", "titlebar.bmp"]
     );
     assert_eq!(ignored, ["MySkin/REGION.TXT", "MySkin/normal.cur"]);
+}
+
+#[test]
+fn an_unsettled_refusal_is_a_draft_with_no_suggestion() {
+    // Stock Winamp's #ffffff window text: on #404040 fixed danger.fg ends
+    // up failing on its fill; on a light window no lightness of
+    // text.primary passes on every ground. Neither is an error.
+    for bg in [[0x40; 3], [0xbd, 0xce, 0xd6]] {
+        let Outcome::Draft(d) = import(&skin_on([0xff; 3], bg), "w").unwrap() else {
+            panic!("#ffffff on {bg:?} fails")
+        };
+        let u = d.unsettled.as_ref().expect("an unsettled failure");
+        assert!(!u.why.is_empty());
+        assert!(d.suggested.is_none());
+        assert!(validate::run(&d.package).is_err());
+    }
 }

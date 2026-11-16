@@ -43,12 +43,9 @@ pub enum ImportError {
     Image { file: String, detail: String },
     #[error("the package is refused: {0}")]
     Refused(SkinError),
-    #[error("{token}: no lightness passes {rule} on {ground}")]
-    WalkExhausted {
-        token: String,
-        ground: String,
-        rule: String,
-    },
+    /// A built-in the walk cannot settle (a user import is a draft).
+    #[error("the walk cannot settle {error}: {why}")]
+    Unsettled { error: SkinError, why: String },
 }
 
 /// An imported skin: the canonical package and the `NOTICE` beside it.

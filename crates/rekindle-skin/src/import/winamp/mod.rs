@@ -18,8 +18,12 @@
 //! A user import whose package fails the validator is an [`ImportDraft`]:
 //! the package as imported, every failing pair with its suggested passing
 //! colour (the walk's [`walk::Change`]), and the package with every
-//! suggestion accepted. The editor draft type does not exist yet; this is
-//! its input.
+//! suggestion accepted. A refusal the walk cannot settle (stock Winamp's
+//! `#ffffff` window text leaves fixed `danger.fg` failing on its fill, or
+//! no lightness of `text.primary` passing on every ground) is the draft's
+//! [`ImportDraft::unsettled`] failure, with no suggestion and no suggested
+//! package, never an error. The editor draft type does not exist yet; this
+//! is its input.
 
 pub mod archive;
 pub mod bmp;
@@ -81,10 +85,13 @@ pub struct Read {
 pub struct ImportDraft {
     /// The package as imported (a zip that fails [`crate::validate::run`]).
     pub package: Vec<u8>,
-    /// Every failing pair, with its suggested passing colour.
+    /// Every failing pair the walk settled, with its suggested passing colour.
     pub failures: Vec<walk::Change>,
-    /// The package with every suggestion accepted.
-    pub suggested: Imported,
+    /// The refusal the walk cannot settle, with no suggestion.
+    pub unsettled: Option<walk::Unsettled>,
+    /// The package with every suggestion accepted; `None` when a refusal is
+    /// unsettled.
+    pub suggested: Option<Imported>,
 }
 
 /// A passing import or a draft.
@@ -269,8 +276,7 @@ fn png(file: &str, img: &RgbaImage) -> Result<Vec<u8>, ImportError> {
 /// draft naming every failing pair.
 ///
 /// # Errors
-/// What [`read`] refuses, an image that does not encode, a refusal that is
-/// not a contrast pair or that the walk cannot settle.
+/// What [`read`] refuses, an image that does not encode.
 pub fn import(wsz: &[u8], id: &str) -> Result<Outcome, ImportError> {
     let read = read(wsz)?;
     let source = blake3::hash(wsz).to_hex().to_string();
@@ -301,7 +307,18 @@ pub fn import(wsz: &[u8], id: &str) -> Result<Outcome, ImportError> {
     };
     let package = build(&read.tokens)?;
     let mut tokens = read.tokens.clone();
-    let (canonical, changes) = settle(&mut tokens, base, build)?;
+    let (settled, changes) = settle(&mut tokens, base, build)?;
+    let canonical = match settled {
+        walk::Settled::Passed(c) => c,
+        walk::Settled::Unsettled(u) => {
+            return Ok(Outcome::Draft(Box::new(ImportDraft {
+                package,
+                failures: changes,
+                unsettled: Some(u),
+                suggested: None,
+            })));
+        }
+    };
     let notice = notice::render(id, &read, &source, &changes);
     let imported = Imported {
         canonical,
@@ -314,7 +331,8 @@ pub fn import(wsz: &[u8], id: &str) -> Result<Outcome, ImportError> {
     Ok(Outcome::Draft(Box::new(ImportDraft {
         package,
         failures: imported.changes.clone(),
-        suggested: imported,
+        unsettled: None,
+        suggested: Some(imported),
     })))
 }
 

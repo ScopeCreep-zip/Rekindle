@@ -37,7 +37,11 @@ fn winamp_pack(from: &Path, id: &str) -> Result<Imported> {
                         c.fg, c.rule, c.ground, c.token, c.original, c.new
                     );
                 }
-                d.suggested
+                match (d.suggested, d.unsettled) {
+                    (Some(i), _) => i,
+                    (None, Some(u)) => bail!("the walk cannot settle {}: {}", u.error, u.why),
+                    (None, None) => bail!("a draft with neither a suggestion nor a failure"),
+                }
             }
         },
     )

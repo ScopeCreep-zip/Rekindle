@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::{SkinRule, TokenValue};
+use rekindle_types::dto::skin::{SkinError, SkinRule, TokenValue};
 
 use super::ImportError;
 use crate::access::scaled;
@@ -178,58 +178,93 @@ fn ratio_x100(a: [u8; 3], b: [u8; 3]) -> u32 {
     scaled(colour::contrast(a, b), 100.0)
 }
 
+/// A refusal the walk cannot settle: the validator's error and why the walk
+/// stopped. A user import keeps it as a draft failure with no suggestion.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unsettled {
+    pub error: SkinError,
+    pub why: String,
+}
+
+/// Where [`settle`] stopped.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Settled {
+    /// The package passes, with every change made.
+    Passed(Canonical),
+    /// A refusal the walk cannot settle; the changes before it still stand.
+    Unsettled(Unsettled),
+}
+
+/// What the walk sets to fix `fg` on `ground`: the text token, else its
+/// ground, else `None` (both fixed, or one fixed and the other derived).
+fn target_of(fg: &str, ground: &str) -> Option<(String, String)> {
+    if settable(fg) {
+        Some((fg.to_owned(), ground.to_owned()))
+    } else if settable(ground) {
+        Some((ground.to_owned(), fg.to_owned()))
+    } else {
+        None
+    }
+}
+
 /// Builds with `build`, validates, and walks every failing pair until the
-/// package passes.
+/// package passes or a refusal cannot be settled.
 ///
 /// # Errors
-/// A refusal that is not a contrast pair, a pair nothing settable can fix,
-/// or what `build` returns.
+/// What `build` returns.
 pub fn settle(
     tokens: &mut BTreeMap<String, TokenValue>,
     base: Base,
     build: impl Fn(&BTreeMap<String, TokenValue>) -> Result<Vec<u8>, ImportError>,
-) -> Result<(Canonical, Vec<Change>), ImportError> {
+) -> Result<(Settled, Vec<Change>), ImportError> {
     let mut changes = Vec::new();
     loop {
         let err = match validate::run(&build(tokens)?) {
-            Ok(c) => return Ok((c, changes)),
+            Ok(c) => return Ok((Settled::Passed(c), changes)),
             Err(e) => e,
         };
-        let refused = || ImportError::Refused(err.clone());
-        let (rule, fg, ground, before, required) = pair_of(&err.rule).ok_or_else(refused)?;
-        if changes.len() >= MAX_CHANGES {
-            return Err(refused());
-        }
-        let (target, other) = if settable(&fg) {
-            (fg.clone(), ground.clone())
-        } else if settable(&ground) {
-            (ground.clone(), fg.clone())
-        } else {
-            return Err(refused());
+        let stop = |why: &str| {
+            Settled::Unsettled(Unsettled {
+                error: err.clone(),
+                why: why.to_owned(),
+            })
         };
-        let original = colour_of(tokens, base, &target).ok_or_else(refused)?;
+        let Some((rule, fg, ground, before, required)) = pair_of(&err.rule) else {
+            return Ok((stop("not a contrast pair"), changes));
+        };
+        if changes.len() >= MAX_CHANGES {
+            return Ok((stop("the walk made its limit of changes"), changes));
+        }
+        let Some((target, other)) = target_of(&fg, &ground) else {
+            return Ok((
+                stop("neither colour of the pair is a token the skin sets"),
+                changes,
+            ));
+        };
+        let Some(original) = colour_of(tokens, base, &target) else {
+            return Ok((stop("the token is not a resolved colour"), changes));
+        };
         // Away from the other colour; text on an image region goes away
         // from the base's ground.
         let up = colour_of(tokens, base, &other)
             .map_or(matches!(base, Base::Dark | Base::HcDark), |o| {
                 colour::luminance(original) >= colour::luminance(o)
             });
-        let same = |e: &rekindle_types::dto::skin::SkinError| {
+        let same = |e: &SkinError| {
             pair_of(&e.rule).is_some_and(|(r, f, g, _, _)| r == rule && f == fg && g == ground)
         };
         let mut trial = tokens.clone();
-        let new = lightness_walk(original, up, |c| {
+        let walked = lightness_walk(original, up, |c| {
             trial.insert(target.clone(), color(c));
             Ok(match validate::run(&build(&trial)?) {
                 Ok(_) => true,
                 Err(e) => !same(&e),
             })
-        })?
-        .ok_or_else(|| ImportError::WalkExhausted {
-            token: target.clone(),
-            ground: other.clone(),
-            rule: rule.clone(),
         })?;
+        let Some(new) = walked else {
+            let why = format!("no lightness of {target} passes {rule} on {other}");
+            return Ok((stop(&why), changes));
+        };
         tokens.insert(target.clone(), color(new));
         let after_x100 = colour_of(tokens, base, &fg)
             .zip(colour_of(tokens, base, &ground))
