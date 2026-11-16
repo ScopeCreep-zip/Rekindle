@@ -39,6 +39,8 @@ mod attach_tests;
 #[cfg(test)]
 mod member_record_tests;
 #[cfg(test)]
+mod message_tests;
+#[cfg(test)]
 mod replica_tests;
 #[cfg(test)]
 mod routes_tests;

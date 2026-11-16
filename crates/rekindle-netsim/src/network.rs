@@ -243,7 +243,7 @@ pub(crate) struct Inner {
     pub faults: Faults,
     pub trace: Trace,
     /// The run of own-route allocation entries at the trace's end: their
-    /// instant, first index and end ([`crate::routes`]' `InFlight`).
+    /// instant, first index and end ([`crate::flight`]' `AllocationFlight`).
     pub alloc_tail: Option<(tokio::time::Instant, usize, usize)>,
     /// When the next watch tick runs.
     pub next_tick: Option<tokio::time::Instant>,

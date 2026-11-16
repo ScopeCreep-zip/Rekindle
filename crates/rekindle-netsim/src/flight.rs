@@ -8,14 +8,14 @@ use crate::routes::{allocation_entry, ALLOCATION_CUT, ALLOCATION_ENDS, ALLOCATIO
 
 /// An allocation in flight: traced at its start and end, and as cut when
 /// dropped before its end.
-pub(crate) struct InFlight<'a> {
+pub(crate) struct AllocationFlight<'a> {
     node: usize,
     class: RouteClass,
     net: &'a Network,
     ended: bool,
 }
 
-impl<'a> InFlight<'a> {
+impl<'a> AllocationFlight<'a> {
     pub(crate) fn start(node: usize, class: RouteClass, net: &'a Network) -> Self {
         let flight = Self {
             node,
@@ -55,7 +55,7 @@ impl<'a> InFlight<'a> {
     }
 }
 
-impl Drop for InFlight<'_> {
+impl Drop for AllocationFlight<'_> {
     fn drop(&mut self) {
         if !self.ended {
             self.push(ALLOCATION_CUT);

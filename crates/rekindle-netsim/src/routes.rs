@@ -79,7 +79,7 @@ use rekindle_records::port::{PeerTarget, PortError, PortEvent, RouteClass, Route
 use rekindle_route::own_routes::{AllocError, OwnRoutes, RouteAllocator};
 use tokio::sync::watch;
 
-use crate::flight::InFlight;
+use crate::flight::AllocationFlight;
 use crate::network::{Network, RouteEntry};
 
 /// The trace entry of a node forgetting a peer's route after a send to it
@@ -188,7 +188,7 @@ impl RouteAllocator for FakeAllocator {
     async fn allocate(&self, class: RouteClass) -> Result<(String, Vec<u8>), AllocError> {
         // A suspended process allocates nothing ([`crate::sleep`]).
         self.net.awake(self.node).await;
-        let mut flight = InFlight::start(self.node, class, &self.net);
+        let mut flight = AllocationFlight::start(self.node, class, &self.net);
         let result = self.allocate_and_test(class).await;
         flight.end();
         result
