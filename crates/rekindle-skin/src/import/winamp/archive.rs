@@ -10,12 +10,20 @@
 //! Webamp matches files by base name, case-insensitively, in any folder
 //! (`skinParser.js:10-49`); so does this, and two wanted files with one
 //! base name refuse the archive (Webamp's "last wins").
+//!
+//! The end record and central headers are `crate::package::zip`'s; the
+//! local header is read by this importer's own legacy reader
+//! ([`local_data`]), because legacy archives carry the data-descriptor flag
+//! (APPNOTE 6.3.10 §4.4.4 bit 3: the local CRC and sizes are zero and a
+//! descriptor follows the data). The central directory is authoritative for
+//! the sizes and CRC; the legacy limits and ratio above still bound them.
+//! The `.rkskin` package reader stays strict and refuses bit 3.
 
 use rekindle_types::dto::skin::SkinRule;
 
 use super::super::{ImportError, Tree};
 use crate::limits::MAX_ENTRIES;
-use crate::package::zip::{self, FLAG_ENCRYPTED};
+use crate::package::zip::{self, FLAG_DATA_DESCRIPTOR, FLAG_ENCRYPTED};
 
 /// A legacy archive's bytes.
 pub const MAX_ARCHIVE_BYTES: u64 = 32 * 1024 * 1024;
@@ -29,6 +37,8 @@ pub const WANTED: [&str; 4] = ["gen.bmp", "genex.bmp", "titlebar.bmp", "pledit.t
 
 const STORED: u16 = 0;
 const DEFLATE: u16 = 8;
+const LOCAL_SIG: u32 = 0x0403_4b50;
+const LOCAL_LEN: usize = 30;
 
 fn refused(entry: &str, detail: impl Into<String>) -> ImportError {
     ImportError::Archive {
@@ -119,7 +129,7 @@ fn inflate(
             rekindle_types::dto::skin::SkinError::new(name, SkinRule::EncryptedEntry),
         ));
     }
-    let range = zip::local_data(bytes, name, h, directory_start).map_err(ImportError::Refused)?;
+    let range = local_data(bytes, name, h, directory_start)?;
     let raw = &bytes[range];
     let size = usize::try_from(h.uncompressed).unwrap_or(usize::MAX);
     let data = match h.method {
@@ -135,4 +145,51 @@ fn inflate(
         return Err(refused(name, "CRC-32 mismatch"));
     }
     Ok(data)
+}
+
+fn le(bytes: &[u8], at: usize, n: usize) -> Option<u32> {
+    let s = bytes.get(at..at.checked_add(n)?)?;
+    Some(s.iter().rev().fold(0, |v, b| v << 8 | u32::from(*b)))
+}
+
+/// The legacy local header: its signature, flags, method and name repeat
+/// the central record; its CRC and sizes repeat it too, or are zero when
+/// the data-descriptor flag is set (the central record is authoritative).
+/// Returns the entry's data range, which must end before the central
+/// directory.
+fn local_data(
+    bytes: &[u8],
+    name: &str,
+    c: &zip::Central<'_>,
+    directory_start: usize,
+) -> Result<std::ops::Range<usize>, ImportError> {
+    let at = c.local_offset;
+    let bad = || refused(name, "local header disagrees with the central directory");
+    let field = |off: usize, n: usize| le(bytes, at + off, n).ok_or_else(bad);
+    if field(0, 4)? != LOCAL_SIG {
+        return Err(refused(name, "bad local header signature"));
+    }
+    if field(6, 2)? != u32::from(c.flags) || field(8, 2)? != u32::from(c.method) {
+        return Err(bad());
+    }
+    let descriptor = c.flags & FLAG_DATA_DESCRIPTOR != 0;
+    for (off, central) in [(14, c.crc), (18, c.compressed), (22, c.uncompressed)] {
+        let local = field(off, 4)?;
+        if local != central && !(descriptor && local == 0) {
+            return Err(bad());
+        }
+    }
+    let name_len = usize::try_from(field(26, 2)?).map_err(|_| bad())?;
+    let extra_len = usize::try_from(field(28, 2)?).map_err(|_| bad())?;
+    let name_start = at + LOCAL_LEN;
+    if bytes.get(name_start..name_start + name_len) != Some(c.name) {
+        return Err(bad());
+    }
+    let start = name_start + name_len + extra_len;
+    let packed = usize::try_from(c.compressed).map_err(|_| bad())?;
+    let end = start
+        .checked_add(packed)
+        .filter(|&end| end <= directory_start)
+        .ok_or_else(|| refused(name, "entry data runs into the central directory"))?;
+    Ok(start..end)
 }
