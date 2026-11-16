@@ -23,6 +23,7 @@ pub mod miranda;
 mod notice;
 pub mod pidgin;
 pub mod qt;
+mod raster;
 mod tree;
 pub mod walk;
 pub mod winamp;

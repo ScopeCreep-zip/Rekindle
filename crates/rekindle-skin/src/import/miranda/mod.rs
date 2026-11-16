@@ -20,15 +20,19 @@
 //! in the `NOTICE` as unmapped. 9-slice images become the region slots
 //! that exist (`window.frame`, `titlebar`, `titlebar.buttons`,
 //! `statusbar`); every other image item is named. Each image is decoded
-//! under the validator's image limits (PNG or GIF; JPEG is refused as step 4 refuses it; a TGA, an SVG or
-//! any other type is dropped and named, as is a path that leaves the skin
-//! or a missing file); insets that leave no centre refuse the import. The
+//! under the validator's image limits (PNG or GIF, and a Clist_modern
+//! `*.tga` atlas through the bounded [`tga`] decoder; JPEG is refused as
+//! step 4 refuses it; a refused TGA, an SVG or any other type is dropped
+//! and named, as is a path that leaves the skin or a missing file); every
+//! decoded image is re-encoded as canonical PNG and validated with the
+//! package; insets that leave no centre refuse the import. The
 //! package goes through [`super::conclude`] (a draft names every failing
 //! pair).
 
 mod clist;
 mod notice;
 mod tabsrmm;
+pub mod tga;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -140,11 +144,25 @@ pub(crate) fn number(file: &str, what: &str, value: &str) -> Result<u32, ImportE
     })
 }
 
+/// Whether `key` names a TGA (the format has no signature; Clist_modern
+/// names its atlases `*.tga`).
+fn is_tga(key: &str) -> bool {
+    std::path::Path::new(key)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("tga"))
+}
+
 /// Decodes the image `raw` names, or why it is dropped: a path outside the
 /// skin, a missing file, a type the validator does not decode (TabSRMM
-/// takes PNG only, `tabsrmm.tsk:316`), a refused decode.
+/// takes PNG only, `tabsrmm.tsk:316`), a refused decode. A Clist_modern
+/// (`png_only` false) `*.tga` atlas is read by the bounded [`tga`] decoder.
 pub(crate) fn load(tree: &Tree, raw: &str, png_only: bool) -> Result<(String, RgbaImage), String> {
     let (key, bytes) = lookup(tree, raw).map_err(|e| e.to_string())?;
+    if !png_only && is_tga(key) {
+        let image = tga::decode(key, bytes).map_err(|e| e.to_string())?;
+        return Ok((key.to_owned(), image));
+    }
     match kind_of(bytes) {
         None => {
             return Err(format!(

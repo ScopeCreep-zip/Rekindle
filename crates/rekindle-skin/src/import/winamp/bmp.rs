@@ -11,22 +11,15 @@
 
 use rekindle_image::{Rgba, RgbaImage};
 
+use super::super::raster::{refused, u16_at, within_limits};
 use super::super::ImportError;
-use crate::limits::{MAX_IMAGE_PIXELS, MAX_IMAGE_SIDE};
 
 const FILE_HEADER: usize = 14;
 const BI_RGB: u32 = 0;
 const BI_RLE8: u32 = 1;
 
 fn bad(file: &str, detail: impl std::fmt::Display) -> ImportError {
-    ImportError::Image {
-        file: file.to_owned(),
-        detail: format!("BMP: {detail}"),
-    }
-}
-
-fn u16_at(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_le_bytes(b.get(at..at + 2)?.try_into().ok()?))
+    refused("BMP", file, detail)
 }
 
 fn u32_at(b: &[u8], at: usize) -> Option<u32> {
@@ -63,15 +56,10 @@ fn header(file: &str, bytes: &[u8]) -> Result<Header, ImportError> {
     let compression = u32_at(bytes, FILE_HEADER + 16).ok_or_else(trunc)?;
     let used = u32_at(bytes, FILE_HEADER + 32).ok_or_else(trunc)?;
     let (width, height) = (sw.unsigned_abs(), sh.unsigned_abs());
-    if sw <= 0 || sh == 0 || width > MAX_IMAGE_SIDE || height > MAX_IMAGE_SIDE {
-        return Err(bad(
-            file,
-            format!("{sw}x{sh} is outside 1..={MAX_IMAGE_SIDE}"),
-        ));
+    if sw <= 0 {
+        return Err(bad(file, format!("width {sw} is not positive")));
     }
-    if u64::from(width) * u64::from(height) > MAX_IMAGE_PIXELS {
-        return Err(bad(file, "too many pixels"));
-    }
+    within_limits(width, height).map_err(|why| bad(file, why))?;
     match (bits, compression) {
         (1 | 4 | 8 | 24 | 32, BI_RGB) | (8, BI_RLE8) => {}
         _ => return Err(bad(file, format!("{bits}-bit compression {compression}"))),

@@ -171,14 +171,19 @@ fn a_non_bitmap_image_is_dropped_and_named() {
     assert!(imp
         .notice
         .contains("frame.png: Gif, but TabSRMM images are PNG only"));
-    // A Clist_modern TGA atlas.
+    // A Clist_modern TGA atlas the bounded decoder refuses (no pixels).
     let mut tree = msf_tree(&MSF.replace("atlas.png", "back.tga"));
     tree.insert(
         "back.tga".into(),
         vec![0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 32, 8],
     );
     let imp = imported(import(&tree, "x").unwrap());
-    assert!(imp.notice.contains("$$Window: back.tga: not a bitmap"));
+    assert!(
+        imp.notice
+            .contains("$$Window: back.tga: image: TGA: pixel data truncated"),
+        "{}",
+        imp.notice
+    );
     assert!(read(&tree).unwrap().regions.is_empty());
     // A Clist_modern JPEG atlas: refused as the validator refuses JPEG.
     let mut tree = msf_tree(&MSF.replace("atlas.png", "back.jpg"));
@@ -191,6 +196,112 @@ fn a_non_bitmap_image_is_dropped_and_named() {
         .notice
         .contains("$$Window: back.jpg: JPEG, which the image validator refuses"));
     assert!(read(&tree).unwrap().regions.is_empty());
+}
+
+/// A TGA: header (a 3-byte image ID, skipped by its length), then `body`.
+fn tga(
+    kind: u8,
+    map: u8,
+    (bits, descriptor): (u8, u8),
+    (w, h): (u16, u16),
+    body: &[u8],
+) -> Vec<u8> {
+    let mut v = vec![3, map, kind, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    v.extend_from_slice(&w.to_le_bytes());
+    v.extend_from_slice(&h.to_le_bytes());
+    v.extend_from_slice(&[bits, descriptor]);
+    v.extend_from_slice(b"ID!");
+    v.extend_from_slice(body);
+    v
+}
+
+const A: [u8; 3] = [10, 20, 30];
+const B: [u8; 3] = [40, 50, 60];
+const C: [u8; 3] = [70, 80, 90];
+const D: [u8; 3] = [1, 2, 3];
+
+/// Rows `A A B` / `C D D`, stored top-down as 32-bit BGRA.
+fn tga32_top_down() -> Vec<u8> {
+    let body: Vec<u8> = [A, A, B, C, D, D]
+        .iter()
+        .flat_map(|[r, g, b]| [*b, *g, *r, 255])
+        .collect();
+    tga(2, 0, (32, 8 | 0x20), (3, 2), &body)
+}
+
+fn bgr([r, g, b]: [u8; 3]) -> [u8; 3] {
+    [b, g, r]
+}
+
+#[test]
+fn uncompressed_and_rle_tga_decode_to_the_same_pixels() {
+    let plain = tga::decode("a", &tga32_top_down()).unwrap();
+    // Bottom-up rows `C D D` then `A A B`: a raw packet of 1, a run of 2
+    // `D`, a run of 2 `A`, a raw packet of 1.
+    let mut body = vec![0x00];
+    body.extend(bgr(C));
+    body.push(0x81);
+    body.extend(bgr(D));
+    body.push(0x81);
+    body.extend(bgr(A));
+    body.push(0x00);
+    body.extend(bgr(B));
+    let rle = tga::decode("b", &tga(10, 0, (24, 0), (3, 2), &body)).unwrap();
+    assert_eq!(plain, rle);
+    let [r, g, b] = B;
+    assert_eq!(plain.get_pixel(2, 0), &Rgba([r, g, b, 255]));
+    let [r, g, b] = C;
+    assert_eq!(rle.get_pixel(0, 1), &Rgba([r, g, b, 255]));
+}
+
+#[test]
+fn a_clist_tga_atlas_imports_as_window_frame() {
+    let [r, g, b, a] = PIXEL.0;
+    let body: Vec<u8> = (0..40 * 20).flat_map(|_| [b, g, r, a]).collect();
+    let mut tree = msf_tree(&MSF.replace("atlas.png", "atlas.tga"));
+    tree.remove("atlas.png");
+    tree.insert("atlas.tga".into(), tga(2, 0, (32, 8), (40, 20), &body));
+    let imp = imported(import(&tree, "fixture").unwrap());
+    let rd = read(&tree).unwrap();
+    let win = &rd.regions["window.frame"].images[&RegionState::Normal];
+    assert_eq!(win.dimensions(), (20, 20));
+    assert_eq!(win.get_pixel(3, 7), &PIXEL);
+    assert!(rd.unread.is_empty(), "{:?}", rd.unread);
+    assert!(
+        imp.notice
+            .contains("Normal: 20x20 px from $$Window atlas.tga"),
+        "{}",
+        imp.notice
+    );
+}
+
+#[test]
+fn malformed_tga_is_refused() {
+    let refused = |bytes: &[u8], why: &str| {
+        let err = tga::decode("t", bytes).unwrap_err();
+        assert!(err.to_string().contains(why), "{err}");
+    };
+    // The stream ends inside the second packet's pixel.
+    let mut body = vec![0x81];
+    body.extend(bgr(A));
+    body.push(0x83);
+    body.extend(&bgr(B)[..2]);
+    refused(&tga(10, 0, (24, 0), (3, 2), &body), "RLE stream truncated");
+    // A run of 7 into a 6-pixel image.
+    let mut body = vec![0x86];
+    body.extend(bgr(A));
+    refused(
+        &tga(10, 0, (24, 0), (3, 2), &body),
+        "RLE packet past the image",
+    );
+    // A colour map on a true-colour image.
+    let mut cm = tga32_top_down();
+    cm[1] = 1;
+    cm[5] = 2;
+    refused(&cm, "a colour map is refused");
+    // Wider than the validator's side limit, every pixel present.
+    let body = vec![0; 4096 * 4];
+    refused(&tga(2, 0, (32, 8), (4096, 1), &body), "4096x1 is outside");
 }
 
 #[test]
