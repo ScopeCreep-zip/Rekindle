@@ -3,6 +3,7 @@ import MessageList from "../../components/chat/MessageList";
 import MessageInput from "../../components/chat/MessageInput";
 import { communityState } from "../../stores/community.store";
 import { authState } from "../../stores/auth.store";
+import { removalText } from "../../utils/removal_text";
 import {
   handleBulkDeleteChannelMessages,
   handleRetryChannelMessage,
@@ -98,7 +99,13 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         }}
         onEditCancel={() => vm.setEditState(null)}
         disabled={!vm.canPostInChannel()}
-        disabledMessage={vm.isAnnouncementChannel() ? "Only admins can post in announcement channels" : "You don't have permission to send messages"}
+        disabledMessage={
+          vm.ownRemoval()
+            ? removalText(vm.activeCommunity()?.name ?? "", vm.ownRemoval()!)
+            : vm.isAnnouncementChannel()
+              ? "Only admins can post in announcement channels"
+              : "You don't have permission to send messages"
+        }
         slowmodeSeconds={vm.activeChannel()?.slowmodeSeconds}
         bypassSlowmode={vm.canBypassSlowmode()}
       />

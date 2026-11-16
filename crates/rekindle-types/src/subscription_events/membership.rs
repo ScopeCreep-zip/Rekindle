@@ -100,6 +100,11 @@ pub enum MembershipEvent {
         removed_by: Option<String>,
         /// The display name on the remover's verified card, when held.
         removed_by_name: Option<String>,
+        /// The reason the removal op gave (A/B R5-2), shown to the removed
+        /// member. Bounded at the source: governance validation refuses a
+        /// removal whose reason exceeds `key_format::MAX_NOTE_LEN`, as for
+        /// a mod report. Gossip carries none.
+        reason: Option<String>,
     },
     /// A member was banned (permanent removal, cannot rejoin).
     /// Triggered by: gossip `ControlPayload::Ban`, and by the Host when the
@@ -112,6 +117,11 @@ pub enum MembershipEvent {
         removed_by: Option<String>,
         /// The display name on the remover's verified card, when held.
         removed_by_name: Option<String>,
+        /// The reason the removal op gave (A/B R5-2), shown to the removed
+        /// member. Bounded at the source: governance validation refuses a
+        /// removal whose reason exceeds `key_format::MAX_NOTE_LEN`, as for
+        /// a mod report. Gossip carries none.
+        reason: Option<String>,
     },
     /// A member was unbanned.
     /// Triggered by: gossip `ControlPayload::Unban`.
@@ -161,4 +171,44 @@ pub enum MembershipEvent {
         sender_pseudonym: String,
         answer_count: usize,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MembershipEvent;
+
+    /// The removal's reason crosses the wire under `reason` and back.
+    #[test]
+    fn a_removal_reason_round_trips() {
+        for banned in [false, true] {
+            let event = if banned {
+                MembershipEvent::Banned {
+                    community: "c".into(),
+                    target_pseudonym: "t".into(),
+                    removed_by: Some("b".into()),
+                    removed_by_name: Some("Ann".into()),
+                    reason: Some("spam".into()),
+                }
+            } else {
+                MembershipEvent::Kicked {
+                    community: "c".into(),
+                    target_pseudonym: "t".into(),
+                    removed_by: None,
+                    removed_by_name: None,
+                    reason: Some("spam".into()),
+                }
+            };
+            let json = serde_json::to_value(&event).expect("serializes");
+            let tag = if banned { "banned" } else { "kicked" };
+            assert_eq!(json[tag]["reason"], "spam", "{json}");
+            let back: MembershipEvent = serde_json::from_value(json).expect("deserializes");
+            let reason = match back {
+                MembershipEvent::Kicked { reason, .. } | MembershipEvent::Banned { reason, .. } => {
+                    reason
+                }
+                _ => None,
+            };
+            assert_eq!(reason.as_deref(), Some("spam"));
+        }
+    }
 }

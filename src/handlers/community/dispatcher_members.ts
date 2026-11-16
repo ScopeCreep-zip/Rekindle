@@ -10,6 +10,7 @@ import { handleResolveCommunityImageDataUrls } from "../../actions/community/lif
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
+import { removalText } from "../../utils/removal_text";
 import { transformChannel, transformMember } from "../../utils/transformers";
 import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
 import { handleLoadChannelThreads } from "../../actions/community/events_threads";
@@ -69,13 +70,9 @@ export function reduceSubscriptionMembership(
     if (c.myPseudonymKey === r.targetPseudonym) {
       // Our own removal, from the Host's merged governance (plan E3.2 S9):
       // the community stays as read-only history.
-      setCommunityState("communities", r.community, "removed", {
-        banned,
-        by: r.removedBy,
-        byName: r.removedByName,
-      });
-      const by = r.removedByName ? ` by ${r.removedByName}` : "";
-      addToast(`You were ${banned ? "banned" : "removed"} from ${c.name}${by}`, "error");
+      const removed = { banned, by: r.removedBy, byName: r.removedByName, reason: r.reason };
+      setCommunityState("communities", r.community, "removed", removed);
+      addToast(removalText(c.name, removed), "error");
       return;
     }
     setCommunityState("communities", r.community, "members", (prev) =>

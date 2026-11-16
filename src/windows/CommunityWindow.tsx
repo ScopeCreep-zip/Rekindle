@@ -1,6 +1,7 @@
 import { Component, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import { setCommunityState } from "../stores/community.store";
+import { removalText } from "../utils/removal_text";
 import { useCommunityWindow } from "./community_window/useCommunityWindow";
 import CommunitySidebar from "./community_window/CommunitySidebar";
 import CommunityMainPane from "./community_window/CommunityMainPane";
@@ -42,6 +43,17 @@ const CommunityWindow: Component = () => {
             Dismiss
           </button>
         </div>
+      </Show>
+      {/* Plan E3.2 S9 (A/B R5-2): our own removal, from the live event or
+          the community's stored `removed` state, so it survives a restart. */}
+      <Show when={vm.ownRemoval()}>
+        {(removed) => (
+          <div class="removal-banner" role="alert">
+            <span class="removal-banner-text">
+              {removalText(vm.activeCommunity()?.name ?? "", removed())}
+            </span>
+          </div>
+        )}
       </Show>
       <div class="community-layout">
         <CommunitySidebar vm={vm} />

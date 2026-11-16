@@ -246,6 +246,7 @@ impl App {
         community: &str,
         target: &str,
         removed_by_name: Option<&str>,
+        reason: Option<&str>,
         verb: &str,
     ) -> String {
         if !self.is_own_pseudonym(community, target) {
@@ -254,8 +255,12 @@ impl App {
         let by = removed_by_name
             .map(|n| format!(" by {n}"))
             .unwrap_or_default();
+        let why = reason
+            .filter(|r| !r.is_empty())
+            .map(|r| format!(": {r}"))
+            .unwrap_or_default();
         format!(
-            "You were {verb} from {}{by}",
+            "You were {verb} from {}{by}{why}",
             self.community_name(community)
         )
     }

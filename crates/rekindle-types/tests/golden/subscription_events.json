@@ -929,6 +929,7 @@
     "membership": {
       "banned": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "reason": "spam",
         "removedBy": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
         "removedByName": "Mod",
         "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
@@ -988,6 +989,7 @@
     "membership": {
       "kicked": {
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "reason": null,
         "removedBy": null,
         "removedByName": null,
         "targetPseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"

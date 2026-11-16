@@ -94,6 +94,7 @@ pub fn control_into_event(
                 target_pseudonym,
                 removed_by: None,
                 removed_by_name: None,
+                reason: None,
             })
         }
         ControlPayload::Ban { target_pseudonym } => {
@@ -102,6 +103,7 @@ pub fn control_into_event(
                 target_pseudonym,
                 removed_by: None,
                 removed_by_name: None,
+                reason: None,
             })
         }
         ControlPayload::Unban { target_pseudonym } => {

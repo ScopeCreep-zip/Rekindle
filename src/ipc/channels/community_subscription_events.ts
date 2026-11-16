@@ -22,8 +22,26 @@ export type MembershipEvent =
   | { joined: { community: string; pseudonym: string; displayName: string; roleIds: number[] } }
   | { left: { community: string; pseudonym: string } }
   | { removed: { community: string; pseudonym: string } }
-  | { kicked: { community: string; targetPseudonym: string; removedBy: string | null; removedByName: string | null } }
-  | { banned: { community: string; targetPseudonym: string; removedBy: string | null; removedByName: string | null } }
+  | {
+      kicked: {
+        community: string;
+        targetPseudonym: string;
+        removedBy: string | null;
+        removedByName: string | null;
+        /** The removal op's reason; null from gossip or when none was given. */
+        reason: string | null;
+      };
+    }
+  | {
+      banned: {
+        community: string;
+        targetPseudonym: string;
+        removedBy: string | null;
+        removedByName: string | null;
+        /** The removal op's reason; null from gossip or when none was given. */
+        reason: string | null;
+      };
+    }
   | { unbanned: { community: string; targetPseudonym: string } }
   | { timedOut: { community: string; targetPseudonym: string; durationSeconds: number; reason: string | null } }
   | { timeoutRemoved: { community: string; targetPseudonym: string } }

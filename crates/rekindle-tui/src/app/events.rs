@@ -273,12 +273,14 @@ impl App {
                 ref community,
                 ref target_pseudonym,
                 ref removed_by_name,
+                ref reason,
                 ..
             }) => {
                 let toast = self.removal_toast(
                     community,
                     target_pseudonym,
                     removed_by_name.as_deref(),
+                    reason.as_deref(),
                     "kicked",
                 );
                 self.notifications.push(toast, ToastLevel::Warning);
@@ -288,12 +290,14 @@ impl App {
                 ref community,
                 ref target_pseudonym,
                 ref removed_by_name,
+                ref reason,
                 ..
             }) => {
                 let toast = self.removal_toast(
                     community,
                     target_pseudonym,
                     removed_by_name.as_deref(),
+                    reason.as_deref(),
                     "banned",
                 );
                 self.notifications.push(toast, ToastLevel::Warning);

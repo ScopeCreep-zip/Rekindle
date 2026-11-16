@@ -210,6 +210,23 @@
     line-height: 1.4;
   }
 
+  /* ─── Own removal (plan E3.2 S9): the community is read-only history ─── */
+  .removal-banner {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    background: color-mix(in srgb, var(--color-xfire-busy) 30%, var(--color-xfire-bg-dark));
+    color: var(--color-xfire-danger-text);
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
+    font-size: 11px;
+  }
+
+  .removal-banner-text {
+    flex: 1;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
   /* ─── Plate Gate (architecture §15) admin banner ─── */
   .plate-gate-banner {
     display: flex;

@@ -146,6 +146,7 @@ fn moderation() -> Vec<Sample> {
                 target_pseudonym: pk('e'),
                 removed_by: None,
                 removed_by_name: None,
+                reason: None,
             },
         ),
         ev(
@@ -155,6 +156,7 @@ fn moderation() -> Vec<Sample> {
                 target_pseudonym: pk('e'),
                 removed_by: Some(pk('f')),
                 removed_by_name: Some("Mod".into()),
+                reason: Some(text("spam")),
             },
         ),
         ev(

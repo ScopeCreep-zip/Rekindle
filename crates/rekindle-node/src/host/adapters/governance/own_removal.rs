@@ -184,6 +184,7 @@ impl HostGovernance {
             .and_then(|c| c.my_pseudonym_key.clone())
             .unwrap_or_default();
         let removed_by_name = removal.by_name.clone();
+        let reason = removal.reason.clone();
         let removed_by = removal
             .by
             .as_ref()
@@ -194,6 +195,7 @@ impl HostGovernance {
                 target_pseudonym,
                 removed_by,
                 removed_by_name,
+                reason,
             }
         } else {
             MembershipEvent::Kicked {
@@ -201,6 +203,7 @@ impl HostGovernance {
                 target_pseudonym,
                 removed_by,
                 removed_by_name,
+                reason,
             }
         }
     }

@@ -101,10 +101,11 @@ async fn a_kicked_member_leaves_locally_and_keeps_its_history() {
             SubscriptionEvent::Membership(MembershipEvent::Kicked {
                 target_pseudonym,
                 removed_by: Some(by),
+                reason: Some(reason),
                 ..
-            }) if *target_pseudonym == bea && *by == ann
+            }) if *target_pseudonym == bea && *by == ann && reason == REASON
         )),
-        "the kicked member announces its own removal, naming the remover"
+        "the kicked member announces its own removal, naming the remover and the reason"
     );
     assert_eq!(
         community.info(1).await["removed"]["banned"].as_bool(),

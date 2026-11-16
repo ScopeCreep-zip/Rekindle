@@ -151,7 +151,11 @@ export function createCommunityWindowState() {
     if (!isVoiceChannel()) return true;
     return voiceState.isConnected && voiceState.channelId === selectedChannelId();
   });
+  /// Our own removal as the backend reports it (plan E3.2 S9): the
+  /// community stays as read-only history.
+  const ownRemoval = createMemo(() => activeCommunity()?.removed ?? null);
   const canPostInChannel = createMemo(() => {
+    if (ownRemoval()) return false;
     if (!isAnnouncementChannel()) return canSendMessages();
     return canManageCommunity();
   });
@@ -221,7 +225,7 @@ export function createCommunityWindowState() {
     myRoleIds, myPerms, canManageChannels, canManageMessages, canRequestToSpeak,
     canManageCommunity, canSendMessages, canBypassSlowmode, gameServers,
     isAnnouncementChannel, isForumChannel, isStageChannel, isVoiceChannel,
-    isTextPaneVisible, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
+    isTextPaneVisible, ownRemoval, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
     channelTypingUsers, upcomingEvents, shouldShowOnboarding, shouldShowWelcome,
     sidebarServerList, formatTimeUntilEvent,
   };
