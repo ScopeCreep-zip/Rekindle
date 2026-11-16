@@ -21,22 +21,33 @@ pub(super) struct OpSet<'a> {
 }
 
 /// `past.contains(i, j)`: op `j` is in op `i`'s causal past.
+///
+/// A dep is always earlier in stamp order than its dependant, so op `i`'s
+/// past holds only ops below `i`: row `i` stores the bits for `0..i` alone
+/// (a lower-triangular bit matrix, half the memory and work of a square one).
 pub(super) struct Ancestry {
-    words: usize,
+    /// Where row `i`'s words start in `bits`.
+    row: Vec<usize>,
     bits: Vec<u64>,
 }
 
 impl Ancestry {
     fn new(n: usize) -> Self {
-        let words = n.div_ceil(64).max(1);
+        let mut row = Vec::with_capacity(n + 1);
+        let mut at = 0;
+        for i in 0..n {
+            row.push(at);
+            at += i.div_ceil(64);
+        }
+        row.push(at);
         Self {
-            words,
-            bits: vec![0; words * n],
+            row,
+            bits: vec![0; at],
         }
     }
 
     pub fn contains(&self, i: usize, j: usize) -> bool {
-        self.bits[i * self.words + j / 64] & (1 << (j % 64)) != 0
+        j < i && self.bits[self.row[i] + j / 64] & (1 << (j % 64)) != 0
     }
 
     /// Neither op is in the other's causal past.
@@ -44,13 +55,16 @@ impl Ancestry {
         i != j && !self.contains(i, j) && !self.contains(j, i)
     }
 
+    /// Op `d` (a dep of `i`, so `d < i`) and its past join `i`'s past.
     fn inherit(&mut self, i: usize, d: usize) {
-        let w = self.words;
-        for k in 0..w {
-            let v = self.bits[d * w + k];
-            self.bits[i * w + k] |= v;
+        debug_assert!(d < i, "a dep precedes its dependant in stamp order");
+        let (head, tail) = self.bits.split_at_mut(self.row[i]);
+        let from = &head[self.row[d]..self.row[d + 1]];
+        let to = &mut tail[..self.row[i + 1] - self.row[i]];
+        for (t, f) in to.iter_mut().zip(from) {
+            *t |= *f;
         }
-        self.bits[i * w + d / 64] |= 1 << (d % 64);
+        to[d / 64] |= 1 << (d % 64);
     }
 }
 
@@ -61,21 +75,26 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
 
     // Equivocation: two ops at one (author, seq). Every op of that author
     // from the fork on is dropped, on every reader alike.
-    let mut at_seq: BTreeMap<(&[u8; 32], u64), OpHash> = BTreeMap::new();
+    // Sorted by (seq, author, hash), two ops at one (author, seq) with
+    // different hashes sit next to each other; seq leads the key because
+    // it is a cheap compare that settles most pairs.
+    let mut by_seq: Vec<(u64, &[u8; 32], OpHash)> = sorted
+        .iter()
+        .map(|op| (op.op().seq, &op.author().0, op.hash()))
+        .collect();
+    by_seq.sort_unstable();
     let mut fork_at: BTreeMap<[u8; 32], u64> = BTreeMap::new();
-    for op in &sorted {
-        let key = (&op.author().0, op.op().seq);
-        if let Some(other) = at_seq.insert(key, op.hash()) {
-            if other != op.hash() {
-                let slot = fork_at.entry(op.author().0).or_insert(u64::MAX);
-                *slot = (*slot).min(op.op().seq);
-            }
+    for pair in by_seq.windows(2) {
+        let ((seq, author, a), (next_seq, next_author, b)) = (pair[0], pair[1]);
+        if author == next_author && seq == next_seq && a != b {
+            let slot = fork_at.entry(*author).or_insert(u64::MAX);
+            *slot = (*slot).min(seq);
         }
     }
 
-    let mut index: HashMap<OpHash, usize> = HashMap::new();
-    let mut kept: Vec<&VerifiedOp> = Vec::new();
-    let mut deps_of: Vec<Vec<usize>> = Vec::new();
+    let mut index: HashMap<OpHash, usize> = HashMap::with_capacity(sorted.len());
+    let mut kept: Vec<&VerifiedOp> = Vec::with_capacity(sorted.len());
+    let mut deps_of: Vec<Vec<usize>> = Vec::with_capacity(sorted.len());
     let mut pending = Vec::new();
     for op in sorted {
         // An out-of-bounds op stays in the DAG (validation refuses it), so

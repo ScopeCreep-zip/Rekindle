@@ -499,6 +499,23 @@ fn equivocation_is_detected_and_the_fork_dropped() {
     assert!(!outcome.applied.contains(&f1.hash()) && !outcome.applied.contains(&f2.hash()));
 }
 
+/// R4-5 pins the fork scan's semantics: a fork whose two ops are apart in
+/// stamp order is found, and one op held at two lamports (one hash) is no
+/// fork.
+#[test]
+fn a_fork_apart_in_stamp_order_is_found_and_one_hash_twice_is_not() {
+    let mut ops = community();
+    let f1 = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 60, meta("one"));
+    let x = op(&pk(4), 1, &[head(&ops), find(&ops, 4, 0)], 61, meta("x"));
+    let f2 = op(&pk(2), 1, &[&x, find(&ops, 2, 0)], 62, meta("two"));
+    let once = op(&pk(3), 1, &[head(&ops), find(&ops, 3, 0)], 63, meta("y"));
+    let again = op(&pk(3), 1, &[&x, find(&ops, 3, 0)], 63, meta("y"));
+    assert!(f1.lamport() < f2.lamport() && once.hash() == again.hash());
+    ops.extend([f1, x, f2, once, again]);
+    let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
+    assert_eq!(outcome.equivocators, vec![pk(2)]);
+}
+
 #[test]
 fn an_op_missing_a_dep_waits() {
     let ops = community();

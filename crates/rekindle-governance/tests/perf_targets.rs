@@ -8,17 +8,27 @@
 //! regression-guard tests.
 //!
 //! These run by default but are short — generating 10,000 governance
-//! entries and merging them. The thresholds match the spec line 4146:
-//! "CRDT merge: target <10ms for 10,000 governance entries". We allow
-//! 4× headroom (40ms) so debug-mode CI doesn't flake; opt into
-//! `--release` for the strict target.
+//! entries and merging them. The spec (communities architecture §32):
+//! "CRDT merge: target <10ms for 10,000 governance entries". A build
+//! without debug assertions (`--release`, as CI F4 runs it) asserts that
+//! target; a debug build asserts a regression guard instead.
 
-use rekindle_governance::fixture::{at, merge_entries, Stamped};
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_governance::fixture::{at, cert, ops_in_order, Stamped};
+use rekindle_governance::merge::merge;
+use rekindle_types::governance::{AdmissionMode, GovernanceEntry};
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions;
 
 const ENTRY_COUNT: usize = 10_000;
+
+/// The spec target, asserted when built without debug assertions.
+const RELEASE_BUDGET_MS: u128 = 10;
+
+/// The debug guard: measured 37–39 ms on the Mac (M-series) after the
+/// R4-5 fix, so Linux's ~1.7× slower debug build (~65 ms) stays well
+/// under it while a several-fold regression still fails. Release measured
+/// 3.2–3.6 ms there.
+const DEBUG_BUDGET_MS: u128 = 150;
 
 fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<Stamped>)> {
     let mut by_author: std::collections::HashMap<PseudonymKey, Vec<Stamped>> =
@@ -77,19 +87,24 @@ fn gen_synthetic_entries(n: usize) -> Vec<(PseudonymKey, Vec<Stamped>)> {
 
 #[test]
 fn merge_10k_entries_completes_within_budget() {
+    let creator = PseudonymKey([0x42u8; 32]);
     let subkeys = gen_synthetic_entries(ENTRY_COUNT);
+    // The op chain is the merge's input, built outside the timed span:
+    // the spec times the merge, not the fixture that fakes its ops.
+    let ops = ops_in_order(&subkeys);
+    let cert = cert(&creator, AdmissionMode::default());
     let started = std::time::Instant::now();
-    let _ = merge_entries(&PseudonymKey([0x42u8; 32]), &subkeys);
+    let _ = merge(&cert, &ops);
     let elapsed = started.elapsed();
 
-    // Spec target: <10ms in release. Debug-mode is ~5–10× slower; we
-    // guard at 200ms so debug CI stays green while still flagging
-    // accidental order-of-magnitude regressions.
+    let (budget, build) = if cfg!(debug_assertions) {
+        (DEBUG_BUDGET_MS, "debug regression guard")
+    } else {
+        (RELEASE_BUDGET_MS, "spec target")
+    };
+    eprintln!("[perf] merge({ENTRY_COUNT} entries) elapsed = {elapsed:?} ({build} <{budget}ms)");
     assert!(
-        elapsed.as_millis() < 200,
-        "merge of {ENTRY_COUNT} governance entries took {elapsed:?} — exceeds 200ms regression budget"
-    );
-    eprintln!(
-        "[perf] merge({ENTRY_COUNT} entries) elapsed = {elapsed:?} (spec target <10ms in release)"
+        elapsed.as_millis() < budget,
+        "merge of {ENTRY_COUNT} governance entries took {elapsed:?}, over the {build} of {budget}ms"
     );
 }
