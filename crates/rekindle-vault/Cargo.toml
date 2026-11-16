@@ -9,7 +9,7 @@ workspace = true
 
 [dependencies]
 aes-gcm = "0.10"
-argon2 = "0.5"
+argon2 = "0.6"
 blake3 = "1"
 hex = "0.4"
 parking_lot = { workspace = true }
