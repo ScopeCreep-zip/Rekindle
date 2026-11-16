@@ -446,7 +446,10 @@ impl Host {
     pub async fn run_until_stopped(&self) -> anyhow::Result<()> {
         let mut stop_signals = signals::StopSignals::register()?;
         let keepalive = watchdog::keepalive_interval();
+        // Biased: a signal and a request at once log the signal; either
+        // stops the host the same way, and the watchdog arm never ends.
         tokio::select! {
+            biased;
             signal = stop_signals.next() => {
                 tracing::info!(signal, "shutdown signal received");
             }

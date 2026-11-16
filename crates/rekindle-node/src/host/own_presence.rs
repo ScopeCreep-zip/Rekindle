@@ -219,7 +219,10 @@ impl OwnPresence {
     /// failed, until `stop`.
     async fn retry_details(&self, stop: tokio_util::sync::CancellationToken) {
         loop {
+            // Biased, stop first: a lock as the retry falls due writes
+            // nothing more.
             tokio::select! {
+                biased;
                 () = stop.cancelled() => return,
                 () = tokio::time::sleep(DETAILS_RETRY) => {}
             }

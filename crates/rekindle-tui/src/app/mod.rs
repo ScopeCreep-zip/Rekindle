@@ -182,7 +182,11 @@ impl App {
         self.load_dashboard_data();
 
         loop {
+            // Biased, terminal first: a busy host stream cannot hold off a
+            // key (quit among them), and the terminal cannot starve the
+            // stream, because the loop drains it below on every pass.
             tokio::select! {
+                biased;
                 // Terminal events: keys, mouse, resize, tick, render
                 event = tui.event_rx.recv() => {
                     match event {

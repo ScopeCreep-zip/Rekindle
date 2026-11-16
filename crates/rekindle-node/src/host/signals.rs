@@ -39,7 +39,10 @@ impl StopSignals {
     pub(super) async fn next(&mut self) -> &'static str {
         #[cfg(unix)]
         {
+            // Biased: two signals at once name SIGINT, not a coin toss;
+            // either stops the daemon the same way.
             tokio::select! {
+                biased;
                 _ = self.interrupt.recv() => "SIGINT",
                 _ = self.terminate.recv() => "SIGTERM",
             }

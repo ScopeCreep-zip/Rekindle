@@ -46,9 +46,12 @@ async fn run(
 ) {
     let mut interval = tokio::time::interval(TICK);
     loop {
+        // Biased, stop first: a lock that lands with a tick reads no idle
+        // time and changes no presence (the netsim's order follows its seed).
         tokio::select! {
-            _ = interval.tick() => {}
+            biased;
             () = stop.cancelled() => return,
+            _ = interval.tick() => {}
         }
         let read = Arc::clone(&source);
         let idle_secs = match rekindle_lifecycle::run_blocking(move || read.idle_seconds()).await {

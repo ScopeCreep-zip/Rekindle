@@ -79,10 +79,14 @@ impl Liveness {
 pub(crate) async fn run_self_tests(live: Arc<Liveness>, mut offers: Offers) {
     let mut healing: HashSet<RouteClass> = HashSet::new();
     loop {
+        // Biased, the end first: a closed `offers` (shutdown) beside a tick
+        // tests nothing more. Every other arm wakes the same pass, and none
+        // is ready again until its next change or tick.
         tokio::select! {
-            () = tokio::time::sleep(SELF_TEST_TICK) => {}
-            () = live.network_changed.notified() => {}
+            biased;
             changed = offers.changed() => if changed.is_err() { return },
+            () = live.network_changed.notified() => {}
+            () = tokio::time::sleep(SELF_TEST_TICK) => {}
         }
         for class in TESTED {
             let now = Instant::now();
@@ -156,8 +160,10 @@ pub(crate) async fn run_publisher(
         let now = Instant::now();
         let mut at = if heal { live.publish_at(now) } else { now };
         loop {
+            // Biased, the newer blob first: a blob offered at the instant
+            // the publish falls due supersedes the one about to be written.
             tokio::select! {
-                () = tokio::time::sleep_until(at) => {}
+                biased;
                 changed = offers.changed() => {
                     if changed.is_err() { return }
                     // A newer blob supersedes this one; keep the heal mark.
@@ -165,6 +171,7 @@ pub(crate) async fn run_publisher(
                     offers.mark_changed();
                     break;
                 }
+                () = tokio::time::sleep_until(at) => {}
             }
             match crate::broadcast::node::publish_personal_route(&session, &shared, &blob).await {
                 None => break,

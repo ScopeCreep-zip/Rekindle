@@ -170,8 +170,18 @@ impl DaemonContext {
         let mut tick = tokio::time::interval(self.subscriber_heartbeat.tick());
 
         loop {
+            // Biased: shutdown, the heartbeat, finished requests, then new
+            // ones. New requests go last because they can arrive without
+            // pause: ahead of the tick they would stop the beat of a loop
+            // that is not stuck (the watchdog would restart the daemon),
+            // and ahead of the answers they would hold every reply off.
+            // The tick is ready once a period and each answer once, so
+            // neither starves the requests.
             tokio::select! {
+                biased;
                 () = self.shutdown.requested() => break,
+                _ = tick.tick() => self.subscriber_heartbeat.beat(),
+                Some(done) = in_flight.next() => self.answer(&client, done).await,
                 msg = client.recv_bus_message() => match msg {
                     Some(Ok(msg)) => {
                         let BusPayload::Request(request) = msg.payload else {
@@ -207,8 +217,6 @@ impl DaemonContext {
                         break;
                     }
                 },
-                Some(done) = in_flight.next() => self.answer(&client, done).await,
-                _ = tick.tick() => self.subscriber_heartbeat.beat(),
             }
         }
 

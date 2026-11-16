@@ -55,7 +55,10 @@ async fn run(
     mut stream: rekindle_events::EventStream,
 ) {
     loop {
+        // Biased, stopping first: a stopping server sends no more frames,
+        // however many the journal holds ready.
         let frame = tokio::select! {
+            biased;
             () = state.stopping.cancelled() => return,
             frame = stream.next() => frame,
         };

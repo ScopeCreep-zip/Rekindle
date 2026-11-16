@@ -86,7 +86,13 @@ impl SubscriptionManager {
                 tokio::time::interval(std::time::Duration::from_secs(TYPING_SWEEP_SECS));
             interval.tick().await; // skip the immediate first tick
             loop {
+                // Biased, stop first: a stop beside a tick sweeps no more.
                 tokio::select! {
+                    biased;
+                    () = stop.cancelled() => {
+                        info!("maintenance loop shutting down");
+                        break;
+                    }
                     _ = interval.tick() => {
                         // Guards dropped before sending: `process_event`
                         // is not reachable from here, but the broadcast
@@ -104,10 +110,6 @@ impl SubscriptionManager {
                                 },
                             ));
                         }
-                    }
-                    () = stop.cancelled() => {
-                        info!("maintenance loop shutting down");
-                        break;
                     }
                 }
             }

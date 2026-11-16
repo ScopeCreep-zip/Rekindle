@@ -20,7 +20,10 @@ pub async fn heal_call_routes(
     stop: CancellationToken,
 ) {
     loop {
+        // Biased, stop first: a stop beside a queued route change heals
+        // nothing more.
         let peer = tokio::select! {
+            biased;
             () = stop.cancelled() => return,
             next = updates.recv() => next,
         };

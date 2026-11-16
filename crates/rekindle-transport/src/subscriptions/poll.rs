@@ -44,7 +44,13 @@ pub async fn run_poll_loop(
     info!(interval_secs, "poll loop started (tier 3 fallback)");
 
     loop {
+        // Biased, stop first: a stop beside a tick starts no sweep.
         tokio::select! {
+            biased;
+            () = stop.cancelled() => {
+                info!("poll loop shutting down");
+                break;
+            }
             _ = interval.tick() => {
                 if !node.is_ready() {
                     debug!("poll: suppressed (node not ready)");
@@ -156,10 +162,6 @@ pub async fn run_poll_loop(
                     sweep_ms = sweep_start.elapsed().as_millis(),
                     "poll: sweep complete"
                 );
-            }
-            () = stop.cancelled() => {
-                info!("poll loop shutting down");
-                break;
             }
         }
     }

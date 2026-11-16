@@ -38,7 +38,11 @@ pub(crate) async fn run(
     media.borrow_and_update();
     super::emit_network_status(&app_handle, &state);
     loop {
+        // Biased: stop first (a lock republishes nothing more), then
+        // General before Media, so two changes at one instant are handled
+        // in one order. Each arm is ready only once per route change.
         let (class, route) = tokio::select! {
+            biased;
             () = stop.cancelled() => return,
             changed = general.changed() => {
                 if changed.is_err() {

@@ -25,7 +25,10 @@ pub async fn stream(
         .ok_or_else(|| anyhow::anyhow!("this connection's event stream is already in use"))?;
     client.subscribe(filters, None).await?;
     loop {
+        // Biased, Ctrl-C first: an interrupt beside a queued event stops
+        // the watch at once; a busy stream cannot hold Ctrl-C off.
         tokio::select! {
+            biased;
             interrupt = tokio::signal::ctrl_c() => {
                 interrupt?;
                 return Ok(());

@@ -62,7 +62,10 @@ pub(super) async fn publish_governance_states(
         Err(error) => tracing::warn!(%error, "queued governance ops not announced"),
     }
     loop {
+        // Biased, stop first: a lock beside a queued change announces
+        // nothing more (the rows hold every state for the next unlock).
         let change = tokio::select! {
+            biased;
             () = stop.cancelled() => return,
             change = changes.recv() => change,
         };

@@ -160,7 +160,10 @@ impl RecordPool {
             .spawn_with_token_or_drop("dht watch re-arm", move |stop| async move {
                 // A drain (logout) stops it as it stops the re-push: the
                 // ending session re-arms nothing (live R1-2).
+                // Biased, the stops first: a re-arm that falls due at the
+                // instant of a stop or a drain arms nothing.
                 tokio::select! {
+                    biased;
                     () = stop.cancelled() => return,
                     () = pool.repush_stop.cancelled() => return,
                     () = tokio::time::sleep(delay) => {}

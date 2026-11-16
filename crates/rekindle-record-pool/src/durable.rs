@@ -265,10 +265,15 @@ impl RecordPool {
                 .filter(|(key, own_writer, _)| *own_writer || self.writable(key))
                 .map(|(_, _, due)| due)
                 .min();
+            // Biased: the stops first, then readiness, then the due time,
+            // and the held set's change last. Every new write notifies
+            // `held_changed`, so ahead of the due time a stream of writes
+            // would hold re-pushes off; last, it only recomputes `next_due`,
+            // which every pass does anyway.
             tokio::select! {
+                biased;
                 () = stop.cancelled() => return,
                 () = self.repush_stop.cancelled() => return,
-                () = self.held_changed.notified() => continue,
                 changed = ready.changed() => {
                     if changed.is_err() {
                         return;
@@ -288,6 +293,7 @@ impl RecordPool {
                         None => std::future::pending().await,
                     }
                 } => {}
+                () = self.held_changed.notified() => continue,
             }
             if self.repush_stop.is_cancelled() {
                 return;

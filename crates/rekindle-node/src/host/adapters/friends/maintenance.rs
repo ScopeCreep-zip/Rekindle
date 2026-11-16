@@ -61,7 +61,9 @@ async fn run_staleness(host: HostFriends, stop: CancellationToken) {
     let mut ticks = tokio::time::interval(STALE_TICK);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
+        // Biased, stop first: a lock beside a tick runs no pass.
         tokio::select! {
+            biased;
             () = stop.cancelled() => return,
             _ = ticks.tick() => {}
         }
@@ -110,7 +112,9 @@ async fn run_prekeys<P, F>(
     P: FnMut() -> F,
     F: std::future::Future<Output = ()>,
 {
+    // Biased, stop first: a lock beside the stage's signal starts no ticks.
     tokio::select! {
+        biased;
         () = stop.cancelled() => return,
         held = ready => if held.is_err() {
             tracing::debug!("prekey maintenance: no prekey record held this unlock");
@@ -121,7 +125,9 @@ async fn run_prekeys<P, F>(
         tokio::time::interval_at(tokio::time::Instant::now() + PREKEY_TICK, PREKEY_TICK);
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
+        // Biased, stop first: a lock beside a tick runs no pass.
         tokio::select! {
+            biased;
             () = stop.cancelled() => return,
             _ = ticks.tick() => {}
         }
@@ -134,7 +140,9 @@ async fn run(host: HostFriends, stop: CancellationToken) {
     ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut count: u64 = 0;
     loop {
+        // Biased, stop first: a lock beside a tick runs no pass.
         tokio::select! {
+            biased;
             () = stop.cancelled() => return,
             _ = ticks.tick() => {}
         }

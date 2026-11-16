@@ -125,7 +125,10 @@ async fn publish_states(
 ) {
     forget_removed(&friends).await;
     loop {
+        // Biased, stop first: a lock beside a queued change publishes
+        // nothing more (the rows hold the states).
         let change = tokio::select! {
+            biased;
             () = stop.cancelled() => return,
             change = changes.recv() => change,
         };

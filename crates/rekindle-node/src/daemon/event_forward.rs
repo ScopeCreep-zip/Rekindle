@@ -21,7 +21,9 @@ pub type EventSource = watch::Receiver<Option<broadcast::Sender<SubscriptionEven
 /// Run `work` until it finishes or `stop` is cancelled; `None` means `stop`
 /// won and `work` was dropped.
 async fn until<T>(stop: &CancellationToken, work: impl Future<Output = T>) -> Option<T> {
+    // Biased, stop first: work ready at the instant of the stop is dropped.
     tokio::select! {
+        biased;
         () = stop.cancelled() => None,
         value = work => Some(value),
     }
@@ -51,7 +53,11 @@ pub async fn follow<F, Fut>(
         drop(sender);
         tracing::debug!("event source subscribed");
         loop {
+            // Biased: stop, then the source change, then events. A flood of
+            // events cannot hold off a lock or a new unlock; the change
+            // arm is ready once per replacement, so events never starve.
             tokio::select! {
+                biased;
                 () = stop.cancelled() => return,
                 // A lock or a new unlock replaced the source.
                 changed = source.changed() => {

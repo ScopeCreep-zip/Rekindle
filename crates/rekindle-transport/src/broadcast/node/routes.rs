@@ -142,7 +142,16 @@ pub(super) async fn run_route_publisher(
         tokio::time::interval(tokio::time::Duration::from_secs(watchdog_secs.max(1)));
     interval.tick().await; // skip immediate first tick
     loop {
+        // Biased, shutdown first: a shutdown beside a route change offers
+        // no blob to a stopping republisher. General before Media keeps
+        // two changes at one instant in one order; none of the arms is
+        // ready again until its source changes or the interval's period.
         tokio::select! {
+            biased;
+            _ = shutdown_rx.recv() => {
+                tracing::info!("route publisher shutting down");
+                break;
+            }
             changed = general.changed() => {
                 if changed.is_err() {
                     break;
@@ -165,10 +174,6 @@ pub(super) async fn run_route_publisher(
                 }
             }
             _ = interval.tick() => routes.want_own(),
-            _ = shutdown_rx.recv() => {
-                tracing::info!("route publisher shutting down");
-                break;
-            }
         }
     }
 }

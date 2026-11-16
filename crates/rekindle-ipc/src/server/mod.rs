@@ -193,7 +193,10 @@ impl BusServer {
     /// the Noise handshake and bidirectional encrypted I/O.
     pub async fn run(&self) -> Result<()> {
         loop {
+            // Biased, stopping first: a stopping server accepts no client
+            // that is waiting at the same instant.
             let accepted = tokio::select! {
+                biased;
                 () = self.stopping.cancelled() => return Ok(()),
                 accepted = self.listener.accept() => accepted,
             };

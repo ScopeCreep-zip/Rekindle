@@ -342,7 +342,10 @@ impl RecordPool {
                         }
                     };
                     let waits = self.waits.lock().clone();
+                    // Biased, the stop first: a drain at the instant the
+                    // retry falls due ends the call, not one more attempt.
                     let stopped = tokio::select! {
+                        biased;
                         () = waits.cancelled() => true,
                         _ = tokio::time::timeout_at(deadline, wait) => false,
                     };

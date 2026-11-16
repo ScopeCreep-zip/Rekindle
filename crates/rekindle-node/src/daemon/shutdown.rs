@@ -92,7 +92,10 @@ impl Shutdown {
     /// Run `work` until it finishes or shutdown is requested, whichever is
     /// first; `None` means shutdown won and `work` was dropped.
     pub async fn run_until<T>(&self, work: impl std::future::Future<Output = T>) -> Option<T> {
+        // Biased, shutdown first: work that is ready at the instant shutdown
+        // is requested is dropped, as the doc says, never a coin toss.
         tokio::select! {
+            biased;
             () = self.requested() => None,
             value = work => Some(value),
         }

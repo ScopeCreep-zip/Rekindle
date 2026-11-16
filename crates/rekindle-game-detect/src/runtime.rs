@@ -58,7 +58,14 @@ pub async fn run<P: GameDetectorPublisher>(
     let mut interval = tokio::time::interval(poll_interval);
     let mut last_game: Option<String> = None;
     loop {
+        // Biased, stop first: a stop that lands with a tick ends the loop
+        // without one more scan and publish.
         tokio::select! {
+            biased;
+            () = stop.cancelled() => {
+                tracing::info!("game detection runtime shutting down");
+                break;
+            }
             _ = interval.tick() => {
                 let detected = detector.scan_once();
                 let current_name = detected.as_ref().map(|g| g.game_name.clone());
@@ -71,10 +78,6 @@ pub async fn run<P: GameDetectorPublisher>(
                     }
                     last_game = current_name;
                 }
-            }
-            () = stop.cancelled() => {
-                tracing::info!("game detection runtime shutting down");
-                break;
             }
         }
     }

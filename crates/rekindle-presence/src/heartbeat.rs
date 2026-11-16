@@ -67,7 +67,11 @@ pub async fn run_status_publisher<D: StatusPublisherDeps + ?Sized>(
     let mut published = None;
 
     loop {
+        // Biased, stop first: a stop beside a wake publishes nothing more.
+        // A change and a beat at once publish the same current status, so
+        // either order writes the same; the change is named first.
         let reason = tokio::select! {
+            biased;
             () = stop.cancelled() => {
                 tracing::debug!("status publisher shutting down");
                 return;
