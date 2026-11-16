@@ -134,14 +134,15 @@ fn a_minimal_theme_imports_and_validates() {
 #[test]
 fn every_emitted_icon_and_sound_key_is_a_registry_id() {
     use crate::registry::{IconSlot, SoundCue};
-    let icons: String = map::ICONS
-        .iter()
-        .map(|(id, _)| format!(r#"<icon id="{id}" file="16/available.png"/>"#))
-        .collect();
-    let sounds: String = map::SOUNDS
-        .iter()
-        .map(|(name, _)| format!(r#"<event name="{name}" file="login.wav"/>"#))
-        .collect();
+    use std::fmt::Write as _;
+    let mut icons = String::new();
+    for (id, _) in map::ICONS {
+        let _ = write!(icons, r#"<icon id="{id}" file="16/available.png"/>"#);
+    }
+    let mut sounds = String::new();
+    for (name, _) in map::SOUNDS {
+        let _ = write!(sounds, r#"<event name="{name}" file="login.wav"/>"#);
+    }
     let t = theme(&icons, &sounds);
     let i = imported(import(&t, "synth").unwrap());
     validate::run(&i.canonical.bytes).unwrap();
