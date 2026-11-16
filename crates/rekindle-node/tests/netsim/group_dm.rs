@@ -409,7 +409,9 @@ fn a_retired_group_stretch_has_one_trace_per_seed() {
             .block_on(retired_stretch_at(91))
     }
     let first = run();
-    for _ in 0..3 {
+    // Six runtimes: under the unbiased selects one run in three still
+    // matched the first, so four runtimes could pass a split.
+    for _ in 0..5 {
         assert_eq!(run(), first, "one seed, one trace");
     }
 }
