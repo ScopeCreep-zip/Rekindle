@@ -30,7 +30,7 @@ use rekindle_types::dto::skin::{
 };
 
 use super::tree::{self, Node};
-use super::winamp::archive::MAX_UNCOMPRESSED_BYTES;
+use super::winamp::archive::{refused, MAX_UNCOMPRESSED_BYTES};
 use super::{base_of, conclude, tree_hash, walk, ImportError, Outcome, Tree};
 use crate::limits::MAX_ENTRIES;
 use crate::output::{token_file, zip};
@@ -50,7 +50,7 @@ const FONT_DROPPED: &str =
 
 /// One item that did not enter the package, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Dropped {
+pub struct DroppedItem {
     pub item: String,
     pub why: String,
 }
@@ -74,22 +74,15 @@ pub struct Read {
     pub icons: BTreeMap<String, (String, Vec<u8>, String)>,
     /// Cue id → (package path, canonical WAV, source item).
     pub sounds: BTreeMap<String, (String, Vec<u8>, String)>,
-    pub dropped: Vec<Dropped>,
+    pub dropped: Vec<DroppedItem>,
 }
 
 impl Read {
     fn drop(&mut self, item: impl Into<String>, why: impl Into<String>) {
-        self.dropped.push(Dropped {
+        self.dropped.push(DroppedItem {
             item: item.into(),
             why: why.into(),
         });
-    }
-}
-
-fn refused(entry: &str, detail: impl Into<String>) -> ImportError {
-    ImportError::Archive {
-        entry: entry.to_owned(),
-        detail: detail.into(),
     }
 }
 

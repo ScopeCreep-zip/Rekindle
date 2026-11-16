@@ -40,7 +40,7 @@ const DEFLATE: u16 = 8;
 const LOCAL_SIG: u32 = 0x0403_4b50;
 const LOCAL_LEN: usize = 30;
 
-fn refused(entry: &str, detail: impl Into<String>) -> ImportError {
+pub(crate) fn refused(entry: &str, detail: impl Into<String>) -> ImportError {
     ImportError::Archive {
         entry: entry.to_owned(),
         detail: detail.into(),
