@@ -543,3 +543,54 @@ async fn an_allocation_takes_its_route_test_and_a_drop_is_traced_as_cut() {
         "a cut allocation leaves no route"
     );
 }
+
+/// A silently dead route (plan VU2 item 12): while the node's online
+/// detector says Offline its loopback failures are deferred, so it outlives
+/// any run of tests and no one hears of it (0.5.8 `ping_validator.rs:815-826`);
+/// once a round trip proves the network (a returned readiness,
+/// `online_detector.rs:1338-1350`) the failures count and the third kills
+/// it (`route_spec_store/mod.rs:51-63`). A silent route its owner releases
+/// leaves no run behind.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_silent_death_ends_by_release_or_by_tests_once_the_network_is_proven() {
+    let (sim, mut nodes) = Netsim::nodes(1, 27);
+    let _pump = sim.start();
+    attached(&mut nodes[0]).await;
+    nodes[0].ports.routes.want_own();
+    let general = nodes[0]
+        .ports
+        .routes
+        .available_own(RouteClass::General)
+        .await;
+    nodes[0].ports.routes.want_own_class(RouteClass::Media);
+    let media = nodes[0].ports.routes.available_own(RouteClass::Media).await;
+    sim.quiesce().await;
+    while nodes[0].events.try_recv().is_ok() {}
+    for class in [RouteClass::General, RouteClass::Media] {
+        sim.fault(Fault::RouteSilentDeath { node: 0, class });
+    }
+    tokio::time::sleep(Duration::from_secs(300)).await;
+    assert!(live(&sim, &general), "deferred while Offline");
+    assert!(
+        !std::iter::from_fn(|| nodes[0].events.try_recv().ok())
+            .any(|e| matches!(e, PortEvent::RouteChange { .. })),
+        "no one hears of a silent death"
+    );
+    let media_id = crate::routes::route_id(&media).unwrap();
+    nodes[0].ports.routes.release_own_class(RouteClass::Media);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(
+        !sim.net.inner.lock().faults.loopback.contains_key(&media_id),
+        "a released silent route leaves no run"
+    );
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: false,
+    });
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: true,
+    });
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    assert!(!live(&sim, &general), "counted again, the tests kill it");
+}
