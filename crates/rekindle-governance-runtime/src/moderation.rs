@@ -84,12 +84,21 @@ pub async fn remove_member<D: GovernanceRuntimeDeps>(
 }
 
 /// Our own departure: the `MemberLeft` op on our member record, written
-/// before the community is forgotten here.
+/// before the community is forgotten here. It carries our own slot heads
+/// as we hold them: we wrote every value of our slot, so readers keep our
+/// posts from history by them, and a slot write after the leave (a
+/// restored backup of this profile) is kept by none (A/B R3-8).
 pub async fn leave<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
 ) -> Result<(), GovernanceRuntimeError> {
-    apply::write_entry(deps, community_id, GovernanceEntry::MemberLeft {}).await?;
+    let me = deps
+        .community_membership(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_owned()))?
+        .my_pseudonym_hex
+        .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_owned()))?;
+    let heads = deps.departed_slot_heads(community_id, &me).await;
+    apply::write_entry(deps, community_id, GovernanceEntry::MemberLeft { heads }).await?;
     Ok(())
 }
 

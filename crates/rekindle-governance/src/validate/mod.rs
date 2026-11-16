@@ -136,7 +136,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         // causal check in `merge` (`gates::invite_gate`).
         GovernanceEntry::MemberJoined { .. }
         | GovernanceEntry::MemberRecordMoved { .. }
-        | GovernanceEntry::MemberLeft {} => true,
+        | GovernanceEntry::MemberLeft { .. } => true,
 
         // The durable kick: the same authority and hierarchy as a ban,
         // and the creator cannot be removed (MSC4289).

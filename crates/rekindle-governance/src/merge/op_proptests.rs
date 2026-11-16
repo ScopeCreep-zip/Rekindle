@@ -100,7 +100,10 @@ fn every_variant_has_a_power_row() {
     assert_eq!(class_of(&kick(2)), OpClass::Power);
     assert_eq!(class_of(&assign(2, 6)), OpClass::Power);
     assert_eq!(class_of(&joined(1, None)), OpClass::NonPower);
-    assert_eq!(class_of(&GovernanceEntry::MemberLeft {}), OpClass::NonPower);
+    assert_eq!(
+        class_of(&GovernanceEntry::MemberLeft { heads: Vec::new() }),
+        OpClass::NonPower
+    );
     assert_eq!(class_of(&meta("x")), OpClass::NonPower);
 }
 
@@ -232,18 +235,41 @@ fn an_invite_creator_may_revoke_only_its_own_invite() {
 }
 
 /// A departed author's op log stays locatable: its last op (the leave)
-/// is published on that record, and frontiers keep naming its ops.
+/// is published on that record, and frontiers keep naming its ops. The
+/// leave's own slot heads are the ones readers keep its history by (A/B
+/// finding R3-8); a re-join makes it a member again, not departed.
 #[test]
 fn a_departed_author_keeps_its_op_log_record() {
     let mut ops = community();
-    let left = op(&pk(4), 1, &[head(&ops)], 20, GovernanceEntry::MemberLeft {});
+    let heads = vec![rekindle_types::governance::SlotHead {
+        record_key: "VLD0:ch".into(),
+        seq: 6,
+    }];
+    let left = op(
+        &pk(4),
+        1,
+        &[head(&ops)],
+        20,
+        GovernanceEntry::MemberLeft { heads },
+    );
     ops.push(left);
     let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
     assert!(!state.members.contains_key(&pk(4)), "the member left");
+    assert!(state.is_departed(&pk(4)));
     assert_eq!(
         state.op_log_records.get(&pk(4)).map(String::as_str),
         Some("VLD0:m4")
     );
+    assert_eq!(
+        state.departed_heads.get(&pk(4)),
+        Some(&[("VLD0:ch".to_string(), 6)].into_iter().collect()),
+        "the leave's heads are recorded"
+    );
+    let rejoin = op(&pk(4), 2, &[head(&ops)], 30, joined(4, Some("code")));
+    ops.push(rejoin);
+    let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
+    assert!(state.members.contains_key(&pk(4)), "the leaver re-joined");
+    assert!(!state.is_departed(&pk(4)));
 }
 
 #[test]

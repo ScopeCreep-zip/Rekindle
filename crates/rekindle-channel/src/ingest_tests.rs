@@ -332,12 +332,14 @@ fn a_predecessor_arriving_after_its_successor_does_not_drop_it() {
     assert_eq!(verdicts[&100], Verdict::Admit);
 }
 
-/// ANN joined (an op log is known), then departed at second 100.
+/// ANN joined (an op log is known), then departed with its slot in
+/// `VLD0:ch` at seq 4.
 fn departed_state() -> GovernanceState {
     let mut gov = state();
     let ann = PseudonymKey::from_hex_lossy(ANN);
     gov.op_log_records.insert(ann.clone(), "VLD0:m".into());
-    gov.departed_at.insert(ann, 100);
+    gov.departed_heads
+        .insert(ann, [("VLD0:ch".to_string(), 4)].into_iter().collect());
     gov
 }
 
@@ -352,31 +354,14 @@ fn a_departed_authors_live_post_is_dropped() {
     }
 }
 
+/// A departed author's backfilled post is kept by its slot position, not
+/// its own date (A/B finding R3-8), whether the departure is a kick or its
+/// own leave (both record the heads): a value above the recorded seq is
+/// dropped even when the post claims a time before the departure, and one
+/// at or below it stays readable.
 #[test]
-fn a_backfilled_post_dated_before_the_departure_stays_readable() {
+fn a_departed_authors_backfill_is_kept_by_slot_position_not_date() {
     let gov = departed_state();
-    let before = GateItem {
-        backfill: true,
-        ..item("old", 50, 200)
-    };
-    let after = GateItem {
-        backfill: true,
-        ..item("new", 100, 200)
-    };
-    assert_eq!(judge(&gov, &before), Verdict::Admit);
-    assert_eq!(judge(&gov, &after), Verdict::Drop(GateReason::NotMember));
-}
-
-/// A removed author's backfilled post is kept by its slot position, not
-/// its own date (A/B finding R3-8): a value above the seq the removal
-/// recorded is dropped even when the post claims a time before the
-/// removal, and one at or below it stays readable.
-#[test]
-fn a_removed_authors_backfill_is_kept_by_slot_position_not_date() {
-    let mut gov = departed_state();
-    let ann = PseudonymKey::from_hex_lossy(ANN);
-    gov.departed_heads
-        .insert(ann, [("VLD0:ch".to_string(), 4)].into_iter().collect());
     let at = |seq, record_key| GateItem {
         backfill: true,
         slot: Some(SlotPosition { record_key, seq }),
@@ -423,6 +408,10 @@ fn the_author_checks_refuse_a_departed_author_without_a_body() {
     );
     let old = GateItem {
         backfill: true,
+        slot: Some(SlotPosition {
+            record_key: "VLD0:ch",
+            seq: 4,
+        }),
         ..item("", 50, 200)
     };
     assert_eq!(author_refusal(&old, &gov, &BlockList::default()), None);

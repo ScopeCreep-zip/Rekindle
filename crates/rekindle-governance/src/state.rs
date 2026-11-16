@@ -42,16 +42,13 @@ pub struct GovernanceState {
     /// published there and frontiers still name it (plan E3.2, evidence 4.4).
     pub op_log_records: HashMap<PseudonymKey, String>,
 
-    /// The `issued_at` of each member's latest merged departure: its own
-    /// `MemberLeft` or a `MemberRemoved` naming it. A backfilled post dated
-    /// before it stays readable (register FX1, a removed member's posts).
-    pub departed_at: HashMap<PseudonymKey, u64>,
-
-    /// The slot heads of each member whose latest merged departure is a
-    /// `MemberRemoved`: record key -> the seq of its slot value the
-    /// remover held. A backfilled post of the member is kept only from a
-    /// value at or below it (A/B finding R3-8); a member who left of its
-    /// own accord has no entry and is judged by `departed_at`.
+    /// The slot heads of each member's latest merged departure, its own
+    /// `MemberLeft` or a `MemberRemoved` naming it: record key -> the seq
+    /// of its slot value the leaver or the remover held. A backfilled post
+    /// of the member is kept only from a value at or below it, never by
+    /// the post's own date (register FX1, A/B finding R3-8). A re-joined
+    /// member is not departed, so its entry is not read until it departs
+    /// again and that departure replaces it.
     pub departed_heads: HashMap<PseudonymKey, HashMap<String, u32>>,
 
     /// Highest `MemberRemoved` stamp per removed member; a re-join must

@@ -68,7 +68,7 @@ pub(super) fn apply_membership(
                 member.member_record_owner.clone_from(member_record_owner);
             }
         }
-        GovernanceEntry::MemberLeft {} => {
+        GovernanceEntry::MemberLeft { .. } => {
             state.members.remove(author);
             state.pending_members.remove(author);
         }

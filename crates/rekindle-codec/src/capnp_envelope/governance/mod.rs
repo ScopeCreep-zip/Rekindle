@@ -57,7 +57,9 @@ use events::{
     read_thread_created, read_thread_unarchived,
 };
 use expression::{read_attachment_pinned, read_expression_added, read_expression_removed};
-use membership::{read_member_joined, read_member_record_moved, read_member_removed};
+use membership::{
+    read_member_joined, read_member_left, read_member_record_moved, read_member_removed,
+};
 use moderation::{
     read_admin_delete, read_auto_mod_rule, read_ban_entry, read_member_approved,
     read_member_rejected, read_mod_report, read_remove_timeout_entry, read_timeout_entry,
@@ -100,7 +102,7 @@ pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         )),
         Which::MemberJoined(p) => read_member_joined(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRecordMoved(p) => read_member_record_moved(p.map_err(|e| capnp_err(&e))?),
-        Which::MemberLeft(_) => Ok(GovernanceEntry::MemberLeft {}),
+        Which::MemberLeft(p) => read_member_left(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRemoved(p) => read_member_removed(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelCreated(p) => read_channel_created(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelArchived(p) => read_channel_archived(p.map_err(|e| capnp_err(&e))?),
@@ -250,7 +252,15 @@ mod admission_wire_tests {
             member_record_owner: "owner2".into(),
             owner_proof: vec![6; 64],
         });
-        round_trip(&GovernanceEntry::MemberLeft {});
+        for heads in [
+            Vec::new(),
+            vec![rekindle_types::governance::SlotHead {
+                record_key: "VLD0:channel".into(),
+                seq: 3,
+            }],
+        ] {
+            round_trip(&GovernanceEntry::MemberLeft { heads });
+        }
         for reason in [None, Some(String::new()), Some("spam".into())] {
             round_trip(&GovernanceEntry::MemberRemoved {
                 target: pseudo(4),
@@ -261,6 +271,23 @@ mod admission_wire_tests {
                 }],
             });
         }
+    }
+
+    /// A `MemberLeft` that states no slot heads (the list left out, not
+    /// empty) is refused: readers keep a leaver's posts from history only
+    /// by its heads (A/B finding R3-8), and no build wrote the bare shape.
+    #[test]
+    fn a_member_left_without_its_heads_is_refused() {
+        use crate::community_governance_capnp::governance_entry as schema;
+        use crate::error::CodecError;
+        let mut builder = capnp::message::Builder::new_default();
+        let root = builder.init_root::<schema::Builder<'_>>();
+        root.init_member_left();
+        let bytes = crate::capnp_codec::pack(&builder);
+        assert!(matches!(
+            decode_governance_entry(&bytes),
+            Err(CodecError::Deserialization(_))
+        ));
     }
 
     #[test]

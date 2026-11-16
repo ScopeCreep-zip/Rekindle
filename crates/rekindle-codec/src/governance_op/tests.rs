@@ -99,7 +99,7 @@ fn member_bodies() -> Vec<GovernanceEntry> {
             member_record_owner: s("own2"),
             owner_proof: vec![6; 64],
         },
-        E::MemberLeft {},
+        E::MemberLeft { heads: Vec::new() },
         E::MemberRemoved {
             target: pk(3),
             reason: None,
@@ -381,7 +381,10 @@ fn every_body_arm_round_trips() {
 
 #[test]
 fn seq_zero_without_prev_round_trips() {
-    let mut original = op(GovernanceEntry::MemberLeft {}, Vec::new());
+    let mut original = op(
+        GovernanceEntry::MemberLeft { heads: Vec::new() },
+        Vec::new(),
+    );
     original.seq = 0;
     original.prev = None;
     assert_eq!(
@@ -542,7 +545,10 @@ fn an_op_round_trips_through_the_gossip_arm() {
     use crate::capnp_envelope::{decode_community_envelope, encode_community_envelope};
     use crate::community::envelope::{CommunityEnvelope, ControlPayload};
 
-    let original = op(GovernanceEntry::MemberLeft {}, vec![op_ref(3)]);
+    let original = op(
+        GovernanceEntry::MemberLeft { heads: Vec::new() },
+        vec![op_ref(3)],
+    );
     let encoded = encode_op(&original).unwrap();
     let envelope = CommunityEnvelope::Control(ControlPayload::GovernanceOp {
         op: encoded.clone(),

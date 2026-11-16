@@ -40,20 +40,40 @@ pub(super) fn read_member_record_moved(
     })
 }
 
-pub(super) fn read_member_removed(
-    p: schema_pkg::member_removed_payload::Reader<'_>,
+/// A `MemberLeft`: the leaver's own slot heads (A/B finding R3-8). The
+/// list is required: an op that leaves it out states no heads at all, not
+/// an empty set, and is refused (no build ever wrote that shape).
+pub(super) fn read_member_left(
+    p: schema_pkg::member_left_payload::Reader<'_>,
 ) -> Result<GovernanceEntry, CodecError> {
-    let heads = (p.get_heads().map_err(|e| capnp_err(&e))?)
-        .iter()
+    if !p.has_heads() {
+        return Err(CodecError::Deserialization(
+            "memberLeft without its slot heads".into(),
+        ));
+    }
+    Ok(GovernanceEntry::MemberLeft {
+        heads: read_heads(p.get_heads().map_err(|e| capnp_err(&e))?)?,
+    })
+}
+
+fn read_heads(
+    list: capnp::struct_list::Reader<'_, schema_pkg::slot_head_payload::Owned>,
+) -> Result<Vec<SlotHead>, CodecError> {
+    list.iter()
         .map(|h| {
             Ok(SlotHead {
                 record_key: text_to_string(h.get_record_key().map_err(|e| capnp_err(&e))?)?,
                 seq: h.get_seq(),
             })
         })
-        .collect::<Result<Vec<_>, CodecError>>()?;
+        .collect()
+}
+
+pub(super) fn read_member_removed(
+    p: schema_pkg::member_removed_payload::Reader<'_>,
+) -> Result<GovernanceEntry, CodecError> {
     Ok(GovernanceEntry::MemberRemoved {
-        heads,
+        heads: read_heads(p.get_heads().map_err(|e| capnp_err(&e))?)?,
         target: pseudonym_key_from_capnp(p.get_target().map_err(|e| capnp_err(&e))?)?,
         reason: if p.get_has_reason() {
             Some(text_to_string(p.get_reason().map_err(|e| capnp_err(&e))?)?)
@@ -102,7 +122,26 @@ pub(super) fn write_member_removed(
     if let Some(r) = reason {
         p.set_reason(r);
     }
-    let mut list = p.init_heads(u32::try_from(heads.len()).unwrap_or(u32::MAX));
+    write_heads(
+        p.init_heads(u32::try_from(heads.len()).unwrap_or(u32::MAX)),
+        heads,
+    );
+}
+
+pub(super) fn write_member_left(
+    p: schema_pkg::member_left_payload::Builder<'_>,
+    heads: &[SlotHead],
+) {
+    write_heads(
+        p.init_heads(u32::try_from(heads.len()).unwrap_or(u32::MAX)),
+        heads,
+    );
+}
+
+fn write_heads(
+    mut list: capnp::struct_list::Builder<'_, schema_pkg::slot_head_payload::Owned>,
+    heads: &[SlotHead],
+) {
     for (i, head) in (0u32..).zip(heads) {
         let mut h = list.reborrow().get(i);
         h.set_record_key(&head.record_key);

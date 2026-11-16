@@ -375,7 +375,12 @@ mod tests {
         let rebuilding = held.lock().await;
         let writer = std::sync::Arc::clone(&deps);
         let write = tokio::spawn(async move {
-            write_entry(writer.as_ref(), "community", GovernanceEntry::MemberLeft {}).await
+            write_entry(
+                writer.as_ref(),
+                "community",
+                GovernanceEntry::MemberLeft { heads: Vec::new() },
+            )
+            .await
         });
         for _ in 0..50 {
             tokio::task::yield_now().await;

@@ -23,7 +23,9 @@ use super::events::{
 use super::expression::{
     write_attachment_pinned, write_expression_added, write_expression_removed,
 };
-use super::membership::{write_member_joined, write_member_record_moved, write_member_removed};
+use super::membership::{
+    write_member_joined, write_member_left, write_member_record_moved, write_member_removed,
+};
 use super::moderation::{
     write_admin_delete, write_auto_mod_rule, write_ban_entry, write_member_approved,
     write_member_rejected, write_mod_report, write_remove_timeout_entry, write_timeout_entry,
@@ -219,8 +221,8 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             member_record_owner,
             owner_proof,
         ),
-        GovernanceEntry::MemberLeft {} => {
-            b.reborrow().init_member_left();
+        GovernanceEntry::MemberLeft { heads } => {
+            write_member_left(b.reborrow().init_member_left(), heads);
         }
         GovernanceEntry::MemberRemoved {
             target,

@@ -159,7 +159,14 @@ pub enum GovernanceEntry {
     },
 
     /// The author left the community (self-authored).
-    MemberLeft {},
+    ///
+    /// `heads` records, per channel record, the seq of the author's own
+    /// slot value as it held it when it left, signed by the author, the
+    /// one holder of the slot's keys: a departed author's post read from
+    /// history is kept only from a value at or below it, so a leaver
+    /// whose slot stays writable (a restored backup) cannot back-date a
+    /// post into members' history (A/B finding R3-8, as `MemberRemoved`).
+    MemberLeft { heads: Vec<SlotHead> },
 
     /// A durable kick: removes `target` from the roster and drives MEK
     /// rotation (E3.5). Requires `KICK_MEMBERS` and outranking the target.
@@ -518,7 +525,8 @@ pub enum GovernanceEntry {
 }
 
 /// The seq of a member's slot value in one channel record, as a
-/// `MemberRemoved` records it (A/B finding R3-8).
+/// `MemberRemoved` or the member's own `MemberLeft` records it (A/B
+/// finding R3-8).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SlotHead {
     pub record_key: String,

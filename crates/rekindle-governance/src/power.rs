@@ -40,7 +40,7 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         | G::ChannelUpdated { .. }
         | G::MemberJoined { .. }
         | G::MemberRecordMoved { .. }
-        | G::MemberLeft {}
+        | G::MemberLeft { .. }
         | G::CommunityMeta { .. }
         | G::CommunityNotificationDefault { .. }
         | G::MEKGenerationBump { .. }

@@ -472,10 +472,10 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str);
 
     /// The seq of `target_hex`'s slot value in each of the community's
-    /// channel records, as we hold it now: a `MemberRemoved` records them,
-    /// and readers keep the removed member's backfilled posts only at or
-    /// below them (A/B finding R3-8). A record whose slot we cannot read
-    /// is left out.
+    /// channel records, as we hold it now: a `MemberRemoved` records them
+    /// for its target, our own `MemberLeft` for us, and readers keep the
+    /// departed member's backfilled posts only at or below them (A/B
+    /// finding R3-8). A record whose slot we cannot read is left out.
     async fn departed_slot_heads(
         &self,
         community_id: &str,

@@ -39,7 +39,7 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
         for (o, op) in set.ops.iter().enumerate() {
             let self_membership = matches!(
                 op.body(),
-                GovernanceEntry::MemberJoined { .. } | GovernanceEntry::MemberLeft {}
+                GovernanceEntry::MemberJoined { .. } | GovernanceEntry::MemberLeft { .. }
             );
             let approved = round
                 .state

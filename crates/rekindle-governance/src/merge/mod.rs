@@ -145,23 +145,17 @@ fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
         return false;
     }
     apply(op.author(), op.body(), op.stamp(), state);
-    let gone = match op.body() {
-        GovernanceEntry::MemberLeft {} => Some(op.author()),
-        GovernanceEntry::MemberRemoved { target, .. } => Some(target),
+    // Every departure states the member's slot heads: the remover's view
+    // for a kick, the leaver's own for a leave (A/B finding R3-8). The
+    // latest merged departure's heads are the ones readers judge by.
+    let departed = match op.body() {
+        GovernanceEntry::MemberLeft { heads } => Some((op.author(), heads)),
+        GovernanceEntry::MemberRemoved { target, heads, .. } => Some((target, heads)),
         _ => None,
     };
-    if let Some(gone) = gone {
-        state.departed_at.insert(gone.clone(), op.op().issued_at);
-    }
-    match op.body() {
-        GovernanceEntry::MemberRemoved { target, heads, .. } => {
-            let heads = heads.iter().map(|h| (h.record_key.clone(), h.seq));
-            state.departed_heads.insert(target.clone(), heads.collect());
-        }
-        GovernanceEntry::MemberLeft {} => {
-            state.departed_heads.remove(op.author());
-        }
-        _ => {}
+    if let Some((gone, heads)) = departed {
+        let heads = heads.iter().map(|h| (h.record_key.clone(), h.seq));
+        state.departed_heads.insert(gone.clone(), heads.collect());
     }
     let remover_of = match op.body() {
         GovernanceEntry::MemberRemoved { target, .. } => {
@@ -229,7 +223,7 @@ fn apply(
         }
         G::MemberJoined { .. }
         | G::MemberRecordMoved { .. }
-        | G::MemberLeft {}
+        | G::MemberLeft { .. }
         | G::MemberRemoved { .. } => apply_membership(author, entry, stamp, state),
         G::CommunityMeta { .. }
         | G::CommunityNotificationDefault { .. }

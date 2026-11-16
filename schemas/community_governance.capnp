@@ -207,7 +207,13 @@ struct MemberRecordMovedPayload {
     ownerProof           @2 :Data;
 }
 
-struct MemberLeftPayload {}
+struct MemberLeftPayload {
+    # The leaver's own channel slots as it held them when it left: a
+    # backfilled post of the leaver is kept only from a slot value at or
+    # below its recorded seq (A/B finding R3-8). Required: an op without
+    # the list is refused, so every leave states its heads.
+    heads                @0 :List(SlotHeadPayload);
+}
 
 struct MemberRemovedPayload {
     target               @0 :PseudonymKey;

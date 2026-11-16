@@ -1,8 +1,9 @@
-//! The slot heads a removal records (A/B finding R3-8): for each channel
-//! record the history reads, the seq of the removed member's slot value as
-//! we hold it when we remove it. The `MemberRemoved` carries them, signed,
-//! to every reader, so every reader keeps the same of the member's posts
-//! from history: those read from a value at or below its head. A reader
+//! The slot heads a departure records (A/B finding R3-8): for each channel
+//! record the history reads, the seq of the departing member's slot value
+//! as we hold it when we remove it, or of our own when we leave. The
+//! `MemberRemoved` or our `MemberLeft` carries them, signed, to every
+//! reader, so every reader keeps the same of the member's posts from
+//! history: those read from a value at or below its head. A reader
 //! computing the heads itself at merge time would hold a different value
 //! than its peers and keep different posts.
 
@@ -14,7 +15,8 @@ use super::HostGovernance;
 
 impl HostGovernance {
     /// The heads of `target_hex`'s slot in each of `community_id`'s channel
-    /// records, as our local copy holds them. Never a network read: the
+    /// records, as our local copy holds them (our own slot, for a leave, is
+    /// one we wrote every value of). Never a network read: the
     /// removal is authored at the state we hold, and a round trip before it
     /// lets ops that arrive meanwhile into its causal past, so a kick
     /// concurrent with the remover's own removal would no longer be void
