@@ -325,8 +325,8 @@ pub fn import(wsz: &[u8], id: &str) -> Result<Outcome, ImportError> {
     let mut tokens = read.tokens.clone();
     let (settled, changes) = settle(&mut tokens, base, build)?;
     let canonical = match settled {
-        walk::Settled::Passed(c) => c,
-        walk::Settled::Unsettled(u) => {
+        walk::WalkResult::Passed(c) => c,
+        walk::WalkResult::Unsettled(u) => {
             return Ok(Outcome::Draft(Box::new(ImportDraft {
                 package,
                 failures: changes,

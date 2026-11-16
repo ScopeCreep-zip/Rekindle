@@ -188,7 +188,7 @@ pub struct Unsettled {
 
 /// Where [`settle`] stopped.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Settled {
+pub enum WalkResult {
     /// The package passes, with every change made.
     Passed(Canonical),
     /// A refusal the walk cannot settle; the changes before it still stand.
@@ -216,15 +216,15 @@ pub fn settle(
     tokens: &mut BTreeMap<String, TokenValue>,
     base: Base,
     build: impl Fn(&BTreeMap<String, TokenValue>) -> Result<Vec<u8>, ImportError>,
-) -> Result<(Settled, Vec<Change>), ImportError> {
+) -> Result<(WalkResult, Vec<Change>), ImportError> {
     let mut changes = Vec::new();
     loop {
         let err = match validate::run(&build(tokens)?) {
-            Ok(c) => return Ok((Settled::Passed(c), changes)),
+            Ok(c) => return Ok((WalkResult::Passed(c), changes)),
             Err(e) => e,
         };
         let stop = |why: &str| {
-            Settled::Unsettled(Unsettled {
+            WalkResult::Unsettled(Unsettled {
                 error: err.clone(),
                 why: why.to_owned(),
             })
