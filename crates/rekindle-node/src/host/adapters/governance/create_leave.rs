@@ -139,8 +139,16 @@ impl HostGovernance {
         .await
         .map_err(|e| format!("community leave failed: {e}"))?;
         self.send_departure(&id, &left.departure_notice).await;
+        // A follow-up a rebuild scheduled after the loops stopped started
+        // on a fresh community scope: stop it before the ring is released.
+        let late_tasks = self.ctx.community_scopes.lock().remove(&id);
+        if let Some(tasks) = late_tasks {
+            if let Err(stuck) = tasks.shutdown(COMMUNITY_STOP_DEADLINE).await {
+                tracing::warn!(community = %id, %stuck, "community tasks did not stop in time");
+            }
+        }
         self.release_watch_ring(&id).await;
-        let leases = self.ctx.communities.take_leases(&id);
+        let (leases, ring_leases) = self.ctx.communities.take_leases(&id);
         let watch_leases = self
             .ctx
             .subscriptions
@@ -148,7 +156,7 @@ impl HostGovernance {
             .as_ref()
             .map(|subs| subs.teardown_community(&id))
             .unwrap_or_default();
-        for lease in leases.all().chain(watch_leases) {
+        for lease in leases.all().chain(ring_leases).chain(watch_leases) {
             rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
         }
         self.forget_keys(&id);

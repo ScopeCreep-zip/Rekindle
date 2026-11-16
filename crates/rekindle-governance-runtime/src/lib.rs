@@ -47,6 +47,7 @@ pub mod op_log;
 pub mod origin;
 pub mod overflow;
 pub mod ownership;
+pub mod rebuild_flight;
 pub(crate) mod records;
 pub mod roles;
 pub mod roster;

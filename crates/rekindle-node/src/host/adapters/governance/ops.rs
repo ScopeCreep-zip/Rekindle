@@ -441,7 +441,10 @@ impl HostGovernance {
 
     /// Write our `Frontier` (`M`/3): the heads of the op set we hold, which a
     /// joiner's walk and the sweep start from; unchanged heads are not
-    /// written again.
+    /// written again. The one writer of the subkey: `append_own_op` and the
+    /// post-rebuild republish both come here, serialized per community, and
+    /// the heads are read once the lock is held, so the last write carries
+    /// the latest op set's heads.
     async fn write_own_frontier(
         &self,
         community_id: &str,
@@ -449,6 +452,8 @@ impl HostGovernance {
         writer: &str,
     ) -> Result<(), String> {
         use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        let lock = self.ctx.communities.frontier_write_lock(community_id);
+        let _writing = lock.lock().await;
         let (cert, state) = {
             let map = self.ctx.communities.map().read();
             let community = map.get(community_id).ok_or("community not found")?;

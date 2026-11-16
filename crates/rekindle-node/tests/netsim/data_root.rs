@@ -1,7 +1,8 @@
 //! A node's data root, copied and put back (plan E3.2 S7, the equivocation
 //! scenario): what a user does who restores a backup of their profile
 //! directory. The copy is taken while the node is locked, so no database
-//! is open.
+//! is open. Veilid keeps its record store under that root too, so the sim's
+//! local store for the node is copied and put back with it.
 
 use std::fs;
 use std::path::Path;
@@ -36,16 +37,28 @@ fn clear(dir: &Path) {
     }
 }
 
-/// A copy of `node`'s data root (the node must be locked).
-pub fn snapshot(node: &SimNode) -> tempfile::TempDir {
-    let copy = tempfile::tempdir().expect("temp dir");
-    copy_tree(node.root_dir(), copy.path());
-    copy
+/// A backup of one node's profile: its data root and the Veilid local
+/// record store, which Veilid keeps under that root.
+pub struct Backup {
+    dir: tempfile::TempDir,
+    store: rekindle_netsim::LocalStore,
 }
 
-/// Put `snapshot` back as `node`'s data root (the node must be locked):
-/// everything written since is gone.
-pub fn restore(node: &SimNode, snapshot: &tempfile::TempDir) {
+/// A copy of `node`'s data root and local record store (the node must be
+/// locked).
+pub fn snapshot(sim: &rekindle_netsim::Netsim, node: &SimNode) -> Backup {
+    let dir = tempfile::tempdir().expect("temp dir");
+    copy_tree(node.root_dir(), dir.path());
+    Backup {
+        dir,
+        store: sim.local_store(node.index),
+    }
+}
+
+/// Put `backup` back as `node`'s data root and local record store (the
+/// node must be locked): everything written since is gone from both.
+pub fn restore(sim: &rekindle_netsim::Netsim, node: &SimNode, backup: &Backup) {
     clear(node.root_dir());
-    copy_tree(snapshot.path(), node.root_dir());
+    copy_tree(backup.dir.path(), node.root_dir());
+    sim.restore_local_store(node.index, backup.store.clone());
 }

@@ -11,6 +11,12 @@ use rekindle_types::id::PseudonymKey;
 
 use super::HostGovernance;
 
+/// The shortest wait before a post-rebuild follow-up's turn.
+const FOLLOW_UP_DELAY_MIN: std::time::Duration = std::time::Duration::from_secs(2);
+/// The width, in milliseconds, of the jitter added to
+/// [`FOLLOW_UP_DELAY_MIN`]: a turn waits 2 to 10 s.
+const FOLLOW_UP_JITTER_MS: u64 = 8_000;
+
 impl HostGovernance {
     // ---------- Gossip ----------
 
@@ -181,36 +187,74 @@ impl HostGovernance {
     }
 
     /// Project the merged state, save its snapshot for the next login's
-    /// restore, then republish our frontier and move the watch ring.
+    /// restore, then schedule the follow-up that republishes our frontier
+    /// and moves the watch ring.
     ///
     /// The frontier write and the ring move are DHT round trips, so they
-    /// run on the session scope rather than inside the rebuild: a rebuild
-    /// a `BootstrapRequest` triggers (`op_log::receive_op`) is answered
-    /// within the app_call deadline, which a creator holding its own ring
-    /// and frontier ran past. They are serialized per community under the
-    /// ring move lock, and each reads the state once it holds the lock, so
-    /// the last one leaves the latest state's frontier and successors.
+    /// run outside the rebuild: a rebuild a `BootstrapRequest` triggers
+    /// (`op_log::receive_op`) is answered within the app_call deadline.
     pub(super) async fn apply_governance_rebuild_result_impl(
         &self,
         community_id: &str,
         gov_state: GovernanceState,
     ) {
-        use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
-        use tracing::Instrument as _;
         self.set_governance_state_impl(community_id, gov_state);
         self.persist_governance_snapshot(community_id).await;
+        self.schedule_follow_up(community_id);
+    }
+
+    /// The post-rebuild follow-up (S7l): one task per community, on the
+    /// community's scope so leave stops it, waiting a jittered
+    /// [`FOLLOW_UP_DELAY_MIN`] plus up to [`FOLLOW_UP_JITTER_MS`] before each turn
+    /// (the threat model refuses deterministic timing: a write right after
+    /// each merge tells the DHT when this member merged), so the rebuilds
+    /// that finish meanwhile cost one more turn, not one write each.
+    pub(super) fn schedule_follow_up(&self, community_id: &str) {
+        let communities = &self.ctx.communities;
+        if !communities.map().read().contains_key(community_id)
+            || !communities.mark_follow_up(community_id)
+        {
+            return;
+        }
         let host = self.clone();
         let community = community_id.to_owned();
-        self.scope().spawn_or_drop(
+        let span = tracing::Span::current();
+        let started = self.ctx.community_scope(community_id).spawn_with_token(
             "frontier and ring after a rebuild",
-            async move {
-                let lock = host.ctx.communities.ring_move_lock(&community);
-                let _move = lock.lock().await;
-                host.republish_own_frontier(&community).await;
-                host.rearm_watch_ring_locked(&community).await;
-            }
-            .in_current_span(),
+            move |stop| {
+                tracing::Instrument::instrument(
+                    async move {
+                        loop {
+                            let delay = host.follow_up_delay();
+                            if stop
+                                .run_until_cancelled(tokio::time::sleep(delay))
+                                .await
+                                .is_none()
+                                || !host.ctx.communities.take_follow_up(&community)
+                            {
+                                return;
+                            }
+                            host.republish_own_frontier(&community).await;
+                            host.rearm_watch_ring(&community).await;
+                        }
+                    },
+                    span,
+                )
+            },
         );
+        if let Err(closed) = started {
+            tracing::debug!(community_id, error = %closed, "follow-up dropped");
+            communities.stop_follow_up(community_id);
+        }
+    }
+
+    /// [`FOLLOW_UP_DELAY_MIN`] plus a jitter below [`FOLLOW_UP_JITTER_MS`]
+    /// from the RNG port.
+    fn follow_up_delay(&self) -> std::time::Duration {
+        let mut bytes = [0u8; 8];
+        self.ctx.rng.fill(&mut bytes);
+        FOLLOW_UP_DELAY_MIN
+            + std::time::Duration::from_millis(u64::from_le_bytes(bytes) % FOLLOW_UP_JITTER_MS)
     }
 
     /// The community's projected governance into SQLite

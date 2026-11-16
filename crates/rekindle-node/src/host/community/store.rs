@@ -11,22 +11,26 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
+use locks::{CommunityLocks, FollowUp};
 use parking_lot::RwLock;
 use rekindle_governance::state::GovernanceState;
+use rekindle_governance_runtime::rebuild_flight::RebuildFlight;
 use rekindle_records::lease::{CommunityLeases, LeaseId, Merged};
 use rekindle_transport::session::CommunityMembership;
-use rekindle_types::id::PseudonymKey;
 use rekindle_types::id::ThreadId;
 
 use rekindle_db::repo::communities::snapshot::StoredGovernance;
 
-use super::state::{CommunityState, MemberRecord, OwnRemoval};
+use super::state::{CommunityState, MemberRecord};
 use crate::host::adapters::governance::projection::{self, GovernanceProjected};
 
 /// Every joined community, keyed by governance key.
 pub type CommunityMap = Arc<RwLock<HashMap<String, CommunityState>>>;
 
 /// A new, empty [`CommunityMap`].
+mod locks;
+mod removal;
+
 #[must_use]
 pub fn new_map() -> CommunityMap {
     Arc::new(RwLock::new(HashMap::new()))
@@ -47,13 +51,16 @@ pub struct CommunityStore {
     /// One lock per community serializing its governance rebuilds (S7):
     /// an older rebuild finishing last installed over a newer one.
     rebuilds: CommunityLocks,
-}
-
-type CommunityLocks = Arc<parking_lot::Mutex<BTreeMap<String, Arc<tokio::sync::Mutex<()>>>>>;
-
-/// `community_id`'s lock in `locks`, created on first use.
-fn community_lock(locks: &CommunityLocks, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-    Arc::clone(locks.lock().entry(community_id.to_string()).or_default())
+    /// One rebuild single flight per community (S7l): the triggers that
+    /// arrive while a rebuild runs coalesce into one more.
+    rebuild_flights: Arc<parking_lot::Mutex<BTreeMap<String, Arc<RebuildFlight>>>>,
+    /// One lock per community serializing its `Frontier` (`M`/3) writes
+    /// (S7l): `append_own_op` and the post-rebuild republish were two
+    /// unsynchronized writers, so an older head set could land last.
+    frontier_writes: CommunityLocks,
+    /// The post-rebuild follow-up per community (S7l): at most one runs,
+    /// and the rebuilds that finish meanwhile only mark it dirty.
+    follow_ups: Arc<parking_lot::Mutex<BTreeMap<String, FollowUp>>>,
 }
 
 impl CommunityStore {
@@ -65,19 +72,10 @@ impl CommunityStore {
             member_cards: Arc::new(RwLock::new(BTreeMap::new())),
             ring_moves: Arc::default(),
             rebuilds: Arc::default(),
+            rebuild_flights: Arc::default(),
+            frontier_writes: Arc::default(),
+            follow_ups: Arc::default(),
         }
-    }
-
-    /// The lock that serializes `community_id`'s watch-ring moves.
-    #[must_use]
-    pub fn ring_move_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        community_lock(&self.ring_moves, community_id)
-    }
-
-    /// The lock that serializes `community_id`'s governance rebuilds.
-    #[must_use]
-    pub fn rebuild_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
-        community_lock(&self.rebuilds, community_id)
     }
 
     /// The display name on `pseudonym`'s verified card.
@@ -229,12 +227,19 @@ impl CommunityStore {
         .unwrap_or_default()
     }
 
-    /// Take the community's leases, for release (leave).
-    pub fn take_leases(&self, community_id: &str) -> CommunityLeases {
+    /// Take the community's leases, for release (leave): its own and its
+    /// watch ring's, so a ring move that finished after the leave's
+    /// `release_watch_ring` leaks no lease.
+    pub fn take_leases(&self, community_id: &str) -> (CommunityLeases, Vec<LeaseId>) {
         self.map
             .write()
             .get_mut(community_id)
-            .map(|c| std::mem::take(&mut c.leases))
+            .map(|c| {
+                (
+                    std::mem::take(&mut c.leases),
+                    std::mem::take(&mut c.watch_ring).into_values().collect(),
+                )
+            })
             .unwrap_or_default()
     }
 
@@ -568,63 +573,6 @@ impl CommunityStore {
     /// the store holds (insert-only, as the session records it).
     pub fn note_channel_record_key(&self, community_id: &str, channel_id: &str, record_key: &str) {
         self.update(community_id, |c| note_record_key(c, channel_id, record_key));
-    }
-
-    /// Note our own removal (plan E3.2 S9 own removal): whether the
-    /// community was not marked removed before.
-    pub fn note_own_removal(&self, community_id: &str, removal: OwnRemoval) -> bool {
-        self.write(community_id, |c| c.own_removal.replace(removal).is_none())
-    }
-
-    /// Clear our removal mark: the merged state no longer removes us (the
-    /// removal was void, strong removal). Whether it was marked.
-    pub fn clear_own_removal(&self, community_id: &str) -> bool {
-        self.read(community_id, |c| c.own_removal.is_some()) == Some(true)
-            && self.write(community_id, |c| c.own_removal.take().is_some())
-    }
-
-    /// The lock over whether the community's network side is torn down for
-    /// our removal.
-    #[must_use]
-    pub fn removal_gate(
-        &self,
-        community_id: &str,
-    ) -> Option<std::sync::Arc<tokio::sync::Mutex<bool>>> {
-        self.read(community_id, |c| std::sync::Arc::clone(&c.removal_gate))
-    }
-
-    /// Our own removal from the community, if the merge found one.
-    #[must_use]
-    pub fn own_removal(&self, community_id: &str) -> Option<OwnRemoval> {
-        self.read(community_id, |c| c.own_removal.clone()).flatten()
-    }
-
-    /// Whether we take `author`'s traffic for the community (gossip, its
-    /// relay, key transfers): never once we were removed from it, nor from
-    /// a member who departed (plan E3.2 S9, amended 2026-11-15). A relay
-    /// keeps its author's signature, so the author is who is judged. A
-    /// community the store does not hold is judged by its own handlers.
-    #[must_use]
-    pub fn takes_traffic_from(&self, community_id: &str, author: &PseudonymKey) -> bool {
-        self.read(community_id, |c| {
-            c.own_removal.is_none()
-                && !(c.governance_state.as_ref()).is_some_and(|state| state.is_departed(author))
-        })
-        .unwrap_or(true)
-    }
-
-    /// Drop a community — on leave.
-    pub fn remove(&self, community_id: &str) {
-        self.map.write().remove(community_id);
-        self.member_cards
-            .write()
-            .retain(|(community, _), _| community != community_id);
-    }
-
-    /// Drop every community. Called when the session ends.
-    pub fn clear(&self) {
-        self.map.write().clear();
-        self.member_cards.write().clear();
     }
 }
 

@@ -378,6 +378,13 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// one. Held from the op-set read to the install.
     fn rebuild_lock(&self, community_id: &str) -> std::sync::Arc<tokio::sync::Mutex<()>>;
 
+    /// `community_id`'s rebuild generations, which coalesce the triggers
+    /// that arrive while a rebuild runs into one more (plan E3.2 S7l).
+    fn rebuild_flight(
+        &self,
+        community_id: &str,
+    ) -> std::sync::Arc<crate::rebuild_flight::RebuildFlight>;
+
     // ---------- Governance ops (plan E3.2) ----------
 
     /// The community's pinned `GenesisCert`: `communities.genesis_cert`,

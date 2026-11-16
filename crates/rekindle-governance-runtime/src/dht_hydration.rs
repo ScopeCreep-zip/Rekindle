@@ -212,29 +212,16 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
     let community_id = &community.to_owned();
     // Serialized per community from the op-set read to the install (D15:
     // the state is a pure function of a grow-only op set, so the rebuild
-    // that reads last must install last).
+    // that reads last must install last), and coalesced: the triggers that
+    // arrive while one runs cost one more, not one each.
     let lock = deps.rebuild_lock(community_id);
-    let installing = lock.lock().await;
-    let previous_bans = deps
-        .governance_state(community_id)
-        .map(|gov| gov.bans)
-        .unwrap_or_default();
-    let gov_state = match crate::op_log::rebuild_ops(deps, community_id).await {
-        Ok(state) => state,
-        Err(error) => {
-            tracing::warn!(community = %community_id, %error, "governance rebuild failed");
-            return;
-        }
+    let flight = deps.rebuild_flight(community_id);
+    let Some(new_bans) = flight
+        .run(&lock, || install_rebuild(deps, community_id))
+        .await
+    else {
+        return;
     };
-    let new_bans: Vec<String> = gov_state
-        .bans
-        .iter()
-        .filter(|pseudo| !previous_bans.contains(*pseudo))
-        .map(|pseudo| hex::encode(pseudo.0))
-        .collect();
-    deps.apply_governance_rebuild_result(community_id, gov_state)
-        .await;
-    drop(installing);
     deps.emit_event(GovernanceRuntimeEvent::GovernanceRebuilt {
         community_id: community_id.clone(),
     });
@@ -245,6 +232,34 @@ pub async fn rebuild_governance<D: GovernanceRuntimeDeps>(deps: &D, community: &
     for banned_pseudonym in new_bans {
         deps.spawn_text_mek_rotation_for_ban(community_id, &banned_pseudonym);
     }
+}
+
+/// One rebuild under the community's rebuild lock: merge the op set and
+/// install it, returning the pseudonyms it newly bans; `None` on failure.
+async fn install_rebuild<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &String,
+) -> Option<Vec<String>> {
+    let previous_bans = deps
+        .governance_state(community_id)
+        .map(|gov| gov.bans)
+        .unwrap_or_default();
+    let gov_state = match crate::op_log::rebuild_ops(deps, community_id).await {
+        Ok(state) => state,
+        Err(error) => {
+            tracing::warn!(community = %community_id, %error, "governance rebuild failed");
+            return None;
+        }
+    };
+    let new_bans: Vec<String> = gov_state
+        .bans
+        .iter()
+        .filter(|pseudo| !previous_bans.contains(*pseudo))
+        .map(|pseudo| hex::encode(pseudo.0))
+        .collect();
+    deps.apply_governance_rebuild_result(community_id, gov_state)
+        .await;
+    Some(new_bans)
 }
 
 /// Re-open every locally-held write-once community record so veilid rehydrates

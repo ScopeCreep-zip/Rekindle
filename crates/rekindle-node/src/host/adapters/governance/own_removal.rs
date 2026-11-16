@@ -142,7 +142,7 @@ impl HostGovernance {
                 tracing::warn!(community = %community_id, %stuck, "removed community's tasks did not stop in time");
             }
         }
-        let leases = self.ctx.communities.take_leases(community_id);
+        let (leases, ring_leases) = self.ctx.communities.take_leases(community_id);
         let watch_leases = self
             .ctx
             .subscriptions
@@ -151,7 +151,7 @@ impl HostGovernance {
             .map(|subs| subs.teardown_community(community_id))
             .unwrap_or_default();
         if let Ok(transport) = self.transport() {
-            for lease in leases.all().chain(watch_leases) {
+            for lease in leases.all().chain(ring_leases).chain(watch_leases) {
                 rekindle_transport::broadcast::dht_writes::release(&transport, lease).await;
             }
         }

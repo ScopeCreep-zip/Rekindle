@@ -64,7 +64,7 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
     tokio::time::sleep(Duration::from_secs(60)).await;
 
     community.nodes[0].ok(IpcRequest::Lock).await;
-    let backup = crate::data_root::snapshot(&community.nodes[0]);
+    let backup = crate::data_root::snapshot(&community.sim, &community.nodes[0]);
     unlock(&community, 0).await;
     create_role(&community, 0, "alpha").await;
     assert!(
@@ -76,7 +76,7 @@ async fn a_restored_backup_equivocates_and_its_later_ops_are_quarantined() {
     );
 
     community.nodes[0].ok(IpcRequest::Lock).await;
-    crate::data_root::restore(&community.nodes[0], &backup);
+    crate::data_root::restore(&community.sim, &community.nodes[0], &backup);
     community.sim.fault(Fault::Partition {
         a: vec![0],
         b: vec![1, 2],
