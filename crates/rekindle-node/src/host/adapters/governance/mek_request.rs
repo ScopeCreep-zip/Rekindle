@@ -212,6 +212,25 @@ impl HostGovernance {
             .map(|m| m.route_blob)
     }
 
+    /// The key of `scope` at exactly `generation` we hold in memory: the
+    /// key a `mek_transfer` row sealed, under which its ack's
+    /// key-confirmation tag must verify (review S7m part 1).
+    pub(crate) fn held_key(
+        &self,
+        community_id: &str,
+        scope: KeyScope,
+        generation: u64,
+    ) -> Option<MediaEncryptionKey> {
+        rekindle_mek_rotation::ChannelMekCache::get(
+            &crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
+                &self.ctx.mek_cache,
+            )),
+            community_id,
+            scope,
+            generation,
+        )
+    }
+
     /// `app_call` a member's route with `payload` (unframed, sealed).
     pub(crate) async fn call_member(
         &self,

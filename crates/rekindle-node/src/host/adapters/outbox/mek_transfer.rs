@@ -3,9 +3,10 @@
 //! its payload the route the member gave and the `MekTransfer` envelope
 //! already sealed to its pseudonym (never the key itself). Each attempt
 //! `app_call`s the member's current route (the one its presence carries,
-//! else the one it gave), and only its `MekTransferAck` of exactly that
-//! key settles the row `delivered`; anything else is tried again until
-//! the deadline. A member who is no longer a key reader settles its row
+//! else the one it gave), and only its `MekTransferAck` whose
+//! key-confirmation tag verifies under that key (review S7m part 1)
+//! settles the row `delivered`; anything else is tried again until the
+//! deadline. A member who is no longer a key reader settles its row
 //! unsent, and the member's departure, or ours, discards the stream.
 
 use std::sync::Arc;
@@ -41,12 +42,21 @@ fn decode(payload: &[u8]) -> Option<(&[u8], &[u8])> {
     Some((payload.get(4..4 + len)?, payload.get(4 + len..)?))
 }
 
-/// The scope and generation the sealed envelope carries.
-fn sealed_key(sealed: &[u8]) -> Option<(KeyScope, u64)> {
+/// What the sealed envelope names: its key's scope and generation and
+/// its sender (our pseudonym, hex).
+struct SealedKey {
+    scope: KeyScope,
+    generation: u64,
+    sender_hex: String,
+}
+
+fn sealed_key(sealed: &[u8]) -> Option<SealedKey> {
     match rekindle_codec::capnp_envelope::try_decode_community_envelope(sealed) {
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(p)))) => {
-            Some((KeyScope::from_wire(p.channel_id.as_deref())?, p.generation))
-        }
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(p)))) => Some(SealedKey {
+            scope: KeyScope::from_wire(p.channel_id.as_deref())?,
+            generation: p.generation,
+            sender_hex: p.sender_pseudonym,
+        }),
         _ => None,
     }
 }
@@ -66,22 +76,30 @@ impl StreamSender for MekTransferSender {
         let Some((route, sealed)) = decode(&row.payload) else {
             return AttemptOutcome::Wedged("malformed key transfer row".into());
         };
-        let Some((key_scope, generation)) = sealed_key(sealed) else {
+        let Some(sealed_key) = sealed_key(sealed) else {
             return AttemptOutcome::Wedged("the row holds no MekTransfer".into());
         };
+        let generation = sealed_key.generation;
         if !self.0.member_reads_keys(community, member) {
             return AttemptOutcome::Superseded(DEPARTED.to_owned());
         }
+        // The ack's tag is checked under our own copy of the sealed key.
+        let Some(key) = self.0.held_key(community, sealed_key.scope, generation) else {
+            return AttemptOutcome::Wedged("the sealed key is no longer held".into());
+        };
+        let expected = rekindle_mek_rotation::ExpectedAck {
+            community_id: community,
+            inviter_hex: &sealed_key.sender_hex,
+            joiner_hex: member,
+            scope: sealed_key.scope,
+            mek: &key,
+        };
         let route = self
             .0
             .member_route(community, member)
             .unwrap_or_else(|| route.to_vec());
         match self.0.call_member(&route, sealed.to_vec()).await {
-            Ok(reply)
-                if rekindle_mek_rotation::is_mek_transfer_ack(
-                    community, member, key_scope, generation, &reply,
-                ) =>
-            {
+            Ok(reply) if rekindle_mek_rotation::is_mek_transfer_ack(&expected, &reply) => {
                 tracing::info!(
                     community,
                     member,

@@ -257,6 +257,10 @@ struct MekTransferPayload @0xea0011000000a000 {
     generation           @3 :UInt64;
     senderPseudonym      @4 :Text;
     wrappedMek           @5 :Data;
+    # Random per push, kept across its retries; the ack echoes it inside
+    # its key-confirmation tag (review S7m part 1). It correlates, it does
+    # not settle.
+    transferId           @6 :Data;
 }
 
 # P1.3 — requester → responder ack confirming successful MekTransfer
@@ -272,6 +276,12 @@ struct MekTransferAckPayload @0xea0043000000a000 {
     channelId            @2 :Text;
     generation           @3 :UInt64;
     requesterPseudonym   @4 :Text;
+    # The transfer's id, echoed.
+    transferId           @5 :Data;
+    # The key-confirmation MAC (rekindle_secrets::mek_ack, label
+    # rekindle-mek-ack-v1): proves the requester unwrapped exactly the key
+    # of this generation (RFC 9420 §12.4.3 confirmation_tag). Required.
+    ackTag               @6 :Data;
 }
 
 # P4.3 — joiner → admins request to expand the community's Plate Gate

@@ -28,10 +28,11 @@ use rekindle_types::channel_keys::KeyScope;
 /// adapter, which caches it under the convergence rule and stores it in the
 /// vault (so the next unlock reloads it) and tells the shell.
 ///
-/// Returns `CallResponse::Ok(pseudonym_hex)` so the transport layer can
-/// name us in the `MekTransferAck` the rotator is waiting on; anything
-/// else makes the rotator treat the delivery as failed, which is the
-/// correct signal when we could not unwrap.
+/// Returns `CallResponse::Ok(ack)`, the encoded `MekTransferAck` whose
+/// key-confirmation tag is keyed by the key we unwrapped (review S7m part
+/// 1), which the transport layer replies with verbatim; anything else makes
+/// the rotator treat the delivery as failed, which is the correct signal
+/// when we could not unwrap.
 pub(crate) fn handle_mek_transfer(
     transfer: &MekTransferPayload,
     session: &RwLock<Option<rekindle_transport::Session>>,
@@ -115,7 +116,16 @@ pub(crate) fn handle_mek_transfer(
                 generation,
                 "MEK accepted from rotator"
             );
-            CallResponse::Ok(our_pseudonym_hex.into_bytes())
+            match rekindle_mek_rotation::encode_mek_transfer_ack(transfer, &mek, &our_pseudonym_hex)
+            {
+                Ok(ack) => CallResponse::Ok(ack),
+                Err(e) => {
+                    tracing::warn!(community = %governance_key, error = %e, "MekTransferAck not encoded");
+                    CallResponse::Rejected {
+                        reason: "ack not encoded".into(),
+                    }
+                }
+            }
         }
         Err(e) => {
             // Expected whenever the transfer was not actually wrapped

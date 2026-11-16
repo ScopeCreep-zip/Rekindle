@@ -24,6 +24,7 @@
 //! Parameterised over `MekDistributeDeps` so the src-tauri shell can
 //! supply concrete AppState / Db / AppHandle / Veilid wiring.
 
+pub mod ack;
 pub mod cache;
 pub mod convergence;
 pub mod deps;
@@ -36,11 +37,10 @@ pub(crate) mod pseudonym_hex;
 pub mod receive;
 pub mod rotate;
 
+pub use ack::{encode_mek_transfer_ack, is_mek_transfer_ack, ExpectedAck};
 pub use cache::InMemoryMekCache;
 pub use deps::{ChannelMekCache, MekDistributeDeps, MekPersist, RotationRecipient};
-pub use distribute::{
-    distribute_mek, is_mek_transfer_ack, seal_mek_transfer, wait_for_rotation_slot,
-};
+pub use distribute::{distribute_mek, seal_mek_transfer, wait_for_rotation_slot, TRANSFER_ID_LEN};
 pub use election::{
     cascade_candidates, cascade_delay, select_mek_responder, CASCADE_TIMEOUT_SECS, MAX_CASCADES,
 };

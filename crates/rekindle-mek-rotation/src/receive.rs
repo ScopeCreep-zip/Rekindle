@@ -54,7 +54,7 @@ pub fn handle_incoming_mek_transfer<D: MekDistributeDeps + ?Sized>(
     scope: KeyScope,
     sender_pseudonym: &str,
     wrapped_mek: &[u8],
-) -> Result<u64, MekRotationError> {
+) -> Result<MediaEncryptionKey, MekRotationError> {
     let secret = deps
         .identity_secret()
         .ok_or_else(|| MekRotationError::InvalidInput("identity secret unavailable".to_string()))?;
@@ -64,5 +64,5 @@ pub fn handle_incoming_mek_transfer<D: MekDistributeDeps + ?Sized>(
         deps.persist_received_mek(community_id, scope, &mek);
         deps.emit_rotation_received(community_id, scope, generation);
     }
-    Ok(generation)
+    Ok(mek)
 }

@@ -107,6 +107,7 @@ mod tests {
                 generation: 7,
                 sender_pseudonym: "aa".repeat(32),
                 wrapped_mek: vec![1, 2, 3, 4],
+                transfer_id: vec![9; 16],
             },
         )))
         .expect("encode")

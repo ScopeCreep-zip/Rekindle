@@ -332,6 +332,13 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   `FILE_CACHE_ATTACHMENT` prefixes) under a key
   HKDF-derived from the identity secret (`FILE_CACHE_NAMES`), so names
   are never ids and are unlinkable across identities (plan E3.0a).
+- **Key-confirmation tag of a `MekTransferAck`** (as RFC 9420 §12.4.3's
+  `confirmation_tag`): BLAKE3-keyed under `derive_key("rekindle-mek-ack-v1",
+  MEK_G)` over community ‖ scope ‖ G ‖ transfer id ‖ inviter ‖ joiner (each
+  variable field length-prefixed; `rekindle_secrets::mek_ack`). The sender
+  settles a key transfer only when the tag verifies under its own copy of the
+  key, so only a party that unwrapped exactly that key can confirm it; no
+  signature, so the joiner stays deniable.
 - **Vault key split**: `derive_key` of the Argon2id master under
   `rekindle-vault-{sqlcipher,entry,app-db}-v1` (§9).
 - **Governance device keys** (ADR 0022, Proposed; plan E3.2 S7d-keys):

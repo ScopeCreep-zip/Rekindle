@@ -294,6 +294,7 @@ async fn an_outsider_cannot_inject_a_community_key() {
             generation: 99,
             sender_pseudonym: hex::encode(forger.verifying_key().to_bytes()),
             wrapped_mek: wrapped,
+            transfer_id: vec![1; 16],
         }),
     ))
     .unwrap();

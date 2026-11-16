@@ -57,6 +57,7 @@ pub(super) fn write_mek_transfer(
         generation,
         sender_pseudonym,
         wrapped_mek,
+        transfer_id,
     }) = payload
     else {
         unreachable!("write_mek_transfer: variant mismatch")
@@ -69,6 +70,7 @@ pub(super) fn write_mek_transfer(
     p.set_generation(*generation);
     p.set_sender_pseudonym(sender_pseudonym);
     p.set_wrapped_mek(wrapped_mek);
+    p.set_transfer_id(transfer_id);
 }
 
 pub(super) fn write_mek_transfer_ack(
@@ -80,6 +82,8 @@ pub(super) fn write_mek_transfer_ack(
         channel_id,
         generation,
         requester_pseudonym,
+        transfer_id,
+        ack_tag,
     }) = payload
     else {
         unreachable!("write_mek_transfer_ack: variant mismatch")
@@ -91,6 +95,8 @@ pub(super) fn write_mek_transfer_ack(
     }
     p.set_generation(*generation);
     p.set_requester_pseudonym(requester_pseudonym);
+    p.set_transfer_id(transfer_id);
+    p.set_ack_tag(ack_tag);
 }
 
 pub(super) fn write_admin_keypair_grant(
@@ -195,6 +201,7 @@ pub(super) fn read_mek_transfer(
         generation: p.get_generation(),
         sender_pseudonym: text_to_string(p.get_sender_pseudonym().map_err(|e| capnp_err(&e))?)?,
         wrapped_mek: p.get_wrapped_mek().map_err(|e| capnp_err(&e))?.to_vec(),
+        transfer_id: p.get_transfer_id().map_err(|e| capnp_err(&e))?.to_vec(),
     }))
 }
 
@@ -214,6 +221,8 @@ pub(super) fn read_mek_transfer_ack(
         requester_pseudonym: text_to_string(
             p.get_requester_pseudonym().map_err(|e| capnp_err(&e))?,
         )?,
+        transfer_id: p.get_transfer_id().map_err(|e| capnp_err(&e))?.to_vec(),
+        ack_tag: p.get_ack_tag().map_err(|e| capnp_err(&e))?.to_vec(),
     }))
 }
 

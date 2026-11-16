@@ -7,9 +7,7 @@ use crate::state_helpers;
 
 use rekindle_transport::operations::direct::NAK;
 
-use rekindle_codec::community::envelope::{
-    CommunityEnvelope, ControlPayload, MekTransferAckPayload, MekTransferPayload,
-};
+use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 pub async fn handle_app_call(
     app_handle: &AppHandle,
@@ -114,64 +112,45 @@ async fn community_call(
                 NAK.to_vec()
             })
         }
-        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(MekTransferPayload {
-            community_id,
-            channel_id,
-            generation,
-            sender_pseudonym,
-            wrapped_mek,
-        })))) => {
-            // P1.3 — reply with a Cap'n-Proto-encoded `MekTransferAck`
-            // instead of a bare `b"ACK"`. Confirms BOTH (1) the unwrap
-            // succeeded at the app layer (a network-layer success
-            // alone leaves the responder uncertain whether decryption
-            // worked) and (2) the generation we ack'd matches what
-            // they sent (catches misrouted app_calls).
-            //
-            // On unwrap failure we still reply `b"ACK"` so the
-            // responder's app_call await resolves; the caller's
-            // tracing surfaces the error path.
-            let received = rekindle_types::channel_keys::KeyScope::from_wire(channel_id.as_deref())
-                .ok_or_else(|| format!("MekTransfer names no key scope: {channel_id:?}"))
-                .and_then(|scope| {
-                    crate::services::community::handle_incoming_mek_transfer(
-                        app_handle,
-                        state,
-                        &community_id,
-                        scope,
-                        &sender_pseudonym,
-                        &wrapped_mek,
-                    )
-                });
-            match received {
-                Ok(_) => {
-                    let requester_pseudonym = {
-                        let communities = state.communities.read();
-                        communities
-                            .get(&community_id)
-                            .and_then(|cs| cs.my_pseudonym_key.clone())
-                            .unwrap_or_default()
-                    };
-                    let ack = CommunityEnvelope::Control(ControlPayload::MekTransferAck(
-                        MekTransferAckPayload {
-                            community_id: community_id.clone(),
-                            channel_id: channel_id.clone(),
-                            generation,
-                            requester_pseudonym,
-                        },
-                    ));
-                    rekindle_codec::capnp_envelope::encode_community_envelope(&ack).unwrap_or_else(
-                        |e| {
-                            tracing::warn!(
-                                call_id = %call_id,
-                                error = %e,
-                                "failed to encode MekTransferAck — falling back to bare ACK"
-                            );
-                            b"ACK".to_vec()
-                        },
-                    )
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
+            // P1.3, review S7m part 1: reply with a `MekTransferAck` whose
+            // key-confirmation tag is keyed by the key we unwrapped, so the
+            // sender settles the transfer only on proof of the unwrap. On an
+            // unwrap failure we reply a bare `ACK` (the sender retries).
+            let received =
+                rekindle_types::channel_keys::KeyScope::from_wire(transfer.channel_id.as_deref())
+                    .ok_or_else(|| {
+                        format!("MekTransfer names no key scope: {:?}", transfer.channel_id)
+                    })
+                    .and_then(|scope| {
+                        crate::services::community::handle_incoming_mek_transfer(
+                            app_handle,
+                            state,
+                            &transfer.community_id,
+                            scope,
+                            &transfer.sender_pseudonym,
+                            &transfer.wrapped_mek,
+                        )
+                    });
+            let requester_pseudonym = {
+                let communities = state.communities.read();
+                communities
+                    .get(&transfer.community_id)
+                    .and_then(|cs| cs.my_pseudonym_key.clone())
+            };
+            match (received, requester_pseudonym) {
+                (Ok(mek), Some(requester)) => rekindle_mek_rotation::encode_mek_transfer_ack(
+                    &transfer, &mek, &requester,
+                )
+                .unwrap_or_else(|e| {
+                    tracing::warn!(call_id = %call_id, error = %e, "MekTransferAck not encoded");
+                    b"ACK".to_vec()
+                }),
+                (Ok(_), None) => {
+                    tracing::warn!(call_id = %call_id, "MEK transfer for a community without our pseudonym");
+                    b"ACK".to_vec()
                 }
-                Err(error) => {
+                (Err(error), _) => {
                     tracing::warn!(
                         call_id = %call_id,
                         error = %error,

@@ -351,25 +351,18 @@ async fn dispatch_app_call<H: InboundHandler>(
 /// Hand a bare MEK transfer to the handler and reply in the same
 /// dialect it arrived in.
 ///
-/// The reply is a Cap'n Proto `MekTransferAck` rather than a serialized
-/// `CallResponse`, because the sender is a desktop rotator awaiting
-/// exactly that: `distribute_mek` inspects the reply for an ack whose
-/// generation matches what it sent. A `CallResponse` there reads as a
-/// delivery failure and makes the rotator log a mismatch on a transfer
-/// that actually succeeded.
+/// The reply is the Cap'n Proto `MekTransferAck` the handler built (only
+/// the handler holds the unwrapped key that keys its confirmation tag,
+/// review S7m part 1), not a serialized `CallResponse`, because the sender
+/// awaits exactly that ack and settles the transfer only on a tag that
+/// verifies.
 async fn dispatch_bare_mek_transfer<H: InboundHandler>(
     handler: &Arc<H>,
     messages: &dyn AppMessagePort,
     call_id: AppCallId,
     transfer: rekindle_codec::community::envelope::MekTransferPayload,
 ) {
-    use rekindle_codec::community::envelope::{
-        CommunityEnvelope, ControlPayload, MekTransferAckPayload,
-    };
-
     let community_id = transfer.community_id.clone();
-    let channel_id = transfer.channel_id.clone();
-    let generation = transfer.generation;
     // The sender is authenticated by the ECDH wrap, not by an envelope
     // signature, so it is passed through as the claimed sender and the
     // handler's unwrap is what actually decides.
@@ -384,25 +377,8 @@ async fn dispatch_bare_mek_transfer<H: InboundHandler>(
     )
     .await
     {
-        // `Ok(bytes)` carries our own pseudonym hex — the handler is the
-        // only layer that knows which pseudonym this community maps to,
-        // and the rotator traces it to confirm *who* acked.
-        Ok(crate::payload::rpc::CallResponse::Ok(requester)) => {
-            let ack =
-                CommunityEnvelope::Control(ControlPayload::MekTransferAck(MekTransferAckPayload {
-                    community_id,
-                    channel_id,
-                    generation,
-                    requester_pseudonym: String::from_utf8_lossy(&requester).into_owned(),
-                }));
-            rekindle_codec::capnp_envelope::encode_community_envelope(&ack).unwrap_or_else(|e| {
-                // The rotator is waiting on this reply. A bare NAK is a
-                // worse answer than nothing, but it at least resolves
-                // their `app_call` instead of leaving it to time out.
-                warn!(error = %e, "encoding MekTransferAck failed");
-                NAK.to_vec()
-            })
-        }
+        // `Ok(bytes)` is the encoded, tagged `MekTransferAck`.
+        Ok(crate::payload::rpc::CallResponse::Ok(ack)) => ack,
         Ok(other) => {
             warn!(
                 community = %community_id,

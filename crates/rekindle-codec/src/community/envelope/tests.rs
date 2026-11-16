@@ -307,6 +307,8 @@ fn mek_transfer_ack_capnp_roundtrip() {
         channel_id: Some("ch_42".into()),
         generation: 17,
         requester_pseudonym: "deadbeef".repeat(4), // 32-hex-char pseudonym
+        transfer_id: vec![5; 16],
+        ack_tag: vec![6; 32],
     });
     let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();
@@ -316,7 +318,11 @@ fn mek_transfer_ack_capnp_roundtrip() {
             channel_id,
             generation,
             requester_pseudonym,
+            transfer_id,
+            ack_tag,
         })) => {
+            assert_eq!(transfer_id, vec![5; 16]);
+            assert_eq!(ack_tag, vec![6; 32]);
             assert_eq!(community_id, "veilid:abc");
             assert_eq!(channel_id.as_deref(), Some("ch_42"));
             assert_eq!(generation, 17);
@@ -332,6 +338,8 @@ fn mek_transfer_ack_capnp_roundtrip() {
         channel_id: None,
         generation: 99,
         requester_pseudonym: "cafebabe".repeat(4),
+        transfer_id: vec![],
+        ack_tag: vec![],
     });
     let bytes = encode_community_envelope(&CommunityEnvelope::Control(payload_none)).unwrap();
     let back = crate::capnp_envelope::decode_community_envelope(&bytes).unwrap();

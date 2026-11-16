@@ -151,6 +151,11 @@ labels! {
     GOV_GENESIS = "rekindle-gov-genesis-v1";
     /// HKDF info: channel MEK wrapping key.
     MEK_WRAP = "rekindle-mek-wrap-v1";
+    /// BLAKE3 `derive_key` context: a `MekTransferAck`'s key-confirmation
+    /// tag, keyed by the confirmed MEK, over community ‖ scope ‖ generation
+    /// ‖ transfer id ‖ inviter ‖ joiner (RFC 9420 §12.4.3 `confirmation_tag`;
+    /// review S7m part 1, research batch 11 (2)).
+    MEK_ACK = "rekindle-mek-ack-v1";
     /// Ed25519 signature prefix: the daemon's framed community RPC
     /// (`SignedPayload`), bound to the recipient's identity key and the
     /// frame `TypeId`. v3 dropped `seq` and the correlation id with the

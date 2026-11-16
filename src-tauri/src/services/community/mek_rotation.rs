@@ -302,7 +302,7 @@ pub fn handle_incoming_mek_transfer(
     scope: rekindle_types::channel_keys::KeyScope,
     sender_pseudonym: &str,
     wrapped_mek: &[u8],
-) -> Result<u64, String> {
+) -> Result<rekindle_crypto::group::media_key::MediaEncryptionKey, String> {
     let pool = state.db.current()?;
     let adapter =
         crate::services::mek_adapter::MekAdapter::new(Arc::clone(state), app_handle.clone(), pool);
