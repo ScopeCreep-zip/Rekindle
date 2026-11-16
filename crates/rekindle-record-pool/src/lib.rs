@@ -141,6 +141,8 @@ pub struct RecordPool {
     /// Inspect seqs no forced get confirmed, per open record (`refetch.rs`,
     /// threat model D8).
     unconfirmed: Mutex<refetch::Unconfirmed>,
+    /// Watched records Veilid has not accepted a watch on (`watch.rs`).
+    unarmed: Mutex<std::collections::HashSet<String>>,
     /// Durable writes that missed, held for re-push (`durable.rs`).
     held: Mutex<durable::HeldWrites>,
     held_changed: tokio::sync::Notify,
@@ -214,6 +216,7 @@ impl RecordPool {
             key_locks: Mutex::new(HashMap::new()),
             rearm: Mutex::new(HashMap::new()),
             unconfirmed: Mutex::new(refetch::Unconfirmed::default()),
+            unarmed: Mutex::new(std::collections::HashSet::new()),
             held: Mutex::new(durable::HeldWrites::new()),
             held_changed: tokio::sync::Notify::new(),
             settled: tokio::sync::broadcast::channel(256).0,
@@ -514,6 +517,7 @@ impl RecordPool {
         }
         self.rearm.lock().remove(name);
         self.unconfirmed.lock().forget(name);
+        self.unarmed.lock().remove(name);
         let key = name.to_string();
         if let Err(e) = self
             .run("dht close", move |backend| async move {
@@ -543,6 +547,7 @@ impl RecordPool {
         self.table.lock().clear();
         self.rearm.lock().clear();
         self.unconfirmed.lock().clear();
+        self.unarmed.lock().clear();
         let mut keys: Vec<String> = self.records.lock().drain().map(|(key, _)| key).collect();
         // One close order on every run.
         keys.sort_unstable();

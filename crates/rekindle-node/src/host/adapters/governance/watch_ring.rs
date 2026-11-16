@@ -4,11 +4,11 @@
 //! (`rekindle_governance_runtime::watch_ring`); a newly assigned member
 //! record is opened read-only (which starts warming, V12) and watched on
 //! every subkey with `count = None`, and one no longer assigned is
-//! released. A record that did not open or whose watch was not set is left
-//! out of the ring, so the next move tries it again; the anti-entropy tick
-//! makes one move per community, so a failure waits at most one sweep
-//! period. The record pool is the one watch-death owner (D4): it re-arms
-//! a held lease's watch on `count == 0`. A ring record's ValueChange is the
+//! released. A record that did not open is left out of the ring, so the
+//! next move tries it again; the anti-entropy tick makes one move per
+//! community, so a failed open waits at most one sweep period. The record
+//! pool is the one watch retry layer (D4): it re-arms a held lease's watch
+//! on `count == 0` and one Veilid refused. A ring record's ValueChange is the
 //! governance change trigger ([`HostGovernance::on_watched_change`]).
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -112,15 +112,10 @@ impl HostGovernance {
                     continue;
                 }
             };
-            // A watch that never armed sends no `count == 0` change, so the
-            // pool's re-arm (D4) never sees it, and the lease's table entry
-            // would make a second `watch_all` a no-op: the lease is released
-            // and the record stays out of `watch_ring`, so the next move (a
-            // rebuild or the sweep's tick) opens and watches it again.
+            // A watch Veilid refused stays wanted: the pool records it as
+            // set only once Veilid accepts it and re-arms it itself (D4).
             if let Err(e) = dht_writes::watch_all_leased(&node, lease).await {
-                tracing::debug!(community_id, record, error = %e, "ring watch not set");
-                dht_writes::release(&node, lease).await;
-                continue;
+                tracing::debug!(community_id, record, error = %e, "ring watch not yet set");
             }
             opened.insert(record.clone(), lease);
         }

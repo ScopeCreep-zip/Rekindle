@@ -33,7 +33,8 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
             if stop.is_cancelled() {
                 return;
             }
-            // A ring record that failed to open or to watch is tried again.
+            // A ring record that failed to open is opened again (the pool
+            // re-arms a refused watch itself).
             host.rearm_watch_ring(&community_id).await;
             let frontiers = seen.entry(community_id.clone()).or_default();
             match anti_entropy::sweep(&host, &community_id, kind, frontiers).await {

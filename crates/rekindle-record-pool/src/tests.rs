@@ -23,6 +23,8 @@ struct TestDht {
     watches: AtomicU32,
     opens: AtomicU32,
     open_failures: u32,
+    /// Refuse the first this many watch requests.
+    watch_failures: u32,
 }
 
 #[async_trait::async_trait]
@@ -113,7 +115,12 @@ impl DhtBackend for TestDht {
         _expiration_us: Option<u64>,
         _count: Option<u32>,
     ) -> Result<bool, DhtCallError> {
-        self.watches.fetch_add(1, Ordering::SeqCst);
+        if self.watches.fetch_add(1, Ordering::SeqCst) < self.watch_failures {
+            return Err(DhtCallError {
+                kind: DhtErrorKind::TryAgain,
+                message: "no node accepted the watch".into(),
+            });
+        }
         Ok(true)
     }
 
@@ -257,4 +264,33 @@ async fn owner_of_names_the_opened_descriptor_s_owner_while_the_lease_is_held() 
         pool.owner_of(lease),
         Err(rekindle_records::port::PortError::LeaseNotHeld(_))
     ));
+}
+
+/// A watch Veilid refused was never set: the pool re-arms it with the
+/// dead-watch backoff (one second, then two), and a second `watch_all`
+/// applies it again rather than finding it unchanged.
+#[tokio::test(start_paused = true)]
+async fn a_refused_watch_is_not_recorded_as_set_and_the_pool_re_arms_it() {
+    let backend = Arc::new(TestDht {
+        watch_failures: 2,
+        ..TestDht::default()
+    });
+    let pool = pool_on(Arc::clone(&backend));
+    let lease = pool
+        .acquire(LEASED_RECORD, None, OpenIntent::Check)
+        .await
+        .expect("open");
+    pool.watch_all(lease).await.expect_err("refused");
+    pool.watch_all(lease)
+        .await
+        .expect_err("refused again, not unchanged");
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 2);
+    pass(Duration::from_secs(5)).await;
+    assert_eq!(backend.watches.load(Ordering::SeqCst), 3);
+    pass(Duration::from_secs(120)).await;
+    assert_eq!(
+        backend.watches.load(Ordering::SeqCst),
+        3,
+        "armed, so no more re-arms"
+    );
 }

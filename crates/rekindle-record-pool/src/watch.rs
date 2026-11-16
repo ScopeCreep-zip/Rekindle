@@ -30,8 +30,43 @@ impl RecordPool {
     /// The lease is not held, or Veilid refused the watch request.
     pub async fn watch(&self, id: LeaseId, subkeys: SubkeySet) -> Result<(), PortError> {
         let (key, _) = self.lookup(id)?;
-        let plan = self.table.lock().set_watch(id, subkeys);
-        self.apply_watch(&key, plan).await
+        let plan = {
+            let mut table = self.table.lock();
+            match table.set_watch(id, subkeys) {
+                // The table already wants this watch, but Veilid never
+                // accepted it: apply it again rather than call it set.
+                WatchPlan::Unchanged if self.unarmed.lock().contains(&key) => {
+                    let wanted = table.watched(&key);
+                    if wanted.is_empty() {
+                        WatchPlan::Unchanged
+                    } else {
+                        WatchPlan::Watch(wanted)
+                    }
+                }
+                plan => plan,
+            }
+        };
+        self.arm(&key, plan).await
+    }
+
+    /// Apply `plan` and record whether Veilid holds the watch: a record is
+    /// armed only once `watch_dht_values` accepted it, and one it refused is
+    /// re-armed with the dead-watch backoff, so a watch that never armed is
+    /// retried here, the one retry layer (D4).
+    async fn arm(&self, key: &str, plan: WatchPlan) -> Result<(), PortError> {
+        let watching = matches!(plan, WatchPlan::Watch(_));
+        let applied = self.apply_watch(key, plan).await;
+        match (&applied, watching) {
+            (Ok(()), _) => {
+                self.unarmed.lock().remove(key);
+            }
+            (Err(_), true) => {
+                self.unarmed.lock().insert(key.to_string());
+                self.schedule_rearm(key);
+            }
+            (Err(_), false) => {}
+        }
+        applied
     }
 
     /// Watch every subkey of the leased record (its schema's subkey count).
@@ -86,15 +121,25 @@ impl RecordPool {
         if !report.held || !report.watch_died || watched.is_empty() {
             return report;
         }
-        // Checked before the re-arm is counted or logged; the key came from
-        // the backend's own text, so this holds.
-        let Ok(key) = self.backend.check_key(&change.key) else {
-            return report;
+        self.unarmed.lock().insert(name.clone());
+        tracing::info!(record = %name, "DHT watch died; re-arming");
+        self.schedule_rearm(&name);
+        report
+    }
+
+    /// Re-arm `name`'s watch after the backoff its deaths and refusals
+    /// earned, while a lease still watches it; a refused re-arm schedules
+    /// the next one.
+    fn schedule_rearm(&self, name: &str) {
+        // Checked before the re-arm is counted; the key came from the
+        // backend's own text, so this holds.
+        let Ok(key) = self.backend.check_key(name) else {
+            return;
         };
         let delay = {
             let now = Instant::now();
             let mut rearm = self.rearm.lock();
-            let state = rearm.entry(name.clone()).or_insert(Rearm {
+            let state = rearm.entry(name.to_string()).or_insert(Rearm {
                 deaths: 0,
                 last: now,
             });
@@ -107,8 +152,10 @@ impl RecordPool {
                 .saturating_mul(1 << state.deaths.saturating_sub(1).min(6))
                 .min(REARM_MAX)
         };
-        tracing::info!(record = %name, delay_ms = delay.as_millis(), "DHT watch died; re-arming");
-        let pool = Arc::clone(self);
+        tracing::debug!(record = %name, delay_ms = delay.as_millis(), "DHT watch re-arm scheduled");
+        let Some(pool) = self.this.upgrade() else {
+            return;
+        };
         self.scope
             .spawn_with_token_or_drop("dht watch re-arm", move |stop| async move {
                 // A drain (logout) stops it as it stops the re-push: the
@@ -118,22 +165,25 @@ impl RecordPool {
                     () = pool.repush_stop.cancelled() => return,
                     () = tokio::time::sleep(delay) => {}
                 }
-                // Still wanted? The lease may have gone during the backoff.
+                // Still wanted and still unarmed? The lease may have gone,
+                // or an earlier re-arm or a new `watch` armed it.
                 let subkeys = pool.table.lock().watched(&key);
-                if subkeys.is_empty() {
+                if subkeys.is_empty() || !pool.unarmed.lock().contains(&key) {
                     return;
                 }
                 match pool.apply_watch(&key, WatchPlan::Watch(subkeys)).await {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        pool.unarmed.lock().remove(&key);
+                    }
                     // Drained while the re-arm ran: the session ended.
                     Err(PortError::Closed) => {
                         tracing::debug!(record = %key, "session ended during a watch re-arm");
                     }
                     Err(e) => {
                         tracing::warn!(record = %key, error = %e, "re-arming DHT watch failed");
+                        pool.schedule_rearm(&key);
                     }
                 }
             });
-        report
     }
 }
