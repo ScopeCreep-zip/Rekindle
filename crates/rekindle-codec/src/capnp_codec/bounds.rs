@@ -163,6 +163,13 @@ pub const MEMBER_CARD_BOUND: Bound = Bound {
     max_words: 4 * 1024,
 };
 
+/// `HeadAdvanced` (`member_record.capnp`, the ring hint): its 512-byte
+/// gossip cap, and 64 words.
+pub const HEAD_ADVANCED_BOUND: Bound = Bound {
+    max_bytes: crate::member_record::head_advanced::HEAD_ADVANCED_MAX_BYTES,
+    max_words: 64,
+};
+
 /// `HistoryAd` and its sealed ranges (`member_record.capnp`): the ad's
 /// 4 KiB cap, and 1 Ki words.
 pub const HISTORY_AD_BOUND: Bound = Bound {

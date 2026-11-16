@@ -113,6 +113,10 @@ labels! {
     /// Ed25519 signature prefix: a presence beat (`M`/1, plan E3.2), by
     /// the pseudonym.
     PRESENCE_BEAT = "rekindle-presence-beat-v1";
+    /// Ed25519 signature prefix: a ring watcher's `HeadAdvanced` hint
+    /// (plan E3.2 S7), by the relaying member's pseudonym, over
+    /// `community ‖ author ‖ memberRecord ‖ subkey ‖ seq`.
+    HEAD_ADVANCED = "rekindle-head-advanced-v1";
     /// Ed25519 signature prefix: a history ad (`M`/5, plan E3.2), by the
     /// pseudonym, over `community ‖ memberRecord ‖ mekGeneration ‖ sealed`.
     HISTORY_AD = "rekindle-history-ad-v1";

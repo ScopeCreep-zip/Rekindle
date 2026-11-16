@@ -248,6 +248,16 @@ impl InboundHandler for DaemonHandler {
             return;
         }
 
+        // A ring watcher's hint (plan E3.2 S7, `headAdvanced @76`).
+        if let CommunityEnvelope::Control(ControlPayload::HeadAdvanced { ref hint }) = envelope {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .on_head_advanced(community_id, sender_pseudonym, hint)
+                    .await;
+            }
+            return;
+        }
+
         // A game server added or removed (plan E3.1 H1): stored when the
         // Host's adapter accepts it.
         if let CommunityEnvelope::Control(
@@ -487,7 +497,11 @@ impl InboundHandler for DaemonHandler {
             .and_then(std::sync::Weak::upgrade)
             .map(crate::host::adapters::governance::HostGovernance::new);
         let rebuilt = match governance {
-            Some(governance) => governance.on_watched_change(record_key).await,
+            Some(governance) => {
+                governance
+                    .on_watched_change(record_key, &changed_subkeys)
+                    .await
+            }
             None => false,
         };
         // A channel record: each changed slot's posts pass the Host's

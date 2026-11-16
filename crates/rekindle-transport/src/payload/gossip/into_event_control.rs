@@ -337,6 +337,7 @@ pub fn control_into_event(
         // A governance op reaches the Host's op store, whose rebuild emits
         // what changed (plan E3.2).
         | ControlPayload::GovernanceOp { .. }
+        | ControlPayload::HeadAdvanced { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

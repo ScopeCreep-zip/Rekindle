@@ -19,7 +19,10 @@ use super::HostGovernance;
 impl HostGovernance {
     /// Handle a watched record's change when it is a ring member record:
     /// `true` when it was one (rebuilt), `false` for any other record.
-    pub async fn on_watched_change(&self, record: &str) -> bool {
+    /// `subkeys` are the ones the change names; an empty list is a
+    /// change we did not observe through our own watch, which is never
+    /// relayed.
+    pub async fn on_watched_change(&self, record: &str, subkeys: &[u32]) -> bool {
         let Some(community) = self.community_of_ring_record(record) else {
             return false;
         };
@@ -29,10 +32,17 @@ impl HostGovernance {
             return true;
         }
         tracing::info!(%community, record, "ring member record changed — rebuilding that community");
-        self.catch_up_record(&community, record).await;
-        rekindle_governance_runtime::rebuild_governance(self, &community).await;
-        self.open_new_channel_records(&community).await;
+        self.refresh_member_record(&community, record).await;
+        self.relay_head_advanced(&community, record, subkeys).await;
         true
+    }
+
+    /// Read `record`'s frontier, rebuild `community`, and borrow the
+    /// channel records the new state names (a ring change or a hint).
+    pub(super) async fn refresh_member_record(&self, community: &str, record: &str) {
+        self.catch_up_record(community, record).await;
+        rekindle_governance_runtime::rebuild_governance(self, community).await;
+        self.open_new_channel_records(community).await;
     }
 
     /// Store the heads `record`'s frontier names that we do not hold.

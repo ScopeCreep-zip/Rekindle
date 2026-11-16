@@ -132,6 +132,8 @@ mod tests {
             my_segment_index: None,
             segments: Vec::new(),
             watch_ring: std::collections::BTreeMap::new(),
+            ring_beat_status: std::collections::BTreeMap::new(),
+            head_hints: std::collections::BTreeMap::new(),
             governance_key: Some("gov-key".to_string()),
             governance_state: gov,
             own_removal: None,

@@ -123,7 +123,10 @@ pub(crate) async fn inspect_record(
             .await
             .map_err(|e| format!("get_dht_value failed during inspect sync: {e}"))?;
         if !crate::services::sync_communities::handle_community_record_change(
-            state, &pool, record_key,
+            state,
+            &pool,
+            record_key,
+            &[],
         )
         .await?
         {

@@ -209,6 +209,7 @@ pub fn encode_control_payload(
             write_voice_media_key(b.reborrow().init_voice_media_key(), payload);
         }
         CP::GovernanceOp { op } => b.set_governance_op(op),
+        CP::HeadAdvanced { hint } => b.set_head_advanced(hint),
         CP::VoiceMediaKeyAck { .. } => {
             write_voice_media_key_ack(b.reborrow().init_voice_media_key_ack(), payload);
         }
@@ -322,6 +323,9 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::VoiceJoinConfirmed(p) => read_voice_join_confirmed(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceMediaKey(p) => read_voice_media_key(p.map_err(|e| capnp_err(&e))?),
         Which::VoiceMediaKeyAck(p) => read_voice_media_key_ack(p.map_err(|e| capnp_err(&e))?),
+        Which::HeadAdvanced(hint) => Ok(ControlPayload::HeadAdvanced {
+            hint: hint.map_err(|e| capnp_err(&e))?.to_vec(),
+        }),
         Which::GovernanceOp(op) => Ok(ControlPayload::GovernanceOp {
             op: op.map_err(|e| capnp_err(&e))?.to_vec(),
         }),

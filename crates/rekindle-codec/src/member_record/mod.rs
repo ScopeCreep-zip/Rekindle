@@ -12,6 +12,7 @@
 
 pub mod beat;
 pub mod card;
+pub mod head_advanced;
 pub mod history_ad;
 #[cfg(test)]
 mod tests;

@@ -20,6 +20,7 @@ pub(crate) async fn handle_community_record_change(
     state: &Arc<AppState>,
     pool: &Db,
     dht_key: &str,
+    subkeys: &[u32],
 ) -> Result<bool, rekindle_db::NotLoggedIn> {
     enum ChangedRecord {
         Registry {
@@ -32,7 +33,7 @@ pub(crate) async fn handle_community_record_change(
     }
 
     if state_helpers::host_governance(state)?
-        .on_watched_change(dht_key)
+        .on_watched_change(dht_key, subkeys)
         .await
     {
         return Ok(true);

@@ -65,6 +65,7 @@ pub(crate) fn handle_gossip_control_payloads(
                             &state,
                             &db_pool,
                             &governance_key,
+                            &[],
                         )
                         .await
                     {

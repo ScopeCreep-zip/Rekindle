@@ -399,6 +399,8 @@ pub enum ControlPayload {
     /// (`rekindle_codec::governance_op::encode_op`) a member published to
     /// its op log. A receiver verifies it as it would a fetched op.
     GovernanceOp { op: Vec<u8> },
+    /// A ring watcher's `HeadAdvanced` hint, encoded (plan E3.2 S7).
+    HeadAdvanced { hint: Vec<u8> },
     /// Reply to a [`Self::VoiceMediaKey`] call: `recipient` opened and
     /// installed `sender`'s key at `key_index` (plan C7.22).
     VoiceMediaKeyAck {

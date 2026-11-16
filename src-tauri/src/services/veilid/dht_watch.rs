@@ -45,8 +45,10 @@ pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::Vei
     // were never opened (V19).
     let record_pool = crate::state_helpers::record_pool(state).ok();
 
-    match crate::services::sync_communities::handle_community_record_change(state, &pool, &key)
-        .await
+    match crate::services::sync_communities::handle_community_record_change(
+        state, &pool, &key, &subkeys,
+    )
+    .await
     {
         Ok(true) => {
             tracing::debug!(key = %key, "handled community DHT change via sync service");

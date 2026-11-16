@@ -74,6 +74,7 @@ mod publication;
 mod registry;
 pub(crate) mod search;
 
+mod head_advanced;
 pub mod moderation;
 pub mod role_ops;
 mod roles;

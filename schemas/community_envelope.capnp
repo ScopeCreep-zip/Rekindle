@@ -806,5 +806,8 @@ struct ControlPayload @0xeaffffff00000001 {
         governanceOp             @74 :Data;
         # The inviter's answer to a bootstrapRequest (plan E3.2).
         bootstrapResponseV2      @75 :BootstrapResponseV2Payload;
+        # A ring watcher's hint (plan E3.2 S7): an encoded `HeadAdvanced`
+        # (member_record.capnp), signed by the relaying member.
+        headAdvanced             @76 :Data;
     }
 }

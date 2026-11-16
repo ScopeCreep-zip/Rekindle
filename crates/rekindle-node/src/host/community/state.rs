@@ -84,6 +84,14 @@ pub struct CommunityState {
     /// each held read-only and watched, by record key.
     #[serde(skip)]
     pub watch_ring: std::collections::BTreeMap<String, rekindle_records::lease::LeaseId>,
+    /// The last beat status seen on each ring record, so only status
+    /// transitions are relayed as `HeadAdvanced` (plan E3.2 S7).
+    #[serde(skip)]
+    pub ring_beat_status:
+        std::collections::BTreeMap<String, rekindle_types::presence::SessionStatus>,
+    /// The newest `HeadAdvanced` seq acted on per (member record, subkey).
+    #[serde(skip)]
+    pub head_hints: std::collections::BTreeMap<(String, u32), u64>,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.
