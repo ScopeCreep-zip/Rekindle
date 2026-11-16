@@ -9,6 +9,7 @@ mod images;
 mod manifest;
 mod output;
 mod package;
+mod region_states;
 mod regions;
 mod sounds;
 mod tokens;

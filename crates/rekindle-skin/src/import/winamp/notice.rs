@@ -53,7 +53,11 @@ pub fn render(id: &str, read: &Read, source: &str, made: &[Change]) -> String {
                 "absent ({} not in the archive)",
                 sprite.sheet.to_uppercase()
             ),
-            (true, true) => format!("region {}", sprite.region),
+            (true, true) => format!(
+                "region {} ({})",
+                sprite.region,
+                super::sprites::state(sprite).key()
+            ),
             (true, false) => format!(
                 "decoded; not mapped: no registry region {} yet",
                 sprite.region

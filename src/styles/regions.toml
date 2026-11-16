@@ -564,3 +564,25 @@
 '.buddy-voice-icon' = { dims = ["body"], graphic = true }
 '.emoji-picker-tab' = { dims = ["body"], graphic = true }
 '.loading-button-spinner' = { dims = [".form-btn-primary", ".form-btn-secondary"], graphic = true }
+
+# Region slots (plan E7.7.1 "Regions"; `rekindle-skin::regions`): each
+# painted slot and the app elements it paints. `cargo xtask
+# gen-skin-registry` writes `src/styles/generated/regions.css` from this
+# table: each element and its state selectors (`:hover`, `:active`,
+# `:disabled` / `[aria-disabled="true"]`, `:focus-visible`, the inactive
+# window) read the slot's custom property, which a skin sets in
+# `@layer skin`. Painted slots carry no text; the frame, titlebar and status
+# bar (text, `textBacking`) get their selectors with E7.7.2's apply step.
+[regions]
+'titlebar.btn.minimize' = { elements = [".xfire-titlebar-btn-minimize"] }
+'titlebar.btn.maximize' = { elements = [".xfire-titlebar-btn-maximize"] }
+'titlebar.btn.close' = { elements = [".xfire-titlebar-btn-close"] }
+'scrollbar.track' = { elements = ["::-webkit-scrollbar-track:vertical"] }
+'scrollbar.thumb' = { elements = ["::-webkit-scrollbar-thumb:vertical"] }
+'scrollbar.track-horizontal' = { elements = ["::-webkit-scrollbar-track:horizontal"] }
+'scrollbar.thumb-horizontal' = { elements = ["::-webkit-scrollbar-thumb:horizontal"] }
+'scrollbar.button-up' = { elements = ["::-webkit-scrollbar-button:vertical:decrement"] }
+'scrollbar.button-down' = { elements = ["::-webkit-scrollbar-button:vertical:increment"] }
+'scrollbar.button-left' = { elements = ["::-webkit-scrollbar-button:horizontal:decrement"] }
+'scrollbar.button-right' = { elements = ["::-webkit-scrollbar-button:horizontal:increment"] }
+'scrollbar.corner' = { elements = ["::-webkit-scrollbar-corner"] }

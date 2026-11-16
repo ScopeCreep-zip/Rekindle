@@ -34,7 +34,10 @@ pub use qt::{mumble, teamspeak};
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::{SkinBase, SkinError, TokenValue};
+use rekindle_image::{encode_png, DynamicImage, RgbaImage};
+use rekindle_types::dto::skin::{
+    RegionFit, RegionSpec, RegionState, SkinBase, SkinError, TokenValue,
+};
 
 use crate::colour;
 use crate::output::Canonical;
@@ -109,6 +112,63 @@ pub struct ImportDraft {
 pub enum Outcome {
     Passed(Imported),
     Draft(Box<ImportDraft>),
+}
+
+/// One painted control slot an importer fills (titlebar buttons,
+/// scrollbar parts): its fit and its images by state, normal included.
+#[derive(Debug, Clone)]
+pub struct Control {
+    pub region: &'static str,
+    pub fit: RegionFit,
+    pub images: BTreeMap<RegionState, RgbaImage>,
+}
+
+impl Control {
+    /// The package path of the image for `state`.
+    #[must_use]
+    pub fn path(&self, state: RegionState) -> String {
+        match state {
+            RegionState::Normal => format!("assets/{}.png", self.region),
+            s => format!("assets/{}--{}.png", self.region, s.key()),
+        }
+    }
+
+    /// The manifest region.
+    #[must_use]
+    pub fn spec(&self) -> RegionSpec {
+        RegionSpec {
+            image: self.path(RegionState::Normal),
+            fit: self.fit,
+            states: self
+                .images
+                .keys()
+                .filter(|s| **s != RegionState::Normal)
+                .map(|s| (*s, self.path(*s)))
+                .collect(),
+            tint: None,
+            mask: None,
+            text_backing: None,
+        }
+    }
+
+    /// Every image as a PNG at its package path.
+    ///
+    /// # Errors
+    /// [`ImportError::Image`] when an image does not encode.
+    pub fn files(&self) -> Result<Vec<(String, Vec<u8>)>, ImportError> {
+        self.images
+            .iter()
+            .map(|(state, img)| {
+                let path = self.path(*state);
+                encode_png(&DynamicImage::ImageRgba8(img.clone()))
+                    .map(|png| (path.clone(), png))
+                    .map_err(|e| ImportError::Image {
+                        file: path,
+                        detail: e.to_string(),
+                    })
+            })
+            .collect()
+    }
 }
 
 /// The base an imported palette is validated on: light when `bg.panel` is

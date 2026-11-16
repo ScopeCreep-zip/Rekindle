@@ -25,6 +25,7 @@
 
 pub mod bitmap;
 pub mod colours;
+pub mod controls;
 mod notice;
 
 use std::collections::BTreeMap;
@@ -37,7 +38,7 @@ use rekindle_types::dto::skin::{
 
 use super::tree::{self, Node};
 use super::walk::{self, settle};
-use super::{tree_hash, ImportError, Imported, Tree};
+use super::{tree_hash, Control, ImportError, Imported, Tree};
 use crate::colour;
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
@@ -71,6 +72,9 @@ pub struct Read {
     pub tokens: BTreeMap<String, TokenValue>,
     pub frame: Option<(RgbaImage, rekindle_types::dto::skin::Insets)>,
     pub dropped: BTreeMap<&'static str, usize>,
+    /// The painted control slots ([`controls`]) and what they kept.
+    pub controls: Vec<Control>,
+    pub tally: controls::StateTally,
 }
 
 fn file<'t>(tree: &'t Tree, name: &str) -> Result<&'t [u8], ImportError> {
@@ -229,6 +233,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
             components.push(xml(tree, f)?);
         }
     }
+    let (controls, tally) = controls::read(tree, theme, &colours, &components)?;
     let info_xml = match tree.get("Info.xml") {
         Some(bytes) => Some(tree::parse("Info.xml", bytes)?),
         None => None,
@@ -254,6 +259,8 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         tokens,
         frame,
         dropped: count_dropped(tree, &components),
+        controls,
+        tally,
     })
 }
 
@@ -295,6 +302,9 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
                 text_backing: None,
             },
         );
+    }
+    for c in &read.controls {
+        regions.insert(c.region.to_owned(), c.spec());
     }
     SkinManifest {
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
@@ -353,8 +363,12 @@ pub fn import(tree: &Tree, id: &str) -> Result<Imported, ImportError> {
         )?),
         None => None,
     };
+    let mut control_files = BTreeMap::new();
+    for c in &read.controls {
+        control_files.extend(c.files()?);
+    }
     let build = |tokens: &BTreeMap<String, TokenValue>| {
-        let mut files = BTreeMap::new();
+        let mut files = control_files.clone();
         files.insert(MANIFEST.to_owned(), manifest_json.clone());
         files.insert(
             TOKENS.to_owned(),

@@ -59,6 +59,7 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
             i.left
         );
     }
+    controls(&mut s, read);
     let _ = writeln!(s, "\nDropped");
     for (what, n) in &read.dropped {
         let _ = writeln!(s, "  {what}: {n}");
@@ -73,4 +74,44 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
         changes,
     );
     s
+}
+
+/// The painted control slots and the state image sets kept and dropped.
+fn controls(s: &mut String, read: &Read) {
+    if read.frame.is_none() && !read.controls.is_empty() {
+        let _ = writeln!(s, "\nRegions");
+    }
+    for c in &read.controls {
+        let states: Vec<&str> = c.images.keys().map(|k| k.key()).collect();
+        let (w, h) = c
+            .images
+            .values()
+            .next()
+            .map_or((0, 0), rekindle_image::RgbaImage::dimensions);
+        let _ = writeln!(
+            s,
+            "  {}: {} from {}, {w}x{h} px, {:?}; states {}",
+            c.region,
+            if c.region.starts_with("titlebar") {
+                "the title button"
+            } else {
+                "the scrollbar"
+            },
+            super::controls::SOURCE,
+            c.fit,
+            states.join(", ")
+        );
+    }
+    let t = &read.tally;
+    let _ = writeln!(
+        s,
+        "\nState images (Hover -> hover, Down -> down, Disabled -> disabled)\n  kept {} of {} images",
+        t.images.0, t.images.1
+    );
+    for (state, (kept, of)) in &t.sets {
+        let _ = writeln!(s, "  {state} sets: kept {kept} of {of}");
+    }
+    for (component, state, why) in &t.dropped {
+        let _ = writeln!(s, "  dropped {component} {state}: {why}");
+    }
 }

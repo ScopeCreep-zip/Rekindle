@@ -220,6 +220,24 @@ pub enum RegionState {
     Muted,
 }
 
+impl RegionState {
+    /// The manifest key (camelCase, as serialised).
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Normal => "normal",
+            Self::Hover => "hover",
+            Self::Down => "down",
+            Self::Disabled => "disabled",
+            Self::Focused => "focused",
+            Self::WindowInactive => "windowInactive",
+            Self::Ringing => "ringing",
+            Self::Talking => "talking",
+            Self::Muted => "muted",
+        }
+    }
+}
+
 /// Why a skin package was refused: the entry and the rule. Nothing is
 /// partly applied.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
@@ -399,6 +417,17 @@ pub enum SkinRule {
     UnknownRegion { region: String },
     #[error("{region} carries text and needs a textBacking colour token")]
     MissingTextBacking { region: String },
+    #[error("{region}: the slot has no {state} state")]
+    UnsupportedRegionState { region: String, state: String },
+    #[error("{region}: the {state} image is {width} × {height}, the normal image {normal_width} × {normal_height}; every state shares the normal image's size and nine-slice")]
+    RegionStateSize {
+        region: String,
+        state: String,
+        width: u32,
+        height: u32,
+        normal_width: u32,
+        normal_height: u32,
+    },
     #[error("{region}: nine-slice insets {top}/{right}/{bottom}/{left} leave no middle in a {width} × {height} image")]
     NineSliceInsets {
         region: String,

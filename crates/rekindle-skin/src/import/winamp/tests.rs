@@ -216,7 +216,6 @@ fn a_minimal_wsz_imports_and_validates() {
         Some(&walk::color([0x20, 0x20, 0x40]))
     );
     assert!(i.notice.contains("MySkin/REGION.TXT") && i.notice.contains("MySkin/normal.cur"));
-    assert!(i.notice.contains("no registry region scrollbar.thumb yet"));
     // Deterministic.
     let Outcome::Passed(j) = import(&skin([0xe7; 3]), "w").unwrap() else {
         panic!()
@@ -358,4 +357,43 @@ fn pledit_font_is_checked_against_the_allow_list() {
         "{}",
         i.notice
     );
+}
+
+#[test]
+fn titlebar_and_genex_controls_fill_the_painted_slots() {
+    let Outcome::Passed(p) = import(&skin([0xe7; 3]), "w").unwrap() else {
+        panic!("passes")
+    };
+    assert!(p.notice.contains("no registry region button.secondary yet"));
+    assert!(p
+        .notice
+        .contains("MAIN_CLOSE_BUTTON_DEPRESSED -> region titlebar.btn.close (down)"));
+    let m: rekindle_types::dto::skin::SkinManifest = serde_json::from_slice(
+        &rkskin_entries(&p.canonical.bytes)
+            .into_iter()
+            .find(|(n, _)| n == "manifest.json")
+            .unwrap()
+            .1,
+    )
+    .unwrap();
+    let close = &m.regions["titlebar.btn.close"];
+    assert_eq!(close.image, "assets/titlebar.btn.close.png");
+    assert_eq!(
+        close
+            .states
+            .get(&rekindle_types::dto::skin::RegionState::Down)
+            .map(String::as_str),
+        Some("assets/titlebar.btn.close--down.png")
+    );
+    for id in [
+        "titlebar.btn.minimize",
+        "scrollbar.button-up",
+        "scrollbar.button-down",
+        "scrollbar.button-left",
+        "scrollbar.button-right",
+        "scrollbar.thumb",
+        "scrollbar.thumb-horizontal",
+    ] {
+        assert_eq!(m.regions[id].states.len(), 1, "{id}");
+    }
 }

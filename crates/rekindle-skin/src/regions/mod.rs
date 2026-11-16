@@ -31,7 +31,9 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::{decode_limited, DecodeLimits, Decoded, Frames, ImageKind, RgbaImage};
-use rekindle_types::dto::skin::{Insets, RegionFit, SkinError, SkinManifest, SkinRule, TokenValue};
+use rekindle_types::dto::skin::{
+    Insets, RegionFit, RegionSpec, SkinError, SkinManifest, SkinRule, TokenValue,
+};
 
 use crate::access::scaled;
 use crate::colour;
@@ -40,110 +42,10 @@ use crate::limits::{MAX_IMAGE_FRAMES, MAX_IMAGE_PIXELS, MAX_IMAGE_SIDE};
 use crate::package::MANIFEST;
 use crate::registry::{TokenEntry, TokenType};
 
-/// One app window's sizes, CSS px: minimum and maximum inner size.
-#[derive(Debug, Clone, Copy)]
-pub struct WindowSize {
-    pub kind: &'static str,
-    pub min: (u32, u32),
-    pub max: (u32, u32),
-}
+pub mod css;
+mod slots;
 
-const UNBOUNDED: (u32, u32) = (MAX_IMAGE_SIDE, MAX_IMAGE_SIDE);
-
-/// Every window (`src-tauri/src/windows/mod.rs:54-72`, `:107`).
-pub const WINDOWS: [WindowSize; 7] = [
-    window("login", (340, 440), UNBOUNDED),
-    window("buddy-list", (300, 500), (400, 900)),
-    window("settings", (420, 450), UNBOUNDED),
-    window("chat", (380, 400), UNBOUNDED),
-    window("community", (750, 500), UNBOUNDED),
-    window("call", (360, 420), UNBOUNDED),
-    window("profile", (340, 420), UNBOUNDED),
-];
-
-const fn window(kind: &'static str, min: (u32, u32), max: (u32, u32)) -> WindowSize {
-    WindowSize { kind, min, max }
-}
-
-/// A box side: the window's, or a dimension token's value.
-#[derive(Debug, Clone, Copy)]
-pub enum Extent {
-    Window,
-    Token(&'static str),
-}
-
-/// A text role drawn on a region.
-#[derive(Debug, Clone, Copy)]
-pub struct RegionText {
-    /// The registry colour token of the text.
-    pub token: &'static str,
-    /// WCAG large text (≥ 18 pt, or ≥ 14 pt bold): 3:1 instead of 4.5:1.
-    pub large: bool,
-}
-
-/// A region slot.
-#[derive(Debug, Clone, Copy)]
-pub struct RegionSlot {
-    pub id: &'static str,
-    pub width: Extent,
-    pub height: Extent,
-    /// The text drawn on it; empty when it carries none.
-    pub text: &'static [RegionText],
-}
-
-/// The region slots. Every slot appears in every window.
-pub const SLOTS: [RegionSlot; 4] = [
-    // The whole window behind its content.
-    slot("window.frame", Extent::Window, Extent::Window, &[]),
-    // `.xfire-titlebar` (`00-rules.css:98`), its title `.xfire-titlebar-text`
-    // (`00-primitives.css:102`, 11 px semibold).
-    slot(
-        "titlebar",
-        Extent::Window,
-        Extent::Token("size.chrome-height"),
-        &[normal("titlebar.text")],
-    ),
-    slot(
-        "titlebar.buttons",
-        Extent::Token("size.chrome-height"),
-        Extent::Token("size.chrome-height"),
-        &[],
-    ),
-    // `.status-bar` (`01-form-primitives.css:62`, 11 px).
-    slot(
-        "statusbar",
-        Extent::Window,
-        Extent::Token("size.chrome-height"),
-        &[normal("text.status")],
-    ),
-];
-
-const fn normal(token: &'static str) -> RegionText {
-    RegionText {
-        token,
-        large: false,
-    }
-}
-
-const fn slot(
-    id: &'static str,
-    width: Extent,
-    height: Extent,
-    text: &'static [RegionText],
-) -> RegionSlot {
-    RegionSlot {
-        id,
-        width,
-        height,
-        text,
-    }
-}
-
-/// The slot `id`.
-#[must_use]
-pub fn slot_of(id: &str) -> Option<&'static RegionSlot> {
-    SLOTS.iter().find(|s| s.id == id)
-}
+pub use slots::{slot_of, Extent, RegionSlot, RegionText, WindowSize, SLOTS, WINDOWS};
 
 /// How one axis of a region image fills its box.
 #[derive(Debug, Clone, Copy)]
@@ -164,7 +66,13 @@ fn nearest(x: u32, out: u32, src: u32) -> u32 {
 fn sampled(axis: Axis, out: u32, src: u32) -> Vec<u32> {
     let mut v: Vec<u32> = match axis {
         Axis::Stretch => (0..out).map(|x| nearest(x, out, src)).collect(),
-        Axis::Tile => (0..out.min(src)).collect(),
+        // CSS Backgrounds 3 `border-image-repeat: repeat` centres the
+        // tiles in the area, so a box narrower than the image shows its
+        // middle.
+        Axis::Tile if out >= src => (0..src).collect(),
+        Axis::Tile => (0..out)
+            .map(|x| u32::try_from((u64::from(x) * 2 + 1 + u64::from(src - out)) / 2).unwrap_or(0))
+            .collect(),
         Axis::Slice(a, b) => {
             let mid_src = src - a - b;
             let mut v = Vec::new();
@@ -351,6 +259,7 @@ pub fn validate(
             )?),
             None => None,
         };
+        state_sizes(id, slot, region, images)?;
         let paths = std::iter::once(&region.image).chain(region.states.values());
         for path in paths {
             let Some(bytes) = images.get(path) else {
@@ -392,6 +301,50 @@ pub fn validate(
                 };
                 ctx.check()
                     .map_err(|rule| SkinError::new(path.as_str(), rule))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Every state image of `region` is one `slot` has and is the size of the
+/// normal image (so the region's nine-slice fits it the same way).
+fn state_sizes(
+    id: &str,
+    slot: &RegionSlot,
+    region: &RegionSpec,
+    images: &BTreeMap<String, Vec<u8>>,
+) -> Result<(), SkinError> {
+    let size = |path: &String| -> Result<Option<(u32, u32)>, SkinError> {
+        match images.get(path) {
+            Some(bytes) => Ok(frames(path, bytes)?.first().map(RgbaImage::dimensions)),
+            None => Ok(None),
+        }
+    };
+    let normal = size(&region.image)?;
+    for (state, path) in &region.states {
+        if !slot.has(*state) {
+            return Err(SkinError::new(
+                MANIFEST,
+                SkinRule::UnsupportedRegionState {
+                    region: id.to_owned(),
+                    state: state.key().to_owned(),
+                },
+            ));
+        }
+        if let (Some((nw, nh)), Some((w, h))) = (normal, size(path)?) {
+            if (w, h) != (nw, nh) {
+                return Err(SkinError::new(
+                    path.as_str(),
+                    SkinRule::RegionStateSize {
+                        region: id.to_owned(),
+                        state: state.key().to_owned(),
+                        width: w,
+                        height: h,
+                        normal_width: nw,
+                        normal_height: nh,
+                    },
+                ));
             }
         }
     }
@@ -466,7 +419,9 @@ mod tests {
     fn axes_sample_as_drawn() {
         assert_eq!(sampled(Axis::Stretch, 2, 4), vec![1, 3]);
         assert_eq!(sampled(Axis::Stretch, 8, 4), vec![0, 1, 2, 3]);
-        assert_eq!(sampled(Axis::Tile, 3, 10), vec![0, 1, 2]);
+        // Centred tiles: a 3 px box over 10 px shows the middle.
+        assert_eq!(sampled(Axis::Tile, 3, 10), vec![4, 5, 6]);
+        assert_eq!(sampled(Axis::Tile, 12, 10).len(), 10);
         // Insets 2 + 2 of 10, a 20 px box: every pixel.
         assert_eq!(sampled(Axis::Slice(2, 2), 20, 10).len(), 10);
         // A 2 px box: the insets shrink to 1 + 1, the middle is not drawn.

@@ -6,8 +6,10 @@
  *   theme           Tailwind `@theme` tokens (the generated dark defaults)
  *   base            element resets
  *   xfire-defaults  per-base default values that differ from the dark ones
- *   skin            a skin's generated tokens (E7.7.2), never element styles
- *   components      every app rule (`src/styles/theme/*`, scrollbars)
+ *   skin            a skin's generated tokens and region properties (E7.7.2),
+ *                   never element styles
+ *   components      every app rule (`src/styles/theme/*`, scrollbars, the
+ *                   region slots `generated/regions.css` paints last)
  *   utilities       Tailwind utilities
  *   a11y            user accessibility settings; beats any skin
  *   sec             security surfaces; nothing overrides it */
@@ -62,6 +64,7 @@
 @import "./theme/91-top-level.css";
 @import "./animations.css";
 @import "./scrollbar.css";
+@import "./generated/regions.css";
 
 @font-face {
   font-family: "Symbols Nerd Font Mono";

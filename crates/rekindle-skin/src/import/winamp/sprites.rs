@@ -4,9 +4,20 @@
 //! `skinParserUtils.ts:188-261`).
 
 use rekindle_image::{Rgba, RgbaImage};
-use rekindle_types::dto::skin::Insets;
+use rekindle_types::dto::skin::{Insets, RegionState};
 
 use super::super::ImportError;
+
+/// The region state a sprite draws: Webamp's `_DEPRESSED` and `_PRESSED`
+/// sprites are `down`, every other one the normal image.
+#[must_use]
+pub fn state(sprite: &Sprite) -> RegionState {
+    if sprite.name.ends_with("_DEPRESSED") || sprite.name.ends_with("_PRESSED") {
+        RegionState::Down
+    } else {
+        RegionState::Normal
+    }
+}
 
 /// One sprite: sheet (lower-case file), name, x, y, width, height, and the
 /// Rekindle region it maps to (d1's proposed id).
@@ -176,13 +187,13 @@ pub const SPRITES: [Sprite; 39] = [
         GENEX,
         "HORIZONTAL_SCROLL_HANDLE_UNPRESSED",
         (84, 31, 28, 14),
-        "scrollbar.thumb",
+        "scrollbar.thumb-horizontal",
     ),
     s(
         GENEX,
         "HORIZONTAL_SCROLL_HANDLE_PRESSED",
         (84, 45, 28, 14),
-        "scrollbar.thumb",
+        "scrollbar.thumb-horizontal",
     ),
 ];
 

@@ -135,3 +135,119 @@ fn xfire_own_skins_carry_the_owner_ruling() {
         SkinLicense::Text(ref s) if s.starts_with("Xfire, Inc.'s own skin art")
     ));
 }
+
+/// `tree` plus a `Common.xml` with a close button (normal, hover, down,
+/// and a disabled image `disabled_w` wide), a vertical scrollbar thumb in
+/// two states, an arrow, and a baked-label button that stays dropped.
+fn tree_with_controls(disabled_w: u32) -> Tree {
+    let mut t = tree(PASSING);
+    t.insert(
+        "Skin.xml".into(),
+        br#"<XfireSkin><Include File="Themes.xml"/><Include File="Components/ChatWindow.xml"/><Include File="Components/Common.xml"/></XfireSkin>"#.to_vec(),
+    );
+    let mut themes = String::from_utf8(t["Themes.xml"].clone()).unwrap();
+    let mut bitmaps = String::new();
+    let mut add = |name: &str, w: u32, h: u32, v: u8| {
+        let _ = write!(
+            bitmaps,
+            "<Bitmap Name=\"{name}\">Images/{name}.png</Bitmap>"
+        );
+        t.insert(
+            format!("Images/{name}.png"),
+            png(w, h, Rgba([v, v, v, 255])),
+        );
+    };
+    add("close_n", 18, 16, 60);
+    add("close_h", 18, 16, 90);
+    add("close_d", 18, 16, 30);
+    add("close_x", disabled_w, 16, 50);
+    for (s, v) in [("n", 70), ("h", 100)] {
+        add(&format!("vt_{s}"), 12, 4, v);
+        add(&format!("vm_{s}"), 12, 6, v);
+        add(&format!("vb_{s}"), 12, 4, v);
+        add(&format!("up_{s}"), 12, 12, v);
+    }
+    add("send_h", 40, 20, 80);
+    themes = themes.replace("</Bitmaps>", &format!("{bitmaps}</Bitmaps>"));
+    t.insert("Themes.xml".into(), themes.into_bytes());
+    let state = |s: &str, x: &str| {
+        format!("<Images State=\"{s}\" Color=\"SideCG\"><Image Type=\"ScrollVertGripperTop\">vt_{x}</Image><Image Type=\"ScrollVertGripperMiddle\">vm_{x}</Image><Image Type=\"ScrollVertGripperBottom\">vb_{x}</Image><Image Type=\"ScrollVertGripperOverlay\">vm_{x}</Image><Image Type=\"ScrollUp\">up_{x}</Image></Images>")
+    };
+    let common = format!(
+        "<Components><Component Name=\"ButtonClose\" Class=\"PushButton\"><Images State=\"Normal\"><Image Type=\"Middle\">close_n</Image></Images><Images State=\"Hover\"><Image Type=\"Middle\">close_h</Image></Images><Images State=\"Down\"><Image Type=\"Middle\">close_d</Image></Images><Images State=\"Disabled\"><Image Type=\"Middle\">close_x</Image></Images></Component><Component Name=\"XfireScrollbar\" Class=\"Scrollbar\">{}{}</Component><Component Name=\"ChatButtonSend\" Class=\"PushButton\"><Images State=\"Normal\"><Image Type=\"Middle\">send_h</Image></Images><Images State=\"Hover\"><Image Type=\"Middle\">send_h</Image></Images></Component></Components>",
+        state("Normal", "n"),
+        state("Hover", "h")
+    );
+    t.insert("Components/Common.xml".into(), common.into_bytes());
+    t
+}
+
+#[test]
+fn title_buttons_and_the_scrollbar_keep_their_state_images() {
+    let a = import(&tree_with_controls(18), "fixture").unwrap();
+    let c = validate::run(&a.canonical.bytes).unwrap();
+    assert_eq!(c.bytes, a.canonical.bytes);
+    let r = read(&tree_with_controls(18)).unwrap();
+    let close = r
+        .controls
+        .iter()
+        .find(|c| c.region == "titlebar.btn.close")
+        .unwrap();
+    assert_eq!(close.fit, RegionFit::Stretch);
+    let states: Vec<_> = close.images.keys().copied().collect();
+    use rekindle_types::dto::skin::RegionState as S;
+    assert_eq!(states, [S::Normal, S::Hover, S::Down, S::Disabled]);
+    // Hover is `close_h` (90) shifted by nothing: the button set has no Color.
+    assert_eq!(close.images[&S::Hover].get_pixel(5, 5).0, [90, 90, 90, 255]);
+    let thumb = r
+        .controls
+        .iter()
+        .find(|c| c.region == "scrollbar.thumb")
+        .unwrap();
+    assert_eq!(
+        thumb.fit,
+        RegionFit::NineSlice(rekindle_types::dto::skin::Insets {
+            top: 4,
+            right: 0,
+            bottom: 4,
+            left: 0
+        })
+    );
+    assert_eq!(thumb.images[&S::Normal].dimensions(), (12, 14));
+    // SideCG shifts the gripper (+30 red, -30 green).
+    assert_eq!(
+        thumb.images[&S::Hover].get_pixel(5, 5).0,
+        [130, 70, 100, 255]
+    );
+    assert!(r.controls.iter().any(|c| c.region == "scrollbar.button-up"));
+    // Kept: 3 button images + (3 gripper + 1 arrow) hover; the overlay and
+    // the baked-label send button and the frame's hover piece are not.
+    assert_eq!(r.tally.images, (7, 3 + 5 + 1 + 1));
+    assert_eq!(r.tally.sets["Hover"], (2, 4));
+    assert!(a
+        .notice
+        .contains("dropped ChatButtonSend Hover: no region slot"));
+    assert!(a.notice.contains("titlebar.btn.close: the title button"));
+}
+
+#[test]
+fn a_state_image_of_another_size_is_dropped_and_named() {
+    let r = read(&tree_with_controls(17)).unwrap();
+    let close = r
+        .controls
+        .iter()
+        .find(|c| c.region == "titlebar.btn.close")
+        .unwrap();
+    assert!(!close
+        .images
+        .contains_key(&rekindle_types::dto::skin::RegionState::Disabled));
+    assert!(r
+        .tally
+        .dropped
+        .iter()
+        .any(|(c, s, why)| c == "ButtonClose (titlebar.btn.close)"
+            && *s == "Disabled"
+            && why.contains("size differs")));
+    let a = import(&tree_with_controls(17), "fixture").unwrap();
+    validate::run(&a.canonical.bytes).unwrap();
+}

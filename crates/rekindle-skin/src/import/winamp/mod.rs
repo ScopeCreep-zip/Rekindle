@@ -40,10 +40,11 @@ use rekindle_types::dto::skin::{
 };
 
 use super::walk;
-use super::{base_of, conclude, ImportError, Tree};
+use super::{base_of, conclude, Control, ImportError, Tree};
 pub use super::{ImportDraft, Outcome};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
+use crate::regions::slot_of;
 use sprites::{Sprite, Target, SPRITES};
 
 /// The `source.format` of an imported package.
@@ -63,6 +64,32 @@ pub struct ColourRow {
     pub target: Target,
 }
 
+/// The sprites of painted slots, grouped by slot in table order.
+fn controls(decoded: &[(Sprite, RgbaImage)]) -> Vec<Control> {
+    let mut out: Vec<Control> = Vec::new();
+    for (sprite, img) in decoded {
+        if !slot_of(sprite.region).is_some_and(|s| s.css) {
+            continue;
+        }
+        let i = if let Some(i) = out.iter().position(|c| c.region == sprite.region) {
+            i
+        } else {
+            out.push(Control {
+                region: sprite.region,
+                fit: RegionFit::Stretch,
+                images: BTreeMap::new(),
+            });
+            out.len() - 1
+        };
+        out[i]
+            .images
+            .entry(sprites::state(sprite))
+            .or_insert_with(|| img.clone());
+    }
+    out.retain(|c| c.images.contains_key(&RegionState::Normal));
+    out
+}
+
 /// What the importer read, before the package is built.
 #[derive(Debug)]
 pub struct Read {
@@ -73,6 +100,9 @@ pub struct Read {
     /// `window.frame` and `titlebar`, each [active, inactive].
     pub frame: Option<[RgbaImage; 2]>,
     pub title: Option<[RgbaImage; 2]>,
+    /// The painted control slots (titlebar buttons, scrollbar parts): each
+    /// slot's images by state, from TITLEBAR.BMP and GENEX.BMP.
+    pub controls: Vec<Control>,
     /// PLEDIT.TXT keys that are not colours we know.
     pub unknown: Vec<String>,
     /// PLEDIT.TXT `Font=` and the allowed face it names.
@@ -184,6 +214,7 @@ pub fn read(wsz: &[u8]) -> Result<Read, ImportError> {
         sprites: seen,
         frame,
         title,
+        controls: controls(&decoded),
         unknown,
         font,
         ignored,
@@ -218,6 +249,9 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
             "titlebar".to_owned(),
             region(TITLE, sprites::TITLE_INSETS, Some("titlebar.start")),
         );
+    }
+    for c in &read.controls {
+        regions.insert(c.region.to_owned(), c.spec());
     }
     SkinManifest {
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
@@ -277,6 +311,9 @@ pub fn import(wsz: &[u8], id: &str) -> Result<Outcome, ImportError> {
                 images.insert((*p).to_owned(), png(p, img)?);
             }
         }
+    }
+    for c in &read.controls {
+        images.extend(c.files()?);
     }
     let build = |tokens: &BTreeMap<String, TokenValue>| {
         let mut files = images.clone();
