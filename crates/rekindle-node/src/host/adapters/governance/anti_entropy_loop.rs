@@ -4,7 +4,8 @@
 //! each community's sweep inspects 16 random member records, and the first
 //! tick after the route comes back (a reconnect) sweeps all of them; the
 //! login stage runs the login sweep. A sweep that stored a head rebuilds
-//! that community. The ticks are tokio time (paused under netsim).
+//! that community, and each tick moves the community's watch ring, which
+//! opens and watches a ring record an earlier move could not. The ticks are tokio time (paused under netsim).
 
 use std::collections::BTreeMap;
 
@@ -32,6 +33,8 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
             if stop.is_cancelled() {
                 return;
             }
+            // A ring record that failed to open or to watch is tried again.
+            host.rearm_watch_ring(&community_id).await;
             let frontiers = seen.entry(community_id.clone()).or_default();
             match anti_entropy::sweep(&host, &community_id, kind, frontiers).await {
                 Ok(0) => {}
