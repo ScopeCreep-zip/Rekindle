@@ -137,5 +137,7 @@ rekindle-governance = { path = "../rekindle-governance", features = [ "fixture" 
 rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 # The network simulator the netsim scenarios run real Hosts on (plan C9.3).
 rekindle-netsim = { path = "../rekindle-netsim" }
+# The route-liveness deadlines a netsim scenario waits out (plan RH1r-c S1).
+rekindle-route = { path = "../rekindle-route" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

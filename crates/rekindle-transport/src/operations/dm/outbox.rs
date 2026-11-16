@@ -286,7 +286,9 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     let mut chained: Vec<(usize, Vec<u8>, Vec<u8>, DmTypeId)> = Vec::new();
     // Route liveness (plan RH1r-c S1–S4): every row here waits for the
     // peer's `DmAck`, so its sends count against their route, and a suspect
-    // round runs first when one is due. While the peer shows unreachable
+    // round runs first when one is due: its re-read, which may replace the
+    // route; its probe runs beside the hints (finding R5-1, so a lost
+    // DmText's re-hint keeps the re-ask cadence). While the peer shows unreachable
     // the hints wait for their backoff step; the chain appends never do.
     let hint = super::route_health::before_send(host, to).await;
     for row in rows {

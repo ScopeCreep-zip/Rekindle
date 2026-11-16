@@ -58,7 +58,11 @@ fn reachability(host: &dyn FriendHost, peer: &str, reachable: bool) {
 }
 
 /// One suspect round (S2): re-read the peer's route record; a strictly
-/// higher seq replaces the cached route; the record we hold is probed once.
+/// higher seq replaces the cached route; the record we hold is probed once,
+/// beside the send that ran the round (A/B round 5 finding R5-1): the
+/// probe's answer never changes which route a hint takes, so the hint does
+/// not wait the probe's round trip, or our `app_call` deadline when it is
+/// lost, and a lost DmText is hinted again on the outbox's re-ask cadence.
 /// The held route stays in use when nothing newer is published, whether
 /// the probe answers or not, and with no record to re-read: a probe whose
 /// answer was lost on its way back (a one-way loss) cannot be told from a
@@ -85,22 +89,35 @@ async fn suspect_round(host: &dyn FriendHost, node: &TransportNode, to: &str) {
             route::cache(node, to, blob);
         }
         Fetched::Stale => tracing::debug!(to = %to, seq, "suspect route: stale record ignored"),
-        Fetched::Newer | Fetched::Same => probe(host, node, to, blob).await,
+        Fetched::Newer | Fetched::Same => probe_beside(host, to, blob),
     }
+}
+
+/// Run [`probe`] in the unlock scope, off the send's path.
+fn probe_beside(host: &dyn FriendHost, to: &str, blob: Vec<u8>) {
+    let owned = host.owned();
+    let to = to.to_string();
+    host.scope()
+        .spawn_or_drop("suspect route probe", async move {
+            probe(owned.as_ref(), &to, blob).await;
+        });
 }
 
 /// Probe the peer's route once with an `app_call` (S2): any answer, a NAK
 /// included, shows it delivers and clears its failure cache; with no
 /// answer it stays failure-cached, and in use ([`suspect_round`]).
-async fn probe(host: &dyn FriendHost, node: &TransportNode, to: &str, blob: Vec<u8>) {
+async fn probe(host: &dyn FriendHost, to: &str, blob: Vec<u8>) {
+    let Ok(node) = host.node() else {
+        return;
+    };
     let live = node.liveness();
-    let Some(target) = route::import(node, to, &blob) else {
+    let Some(target) = route::import(&node, to, &blob) else {
         return;
     };
     match node.caller().call_direct(&target, live.peer_probe()).await {
         Ok(_) => {
             tracing::info!(to = %to, "suspect route answered its probe");
-            route::cache(node, to, blob);
+            route::cache(&node, to, blob);
             if live.probe_answered(to) {
                 reachability(host, to, true);
             }

@@ -102,3 +102,76 @@ async fn a_landed_message_whose_acks_were_lost_is_hinted_again_until_delivered()
         .count();
     assert_eq!(copies, 1, "Jon holds the message once");
 }
+
+/// A/B round 5 finding R5-1: the suspect round (plan RH1r-c S2) that the
+/// first send past the ack deadline runs never holds that send's hint
+/// behind its probe. Ida's "first" is hinted and Jon's acks are lost, so
+/// 30 s later Ida suspects Jon's route; her next send ("second") runs the
+/// round: a re-read of Jon's route record, then an `app_call` probe of the
+/// route we hold. The probe's answer never changes which route a hint
+/// takes (a newer record replaces it; with none the held route stays in
+/// use, answered or not), so the hint goes once the re-read is done and the
+/// probe runs beside it. Here every call to Jon hangs, so a probe ends only
+/// at our `app_call` deadline (11 s): live, the hint of the re-ask waited
+/// on it, and a lost DmText came back 42 s after its send instead of on the
+/// re-ask's cadence.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_suspect_rounds_probe_never_holds_the_hint_back() {
+    use rekindle_netsim::latency::DEADLINE;
+    use rekindle_route::liveness::ACK_TIMEOUT_PROVEN;
+    use rekindle_transport::broadcast::deadline::app_call_deadline;
+    use rekindle_types::config::{
+        SafetyProfile, SequencingPreference, StabilityPreference, ANONYMITY_HOP_FLOOR,
+    };
+
+    let (sim, mut nodes) = start(2, 79).await;
+    for (node, name) in nodes.iter_mut().zip(["Ida", "Jon"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    talk(&sim, &nodes[0], &nodes[1], "hello").await;
+    let (ida, jon) = (key(&nodes[0]), key(&nodes[1]));
+    assert!(
+        eventually(&sim, LIMIT, || delivered(&nodes[0], &jon, "hello: 0 to 1")).await,
+        "hello settled: Jon's route is proven"
+    );
+    sim.fault(Fault::CallHangs {
+        node: 1,
+        hangs: true,
+    });
+
+    send(&nodes[0], &jon, "first").await;
+    assert!(
+        eventually(&sim, SET.min / 2, || received(&nodes[1], &ida, "first")).await,
+        "Jon has the first from its hint"
+    );
+    // Every frame Jon sends is lost until Ida's ack deadline has passed,
+    // so Ida hears nothing from him after the first's hint.
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 1000,
+    });
+    tokio::time::sleep(ACK_TIMEOUT_PROVEN + MESSAGE.max).await;
+    sim.fault(Fault::DropFrom {
+        node: 1,
+        per_mille: 0,
+    });
+
+    // The round's re-read (one profile subkey read, bounded by the fanout
+    // deadline at worst), then the hint: well inside the probe's deadline.
+    let probe = app_call_deadline(&SafetyProfile {
+        hop_count: ANONYMITY_HOP_FLOOR,
+        stability: StabilityPreference::default(),
+        sequencing: SequencingPreference::default(),
+    });
+    let bound = GET.max + MESSAGE.max * 2;
+    assert!(bound * 4 < probe, "a held hint would show");
+    assert!(GET.max < DEADLINE.min);
+    send(&nodes[0], &jon, "second").await;
+    let sent = tokio::time::Instant::now();
+    assert!(
+        eventually(&sim, bound, || received(&nodes[1], &ida, "second")).await,
+        "Jon has the second within {bound:?}, not after the probe's {probe:?} (after {:?})",
+        sent.elapsed()
+    );
+}
