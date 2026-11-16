@@ -1,5 +1,5 @@
 //! The governance arm of the Host's watch path (plan E3.2 S7, D4), on both
-//! modes: a ValueChange on a member record our watch ring holds reads that
+//! modes: a ValueChange on the op-log head of a member record our watch ring holds reads that
 //! record's frontier, stores the heads we lack, and rebuilds that community
 //! alone; then borrows every channel record the new state names that we do
 //! not hold. This (with a `HeadAdvanced` hint) is the only governance
@@ -12,16 +12,32 @@ use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::lease::CommunityLeases;
 use rekindle_records::port::OpenIntent;
 use rekindle_transport::broadcast::dht_writes;
+use rekindle_types::dht_layout::member_record::GOV_HEAD;
 use rekindle_types::id::ChannelId;
 
 use super::HostGovernance;
 
+/// Does a ring change on `subkeys` of a member record rebuild the
+/// community? Only a change on the op-log head (`M`/2) does (register
+/// 2026-10-24, "S8 sequencing": the ring dispatches by subkey, so beats
+/// never trigger rebuilds). The beat (1) and the outbox (4) go to their
+/// one consumer in code today, the `HeadAdvanced` relay
+/// (`HostGovernance::relay_head_advanced`); their readers, presence and
+/// channel posting, arrive with E3.4 and E3.3, so until then a change on
+/// them is only recorded (a debug line). The card (0), the frontier (3,
+/// read by the anti-entropy sweep), the history ad (5) and the reserved
+/// subkeys have no ring consumer.
+pub(crate) fn rebuilds_on(subkeys: &[u32]) -> bool {
+    subkeys.contains(&GOV_HEAD)
+}
+
 impl HostGovernance {
     /// Handle a watched record's change when it is a ring member record:
-    /// `true` when it was one (rebuilt), `false` for any other record.
-    /// `subkeys` are the ones the change names; an empty list is a
-    /// change we did not observe through our own watch, which is never
-    /// relayed.
+    /// `true` when it was one, `false` for any other record. `subkeys` are
+    /// the ones the change names; an empty list is a change we did not
+    /// observe through our own watch, which is never relayed. The change
+    /// is dispatched by subkey ([`rebuilds_on`]): only the op-log head
+    /// rebuilds the community.
     pub async fn on_watched_change(&self, record: &str, subkeys: &[u32]) -> bool {
         let Some(community) = self.community_of_ring_record(record) else {
             return false;
@@ -31,8 +47,12 @@ impl HostGovernance {
         if self.ctx.communities.own_removal(&community).is_some() {
             return true;
         }
-        tracing::info!(%community, record, "ring member record changed — rebuilding that community");
-        self.refresh_member_record(&community, record).await;
+        if rebuilds_on(subkeys) {
+            tracing::info!(%community, record, "ring member's op-log head changed — rebuilding that community");
+            self.refresh_member_record(&community, record).await;
+        } else {
+            tracing::debug!(%community, record, ?subkeys, "ring member record changed, no op-log head — recorded, not rebuilt");
+        }
         self.relay_head_advanced(&community, record, subkeys).await;
         true
     }
@@ -131,5 +151,28 @@ impl HostGovernance {
         for lease in merged.surplus {
             dht_writes::release(&transport, lease).await;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rekindle_types::dht_layout::member_record::{GOV_HEAD, SUBKEY_COUNT};
+
+    use super::rebuilds_on;
+
+    /// A ring change on each subkey of `M` rebuilds only for the op-log
+    /// head; a beat, an outbox or any other subkey never does (register
+    /// 2026-10-24, "S8 sequencing").
+    #[test]
+    fn only_an_op_log_head_change_rebuilds() {
+        for subkey in 0..u32::from(SUBKEY_COUNT) {
+            assert_eq!(
+                rebuilds_on(&[subkey]),
+                subkey == GOV_HEAD,
+                "a ring change on subkey {subkey}"
+            );
+        }
+        assert!(rebuilds_on(&[1, 2, 4]), "a change naming the head rebuilds");
+        assert!(!rebuilds_on(&[]), "a change naming no subkey does not");
     }
 }
