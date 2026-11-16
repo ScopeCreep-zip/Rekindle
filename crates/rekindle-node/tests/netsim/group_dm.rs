@@ -231,13 +231,36 @@ async fn a_group_of_non_friends_talks_and_a_leave_and_a_block_rotate() {
 
 /// Bea's DHT is off while Ann sends; 31 days on, Ann's next append retires
 /// her chain past it (age only, no acks), and Bea's diff stores the gap row
-/// and publishes it.
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_retired_group_stretch_is_a_stored_history_gap() {
-    let (sim, mut nodes) = start(3, 93).await;
+/// and publishes it. Returns the run's trace hash
+/// ([`a_retired_group_stretch_has_one_trace_per_seed`]).
+async fn retired_stretch() -> [u8; 32] {
+    retired_stretch_at(93).await
+}
+
+async fn retired_stretch_at(seed: u64) -> [u8; 32] {
+    let (sim, mut nodes) = start(3, seed).await;
     let gid = three_members(&sim, &mut nodes).await;
     let ann = key(&nodes[0]);
     let bea_events = nodes[1].events().await;
+    // E2.5's design sends a message twice, by the direct frame and by the
+    // chain, and either may reach Cid first; an entry his hint diff reads
+    // before his watch on Ann's chain is held is reported by no change, so
+    // reading a message says nothing of whether a watched change of her
+    // chain reached him. As `pair::talk_until_watched` (db0c8cd1), Ann talks
+    // until one has (at most four rounds), so the snapshot below names her
+    // chain whichever path came first.
+    for round in 0..4 {
+        let body = format!("watched {round}");
+        send(&nodes[0], &gid, &body).await;
+        assert!(eventually(&sim, LIMIT, || reads(&nodes[2], &gid, &body)).await);
+        if eventually(&sim, Duration::from_secs(15), || async {
+            unretired(&sim, 2).iter().any(|k| sim.creator(k) == Some(0))
+        })
+        .await
+        {
+            break;
+        }
+    }
     sim.fault(Fault::DhtOffline {
         node: 1,
         offline: true,
@@ -302,6 +325,12 @@ async fn a_retired_group_stretch_is_a_stored_history_gap() {
         SubscriptionEvent::GroupDm(GroupDmEvent::HistoryGap { member, .. })
             if member.public_key == ann
     )));
+    sim.trace().hash()
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_retired_group_stretch_is_a_stored_history_gap() {
+    retired_stretch().await;
 }
 
 /// Ann is detached while she writes a backlog; once she is back, the
@@ -363,26 +392,21 @@ async fn a_group_backlog_lands_in_as_few_pages_as_hold_it() {
 }
 
 /// One seed, one trace (ADR 0021, C9.3) through the outbox's concurrent
-/// stream attempts (E2.5j): Ann's group send goes out as each member's
-/// direct frame and as her chain append at once, and the order Cid sees
-/// them in is the seed's, never tokio's `select!` draw. Each run is a
-/// runtime of its own, so each has another `select!` seed.
+/// stream attempts (E2.5j) and the transport's dispatch: the retired
+/// stretch's trace split while both polled their `select!` branches in
+/// tokio's drawn order (node 2's value-change handler and its outbox
+/// `GroupDmAccept` send swapped at one sim instant). Each run is a runtime
+/// of its own, so each draws another `select!` seed. Under seed 91 with the
+/// selects unbiased, three runs gave three traces (7 of seeds 90-99 split).
 #[test]
-fn a_group_send_has_one_trace_per_seed() {
+fn a_retired_group_stretch_has_one_trace_per_seed() {
     fn run() -> [u8; 32] {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .start_paused(true)
             .build()
-            .unwrap();
-        runtime.block_on(async {
-            let (sim, mut nodes) = start(3, 93).await;
-            let gid = three_members(&sim, &mut nodes).await;
-            send(&nodes[0], &gid, "traced").await;
-            assert!(eventually(&sim, LIMIT, || reads(&nodes[2], &gid, "traced")).await);
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            sim.trace().hash()
-        })
+            .expect("a runtime")
+            .block_on(retired_stretch_at(91))
     }
     let first = run();
     for _ in 0..3 {

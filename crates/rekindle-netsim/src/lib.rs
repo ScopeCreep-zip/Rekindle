@@ -327,6 +327,12 @@ impl Netsim {
         self.net.inner.lock().owners.get(key).cloned()
     }
 
+    /// The node that created `key`: whose record it is (a chain's writer).
+    #[must_use]
+    pub fn creator(&self, key: &str) -> Option<usize> {
+        self.net.inner.lock().records.get(key).map(|r| r.creator)
+    }
+
     /// A kill -9 on `node`: its record pools discard the writes they hold
     /// for a re-push, which live only in memory (a graceful lock saves
     /// them for the next unlock). Nothing re-pushes them.
