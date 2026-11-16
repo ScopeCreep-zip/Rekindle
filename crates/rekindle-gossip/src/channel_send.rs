@@ -5,6 +5,8 @@
 
 use std::sync::Arc;
 
+use tracing::Instrument as _;
+
 use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_codec::ingress::gossip_datagram;
 
@@ -91,9 +93,12 @@ async fn fan_out<D: GossipDeps>(
         let deps = Arc::clone(&deps);
         let cid = community_id.clone();
         let data = data.clone();
-        set.spawn(async move {
-            send_to_one_peer(deps, cid, peer, data, None).await;
-        });
+        set.spawn(
+            async move {
+                send_to_one_peer(deps, cid, peer, data, None).await;
+            }
+            .in_current_span(),
+        );
     }
     while set.join_next().await.is_some() {}
 }

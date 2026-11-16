@@ -11,6 +11,7 @@ use std::future::Future;
 use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::IpcResponse;
 use tokio::task::{Id, JoinSet};
+use tracing::Instrument as _;
 use uuid::Uuid;
 
 /// Who a response goes back to.
@@ -38,12 +39,13 @@ pub(crate) struct InFlight {
 }
 
 impl InFlight {
-    /// Run `dispatch` as its own task, answering `correlation`.
+    /// Run `dispatch` as its own task, answering `correlation`, in the span
+    /// it was started in (its log lines name the host they ran for).
     pub(crate) fn spawn<F>(&mut self, correlation: Correlation, dispatch: F)
     where
         F: Future<Output = IpcResponse> + Send + 'static,
     {
-        let handle = self.tasks.spawn(dispatch);
+        let handle = self.tasks.spawn(dispatch.in_current_span());
         self.owners.insert(handle.id(), correlation);
     }
 

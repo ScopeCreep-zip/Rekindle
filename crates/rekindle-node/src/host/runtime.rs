@@ -356,9 +356,9 @@ impl Host {
 
         // The domain workers each own an `Arc<DaemonContext>`. In the shell
         // the GUI's pipeline runs these stages (one owner per stage), so
-        // their queues have no reader there.
+        // their queues have no reader there. Each runs in the span the host
+        // started in, so its log lines name the host they ran for.
         let workers = tokio_util::task::TaskTracker::new();
-        // Each in the Host's span, as a SessionScope task is.
         if mode == HostMode::Daemon {
             use crate::daemon::{
                 event_forward, gossip, mek_rotation, presence_adapter::supervisor,

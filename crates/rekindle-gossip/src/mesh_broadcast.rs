@@ -9,6 +9,8 @@
 
 use std::sync::Arc;
 
+use tracing::Instrument as _;
+
 use rekindle_codec::capnp_envelope::{encode_community_envelope, try_decode_community_envelope};
 use rekindle_codec::community::envelope::{self, CommunityEnvelope, SignedEnvelope};
 use rekindle_codec::ingress::gossip_datagram;
@@ -138,9 +140,12 @@ pub fn send_to_mesh_raw<D: GossipDeps>(deps: Arc<D>, community_id: &str, signed:
             let cid = cid_owner.clone();
             let data = signed_bytes.clone();
             let msg_id = message_id.clone();
-            set.spawn(async move {
-                send_to_one_peer(deps_clone, cid, peer, data, msg_id).await;
-            });
+            set.spawn(
+                async move {
+                    send_to_one_peer(deps_clone, cid, peer, data, msg_id).await;
+                }
+                .in_current_span(),
+            );
         }
         while set.join_next().await.is_some() {}
     });
