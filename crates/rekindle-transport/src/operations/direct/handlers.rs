@@ -52,8 +52,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::DmText(text) => {
             // A hint of theirs arrived: they are reachable (E2.5g).
             crate::operations::dm::outbox::peer_heard(host, sender).await;
-            applied =
-                direct_message(host, sender, text, opened.sent_at_ms, opened.stream_seq).await;
+            applied = direct_message(host, sender, text, &opened).await;
             if applied {
                 // Committed: acknowledge it (a resend of one held again too,
                 // its first ack may be lost).
@@ -229,10 +228,10 @@ async fn direct_message(
     host: &dyn FriendHost,
     sender: &str,
     text: &DmText,
-    sent_at_ms: u64,
-    stream_seq: u64,
+    opened: &Opened,
 ) -> bool {
-    let claimed = i64::try_from(sent_at_ms).unwrap_or(i64::MAX);
+    let stream_seq = opened.stream_seq;
+    let claimed = i64::try_from(opened.sent_at_ms).unwrap_or(i64::MAX);
     let message_id = client_id_text(&text.client_id);
     let reply_to = text.reply_to.as_ref().map(client_id_text);
     let fields = NewDmFields {
@@ -255,6 +254,14 @@ async fn direct_message(
             return false;
         }
     };
+    // So a run's logs time each arrival (A/B finding R5-5); the peer key
+    // is redacted to its per-process tag by the log scrubber.
+    tracing::info!(
+        from = %sender,
+        stream_seq,
+        chain_seq = opened.chain_seq,
+        "direct message received"
+    );
     host.publish(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DirectMessageReceived {
             peer_key: sender.to_string(),
