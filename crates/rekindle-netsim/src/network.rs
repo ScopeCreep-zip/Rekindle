@@ -266,6 +266,16 @@ pub struct Network {
 }
 
 impl Network {
+    /// Count one network get `node`'s app sent for `key` (`app_gets`).
+    pub(crate) fn count_app_get(&self, node: usize, key: &str) {
+        tally(&mut self.inner.lock().nodes[node].app_gets, key);
+    }
+
+    /// Count one inspect `node`'s app sent for `key` (`app_inspects`).
+    pub(crate) fn count_app_inspect(&self, node: usize, key: &str) {
+        tally(&mut self.inner.lock().nodes[node].app_inspects, key);
+    }
+
     pub(crate) fn new(seed: u64) -> Arc<Self> {
         Arc::new(Self {
             inner: Mutex::new(Inner::default()),
@@ -491,6 +501,6 @@ pub(crate) fn pair(a: usize, b: usize) -> (usize, usize) {
 }
 
 /// One more of `key` in a per-record tally (`app_inspects`, `app_gets`).
-pub fn tally(counts: &mut HashMap<String, u64>, key: &str) {
+fn tally(counts: &mut HashMap<String, u64>, key: &str) {
     *counts.entry(key.to_string()).or_default() += 1;
 }
