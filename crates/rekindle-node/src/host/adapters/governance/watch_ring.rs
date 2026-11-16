@@ -59,11 +59,17 @@ impl HostGovernance {
     /// community, and each reads the member set once it holds the lock, so
     /// the move after the last merge leaves exactly that set's successors.
     pub(crate) async fn rearm_watch_ring(&self, community_id: &str) {
+        let lock = self.ctx.communities.ring_move_lock(community_id);
+        let _move = lock.lock().await;
+        self.rearm_watch_ring_locked(community_id).await;
+    }
+
+    /// [`Self::rearm_watch_ring`] with the community's ring move lock
+    /// already held by the caller.
+    pub(super) async fn rearm_watch_ring_locked(&self, community_id: &str) {
         let Ok(node) = self.transport() else {
             return;
         };
-        let lock = self.ctx.communities.ring_move_lock(community_id);
-        let _move = lock.lock().await;
         let (wanted, current, members): (BTreeSet<String>, BTreeSet<String>, usize) = {
             let map = self.ctx.communities.map().read();
             let Some(community) = map.get(community_id) else {

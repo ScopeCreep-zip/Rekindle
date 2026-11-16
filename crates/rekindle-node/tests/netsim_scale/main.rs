@@ -97,5 +97,7 @@ mod route_link_failure;
 mod scenarios;
 #[path = "../netsim/smoke.rs"]
 mod smoke;
+#[path = "../netsim/watch_ring.rs"]
+mod watch_ring;
 #[path = "../netsim/watch_ring_budget.rs"]
 mod watch_ring_budget;

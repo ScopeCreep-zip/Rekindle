@@ -181,16 +181,36 @@ impl HostGovernance {
     }
 
     /// Project the merged state, save its snapshot for the next login's
-    /// restore, republish our frontier and move the watch ring.
+    /// restore, then republish our frontier and move the watch ring.
+    ///
+    /// The frontier write and the ring move are DHT round trips, so they
+    /// run on the session scope rather than inside the rebuild: a rebuild
+    /// a `BootstrapRequest` triggers (`op_log::receive_op`) is answered
+    /// within the app_call deadline, which a creator holding its own ring
+    /// and frontier ran past. They are serialized per community under the
+    /// ring move lock, and each reads the state once it holds the lock, so
+    /// the last one leaves the latest state's frontier and successors.
     pub(super) async fn apply_governance_rebuild_result_impl(
         &self,
         community_id: &str,
         gov_state: GovernanceState,
     ) {
+        use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+        use tracing::Instrument as _;
         self.set_governance_state_impl(community_id, gov_state);
         self.persist_governance_snapshot(community_id).await;
-        self.republish_own_frontier(community_id).await;
-        self.rearm_watch_ring(community_id).await;
+        let host = self.clone();
+        let community = community_id.to_owned();
+        self.scope().spawn_or_drop(
+            "frontier and ring after a rebuild",
+            async move {
+                let lock = host.ctx.communities.ring_move_lock(&community);
+                let _move = lock.lock().await;
+                host.republish_own_frontier(&community).await;
+                host.rearm_watch_ring_locked(&community).await;
+            }
+            .in_current_span(),
+        );
     }
 
     /// The community's projected governance into SQLite
