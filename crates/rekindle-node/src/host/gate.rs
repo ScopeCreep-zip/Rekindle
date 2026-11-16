@@ -340,7 +340,7 @@ pub(crate) fn clear_connection(ctx: &DaemonContext, conn: u64) {
 
 #[cfg(test)]
 #[path = "gate_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 
 #[cfg(test)]
 #[path = "community_join_tests.rs"]

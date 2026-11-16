@@ -245,15 +245,7 @@ impl DaemonContext {
     pub(crate) async fn call(&self, request: IpcRequest, caller: &Caller) -> IpcResponse {
         let required = request.required_clearance();
         if caller.clearance < required {
-            return IpcResponse::error_with_remediation(
-                403,
-                format!(
-                    "{} needs {required:?} clearance; this client has {:?}",
-                    request.name(),
-                    caller.clearance
-                ),
-                "unlock the identity from this client first",
-            );
+            return self.clearance_refusal(&request, required, caller);
         }
         // An agent is scoped by its capabilities above the locked-state
         // requests (plan D1).
@@ -286,6 +278,43 @@ impl DaemonContext {
         // Then `validate_request`, the shell's refusals and the intent gate
         // (plan D3.3), which dispatches what may run.
         crate::host::gate::run(self, request, caller).await
+    }
+
+    /// Why `caller` lacks `required` (plan D1). A client's clearance lasts
+    /// as long as the unlock: the registry holds the identity's clients
+    /// from unlock to lock (`daemon::clients::{load, unload}`), and nothing
+    /// lapses in between. So a refused client either finds no identity
+    /// unlocked (the daemon starts locked, and a lock, logout or restart
+    /// ends the unlock: live R5-4, a restarted daemon), or holds a key the
+    /// unlocked identity does not trust.
+    fn clearance_refusal(
+        &self,
+        request: &IpcRequest,
+        required: rekindle_ipc::message::SecurityLevel,
+        caller: &Caller,
+    ) -> IpcResponse {
+        if self.session.read().is_none() {
+            return IpcResponse::error_with_remediation(
+                403,
+                format!(
+                    "{} needs an unlocked identity, and this daemon holds none: \
+                     a daemon starts locked, and a lock, logout or daemon restart \
+                     ends the unlock and every client's clearance with it",
+                    request.name()
+                ),
+                "unlock an identity first (rekindle identity list, then rekindle unlock)",
+            );
+        }
+        IpcResponse::error_with_remediation(
+            403,
+            format!(
+                "{} needs {required:?} clearance; this client has {:?}: \
+                 the unlocked identity does not trust this client's key",
+                request.name(),
+                caller.clearance
+            ),
+            "unlock the identity from this client once, which registers its key",
+        )
     }
 
     /// Dispatch `request` holding its lane for the whole handler;
@@ -332,3 +361,7 @@ async fn respond(
         tracing::error!(error = %e, "daemon subscriber: failed to send response");
     }
 }
+
+#[cfg(test)]
+#[path = "clearance_tests.rs"]
+mod clearance_tests;
