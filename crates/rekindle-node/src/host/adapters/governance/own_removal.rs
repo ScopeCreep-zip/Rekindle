@@ -176,13 +176,15 @@ impl HostGovernance {
     }
 
     /// Undo [`Self::tear_down_removed`] for a removal that turned out void:
-    /// the vault's keys back into the caches, then the community brought up
-    /// as the login stage brings each one up (records, watches, keepalive,
-    /// hydration, rebuild, catch-up) and, on the daemon, as a join activates
-    /// it (subscription and gossip mesh, presence).
+    /// the vault's keys back into the caches; on the daemon the community
+    /// activated as a join activates it (subscription and gossip mesh,
+    /// presence), first, as the unlock sets up the overlays apart from the
+    /// login stage, so the member posts at once (the mesh holds the message
+    /// Lamport clock); then the community brought up as the login stage
+    /// brings each one up (records, watches, keepalive, hydration, the full
+    /// anti-entropy sweep, rebuild, catch-up).
     async fn restore_unremoved(&self, community_id: &str) {
         self.restore_stored_meks();
-        super::login_stage::bring_up(self, community_id).await;
         if self.ctx.shell.is_none() {
             let membership =
                 (self.ctx.session.read().as_ref()).and_then(|s| s.community(community_id).cloned());
@@ -191,6 +193,7 @@ impl HostGovernance {
                     .await;
             }
         }
+        super::login_stage::bring_up(self, community_id).await;
         tracing::info!(community = %community_id, "community restored after a void removal");
     }
 }

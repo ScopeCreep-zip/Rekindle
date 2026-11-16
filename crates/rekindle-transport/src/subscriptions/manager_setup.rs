@@ -13,11 +13,13 @@ impl SubscriptionManager {
     /// Called for each community during resume and on community join.
     pub async fn setup_community(&self, membership: &CommunityMembership) {
         info!(community = %membership.community_name, governance = %membership.governance_key, "sub: setup_community");
-        watches::setup_community_watches(&self.node, &self.watches, membership).await;
+        // The mesh first: it holds the community's message Lamport clock, so
+        // a send works while the watches' DHT opens are still in flight.
         self.meshes
             .write()
             .entry(membership.governance_key.clone())
             .or_insert_with(|| GossipMesh::new(membership.governance_key.clone()));
+        watches::setup_community_watches(&self.node, &self.watches, membership).await;
     }
 
     /// Do we hold a watch on this record?
