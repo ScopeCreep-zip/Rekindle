@@ -8,11 +8,12 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::{ChannelRequest, CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{ActivityRequest, ChannelRequest, CommunityRequest, IpcRequest};
 use rekindle_netsim::Fault;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX, SUBKEY_COUNT};
 use rekindle_types::subscription_events::{GovernanceEvent, SubscriptionEvent};
 
+use crate::events;
 use crate::harness::{eventually, Community, Events};
 use crate::watch_ring::creator_record;
 
@@ -151,5 +152,74 @@ async fn a_lost_op_gossip_reaches_the_ring_watcher_through_the_frontier() {
     assert!(
         rebuilds(&events, &key) > marked,
         "the frontier change rebuilt the community"
+    );
+}
+
+/// R5-3 (A/B round 5): a ring member's frontier that moved but names only
+/// heads we hold stores nothing, and a rebuild merges stored heads
+/// (`anti_entropy`), so it does not rebuild. Here node 1 authors an op; the
+/// creator merges it and republishes its frontier citing it (a new seq);
+/// node 1, the creator's ring watcher, reads that frontier, stores nothing
+/// (the op is its own) and must not rebuild for it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_moved_frontier_naming_only_held_heads_rebuilds_nothing() {
+    let community = Community::of(2, 4108).await;
+    let key = community.governance_key.clone();
+    let creator = creator_record(&community);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(300), || async {
+            community
+                .sim
+                .watchers_of_dflt(SUBKEY_COUNT)
+                .get(&creator)
+                .is_some_and(|w| w.contains(&1))
+        })
+        .await,
+        "node 1 watches the creator's member record"
+    );
+    // The creator schedules an event; node 1's RSVP to it is an op any
+    // member may author (`validate`: "Answering an event is not a
+    // permission").
+    let event = events::create(
+        &community.nodes[0],
+        &key,
+        events::new_event("Raid night", 4_000_000_000),
+    )
+    .await;
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    community.sim.quiesce().await;
+
+    let frontier =
+        |sim: &rekindle_netsim::Netsim| sim.network_get(&creator, FRONTIER).map(|v| v.seq);
+    let before = frontier(&community.sim);
+    let seen = community.nodes[1].events().await;
+    community.nodes[1]
+        .ok(IpcRequest::Community(CommunityRequest::Activities(
+            ActivityRequest::EventRsvp {
+                community: key.clone(),
+                event_id: event,
+                status: "going".into(),
+            },
+        )))
+        .await;
+    assert_eq!(
+        frontier(&community.sim),
+        before,
+        "the creator has not republished its frontier yet"
+    );
+    let own = rebuilds(&seen, &key);
+    assert!(
+        eventually(&community.sim, Duration::from_secs(120), || async {
+            frontier(&community.sim) != before
+        })
+        .await,
+        "the creator merged node 1's op and republished its frontier"
+    );
+    tokio::time::sleep(Duration::from_secs(30)).await;
+    community.sim.quiesce().await;
+    assert_eq!(
+        rebuilds(&seen, &key),
+        own,
+        "node 1 rebuilt for a frontier naming only an op it holds"
     );
 }

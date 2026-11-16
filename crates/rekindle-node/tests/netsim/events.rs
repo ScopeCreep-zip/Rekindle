@@ -13,7 +13,7 @@ use crate::harness::{eventually, Community, SimNode};
 
 const LIMIT: Duration = Duration::from_secs(180);
 
-fn new_event(title: &str, start_time: u64) -> NewEvent {
+pub(crate) fn new_event(title: &str, start_time: u64) -> NewEvent {
     NewEvent {
         title: title.into(),
         description: "bring potions".into(),
@@ -27,7 +27,7 @@ fn new_event(title: &str, start_time: u64) -> NewEvent {
     }
 }
 
-async fn create(node: &SimNode, community: &str, event: NewEvent) -> String {
+pub(crate) async fn create(node: &SimNode, community: &str, event: NewEvent) -> String {
     let id = node
         .ok(IpcRequest::Community(CommunityRequest::Activities(
             ActivityRequest::EventCreate {

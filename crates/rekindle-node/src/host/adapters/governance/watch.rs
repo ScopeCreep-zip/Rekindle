@@ -1,8 +1,8 @@
 //! The governance arm of the Host's watch path (plan E3.2 S7, D4), on both
 //! modes: a ValueChange on the frontier (`M`/3) of a member record our watch
-//! ring holds, at a frontier seq we have not read, reads that frontier,
-//! stores the heads we lack, and rebuilds that community alone; then
-//! borrows every channel record the new state names that we do not hold.
+//! ring holds reads that frontier, stores the heads we lack and, when it
+//! stored one, rebuilds that community alone and borrows every channel
+//! record the new state names that we do not hold.
 //! This (with a `HeadAdvanced` hint) is the only governance change trigger;
 //! the governance-record watch is gone.
 
@@ -42,7 +42,7 @@ impl HostGovernance {
     /// the ones the change names; an empty list is a change we did not
     /// observe through our own watch, which is never relayed. The change
     /// is dispatched by subkey ([`rebuilds_on`]): only a frontier change
-    /// at a seq not read yet rebuilds the community.
+    /// that names a head we lack rebuilds the community.
     pub async fn on_watched_change(&self, record: &str, subkeys: &[u32]) -> bool {
         let Some(community) = self.community_of_ring_record(record) else {
             return false;
@@ -83,51 +83,46 @@ impl HostGovernance {
         self.inspect_dht_record_update_get_seqs(lease).await.ok()
     }
 
-    /// Is `record`'s frontier at `seq` past the last seq caught up from, by
-    /// a ring change or a hint (one (record, frontier seq) map,
-    /// `CommunityState::head_hints`)? A ring change and a hint for one
-    /// frontier write then cost one rebuild.
-    pub(super) fn frontier_unread(&self, community: &str, record: &str, seq: u64) -> bool {
-        self.ctx
-            .communities
-            .map()
-            .read()
-            .get(community)
-            .is_some_and(|c| c.head_hints.worth_reading(record, FRONTIER, seq))
-    }
-
     /// Mark `record`'s frontier read at `seq`, once every head it names is
     /// stored (`anti_entropy::inspect_one` counts it read only then), so a
     /// frontier whose head did not fetch yet is read again on its next
-    /// change or hint.
+    /// change or hint; a hint for a frontier seq already read is not read
+    /// again (`head_advanced.rs`, `head_hints.worth_reading`).
     fn mark_frontier_read(&self, community: &str, record: &str, seq: u64) {
         if let Some(c) = self.ctx.communities.map().write().get_mut(community) {
             c.head_hints.record_read(record, FRONTIER, seq);
         }
     }
 
-    /// Read `record`'s frontier, rebuild `community`, and borrow the
-    /// channel records the new state names (a ring change or a hint).
-    /// A frontier read at a seq already caught up from, that stored
-    /// nothing, rebuilds nothing: a ring change and a hint for one frontier
-    /// write cost one rebuild.
+    /// Read `record`'s frontier and, when the read stored a head we lacked,
+    /// rebuild `community` and borrow the channel records the new state
+    /// names (a ring change or a hint). The rebuild merges the stored heads
+    /// (the `anti_entropy` module contract, as the periodic sweep does in
+    /// `anti_entropy_loop`); a frontier that stored nothing, at any seq,
+    /// adds nothing to merge, since our state is the merge of every op we
+    /// hold, and the read's own D15 convergence check
+    /// (`anti_entropy::check_convergence`) rebuilds when equal heads carry
+    /// a roster checksum other than ours (R5-3). A ring change and a hint
+    /// for one frontier write cost one rebuild: the second read finds
+    /// every head held.
     pub(super) async fn refresh_member_record(&self, community: &str, record: &str) {
         let (read, stored) = self.catch_up_record(community, record).await;
         if let Some(seq) = read {
-            if stored == 0 && !self.frontier_unread(community, record, seq) {
-                tracing::debug!(
-                    community,
-                    record,
-                    seq,
-                    "ring member's frontier at a seq already read"
-                );
-                return;
-            }
             self.mark_frontier_read(community, record, seq);
+        }
+        if stored == 0 {
+            tracing::debug!(
+                community,
+                record,
+                ?read,
+                "ring member's frontier names no head we lack — not rebuilt"
+            );
+            return;
         }
         tracing::info!(
             community,
             record,
+            stored,
             "ring member's frontier moved — rebuilding that community"
         );
         rekindle_governance_runtime::rebuild_governance(self, community).await;

@@ -189,8 +189,9 @@ impl HostGovernance {
     /// the hinted read, VU3) and record the seq that read returned; act
     /// only when it moved: a
     /// frontier (3), the writer's commit point, is caught up and the
-    /// community rebuilt, sharing the ring change's (record, frontier seq)
-    /// mark ([`HostGovernance::frontier_unread`], marked once caught up); an op-log head (2), a
+    /// community rebuilt when the read stored a head we lacked
+    /// ([`HostGovernance::refresh_member_record`], which shares the ring
+    /// change's (record, frontier seq) mark); an op-log head (2), a
     /// beat (1) or an outbox (4) has no governance effect alone, so it is
     /// only recorded.
     async fn read_hinted(&self, community_id: &str, hint: HeadAdvanced) {
