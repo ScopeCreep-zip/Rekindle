@@ -50,9 +50,16 @@ async fn a_head_that_did_not_fetch_leaves_the_frontier_unread() {
     let mut seen = SeenFrontiers::new();
     let mut known = BTreeSet::new();
     for _ in 0..2 {
-        let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
-            .await
-            .expect("inspected");
+        let stored = inspect_one(
+            &deps,
+            "A",
+            "VLD0:m",
+            &mut seen,
+            &mut known,
+            FrontierRead::Sweep,
+        )
+        .await
+        .expect("inspected");
         assert_eq!(stored, 0);
     }
     assert!(seen.is_empty(), "{seen:?}");
@@ -126,9 +133,16 @@ async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read(
     let mut stored = Vec::new();
     for _ in 0..3 {
         stored.push(
-            inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
-                .await
-                .expect("inspected"),
+            inspect_one(
+                &deps,
+                "A",
+                "VLD0:m",
+                &mut seen,
+                &mut known,
+                FrontierRead::Sweep,
+            )
+            .await
+            .expect("inspected"),
         );
     }
     assert_eq!(stored, [0, 1, 0]);
@@ -227,9 +241,16 @@ fn converging(
 async fn equal_heads_with_another_checksum_rebuild_the_state() {
     let (deps, mut known) = converging(&Peer::Other, false, 1);
     let mut seen = SeenFrontiers::new();
-    let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
-        .await
-        .expect("inspected");
+    let stored = inspect_one(
+        &deps,
+        "A",
+        "VLD0:m",
+        &mut seen,
+        &mut known,
+        FrontierRead::Sweep,
+    )
+    .await
+    .expect("inspected");
     assert_eq!(stored, 0);
     assert_eq!(seen.get("VLD0:m"), Some(&5));
 }
@@ -239,9 +260,16 @@ async fn equal_heads_with_another_checksum_rebuild_the_state() {
 async fn equal_heads_with_our_checksum_do_not_rebuild() {
     let (deps, mut known) = converging(&Peer::Merged, false, 0);
     let mut seen = SeenFrontiers::new();
-    let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
-        .await
-        .expect("inspected");
+    let stored = inspect_one(
+        &deps,
+        "A",
+        "VLD0:m",
+        &mut seen,
+        &mut known,
+        FrontierRead::Sweep,
+    )
+    .await
+    .expect("inspected");
     assert_eq!(stored, 0);
     assert_eq!(seen.get("VLD0:m"), Some(&5));
 }
@@ -253,9 +281,16 @@ async fn equal_heads_with_our_checksum_do_not_rebuild() {
 async fn a_pending_rebuild_with_equal_heads_does_not_rebuild() {
     let (deps, mut known) = converging(&Peer::Merged, true, 0);
     let mut seen = SeenFrontiers::new();
-    let stored = inspect_one(&deps, "A", "VLD0:m", &mut seen, &mut known)
-        .await
-        .expect("inspected");
+    let stored = inspect_one(
+        &deps,
+        "A",
+        "VLD0:m",
+        &mut seen,
+        &mut known,
+        FrontierRead::Sweep,
+    )
+    .await
+    .expect("inspected");
     assert_eq!(stored, 0);
     assert_eq!(seen.get("VLD0:m"), Some(&5));
 }
@@ -297,5 +332,45 @@ fn our_frontier_carries_the_checksum_of_its_heads_merge() {
     assert_eq!(
         frontier.roster_checksum,
         roster_checksum(&rekindle_governance::merge::merge(&cert, &set.ops))
+    );
+}
+
+/// VU3's hint contract: a ring change or a hint that names the frontier
+/// force-reads it with no inspect first, even when the seq last read is the
+/// one a lagging replica's inspect would still report (`seen` holds 5), so
+/// the change is never turned into "nothing newer".
+#[tokio::test]
+async fn a_hinted_frontier_read_never_inspects_first() {
+    let mut deps = MockGovernanceRuntimeDeps::new();
+    deps.expect_acquire_record()
+        .returning(|_, _, _| Ok(LeaseId(1)));
+    deps.expect_release_record().returning(|_| ());
+    deps.expect_inspect_dht_record_update_get_seqs().never();
+    deps.expect_get_dht_value().never();
+    deps.expect_read_hinted_value()
+        .times(1)
+        .returning(|_, subkey| {
+            assert_eq!(subkey, member_record::FRONTIER);
+            Ok(Some((6, frontier())))
+        });
+    deps.expect_fetch_governance_op().returning(|_| Ok(None));
+    let mut seen = SeenFrontiers::new();
+    seen.insert("VLD0:m".to_owned(), 5);
+    let mut known = BTreeSet::new();
+    let stored = inspect_one(
+        &deps,
+        "A",
+        "VLD0:m",
+        &mut seen,
+        &mut known,
+        FrontierRead::Hinted,
+    )
+    .await
+    .expect("read");
+    assert_eq!(stored, 0, "its head did not fetch");
+    assert_eq!(
+        seen.get("VLD0:m"),
+        Some(&5),
+        "an incomplete read stays unread"
     );
 }

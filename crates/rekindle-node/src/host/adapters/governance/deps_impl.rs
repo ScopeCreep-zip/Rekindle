@@ -145,6 +145,14 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.get_dht_value_impl(lease, subkey, force_refresh).await
     }
 
+    async fn read_hinted_value(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+    ) -> Result<Option<(u64, Vec<u8>)>, GovernanceRuntimeError> {
+        self.read_hinted_value_impl(lease, subkey).await
+    }
+
     async fn set_dht_value(
         &self,
         lease: LeaseId,

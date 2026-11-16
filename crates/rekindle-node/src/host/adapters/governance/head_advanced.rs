@@ -185,8 +185,9 @@ impl HostGovernance {
         true
     }
 
-    /// Read the hinted subkey from the DHT (writer-signed, forced) and
-    /// record the seq the network holds; act only when it moved: a
+    /// Read the hinted subkey from the DHT (writer-signed, forced through
+    /// the hinted read, VU3) and record the seq that read returned; act
+    /// only when it moved: a
     /// frontier (3), the writer's commit point, is caught up and the
     /// community rebuilt, sharing the ring change's (record, frontier seq)
     /// mark ([`HostGovernance::frontier_unread`], marked once caught up); an op-log head (2), a
@@ -197,24 +198,22 @@ impl HostGovernance {
         let Ok(lease) = self.acquire_record(record, None, OpenIntent::Check).await else {
             return;
         };
-        let read = match self.get_dht_value(lease, hint.subkey, true).await {
-            Ok(Some(_)) => self
-                .inspect_dht_record_update_get_seqs(lease)
-                .await
-                .ok()
-                .and_then(|seqs| seqs.get(hint.subkey as usize).copied().flatten()),
-            _ => None,
-        };
+        if hint.subkey == FRONTIER {
+            // The frontier is read once, forced, by the catch-up itself.
+            self.release_record(lease).await;
+            self.refresh_member_record(community_id, record).await;
+            return;
+        }
+        let read = self
+            .read_hinted_value(lease, hint.subkey)
+            .await
+            .ok()
+            .flatten()
+            .map(|(seq, _)| seq);
         self.release_record(lease).await;
         let Some(read) = read else {
             return;
         };
-        if hint.subkey == FRONTIER {
-            if self.frontier_unread(community_id, record, read) {
-                self.refresh_member_record(community_id, record).await;
-            }
-            return;
-        }
         let mut map = self.ctx.communities.map().write();
         if let Some(c) = map.get_mut(community_id) {
             c.head_hints.record_read(record, hint.subkey, read);

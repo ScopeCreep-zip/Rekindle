@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 
 use rekindle_codec::member_record::head_advanced::RELAYED_SUBKEYS;
-use rekindle_governance_runtime::anti_entropy::{self, SeenFrontiers};
+use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontiers};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::lease::CommunityLeases;
 use rekindle_records::port::OpenIntent;
@@ -58,19 +58,10 @@ impl HostGovernance {
         }
         let seqs = self.ring_record_seqs(&community, record).await;
         if rebuilds_on(subkeys) {
-            let at = seqs
-                .as_ref()
-                .and_then(|seqs| seqs.get(FRONTIER as usize).copied().flatten());
-            match at {
-                Some(seq) if self.frontier_unread(&community, record, seq) => {
-                    tracing::info!(%community, record, seq, "ring member's frontier moved — rebuilding that community");
-                    self.refresh_member_record(&community, record).await;
-                }
-                Some(seq) => {
-                    tracing::debug!(%community, record, seq, "ring member's frontier at a seq already read");
-                }
-                None => tracing::debug!(%community, record, "ring member's frontier seq not read"),
-            }
+            // The change names the frontier: it is force-read (VU3's hint
+            // contract), never gated on an inspect a lagging replica answers.
+            tracing::info!(%community, record, "ring member's frontier changed — reading it");
+            self.refresh_member_record(&community, record).await;
         } else {
             tracing::debug!(%community, record, ?subkeys, "ring member record changed, no frontier — recorded, not rebuilt");
         }
@@ -117,17 +108,35 @@ impl HostGovernance {
 
     /// Read `record`'s frontier, rebuild `community`, and borrow the
     /// channel records the new state names (a ring change or a hint).
+    /// A frontier read at a seq already caught up from, that stored
+    /// nothing, rebuilds nothing: a ring change and a hint for one frontier
+    /// write cost one rebuild.
     pub(super) async fn refresh_member_record(&self, community: &str, record: &str) {
-        if let Some(seq) = self.catch_up_record(community, record).await {
+        let (read, stored) = self.catch_up_record(community, record).await;
+        if let Some(seq) = read {
+            if stored == 0 && !self.frontier_unread(community, record, seq) {
+                tracing::debug!(
+                    community,
+                    record,
+                    seq,
+                    "ring member's frontier at a seq already read"
+                );
+                return;
+            }
             self.mark_frontier_read(community, record, seq);
         }
+        tracing::info!(
+            community,
+            record,
+            "ring member's frontier moved — rebuilding that community"
+        );
         rekindle_governance_runtime::rebuild_governance(self, community).await;
         self.open_new_channel_records(community).await;
     }
 
     /// Store the heads `record`'s frontier names that we do not hold; the
-    /// frontier seq, when every head is stored.
-    async fn catch_up_record(&self, community: &str, record: &str) -> Option<u64> {
+    /// frontier seq, when every head is stored, and how many were stored.
+    async fn catch_up_record(&self, community: &str, record: &str) -> (Option<u64>, usize) {
         let known: Result<BTreeSet<_>, _> = self
             .governance_ops(community)
             .await
@@ -136,22 +145,33 @@ impl HostGovernance {
             Ok(known) => known,
             Err(error) => {
                 tracing::warn!(community, %error, "ring change: op store not read");
-                return None;
+                return (None, 0);
             }
         };
         let mut seen = SeenFrontiers::new();
-        match anti_entropy::inspect_one(self, community, record, &mut seen, &mut known).await {
-            Ok(stored) => tracing::debug!(
-                community,
-                record,
-                stored,
-                "ring change: frontier heads stored"
-            ),
+        let stored = match anti_entropy::inspect_one(
+            self,
+            community,
+            record,
+            &mut seen,
+            &mut known,
+            FrontierRead::Hinted,
+        )
+        .await
+        {
+            Ok(stored) => stored,
             Err(error) => {
                 tracing::warn!(community, record, %error, "ring change: heads not stored");
+                0
             }
-        }
-        seen.get(record).copied()
+        };
+        tracing::debug!(
+            community,
+            record,
+            stored,
+            "ring change: frontier heads stored"
+        );
+        (seen.get(record).copied(), stored)
     }
 
     /// Borrow every channel record the community's membership names that

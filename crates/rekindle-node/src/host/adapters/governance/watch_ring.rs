@@ -105,7 +105,8 @@ impl HostGovernance {
         }
         let mut opened: BTreeMap<String, LeaseId> = BTreeMap::new();
         for record in wanted.difference(&current) {
-            let lease = match dht_writes::acquire_str(&node, record, None, OpenIntent::Check).await {
+            let lease = match dht_writes::acquire_str(&node, record, None, OpenIntent::Check).await
+            {
                 Ok(lease) => lease,
                 Err(e) => {
                     tracing::debug!(community_id, record, error = %e, "ring record did not open");

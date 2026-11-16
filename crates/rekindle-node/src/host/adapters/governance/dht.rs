@@ -140,6 +140,18 @@ impl HostGovernance {
             .map_err(|e| dht_err("get_dht_value", e))
     }
 
+    pub(super) async fn read_hinted_value_impl(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+    ) -> Result<Option<(u64, Vec<u8>)>, GovernanceRuntimeError> {
+        let node = self.transport()?;
+        dht_writes::read_hinted_leased(&node, lease, subkey)
+            .await
+            .map(|read| read.map(|(seq, data)| (u64::from(seq), data)))
+            .map_err(|e| dht_err("read_hinted_value", e))
+    }
+
     /// Write a subkey. `Ok(None)` means the value is stored; `Ok(Some(stale))`
     /// means the network already held a newer value and ours was superseded
     /// (the slot claim's compare-and-swap, join step 9). A write that did not

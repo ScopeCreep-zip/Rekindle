@@ -100,9 +100,31 @@ pub async fn sweep<D: GovernanceRuntimeDeps>(
         .collect();
     let mut stored = 0;
     for record in &records {
-        stored += inspect_one(deps, community_id, record, seen, &mut known).await?;
+        stored += inspect_one(
+            deps,
+            community_id,
+            record,
+            seen,
+            &mut known,
+            FrontierRead::Sweep,
+        )
+        .await?;
     }
     Ok(stored)
+}
+
+/// How [`inspect_one`] reads a member record's frontier (`M`/3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrontierRead {
+    /// The sweep: inspect the record, and read the frontier (forced) only
+    /// when its seq moved past the one already read.
+    Sweep,
+    /// A ring change or a hint named the frontier: force-read it with no
+    /// inspect first (VU3's hint contract, `RecordPort::read_hinted`): an
+    /// inspect whose replica has not caught up would answer "nothing
+    /// newer", and the forced read clears Veilid's report mark so the next
+    /// change of it is reported.
+    Hinted,
 }
 
 /// Inspect `record`; when its frontier seq moved, read the frontier and
@@ -118,6 +140,7 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
     record: &str,
     seen: &mut SeenFrontiers,
     known: &mut BTreeSet<OpHash>,
+    mode: FrontierRead,
 ) -> Result<usize, GovernanceRuntimeError> {
     let lease = match deps.acquire_record(record, None, OpenIntent::Check).await {
         Ok(lease) => lease,
@@ -126,6 +149,14 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
             return Ok(0);
         }
     };
+    if mode == FrontierRead::Hinted {
+        let read = deps.read_hinted_value(lease, member_record::FRONTIER).await;
+        deps.release_record(lease).await;
+        let Ok(Some((seq, bytes))) = read else {
+            return Ok(0);
+        };
+        return store_frontier_heads(deps, community_id, record, seen, known, seq, &bytes).await;
+    }
     let seq = deps
         .inspect_dht_record_update_get_seqs(lease)
         .await
@@ -148,7 +179,21 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
     let Some((seq, Ok(Some(bytes)))) = read else {
         return Ok(0);
     };
-    let Ok(frontier) = rekindle_codec::governance_op::decode_frontier(&bytes) else {
+    store_frontier_heads(deps, community_id, record, seen, known, seq, &bytes).await
+}
+
+/// Store every head of the frontier `bytes` (read at `seq`) not in
+/// `known`; the seq counts as read once all of them are stored.
+async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    record: &str,
+    seen: &mut SeenFrontiers,
+    known: &mut BTreeSet<OpHash>,
+    seq: u64,
+    bytes: &[u8],
+) -> Result<usize, GovernanceRuntimeError> {
+    let Ok(frontier) = rekindle_codec::governance_op::decode_frontier(bytes) else {
         tracing::debug!(
             community = community_id,
             record,

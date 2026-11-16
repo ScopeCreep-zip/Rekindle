@@ -73,6 +73,23 @@ pub async fn get_leased(
     Ok(value.map(|v| v.data))
 }
 
+/// Read a subkey a `ValueChange` or a hint named, through the pool's
+/// hinted read ([`RecordPort::read_hinted`](rekindle_records::port::RecordPort::read_hinted)):
+/// forced from the network with no inspect first, so a replica that has
+/// not caught up cannot turn it local, and the read clears the subkey's
+/// report mark. The seq and the data, or `None` when nothing was read.
+pub async fn read_hinted_leased(
+    node: &TransportNode,
+    lease: LeaseId,
+    subkey: u32,
+) -> Result<Option<(u32, Vec<u8>)>> {
+    let read = pool(node)?.read_hinted(lease, &[subkey]).await?;
+    Ok(read
+        .into_iter()
+        .find(|(s, _)| *s == subkey)
+        .map(|(_, v)| (v.seq, v.data)))
+}
+
 /// The value the network held instead of ours when a write was superseded.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewerValue {

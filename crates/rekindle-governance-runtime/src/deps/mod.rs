@@ -184,6 +184,16 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         force_refresh: bool,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
 
+    /// The hinted read of `subkey` (VU3's hint contract, `RecordPort::
+    /// read_hinted`): a subkey a ring change or a hint named, forced from
+    /// the network with no inspect first. The seq and data read, `None`
+    /// when the read found nothing.
+    async fn read_hinted_value(
+        &self,
+        lease: LeaseId,
+        subkey: u32,
+    ) -> Result<Option<(u64, Vec<u8>)>, GovernanceRuntimeError>;
+
     /// Returns `Ok(None)` on success, `Ok(Some(stale_bytes))` if the
     /// network's view is newer (M9.5 write conflict per §Failure 4 in
     /// `governance.rs`).
