@@ -293,8 +293,12 @@ theme tokens, and compose the component using `@apply` semantics.
   (Xfire, Inc.'s art under the owner's 2026-10-15 ruling; not MIT), and
   `rekindle_skin::builtin` embeds it as `builtin:symbiosis`, the default
   skin (`builtin::DEFAULT`), helper-validated on first use per process.
-  The pack holds Symbiosis's palette and its chat-window frame; its
-  per-state button images wait for region slots beyond the four.
+  The pack holds Symbiosis's palette, its chat-window frame, its title
+  buttons and its scrollbar with their hover/down/disabled images (region
+  slots `titlebar.btn.*` and `scrollbar.*`, painted by the generated
+  `src/styles/generated/regions.css` from `regions.toml`'s `[regions]`).
+  Xfire's other button, menu and tab images bake in their label or icon and
+  stay dropped (a region never replaces a label; counts in the NOTICE).
 - **High-DPI asset scaling** — the original Symbiosis GIFs are 1× pixel
   art. Components currently composite Tailwind tokens on top of a
   small subset of the original assets; full skin-fidelity at 2× / 3×
