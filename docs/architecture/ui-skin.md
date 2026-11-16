@@ -278,16 +278,23 @@ theme tokens, and compose the component using `@apply` semantics.
 | Animations | `src/styles/animations.css` |
 | Custom scrollbars | `src/styles/scrollbar.css` |
 | Nerd Font icon set | `src/assets/fonts/SymbolsNerdFontMono-Regular.woff2`, `src/icons.ts` |
-| Reference skin assets | `legacy/unpacked/skins/Symbiosis/` |
+| Reference skin assets | `legacy/unpacked/skins/Symbiosis.zip` (extracted in `skins_extracted/`) |
+| Built-in packs | `crates/rekindle-skin/builtin/<id>.rkskin` + `<id>.NOTICE`, `crates/rekindle-skin/src/builtin.rs` |
 | Reference notification sounds | `legacy/unpacked/sounds/` |
 | System tray | `src-tauri/src/tray.rs` |
 
 ## Open work
 
 - **Skin selector** — the architecture allows multiple skins (plan E7.7),
-  but the runtime selector and the `.rkskin` format are not yet shipped.
-  Symbiosis becomes the default once E7.7.3 imports it; the Xfire
-  importer that extracts it from `legacy/unpacked/skins/` is E7.7.3 too.
+  but the runtime selector (E7.7.2) is not yet shipped. Symbiosis is
+  imported: `cargo xtask import-skin --format xfire-xml --from
+  legacy/unpacked/skins_extracted --builtin symbiosis` writes
+  `crates/rekindle-skin/builtin/symbiosis.rkskin` and its `NOTICE`
+  (Xfire, Inc.'s art under the owner's 2026-10-15 ruling; not MIT), and
+  `rekindle_skin::builtin` embeds it as `builtin:symbiosis`, the default
+  skin (`builtin::DEFAULT`), helper-validated on first use per process.
+  The pack holds Symbiosis's palette and its chat-window frame; its
+  per-state button images wait for region slots beyond the four.
 - **High-DPI asset scaling** — the original Symbiosis GIFs are 1× pixel
   art. Components currently composite Tailwind tokens on top of a
   small subset of the original assets; full skin-fidelity at 2× / 3×

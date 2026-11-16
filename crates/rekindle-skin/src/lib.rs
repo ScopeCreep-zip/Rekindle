@@ -27,6 +27,8 @@
 //! * [`helper`]: the Host's way in: [`helper::validate`] runs the pipeline
 //!   in `rekindle-skin-helper` (`src/bin/`), a separate, OS-capped process,
 //!   under a wall-clock deadline.
+//! * [`builtin`]: the embedded built-in packs, helper-validated on first
+//!   use per process; [`builtin::DEFAULT`] is Symbiosis.
 //! * [`import`]: legacy skin formats into a package that then passes
 //!   [`validate::run`] (plan E7.7.3).
 //! * [`registry`]: the closed token registry, and [`generate`], the
@@ -40,6 +42,7 @@
 #![forbid(unsafe_code)]
 
 pub mod access;
+pub mod builtin;
 mod colour;
 pub mod flash;
 pub mod generate;

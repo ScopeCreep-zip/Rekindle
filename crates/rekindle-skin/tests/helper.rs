@@ -155,3 +155,28 @@ fn the_frame_refuses_another_version_or_trailing_bytes_after_a_refusal() {
     longer.push(b' ');
     assert!(frame::decode(&longer).is_err());
 }
+
+/// A built-in is validated by the real helper on first use and kept for
+/// the process: a later call never starts the helper again.
+#[test]
+fn a_builtin_is_validated_once_per_process() {
+    use rekindle_skin::builtin;
+    let first = builtin::validated(builtin::DEFAULT, &real())
+        .unwrap()
+        .unwrap();
+    let (_, pack) = builtin::find(builtin::DEFAULT).unwrap();
+    assert_eq!(first.bytes, pack.bytes);
+    let gone = HelperOpts {
+        path: PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("no-such-skin-helper"),
+        timeout: helper::HELPER_TIMEOUT,
+    };
+    assert!(matches!(
+        helper::validate(pack.bytes, &gone),
+        Err(HelperError::Spawn(_))
+    ));
+    assert_eq!(
+        builtin::validated(builtin::DEFAULT, &gone).unwrap(),
+        Some(first)
+    );
+    assert_eq!(builtin::validated("builtin:nope", &gone).unwrap(), None);
+}
