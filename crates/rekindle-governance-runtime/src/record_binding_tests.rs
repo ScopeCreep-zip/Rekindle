@@ -4,51 +4,16 @@
 //! front-runner can't take the victim's record and lock the victim out.
 
 use super::*;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use base64::Engine;
+use crate::test_member::Member;
 use rekindle_governance::fixture::meta;
 use rekindle_governance::op::invite_proof_bytes;
-use rekindle_secrets::member_record::{dflt_opaque_record_key, sign_member_record_binding};
+use rekindle_secrets::member_record::sign_member_record_binding;
 use rekindle_types::governance::{AdmissionMode, InviteProof};
 
 const ANCHOR: &str = "VLD0:anchor";
 const CODE: &str = "code";
 
-/// A member's keys: its pseudonym and its record owner `K_M`.
-struct Member {
-    pseudonym: SigningKey,
-    owner: SigningKey,
-}
-
 impl Member {
-    fn new(seed: u8) -> Self {
-        Self {
-            pseudonym: SigningKey::from_bytes(&[seed; 32]),
-            owner: SigningKey::from_bytes(&[seed.wrapping_add(100); 32]),
-        }
-    }
-
-    fn author(&self) -> PseudonymKey {
-        PseudonymKey(self.pseudonym.verifying_key().to_bytes())
-    }
-
-    fn owner_text(&self) -> String {
-        rekindle_crypto::keypair_text::public_key_text(&self.owner.verifying_key().to_bytes())
-    }
-
-    /// The record key Veilid gives `K_M`'s DFLT(8) member record.
-    fn record(&self) -> String {
-        let opaque = dflt_opaque_record_key(
-            &self.owner.verifying_key().to_bytes(),
-            rekindle_types::dht_layout::member_record::SUBKEY_COUNT,
-        );
-        format!(
-            "VLD0:{}:{}",
-            URL_SAFE_NO_PAD.encode(opaque),
-            URL_SAFE_NO_PAD.encode([5; 32])
-        )
-    }
-
     /// A join by `self` naming `victim`'s record. Its `ownerProof` is the
     /// one `victim`'s `K_M` signs: for `victim`'s own join, a binding to
     /// `victim`; replayed by anyone else, a binding to someone else.

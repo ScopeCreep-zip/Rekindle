@@ -26,16 +26,18 @@ use rekindle_records::schema;
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, InviteProof, OpRef};
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::invite::InviteSecrets;
 use zeroize::Zeroizing;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::join::{derive_join_identity, InitialPresence, JoinIdentity};
+use crate::join_deps::join_deps;
 use crate::join_stages::{
     claim_registry_slot, collect_initial_presence_state, ClaimedSlot, SlotClaimCtx,
 };
-use crate::op_log::{self, HeldOp, OpFate};
+use crate::op_log::{self, Deps, HeldOp, OpFate};
 
 /// The joiner's own member record, created by the join.
 pub struct JoinerRecord {
@@ -113,7 +115,7 @@ fn check_invite(
     state: &GovernanceState,
     code_hash: &str,
     now_secs: u64,
-) -> Result<rekindle_types::id::PseudonymKey, GovernanceRuntimeError> {
+) -> Result<PseudonymKey, GovernanceRuntimeError> {
     let mut invites: Vec<_> = state.invites.iter().collect();
     invites.sort_by_key(|(id, _)| **id);
     let invite = invites
@@ -153,7 +155,9 @@ async fn create_member_record<D: GovernanceRuntimeDeps>(
 /// Our op #0: `MemberJoined` with the invite proof (the joiner pseudonym
 /// over `INVITE_PROOF ‖ anchor ‖ code hash ‖ memberRecord`) and the owner
 /// proof (`K_M` over `MEMBER_RECORD_BINDING ‖ anchor ‖ pseudonym ‖
-/// memberRecord`, ADR 0011 "Binding").
+/// memberRecord`, ADR 0011 "Binding"). Its deps are shallow (plan E3.2
+/// S7c.0, [`join_deps`](crate::join_deps::join_deps)): the creator's last
+/// genesis op and `inviter`'s latest op, not the whole frontier.
 fn joined_op(
     anchor: &str,
     cert: &GenesisCert,
@@ -161,9 +165,10 @@ fn joined_op(
     set: &op_log::VerifiedSet,
     key: &SigningKey,
     member: (&JoinerRecord, String),
-    code_hash: String,
+    invite: (String, &PseudonymKey),
     now_secs: u64,
 ) -> Result<HeldOp, GovernanceRuntimeError> {
+    let (code_hash, inviter) = invite;
     let (member, owner) = member;
     let record = member.record_key.as_str();
     let sig = key
@@ -185,7 +190,9 @@ fn joined_op(
         invite_proof: Some(InviteProof { code_hash, sig }),
         owner_proof: owner_proof.to_vec(),
     };
-    let (op, encoded) = op_log::build_op(anchor, cert, state, set, key, body, now_secs)?;
+    let joiner = PseudonymKey(key.verifying_key().to_bytes());
+    let deps = Deps::Join(join_deps(cert, set, &joiner, inviter)?);
+    let (op, encoded) = op_log::build_op(anchor, cert, state, set, key, body, deps, now_secs)?;
     Ok(op_log::held(
         &op,
         record.to_owned(),
@@ -244,7 +251,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         &set,
         &identity.pseudonym_signing,
         (&member, member_owner),
-        code_hash,
+        (code_hash, &inviter),
         now,
     )?;
 

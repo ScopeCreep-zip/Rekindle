@@ -37,6 +37,7 @@ pub mod genesis;
 pub mod invite_secrets;
 pub mod invites;
 pub mod join;
+pub mod join_deps;
 pub mod join_flow;
 pub mod join_gate;
 pub mod join_stages;
@@ -54,6 +55,9 @@ pub mod roster;
 pub mod segments;
 pub mod verify_cache;
 pub mod watch_ring;
+
+#[cfg(test)]
+mod test_member;
 
 pub use apply::{write_entry, write_entry_queued, write_invite_created};
 pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};

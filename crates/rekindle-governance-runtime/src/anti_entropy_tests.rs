@@ -188,6 +188,7 @@ fn converging(
         &op_log::VerifiedSet::default(),
         &key,
         rekindle_governance::fixture::meta("a"),
+        op_log::Deps::Frontier,
         5,
     )
     .expect("op builds");
@@ -320,6 +321,7 @@ fn our_frontier_carries_the_checksum_of_its_heads_merge() {
         &op_log::VerifiedSet::default(),
         &key,
         rekindle_governance::fixture::meta("a"),
+        op_log::Deps::Frontier,
         5,
     )
     .expect("op builds");

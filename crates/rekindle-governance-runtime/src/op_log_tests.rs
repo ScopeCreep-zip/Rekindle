@@ -24,7 +24,17 @@ fn our_ops_chain_verify_and_replay_by_frontier() {
     let cert = cert(&key);
     let state = GovernanceState::default();
     let empty = VerifiedSet::default();
-    let (first, first_bytes) = build_op("A", &cert, &state, &empty, &key, meta("a"), 5).unwrap();
+    let (first, first_bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &empty,
+        &key,
+        meta("a"),
+        Deps::Frontier,
+        5,
+    )
+    .unwrap();
     assert_eq!(
         (first.op().seq, first.op().prev, first.lamport()),
         (0, None, 1)
@@ -33,7 +43,8 @@ fn our_ops_chain_verify_and_replay_by_frontier() {
     let held_first = held(&first, record.clone(), first_bytes, OpFate::Applied);
     let set = verify_held("A", std::slice::from_ref(&held_first));
     assert_eq!(set.ops, vec![first.clone()]);
-    let (second, second_bytes) = build_op("A", &cert, &state, &set, &key, meta("b"), 6).unwrap();
+    let (second, second_bytes) =
+        build_op("A", &cert, &state, &set, &key, meta("b"), Deps::Frontier, 6).unwrap();
     assert_eq!(second.op().seq, 1);
     assert_eq!(second.op().prev, Some(first.hash()));
     assert_eq!(second.op().deps, vec![first.op_ref(&record)]);
@@ -63,6 +74,7 @@ fn a_held_op_whose_dep_is_absent_is_pending_and_its_dep_is_missing() {
         &VerifiedSet::default(),
         &key,
         meta("a"),
+        Deps::Frontier,
         5,
     )
     .unwrap();
@@ -70,7 +82,8 @@ fn a_held_op_whose_dep_is_absent_is_pending_and_its_dep_is_missing() {
         "A",
         &[held(&first, "m".into(), first_bytes, OpFate::Applied)],
     );
-    let (second, bytes) = build_op("A", &cert, &state, &set, &key, meta("b"), 6).unwrap();
+    let (second, bytes) =
+        build_op("A", &cert, &state, &set, &key, meta("b"), Deps::Frontier, 6).unwrap();
     let alone = verify_held("A", &[held(&second, "m".into(), bytes, OpFate::Applied)]);
     assert_eq!(alone.pending, vec![second.hash()]);
     assert_eq!(alone.missing.len(), 1);
@@ -84,10 +97,29 @@ fn a_refused_op_is_quarantined_and_a_verified_op_carries_its_lamport() {
     let cert = cert(&creator);
     let state = GovernanceState::default();
     let empty = VerifiedSet::default();
-    let (ours, ours_bytes) = build_op("A", &cert, &state, &empty, &creator, meta("a"), 5).unwrap();
+    let (ours, ours_bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &empty,
+        &creator,
+        meta("a"),
+        Deps::Frontier,
+        5,
+    )
+    .unwrap();
     // A non-member's write verifies (signature, chain) but the merge refuses it.
-    let (theirs, theirs_bytes) =
-        build_op("A", &cert, &state, &empty, &stranger, meta("b"), 5).unwrap();
+    let (theirs, theirs_bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &empty,
+        &stranger,
+        meta("b"),
+        Deps::Frontier,
+        5,
+    )
+    .unwrap();
     let set = verify_held(
         "A",
         &[
@@ -173,14 +205,35 @@ fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_sta
         &VerifiedSet::default(),
         &key,
         meta("a"),
+        Deps::Frontier,
         5,
     )
     .unwrap();
     let held_first = held(&first, "m".into(), first_bytes, OpFate::Applied);
     let base = verify_held("A", std::slice::from_ref(&held_first));
     // A restored backup: two different ops at seq 1, both after `first`.
-    let (left, left_bytes) = build_op("A", &cert, &state, &base, &key, meta("b"), 6).unwrap();
-    let (right, right_bytes) = build_op("A", &cert, &state, &base, &key, meta("c"), 7).unwrap();
+    let (left, left_bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &base,
+        &key,
+        meta("b"),
+        Deps::Frontier,
+        6,
+    )
+    .unwrap();
+    let (right, right_bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &base,
+        &key,
+        meta("c"),
+        Deps::Frontier,
+        7,
+    )
+    .unwrap();
     assert_eq!((left.op().seq, right.op().seq), (1, 1));
     let set = verify_held(
         "A",

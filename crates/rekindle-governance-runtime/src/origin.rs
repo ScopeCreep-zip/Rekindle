@@ -45,16 +45,24 @@ fn random_channel_id(rng: &dyn rekindle_utils::RandomSource) -> ChannelId {
     ChannelId(rekindle_utils::random::id_bytes_16_from(rng))
 }
 
+/// The number of genesis ops, the creator's ops #0…4.
+const GENESIS_OPS: usize = 5;
+
+/// The seq of the creator's last genesis op (`ChannelCreated`): the base a
+/// join cites while no checkpoint exists (plan E3.2 S7c.0,
+/// [`join_deps`](crate::join_deps::join_deps)).
+pub const GENESIS_LAST_SEQ: u64 = 4;
+
 /// The genesis ops' bodies, the creator's ops #0…n in this order. The
 /// admission mode is not among them: `GenesisCert.policy` pins it (plan
 /// E3.2 decision (b)).
-fn genesis_entries(
+pub(crate) fn genesis_entries(
     name: &str,
     my_pseudo: &PseudonymKey,
     channel_id: ChannelId,
     channel_record_key: &str,
-) -> Vec<GovernanceEntry> {
-    vec![
+) -> [GovernanceEntry; GENESIS_OPS] {
+    [
         GovernanceEntry::CommunityMeta {
             name: Some(name.to_string()),
             description: None,
@@ -284,6 +292,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
             &set,
             &pseudonym_signing,
             body,
+            op_log::Deps::Frontier,
             cert.created_at,
         )?;
         genesis_ops.push(op_log::held(
@@ -467,5 +476,6 @@ mod genesis_tests {
             })
             .collect();
         assert_eq!(kinds, ["meta", "role", "role", "assign", "channel"]);
+        assert_eq!(super::GENESIS_LAST_SEQ, entries.len() as u64 - 1);
     }
 }

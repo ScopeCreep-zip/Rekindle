@@ -3,7 +3,7 @@
 //! is not, and the cache holds the last held set's ops only.
 
 use super::*;
-use crate::op_log::{build_op, held, verify_held, OpFate};
+use crate::op_log::{build_op, held, verify_held, Deps, OpFate};
 use rekindle_codec::governance_op::{encode_op, op_unsigned_bytes};
 use rekindle_governance::fixture::meta;
 use rekindle_governance::state::GovernanceState;
@@ -26,8 +26,17 @@ fn chain(len: usize) -> Vec<HeldOp> {
     let mut out = Vec::new();
     for i in 0..len {
         let set = verify_held("A", &out);
-        let (op, bytes) =
-            build_op("A", &cert, &state, &set, &key, meta(&format!("m{i}")), 5).unwrap();
+        let (op, bytes) = build_op(
+            "A",
+            &cert,
+            &state,
+            &set,
+            &key,
+            meta(&format!("m{i}")),
+            Deps::Frontier,
+            5,
+        )
+        .unwrap();
         out.push(held(&op, "VLD0:m".into(), bytes, OpFate::Applied));
     }
     out

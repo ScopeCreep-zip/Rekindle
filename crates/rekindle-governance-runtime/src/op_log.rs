@@ -141,13 +141,24 @@ fn frontier(ops: &[VerifiedOp], must: Option<OpHash>) -> Vec<&VerifiedOp> {
     heads
 }
 
-/// Our op for `body`: the next seq of our chain, the frontier as deps,
+/// The deps an op cites (plan E3.2 S7c.0).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Deps {
+    /// The frontier of the verified set (every op but a join).
+    Frontier,
+    /// A `MemberJoined`'s shallow deps, by hash, from
+    /// [`join_deps`](crate::join_deps::join_deps); our previous op is
+    /// added when missing (the chain rule).
+    Join(Vec<OpHash>),
+}
+
+/// Our op for `body`: the next seq of our chain, `deps` as its deps,
 /// signed by `key` (our community pseudonym) and verified against `set`
 /// as every reader verifies it.
 ///
 /// # Errors
-/// A dep's author has no member record in `state`, the op does not
-/// encode, or it fails verification.
+/// A dep's author has no member record in `state`, a join dep is not in
+/// `set`, the op does not encode, or it fails verification.
 pub fn build_op(
     anchor: &str,
     cert: &GenesisCert,
@@ -155,6 +166,7 @@ pub fn build_op(
     set: &VerifiedSet,
     key: &SigningKey,
     body: GovernanceEntry,
+    deps: Deps,
     issued_at: u64,
 ) -> Result<(VerifiedOp, Vec<u8>), GovernanceRuntimeError> {
     let author = PseudonymKey(key.verifying_key().to_bytes());
@@ -164,7 +176,7 @@ pub fn build_op(
         .filter(|op| *op.author() == author)
         .max_by_key(|op| op.op().seq);
     let (seq, prev) = last.map_or((0, None), |op| (op.op().seq + 1, Some(op.hash())));
-    let deps = frontier(&set.ops, prev)
+    let deps = cited(set, deps, prev)?
         .into_iter()
         .map(|op| {
             author_record(cert, state, op.author())
@@ -190,6 +202,28 @@ pub fn build_op(
     let verified = VerifiedOp::verify(anchor, op, &unsigned, |h| known.get(h).copied())
         .map_err(|e| GovernanceRuntimeError::OpRefused(format!("{e:?}")))?;
     Ok((verified, encoded))
+}
+
+/// The ops `deps` names in `set`, `prev` among them, in hash order.
+fn cited(
+    set: &VerifiedSet,
+    deps: Deps,
+    prev: Option<OpHash>,
+) -> Result<Vec<&VerifiedOp>, GovernanceRuntimeError> {
+    let Deps::Join(mut hashes) = deps else {
+        return Ok(frontier(&set.ops, prev));
+    };
+    hashes.extend(prev);
+    hashes.sort_unstable();
+    hashes.dedup();
+    hashes
+        .iter()
+        .map(|h| {
+            set.ops.iter().find(|op| op.hash() == *h).ok_or_else(|| {
+                GovernanceRuntimeError::OpRefused(format!("join dep {} not held", hex::encode(h.0)))
+            })
+        })
+        .collect()
 }
 
 /// The stored form of a verified op.

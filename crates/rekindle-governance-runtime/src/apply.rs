@@ -155,6 +155,7 @@ async fn write<D: GovernanceRuntimeDeps>(
         &set,
         &key,
         entry.clone(),
+        op_log::Deps::Frontier,
         deps.clock().now_secs(),
     )?;
     // Our member record M(p), where our op log lives: the cert's for the
