@@ -391,9 +391,9 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let state = deps.governance_state(community_id).unwrap_or_default();
     let record = match &decoded.op.body {
-        GovernanceEntry::MemberJoined { member_record, .. } if decoded.op.seq == 0 => {
-            Some(member_record.clone())
-        }
+        // A `MemberJoined` names its own record (op #0, or a re-join that
+        // binds a fresh record, owner-proved).
+        GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
         _ => author_record(&cert, &state, &decoded.op.author),
     };
     let Some(author_record) = record else {
@@ -427,8 +427,8 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
 
 /// The receive-side bounds on a gossiped op, before it is stored: its
 /// fields are within the reader bounds (`validate::bounds`, which the merge
-/// applies too), and a seq-0 `MemberJoined` from an author `state` does not
-/// already hold carries an invite proof naming one of the community's live
+/// applies too), and a `MemberJoined` (op #0 or a re-join) from an author
+/// `state` does not already hold carries an invite proof naming one of the community's live
 /// `InviteCreated` codes (plan E3.2: readers check `inviteProof` against the
 /// community's `InviteCreated` set; every admission mode needs an invite),
 /// so a key with no invite cannot leave a row behind. The merge's invite
@@ -439,7 +439,8 @@ pub fn receive_bounded(op: &GovernanceOp, state: &GovernanceState) -> bool {
         return false;
     }
     match &op.body {
-        GovernanceEntry::MemberJoined { invite_proof, .. } if op.seq == 0 => {
+        // Op #0, or a re-join by an author that left or was removed.
+        GovernanceEntry::MemberJoined { invite_proof, .. } => {
             let known = state.members.contains_key(&op.author)
                 || state.pending_members.contains_key(&op.author);
             known

@@ -65,6 +65,7 @@ impl HostGovernance {
             mek_generation: 0,
         };
         let joined_at = self.ctx.clock.now_ms_i64();
+        let recorded = membership.clone();
         crate::host::session::record_membership(
             &self.ctx.session,
             &self.ctx.db,
@@ -87,6 +88,7 @@ impl HostGovernance {
         // then `M` in §4.4's order.
         self.store_join_ops(&id, &outcome).await?;
         rekindle_governance_runtime::rebuild_governance(self, &id).await;
+        self.mirror_own_chain(&id, &outcome).await?;
         let joined_queued = self
             .publish_joined_record(&id, &outcome)
             .await
@@ -99,7 +101,17 @@ impl HostGovernance {
         // the walk from its frontier. The invite carries no community key
         // (D11): the inviter pushes it by `MekTransfer` once it merged our
         // `MemberJoined` (D16).
-        self.bootstrap_from_inviter(&id, &outcome).await;
+        // An inviter that answers and refuses holds our `MemberJoined`
+        // invalid, as every member's merge will: the join is withdrawn (our
+        // `MemberLeft`, the community forgotten) and fails, never a
+        // membership with no key.
+        if let Err(refused) = self.bootstrap_from_inviter(&id, &outcome).await {
+            tracing::warn!(community = %id, error = %refused, "join refused by the inviter, withdrawn");
+            self.leave(&recorded).await.map_err(|e| {
+                format!("community join refused ({refused}), withdrawal failed: {e}")
+            })?;
+            return Err(format!("community join failed: {refused}"));
+        }
         self.audit_joined(&id, &outcome.invite.community_name);
         tracing::info!(community = %id, "joined community");
         // Our `MemberJoined` not on `M` yet is a pending success: applied,
@@ -233,6 +245,56 @@ impl HostGovernance {
         Ok(queued.load(std::sync::atomic::Ordering::Relaxed))
     }
 
+    /// A re-join (our `MemberJoined` is a later op of our own chain, after
+    /// our departure): our earlier ops, walked from the inviter's frontier,
+    /// go first on the fresh member record, so it holds our whole chain at
+    /// chain seq `op.seq + 1`, where an `OpRef` locates every op
+    /// (`fetch_governance_op_impl`), the re-join's `MemberJoined` included.
+    ///
+    /// # Errors
+    /// An earlier op of ours was not walked, or an append failed.
+    async fn mirror_own_chain(
+        &self,
+        community: &str,
+        outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
+    ) -> Result<(), String> {
+        let joined = &outcome.joined;
+        if joined.seq == 0 {
+            return Ok(());
+        }
+        let mut own: Vec<&rekindle_governance_runtime::op_log::HeldOp> = outcome
+            .walked
+            .iter()
+            .filter(|op| op.author == joined.author)
+            .collect();
+        own.sort_by_key(|op| op.seq);
+        own.dedup_by_key(|op| op.seq);
+        if !own.iter().map(|op| op.seq).eq(0..joined.seq) {
+            return Err("community re-join failed: our earlier ops are not all readable".into());
+        }
+        let entries: Vec<Vec<u8>> = own.iter().map(|op| op.encoded.clone()).collect();
+        let writer = self.member_record_writer(community)?;
+        let pool = self
+            .transport()
+            .map_err(|e| e.to_string())?
+            .require_records()
+            .map_err(|e| format!("record pool: {e}"))?;
+        let runs = rekindle_records::chain::page_runs(&entries)
+            .map_err(|e| format!("community re-join failed: {e}"))?;
+        for run in runs {
+            rekindle_records::chain::append_at(
+                &*pool,
+                &outcome.member.record_key,
+                rekindle_types::dht_layout::member_record::GOV_HEAD,
+                &writer,
+                run,
+            )
+            .await
+            .map_err(|e| format!("community re-join failed, op log not written: {e}"))?;
+        }
+        Ok(())
+    }
+
     async fn store_join_ops(
         &self,
         community: &str,
@@ -252,12 +314,17 @@ impl HostGovernance {
     }
 
     /// The bootstrap exchange (plan E3.2). The join already stands from
-    /// the DHT; an inviter that is not online leaves it as it is.
+    /// the DHT; an inviter that is not online leaves it as it is, and the
+    /// community key comes from the members that merge our `MemberJoined`
+    /// (`recover_behind_meks`, D16).
+    ///
+    /// # Errors
+    /// The inviter answered and refused our `MemberJoined`.
     async fn bootstrap_from_inviter(
         &self,
         community: &str,
         outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
-    ) {
+    ) -> Result<(), rekindle_governance_runtime::GovernanceRuntimeError> {
         use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
         let joined = &outcome.joined;
         let joiner = rekindle_governance_runtime::BootstrapJoiner {
@@ -280,18 +347,22 @@ impl HostGovernance {
         .await
         {
             Ok(walked) => walked,
+            Err(e @ rekindle_governance_runtime::GovernanceRuntimeError::BootstrapRefused(_)) => {
+                return Err(e)
+            }
             Err(e) => {
                 tracing::info!(community, error = %e, "bootstrap exchange not completed");
-                return;
+                return Ok(());
             }
         };
         for op in &walked {
             if let Err(e) = self.store_governance_op(community, op).await {
                 tracing::warn!(community, error = %e, "bootstrap op not stored");
-                return;
+                return Ok(());
             }
         }
         rekindle_governance_runtime::rebuild_governance(self, community).await;
+        Ok(())
     }
 
     async fn store_own_member_row(

@@ -26,7 +26,8 @@ use crate::op_log::{self, HeldOp};
 /// `MAX_APP_CALL_Q_MESSAGE_LEN`).
 pub const MAX_BOOTSTRAP_RESPONSE_LEN: usize = 32_768;
 
-/// Who asks: the joiner's pseudonym and its op #0, `MemberJoined`.
+/// Who asks: the joiner's pseudonym and its `MemberJoined` (op #0, or a
+/// re-join's later op).
 #[derive(Debug, Clone)]
 pub struct BootstrapJoiner {
     /// Hex of the joiner's community pseudonym.
@@ -48,8 +49,8 @@ fn adapter(msg: impl Into<String>) -> GovernanceRuntimeError {
 /// `bootstrapResponseV2` with our frontier.
 ///
 /// # Errors
-/// We are not in the community, the op is not the joiner's op #0 or does
-/// not match its `OpRef`, the merged state does not hold the joiner as a member,
+/// We are not in the community, the op is not the joiner's `MemberJoined`
+/// or does not match its `OpRef`, the merged state does not hold the joiner as a member,
 /// or the store or the encode failed. The caller NAKs.
 pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     deps: &D,
@@ -59,14 +60,15 @@ pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     deps.community_membership(anchor)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(anchor.to_owned()))?;
     let author = &joiner.member_joined.author;
-    if hex::encode(author.0) != joiner.pseudonym || joiner.member_joined.author_seq != 0 {
-        return Err(adapter("bootstrap: the OpRef is not the joiner's op #0"));
+    if hex::encode(author.0) != joiner.pseudonym {
+        return Err(adapter("bootstrap: the OpRef is not the joiner's"));
     }
     let op = op_log::held_from_encoded(&joiner.member_joined, joiner.member_joined_op.clone())
         .ok_or_else(|| adapter("bootstrap: the op does not match the joiner's OpRef"))?;
-    if op.seq != 0 || op.author != *author {
+    let before = deps.governance_state(anchor).unwrap_or_default();
+    if !is_joiners_member_joined(&op, &joiner.member_joined, &before) {
         return Err(adapter(
-            "bootstrap: the fetched op is not the joiner's op #0",
+            "bootstrap: the op is not the joiner's MemberJoined (op #0, or a re-join after its departure)",
         ));
     }
     op_log::receive_op(deps, anchor, op.encoded).await?;
@@ -97,6 +99,30 @@ pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     Ok(bytes)
 }
 
+/// Whether `op` is the joiner's `MemberJoined`: its op #0, or a re-join,
+/// a later `MemberJoined` of the same pseudonym by an author `state` does
+/// not hold as a member (it left or was removed; the merge's re-join rule,
+/// `gates::rejoined`, decides whether it stands). A member's community
+/// pseudonym is fixed per identity and community (`derive_community_pseudonym`),
+/// so a re-join continues its own op chain.
+fn is_joiners_member_joined(
+    op: &op_log::HeldOp,
+    op_ref: &OpRef,
+    state: &rekindle_governance::state::GovernanceState,
+) -> bool {
+    let Ok(decoded) = rekindle_codec::governance_op::decode_op(&op.encoded) else {
+        return false;
+    };
+    let joined = matches!(
+        decoded.op.body,
+        rekindle_types::governance::GovernanceEntry::MemberJoined { .. }
+    );
+    joined
+        && op.author == op_ref.author
+        && op.seq == op_ref.author_seq
+        && (op.seq == 0 || !state.members.contains_key(&op.author))
+}
+
 fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntimeError> {
     let bytes = rekindle_codec::capnp_envelope::encode_community_envelope(
         &CommunityEnvelope::Control(payload),
@@ -116,8 +142,9 @@ fn encode_response(payload: ControlPayload) -> Result<Vec<u8>, GovernanceRuntime
 /// walk found (the caller stores the new ones and rebuilds).
 ///
 /// # Errors
-/// The `app_call` failed or was refused, the reply is not a
-/// `bootstrapResponseV2` for `anchor`, or the walk failed.
+/// The `app_call` failed, the inviter refused
+/// ([`GovernanceRuntimeError::BootstrapRefused`]: the reply is not a
+/// `bootstrapResponseV2` for `anchor`), or the walk failed.
 pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
     deps: &D,
     inviter_route: &[u8],
@@ -140,7 +167,11 @@ pub async fn request_bootstrap<D: GovernanceRuntimeDeps>(
             frontier,
             ..
         }))) if answered == anchor => frontier,
-        _ => return Err(adapter("bootstrap: the inviter refused the request")),
+        _ => {
+            return Err(GovernanceRuntimeError::BootstrapRefused(
+                "the reply is not a bootstrapResponseV2 for this community".into(),
+            ))
+        }
     };
     op_log::walk(deps, anchor, &frontier).await
 }

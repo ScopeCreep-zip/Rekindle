@@ -383,7 +383,7 @@ impl HostGovernance {
     }
 
     /// `K_M(p)`, our member record's owner, from the vault.
-    fn member_record_writer(
+    pub(super) fn member_record_writer(
         &self,
         community_id: &str,
     ) -> Result<zeroize::Zeroizing<String>, String> {

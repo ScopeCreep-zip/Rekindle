@@ -110,6 +110,12 @@ pub enum GovernanceRuntimeError {
     #[error("adapter error: {0}")]
     Adapter(String),
 
+    /// The inviter answered our `BootstrapRequest` and refused it: its merge
+    /// does not hold our `MemberJoined` (plan E3.2). Distinct from an
+    /// inviter that is not reachable, where the join stands from the DHT.
+    #[error("the inviter refused the join: {0}")]
+    BootstrapRefused(String),
+
     /// Our op did not land on our member record `M` within the command's
     /// deadline; it stays queued and the outbox lands it later (plan E3.2
     /// S6b).
