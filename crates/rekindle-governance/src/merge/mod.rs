@@ -161,7 +161,7 @@ fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
         _ => None,
     };
     if let Some((gone, heads)) = departed {
-        let heads = heads.iter().map(|h| (h.record_key.clone(), h.seq));
+        let heads = (heads.iter()).map(|h| (h.record_key.clone(), (h.seq, h.digest)));
         state.departed_heads.insert(gone.clone(), heads.collect());
     }
     let remover_of = match op.body() {

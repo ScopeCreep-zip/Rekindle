@@ -257,6 +257,7 @@ mod admission_wire_tests {
             vec![rekindle_types::governance::SlotHead {
                 record_key: "VLD0:channel".into(),
                 seq: 3,
+                digest: [3; 32],
             }],
         ] {
             round_trip(&GovernanceEntry::MemberLeft { heads });
@@ -268,6 +269,7 @@ mod admission_wire_tests {
                 heads: vec![rekindle_types::governance::SlotHead {
                     record_key: "VLD0:channel".into(),
                     seq: 7,
+                    digest: [7; 32],
                 }],
             });
         }
@@ -288,6 +290,30 @@ mod admission_wire_tests {
             decode_governance_entry(&bytes),
             Err(CodecError::Deserialization(_))
         ));
+    }
+
+    /// A slot head without its 32-byte digest is refused (plan S9): a
+    /// departed member's posts are kept only from exactly the committed
+    /// value, and no build wrote a head without one.
+    #[test]
+    fn a_slot_head_without_its_digest_is_refused() {
+        use crate::community_governance_capnp::governance_entry as schema;
+        use crate::error::CodecError;
+        for digest in [None, Some(&[9u8; 31][..])] {
+            let mut builder = capnp::message::Builder::new_default();
+            let root = builder.init_root::<schema::Builder<'_>>();
+            let mut head = root.init_member_left().init_heads(1).get(0);
+            head.set_record_key("VLD0:channel");
+            head.set_seq(3);
+            if let Some(digest) = digest {
+                head.set_digest(digest);
+            }
+            let bytes = crate::capnp_codec::pack(&builder);
+            assert!(matches!(
+                decode_governance_entry(&bytes),
+                Err(CodecError::Deserialization(_))
+            ));
+        }
     }
 
     #[test]

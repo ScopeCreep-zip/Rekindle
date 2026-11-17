@@ -209,8 +209,8 @@ struct MemberRecordMovedPayload {
 
 struct MemberLeftPayload {
     # The leaver's own channel slots as it held them when it left: a
-    # backfilled post of the leaver is kept only from a slot value at or
-    # below its recorded seq (A/B finding R3-8). Required: an op without
+    # backfilled post of the leaver is kept only from exactly the recorded
+    # slot value, seq and digest (A/B finding R3-8, plan S9). Required: an op without
     # the list is refused, so every leave states its heads.
     heads                @0 :List(SlotHeadPayload);
 }
@@ -220,14 +220,18 @@ struct MemberRemovedPayload {
     hasReason            @1 :Bool;
     reason               @2 :Text;
     # The removed member's channel slots as the remover held them: a
-    # backfilled post of the member is kept only from a slot value at or
-    # below its recorded seq (A/B finding R3-8).
+    # backfilled post of the member is kept only from exactly the recorded
+    # slot value, seq and digest (A/B finding R3-8, plan S9).
     heads                @3 :List(SlotHeadPayload);
 }
 
 struct SlotHeadPayload {
     recordKey            @0 :Text;
     seq                  @1 :UInt32;
+    # BLAKE3 derive_key digest of the slot value at `seq`: record key,
+    # subkey, seq and the decrypted page (plan S9). Required, 32 bytes: a
+    # departed member's post is kept only from exactly this value.
+    digest               @2 :Data;
 }
 
 struct MemberApprovedPayload {

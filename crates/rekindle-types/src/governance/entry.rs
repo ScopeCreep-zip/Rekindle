@@ -524,11 +524,14 @@ pub enum GovernanceEntry {
     },
 }
 
-/// The seq of a member's slot value in one channel record, as a
+/// The exact value of a member's slot in one channel record, as a
 /// `MemberRemoved` or the member's own `MemberLeft` records it (A/B
-/// finding R3-8).
+/// finding R3-8, plan S9): its seq and the digest of its decrypted page
+/// (`rekindle_secrets::slot_head_digest`). A reader keeps the departed
+/// member's backfilled posts only when read from exactly this value.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SlotHead {
     pub record_key: String,
     pub seq: u32,
+    pub digest: [u8; 32],
 }

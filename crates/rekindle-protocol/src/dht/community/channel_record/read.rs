@@ -35,9 +35,16 @@ pub async fn read_all_channel_entries(
     let mut items = Vec::new();
     for (subkey_index, value) in read? {
         if let Ok(entries) = decode_channel_entries(&value.data) {
+            let slot_digest = rekindle_secrets::slot_head::slot_head_digest(
+                channel_key,
+                subkey_index,
+                value.seq,
+                &value.data,
+            );
             items.extend(entries.into_iter().map(|entry| ChannelRecordItem {
                 subkey_index,
                 seq: value.seq,
+                slot_digest,
                 entry,
             }));
         }

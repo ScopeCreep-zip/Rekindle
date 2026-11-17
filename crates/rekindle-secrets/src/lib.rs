@@ -31,6 +31,7 @@ pub mod pq_keys;
 pub mod rotator;
 pub mod sframe;
 pub mod sign;
+pub mod slot_head;
 pub mod sync_key;
 
 // Re-export ed25519_dalek for callers that need SigningKey/VerifyingKey types

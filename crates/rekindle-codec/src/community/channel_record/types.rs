@@ -192,6 +192,11 @@ pub struct ChannelRecordItem {
     pub subkey_index: u32,
     /// The seq of the slot value it was read from.
     pub seq: u32,
+    /// The digest of that slot value's decrypted page
+    /// (`rekindle_secrets::slot_head::slot_head_digest`): a departed
+    /// member's post is kept only from the value its departure named
+    /// (plan E3.2 S9).
+    pub slot_digest: [u8; 32],
     pub entry: ChannelRecordEntry,
 }
 

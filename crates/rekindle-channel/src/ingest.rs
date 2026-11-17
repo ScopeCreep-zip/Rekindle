@@ -47,20 +47,22 @@ pub struct GateItem<'a> {
     /// Read from history (the backfill), not received live: a departed
     /// author's post from before its departure stays readable.
     pub backfill: bool,
-    /// Where a backfilled post was read: the channel record and the seq
-    /// of the author's slot value holding it. A departed author's post is
-    /// kept from history only at or below the seq its departure recorded
-    /// (A/B finding R3-8); `None` (a live post, or a read that does not
-    /// know the seq) keeps none.
+    /// Where a backfilled post was read: the channel record, and the seq
+    /// and digest of the author's slot value holding it. A departed
+    /// author's post is kept from history only from exactly the value its
+    /// departure recorded (A/B finding R3-8, plan S9); `None` (a live post,
+    /// or a read that does not know the value) keeps none.
     pub slot: Option<SlotPosition<'a>>,
 }
 
-/// A slot value's place in a channel record: the record and the value's
-/// seq, which only rises with each write of the slot.
+/// A slot value's place in a channel record: the record, the value's seq
+/// (which only rises with each write of the slot) and the digest of its
+/// decrypted page (`rekindle_secrets::slot_head::slot_head_digest`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SlotPosition<'a> {
     pub record_key: &'a str,
     pub seq: u32,
+    pub digest: [u8; 32],
 }
 
 /// Why the gate hid or dropped a post.
@@ -240,16 +242,24 @@ fn not_member(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>)
 
 /// Whether a departed author's backfilled post predates its departure. It
 /// is judged by its causal position, never by the time the author wrote
-/// into it: it is kept only from a slot value at or below the seq the
-/// departure recorded for that record (the remover's for a kick, the
-/// leaver's own for a leave), so a departed member writing its
-/// still-writable slot cannot back-date a post into history (A/B finding
-/// R3-8; Matrix judges history at the event's place in the DAG). A
-/// departure with no head for the record keeps none of it.
+/// into it: it is kept only when read from exactly the slot value the
+/// departure recorded for that record, its seq and the digest of its page
+/// (the remover's for a kick, the leaver's own for a leave). So a departed
+/// member writing its still-writable slot cannot back-date a post into
+/// history (A/B finding R3-8; Matrix judges history at the event's place
+/// in the DAG), and a leaver that signed a head above its published seq
+/// cannot fill the gap afterwards (plan S9: a value at another seq, or at
+/// the head's seq with another page, is never kept). A slot value is the
+/// member's whole recent page (`channel_record/write.rs`), so the head
+/// value carries every post it had; an older value a stale replica serves
+/// keeps none, and the next read of the head value keeps them. A departure
+/// with no head for the record keeps none of it.
 fn predates_departure(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>) -> bool {
     gov.departed_heads.get(sender).is_some_and(|heads| {
-        item.slot
-            .is_some_and(|slot| (heads.get(slot.record_key)).is_some_and(|head| slot.seq <= *head))
+        item.slot.is_some_and(|slot| {
+            (heads.get(slot.record_key))
+                .is_some_and(|(seq, digest)| slot.seq == *seq && slot.digest == *digest)
+        })
     })
 }
 

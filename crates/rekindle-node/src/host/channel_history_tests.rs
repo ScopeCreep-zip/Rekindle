@@ -61,6 +61,7 @@ fn record_message() -> RecordMessage {
         attachment: Some(offer()),
         record_key: "VLD0:ch".into(),
         slot_seq: 0,
+        slot_digest: [0; 32],
     }
 }
 

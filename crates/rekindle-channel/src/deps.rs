@@ -94,6 +94,8 @@ pub struct ChannelEntryItem {
     pub subkey_index: u32,
     /// The seq of the slot value it was read from.
     pub seq: u32,
+    /// The digest of that slot value's page (plan E3.2 S9).
+    pub slot_digest: [u8; 32],
     pub entry: ChannelRecordEntry,
 }
 

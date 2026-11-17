@@ -61,9 +61,15 @@ fn read_heads(
 ) -> Result<Vec<SlotHead>, CodecError> {
     list.iter()
         .map(|h| {
+            // A missing digest reads as empty and is refused with a short one.
+            let digest = h.get_digest().map_err(|e| capnp_err(&e))?;
+            let digest: [u8; 32] = digest.try_into().map_err(|_| {
+                CodecError::Deserialization("slot head without a 32-byte digest".into())
+            })?;
             Ok(SlotHead {
                 record_key: text_to_string(h.get_record_key().map_err(|e| capnp_err(&e))?)?,
                 seq: h.get_seq(),
+                digest,
             })
         })
         .collect()
@@ -146,5 +152,6 @@ fn write_heads(
         let mut h = list.reborrow().get(i);
         h.set_record_key(&head.record_key);
         h.set_seq(head.seq);
+        h.set_digest(&head.digest);
     }
 }

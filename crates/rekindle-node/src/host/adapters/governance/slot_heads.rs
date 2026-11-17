@@ -1,10 +1,13 @@
 //! The slot heads a departure records (A/B finding R3-8): for each channel
 //! record of the departing member's segment, the seq of its slot value as
-//! we hold it when we remove it, or of our own when we leave. The
+//! we hold it when we remove it, or of our own when we leave, and the
+//! digest of that value's page (plan S9). The
 //! `MemberRemoved` or our `MemberLeft` carries them, signed, to every
 //! reader, so every reader keeps the same of the member's posts from
-//! history: those read from a value at or below its head, and none from a
-//! record with no head. A reader computing the heads itself at merge time
+//! history: those read from exactly its head value, and none from a record
+//! with no head. The digest closes a leaver's reserved seq gap: a head
+//! signed above the published seq names a page that a later write into the
+//! gap (veilid-core 0.5.8 `set_value` `min_seqnum`) never matches. A reader computing the heads itself at merge time
 //! would hold a different value than its peers and keep different posts.
 //!
 //! Our own slot is found from our membership, never from the roster: the
@@ -14,7 +17,8 @@
 
 use rekindle_governance_runtime::deps::CommunityMembership;
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_records::port::{OpenIntent, ReportScope};
+use rekindle_records::lease::LeaseId;
+use rekindle_records::port::{OpenIntent, PortError, RecordPort, RecordValue, ReportScope};
 use rekindle_types::dht_layout::channel::OWNER_SUBKEY_COUNT;
 use rekindle_types::governance::SlotHead;
 
@@ -73,19 +77,22 @@ impl HostGovernance {
             // A local inspect, not a get: a get without refresh still asks
             // the network when we hold no value (veilid-core 0.5.8
             // `storage_manager/get_value.rs:155-165` returns early only on a
-            // local hit), which held the kick ~11 s in the netsim.
-            let read = (pool.inspect(lease, Some(&[slot]), ReportScope::Local)).await;
+            // local hit), which held the kick ~11 s in the netsim. Only a
+            // slot the inspect found locally is then read, a local hit.
+            let read = local_slot_value(&*pool, lease, slot).await;
             pool.release(lease).await;
             match read {
-                Ok(report) => heads.extend(
-                    (report.subkeys.iter().zip(&report.local_seqs))
-                        .filter(|(subkey, _)| **subkey == slot)
-                        .filter_map(|(_, seq)| *seq)
-                        .map(|seq| SlotHead {
-                            record_key: record_key.clone(),
-                            seq,
-                        }),
-                ),
+                Ok(Some(value)) => heads.push(SlotHead {
+                    digest: rekindle_secrets::slot_head::slot_head_digest(
+                        &record_key,
+                        slot,
+                        value.seq,
+                        &value.data,
+                    ),
+                    record_key,
+                    seq: value.seq,
+                }),
+                Ok(None) => {}
                 Err(e) if departed.own => return Err(adapter(e)),
                 Err(e) => {
                     tracing::warn!(
@@ -161,6 +168,26 @@ impl HostGovernance {
         record_keys.dedup();
         record_keys
     }
+}
+
+/// Our local copy of `slot`'s value, never read from the network: the
+/// head commits to its seq and its decrypted page (plan S9), so a reader
+/// keeps the member's posts only from exactly that value. `None` when we
+/// hold no value of the slot.
+async fn local_slot_value(
+    pool: &dyn RecordPort,
+    lease: LeaseId,
+    slot: u32,
+) -> Result<Option<RecordValue>, PortError> {
+    let report = pool
+        .inspect(lease, Some(&[slot]), ReportScope::Local)
+        .await?;
+    let held = (report.subkeys.iter().zip(&report.local_seqs))
+        .any(|(subkey, seq)| *subkey == slot && seq.is_some());
+    if !held {
+        return Ok(None);
+    }
+    pool.get(lease, slot, false).await
 }
 
 fn adapter(e: impl std::fmt::Display) -> GovernanceRuntimeError {

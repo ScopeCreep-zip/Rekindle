@@ -38,6 +38,9 @@ pub struct RecordMessage {
     /// The seq of its author's slot value it was read from: the gate keeps
     /// a removed author's post by it (A/B finding R3-8).
     pub slot_seq: u32,
+    /// The digest of that slot value's page: the gate keeps a departed
+    /// author's post only from the exact value its departure named (S9).
+    pub slot_digest: [u8; 32],
 }
 
 /// The latest `limit` messages of `channel_id`'s record (only those older
@@ -71,7 +74,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
             ChannelRecordEntry::Message(message)
                 if before.is_none_or(|before| message.timestamp < before) =>
             {
-                Some((item.subkey_index, item.seq, message))
+                Some((item.subkey_index, (item.seq, item.slot_digest), message))
             }
             _ => None,
         })
@@ -84,7 +87,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
     Ok(messages
         .into_iter()
         .skip(skip)
-        .map(|(subkey_index, slot_seq, message)| {
+        .map(|(subkey_index, (slot_seq, slot_digest), message)| {
             let body = crate::text_keys::open_text(
                 deps,
                 community_id,
@@ -138,6 +141,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 attachment: message.attachment.clone(),
                 record_key: record_key.clone(),
                 slot_seq,
+                slot_digest,
             }
         })
         .collect())

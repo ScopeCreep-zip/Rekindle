@@ -332,14 +332,21 @@ fn a_predecessor_arriving_after_its_successor_does_not_drop_it() {
     assert_eq!(verdicts[&100], Verdict::Admit);
 }
 
+/// The page digest the departure in `departed_state` committed to.
+const HEAD_DIGEST: [u8; 32] = [4; 32];
+
 /// ANN joined (an op log is known), then departed with its slot in
-/// `VLD0:ch` at seq 4.
+/// `VLD0:ch` at seq 4, page digest `HEAD_DIGEST`.
 fn departed_state() -> GovernanceState {
     let mut gov = state();
     let ann = PseudonymKey::from_hex_lossy(ANN);
     gov.op_log_records.insert(ann.clone(), "VLD0:m".into());
-    gov.departed_heads
-        .insert(ann, [("VLD0:ch".to_string(), 4)].into_iter().collect());
+    gov.departed_heads.insert(
+        ann,
+        [("VLD0:ch".to_string(), (4, HEAD_DIGEST))]
+            .into_iter()
+            .collect(),
+    );
     gov
 }
 
@@ -356,20 +363,31 @@ fn a_departed_authors_live_post_is_dropped() {
 
 /// A departed author's backfilled post is kept by its slot position, not
 /// its own date (A/B finding R3-8), whether the departure is a kick or its
-/// own leave (both record the heads): a value above the recorded seq is
-/// dropped even when the post claims a time before the departure, and one
-/// at or below it stays readable.
+/// own leave (both record the heads): only a post read from exactly the
+/// recorded value, its seq and page digest, stays readable. A value above
+/// the head is dropped even when the post claims a time before the
+/// departure; one below it is a superseded page a stale replica serves;
+/// one at the head's seq with another page is a leaver's reserved gap
+/// filled after it left (plan S9).
 #[test]
-fn a_departed_authors_backfill_is_kept_by_slot_position_not_date() {
+fn a_departed_authors_backfill_is_kept_only_from_the_head_value() {
     let gov = departed_state();
-    let at = |seq, record_key| GateItem {
+    let at = |seq, record_key, digest| GateItem {
         backfill: true,
-        slot: Some(SlotPosition { record_key, seq }),
+        slot: Some(SlotPosition {
+            record_key,
+            seq,
+            digest,
+        }),
         ..item("old", 50, 200)
     };
-    assert_eq!(judge(&gov, &at(4, "VLD0:ch")), Verdict::Admit);
-    assert_eq!(judge(&gov, &at(3, "VLD0:ch")), Verdict::Admit);
-    for back_dated in [at(5, "VLD0:ch"), at(0, "VLD0:other")] {
+    assert_eq!(judge(&gov, &at(4, "VLD0:ch", HEAD_DIGEST)), Verdict::Admit);
+    for back_dated in [
+        at(5, "VLD0:ch", HEAD_DIGEST),
+        at(3, "VLD0:ch", HEAD_DIGEST),
+        at(4, "VLD0:ch", [5; 32]),
+        at(0, "VLD0:other", HEAD_DIGEST),
+    ] {
         assert_eq!(
             judge(&gov, &back_dated),
             Verdict::Drop(GateReason::NotMember)
@@ -411,6 +429,7 @@ fn the_author_checks_refuse_a_departed_author_without_a_body() {
         slot: Some(SlotPosition {
             record_key: "VLD0:ch",
             seq: 4,
+            digest: HEAD_DIGEST,
         }),
         ..item("", 50, 200)
     };

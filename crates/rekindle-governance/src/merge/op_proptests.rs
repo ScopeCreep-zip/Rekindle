@@ -244,6 +244,7 @@ fn a_departed_author_keeps_its_op_log_record() {
     let heads = vec![rekindle_types::governance::SlotHead {
         record_key: "VLD0:ch".into(),
         seq: 6,
+        digest: [6; 32],
     }];
     let left = op(
         &pk(4),
@@ -262,7 +263,11 @@ fn a_departed_author_keeps_its_op_log_record() {
     );
     assert_eq!(
         state.departed_heads.get(&pk(4)),
-        Some(&[("VLD0:ch".to_string(), 6)].into_iter().collect()),
+        Some(
+            &[("VLD0:ch".to_string(), (6, [6; 32]))]
+                .into_iter()
+                .collect()
+        ),
         "the leave's heads are recorded"
     );
     let rejoin = op(&pk(4), 2, &[head(&ops)], 30, joined(4, Some("code")));

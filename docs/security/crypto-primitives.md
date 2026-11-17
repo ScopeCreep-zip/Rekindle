@@ -327,6 +327,13 @@ SHA256(concatenated)` will move to a true binary Merkle tree
 - **Invite-code lookup id** (the `code_hash` an invite entry is stored
   under): `derive_key` under `rekindle-invite-code-id-v1` over the code
   (`rekindle_secrets::invite::hash_invite_code`).
+- **Departure slot heads** (plan E3.2 S9): a `MemberLeft` or `MemberRemoved`
+  commits to the exact value of the departed member's channel slot with
+  `derive_key("rekindle-departed-slot-head-v1", record key ‖ subkey ‖ seq ‖
+  page)` over the decrypted page bytes (the record key length-prefixed;
+  `rekindle_secrets::slot_head`). A reader keeps a departed member's
+  backfilled posts only from a value with that seq and digest, so a leaver
+  cannot fill a seq gap it reserved with posts written after it left.
 - **File-cache names**: every directory under `state/{pk}.files/` is a
   keyed BLAKE3 hash (`FILE_CACHE_COMMUNITY`, `FILE_CACHE_DM`,
   `FILE_CACHE_ATTACHMENT` prefixes) under a key

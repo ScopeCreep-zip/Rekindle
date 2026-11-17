@@ -137,6 +137,12 @@ labels! {
     /// BLAKE3 `derive_key` context: a `Frontier`'s roster checksum over the
     /// canonical encoding of the merged roster and role tables (D15).
     GOV_ROSTER_CHECKSUM = "rekindle-gov-roster-checksum-v1";
+    /// BLAKE3 `derive_key` context: a departure's slot head digest over
+    /// record key ‖ subkey ‖ seq ‖ the decrypted page of the departed
+    /// member's slot value (plan E3.2 S9,
+    /// `rekindle_secrets::slot_head::slot_head_digest`). Not `rekindle-slot-…`:
+    /// that is `SLOT_KEY_PREFIX`'s namespace.
+    SLOT_HEAD = "rekindle-departed-slot-head-v1";
     /// Ed25519 context: a joiner's invite proof over this label ‖ anchor ‖
     /// invite code hash ‖ member record key (plan E3.2).
     INVITE_PROOF = "rekindle-invite-proof-v1";

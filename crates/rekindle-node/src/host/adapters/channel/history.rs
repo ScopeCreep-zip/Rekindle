@@ -141,6 +141,7 @@ impl HostChannel {
                     slot: Some(SlotPosition {
                         record_key: &message.record_key,
                         seq: message.slot_seq,
+                        digest: message.slot_digest,
                     }),
                 };
                 match self.author_refused(inputs, &author) {
@@ -180,6 +181,7 @@ impl HostChannel {
                     slot: Some(SlotPosition {
                         record_key: &message.record_key,
                         seq: message.slot_seq,
+                        digest: message.slot_digest,
                     }),
                 },
             );

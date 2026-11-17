@@ -44,12 +44,13 @@ pub struct GovernanceState {
 
     /// The slot heads of each member's latest merged departure, its own
     /// `MemberLeft` or a `MemberRemoved` naming it: record key -> the seq
-    /// of its slot value the leaver or the remover held. A backfilled post
-    /// of the member is kept only from a value at or below it, never by
-    /// the post's own date (register FX1, A/B finding R3-8). A re-joined
+    /// and digest of its slot value the leaver or the remover held. A
+    /// backfilled post of the member is kept only from exactly that value,
+    /// never by the post's own date (register FX1, A/B finding R3-8, plan
+    /// S9: a seq gap the leaver reserved is never kept). A re-joined
     /// member is not departed, so its entry is not read until it departs
     /// again and that departure replaces it.
-    pub departed_heads: HashMap<PseudonymKey, HashMap<String, u32>>,
+    pub departed_heads: HashMap<PseudonymKey, HashMap<String, (u32, [u8; 32])>>,
 
     /// Highest `MemberRemoved` stamp per removed member; a re-join must
     /// come after it.
