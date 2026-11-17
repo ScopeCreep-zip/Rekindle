@@ -256,3 +256,51 @@ fn a_re_join_cites_its_own_previous_op_and_its_removal() {
     assert_eq!(rejoined.op().prev, Some(joined.hash()));
     assert!(world.state.members.contains_key(&rejoiner.author()));
 }
+
+/// Two members, the second holding its own invite `code2`, and an admin
+/// op by the creator outside that member's past.
+fn with_member_invite(admin_op: impl FnOnce(&Member) -> GovernanceEntry) -> (World, Member) {
+    let creator = Member::new(1);
+    let mut world = World::new(&creator);
+    let inviter = Member::new(11);
+    world.join(&inviter, &creator, "code");
+    world.author(&inviter, invite(2, "code2"), Deps::Frontier);
+    let body = admin_op(&inviter);
+    // Built after the creator's invite only: outside the inviter's past.
+    world.author(&creator, body, Deps::Join(vec![world.op_at(&creator, 5)]));
+    (world, inviter)
+}
+
+#[test]
+fn a_revocation_outside_the_inviters_past_leaves_a_join_concurrent() {
+    // Accepted (C5): the join sees only the inviter's chain and the base.
+    let (mut world, inviter) =
+        with_member_invite(|_| GovernanceEntry::InviteRevoked { invite_id: [2; 16] });
+    let joiner = Member::new(20);
+    world.join(&joiner, &inviter, "code2");
+    assert!(world.state.members.contains_key(&joiner.author()));
+}
+
+#[test]
+fn a_join_concurrent_with_the_inviters_removal_is_still_filtered() {
+    let creator = Member::new(1);
+    let mut world = World::new(&creator);
+    let inviter = Member::new(11);
+    let inviter_joined = world.join(&inviter, &creator, "code");
+    world.author(&inviter, invite(2, "code2"), Deps::Frontier);
+    // The joiner signs before it sees the removal.
+    let joiner = Member::new(20);
+    let deps = join_deps(&world.cert, &world.set, &joiner.author(), &inviter.author()).unwrap();
+    let (joined, encoded) = world.build(&joiner, joiner.joined("code2"), Deps::Join(deps));
+    // The removal follows the inviter's join, not its invite.
+    let removal = GovernanceEntry::MemberRemoved {
+        target: inviter.author(),
+        reason: None,
+        heads: Vec::new(),
+    };
+    let base = vec![world.op_at(&creator, 5), inviter_joined.hash()];
+    world.author(&creator, removal, Deps::Join(base));
+    world.hold(&joined, encoded);
+    assert!(!world.state.members.contains_key(&inviter.author()));
+    assert!(!world.state.members.contains_key(&joiner.author()));
+}
