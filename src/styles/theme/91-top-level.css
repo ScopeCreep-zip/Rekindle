@@ -375,5 +375,10 @@
     *:focus-visible {
       outline-width: 3px;
     }
+
+    /* The thicker ring reaches 5px; keep that room when scrolled to. */
+    * {
+      scroll-margin: 5px;
+    }
   }
 }

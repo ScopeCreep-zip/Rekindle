@@ -260,8 +260,13 @@
   }
 
   /* Profile action buttons */
+  /* Wraps at narrow widths: one unwrapped row is wider than the window
+     and, centred in .profile-content, spills past both edges. */
   .profile-actions {
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
     gap: 8px;
     padding: 12px 0;
     margin-top: 8px;

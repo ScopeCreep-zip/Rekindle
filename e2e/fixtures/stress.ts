@@ -162,6 +162,38 @@ export function channelMessages(n: number) {
   }));
 }
 
+/** A 33×33 module grid with the three finder patterns, as the Host's
+ *  `qrRows` (`1` dark, no quiet zone): the shape of a real code. */
+export function qrRows(n = 33): string[] {
+  const finder = (x: number, y: number) => {
+    const d = Math.max(Math.abs(x - 3), Math.abs(y - 3));
+    return d !== 2 && d <= 3;
+  };
+  return Array.from({ length: n }, (_, y) =>
+    Array.from({ length: n }, (_, x) => {
+      if (x < 7 && y < 7) return finder(x, y) ? "1" : "0";
+      if (x >= n - 7 && y < 7) return finder(x - (n - 7), y) ? "1" : "0";
+      if (x < 7 && y >= n - 7) return finder(x, y - (n - 7)) ? "1" : "0";
+      return (x * 7 + y * 13) % 3 === 0 ? "1" : "0";
+    }).join(""),
+  );
+}
+
+/** Our safety number with `peer` as `IdentitySafetyNumber` answers it
+ *  (`rekindle_types::dto::friends::SafetyNumberView`): 60 digits, the
+ *  scannable form in base64, its QR rows, never verified. */
+export function safetyNumber(peer: string) {
+  return {
+    peerKey: peer,
+    digits: Array.from({ length: 60 }, (_, i) => String((i * 7) % 10)).join(""),
+    scannable: "CAESIgogq83vASNFZ4mrze8BI0VniavN7wEjRWeJq83vASNFZ4kaIgog",
+    qrRows: qrRows(),
+    verified: false,
+    verifiedAt: null,
+    changed: false,
+  };
+}
+
 export interface Stress {
   friends: number;
   members: number;
@@ -226,6 +258,8 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark"): strin
         tokensHref: ${j(`skin://localhost/${ME}/tokens.css`)} };
     case "get_game_status":
       return null;
+    case "get_safety_number":
+      return ${j(safetyNumber(PEER))};
     case "get_active_call":
       return ${j(call)};
     default:

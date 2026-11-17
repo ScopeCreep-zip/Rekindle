@@ -10,6 +10,12 @@
     outline-offset: 2px;
     border-radius: inherit;
   }
+  /* The ring above reaches 4px past an element (2px outline + 2px
+   * offset): scrolling an element into view, as focus does, leaves that
+   * room so a scroll pane's edge never cuts the ring. */
+  * {
+    scroll-margin: 4px;
+  }
   *:focus:not(:focus-visible) {
     outline: none;
   }

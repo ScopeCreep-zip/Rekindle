@@ -1,4 +1,4 @@
-import { Component, createMemo, createSignal, For, Show } from "solid-js";
+import { Component, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
 import type { SafetyNumberView } from "../../ipc/commands/dto";
 import { handleSetVerified } from "../../actions/verification.actions";
 import { addToast } from "../../stores/toast.store";
@@ -56,6 +56,16 @@ const SafetyNumberPanel: Component<{
           >
             <For each={groups()}>{(group) => <span aria-hidden="true">{group}</span>}</For>
           </div>
+          {/* The Host always sends valid rows; if a reply ever does not
+              draw, only the code says so, never the digits, the name or
+              the badge above. */}
+          <ErrorBoundary
+            fallback={
+              <p class="sec-safety-number-hint" role="alert">
+                The QR code could not be drawn. Compare the numbers above instead.
+              </p>
+            }
+          >
           <svg
             class="sec-safety-number-qr"
             viewBox={`0 0 ${size()} ${size()}`}
@@ -66,6 +76,7 @@ const SafetyNumberPanel: Component<{
             <rect class="sec-safety-number-qr-ground" width={size()} height={size()} />
             <path class="sec-safety-number-qr-modules" d={qrPath(view().qrRows)} />
           </svg>
+          </ErrorBoundary>
           <p class="sec-safety-number-hint">
             Compare these numbers with them in person or on a call you trust.
           </p>

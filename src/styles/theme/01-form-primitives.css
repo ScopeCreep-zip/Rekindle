@@ -350,6 +350,15 @@
     gap: 12px;
   }
 
+  /* The profile is where a name is read in full: long names and status
+     messages wrap inside the column instead of spilling past it. */
+  .profile-display-name,
+  .profile-status-message {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
   .profile-display-name {
     font-size: 16px;
     font-weight: 600;
