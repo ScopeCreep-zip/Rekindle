@@ -133,6 +133,8 @@
     margin: 0;
     font-size: 13px;
     line-height: 1.4;
+    /* A long unbroken name (a skin, a device) wraps, never clips. */
+    overflow-wrap: anywhere;
   }
 
   /* An escalation (a verified key that changed, plan E2.3): the words carry

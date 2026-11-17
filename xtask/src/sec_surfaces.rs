@@ -93,6 +93,16 @@ pub(crate) const SURFACES: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "src/components/settings/SkinTrialPrompt.tsx",
+        &[
+            "sec-review",
+            "sec-review-subject",
+            "sec-review-fact",
+            "sec-btn-commit",
+            "sec-btn-secondary",
+        ],
+    ),
+    (
         "src/components/profile/VerifiedBadge.tsx",
         &[
             "sec-verified-badge",

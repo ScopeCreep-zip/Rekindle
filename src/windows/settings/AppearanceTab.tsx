@@ -3,6 +3,7 @@ import { commands } from "../../ipc/commands";
 import { subscribeSkinEvents, subscribeSkinTrial } from "../../ipc/channels";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
+import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
 
 /** A Host refusal as the line the tab shows. */
 function refusal(e: unknown): string | null {
@@ -115,26 +116,11 @@ const AppearanceTab: Component = () => {
     <>
       <Show when={trial()}>
         {(t) => (
-          <section class="sec-review skin-trial" aria-labelledby="skin-trial-title">
-            <div class="sec-review-subject" id="skin-trial-title">Keep this skin?</div>
-            <p class="skin-trial-text">
-              {t().name} goes back to the previous skin in {secondsLeft(t())} s unless you keep it.
-            </p>
-            <div class="skin-trial-actions">
-              <button
-                class="sec-btn-commit"
-                onClick={() => void run(() => commands.keepSkin(t().id, true))}
-              >
-                Keep this skin
-              </button>
-              <button
-                class="sec-btn-secondary"
-                onClick={() => void run(() => commands.keepSkin(t().id, false))}
-              >
-                Revert
-              </button>
-            </div>
-          </section>
+          <SkinTrialPrompt
+            trial={t()}
+            secondsLeft={secondsLeft(t())}
+            onAnswer={(keep) => void run(() => commands.keepSkin(t().id, keep))}
+          />
         )}
       </Show>
       <div class="settings-section-title">Skin</div>

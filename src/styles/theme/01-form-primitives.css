@@ -400,13 +400,12 @@
     font-style: normal;
   }
 
+  /* The trial prompt's layout around its `.sec-review` card. */
   .skin-trial {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     margin-bottom: 16px;
-  }
-
-  .skin-trial-text {
-    margin: 0;
-    overflow-wrap: anywhere;
   }
 
   /* The commit is full width (`@layer sec`); revert sits under it. */

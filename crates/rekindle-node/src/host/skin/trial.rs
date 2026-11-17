@@ -33,34 +33,12 @@ struct Inner {
 }
 
 /// The Host's one skin trial slot (`DaemonContext::skin_trial`).
+#[derive(Default)]
 pub(crate) struct TrialSlot {
     inner: parking_lot::Mutex<Inner>,
-    /// [`SKIN_TRIAL_MS`]; a test shortens it, since a paused tokio clock
-    /// would jump to the revert while the host waits on its database.
-    duration_ms: std::sync::atomic::AtomicU64,
-}
-
-impl Default for TrialSlot {
-    fn default() -> Self {
-        Self {
-            inner: parking_lot::Mutex::default(),
-            duration_ms: std::sync::atomic::AtomicU64::new(SKIN_TRIAL_MS),
-        }
-    }
 }
 
 impl TrialSlot {
-    fn duration_ms(&self) -> u64 {
-        self.duration_ms.load(std::sync::atomic::Ordering::Relaxed)
-    }
-
-    /// Run trials for `ms` instead of [`SKIN_TRIAL_MS`].
-    #[cfg(test)]
-    pub(crate) fn shorten(&self, ms: u64) {
-        self.duration_ms
-            .store(ms, std::sync::atomic::Ordering::Relaxed);
-    }
-
     /// The trial `owner` has in progress.
     pub(crate) fn current(&self, owner: &str) -> Option<SkinTrial> {
         self.inner
@@ -129,12 +107,9 @@ pub(super) async fn begin(ctx: &DaemonContext, id: String, hash: String) -> Answ
         id,
         name: m.name,
         previous,
-        reverts_at_ms: ctx
-            .clock
-            .now_ms()
-            .saturating_add(ctx.skin_trial.duration_ms()),
+        reverts_at_ms: ctx.clock.now_ms().saturating_add(SKIN_TRIAL_MS),
     };
-    let wait = Duration::from_millis(ctx.skin_trial.duration_ms());
+    let wait = Duration::from_millis(SKIN_TRIAL_MS);
     let seq = ctx.skin_trial.begin(owner, trial.clone());
     serve::announce(ctx).await?;
     publish(ctx, Some(trial));

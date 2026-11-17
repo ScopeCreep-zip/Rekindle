@@ -1,8 +1,11 @@
 //! "Keep this skin?" through `HostApi::call` on an offline host (plan
 //! E7.7.2 "Apply"): a library skin chosen goes on trial, every window is
 //! told, and the Host puts the stored choice back when the trial runs out
-//! unless `SkinKeep` keeps it. The trial is shortened here: a paused tokio
-//! clock would jump to the revert while the host waits on its database.
+//! unless `SkinKeep` keeps it. The tests wait out the real
+//! [`SKIN_TRIAL_MS`] in real time, as the Host's other timers are tested:
+//! a paused tokio clock advances whenever the runtime waits on the
+//! database thread, so it would fire the revert inside `SkinSelect`'s own
+//! reply (`skin/mod.rs` `select` reads the library after `trial::begin`).
 
 use std::time::Duration;
 
@@ -18,9 +21,7 @@ use super::skin_requests::{data, run, stand_in};
 use super::{create_ann, offline_host, status_of};
 use crate::host::Host;
 
-const TRIAL_MS: u64 = 1_500;
-
-/// An unlocked host holding one library skin, with trials of [`TRIAL_MS`].
+/// An unlocked host holding one library skin.
 async fn host_with_library_skin(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String) {
     let host = offline_host(dir).await;
     create_ann(&host).await;
@@ -37,7 +38,6 @@ async fn host_with_library_skin(dir: &tempfile::TempDir) -> (std::sync::Arc<Host
     )
     .await;
     let entry: SkinEntry = data(answer);
-    host.ctx.skin_trial.shorten(TRIAL_MS);
     (host, entry.id)
 }
 
@@ -60,10 +60,11 @@ async fn select(host: &Host, id: &str) -> SkinLibrary {
 /// The next `SkinTrialChanged` on the journal.
 async fn next_trial(events: &mut rekindle_events::EventStream) -> Option<SkinTrial> {
     loop {
-        let frame = tokio::time::timeout(Duration::from_secs(10), events.next())
-            .await
-            .expect("SkinTrialChanged within 10 s")
-            .expect("an event");
+        let frame =
+            tokio::time::timeout(Duration::from_millis(SKIN_TRIAL_MS + 10_000), events.next())
+                .await
+                .expect("SkinTrialChanged within the trial and 10 s")
+                .expect("an event");
         if let StreamFrame::Event(s) = frame {
             if let SubscriptionEvent::System(SystemEvent::SkinTrialChanged { trial }) = s.event {
                 return trial;
@@ -89,7 +90,9 @@ async fn a_library_skin_is_tried_then_reverted_unless_kept() {
     let trial = chosen.trial.clone().expect("a library skin goes on trial");
     assert_eq!(trial.id, id);
     assert_eq!(trial.previous, before);
-    assert!((started + TRIAL_MS..=started + TRIAL_MS + 1_000).contains(&trial.reverts_at_ms));
+    assert!(
+        (started + SKIN_TRIAL_MS..=started + SKIN_TRIAL_MS + 1_000).contains(&trial.reverts_at_ms)
+    );
     assert_eq!(chosen.active, before, "not stored while on trial");
     assert_eq!(shown(&host).await, id, "every window shows the trial");
     assert_eq!(next_trial(&mut events).await, Some(trial));
@@ -130,7 +133,7 @@ async fn a_kept_skin_is_stored_and_no_revert_follows() {
     );
     assert_eq!(kept.active, id);
     assert!(kept.trial.is_none());
-    tokio::time::sleep(Duration::from_millis(TRIAL_MS * 2)).await;
+    tokio::time::sleep(Duration::from_millis(SKIN_TRIAL_MS + 2_000)).await;
     assert_eq!(library(&host).await.active, id, "the old timer is void");
     assert_eq!(shown(&host).await, id);
 }
@@ -163,7 +166,7 @@ async fn revert_now_and_a_built_in_choice_end_the_trial() {
     let built_in = select(&host, builtin::DEFAULT).await;
     assert!(built_in.trial.is_none(), "a built-in is stored at once");
     assert_eq!(built_in.active, builtin::DEFAULT);
-    tokio::time::sleep(Duration::from_millis(TRIAL_MS * 2)).await;
+    tokio::time::sleep(Duration::from_millis(SKIN_TRIAL_MS + 2_000)).await;
     assert_eq!(shown(&host).await, builtin::DEFAULT);
 
     // A lock mid-trial leaves the stored choice.
