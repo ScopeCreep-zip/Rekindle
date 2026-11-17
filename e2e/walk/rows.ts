@@ -575,12 +575,19 @@ export const ROWS: Row[] = [
       await createIdentity(b, s);
       await shot();
       const started = Date.now();
-      await menu(b, "Rekindle", "Quit");
+      // Quit takes the WebDriver server down with the app, so the helper's
+      // follow-up call after the click can be refused: that is the exit this
+      // row asserts, not a failure. Any error while the process lives is.
+      const clicked = await menu(b, "Rekindle", "Quit").then(
+        () => null,
+        (e: unknown) => e,
+      );
       // The process exits (`quit_app`, the tray's Quit), after the graceful
       // shutdown; closing the window alone would leave it in the tray.
       const deadline = started + NET_WAIT_MS;
       while (app.alive() && Date.now() < deadline) await sleep(250);
       if (app.alive()) {
+        if (clicked !== null) throw clicked;
         const handles = await b.getWindowHandles().catch(() => [] as string[]);
         throw new Error(`did not quit: process alive; windows=[${handles.join(", ")}]`);
       }
