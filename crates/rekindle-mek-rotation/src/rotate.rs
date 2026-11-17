@@ -94,6 +94,8 @@ pub async fn rotate_text_mek_for_departure<D: MekDistributeDeps>(
         }
         None => MediaEncryptionKey::generate_with(new_generation, deps.rng().as_ref()),
     };
+    // Members the push did not reach ask for the key once the bump below
+    // merges (plan E3.2 S7m item 1c); the rotation stands without them.
     distribute_mek(
         deps,
         community_id,
@@ -189,6 +191,7 @@ pub async fn rotate_mek_on_request<D: MekDistributeDeps>(
 
     // Excluding nobody: everyone online is still a member.
     let recipients = deps.online_recipients(community_id, None);
+    // As a departure rotation: an unreached member asks for the key.
     distribute_mek(deps, community_id, scope, &new_mek, &recipients).await?;
 
     install_minted(deps, community_id, scope, &new_mek)?;

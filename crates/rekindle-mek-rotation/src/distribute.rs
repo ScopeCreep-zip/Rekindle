@@ -73,7 +73,14 @@ pub async fn wait_for_rotation_slot<D: MekDistributeDeps>(
 
 /// Encrypt + dispatch the new MEK to each recipient. Emits
 /// `RotationStarted` before the first send and `RotationComplete`
-/// after the last successful one.
+/// after the last one.
+///
+/// Returns the pseudonyms (hex) the push did not reach. A recipient whose
+/// `app_call` fails is skipped, not fatal: the others still get the key,
+/// and the unreached member repairs from the `MEKGenerationBump` by asking
+/// for the key it lacks (plan E3.2 S7m item 1c, the D16 `RequestMEK`
+/// path), as a missing ack is left to recovery. Each caller decides what
+/// an unreached recipient means for it.
 ///
 /// `recipients` should exclude our own pseudonym (the rotator); the
 /// fn additionally filters out any recipient whose pseudonym matches
@@ -84,7 +91,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
     scope: KeyScope,
     new_mek: &MediaEncryptionKey,
     recipients: &[RotationRecipient],
-) -> Result<(), MekRotationError> {
+) -> Result<Vec<String>, MekRotationError> {
     let my_pseudonym = deps
         .my_pseudonym(community_id)
         .ok_or_else(|| MekRotationError::PseudonymMissing(community_id.to_string()))?;
@@ -98,6 +105,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         initiator_pseudonym_hex: my_pseudonym_hex.clone(),
     });
 
+    let mut unreached = Vec::new();
     for recipient in recipients {
         // A rotation cut short by the session ending is repaired like one
         // nobody was online to receive: peers request the key.
@@ -111,14 +119,28 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         let bytes =
             seal_mek_transfer(deps, community_id, scope, new_mek, &recipient.pseudonym_hex)?;
 
-        let reply = deps
+        let reply = match deps
             .broadcast_to_peer(
                 community_id,
                 &recipient.pseudonym_hex,
                 &recipient.route_blob,
                 bytes,
             )
-            .await?;
+            .await
+        {
+            Ok(reply) => reply,
+            Err(error) => {
+                tracing::info!(
+                    community = %community_id,
+                    recipient = %recipient.pseudonym_hex,
+                    generation,
+                    %error,
+                    "key push did not reach the member; it asks for the key"
+                );
+                unreached.push(recipient.pseudonym_hex.clone());
+                continue;
+            }
+        };
 
         // A missing ack is not a failure here (it is logged): the next
         // rotation recovers.
@@ -145,7 +167,7 @@ pub async fn distribute_mek<D: MekDistributeDeps>(
         generation,
     });
 
-    Ok(())
+    Ok(unreached)
 }
 
 /// A transfer id's length in bytes.

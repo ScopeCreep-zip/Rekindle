@@ -112,7 +112,7 @@ impl HostGovernance {
                     request.needed_generation
                 )
             })?;
-        rekindle_mek_rotation::distribute_mek(
+        let unreached = rekindle_mek_rotation::distribute_mek(
             deps,
             community_id,
             scope,
@@ -124,6 +124,9 @@ impl HostGovernance {
         )
         .await
         .map_err(|e| e.to_string())?;
+        if !unreached.is_empty() {
+            return Err("the key push did not reach the requester".into());
+        }
         tracing::info!(community = community_id, requester = %request.requester_pseudonym, "RequestMEK answered");
         Ok(())
     }
