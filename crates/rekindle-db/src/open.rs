@@ -223,7 +223,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// GLOB CHECKs, and the identity skin library `skin_packages`.
 /// 129 (plan E3.2 S7l, F9-1): `outbox.state` and `messages.send_state`
 /// admit `awaiting_key`, a channel post queued until its community key comes.
-pub const SCHEMA_VERSION: i64 = 129;
+/// 130 (plan E3.2 S9, F9-3): `messages.failure_reason`, why our own post
+/// failed (removed from the community, the key did not arrive), kept for a reload.
+pub const SCHEMA_VERSION: i64 = 130;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
