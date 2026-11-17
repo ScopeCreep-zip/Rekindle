@@ -49,6 +49,12 @@ ignore = [
 #   quick-xml 0.38 (MIT): rekindle-skin's legacy XML importers and the
 #     xtask's Xfire `sounds.xml` reader; no DTD or entity resolution (an
 #     entity reference refuses the file).
+#
+# Reviewed addition (plan E7.7.1 "Helper process", d4 §2.2; macOS only):
+#   libproc 0.14.11 (MIT; with errno 0.3 and libc, already in the tree;
+#     build-time bindgen 0.72, already in the tree): the Host's footprint
+#     watchdog reads the skin helper's `ri_phys_footprint` through the safe
+#     `pidrusage`, the `unsafe` FFI staying inside the crate.
 
 [licenses]
 confidence-threshold = 0.93

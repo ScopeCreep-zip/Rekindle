@@ -8,9 +8,14 @@
 //! decode is a [`HelperError`] of that process, never a partial skin.
 //!
 //! The decoders' own limits are the primary bound; the OS caps the helper
-//! sets on itself ([`cap_this_process`]) are the second.
+//! sets on itself ([`cap_this_process`]) are the second. macOS has no
+//! usable hard memory cap, so there the Host also polls the helper's
+//! physical footprint and kills it over [`HelperOpts::footprint_cap`]
+//! (d4 §2.2, `watchdog`).
 
 pub mod frame;
+#[cfg(target_os = "macos")]
+mod watchdog;
 
 use std::io::{Read, Write};
 use std::path::PathBuf;
@@ -33,8 +38,15 @@ pub const CPU_SECONDS: u64 = 20;
 /// its canonical copy, a 64 MiB decode allocation and the binary's own
 /// mappings, with room to spare.
 pub const ADDRESS_SPACE_BYTES: u64 = 1024 * 1024 * 1024;
+/// The physical footprint (`ri_phys_footprint`) the macOS watchdog lets the
+/// helper reach: the Linux [`ADDRESS_SPACE_BYTES`] budget, so neither
+/// platform refuses a skin the other admits (a footprint never exceeds the
+/// address space it lives in). d4 §2.2 names the mechanism, not a size.
+pub const FOOTPRINT_BYTES: u64 = ADDRESS_SPACE_BYTES;
 /// How much of the helper's stderr a failure keeps.
 const MAX_STDERR_BYTES: u64 = 16 * 1024;
+/// How often the Host checks the helper: for its exit, the deadline and,
+/// on macOS, its footprint (the watchdog's polling window, d4 §2.2).
 const EXIT_POLL: Duration = Duration::from_millis(10);
 
 /// A validation that did not produce a canonical package.
@@ -53,6 +65,10 @@ pub enum HelperError {
     /// The helper ran past the deadline and was killed.
     #[error("skin helper killed after {0:?}")]
     TimedOut(Duration),
+    /// The macOS watchdog saw the helper's physical footprint over its cap
+    /// and killed it.
+    #[error("skin helper killed at a {footprint}-byte footprint (cap {cap})")]
+    MemoryExceeded { footprint: u64, cap: u64 },
     /// The helper died: a panic, a signal (its CPU cap included) or any
     /// other non-zero exit. `stderr` is the start of what it printed.
     #[error("skin helper failed ({status}): {stderr}")]
@@ -62,11 +78,15 @@ pub enum HelperError {
     Malformed(String),
 }
 
-/// Where the helper is and how long it may run.
+/// Where the helper is, how long it may run and, on macOS, how much
+/// physical memory it may hold.
 #[derive(Debug, Clone)]
 pub struct HelperOpts {
     pub path: PathBuf,
     pub timeout: Duration,
+    /// The footprint cap the macOS watchdog enforces. Linux bounds the
+    /// helper with its own `RLIMIT_AS` ([`ADDRESS_SPACE_BYTES`]) instead.
+    pub footprint_cap: u64,
 }
 
 impl HelperOpts {
@@ -91,6 +111,7 @@ impl HelperOpts {
         Ok(Self {
             path,
             timeout: HELPER_TIMEOUT,
+            footprint_cap: FOOTPRINT_BYTES,
         })
     }
 }
@@ -130,7 +151,7 @@ pub fn validate(bytes: &[u8], opts: &HelperOpts) -> Result<Canonical, HelperErro
         let writer = s.spawn(move || stdin.write_all(bytes));
         let reader = s.spawn(move || read_bounded(stdout, frame::MAX_FRAME_BYTES));
         let errors = s.spawn(move || read_bounded(stderr, MAX_STDERR_BYTES));
-        let status = wait(&mut child, opts.timeout);
+        let status = wait(&mut child, opts);
         // The child is gone (exited or killed), so every pipe has closed
         // and each thread returns.
         let written = writer.join();
@@ -181,17 +202,25 @@ fn kill(child: &mut Child) {
 }
 
 /// The child's exit status, or [`HelperError::TimedOut`] after killing it
-/// at `timeout`.
-fn wait(child: &mut Child, timeout: Duration) -> Result<ExitStatus, HelperError> {
-    let deadline = Instant::now() + timeout;
+/// at `opts.timeout` (and on macOS [`HelperError::MemoryExceeded`] after
+/// killing it over `opts.footprint_cap`).
+fn wait(child: &mut Child, opts: &HelperOpts) -> Result<ExitStatus, HelperError> {
+    let deadline = Instant::now() + opts.timeout;
     loop {
         match child.try_wait() {
             Ok(Some(status)) => return Ok(status),
             Ok(None) if Instant::now() >= deadline => {
                 kill(child);
-                return Err(HelperError::TimedOut(timeout));
+                return Err(HelperError::TimedOut(opts.timeout));
             }
-            Ok(None) => std::thread::sleep(EXIT_POLL),
+            Ok(None) => {
+                #[cfg(target_os = "macos")]
+                if let Err(e) = watchdog::check(child, opts.footprint_cap) {
+                    kill(child);
+                    return Err(e);
+                }
+                std::thread::sleep(EXIT_POLL);
+            }
             Err(e) => {
                 kill(child);
                 return Err(HelperError::Pipe(format!("waiting for the helper: {e}")));

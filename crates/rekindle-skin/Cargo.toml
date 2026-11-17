@@ -44,6 +44,12 @@ unicode-normalization = "0.1.25"
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 rlimit = "0.11"
 
+# The Host's macOS footprint watchdog reads the helper's `ri_phys_footprint`
+# through libproc's safe `pidrusage` (MIT; plan E7.7.1 "Helper process",
+# d4 §2.2): macOS has no usable hard memory cap.
+[target.'cfg(target_os = "macos")'.dependencies]
+libproc = "0.14.11"
+
 [[bin]]
 name = "rekindle-skin-helper"
 path = "src/bin/rekindle-skin-helper.rs"

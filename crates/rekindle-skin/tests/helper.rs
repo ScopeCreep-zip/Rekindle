@@ -20,6 +20,7 @@ fn real() -> HelperOpts {
     HelperOpts {
         path: PathBuf::from(env!("CARGO_BIN_EXE_rekindle-skin-helper")),
         timeout: helper::HELPER_TIMEOUT,
+        footprint_cap: helper::FOOTPRINT_BYTES,
     }
 }
 
@@ -43,6 +44,7 @@ fn script(name: &str, body: &str) -> HelperOpts {
     HelperOpts {
         path,
         timeout: Duration::from_secs(10),
+        footprint_cap: helper::FOOTPRINT_BYTES,
     }
 }
 
@@ -72,6 +74,7 @@ fn an_oversized_package_is_refused_before_any_helper_starts() {
     let opts = HelperOpts {
         path: PathBuf::from("/nonexistent/rekindle-skin-helper"),
         timeout: Duration::from_secs(1),
+        footprint_cap: helper::FOOTPRINT_BYTES,
     };
     let in_process = validate::run(&bytes).unwrap_err();
     assert_eq!(
@@ -89,6 +92,38 @@ fn a_helper_past_its_deadline_is_killed_and_reported() {
     let out = helper::validate(&valid(), &opts);
     assert_eq!(out, Err(HelperError::TimedOut(opts.timeout)));
     assert!(started.elapsed() < Duration::from_secs(10), "not killed");
+}
+
+/// A package whose one icon decodes to a 16 MB RGBA buffer (2000², under
+/// the 4 Mpx limit), while the zip stays small.
+#[cfg(target_os = "macos")]
+fn allocating() -> Vec<u8> {
+    let icon = RgbaImage::from_pixel(2000, 2000, Rgba([90, 40, 90, 255]));
+    let icon = encode_png(&DynamicImage::ImageRgba8(icon)).unwrap();
+    common::zip(&[
+        Entry::file("manifest.json", common::manifest().to_string().as_bytes()),
+        Entry::file("dark.json", DARK),
+        Entry::file("icons/c.png", &icon),
+    ])
+}
+
+/// The macOS watchdog (d4 §2.2): the real helper decoding a 16 MB image
+/// under an 8 MiB footprint cap is killed with the typed memory failure,
+/// not the deadline; under the default cap the same package validates.
+#[cfg(target_os = "macos")]
+#[test]
+fn a_helper_over_its_footprint_cap_is_killed_and_reported() {
+    let bytes = allocating();
+    assert!(helper::validate(&bytes, &real()).is_ok());
+    let mut opts = real();
+    opts.footprint_cap = 8 * 1024 * 1024;
+    let out = helper::validate(&bytes, &opts);
+    assert!(
+        matches!(out, Err(HelperError::MemoryExceeded { cap, footprint })
+            if cap == opts.footprint_cap && footprint > cap),
+        "{:?}",
+        out.map(|c| c.hash)
+    );
 }
 
 #[cfg(unix)]
@@ -169,6 +204,7 @@ fn a_builtin_is_validated_once_per_process() {
     let gone = HelperOpts {
         path: PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("no-such-skin-helper"),
         timeout: helper::HELPER_TIMEOUT,
+        footprint_cap: helper::FOOTPRINT_BYTES,
     };
     assert!(matches!(
         helper::validate(pack.bytes, &gone),
