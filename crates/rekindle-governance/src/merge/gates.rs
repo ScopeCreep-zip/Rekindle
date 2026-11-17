@@ -4,9 +4,9 @@
 //! set and its `max_uses` cap, joins backdated before their own deps
 //! (SEC-3), and one member per member record.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
-use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry};
+use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use super::resolve::OpSet;
@@ -61,6 +61,7 @@ pub(super) fn invalidated(
     }
     backdated_join_gate(set, &mut invalid);
     record_gate(cert, set, round, &mut invalid);
+    checkpoint_gate(set, round, &mut invalid);
     let uses = invite_gate(set, round, &mut invalid);
     (invalid, uses)
 }
@@ -174,4 +175,35 @@ fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) -> InviteUs
         }
     }
     uses
+}
+
+/// A `Checkpoint` past height 1 needs its `prevCheckpoint` applied, one
+/// height below it, and the previous cut inside its own: every previous
+/// cut head is one of its cut heads or in the causal past of one (plan
+/// E3.2 S7c.3).
+fn checkpoint_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
+    let mut index: Option<HashMap<OpHash, usize>> = None;
+    for (o, op) in set.ops.iter().enumerate() {
+        let GovernanceEntry::Checkpoint(c) = op.body() else {
+            continue;
+        };
+        let Some(prev) = &c.prev else {
+            continue;
+        };
+        let index = index.get_or_insert_with(|| {
+            (set.ops.iter().enumerate())
+                .map(|(i, op)| (op.hash(), i))
+                .collect()
+        });
+        let at = |hash: &OpHash| index.get(hash).copied();
+        let heads: Vec<usize> = c.cut.iter().filter_map(|r| at(&r.op_hash)).collect();
+        let covered = |h: usize| heads.iter().any(|&k| k == h || set.past.contains(k, h));
+        let holds = at(&prev.op_hash).is_some_and(|p| {
+            round.applied[p]
+                && matches!(set.ops[p].body(), GovernanceEntry::Checkpoint(pc)
+                    if pc.height.checked_add(1) == Some(c.height)
+                        && pc.cut.iter().all(|r| at(&r.op_hash).is_some_and(covered)))
+        });
+        invalid[o] |= heads.len() != c.cut.len() || !holds;
+    }
 }

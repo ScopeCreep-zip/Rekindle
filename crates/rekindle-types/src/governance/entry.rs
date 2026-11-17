@@ -522,6 +522,10 @@ pub enum GovernanceEntry {
         /// Window length for the rate detector. Default 600 s.
         join_interval_seconds: u32,
     },
+
+    /// A governance checkpoint (plan E3.2 S7c.3): an acceleration hint
+    /// over a causal cut, endorsed by the op's author. It changes no state.
+    Checkpoint(super::checkpoint::Checkpoint),
 }
 
 /// The exact value of a member's slot in one channel record, as a

@@ -7,6 +7,7 @@
 //! See architecture doc §4.3 Record 1 and §4.4 for merge rules.
 //! See rekindle-architecture-v2.md §4 for field specifications.
 
+mod checkpoint;
 mod entry;
 mod mod_report;
 mod onboarding;
@@ -19,6 +20,7 @@ mod tests;
 
 mod automod;
 pub use automod::AutoModAction;
+pub use checkpoint::Checkpoint;
 pub use entry::{AdmissionMode, GovernanceEntry, SlotHead};
 pub use mod_report::ModReportTarget;
 pub use onboarding::{

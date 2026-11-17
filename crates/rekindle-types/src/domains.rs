@@ -140,6 +140,18 @@ labels! {
     /// signature: a directory page is proven by its path to the endorsed
     /// `dirRoot`, so nothing on it is signed.
     GOV_DIRECTORY = "rekindle-gov-directory-v1";
+    /// BLAKE3 `derive_key` context: a governance checkpoint's digest over
+    /// every field of its body but `pages` and `round` (plan E3.2 S7c.3).
+    GOV_CHECKPOINT = "rekindle-gov-checkpoint-v1";
+    /// BLAKE3 `derive_key` context: a checkpoint's `stateRoot` over
+    /// `canonical_state ‖ canonical_cut` at its cut (plan E3.2 S7c.3).
+    GOV_CHECKPOINT_STATE = "rekindle-gov-checkpoint-state-v1";
+    /// BLAKE3 `derive_key` context: a checkpoint's `frontierHash` over its
+    /// cut's head hashes, sorted (plan E3.2 S7c.3).
+    GOV_CHECKPOINT_FRONTIER = "rekindle-gov-checkpoint-frontier-v1";
+    /// BLAKE3 `derive_key` context: a checkpoint's `eligibleSetHash` over
+    /// the electorate's pseudonyms, sorted (plan E3.2 S7c.3, ADR 0018).
+    GOV_CHECKPOINT_ELIGIBLE = "rekindle-gov-checkpoint-eligible-v1";
     /// BLAKE3 `derive_key` context: a `Frontier`'s roster checksum over the
     /// canonical encoding of the merged roster and role tables (D15).
     GOV_ROSTER_CHECKSUM = "rekindle-gov-roster-checksum-v1";

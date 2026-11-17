@@ -234,6 +234,9 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             reason.as_deref(),
             heads,
         ),
+        GovernanceEntry::Checkpoint(c) => {
+            super::checkpoint::write_checkpoint(b.reborrow().init_checkpoint(), c);
+        }
         GovernanceEntry::MemberApproved { target } => {
             write_member_approved(b.reborrow().init_member_approved(), target);
         }

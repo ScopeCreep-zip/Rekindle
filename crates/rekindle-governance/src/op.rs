@@ -40,6 +40,11 @@ pub enum OpRejection {
     /// `prev` is absent at seq > 0, present at seq 0, not the author's
     /// `seq - 1`, or not among the deps.
     BadChain,
+    /// A `Checkpoint` op breaking its op-local rules: a cut head missing
+    /// from its deps, too many or repeated heads, a wrong `frontierHash`,
+    /// or a height that disagrees with `prevCheckpoint`
+    /// (`checkpoint::check_shape`, plan E3.2 S7c.3).
+    BadCheckpoint,
 }
 
 /// An op whose signature and deps are checked. Built only by
@@ -97,6 +102,7 @@ impl VerifiedOp {
             .map_err(|_| OpRejection::BadSignature)?;
         check_invite_proof(anchor, &op)?;
         check_owner_proof(anchor, &op)?;
+        crate::checkpoint::check_shape(&op)?;
         let mut lamport = 0;
         for dep in &op.deps {
             let found = known(&dep.op_hash).ok_or(OpRejection::MissingDep(dep.op_hash))?;

@@ -270,11 +270,14 @@ fn apply(
         | G::RoleAssignment { .. }
         | G::RoleUnassignment { .. }
         | G::RoleArchived { .. } => apply_roles(entry, stamp, state),
+        // A hint over a cut: it changes no state (plan E3.2 S7c.3).
+        G::Checkpoint(_) => {}
     }
 }
 
 mod channels;
 mod community;
+mod cut;
 mod events;
 mod expression;
 mod gates;
@@ -285,6 +288,8 @@ mod resolve;
 mod roles;
 
 #[cfg(test)]
+mod checkpoint_tests;
+#[cfg(test)]
 mod op_proptests;
 #[cfg(test)]
 mod proptests;
@@ -293,6 +298,7 @@ mod tests;
 
 use channels::apply_channels;
 use community::apply_community;
+pub use cut::merge_cut;
 use events::apply_events;
 use expression::apply_expression;
 use membership::apply_membership;

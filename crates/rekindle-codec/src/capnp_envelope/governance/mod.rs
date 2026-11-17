@@ -32,6 +32,7 @@ macro_rules! target_reason_writer {
 }
 
 mod channels;
+mod checkpoint;
 mod community;
 mod dispatch_write;
 mod events;
@@ -47,6 +48,7 @@ use channels::{
     read_channel_created, read_channel_segment_linked, read_channel_updated,
     read_permission_overwrite,
 };
+use checkpoint::read_checkpoint;
 use community::{
     read_community_meta, read_community_notification_default, read_community_policy,
     read_invite_created, read_invite_revoked, read_mek_generation_bump, read_segment_added,
@@ -104,6 +106,7 @@ pub(crate) fn read_governance_entry(r: schema::Reader<'_>) -> Result<GovernanceE
         Which::MemberRecordMoved(p) => read_member_record_moved(p.map_err(|e| capnp_err(&e))?),
         Which::MemberLeft(p) => read_member_left(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRemoved(p) => read_member_removed(p.map_err(|e| capnp_err(&e))?),
+        Which::Checkpoint(p) => read_checkpoint(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelCreated(p) => read_channel_created(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelArchived(p) => read_channel_archived(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelUpdated(p) => read_channel_updated(p.map_err(|e| capnp_err(&e))?),

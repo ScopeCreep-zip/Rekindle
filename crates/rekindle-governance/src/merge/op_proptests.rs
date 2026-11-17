@@ -29,7 +29,7 @@ pub(super) fn joined(by: u8, code: Option<&str>) -> GovernanceEntry {
     }
 }
 
-fn role(id: u8, position: u32) -> GovernanceEntry {
+pub(super) fn role(id: u8, position: u32) -> GovernanceEntry {
     GovernanceEntry::RoleDefinition {
         role_id: RoleId([id; 16]),
         name: format!("r{id}"),
@@ -50,7 +50,7 @@ fn assign(target: u8, id: u8) -> GovernanceEntry {
     }
 }
 
-fn kick(target: u8) -> GovernanceEntry {
+pub(super) fn kick(target: u8) -> GovernanceEntry {
     GovernanceEntry::MemberRemoved {
         target: pk(target),
         reason: None,

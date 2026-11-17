@@ -289,6 +289,19 @@ fn moderation_and_policy_bodies() -> Vec<GovernanceEntry> {
             max_joins_per_interval: 10,
             join_interval_seconds: 60,
         },
+        E::Checkpoint(rekindle_types::governance::Checkpoint {
+            height: 2,
+            round: 1,
+            prev: Some(op_ref(17)),
+            cut: vec![op_ref(18), op_ref(19)],
+            frontier_hash: [20; 32],
+            dir_root: [21; 32],
+            dir_size: 129,
+            state_root: [22; 32],
+            mek_generation: 3,
+            eligible_set_hash: [23; 32],
+            pages: vec![s("VLD0:page0"), s("VLD0:page1")],
+        }),
     ]
 }
 
@@ -340,6 +353,7 @@ fn arm_index(entry: &GovernanceEntry) -> usize {
         E::InviteRevoked { .. } => 40,
         E::AttachmentPinned { .. } => 41,
         E::CommunityPolicy { .. } => 42,
+        E::Checkpoint(_) => 43,
     }
 }
 
@@ -370,7 +384,7 @@ fn every_body_arm_round_trips() {
     let bodies = every_body();
     let arms: std::collections::BTreeSet<usize> = bodies.iter().map(arm_index).collect();
     assert_eq!(arms.len(), bodies.len(), "one value per arm");
-    assert_eq!(arms.len(), 43, "every live arm");
+    assert_eq!(arms.len(), 44, "every live arm");
     for body in bodies {
         let original = op(body, vec![op_ref(1), op_ref(2)]);
         let decoded = decode_op(&encode_op(&original).unwrap()).unwrap();

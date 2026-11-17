@@ -10,6 +10,7 @@
 
 @0xab046a85150ae9f1;
 
+using Op = import "governance_op.capnp";
 using import "community_event.capnp".RecurrenceRule;
 using import "community_event.capnp".EventLocation;
 using import "community_event.capnp".EventStatus;
@@ -223,6 +224,25 @@ struct MemberRemovedPayload {
     # backfilled post of the member is kept only from exactly the recorded
     # slot value, seq and digest (A/B finding R3-8, plan S9).
     heads                @3 :List(SlotHeadPayload);
+}
+
+# A governance checkpoint (plan E3.2 S7c.3): an acceleration hint over a
+# causal cut, never authoritative; the op is its author's endorsement. The
+# digest, BLAKE3 derive_key(rekindle-gov-checkpoint-v1), covers every field
+# but `pages` and `round`.
+struct CheckpointEntry {
+    height               @0 :UInt64;
+    round                @1 :UInt32;
+    hasPrevCheckpoint    @2 :Bool;          # false only at height 1
+    prevCheckpoint       @3 :Op.OpRef;
+    cut                  @4 :List(Op.OpRef); # the cut's heads, at most 63
+    frontierHash         @5 :Data;          # 32 bytes
+    dirRoot              @6 :Data;          # 32 bytes
+    dirSize              @7 :UInt64;
+    stateRoot            @8 :Data;          # 32 bytes
+    mekGeneration        @9 :UInt64;
+    eligibleSetHash      @10 :Data;         # 32 bytes
+    pages                @11 :List(Text);   # directory page record keys
 }
 
 struct SlotHeadPayload {
@@ -580,5 +600,6 @@ struct GovernanceEntry @0xd9d4eb16e9bf1c2e {
         memberRecordMoved             @42 :MemberRecordMovedPayload;
         memberLeft                    @43 :MemberLeftPayload;
         memberRemoved                 @44 :MemberRemovedPayload;
+        checkpoint                    @45 :CheckpointEntry;
     }
 }

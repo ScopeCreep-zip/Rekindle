@@ -65,7 +65,9 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         | G::InviteCreated { .. }
         | G::InviteRevoked { .. }
         | G::AttachmentPinned { .. }
-        | G::CommunityPolicy { .. } => OpClass::NonPower,
+        | G::CommunityPolicy { .. }
+        // It changes no state (plan E3.2 S7c.3).
+        | G::Checkpoint(_) => OpClass::NonPower,
     }
 }
 

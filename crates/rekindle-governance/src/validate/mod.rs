@@ -111,6 +111,14 @@ pub fn well_formed(
 
 /// The permission half of [`validate_write`], for a well-formed entry.
 fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceState) -> bool {
+    // A checkpoint is endorsed by an eligible member only: counted and not
+    // departed, the creator included (plan E3.2 S7c.3). Its deps and cut
+    // are checked on ingest (`checkpoint::check_shape`) and causally in
+    // `merge` (`gates`).
+    if matches!(entry, GovernanceEntry::Checkpoint(_)) {
+        return state.members.contains_key(writer) && !state.is_departed(writer);
+    }
+
     // Creator always passes validation
     if state.creator.as_ref() == Some(writer) {
         return true;
@@ -137,6 +145,9 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         GovernanceEntry::MemberJoined { .. }
         | GovernanceEntry::MemberRecordMoved { .. }
         | GovernanceEntry::MemberLeft { .. } => true,
+
+        // Decided above, before the creator bypass.
+        GovernanceEntry::Checkpoint(_) => true,
 
         // The durable kick: the same authority and hierarchy as a ban,
         // and the creator cannot be removed (MSC4289).
