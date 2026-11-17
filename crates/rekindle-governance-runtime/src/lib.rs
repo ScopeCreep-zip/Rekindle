@@ -45,6 +45,7 @@ pub mod member_card;
 pub mod membership_events;
 pub mod moderation;
 pub mod op_log;
+pub mod op_walk;
 pub mod origin;
 pub mod overflow;
 pub mod ownership;

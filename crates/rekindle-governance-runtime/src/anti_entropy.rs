@@ -206,11 +206,12 @@ async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
     // next inspect reads it again although its seq has not moved.
     let mut stored = 0;
     let mut complete = true;
+    let logs = op_log::WalkLogCache::default();
     for op_ref in &frontier.heads {
         if known.contains(&op_ref.op_hash) {
             continue;
         }
-        match op_log::fetch_held(deps, op_ref).await? {
+        match op_log::fetch_held(deps, op_ref, &logs).await? {
             Some(op) => {
                 deps.store_governance_op(community_id, &op).await?;
                 known.insert(op_ref.op_hash);

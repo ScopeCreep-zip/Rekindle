@@ -237,28 +237,18 @@ impl HostGovernance {
     }
 
     /// The op at `op_ref.author_seq` of its author's op log: chain seq
-    /// `author_seq + 1` of `M`/2.
+    /// `author_seq + 1` of `M`/2, through `logs`: one read per author log
+    /// per walk (plan S7c.1, `op_walk::fetch_from_log`).
     pub(super) async fn fetch_governance_op_impl(
         &self,
         op_ref: &OpRef,
+        logs: &rekindle_governance_runtime::op_walk::WalkLogCache,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
         let pool = self
             .transport()?
             .require_records()
             .map_err(|e| adapter("record pool", e))?;
-        let read = rekindle_records::chain::read_log_after(
-            &*pool,
-            &op_ref.author_record,
-            GOV_HEAD,
-            op_ref.author_seq,
-        )
-        .await
-        .map_err(|e| adapter("read op log", e))?;
-        Ok(read
-            .entries
-            .into_iter()
-            .find(|entry| entry.seq == op_ref.author_seq + 1)
-            .map(|entry| entry.ciphertext))
+        rekindle_governance_runtime::op_walk::fetch_from_log(&*pool, logs, op_ref).await
     }
 
     /// Publish `encoded` on our member record's op log (the cert's record

@@ -40,7 +40,7 @@ fn deps(reads: usize) -> MockGovernanceRuntimeDeps {
     deps.expect_get_dht_value()
         .times(reads)
         .returning(|_, _, _| Ok(Some(frontier())));
-    deps.expect_fetch_governance_op().returning(|_| Ok(None));
+    deps.expect_fetch_governance_op().returning(|_, _| Ok(None));
     deps
 }
 
@@ -121,7 +121,7 @@ async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read(
         .times(2)
         .returning(move |_, _, _| Ok(Some(frontier.clone())));
     let fetches = std::sync::atomic::AtomicUsize::new(0);
-    deps.expect_fetch_governance_op().returning(move |_| {
+    deps.expect_fetch_governance_op().returning(move |_, _| {
         let first = fetches.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
         Ok((!first).then(|| encoded.clone()))
     });
@@ -358,7 +358,7 @@ async fn a_hinted_frontier_read_never_inspects_first() {
             assert_eq!(subkey, member_record::FRONTIER);
             Ok(Some((6, frontier())))
         });
-    deps.expect_fetch_governance_op().returning(|_| Ok(None));
+    deps.expect_fetch_governance_op().returning(|_, _| Ok(None));
     let mut seen = SeenFrontiers::new();
     seen.insert("VLD0:m".to_owned(), 5);
     let mut known = BTreeSet::new();

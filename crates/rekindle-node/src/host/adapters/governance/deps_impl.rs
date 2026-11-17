@@ -399,8 +399,9 @@ impl GovernanceRuntimeDeps for HostGovernance {
     async fn fetch_governance_op(
         &self,
         op_ref: &OpRef,
+        logs: &rekindle_governance_runtime::op_walk::WalkLogCache,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        self.fetch_governance_op_impl(op_ref).await
+        self.fetch_governance_op_impl(op_ref, logs).await
     }
 
     async fn publish_governance_op(

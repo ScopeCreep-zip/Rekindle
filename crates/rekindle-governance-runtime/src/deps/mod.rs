@@ -436,10 +436,13 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     ) -> Result<(), GovernanceRuntimeError>;
     /// The encoded op `op_ref` names, read from its author's op log
     /// (`rekindle_records::chain::read_log_after` on
-    /// `op_ref.author_record`/`GOV_HEAD`, chain seq `author_seq + 1`).
+    /// `op_ref.author_record`/`GOV_HEAD`, chain seq `author_seq + 1`),
+    /// through `logs` ([`WalkLogCache::entry`](crate::op_walk::WalkLogCache::entry)):
+    /// one read per author log per walk, rebuild or sweep (plan S7c.1).
     async fn fetch_governance_op(
         &self,
         op_ref: &rekindle_types::governance::OpRef,
+        logs: &crate::op_walk::WalkLogCache,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
     /// Queue our encoded op on the governance-op outbox stream
     /// (`StreamKind::GovernanceOp`, D22) and wait for what `landing` names. Its

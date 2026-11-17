@@ -93,5 +93,6 @@ mod stale_route_call;
 mod stall;
 mod udp_blocked;
 mod wake_trigger;
+mod walk_cost;
 mod watch_fallback;
 mod watch_ring;

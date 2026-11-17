@@ -29,6 +29,7 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
+pub use crate::op_walk::{walk, WalkLogCache};
 pub use crate::verify_cache::verify_held_cached;
 
 /// An op's fate in the last merge, as `governance_ops.state` stores it.
@@ -309,6 +310,7 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let mut held = deps.governance_ops(community_id).await?;
     let mut tried: BTreeSet<OpHash> = BTreeSet::new();
+    let logs = WalkLogCache::default();
     loop {
         let set = verify_held_with(deps, community_id, &held);
         let wanted: Vec<OpRef> = set
@@ -319,7 +321,7 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             .collect();
         let mut fetched = false;
         for op_ref in wanted {
-            let Some(op) = fetch_held(deps, &op_ref).await? else {
+            let Some(op) = fetch_held(deps, &op_ref, &logs).await? else {
                 continue;
             };
             deps.store_governance_op(community_id, &op).await?;
@@ -365,15 +367,17 @@ fn warn_newly_dropped(community_id: &str, held: &[HeldOp], verdicts: &[OpVerdict
 
 /// The op `op_ref` names, fetched from its author's op log and checked
 /// against the locator's hash; `None` when it is not there or does not
-/// match.
+/// match. `logs` keeps the author logs this walk, rebuild or sweep has
+/// read, so each is read once.
 ///
 /// # Errors
 /// The fetch failed.
 pub async fn fetch_held<D: GovernanceRuntimeDeps>(
     deps: &D,
     op_ref: &OpRef,
+    logs: &WalkLogCache,
 ) -> Result<Option<HeldOp>, GovernanceRuntimeError> {
-    let Some(encoded) = deps.fetch_governance_op(op_ref).await? else {
+    let Some(encoded) = deps.fetch_governance_op(op_ref, logs).await? else {
         return Ok(None);
     };
     Ok(held_from_encoded(op_ref, encoded))
@@ -486,36 +490,6 @@ pub fn receive_bounded(op: &GovernanceOp, state: &GovernanceState) -> bool {
                 })
         }
         _ => true,
-    }
-}
-
-/// Walk the op DAG of `anchor` from `start` (a member's `Frontier`) by
-/// `OpRef`, through deps, until a pass fetches nothing new: the joiner's
-/// read of the op set with nobody online. Nothing is stored; the caller
-/// stores the walked ops once its community row exists.
-///
-/// # Errors
-/// A fetch failed.
-pub async fn walk<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    anchor: &str,
-    start: &[OpRef],
-) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
-    let mut held: Vec<HeldOp> = Vec::new();
-    let mut tried: BTreeSet<OpHash> = BTreeSet::new();
-    let mut wanted: Vec<OpRef> = start.to_vec();
-    loop {
-        let mut fetched = false;
-        for op_ref in wanted.into_iter().filter(|r| tried.insert(r.op_hash)) {
-            if let Some(op) = fetch_held(deps, &op_ref).await? {
-                held.push(op);
-                fetched = true;
-            }
-        }
-        if !fetched {
-            return Ok(held);
-        }
-        wanted = verify_held_with(deps, anchor, &held).missing;
     }
 }
 
