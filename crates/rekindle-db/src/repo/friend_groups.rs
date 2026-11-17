@@ -71,9 +71,13 @@ mod tests {
             id,
         )
         .unwrap();
+        let row = &crate::repo::friends::load_all(&conn, OWNER).unwrap()[0];
+        assert_eq!(row.group_id, Some(id));
+        assert_eq!(row.group_name.as_deref(), Some("Clan"));
         assert!(delete(&conn, OWNER, id).unwrap());
         assert!(!rename(&conn, OWNER, id, "Gone").unwrap());
         let row = &crate::repo::friends::load_all(&conn, OWNER).unwrap()[0];
         assert_eq!(row.group_name, None);
+        assert_eq!(row.group_id, None);
     }
 }

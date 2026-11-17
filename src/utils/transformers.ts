@@ -20,7 +20,7 @@ export function transformFriend(f: FriendInfo): Friend {
       ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null, serverAddress: f.gameInfo.serverAddress ?? null }
       : null,
     group: f.groupLabel,
-    inDefaultGroup: f.group === null,
+    groupId: f.groupId,
     unreadCount: 0,
     lastSeenAt: f.lastSeenAt ?? null,
     voiceChannel: null,
@@ -240,7 +240,7 @@ export function transformNewFriend(
     publicKey, displayName, nickname: null, status: "offline" as const,
     statusMessage: null, gameInfo: null, group: groupLabel,
     // A friend is added in no group (the Host's `Added`).
-    inDefaultGroup: true, unreadCount: 0,
+    groupId: null, unreadCount: 0,
     lastSeenAt: null, voiceChannel: null,
     friendshipState: (friendshipState === "accepted" ? "accepted" : "pendingOut") as Friend["friendshipState"],
     handshakeError: null,

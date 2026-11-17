@@ -87,6 +87,23 @@ test.describe("Account Picker", () => {
     );
   });
 
+  test("a focused delete button is visible, not only on hover", async ({ page }) => {
+    await preloadMocks(page, "login", LOGIN_SUCCESS_HANDLER);
+    await page.goto("/login");
+    await page.waitForSelector(".account-bubble", { timeout: 10_000 });
+
+    const del = page.locator(".account-bubble-delete");
+    await expect(del).toHaveCSS("opacity", "0");
+    // Reach it by keyboard, with the pointer away from the bubble.
+    await page.mouse.move(0, 0);
+    for (let i = 0; i < 20; i++) {
+      if (await del.evaluate((el) => el === document.activeElement)) break;
+      await page.keyboard.press("Tab");
+    }
+    await expect(del).toBeFocused();
+    await expect(del).toHaveCSS("opacity", "1");
+  });
+
   test("deleting an identity asks for its passphrase in the review", async ({
     page,
   }) => {

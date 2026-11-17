@@ -474,6 +474,7 @@ mod tests {
             status,
             status_message: None,
             game_info: None,
+            group_id: None,
             group: None,
             group_label: rekindle_types::dto::friends::DEFAULT_FRIEND_GROUP.to_string(),
             last_seen_at: None,

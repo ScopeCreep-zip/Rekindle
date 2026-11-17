@@ -35,6 +35,13 @@ pub async fn show_buddy_list(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Quit Rekindle from the menu bar: the tray's Quit (`tray::quit_rekindle`). Closing
+/// the buddy list only hides it and leaves the app in the tray.
+#[tauri::command]
+pub async fn quit_app(app: tauri::AppHandle) {
+    crate::tray::quit_rekindle(&app);
+}
+
 /// Open a chat window: 1:1 with a friend or community member, or a group
 /// DM. The window title is resolved from backend state.
 #[tauri::command]

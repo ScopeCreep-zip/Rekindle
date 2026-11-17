@@ -63,6 +63,9 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_preferences", Some(IntentKind::SetPreferences)),
     ("check_for_updates", None),
     ("show_buddy_list", None),
+    // Quitting the app is the shell's `Shutdown`: Routine, with no review,
+    // like the tray's Quit (r9-intents §7.2: leaving is abandoning a task).
+    ("quit_app", Some(IntentKind::Shutdown)),
     ("open_external_url", Some(IntentKind::OpenExternalUrl)),
     ("open_chat_window", None),
     ("open_settings_window", None),

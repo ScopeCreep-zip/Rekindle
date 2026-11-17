@@ -206,6 +206,7 @@
       "serverInfo": null
     },
     "group": "Raid team",
+    "groupId": 7,
     "groupLabel": "Raid team",
     "handshakeError": null,
     "handshakeRetrying": false,
@@ -221,6 +222,7 @@
     "friendshipState": "pendingOut",
     "gameInfo": null,
     "group": null,
+    "groupId": null,
     "groupLabel": "Friends",
     "handshakeError": "their accept carried no session data",
     "handshakeRetrying": false,

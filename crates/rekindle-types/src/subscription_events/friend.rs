@@ -73,6 +73,8 @@ pub enum FriendEvent {
     /// Triggered by: the friend-group actions.
     GroupChanged {
         peer_key: String,
+        /// The id of their group now, the one the group actions take.
+        group_id: Option<i64>,
         group: Option<String>,
         /// The group the buddy list shows them under now
         /// ([`crate::dto::friends::group_label`]).

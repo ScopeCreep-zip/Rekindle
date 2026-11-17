@@ -33,6 +33,7 @@ export interface FriendRow {
   status: string;
   statusMessage: string | null;
   gameInfo: null;
+  groupId: number | null;
   group: string | null;
   groupLabel: string;
   unreadCount: number;
@@ -54,6 +55,7 @@ export function friends(n: number): FriendRow[] {
       status: STATUSES[i % STATUSES.length],
       statusMessage: i % 3 === 0 ? longName(`Status${i}_`, 80) : null,
       gameInfo: null,
+      groupId: group === null ? null : 1,
       group,
       // The Host's label: the group, or its default group's name
       // (`rekindle_types::dto::friends::group_label`).

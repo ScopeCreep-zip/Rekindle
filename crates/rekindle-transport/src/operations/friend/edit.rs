@@ -47,16 +47,19 @@ pub async fn set_nickname(
     Ok(())
 }
 
-/// Every friend whose group label is `from`, relabelled `to`, each
-/// announced.
-fn relabel(host: &dyn FriendHost, from: &str, to: Option<&str>) {
+/// Every friend in our group `group_id`, relabelled `to` (renamed), or
+/// moved to no group with `None` (the group deleted), each announced.
+fn relabel(host: &dyn FriendHost, group_id: i64, to: Option<&str>) {
+    let new_id = to.map(|_| group_id);
     for friend in state::friends(host) {
-        if friend.group.as_deref() == Some(from) {
+        if friend.group_id == Some(group_id) {
             state::update(host, &friend.public_key, |f| {
+                f.group_id = new_id;
                 f.group = to.map(str::to_string);
             });
             host.publish(SubscriptionEvent::Friend(FriendEvent::GroupChanged {
                 peer_key: friend.public_key,
+                group_id: new_id,
                 group: to.map(str::to_string),
                 group_label: rekindle_types::dto::friends::group_label(to),
             }));
@@ -96,7 +99,7 @@ pub async fn rename_group(
     group_id: i64,
     name: &str,
 ) -> Result<(), FriendError> {
-    let old = group_name(host, group_id).await?;
+    group_name(host, group_id).await?;
     let owner = state::owner(host)?;
     let new = name.to_string();
     let list = super::list_record::list_write(host);
@@ -106,7 +109,7 @@ pub async fn rename_group(
         })
     })
     .await?;
-    relabel(host, &old, Some(name));
+    relabel(host, group_id, Some(name));
     super::list_record::queued(host, "a group rename");
     Ok(())
 }
@@ -117,7 +120,7 @@ pub async fn rename_group(
 /// # Errors
 /// `NotFound` when we have no such group.
 pub async fn delete_group(host: &dyn FriendHost, group_id: i64) -> Result<(), FriendError> {
-    let old = group_name(host, group_id).await?;
+    group_name(host, group_id).await?;
     let owner = state::owner(host)?;
     let list = super::list_record::list_write(host);
     state::db_call!(host, "delete friend group", move |conn| {
@@ -126,7 +129,7 @@ pub async fn delete_group(host: &dyn FriendHost, group_id: i64) -> Result<(), Fr
         })
     })
     .await?;
-    relabel(host, &old, None);
+    relabel(host, group_id, None);
     super::list_record::queued(host, "a group delete");
     Ok(())
 }
@@ -164,9 +167,13 @@ pub async fn move_to_group(
         })
     })
     .await?;
-    state::update(host, public_key, |f| f.group.clone_from(&group));
+    state::update(host, public_key, |f| {
+        f.group_id = group_id;
+        f.group.clone_from(&group);
+    });
     host.publish(SubscriptionEvent::Friend(FriendEvent::GroupChanged {
         peer_key: public_key.to_string(),
+        group_id,
         group_label: rekindle_types::dto::friends::group_label(group.as_deref()),
         group,
     }));

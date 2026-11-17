@@ -132,6 +132,7 @@ pub async fn load(
 fn friend_state(row: repo::friends::FriendRow) -> FriendState {
     let mut friend = FriendState::new(row.public_key, row.display_name, row.friendship_state);
     friend.nickname = row.nickname;
+    friend.group_id = row.group_id;
     friend.group = row.group_name;
     friend.dht_record_key = row.dht_record_key;
     friend.last_seen_at = row.last_seen_at;

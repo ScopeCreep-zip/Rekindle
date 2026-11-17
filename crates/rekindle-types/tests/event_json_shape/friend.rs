@@ -115,6 +115,7 @@ pub fn samples() -> Vec<Sample> {
             "groupChanged",
             FriendEvent::GroupChanged {
                 peer_key: pk('b'),
+                group_id: Some(7),
                 group: Some(text("Raid team")),
                 group_label: text("Raid team"),
             },

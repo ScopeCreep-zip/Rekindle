@@ -112,6 +112,22 @@ async function toPicker(b: Browser): Promise<void> {
   }
 }
 
+/** Create `s`'s identity from the login window and land on the buddy list. */
+async function createIdentity(b: Browser, s: WalkState): Promise<void> {
+  await switchTo(b, LOGIN, NET_WAIT_MS);
+  if (await present(b, ".account-create-btn")) await (await b.$(".account-create-btn")).click();
+  await typeInto(await shown(b, 'input[placeholder="Display Name (optional)"]', NET_WAIT_MS), s.displayName);
+  await typeInto(await shown(b, 'form.login-container input[type="password"]'), s.passphrase);
+  const submit = await b.$('form.login-container button[type="submit"]');
+  await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Create Identity stayed disabled (Connecting…)" });
+  await submit.click();
+  await resolveIntent(b, { passphrase: s.passphrase });
+  await waitForHandle(b, (h) => h === BUDDY, NET_WAIT_MS);
+  await inBuddy(b);
+  const name = await (await shown(b, ".identity-bar-name")).getText();
+  if (!name.includes(s.displayName)) throw new Error(`identity bar shows "${name}"`);
+}
+
 async function generateInvite(ctx: RowContext): Promise<void> {
   const { b, s } = ctx;
   await openAddFriend(b);
@@ -151,18 +167,7 @@ export const ROWS: Row[] = [
     id: "L6",
     title: "Create identity",
     async run({ b, s }) {
-      await switchTo(b, LOGIN);
-      if (await present(b, ".account-create-btn")) await (await b.$(".account-create-btn")).click();
-      await typeInto(await shown(b, 'input[placeholder="Display Name (optional)"]'), s.displayName);
-      await typeInto(await shown(b, 'form.login-container input[type="password"]'), s.passphrase);
-      const submit = await b.$('form.login-container button[type="submit"]');
-      await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Create Identity stayed disabled (Connecting…)" });
-      await submit.click();
-      await resolveIntent(b, { passphrase: s.passphrase });
-      await waitForHandle(b, (h) => h === BUDDY, NET_WAIT_MS);
-      await inBuddy(b);
-      const name = await (await shown(b, ".identity-bar-name")).getText();
-      if (!name.includes(s.displayName)) throw new Error(`identity bar shows "${name}"`);
+      await createIdentity(b, s);
     },
   },
   {
@@ -536,25 +541,9 @@ export const ROWS: Row[] = [
     },
   },
   {
-    id: "B8",
-    title: "Menu > Quit (inventory W3)",
-    async run({ b, app, shot }) {
-      await inBuddy(b);
-      await shot();
-      await menu(b, "Rekindle", "Quit");
-      await sleep(3000);
-      const alive = app.alive();
-      const handles = alive ? await b.getWindowHandles().catch(() => [] as string[]) : [];
-      const note = `process alive=${alive}; windows=[${handles.join(", ")}]`;
-      if (alive) throw new Error(`did not quit: ${note}`);
-      return note;
-    },
-  },
-  {
     id: "L2",
     title: "Delete account",
-    async run({ b, app, s }) {
-      if (!app.alive()) throw new Error("app quit at B8; nothing left to delete");
+    async run({ b, s }) {
       const handles = await b.getWindowHandles();
       if (handles.includes(BUDDY) && !(await (async () => {
         await b.switchToWindow(LOGIN).catch(() => undefined);
@@ -565,15 +554,37 @@ export const ROWS: Row[] = [
         await resolveIntent(b, { passphrase: s.passphrase });
       }
       await toPicker(b);
-      // The delete button is opacity 0 until the bubble is hovered
-      // (theme/01-form-primitives.css:224,231), so WebDriver never sees it
-      // displayed: wait for it to exist and press it in the page.
+      // The delete button is opacity 0 until the bubble is hovered or holds
+      // focus (theme/01-form-primitives.css, `.account-bubble-delete`), so
+      // WebDriver never sees it displayed: wait for it to exist and press it
+      // in the page.
       const del = await b.$(`[aria-label="Delete ${s.displayName}"]`);
       await del.waitForExist({ timeout: NET_WAIT_MS });
       await press(b, del);
       const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: WAIT_MS });
       await waitUntil(async () => !(await present(b, `[aria-label="Delete ${s.displayName}"]`)), NET_WAIT_MS, "account bubble still shown");
       return `review ${outcome}`;
+    },
+  },
+  {
+    id: "B8",
+    title: "Menu > Quit (inventory W3)",
+    // Last: quitting ends the walk. L2 deleted the walk's identity, so make
+    // a fresh one to reach the buddy list's menu bar.
+    async run({ b, app, s, shot }) {
+      await createIdentity(b, s);
+      await shot();
+      const started = Date.now();
+      await menu(b, "Rekindle", "Quit");
+      // The process exits (`quit_app`, the tray's Quit), after the graceful
+      // shutdown; closing the window alone would leave it in the tray.
+      const deadline = started + NET_WAIT_MS;
+      while (app.alive() && Date.now() < deadline) await sleep(250);
+      if (app.alive()) {
+        const handles = await b.getWindowHandles().catch(() => [] as string[]);
+        throw new Error(`did not quit: process alive; windows=[${handles.join(", ")}]`);
+      }
+      return `process exited ${Date.now() - started} ms after Quit`;
     },
   },
 ];

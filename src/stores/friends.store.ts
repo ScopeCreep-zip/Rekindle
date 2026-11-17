@@ -16,8 +16,9 @@ export interface Friend {
   gameInfo: GameInfo | null;
   /** The group label the buddy list shows them under (the Host's). */
   group: string;
-  /** They are in no group of ours: `group` is the Host's default label. */
-  inDefaultGroup: boolean;
+  /** Our group they are in, the id the group commands take; null when they
+   *  are in none (`group` is then the Host's default label). */
+  groupId: number | null;
   unreadCount: number;
   lastSeenAt: number | null;
   voiceChannel: string | null;

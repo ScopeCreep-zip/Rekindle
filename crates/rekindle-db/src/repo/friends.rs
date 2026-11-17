@@ -33,6 +33,8 @@ pub struct FriendRow {
     pub public_key: String,
     pub display_name: String,
     pub nickname: Option<String>,
+    /// The id of their group, when they are in one of ours.
+    pub group_id: Option<i64>,
     pub group_name: Option<String>,
     pub dht_record_key: Option<String>,
     pub last_seen_at: Option<i64>,
@@ -47,7 +49,7 @@ pub struct FriendRow {
 pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<FriendRow>> {
     let mut stmt = conn.prepare(&format!(
         "SELECT f.public_key, f.display_name, {}, g.name, f.dht_record_key, \
-         f.last_seen_at, f.mailbox_dht_key, f.friendship_state \
+         f.last_seen_at, f.mailbox_dht_key, f.friendship_state, f.group_id \
          FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
          WHERE f.owner_key = ?1",
         nickname::NICKNAME
@@ -58,6 +60,7 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Frie
                 public_key: row.get(0)?,
                 display_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
                 nickname: row.get(2)?,
+                group_id: row.get(8)?,
                 group_name: row.get(3)?,
                 dht_record_key: row.get(4)?,
                 last_seen_at: row.get(5)?,

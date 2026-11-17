@@ -68,6 +68,8 @@ export const systemCommands = {
 
   // Windows
   showBuddyList: () => invoke<void>("show_buddy_list"),
+  /** Quit Rekindle, the tray's Quit (closing the buddy list only hides it). */
+  quitApp: () => invoke<void>("quit_app"),
   // Window titles are resolved by the backend from its own state. One chat
   // window: 1:1 with a peer, or a group DM by its group id (plan E2.6).
   openChatWindow: (publicKey: string) =>

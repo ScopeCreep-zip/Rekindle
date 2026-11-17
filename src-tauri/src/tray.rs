@@ -31,7 +31,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
-            "quit" => app.exit(0),
+            "quit" => quit_rekindle(app),
             "settings" => {
                 let _ = windows::open_settings(app, None);
             }
@@ -55,6 +55,14 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .build(app)?;
 
     Ok(())
+}
+
+/// Quit Rekindle: the tray's Quit and the menu bar's (`quit_app`). A
+/// programmatic exit, which the run loop lets proceed (`lib.rs`,
+/// `ExitRequested` with a code) and which ends in the graceful shutdown
+/// (`RunEvent::Exit`, `shutdown::handle_exit`).
+pub fn quit_rekindle(app: &tauri::AppHandle) {
+    app.exit(0);
 }
 
 /// Set our status from the tray: the same Host call as the status picker

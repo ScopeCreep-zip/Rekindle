@@ -27,6 +27,9 @@ pub struct Friend {
     pub status: UserStatus,
     pub status_message: Option<String>,
     pub game_info: Option<GameInfoState>,
+    /// Our group they are in, the id the group actions take; `None` for no
+    /// group.
+    pub group_id: Option<i64>,
     pub group: Option<String>,
     /// The group the buddy list shows them under: `group`, or
     /// [`DEFAULT_FRIEND_GROUP`] for none.
@@ -58,6 +61,7 @@ impl Friend {
             },
             status_message: friend.status_message.clone().filter(|_| accepted),
             game_info: friend.game_info.clone().filter(|_| accepted),
+            group_id: friend.group_id,
             group: friend.group.clone(),
             group_label: group_label(friend.group.as_deref()),
             last_seen_at: friend.last_seen_at,

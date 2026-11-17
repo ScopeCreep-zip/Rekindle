@@ -1,12 +1,13 @@
 import { Component, createSignal, JSX, Show, For } from "solid-js";
 import type { Friend } from "../../stores/friends.store";
-import { handleRenameFriendGroup, handleCreateFriendGroup } from "../../actions/buddy.actions";
+import { handleRenameFriendGroup } from "../../actions/buddy.actions";
 import BuddyItem from "./BuddyItem";
 
 interface BuddyGroupProps {
   name: string;
-  /** One of our groups (not the default group nor the request list). */
-  renamable: boolean;
+  /** The id of our group (the Host's `friend_groups.id`), or null for the
+   *  default group and the request list, which cannot be renamed. */
+  groupId: number | null;
   friends: Friend[];
   selectedKey: string | null;
   onDoubleClick: (publicKey: string, displayName: string) => void;
@@ -31,20 +32,21 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
 
   function handleGroupContextMenu(e: MouseEvent): void {
     e.preventDefault();
-    if (!props.renamable) return;
+    if (props.groupId === null) return;
     setRenameValue(props.name);
     setRenaming(true);
   }
 
   async function commitRename(): Promise<void> {
-    const newName = renameValue().trim();
-    if (newName && newName !== props.name) {
-      const groupId = await handleCreateFriendGroup(props.name);
-      if (groupId >= 0) {
-        await handleRenameFriendGroup(groupId, newName);
-      }
-    }
+    // Enter commits, and the input's removal then blurs it: leave rename
+    // mode first so the blur does not send the rename a second time.
+    if (!renaming()) return;
     setRenaming(false);
+    const newName = renameValue().trim();
+    const groupId = props.groupId;
+    if (newName && newName !== props.name && groupId !== null) {
+      await handleRenameFriendGroup(groupId, newName);
+    }
   }
 
   function handleRenameKeyDown(e: KeyboardEvent): void {

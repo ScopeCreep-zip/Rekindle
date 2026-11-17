@@ -109,6 +109,8 @@ export interface FriendInfo {
   status: string;
   statusMessage: string | null;
   gameInfo: GameStatus | null;
+  /** Our group they are in, the id the group commands take; null for none. */
+  groupId: number | null;
   group: string | null;
   /** The group the buddy list shows them under: `group`, or the Host's
    *  default group name when `group` is null. */

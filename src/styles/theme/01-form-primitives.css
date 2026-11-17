@@ -228,7 +228,11 @@
     justify-content: center;
   }
 
-  .account-bubble:hover .account-bubble-delete {
+  /* Shown on hover, and while the keyboard is on the bubble or the button
+     itself, so a keyboard user sees the control they have focused. */
+  .account-bubble:hover .account-bubble-delete,
+  .account-bubble:focus-within .account-bubble-delete,
+  .account-bubble-delete:focus-visible {
     opacity: 1;
   }
 

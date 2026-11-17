@@ -303,6 +303,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         // notifications
         // windows
         commands::window::show_buddy_list,
+        commands::window::quit_app,
         commands::window::open_external_url,
         // deep links (consent flow)
         commands::window::open_chat_window,

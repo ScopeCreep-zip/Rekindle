@@ -2,7 +2,6 @@ import { Component } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
 import { commands } from "../../ipc/commands";
 import type { SettingsTab } from "../../ipc/commands/types";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { setBuddyListUI } from "../../stores/buddylist-ui.store";
 
 const REPO_URL = "https://github.com/ScopeCreep-zip/Rekindle";
@@ -11,8 +10,10 @@ function openSettingsTab(tab: SettingsTab): void {
   commands.openSettingsWindow(tab);
 }
 
+/** Quit the app, as the tray's Quit does; closing this window only hides
+ *  it in the tray. */
 function handleQuit(): void {
-  getCurrentWindow().close();
+  void commands.quitApp();
 }
 
 function handleOpenDocs(): void {

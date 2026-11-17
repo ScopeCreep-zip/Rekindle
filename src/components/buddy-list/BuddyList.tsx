@@ -68,13 +68,17 @@ const BuddyList: Component = () => {
   const hasFriends = createMemo(() => Object.keys(friendsState.friends).length > 0);
   const hasFilteredResults = createMemo(() => Object.keys(groupedFriends()).length > 0);
 
-  /** Our groups a friend can move to (not the pending-request list), and
-   *  the label of the Host's default group (friends in none). */
+  /** The id of the group a label names: ours, or null for the Host's
+   *  default group and the pending-request list. */
+  function groupIdOf(name: string): number | null {
+    if (name === AWAITING_RESPONSE) return null;
+    return groupedFriends()[name]?.[0]?.groupId ?? null;
+  }
+
+  /** Our groups a friend can move to (not the pending-request list); the
+   *  Host's default group moves them out of any group (id null). */
   const existingGroups = createMemo(() =>
     Object.keys(groupedFriends()).filter((name) => name !== AWAITING_RESPONSE),
-  );
-  const defaultGroupName = createMemo(
-    () => Object.values(friendsState.friends).find((f) => f.inDefaultGroup)?.group ?? null,
   );
 
   function handleDblClick(publicKey: string): void {
@@ -87,14 +91,7 @@ const BuddyList: Component = () => {
   }
 
   async function moveToExistingGroup(friendKey: string, groupName: string): Promise<void> {
-    if (groupName === defaultGroupName()) {
-      await handleMoveFriendToGroup(friendKey, null);
-    } else {
-      const groupId = await handleCreateFriendGroup(groupName);
-      if (groupId >= 0) {
-        await handleMoveFriendToGroup(friendKey, groupId);
-      }
-    }
+    await handleMoveFriendToGroup(friendKey, groupIdOf(groupName));
   }
 
   async function createGroupAndMove(friendKey: string, groupName: string): Promise<void> {
@@ -282,7 +279,7 @@ const BuddyList: Component = () => {
             {([name, friends]) => (
               <BuddyGroup
                 name={name}
-                renamable={name !== defaultGroupName() && name !== AWAITING_RESPONSE}
+                groupId={groupIdOf(name)}
                 friends={friends}
                 selectedKey={selectedKey()}
                 onDoubleClick={handleDblClick}

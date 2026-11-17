@@ -31,6 +31,9 @@ pub struct FriendState {
     pub status: UserStatus,
     pub status_message: Option<String>,
     pub game_info: Option<GameInfoState>,
+    /// The id of our group they are in (`friend_groups.id`), with its
+    /// name in `group`; `None` for no group.
+    pub group_id: Option<i64>,
     pub group: Option<String>,
     /// The friend's profile record, which we watch for their presence.
     pub dht_record_key: Option<String>,
@@ -70,6 +73,7 @@ impl FriendState {
             status: UserStatus::Offline,
             status_message: None,
             game_info: None,
+            group_id: None,
             group: None,
             dht_record_key: None,
             last_seen_at: None,

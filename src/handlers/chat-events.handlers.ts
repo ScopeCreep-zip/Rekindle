@@ -218,9 +218,9 @@ function applyFriendEvent(friend: FriendEvent): void {
     return;
   }
   if ("groupChanged" in friend) {
-    const { peerKey, group, groupLabel } = friend.groupChanged;
+    const { peerKey, groupId, groupLabel } = friend.groupChanged;
     if (friendsState.friends[peerKey]) {
-      setFriendsState("friends", peerKey, { group: groupLabel, inDefaultGroup: group === null });
+      setFriendsState("friends", peerKey, { group: groupLabel, groupId });
     }
     return;
   }

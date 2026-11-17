@@ -333,6 +333,7 @@
     "friend": {
       "groupChanged": {
         "group": "Raid team",
+        "groupId": 7,
         "groupLabel": "Raid team",
         "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
       }

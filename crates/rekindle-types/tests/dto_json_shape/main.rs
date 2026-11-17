@@ -336,6 +336,7 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
     accepted.nickname = Some("Bobby".into());
     accepted.status = SessionStatus::Busy;
     accepted.status_message = Some("raiding".into());
+    accepted.group_id = Some(7);
     accepted.group = Some("Raid team".into());
     accepted.identity_pin_mismatch = true;
     accepted.last_seen_at = Some(1_700_000_000_000);

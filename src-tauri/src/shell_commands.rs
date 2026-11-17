@@ -337,6 +337,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
 pub const SHELL_LOCAL: &[&str] = &[
     "subscribe_events",
     "show_buddy_list",
+    "quit_app",
     "open_chat_window",
     "open_community_window",
     "open_settings_window",
