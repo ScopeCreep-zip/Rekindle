@@ -75,4 +75,15 @@ impl CommunityStore {
         })
         .unwrap_or(true)
     }
+
+    /// Whether we relay `author`'s gossip for the community one hop
+    /// further: only for a community we hold, whose traffic we take
+    /// ([`Self::takes_traffic_from`]). A community we left or forgot is
+    /// gone from the store, and its remaining members' gossip that still
+    /// reaches us (their peer lists hold us until they refresh) is not
+    /// ours to amplify, as Signal's left group sends nothing (A/B F7-4).
+    #[must_use]
+    pub fn relays_for(&self, community_id: &str, author: &PseudonymKey) -> bool {
+        self.read(community_id, |_| ()).is_some() && self.takes_traffic_from(community_id, author)
+    }
 }

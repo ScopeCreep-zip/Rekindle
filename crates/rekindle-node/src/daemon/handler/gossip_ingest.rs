@@ -223,12 +223,21 @@ impl DaemonHandler {
         }
     }
 
-    /// Whether we take `author`'s gossip for the community, or relay it
+    /// Whether we take `author`'s gossip for the community
     /// (`CommunityStore::takes_traffic_from`).
     pub(super) fn takes_traffic(&self, community_id: &str, author: &str) -> bool {
         let author = rekindle_types::id::PseudonymKey::from_hex_lossy(author);
         (self.host.get().and_then(std::sync::Weak::upgrade))
             .is_none_or(|ctx| ctx.communities.takes_traffic_from(community_id, &author))
+    }
+
+    /// Whether we relay `author`'s gossip for the community one hop
+    /// further (`CommunityStore::relays_for`): never for a community the
+    /// Host does not hold, nor before it is up.
+    pub(super) fn relays(&self, community_id: &str, author: &str) -> bool {
+        let author = rekindle_types::id::PseudonymKey::from_hex_lossy(author);
+        (self.host.get().and_then(std::sync::Weak::upgrade))
+            .is_some_and(|ctx| ctx.communities.relays_for(community_id, &author))
     }
 
     /// Hand a notified channel post to the Host's ingest (plan E3.1 F3).

@@ -53,6 +53,7 @@ mod invite_join_leave;
 mod invite_unpublished;
 mod kick_rotates_once;
 mod kicked_slot_write;
+mod left_quiet;
 mod left_slot_write;
 mod logout_unlock;
 mod logs;

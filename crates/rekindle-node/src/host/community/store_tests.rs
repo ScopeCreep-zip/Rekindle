@@ -339,3 +339,29 @@ fn traffic_from_a_departed_author_or_after_our_removal_is_refused() {
     );
     assert!(!store.takes_traffic_from("c1", &member), "we were removed");
 }
+
+#[test]
+fn gossip_is_relayed_only_for_a_held_community_whose_traffic_we_take() {
+    let store = CommunityStore::new(new_map());
+    let member = PseudonymKey([3; 32]);
+    let departed = PseudonymKey([4; 32]);
+    let mut governance = GovernanceState::default();
+    governance.bans.insert(departed.clone());
+    store.set_governance_state("c1", governance);
+    assert!(store.relays_for("c1", &member));
+    assert!(!store.relays_for("c1", &departed), "a departed author");
+    assert!(
+        !store.relays_for("unheld", &member),
+        "a community we left or never held"
+    );
+    store.note_own_removal(
+        "c1",
+        super::OwnRemoval {
+            banned: false,
+            by: None,
+            by_name: None,
+            reason: None,
+        },
+    );
+    assert!(!store.relays_for("c1", &member), "we were removed");
+}

@@ -176,7 +176,7 @@ impl InboundHandler for DaemonHandler {
     /// the transport already decremented has changed. That is what makes
     /// a relayed message still attributable to whoever wrote it.
     async fn on_gossip_forward(&self, envelope: &SignedEnvelope) {
-        if !self.takes_traffic(&envelope.community_id, &envelope.sender_pseudonym) {
+        if !self.relays(&envelope.community_id, &envelope.sender_pseudonym) {
             return;
         }
         crate::daemon::gossip::forward(&self.gossip_tx, envelope.clone());
