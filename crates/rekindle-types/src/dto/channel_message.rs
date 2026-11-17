@@ -109,4 +109,8 @@ pub struct ChannelMessageView {
     pub flags: u32,
     /// Our own message's delivery state; `delivered` for a received one.
     pub send_state: SendState,
+    /// Why our `failed` post was not delivered, as the user reads it (plan
+    /// E3.2 S9, F9-3; S7l's key deadline), kept across a reload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_reason: Option<String>,
 }

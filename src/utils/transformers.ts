@@ -63,6 +63,7 @@ export function transformMessage(m: IpcMessage): Message {
       : undefined,
     flags: m.flags ?? 0,
     status: m.isOwn ? ownStatus(m.sendState) : undefined,
+    failureReason: m.isOwn ? m.failureReason : undefined,
   };
 }
 

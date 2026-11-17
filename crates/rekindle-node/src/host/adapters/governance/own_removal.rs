@@ -61,6 +61,12 @@ impl HostGovernance {
                     }
                 }
                 this.reconcile_removal(&community).await;
+                // Judged once the removal stands (the catch-up before the
+                // teardown can void it): our posts no reader keeps since
+                // (plan E3.2 S9, F9-3).
+                if first && this.ctx.communities.own_removal(&community).is_some() {
+                    this.fail_posts_past_removal(&community).await;
+                }
             },
         );
     }

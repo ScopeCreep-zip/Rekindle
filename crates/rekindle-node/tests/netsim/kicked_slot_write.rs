@@ -159,3 +159,92 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
         );
     }
 }
+
+/// Node `i`'s own post `body` from its history: its stored send state and
+/// the reason a failed one shows.
+async fn own_state(community: &Community, i: usize, body: &str) -> (String, Option<String>) {
+    let page = community.history(i, None, 100).await.expect("history");
+    let row = (page.iter())
+        .find(|m| m["body"].as_str() == Some(body))
+        .unwrap_or_else(|| panic!("node {i} holds its post {body:?}: {page:?}"));
+    (
+        row["sendState"].as_str().unwrap_or_default().to_owned(),
+        row["failureReason"].as_str().map(str::to_owned),
+    )
+}
+
+/// A/B finding F9-3 (round 9 step 4): a kick racing the member's post. The
+/// member posts after the kick op was signed but before it merged the kick
+/// (it is cut off while it is kicked), so the post is past the slot head the
+/// removal recorded and every reader drops it. Once the member merges its
+/// removal, its own client marks that post not delivered, with the reason,
+/// instead of "sent", and keeps its genuine pre-kick post sent.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_post_racing_the_kick_reads_not_delivered_on_the_senders_client() {
+    let mut community = Community::create(3, 163).await;
+    community.join(1).await;
+    community.join(2).await;
+    let bea = community.pseudonym(1).await;
+    let _ = community.post(1, "bea before the kick").await;
+    for reader in [0, 2] {
+        assert!(
+            community
+                .reads(reader, "bea before the kick", Duration::from_secs(120))
+                .await,
+            "node {reader} reads the member's post before the kick"
+        );
+    }
+    community.sim.fault(Fault::Partition {
+        a: vec![0, 2],
+        b: vec![1],
+    });
+    community.nodes[0]
+        .ok(IpcRequest::Community(CommunityRequest::Members(
+            MemberRequest::Kick {
+                community: community.governance_key.clone(),
+                target_pseudonym: bea.clone(),
+                reason: None,
+            },
+        )))
+        .await;
+    for reader in [0, 2] {
+        assert!(
+            crate::harness::eventually(&community.sim, Duration::from_secs(120), || async {
+                listed(&community, reader, &bea).await.is_none()
+            })
+            .await,
+            "node {reader} merges the kick"
+        );
+    }
+    let _ = community.post(1, "bea racing the kick").await;
+    community.sim.fault(Fault::Heal);
+    let reason = "Not delivered: you were removed from the community";
+    assert!(
+        crate::harness::eventually(&community.sim, Duration::from_secs(180), || async {
+            own_state(&community, 1, "bea racing the kick").await
+                == ("failed".to_owned(), Some(reason.to_owned()))
+        })
+        .await,
+        "the kicked member's racing post reads not delivered: {:?}",
+        own_state(&community, 1, "bea racing the kick").await
+    );
+    community.sim.quiesce().await;
+    assert_eq!(
+        own_state(&community, 1, "bea racing the kick").await,
+        ("failed".to_owned(), Some(reason.to_owned())),
+        "no later settle flips it back to sent"
+    );
+    assert_eq!(
+        own_state(&community, 1, "bea before the kick").await,
+        ("sent".to_owned(), None),
+        "the genuine pre-kick post stays sent"
+    );
+    for reader in [0, 2] {
+        assert!(
+            !community
+                .reads(reader, "bea racing the kick", Duration::from_secs(60))
+                .await,
+            "node {reader} never shows the racing post"
+        );
+    }
+}

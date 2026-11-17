@@ -133,6 +133,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                     } else {
                         SendState::Delivered
                     },
+                    failure_reason: None,
                 },
                 reply_to: message.reply_to.clone(),
                 mek_generation: message.mek_generation,
@@ -259,6 +260,7 @@ mod tests {
             attachment: None,
             flags: 0,
             send_state: SendState::Delivered,
+            failure_reason: None,
         }
     }
 

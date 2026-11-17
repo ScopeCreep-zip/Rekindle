@@ -231,7 +231,8 @@ pub fn delete_to_peer(conn: &Connection, owner_key: &str, peer: &str) -> rusqlit
 /// echo's state is monotone, merged with max). `queued` < `sent` <
 /// `delivered` < `read`; `failed` ranks with `sent`, so it replaces an
 /// unacked echo but never a `delivered` or `read` one, and a `failed` echo
-/// takes any state (a retry queues it again). A re-handed-off in-flight row
+/// takes any state (a retry queues it again, and its failure reason goes).
+/// A re-handed-off in-flight row
 /// is `queued` again in the outbox, but its delivered echo stays delivered.
 fn project(
     conn: &Connection,
@@ -240,7 +241,9 @@ fn project(
     state: SendState,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "UPDATE messages SET send_state = ?3 WHERE owner_key = ?1 AND id = \
+        "UPDATE messages SET send_state = ?3, \
+         failure_reason = CASE ?3 WHEN 'failed' THEN failure_reason ELSE NULL END \
+         WHERE owner_key = ?1 AND id = \
          (SELECT echo_id FROM outbox WHERE owner_key = ?1 AND client_id = ?2) \
          AND (CASE ?3 WHEN 'awaiting_key' THEN 0 WHEN 'queued' THEN 0 WHEN 'sent' THEN 1 \
          WHEN 'failed' THEN 1 \

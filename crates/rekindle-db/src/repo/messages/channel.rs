@@ -221,6 +221,8 @@ pub struct StoredChannelMessage {
     pub attachment_json: Option<String>,
     pub flags: u32,
     pub send_state: SendState,
+    /// Why our `failed` post was not delivered, as the user reads it.
+    pub failure_reason: Option<String>,
 }
 
 /// Up to `limit` messages of `channel_id`, oldest first; with `before`, only
@@ -238,7 +240,7 @@ pub fn page(
 ) -> rusqlite::Result<Vec<StoredChannelMessage>> {
     let mut stmt = conn.prepare(
         "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, \
-                attachment_json, flags, send_state \
+                attachment_json, flags, send_state, failure_reason \
          FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
            AND (?3 IS NULL OR timestamp < ?3) \
@@ -264,11 +266,34 @@ pub fn page(
             attachment_json: get(row, "attachment_json")?,
             flags: get(row, "flags")?,
             send_state,
+            failure_reason: get(row, "failure_reason")?,
         })
     })?;
     let mut out = rows.collect::<rusqlite::Result<Vec<_>>>()?;
     out.reverse();
     Ok(out)
+}
+
+/// Our post `message_id` of a channel did not reach its readers: it reads
+/// `failed` with `reason` (plan E3.2 S9, F9-3; S7l's key deadline). A post
+/// still waiting, written, or failed takes it; a received message never
+/// (its state is `delivered`). Whether a row changed.
+///
+/// # Errors
+/// The write failed.
+pub fn fail_own_post(
+    conn: &Connection,
+    owner_key: &str,
+    message_id: &str,
+    reason: &str,
+) -> rusqlite::Result<bool> {
+    let changed = conn.execute(
+        "UPDATE messages SET send_state = 'failed', failure_reason = ?3 \
+         WHERE owner_key = ?1 AND message_id = ?2 AND conversation_type = 'channel' \
+           AND send_state IN ('awaiting_key', 'queued', 'sent', 'failed')",
+        params![owner_key, message_id, reason],
+    )?;
+    Ok(changed > 0)
 }
 
 /// Delete one stored channel message by its protocol id; whether a row went.
@@ -338,5 +363,27 @@ mod tests {
         assert!(find_by_message_id(&conn, OWNER, "ch", "b")
             .unwrap()
             .is_none());
+    }
+
+    #[test]
+    fn a_failed_posts_reason_is_kept_for_the_reload() {
+        let conn = fixture::conn();
+        fixture::community(&conn, "c");
+        let sent = ChannelMessageInsert {
+            sender_key: OWNER,
+            send_state: SendState::Sent,
+            ..row("ours", 10, 1)
+        };
+        insert(&conn, &sent).unwrap();
+        insert(&conn, &row("theirs", 20, 2)).unwrap();
+        let reason = "Not delivered: you were removed from the community";
+        assert!(fail_own_post(&conn, OWNER, "ours", reason).unwrap());
+        // A received message has no send to fail.
+        assert!(!fail_own_post(&conn, OWNER, "theirs", reason).unwrap());
+        let read = page(&conn, OWNER, "ch", None, 10).unwrap();
+        assert_eq!(read[0].send_state, SendState::Failed);
+        assert_eq!(read[0].failure_reason.as_deref(), Some(reason));
+        assert_eq!(read[1].send_state, SendState::Delivered);
+        assert_eq!(read[1].failure_reason, None);
     }
 }

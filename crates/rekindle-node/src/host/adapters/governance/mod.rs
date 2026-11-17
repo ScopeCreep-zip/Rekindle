@@ -73,6 +73,7 @@ pub(crate) mod pins;
 pub mod projection;
 mod publication;
 mod registry;
+mod removal_posts;
 pub(crate) mod search;
 
 mod checkpoint_state;

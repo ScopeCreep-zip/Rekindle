@@ -53,6 +53,7 @@ fn record_message() -> RecordMessage {
             attachment: None,
             flags: 0,
             send_state: SendState::Delivered,
+            failure_reason: None,
         },
         reply_to: None,
         mek_generation: 0,

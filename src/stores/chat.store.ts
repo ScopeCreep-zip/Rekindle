@@ -50,7 +50,8 @@ export interface Message extends Omit<IpcMessage, "sendState"> {
    *  loaded (our own only), then updated locally as a send resolves. */
   status?: MessageStatus;
   /** Why our failed post was not sent, as the backend words it (a key that
-   *  never came); absent when the network superseded it. */
+   *  never came, or written after our removal), live or from the stored
+   *  row; absent when the network superseded it. */
   failureReason?: string;
   replyTo?: number;
   replyToId?: string;

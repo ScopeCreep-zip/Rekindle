@@ -31,6 +31,7 @@ mod dht;
 mod events;
 pub(crate) mod history;
 pub mod ingest;
+pub(crate) mod not_delivered;
 mod persist;
 mod record_change;
 pub(crate) mod rich;
@@ -259,13 +260,19 @@ fn start_key_deadline(ctx: &DaemonContext, scope: &Arc<SessionScope>) -> Result<
                 continue;
             }
             match posts.post(&change.client_id).await {
-                Ok(Some(post)) => channel.send_state_impl(
-                    &post.community,
-                    &post.channel,
-                    &post.message,
-                    rekindle_types::message::SendState::Failed,
-                    Some(key_did_not_arrive_text()),
-                ),
+                Ok(Some(post)) => {
+                    // Stored with the row, so a reload still says why.
+                    channel
+                        .store_failure_reason(&post.message, &key_did_not_arrive_text())
+                        .await;
+                    channel.send_state_impl(
+                        &post.community,
+                        &post.channel,
+                        &post.message,
+                        rekindle_types::message::SendState::Failed,
+                        Some(key_did_not_arrive_text()),
+                    );
+                }
                 Ok(None) => {}
                 Err(error) => tracing::warn!(%error, "expired channel post not read"),
             }

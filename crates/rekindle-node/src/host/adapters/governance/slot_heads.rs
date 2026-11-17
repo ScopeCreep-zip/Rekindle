@@ -220,7 +220,7 @@ async fn local_pages_of(
 /// head commits to its seq and its decrypted page (plan S9), so a reader
 /// keeps the member's posts only from exactly that value. `None` when we
 /// hold no value of the slot.
-async fn local_slot_value(
+pub(super) async fn local_slot_value(
     pool: &dyn RecordPort,
     lease: LeaseId,
     slot: u32,

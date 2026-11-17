@@ -165,6 +165,11 @@ CREATE TABLE IF NOT EXISTS messages (
     -- or `failed`; a received message is `delivered`.
     send_state TEXT NOT NULL DEFAULT 'delivered'
         CHECK(send_state IN ('awaiting_key', 'queued', 'sent', 'delivered', 'read', 'failed')),
+    -- Why our `failed` post was not delivered, as the user reads it (plan
+    -- E3.2 S7l/S9, F9-1 and F9-3): its key never came, or it was written
+    -- past the slot head of our removal. Read only while `failed`; a retry
+    -- clears it.
+    failure_reason TEXT,
     -- A direct message's place in its DM stream (plan E2.5, r10): ours is
     -- our outbox seq to the peer, a received one the sender's; a
     -- `ReadUpTo` names it. NULL for a channel message.

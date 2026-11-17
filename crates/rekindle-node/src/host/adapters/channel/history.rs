@@ -311,6 +311,9 @@ pub(crate) fn stored_view(
         forwarded_from_author: row.forwarded_from_author,
         attachment,
         flags: row.flags,
+        failure_reason: row
+            .failure_reason
+            .filter(|_| row.send_state == SendState::Failed),
         send_state: row.send_state,
     }
 }

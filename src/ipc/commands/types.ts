@@ -31,6 +31,9 @@ export interface Message {
   };
   forwardedFromAuthor?: string | null;
   sendState: SendState;
+  /** Why our `failed` post was not delivered, as the backend words it
+   *  (plan E3.2 S9, F9-3; S7l's key deadline); absent otherwise. */
+  failureReason?: string;
   attachment?: {
     attachmentId: string;
     filename: string;
