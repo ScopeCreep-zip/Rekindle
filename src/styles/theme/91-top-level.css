@@ -352,10 +352,10 @@
     }
 
     /* Focus rings — forced-colors strips outline colors unless we ask
-     * for the system focus token explicitly. */
+     * for the system focus token explicitly. The offset stays the
+     * components' (outset, or inset on rows and tabs in clipping lists). */
     *:focus-visible {
       outline: 2px solid Highlight;
-      outline-offset: 2px;
     }
 
     /* Icons rendered as font glyphs lose their decorative role; let the

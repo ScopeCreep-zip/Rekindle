@@ -14,14 +14,17 @@
     outline: none;
   }
 
-  /* Rows and tabs fill a clipping list or bar edge to edge, so an outset
-   * ring would be cut; theirs is drawn inside the box (plan E7.12). */
+  /* Rows, tabs and bar buttons fill a clipping list or bar edge to edge, so an outset
+   * ring would be cut; theirs is drawn inside the box (plan E7.12), deep
+   * enough for the 3px ring `prefers-contrast: more` asks for. */
   .buddy-tab:focus-visible,
   .form-tab:focus-visible,
+  .menu-bar-item:focus-visible,
+  .header-add-btn:focus-visible,
   .buddy-item:focus-visible,
   .member-item:focus-visible,
   .group-dm-row:focus-visible {
-    outline-offset: -2px;
+    outline-offset: -3px;
   }
 
   /* Architecture §32 a11y — skip link rendered as the first focusable

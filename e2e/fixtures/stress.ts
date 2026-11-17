@@ -144,11 +144,12 @@ export const FULL: Stress = { friends: 100, members: 100, messages: 40, communit
 export const EMPTY: Stress = { friends: 0, members: 0, messages: 0, communities: 0 };
 
 /**
- * The handler source for one stress level. `get_*`/`list_*` commands not
+ * The handler source for one stress level, showing a skin on `base`
+ * (plan E7.7.2's `get_skin`). `get_*`/`list_*` commands not
  * named answer an empty list, the rest `null`, as a window with no data
  * would see them.
  */
-export function stressHandler(s: Stress): string {
+export function stressHandler(s: Stress, base: "dark" | "light" = "dark"): string {
   const j = JSON.stringify;
   const call = {
     callId: CALL,
@@ -191,6 +192,9 @@ export function stressHandler(s: Stress): string {
       )};
     case "group_dm_messages":
       return ${j(dmHistory(s.messages))};
+    case "get_skin":
+      return { id: "builtin:symbiosis", base: ${j(base)}, regions: [],
+        tokensHref: ${j(`skin://localhost/${ME}/tokens.css`)} };
     case "get_active_call":
       return ${j(call)};
     default:

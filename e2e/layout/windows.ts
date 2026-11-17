@@ -116,9 +116,15 @@ export function sizes(w: WindowCase): [string, Size][] {
 }
 
 /** Open `w` at `size` over the stress data and wait for it to settle. */
-export async function open(page: Page, w: WindowCase, size: Size, data: Stress): Promise<void> {
+export async function open(
+  page: Page,
+  w: WindowCase,
+  size: Size,
+  data: Stress,
+  base: "dark" | "light" = "dark",
+): Promise<void> {
   await page.setViewportSize(size);
-  await preloadMocks(page, w.label, stressHandler(data));
+  await preloadMocks(page, w.label, stressHandler(data, base));
   await page.goto(w.path);
   await w.ready(page);
   // Lazy windows hydrate over several IPC rounds; let them land.
