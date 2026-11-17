@@ -17,7 +17,7 @@ import type {
   NotificationEvent,
   NotificationSubscriptionEvent,
 } from "./notification_events";
-import type { IntentReview, LifecycleState, SkinApplied } from "../commands/dto";
+import type { IntentReview, LifecycleState, SkinApplied, SkinTrial } from "../commands/dto";
 import type { SettingsTab } from "../commands/types";
 
 /// Where this window is in the host's event stream
@@ -214,6 +214,20 @@ export function subscribeSkinEvents(onSkin: (skin: SkinApplied) => void): Promis
   return on<{ system: { skinChanged: { skin: SkinApplied } } }>("skin-event", (payload) => {
     onSkin(payload.system.skinChanged.skin);
   });
+}
+
+/**
+ * Subscribe to "Keep this skin?" (`SystemEvent::SkinTrialChanged`, plan
+ * E7.7.2): the Settings window receives the trial in progress, or `null`
+ * once it is kept, reverted or replaced, on `skin-trial-event`.
+ */
+export function subscribeSkinTrial(
+  onTrial: (trial: SkinTrial | null) => void,
+): Promise<UnlistenFn> {
+  return on<{ system: { skinTrialChanged: { trial: SkinTrial | null } } }>(
+    "skin-trial-event",
+    (payload) => onTrial(payload.system.skinTrialChanged.trial),
+  );
 }
 
 export function subscribeNotificationEvents(

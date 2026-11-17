@@ -159,6 +159,14 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(b"|");
             h.update(skin.tokens_href.as_bytes());
         }
+        SystemEvent::SkinTrialChanged { trial } => {
+            h.update(b"skin_trial|");
+            if let Some(t) = trial {
+                h.update(t.id.as_bytes());
+                h.update(b"|");
+                h.update(&t.reverts_at_ms.to_le_bytes());
+            }
+        }
     }
 }
 

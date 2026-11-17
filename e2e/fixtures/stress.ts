@@ -213,6 +213,31 @@ export interface Stress {
   communities: number;
 }
 
+/** Settings → Appearance's library: the built-ins, then (with data) a
+ *  dozen long-named library skins, one of them on trial. */
+function skinLibrary(s: Stress) {
+  const pkg = (i: number) => `pkg:${i.toString(16).padStart(64, "0")}`;
+  const library = s.communities
+    ? Array.from({ length: s.communities }, (_, i) => ({
+        id: pkg(i + 1),
+        name: longName(`Skin_${i}_`),
+        importedAt: 1000 + i,
+      }))
+    : [];
+  return {
+    skins: [
+      { id: "builtin:symbiosis", name: "Symbiosis", importedAt: null },
+      { id: "builtin:default", name: "Default", importedAt: null },
+      ...library,
+    ],
+    active: "builtin:symbiosis",
+    login: library.length ? pkg(2) : "builtin:symbiosis",
+    trial: library.length
+      ? { id: pkg(1), name: library[0].name, previous: "builtin:symbiosis", revertsAtMs: 0 }
+      : null,
+  };
+}
+
 export const FULL: Stress = { friends: 100, members: 100, messages: 40, communities: 12 };
 export const EMPTY: Stress = { friends: 0, members: 0, messages: 0, communities: 0 };
 
@@ -268,6 +293,11 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcom
     case "get_skin":
       return { id: "builtin:symbiosis", base: ${j(base)}, regions: [],
         tokensHref: ${j(`skin://localhost/${ME}/tokens.css`)} };
+    case "list_skins": {
+      // The Host's trial ends 15 s after it began.
+      const lib = ${j(skinLibrary(s))};
+      return { ...lib, trial: lib.trial && { ...lib.trial, revertsAtMs: Date.now() + 15000 } };
+    }
     case "get_game_status":
       return null;
     case "get_welcome_screen":

@@ -338,6 +338,85 @@
     color: var(--color-xfire-text);
   }
 
+  /* Settings → Appearance (plan E7.7.2). */
+  .skin-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+  }
+
+  .skin-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 8px;
+    padding-right: 12px;
+    border-radius: 4px;
+  }
+
+  .skin-row-shown {
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+  }
+
+  .skin-choice {
+    flex: 1 1 160px;
+    min-width: 0;
+  }
+
+  .skin-name {
+    overflow-wrap: anywhere;
+  }
+
+  .skin-badge {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    white-space: nowrap;
+  }
+
+  .skin-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .skin-action {
+    white-space: nowrap;
+  }
+
+  .skin-import {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+  }
+
+  .skin-file-input {
+    display: none;
+  }
+
+  .skin-error {
+    font-style: normal;
+  }
+
+  .skin-trial {
+    margin-bottom: 16px;
+  }
+
+  .skin-trial-text {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+
+  /* The commit is full width (`@layer sec`); revert sits under it. */
+  .skin-trial-actions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 8px;
+  }
+
   /* Profile */
   .profile-content {
     flex: 1;

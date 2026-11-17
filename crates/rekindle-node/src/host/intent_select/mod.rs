@@ -140,7 +140,7 @@ pub(crate) async fn select(
         IpcRequest::SkinRemove { id } => {
             s.subject = Subject::Named { name: id.clone() };
         }
-        IpcRequest::SkinSelect { .. } => {
+        IpcRequest::SkinSelect { .. } | IpcRequest::SkinKeep { .. } => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }

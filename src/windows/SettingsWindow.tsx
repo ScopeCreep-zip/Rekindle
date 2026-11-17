@@ -8,6 +8,7 @@ import { hydrateState } from "../stores/hydrate";
 import type { SettingsTab } from "../ipc/commands/types";
 import ProfileTab from "./settings/ProfileTab";
 import ApplicationTab from "./settings/ApplicationTab";
+import AppearanceTab from "./settings/AppearanceTab";
 import NotificationsTab from "./settings/NotificationsTab";
 import AudioTab from "./settings/AudioTab";
 import VideoTab from "./settings/VideoTab";
@@ -16,11 +17,12 @@ import DevicesTab from "./settings/DevicesTab";
 import AboutTab from "./settings/AboutTab";
 
 
-const VALID_TABS: SettingsTab[] = ["profile", "application", "notifications", "audio", "video", "privacy", "devices", "mobile", "about"];
+const VALID_TABS: SettingsTab[] = ["profile", "application", "appearance", "notifications", "audio", "video", "privacy", "devices", "mobile", "about"];
 
 const TAB_LABELS: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "application", label: "Application" },
+  { id: "appearance", label: "Appearance" },
   { id: "notifications", label: "Notifications" },
   { id: "audio", label: "Audio" },
   { id: "video", label: "Video" },
@@ -77,6 +79,7 @@ const SettingsWindow: Component = () => {
       <div class="settings-content" id="main-content" tabindex="-1">
         <Show when={activeTab() === "profile"}><ProfileTab /></Show>
         <Show when={activeTab() === "application"}><ApplicationTab /></Show>
+        <Show when={activeTab() === "appearance"}><AppearanceTab /></Show>
         <Show when={activeTab() === "notifications"}><NotificationsTab /></Show>
         <Show when={activeTab() === "audio"}><AudioTab /></Show>
         <Show when={activeTab() === "video"}><VideoTab /></Show>

@@ -330,6 +330,7 @@ export interface GameServer {
 export type SettingsTab =
   | "profile"
   | "application"
+  | "appearance"
   | "notifications"
   | "audio"
   | "video"

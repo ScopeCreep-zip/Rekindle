@@ -169,6 +169,8 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     // The identity's skin is a preference (E6.8's `PatchPreferences`).
     ("SkinSelect", Some(IntentKind::SetPreferences)),
     ("SkinSetLogin", Some(IntentKind::SetLoginSkin)),
+    // Keeping or reverting a tried skin settles the same preference.
+    ("SkinKeep", Some(IntentKind::SetPreferences)),
     ("AuditVerify", None),
     ("AuditExport", Some(IntentKind::AuditExport)),
     ("LinkOpen", Some(IntentKind::OpenExternalUrl)),

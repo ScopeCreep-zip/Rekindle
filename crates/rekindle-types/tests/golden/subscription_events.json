@@ -1718,6 +1718,18 @@
       }
     }
   },
+  "system.skinTrialChanged": {
+    "system": {
+      "skinTrialChanged": {
+        "trial": {
+          "id": "pkg:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "name": "Carbon Fiber",
+          "previous": "builtin:symbiosis",
+          "revertsAtMs": 1700000015000
+        }
+      }
+    }
+  },
   "system.syncReceived": {
     "system": {
       "syncReceived": {

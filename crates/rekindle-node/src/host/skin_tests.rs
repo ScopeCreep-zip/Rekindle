@@ -146,8 +146,20 @@ async fn import_select_set_login_and_remove_round_trip() {
     )
     .await;
     let library: SkinLibrary = data(answer);
-    assert_eq!(library.active, entry.id);
+    assert_eq!(library.trial.map(|t| t.id), Some(entry.id.clone()));
     assert!(library.skins.iter().any(|s| s.id == entry.id));
+    let (answer, review) = run(
+        &host,
+        IpcRequest::SkinKeep {
+            id: entry.id.clone(),
+            keep: true,
+        },
+    )
+    .await;
+    assert!(review.is_none(), "keeping a skin is Routine");
+    let library: SkinLibrary = data(answer);
+    assert_eq!(library.active, entry.id);
+    assert!(library.trial.is_none());
     let (answer, _) = run(
         &host,
         IpcRequest::SkinRemove {

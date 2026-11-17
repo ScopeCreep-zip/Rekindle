@@ -312,6 +312,11 @@ pub enum IpcRequest {
     /// The device login skin, visible before unlock: a built-in, or a
     /// stripped render-only copy of a library package.
     SkinSetLogin { id: String },
+    /// Settle the "Keep this skin?" trial of `pkg:<hash>` (plan E7.7.2
+    /// "Apply"): `keep` makes it the identity's skin, otherwise the skin
+    /// chosen before it comes back now. Without one the Host reverts it
+    /// `rekindle_types::dto::skin_library::SKIN_TRIAL_MS` after the select.
+    SkinKeep { id: String, keep: bool },
     /// What a window applies (`SkinApplied`): `id`, or with `None` the
     /// resolution (the identity's choice while unlocked, else the device
     /// login skin). Answered before unlock for the login skin only.

@@ -82,4 +82,12 @@ pub enum SystemEvent {
     SkinChanged {
         skin: crate::dto::skin_library::SkinApplied,
     },
+    /// A library skin went on trial (`Some`: the window that shows the
+    /// Settings renders "Keep this skin?" with its countdown), or its
+    /// trial ended (`None`: kept, reverted, replaced or the identity
+    /// locked). Triggered by: `SkinSelect` of a `pkg:` id, `SkinKeep`, the
+    /// Host's revert after `SKIN_TRIAL_MS`.
+    SkinTrialChanged {
+        trial: Option<crate::dto::skin_library::SkinTrial>,
+    },
 }

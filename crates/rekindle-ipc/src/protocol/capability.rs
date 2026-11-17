@@ -183,6 +183,7 @@ impl IpcRequest {
             | Self::SkinRemove { .. }
             | Self::SkinSelect { .. }
             | Self::SkinSetLogin { .. }
+            | Self::SkinKeep { .. }
             | Self::SkinGet { .. }
             | Self::SkinFile { .. }
             | Self::AuditVerify

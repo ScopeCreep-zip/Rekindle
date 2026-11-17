@@ -420,6 +420,34 @@ export interface AuditEntryView {
   payload: unknown;
 }
 
+/// One skin the user can choose (`rekindle_types::dto::skin_library::SkinEntry`).
+export interface SkinEntry {
+  /// `builtin:<id>` or `pkg:<hash>`.
+  id: string;
+  name: string;
+  /// When it entered the library (ms); `null` for a built-in.
+  importedAt: number | null;
+}
+
+/// A library skin on trial ("Keep this skin?", `SkinTrial`): the Host
+/// reverts it to `previous` at `revertsAtMs` unless it is kept.
+export interface SkinTrial {
+  id: string;
+  name: string;
+  previous: string;
+  revertsAtMs: number;
+}
+
+/// `list_skins`' answer (`SkinLibrary`).
+export interface SkinLibrary {
+  skins: SkinEntry[];
+  /// The identity's stored skin.
+  active: string;
+  /// The device login skin: `builtin:<id>` or `dev:<hash>`.
+  login: string;
+  trial: SkinTrial | null;
+}
+
 /// What a window applies (`rekindle_types::dto::skin_library::SkinApplied`,
 /// plan E7.7.2): `get_skin`'s answer and `SkinChanged`'s payload.
 export interface SkinApplied {

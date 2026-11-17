@@ -349,7 +349,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::SkinImport { .. }
         | IpcRequest::SkinRemove { .. }
         | IpcRequest::SkinSelect { .. }
-        | IpcRequest::SkinSetLogin { .. } => crate::host::skin::check(request),
+        | IpcRequest::SkinSetLogin { .. }
+        | IpcRequest::SkinKeep { .. } => crate::host::skin::check(request),
         IpcRequest::GamePresenceSet {
             game_name,
             game_id: _,

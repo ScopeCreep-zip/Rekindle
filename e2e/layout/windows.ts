@@ -125,6 +125,21 @@ export const WINDOWS: WindowCase[] = [
     ready: frame,
     spacing: [".xfire-titlebar", ".form-tabs"],
   },
+  {
+    // Settings → Appearance (plan E7.7.2): the skin list, a trial's
+    // "Keep this skin?" prompt over stress data, and import.
+    name: "settings-appearance",
+    label: "settings",
+    path: "/settings?tab=appearance",
+    def: { width: 500, height: 550 },
+    min: { width: 420, height: 450 },
+    ready: async (page) => {
+      await frame(page);
+      await page.locator(".skin-row").first().waitFor();
+    },
+    spacing: [".xfire-titlebar", ".form-tabs"],
+    spacingWithData: [".skin-list"],
+  },
 ];
 
 /** The content panes `w` renders with or without data. */

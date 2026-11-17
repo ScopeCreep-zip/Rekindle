@@ -27,6 +27,7 @@ use rekindle_db::Db;
 pub enum SettingsTab {
     Profile,
     Application,
+    Appearance,
     Notifications,
     Audio,
     Video,
@@ -41,6 +42,7 @@ impl SettingsTab {
         match self {
             Self::Profile => "profile",
             Self::Application => "application",
+            Self::Appearance => "appearance",
             Self::Notifications => "notifications",
             Self::Audio => "audio",
             Self::Video => "video",

@@ -5,7 +5,7 @@ import type {
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
   AuditEntryView, AuditVerified, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
-  SkinApplied,
+  SkinApplied, SkinEntry, SkinLibrary,
 } from "./dto";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
@@ -39,6 +39,14 @@ export const systemCommands = {
   // The skin this window shows (plan E7.7.2): a Host call; `null` asks
   // for the skin this device shows now.
   getSkin: (id: string | null = null) => hostInvoke<SkinApplied>("get_skin", { id }),
+  // Settings → Appearance: Host calls. A library skin chosen goes on
+  // trial; the Host reverts it unless `keepSkin` keeps it.
+  listSkins: () => hostInvoke<SkinLibrary>("list_skins"),
+  importSkin: (bytes: number[]) => hostInvoke<SkinEntry>("import_skin", { bytes }),
+  removeSkin: (id: string) => hostInvoke<SkinLibrary>("remove_skin", { id }),
+  selectSkin: (id: string) => hostInvoke<SkinLibrary>("select_skin", { id }),
+  keepSkin: (id: string, keep: boolean) => hostInvoke<SkinLibrary>("keep_skin", { id, keep }),
+  setLoginSkin: (id: string) => hostInvoke<SkinLibrary>("set_login_skin", { id }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),

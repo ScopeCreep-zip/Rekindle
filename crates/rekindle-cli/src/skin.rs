@@ -27,5 +27,9 @@ pub fn request(cmd: &SkinCmd) -> anyhow::Result<IpcRequest> {
         SkinCmd::Select { id } => IpcRequest::SkinSelect { id: id.clone() },
         SkinCmd::Remove { id } => IpcRequest::SkinRemove { id: id.clone() },
         SkinCmd::SetLogin { id } => IpcRequest::SkinSetLogin { id: id.clone() },
+        SkinCmd::Keep { id, revert } => IpcRequest::SkinKeep {
+            id: id.clone(),
+            keep: !revert,
+        },
     })
 }

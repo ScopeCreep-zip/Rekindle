@@ -26,6 +26,29 @@ pub struct SkinLibrary {
     /// The device login skin: `builtin:<id>` or `dev:<hash>` (a stripped
     /// copy, which matches no library id by design).
     pub login: String,
+    /// The library skin on trial, shown in place of `active` until it is
+    /// kept or reverted.
+    pub trial: Option<SkinTrial>,
+}
+
+/// How long a library skin is tried before the Host reverts it unless the
+/// user keeps it (plan E7.7.2 "Apply", Telegram's "Keep this theme?").
+pub const SKIN_TRIAL_MS: u64 = 15_000;
+
+/// A library skin on trial (`SkinTrialChanged`'s payload): every window
+/// shows it, the identity's stored choice is still `previous`, and at
+/// `reverts_at_ms` the Host puts `previous` back unless `SkinKeep` keeps it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinTrial {
+    /// `pkg:<hash>`.
+    pub id: String,
+    /// Its manifest's display name.
+    pub name: String,
+    /// The identity's skin before the trial, which a revert restores.
+    pub previous: String,
+    /// When the Host reverts it (ms since the epoch, the Host's clock).
+    pub reverts_at_ms: u64,
 }
 
 /// What a window applies (`SkinGet`'s answer and `SkinChanged`'s payload):

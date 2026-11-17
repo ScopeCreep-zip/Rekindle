@@ -153,6 +153,19 @@ fn a_skin_change_reaches_every_window_kind_on_its_own_channel() {
 }
 
 #[test]
+fn a_skin_trial_reaches_the_settings_window_only() {
+    let e = WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinTrialChanged {
+        trial: None,
+    }));
+    assert_eq!(e.channel(), "skin-trial-event");
+    let audience = e.audience();
+    assert!(audience.includes("settings"));
+    for label in ["login", "buddy-list", "chat-0123456789ab", "community-x"] {
+        assert!(!audience.includes(label), "{label}");
+    }
+}
+
+#[test]
 fn system_events_ride_the_community_channel() {
     let e = WebviewEvent::Subscription(SubscriptionEvent::System(
         rekindle_types::subscription_events::SystemEvent::RaidAlert {

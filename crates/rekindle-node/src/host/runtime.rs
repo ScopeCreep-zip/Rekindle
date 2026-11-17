@@ -293,6 +293,7 @@ impl Host {
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
             skin_helper: std::sync::OnceLock::new(),
+            skin_trial: crate::host::skin::TrialSlot::default(),
             mode,
             read_markers: super::read_markers::PendingMarkers::default(),
             communities: Arc::new(super::community::CommunityStore::new(Arc::clone(

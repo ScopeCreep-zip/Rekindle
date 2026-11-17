@@ -143,9 +143,9 @@ impl SubscriptionEvent {
                 | SystemEvent::SyncReceived { community, .. } => {
                     EventScope::Community(community.clone())
                 }
-                SystemEvent::AuditChainBroken { .. } | SystemEvent::SkinChanged { .. } => {
-                    EventScope::Device
-                }
+                SystemEvent::AuditChainBroken { .. }
+                | SystemEvent::SkinChanged { .. }
+                | SystemEvent::SkinTrialChanged { .. } => EventScope::Device,
             },
             Self::UnreadChanged { context, .. } => match context {
                 UnreadContext::Channel { community, .. } => {

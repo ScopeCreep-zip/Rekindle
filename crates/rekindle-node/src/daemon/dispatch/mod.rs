@@ -115,6 +115,9 @@ pub struct DaemonContext {
     /// Where `rekindle-skin-helper` is (plan E7.7.2): beside this
     /// executable, found on the first skin import (`host::skin`).
     pub skin_helper: std::sync::OnceLock<rekindle_skin::helper::HelperOpts>,
+    /// The library skin on trial ("Keep this skin?", plan E7.7.2), which
+    /// the Host reverts unless it is kept.
+    pub(crate) skin_trial: crate::host::skin::TrialSlot,
     /// The unlocked identity's database (plan D1), shared with the
     /// handler and the inbox scan. Empty while locked.
     pub db: Arc<rekindle_db::DbHandle>,

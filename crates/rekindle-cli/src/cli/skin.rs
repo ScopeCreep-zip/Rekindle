@@ -33,4 +33,13 @@ pub enum SkinCmd {
         /// The skin id.
         id: String,
     },
+    /// Settle a library skin's 15 s trial ("Keep this skin?"): keep it,
+    /// or with `--revert` go back to the skin before it now.
+    Keep {
+        /// The skin on trial (`pkg:<hash>`).
+        id: String,
+        /// Go back to the previous skin instead of keeping this one.
+        #[arg(long)]
+        revert: bool,
+    },
 }

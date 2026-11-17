@@ -76,6 +76,11 @@ pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
             }
             None => Err(refuse("expected pkg:<64 hex>")),
         },
+        // Only a library skin is ever on trial.
+        IpcRequest::SkinKeep { id, .. } => match parse(id) {
+            Some(SkinId::Package(_)) => Ok(()),
+            _ => Err(refuse("expected pkg:<64 hex>")),
+        },
         IpcRequest::SkinSelect { id } | IpcRequest::SkinSetLogin { id } => parse(id)
             .map(drop)
             .ok_or_else(|| refuse("expected builtin:<id> or pkg:<64 hex>")),

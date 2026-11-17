@@ -10,6 +10,7 @@
 pub(crate) mod ids;
 pub(crate) mod login;
 mod serve;
+mod trial;
 
 use rekindle_db::repo::{preferences, skins};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
@@ -23,6 +24,7 @@ use crate::daemon::DaemonState;
 use ids::{SkinId, PKG};
 
 pub(crate) use ids::check;
+pub(crate) use trial::TrialSlot;
 
 /// Route one skin request (the router's arm for them).
 pub(crate) async fn route(
@@ -45,6 +47,10 @@ pub(crate) async fn route(
         IpcRequest::SkinRemove { id } => remove(ctx, id).await,
         IpcRequest::SkinSelect { id } => select(ctx, id).await,
         IpcRequest::SkinSetLogin { id } => set_login(ctx, id).await,
+        IpcRequest::SkinKeep { id, keep } => match trial::keep(ctx, &id, keep).await {
+            Ok(()) => list(ctx).await.map(|l| IpcResponse::ok(&l)),
+            Err(refused) => Err(refused),
+        },
         other => unreachable!("{} is not a skin request", other.name()),
     };
     answer.unwrap_or_else(|refused| refused)
@@ -129,12 +135,15 @@ enum Refusal {
     InUse,
 }
 
-/// `SkinRemove`: never the identity's skin in use.
+/// `SkinRemove`: never the identity's skin in use, nor the one on trial.
 async fn remove(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
     let Some(SkinId::Package(hash)) = ids::parse(&id) else {
         return Err(not_found(&id));
     };
     let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
+    if ctx.skin_trial.current(&owner).is_some_and(|t| t.id == id) {
+        return Err(in_use(&id));
+    }
     let (hash, skin_id) = (hash.to_owned(), id.clone());
     let done = db
         .call(move |conn| {
@@ -152,14 +161,20 @@ async fn remove(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
     match done {
         Ok(()) => list(ctx).await.map(|l| IpcResponse::ok(&l)),
         Err(Refusal::Missing) => Err(not_found(&id)),
-        Err(Refusal::InUse) => Err(IpcResponse::error(
-            409,
-            format!("{id} is the skin in use: choose another first"),
-        )),
+        Err(Refusal::InUse) => Err(in_use(&id)),
     }
 }
 
-/// `SkinSelect`: the identity's skin, a built-in or a library row.
+fn in_use(id: &str) -> IpcResponse {
+    IpcResponse::error(
+        409,
+        format!("{id} is the skin in use: choose another first"),
+    )
+}
+
+/// `SkinSelect`: the identity's skin. A built-in (or the stored skin
+/// again) is stored at once; any other library skin goes on trial
+/// ("Keep this skin?", [`trial`]) and is stored only when kept.
 async fn select(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
     let parsed = ids::parse(&id).ok_or_else(|| not_found(&id))?;
     if matches!(parsed, SkinId::Builtin(_)) && builtin::find(&id).is_none() {
@@ -170,23 +185,29 @@ async fn select(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
         SkinId::Package(h) => Some(h.to_owned()),
         SkinId::Builtin(_) => None,
     };
-    let skin_id = id.clone();
-    let set = db
+    let (skin_id, who, held) = (id.clone(), owner.clone(), hash.clone());
+    let stored = db
         .call(move |conn| {
-            if let Some(hash) = hash {
-                if !skins::contains(conn, &owner, &hash)? {
-                    return Ok(false);
+            if let Some(hash) = held {
+                if !skins::contains(conn, &who, &hash)? {
+                    return Ok(None);
                 }
             }
-            preferences::set_skin_id(conn, &owner, &skin_id)?;
-            Ok(true)
+            Ok(Some(preferences::skin_choice(conn, &who)?.skin_id))
         })
         .await
-        .map_err(|e| failed("skin not chosen", e))?;
-    if !set {
-        return Err(not_found(&id));
+        .map_err(|e| failed("skin not chosen", e))?
+        .ok_or_else(|| not_found(&id))?;
+    match hash {
+        Some(hash) if stored != skin_id => trial::begin(ctx, skin_id, hash).await?,
+        _ => {
+            db.call(move |conn| preferences::set_skin_id(conn, &owner, &skin_id).map(|()| owner))
+                .await
+                .map(|owner| trial::end(ctx, &owner))
+                .map_err(|e| failed("skin not chosen", e))?;
+            serve::announce(ctx).await?;
+        }
     }
-    serve::announce(ctx).await?;
     list(ctx).await.map(|l| IpcResponse::ok(&l))
 }
 
@@ -226,6 +247,7 @@ async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
             imported_at: None,
         });
     }
+    let trial = ctx.skin_trial.current(&owner);
     let (rows, choice) = db
         .call(move |conn| {
             Ok((
@@ -249,5 +271,6 @@ async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
         skins: skins_out,
         active: choice.skin_id,
         login,
+        trial,
     })
 }

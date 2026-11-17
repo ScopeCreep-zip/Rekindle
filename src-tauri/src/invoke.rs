@@ -258,6 +258,12 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::status::get_avatar,
         // skin (plan E7.7.2)
         commands::skin::get_skin,
+        commands::skin::list_skins,
+        commands::skin::import_skin,
+        commands::skin::remove_skin,
+        commands::skin::select_skin,
+        commands::skin::keep_skin,
+        commands::skin::set_login_skin,
         commands::status::set_status_message,
         // game
         commands::game::get_game_status,

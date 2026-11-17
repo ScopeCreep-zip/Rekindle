@@ -16,6 +16,7 @@ pub const NAMES: &[&str] = &[
     "syncReceived",
     "auditChainBroken",
     "skinChanged",
+    "skinTrialChanged",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
@@ -31,6 +32,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::SyncReceived { .. } => "syncReceived",
         SystemEvent::AuditChainBroken { .. } => "auditChainBroken",
         SystemEvent::SkinChanged { .. } => "skinChanged",
+        SystemEvent::SkinTrialChanged { .. } => "skinTrialChanged",
     }
 }
 
@@ -133,6 +135,17 @@ fn sync() -> Vec<Sample> {
                     tokens_href: "skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/tokens.css".into(),
                     regions: vec!["frame".into()],
                 },
+            },
+        ),
+        ev(
+            "skinTrialChanged",
+            SystemEvent::SkinTrialChanged {
+                trial: Some(rekindle_types::dto::skin_library::SkinTrial {
+                    id: "pkg:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+                    name: "Carbon Fiber".into(),
+                    previous: "builtin:symbiosis".into(),
+                    reverts_at_ms: 1_700_000_015_000,
+                }),
             },
         ),
     ]

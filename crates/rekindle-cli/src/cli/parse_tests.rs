@@ -121,6 +121,14 @@ fn skin_subcommands_parse_to_their_requests() {
         request(&["skin", "set-login", "pkg:ab"]),
         IpcRequest::SkinSetLogin { ref id } if id == "pkg:ab"
     ));
+    assert!(matches!(
+        request(&["skin", "keep", "pkg:ab"]),
+        IpcRequest::SkinKeep { ref id, keep: true } if id == "pkg:ab"
+    ));
+    assert!(matches!(
+        request(&["skin", "keep", "pkg:ab", "--revert"]),
+        IpcRequest::SkinKeep { ref id, keep: false } if id == "pkg:ab"
+    ));
     let file =
         std::env::temp_dir().join(format!("rekindle-cli-skin-{}.rkskin", std::process::id()));
     std::fs::write(&file, b"pk").unwrap();
