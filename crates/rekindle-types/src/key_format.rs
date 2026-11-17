@@ -238,6 +238,18 @@ pub fn vld0_key_bytes(s: &str) -> Option<[u8; 32]> {
     URL_SAFE_NO_PAD.decode(first).ok()?.try_into().ok()
 }
 
+/// The opaque key and the encryption key of a `VLD0:<opaque>:<enc>` record
+/// key text, 32 bytes each. `None` for any other shape, a key with no
+/// encryption key among them.
+#[must_use]
+pub fn vld0_record_key_parts(s: &str) -> Option<([u8; 32], [u8; 32])> {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    let opaque = vld0_key_bytes(s)?;
+    let enc = s.strip_prefix(RECORD_KIND_PREFIX)?.split(':').nth(1)?;
+    Some((opaque, URL_SAFE_NO_PAD.decode(enc).ok()?.try_into().ok()?))
+}
+
 /// Validate an identity public key (64 lowercase hex).
 pub fn public_key_hex(s: &str) -> Result<PublicKeyHex, KeyFormatError> {
     check_lower_hex(s, 64)?;

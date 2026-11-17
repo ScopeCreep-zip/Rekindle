@@ -48,6 +48,20 @@ pub struct MemberRecordKey {
     pub encryption_key: [u8; 32],
 }
 
+impl MemberRecordKey {
+    /// The binary key of a `VLD0:<opaque>:<enc>` member record key text;
+    /// `None` for any other shape (plan E3.2 S7c.4: the proposer's leaves).
+    #[must_use]
+    pub fn from_text(text: &str) -> Option<Self> {
+        let (key, encryption_key) = rekindle_types::key_format::vld0_record_key_parts(text)?;
+        Some(Self {
+            kind: *b"VLD0",
+            key,
+            encryption_key,
+        })
+    }
+}
+
 /// One directory entry. Encoded big-endian in field order, 206 bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DirLeafV1 {

@@ -2,13 +2,14 @@
 //! needs, beside the merged state, to skip the cut's ops and reproduce every
 //! post-cut fate. O(N + power ops), never O(history).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use rekindle_types::domains;
-use rekindle_types::governance::OpHash;
+use rekindle_types::governance::{OpHash, OpRef};
 
 use crate::checksum::canon::{put_map, put_set, Canon};
 use crate::checksum::canonical_state;
+use crate::op::VerifiedOp;
 use crate::state::GovernanceState;
 
 /// The cut index of one cut.
@@ -69,4 +70,27 @@ pub fn state_root_of(preimage: &[u8]) -> [u8; 32] {
 #[must_use]
 pub fn state_root(state: &GovernanceState, cut: &CutIndex) -> [u8; 32] {
     state_root_of(&state_preimage(state, cut))
+}
+
+/// The ops `frontier` reaches through deps (and `prev`), the frontier
+/// included, in the set's order: a cut's ops when `frontier` is its heads.
+/// A frontier op not held is left out, as is everything only it reaches.
+#[must_use]
+pub fn causal_past(ops: &[VerifiedOp], frontier: &[OpRef]) -> Vec<VerifiedOp> {
+    let by_hash: HashMap<OpHash, &VerifiedOp> = ops.iter().map(|o| (o.hash(), o)).collect();
+    let mut reached: BTreeSet<OpHash> = BTreeSet::new();
+    let mut stack: Vec<OpHash> = frontier.iter().map(|r| r.op_hash).collect();
+    while let Some(hash) = stack.pop() {
+        let Some(op) = by_hash.get(&hash) else {
+            continue;
+        };
+        if reached.insert(hash) {
+            stack.extend(op.op().deps.iter().map(|d| d.op_hash));
+            stack.extend(op.op().prev);
+        }
+    }
+    ops.iter()
+        .filter(|o| reached.contains(&o.hash()))
+        .cloned()
+        .collect()
 }

@@ -34,6 +34,7 @@ use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 pub use crate::op_walk::{walk, WalkLogCache};
 pub use crate::verify_cache::verify_held_cached;
+pub use rekindle_governance::checkpoint::causal_past;
 
 /// An op's fate in the last merge, as `governance_ops.state` stores it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -559,28 +560,6 @@ pub async fn rebuild_at<D: GovernanceRuntimeDeps>(
     let held = deps.governance_ops(community_id).await?;
     let set = verify_held_with(deps, community_id, &held);
     Ok(merge::merge(&cert, &causal_past(&set.ops, frontier)))
-}
-
-/// The ops `frontier` reaches through deps (and `prev`), the frontier
-/// included, in the set's order.
-#[must_use]
-pub fn causal_past(ops: &[VerifiedOp], frontier: &[OpRef]) -> Vec<VerifiedOp> {
-    let by_hash: HashMap<OpHash, &VerifiedOp> = ops.iter().map(|o| (o.hash(), o)).collect();
-    let mut reached: BTreeSet<OpHash> = BTreeSet::new();
-    let mut stack: Vec<OpHash> = frontier.iter().map(|r| r.op_hash).collect();
-    while let Some(hash) = stack.pop() {
-        let Some(op) = by_hash.get(&hash) else {
-            continue;
-        };
-        if reached.insert(hash) {
-            stack.extend(op.op().deps.iter().map(|d| d.op_hash));
-            stack.extend(op.op().prev);
-        }
-    }
-    ops.iter()
-        .filter(|o| reached.contains(&o.hash()))
-        .cloned()
-        .collect()
 }
 
 #[cfg(test)]

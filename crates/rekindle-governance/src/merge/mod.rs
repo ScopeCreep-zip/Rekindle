@@ -32,8 +32,12 @@
 //! meta, roles, the owner assignment and `#general`), so a `MemberLeft`
 //! still removes it like any member.
 
+use std::collections::HashSet;
+
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
+
+use crate::checkpoint::{self, EndorsementFault, Hints};
 
 use crate::op::{OpStamp, VerifiedOp};
 use crate::power::{class_of, OpClass};
@@ -54,13 +58,17 @@ pub struct MergeOutcome {
     /// Complete ops refused by validation or invalidated by resolution,
     /// the quarantined ones aside.
     pub refused: Vec<OpHash>,
-    /// Ops masked by their author's removal, in stamp order, with why
-    /// (plan E3.2 S7c.3a): shown, never applied.
+    /// Ops masked by their author's removal, in stamp order, then the
+    /// `Checkpoint` ops that count for nothing (S7c.4), with why (plan E3.2
+    /// S7c.3a): shown, never applied.
     pub quarantined: Vec<(OpHash, QuarantineReason)>,
     /// Ops whose deps are missing from the set.
     pub pending: Vec<OpHash>,
     /// Authors caught signing two ops at one seq.
     pub equivocators: Vec<PseudonymKey>,
+    /// The checkpoint hints the applied `Checkpoint` ops carry (plan E3.2
+    /// S7c.4); the ones that count for nothing are quarantined above.
+    pub hints: Hints,
 }
 
 /// Why an op is quarantined rather than applied.
@@ -69,6 +77,13 @@ pub enum QuarantineReason {
     /// After its author's removal: its seq is at or above the target seq
     /// frontier of `cause`, a `MemberRemoved` or `BanEntry` of its author.
     AfterAuthorRemoval { cause: OpHash },
+    /// "two checkpoint endorsements in one round": a `Checkpoint` op whose
+    /// author signed another at the same (height, round) (plan E3.2 S7c.4).
+    TwoCheckpointEndorsementsInOneRound,
+    /// "checkpoint equivocation": a `Checkpoint` op carrying one of two
+    /// digests that each have a strict majority for one cut and one
+    /// `prevCheckpoint` (plan E3.2 S7c.4).
+    CheckpointEquivocation,
 }
 
 /// Merge `ops` under the pinned `cert` into a canonical state.
@@ -83,12 +98,12 @@ pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
 pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     let set = resolve::prepare(ops);
     let (round, masked_by) = resolve_stable(cert, &set);
-    let applied = round.order.iter().map(|&i| set.ops[i].hash()).collect();
+    let mut applied: Vec<OpHash> = round.order.iter().map(|&i| set.ops[i].hash()).collect();
     let refused = (0..set.ops.len())
         .filter(|&i| !round.applied[i] && masked_by[i].is_none())
         .map(|i| set.ops[i].hash())
         .collect();
-    let quarantined = (0..set.ops.len())
+    let mut quarantined: Vec<(OpHash, QuarantineReason)> = (0..set.ops.len())
         .filter_map(|i| {
             let cause = set.ops[masked_by[i]?].hash();
             Some((
@@ -97,6 +112,19 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
             ))
         })
         .collect();
+    let counted: HashSet<OpHash> = applied.iter().copied().collect();
+    let hints = checkpoint::hints(cert, ops, |h| counted.contains(h));
+    let faulted: HashSet<OpHash> = hints.faults.iter().map(|(h, _)| *h).collect();
+    applied.retain(|h| !faulted.contains(h));
+    quarantined.extend(hints.faults.iter().map(|&(hash, fault)| {
+        let reason = match fault {
+            EndorsementFault::TwoInOneRound => {
+                QuarantineReason::TwoCheckpointEndorsementsInOneRound
+            }
+            EndorsementFault::Equivocation => QuarantineReason::CheckpointEquivocation,
+        };
+        (hash, reason)
+    }));
     MergeOutcome {
         state: round.state,
         applied,
@@ -104,6 +132,7 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
         quarantined,
         pending: set.pending,
         equivocators: set.equivocators,
+        hints,
     }
 }
 
@@ -377,6 +406,8 @@ mod roles;
 
 #[cfg(test)]
 mod checkpoint_tests;
+#[cfg(test)]
+mod hint_tests;
 #[cfg(test)]
 mod op_proptests;
 #[cfg(test)]
