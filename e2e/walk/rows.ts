@@ -94,6 +94,24 @@ async function openAddFriend(b: Browser): Promise<void> {
   }
 }
 
+/**
+ * After logout the login window opens on the last account's unlock screen
+ * (`.lock-name`, "← Switch Account", LoginWindow.tsx:211-212), not on the
+ * picker: wait for either, then go back to the picker.
+ */
+async function toPicker(b: Browser): Promise<void> {
+  await switchTo(b, LOGIN, NET_WAIT_MS);
+  await waitUntil(
+    async () => (await present(b, ".account-bubble")) || (await present(b, ".lock-name")),
+    NET_WAIT_MS,
+    "login window showed neither the picker nor the unlock screen",
+  );
+  if (!(await present(b, ".account-bubble"))) {
+    await (await byText(b, "button.form-btn-secondary", "Switch Account")).click();
+    await shown(b, ".account-bubble");
+  }
+}
+
 async function generateInvite(ctx: RowContext): Promise<void> {
   const { b, s } = ctx;
   await openAddFriend(b);
@@ -304,13 +322,16 @@ export const ROWS: Row[] = [
     title: "Cancel invite from the list",
     async run(ctx) {
       const { b, s } = ctx;
+      // "Active Invites" lists every live invite but the current one
+      // (InviteLinkTab.tsx:86-89, :121), so it needs two.
+      await generateInvite(ctx);
       await generateInvite(ctx);
       await shown(b, ".invite-cancel-btn", NET_WAIT_MS);
       const before = (await b.$$(".add-friend-invite-item")).length;
       await (await b.$(".invite-cancel-btn")).click();
       await resolveIntent(b, { passphrase: s.passphrase });
       await waitUntil(async () => (await b.$$(".add-friend-invite-item")).length < before, NET_WAIT_MS, "list did not shrink");
-      return `generated a second invite; list ${before} -> fewer`;
+      return `generated two invites; list ${before} -> fewer`;
     },
   },
   {
@@ -469,7 +490,10 @@ export const ROWS: Row[] = [
       await (await b.$('[aria-label="Logout"]')).click();
       await resolveIntent(b, { passphrase: s.passphrase });
       await switchTo(b, LOGIN, NET_WAIT_MS);
-      await shown(b, ".account-bubble", NET_WAIT_MS);
+      const name = await (await shown(b, ".lock-name", NET_WAIT_MS)).getText();
+      if (name.trim() !== s.displayName) throw new Error(`unlock screen shows ${name}`);
+      await toPicker(b);
+      return "logged out to the unlock screen, then Switch Account to the picker";
     },
   },
   {
@@ -540,10 +564,13 @@ export const ROWS: Row[] = [
         await (await b.$('[aria-label="Logout"]')).click();
         await resolveIntent(b, { passphrase: s.passphrase });
       }
-      await switchTo(b, LOGIN, NET_WAIT_MS);
-      if (await present(b, "button.form-btn-secondary")) await (await byText(b, "button.form-btn-secondary", "Switch Account")).click();
-      const del = await shown(b, `[aria-label="Delete ${s.displayName}"]`, NET_WAIT_MS);
-      await del.click();
+      await toPicker(b);
+      // The delete button is opacity 0 until the bubble is hovered
+      // (theme/01-form-primitives.css:224,231), so WebDriver never sees it
+      // displayed: wait for it to exist and press it in the page.
+      const del = await b.$(`[aria-label="Delete ${s.displayName}"]`);
+      await del.waitForExist({ timeout: NET_WAIT_MS });
+      await press(b, del);
       const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: WAIT_MS });
       await waitUntil(async () => !(await present(b, `[aria-label="Delete ${s.displayName}"]`)), NET_WAIT_MS, "account bubble still shown");
       return `review ${outcome}`;
