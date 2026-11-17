@@ -10,6 +10,8 @@ import type { Row } from "./rows.ts";
 /** A 1x1 PNG (the avatar upload's input accepts png/jpeg/gif up to 256 KB). */
 const PNG_1X1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
+const ONE_SKIN = "one skin listed (Symbiosis: shown and the login skin); a second needs an imported skin package (ST11/ST12)";
+
 const TABS = ["Profile", "Application", "Appearance", "Notifications", "Audio", "Video", "Privacy", "Devices", "Mobile", "About"];
 
 function flipRow(id: string, tab: string, text: string): Row {
@@ -85,8 +87,9 @@ export const SETTINGS_ROWS: Row[] = [
       await input.click();
       await input.clearValue();
       await input.addValue(msg);
-      const row = await input.parentElement();
-      await (await row.$("button.form-btn-primary")).click();
+      // The second Save on the tab (ProfileTab.tsx:94) is the status message's.
+      const saves = await b.$$(".settings-content .form-field-row button.form-btn-primary");
+      await saves[1].click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await shot();
       await closeSettings(b);
@@ -126,7 +129,11 @@ export const SETTINGS_ROWS: Row[] = [
       await openSettings(b, "Appearance");
       await shown(b, ".skin-row", NET_WAIT_MS);
       const target = await b.$(".skin-row:not(.skin-row-shown) input[type=radio]");
-      if (!(await target.isExisting())) throw new Error("only one skin listed");
+      if (!(await target.isExisting())) {
+        await shot();
+        await closeSettings(b);
+        throw new Skip(ONE_SKIN);
+      }
       const name = await (await (await target.parentElement()).$(".skin-name")).getText();
       await target.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
@@ -147,6 +154,11 @@ export const SETTINGS_ROWS: Row[] = [
       await openSettings(b, "Appearance");
       await shown(b, ".skin-row", NET_WAIT_MS);
       const kept = await (await b.$(".skin-row-shown .skin-name")).getText();
+      if (!(await (await b.$(".skin-row:not(.skin-row-shown) input[type=radio]")).isExisting())) {
+        await shot();
+        await closeSettings(b);
+        throw new Skip(ONE_SKIN);
+      }
       await (await b.$(".skin-row:not(.skin-row-shown) input[type=radio]")).click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await shown(b, ".skin-trial", NET_WAIT_MS);
@@ -163,7 +175,13 @@ export const SETTINGS_ROWS: Row[] = [
     title: "Appearance: set login skin",
     async run({ b, s, shot }) {
       await openSettings(b, "Appearance");
-      const btn = await byText(b, ".skin-action", "Use as login skin", NET_WAIT_MS);
+      await shown(b, ".skin-row", NET_WAIT_MS);
+      if (!(await present(b, ".skin-action"))) {
+        await shot();
+        await closeSettings(b);
+        throw new Skip(ONE_SKIN);
+      }
+      const btn = await byText(b, ".skin-action", "Use as login skin");
       const row = await btn.parentElement().then((el) => el.parentElement());
       const name = await (await row.$(".skin-name")).getText();
       await btn.click();
