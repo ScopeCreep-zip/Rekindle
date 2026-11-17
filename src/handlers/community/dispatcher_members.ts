@@ -12,6 +12,7 @@ import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
 import { transformChannel, transformMember } from "../../utils/transformers";
+import { refreshCommunityMembers } from "./members_refresh";
 import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
 import { handleLoadChannelThreads } from "../../actions/community/events_threads";
 
@@ -43,22 +44,9 @@ export function reduceSubscriptionMembership(
   if (!("membership" in event)) return;
   const m = event.membership;
 
+  // A new member: the Host decides its group, so the list is re-read.
   if ("joined" in m) {
-    const { community, pseudonym, displayName, roleIds } = m.joined;
-    const c = communityState.communities[community];
-    if (c && !c.members.some((x) => x.pseudonymKey === pseudonym)) {
-      setCommunityState("communities", community, "members", (prev) => [
-        ...prev,
-        transformMember({
-          pseudonymKey: pseudonym,
-          displayName,
-          roleIds,
-          displayRole: "",
-          status: "online",
-          timeoutUntil: null,
-        }),
-      ]);
-    }
+    refreshCommunityMembers(m.joined.community);
     return;
   }
 
@@ -102,6 +90,7 @@ export function reduceSubscriptionMembership(
       if (pseudonym === c.myPseudonymKey) {
         setCommunityState("communities", community, "myRoleIds", roleIds);
       }
+      refreshCommunityMembers(community);
     }
     return;
   }
@@ -130,21 +119,7 @@ export function reduceSubscriptionMembership(
   }
 
   if ("memberDiscovered" in m) {
-    const { community, pseudonym, displayName } = m.memberDiscovered;
-    const c = communityState.communities[community];
-    if (c && !c.members.some((x) => x.pseudonymKey === pseudonym)) {
-      setCommunityState("communities", community, "members", (prev) => [
-        ...prev,
-        transformMember({
-          pseudonymKey: pseudonym,
-          displayName,
-          roleIds: [0, 1],
-          displayRole: "",
-          status: "online",
-          timeoutUntil: null,
-        }),
-      ]);
-    }
+    refreshCommunityMembers(m.memberDiscovered.community);
     return;
   }
 
@@ -154,6 +129,7 @@ export function reduceSubscriptionMembership(
     const idx = (c?.members ?? []).findIndex((x) => x.pseudonymKey === pseudonym);
     if (idx >= 0) {
       setCommunityState("communities", community, "members", idx, "roleIds", roleIds);
+      refreshCommunityMembers(community);
     }
     if (c?.myPseudonymKey === pseudonym) {
       setCommunityState("communities", community, "onboardingComplete", true);
@@ -218,6 +194,8 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
           exclusionGroup: r.exclusionGroup ?? undefined,
         })),
       );
+      // A role's hoist or position moves members between groups.
+      refreshCommunityMembers(community);
     }
     return;
   }

@@ -149,6 +149,11 @@
   "community.memberView": {
     "displayName": "Bea",
     "displayRole": "Shooters",
+    "group": {
+      "id": 5,
+      "kind": "role",
+      "name": "Shooters"
+    },
     "lastActive": 0,
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "roleIds": [

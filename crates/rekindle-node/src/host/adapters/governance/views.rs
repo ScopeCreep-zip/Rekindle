@@ -6,8 +6,9 @@ use std::collections::HashMap;
 
 use rekindle_types::dto::community::{
     CommunityCategoryView, CommunityChannelView, CommunityMemberView, CommunityRoleView,
-    CommunityView,
+    CommunityView, MemberGroup,
 };
+use rekindle_types::dto::member_groups::{group_members, GroupRole};
 use rekindle_types::presence::SessionLocation;
 
 use super::HostGovernance;
@@ -189,6 +190,7 @@ fn profile_view(
         banner_ref,
         location: None,
         last_active: 0,
+        group: MemberGroup::Offline,
     }
 }
 
@@ -258,7 +260,7 @@ impl HostGovernance {
                 .map(|(_, t)| t.started_at.saturating_add(t.duration_seconds))
                 .filter(|until| *until > now)
         };
-        Ok(rows
+        let members = rows
             .into_iter()
             .filter(|row| !departed.contains(&row.pseudonym_key))
             .map(|row| {
@@ -293,7 +295,16 @@ impl HostGovernance {
                     ..profile
                 }
             })
-            .collect())
+            .collect();
+        Ok(group_members(
+            members,
+            overlay.roles.iter().map(|r| GroupRole {
+                id: r.id,
+                name: &r.name,
+                position: r.position,
+                hoist: r.hoist,
+            }),
+        ))
     }
 }
 

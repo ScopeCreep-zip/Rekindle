@@ -1,7 +1,9 @@
 import type { OpPublicationState } from "../ipc/channels/community_subscription_events";
 import { createStore } from "solid-js/store";
 import type { Message } from "./chat.store";
-import type { GameInfo, InviteDto, OnboardingConfig, WelcomeScreen } from "../ipc/commands/dto";
+import type {
+  GameInfo, InviteDto, MemberGroup, OnboardingConfig, WelcomeScreen,
+} from "../ipc/commands/dto";
 
 export interface Channel {
   id: string;
@@ -63,6 +65,8 @@ export interface Member {
   /** Member's last-active unix seconds, already coarsened by their sharing
    * policy (0 / undefined = not shared). Drives the "last seen" label. */
   lastActive?: number;
+  /** The Host's member-list group; the list renders it as given. */
+  group: MemberGroup;
 }
 
 /** A member's focused channel, decoded from their shared session. */

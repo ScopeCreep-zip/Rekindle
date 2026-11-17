@@ -72,17 +72,30 @@ const HOISTED_ROLE = longName("Moderators_", 32);
 
 /** `n` community members with 64-char names spread over the presence states;
  *  every fifth holds the hoisted long-named role, so the member list draws a
- *  hoisted group, "Online" and "Offline" (an offline role holder sits in "Offline"). */
+ *  hoisted group, "Online" and "Offline" (an offline role holder sits in "Offline").
+ *  As the Host sends them: each with its `group`, ordered group by group. */
 export function members(n: number) {
-  return Array.from({ length: n }, (_, i) => ({
-    pseudonymKey: i === 0 ? ME : key("d", i),
-    displayName: longName(`Member${i}_`),
-    roleIds: i % 5 === 0 ? [0, 1] : [0],
-    displayRole: i % 5 === 0 ? HOISTED_ROLE : "@everyone",
-    status: STATUSES[i % STATUSES.length],
-    timeoutUntil: null,
-    lastActive: 1_700_000_000_000,
-  }));
+  const rank = { role: 0, online: 1, offline: 2 } as const;
+  return Array.from({ length: n }, (_, i) => {
+    const status = STATUSES[i % STATUSES.length];
+    const present = ["online", "away", "busy"].includes(status);
+    const hoisted = i % 5 === 0;
+    const group = !present
+      ? { kind: "offline" as const }
+      : hoisted
+        ? { kind: "role" as const, id: 1, name: HOISTED_ROLE }
+        : { kind: "online" as const };
+    return {
+      pseudonymKey: i === 0 ? ME : key("d", i),
+      displayName: longName(`Member${i}_`),
+      roleIds: hoisted ? [0, 1] : [0],
+      displayRole: hoisted ? HOISTED_ROLE : "@everyone",
+      status,
+      timeoutUntil: null,
+      lastActive: 1_700_000_000_000,
+      group,
+    };
+  }).sort((a, b) => rank[a.group.kind] - rank[b.group.kind]);
 }
 
 /** One community with a long name, many long-named channels and an @everyone that may post. */
@@ -137,10 +150,12 @@ export function dmHistory(n: number) {
   }));
 }
 
+/** Channel messages: ours and a community member's (`members()` key 1), so
+ *  the sender resolves to a member name as it does live. */
 export function channelMessages(n: number) {
-  return dmHistory(n).map(({ id, senderId, body, timestamp, isOwn }) => ({
+  return dmHistory(n).map(({ id, body, timestamp, isOwn }) => ({
     id,
-    senderId,
+    senderId: isOwn ? ME : key("d", 1),
     body,
     timestamp,
     isOwn,

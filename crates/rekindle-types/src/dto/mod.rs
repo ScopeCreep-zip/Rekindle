@@ -9,6 +9,7 @@ pub mod dm;
 pub mod friends;
 pub mod group_dm;
 pub mod identity;
+pub mod member_groups;
 pub mod onboarding;
 pub mod presence;
 pub mod skin;

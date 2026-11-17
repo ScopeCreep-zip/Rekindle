@@ -199,6 +199,23 @@ pub struct CommunityMemberView {
     /// not shared).
     #[serde(default)]
     pub last_active: u64,
+    /// The member-list group this row falls under, decided by the Host
+    /// ([`super::member_groups::group_members`]); every frontend renders it.
+    pub group: MemberGroup,
+}
+
+/// The member-list group a member falls under (Discord's member list): a
+/// hoisted role the member holds while not offline, else `Online`, else
+/// `Offline`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum MemberGroup {
+    /// The member's highest hoisted role.
+    Role { id: u32, name: String },
+    /// Present (online, away or busy) with no hoisted role.
+    Online,
+    /// Offline, whatever their roles.
+    Offline,
 }
 
 /// A community's policy (architecture §10.7, §20.6): the rules text and the

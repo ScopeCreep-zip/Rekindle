@@ -127,6 +127,7 @@ impl App {
                 };
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_channel_history(&community, &channel);
+                self.load_community_members(&community);
             }
             Action::ShowDmInbox => {
                 self.nav

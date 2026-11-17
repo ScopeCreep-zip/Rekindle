@@ -9,6 +9,7 @@ import { friendsState, setFriendsState } from "../stores/friends.store";
 import { communityState, setCommunityState } from "../stores/community.store";
 import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
+import { refreshCommunityMembers } from "./community/members_refresh";
 import { transformGameInfo } from "../utils/transformers";
 
 /**
@@ -175,6 +176,8 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
             "communities", communityId, "members", memberIdx, "location", null,
           );
         }
+        // Presence moves a member between the Host's groups.
+        refreshCommunityMembers(communityId);
       }
 
       // Only when a game was actually observed: a status-only ping

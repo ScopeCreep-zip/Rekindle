@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
-    CommunityMemberView,
+    CommunityMemberView, MemberGroup,
 };
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
@@ -321,6 +321,10 @@ fn onboarding_samples(add: &mut impl FnMut(&str, Value)) {
             banner_ref: None,
             location: None,
             last_active: 0,
+            group: MemberGroup::Role {
+                id: 5,
+                name: "Shooters".into(),
+            },
         }),
     );
 }

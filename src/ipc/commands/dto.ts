@@ -432,3 +432,10 @@ export interface SkinApplied {
   /// The region slots the skin paints.
   regions: string[];
 }
+
+/** The member-list group the Host put a member in (Tier 1 `MemberGroup`):
+ *  every frontend renders it as given. */
+export type MemberGroup =
+  | { kind: "role"; id: number; name: string }
+  | { kind: "online" }
+  | { kind: "offline" };

@@ -6,6 +6,7 @@ import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../ipc/commands/dto";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
+import type { MemberGroup } from "../ipc/commands/dto";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 export function transformFriend(f: FriendInfo): Friend {
@@ -213,6 +214,7 @@ export function transformMember(m: {
   themeColor?: number | null; badges?: string[];
   location?: MemberLocation | null;
   lastActive?: number;
+  group: MemberGroup;
 }): Member {
   return {
     pseudonymKey: m.pseudonymKey, displayName: m.displayName, roleIds: m.roleIds,
@@ -224,6 +226,7 @@ export function transformMember(m: {
     badges: m.badges ?? [],
     location: m.location ?? null,
     lastActive: m.lastActive ?? 0,
+    group: m.group,
   };
 }
 

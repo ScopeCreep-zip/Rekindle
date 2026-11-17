@@ -11,6 +11,7 @@ import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from 
 import { handleRefreshFriends } from "../actions/buddy.actions";
 import type { Message } from "../stores/chat.store";
 import { transformHistoryGap, transformNewFriend } from "../utils/transformers";
+import { refreshCommunityMembers } from "./community/members_refresh";
 
 // A DM we sent changed delivery state (`dmSendStatus`): the
 // message whose client id (`serverMessageId`) it names takes the state the
@@ -355,19 +356,9 @@ export function subscribeCommunityChannelChatEvents(
               (m) => m.pseudonymKey === event.data.from,
             );
             if (existingIdx < 0) {
-              // Member not yet in list — add a minimal entry
-              setCommunityState("communities", communityId, "members", (prev) => [
-                ...prev,
-                {
-                  pseudonymKey: event.data.from,
-                  displayName: event.data.senderDisplayName!,
-                  roleIds: [],
-                  displayRole: "member",
-                  status: "online" as const,
-                  timeoutUntil: null,
-                  gameInfo: null,
-                },
-              ]);
+              // Member not yet in list: the Host's roster has them (with
+              // their status and group), so re-read it.
+              refreshCommunityMembers(communityId);
             } else if (community.members[existingIdx].displayName !== event.data.senderDisplayName) {
               // Update display name if changed
               setCommunityState(

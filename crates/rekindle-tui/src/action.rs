@@ -245,8 +245,11 @@ pub enum CommandResult {
     StatusLoaded {
         snapshot: rekindle_types::display::StatusSnapshot,
     },
-    PeerListLoaded {
-        peers: Vec<rekindle_types::display::PeerSnapshot>,
+    /// A community's members, grouped and ordered by the Host
+    /// (`CommunityMembers`).
+    CommunityMembersLoaded {
+        community: String,
+        members: Vec<rekindle_types::dto::community::CommunityMemberView>,
     },
     IdentityLoaded {
         public_key: String,

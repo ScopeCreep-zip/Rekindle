@@ -1,17 +1,21 @@
 import { test, expect } from "@playwright/test";
 import { preloadMocks } from "./fixtures/mocks";
 
-// The community member list groups by presence the way Discord's does:
-// hoisted role groups hold only members who are not offline, the other
-// present members (online, away, busy, in game) fall under "Online", and
-// every offline member, whatever their roles, falls under "Offline". The
-// group a row lands in matches the status its dot draws: "invisible" and
-// unknown statuses draw the offline ring, an unset status draws online.
+// The community member list renders the groups the Host decided
+// (`CommunityMemberView.group`; the rules are tested in rekindle-types
+// `dto::member_groups`): a header wherever the group changes, in the Host's
+// order, with the group's count. The list does no grouping of its own, so a
+// row the Host put under "Online" stays there whatever status its dot draws.
 
 const COMMUNITY = `VLD0:${"g".repeat(43)}`;
 const ME = "e".repeat(64);
 
-const member = (n: number, name: string, status: string, admin: boolean) => ({
+type Group = { kind: "role"; id: number; name: string } | { kind: "online" } | { kind: "offline" };
+const ADMINS: Group = { kind: "role", id: 1, name: "Admins" };
+const ONLINE: Group = { kind: "online" };
+const OFFLINE: Group = { kind: "offline" };
+
+const member = (n: number, name: string, status: string, admin: boolean, group: Group) => ({
   pseudonymKey: n === 0 ? ME : n.toString(16).padStart(64, "d"),
   displayName: name,
   roleIds: admin ? [0, 1] : [0],
@@ -19,19 +23,19 @@ const member = (n: number, name: string, status: string, admin: boolean) => ({
   status,
   timeoutUntil: null,
   lastActive: 0,
+  group,
 });
 
+// The Host's order: hoisted role group, then Online, then Offline.
+// "HostSaysOnline" is offline by status but the Host put it under Online.
 const MEMBERS = [
-  member(0, "AdminOnline", "online", true),
-  member(1, "AdminBusy", "busy", true),
-  member(2, "AdminOffline", "offline", true),
-  member(3, "UserOnline", "online", false),
-  member(4, "UserAway", "away", false),
-  member(5, "UserBusy", "busy", false),
-  member(6, "UserInGame", "ingame", false),
-  member(7, "UserOffline", "offline", false),
-  member(8, "UserInvisible", "invisible", false),
-  member(9, "UserUnset", "", false),
+  member(0, "AdminOnline", "online", true, ADMINS),
+  member(1, "AdminBusy", "busy", true, ADMINS),
+  member(3, "UserOnline", "online", false, ONLINE),
+  member(4, "UserAway", "away", false, ONLINE),
+  member(5, "HostSaysOnline", "offline", false, ONLINE),
+  member(2, "AdminOffline", "offline", true, OFFLINE),
+  member(7, "UserOffline", "offline", false, OFFLINE),
 ];
 
 const HANDLER = `
@@ -60,26 +64,23 @@ const HANDLER = `
   }
 `;
 
-test("member list groups hoisted roles, online and offline by presence", async ({ page }) => {
+test("member list renders the Host's groups in the Host's order", async ({ page }) => {
   await preloadMocks(page, "community", HANDLER);
   await page.goto(`/community?id=${COMMUNITY}`);
   const list = page.locator(".member-list");
-  await expect(list.locator(".member-list-header")).toHaveText("Members — 10");
+  await expect(list.locator(".member-list-header")).toHaveText("Members — 7");
   await expect(list.locator(".member-group-header")).toHaveText([
     "Admins — 2",
-    "Online — 5",
-    "Offline — 3",
+    "Online — 3",
+    "Offline — 2",
   ]);
   await expect(list.locator(".member-name")).toHaveText([
     "AdminOnline",
     "AdminBusy",
     "UserOnline",
     "UserAway",
-    "UserBusy",
-    "UserInGame",
-    "UserUnset",
+    "HostSaysOnline",
     "AdminOffline",
     "UserOffline",
-    "UserInvisible",
   ]);
 });

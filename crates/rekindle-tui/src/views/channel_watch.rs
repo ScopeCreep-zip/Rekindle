@@ -398,18 +398,12 @@ impl View for ChannelWatchView {
                     );
                 }
             }
-            CommandResult::PeerListLoaded { peers } => {
-                use crate::components::peer_list::PeerEntry;
-                let members: Vec<PeerEntry> = peers
-                    .iter()
-                    .map(|p| PeerEntry {
-                        key: p.key.clone(),
-                        display_name: p.key_short.clone(),
-                        status: if p.has_route { "online" } else { "offline" }.into(),
-                        role: None,
-                    })
-                    .collect();
-                self.peer_list.set_members(members);
+            CommandResult::CommunityMembersLoaded { community, members } => {
+                if community == self.community {
+                    use crate::components::peer_list::PeerEntry;
+                    self.peer_list
+                        .set_members(members.into_iter().map(PeerEntry::from).collect());
+                }
             }
             _ => {}
         }

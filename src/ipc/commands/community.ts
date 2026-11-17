@@ -11,7 +11,7 @@ export interface VoiceMessageAudioView {
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
-import type { CommunityBanView } from "./dto";
+import type { CommunityBanView, MemberGroup } from "./dto";
 
 export const communityCommands = {
   // Community
@@ -59,6 +59,7 @@ export const communityCommands = {
       bannerRef?: string | null;
       location?: { kind: "text" | "voice"; channelId: string } | null;
       lastActive: number;
+      group: MemberGroup;
     }[]>(
       "get_community_members", { communityId },
     ),

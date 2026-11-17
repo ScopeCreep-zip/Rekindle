@@ -11,6 +11,7 @@ use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::display as dt;
 use rekindle_types::dto::channel_message::ChannelMessageView;
+use rekindle_types::dto::community::CommunityMemberView;
 
 use super::super::action::{Action, CommandResult, ToastLevel};
 use super::App;
@@ -36,24 +37,6 @@ impl App {
                     }
                 },
                 Err(e) => report_failure(&tx, "status", e),
-            }
-
-            // Peer list
-            match client.request_ok(IpcRequest::NetworkPeers).await {
-                Ok(value) => match serde_json::from_value::<Vec<dt::PeerSnapshot>>(value.clone()) {
-                    Ok(peers) => {
-                        let _ = tx.send(Action::CommandComplete(Box::new(
-                            CommandResult::PeerListLoaded { peers },
-                        )));
-                    }
-                    Err(e) => {
-                        let _ = tx.send(Action::CommandFailed {
-                            context: "peers parse".into(),
-                            error: format!("{e}: {value}"),
-                        });
-                    }
-                },
-                Err(e) => report_failure(&tx, "peers", e),
             }
 
             // Community list
@@ -165,6 +148,38 @@ impl App {
                     }
                 },
                 Err(e) => report_failure(&tx, "channel history", e),
+            }
+        });
+    }
+
+    /// A community's member list, grouped by the Host.
+    pub(crate) fn load_community_members(&self, community: &str) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        let community = community.to_string();
+        tokio::spawn(async move {
+            match client
+                .request_ok(IpcRequest::Community(CommunityRequest::Lifecycle(
+                    LifecycleRequest::CommunityMembers {
+                        governance_key: community.clone(),
+                    },
+                )))
+                .await
+            {
+                Ok(value) => match serde_json::from_value::<Vec<CommunityMemberView>>(value) {
+                    Ok(members) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::CommunityMembersLoaded { community, members },
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "community members parse".into(),
+                            error: e.to_string(),
+                        });
+                    }
+                },
+                Err(e) => report_failure(&tx, "community members", e),
             }
         });
     }

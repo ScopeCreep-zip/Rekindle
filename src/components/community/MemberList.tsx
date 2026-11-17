@@ -2,7 +2,8 @@ import { Component, For, Show, createEffect, createSignal, createMemo, JSX } fro
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
 import { Member, Role, communityState } from "../../stores/community.store";
-import StatusDot, { isOfflineStatus } from "../status/StatusDot";
+import StatusDot from "../status/StatusDot";
+import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
 import MemberProfilePopup from "./MemberProfilePopup";
 import {
@@ -52,6 +53,15 @@ const TIMEOUT_PRESETS: { label: string; seconds: number }[] = [
   { label: "24 hours", seconds: 86400 },
   { label: "1 week", seconds: 604800 },
 ];
+
+function groupKey(group: MemberGroup): string {
+  return group.kind === "role" ? `role:${group.id}` : group.kind;
+}
+
+function groupLabel(group: MemberGroup): string {
+  if (group.kind === "role") return group.name;
+  return group.kind === "online" ? "Online" : "Offline";
+}
 
 const MemberList: Component<MemberListProps> = (props) => {
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -133,39 +143,23 @@ const MemberList: Component<MemberListProps> = (props) => {
       : props.members;
   });
 
-  // Discord's member list: hoisted role groups hold only members who are not
-  // offline, the other present members fall under "Online", and every offline
-  // member (whatever their roles) falls under "Offline". Presence is the same
-  // status the row's dot draws.
+  // The groups are the Host's (`Member.group`, Discord's member list rules
+  // decided once for every frontend): the list keeps the Host's order and
+  // starts a group wherever the group changes.
   const groupedMembers = createMemo(() => {
-    const hoistedRoles = props.roles
-      .filter((r) => r.hoist && r.id !== 0)
-      .sort((a, b) => b.position - a.position);
-
     const groups: { name: string; members: Member[] }[] = [];
-    const present = filteredMembers().filter((m) => !isOfflineStatus(memberStatus(m)));
-    const offline = filteredMembers().filter((m) => isOfflineStatus(memberStatus(m)));
-    const placed = new Set<string>();
-
-    for (const role of hoistedRoles) {
-      const members = present.filter(
-        (m) => m.roleIds.includes(role.id) && !placed.has(m.pseudonymKey),
-      );
-      if (members.length > 0) {
-        groups.push({ name: `${role.name} — ${members.length}`, members });
-        members.forEach((m) => placed.add(m.pseudonymKey));
+    let current: Member[] | null = null;
+    let currentKey = "";
+    for (const m of filteredMembers()) {
+      const key = groupKey(m.group);
+      if (current === null || key !== currentKey) {
+        current = [];
+        currentKey = key;
+        groups.push({ name: groupLabel(m.group), members: current });
       }
+      current.push(m);
     }
-
-    const online = present.filter((m) => !placed.has(m.pseudonymKey));
-    if (online.length > 0) {
-      groups.push({ name: `Online — ${online.length}`, members: online });
-    }
-    if (offline.length > 0) {
-      groups.push({ name: `Offline — ${offline.length}`, members: offline });
-    }
-
-    return groups;
+    return groups.map((g) => ({ ...g, name: `${g.name} — ${g.members.length}` }));
   });
 
   function memberMenu(member: Member): JSX.Element {
