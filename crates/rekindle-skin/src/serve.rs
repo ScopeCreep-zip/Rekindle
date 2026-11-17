@@ -8,7 +8,9 @@
 //! [`TOKENS_CSS`] (the active variant's `@layer skin` tokens followed by
 //! the region rules, [`stylesheet`]) or `{blake3}.{png|gif}`, one
 //! canonical image by its own address (the hrefs
-//! [`crate::regions::css::skin_css`] writes). Every other path is refused
+//! [`crate::regions::css::skin_css`] writes), the reduced-motion still of
+//! an animated region GIF among them ([`crate::regions::still`], derived
+//! from the canonical GIF, so its address is stable). Every other path is refused
 //! before anything is looked up, so no `..`, no second segment and no
 //! query reaches a store.
 
@@ -19,6 +21,7 @@ use rekindle_types::dto::skin::{SkinBase, SkinContrast, SkinError, SkinRule, Ski
 use crate::output::tokens_css;
 use crate::package::{self, Package};
 use crate::regions::css::skin_css;
+use crate::regions::still;
 use crate::registry::{resolve, Base, ENTRIES};
 use crate::{manifest, tokens};
 
@@ -174,20 +177,38 @@ pub fn body(bytes: &[u8], address: &str, file: File<'_>) -> Result<Option<Body>,
         })),
         File::Image { hash, ext } => {
             let p = package::read(bytes)?;
-            let found = p.files().find(|(name, data)| {
-                name.rsplit_once('.').map(|(_, e)| e) == Some(ext)
-                    && blake3::hash(data).to_hex().as_str() == hash
-            });
-            Ok(found.map(|(_, data)| Body {
+            let found = p
+                .files()
+                .find(|(name, data)| {
+                    name.rsplit_once('.').map(|(_, e)| e) == Some(ext)
+                        && blake3::hash(data).to_hex().as_str() == hash
+                })
+                .map(|(_, data)| data.to_vec());
+            let bytes = match found {
+                Some(bytes) => Some(bytes),
+                None if ext == "png" => still_named(&p, hash)?,
+                None => None,
+            };
+            Ok(bytes.map(|bytes| Body {
                 content_type: if ext == "gif" {
                     "image/gif"
                 } else {
                     "image/png"
                 },
-                bytes: data.to_vec(),
+                bytes,
             }))
         }
     }
+}
+
+/// The still (`skin_css`'s reduced-motion first frame, [`still::stills`])
+/// of the package's animated region image whose PNG has address `hash`.
+fn still_named(p: &Package<'_>, hash: &str) -> Result<Option<Vec<u8>>, SkinError> {
+    let m = manifest::parse(p)?;
+    let stills = still::stills(&m, &files(p)).map_err(|e| unreadable(&e.to_string()))?;
+    Ok(stills
+        .into_values()
+        .find(|png| blake3::hash(png).to_hex().as_str() == hash))
 }
 
 #[cfg(test)]

@@ -11,7 +11,9 @@
  *   components      every app rule (`src/styles/theme/*`, scrollbars, the
  *                   region slots `generated/regions.css` paints last)
  *   utilities       Tailwind utilities
- *   a11y            user accessibility settings; beats any skin
+ *   a11y            user accessibility settings; beats any skin (the
+ *                   region slots under reduced motion and forced colours:
+ *                   `generated/regions-a11y.css`)
  *   sec             security surfaces; nothing overrides it */
 @layer theme, base, xfire-defaults, skin, components, utilities, a11y, sec;
 @import "tailwindcss" source(none);
@@ -65,6 +67,7 @@
 @import "./animations.css";
 @import "./scrollbar.css";
 @import "./generated/regions.css";
+@import "./generated/regions-a11y.css";
 
 /* The spacing grid (plan E7.12): every gap, padding and margin between
  * controls is a whole multiple of this step, the scale the theme parts

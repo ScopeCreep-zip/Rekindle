@@ -15,7 +15,7 @@ use anyhow::{anyhow, Context, Result};
 use std::collections::BTreeMap;
 
 use rekindle_skin::generate::{json_schema, tokens_css, tokens_ts, tui_palette, HEADER};
-use rekindle_skin::regions::css::app_css;
+use rekindle_skin::regions::css::{app_a11y_css, app_css};
 use rekindle_skin::registry::{constraint_failures, Base, ENTRIES};
 
 /// The generated stylesheet directory: its literals and repeats are the
@@ -61,8 +61,15 @@ fn regions_css() -> Result<String> {
         .map_err(|e| anyhow!("{}: {e}", crate::declared_grounds::MAP))
 }
 
+/// `src/styles/generated/regions-a11y.css`: the same rules under the
+/// user's settings, in `@layer a11y` (plan E7.7.2 "Apply").
+fn regions_a11y_css() -> Result<String> {
+    app_a11y_css(HEADER, &region_elements()?)
+        .map_err(|e| anyhow!("{}: {e}", crate::declared_grounds::MAP))
+}
+
 /// Every generated file, relative to the workspace root, with its content.
-fn artefacts() -> Result<[(&'static str, String); 6]> {
+fn artefacts() -> Result<[(&'static str, String); 7]> {
     Ok([
         ("src/styles/generated/tokens.css", tokens_css()),
         ("src/styles/generated/tokens.ts", tokens_ts()),
@@ -79,6 +86,7 @@ fn artefacts() -> Result<[(&'static str, String); 6]> {
             json_schema(),
         ),
         ("src/styles/generated/regions.css", regions_css()?),
+        ("src/styles/generated/regions-a11y.css", regions_a11y_css()?),
     ])
 }
 

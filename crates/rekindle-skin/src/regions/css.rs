@@ -7,7 +7,9 @@
 //!   rule, each painted slot's elements and their state selectors read the
 //!   slot's custom property into `border-image`. A state without its own
 //!   image shows the normal one; with no skin region the property is unset
-//!   and `border-image` computes to `none`.
+//!   and `border-image` computes to `none`. [`app_a11y_css`], generated
+//!   beside it into `regions-a11y.css`, holds the same rules under the
+//!   user's settings (below).
 //! * [`skin_css`], built per skin: `@layer skin { :root { … } }` setting
 //!   those custom properties. A value is drawn from the numbers alone (the
 //!   insets, the fit) and the image's BLAKE3 address under the Host's
@@ -24,10 +26,24 @@
 //! `.form-btn-secondary` holds an `<img>`), so their `image-rendering:
 //! pixelated` (the F83 sampling's assumption) reaches no other image.
 //!
+//! * The user's settings follow in `@layer a11y` (plan E7.7.2 "Apply";
+//!   `src/styles/global.css:16` declares `… components, utilities, a11y,
+//!   sec`, so they beat every app and skin rule and only `@layer sec` sits
+//!   above them). Under `prefers-reduced-motion: reduce` each region rule
+//!   reads its image's still ([`still_property`]: the first frame of an
+//!   animated GIF, [`super::still`], which [`skin_css`] sets only for a
+//!   GIF that moves), else the image itself.
 //! * Under `forced-colors: active` every region rule's `border-image` is
-//!   `none` (plan E7.7.2): a forced palette replaces the app's colours, and
-//!   a skin bitmap left in place would draw the skin's colours over it
-//!   (CSS Color Adjustment 1 §3.1 forces colours, not `border-image`).
+//!   `none`, after the reduced-motion rules so it wins over them too: a
+//!   forced palette replaces the app's colours, and a skin bitmap left in
+//!   place would draw the skin's colours over it. CSS Color Adjustment 1
+//!   §3.1 (<https://www.w3.org/TR/css-color-adjust-1/#forced-colors-properties>)
+//!   forces the colour properties and computes `background-image` to `none`
+//!   "unless the original value contains a url() function"; it does not
+//!   name `border-image`, the only property a region image is drawn with
+//!   here. The one `background-image` these rules write, a text slot's
+//!   backing gradient on its `::before`, goes with the box (`content:
+//!   none`).
 //! * A scrollbar button has no length until a skin gives it one: its
 //!   `height` (vertical) or `width` (horizontal) reads
 //!   [`length_property`], which [`skin_css`] sets to the button image's
@@ -60,6 +76,7 @@ use rekindle_image::{read_header, ImageKind};
 use rekindle_types::dto::skin::{RegionFit, RegionState, SkinManifest};
 
 use super::slots::{slot_of, SLOTS};
+use super::still;
 use crate::images::extension;
 use crate::limits::MAX_IMAGE_ALLOC;
 use crate::registry::{TokenType, ENTRIES};
@@ -119,6 +136,13 @@ fn backing_rule(id: &str, elements: &[String]) -> Result<String, String> {
     ))
 }
 
+/// The custom property holding the still of `slot`'s (or its `state`'s)
+/// image: set by [`skin_css`] only when that image is an animated GIF.
+#[must_use]
+pub fn still_property(slot: &str, state: Option<RegionState>) -> String {
+    format!("{}--still", property(slot, state))
+}
+
 /// The custom property of `slot`, or of its `state` image.
 #[must_use]
 pub fn property(slot: &str, state: Option<RegionState>) -> String {
@@ -160,12 +184,35 @@ const ORDER: [RegionState; 5] = [
 ];
 
 /// `src/styles/generated/regions.css` from the region map's `[regions]`
-/// (slot id → the app elements it paints), with `header` as its comment.
+/// (slot id → the app elements it paints), with `header` as its comment:
+/// the region rules, in `@layer components`.
 ///
 /// # Errors
 /// A map entry naming no painted slot, a painted slot the map lacks or
 /// maps to no element, or a state a pseudo-element cannot take.
 pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<String, String> {
+    let (components, _) = rules(map)?;
+    Ok(format!(
+        "/* {header}\n *\n * Region slots (`rekindle-skin::regions`) on the elements\n * `src/styles/regions.toml` `[regions]` names; a skin sets the custom\n * properties in `@layer skin`. The user's settings are in\n * `regions-a11y.css`. */\n@layer components {{\n{components}}}\n"
+    ))
+}
+
+/// `src/styles/generated/regions-a11y.css` from the same map: the same
+/// rules under the user's settings, in `@layer a11y` (plan E7.7.2
+/// "Apply"): the reduced-motion swap to each image's still, then the
+/// forced-colors reset.
+///
+/// # Errors
+/// What [`app_css`] returns.
+pub fn app_a11y_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<String, String> {
+    let (_, a11y) = rules(map)?;
+    Ok(format!(
+        "/* {header}\n *\n * The region rules of `regions.css` under the user's settings, in\n * `@layer a11y`, which `global.css` orders above `components` and\n * `utilities` and below `sec` only. */\n@layer a11y {{\n{a11y}}}\n"
+    ))
+}
+
+/// The bodies of the region rules' `@layer components` and `@layer a11y`.
+fn rules(map: &BTreeMap<String, Vec<String>>) -> Result<(String, String), String> {
     for id in map.keys() {
         if !slot_of(id).is_some_and(|s| s.css) {
             return Err(format!("[regions] `{id}`: not a painted region slot"));
@@ -175,9 +222,9 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
     // backing `::before`.
     let mut painted: Vec<String> = Vec::new();
     let mut backed: Vec<String> = Vec::new();
-    let mut out = format!(
-        "/* {header}\n *\n * Region slots (`rekindle-skin::regions`) on the elements\n * `src/styles/regions.toml` `[regions]` names; a skin sets the custom\n * properties in `@layer skin`. */\n@layer components {{\n"
-    );
+    // Every rule again, reading the still under reduced motion.
+    let mut motion = String::new();
+    let mut out = String::new();
     for slot in SLOTS.iter().filter(|s| s.css) {
         let elements = map
             .get(slot.id)
@@ -199,6 +246,12 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
             elements.join(",\n  ")
         );
         painted.push(elements.join(",\n    "));
+        let normal_still = format!("var({}, var({normal}))", still_property(slot.id, None));
+        let _ = write!(
+            motion,
+            "    {} {{\n      border-image: {normal_still};\n    }}\n",
+            elements.join(",\n    ")
+        );
         if text {
             out.push_str(&backing_rule(slot.id, elements)?);
             backed.extend(elements.iter().map(|e| format!("{e}::before")));
@@ -219,22 +272,30 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
                 property(slot.id, Some(state))
             );
             painted.push(selectors.join(",\n    "));
+            let _ = write!(
+                motion,
+                "    {} {{\n      border-image: var({}, var({}, {normal_still}));\n    }}\n",
+                selectors.join(",\n    "),
+                still_property(slot.id, Some(state)),
+                property(slot.id, Some(state))
+            );
         }
     }
+    let mut a11y = format!("  @media (prefers-reduced-motion: reduce) {{\n{motion}  }}\n");
     // Last, at each rule's own specificity, so every state is reset too.
-    out.push_str("  @media (forced-colors: active) {\n");
+    a11y.push_str("  @media (forced-colors: active) {\n");
     for list in &painted {
-        let _ = write!(out, "    {list} {{\n      border-image: none;\n    }}\n");
+        let _ = write!(a11y, "    {list} {{\n      border-image: none;\n    }}\n");
     }
     if !backed.is_empty() {
         let _ = write!(
-            out,
+            a11y,
             "    {} {{\n      content: none;\n    }}\n",
             backed.join(",\n    ")
         );
     }
-    out.push_str("  }\n}\n");
-    Ok(out)
+    a11y.push_str("  }\n");
+    Ok((out, a11y))
 }
 
 /// A serving base the Host owns: ASCII letters, digits and `:/._-`.
@@ -285,10 +346,14 @@ fn dimensions(path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<(u32, u3
 ///
 /// A text slot's backing is written as its token's custom property, and
 /// its image's slice widths (0 for `stretch` and `tile`) as
-/// [`slice_property`], where its backing's centre layer begins.
+/// [`slice_property`], where its backing's centre layer begins. An
+/// animated GIF (normal or state) also gets its still under
+/// [`still_property`], addressed by the still's own BLAKE3 as a `.png`
+/// ([`super::still`]), which `@layer a11y` reads under reduced motion.
 ///
 /// `None` for a `base` outside its alphabet, a region image `images`
-/// lacks, a scrollbar button image whose header does not read, or a text
+/// lacks or whose still does not decode, a scrollbar button image whose
+/// header does not read, or a text
 /// slot whose `textBacking` is missing or no registry colour (never for a
 /// validated package).
 #[must_use]
@@ -300,6 +365,14 @@ pub fn skin_css(
     if !base_ok(base) {
         return None;
     }
+    let stills = still::stills(manifest, images).ok()?;
+    // The still's href and value, for an animated image `path`.
+    let still_decl = |prop: String, path: &str, fit: RegionFit| {
+        stills.get(path).map(|png| {
+            let h = format!("{base}/{}.png", blake3::hash(png).to_hex());
+            format!("    {prop}: {};\n", value(&h, fit))
+        })
+    };
     let mut decls = String::new();
     for (id, region) in &manifest.regions {
         let Some(slot) = slot_of(id).filter(|s| s.css) else {
@@ -312,6 +385,9 @@ pub fn skin_css(
             property(id, None),
             value(&normal, region.fit)
         );
+        if let Some(d) = still_decl(still_property(id, None), &region.image, region.fit) {
+            decls.push_str(&d);
+        }
         if let Some(side) = button_side(id) {
             let (width, height) = dimensions(&region.image, images)?;
             let px = if side == "height" { height } else { width };
@@ -339,6 +415,9 @@ pub fn skin_css(
                 property(id, Some(*state)),
                 value(&h, region.fit)
             );
+            if let Some(d) = still_decl(still_property(id, Some(*state)), path, region.fit) {
+                decls.push_str(&d);
+            }
         }
     }
     Some(format!("@layer skin {{\n  :root {{\n{decls}  }}\n}}\n"))

@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::{encode_png, DynamicImage, Rgba, RgbaImage};
-use rekindle_skin::regions::css::{app_css, skin_css};
+use rekindle_skin::regions::css::{app_a11y_css, app_css, skin_css};
 use rekindle_skin::registry::{resolve, Base, ENTRIES};
 use rekindle_skin::{images, manifest, package, regions};
 use rekindle_types::dto::skin::{SkinError, SkinManifest, SkinRule};
@@ -212,9 +212,16 @@ fn the_app_css_maps_states_to_selectors() {
 
 #[test]
 fn the_app_css_resets_every_region_rule_under_forced_colors() {
-    let css = app_css("h", &full_map()).unwrap();
+    let components = app_css("h", &full_map()).unwrap();
+    assert!(
+        !components.contains("@media"),
+        "the user's settings are a11y's"
+    );
+    // In `@layer a11y` (plan E7.7.2), which `global.css` orders above
+    // `components`, and last in it, after the reduced-motion swap.
+    let css = app_a11y_css("h", &full_map()).unwrap();
+    assert!(css.contains("\n@layer a11y {\n  @media (prefers-reduced-motion: reduce) {\n"));
     let media = css.find("  @media (forced-colors: active) {\n").unwrap();
-    // After every painted rule, so it wins at each rule's own specificity.
     assert!(css.rfind("var(--skin-region-").unwrap() < media);
     assert!(css.ends_with("    }\n  }\n}\n"));
     let forced = &css[media..];
@@ -235,7 +242,7 @@ fn the_app_css_resets_every_region_rule_under_forced_colors() {
             "{list}"
         );
     }
-    let painted = css.matches("border-image: var(").count();
+    let painted = components.matches("border-image: var(").count();
     assert_eq!(forced.matches("border-image: none;").count(), painted);
 }
 
@@ -280,7 +287,8 @@ fn the_app_css_backs_a_text_slot_between_image_and_label() {
         "text slots only"
     );
     // Under forced colors the backing is not generated.
-    let forced = &css[css.find("  @media (forced-colors: active) {\n").unwrap()..];
+    let a11y = app_a11y_css("h", &full_map()).unwrap();
+    let forced = &a11y[a11y.find("  @media (forced-colors: active) {\n").unwrap()..];
     assert!(forced.contains("    .btn2::before {\n      content: none;\n    }\n"));
     // A text slot on a pseudo-element cannot take a `::before`.
     let mut pseudo = full_map();

@@ -55,6 +55,7 @@ use crate::registry::{TokenEntry, TokenType};
 
 pub mod css;
 mod slots;
+pub mod still;
 
 pub use slots::{slot_of, Extent, RegionSlot, RegionText, WindowSize, SLOTS, WINDOWS};
 
