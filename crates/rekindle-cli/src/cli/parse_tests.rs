@@ -97,3 +97,47 @@ fn invite_max_uses_is_refused_outside_one_to_a_hundred() {
         ));
     }
 }
+
+#[test]
+fn skin_subcommands_parse_to_their_requests() {
+    use rekindle_ipc::protocol::IpcRequest;
+
+    use super::SkinCmd;
+
+    let request = |args: &[&str]| match parse(args).command {
+        Some(Command::Skin(cmd)) => crate::skin::request(&cmd).unwrap(),
+        _ => panic!("{args:?} is not a skin command"),
+    };
+    assert!(matches!(request(&["skin", "list"]), IpcRequest::SkinList));
+    assert!(matches!(
+        request(&["skin", "select", "builtin:symbiosis"]),
+        IpcRequest::SkinSelect { ref id } if id == "builtin:symbiosis"
+    ));
+    assert!(matches!(
+        request(&["skin", "remove", "pkg:ab"]),
+        IpcRequest::SkinRemove { ref id } if id == "pkg:ab"
+    ));
+    assert!(matches!(
+        request(&["skin", "set-login", "pkg:ab"]),
+        IpcRequest::SkinSetLogin { ref id } if id == "pkg:ab"
+    ));
+    let file =
+        std::env::temp_dir().join(format!("rekindle-cli-skin-{}.rkskin", std::process::id()));
+    std::fs::write(&file, b"pk").unwrap();
+    let imported = request(&["skin", "import", file.to_str().unwrap()]);
+    std::fs::remove_file(&file).unwrap();
+    assert!(matches!(imported, IpcRequest::SkinImport { ref bytes } if bytes == b"pk"));
+    let Some(Command::Skin(missing @ SkinCmd::Import { .. })) =
+        parse(&["skin", "import", "/nope/x.rkskin"]).command
+    else {
+        panic!("skin import parses");
+    };
+    assert!(
+        crate::skin::request(&missing).is_err(),
+        "an unreadable file is an error"
+    );
+    assert!(
+        Cli::try_parse_from(["rekindle", "skin", "select"]).is_err(),
+        "an id is required"
+    );
+}

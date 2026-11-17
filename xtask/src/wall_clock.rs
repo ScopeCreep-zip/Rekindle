@@ -70,6 +70,10 @@ const OUTSIDE_THE_SIM: &[(&str, &str)] = &[
         "the fetched_at of an HTTPS preview fetch; the netsim makes no HTTP requests",
     ),
     (
+        "crates/rekindle-skin/src/helper/",
+        "the skin helper's wall-clock kill of a real child process (plan E7.7.1); the netsim imports no skins",
+    ),
+    (
         "crates/rekindle-ipc/src/server/",
         "the daemon's Unix-socket server and its connections; the netsim never binds a socket",
     ),

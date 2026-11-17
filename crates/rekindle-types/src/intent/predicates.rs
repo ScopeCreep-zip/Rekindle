@@ -196,7 +196,10 @@ impl IntentKind {
             | Self::ViewRecoveryMaterial
             | Self::MarkVerified
             | Self::ClearVerification
-            | Self::ArmQuickWipe => false,
+            | Self::ArmQuickWipe
+            | Self::ImportSkin
+            | Self::SetLoginSkin
+            | Self::RemoveSkin => false,
         }
     }
 
@@ -389,7 +392,10 @@ impl IntentKind {
             | Self::ViewRecoveryMaterial
             | Self::MarkVerified
             | Self::ClearVerification
-            | Self::ArmQuickWipe => false,
+            | Self::ArmQuickWipe
+            | Self::ImportSkin
+            | Self::SetLoginSkin
+            | Self::RemoveSkin => false,
         }
     }
 }

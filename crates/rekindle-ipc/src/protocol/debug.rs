@@ -143,6 +143,11 @@ impl std::fmt::Debug for IpcRequest {
             | Self::AvatarGet { .. }
             | Self::AuditVerify
             | Self::AuditExport { .. }
+            | Self::SkinList
+            | Self::SkinImport { .. }
+            | Self::SkinRemove { .. }
+            | Self::SkinSelect { .. }
+            | Self::SkinSetLogin { .. }
             | Self::LinkOpen { .. } => self.fmt_own(f),
             Self::PresenceSet { .. }
             | Self::GamePresenceSet { .. }
@@ -191,6 +196,14 @@ impl IpcRequest {
             Self::AuditExport { since } => {
                 f.debug_struct("AuditExport").field("since", since).finish()
             }
+            Self::SkinList => write!(f, "SkinList"),
+            Self::SkinImport { bytes } => f
+                .debug_struct("SkinImport")
+                .field("bytes_len", &bytes.len())
+                .finish(),
+            Self::SkinRemove { id } => f.debug_struct("SkinRemove").field("id", id).finish(),
+            Self::SkinSelect { id } => f.debug_struct("SkinSelect").field("id", id).finish(),
+            Self::SkinSetLogin { id } => f.debug_struct("SkinSetLogin").field("id", id).finish(),
             Self::LinkOpen { url } => f
                 .debug_struct("LinkOpen")
                 .field("url_len", &url.len())

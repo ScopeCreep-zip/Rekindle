@@ -176,6 +176,13 @@ impl IpcRequest {
             // Whether we tell friends what we read is the user's own.
             | Self::SetReadReceiptsEnabled { .. }
             | Self::ProfileSetAvatar { .. }
+            // What the app looks like, and what shows before unlock, is
+            // the user's own.
+            | Self::SkinList
+            | Self::SkinImport { .. }
+            | Self::SkinRemove { .. }
+            | Self::SkinSelect { .. }
+            | Self::SkinSetLogin { .. }
             | Self::AuditVerify
             | Self::AuditExport { .. }
             | Self::LinkOpen { .. }

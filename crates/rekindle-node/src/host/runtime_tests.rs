@@ -37,6 +37,9 @@ mod membership;
 mod onboarding_bounds;
 #[path = "own_removal_tests.rs"]
 mod own_removal;
+#[cfg(unix)]
+#[path = "skin_tests.rs"]
+mod skin_requests;
 
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     offline_host_with(dir, None).await

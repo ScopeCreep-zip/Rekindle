@@ -49,6 +49,7 @@ pub mod generate;
 pub mod helper;
 pub mod images;
 pub mod import;
+pub mod login;
 pub mod manifest;
 pub mod output;
 pub mod package;

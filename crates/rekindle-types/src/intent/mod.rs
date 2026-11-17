@@ -151,6 +151,9 @@ pub enum Escalation {
     StartsMekBallot,
     /// E9: the first camera or screen share in this call.
     FirstMediaInCall,
+    /// The skin will be shown on this device before unlock, to anyone
+    /// at the screen, without the passphrase (plan E7.7.2).
+    VisibleBeforeUnlock,
 }
 
 impl Escalation {
@@ -158,9 +161,10 @@ impl Escalation {
     #[must_use]
     pub const fn floor(&self) -> IntentClass {
         match self {
-            Self::VerifiedKeyChanged { .. } | Self::Attachment(_) | Self::FirstMediaInCall => {
-                IntentClass::TrustChanging
-            }
+            Self::VerifiedKeyChanged { .. }
+            | Self::Attachment(_)
+            | Self::FirstMediaInCall
+            | Self::VisibleBeforeUnlock => IntentClass::TrustChanging,
             Self::MassMention { .. }
             | Self::CrossAudience { .. }
             | Self::PendingWork { .. }

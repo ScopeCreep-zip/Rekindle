@@ -133,6 +133,28 @@ pub(crate) async fn select(
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetAvatar);
         }
         IpcRequest::AuditExport { .. } => s.subject = unlocked_identity(ctx),
+        IpcRequest::SkinImport { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RemoveSkin);
+        }
+        IpcRequest::SkinRemove { id } => {
+            s.subject = Subject::Named { name: id.clone() };
+        }
+        IpcRequest::SkinSelect { .. } => {
+            s.subject = unlocked_identity(ctx);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
+        }
+        IpcRequest::SkinSetLogin { id } => {
+            s.subject = Subject::Named {
+                name: "this device's login screen".into(),
+            };
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetLoginSkin);
+            // Only a built-in is Routine: any other skin will be shown
+            // before unlock, to anyone at the screen (plan E7.7.2).
+            if !id.starts_with(rekindle_skin::builtin::PREFIX) {
+                s.escalations.push(Escalation::VisibleBeforeUnlock);
+            }
+        }
         IpcRequest::LinkOpen { url } => {
             // `validate_request` passed it; the host as the browser will
             // ask for it (punycode for an international name).
@@ -172,6 +194,7 @@ pub(crate) async fn select(
         | IpcRequest::FriendCode
         | IpcRequest::PresenceGet
         | IpcRequest::AvatarGet { .. }
+        | IpcRequest::SkinList
         | IpcRequest::AuditVerify
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests

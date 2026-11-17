@@ -74,6 +74,8 @@ rekindle-link-preview = { path = "../rekindle-link-preview" }
 # Avatars: decoded as their declared kind under limits, made a 128 px
 # WebP (plans E1.1, E7.11).
 rekindle-image = { path = "../rekindle-image" }
+# The skin library and login skin (plan E7.7.2): the helper, the built-ins.
+rekindle-skin = { path = "../rekindle-skin" }
 rekindle-files = { path = "../rekindle-files" }
 
 # Async runtime

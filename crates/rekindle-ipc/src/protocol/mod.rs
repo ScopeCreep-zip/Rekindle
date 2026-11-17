@@ -297,6 +297,21 @@ pub enum IpcRequest {
     },
     /// Our own or a friend's avatar (WebP bytes), from the database.
     AvatarGet { public_key: String },
+    /// The skins (plan E7.7.2): the built-ins and the identity's library,
+    /// with the identity's choice and the device login skin.
+    SkinList,
+    /// Import a `rekindle-skin/1` package: validated in
+    /// `rekindle-skin-helper`, stored as its canonical package `pkg:<hash>`.
+    SkinImport { bytes: Vec<u8> },
+    /// Remove `pkg:<hash>` from the library; the identity's skin in use is
+    /// refused.
+    SkinRemove { id: String },
+    /// The identity's skin: a built-in or a library package (a dedicated
+    /// preference setter until E6.8's `PatchPreferences` absorbs it).
+    SkinSelect { id: String },
+    /// The device login skin, visible before unlock: a built-in, or a
+    /// stripped render-only copy of a library package.
+    SkinSetLogin { id: String },
     /// Set game presence info.
     GamePresenceSet {
         game_name: String,

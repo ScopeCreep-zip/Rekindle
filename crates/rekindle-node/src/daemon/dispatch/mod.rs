@@ -112,6 +112,9 @@ pub struct DaemonContext {
     pub session: Arc<RwLock<Option<Session>>>,
     /// The data root: the identity registry and every identity's files.
     pub root: rekindle_db::paths::DataRoot,
+    /// Where `rekindle-skin-helper` is (plan E7.7.2): beside this
+    /// executable, found on the first skin import (`host::skin`).
+    pub skin_helper: std::sync::OnceLock<rekindle_skin::helper::HelperOpts>,
     /// The unlocked identity's database (plan D1), shared with the
     /// handler and the inbox scan. Empty while locked.
     pub db: Arc<rekindle_db::DbHandle>,

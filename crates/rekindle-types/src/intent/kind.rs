@@ -247,6 +247,16 @@ pub enum IntentKind {
     ClearVerification,
     // Protected: Not yet built
     ArmQuickWipe,
+    // Skins (plan E7.7.2)
+    /// Import a skin package into the identity's library: TrustChanging,
+    /// as it brings third-party pictures and sounds into every window.
+    ImportSkin,
+    /// Set the device login skin: Routine for a built-in; a library
+    /// package is raised to TrustChanging by
+    /// `Escalation::VisibleBeforeUnlock`.
+    SetLoginSkin,
+    /// Remove a package from the library.
+    RemoveSkin,
 }
 
 impl IntentKind {
@@ -350,7 +360,8 @@ impl IntentKind {
             | Self::PolicyReload
             | Self::UpdateChannel
             | Self::SetGamePresence
-            | Self::ClearGamePresence => IntentClass::Routine,
+            | Self::ClearGamePresence
+            | Self::SetLoginSkin => IntentClass::Routine,
             Self::BlockUser
             | Self::DeclineDmInvite
             | Self::DeclineSessionReset
@@ -394,7 +405,8 @@ impl IntentKind {
             | Self::UnregisterWithPushRelay
             | Self::ForwardChannelMessage
             | Self::RejectJoinRequest
-            | Self::RevokeAgent => IntentClass::Consequential,
+            | Self::RevokeAgent
+            | Self::RemoveSkin => IntentClass::Consequential,
             Self::AcceptDmInvite
             | Self::AcceptRequest
             | Self::AddFriend
@@ -422,7 +434,8 @@ impl IntentKind {
             | Self::StartPairingSession
             | Self::ApproveJoinRequest
             | Self::MarkVerified
-            | Self::ClearVerification => IntentClass::TrustChanging,
+            | Self::ClearVerification
+            | Self::ImportSkin => IntentClass::TrustChanging,
             Self::BulkDeleteChannelMessages
             | Self::TransferCommunityOwnership
             | Self::ForgetCommunity

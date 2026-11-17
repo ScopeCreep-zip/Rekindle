@@ -738,6 +738,7 @@
       "oldSafetyNumber": "1a2b3c4d"
     }
   },
+  "intent.escalation.visibleBeforeUnlock": "visibleBeforeUnlock",
   "intent.fact.fingerprint": {
     "fingerprint": {
       "fingerprint": "abcd 0123"

@@ -31,6 +31,7 @@ fn every_escalation() -> Vec<Escalation> {
         },
         Escalation::StartsMekBallot,
         Escalation::FirstMediaInCall,
+        Escalation::VisibleBeforeUnlock,
     ]
 }
 

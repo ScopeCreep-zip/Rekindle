@@ -1,0 +1,244 @@
+//! The skin requests (plan E7.7.2 "Host"): the identity's library, its
+//! skin choice and the device login skin, one implementation on both
+//! hosts. A package enters the library only as the canonical package
+//! `rekindle-skin-helper` returns; an id that names no built-in and no
+//! library row is refused.
+//!
+//! The webview serving protocol, `SkinGet` and `SystemEvent::SkinChanged`
+//! are the step's serving-and-apply half.
+
+pub(crate) mod ids;
+pub(crate) mod login;
+
+use rekindle_db::repo::{preferences, skins};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_skin::helper::{self, HelperError, HelperOpts};
+use rekindle_skin::{builtin, manifest, package};
+use rekindle_types::dto::skin::SkinManifest;
+use rekindle_types::dto::skin_library::{SkinEntry, SkinLibrary};
+
+use crate::daemon::dispatch::{state_error, DaemonContext};
+use crate::daemon::DaemonState;
+use ids::{SkinId, PKG};
+
+pub(crate) use ids::check;
+
+/// Route one skin request (the router's arm for them).
+pub(crate) async fn route(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    request: IpcRequest,
+) -> IpcResponse {
+    if !matches!(request, IpcRequest::SkinList) && !state.can_write() {
+        return state_error(state, "write");
+    }
+    let answer = match request {
+        IpcRequest::SkinList => list(ctx).await.map(|l| IpcResponse::ok(&l)),
+        IpcRequest::SkinImport { bytes } => import(ctx, bytes).await.map(|e| IpcResponse::ok(&e)),
+        IpcRequest::SkinRemove { id } => remove(ctx, id).await,
+        IpcRequest::SkinSelect { id } => select(ctx, id).await,
+        IpcRequest::SkinSetLogin { id } => set_login(ctx, id).await,
+        other => unreachable!("{} is not a skin request", other.name()),
+    };
+    answer.unwrap_or_else(|refused| refused)
+}
+
+type Answer<T> = Result<T, IpcResponse>;
+
+fn not_found(id: &str) -> IpcResponse {
+    IpcResponse::error(
+        404,
+        format!("no skin {id}: no built-in and no library package"),
+    )
+}
+
+fn failed(what: &str, e: impl std::fmt::Display) -> IpcResponse {
+    IpcResponse::error(500, format!("{what}: {e}"))
+}
+
+/// The helper's location: beside this executable, found on first use.
+fn helper_opts(ctx: &DaemonContext) -> Answer<HelperOpts> {
+    if let Some(opts) = ctx.skin_helper.get() {
+        return Ok(opts.clone());
+    }
+    let opts = HelperOpts::beside_current_exe().map_err(|e| failed("skin helper", e))?;
+    Ok(ctx.skin_helper.get_or_init(|| opts).clone())
+}
+
+/// A package's manifest; every package here passed the pipeline.
+fn manifest_of(bytes: &[u8]) -> Answer<SkinManifest> {
+    package::read(bytes)
+        .and_then(|p| manifest::parse(&p))
+        .map_err(|e| failed("skin manifest unreadable", e))
+}
+
+/// `SkinImport`: the helper validates, the canonical package is stored.
+async fn import(ctx: &DaemonContext, bytes: Vec<u8>) -> Answer<SkinEntry> {
+    let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
+    let opts = helper_opts(ctx)?;
+    let canonical = rekindle_lifecycle::run_blocking(move || helper::validate(&bytes, &opts))
+        .await
+        .map_err(|e| failed("skin helper task", e))?
+        .map_err(|e| match e {
+            HelperError::Refused(rule) => IpcResponse::error(400, format!("skin refused: {rule}")),
+            other => failed("skin not validated", other),
+        })?;
+    let m = manifest_of(&canonical.bytes)?;
+    let manifest_json = serde_json::to_string(&m).map_err(|e| failed("skin manifest", e))?;
+    let hash = canonical.address();
+    let imported_at = ctx.clock.now_ms_i64();
+    let stored = hash.clone();
+    let imported_at = db
+        .call(move |conn| {
+            skins::insert(
+                conn,
+                &owner,
+                &skins::NewSkin {
+                    hash: &stored,
+                    manifest_json: &manifest_json,
+                    bytes: &canonical.bytes,
+                    imported_at,
+                    origin: skins::Origin::Import,
+                },
+            )?;
+            // A package already held keeps its first import time.
+            Ok(skins::list(conn, &owner)?
+                .into_iter()
+                .find(|r| r.hash == stored)
+                .map_or(imported_at, |r| r.imported_at))
+        })
+        .await
+        .map_err(|e| failed("skin not stored", e))?;
+    Ok(SkinEntry {
+        id: format!("{PKG}{hash}"),
+        name: m.name,
+        imported_at: Some(imported_at),
+    })
+}
+
+/// Why a library change was refused inside its transaction.
+enum Refusal {
+    Missing,
+    InUse,
+}
+
+/// `SkinRemove`: never the identity's skin in use.
+async fn remove(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
+    let Some(SkinId::Package(hash)) = ids::parse(&id) else {
+        return Err(not_found(&id));
+    };
+    let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
+    let (hash, skin_id) = (hash.to_owned(), id.clone());
+    let done = db
+        .call(move |conn| {
+            if preferences::skin_choice(conn, &owner)?.skin_id == skin_id {
+                return Ok(Err(Refusal::InUse));
+            }
+            Ok(if skins::remove(conn, &owner, &hash)? {
+                Ok(())
+            } else {
+                Err(Refusal::Missing)
+            })
+        })
+        .await
+        .map_err(|e| failed("skin not removed", e))?;
+    match done {
+        Ok(()) => list(ctx).await.map(|l| IpcResponse::ok(&l)),
+        Err(Refusal::Missing) => Err(not_found(&id)),
+        Err(Refusal::InUse) => Err(IpcResponse::error(
+            409,
+            format!("{id} is the skin in use: choose another first"),
+        )),
+    }
+}
+
+/// `SkinSelect`: the identity's skin, a built-in or a library row.
+async fn select(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
+    let parsed = ids::parse(&id).ok_or_else(|| not_found(&id))?;
+    if matches!(parsed, SkinId::Builtin(_)) && builtin::find(&id).is_none() {
+        return Err(not_found(&id));
+    }
+    let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
+    let hash = match parsed {
+        SkinId::Package(h) => Some(h.to_owned()),
+        SkinId::Builtin(_) => None,
+    };
+    let skin_id = id.clone();
+    let set = db
+        .call(move |conn| {
+            if let Some(hash) = hash {
+                if !skins::contains(conn, &owner, &hash)? {
+                    return Ok(false);
+                }
+            }
+            preferences::set_skin_id(conn, &owner, &skin_id)?;
+            Ok(true)
+        })
+        .await
+        .map_err(|e| failed("skin not chosen", e))?;
+    if !set {
+        return Err(not_found(&id));
+    }
+    list(ctx).await.map(|l| IpcResponse::ok(&l))
+}
+
+/// `SkinSetLogin`: a built-in, or a stripped copy of a library package.
+async fn set_login(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
+    match ids::parse(&id).ok_or_else(|| not_found(&id))? {
+        SkinId::Builtin(_) => {
+            if builtin::find(&id).is_none() {
+                return Err(not_found(&id));
+            }
+            login::set_builtin(&ctx.root, &id).map_err(|e| failed("login skin", e))?;
+        }
+        SkinId::Package(hash) => {
+            let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
+            let hash = hash.to_owned();
+            let bytes = db
+                .call(move |conn| skins::bytes(conn, &owner, &hash))
+                .await
+                .map_err(|e| failed("skin unreadable", e))?
+                .ok_or_else(|| not_found(&id))?;
+            let copy = rekindle_skin::login::strip(&bytes).map_err(|e| failed("login copy", e))?;
+            login::set_copy(&ctx.root, &copy).map_err(|e| failed("login skin", e))?;
+        }
+    }
+    list(ctx).await.map(|l| IpcResponse::ok(&l))
+}
+
+/// `SkinList`: the built-ins, then the library; the choice and login skin.
+async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
+    let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
+    let mut skins_out = Vec::new();
+    for pack in &builtin::PACKS {
+        skins_out.push(SkinEntry {
+            id: format!("{}{}", builtin::PREFIX, pack.id),
+            name: manifest_of(pack.bytes)?.name,
+            imported_at: None,
+        });
+    }
+    let (rows, choice) = db
+        .call(move |conn| {
+            Ok((
+                skins::list(conn, &owner)?,
+                preferences::skin_choice(conn, &owner)?,
+            ))
+        })
+        .await
+        .map_err(|e| failed("skins unreadable", e))?;
+    for row in rows {
+        let m: SkinManifest =
+            serde_json::from_str(&row.manifest_json).map_err(|e| failed("skin manifest", e))?;
+        skins_out.push(SkinEntry {
+            id: format!("{PKG}{}", row.hash),
+            name: m.name,
+            imported_at: Some(row.imported_at),
+        });
+    }
+    let login = login::read(&ctx.root).map_err(|e| failed("login skin", e))?;
+    Ok(SkinLibrary {
+        skins: skins_out,
+        active: choice.skin_id,
+        login,
+    })
+}

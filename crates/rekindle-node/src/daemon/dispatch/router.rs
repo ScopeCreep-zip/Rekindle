@@ -153,6 +153,13 @@ async fn route(
         | IpcRequest::AuditExport { .. }
         | IpcRequest::LinkOpen { .. }) => own::route(ctx, state, request).await,
 
+        // ── Skins (plan E7.7.2) ──────────────────────────────────
+        request @ (IpcRequest::SkinList
+        | IpcRequest::SkinImport { .. }
+        | IpcRequest::SkinRemove { .. }
+        | IpcRequest::SkinSelect { .. }
+        | IpcRequest::SkinSetLogin { .. }) => crate::host::skin::route(ctx, state, request).await,
+
         // ── Voice ────────────────────────────────────────────────
         IpcRequest::VoiceJoin {
             community,

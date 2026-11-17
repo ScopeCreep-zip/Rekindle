@@ -7685,6 +7685,7 @@ dependencies = [
  "rekindle-records",
  "rekindle-route",
  "rekindle-secrets",
+ "rekindle-skin",
  "rekindle-sync",
  "rekindle-transport",
  "rekindle-types",

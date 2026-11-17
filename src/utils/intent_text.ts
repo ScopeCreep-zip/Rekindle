@@ -84,6 +84,9 @@ export function escalationText(escalation: Escalation): string {
   if (escalation === "lastAdmin") return "You are the last admin.";
   if (escalation === "soleMember") return "You are the only member.";
   if (escalation === "startsMekBallot") return "This starts a new channel key for every member.";
+  if (escalation === "visibleBeforeUnlock") {
+    return "This skin will be visible on this device without your passphrase, before you unlock.";
+  }
   if ("attachment" in escalation) {
     const a = escalation.attachment;
     const meta = a.metadataRemoved ? "" : " Its metadata was not removed.";

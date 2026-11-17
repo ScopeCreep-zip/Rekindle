@@ -131,6 +131,11 @@ impl IpcRequest {
             Self::SetReadReceiptsEnabled { .. } => ("SetReadReceiptsEnabled", Write, Authenticated),
             Self::ProfileSetAvatar { .. } => ("ProfileSetAvatar", Write, Authenticated),
             Self::AvatarGet { .. } => ("AvatarGet", Query, Authenticated),
+            Self::SkinList => ("SkinList", Query, Authenticated),
+            Self::SkinImport { .. } => ("SkinImport", Write, Authenticated),
+            Self::SkinRemove { .. } => ("SkinRemove", Write, Authenticated),
+            Self::SkinSelect { .. } => ("SkinSelect", Write, Authenticated),
+            Self::SkinSetLogin { .. } => ("SkinSetLogin", Write, Authenticated),
             Self::GamePresenceSet { .. } => ("GamePresenceSet", Write, Authenticated),
             Self::GamePresenceClear => ("GamePresenceClear", Write, Authenticated),
 

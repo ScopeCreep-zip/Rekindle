@@ -161,6 +161,12 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
         Some(IntentKind::SetReadReceiptsEnabled),
     ),
     ("AvatarGet", None),
+    ("SkinList", None),
+    ("SkinImport", Some(IntentKind::ImportSkin)),
+    ("SkinRemove", Some(IntentKind::RemoveSkin)),
+    // The identity's skin is a preference (E6.8's `PatchPreferences`).
+    ("SkinSelect", Some(IntentKind::SetPreferences)),
+    ("SkinSetLogin", Some(IntentKind::SetLoginSkin)),
     ("AuditVerify", None),
     ("AuditExport", Some(IntentKind::AuditExport)),
     ("LinkOpen", Some(IntentKind::OpenExternalUrl)),

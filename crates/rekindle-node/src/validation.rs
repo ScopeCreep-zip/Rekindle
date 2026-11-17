@@ -343,6 +343,11 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::LinkOpen { .. } => own(request),
+        IpcRequest::SkinList
+        | IpcRequest::SkinImport { .. }
+        | IpcRequest::SkinRemove { .. }
+        | IpcRequest::SkinSelect { .. }
+        | IpcRequest::SkinSetLogin { .. } => crate::host::skin::check(request),
         IpcRequest::GamePresenceSet {
             game_name,
             game_id: _,

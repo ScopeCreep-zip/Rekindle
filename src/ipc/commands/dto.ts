@@ -280,6 +280,7 @@ export type Escalation =
   | "lastAdmin"
   | "soleMember"
   | "startsMekBallot"
+  | "visibleBeforeUnlock"
   | { attachment: { fileName: string; metadataRemoved: boolean; sizeBytes: number } }
   | { containerNotEmpty: { members: number; messages: number } }
   | { crossAudience: { fromMembers: number; toMembers: number } }

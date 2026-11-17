@@ -29,6 +29,7 @@ mod identity;
 mod keys;
 mod network;
 mod presence;
+mod skin;
 mod voice;
 
 use clap::{CommandFactory, Parser};
@@ -192,6 +193,7 @@ async fn dispatch_command(
         Command::Presence(cmd) => presence::dispatch(&cmd, client, mode).await,
         Command::Profile(cmd) => presence::dispatch_profile(&cmd, client, mode).await,
         Command::Settings(cmd) => presence::dispatch_settings(&cmd, client, mode).await,
+        Command::Skin(cmd) => skin::dispatch(&cmd, client, mode).await,
         Command::Game(cmd) => presence::dispatch_game(&cmd, client, mode).await,
         Command::Audit(cmd) => presence::dispatch_audit(&cmd, client, mode).await,
         Command::Undo { id } => presence::undo(&id, client, mode).await,

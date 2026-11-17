@@ -52,6 +52,7 @@ fn escalation_name(e: &Escalation) -> &'static str {
         Escalation::ContainerNotEmpty { .. } => "containerNotEmpty",
         Escalation::StartsMekBallot => "startsMekBallot",
         Escalation::FirstMediaInCall => "firstMediaInCall",
+        Escalation::VisibleBeforeUnlock => "visibleBeforeUnlock",
     }
 }
 
@@ -158,6 +159,7 @@ fn escalations() -> Vec<Escalation> {
         },
         Escalation::StartsMekBallot,
         Escalation::FirstMediaInCall,
+        Escalation::VisibleBeforeUnlock,
     ]
 }
 
@@ -321,7 +323,7 @@ pub fn samples() -> Vec<(String, Value)> {
 const EXPECTED: &[(&str, usize)] = &[
     ("intentClass", 5),
     ("proofRequired", 5),
-    ("escalation", 10),
+    ("escalation", 11),
     ("fact", 14),
     ("subject", 8),
     ("reversibility", 4),

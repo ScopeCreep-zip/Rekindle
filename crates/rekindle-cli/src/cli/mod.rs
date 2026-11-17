@@ -14,6 +14,7 @@ mod network;
 mod own;
 #[cfg(test)]
 mod parse_tests;
+mod skin;
 mod social;
 
 // Re-export all types so callers use `cli::Cli`, `cli::Command`, etc.
@@ -25,6 +26,7 @@ pub use identity::{IdentityCmd, InitArgs, StatusArgs, UnlockArgs};
 pub use keys::{KeyCmd, MekCmd, PrekeyCmd};
 pub use network::{NetworkCmd, NodeCmd};
 pub use own::{AuditCmd, GameCmd, ProfileCmd, SettingsCmd, Switch};
+pub use skin::SkinCmd;
 pub use social::{
     DmCmd, FriendCmd, FriendCodeCmd, FriendInviteCmd, GroupCmd, PresenceCmd, PresenceStatus,
 };
@@ -172,6 +174,10 @@ pub enum Command {
     /// The identity's settings: read receipts.
     #[command(subcommand)]
     Settings(SettingsCmd),
+
+    /// Skins: the library, the skin in use and the login skin.
+    #[command(subcommand)]
+    Skin(SkinCmd),
 
     /// The game we show.
     #[command(subcommand)]

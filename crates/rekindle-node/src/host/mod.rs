@@ -54,6 +54,7 @@ pub mod runtime;
 mod serve;
 pub mod session;
 pub mod shell_hooks;
+pub(crate) mod skin;
 pub mod undo;
 pub(crate) mod unlock;
 pub(crate) mod unlocked;

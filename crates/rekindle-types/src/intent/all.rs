@@ -192,5 +192,8 @@ impl IntentKind {
         Self::MarkVerified,
         Self::ClearVerification,
         Self::ArmQuickWipe,
+        Self::ImportSkin,
+        Self::SetLoginSkin,
+        Self::RemoveSkin,
     ];
 }
