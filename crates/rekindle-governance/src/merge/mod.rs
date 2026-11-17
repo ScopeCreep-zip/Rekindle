@@ -76,19 +76,24 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
     }
 }
 
-/// Resolution rerun until the invalidated set is stable.
+/// Resolution rerun until the invalidated set is stable; the settled
+/// round's invites carry the joins `invite_gate` counted on them.
 fn resolve_stable(cert: &GenesisCert, set: &resolve::OpSet<'_>) -> Round {
     let mut invalid = vec![false; set.ops.len()];
     let mut round = resolve_round(cert, set, &invalid);
-    for _ in 0..=set.ops.len() {
-        let next = gates::invalidated(cert, set, &round);
-        if next == invalid {
-            break;
+    let mut passes = 0;
+    loop {
+        let (next, uses) = gates::invalidated(cert, set, &round);
+        passes += 1;
+        if next == invalid || passes > set.ops.len() + 1 {
+            for (id, invite) in &mut round.state.invites {
+                invite.uses = uses.get(id).copied().unwrap_or(0);
+            }
+            return round;
         }
         invalid = next;
         round = resolve_round(cert, set, &invalid);
     }
-    round
 }
 
 /// One resolution pass with the ops in `invalid` left out.

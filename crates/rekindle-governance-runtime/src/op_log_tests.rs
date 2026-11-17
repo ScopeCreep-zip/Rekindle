@@ -178,6 +178,7 @@ fn a_gossiped_join_is_stored_only_against_a_live_invite_and_within_bounds() {
             secrets_record_key: "VLD0:s".into(),
             created: rekindle_governance::op::OpStamp::MIN,
             creator_pseudonym: PseudonymKey([1; 32]),
+            uses: 0,
         },
     );
     assert!(receive_bounded(&joined(&joiner, Some("live")), &state));

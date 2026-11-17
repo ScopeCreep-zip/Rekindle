@@ -116,6 +116,7 @@ pub(super) fn apply_community(
                     secrets_record_key: secrets_record_key.clone(),
                     created: stamp,
                     creator_pseudonym: author.clone(),
+                    uses: 0,
                 },
             );
         }

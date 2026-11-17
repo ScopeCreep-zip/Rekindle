@@ -86,6 +86,7 @@ mod tests {
             secrets_record_key: String::new(),
             created: crate::fixture::stamp(lamport),
             creator_pseudonym: creator,
+            uses: 0,
         }
     }
 

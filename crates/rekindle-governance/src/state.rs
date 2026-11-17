@@ -534,4 +534,8 @@ pub struct InviteState {
     /// active-invite quota in `invite_quota.rs` and for audit-log
     /// attribution.
     pub creator_pseudonym: PseudonymKey,
+    /// Joins counted on this invite: set by the merge after the gates
+    /// settle, to the count `invite_gate` reaches (plan E3.2 S7c.3), so a
+    /// checkpoint's `stateRoot` commits to it.
+    pub uses: u32,
 }

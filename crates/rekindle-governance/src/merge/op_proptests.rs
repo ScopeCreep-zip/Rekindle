@@ -248,6 +248,27 @@ fn invite_max_uses_caps_joins() {
     assert_eq!(joined_count, 1);
 }
 
+/// The merge writes the joins `invite_gate` counted into each invite's
+/// `uses` (plan E3.2 S7c.3), whatever order the ops arrive in, so a
+/// checkpoint's `stateRoot` commits to them; a join past the cap is not
+/// counted.
+#[test]
+fn invite_uses_are_in_the_state() {
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
+    let c1 = op(&pk(1), 1, &[&c0], 1, invite(2));
+    let mut ops = vec![c0, c1];
+    let uses =
+        |ops: &[VerifiedOp]| merge(&cert(&pk(1), AdmissionMode::Open), ops).invites[&[7; 16]].uses;
+    assert_eq!(uses(&ops), 0, "no join, no use");
+    let joins: Vec<VerifiedOp> = (2..=4)
+        .map(|m| op(&pk(m), 0, &[&ops[1]], u64::from(m), joined(m, Some("code"))))
+        .collect();
+    ops.extend(joins);
+    assert_eq!(uses(&ops), 2, "two joins counted, the third past the cap");
+    ops.reverse();
+    assert_eq!(uses(&ops), 2);
+}
+
 #[test]
 fn approval_required_holds_joiners_pending() {
     let c0 = op(&pk(1), 0, &[], 0, joined(1, None));

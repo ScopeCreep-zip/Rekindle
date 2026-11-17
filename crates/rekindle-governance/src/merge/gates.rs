@@ -13,8 +13,16 @@ use super::resolve::OpSet;
 use super::Round;
 use crate::power::removal_target;
 
-/// The ops the next round leaves out, from what `round` applied.
-pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) -> Vec<bool> {
+/// Joins counted per invite id by `invite_gate`.
+pub(super) type InviteUses = BTreeMap<[u8; 16], u32>;
+
+/// The ops the next round leaves out, from what `round` applied, and the
+/// joins `invite_gate` counted on each invite.
+pub(super) fn invalidated(
+    cert: &GenesisCert,
+    set: &OpSet<'_>,
+    round: &Round,
+) -> (Vec<bool>, InviteUses) {
     let n = set.ops.len();
     let mut invalid = vec![false; n];
     let removals: Vec<usize> = (0..n)
@@ -53,8 +61,8 @@ pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) ->
     }
     backdated_join_gate(set, &mut invalid);
     record_gate(cert, set, round, &mut invalid);
-    invite_gate(set, round, &mut invalid);
-    invalid
+    let uses = invite_gate(set, round, &mut invalid);
+    (invalid, uses)
 }
 
 /// A `MemberJoined` whose `issued_at` is earlier than the latest
@@ -125,9 +133,9 @@ fn rejoined(set: &OpSet<'_>, round: &Round, r: usize, o: usize) -> bool {
 /// that commitment in its causal past (not revoked there, not expired at
 /// its `issued_at`), and fewer than `max_uses` earlier joins on it
 /// (`max_uses` is in `1..=MAX_USES_PER_INVITE`; there are no unlimited
-/// invites).
-fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
-    let mut uses: BTreeMap<[u8; 16], u32> = BTreeMap::new();
+/// invites). Returns the joins it counted on each invite.
+fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) -> InviteUses {
+    let mut uses = InviteUses::new();
     for (o, op) in set.ops.iter().enumerate() {
         let GovernanceEntry::MemberJoined {
             invite_proof: Some(proof),
@@ -165,4 +173,5 @@ fn invite_gate(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
             *used += 1;
         }
     }
+    uses
 }

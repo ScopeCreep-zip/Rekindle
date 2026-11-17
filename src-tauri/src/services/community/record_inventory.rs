@@ -102,6 +102,7 @@ mod tests {
                 hash: rekindle_types::governance::OpHash([0; 32]),
             },
             creator_pseudonym: creator,
+            uses: 0,
         }
     }
 
