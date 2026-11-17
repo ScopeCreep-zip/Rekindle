@@ -4,6 +4,7 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_governance::state::GovernanceState;
+use rekindle_types::message::SendState;
 
 use super::{create_ann, offline_host, seed_registry_community};
 use crate::host::adapters::channel::{refusal, HostChannel};
@@ -172,5 +173,79 @@ async fn a_reply_is_stored_against_its_parent_row() {
         Some("msg_parent"),
         "the Retry re-sends the parent's id"
     );
+    host.shutdown().await.unwrap();
+}
+
+async fn post_state(host: &Host, owner: &str, id: &'static str) -> Option<SendState> {
+    let owner = owner.to_string();
+    (host.ctx.db.current().unwrap())
+        .call(move |c| rekindle_db::repo::messages::send_state(c, &owner, id))
+        .await
+        .unwrap()
+}
+
+/// Plan E3.2 S7l (F9-1): a key's install releases the posts waiting for it
+/// one release at a time. While another release holds the lock, the post
+/// stays waiting; once it is free, the post leaves `awaiting_key` (offline,
+/// its write cannot be made, so it settles `failed`; never left waiting).
+#[tokio::test]
+async fn a_release_of_waiting_posts_waits_for_the_one_running() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    add_channel(&host, &owner, None, None).await;
+    let posts = host.channel_posts().expect("the unlocked outbox");
+    let o = owner.clone();
+    (host.ctx.db.current().unwrap())
+        .call(move |c| {
+            rekindle_db::test_support::waiting_channel_post(c, &o, SEND_CHANNEL, "m1");
+            Ok(())
+        })
+        .await
+        .unwrap();
+    let post = rekindle_types::message::ChannelPost {
+        community: "c1".into(),
+        channel: SEND_CHANNEL.into(),
+        message: "m1".into(),
+        record_key: "VLD0:channel".into(),
+        subkey: 4,
+    };
+    posts.queue_waiting(&post, i64::MAX / 2).await.unwrap();
+    let running = host.ctx.outbox.channel_release_lock();
+    let guard = running.lock().await;
+    let gov = crate::daemon::dispatch::adapter(&host.ctx);
+    let channel_scope = rekindle_types::channel_keys::KeyScope::Channel(
+        rekindle_types::id::ChannelId::from_hex(SEND_CHANNEL).unwrap(),
+    );
+    for scope in [
+        rekindle_types::channel_keys::KeyScope::Community,
+        channel_scope,
+    ] {
+        gov.install_transferred_mek(
+            "c1",
+            scope,
+            &rekindle_transport::crypto::mek::Mek::from_bytes([7; 32], 1),
+        );
+    }
+    for _ in 0..20 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert_eq!(
+        post_state(&host, &owner, "m1").await,
+        Some(SendState::AwaitingKey),
+        "no release runs beside the one holding the lock"
+    );
+    drop(guard);
+    let mut left = false;
+    for _ in 0..100 {
+        if post_state(&host, &owner, "m1").await != Some(SendState::AwaitingKey) {
+            left = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert!(left, "released once the running release ends");
     host.shutdown().await.unwrap();
 }

@@ -271,6 +271,12 @@ impl OutboxSlot {
     pub(crate) fn channel_posts(&self) -> Option<ChannelPosts> {
         self.current.read().clone().map(ChannelPosts)
     }
+
+    /// The lock one release of key-waiting posts holds
+    /// ([`OutboxSlot::channel_releases`]).
+    pub(crate) fn channel_release_lock(&self) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(&self.channel_releases)
+    }
 }
 
 impl Host {

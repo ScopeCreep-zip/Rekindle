@@ -282,9 +282,13 @@ pub(crate) fn release_waiting_posts(gov: &HostGovernance, community_id: &str) {
     }
     let channel = HostChannel { gov: gov.clone() };
     let community = community_id.to_owned();
+    let releases = gov.context().outbox.channel_release_lock();
     rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(gov).spawn_or_drop(
         "channel posts released",
         async move {
+            // One release at a time: two would race to claim a channel's
+            // posts and could finish their writes out of order.
+            let _one_at_a_time = releases.lock().await;
             rekindle_channel::awaiting_key::release_waiting_posts(&channel, &community).await;
         },
     );

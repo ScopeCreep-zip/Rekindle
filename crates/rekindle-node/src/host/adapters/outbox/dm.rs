@@ -32,6 +32,11 @@ pub struct OutboxSlot {
     pub(super) current: RwLock<Option<Arc<Outbox<HostOutbox>>>>,
     pub(super) senders: Arc<Senders>,
     pub(super) governance_waiters: Arc<super::governance_op::OpWaiters>,
+    /// Held across one release of the posts waiting for a key (plan E3.2
+    /// S7l, F9-1), so two releases (a key install and a send queued behind a
+    /// waiting post) never interleave and write a channel's posts out of
+    /// order: each awaits its writes in FIFO order, so one at a time keeps it.
+    pub(super) channel_releases: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl OutboxSlot {
