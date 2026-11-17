@@ -26,6 +26,14 @@
 //! * **A control's box** (`button.secondary`) is its own range, measured
 //!   at its smallest in each window's minimum size and at its largest in
 //!   each window's maximum, each side capped by the window's.
+//! * **A painted text slot's backing** ([`css`]) covers the image's centre
+//!   (the box inset by its nine-slice widths) and the label's content box,
+//!   so the pixels under it are the box inset on each side by the smaller
+//!   of the slice and the slot's [`RegionSlot::label_inset`]; the edge
+//!   slices outside that band show unbacked and carry no text. Its insets
+//!   must leave a centre in every measured box (else `border-image` would
+//!   shrink them and the backing would not meet the centre), refused as
+//!   [`SkinRule::TextRegionNoCentre`].
 //! * **Window sizes** are `src-tauri/src/windows/mod.rs:54-72` (minimum)
 //!   and `:107` (the buddy list's maximum). A window without a maximum is
 //!   measured at [`MAX_IMAGE_SIDE`]: once a box side reaches the image's
@@ -93,6 +101,34 @@ fn sampled(axis: Axis, out: u32, src: u32) -> Vec<u32> {
             v
         }
     };
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// The distinct source indices an axis draws into the output span
+/// `[lo, out - hi)`, the band a painted text slot's backing covers. A
+/// nine-slice's `lo` and `hi` are at most its insets and the caller has
+/// checked the insets leave a centre in `out`, so they are drawn at 1:1.
+fn backed(axis: Axis, out: u32, src: u32, lo: u32, hi: u32) -> Vec<u32> {
+    let Axis::Slice(a, b) = axis else {
+        return sampled(axis, out, src);
+    };
+    if lo == 0 && hi == 0 {
+        return sampled(axis, out, src);
+    }
+    let (mid_out, mid_src) = (out - a - b, src - a - b);
+    let mut v: Vec<u32> = (lo..out - hi)
+        .map(|x| {
+            if x < a {
+                x
+            } else if x >= out - b {
+                src - (out - x)
+            } else {
+                a + nearest(x - a, mid_out, mid_src)
+            }
+        })
+        .collect();
     v.sort_unstable();
     v.dedup();
     v
@@ -232,7 +268,8 @@ fn colour_token(tokens: &Tokens<'_>, field: &str, id: &str) -> Result<[u8; 4], S
 /// # Errors
 /// An unknown region, a text region without `textBacking`, a backing or
 /// tint that is not a colour token, nine-slice insets that leave no
-/// middle, or the first text role below its floor at the worst pixel.
+/// middle in the image or (a painted text slot) no centre in its box, or
+/// the first text role below its floor at the worst pixel.
 pub fn validate(
     manifest: &SkinManifest,
     images: &BTreeMap<String, Vec<u8>>,
@@ -296,7 +333,12 @@ pub fn validate(
                     ));
                 };
                 let Some(backing) = backing else { continue };
+                let centre = match region.fit {
+                    RegionFit::NineSlice(i) if slot.css => Some(i),
+                    _ => None,
+                };
                 let ctx = Measure {
+                    centre,
                     region: id,
                     slot,
                     tokens: &tokens,
@@ -359,6 +401,9 @@ fn state_sizes(
 
 /// One region frame's measurement.
 struct Measure<'a> {
+    /// A painted text slot's nine-slice insets: its backing covers the
+    /// centre they leave, and the label band.
+    centre: Option<Insets>,
     region: &'a str,
     slot: &'a RegionSlot,
     tokens: &'a Tokens<'a>,
@@ -369,14 +414,61 @@ struct Measure<'a> {
 }
 
 impl Measure<'_> {
+    /// The source columns and rows under the backing in a `width` ×
+    /// `height` box of the `window` window: every drawn pixel, or for a
+    /// painted text slot's nine-slice the centre and the label band.
+    fn under_backing(
+        &self,
+        window: &str,
+        width: u32,
+        height: u32,
+    ) -> Result<(Vec<u32>, Vec<u32>), SkinRule> {
+        let (src_w, src_h) = self.image.dimensions();
+        let Some(insets) = self.centre else {
+            return Ok((
+                sampled(self.axes.0, width, src_w),
+                sampled(self.axes.1, height, src_h),
+            ));
+        };
+        let [top, right, bottom, left] =
+            [insets.top, insets.right, insets.bottom, insets.left].map(u32::from);
+        if left + right >= width || top + bottom >= height {
+            return Err(SkinRule::TextRegionNoCentre {
+                region: self.region.to_owned(),
+                top: insets.top,
+                right: insets.right,
+                bottom: insets.bottom,
+                left: insets.left,
+                window: window.to_owned(),
+                width,
+                height,
+            });
+        }
+        let (label_x, label_y) = self.slot.label_inset;
+        Ok((
+            backed(
+                self.axes.0,
+                width,
+                src_w,
+                left.min(label_x),
+                right.min(label_x),
+            ),
+            backed(
+                self.axes.1,
+                height,
+                src_h,
+                top.min(label_y),
+                bottom.min(label_y),
+            ),
+        ))
+    }
+
     fn check(&self) -> Result<(), SkinRule> {
-        let (w, h) = self.image.dimensions();
         for win in &WINDOWS {
             for ((side_w, side_h), at_max) in [(win.min, false), (win.max, true)] {
                 let bw = self.tokens.side(self.slot.width, side_w, at_max);
                 let bh = self.tokens.side(self.slot.height, side_h, at_max);
-                let cols = sampled(self.axes.0, bw, w);
-                let rows = sampled(self.axes.1, bh, h);
+                let (cols, rows) = self.under_backing(win.kind, bw, bh)?;
                 for t in self.slot.text {
                     let text = self.tokens.colours.get(t.token).copied().unwrap_or([0; 4]);
                     let ratio =
@@ -432,5 +524,21 @@ mod tests {
         assert_eq!(sampled(Axis::Slice(2, 2), 20, 10).len(), 10);
         // A 2 px box: the insets shrink to 1 + 1, the middle is not drawn.
         assert_eq!(sampled(Axis::Slice(2, 2), 2, 10), vec![1, 9]);
+    }
+
+    #[test]
+    fn the_backed_band_skips_the_outer_slice_pixels() {
+        // Insets 3 + 3 of 10 in a 20 px box, backed from 2 px in: source
+        // 0, 1, 8 and 9 (the outer edge pixels) are not under the backing.
+        assert_eq!(
+            backed(Axis::Slice(3, 3), 20, 10, 2, 2),
+            (2..8).collect::<Vec<_>>()
+        );
+        // Backed from the slice in: the centre only.
+        assert_eq!(
+            backed(Axis::Slice(3, 3), 20, 10, 3, 3),
+            (3..7).collect::<Vec<_>>()
+        );
+        assert_eq!(backed(Axis::Stretch, 2, 4, 1, 1), vec![1, 3]);
     }
 }

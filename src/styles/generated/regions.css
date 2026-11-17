@@ -211,8 +211,11 @@
     position: absolute;
     inset: 0;
     z-index: -1;
+    padding: inherit;
     border-radius: inherit;
-    background-color: var(--skin-region-button-secondary-backing);
+    background:
+      linear-gradient(var(--skin-region-button-secondary-backing), var(--skin-region-button-secondary-backing)) var(--skin-region-button-secondary-slice-left, 0px) var(--skin-region-button-secondary-slice-top, 0px) / calc(100% - var(--skin-region-button-secondary-slice-left, 0px) - var(--skin-region-button-secondary-slice-right, 0px)) calc(100% - var(--skin-region-button-secondary-slice-top, 0px) - var(--skin-region-button-secondary-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-button-secondary-backing), var(--skin-region-button-secondary-backing)) no-repeat content-box;
     pointer-events: none;
   }
   :where(:root[data-window-inactive]) .form-btn-secondary {

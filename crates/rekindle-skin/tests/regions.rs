@@ -40,10 +40,15 @@ fn region_manifest(id: &str, backing: Option<&str>) -> Value {
 
 /// Steps 1, 2 and 4, then F83 with `bg.panel` set to `panel`.
 fn run_f83(manifest_json: &Value, panel: [u8; 4]) -> Result<(), SkinError> {
+    run_f83_on(manifest_json, &speckled(), panel)
+}
+
+/// [`run_f83`] with `image` as `assets/title.png`.
+fn run_f83_on(manifest_json: &Value, image: &[u8], panel: [u8; 4]) -> Result<(), SkinError> {
     let bytes = common::zip(&[
         Entry::file("manifest.json", manifest_json.to_string().as_bytes()),
         Entry::file("dark.json", b"{}"),
-        Entry::file("assets/title.png", &speckled()),
+        Entry::file("assets/title.png", image),
     ]);
     let package = package::read(&bytes)?;
     let manifest = manifest::parse(&package)?;
@@ -112,6 +117,86 @@ fn f83_samples_the_secondary_button_in_its_own_box() {
         matches!(err.rule, SkinRule::MissingTextBacking { .. }),
         "{err:?}"
     );
+}
+
+/// `w` × `h` of `#101010` with white pixels at `white`.
+fn dark_with(w: u32, h: u32, white: &[(u32, u32)]) -> Vec<u8> {
+    let image = RgbaImage::from_fn(w, h, |x, y| {
+        if white.contains(&(x, y)) {
+            Rgba([255, 255, 255, 255])
+        } else {
+            Rgba([16, 16, 16, 255])
+        }
+    });
+    encode_png(&DynamicImage::ImageRgba8(image)).unwrap()
+}
+
+/// `button.secondary` as a nine-slice with these insets, backed by `bg.panel`.
+fn button_nine(top: u16, right: u16, bottom: u16, left: u16) -> Value {
+    let mut m = region_manifest("button.secondary", Some("bg.panel"));
+    m["regions"]["button.secondary"]["fit"] = json!({
+        "type": "nineSlice",
+        "data": { "top": top, "right": right, "bottom": bottom, "left": left }
+    });
+    m
+}
+
+#[test]
+fn f83_samples_a_nine_slice_button_under_its_backing_only() {
+    // Insets 3 of 12; the label sits at least 6 px (sides) and 2 px (top,
+    // bottom) in, so the backing covers x 3..w-3 and y 2..h-2 of the box.
+    let m = button_nine(3, 3, 3, 3);
+    let weak = [0, 0, 0, 0x40];
+    // White on the outer edge, outside the backing: the label is never on it.
+    run_f83_on(
+        &m,
+        &dark_with(12, 12, &[(0, 5), (5, 0), (11, 7), (7, 11)]),
+        weak,
+    )
+    .unwrap();
+    // White on the top slice's inner row, under the label band: measured.
+    for white in [(5, 2), (5, 5)] {
+        let err = run_f83_on(&m, &dark_with(12, 12, &[white]), weak).unwrap_err();
+        assert!(
+            matches!(err.rule, SkinRule::TextOverBitmap { .. }),
+            "{white:?}: {err:?}"
+        );
+    }
+}
+
+#[test]
+fn a_text_slot_whose_insets_leave_no_centre_is_refused() {
+    // 8 + 8 of a 20 px image leaves a middle in the image, but none in the
+    // button's smallest 16 px box: the backing would not meet the centre.
+    let err = run_f83_on(
+        &button_nine(8, 2, 8, 2),
+        &dark_with(20, 20, &[]),
+        [0, 0, 0, 0xff],
+    )
+    .unwrap_err();
+    let SkinRule::TextRegionNoCentre {
+        region,
+        top,
+        bottom,
+        window,
+        width,
+        height,
+        ..
+    } = err.rule
+    else {
+        panic!("{err:?}");
+    };
+    assert_eq!(
+        (region.as_str(), top, bottom, window.as_str(), width, height),
+        ("button.secondary", 8, 8, "login", 20, 16)
+    );
+    // 7 + 7 leaves a 2 px centre.
+    run_f83_on(
+        &button_nine(7, 2, 7, 2),
+        &dark_with(20, 20, &[]),
+        [0, 0, 0, 0xff],
+    )
+    .unwrap();
 }
 
 #[test]

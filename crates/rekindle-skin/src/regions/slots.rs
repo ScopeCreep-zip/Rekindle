@@ -17,8 +17,13 @@
 //!   (E7.7.2b): the element gets `isolation: isolate` and a `::before` with
 //!   `position: absolute; inset: 0; z-index: -1` whose background is the
 //!   backing token, so the stack is image, backing, label with no markup
-//!   change ([`super::css`]). Its F83 box is the button's own
-//!   ([`Extent::Range`]), never the window's.
+//!   change ([`super::css`]). The backing covers the image's centre (the
+//!   box inset by the nine-slice widths, so the edge slices stay visible)
+//!   and the label's content box, so the label is always over it even
+//!   where a variant's padding is narrower than a slice. Its F83 box is the
+//!   button's own ([`Extent::Range`]), never the window's, and the band it
+//!   samples on each side is the smaller of the slice and
+//!   [`RegionSlot::label_inset`].
 //! * A state is one of Rekindle's own enums. A skin image for a state the
 //!   slot does not list is refused, so every image a skin ships is one a
 //!   selector can show.
@@ -83,6 +88,10 @@ pub struct RegionSlot {
     pub states: &'static [RegionState],
     /// Painted by the app's generated `regions.css`.
     pub css: bool,
+    /// A painted text slot's least padding (horizontal, vertical) between
+    /// its padding edge and its label over all its variants: the backing
+    /// reaches at least this far in. Zero for a slot backed edge to edge.
+    pub label_inset: (u32, u32),
 }
 
 use RegionState::{Disabled, Down, Focused, Hover, WindowInactive};
@@ -107,6 +116,10 @@ const SECONDARY_WIDTH: Extent = Extent::Range {
 /// (`00-rules.css:207`, `91-top-level.css:368`) at its largest, rounded
 /// up to 40.
 const SECONDARY_HEIGHT: Extent = Extent::Range { min: 16, max: 40 };
+/// Its least padding: 6 px each side and 2 px top and bottom, in
+/// `.settings-member-actions` (`07-member-profile-popup.css:58`; the others
+/// are 16/8 px at `00-rules.css:207` and 10/5 px at `90-top-level.css:31`).
+const SECONDARY_LABEL_INSET: (u32, u32) = (6, 2);
 
 /// The region slots. Every slot appears in every window.
 pub const SLOTS: [RegionSlot; 17] = [
@@ -178,7 +191,8 @@ pub const SLOTS: [RegionSlot; 17] = [
         SECONDARY_HEIGHT,
         &[normal("text.base")],
     )
-    .painted(BUTTON),
+    .painted(BUTTON)
+    .label_inset(SECONDARY_LABEL_INSET),
 ];
 
 const fn normal(token: &'static str) -> RegionText {
@@ -201,6 +215,7 @@ const fn slot(
         text,
         states: &[],
         css: false,
+        label_inset: (0, 0),
     }
 }
 
@@ -213,6 +228,13 @@ impl RegionSlot {
         Self {
             states,
             css: true,
+            ..self
+        }
+    }
+
+    const fn label_inset(self, label_inset: (u32, u32)) -> Self {
+        Self {
+            label_inset,
             ..self
         }
     }

@@ -438,6 +438,17 @@ pub enum SkinRule {
         width: u32,
         height: u32,
     },
+    #[error("{region}: nine-slice insets {top}/{right}/{bottom}/{left} leave no centre for the text backing in its {width} × {height} px box in the {window} window")]
+    TextRegionNoCentre {
+        region: String,
+        top: u16,
+        right: u16,
+        bottom: u16,
+        left: u16,
+        window: String,
+        width: u32,
+        height: u32,
+    },
     #[error(
         "F83: {token} on {region} ({backing} over the image) in the {window} window at {width} × {height} px is {measured_x100}/100:1 at the worst pixel, at least {required_x100}/100:1 is required"
     )]

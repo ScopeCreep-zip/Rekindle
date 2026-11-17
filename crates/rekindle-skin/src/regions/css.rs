@@ -41,6 +41,17 @@
 //!   token's custom property, so it follows the active variant. Unset, the
 //!   background is transparent. Under `forced-colors: active` the `::before`
 //!   is not generated, so the user's `ButtonFace` is never covered.
+//! * The backing is two layers of that colour, so a skin's nine-slice
+//!   image shows its edge slices and not only the ring of its border: one
+//!   on the padding box inset by [`slice_property`] on each side (the
+//!   image's slice widths, which [`skin_css`] sets; 0 with no skin or a
+//!   `stretch`/`tile` image, so the backing is then the whole padding box),
+//!   and one on the content box (`padding: inherit`), so the label is over
+//!   the backing even in a variant whose padding is narrower than a slice
+//!   (`super::validate` samples exactly that band). `border-radius:
+//!   inherit` rounds the padding box; the inset layer is inside its corner
+//!   arcs once a slice reaches the radius, and the image's own corners are
+//!   the skin's.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -81,8 +92,18 @@ pub fn backing_property(slot: &str) -> String {
     format!("{}-backing", property(slot, None))
 }
 
+/// The custom property holding a text slot's nine-slice width on `side`
+/// (`top`, `right`, `bottom` or `left`).
+#[must_use]
+pub fn slice_property(slot: &str, side: &str) -> String {
+    format!("{}-slice-{side}", property(slot, None))
+}
+
+/// The sides of a nine-slice, in CSS order.
+const SIDES: [&str; 4] = ["top", "right", "bottom", "left"];
+
 /// The `::before` of a text slot's `elements` that paints the backing
-/// under the label.
+/// under the label: the image's centre and the label's content box.
 fn backing_rule(id: &str, elements: &[String]) -> Result<String, String> {
     if let Some(e) = elements.iter().find(|e| e.contains("::")) {
         return Err(format!(
@@ -90,10 +111,11 @@ fn backing_rule(id: &str, elements: &[String]) -> Result<String, String> {
         ));
     }
     let before: Vec<String> = elements.iter().map(|e| format!("{e}::before")).collect();
+    let [t, r, b, l] = SIDES.map(|side| format!("var({}, 0px)", slice_property(id, side)));
+    let fill = format!("linear-gradient(var({0}), var({0}))", backing_property(id));
     Ok(format!(
-        "  {} {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    border-radius: inherit;\n    background-color: var({});\n    pointer-events: none;\n  }}\n",
-        before.join(",\n  "),
-        backing_property(id)
+        "  {} {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background:\n      {fill} {l} {t} / calc(100% - {l} - {r}) calc(100% - {t} - {b}) no-repeat padding-box,\n      {fill} no-repeat content-box;\n    pointer-events: none;\n  }}\n",
+        before.join(",\n  ")
     ))
 }
 
@@ -261,7 +283,9 @@ fn dimensions(path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<(u32, u3
 /// custom properties, the images addressed under `base` (the Host's
 /// serving origin and path). `images` are the canonical images.
 ///
-/// A text slot's backing is written as its token's custom property.
+/// A text slot's backing is written as its token's custom property, and
+/// its image's slice widths (0 for `stretch` and `tile`) as
+/// [`slice_property`], where its backing's centre layer begins.
 ///
 /// `None` for a `base` outside its alphabet, a region image `images`
 /// lacks, a scrollbar button image whose header does not read, or a text
@@ -299,6 +323,13 @@ pub fn skin_css(
                 .iter()
                 .find(|e| e.id == token && matches!(e.ty, TokenType::Color))?;
             let _ = writeln!(decls, "    {}: var({});", backing_property(id), entry.css);
+            let widths = match region.fit {
+                RegionFit::NineSlice(i) => [i.top, i.right, i.bottom, i.left],
+                RegionFit::Stretch | RegionFit::Tile => [0; 4],
+            };
+            for (side, px) in SIDES.into_iter().zip(widths) {
+                let _ = writeln!(decls, "    {}: {px}px;", slice_property(id, side));
+            }
         }
         for (state, path) in &region.states {
             let h = href(base, path, images)?;

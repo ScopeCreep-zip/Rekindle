@@ -267,7 +267,13 @@ fn the_app_css_backs_a_text_slot_between_image_and_label() {
     // The element is the stacking context; its `::before` paints the backing
     // at z-index -1: after the border-image, under the label (CSS 2.1 App. E).
     assert!(css.contains("  .btn2 {\n    border-image: var(--skin-region-button-secondary);\n    image-rendering: pixelated;\n    position: relative;\n    isolation: isolate;\n  }\n"));
-    assert!(css.contains("  .btn2::before {\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    border-radius: inherit;\n    background-color: var(--skin-region-button-secondary-backing);\n    pointer-events: none;\n  }\n"));
+    // Its backing is the image's centre (the padding box inset by the
+    // slice widths, 0 with no skin) and the label's content box.
+    let fill = "linear-gradient(var(--skin-region-button-secondary-backing), var(--skin-region-button-secondary-backing))";
+    let [t, r, b, l] = ["top", "right", "bottom", "left"]
+        .map(|side| format!("var(--skin-region-button-secondary-slice-{side}, 0px)"));
+    let before = format!("  .btn2::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background:\n      {fill} {l} {t} / calc(100% - {l} - {r}) calc(100% - {t} - {b}) no-repeat padding-box,\n      {fill} no-repeat content-box;\n    pointer-events: none;\n  }}\n");
+    assert!(css.contains(&before), "{css}");
     assert_eq!(
         css.matches("isolation: isolate;").count(),
         1,
@@ -296,4 +302,28 @@ fn the_skin_css_writes_a_text_slot_backing_token() {
     assert!(
         css.contains("    --skin-region-button-secondary-backing: var(--color-xfire-bg-panel);\n")
     );
+}
+
+#[test]
+fn the_skin_css_writes_a_text_slot_slice_widths() {
+    // `nine()` is 2/3/2/3: the backing's centre layer starts there.
+    let mut m = manifest_with("button.secondary", &nine(), &[]);
+    m["regions"]["button.secondary"]["textBacking"] = json!("bg.panel");
+    let (manifest, canonical) = check(&m, (18, 16), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    for (side, px) in [("top", 2), ("right", 3), ("bottom", 2), ("left", 3)] {
+        let decl = format!("    --skin-region-button-secondary-slice-{side}: {px}px;\n");
+        assert!(css.contains(&decl), "{decl}");
+    }
+    // A stretched image has no slices: the backing is the whole box.
+    let mut m = manifest_with("button.secondary", &json!({ "type": "stretch" }), &[]);
+    m["regions"]["button.secondary"]["textBacking"] = json!("bg.panel");
+    let (manifest, canonical) = check(&m, (18, 16), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(css.contains("    --skin-region-button-secondary-slice-left: 0px;\n"));
+    // Only text slots carry slice widths.
+    let m = manifest_with("scrollbar.thumb", &nine(), &[]);
+    let (manifest, canonical) = check(&m, (18, 16), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(!css.contains("-slice-"));
 }
