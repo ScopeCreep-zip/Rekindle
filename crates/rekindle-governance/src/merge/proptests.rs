@@ -112,6 +112,8 @@ fn arb_entry() -> impl Strategy<Value = Stamped> {
                 GovernanceEntry::BanEntry {
                     target,
                     reason: None,
+                    // `ops_in_order` fills it, as a writer does.
+                    target_seq_frontier: 0,
                 },
             )
         }),

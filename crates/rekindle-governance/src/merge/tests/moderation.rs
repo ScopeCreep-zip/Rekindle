@@ -35,6 +35,7 @@ fn ban_unban_lww() {
             GovernanceEntry::BanEntry {
                 target: target.clone(),
                 reason: Some("spam".into()),
+                target_seq_frontier: 0,
             },
         ),
         at(

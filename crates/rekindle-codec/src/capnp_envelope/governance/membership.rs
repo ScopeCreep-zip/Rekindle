@@ -86,6 +86,7 @@ pub(super) fn read_member_removed(
         } else {
             None
         },
+        target_seq_frontier: p.get_target_seq_frontier(),
     })
 }
 
@@ -122,12 +123,14 @@ pub(super) fn write_member_removed(
     target: &rekindle_types::id::PseudonymKey,
     reason: Option<&str>,
     heads: &[SlotHead],
+    target_seq_frontier: u64,
 ) {
     super::super::sub_types::pseudonym_key_to_capnp(p.reborrow().init_target(), target);
     p.set_has_reason(reason.is_some());
     if let Some(r) = reason {
         p.set_reason(r);
     }
+    p.set_target_seq_frontier(target_seq_frontier);
     write_heads(
         p.init_heads(u32::try_from(heads.len()).unwrap_or(u32::MAX)),
         heads,

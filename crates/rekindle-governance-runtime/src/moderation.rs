@@ -43,6 +43,8 @@ pub async fn ban_member<D: GovernanceRuntimeDeps>(
         GovernanceEntry::BanEntry {
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
             reason: reason.map(ToString::to_string),
+            // `op_log::build_op` fills it from the op's deps.
+            target_seq_frontier: 0,
         },
     )
     .await?;
@@ -78,6 +80,8 @@ pub async fn remove_member<D: GovernanceRuntimeDeps>(
             target: PseudonymKey::from_hex_lossy(pseudonym_hex),
             reason: reason.map(str::to_owned),
             heads,
+            // `op_log::build_op` fills it from the op's deps.
+            target_seq_frontier: 0,
         },
     )
     .await?;

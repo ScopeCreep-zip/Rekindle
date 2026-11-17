@@ -90,6 +90,7 @@ fn ban_admin_blocked_by_equal_rank_admin() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(7),
         reason: None,
+        target_seq_frontier: 0,
     };
     assert!(
         !validate_write(&pseudo(5), &entry, &state),
@@ -104,6 +105,7 @@ fn ban_mod_succeeds_from_admin() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(6),
         reason: None,
+        target_seq_frontier: 0,
     };
     assert!(validate_write(&pseudo(5), &entry, &state));
 }
@@ -116,6 +118,7 @@ fn ban_admin_blocked_from_mod() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(5),
         reason: None,
+        target_seq_frontier: 0,
     };
     assert!(!validate_write(&pseudo(6), &entry, &state));
 }
@@ -128,6 +131,7 @@ fn ban_creator_blocked_from_admin() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(1),
         reason: None,
+        target_seq_frontier: 0,
     };
     assert!(!validate_write(&pseudo(5), &entry, &state));
 }
@@ -287,6 +291,7 @@ fn creator_can_act_at_any_rank() {
     let entry = GovernanceEntry::BanEntry {
         target: pseudo(5),
         reason: None,
+        target_seq_frontier: 0,
     };
     assert!(validate_write(&pseudo(1), &entry, &state));
 }

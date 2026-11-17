@@ -275,6 +275,7 @@ mod rsvps {
                             GovernanceEntry::BanEntry {
                                 target: pseudo(2),
                                 reason: None,
+                                target_seq_frontier: 0,
                             },
                         ),
                     ],

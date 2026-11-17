@@ -10,7 +10,19 @@ use crate::error::CodecError;
 use rekindle_types::governance::{AutoModAction, GovernanceEntry, ModReportTarget};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
-target_reason_writer!(write_ban_entry, ban_entry_payload);
+pub(super) fn write_ban_entry(
+    mut p: schema_pkg::ban_entry_payload::Builder<'_>,
+    target: &PseudonymKey,
+    reason: Option<&str>,
+    target_seq_frontier: u64,
+) {
+    pseudonym_key_to_capnp(p.reborrow().init_target(), target);
+    p.set_has_reason(reason.is_some());
+    if let Some(r) = reason {
+        p.set_reason(r);
+    }
+    p.set_target_seq_frontier(target_seq_frontier);
+}
 
 pub(super) fn write_unban_entry(
     mut p: schema_pkg::unban_entry_payload::Builder<'_>,
@@ -97,6 +109,7 @@ pub(super) fn read_ban_entry(
         } else {
             None
         },
+        target_seq_frontier: p.get_target_seq_frontier(),
     })
 }
 

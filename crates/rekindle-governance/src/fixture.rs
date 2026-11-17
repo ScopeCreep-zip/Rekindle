@@ -124,7 +124,16 @@ pub fn ops_in_order(subkeys: &[(PseudonymKey, Vec<Stamped>)]) -> Vec<VerifiedOp>
             }
         }
         let floor = out.last().map_or(1, |d| d.lamport().saturating_add(1));
-        let given = op(author, *seq, &deps, tag as u64, entry.clone());
+        // A removal's seq frontier, as a writer fills it: the chain puts
+        // every earlier op in its past (plan E3.2 S7c.3a).
+        let entry = match crate::power::removal_target(entry) {
+            Some(target) => crate::power::with_target_seq_frontier(
+                entry.clone(),
+                out.iter().filter(|o| o.author() == target).count() as u64,
+            ),
+            None => entry.clone(),
+        };
+        let given = op(author, *seq, &deps, tag as u64, entry);
         let next =
             VerifiedOp::assume_verified(given.op().clone(), given.hash(), lamport.max(floor));
         *seq += 1;

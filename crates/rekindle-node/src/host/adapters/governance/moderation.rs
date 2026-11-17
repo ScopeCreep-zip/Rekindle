@@ -124,6 +124,8 @@ pub fn permitted(
             &GovernanceEntry::BanEntry {
                 target,
                 reason: None,
+                // A permission check: the frontier is checked in `merge`.
+                target_seq_frontier: 0,
             },
             state,
         ),

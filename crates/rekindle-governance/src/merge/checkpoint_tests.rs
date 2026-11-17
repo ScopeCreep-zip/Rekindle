@@ -46,7 +46,7 @@ fn plus(author: u8, seq: u64, entry: GovernanceEntry) -> Vec<VerifiedOp> {
 
 #[test]
 fn the_state_root_is_equal_across_arrival_orders() {
-    let ops = plus(2, 1, kick(4));
+    let ops = plus(2, 1, kick(4, 1));
     let mut reversed = ops.clone();
     reversed.reverse();
     assert_eq!(root(&ops), root(&reversed));
@@ -57,11 +57,12 @@ fn the_state_root_changes_on_a_ban_a_removal_a_role_or_an_invite_use() {
     let ban = GovernanceEntry::BanEntry {
         target: pk(4),
         reason: None,
+        target_seq_frontier: 1,
     };
     let roots = [
         root(&community()),
         root(&plus(1, 6, ban)),
-        root(&plus(2, 1, kick(4))),
+        root(&plus(2, 1, kick(4, 1))),
         root(&plus(1, 6, role(7, 1))),
         root(&plus(5, 0, joined(5, Some("code")))),
     ];
@@ -96,7 +97,7 @@ fn a_removal_arriving_after_the_cut_applies_normally() {
         91,
         GovernanceEntry::Checkpoint(body(1, None, &[head(&ops)])),
     );
-    let removal = op(&pk(2), 1, &[&cp], 92, kick(4));
+    let removal = op(&pk(2), 1, &[&cp], 92, kick(4, 1));
     let without = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops).state;
     ops.extend([cp.clone(), removal.clone()]);
     let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
@@ -204,7 +205,7 @@ fn the_eligible_set_is_taken_at_the_previous_checkpoints_cut() {
         eligible_set(&c, Some(&at_cut)),
         (1..=4).map(pk).collect::<Vec<_>>()
     );
-    let (after_kick, _) = merge_cut(&c, &plus(2, 1, kick(4)));
+    let (after_kick, _) = merge_cut(&c, &plus(2, 1, kick(4, 1)));
     assert_eq!(
         eligible_set(&c, Some(&after_kick)),
         (1..=3).map(pk).collect::<Vec<_>>()

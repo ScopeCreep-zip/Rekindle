@@ -252,3 +252,35 @@ fn an_equivocators_ops_from_the_fork_on_are_equivocation_and_its_earlier_ops_sta
     assert_eq!(of(left.hash()), OpFate::Equivocation);
     assert_eq!(of(right.hash()), OpFate::Equivocation);
 }
+
+/// An op the merge masks after its author's removal (plan E3.2 S7c.3a)
+/// is held quarantined, like a refused one, never applied.
+#[test]
+fn a_masked_op_is_held_quarantined() {
+    let key = SigningKey::from_bytes(&[7; 32]);
+    let cert = cert(&key);
+    let state = GovernanceState::default();
+    let empty = VerifiedSet::default();
+    let (ours, bytes) = build_op(
+        "A",
+        &cert,
+        &state,
+        &empty,
+        &key,
+        meta("a"),
+        Deps::Frontier,
+        5,
+    )
+    .unwrap();
+    let set = verify_held("A", &[held(&ours, "m".into(), bytes, OpFate::Applied)]);
+    let mut outcome = merge::merge_outcome(&cert, &set.ops);
+    outcome.applied.clear();
+    let cause = ours.hash();
+    outcome.quarantined.push((
+        ours.hash(),
+        merge::QuarantineReason::AfterAuthorRemoval { cause },
+    ));
+    let verdicts = fates(&set, &outcome);
+    assert_eq!(verdicts.len(), 1);
+    assert_eq!(verdicts[0].fate, OpFate::Quarantined);
+}

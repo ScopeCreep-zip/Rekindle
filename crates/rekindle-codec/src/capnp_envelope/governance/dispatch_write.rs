@@ -60,9 +60,16 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::AutoModRule { .. } => {
             write_auto_mod_rule(b.reborrow().init_auto_mod_rule(), e);
         }
-        GovernanceEntry::BanEntry { target, reason } => {
-            write_ban_entry(b.reborrow().init_ban_entry(), target, reason.as_deref());
-        }
+        GovernanceEntry::BanEntry {
+            target,
+            reason,
+            target_seq_frontier,
+        } => write_ban_entry(
+            b.reborrow().init_ban_entry(),
+            target,
+            reason.as_deref(),
+            *target_seq_frontier,
+        ),
         GovernanceEntry::CategoryArchived { category_id } => {
             write_category_archived(b.reborrow().init_category_archived(), *category_id);
         }
@@ -228,11 +235,13 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             target,
             reason,
             heads,
+            target_seq_frontier,
         } => write_member_removed(
             b.reborrow().init_member_removed(),
             target,
             reason.as_deref(),
             heads,
+            *target_seq_frontier,
         ),
         GovernanceEntry::Checkpoint(c) => {
             super::checkpoint::write_checkpoint(b.reborrow().init_checkpoint(), c);

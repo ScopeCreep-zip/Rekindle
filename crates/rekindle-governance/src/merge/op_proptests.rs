@@ -7,7 +7,7 @@ use rekindle_types::governance::{AdmissionMode, GovernanceEntry, InviteProof};
 use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions::{CREATE_INVITES, KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
 
-use super::{merge, merge_outcome};
+use super::{merge, merge_outcome, MergeOutcome, QuarantineReason};
 use crate::fixture::{cert, meta, op, op_at};
 use crate::invite_quota::MAX_USES_PER_INVITE;
 use crate::op::VerifiedOp;
@@ -43,22 +43,24 @@ pub(super) fn role(id: u8, position: u32) -> GovernanceEntry {
     }
 }
 
-fn assign(target: u8, id: u8) -> GovernanceEntry {
+pub(super) fn assign(target: u8, id: u8) -> GovernanceEntry {
     GovernanceEntry::RoleAssignment {
         target: pk(target),
         role_id: RoleId([id; 16]),
     }
 }
 
-pub(super) fn kick(target: u8) -> GovernanceEntry {
+/// A durable kick of `target`, `frontier` of its ops in the kick's past.
+pub(super) fn kick(target: u8, frontier: u64) -> GovernanceEntry {
     GovernanceEntry::MemberRemoved {
         target: pk(target),
         reason: None,
         heads: Vec::new(),
+        target_seq_frontier: frontier,
     }
 }
 
-fn invite(max_uses: u32) -> GovernanceEntry {
+pub(super) fn invite(max_uses: u32) -> GovernanceEntry {
     GovernanceEntry::InviteCreated {
         invite_id: [7; 16],
         code_hash: "code".into(),
@@ -87,7 +89,21 @@ pub(super) fn head(ops: &[VerifiedOp]) -> &VerifiedOp {
     ops.last().expect("ops")
 }
 
-fn find(ops: &[VerifiedOp], author: u8, seq: u64) -> &VerifiedOp {
+/// Whether `masked` is quarantined after its author's removal `cause`.
+pub(super) fn quarantined_by(
+    outcome: &MergeOutcome,
+    masked: &VerifiedOp,
+    cause: &VerifiedOp,
+) -> bool {
+    outcome.quarantined.contains(&(
+        masked.hash(),
+        QuarantineReason::AfterAuthorRemoval {
+            cause: cause.hash(),
+        },
+    ))
+}
+
+pub(super) fn find(ops: &[VerifiedOp], author: u8, seq: u64) -> &VerifiedOp {
     ops.iter()
         .find(|o| o.author() == &pk(author) && o.op().seq == seq)
         .expect("op")
@@ -97,7 +113,7 @@ fn find(ops: &[VerifiedOp], author: u8, seq: u64) -> &VerifiedOp {
 fn every_variant_has_a_power_row() {
     // The match in `class_of` is exhaustive, so this compiles only with a
     // row per variant; the rows below pin the ones resolution relies on.
-    assert_eq!(class_of(&kick(2)), OpClass::Power);
+    assert_eq!(class_of(&kick(2, 1)), OpClass::Power);
     assert_eq!(class_of(&assign(2, 6)), OpClass::Power);
     assert_eq!(class_of(&joined(1, None)), OpClass::NonPower);
     assert_eq!(
@@ -270,59 +286,29 @@ fn invite_uses_are_in_the_state() {
 }
 
 #[test]
-fn approval_required_holds_joiners_pending() {
-    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
-    let c1 = op(&pk(1), 1, &[&c0], 1, invite(MAX_USES_PER_INVITE));
-    let a0 = op(&pk(2), 0, &[&c1], 2, joined(2, Some("code")));
-    let b0 = op(&pk(3), 0, &[&c1], 3, joined(3, Some("code")));
-    let a1 = op(&pk(2), 1, &[&a0, &b0], 4, assign(2, 6));
-    let approve = op(
-        &pk(1),
-        2,
-        &[&a1],
-        5,
-        GovernanceEntry::MemberApproved { target: pk(2) },
-    );
-    let reject = op(
-        &pk(1),
-        3,
-        &[&approve],
-        6,
-        GovernanceEntry::MemberRejected {
-            target: pk(3),
-            reason: None,
-        },
-    );
-    let cert = cert(&pk(1), AdmissionMode::ApprovalRequired);
-    let pending = merge(&cert, &[c0.clone(), c1.clone(), a0.clone(), b0.clone()]);
-    assert!(pending.pending_members.contains_key(&pk(2)));
-    assert!(!pending.members.contains_key(&pk(2)));
-    let state = merge(&cert, &[c0, c1, a0, b0, a1, approve, reject]);
-    assert!(state.members.contains_key(&pk(2)), "approved");
-    assert!(!state.members.contains_key(&pk(3)), "rejected");
-    assert!(!state.pending_members.contains_key(&pk(3)));
-}
-
-#[test]
 fn removal_invalidates_the_removed_managers_concurrent_actions() {
     let mut ops = community();
     // Manager 2 (rank 6) removes manager 3 (rank 5) while 3, unaware,
     // removes member 4: 3's concurrent kick is invalidated.
-    let k2 = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(3));
-    let k3 = op(&pk(3), 1, &[head(&ops), find(&ops, 3, 0)], 31, kick(4));
-    ops.extend([k2, k3]);
-    let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
-    assert!(!state.members.contains_key(&pk(3)));
+    let k2 = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(3, 1));
+    let k3 = op(&pk(3), 1, &[head(&ops), find(&ops, 3, 0)], 31, kick(4, 1));
+    ops.extend([k2.clone(), k3.clone()]);
+    let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
+    assert!(!outcome.state.members.contains_key(&pk(3)));
     assert!(
-        state.members.contains_key(&pk(4)),
+        outcome.state.members.contains_key(&pk(4)),
         "the removed manager's kick is void"
+    );
+    assert!(
+        quarantined_by(&outcome, &k3, &k2),
+        "masked by k2's frontier"
     );
 }
 
 #[test]
 fn a_removal_names_its_author_as_the_remover() {
     let mut ops = community();
-    let k = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(4));
+    let k = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(4, 1));
     let ban = op(
         &pk(1),
         6,
@@ -331,6 +317,7 @@ fn a_removal_names_its_author_as_the_remover() {
         GovernanceEntry::BanEntry {
             target: pk(3),
             reason: Some("spam".into()),
+            target_seq_frontier: 1,
         },
     );
     ops.extend([k, ban]);
@@ -352,7 +339,7 @@ fn a_removal_names_its_author_as_the_remover() {
 #[test]
 fn rejoin_after_removal_is_allowed_and_concurrent_acts_stay_void() {
     let mut ops = community();
-    let k = op(&pk(1), 6, &[head(&ops)], 40, kick(4));
+    let k = op(&pk(1), 6, &[head(&ops)], 40, kick(4, 1));
     let concurrent = op(
         &pk(4),
         1,
@@ -367,7 +354,9 @@ fn rejoin_after_removal_is_allowed_and_concurrent_acts_stay_void() {
     ops.push(rejoin);
     let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
     assert!(outcome.state.members.contains_key(&pk(4)), "re-joined");
-    assert!(outcome.refused.contains(&concurrent.hash()));
+    // The concurrent join is masked by the kick's seq frontier.
+    assert!(quarantined_by(&outcome, &concurrent, &k));
+    assert!(!outcome.refused.contains(&concurrent.hash()));
 }
 
 #[test]
@@ -384,16 +373,17 @@ fn strong_removal_chains_transitively() {
     let c_assign = op(&pk(1), 7, &[&c_role], 52, assign(5, 4));
     ops.extend([c_join, c_role, c_assign]);
     let seen = head(&ops).clone();
-    let a = op(&pk(2), 1, &[&seen, find(&ops, 2, 0)], 53, kick(3));
-    let b = op(&pk(3), 1, &[&seen, find(&ops, 3, 0)], 54, kick(5));
-    let c = op(&pk(5), 1, &[&seen, find(&ops, 5, 0)], 55, kick(4));
+    let a = op(&pk(2), 1, &[&seen, find(&ops, 2, 0)], 53, kick(3, 1));
+    let b = op(&pk(3), 1, &[&seen, find(&ops, 3, 0)], 54, kick(5, 1));
+    let c = op(&pk(5), 1, &[&seen, find(&ops, 5, 0)], 55, kick(4, 1));
     ops.extend([a.clone(), b.clone(), c.clone()]);
     let outcome = merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops);
     assert!(!outcome.state.members.contains_key(&pk(3)), "A removed B");
     assert!(
-        outcome.refused.contains(&b.hash()),
-        "B's removal of C is void"
+        quarantined_by(&outcome, &b, &a),
+        "B's removal of C is masked by A's frontier"
     );
+    assert!(!outcome.refused.contains(&b.hash()));
     assert!(outcome.state.members.contains_key(&pk(5)), "C stays");
     assert!(outcome.applied.contains(&c.hash()), "C's own kick stands");
     assert!(!outcome.state.members.contains_key(&pk(4)));
@@ -561,8 +551,8 @@ proptest! {
     #[test]
     fn one_op_set_one_state(seed in any::<u64>()) {
         let mut ops = community();
-        let k2 = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(3));
-        let k3 = op(&pk(3), 1, &[head(&ops), find(&ops, 3, 0)], 31, kick(4));
+        let k2 = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 30, kick(3, 1));
+        let k3 = op(&pk(3), 1, &[head(&ops), find(&ops, 3, 0)], 31, kick(4, 1));
         let m = op(&pk(4), 1, &[head(&ops), find(&ops, 4, 0)], 32, meta("m"));
         ops.extend([k2, k3, m]);
         let mut shuffled = ops.clone();
@@ -579,3 +569,5 @@ proptest! {
 
 #[path = "departure_tests.rs"]
 mod departure_tests;
+#[path = "time_of_op_tests.rs"]
+mod time_of_op_tests;

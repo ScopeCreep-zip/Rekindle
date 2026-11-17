@@ -167,6 +167,9 @@ struct BanEntryPayload @0xbcd4eb16e9bf1c2e {
     hasReason            @1 :Bool;
     reason               @2 :Text;
     obsoleteLamport              @3 :UInt64;
+    # The number of the target's ops in the ban's causal past (s_k + 1;
+    # 0: none): every later op of the target is masked (plan E3.2 S7c.3a).
+    targetSeqFrontier    @4 :UInt64;
 }
 
 struct UnbanEntryPayload @0xbdd4eb16e9bf1c2e {
@@ -224,6 +227,9 @@ struct MemberRemovedPayload {
     # backfilled post of the member is kept only from exactly the recorded
     # slot value, seq and digest (A/B finding R3-8, plan S9).
     heads                @3 :List(SlotHeadPayload);
+    # The number of the target's ops in the removal's causal past (s_k + 1;
+    # 0: none): every later op of the target is masked (plan E3.2 S7c.3a).
+    targetSeqFrontier    @4 :UInt64;
 }
 
 # A governance checkpoint (plan E3.2 S7c.3): an acceleration hint over a

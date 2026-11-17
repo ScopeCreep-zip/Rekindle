@@ -17,7 +17,7 @@ use crate::state::GovernanceState;
 #[must_use]
 pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState, CutIndex) {
     let set = resolve::prepare(cut_ops);
-    let round = resolve_stable(cert, &set);
+    let (round, _) = resolve_stable(cert, &set);
     let mut authors: BTreeMap<[u8; 32], (u64, OpHash)> = BTreeMap::new();
     for op in &set.ops {
         let entry = (op.op().seq, op.hash());

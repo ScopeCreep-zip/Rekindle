@@ -124,9 +124,15 @@ pub enum GovernanceEntry {
     },
 
     /// Ban a member. CRDT: LWW-Flag per target (UnbanEntry reverses).
+    ///
+    /// `target_seq_frontier` is the number of `target`'s ops in the ban's
+    /// causal past (its highest seq there plus one; 0 when none): every op
+    /// of `target` at a seq at or above it is masked, whatever deps it
+    /// cites (plan E3.2 S7c.3a, strong removal per author).
     BanEntry {
         target: PseudonymKey,
         reason: Option<String>,
+        target_seq_frontier: u64,
     },
 
     /// Unban a member. Must have higher lamport than the corresponding BanEntry.
@@ -182,6 +188,9 @@ pub enum GovernanceEntry {
         reason: Option<String>,
         #[serde(default)]
         heads: Vec<SlotHead>,
+        /// The number of `target`'s ops in the removal's causal past, as
+        /// on `BanEntry` (plan E3.2 S7c.3a).
+        target_seq_frontier: u64,
     },
 
     /// Admit a pending member. Requires `KICK_MEMBERS`.

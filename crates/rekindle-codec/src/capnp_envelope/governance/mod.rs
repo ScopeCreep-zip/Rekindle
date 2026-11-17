@@ -274,6 +274,7 @@ mod admission_wire_tests {
                     seq: 7,
                     digest: [7; 32],
                 }],
+                target_seq_frontier: 5,
             });
         }
     }

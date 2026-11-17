@@ -29,6 +29,7 @@ fn authored() -> Vec<(PseudonymKey, Vec<Stamped>)> {
                 GovernanceEntry::BanEntry {
                     target: key(3),
                     reason: Some("spam".into()),
+                    target_seq_frontier: 0,
                 },
             ),
         ],

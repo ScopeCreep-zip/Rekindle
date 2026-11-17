@@ -243,6 +243,7 @@ fn a_re_join_cites_its_own_previous_op_and_its_removal() {
             target: rejoiner.author(),
             reason: None,
             heads: Vec::new(),
+            target_seq_frontier: 0,
         },
         Deps::Frontier,
     );
@@ -297,6 +298,7 @@ fn a_join_concurrent_with_the_inviters_removal_is_still_filtered() {
         target: inviter.author(),
         reason: None,
         heads: Vec::new(),
+        target_seq_frontier: 0,
     };
     let base = vec![world.op_at(&creator, 5), inviter_joined.hash()];
     world.author(&creator, removal, Deps::Join(base));

@@ -1,6 +1,7 @@
 //! The causal gates between resolution rounds (plan E3.2): strong removal
-//! (p2panda-auth), re-join after removal, approval under
-//! `ApprovalRequired` (Q6), invite proofs against the `InviteCreated`
+//! per author (p2panda-auth, S7c.3a), re-join after removal, approval
+//! under `ApprovalRequired` (Q6) at the op's anchor, invite proofs
+//! against the `InviteCreated`
 //! set and its `max_uses` cap, joins backdated before their own deps
 //! (SEC-3), and one member per member record.
 
@@ -11,59 +12,119 @@ use rekindle_types::id::PseudonymKey;
 
 use super::resolve::OpSet;
 use super::Round;
-use crate::power::removal_target;
+use crate::power::{removal_target, target_seq_frontier};
 
 /// Joins counted per invite id by `invite_gate`.
 pub(super) type InviteUses = BTreeMap<[u8; 16], u32>;
 
-/// The ops the next round leaves out, from what `round` applied, and the
-/// joins `invite_gate` counted on each invite.
-pub(super) fn invalidated(
-    cert: &GenesisCert,
-    set: &OpSet<'_>,
-    round: &Round,
-) -> (Vec<bool>, InviteUses) {
+/// What the gates decided from one round.
+pub(super) struct Gated {
+    /// The ops the next round leaves out.
+    pub invalid: Vec<bool>,
+    /// Per op, the `MemberRemoved` or `BanEntry` that masks it.
+    pub masked_by: Vec<Option<usize>>,
+    /// The joins `invite_gate` counted on each invite.
+    pub uses: InviteUses,
+}
+
+/// The ops the next round leaves out, from what `round` applied.
+pub(super) fn invalidated(cert: &GenesisCert, set: &OpSet<'_>, round: &Round) -> Gated {
     let n = set.ops.len();
     let mut invalid = vec![false; n];
-    let removals: Vec<usize> = (0..n)
-        .filter(|&r| round.applied[r])
-        .filter(|&r| removal_target(set.ops[r].body()).is_some_and(|t| t != set.ops[r].author()))
-        .collect();
-    for &r in &removals {
-        let remover = set.ops[r].author();
-        let Some(target) = removal_target(set.ops[r].body()) else {
-            continue;
-        };
-        for o in (0..n).filter(|&o| set.ops[o].author() == target) {
-            let mutual = removal_target(set.ops[o].body()) == Some(remover);
-            if set.past.concurrent(o, r) {
-                invalid[o] |= !mutual;
-            } else if set.past.contains(o, r) && !rejoined(set, round, r, o) {
-                invalid[o] = true;
-            }
-        }
-    }
-    if round.state.effective_admission_mode() == AdmissionMode::ApprovalRequired {
-        for (o, op) in set.ops.iter().enumerate() {
-            let self_membership = matches!(
-                op.body(),
-                GovernanceEntry::MemberJoined { .. } | GovernanceEntry::MemberLeft { .. }
-            );
-            let approved = round
-                .state
-                .admitted
-                .get(op.author())
-                .is_some_and(|d| d.approved);
-            if op.author() != &cert.creator_pseudonym && !self_membership && !approved {
-                invalid[o] = true;
-            }
-        }
-    }
+    let masked_by = strong_removal(set, round, &mut invalid);
+    approval_gate(cert, set, round, &mut invalid);
     backdated_join_gate(set, &mut invalid);
     record_gate(cert, set, round, &mut invalid);
     checkpoint_gate(set, round, &mut invalid);
     let uses = invite_gate(set, round, &mut invalid);
-    (invalid, uses)
+    Gated {
+        invalid,
+        masked_by,
+        uses,
+    }
+}
+
+/// Strong removal per author (plan E3.2 S7c.3a). A `MemberRemoved` or
+/// `BanEntry` masks every op of its target at a seq at or above its target
+/// seq frontier, whatever deps the op cites: the target's seqs are
+/// contiguous along `prev`, so its next op takes the next seq whatever it
+/// cites. Its ops below the frontier stand, judged at their own position.
+/// A demotion (`RoleUnassignment`) carries no frontier and masks the
+/// target's ops concurrent with it or after it. A concurrent removal of
+/// the remover by its target (mutual) stands, and a re-join after the
+/// removal lifts it for the ops that follow the re-join. Returns, per op,
+/// the first removal (in stamp order) that masks it.
+fn strong_removal(set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) -> Vec<Option<usize>> {
+    let n = set.ops.len();
+    let mut masked_by = vec![None; n];
+    let removals = (0..n)
+        .filter(|&r| round.applied[r])
+        .filter(|&r| removal_target(set.ops[r].body()).is_some_and(|t| t != set.ops[r].author()));
+    for r in removals {
+        let remover = set.ops[r].author();
+        let body = set.ops[r].body();
+        let Some(target) = removal_target(body) else {
+            continue;
+        };
+        let frontier = target_seq_frontier(body);
+        for o in (0..n).filter(|&o| set.ops[o].author() == target) {
+            let mutual = removal_target(set.ops[o].body()) == Some(remover);
+            let concurrent = set.past.concurrent(o, r);
+            let after = match frontier {
+                Some(frontier) => set.ops[o].op().seq >= frontier,
+                None => concurrent || set.past.contains(o, r),
+            };
+            let exempt = if concurrent {
+                mutual
+            } else {
+                rejoined(set, round, r, o)
+            };
+            if after && !exempt {
+                invalid[o] = true;
+                if frontier.is_some() && masked_by[o].is_none() {
+                    masked_by[o] = Some(r);
+                }
+            }
+        }
+    }
+    masked_by
+}
+
+/// Under `ApprovalRequired`, an op of a member not approved at the op's
+/// anchor (the admission decisions among the power ops in its causal
+/// past, the last one standing) is refused, its own join and leave aside
+/// (plan E3.2 S7c.3a: `admitted` at the op's anchor, not the final one).
+fn approval_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &mut [bool]) {
+    if round.state.effective_admission_mode() != AdmissionMode::ApprovalRequired {
+        return;
+    }
+    let mut decisions: HashMap<&PseudonymKey, Vec<(usize, bool)>> = HashMap::new();
+    for (at, &p) in round.power_order.iter().enumerate() {
+        match set.ops[p].body() {
+            GovernanceEntry::MemberApproved { target } => {
+                decisions.entry(target).or_default().push((at, true));
+            }
+            GovernanceEntry::MemberRejected { target, .. } => {
+                decisions.entry(target).or_default().push((at, false));
+            }
+            _ => {}
+        }
+    }
+    for (o, op) in set.ops.iter().enumerate() {
+        let self_membership = matches!(
+            op.body(),
+            GovernanceEntry::MemberJoined { .. } | GovernanceEntry::MemberLeft { .. }
+        );
+        let approved = round.anchor[o].is_some_and(|anchor| {
+            decisions
+                .get(op.author())
+                .and_then(|d| d.iter().rev().find(|(at, _)| *at <= anchor))
+                .is_some_and(|(_, approved)| *approved)
+        });
+        if op.author() != &cert.creator_pseudonym && !self_membership && !approved {
+            invalid[o] = true;
+        }
+    }
 }
 
 /// A `MemberJoined` whose `issued_at` is earlier than the latest

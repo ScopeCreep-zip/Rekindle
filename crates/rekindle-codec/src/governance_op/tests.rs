@@ -77,6 +77,7 @@ fn channel_and_role_bodies() -> Vec<GovernanceEntry> {
         E::BanEntry {
             target: pk(2),
             reason: Some(s("spam")),
+            target_seq_frontier: 9,
         },
         E::UnbanEntry { target: pk(2) },
     ]
@@ -104,6 +105,7 @@ fn member_bodies() -> Vec<GovernanceEntry> {
             target: pk(3),
             reason: None,
             heads: Vec::new(),
+            target_seq_frontier: 4,
         },
         E::MemberApproved { target: pk(4) },
         E::MemberRejected {
