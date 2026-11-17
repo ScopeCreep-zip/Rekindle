@@ -171,6 +171,65 @@ pub fn set_read_receipts_enabled(
     Ok(())
 }
 
+/// The identity's skin and sound bank (plan E7.7.2), each a
+/// `builtin:<id>` or `pkg:<hash>` id. Device-bound: never synced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkinChoice {
+    pub skin_id: String,
+    pub sound_bank: String,
+}
+
+/// The identity's skin and sound bank; the column defaults when no row
+/// was saved.
+///
+/// # Errors
+/// The query failed.
+pub fn skin_choice(conn: &Connection, owner_key: &str) -> rusqlite::Result<SkinChoice> {
+    let stored = conn
+        .query_row(
+            "SELECT skin_id, sound_bank FROM app_settings WHERE owner_key = ?1",
+            params![owner_key],
+            |row| {
+                Ok(SkinChoice {
+                    skin_id: row.get(0)?,
+                    sound_bank: row.get(1)?,
+                })
+            },
+        )
+        .optional()?;
+    match stored {
+        Some(choice) => Ok(choice),
+        None => conn.query_row(
+            "SELECT \
+             (SELECT dflt_value FROM pragma_table_info('app_settings') WHERE name = 'skin_id'), \
+             (SELECT dflt_value FROM pragma_table_info('app_settings') WHERE name = 'sound_bank')",
+            [],
+            |row| {
+                let unquote = |v: String| v.trim_matches('\'').to_owned();
+                Ok(SkinChoice {
+                    skin_id: unquote(row.get(0)?),
+                    sound_bank: unquote(row.get(1)?),
+                })
+            },
+        ),
+    }
+}
+
+/// Set the identity's skin; the row's other settings stay. The caller has
+/// checked that `skin_id` names a built-in or a `skin_packages` row; the
+/// column's CHECK refuses any other shape.
+///
+/// # Errors
+/// The write failed or the CHECK refused the id.
+pub fn set_skin_id(conn: &Connection, owner_key: &str, skin_id: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (owner_key, skin_id) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET skin_id = excluded.skin_id",
+        params![owner_key, skin_id],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,6 +281,32 @@ mod tests {
         assert!(stored.read_receipts_enabled, "the bulk save leaves it");
         set_read_receipts_enabled(&conn, OWNER, false).unwrap();
         assert!(!load(&conn, OWNER).unwrap().read_receipts_enabled);
+    }
+
+    #[test]
+    fn the_skin_defaults_to_symbiosis_and_its_check_refuses_other_shapes() {
+        let mut conn = fixture::conn();
+        let defaults = SkinChoice {
+            skin_id: "builtin:symbiosis".into(),
+            sound_bank: "builtin:defaults".into(),
+        };
+        assert_eq!(skin_choice(&conn, OWNER).unwrap(), defaults);
+        // A row made by another setting keeps the defaults.
+        save(&mut conn, OWNER, &Preferences::default()).unwrap();
+        assert_eq!(skin_choice(&conn, OWNER).unwrap(), defaults);
+        set_skin_id(&conn, OWNER, "pkg:00").unwrap();
+        assert_eq!(skin_choice(&conn, OWNER).unwrap().skin_id, "pkg:00");
+        for bad in ["dev:00", "symbiosis", "", "Builtin:x"] {
+            assert!(set_skin_id(&conn, OWNER, bad).is_err(), "{bad:?}");
+        }
+        for bad in ["dev:00", "defaults"] {
+            let refused = conn.execute(
+                "UPDATE app_settings SET sound_bank = ?2 WHERE owner_key = ?1",
+                params![OWNER, bad],
+            );
+            assert!(refused.is_err(), "{bad:?}");
+        }
+        assert_eq!(skin_choice(&conn, OWNER).unwrap().skin_id, "pkg:00");
     }
 
     #[test]

@@ -16,8 +16,9 @@
 //!
 //! Everything Rekindle owns per identity lives under `state/`, its file
 //! cache `state/{pk}.files/` included (plan E3.0a), so the sweep is one
-//! directory; the node lock, logs, webview data and the user's
-//! `config.toml` live outside it and survive.
+//! directory; the node lock, logs, webview data, the device login skin
+//! `data/skins/` (plan E7.7.2) and the user's `config.toml` live outside it
+//! and survive.
 
 use std::path::{Path, PathBuf};
 

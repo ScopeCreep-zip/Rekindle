@@ -480,7 +480,26 @@ CREATE TABLE IF NOT EXISTS app_settings (
     -- bulk preference save; it never goes on the wire.
     read_receipts_enabled INTEGER NOT NULL DEFAULT 0
         CHECK(read_receipts_enabled IN (0, 1)),
+    -- The identity's skin and sound bank (plan E7.7.2): a built-in
+    -- (`rekindle_skin::builtin`) or a `skin_packages` row (`pkg:<hash>`),
+    -- which the Host checks before writing. Device-bound, not synced.
+    skin_id TEXT NOT NULL DEFAULT 'builtin:symbiosis'
+        CHECK(skin_id GLOB 'builtin:*' OR skin_id GLOB 'pkg:*'),
+    sound_bank TEXT NOT NULL DEFAULT 'builtin:defaults'
+        CHECK(sound_bank GLOB 'builtin:*' OR sound_bank GLOB 'pkg:*'),
     PRIMARY KEY (owner_key)
+);
+
+-- The identity's skin library (plan E7.7.2): each package the helper
+-- validated, as its canonical bytes, addressed by their BLAKE3.
+CREATE TABLE IF NOT EXISTS skin_packages (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    hash TEXT NOT NULL CHECK(length(hash) = 64 AND hash NOT GLOB '*[^0-9a-f]*'),
+    manifest_json TEXT NOT NULL,
+    bytes BLOB NOT NULL CHECK(length(bytes) <= 16777216),
+    imported_at INTEGER NOT NULL,
+    origin TEXT NOT NULL CHECK(origin IN ('import', 'received', 'authored')),
+    PRIMARY KEY (owner_key, hash)
 );
 
 -- The input-channel choice per input device (`Preferences::input_channels`,

@@ -97,6 +97,26 @@ impl DataRoot {
         self.data.join("file_cache")
     }
 
+    /// The device login skin, `data/skins/` (plan E7.7.2): `login.json`
+    /// and at most one stripped, render-only package, the only skin data
+    /// readable before unlock. It sits outside `state/`, so a schema reset
+    /// keeps it.
+    #[must_use]
+    pub fn skins(&self) -> PathBuf {
+        self.data.join("skins")
+    }
+
+    /// Create [`DataRoot::skins`], owner-only, and return it. Created on
+    /// the first write of the login skin, never at start.
+    ///
+    /// # Errors
+    /// The directory cannot be created or its permissions set.
+    pub fn create_skins_dir(&self) -> std::io::Result<PathBuf> {
+        let dir = self.skins();
+        create_private_dir(&dir)?;
+        Ok(dir)
+    }
+
     /// Create every directory, owner-only (`0700`) on Unix: the root holds
     /// keys, the databases and Veilid's node identity (RC-6). Veilid's own
     /// directory is created when the node starts (`create_veilid_dir`).
