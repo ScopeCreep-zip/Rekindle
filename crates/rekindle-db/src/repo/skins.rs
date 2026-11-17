@@ -147,12 +147,21 @@ mod tests {
     fn a_package_round_trips_once_and_is_removed() {
         let conn = fixture::conn();
         assert!(insert(&conn, OWNER, &skin(HASH)).unwrap());
-        assert!(!insert(&conn, OWNER, &skin(HASH)).unwrap(), "kept as it was");
+        assert!(
+            !insert(&conn, OWNER, &skin(HASH)).unwrap(),
+            "kept as it was"
+        );
         assert!(contains(&conn, OWNER, HASH).unwrap());
-        assert_eq!(bytes(&conn, OWNER, HASH).unwrap().as_deref(), Some(&b"pk"[..]));
+        assert_eq!(
+            bytes(&conn, OWNER, HASH).unwrap().as_deref(),
+            Some(&b"pk"[..])
+        );
         let rows = list(&conn, OWNER).unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!((rows[0].imported_at, rows[0].origin.as_str()), (7, "import"));
+        assert_eq!(
+            (rows[0].imported_at, rows[0].origin.as_str()),
+            (7, "import")
+        );
         assert!(remove(&conn, OWNER, HASH).unwrap());
         assert!(!remove(&conn, OWNER, HASH).unwrap());
         assert!(!contains(&conn, OWNER, HASH).unwrap());
