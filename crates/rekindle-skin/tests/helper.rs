@@ -35,12 +35,22 @@ fn valid() -> Vec<u8> {
 }
 
 /// An executable shell script standing in for the helper.
+///
+/// A child `sh` writes it, never this process: a write fd held here is
+/// inherited by a sibling test's fork until that child execs, and exec'ing
+/// a file some process holds open for writing fails with ETXTBSY (Linux,
+/// seen under a loaded workspace run). The writer has exited before we
+/// spawn the script.
 #[cfg(unix)]
 fn script(name: &str, body: &str) -> HelperOpts {
-    use std::os::unix::fs::PermissionsExt;
     let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("skin-helper-{name}"));
-    std::fs::write(&path, format!("#!/bin/sh\n{body}\n")).unwrap();
-    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let written = std::process::Command::new("/bin/sh")
+        .args(["-c", r#"printf '%s' "$1" > "$2" && chmod 755 "$2""#, "sh"])
+        .arg(format!("#!/bin/sh\n{body}\n"))
+        .arg(&path)
+        .status()
+        .unwrap();
+    assert!(written.success(), "the stand-in helper script is written");
     HelperOpts {
         path,
         timeout: Duration::from_secs(10),
