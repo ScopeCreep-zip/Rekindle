@@ -321,7 +321,22 @@
     align-items: center;
     padding: 40px 20px;
     max-width: 500px;
+    width: 100%;
+    box-sizing: border-box;
     margin: 0 auto;
+  }
+
+  /* Featured channels fill the column and their text wraps inside it, so
+     a long description never pushes an entry past the window. */
+  .welcome-screen-channels,
+  .welcome-channel-entry {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .welcome-channel-desc {
+    overflow-wrap: anywhere;
   }
 
   .welcome-screen-header h2 {
@@ -330,6 +345,7 @@
     color: var(--color-xfire-text-primary);
     margin: 0 0 12px 0;
     text-align: center;
+    overflow-wrap: anywhere;
   }
 
   .welcome-screen-description {
@@ -338,6 +354,7 @@
     line-height: 1.6;
     text-align: center;
     margin: 0 0 24px 0;
+    overflow-wrap: anywhere;
   }
 
   .welcome-screen-channels h3 {

@@ -27,6 +27,8 @@ export interface WindowCase {
   spacingWithData?: string[];
   /** Content panes, rendered when the window has data, that must never scroll sideways. */
   panes?: string[];
+  /** The community has a welcome screen set, which shows on open. */
+  welcome?: boolean;
 }
 
 const frame = (page: Page) => expect(page.locator(".app-frame").first()).toBeVisible();
@@ -83,6 +85,18 @@ export const WINDOWS: WindowCase[] = [
     spacing: [".xfire-titlebar", ".community-sidebar-header"],
     spacingWithData: [".channel-list", ".member-list", ".member-list-header", ".community-channel-header"],
     panes: [".chat-message-area", ".channel-list", ".member-list"],
+  },
+  {
+    name: "community-welcome",
+    label: "community",
+    path: `/community?id=${COMMUNITY}`,
+    def: { width: 900, height: 650 },
+    min: { width: 750, height: 500 },
+    ready: frame,
+    welcome: true,
+    spacing: [".xfire-titlebar", ".community-sidebar-header"],
+    spacingWithData: [".channel-list", ".member-list", ".member-list-header", ".welcome-channel-list"],
+    panes: [".welcome-screen", ".channel-list", ".member-list"],
   },
   {
     name: "call",
@@ -144,7 +158,7 @@ export async function open(
   base: "dark" | "light" = "dark",
 ): Promise<void> {
   await page.setViewportSize(size);
-  await preloadMocks(page, w.label, stressHandler(data, base));
+  await preloadMocks(page, w.label, stressHandler(data, base, w.welcome ?? false));
   await page.goto(w.path);
   await w.ready(page);
   // Lazy windows hydrate over several IPC rounds; let them land.

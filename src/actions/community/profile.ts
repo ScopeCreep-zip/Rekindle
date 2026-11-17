@@ -235,7 +235,11 @@ export async function handleLoadOnboardingConfig(communityId: string): Promise<v
 export async function handleLoadWelcomeScreen(communityId: string): Promise<void> {
   try {
     const screen = await commands.getWelcomeScreen(communityId);
-    setCommunityState("communities", communityId, "welcomeScreen", screen);
+    // The Host answers its empty default when no welcome screen is set
+    // (`OnboardingAdapter::welcome_screen`): that is no screen, not a blank
+    // page shown on every open.
+    const isSet = screen.description !== "" || screen.channels.length > 0;
+    setCommunityState("communities", communityId, "welcomeScreen", isSet ? screen : undefined);
   } catch (e) {
     console.error("Failed to load welcome screen:", e);
   }

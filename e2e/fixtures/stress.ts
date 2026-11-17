@@ -194,6 +194,18 @@ export function safetyNumber(peer: string) {
   };
 }
 
+/** A set welcome screen (`WelcomeScreenDto`): long text, featured channels. */
+export function welcomeScreen() {
+  return {
+    description: longName("Welcome_", 300),
+    channels: Array.from({ length: 5 }, (_, i) => ({
+      channelId: `ch${i}`,
+      description: longName(`Featured${i}_`, 120),
+      emoji: null,
+    })),
+  };
+}
+
 export interface Stress {
   friends: number;
   members: number;
@@ -210,7 +222,7 @@ export const EMPTY: Stress = { friends: 0, members: 0, messages: 0, communities:
  * named answer an empty list, the rest `null`, as a window with no data
  * would see them.
  */
-export function stressHandler(s: Stress, base: "dark" | "light" = "dark"): string {
+export function stressHandler(s: Stress, base: "dark" | "light" = "dark", welcome = false): string {
   const j = JSON.stringify;
   const call = {
     callId: CALL,
@@ -259,7 +271,9 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark"): strin
     case "get_game_status":
       return null;
     case "get_welcome_screen":
-      return { description: "", channels: [] };
+      // The Host's empty default (none set), or a set screen with the
+      // longest description and featured channels.
+      return ${j(welcome ? welcomeScreen() : { description: "", channels: [] })};
     case "get_onboarding_config":
       return { enabled: false, mode: "default", defaultChannels: [], questions: [],
         welcomeMessage: null, guideSteps: [] };

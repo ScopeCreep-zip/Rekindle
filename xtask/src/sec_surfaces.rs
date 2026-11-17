@@ -103,7 +103,9 @@ pub(crate) const SURFACES: &[(&str, &[&str])] = &[
 ];
 
 /// Solid's components that only choose what renders and draw nothing.
-const CONTROL_FLOW: &[&str] = &["Show", "For", "Index", "Switch", "Match"];
+/// `ErrorBoundary` renders its children or its `fallback`, whose elements
+/// sit inside the security element and are checked like any other.
+const CONTROL_FLOW: &[&str] = &["Show", "For", "Index", "Switch", "Match", "ErrorBoundary"];
 
 /// Attributes that can add a class to an element or hide it.
 const RESTYLING_ATTRS: &[&str] = &["classList", "className", "style", "hidden"];
@@ -473,6 +475,18 @@ mod tests {
         let listed = "import VerifiedBadge from \"./VerifiedBadge\";\n<div class=\"sec-safety-number\"><VerifiedBadge view={v()} /><span aria-hidden=\"true\">1</span></div>";
         let hits = scan(listed, &[]);
         assert!(hits.is_empty(), "{hits:?}");
+    }
+
+    #[test]
+    fn an_error_boundary_draws_nothing_but_its_fallback_is_checked() {
+        let fixed = r#"<section class="sec-safety-number"><ErrorBoundary fallback={<p class="sec-safety-number-hint">No code</p>}><svg class="sec-safety-number-qr" /></ErrorBoundary></section>"#;
+        let hits = scan(fixed, &[]);
+        assert!(hits.is_empty(), "{hits:?}");
+        let themed = r#"<section class="sec-safety-number"><ErrorBoundary fallback={<p class={dim()}>No code</p>}><svg class="sec-safety-number-qr" /></ErrorBoundary></section>"#;
+        assert!(has(
+            &scan(themed, &[]),
+            "chooses its class with an expression"
+        ));
     }
 
     #[test]
