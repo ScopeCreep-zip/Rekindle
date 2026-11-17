@@ -25,7 +25,9 @@ import {
   typeInto,
   waitForHandle,
   waitUntil,
+  within,
 } from "./helpers.ts";
+import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu } from "./nav.ts";
 
 export interface WalkState {
   displayName: string;
@@ -47,28 +49,6 @@ export interface Row {
   run(ctx: RowContext): Promise<string | void>;
 }
 
-const LOGIN = "login";
-const BUDDY = "buddy-list";
-const SETTINGS = "settings";
-
-async function inBuddy(b: Browser): Promise<void> {
-  await switchTo(b, BUDDY, NET_WAIT_MS);
-  await shown(b, ".identity-bar", NET_WAIT_MS);
-}
-
-async function menu(b: Browser, trigger: string, item: string): Promise<void> {
-  await press(b, await byText(b, ".menu-bar-item", trigger));
-  await shown(b, ".menu-dropdown");
-  await press(b, await byText(b, ".menu-dropdown-item", item));
-}
-
-async function closeModal(b: Browser): Promise<void> {
-  if (await present(b, ".modal-close-btn")) {
-    await (await b.$(".modal-close-btn")).click();
-    await gone(b, ".modal-container");
-  }
-}
-
 function settingsRow(id: string, item: string): Row {
   return {
     id,
@@ -87,7 +67,7 @@ function settingsRow(id: string, item: string): Row {
   };
 }
 
-async function openAddFriend(b: Browser): Promise<void> {
+export async function openAddFriend(b: Browser): Promise<void> {
   if (!(await present(b, ".form-tabs-equal"))) {
     await (await b.$('[aria-label="Add Friend"]')).click();
     await shown(b, ".form-tabs-equal");
@@ -113,7 +93,7 @@ async function toPicker(b: Browser): Promise<void> {
 }
 
 /** Create `s`'s identity from the login window and land on the buddy list. */
-async function createIdentity(b: Browser, s: WalkState): Promise<void> {
+export async function createIdentity(b: Browser, s: WalkState): Promise<void> {
   await switchTo(b, LOGIN, NET_WAIT_MS);
   if (await present(b, ".account-create-btn")) await (await b.$(".account-create-btn")).click();
   await typeInto(await shown(b, 'input[placeholder="Display Name (optional)"]', NET_WAIT_MS), s.displayName);
@@ -124,8 +104,15 @@ async function createIdentity(b: Browser, s: WalkState): Promise<void> {
   await resolveIntent(b, { passphrase: s.passphrase });
   await waitForHandle(b, (h) => h === BUDDY, NET_WAIT_MS);
   await inBuddy(b);
-  const name = await (await shown(b, ".identity-bar-name")).getText();
-  if (!name.includes(s.displayName)) throw new Error(`identity bar shows "${name}"`);
+  // The bar renders before the store hydrates ("Unknown" first, then the name).
+  let name = "";
+  await waitUntil(
+    async () => (name = await (await shown(b, ".identity-bar-name")).getText()).includes(s.displayName),
+    WAIT_MS,
+    "",
+  ).catch(() => {
+    throw new Error(`identity bar shows "${name}" ${WAIT_MS} ms after the buddy list opened`);
+  });
 }
 
 async function generateInvite(ctx: RowContext): Promise<void> {
@@ -141,7 +128,7 @@ async function statusLabel(b: Browser): Promise<string> {
   return (await b.$(".status-picker .buddy-name")).getText();
 }
 
-export const ROWS: Row[] = [
+const BASE_ROWS: Row[] = [
   {
     id: "L3",
     title: "Create account mode",
@@ -411,14 +398,17 @@ export const ROWS: Row[] = [
     title: "Status picker: Away, Busy, Appear Offline, Online",
     async run({ b, s }) {
       const seen: string[] = [];
+      // Each step has its own deadline, so a stuck call fails the row with
+      // its name instead of running on into B9 after the row timeout.
       for (const label of ["Away", "Busy", "Appear Offline", "Online"]) {
-        await press(b, await shown(b, ".status-picker"));
-        await shown(b, ".status-picker-dropdown");
-        await press(b, await byText(b, ".status-picker-dropdown .context-menu-item", label));
-        await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-        await gone(b, ".status-picker-dropdown");
-        await waitUntil(async () => (await statusLabel(b)).includes(label), WAIT_MS, `status did not show ${label}`);
-        seen.push(await statusLabel(b));
+        const step = <T,>(name: string, work: Promise<T>): Promise<T> => within(work, 30_000, `${label}: ${name} did not return in 30 s`);
+        await step("press trigger", press(b, await step("find trigger", shown(b, ".status-picker"))));
+        await step("dropdown", shown(b, ".status-picker-dropdown"));
+        await step("press item", press(b, await step("find item", byText(b, ".status-picker-dropdown .context-menu-item", label))));
+        await step("intent", resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 }));
+        await step("dropdown closes", gone(b, ".status-picker-dropdown"));
+        await step("label", waitUntil(async () => (await statusLabel(b)).includes(label), WAIT_MS, `status did not show ${label}`));
+        seen.push(await step("read label", statusLabel(b)));
       }
       return `shown: ${seen.join(", ")}`;
     },
@@ -460,6 +450,8 @@ export const ROWS: Row[] = [
   settingsRow("B5", "Audio"),
   settingsRow("B6", "Privacy"),
   settingsRow("B7", "About"),
+  // Rows in rows-settings.ts, rows-community.ts and rows-peer.ts run here,
+  // while the identity is logged in (the getters keep the imports lazy).
   {
     id: "B1",
     title: "Titlebar minimize / close (hides)",
@@ -595,3 +587,14 @@ export const ROWS: Row[] = [
     },
   },
 ];
+
+const SPLICE_AFTER = "B7";
+
+/** The walk's rows in order: rows.ts's own, with the per-window files after B7. */
+export async function allRows(): Promise<Row[]> {
+  const { SETTINGS_ROWS } = await import("./rows-settings.ts");
+  const { COMMUNITY_ROWS } = await import("./rows-community.ts");
+  const { PEER_ROWS } = await import("./rows-peer.ts");
+  const at = BASE_ROWS.findIndex((r) => r.id === SPLICE_AFTER) + 1;
+  return [...BASE_ROWS.slice(0, at), ...SETTINGS_ROWS, ...COMMUNITY_ROWS, ...PEER_ROWS, ...BASE_ROWS.slice(at)];
+}

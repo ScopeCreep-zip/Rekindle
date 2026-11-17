@@ -12,7 +12,8 @@ import path from "node:path";
 import { remote, type Browser } from "webdriverio";
 import { Skip } from "./helpers.ts";
 import { OUT_DIR, build, launch, type App } from "./launch.ts";
-import { ROWS, type RowContext, type WalkState } from "./rows.ts";
+import { allRows, type RowContext, type WalkState } from "./rows.ts";
+import { stopPeer } from "./rows-peer.ts";
 
 type Status = "pass" | "fail" | "skip";
 
@@ -61,10 +62,10 @@ async function walk(app: App): Promise<Result[]> {
     communityName: `walk-community-${randomBytes(2).toString("hex")}`,
   };
   const results: Result[] = [];
-  const ROW_TIMEOUT_MS = 180_000;
+  const ROW_TIMEOUT_MS = 300_000;
   const SHOT_TIMEOUT_MS = 15_000;
   try {
-    for (const row of ROWS) {
+    for (const row of await allRows()) {
       const started = Date.now();
       let shotPath: string | null = null;
       let taken = false;
@@ -96,6 +97,7 @@ async function walk(app: App): Promise<Result[]> {
       console.log(`[walk] ${row.id} ${status}${note ? `: ${note}` : ""}`);
     }
   } finally {
+    await stopPeer();
     if (app.alive()) await b.deleteSession().catch(() => undefined);
   }
   return results;

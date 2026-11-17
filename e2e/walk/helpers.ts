@@ -157,3 +157,12 @@ export async function resolveIntent(
   );
   return "committed";
 }
+
+/** `work`, or a rejection with `msg` after `ms` (the work itself is not cancelled). */
+export function within<T>(work: Promise<T>, ms: number, msg: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(msg)), ms);
+  });
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
+}

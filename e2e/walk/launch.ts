@@ -66,11 +66,11 @@ export function build(): void {
   if (result.status !== 0) throw new Error(`build failed (exit ${result.status ?? result.signal})`);
 }
 
-async function waitForStatus(app: App): Promise<void> {
+async function waitForStatus(app: App, logName: string): Promise<void> {
   const deadline = Date.now() + STATUS_TIMEOUT_MS;
   let last = "no answer";
   while (Date.now() < deadline) {
-    if (!app.alive()) throw new Error(`app exited before /status answered (see ${path.join(OUT_DIR, "app.log")})`);
+    if (!app.alive()) throw new Error(`app exited before /status answered (see ${path.join(OUT_DIR, logName)})`);
     try {
       const res = await fetch(`http://127.0.0.1:${app.port}/status`, {
         headers: { Authorization: `Bearer ${app.token}` },
@@ -90,13 +90,25 @@ async function waitForStatus(app: App): Promise<void> {
   throw new Error(`WebDriver /status not ready after ${STATUS_TIMEOUT_MS} ms (${last})`);
 }
 
-export async function launch(): Promise<App> {
+const running = new Set<App>();
+let signalsHooked = false;
+
+/**
+ * Launch one app on its own temp data root, port and token. The walk may
+ * run two (a second identity for the [PEER] rows): the webdriver build has
+ * no single-instance plugin (lib.rs:109), the node lock is per data root
+ * (setup.rs `host::claim`), and Veilid's empty listen address searches
+ * upward from 5150 (veilid-core start_protocols.rs:89-95), so they coexist.
+ */
+export async function launch(name = "app"): Promise<App> {
   if (!existsSync(BINARY)) throw new Error(`${BINARY} is missing; run without --no-build`);
   mkdirSync(OUT_DIR, { recursive: true });
   const dataRoot = mkdtempSync(path.join(tmpdir(), "rekindle-walk-"));
+  console.log(`[walk] ${name} data root: ${dataRoot}`);
   const port = await freePort();
   const token = base32Lower(randomBytes(32));
-  const log = createWriteStream(path.join(OUT_DIR, "app.log"));
+  const logName = `${name}.log`;
+  const log = createWriteStream(path.join(OUT_DIR, logName));
   const child = spawn(BINARY, [], {
     cwd: REPO_ROOT,
     env: {
@@ -133,18 +145,23 @@ export async function launch(): Promise<App> {
         if (!gone && !exited) child.kill("SIGKILL");
       }
       log.end();
+      running.delete(app);
       rmSync(dataRoot, { recursive: true, force: true });
     },
   };
+  running.add(app);
 
-  const onSignal = (): void => {
-    void app.stop().finally(() => process.exit(130));
-  };
-  process.once("SIGINT", onSignal);
-  process.once("SIGTERM", onSignal);
+  if (!signalsHooked) {
+    signalsHooked = true;
+    const onSignal = (): void => {
+      void Promise.all([...running].map((a) => a.stop())).finally(() => process.exit(130));
+    };
+    process.once("SIGINT", onSignal);
+    process.once("SIGTERM", onSignal);
+  }
 
   try {
-    await waitForStatus(app);
+    await waitForStatus(app, logName);
   } catch (err) {
     await app.stop();
     throw err;
