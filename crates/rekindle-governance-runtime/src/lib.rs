@@ -30,6 +30,7 @@ pub mod audit;
 pub mod bootstrap;
 pub mod channels;
 pub mod checkpoint_state;
+pub mod checkpointing;
 pub mod deps;
 pub mod dht_hydration;
 pub mod error;
@@ -61,7 +62,7 @@ pub mod watch_ring;
 #[cfg(test)]
 mod test_member;
 
-pub use apply::{write_entry, write_entry_queued, write_invite_created};
+pub use apply::{write_checkpoint_queued, write_entry, write_entry_queued, write_invite_created};
 pub use bootstrap::{build_bootstrap_response_v2, request_bootstrap, BootstrapJoiner};
 pub use deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,

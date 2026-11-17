@@ -61,7 +61,14 @@ pub async fn write_entry<D: GovernanceRuntimeDeps>(
     community_id: &str,
     entry: GovernanceEntry,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
-    write(deps, community_id, entry, OpLanding::FirstAttempt).await
+    write(
+        deps,
+        community_id,
+        entry,
+        OpLanding::FirstAttempt,
+        op_log::Deps::Frontier,
+    )
+    .await
 }
 
 /// [`write_entry`] for an invite's `InviteCreated` (of `invite_id`),
@@ -81,6 +88,7 @@ pub async fn write_invite_created<D: GovernanceRuntimeDeps>(
         community_id,
         entry,
         OpLanding::InviteLanded { invite_id },
+        op_log::Deps::Frontier,
     )
     .await
 }
@@ -95,7 +103,33 @@ pub async fn write_entry_queued<D: GovernanceRuntimeDeps>(
     community_id: &str,
     entry: GovernanceEntry,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
-    write(deps, community_id, entry, OpLanding::Queued).await
+    write(
+        deps,
+        community_id,
+        entry,
+        OpLanding::Queued,
+        op_log::Deps::Frontier,
+    )
+    .await
+}
+
+/// Our `Checkpoint` op (plan E3.2 S7c.4), queued like
+/// [`write_entry_queued`]: its deps are its cut's heads and our previous
+/// op, so whoever cites it has the whole cut in its causal past (S7c.3).
+pub async fn write_checkpoint_queued<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    checkpoint: rekindle_types::governance::Checkpoint,
+) -> Result<OpOutcome, GovernanceRuntimeError> {
+    let heads = checkpoint.cut.iter().map(|r| r.op_hash).collect();
+    write(
+        deps,
+        community_id,
+        GovernanceEntry::Checkpoint(checkpoint),
+        OpLanding::Queued,
+        op_log::Deps::Cited(heads),
+    )
+    .await
 }
 
 async fn write<D: GovernanceRuntimeDeps>(
@@ -103,6 +137,7 @@ async fn write<D: GovernanceRuntimeDeps>(
     community_id: &str,
     entry: GovernanceEntry,
     landing: OpLanding,
+    op_deps: op_log::Deps,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
     refuse_out_of_bounds(&entry)?;
 
@@ -155,7 +190,7 @@ async fn write<D: GovernanceRuntimeDeps>(
         &set,
         &key,
         entry.clone(),
-        op_log::Deps::Frontier,
+        op_deps,
         deps.clock().now_secs(),
     )?;
     // Our member record M(p), where our op log lives: the cert's for the

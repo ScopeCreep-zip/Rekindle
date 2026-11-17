@@ -155,6 +155,9 @@ pub enum Deps {
     /// [`join_deps`](crate::join_deps::join_deps); our previous op is
     /// added when missing (the chain rule).
     Join(Vec<OpHash>),
+    /// A `Checkpoint`'s deps (plan E3.2 S7c.4): its cut's heads, by hash;
+    /// our previous op is added when missing.
+    Cited(Vec<OpHash>),
 }
 
 /// Our op for `body`: the next seq of our chain, `deps` as its deps,
@@ -230,7 +233,7 @@ fn cited(
     deps: Deps,
     prev: Option<OpHash>,
 ) -> Result<Vec<&VerifiedOp>, GovernanceRuntimeError> {
-    let Deps::Join(mut hashes) = deps else {
+    let (Deps::Join(mut hashes) | Deps::Cited(mut hashes)) = deps else {
         return Ok(frontier(&set.ops, prev));
     };
     hashes.extend(prev);
@@ -240,7 +243,7 @@ fn cited(
         .iter()
         .map(|h| {
             set.ops.iter().find(|op| op.hash() == *h).ok_or_else(|| {
-                GovernanceRuntimeError::OpRefused(format!("join dep {} not held", hex::encode(h.0)))
+                GovernanceRuntimeError::OpRefused(format!("dep {} not held", hex::encode(h.0)))
             })
         })
         .collect()

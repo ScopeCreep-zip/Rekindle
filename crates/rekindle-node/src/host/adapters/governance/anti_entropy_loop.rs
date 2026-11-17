@@ -5,11 +5,13 @@
 //! tick after the route comes back (a reconnect) sweeps all of them; the
 //! login stage runs the login sweep. A sweep that stored a head rebuilds
 //! that community, and each tick moves the community's watch ring, which
-//! opens and watches a ring record an earlier move could not. The ticks are tokio time (paused under netsim).
+//! opens and watches a ring record an earlier move could not, and each
+//! tick may propose or endorse a checkpoint hint (S7c.4). The ticks are tokio time (paused under netsim).
 
 use std::collections::BTreeMap;
 
 use rekindle_governance_runtime::anti_entropy::{self, SeenFrontiers, Sweep, SWEEP_PERIOD};
+use rekindle_governance_runtime::checkpointing::{self, CheckpointClock, CheckpointStep};
 use tokio_util::sync::CancellationToken;
 
 use super::HostGovernance;
@@ -18,6 +20,7 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
     let mut ticks =
         tokio::time::interval_at(tokio::time::Instant::now() + SWEEP_PERIOD, SWEEP_PERIOD);
     let mut seen: BTreeMap<String, SeenFrontiers> = BTreeMap::new();
+    let mut clocks: BTreeMap<String, CheckpointClock> = BTreeMap::new();
     let mut offline = false;
     while stop.run_until_cancelled(ticks.tick()).await.is_some() {
         if host.our_route_blob_impl().is_empty() {
@@ -45,6 +48,16 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
                 }
                 Err(error) => {
                     tracing::debug!(community = %community_id, %error, "anti-entropy sweep failed");
+                }
+            }
+            // Propose or endorse a checkpoint hint (plan E3.2 S7c.4): both
+            // triggers are local and run on this tick's clock.
+            let clock = clocks.entry(community_id.clone()).or_default();
+            match checkpointing::tick(&host, &community_id, clock).await {
+                Ok(CheckpointStep::Idle) => {}
+                Ok(step) => tracing::debug!(community = %community_id, ?step, "checkpoint"),
+                Err(error) => {
+                    tracing::debug!(community = %community_id, %error, "checkpoint tick failed");
                 }
             }
         }
