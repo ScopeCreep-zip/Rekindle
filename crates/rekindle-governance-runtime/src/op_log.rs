@@ -19,6 +19,9 @@ use rekindle_codec::governance_op::{decode_op, encode_op, op_unsigned_bytes};
 use rekindle_governance::checksum::roster_checksum;
 use rekindle_governance::merge::{self, MergeOutcome};
 use rekindle_governance::op::{op_hash, op_signing_bytes, VerifiedOp};
+use rekindle_governance::power::{
+    removal_target, seq_frontier, target_seq_frontier, with_target_seq_frontier,
+};
 use rekindle_governance::state::GovernanceState;
 use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
 use rekindle_types::dht_layout::member_record::MAX_FRONTIER_REFS;
@@ -155,7 +158,8 @@ pub enum Deps {
 
 /// Our op for `body`: the next seq of our chain, `deps` as its deps,
 /// signed by `key` (our community pseudonym) and verified against `set`
-/// as every reader verifies it.
+/// as every reader verifies it. A `MemberRemoved` or `BanEntry` gets its
+/// target's seq frontier from those deps, whatever `body` held.
 ///
 /// # Errors
 /// A dep's author has no member record in `state`, a join dep is not in
@@ -177,7 +181,22 @@ pub fn build_op(
         .filter(|op| *op.author() == author)
         .max_by_key(|op| op.op().seq);
     let (seq, prev) = last.map_or((0, None), |op| (op.op().seq + 1, Some(op.hash())));
-    let deps = cited(set, deps, prev)?
+    let cited = cited(set, deps, prev)?;
+    let known: HashMap<OpHash, &VerifiedOp> = set.ops.iter().map(|o| (o.hash(), o)).collect();
+    // A removal carries its target's seq frontier in these deps (plan E3.2
+    // S7c.3a): every reader refuses one whose field differs from it.
+    let body = match target_seq_frontier(&body).and(removal_target(&body)) {
+        Some(target) => {
+            let frontier = seq_frontier(
+                cited.iter().map(|op| op.hash()),
+                |h| known.get(h).copied(),
+                target,
+            );
+            with_target_seq_frontier(body, frontier)
+        }
+        None => body,
+    };
+    let deps = cited
         .into_iter()
         .map(|op| {
             author_record(cert, state, op.author())
@@ -199,7 +218,6 @@ pub fn build_op(
     let unsigned = op_unsigned_bytes(&op);
     op.sig = key.sign(&op_signing_bytes(anchor, &unsigned)).to_bytes();
     let encoded = encode_op(&op).map_err(|e| GovernanceRuntimeError::Encoding(e.to_string()))?;
-    let known: HashMap<OpHash, &VerifiedOp> = set.ops.iter().map(|o| (o.hash(), o)).collect();
     let verified = VerifiedOp::verify(anchor, op, &unsigned, |h| known.get(h).copied())
         .map_err(|e| GovernanceRuntimeError::OpRefused(format!("{e:?}")))?;
     Ok((verified, encoded))
@@ -255,11 +273,16 @@ pub struct OpVerdict {
 /// The fate of every held op after `outcome`: an equivocator's ops from
 /// its fork on (the ones the merge dropped; its earlier ops stay applied,
 /// D15) are `Equivocation`, an op the merge refused (validation, strong removal, the
-/// invite and approval gates) is `Quarantined`, one the merge holds for a
+/// invite and approval gates) or masked after its author's removal is
+/// `Quarantined`, one the merge holds for a
 /// dep is `PendingDeps`, and only an applied op is `Applied`.
 #[must_use]
 pub fn fates(set: &VerifiedSet, outcome: &MergeOutcome) -> Vec<OpVerdict> {
-    let refused: BTreeSet<OpHash> = outcome.refused.iter().copied().collect();
+    // A masked op (after its author's removal, plan E3.2 S7c.3a) is held
+    // quarantined like a refused one.
+    let refused: BTreeSet<OpHash> = (outcome.refused.iter().copied())
+        .chain(outcome.quarantined.iter().map(|(hash, _)| *hash))
+        .collect();
     let applied: BTreeSet<OpHash> = outcome.applied.iter().copied().collect();
     let pending: BTreeSet<OpHash> = outcome.pending.iter().copied().collect();
     let mut out: Vec<OpVerdict> = set
