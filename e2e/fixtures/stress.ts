@@ -34,29 +34,38 @@ export interface FriendRow {
   statusMessage: string | null;
   gameInfo: null;
   group: string | null;
+  groupLabel: string;
   unreadCount: number;
   lastSeenAt: number | null;
   friendshipState: string;
   handshakeError: null;
   handshakeRetrying: boolean;
+  identityPinMismatch: boolean;
 }
 
 /** `n` accepted friends with 64-char names, status messages and unread badges. */
 export function friends(n: number): FriendRow[] {
-  return Array.from({ length: n }, (_, i) => ({
-    publicKey: i === 0 ? PEER : key("c", i),
-    displayName: longName(`Friend${i}_`),
-    nickname: null,
-    status: STATUSES[i % STATUSES.length],
-    statusMessage: i % 3 === 0 ? longName(`Status${i}_`, 80) : null,
-    gameInfo: null,
-    group: i % 5 === 0 ? longName("Group_", 40) : null,
-    unreadCount: i % 4 === 0 ? 120 + i : 0,
-    lastSeenAt: null,
-    friendshipState: "accepted",
-    handshakeError: null,
-    handshakeRetrying: false,
-  }));
+  return Array.from({ length: n }, (_, i) => {
+    const group = i % 5 === 0 ? longName("Group_", 40) : null;
+    return {
+      publicKey: i === 0 ? PEER : key("c", i),
+      displayName: longName(`Friend${i}_`),
+      nickname: null,
+      status: STATUSES[i % STATUSES.length],
+      statusMessage: i % 3 === 0 ? longName(`Status${i}_`, 80) : null,
+      gameInfo: null,
+      group,
+      // The Host's label: the group, or its default group's name
+      // (`rekindle_types::dto::friends::group_label`).
+      groupLabel: group ?? "Friends",
+      unreadCount: i % 4 === 0 ? 120 + i : 0,
+      lastSeenAt: null,
+      friendshipState: "accepted",
+      handshakeError: null,
+      handshakeRetrying: false,
+      identityPinMismatch: false,
+    };
+  });
 }
 
 /** `n` community members with 64-char names spread over the presence states. */
@@ -195,6 +204,8 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark"): strin
     case "get_skin":
       return { id: "builtin:symbiosis", base: ${j(base)}, regions: [],
         tokensHref: ${j(`skin://localhost/${ME}/tokens.css`)} };
+    case "get_game_status":
+      return null;
     case "get_active_call":
       return ${j(call)};
     default:

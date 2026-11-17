@@ -279,13 +279,18 @@
 
   .form-field-row .form-input {
     flex: 1;
+    min-width: 0;
     margin: 0;
   }
 
+  /* The field takes the row; its button keeps its label's width (not
+     `.form-btn-primary`'s full width, which squeezed the field away). */
   .form-field-row .form-btn-primary {
     margin: 0;
     padding: 6px 12px;
     min-width: auto;
+    width: auto;
+    flex: 0 0 auto;
   }
 
   .form-tabs {
@@ -295,7 +300,9 @@
     padding: 0 8px;
     gap: 2px;
     background: var(--color-xfire-bg-dark);
-    overflow-x: auto;
+    /* Every tab stays in view: a narrow window wraps them to a second
+       row rather than hiding the last ones in a sideways scroller. */
+    flex-wrap: wrap;
   }
 
   .form-tabs-equal {
@@ -346,6 +353,15 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     cursor: pointer;
+    /* One line: a long group name gives way (ellipsis), its count stays. */
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .buddy-group-count {
+    flex-shrink: 0;
   }
 
 

@@ -83,7 +83,9 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
           onClick={handleToggle}
           onContextMenu={handleGroupContextMenu}
         >
-          {collapsed() ? "▶" : "▼"} {props.name} ({props.friends.length})
+          <span aria-hidden="true">{collapsed() ? "▶" : "▼"}</span>
+          <span class="buddy-group-name">{props.name}</span>
+          <span class="buddy-group-count">({props.friends.length})</span>
         </div>
       </Show>
       <Show when={!collapsed()}>

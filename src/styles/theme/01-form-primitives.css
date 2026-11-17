@@ -26,9 +26,29 @@
 
 
 
+  /* A long word or URL breaks anywhere rather than widening the list. */
   .chat-message-body {
     font-size: 12px;
     color: var(--color-xfire-text);
+    overflow-wrap: anywhere;
+  }
+
+  /* One line: the sender's name gives way (ellipsis), the timestamp and
+     the markers after it never wrap or shrink. */
+  .chat-message-header {
+    display: flex;
+    align-items: baseline;
+    min-width: 0;
+  }
+
+  .chat-message-header > * {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+
+  .chat-message-header > .chat-message-sender-other,
+  .chat-message-header > .chat-message-sender-self {
+    flex-shrink: 1;
   }
 
   .chat-message-timestamp {

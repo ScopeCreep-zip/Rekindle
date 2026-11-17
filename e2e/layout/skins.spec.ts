@@ -1,14 +1,20 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
   assertFlexContract,
+  assertFieldsUsable,
   assertFocusVisibleNotClipped,
   assertNoHorizontalOverflow,
+  assertBadgesInRow,
   assertNoOverlap,
+  assertNoPlaceholderText,
+  assertPanesNoHorizontalScroll,
   assertSpacingOnScale,
   assertTextFits,
+  assertTextNotClipped,
+  assertTimestampsInline,
 } from "../fixtures/layout";
 import { FULL } from "../fixtures/stress";
-import { WINDOWS, open, spacingOf } from "./windows";
+import { WINDOWS, open, panesOf, spacingOf } from "./windows";
 
 // Plan E7.12 "Skins": the geometry set again under the light base (the
 // apply step's `:root[data-skin-base]`), forced colours and more contrast,
@@ -41,6 +47,12 @@ for (const v of VARIANTS) {
       await assertNoHorizontalOverflow(page, root);
       await assertNoOverlap(page, root);
       await assertTextFits(page, root);
+      await assertTextNotClipped(page, root);
+      await assertPanesNoHorizontalScroll(page, root, panesOf(w, true));
+      await assertBadgesInRow(page, root);
+      await assertNoPlaceholderText(page, root);
+      await assertTimestampsInline(page, root);
+      await assertFieldsUsable(page, root);
       await assertSpacingOnScale(page, root, spacingOf(w, true));
       await assertFocusVisibleNotClipped(page, root);
     });

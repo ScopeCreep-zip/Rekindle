@@ -166,36 +166,38 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         )}
       </Show>
 
-      <span class={senderClass()}>{props.senderName}</span>
-      <span class="chat-message-timestamp">
-        {formatTimestamp(props.message.timestamp)}
-      </span>
-      <Show when={props.message.editedAt}>
-        <span class="edit-indicator">(edited)</span>
-      </Show>
-      <Show when={statusIcon()}>
-        <span class={`${statusClass()} nf-icon`}>{statusIcon()}</span>
-      </Show>
-      <Show when={props.message.status === "failed"}>
-        <button
-          class="message-retry-btn"
-          onClick={handleRetryClick}
-          title="Click to retry"
-          aria-label="Retry sending message"
-        >
-          <span class="nf-icon" aria-hidden="true">{ICON_REFRESH}</span>
-        </button>
-        <Show when={props.onDiscard}>
-          <button
-            class="message-discard-btn"
-            onClick={handleDiscardClick}
-            title="Discard"
-            aria-label="Discard failed message"
-          >
-            <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
-          </button>
+      <div class="chat-message-header">
+        <span class={senderClass()}>{props.senderName}</span>
+        <span class="chat-message-timestamp">
+          {formatTimestamp(props.message.timestamp)}
+        </span>
+        <Show when={props.message.editedAt}>
+          <span class="edit-indicator">(edited)</span>
         </Show>
-      </Show>
+        <Show when={statusIcon()}>
+          <span class={`${statusClass()} nf-icon`}>{statusIcon()}</span>
+        </Show>
+        <Show when={props.message.status === "failed"}>
+          <button
+            class="message-retry-btn"
+            onClick={handleRetryClick}
+            title="Click to retry"
+            aria-label="Retry sending message"
+          >
+            <span class="nf-icon" aria-hidden="true">{ICON_REFRESH}</span>
+          </button>
+          <Show when={props.onDiscard}>
+            <button
+              class="message-discard-btn"
+              onClick={handleDiscardClick}
+              title="Discard"
+              aria-label="Discard failed message"
+            >
+              <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+            </button>
+          </Show>
+        </Show>
+      </div>
 
       {/* Action toolbar (appears on hover) */}
       <div class="message-actions">

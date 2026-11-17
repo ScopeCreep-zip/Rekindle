@@ -246,9 +246,12 @@
   }
 
   /* Tooltip */
+  /* Never wider than its container, so an ellipsizing child (a buddy
+     name) shrinks with the row instead of running past it. */
   .tooltip-wrapper {
     position: relative;
     display: inline-flex;
+    max-width: 100%;
   }
 
   .tooltip-bubble {

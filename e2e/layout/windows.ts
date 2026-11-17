@@ -25,6 +25,8 @@ export interface WindowCase {
   spacing: string[];
   /** More such containers, rendered only when the window has data. */
   spacingWithData?: string[];
+  /** Content panes, rendered when the window has data, that must never scroll sideways. */
+  panes?: string[];
 }
 
 const frame = (page: Page) => expect(page.locator(".app-frame").first()).toBeVisible();
@@ -49,6 +51,7 @@ export const WINDOWS: WindowCase[] = [
     ready: frame,
     spacing: [".xfire-titlebar", ".status-bar", ".menu-bar"],
     spacingWithData: [".buddy-group-header"],
+    panes: [".buddy-list"],
   },
   {
     name: "chat-dm",
@@ -58,6 +61,7 @@ export const WINDOWS: WindowCase[] = [
     min: { width: 380, height: 400 },
     ready: frame,
     spacing: [".xfire-titlebar", ".message-input-wrapper", ".message-input-shell"],
+    panes: [".chat-message-area"],
   },
   {
     name: "chat-group",
@@ -67,6 +71,7 @@ export const WINDOWS: WindowCase[] = [
     min: { width: 380, height: 400 },
     ready: frame,
     spacing: [".xfire-titlebar", ".group-chat-header", ".group-chat-members", ".message-input-wrapper"],
+    panes: [".chat-message-area"],
   },
   {
     name: "community",
@@ -77,6 +82,7 @@ export const WINDOWS: WindowCase[] = [
     ready: frame,
     spacing: [".xfire-titlebar", ".community-sidebar-header"],
     spacingWithData: [".channel-list", ".member-list", ".member-list-header", ".community-channel-header"],
+    panes: [".chat-message-area", ".channel-list", ".member-list"],
   },
   {
     name: "call",
@@ -106,6 +112,11 @@ export const WINDOWS: WindowCase[] = [
     spacing: [".xfire-titlebar", ".form-tabs"],
   },
 ];
+
+/** The content panes `w` renders with or without data. */
+export function panesOf(w: WindowCase, withData: boolean): string[] {
+  return withData ? w.panes ?? [] : [];
+}
 
 /** The spacing containers `w` renders with or without data. */
 export function spacingOf(w: WindowCase, withData: boolean): string[] {

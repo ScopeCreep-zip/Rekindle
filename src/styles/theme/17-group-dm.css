@@ -25,12 +25,17 @@
     background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
+  /* The name gives way; the member count never does. */
+  .group-dm-row .buddy-name {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   .group-dm-count {
     font-size: 10px;
     color: var(--color-xfire-text-dim);
-    overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
+    flex-shrink: 0;
     margin-left: auto;
   }
 

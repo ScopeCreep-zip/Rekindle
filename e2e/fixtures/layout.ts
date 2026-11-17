@@ -12,7 +12,9 @@ export const OVERLAYS = [
   "[role=tooltip]",
   "[role=menu]",
   "[role=listbox]",
-  "[aria-live]",
+  // Toasts and screen-reader announcers. A `role=log` (the message lists,
+  // `LiveRegion`) is live too, but it is content and is checked.
+  "[aria-live]:not([role=log])",
   ".sr-only",
 ];
 
@@ -300,4 +302,190 @@ export async function assertSpacingOnScale(page: Page, root: Locator, containers
     return out.slice(0, 12);
   }, containers);
   expect.soft(off, "spacing off the grid").toEqual([]);
+}
+
+/**
+ * No visible text under `root` is cut sideways by an ancestor (or itself)
+ * that clips (`overflow` hidden, clip, auto or scroll), unless an element
+ * between the text and that clipper ellipsizes (`text-overflow: ellipsis`,
+ * `overflow: hidden`, `white-space: nowrap`) and is itself wholly inside
+ * the clipper, so the reader sees the ellipsis. Boxes are compared
+ * unclipped: the clipping is what this looks for.
+ */
+export async function assertTextNotClipped(page: Page, root: Locator, opts: { allow?: string[] } = {}): Promise<void> {
+  await install(page);
+  const skip = [...OVERLAYS, ...(opts.allow ?? [])];
+  const bad = await root.evaluate((rootEl, skip) => {
+    const g = (window as any).__geo;
+    const skipSel = skip.join(", ");
+    const out: string[] = [];
+    const ellipsizes = (s: CSSStyleDeclaration) =>
+      s.textOverflow === "ellipsis" && s.overflowX === "hidden" && s.whiteSpace.startsWith("nowrap");
+    const padX = (a: Element): [number, number] => {
+      const r = a.getBoundingClientRect();
+      const left = r.left + a.clientLeft;
+      return [left, left + a.clientWidth];
+    };
+    for (const el of Array.from(rootEl.querySelectorAll("*"))) {
+      if (skipSel && el.closest(skipSel)) continue;
+      if (el.closest("input, textarea, select, option") || !g.shown(el)) continue;
+      let x0 = Infinity, x1 = -Infinity;
+      for (const n of Array.from(el.childNodes)) {
+        if (n.nodeType !== Node.TEXT_NODE || !(n.textContent ?? "").trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(n);
+        for (const r of Array.from(range.getClientRects())) {
+          if (r.width < 0.5 || r.height < 0.5) continue;
+          x0 = Math.min(x0, r.left); x1 = Math.max(x1, r.right);
+        }
+      }
+      if (!(x1 > x0)) continue;
+      let excused: Element | null = null;
+      for (let a: Element | null = el; a && a !== document.documentElement; a = a.parentElement) {
+        const s = getComputedStyle(a);
+        if (s.position === "fixed" && a !== el) break;
+        if (!excused && ellipsizes(s)) excused = a;
+        if (s.overflowX === "visible") continue;
+        const [c0, c1] = padX(a);
+        if (x0 >= c0 - 1 && x1 <= c1 + 1) continue;
+        if (excused && excused !== a) {
+          const [e0, e1] = padX(excused);
+          if (e0 >= c0 - 1 && e1 <= c1 + 1) continue;
+        } else if (excused === a) continue;
+        out.push(`${g.describe(el)} text [${Math.round(x0)}, ${Math.round(x1)}] cut by ${g.describe(a).slice(0, 40)} [${Math.round(c0)}, ${Math.round(c1)}]`);
+        x0 = -Infinity;
+        break;
+      }
+      // The window edge clips too.
+      if (x0 === -Infinity || (x0 >= -1 && x1 <= window.innerWidth + 1)) continue;
+      if (excused) {
+        const [e0, e1] = padX(excused);
+        if (e0 >= -1 && e1 <= window.innerWidth + 1) continue;
+      }
+      out.push(`${g.describe(el)} text [${Math.round(x0)}, ${Math.round(x1)}] cut by the window [0, ${window.innerWidth}]`);
+    }
+    return out.slice(0, 12);
+  }, skip);
+  expect.soft(bad, "text clipped sideways without an ellipsis").toEqual([]);
+}
+
+/** The content panes under `root` that render (`panes`) never scroll sideways. */
+export async function assertPanesNoHorizontalScroll(page: Page, root: Locator, panes: string[]): Promise<void> {
+  const over = await root.evaluate((rootEl, panes) => {
+    const out: string[] = [];
+    for (const sel of panes) {
+      const found = Array.from(rootEl.querySelectorAll(sel));
+      // A selector that matches nothing would pass vacuously.
+      if (found.length === 0) out.push(`${sel} matches nothing`);
+      for (const p of found) {
+        if (p.scrollWidth > p.clientWidth + 1) out.push(`${sel} scrollWidth ${p.scrollWidth} > clientWidth ${p.clientWidth}`);
+      }
+    }
+    return out;
+  }, panes);
+  expect.soft(over, "content panes scrolling sideways").toEqual([]);
+}
+
+/**
+ * Badges and counts sit wholly inside their row: never squeezed below
+ * their content, not cut sideways by a clipping ancestor or the window,
+ * nor spilling out of their row.
+ */
+export async function assertBadgesInRow(page: Page, root: Locator): Promise<void> {
+  await install(page);
+  const bad = await root.evaluate((rootEl) => {
+    const g = (window as any).__geo;
+    const out: string[] = [];
+    for (const el of Array.from(rootEl.querySelectorAll("[class*='badge'], [class*='-count']"))) {
+      if (!g.shown(el)) continue;
+      const r = el.getBoundingClientRect();
+      // A count is never truncated, not even to an ellipsis.
+      if (el.scrollWidth > el.clientWidth + 1) out.push(`${g.describe(el)} squeezed to ${el.clientWidth}px of ${el.scrollWidth}px`);
+      for (let a = el.parentElement; a && a !== document.documentElement; a = a.parentElement) {
+        const s = getComputedStyle(a);
+        if (s.position === "fixed") break;
+        if (s.overflowX === "visible" && s.overflowY === "visible") continue;
+        const c = a.getBoundingClientRect();
+        const left = c.left + a.clientLeft, right = left + a.clientWidth;
+        if (r.left < left - 0.5 || r.right > right + 0.5) {
+          out.push(`${g.describe(el)} [${r.left.toFixed(1)}, ${r.right.toFixed(1)}] cut by ${g.describe(a).slice(0, 40)} [${left.toFixed(1)}, ${right.toFixed(1)}]`);
+          break;
+        }
+      }
+      if (r.left < -0.5 || r.right > window.innerWidth + 0.5) out.push(`${g.describe(el)} [${r.left.toFixed(1)}, ${r.right.toFixed(1)}] cut by the window`);
+      const row = el.parentElement!.getBoundingClientRect();
+      if (r.top < row.top - 0.5 || r.bottom > row.bottom + 0.5) out.push(`${g.describe(el)} spills out of its row vertically`);
+    }
+    return out.slice(0, 12);
+  });
+  expect.soft(bad, "badges outside their row").toEqual([]);
+}
+
+/** No visible text or accessible label under `root` shows a missing value. */
+export async function assertNoPlaceholderText(page: Page, root: Locator): Promise<void> {
+  await install(page);
+  const bad = await root.evaluate((rootEl) => {
+    const g = (window as any).__geo;
+    const re = /\b(undefined|null|NaN)\b|\[object Object\]/;
+    const out: string[] = [];
+    const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const p = n.parentElement;
+      if (p && g.shown(p) && re.test(n.textContent ?? "")) out.push(`${g.describe(p)}: "${(n.textContent ?? "").trim().slice(0, 40)}"`);
+    }
+    for (const el of Array.from(rootEl.querySelectorAll("[aria-label], [title], [placeholder]"))) {
+      for (const attr of ["aria-label", "title", "placeholder"]) {
+        const v = el.getAttribute(attr);
+        if (v && re.test(v)) out.push(`${g.describe(el)} ${attr}="${v.slice(0, 40)}"`);
+      }
+    }
+    return out.slice(0, 12);
+  });
+  expect.soft(bad, "missing values shown as text").toEqual([]);
+}
+
+/**
+ * A timestamp is one line and shares that line with the element before it
+ * (a message header's sender name), never wrapping under it.
+ */
+export async function assertTimestampsInline(page: Page, root: Locator): Promise<void> {
+  await install(page);
+  const bad = await root.evaluate((rootEl) => {
+    const g = (window as any).__geo;
+    const out: string[] = [];
+    for (const el of Array.from(rootEl.querySelectorAll("[class*='timestamp']"))) {
+      if (!g.shown(el)) continue;
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const tops = new Set(Array.from(range.getClientRects()).filter((r) => r.width > 0.5).map((r) => Math.round(r.top)));
+      if (tops.size > 1) out.push(`${g.describe(el)} wraps over ${tops.size} lines`);
+      let prev = el.previousElementSibling;
+      while (prev && !g.shown(prev)) prev = prev.previousElementSibling;
+      if (!prev) continue;
+      const a = el.getBoundingClientRect(), b = prev.getBoundingClientRect();
+      if (Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) < 1) out.push(`${g.describe(el)} sits on its own line under ${g.describe(prev)}`);
+    }
+    return out.slice(0, 12);
+  });
+  expect.soft(bad, "timestamps off their line").toEqual([]);
+}
+
+/** The narrowest a text field may render and still be typed into. */
+const MIN_FIELD_WIDTH = 80;
+
+/** Every visible text field under `root` is at least `MIN_FIELD_WIDTH` wide, never squeezed by its row. */
+export async function assertFieldsUsable(page: Page, root: Locator): Promise<void> {
+  await install(page);
+  const bad = await root.evaluate((rootEl, min) => {
+    const g = (window as any).__geo;
+    const out: string[] = [];
+    const sel = "input:not([type]), input[type=text], input[type=search], input[type=password], input[type=email], input[type=url], textarea, select";
+    for (const el of Array.from(rootEl.querySelectorAll(sel))) {
+      if (!g.shown(el)) continue;
+      const w = el.getBoundingClientRect().width;
+      if (w < min) out.push(`${g.describe(el)}${el.id ? `#${el.id}` : ""} is ${w.toFixed(1)}px wide`);
+    }
+    return out.slice(0, 12);
+  }, MIN_FIELD_WIDTH);
+  expect.soft(bad, "text fields squeezed").toEqual([]);
 }
