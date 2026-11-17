@@ -221,7 +221,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// retire mark rides in `ChainHead`, the `RETIRE_THROUGH` subkey is gone.
 /// 128 (plan E7.7.2): `app_settings.skin_id` and `sound_bank` with their
 /// GLOB CHECKs, and the identity skin library `skin_packages`.
-pub const SCHEMA_VERSION: i64 = 128;
+/// 129 (plan E3.2 S7l, F9-1): `outbox.state` and `messages.send_state`
+/// admit `awaiting_key`, a channel post queued until its community key comes.
+pub const SCHEMA_VERSION: i64 = 129;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
