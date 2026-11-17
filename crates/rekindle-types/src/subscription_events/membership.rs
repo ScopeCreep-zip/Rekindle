@@ -70,7 +70,8 @@ pub enum MembershipEvent {
     },
 
     /// A new member joined the community (everyone sees this).
-    /// Triggered by: gossip `ControlPayload::MemberJoined`.
+    /// Triggered by: the Host, when the merged governance first lists the
+    /// member (`member_events.rs`); the gossip notice publishes none.
     Joined {
         community: String,
         pseudonym: String,
@@ -78,7 +79,9 @@ pub enum MembershipEvent {
         role_ids: Vec<u32>,
     },
     /// A member left the community voluntarily.
-    /// Triggered by: gossip `ControlPayload::MemberLeave`.
+    /// Triggered by: the Host, when the merged governance first holds the
+    /// member's `MemberLeft`, on every member's frontends, the leaver's
+    /// own included; the gossip notice publishes none.
     Left {
         community: String,
         pseudonym: String,
@@ -90,41 +93,44 @@ pub enum MembershipEvent {
         pseudonym: String,
     },
     /// A member was kicked (immediate removal, can rejoin).
-    /// Triggered by: gossip `ControlPayload::Kick`, and by the Host when the
-    /// merged governance names our own pseudonym in a `MemberRemoved`.
+    /// Triggered by: the Host, once per removal, when the merged governance
+    /// first holds the `MemberRemoved` (`member_events.rs`, our own removal
+    /// `own_removal.rs`); the gossip notice publishes none.
     Kicked {
         community: String,
         target_pseudonym: String,
         /// The remover's pseudonym, when the merged op names it: our own
-        /// removal (plan E3.2 S9 own removal) carries it; gossip carries none.
+        /// removal (plan E3.2 S9 own removal) carries it, as does another's.
         removed_by: Option<String>,
         /// The display name on the remover's verified card, when held.
         removed_by_name: Option<String>,
         /// The reason the removal op gave (A/B R5-2), shown to the removed
         /// member. Bounded at the source: governance validation refuses a
         /// removal whose reason exceeds `key_format::MAX_NOTE_LEN`, as for
-        /// a mod report. Gossip carries none.
+        /// a mod report.
         reason: Option<String>,
     },
     /// A member was banned (permanent removal, cannot rejoin).
-    /// Triggered by: gossip `ControlPayload::Ban`, and by the Host when the
-    /// merged governance bans our own pseudonym.
+    /// Triggered by: the Host, once per ban, when the merged governance
+    /// first holds it (`member_events.rs`, our own ban `own_removal.rs`);
+    /// the gossip notice publishes none.
     Banned {
         community: String,
         target_pseudonym: String,
         /// The remover's pseudonym, when the merged op names it: our own
-        /// removal (plan E3.2 S9 own removal) carries it; gossip carries none.
+        /// removal (plan E3.2 S9 own removal) carries it, as does another's.
         removed_by: Option<String>,
         /// The display name on the remover's verified card, when held.
         removed_by_name: Option<String>,
         /// The reason the removal op gave (A/B R5-2), shown to the removed
         /// member. Bounded at the source: governance validation refuses a
         /// removal whose reason exceeds `key_format::MAX_NOTE_LEN`, as for
-        /// a mod report. Gossip carries none.
+        /// a mod report.
         reason: Option<String>,
     },
     /// A member was unbanned.
-    /// Triggered by: gossip `ControlPayload::Unban`.
+    /// Triggered by: the Host, when the merged governance lifts the ban
+    /// (`member_events.rs`); the gossip notice publishes none.
     Unbanned {
         community: String,
         target_pseudonym: String,

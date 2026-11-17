@@ -22,8 +22,10 @@ use super::into_event_control_rest::control_into_event_rest;
 /// variants are media- or transport-plane traffic — voice signaling,
 /// video fragments and FEC, attachment chunks, bandwidth and topology
 /// reports — consumed by the subsystems that own them and never
-/// surfaced to a subscriber — and the three thread payloads, whose
-/// events the Host publishes once it has stored them. Saying so in the return type is what stops
+/// surfaced to a subscriber — the three thread payloads, whose
+/// events the Host publishes once it has stored them, and the six
+/// membership notices, whose verdicts the Host publishes from the merged
+/// governance. Saying so in the return type is what stops
 /// them being given an invented event just to satisfy the match.
 pub fn control_into_event(
     payload: ControlPayload,
@@ -46,12 +48,6 @@ pub fn control_into_event(
             display_name,
             has_invite: invite_code.is_some(),
         }),
-        ControlPayload::MemberLeave { pseudonym_key } => {
-            SubscriptionEvent::Membership(MembershipEvent::Left {
-                community: c(),
-                pseudonym: pseudonym_key,
-            })
-        }
         ControlPayload::JoinAccepted {
             mek_generation,
             slot_index,
@@ -69,49 +65,8 @@ pub fn control_into_event(
                 reason,
             })
         }
-        ControlPayload::MemberJoined {
-            pseudonym_key,
-            display_name,
-            role_ids,
-            ..
-        } => SubscriptionEvent::Membership(MembershipEvent::Joined {
-            community: c(),
-            pseudonym: pseudonym_key,
-            display_name,
-            role_ids,
-        }),
-        ControlPayload::MemberRemoved { pseudonym_key } => {
-            SubscriptionEvent::Membership(MembershipEvent::Removed {
-                community: c(),
-                pseudonym: pseudonym_key,
-            })
-        }
 
         // ── Moderation ──────────────────────────────────────
-        ControlPayload::Kick { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::Kicked {
-                community: c(),
-                target_pseudonym,
-                removed_by: None,
-                removed_by_name: None,
-                reason: None,
-            })
-        }
-        ControlPayload::Ban { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::Banned {
-                community: c(),
-                target_pseudonym,
-                removed_by: None,
-                removed_by_name: None,
-                reason: None,
-            })
-        }
-        ControlPayload::Unban { target_pseudonym } => {
-            SubscriptionEvent::Membership(MembershipEvent::Unbanned {
-                community: c(),
-                target_pseudonym,
-            })
-        }
         ControlPayload::TimeoutMember {
             target_pseudonym,
             duration_seconds,
@@ -326,7 +281,21 @@ pub fn control_into_event(
         // binds, so only the Host, reading the reply from the thread
         // record, has the body the event carries; mapping them here as
         // well would publish each twice, the reply once without its body.
-        ControlPayload::ThreadCreated { .. }
+        //
+        // Membership verdicts (A/B F7b-1, F7b-2): who joined, left, was
+        // kicked, banned or unbanned is the merged governance's to say,
+        // and the Host publishes each from the merge, once, with the
+        // remover and the reason (`host/adapters/governance/member_events.rs`).
+        // A gossip notice is a hint that is not authenticated for policy
+        // and carries neither; mapping it too published every removal
+        // twice, first without its reason.
+        ControlPayload::MemberJoined { .. }
+        | ControlPayload::MemberLeave { .. }
+        | ControlPayload::MemberRemoved { .. }
+        | ControlPayload::Kick { .. }
+        | ControlPayload::Ban { .. }
+        | ControlPayload::Unban { .. }
+        | ControlPayload::ThreadCreated { .. }
         | ControlPayload::ThreadMessageReceived { .. }
         | ControlPayload::ThreadArchived { .. }
         | ControlPayload::MekTransferAck(_)

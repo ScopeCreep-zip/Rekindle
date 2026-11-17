@@ -29,9 +29,19 @@ impl HostGovernance {
             community_id,
             &state,
         );
-        let removal = (self.ctx.communities.map().read().get(community_id))
-            .and_then(|c| c.my_pseudonym_key.clone())
-            .and_then(|me| crate::host::community::OwnRemoval::of(&state, &me));
+        let me = (self.ctx.communities.map().read().get(community_id))
+            .and_then(|c| c.my_pseudonym_key.clone());
+        let removal = me
+            .as_ref()
+            .and_then(|me| crate::host::community::OwnRemoval::of(&state, me));
+        // The membership verdicts against the state last projected, read
+        // before this one replaces it and published once it is in place.
+        let me = me.and_then(|hex| {
+            (hex::decode(hex).ok()?.try_into().ok()).map(rekindle_types::id::PseudonymKey)
+        });
+        let prev = self.ctx.communities.governance_state(community_id);
+        let transitions =
+            self.member_transitions_of(community_id, prev.as_ref(), &state, me.as_ref());
         let now_secs = self.ctx.clock.now_secs();
         let (projected, held) =
             self.ctx
@@ -42,6 +52,7 @@ impl HostGovernance {
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
         }
+        self.publish_member_transitions(transitions);
         match removal {
             Some(removal) => self.on_own_removal(community_id, &removal),
             None => self.on_not_removed(community_id),

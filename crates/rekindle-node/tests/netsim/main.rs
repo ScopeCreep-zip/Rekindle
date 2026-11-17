@@ -58,6 +58,7 @@ mod left_slot_write;
 mod logout_unlock;
 mod logs;
 mod mek_transfer_retry;
+mod member_events;
 mod mod_report;
 mod moderation;
 mod no_timed_inspect;

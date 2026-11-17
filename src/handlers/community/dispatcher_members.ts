@@ -81,8 +81,10 @@ export function reduceSubscriptionMembership(
     return;
   }
 
-  if ("removed" in m) {
-    const { community, pseudonym } = m.removed;
+  // A leave, from the Host's merged governance (A/B F7b-1), drops the
+  // member as a removal does.
+  if ("removed" in m || "left" in m) {
+    const { community, pseudonym } = "left" in m ? m.left : m.removed;
     setCommunityState("communities", community, "members", (prev) =>
       prev.filter((x) => x.pseudonymKey !== pseudonym),
     );
