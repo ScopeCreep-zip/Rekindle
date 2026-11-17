@@ -117,3 +117,26 @@ export async function pickNextFile(b: Browser, name: string, mime: string, base6
     base64,
   );
 }
+
+/**
+ * Wait until the stored preference `key` reads `value`. A `<select>` shows
+ * the choice at once, but `handleSaveSettings` (settings.actions.ts:30)
+ * first awaits `get_preferences` and only then sends `set_preferences`:
+ * closing Settings before that kills the save (ST8). The read is started
+ * by one script and collected by later ones (async scripts timed out).
+ */
+export async function waitStored(b: Browser, key: string, value: unknown): Promise<void> {
+  await waitUntil(
+    async () => {
+      const got = await b.execute((k: string) => {
+        const w = window as unknown as { __walkPref?: unknown; __TAURI_INTERNALS__: { invoke(cmd: string): Promise<Record<string, unknown>> } };
+        const prev = w.__walkPref;
+        w.__TAURI_INTERNALS__.invoke("get_preferences").then((p) => { w.__walkPref = p[k]; });
+        return prev;
+      }, key);
+      return got === value;
+    },
+    WAIT_MS,
+    `stored ${key} never read ${String(value)}`,
+  );
+}
