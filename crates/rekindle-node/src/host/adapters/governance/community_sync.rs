@@ -4,7 +4,9 @@
 //! then every [`TICK`]) it re-announces our presence and route to each
 //! community's gossip mesh and asks the mesh for each channel's messages
 //! since our newest. Its first tick with a route also asks for every
-//! community key we hold behind ([`HostGovernance::recover_behind_meks`]).
+//! community key we hold behind ([`HostGovernance::recover_behind_meks`]);
+//! every later tick asks again for a key still behind, at the next cascade
+//! index ([`HostGovernance::repair_behind_meks`], plan E3.2 S7m item 1c).
 //!
 //! It reads no record (D4): a channel or governance record's change arrives
 //! by its watch, so the desktop's per-tick inspect of every channel record
@@ -63,6 +65,8 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
     let mut ticks = tokio::time::interval(FIRST_TICK);
     let mut count: u32 = 0;
     let mut recovered = false;
+    // The cascade indices a repeated key request walks.
+    let cascades = u32::try_from(rekindle_mek_rotation::MAX_CASCADES).unwrap_or(u32::MAX);
     while stop.run_until_cancelled(ticks.tick()).await.is_some() {
         count += 1;
         if count == FIRST_TICKS {
@@ -76,7 +80,9 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
         if route.is_empty() || rekindle_presence::hides_presence(host.ctx.own_presence.status()) {
             continue;
         }
-        if !recovered {
+        if recovered {
+            host.repair_behind_meks(count % cascades);
+        } else {
             host.recover_behind_meks();
             recovered = true;
         }

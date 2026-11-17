@@ -6,6 +6,7 @@ mod attachment_round_trip;
 mod audit;
 mod auto_away;
 mod backfill_gate;
+mod behind_key_repair;
 mod channel_delete_container_not_empty;
 mod channel_post_both_ways;
 mod community_block_drops;

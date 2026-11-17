@@ -81,7 +81,7 @@ pub mod role_ops;
 mod roles;
 mod slot_heads;
 mod state_builder;
-mod state_mutations;
+pub(crate) mod state_mutations;
 mod state_reads;
 pub(crate) mod unread;
 mod views;

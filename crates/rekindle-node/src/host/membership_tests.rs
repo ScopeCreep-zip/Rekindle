@@ -151,7 +151,7 @@ async fn recover_behind_meks_asks_only_for_a_held_key_behind() {
     rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(2));
     assert_eq!(
         governance.behind_meks(),
-        vec![("c1".into(), "me".into())],
+        vec![("c1".into(), "me".into(), 3)],
         "generation 2 is behind 3"
     );
     rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(3));
@@ -161,6 +161,23 @@ async fn recover_behind_meks_asks_only_for_a_held_key_behind() {
     );
     governance.recover_behind_meks();
     host.shutdown().await.unwrap();
+}
+
+/// Item 1c's trigger (plan E3.2 S7m): a merge that raises the key's
+/// generation asks for the key; the first projection, an unchanged one and
+/// a lower one do not.
+#[test]
+fn only_a_raised_generation_triggers_the_key_repair() {
+    use crate::host::adapters::governance::state_mutations::raises_key_generation;
+    use rekindle_governance::state::GovernanceState;
+    let at = |mek_generation| GovernanceState {
+        mek_generation,
+        ..GovernanceState::default()
+    };
+    assert!(raises_key_generation(Some(&at(1)), &at(2)));
+    assert!(!raises_key_generation(None, &at(2)), "a first projection");
+    assert!(!raises_key_generation(Some(&at(2)), &at(2)), "unchanged");
+    assert!(!raises_key_generation(Some(&at(3)), &at(2)), "lower");
 }
 
 /// The sync loop's community phase (plan E3.1 C2b): one pass asks for

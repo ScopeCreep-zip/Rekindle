@@ -15,6 +15,23 @@ use rekindle_transport::session::CommunityMembership as SessionMembership;
 
 use super::HostGovernance;
 
+/// How long a raised key generation waits for the rotator's push before
+/// the member asks for the key itself: one push's `app_call` round trip
+/// and its install, with room.
+const KEY_PUSH_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Whether merging `next` over `prev` raises the community key's
+/// generation, the trigger of item 1c's repair. The first projection of a
+/// community (`prev` absent: the unlock's load or a join) is not one: the
+/// login catch-up asks for a key behind, and a joiner's first key is the
+/// inviter's push (D16).
+pub(crate) fn raises_key_generation(
+    prev: Option<&GovernanceState>,
+    next: &GovernanceState,
+) -> bool {
+    prev.is_some_and(|prev| prev.mek_generation < next.mek_generation)
+}
+
 impl HostGovernance {
     pub(super) fn set_governance_state_impl(&self, community_id: &str, state: GovernanceState) {
         // Record each channel's record key before the state lands.
@@ -42,6 +59,7 @@ impl HostGovernance {
         let prev = self.ctx.communities.governance_state(community_id);
         let transitions =
             self.member_transitions_of(community_id, prev.as_ref(), &state, me.as_ref());
+        let raised = raises_key_generation(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
         let (projected, held) =
             self.ctx
@@ -57,6 +75,25 @@ impl HostGovernance {
             Some(removal) => self.on_own_removal(community_id, &removal),
             None => self.on_not_removed(community_id),
         }
+        if raised {
+            self.repair_after_grace(community_id);
+        }
+    }
+
+    /// A merge raised the community key's generation (a
+    /// `MEKGenerationBump`, plan E3.2 S7m item 1c): once the rotator's own
+    /// push has had [`KEY_PUSH_GRACE`] to land, ask for the key if we still
+    /// hold it behind. The sync tick keeps asking after that.
+    fn repair_after_grace(&self, community_id: &str) {
+        let host = self.clone();
+        let community = community_id.to_string();
+        rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(self).spawn_or_drop(
+            "community key repair",
+            async move {
+                tokio::time::sleep(KEY_PUSH_GRACE).await;
+                host.repair_behind_mek(&community);
+            },
+        );
     }
 
     /// The files domain's effects of a projection (plan E3.1 E3f), on both
