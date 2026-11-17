@@ -8,6 +8,19 @@
 //!   ([`super::css`]). The frame, titlebar and status bar carry text or
 //!   hold the whole window: their selectors and the `textBacking` layer
 //!   are E7.7.2's apply step, so they are measured (F83) but not painted.
+//! * A painted slot that carries text (`button.secondary`, Winamp GENEX's
+//!   button, `.form-btn-secondary`) needs its `textBacking` between the
+//!   bitmap and the label. Its own `background` cannot be it:
+//!   `border-image` paints over the background. Decided (E7.7.2, CSS 2.1
+//!   Appendix E painting order: a stacking context paints its background
+//!   and borders, then children with negative `z-index`, then in-flow
+//!   content): the element gets `isolation: isolate` and a `::before` with
+//!   `position: absolute; inset: 0; z-index: -1` whose background is the
+//!   backing token, so the stack is image, backing, label with no markup
+//!   change. It is a step of its own, not built yet: a slot with that
+//!   box's extents (not window-sized F83 sampling), the generator's backing
+//!   rule, `skin_css` writing the backing token's value, and the Winamp
+//!   importer composing the left/centre/right sprites into one nine-slice.
 //! * A state is one of Rekindle's own enums. A skin image for a state the
 //!   slot does not list is refused, so every image a skin ships is one a
 //!   selector can show.
