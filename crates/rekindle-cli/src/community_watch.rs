@@ -77,6 +77,20 @@ fn removal(what: &str, by: Option<&str>, by_name: Option<&str>, reason: Option<&
     text
 }
 
+/// "Ann (abcd1234…ef01)", or the short pseudonym alone while the member's
+/// card is not read (plan E3.2 F9-2): a name is always shown beside the
+/// key, so two members with one name stay apart.
+fn member(pseudonym: &str, name: Option<&str>) -> String {
+    match name {
+        Some(name) => format!(
+            "{} ({})",
+            sanitize_for_display(name),
+            abbreviate_key(pseudonym)
+        ),
+        None => abbreviate_key(pseudonym),
+    }
+}
+
 fn roles(role_ids: &[u32]) -> String {
     let ids: Vec<String> = role_ids.iter().map(u32::to_string).collect();
     format!("[{}]", ids.join(", "))
@@ -133,10 +147,17 @@ fn membership(event: &MembershipEvent) -> (&str, String) {
             ..
         } => (
             community,
+            format!("{} joined", member(pseudonym, display_name.as_deref())),
+        ),
+        MembershipEvent::MemberCardChanged {
+            community,
+            pseudonym,
+            display_name,
+        } => (
+            community,
             format!(
-                "{} ({}) joined",
-                sanitize_for_display(display_name),
-                abbreviate_key(pseudonym)
+                "{} is named on its card",
+                member(pseudonym, Some(display_name))
             ),
         ),
         MembershipEvent::Left {
@@ -367,6 +388,30 @@ mod tests {
         });
         let line = render(&event).expect("a ban is a community event");
         assert!(line.ends_with("was banned by bbbbbbbb…bbbb"), "{line}");
+    }
+
+    /// A join before the card is read shows the key alone; the card's name
+    /// follows as its own line (plan E3.2 F9-2).
+    #[test]
+    fn a_join_shows_the_key_until_the_card_names_the_member() {
+        let joined = SubscriptionEvent::Membership(MembershipEvent::Joined {
+            community: "c".repeat(64),
+            pseudonym: "p".repeat(64),
+            display_name: None,
+            role_ids: Vec::new(),
+        });
+        let line = render(&joined).expect("a join is a community event");
+        assert!(line.ends_with(": pppppppp…pppp joined"), "{line}");
+        let card = SubscriptionEvent::Membership(MembershipEvent::MemberCardChanged {
+            community: "c".repeat(64),
+            pseudonym: "p".repeat(64),
+            display_name: "Ann".into(),
+        });
+        let line = render(&card).expect("a card name is a community event");
+        assert!(
+            line.ends_with(": Ann (pppppppp…pppp) is named on its card"),
+            "{line}"
+        );
     }
 
     /// Events outside a community are not this watch's.

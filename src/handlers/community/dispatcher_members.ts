@@ -50,6 +50,18 @@ export function reduceSubscriptionMembership(
     return;
   }
 
+  // The member's verified card named it (plan E3.2 F9-2): the row shows
+  // the short pseudonym until then.
+  if ("memberCardChanged" in m) {
+    const { community, pseudonym, displayName } = m.memberCardChanged;
+    const c = communityState.communities[community];
+    const idx = (c?.members ?? []).findIndex((x) => x.pseudonymKey === pseudonym);
+    if (idx >= 0) {
+      setCommunityState("communities", community, "members", idx, "displayName", displayName);
+    }
+    return;
+  }
+
   if ("kicked" in m || "banned" in m) {
     const banned = "banned" in m;
     const r = "banned" in m ? m.banned : m.kicked;

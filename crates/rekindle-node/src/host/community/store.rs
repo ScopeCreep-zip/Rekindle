@@ -29,6 +29,7 @@ use crate::host::adapters::governance::projection::{self, GovernanceProjected};
 pub type CommunityMap = Arc<RwLock<HashMap<String, CommunityState>>>;
 
 /// A new, empty [`CommunityMap`].
+mod cards;
 mod locks;
 mod removal;
 
@@ -81,31 +82,6 @@ impl CommunityStore {
             frontier_writes: Arc::default(),
             follow_ups: Arc::default(),
         }
-    }
-
-    /// The display name on `pseudonym`'s verified card.
-    #[must_use]
-    pub fn member_card_name(
-        &self,
-        community_id: &str,
-        pseudonym: &rekindle_types::id::PseudonymKey,
-    ) -> Option<String> {
-        self.member_cards
-            .read()
-            .get(&(community_id.to_owned(), pseudonym.0))
-            .cloned()
-    }
-
-    /// Remember the display name on `pseudonym`'s verified card.
-    pub fn note_member_card_name(
-        &self,
-        community_id: &str,
-        pseudonym: &rekindle_types::id::PseudonymKey,
-        name: String,
-    ) {
-        self.member_cards
-            .write()
-            .insert((community_id.to_owned(), pseudonym.0), name);
     }
 
     /// The shared map itself.

@@ -87,6 +87,7 @@ impl SubscriptionEvent {
                 | MembershipEvent::JoinAccepted { community, .. }
                 | MembershipEvent::JoinRejected { community, .. }
                 | MembershipEvent::Joined { community, .. }
+                | MembershipEvent::MemberCardChanged { community, .. }
                 | MembershipEvent::Left { community, .. }
                 | MembershipEvent::Removed { community, .. }
                 | MembershipEvent::Kicked { community, .. }

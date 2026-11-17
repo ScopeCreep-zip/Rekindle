@@ -19,7 +19,9 @@ pub(super) fn handle_membership_payload(
     match payload {
         ControlPayload::MemberJoined {
             pseudonym_key,
-            display_name,
+            // A gossip notice's name is a hint, not the member's verified
+            // card (plan E3.2 F9-2), so the Joined below carries none.
+            display_name: _,
             role_ids,
             status,
             route_blob,
@@ -60,7 +62,7 @@ pub(super) fn handle_membership_payload(
                 rekindle_types::subscription_events::MembershipEvent::Joined {
                     community: community_id.to_string(),
                     pseudonym: pseudonym_key.clone(),
-                    display_name,
+                    display_name: None,
                     role_ids,
                 },
             );

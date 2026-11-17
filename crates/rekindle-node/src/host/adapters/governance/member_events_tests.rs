@@ -45,7 +45,7 @@ fn transitions(
     next: &GovernanceState,
     me: Option<&PseudonymKey>,
 ) -> serde_json::Value {
-    json(member_transitions(C, prev, next, me, names))
+    json(member_transitions(C, prev, next, me, names, names))
 }
 
 fn json(events: Vec<MembershipEvent>) -> serde_json::Value {
@@ -87,7 +87,7 @@ fn a_ban_is_one_banned_and_our_own_removal_is_left_to_own_removal() {
     next.bans.insert(key(2));
     next.removed.insert(key(2), OpStamp::MIN);
     next.removed_by.insert(key(2), key(1));
-    let events = member_transitions(C, &prev, &next, Some(&key(1)), names);
+    let events = member_transitions(C, &prev, &next, Some(&key(1)), names, names);
     assert!(
         matches!(&events[..], [MembershipEvent::Banned { target_pseudonym, removed_by: Some(by), .. }]
             if *target_pseudonym == key(2).to_hex() && *by == key(1).to_hex()),
@@ -103,7 +103,7 @@ fn a_ban_is_one_banned_and_our_own_removal_is_left_to_own_removal() {
             MembershipEvent::Joined {
                 community: C.into(),
                 pseudonym: key(2).to_hex(),
-                display_name: String::new(),
+                display_name: None,
                 role_ids: Vec::new(),
             },
             MembershipEvent::Unbanned {
@@ -140,7 +140,28 @@ fn a_join_is_one_joined_with_the_card_name() {
         json(vec![MembershipEvent::Joined {
             community: C.into(),
             pseudonym: key(1).to_hex(),
-            display_name: "Ann".into(),
+            display_name: Some("Ann".into()),
+            role_ids: Vec::new(),
+        }])
+    );
+}
+
+/// Plan E3.2 F9-2: a joiner's name is its verified card's alone. Before the
+/// card is read the Joined carries none (the name follows as
+/// `MemberCardChanged`), even when a stored profile row holds one: those
+/// rows are not all signed by the member.
+#[test]
+fn a_join_before_the_card_is_read_carries_no_name_not_the_profile_row() {
+    let prev = with(&[2]);
+    let next = with(&[1, 2]);
+    let no_card = |_: &PseudonymKey| None;
+    let events = member_transitions(C, &prev, &next, Some(&key(2)), no_card, names);
+    assert_eq!(
+        json(events),
+        json(vec![MembershipEvent::Joined {
+            community: C.into(),
+            pseudonym: key(1).to_hex(),
+            display_name: None,
             role_ids: Vec::new(),
         }])
     );

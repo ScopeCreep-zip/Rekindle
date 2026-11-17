@@ -1006,6 +1006,15 @@
       }
     }
   },
+  "membership.memberCardChanged": {
+    "membership": {
+      "memberCardChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "displayName": "Eve",
+        "pseudonym": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      }
+    }
+  },
   "membership.memberDiscovered": {
     "membership": {
       "memberDiscovered": {

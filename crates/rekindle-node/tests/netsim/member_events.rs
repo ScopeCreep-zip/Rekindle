@@ -4,7 +4,9 @@
 //! the others as one `Kicked` naming the remover and carrying the reason
 //! (the gossip echo, which carries neither, used to arrive first); a leave
 //! reaches the leaver's own frontends and every other member as one
-//! `Left`, whether or not the departure gossip reached them.
+//! `Left`, whether or not the departure gossip reached them. A join goes
+//! out at once with no name, and the joiner's verified card names it once
+//! read (plan E3.2 F9-2).
 
 use std::time::Duration;
 
@@ -108,5 +110,47 @@ async fn a_leave_is_one_left_on_the_leaver_and_every_member() {
         left(&cid_events, &bea),
         1,
         "another member sees the leave once"
+    );
+}
+
+/// Plan E3.2 F9-2 (A/B round 9 saw `displayName: ""`): another member gets
+/// one `Joined` with no name, never "", and then one `MemberCardChanged`
+/// with the name on the joiner's verified card.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_join_is_named_by_the_joiners_card_once_read() {
+    let mut community = Community::create(2, 721).await;
+    let ann_events = community.nodes[0].events().await;
+    community.join(1).await;
+    let bea = community.pseudonym(1).await;
+    let card = |e: &SubscriptionEvent| {
+        matches!(e, SubscriptionEvent::Membership(MembershipEvent::MemberCardChanged {
+            pseudonym, display_name, ..
+        }) if *pseudonym == bea && display_name == "member1")
+    };
+    assert!(
+        eventually(&community.sim, Duration::from_secs(180), || async {
+            ann_events.any(card)
+        })
+        .await,
+        "the joiner's card names it on the creator"
+    );
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    community.sim.quiesce().await;
+    let joined = |named: bool| {
+        ann_events.matching(|e| {
+            matches!(e, SubscriptionEvent::Membership(MembershipEvent::Joined {
+                pseudonym, display_name, ..
+            }) if *pseudonym == bea && display_name.is_some() == named)
+        })
+    };
+    assert_eq!(
+        (joined(false), joined(true)),
+        (1, 0),
+        "one Joined, before the card is read, with no name"
+    );
+    assert_eq!(
+        ann_events.matching(card),
+        1,
+        "the card's name is announced once"
     );
 }

@@ -9,6 +9,7 @@ use rekindle_types::dto::community::{
     CommunityView, MemberGroup,
 };
 use rekindle_types::dto::member_groups::{group_members, GroupRole};
+use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::SessionLocation;
 
 use super::HostGovernance;
@@ -283,9 +284,13 @@ impl HostGovernance {
                     .get(&row.pseudonym_key)
                     .cloned()
                     .unwrap_or_default();
+                // The verified card's name first (plan E3.2 F9-2), so a
+                // re-read never undoes a `MemberCardChanged`.
+                let card = (self.ctx.communities)
+                    .member_card_name(community, &PseudonymKey::from_hex_lossy(&row.pseudonym_key));
                 CommunityMemberView {
                     display_role: display_role_name(&role_ids, &overlay.roles),
-                    display_name: row.display_name.unwrap_or_default(),
+                    display_name: card.or(row.display_name).unwrap_or_default(),
                     role_ids,
                     status,
                     timeout_until: timeout_until(&row.pseudonym_key),

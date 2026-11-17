@@ -20,6 +20,7 @@ use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_records::port::RecordSchema;
 use rekindle_types::governance::{GenesisCert, OpRef};
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
 use super::HostGovernance;
 
@@ -358,10 +359,22 @@ impl GovernanceRuntimeDeps for HostGovernance {
             .member_card_name(community_id, pseudonym)
     }
 
+    /// A name we did not hold goes to every frontend as `MemberCardChanged`
+    /// (plan E3.2 F9-2): the first read of the card, or a changed name.
     fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String) {
-        self.ctx
+        if self
+            .ctx
             .communities
-            .note_member_card_name(community_id, pseudonym, name);
+            .note_member_card_name(community_id, pseudonym, name.clone())
+        {
+            self.ctx.publish_event(SubscriptionEvent::Membership(
+                MembershipEvent::MemberCardChanged {
+                    community: community_id.to_owned(),
+                    pseudonym: pseudonym.to_hex(),
+                    display_name: name,
+                },
+            ));
+        }
     }
 
     fn record_port(

@@ -20,7 +20,17 @@ export type MembershipEvent =
   | { joinAccepted: { community: string; mekGeneration: number | null; slotIndex: number | null } }
   | { joinRejected: { community: string; reason: string } }
   | { joinProgress: { community: string; stage: string; status: string } }
-  | { joined: { community: string; pseudonym: string; displayName: string; roleIds: number[] } }
+  | {
+      joined: {
+        community: string;
+        pseudonym: string;
+        /** The verified card's name; null until the card is read (plan E3.2 F9-2). */
+        displayName: string | null;
+        roleIds: number[];
+      };
+    }
+  /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
+  | { memberCardChanged: { community: string; pseudonym: string; displayName: string } }
   | { left: { community: string; pseudonym: string } }
   | { removed: { community: string; pseudonym: string } }
   | {

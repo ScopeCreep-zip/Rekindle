@@ -7,6 +7,7 @@ import type { GameInfo } from "../ipc/commands/dto";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 import type { MemberGroup } from "../ipc/commands/dto";
+import { truncateKey } from "./formatting";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 export function transformFriend(f: FriendInfo): Friend {
@@ -219,7 +220,10 @@ export function transformMember(m: {
   group: MemberGroup;
 }): Member {
   return {
-    pseudonymKey: m.pseudonymKey, displayName: m.displayName, roleIds: m.roleIds,
+    // A member whose card is not read yet shows its short pseudonym, as
+    // Matrix shows the user id without a displayname (plan E3.2 F9-2).
+    pseudonymKey: m.pseudonymKey, displayName: m.displayName || truncateKey(m.pseudonymKey),
+    roleIds: m.roleIds,
     displayRole: m.displayRole, status: m.status, timeoutUntil: m.timeoutUntil ?? null,
     gameInfo: m.gameInfo ?? null,
     bio: m.bio ?? null,

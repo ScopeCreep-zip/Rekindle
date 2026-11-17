@@ -256,10 +256,12 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::Membership(MembershipEvent::Joined {
-                ref display_name, ..
+                ref pseudonym,
+                ref display_name,
+                ..
             }) => {
-                self.notifications
-                    .push(format!("{display_name} joined"), ToastLevel::Info);
+                let toast = format!("{} joined", member_label(pseudonym, display_name.as_deref()));
+                self.notifications.push(toast, ToastLevel::Info);
                 Some(Action::Render)
             }
             SubscriptionEvent::Membership(MembershipEvent::Left { ref pseudonym, .. }) => {
@@ -467,4 +469,12 @@ impl App {
             KeymapContext::Default
         }
     }
+}
+
+/// "Ann (abcd1234…ef01)", or the short pseudonym alone while the member's
+/// card is not read (plan E3.2 F9-2): a name is always shown beside the
+/// key, so two members with one name stay apart.
+fn member_label(pseudonym: &str, name: Option<&str>) -> String {
+    let key = crate::helpers::abbreviate_key(pseudonym);
+    name.map_or_else(|| key.clone(), |name| format!("{name} ({key})"))
 }

@@ -65,6 +65,20 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(pseudonym.as_bytes());
         }
+        MembershipEvent::MemberCardChanged {
+            community,
+            pseudonym,
+            display_name,
+        } => {
+            // The name too: a rename is a new event, a repeat of the same
+            // name one.
+            h.update(b"card|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(pseudonym.as_bytes());
+            h.update(b"|");
+            h.update(display_name.as_bytes());
+        }
         MembershipEvent::Left {
             community,
             pseudonym,

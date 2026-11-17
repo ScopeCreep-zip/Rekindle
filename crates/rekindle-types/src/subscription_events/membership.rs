@@ -75,8 +75,23 @@ pub enum MembershipEvent {
     Joined {
         community: String,
         pseudonym: String,
-        display_name: String,
+        /// The name on the member's verified card (`M`/0), when we have
+        /// read it; `None` = not read yet, never "" (plan E3.2 F9-2). The
+        /// event goes out at once, so the name usually follows as a
+        /// [`Self::MemberCardChanged`]; a frontend shows the short
+        /// pseudonym until then.
+        display_name: Option<String>,
         role_ids: Vec<u32>,
+    },
+    /// The name on a member's verified card (`M`/0, signed by the
+    /// pseudonym, its owner pinned to the member's `MemberJoined`), on the
+    /// first read of that card and on each change (plan E3.2 F9-2).
+    /// Triggered by: the Host, when it notes a card name it did not hold
+    /// (`CommunityStore::note_member_card_name`).
+    MemberCardChanged {
+        community: String,
+        pseudonym: String,
+        display_name: String,
     },
     /// A member left the community voluntarily.
     /// Triggered by: the Host, when the merged governance first holds the
@@ -182,6 +197,19 @@ pub enum MembershipEvent {
 #[cfg(test)]
 mod tests {
     use super::MembershipEvent;
+
+    /// A Joined whose card is not read yet carries a null name, never "".
+    #[test]
+    fn a_joined_before_its_card_carries_no_name() {
+        let event = MembershipEvent::Joined {
+            community: "c".into(),
+            pseudonym: "p".into(),
+            display_name: None,
+            role_ids: Vec::new(),
+        };
+        let json = serde_json::to_value(&event).expect("serializes");
+        assert!(json["joined"]["displayName"].is_null(), "{json}");
+    }
 
     /// The removal's reason crosses the wire under `reason` and back.
     #[test]

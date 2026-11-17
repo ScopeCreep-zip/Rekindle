@@ -41,9 +41,14 @@ impl HostGovernance {
             return Vec::new();
         };
         let communities = &self.ctx.communities;
-        member_transitions(community_id, prev, next, me, |p| {
-            communities.removal_name_of(community_id, p)
-        })
+        member_transitions(
+            community_id,
+            prev,
+            next,
+            me,
+            |p| communities.member_card_name(community_id, p),
+            |p| communities.removal_name_of(community_id, p),
+        )
     }
 
     /// Publish `events` (from [`Self::member_transitions_of`]).
@@ -55,13 +60,19 @@ impl HostGovernance {
 }
 
 /// The membership events that take `prev` to `next`, in pseudonym order.
-/// `name_of` gives a member's card or profile name (a joiner's, a
-/// remover's). Our own kick or ban (`me`) is left to the own-removal path.
+/// `card_name_of` gives the name on a member's verified card, the only
+/// source of a joiner's name (plan E3.2 F9-2: the stored `member_profiles`
+/// rows are not all signed by the member, e.g. a `JoinAccepted`'s member
+/// list is the sender's word); `None` while the card is not read, and its
+/// name follows as `MemberCardChanged`. `name_of` gives a remover's card
+/// or profile name. Our own kick or ban (`me`) is left to the own-removal
+/// path.
 pub(super) fn member_transitions(
     community_id: &str,
     prev: &GovernanceState,
     next: &GovernanceState,
     me: Option<&PseudonymKey>,
+    card_name_of: impl Fn(&PseudonymKey) -> Option<String>,
     name_of: impl Fn(&PseudonymKey) -> Option<String>,
 ) -> Vec<MembershipEvent> {
     let community = || community_id.to_owned();
@@ -86,7 +97,7 @@ pub(super) fn member_transitions(
             out.push(MembershipEvent::Joined {
                 community: community(),
                 pseudonym: p.to_hex(),
-                display_name: name_of(p).unwrap_or_default(),
+                display_name: card_name_of(p),
                 // The legacy numeric role list: a member's roles are 16-byte
                 // ids, published by `RolesChanged` once assigned.
                 role_ids: Vec::new(),

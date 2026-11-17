@@ -242,11 +242,13 @@ pub async fn read_beat(
         .map_err(|e| format!("presence beat: {e}"))
 }
 
-/// Read and remember the verified card of every pending member whose card
-/// we do not hold yet, for the admission queue's names
-/// (`GovernanceRuntimeDeps::member_card_name`). A card that does not
-/// verify is not remembered.
-pub async fn refresh_pending_cards<D: crate::deps::GovernanceRuntimeDeps>(
+/// Read and remember the verified card of every pending or admitted member
+/// whose card name we do not hold yet: the admission queue's names and the
+/// name a `Joined` lacked (plan E3.2 F9-2; the deps announce a name they
+/// did not hold, `GovernanceRuntimeDeps::note_member_card_name`). Pending
+/// members first, oldest first, then members by join stamp. A card that
+/// does not verify is not remembered.
+pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
 ) {
@@ -256,17 +258,24 @@ pub async fn refresh_pending_cards<D: crate::deps::GovernanceRuntimeDeps>(
     let Ok(port) = deps.record_port() else {
         return;
     };
-    let mut pending: Vec<_> = state.pending_members.iter().collect();
-    pending.sort_by_key(|(_, p)| p.stamp);
-    for (pseudonym, member) in pending {
+    let mut pending: Vec<_> = (state.pending_members.iter())
+        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.stamp))
+        .collect();
+    pending.sort_by_key(|(_, _, _, stamp)| *stamp);
+    let mut members: Vec<_> = (state.members.iter())
+        .filter(|(p, _)| !state.is_departed(p))
+        .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.joined))
+        .collect();
+    members.sort_by_key(|(_, _, _, stamp)| *stamp);
+    for (pseudonym, record, owner, _) in pending.into_iter().chain(members) {
         if deps.member_card_name(community_id, pseudonym).is_some() {
             continue;
         }
         let at = MemberRecordRef {
             community_id,
             pseudonym,
-            record: &member.member_record,
-            owner: &member.member_record_owner,
+            record,
+            owner,
         };
         match read_card(&*port, &at).await {
             Ok(Some(signed)) => {
