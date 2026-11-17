@@ -54,8 +54,15 @@ async fn a_partially_written_op_is_readable_while_pending_and_lands_once() {
     let answer = community.nodes[0].call(create).await;
     assert!(answer.is_ok(), "a pending op is a success: {answer:?}");
 
-    // Two replicas hold the new op-log head, below consensus, and a get
-    // reaching them reads it while the writer still has it queued.
+    // The accepting replicas hold the new op-log head although the writer's
+    // set ended below consensus, and a get reaching them reads it while the
+    // writer still has it queued. Other replicas may hold it too: a ring
+    // member keeping the writer's record warm (`keepalive.rs` `rehydrate`,
+    // architecture §14.1 mutual aid; `watch_ring.rs` `warm_member_records`)
+    // re-opens it with `OpenIntent::Hold`, and Veilid's rehydration pushes a
+    // subkey held below `SET_COUNT` on to the rest, so "only the accepting
+    // replicas" is not a property the code or Veilid promises (traced
+    // 2026-11-17: node 2's keepalive at +191 s, inside node 0's partial set).
     let newer: Vec<u32> = community
         .sim
         .replica_values(&record, member_record::GOV_HEAD)
@@ -64,7 +71,10 @@ async fn a_partially_written_op_is_readable_while_pending_and_lands_once() {
         .map(|v| v.seq)
         .filter(|seq| before.is_none_or(|b| *seq > b))
         .collect();
-    assert_eq!(newer.len(), 2, "only the accepting replicas: {newer:?}");
+    assert!(
+        newer.len() >= 2,
+        "the accepting replicas hold the pending head: {newer:?}"
+    );
     let read = community
         .sim
         .network_get(&record, member_record::GOV_HEAD)
