@@ -152,6 +152,10 @@ labels! {
     /// BLAKE3 `derive_key` context: a checkpoint's `eligibleSetHash` over
     /// the electorate's pseudonyms, sorted (plan E3.2 S7c.3, ADR 0018).
     GOV_CHECKPOINT_ELIGIBLE = "rekindle-gov-checkpoint-eligible-v1";
+    /// Ed25519 signature prefix: a member's checkpoint state snapshot
+    /// request (plan E3.2 S7c.3), by the asking member's pseudonym, over
+    /// `community ‖ height ‖ digest ‖ offset ‖ requester`.
+    CHECKPOINT_STATE_REQUEST = "rekindle-checkpoint-state-request-v1";
     /// BLAKE3 `derive_key` context: a `Frontier`'s roster checksum over the
     /// canonical encoding of the merged roster and role tables (D15).
     GOV_ROSTER_CHECKSUM = "rekindle-gov-roster-checksum-v1";

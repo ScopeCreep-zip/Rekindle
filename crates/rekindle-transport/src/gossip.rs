@@ -71,6 +71,7 @@ const RATE_LIMIT_IDLE_TTL: Duration = Duration::from_secs(60);
 /// consulted: `GossipMesh` constructed one and nothing ever called it,
 /// so the daemon had no receiver-side flood protection at all. It also
 /// grew a `VecDeque` per sender forever — nothing pruned idle senders.
+#[derive(Debug, Clone)]
 pub struct RateLimiter {
     /// sender_key → token bucket.
     buckets: HashMap<String, TokenBucket>,

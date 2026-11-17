@@ -258,7 +258,11 @@ async fn dispatch_app_call<H: InboundHandler>(
                 return;
             }
             if let Some(request) = super::bare_envelope::decode_bare_bootstrap_request(raw) {
-                dispatch_bare_bootstrap_request(handler, messages, call_id, request).await;
+                dispatch_bare_request(handler, messages, call_id, request).await;
+                return;
+            }
+            if let Some(request) = super::bare_envelope::decode_bare_checkpoint_state_request(raw) {
+                dispatch_bare_request(handler, messages, call_id, request).await;
                 return;
             }
             if let Some((attachment_id, requested_chunks)) =
@@ -509,9 +513,10 @@ async fn reply_nak(messages: &dyn AppMessagePort, call_id: AppCallId) {
 mod tests;
 
 /// Answer a joiner's bare `BootstrapRequest` (plan E3.2) with the
-/// handler's encoded `bootstrapResponseV2`; a refusal, or a handler past
-/// the deadline, is a NAK.
-async fn dispatch_bare_bootstrap_request<H: InboundHandler>(
+/// handler's encoded `bootstrapResponseV2`, or a member's bare
+/// `CheckpointStateRequest` (S7c.3) with its `checkpointStateResponse`; a
+/// refusal, or a handler past the deadline, is a NAK.
+async fn dispatch_bare_request<H: InboundHandler>(
     handler: &Arc<H>,
     messages: &dyn AppMessagePort,
     call_id: AppCallId,
@@ -520,15 +525,15 @@ async fn dispatch_bare_bootstrap_request<H: InboundHandler>(
     let reply = match tokio::time::timeout(CALL_DEADLINE, handler.on_call(None, request)).await {
         Ok(crate::payload::rpc::CallResponse::Ok(bytes)) => bytes,
         Ok(other) => {
-            warn!(response = ?other, "bootstrap request refused");
+            warn!(response = ?other, "bare request refused");
             NAK.to_vec()
         }
         Err(_) => {
-            warn!("bootstrap request exceeded the call deadline");
+            warn!("bare request exceeded the call deadline");
             NAK.to_vec()
         }
     };
     if let Err(e) = messages.reply(call_id, reply).await {
-        warn!(error = %e, "failed to send bootstrap reply");
+        warn!(error = %e, "failed to send bare request reply");
     }
 }

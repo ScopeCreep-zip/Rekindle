@@ -10,6 +10,7 @@
 
 pub mod capnp_codec;
 pub mod capnp_envelope;
+pub mod checkpoint_state;
 pub mod community;
 pub mod dedup;
 pub mod envelope;

@@ -309,6 +309,9 @@ pub fn control_into_event(
         // what changed (plan E3.2).
         | ControlPayload::GovernanceOp { .. }
         | ControlPayload::HeadAdvanced { .. }
+        // A snapshot request and its answer travel by app_call (S7c.3).
+        | ControlPayload::CheckpointStateRequest { .. }
+        | ControlPayload::CheckpointStateResponse { .. }
         | ControlPayload::RequestAttachment { .. }
         | ControlPayload::AttachmentChunk { .. }
         | ControlPayload::MultiAttachmentChunk { .. }

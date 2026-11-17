@@ -102,6 +102,9 @@ pub struct CommunityState {
     /// subkey).
     #[serde(skip)]
     pub head_hints: HeadHints,
+    /// Each member's checkpoint state requests, at the gossip floor (S7c.3).
+    #[serde(skip)]
+    pub snapshot_requests: rekindle_transport::gossip::RateLimiter,
     // ── v2.0 flat governance fields ──
     /// DHT key of the SMPL governance record (o_cnt:0).
     /// This is the canonical community identifier.

@@ -112,6 +112,20 @@ async fn community_call(
                 NAK.to_vec()
             })
         }
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateRequest {
+            request,
+        }))) => {
+            // A member's state snapshot request (plan E3.2 S7c.3): the Host
+            // admits and rate-limits the signer; a refusal is a NAK.
+            match state.host.current() {
+                Some(host) => host
+                    .governance()
+                    .answer_checkpoint_state(&request)
+                    .await
+                    .unwrap_or_else(|| NAK.to_vec()),
+                None => NAK.to_vec(),
+            }
+        }
         Ok(Some(CommunityEnvelope::Control(ControlPayload::MekTransfer(transfer)))) => {
             // P1.3, review S7m part 1: reply with a `MekTransferAck` whose
             // key-confirmation tag is keyed by the key we unwrapped, so the

@@ -29,6 +29,7 @@ pub mod apply;
 pub mod audit;
 pub mod bootstrap;
 pub mod channels;
+pub mod checkpoint_state;
 pub mod deps;
 pub mod dht_hydration;
 pub mod error;

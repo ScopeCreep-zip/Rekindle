@@ -401,6 +401,10 @@ pub enum ControlPayload {
     GovernanceOp { op: Vec<u8> },
     /// A ring watcher's `HeadAdvanced` hint, encoded (plan E3.2 S7).
     HeadAdvanced { hint: Vec<u8> },
+    /// An encoded, signed `CheckpointStateRequest` (plan E3.2 S7c.3).
+    CheckpointStateRequest { request: Vec<u8> },
+    /// An encoded `CheckpointStateResponse` (plan E3.2 S7c.3).
+    CheckpointStateResponse { response: Vec<u8> },
     /// Reply to a [`Self::VoiceMediaKey`] call: `recipient` opened and
     /// installed `sender`'s key at `key_index` (plan C7.22).
     VoiceMediaKeyAck {

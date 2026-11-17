@@ -355,6 +355,17 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   the sorted pseudonyms of the electorate (ADR 0018), so an endorsement made
   for one electorate never counts toward another
   (`rekindle_governance::checkpoint`).
+- **Checkpoint state snapshot** (plan E3.2 S7c.3): a member asks a ring
+  peer for a checkpoint's `canonical_state ‖ canonical_cut` bytes in
+  chunks of at most 30,000 B with a `CheckpointStateRequest` its pseudonym
+  signs under `rekindle-checkpoint-state-request-v1` over community ‖
+  height ‖ checkpoint digest ‖ offset ‖ requester (the community
+  length-prefixed), so the answering member serves admitted members only.
+  The answer is unsigned: the reader hashes the reassembled bytes under
+  `rekindle-gov-checkpoint-state-v1` and keeps them only when they equal
+  the endorsed `stateRoot`, asking the next ring peer otherwise
+  (`rekindle_codec::checkpoint_state`,
+  `rekindle_governance_runtime::checkpoint_state`).
 - **File-cache names**: every directory under `state/{pk}.files/` is a
   keyed BLAKE3 hash (`FILE_CACHE_COMMUNITY`, `FILE_CACHE_DM`,
   `FILE_CACHE_ATTACHMENT` prefixes) under a key

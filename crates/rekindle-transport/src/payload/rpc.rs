@@ -140,6 +140,12 @@ pub enum InboundCall {
         member_joined_op: Vec<u8>,
         joiner_route: Vec<u8>,
     },
+    /// A member's checkpoint state snapshot request (plan E3.2 S7c.3),
+    /// bare like the bootstrap request: the encoded `CheckpointStateRequest`
+    /// its pseudonym signs. The handler admits the signer as a member and
+    /// rate-limits it, then answers `CallResponse::Ok` with the encoded
+    /// `checkpointStateResponse` envelope; anything else is a NAK.
+    CheckpointStateRequest { request: Vec<u8> },
 }
 
 /// Response from the handler to an inbound RPC.

@@ -21,6 +21,8 @@ mod channel_history_tests;
 mod channel_ingest_tests;
 #[path = "channel_send_tests.rs"]
 mod channel_send_tests;
+#[path = "checkpoint_state_tests.rs"]
+mod checkpoint_state;
 #[path = "community_info_tests.rs"]
 mod community_info;
 #[path = "expression_upload_tests.rs"]

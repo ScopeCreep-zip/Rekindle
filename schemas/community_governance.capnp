@@ -245,6 +245,30 @@ struct CheckpointEntry {
     pages                @11 :List(Text);   # directory page record keys
 }
 
+# A member's request for a checkpoint's state snapshot (plan E3.2 S7c.3),
+# carried in ControlPayload `checkpointStateRequest @77`: the bytes at
+# `offset` of `canonical_state ‖ canonical_cut` at the cut of the checkpoint
+# with this `height` and `digest`. Signed by `requester`, the asking
+# member's pseudonym, over `rekindle-checkpoint-state-request-v1 ‖
+# community ‖ height ‖ digest ‖ offset ‖ requester`, so the answering member
+# serves admitted members only.
+struct CheckpointStateRequest {
+    community            @0 :Text;
+    height               @1 :UInt64;
+    digest               @2 :Data;          # 32 bytes, the checkpoint digest
+    offset               @3 :UInt32;
+    requester            @4 :Data;          # 32 bytes
+    sig                  @5 :Data;          # 64 bytes
+}
+
+# The answer, in `checkpointStateResponse @78`: at most 30,000 of the
+# `total` snapshot bytes from the request's offset. Unsigned: the reader
+# checks the reassembled bytes against the checkpoint's `stateRoot`.
+struct CheckpointStateResponse {
+    total                @0 :UInt32;
+    bytes                @1 :Data;
+}
+
 struct SlotHeadPayload {
     recordKey            @0 :Text;
     seq                  @1 :UInt32;

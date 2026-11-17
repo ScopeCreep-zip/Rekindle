@@ -210,6 +210,8 @@ pub fn encode_control_payload(
         }
         CP::GovernanceOp { op } => b.set_governance_op(op),
         CP::HeadAdvanced { hint } => b.set_head_advanced(hint),
+        CP::CheckpointStateRequest { request } => b.set_checkpoint_state_request(request),
+        CP::CheckpointStateResponse { response } => b.set_checkpoint_state_response(response),
         CP::VoiceMediaKeyAck { .. } => {
             write_voice_media_key_ack(b.reborrow().init_voice_media_key_ack(), payload);
         }
@@ -325,6 +327,12 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::VoiceMediaKeyAck(p) => read_voice_media_key_ack(p.map_err(|e| capnp_err(&e))?),
         Which::HeadAdvanced(hint) => Ok(ControlPayload::HeadAdvanced {
             hint: hint.map_err(|e| capnp_err(&e))?.to_vec(),
+        }),
+        Which::CheckpointStateRequest(request) => Ok(ControlPayload::CheckpointStateRequest {
+            request: request.map_err(|e| capnp_err(&e))?.to_vec(),
+        }),
+        Which::CheckpointStateResponse(response) => Ok(ControlPayload::CheckpointStateResponse {
+            response: response.map_err(|e| capnp_err(&e))?.to_vec(),
         }),
         Which::GovernanceOp(op) => Ok(ControlPayload::GovernanceOp {
             op: op.map_err(|e| capnp_err(&e))?.to_vec(),

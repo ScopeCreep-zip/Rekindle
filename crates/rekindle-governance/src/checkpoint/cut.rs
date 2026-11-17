@@ -45,15 +45,28 @@ pub fn canonical_cut(cut: &CutIndex) -> Vec<u8> {
     out
 }
 
-/// A checkpoint's `stateRoot`: BLAKE3 `derive_key(GOV_CHECKPOINT_STATE)`
-/// over `canonical_state(state) ‖ canonical_cut(cut)`. The `Frontier`'s
-/// roster checksum hashes the first part alone, so the two share one
-/// encoder while the cut index, which differs between readers holding
-/// different op sets, stays out of D15.
+/// The preimage of a checkpoint's `stateRoot`, `canonical_state(state) ‖
+/// canonical_cut(cut)`: the bytes a state snapshot carries (plan E3.2
+/// S7c.3, "State snapshot"). The `Frontier`'s roster checksum hashes the
+/// first part alone, so the two share one encoder while the cut index,
+/// which differs between readers holding different op sets, stays out of
+/// D15.
+#[must_use]
+pub fn state_preimage(state: &GovernanceState, cut: &CutIndex) -> Vec<u8> {
+    let mut out = canonical_state(state);
+    out.extend_from_slice(&canonical_cut(cut));
+    out
+}
+
+/// BLAKE3 `derive_key(GOV_CHECKPOINT_STATE)` over a `stateRoot` preimage,
+/// which a reader checks a reassembled snapshot with before decoding it.
+#[must_use]
+pub fn state_root_of(preimage: &[u8]) -> [u8; 32] {
+    blake3::derive_key(domains::GOV_CHECKPOINT_STATE, preimage)
+}
+
+/// A checkpoint's `stateRoot`: [`state_root_of`] its [`state_preimage`].
 #[must_use]
 pub fn state_root(state: &GovernanceState, cut: &CutIndex) -> [u8; 32] {
-    let mut hasher = blake3::Hasher::new_derive_key(domains::GOV_CHECKPOINT_STATE);
-    hasher.update(&canonical_state(state));
-    hasher.update(&canonical_cut(cut));
-    *hasher.finalize().as_bytes()
+    state_root_of(&state_preimage(state, cut))
 }

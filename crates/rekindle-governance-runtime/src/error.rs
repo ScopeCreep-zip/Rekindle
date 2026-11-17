@@ -121,6 +121,12 @@ pub enum GovernanceRuntimeError {
     /// S6b).
     #[error("not yet published: the op is queued until it lands")]
     NotYetPublished,
+
+    /// We hold no checkpoint with the asked height and digest, or our merge
+    /// of its cut does not reproduce its `stateRoot`, or the asked offset is
+    /// past the snapshot (plan E3.2 S7c.3): no snapshot is served.
+    #[error("no checkpoint state to serve: {0}")]
+    NoCheckpointState(String),
 }
 
 impl GovernanceRuntimeError {

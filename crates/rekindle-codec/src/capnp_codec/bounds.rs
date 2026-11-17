@@ -167,6 +167,18 @@ pub const HEAD_ADVANCED_BOUND: Bound = Bound {
     max_words: 64,
 };
 
+/// `CheckpointStateRequest` (`community_governance.capnp`): its 512-byte
+/// cap, and 64 words.
+pub const CHECKPOINT_STATE_REQUEST_BOUND: Bound = Bound {
+    max_bytes: crate::checkpoint_state::CHECKPOINT_STATE_REQUEST_MAX_BYTES,
+    max_words: 64,
+};
+
+/// `CheckpointStateResponse` (`community_governance.capnp`): its cap, the
+/// chunk and its framing, as packed bytes.
+pub const CHECKPOINT_STATE_RESPONSE_BOUND: Bound =
+    Bound::packed(crate::checkpoint_state::CHECKPOINT_STATE_RESPONSE_MAX_BYTES);
+
 /// `HistoryAd` and its sealed ranges (`member_record.capnp`): the ad's
 /// 4 KiB cap, and 1 Ki words.
 pub const HISTORY_AD_BOUND: Bound = Bound {

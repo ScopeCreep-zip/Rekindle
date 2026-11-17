@@ -113,6 +113,8 @@ impl CommunityEnvelope {
                 // Answers to one peer's question.
                 | ControlPayload::SyncResponse { .. }
                 | ControlPayload::BootstrapResponseV2 { .. }
+                | ControlPayload::CheckpointStateRequest { .. }
+                | ControlPayload::CheckpointStateResponse { .. }
                 // Media plane — §10.6. Directed to a call or channel
                 // roster; flooding it would multiply a video stream by
                 // the fan-out degree at every hop.

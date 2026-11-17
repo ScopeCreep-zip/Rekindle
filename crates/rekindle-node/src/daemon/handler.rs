@@ -272,6 +272,24 @@ impl InboundHandler for DaemonHandler {
                 )
                 .map_or(CallResponse::Ack, CallResponse::Ok)
             }
+            InboundCall::CheckpointStateRequest { request } => {
+                // A member's state snapshot request (plan E3.2 S7c.3): the
+                // Host admits and rate-limits the signer; a refusal is a NAK.
+                let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+                    return CallResponse::Rejected {
+                        reason: "no host".into(),
+                    };
+                };
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .answer_checkpoint_state(&request)
+                    .await
+                    .map_or_else(
+                        || CallResponse::Rejected {
+                            reason: "checkpoint state not served".into(),
+                        },
+                        CallResponse::Ok,
+                    )
+            }
         }
     }
 

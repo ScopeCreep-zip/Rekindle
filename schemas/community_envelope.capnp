@@ -819,5 +819,11 @@ struct ControlPayload @0xeaffffff00000001 {
         # A ring watcher's hint (plan E3.2 S7): an encoded `HeadAdvanced`
         # (member_record.capnp), signed by the relaying member.
         headAdvanced             @76 :Data;
+        # A checkpoint state snapshot request and its answer (plan E3.2
+        # S7c.3): an encoded `CheckpointStateRequest`, signed by the asking
+        # member, and an encoded `CheckpointStateResponse`
+        # (community_governance.capnp).
+        checkpointStateRequest   @77 :Data;
+        checkpointStateResponse  @78 :Data;
     }
 }

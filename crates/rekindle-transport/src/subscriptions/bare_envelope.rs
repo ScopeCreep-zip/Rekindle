@@ -30,8 +30,14 @@
 //! community's rules before it answers; the answer (a frontier of op
 //! locators) is what any member's `Frontier` subkey already publishes.
 //!
-//! Those three arguments cover `MekTransfer`, `RequestAttachment` and
-//! `BootstrapRequest` and nothing else. Every other
+//! The fourth is a member's `CheckpointStateRequest` (plan E3.2 S7c.3).
+//! It is signed by the asking member's pseudonym inside the payload, which
+//! the handler verifies and admits as a member before it answers; the
+//! answer is bytes the reader checks against the endorsed `stateRoot`.
+//!
+//! Those four arguments cover `MekTransfer`, `RequestAttachment`,
+//! `BootstrapRequest` and `CheckpointStateRequest` and nothing else. Every
+//! other
 //! control variant carries its authority in plaintext fields — a
 //! `MEKRotated` generation, a `GovernanceUpdated` subkey — and would be
 //! forgeable by anyone who can reach our route. Those must keep
@@ -87,6 +93,19 @@ pub(super) fn decode_bare_bootstrap_request(
             member_joined_op,
             joiner_route,
         }),
+        _ => None,
+    }
+}
+
+/// Recognise a bare `CommunityEnvelope` carrying a member's
+/// `CheckpointStateRequest`.
+pub(super) fn decode_bare_checkpoint_state_request(
+    raw: &[u8],
+) -> Option<crate::payload::rpc::InboundCall> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointStateRequest {
+            request,
+        }))) => Some(crate::payload::rpc::InboundCall::CheckpointStateRequest { request }),
         _ => None,
     }
 }
