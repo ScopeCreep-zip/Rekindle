@@ -258,6 +258,11 @@ export function stressHandler(s: Stress, base: "dark" | "light" = "dark"): strin
         tokensHref: ${j(`skin://localhost/${ME}/tokens.css`)} };
     case "get_game_status":
       return null;
+    case "get_welcome_screen":
+      return { description: "", channels: [] };
+    case "get_onboarding_config":
+      return { enabled: false, mode: "default", defaultChannels: [], questions: [],
+        welcomeMessage: null, guideSteps: [] };
     case "get_safety_number":
       return ${j(safetyNumber(PEER))};
     case "get_active_call":

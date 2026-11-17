@@ -39,6 +39,11 @@ function handler(removed: string): string {
                   hoist: false, mentionable: false }],
         myPseudonymKey: "${ME}", myRoleIds: [0], removed: ${removed},
       }];
+    case "get_welcome_screen":
+      return { description: "", channels: [] };
+    case "get_onboarding_config":
+      return { enabled: false, mode: "default", defaultChannels: [], questions: [],
+        welcomeMessage: null, guideSteps: [] };
     default:
       return cmd.startsWith("get_") || cmd.startsWith("list_") ? [] : null;
   }

@@ -1,33 +1,28 @@
 import type { Page } from "@playwright/test";
 
+import { readFileSync } from "node:fs";
+
 /**
- * The Tauri commands that are Host calls (`src-tauri/src/shell_commands.rs`
- * `HOST_CALLS`): they answer `Done<T>` (`{ value, undo }`), which the mocks
- * build from a handler's plain value.
+ * The Tauri commands that are Host calls: they answer `Done<T>`
+ * (`{ value, undo }`), which the mocks build from a handler's plain value.
+ * Read from `src-tauri/src/shell_commands.rs` `HOST_CALLS` itself, so the
+ * mocks can never wrap a different set than the shell does (a hand-kept
+ * copy went stale and left whole community panels unwrapped).
  */
-const HOST_CALLS = [
-  "create_community",
-  "leave_community",
-  "get_communities",
-  "get_community_details",
-  "get_community_members",
-  "create_identity", "login", "get_identity", "pqxdh_bundle_info", "logout", "list_identities",
-  "delete_identity", "audit_verify", "audit_export", "lifecycle_current",
-  "intent_commit", "intent_cancel", "undo", "set_status", "set_status_message",
-  "set_nickname", "set_avatar", "get_avatar", "get_skin", "get_game_status", "open_external_url",
-  // Friends and the 1:1 paths (plan E2.1).
-  "send_message", "outbox_retry", "outbox_discard", "send_typing", "get_message_history", "mark_read", "add_friend_from_code",
-  "get_friend_code", "rotate_friend_token",
-  "remove_friend", "accept_request", "reject_request", "cancel_request", "retry_handshake", "get_friends",
-  "get_pending_requests", "create_friend_group", "rename_friend_group",
-  "delete_friend_group", "move_friend_to_group", "set_friend_nickname", "generate_invite",
-  "add_friend_from_invite", "cancel_invite", "get_outgoing_invites", "block_user",
-  "unblock_user", "get_blocked_users", "reset_signal_session",
-  // Safety numbers and verification (plan E2.3).
-  "get_safety_number", "mark_identity_verified", "clear_identity_verification",
-  "group_dm_create", "group_dm_accept", "group_dm_decline", "group_dm_leave", "group_dm_list",
-  "group_dm_messages", "group_dm_send", "group_dm_typing",
-];
+export function hostCallsFromRust(source: string): string[] {
+  const block = /pub const HOST_CALLS: &\[\(&str, HostCall\)\] = &\[([\s\S]*?)\n\];/.exec(source);
+  if (!block) throw new Error("HOST_CALLS not found in shell_commands.rs");
+  const names = Array.from(block[1].matchAll(/\(\s*"([a-z0-9_]+)",\s*HostCall::/g), (m) => m[1]);
+  const entries = block[1].match(/HostCall::/g)?.length ?? 0;
+  if (names.length === 0 || names.length !== entries) {
+    throw new Error(`HOST_CALLS: read ${names.length} names of ${entries} entries`);
+  }
+  return names;
+}
+
+export const HOST_CALLS = hostCallsFromRust(
+  readFileSync(new URL("../../src-tauri/src/shell_commands.rs", import.meta.url), "utf8"),
+);
 
 /**
  * Set up Tauri IPC mocks in the browser page context.

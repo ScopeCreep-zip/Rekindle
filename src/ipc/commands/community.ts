@@ -125,9 +125,9 @@ export const communityCommands = {
   sendChannelMessage: (channelId: string, body: string, replyToId?: string) =>
     hostInvoke<SendChannelMessageResult>("send_channel_message", { channelId, body, replyToId: replyToId ?? null }),
   editChannelMessage: (channelId: string, messageId: string, newBody: string) =>
-    invoke<void>("edit_channel_message", { channelId, messageId, newBody }),
+    hostInvoke<void>("edit_channel_message", { channelId, messageId, newBody }),
   deleteChannelMessage: (channelId: string, messageId: string) =>
-    invoke<void>("delete_channel_message", { channelId, messageId }),
+    hostInvoke<void>("delete_channel_message", { channelId, messageId }),
   adminDeleteChannelMessage: (
     communityId: string,
     channelId: string,
@@ -218,9 +218,9 @@ export const communityCommands = {
       joinIntervalSeconds,
     }),
   getChannelMessages: (channelId: string, limit: number) =>
-    invoke<Message[]>("get_channel_messages", { channelId, limit }),
+    hostInvoke<Message[]>("get_channel_messages", { channelId, limit }),
   getOlderChannelMessages: (communityId: string, channelId: string, beforeTimestamp: number, limit: number) =>
-    invoke<Message[]>("get_older_channel_messages", { communityId, channelId, beforeTimestamp, limit }),
+    hostInvoke<Message[]>("get_older_channel_messages", { communityId, channelId, beforeTimestamp, limit }),
   createPoll: (
     communityId: string,
     channelId: string,
