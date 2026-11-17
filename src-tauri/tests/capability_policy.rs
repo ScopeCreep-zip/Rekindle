@@ -329,7 +329,10 @@ fn frontend_files(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// `commands.<wrapper>` → the command it invokes, from `src/ipc/commands/`.
 fn command_wrappers() -> BTreeMap<String, String> {
-    let invoke = regex::Regex::new(r#"invoke\b[^"\n]*?\(\s*"(\w+)""#).expect("regex");
+    // `invoke` and `hostInvoke` (a Host call the shell forwards, E7.12): a
+    // case-sensitive `invoke\b` alone missed every `hostInvoke(` wrapper.
+    let invoke =
+        regex::Regex::new(r#"\b(?:invoke|hostInvoke)\b[^"\n]*?\(\s*"(\w+)""#).expect("regex");
     let key = regex::Regex::new(r"(?m)^\s*(\w+)\s*[:(]").expect("regex");
     let mut files = Vec::new();
     frontend_files(&repo_root().join("src/ipc/commands"), &mut files);
