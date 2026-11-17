@@ -13,11 +13,11 @@ use crate::invite_quota::MAX_USES_PER_INVITE;
 use crate::op::VerifiedOp;
 use crate::power::{class_of, OpClass};
 
-fn pk(b: u8) -> PseudonymKey {
+pub(super) fn pk(b: u8) -> PseudonymKey {
     PseudonymKey([b; 32])
 }
 
-fn joined(by: u8, code: Option<&str>) -> GovernanceEntry {
+pub(super) fn joined(by: u8, code: Option<&str>) -> GovernanceEntry {
     GovernanceEntry::MemberJoined {
         member_record: format!("VLD0:m{by}"),
         member_record_owner: "owner".into(),
@@ -70,7 +70,7 @@ fn invite(max_uses: u32) -> GovernanceEntry {
 
 /// Creator 1; managers 2 (role 6) and 3 (role 5); member 4. Returns the
 /// ops and the head everyone has seen.
-fn community() -> Vec<VerifiedOp> {
+pub(super) fn community() -> Vec<VerifiedOp> {
     let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let c1 = op(&pk(1), 1, &[&c0], 1, invite(MAX_USES_PER_INVITE));
     let a0 = op(&pk(2), 0, &[&c1], 2, joined(2, Some("code")));
@@ -83,7 +83,7 @@ fn community() -> Vec<VerifiedOp> {
     vec![c0, c1, a0, b0, d0, c2, c3, c4, c5]
 }
 
-fn head(ops: &[VerifiedOp]) -> &VerifiedOp {
+pub(super) fn head(ops: &[VerifiedOp]) -> &VerifiedOp {
     ops.last().expect("ops")
 }
 
@@ -232,49 +232,6 @@ fn an_invite_creator_may_revoke_only_its_own_invite() {
         state.invites.contains_key(&[7; 16]),
         "a CREATE_INVITES-only revocation of another's invite is refused"
     );
-}
-
-/// A departed author's op log stays locatable: its last op (the leave)
-/// is published on that record, and frontiers keep naming its ops. The
-/// leave's own slot heads are the ones readers keep its history by (A/B
-/// finding R3-8); a re-join makes it a member again, not departed.
-#[test]
-fn a_departed_author_keeps_its_op_log_record() {
-    let mut ops = community();
-    let heads = vec![rekindle_types::governance::SlotHead {
-        record_key: "VLD0:ch".into(),
-        seq: 6,
-        digest: [6; 32],
-    }];
-    let left = op(
-        &pk(4),
-        1,
-        &[head(&ops)],
-        20,
-        GovernanceEntry::MemberLeft { heads },
-    );
-    ops.push(left);
-    let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
-    assert!(!state.members.contains_key(&pk(4)), "the member left");
-    assert!(state.is_departed(&pk(4)));
-    assert_eq!(
-        state.op_log_records.get(&pk(4)).map(String::as_str),
-        Some("VLD0:m4")
-    );
-    assert_eq!(
-        state.departed_heads.get(&pk(4)),
-        Some(
-            &[("VLD0:ch".to_string(), (6, [6; 32]))]
-                .into_iter()
-                .collect()
-        ),
-        "the leave's heads are recorded"
-    );
-    let rejoin = op(&pk(4), 2, &[head(&ops)], 30, joined(4, Some("code")));
-    ops.push(rejoin);
-    let state = merge(&cert(&pk(1), AdmissionMode::Open), &ops);
-    assert!(state.members.contains_key(&pk(4)), "the leaver re-joined");
-    assert!(!state.is_departed(&pk(4)));
 }
 
 #[test]
@@ -598,3 +555,6 @@ proptest! {
         prop_assert_eq!(merge(&cert, &ops), merge(&cert, &shuffled));
     }
 }
+
+#[path = "departure_tests.rs"]
+mod departure_tests;

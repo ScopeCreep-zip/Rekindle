@@ -153,20 +153,20 @@ async fn heads_of(community: &Community, i: usize, departed: &str) -> Vec<SlotHe
         .expect("the slot heads")
 }
 
-/// Node `reader`'s merged head of `departed`'s slot in `record_key`.
+/// Node `reader`'s merged heads of `departed`'s slots in `record_key`.
 fn merged_head(
     community: &Community,
     reader: usize,
     departed: &str,
     record_key: &str,
-) -> Option<(u32, [u8; 32])> {
+) -> Option<std::collections::BTreeSet<(u32, [u8; 32])>> {
     (community.nodes[reader].host.governance())
         .governance_state(&community.governance_key)
         .and_then(|state| {
             (state
                 .departed_heads
                 .get(&PseudonymKey::from_hex_lossy(departed)))
-            .and_then(|heads| heads.get(record_key).copied())
+            .and_then(|heads| heads.get(record_key).cloned())
         })
 }
 
@@ -230,7 +230,7 @@ async fn a_leavers_reserved_seq_gap_is_kept_by_no_member() {
         assert!(
             eventually(&community.sim, LIMIT, || async {
                 merged_head(&community, reader, &bea, &reserved.record_key)
-                    == Some((reserved.seq, reserved.digest))
+                    == Some([(reserved.seq, reserved.digest)].into_iter().collect())
             })
             .await,
             "node {reader} merges the leave with its reserved head"

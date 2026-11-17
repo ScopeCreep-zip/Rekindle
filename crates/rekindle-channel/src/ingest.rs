@@ -243,7 +243,7 @@ fn not_member(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>)
 /// Whether a departed author's backfilled post predates its departure. It
 /// is judged by its causal position, never by the time the author wrote
 /// into it: it is kept only when read from exactly the slot value the
-/// departure recorded for that record, its seq and the digest of its page
+/// departures recorded for that record, its seq and the digest of its page
 /// (the remover's for a kick, the leaver's own for a leave). So a departed
 /// member writing its still-writable slot cannot back-date a post into
 /// history (A/B finding R3-8; Matrix judges history at the event's place
@@ -257,8 +257,7 @@ fn not_member(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>)
 fn predates_departure(gov: &GovernanceState, sender: &PseudonymKey, item: &GateItem<'_>) -> bool {
     gov.departed_heads.get(sender).is_some_and(|heads| {
         item.slot.is_some_and(|slot| {
-            (heads.get(slot.record_key))
-                .is_some_and(|(seq, digest)| slot.seq == *seq && slot.digest == *digest)
+            (heads.get(slot.record_key)).is_some_and(|held| held.contains(&(slot.seq, slot.digest)))
         })
     })
 }

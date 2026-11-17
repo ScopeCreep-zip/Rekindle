@@ -343,9 +343,12 @@ fn departed_state() -> GovernanceState {
     gov.op_log_records.insert(ann.clone(), "VLD0:m".into());
     gov.departed_heads.insert(
         ann,
-        [("VLD0:ch".to_string(), (4, HEAD_DIGEST))]
-            .into_iter()
-            .collect(),
+        [(
+            "VLD0:ch".to_string(),
+            [(4, HEAD_DIGEST)].into_iter().collect(),
+        )]
+        .into_iter()
+        .collect(),
     );
     gov
 }

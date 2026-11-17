@@ -5,7 +5,7 @@
 //! It's computed deterministically from all member subkeys and cached
 //! in memory for fast permission checks and UI rendering.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use crate::op::OpStamp;
 use rekindle_types::governance::{AdmissionMode, GuideStep, OnboardingQuestion, WelcomeChannel};
@@ -42,15 +42,18 @@ pub struct GovernanceState {
     /// published there and frontiers still name it (plan E3.2, evidence 4.4).
     pub op_log_records: HashMap<PseudonymKey, String>,
 
-    /// The slot heads of each member's latest merged departure, its own
-    /// `MemberLeft` or a `MemberRemoved` naming it: record key -> the seq
-    /// and digest of its slot value the leaver or the remover held. A
-    /// backfilled post of the member is kept only from exactly that value,
-    /// never by the post's own date (register FX1, A/B finding R3-8, plan
-    /// S9: a seq gap the leaver reserved is never kept). A re-joined
-    /// member is not departed, so its entry is not read until it departs
-    /// again and that departure replaces it.
-    pub departed_heads: HashMap<PseudonymKey, HashMap<String, (u32, [u8; 32])>>,
+    /// The slot heads of each member's merged departures, its own
+    /// `MemberLeft`s and the `MemberRemoved`s naming it: record key -> the
+    /// seq and digest of each slot value the leaver or the remover held. A
+    /// backfilled post of the member is kept only from exactly one of those
+    /// values, never by the post's own date (register FX1, A/B finding
+    /// R3-8, plan S9: a seq gap the leaver reserved is never kept). A
+    /// re-joined member is not departed, so its entry is not read until it
+    /// departs again; that departure adds its heads to the earlier ones,
+    /// so the posts a leave kept stay kept after a re-join from another
+    /// slot and a later kick (A/B F8-1). Each head's digest commits to its
+    /// slot, so an earlier head never keeps a page of another slot.
+    pub departed_heads: HashMap<PseudonymKey, DepartedHeads>,
 
     /// Highest `MemberRemoved` stamp per removed member; a re-join must
     /// come after it.
@@ -241,6 +244,10 @@ pub struct PendingMemberState {
     pub member_record_owner: String,
     pub stamp: OpStamp,
 }
+
+/// A departed member's slot heads: channel record key -> the `(seq,
+/// digest)` of each slot value its departures recorded.
+pub type DepartedHeads = HashMap<String, BTreeSet<(u32, [u8; 32])>>;
 
 /// A counted member: its `MemberJoined` applied (and, under
 /// `ApprovalRequired`, approved), not since removed or left.

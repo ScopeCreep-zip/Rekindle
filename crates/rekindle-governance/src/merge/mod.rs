@@ -153,16 +153,19 @@ fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
     }
     apply(op.author(), op.body(), op.stamp(), state);
     // Every departure states the member's slot heads: the remover's view
-    // for a kick, the leaver's own for a leave (A/B finding R3-8). The
-    // latest merged departure's heads are the ones readers judge by.
+    // for a kick, the leaver's own for a leave (A/B finding R3-8). Readers
+    // judge by every merged departure's heads: a later departure from
+    // another slot never drops what an earlier one kept (A/B F8-1).
     let departed = match op.body() {
         GovernanceEntry::MemberLeft { heads } => Some((op.author(), heads)),
         GovernanceEntry::MemberRemoved { target, heads, .. } => Some((target, heads)),
         _ => None,
     };
     if let Some((gone, heads)) = departed {
-        let heads = (heads.iter()).map(|h| (h.record_key.clone(), (h.seq, h.digest)));
-        state.departed_heads.insert(gone.clone(), heads.collect());
+        let held = state.departed_heads.entry(gone.clone()).or_default();
+        for head in heads {
+            (held.entry(head.record_key.clone()).or_default()).insert((head.seq, head.digest));
+        }
     }
     let remover_of = match op.body() {
         GovernanceEntry::MemberRemoved { target, .. } => {
