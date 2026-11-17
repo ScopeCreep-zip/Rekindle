@@ -68,7 +68,9 @@ pub async fn remove_member<D: GovernanceRuntimeDeps>(
     deps.require_permission(community_id, KICK_MEMBERS)?;
     // The member's slot heads as we hold them: readers keep its posts
     // from history by them, not by the time it claims (A/B R3-8).
-    let heads = deps.departed_slot_heads(community_id, pseudonym_hex).await;
+    let heads = deps
+        .departed_slot_heads(community_id, pseudonym_hex)
+        .await?;
     apply::write_entry(
         deps,
         community_id,
@@ -97,7 +99,7 @@ pub async fn leave<D: GovernanceRuntimeDeps>(
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_owned()))?
         .my_pseudonym_hex
         .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_owned()))?;
-    let heads = deps.departed_slot_heads(community_id, &me).await;
+    let heads = deps.departed_slot_heads(community_id, &me).await?;
     apply::write_entry(deps, community_id, GovernanceEntry::MemberLeft { heads }).await?;
     Ok(())
 }

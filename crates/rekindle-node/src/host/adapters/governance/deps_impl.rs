@@ -424,7 +424,7 @@ impl GovernanceRuntimeDeps for HostGovernance {
         &self,
         community_id: &str,
         target_hex: &str,
-    ) -> Vec<rekindle_types::governance::SlotHead> {
+    ) -> Result<Vec<rekindle_types::governance::SlotHead>, GovernanceRuntimeError> {
         self.departed_slot_heads_impl(community_id, target_hex)
             .await
     }

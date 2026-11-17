@@ -65,15 +65,31 @@ async fn a_kicked_members_slot_write_is_stored_by_no_member() {
     }
 }
 
+/// Whether node `i`'s history page holds an entry by `author` within the
+/// scenario limit.
+async fn holds_entry_of(community: &Community, i: usize, author: &str) -> bool {
+    crate::harness::eventually(&community.sim, Duration::from_secs(120), || async {
+        community
+            .history(i, None, 100)
+            .await
+            .is_ok_and(|page| page.iter().any(|m| m["senderId"].as_str() == Some(author)))
+    })
+    .await
+}
+
 /// A/B finding R3-8: a kicked member back-dates a post into its slot after
 /// the kick (its clock an hour behind, so the post's `sent_at` precedes the
 /// removal). The history keeps a departed author's post by its causal
 /// position, the slot seq the removal recorded, never by the time the
 /// author wrote into it, so no reader shows or stores the back-dated post,
-/// while the member's genuine pre-kick post still shows.
+/// while the member's genuine pre-kick post still shows: the removal names
+/// the head of the member's slot, and a member joining after the kick reads
+/// the genuine post from the channel record alone.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
-    let community = Community::of(3, 157).await;
+    let mut community = Community::create(4, 157).await;
+    community.join(1).await;
+    community.join(2).await;
     let bea = community.pseudonym(1).await;
     let _ = community.post(1, "bea before the kick").await;
     for reader in [0, 2] {
@@ -85,7 +101,7 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
         );
     }
     community.sim.fault(Fault::Partition {
-        a: vec![0, 2],
+        a: vec![0, 2, 3],
         b: vec![1],
     });
     community.nodes[0]
@@ -105,7 +121,13 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
             .await,
             "node {reader} merges the kick"
         );
+        crate::left_slot_write::assert_departure_heads(&community, reader, &bea).await;
     }
+    community.join(3).await;
+    assert!(
+        holds_entry_of(&community, 3, &bea).await,
+        "a member joining after the kick holds the member's genuine post"
+    );
     community.sim.fault(Fault::ClockSkew {
         node: 1,
         ms: -3_600_000,

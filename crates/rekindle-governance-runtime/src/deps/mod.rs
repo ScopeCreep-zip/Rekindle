@@ -471,16 +471,21 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     /// pseudonym so the rotation work is parallelised across bans.
     fn spawn_text_mek_rotation_for_ban(&self, community_id: &str, banned_pseudonym_hex: &str);
 
-    /// The seq of `target_hex`'s slot value in each of the community's
-    /// channel records, as we hold it now: a `MemberRemoved` records them
-    /// for its target, our own `MemberLeft` for us, and readers keep the
-    /// departed member's backfilled posts only at or below them (A/B
-    /// finding R3-8). A record whose slot we cannot read is left out.
+    /// The seq of `target_hex`'s slot value in each channel record of its
+    /// segment, as we hold it now: a `MemberRemoved` records them for its
+    /// target, our own `MemberLeft` for us, and readers keep the departed
+    /// member's backfilled posts only at or below them, none from a record
+    /// with no head (A/B finding R3-8). A record where we hold no value of
+    /// the slot gets no head.
+    ///
+    /// # Errors
+    /// Our own slot (`target_hex` is us) is unknown, or one of its records
+    /// cannot be read: our leave would sign away our posts in it.
     async fn departed_slot_heads(
         &self,
         community_id: &str,
         target_hex: &str,
-    ) -> Vec<rekindle_types::governance::SlotHead>;
+    ) -> Result<Vec<rekindle_types::governance::SlotHead>, GovernanceRuntimeError>;
 
     // ---------- Role mutations (Phase 23.D.15) ----------
 
