@@ -342,6 +342,19 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   and consistency proofs follow RFC 9162 §2.1.3–§2.1.4
   (`rekindle_governance::checkpoint::directory`). A hash domain, not a
   signature: a page is proven by its path to the endorsed `dirRoot`.
+- **Checkpoint op** (plan E3.2 S7c.3): a `Checkpoint` op is its author's
+  endorsement, signed under `rekindle-gov-op-v1` like every op; votes are
+  counted by its digest, `derive_key("rekindle-gov-checkpoint-v1", ·)` over
+  every body field but `pages` and `round`. `stateRoot` is
+  `derive_key("rekindle-gov-checkpoint-state-v1", canonical_state ‖
+  canonical_cut)`, sharing its first part with the `Frontier`'s roster
+  checksum (`rekindle-gov-roster-checksum-v1`); `frontierHash` is
+  `derive_key("rekindle-gov-checkpoint-frontier-v1", ·)` over the sorted
+  cut head hashes, and `eligibleSetHash` is
+  `derive_key("rekindle-gov-checkpoint-eligible-v1", ·)` over the count and
+  the sorted pseudonyms of the electorate (ADR 0018), so an endorsement made
+  for one electorate never counts toward another
+  (`rekindle_governance::checkpoint`).
 - **File-cache names**: every directory under `state/{pk}.files/` is a
   keyed BLAKE3 hash (`FILE_CACHE_COMMUNITY`, `FILE_CACHE_DM`,
   `FILE_CACHE_ATTACHMENT` prefixes) under a key
