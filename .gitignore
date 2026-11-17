@@ -47,6 +47,8 @@ src-tauri/binaries/
 /playwright-report/
 /test-results/
 /blob-report/
+# WebdriverIO whole-app walk output (plan E7.13)
+e2e/walk/out/
 
 # ------------------------------------------------------------
 # AI tooling config (local only)
