@@ -8,7 +8,7 @@ import {
   assertTextFits,
 } from "../fixtures/layout";
 import { FULL } from "../fixtures/stress";
-import { WINDOWS, open } from "./windows";
+import { WINDOWS, open, spacingOf } from "./windows";
 
 // Plan E7.12 "Skins": the geometry set again under the light base (the
 // apply step's `:root[data-skin-base]`), forced colours and more contrast,
@@ -41,7 +41,7 @@ for (const v of VARIANTS) {
       await assertNoHorizontalOverflow(page, root);
       await assertNoOverlap(page, root);
       await assertTextFits(page, root);
-      await assertSpacingOnScale(page, root, w.spacing);
+      await assertSpacingOnScale(page, root, spacingOf(w, true));
       await assertFocusVisibleNotClipped(page, root);
     });
   }

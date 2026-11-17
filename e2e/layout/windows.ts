@@ -21,8 +21,10 @@ export interface WindowCase {
   max?: Size;
   /** Run after `goto`, until the window shows its content. */
   ready: (page: Page) => Promise<void>;
-  /** Containers whose declared gaps must sit on the spacing scale. */
+  /** Containers whose declared gaps must sit on the spacing grid. */
   spacing: string[];
+  /** More such containers, rendered only when the window has data. */
+  spacingWithData?: string[];
 }
 
 const frame = (page: Page) => expect(page.locator(".app-frame").first()).toBeVisible();
@@ -45,7 +47,8 @@ export const WINDOWS: WindowCase[] = [
     min: { width: 300, height: 500 },
     max: { width: 400, height: 900 },
     ready: frame,
-    spacing: [".xfire-titlebar", ".status-bar"],
+    spacing: [".xfire-titlebar", ".status-bar", ".menu-bar"],
+    spacingWithData: [".buddy-group-header"],
   },
   {
     name: "chat-dm",
@@ -54,7 +57,7 @@ export const WINDOWS: WindowCase[] = [
     def: { width: 480, height: 550 },
     min: { width: 380, height: 400 },
     ready: frame,
-    spacing: [".xfire-titlebar"],
+    spacing: [".xfire-titlebar", ".message-input-wrapper", ".message-input-shell"],
   },
   {
     name: "chat-group",
@@ -63,7 +66,7 @@ export const WINDOWS: WindowCase[] = [
     def: { width: 480, height: 550 },
     min: { width: 380, height: 400 },
     ready: frame,
-    spacing: [".xfire-titlebar"],
+    spacing: [".xfire-titlebar", ".group-chat-header", ".group-chat-members", ".message-input-wrapper"],
   },
   {
     name: "community",
@@ -72,7 +75,8 @@ export const WINDOWS: WindowCase[] = [
     def: { width: 900, height: 650 },
     min: { width: 750, height: 500 },
     ready: frame,
-    spacing: [".xfire-titlebar"],
+    spacing: [".xfire-titlebar", ".community-sidebar-header"],
+    spacingWithData: [".channel-list", ".member-list", ".member-list-header", ".community-channel-header"],
   },
   {
     name: "call",
@@ -81,7 +85,7 @@ export const WINDOWS: WindowCase[] = [
     def: { width: 420, height: 540 },
     min: { width: 360, height: 420 },
     ready: frame,
-    spacing: [".xfire-titlebar"],
+    spacing: [".xfire-titlebar", ".active-call-controls"],
   },
   {
     name: "profile",
@@ -102,6 +106,11 @@ export const WINDOWS: WindowCase[] = [
     spacing: [".xfire-titlebar", ".form-tabs"],
   },
 ];
+
+/** The spacing containers `w` renders with or without data. */
+export function spacingOf(w: WindowCase, withData: boolean): string[] {
+  return withData ? [...w.spacing, ...(w.spacingWithData ?? [])] : w.spacing;
+}
 
 export function sizes(w: WindowCase): [string, Size][] {
   const large = {

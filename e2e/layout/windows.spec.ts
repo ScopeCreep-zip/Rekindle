@@ -8,7 +8,7 @@ import {
   assertTextFits,
 } from "../fixtures/layout";
 import { EMPTY, FULL, type Stress } from "../fixtures/stress";
-import { WINDOWS, open, sizes } from "./windows";
+import { WINDOWS, open, sizes, spacingOf } from "./windows";
 
 // Plan E7.12: every routed window at its minimum, default and a large size,
 // over stress data (and, where a window has one, its empty state). The
@@ -30,7 +30,7 @@ for (const w of WINDOWS) {
         await assertNoHorizontalOverflow(page, root);
         await assertNoOverlap(page, root);
         await assertTextFits(page, root);
-        await assertSpacingOnScale(page, root, w.spacing);
+        await assertSpacingOnScale(page, root, spacingOf(w, data !== EMPTY));
         await assertFocusVisibleNotClipped(page, root);
       });
     }

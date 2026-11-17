@@ -277,7 +277,10 @@ export async function assertSpacingOnScale(page: Page, root: Locator, containers
     const onScale = (px: number) => Math.abs(px / step - Math.round(px / step)) < 0.01;
     const out: string[] = [];
     for (const sel of containers) {
-      for (const c of Array.from(rootEl.querySelectorAll(sel))) {
+      const found = Array.from(rootEl.querySelectorAll(sel));
+      // A selector that matches nothing would pass vacuously.
+      if (found.length === 0) out.push(`${sel} matches nothing`);
+      for (const c of found) {
         const s = getComputedStyle(c);
         for (const [p, v] of [["row-gap", s.rowGap], ["column-gap", s.columnGap]]) {
           if (v !== "normal" && !onScale(parseFloat(v))) out.push(`${sel} ${p} ${v}`);
