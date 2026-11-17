@@ -288,6 +288,10 @@
     font-weight: 700;
     color: var(--color-xfire-text);
     cursor: pointer;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .identity-bar-name:hover {

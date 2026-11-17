@@ -14,6 +14,16 @@
     outline: none;
   }
 
+  /* Rows and tabs fill a clipping list or bar edge to edge, so an outset
+   * ring would be cut; theirs is drawn inside the box (plan E7.12). */
+  .buddy-tab:focus-visible,
+  .form-tab:focus-visible,
+  .buddy-item:focus-visible,
+  .member-item:focus-visible,
+  .group-dm-row:focus-visible {
+    outline-offset: -2px;
+  }
+
   /* Architecture §32 a11y — skip link rendered as the first focusable
    * child of each top-level window. Hidden via `clip-path: inset(100%)`
    * (modern 2026-canon pattern; not the deprecated `left: -9999px`

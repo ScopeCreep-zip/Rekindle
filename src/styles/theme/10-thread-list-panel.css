@@ -217,7 +217,16 @@
   }
 
   /* ─── Channel topic in header ─── */
+  .community-channel-header-name {
+    flex-shrink: 0;
+    max-width: 50%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .channel-topic {
+    min-width: 0;
     font-size: 11px;
     font-weight: 400;
     color: var(--color-xfire-text-dim);

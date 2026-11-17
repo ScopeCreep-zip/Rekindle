@@ -53,7 +53,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
           }>
             <div class="community-channel-header">
               <span class="nf-icon community-channel-header-icon">{vm.channelHeaderIcon()}</span>
-              {vm.activeChannel()!.name}
+              <span class="community-channel-header-name">{vm.activeChannel()!.name}</span>
               <Show when={vm.activeChannel()?.topic || vm.canManageChannels()}>
                 <Show when={vm.editingTopic()} fallback={
                   <span

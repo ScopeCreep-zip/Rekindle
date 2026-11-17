@@ -66,6 +66,14 @@
 @import "./scrollbar.css";
 @import "./generated/regions.css";
 
+/* The spacing grid (plan E7.12): every gap, padding and margin between
+ * controls is a whole multiple of this step, the scale the theme parts
+ * were written on (2, 4, 6, 8, 10, 12, 16 px). The layout suite
+ * (`e2e/fixtures/layout.ts` `assertSpacingOnScale`) reads it from here. */
+@theme static {
+  --layout-grid: 2px;
+}
+
 @font-face {
   font-family: "Symbols Nerd Font Mono";
   src: url("../assets/fonts/SymbolsNerdFontMono-Regular.woff2") format("woff2");

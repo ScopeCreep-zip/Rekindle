@@ -12,6 +12,14 @@ export default defineConfig({
       testMatch: ["login.spec.ts", "events.spec.ts", "chat-window.spec.ts", "group-dm.spec.ts", "community-removal.spec.ts", "window-focus.spec.ts", "skin-apply.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
+    // Geometry of every routed window (plan E7.12), mocked IPC like `mock`,
+    // on WebKit: the app ships in WKWebView and WebKitGTK, and layout is
+    // engine-specific.
+    {
+      name: "layout",
+      testMatch: "layout/**/*.spec.ts",
+      use: { ...devices["Desktop Safari"] },
+    },
     // Real E2E tests against live Rust backend (SQLite + Stronghold + Ed25519)
     {
       name: "e2e",

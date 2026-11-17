@@ -379,6 +379,9 @@
   .active-call-peer-name {
     font-weight: 700;
     color: var(--color-xfire-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .active-call-peer-meta {
     display: flex;

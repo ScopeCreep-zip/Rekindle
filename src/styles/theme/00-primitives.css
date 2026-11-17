@@ -103,6 +103,19 @@
     color: var(--color-xfire-titlebar-text);
     font-size: 11px;
     font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* A sender's name never pushes the message row past the window. */
+  .chat-message-sender-other,
+  .chat-message-sender-self {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .form-input,
