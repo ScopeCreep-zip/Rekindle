@@ -54,8 +54,12 @@ test("a keyboard choice sets the status and closes the picker", async ({ page })
   await page.locator(".status-picker").focus();
   await page.keyboard.press("Enter");
   const dropdown = page.locator(".status-picker-dropdown");
-  await expect(dropdown).toBeVisible();
+  // Kobalte moves focus into the menu after it opens: a key pressed before
+  // that lands on the trigger, so wait for the first item to hold focus.
+  const items = dropdown.locator(".context-menu-item");
+  await expect(items.first()).toBeFocused();
   await page.keyboard.press("ArrowDown");
+  await expect(items.nth(1)).toBeFocused();
   await page.keyboard.press("Enter");
   await expect(dropdown).toHaveCount(0);
   await expect.poll(() => statusCalls(page)).toHaveLength(1);
