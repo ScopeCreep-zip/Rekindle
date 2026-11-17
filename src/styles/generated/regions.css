@@ -125,68 +125,72 @@
   ::-webkit-scrollbar-thumb:horizontal:disabled {
     border-image: var(--skin-region-scrollbar-thumb-horizontal--disabled, var(--skin-region-scrollbar-thumb-horizontal));
   }
-  ::-webkit-scrollbar-button:vertical:decrement {
+  ::-webkit-scrollbar-button:vertical:start:decrement {
     border-image: var(--skin-region-scrollbar-button-up);
     image-rendering: pixelated;
+    height: var(--skin-region-scrollbar-button-up-length, 0);
   }
-  ::-webkit-scrollbar-button:vertical:decrement:window-inactive {
+  ::-webkit-scrollbar-button:vertical:start:decrement:window-inactive {
     border-image: var(--skin-region-scrollbar-button-up--windowinactive, var(--skin-region-scrollbar-button-up));
   }
-  ::-webkit-scrollbar-button:vertical:decrement:hover {
+  ::-webkit-scrollbar-button:vertical:start:decrement:hover {
     border-image: var(--skin-region-scrollbar-button-up--hover, var(--skin-region-scrollbar-button-up));
   }
-  ::-webkit-scrollbar-button:vertical:decrement:active {
+  ::-webkit-scrollbar-button:vertical:start:decrement:active {
     border-image: var(--skin-region-scrollbar-button-up--down, var(--skin-region-scrollbar-button-up));
   }
-  ::-webkit-scrollbar-button:vertical:decrement:disabled {
+  ::-webkit-scrollbar-button:vertical:start:decrement:disabled {
     border-image: var(--skin-region-scrollbar-button-up--disabled, var(--skin-region-scrollbar-button-up));
   }
-  ::-webkit-scrollbar-button:vertical:increment {
+  ::-webkit-scrollbar-button:vertical:end:increment {
     border-image: var(--skin-region-scrollbar-button-down);
     image-rendering: pixelated;
+    height: var(--skin-region-scrollbar-button-down-length, 0);
   }
-  ::-webkit-scrollbar-button:vertical:increment:window-inactive {
+  ::-webkit-scrollbar-button:vertical:end:increment:window-inactive {
     border-image: var(--skin-region-scrollbar-button-down--windowinactive, var(--skin-region-scrollbar-button-down));
   }
-  ::-webkit-scrollbar-button:vertical:increment:hover {
+  ::-webkit-scrollbar-button:vertical:end:increment:hover {
     border-image: var(--skin-region-scrollbar-button-down--hover, var(--skin-region-scrollbar-button-down));
   }
-  ::-webkit-scrollbar-button:vertical:increment:active {
+  ::-webkit-scrollbar-button:vertical:end:increment:active {
     border-image: var(--skin-region-scrollbar-button-down--down, var(--skin-region-scrollbar-button-down));
   }
-  ::-webkit-scrollbar-button:vertical:increment:disabled {
+  ::-webkit-scrollbar-button:vertical:end:increment:disabled {
     border-image: var(--skin-region-scrollbar-button-down--disabled, var(--skin-region-scrollbar-button-down));
   }
-  ::-webkit-scrollbar-button:horizontal:decrement {
+  ::-webkit-scrollbar-button:horizontal:start:decrement {
     border-image: var(--skin-region-scrollbar-button-left);
     image-rendering: pixelated;
+    width: var(--skin-region-scrollbar-button-left-length, 0);
   }
-  ::-webkit-scrollbar-button:horizontal:decrement:window-inactive {
+  ::-webkit-scrollbar-button:horizontal:start:decrement:window-inactive {
     border-image: var(--skin-region-scrollbar-button-left--windowinactive, var(--skin-region-scrollbar-button-left));
   }
-  ::-webkit-scrollbar-button:horizontal:decrement:hover {
+  ::-webkit-scrollbar-button:horizontal:start:decrement:hover {
     border-image: var(--skin-region-scrollbar-button-left--hover, var(--skin-region-scrollbar-button-left));
   }
-  ::-webkit-scrollbar-button:horizontal:decrement:active {
+  ::-webkit-scrollbar-button:horizontal:start:decrement:active {
     border-image: var(--skin-region-scrollbar-button-left--down, var(--skin-region-scrollbar-button-left));
   }
-  ::-webkit-scrollbar-button:horizontal:decrement:disabled {
+  ::-webkit-scrollbar-button:horizontal:start:decrement:disabled {
     border-image: var(--skin-region-scrollbar-button-left--disabled, var(--skin-region-scrollbar-button-left));
   }
-  ::-webkit-scrollbar-button:horizontal:increment {
+  ::-webkit-scrollbar-button:horizontal:end:increment {
     border-image: var(--skin-region-scrollbar-button-right);
     image-rendering: pixelated;
+    width: var(--skin-region-scrollbar-button-right-length, 0);
   }
-  ::-webkit-scrollbar-button:horizontal:increment:window-inactive {
+  ::-webkit-scrollbar-button:horizontal:end:increment:window-inactive {
     border-image: var(--skin-region-scrollbar-button-right--windowinactive, var(--skin-region-scrollbar-button-right));
   }
-  ::-webkit-scrollbar-button:horizontal:increment:hover {
+  ::-webkit-scrollbar-button:horizontal:end:increment:hover {
     border-image: var(--skin-region-scrollbar-button-right--hover, var(--skin-region-scrollbar-button-right));
   }
-  ::-webkit-scrollbar-button:horizontal:increment:active {
+  ::-webkit-scrollbar-button:horizontal:end:increment:active {
     border-image: var(--skin-region-scrollbar-button-right--down, var(--skin-region-scrollbar-button-right));
   }
-  ::-webkit-scrollbar-button:horizontal:increment:disabled {
+  ::-webkit-scrollbar-button:horizontal:end:increment:disabled {
     border-image: var(--skin-region-scrollbar-button-right--disabled, var(--skin-region-scrollbar-button-right));
   }
   ::-webkit-scrollbar-corner {
@@ -195,5 +199,187 @@
   }
   ::-webkit-scrollbar-corner:window-inactive {
     border-image: var(--skin-region-scrollbar-corner--windowinactive, var(--skin-region-scrollbar-corner));
+  }
+  @media (forced-colors: active) {
+    .xfire-titlebar-btn-minimize {
+      border-image: none;
+    }
+    :where(:root[data-window-inactive]) .xfire-titlebar-btn-minimize {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-minimize:hover {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-minimize:focus-visible {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-minimize:active {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-minimize:disabled, .xfire-titlebar-btn-minimize[aria-disabled="true"] {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-maximize {
+      border-image: none;
+    }
+    :where(:root[data-window-inactive]) .xfire-titlebar-btn-maximize {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-maximize:hover {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-maximize:focus-visible {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-maximize:active {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-maximize:disabled, .xfire-titlebar-btn-maximize[aria-disabled="true"] {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-close {
+      border-image: none;
+    }
+    :where(:root[data-window-inactive]) .xfire-titlebar-btn-close {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-close:hover {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-close:focus-visible {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-close:active {
+      border-image: none;
+    }
+    .xfire-titlebar-btn-close:disabled, .xfire-titlebar-btn-close[aria-disabled="true"] {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:vertical {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:vertical:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:vertical:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:vertical:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:vertical:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:vertical {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:vertical:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:vertical:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:vertical:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:vertical:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:horizontal {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:horizontal:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:horizontal:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:horizontal:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-track:horizontal:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:horizontal {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:horizontal:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:horizontal:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:horizontal:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-thumb:horizontal:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:start:decrement {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:start:decrement:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:start:decrement:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:start:decrement:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:start:decrement:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:end:increment {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:end:increment:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:end:increment:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:end:increment:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:vertical:end:increment:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:start:decrement {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:start:decrement:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:start:decrement:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:start:decrement:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:start:decrement:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:end:increment {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:end:increment:window-inactive {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:end:increment:hover {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:end:increment:active {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-button:horizontal:end:increment:disabled {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-corner {
+      border-image: none;
+    }
+    ::-webkit-scrollbar-corner:window-inactive {
+      border-image: none;
+    }
   }
 }

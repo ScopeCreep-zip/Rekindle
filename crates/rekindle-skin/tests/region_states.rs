@@ -137,9 +137,9 @@ fn map(entries: &[(&str, &[&str])]) -> BTreeMap<String, Vec<String>> {
         .collect()
 }
 
-#[test]
-fn the_app_css_maps_states_to_selectors() {
-    let full = map(&[
+/// Every painted slot on one test element each.
+fn full_map() -> BTreeMap<String, Vec<String>> {
+    map(&[
         ("titlebar.btn.minimize", &[".min"]),
         ("titlebar.btn.maximize", &[".max"]),
         ("titlebar.btn.close", &[".close"]),
@@ -170,7 +170,12 @@ fn the_app_css_maps_states_to_selectors() {
             &["::-webkit-scrollbar-button:horizontal:increment"],
         ),
         ("scrollbar.corner", &["::-webkit-scrollbar-corner"]),
-    ]);
+    ])
+}
+
+#[test]
+fn the_app_css_maps_states_to_selectors() {
+    let full = full_map();
     let css = app_css("h", &full).unwrap();
     assert!(css.starts_with("/* h\n"));
     assert!(css.contains("@layer components {"));
@@ -202,4 +207,55 @@ fn the_app_css_maps_states_to_selectors() {
     assert!(app_css("h", &unknown)
         .unwrap_err()
         .contains("not a painted region slot"));
+}
+
+#[test]
+fn the_app_css_resets_every_region_rule_under_forced_colors() {
+    let css = app_css("h", &full_map()).unwrap();
+    let media = css.find("  @media (forced-colors: active) {\n").unwrap();
+    // After every painted rule, so it wins at each rule's own specificity.
+    assert!(css.rfind("var(--skin-region-").unwrap() < media);
+    assert!(css.ends_with("    }\n  }\n}\n"));
+    let forced = &css[media..];
+    for list in [
+        ".close",
+        ".close:hover",
+        ".close:active",
+        ".close:focus-visible",
+        ".close:disabled, .close[aria-disabled=\"true\"]",
+        ":where(:root[data-window-inactive]) .close",
+        "::-webkit-scrollbar-thumb:vertical:window-inactive",
+        "::-webkit-scrollbar-corner",
+    ] {
+        assert!(
+            forced.contains(&format!(
+                "    {list} {{\n      border-image: none;\n    }}\n"
+            )),
+            "{list}"
+        );
+    }
+    let painted = css.matches("border-image: var(").count();
+    assert_eq!(forced.matches("border-image: none;").count(), painted);
+}
+
+#[test]
+fn the_app_css_sizes_scrollbar_buttons_from_the_skin() {
+    let css = app_css("h", &full_map()).unwrap();
+    assert!(css.contains("  ::-webkit-scrollbar-button:vertical:decrement {\n    border-image: var(--skin-region-scrollbar-button-up);\n    image-rendering: pixelated;\n    height: var(--skin-region-scrollbar-button-up-length, 0);\n  }\n"));
+    assert!(css.contains("    width: var(--skin-region-scrollbar-button-right-length, 0);\n"));
+    assert!(css.contains("    height: var(--skin-region-scrollbar-button-down-length, 0);\n"));
+    assert!(css.contains("    width: var(--skin-region-scrollbar-button-left-length, 0);\n"));
+    assert_eq!(css.matches("-length, 0);").count(), 4, "buttons only");
+}
+
+#[test]
+fn the_skin_css_gives_a_scrollbar_button_its_image_length() {
+    let up = manifest_with("scrollbar.button-up", &json!({ "type": "stretch" }), &[]);
+    let (manifest, canonical) = check(&up, (14, 12), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(css.contains("    --skin-region-scrollbar-button-up-length: 12px;\n"));
+    let left = manifest_with("scrollbar.button-left", &json!({ "type": "stretch" }), &[]);
+    let (manifest, canonical) = check(&left, (14, 12), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(css.contains("    --skin-region-scrollbar-button-left-length: 14px;\n"));
 }

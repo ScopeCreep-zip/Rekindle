@@ -22,14 +22,48 @@
 //! image's transparent pixels. Painted slots are leaf controls, so their
 //! `image-rendering: pixelated` (the F83 sampling's assumption) reaches no
 //! other image.
+//!
+//! * Under `forced-colors: active` every region rule's `border-image` is
+//!   `none` (plan E7.7.2): a forced palette replaces the app's colours, and
+//!   a skin bitmap left in place would draw the skin's colours over it
+//!   (CSS Color Adjustment 1 §3.1 forces colours, not `border-image`).
+//! * A scrollbar button has no length until a skin gives it one: its
+//!   `height` (vertical) or `width` (horizontal) reads
+//!   [`length_property`], which [`skin_css`] sets to the button image's
+//!   length on that axis, so the arrow shows at 1:1 and a scrollbar
+//!   without a skin keeps no buttons.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
+use rekindle_image::{read_header, ImageKind};
 use rekindle_types::dto::skin::{RegionFit, RegionState, SkinManifest};
 
 use super::slots::{slot_of, SLOTS};
 use crate::images::extension;
+use crate::limits::MAX_IMAGE_ALLOC;
+
+/// The scrollbar button slots and the side along their scroll axis.
+const BUTTON_LENGTH: [(&str, &str); 4] = [
+    ("scrollbar.button-up", "height"),
+    ("scrollbar.button-down", "height"),
+    ("scrollbar.button-left", "width"),
+    ("scrollbar.button-right", "width"),
+];
+
+/// The side along the scroll axis of the button `slot`, if it is one.
+fn button_side(slot: &str) -> Option<&'static str> {
+    BUTTON_LENGTH
+        .iter()
+        .find(|(id, _)| *id == slot)
+        .map(|(_, side)| *side)
+}
+
+/// The custom property holding a scrollbar button's length.
+#[must_use]
+pub fn length_property(slot: &str) -> String {
+    format!("{}-length", property(slot, None))
+}
 
 /// The custom property of `slot`, or of its `state` image.
 #[must_use]
@@ -83,6 +117,8 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
             return Err(format!("[regions] `{id}`: not a painted region slot"));
         }
     }
+    // Every rule's selector list, for the forced-colors reset.
+    let mut painted: Vec<String> = Vec::new();
     let mut out = format!(
         "/* {header}\n *\n * Region slots (`rekindle-skin::regions`) on the elements\n * `src/styles/regions.toml` `[regions]` names; a skin sets the custom\n * properties in `@layer skin`. */\n@layer components {{\n"
     );
@@ -92,11 +128,15 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
             .filter(|e| !e.is_empty())
             .ok_or_else(|| format!("[regions] has no elements for `{}`", slot.id))?;
         let normal = property(slot.id, None);
+        let length = button_side(slot.id)
+            .map(|side| format!("    {side}: var({}, 0);\n", length_property(slot.id)))
+            .unwrap_or_default();
         let _ = write!(
             out,
-            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n  }}\n",
+            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n{length}  }}\n",
             elements.join(",\n  ")
         );
+        painted.push(elements.join(",\n    "));
         for state in ORDER.into_iter().filter(|s| slot.has(*s)) {
             let selectors = elements
                 .iter()
@@ -112,9 +152,15 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
                 selectors.join(",\n  "),
                 property(slot.id, Some(state))
             );
+            painted.push(selectors.join(",\n    "));
         }
     }
-    out.push_str("}\n");
+    // Last, at each rule's own specificity, so every state is reset too.
+    out.push_str("  @media (forced-colors: active) {\n");
+    for list in &painted {
+        let _ = write!(out, "    {list} {{\n      border-image: none;\n    }}\n");
+    }
+    out.push_str("  }\n}\n");
     Ok(out)
 }
 
@@ -149,12 +195,24 @@ fn href(base: &str, path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<St
     Some(format!("{base}/{}.{ext}", blake3::hash(bytes).to_hex()))
 }
 
+/// The width and height of the canonical image `path`, from its header.
+fn dimensions(path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<(u32, u32)> {
+    let kind = match extension(path).as_deref() {
+        Some("gif") => ImageKind::Gif,
+        Some("png") => ImageKind::Png,
+        _ => return None,
+    };
+    let header = read_header(images.get(path)?, kind, MAX_IMAGE_ALLOC).ok()?;
+    Some((header.width, header.height))
+}
+
 /// The skin half: `@layer skin { :root { … } }` with each painted region's
 /// custom properties, the images addressed under `base` (the Host's
 /// serving origin and path). `images` are the canonical images.
 ///
-/// `None` for a `base` outside its alphabet or a region image `images`
-/// lacks (never for a validated package).
+/// `None` for a `base` outside its alphabet, a region image `images`
+/// lacks, or a scrollbar button image whose header does not read (never
+/// for a validated package).
 #[must_use]
 pub fn skin_css(
     manifest: &SkinManifest,
@@ -176,6 +234,11 @@ pub fn skin_css(
             property(id, None),
             value(&normal, region.fit)
         );
+        if let Some(side) = button_side(id) {
+            let (width, height) = dimensions(&region.image, images)?;
+            let px = if side == "height" { height } else { width };
+            let _ = writeln!(decls, "    {}: {px}px;", length_property(id));
+        }
         for (state, path) in &region.states {
             let h = href(base, path, images)?;
             let _ = writeln!(

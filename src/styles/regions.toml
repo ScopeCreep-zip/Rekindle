@@ -573,6 +573,8 @@
 # window) read the slot's custom property, which a skin sets in
 # `@layer skin`. Painted slots carry no text; the frame, titlebar and status
 # bar (text, `textBacking`) get their selectors with E7.7.2's apply step.
+# A scrollbar button is the classic single button at each end: the
+# decrement before the thumb (`:start`), the increment after (`:end`).
 [regions]
 'titlebar.btn.minimize' = { elements = [".xfire-titlebar-btn-minimize"] }
 'titlebar.btn.maximize' = { elements = [".xfire-titlebar-btn-maximize"] }
@@ -581,8 +583,8 @@
 'scrollbar.thumb' = { elements = ["::-webkit-scrollbar-thumb:vertical"] }
 'scrollbar.track-horizontal' = { elements = ["::-webkit-scrollbar-track:horizontal"] }
 'scrollbar.thumb-horizontal' = { elements = ["::-webkit-scrollbar-thumb:horizontal"] }
-'scrollbar.button-up' = { elements = ["::-webkit-scrollbar-button:vertical:decrement"] }
-'scrollbar.button-down' = { elements = ["::-webkit-scrollbar-button:vertical:increment"] }
-'scrollbar.button-left' = { elements = ["::-webkit-scrollbar-button:horizontal:decrement"] }
-'scrollbar.button-right' = { elements = ["::-webkit-scrollbar-button:horizontal:increment"] }
+'scrollbar.button-up' = { elements = ["::-webkit-scrollbar-button:vertical:start:decrement"] }
+'scrollbar.button-down' = { elements = ["::-webkit-scrollbar-button:vertical:end:increment"] }
+'scrollbar.button-left' = { elements = ["::-webkit-scrollbar-button:horizontal:start:decrement"] }
+'scrollbar.button-right' = { elements = ["::-webkit-scrollbar-button:horizontal:end:increment"] }
 'scrollbar.corner' = { elements = ["::-webkit-scrollbar-corner"] }
