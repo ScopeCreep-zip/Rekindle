@@ -16,7 +16,9 @@
 //! the teardown keeps what a restore needs: the vault's keys (the slot
 //! keypair, the member HPKE secret, the MEKs) stay, only the in-memory
 //! caches are dropped. A real removal is followed by the key rotation
-//! (ADR 0018), which is what keeps us from later content.
+//! (ADR 0018), which is what keeps us from later content. Before the
+//! teardown every member's frontier is read and the state rebuilt, so a
+//! removal whose voiding op is already published is never torn down on.
 
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
@@ -163,12 +165,42 @@ impl HostGovernance {
         let mut torn_down = gate.lock().await;
         let removed = self.ctx.communities.own_removal(community_id).is_some();
         if removed && !*torn_down {
-            self.tear_down_removed(community_id).await;
-            *torn_down = true;
+            // Judged on the members' frontiers as published, not on the op
+            // set as it happens to be held: the teardown stops the reads
+            // that would bring the op voiding the removal.
+            self.catch_up_before_teardown(community_id).await;
+            if self.ctx.communities.own_removal(community_id).is_some() {
+                self.tear_down_removed(community_id).await;
+                *torn_down = true;
+            }
         } else if !removed && *torn_down {
             self.restore_unremoved(community_id).await;
             *torn_down = false;
         }
+    }
+
+    /// Read every member's frontier (the full anti-entropy sweep, plan E3.2
+    /// S7) and rebuild, before a removal tears the community down. Under
+    /// strong removal a removal concurrent with the remover's own is void,
+    /// and the op that voids it may already be on its author's frontier
+    /// while a ring read of it is still in flight; the teardown stops that
+    /// read and every later one, so a removal judged on the op set as held
+    /// would stand on a node that never sees the op voiding it (D15: the
+    /// state is a function of the op set, so it must be judged on the op
+    /// set the members have published). A rebuild that no longer removes us
+    /// clears the mark ([`Self::on_not_removed`]).
+    async fn catch_up_before_teardown(&self, community_id: &str) {
+        use rekindle_governance_runtime::{anti_entropy, dht_hydration};
+        let mut seen = anti_entropy::SeenFrontiers::new();
+        match anti_entropy::sweep(self, community_id, anti_entropy::Sweep::Full, &mut seen).await {
+            Ok(stored) => {
+                tracing::debug!(community = %community_id, stored, "frontiers read before a removal's teardown");
+            }
+            Err(error) => {
+                tracing::warn!(community = %community_id, %error, "frontier read before a removal's teardown failed");
+            }
+        }
+        dht_hydration::rebuild_governance(self, community_id).await;
     }
 
     /// The event naming us as the removed member and the remover with its
