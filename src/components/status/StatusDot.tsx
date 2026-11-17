@@ -28,6 +28,13 @@ const statusShapeMap: Record<string, DotShape> = {
   invisible: "ring",
 };
 
+/** Whether a status draws the offline ring: `offline`, `invisible` ("Appear
+ *  offline") and any status this component does not know. Lists that group
+ *  by presence use this so a row's group always matches its dot. */
+export function isOfflineStatus(status: string): boolean {
+  return (statusShapeMap[status] ?? "ring") === "ring";
+}
+
 const statusLabels: Record<string, string> = {
   online: "Online",
   away: "Away",

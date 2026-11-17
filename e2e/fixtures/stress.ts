@@ -68,13 +68,17 @@ export function friends(n: number): FriendRow[] {
   });
 }
 
-/** `n` community members with 64-char names spread over the presence states. */
+const HOISTED_ROLE = longName("Moderators_", 32);
+
+/** `n` community members with 64-char names spread over the presence states;
+ *  every fifth holds the hoisted long-named role, so the member list draws a
+ *  hoisted group, "Online" and "Offline" (an offline role holder sits in "Offline"). */
 export function members(n: number) {
   return Array.from({ length: n }, (_, i) => ({
     pseudonymKey: i === 0 ? ME : key("d", i),
     displayName: longName(`Member${i}_`),
-    roleIds: [0],
-    displayRole: "@everyone",
+    roleIds: i % 5 === 0 ? [0, 1] : [0],
+    displayRole: i % 5 === 0 ? HOISTED_ROLE : "@everyone",
     status: STATUSES[i % STATUSES.length],
     timeoutUntil: null,
     lastActive: 1_700_000_000_000,
@@ -96,6 +100,7 @@ export function communityDetails(channelCount = 30) {
       })),
       roles: [
         { id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0, hoist: false, mentionable: false },
+        { id: 1, name: HOISTED_ROLE, color: 0x3498db, permissions: "65536", position: 1, hoist: true, mentionable: false },
       ],
       myRole: null,
       myRoleIds: [0],

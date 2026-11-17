@@ -2,7 +2,7 @@ import { Component, For, Show, createEffect, createSignal, createMemo, JSX } fro
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
 import { Member, Role, communityState } from "../../stores/community.store";
-import StatusDot from "../status/StatusDot";
+import StatusDot, { isOfflineStatus } from "../status/StatusDot";
 import RoleTag from "./RoleTag";
 import MemberProfilePopup from "./MemberProfilePopup";
 import {
@@ -121,6 +121,11 @@ const MemberList: Component<MemberListProps> = (props) => {
     }
   }
 
+  /** The status a member's row draws; an unset status is shown online. */
+  function memberStatus(member: Member): string {
+    return member.status || "online";
+  }
+
   const filteredMembers = createMemo(() => {
     const q = searchQuery().toLowerCase();
     return q
@@ -128,16 +133,22 @@ const MemberList: Component<MemberListProps> = (props) => {
       : props.members;
   });
 
+  // Discord's member list: hoisted role groups hold only members who are not
+  // offline, the other present members fall under "Online", and every offline
+  // member (whatever their roles) falls under "Offline". Presence is the same
+  // status the row's dot draws.
   const groupedMembers = createMemo(() => {
     const hoistedRoles = props.roles
       .filter((r) => r.hoist && r.id !== 0)
       .sort((a, b) => b.position - a.position);
 
     const groups: { name: string; members: Member[] }[] = [];
+    const present = filteredMembers().filter((m) => !isOfflineStatus(memberStatus(m)));
+    const offline = filteredMembers().filter((m) => isOfflineStatus(memberStatus(m)));
     const placed = new Set<string>();
 
     for (const role of hoistedRoles) {
-      const members = filteredMembers().filter(
+      const members = present.filter(
         (m) => m.roleIds.includes(role.id) && !placed.has(m.pseudonymKey),
       );
       if (members.length > 0) {
@@ -146,9 +157,12 @@ const MemberList: Component<MemberListProps> = (props) => {
       }
     }
 
-    const remaining = filteredMembers().filter((m) => !placed.has(m.pseudonymKey));
-    if (remaining.length > 0) {
-      groups.push({ name: `Online — ${remaining.length}`, members: remaining });
+    const online = present.filter((m) => !placed.has(m.pseudonymKey));
+    if (online.length > 0) {
+      groups.push({ name: `Online — ${online.length}`, members: online });
+    }
+    if (offline.length > 0) {
+      groups.push({ name: `Offline — ${offline.length}`, members: offline });
     }
 
     return groups;
@@ -310,7 +324,7 @@ const MemberList: Component<MemberListProps> = (props) => {
         }
       >
         <Popover.Trigger as="div" class="member-item">
-          <StatusDot status={member.status || "online"} />
+          <StatusDot status={memberStatus(member)} />
           <div class="member-name-info">
             <span class="member-name">{member.displayName}</span>
             <Show when={member.gameInfo}>
