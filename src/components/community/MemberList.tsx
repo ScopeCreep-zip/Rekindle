@@ -345,7 +345,6 @@ const MemberList: Component<MemberListProps> = (props) => {
           communityId={props.communityId}
           member={member}
           roles={props.roles}
-          onClose={() => setOpenProfileFor(null)}
           myPseudonymKey={props.myPseudonymKey}
         />
       </Popover>

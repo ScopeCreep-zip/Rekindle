@@ -20,7 +20,6 @@ interface MemberProfilePopupProps {
   communityId: string;
   member: Member;
   roles: Role[];
-  onClose: () => void;
   myPseudonymKey?: string | null;
 }
 
@@ -165,12 +164,6 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
     props.roles
       .filter((role) => role.selfAssignable && role.id !== 0 && role.name !== "@everyone")
       .sort((a, b) => b.position - a.position);
-
-  function handleMessage(): void {
-    commands.openChatWindow(props.member.pseudonymKey);
-    props.onClose();
-  }
-
 
   function handleCopyKey(): void {
     navigator.clipboard.writeText(props.member.pseudonymKey);
@@ -467,7 +460,6 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         </Show>
         <Show when={!isSelf()}>
           <div class="profile-popup-actions">
-            <button class="profile-popup-action-btn" onClick={handleMessage}>Message</button>
             <button class="profile-popup-action-btn" onClick={handleCopyKey}>Copy Key</button>
           </div>
         </Show>
