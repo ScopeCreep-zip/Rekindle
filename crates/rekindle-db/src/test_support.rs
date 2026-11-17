@@ -183,3 +183,23 @@ pub fn queued_channel_post(
     )
     .expect("insert a queued channel post");
 }
+
+/// Insert our channel post `message_id` composed before its channel's key
+/// (plan E3.2 S7l): its row `awaiting_key`.
+///
+/// # Panics
+/// The insert failed.
+pub fn waiting_channel_post(
+    conn: &rusqlite::Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+) {
+    conn.execute(
+        "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, \
+         body, timestamp, is_read, message_id, send_state) \
+         VALUES (?1, ?2, 'channel', ?1, 'post', 1, 1, ?3, 'awaiting_key')",
+        rusqlite::params![owner_key, channel_id, message_id],
+    )
+    .expect("insert a waiting channel post");
+}

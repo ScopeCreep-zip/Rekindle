@@ -38,16 +38,31 @@ impl HostChannel {
         message_id: &str,
         landed: bool,
     ) {
+        let state = if landed {
+            SendState::Sent
+        } else {
+            SendState::Failed
+        };
+        self.send_state_impl(community_id, channel_id, message_id, state, None);
+    }
+
+    /// Our post's `state` on the bus, with why it failed (`reason`, as the
+    /// user reads it) when it did not go.
+    pub(super) fn send_state_impl(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        state: SendState,
+        reason: Option<String>,
+    ) {
         self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::ChannelSendStatus {
                 community: community_id.to_string(),
                 channel: channel_id.to_string(),
                 message_id: message_id.to_string(),
-                state: if landed {
-                    SendState::Sent
-                } else {
-                    SendState::Failed
-                },
+                state,
+                reason,
             },
         ));
     }

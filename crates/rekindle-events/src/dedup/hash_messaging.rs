@@ -49,6 +49,7 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             channel,
             message_id,
             state,
+            reason: _,
         } => {
             h.update(b"channel_send_status|");
             h.update(community.as_bytes());

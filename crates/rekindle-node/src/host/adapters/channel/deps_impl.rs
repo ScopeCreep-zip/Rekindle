@@ -353,6 +353,27 @@ impl ChannelMessagingDeps for HostChannel {
         self.fail_post_impl(message).await;
     }
 
+    async fn queue_waiting_post(
+        &self,
+        post: &ChannelPost,
+        deadline_ms: i64,
+    ) -> Result<(), ChannelError> {
+        self.queue_waiting_post_impl(post, deadline_ms).await
+    }
+
+    async fn waiting_posts(&self, community_id: &str) -> Vec<ChannelPost> {
+        self.waiting_posts_impl(community_id).await
+    }
+
+    async fn release_waiting_post(&self, message: &str) -> bool {
+        self.move_waiting_post_impl(message, None).await
+    }
+
+    async fn park_waiting_post(&self, message: &str, deadline_ms: i64) -> bool {
+        self.move_waiting_post_impl(message, Some(deadline_ms))
+            .await
+    }
+
     // ---------- DB (channel messages) ----------
 
     async fn persist_sent_message(
@@ -526,5 +547,15 @@ impl ChannelMessagingDeps for HostChannel {
 
     fn emit_delivery_failed(&self, community_id: &str, channel_id: &str, message_id: &str) {
         self.delivery_impl(community_id, channel_id, message_id, false);
+    }
+
+    fn emit_send_state(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        state: rekindle_types::message::SendState,
+    ) {
+        self.send_state_impl(community_id, channel_id, message_id, state, None);
     }
 }

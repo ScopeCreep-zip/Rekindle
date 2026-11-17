@@ -70,6 +70,7 @@ export function transformMessage(m: IpcMessage): Message {
  *  failed, or out (sent, delivered, read). */
 function ownStatus(state: IpcMessage["sendState"]): Message["status"] {
   switch (state) {
+    case "awaiting_key":
     case "queued":
     case "failed":
       return state;

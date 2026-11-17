@@ -187,17 +187,20 @@ function applyChannelUnread(u: UnreadChanged): void {
 /// Channel-message and social events on the daemon vocabulary.
 /// Our post's delivery state from the Host (`ChannelSendStatus`): `sent` once
 /// its slot settled, `failed` when the network superseded our page without it
-/// (plan C7.13); a resend merges it back.
-function applySendStatus(channel: string, messageId: string, state: string): void {
+/// (plan C7.13); a resend merges it back. `awaiting_key` while it waits for
+/// the community key, `queued` once released to its write (plan E3.2 S7l);
+/// a `failed` one carries the backend's `reason` when its key never came.
+function applySendStatus(channel: string, messageId: string, state: string, reason?: string): void {
   const msgs = communityState.channelMessages[channel];
   if (!msgs) return;
   const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
   if (idx < 0) return;
   if (state === "failed") {
     setCommunityState("channelMessages", channel, idx, "status", "failed");
-    addToast("Message not delivered. Resend it.", "error");
-  } else if (state === "sent") {
-    setCommunityState("channelMessages", channel, idx, "status", "sent");
+    setCommunityState("channelMessages", channel, idx, "failureReason", reason);
+    addToast(reason ?? "Message not delivered. Resend it.", "error");
+  } else if (state === "sent" || state === "queued" || state === "awaiting_key") {
+    setCommunityState("channelMessages", channel, idx, "status", state);
   }
 }
 
@@ -213,7 +216,12 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
     } else if ("deleted" in m) {
       applyDelete(m.deleted.channel, m.deleted.messageId);
     } else if ("channelSendStatus" in m) {
-      applySendStatus(m.channelSendStatus.channel, m.channelSendStatus.messageId, m.channelSendStatus.state);
+      applySendStatus(
+        m.channelSendStatus.channel,
+        m.channelSendStatus.messageId,
+        m.channelSendStatus.state,
+        m.channelSendStatus.reason,
+      );
     } else if ("attachmentDownloaded" in m) {
       applyAttachmentDownloaded(m.attachmentDownloaded.channel, m.attachmentDownloaded.attachmentId);
     } else if ("expressionAssetReady" in m) {

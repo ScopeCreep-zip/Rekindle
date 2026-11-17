@@ -8,11 +8,19 @@
 //! user's Retry makes the post's write again under its client id through
 //! the channel send path's [`super::Reissuer`] ([`ChannelPosts::install_reissuer`]). The rows outlive a lock, as the pool's held write does
 //! (a `dht_write` row), so the next unlock's settle still finds them.
+//!
+//! A post composed before we held its channel's key waits on its row in
+//! state `awaiting_key` (plan E3.2 S7l, F9-1) until the key's install
+//! releases it ([`ChannelPosts::release`]), its deadline (one day from
+//! composition) fails it, or our departure discards it
+//! ([`ChannelPosts::discard_community`]); a lock keeps it.
 
 use std::sync::Arc;
 
 use rekindle_db::repo::outbox as repo;
-use rekindle_outbox::{Deadline, Entry, Outbox, OutboxError, OutboxRow, StreamKind};
+use rekindle_outbox::{
+    Deadline, Entry, Outbox, OutboxError, OutboxRow, StreamKind, OUTBOX_DEADLINE,
+};
 use rekindle_types::message::ChannelPost;
 
 use super::{storage, HostOutbox, OutboxSlot, Reissuer};
@@ -73,6 +81,147 @@ impl ChannelPosts {
         .map_err(|e| storage(&e))?;
         self.0.wake();
         Ok(())
+    }
+
+    /// Store `post`'s row waiting for its channel's key until `deadline`
+    /// (ms), its echo the post already written `awaiting_key`.
+    ///
+    /// # Errors
+    /// The storage failed, or no waiting post is `post.message`.
+    pub async fn queue_waiting(
+        &self,
+        post: &ChannelPost,
+        deadline: i64,
+    ) -> Result<(), OutboxError> {
+        let payload = serde_json::to_vec(post).map_err(|e| storage(&e))?;
+        let row = self.0.new_row(Entry {
+            kind: StreamKind::ChannelPost,
+            scope: scope(&post.record_key, post.subkey),
+            client_id: post.message.clone(),
+            payload,
+            deadline: Deadline::At(deadline),
+        });
+        let (db, owner) = self.0.deps().db()?;
+        db.call(move |conn| {
+            let new = repo::NewRow {
+                owner_key: &owner,
+                stream: &row.stream,
+                client_id: &row.client_id,
+                kind: row.kind.as_str(),
+                payload: &row.payload,
+                next_at: row.next_at,
+                deadline: row.deadline,
+            };
+            repo::enqueue_waiting_for_message(conn, &new, &row.client_id)
+        })
+        .await
+        .map_err(|e| storage(&e))?;
+        // The engine's pass learns the new deadline.
+        self.0.wake();
+        Ok(())
+    }
+
+    /// The posts waiting for their channel's key, of `community` only when
+    /// given, each channel slot's first-composed first.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn waiting(&self, community: Option<&str>) -> Result<Vec<ChannelPost>, OutboxError> {
+        let (db, owner) = self.0.deps().db()?;
+        let rows = db
+            .call(move |conn| repo::waiting_for_key(conn, &owner))
+            .await
+            .map_err(|e| storage(&e))?;
+        Ok(rows
+            .into_iter()
+            .filter_map(|row| post_of(&super::row_of(row).ok()?))
+            .filter(|post| community.is_none_or(|c| post.community == c))
+            .collect())
+    }
+
+    /// Release the waiting post `message` to its write: `queued`, with a
+    /// write's deadline from now. `false` when it was not waiting.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn release(&self, message: &str) -> Result<bool, OutboxError> {
+        let deadline = self
+            .0
+            .deps()
+            .clock
+            .now_ms_i64()
+            .saturating_add(i64::try_from(OUTBOX_DEADLINE.as_millis()).unwrap_or(i64::MAX));
+        self.set_waiting(message, deadline, true).await
+    }
+
+    /// Park the post `message` waiting for its key again until `deadline`.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn park(&self, message: &str, deadline: i64) -> Result<bool, OutboxError> {
+        self.set_waiting(message, deadline, false).await
+    }
+
+    async fn set_waiting(
+        &self,
+        message: &str,
+        deadline: i64,
+        release: bool,
+    ) -> Result<bool, OutboxError> {
+        let (db, owner) = self.0.deps().db()?;
+        let message = message.to_owned();
+        let changed = db
+            .call(move |conn| {
+                if release {
+                    repo::release_waiting(conn, &owner, &message, deadline)
+                } else {
+                    repo::wait_for_key(conn, &owner, &message, deadline)
+                }
+            })
+            .await
+            .map_err(|e| storage(&e))?;
+        self.0.wake();
+        Ok(changed)
+    }
+
+    /// We left `community`, or were removed from it: its posts still
+    /// waiting for the key are discarded (as `mek_transfer`'s
+    /// [`super::mek_transfer::DEPARTED`]). Returns them.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn discard_community(
+        &self,
+        community: &str,
+    ) -> Result<Vec<ChannelPost>, OutboxError> {
+        let mut discarded = Vec::new();
+        for post in self.waiting(Some(community)).await? {
+            if self.0.discard(&post.message).await? {
+                discarded.push(post);
+            }
+        }
+        Ok(discarded)
+    }
+
+    /// Every state change of the outbox from now on.
+    #[must_use]
+    pub fn changes(&self) -> tokio::sync::broadcast::Receiver<rekindle_outbox::StateChange> {
+        self.0.deps().subscribe()
+    }
+
+    /// The post of the row `client_id`, while it is on the outbox.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn post(&self, client_id: &str) -> Result<Option<ChannelPost>, OutboxError> {
+        use rekindle_outbox::OutboxDeps as _;
+        Ok(self
+            .0
+            .deps()
+            .row(client_id)
+            .await?
+            .as_ref()
+            .and_then(post_of))
     }
 
     /// The write of `record_key`/`subkey` settled: every post waiting on

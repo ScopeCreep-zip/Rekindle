@@ -7,7 +7,7 @@ import type { RouteAvailability } from "../channels/notification_events";
 export type { IdentitySummary } from "./dto";
 
 /** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
-export type SendState = "queued" | "sent" | "delivered" | "read" | "failed";
+export type SendState = "awaiting_key" | "queued" | "sent" | "delivered" | "read" | "failed";
 
 export interface Message {
   id: number;

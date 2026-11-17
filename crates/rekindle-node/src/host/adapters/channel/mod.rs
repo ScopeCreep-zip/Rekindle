@@ -166,7 +166,9 @@ pub(crate) fn removed_refusal(error: &ChannelError, what: &str) -> Option<IpcRes
 }
 
 /// The outbox's Retry of a failed channel post: its write is made again
-/// under its client id (`rekindle_channel::reissue`).
+/// under its client id (`rekindle_channel::reissue`), or, while its
+/// channel's key is still absent, it waits for the key again (plan E3.2
+/// S7l, `rekindle_channel::awaiting_key::retry_post`).
 struct PostReissuer(HostChannel);
 
 #[async_trait]
@@ -176,7 +178,7 @@ impl Reissuer for PostReissuer {
         self.0
             .refuse_removed(&post.community)
             .map_err(|e| e.to_string())?;
-        rekindle_channel::reissue::reissue_channel_post(&self.0, &post)
+        rekindle_channel::awaiting_key::retry_post(&self.0, &post)
             .await
             .map(drop)
             .map_err(|e| e.to_string())
@@ -200,6 +202,7 @@ pub(crate) fn start_settle(
     if let Some(posts) = ctx.outbox.channel_posts() {
         posts.install_reissuer(Arc::new(PostReissuer(channel.clone())));
     }
+    start_key_deadline(ctx, scope)?;
     let mut settled = pool.settled();
     scope.spawn_with_token("channel delivery settle", |stop| async move {
         loop {
@@ -221,4 +224,92 @@ pub(crate) fn start_settle(
             .await;
         }
     })
+}
+
+/// What a post that waited past its deadline for its channel's key shows
+/// (plan E3.2 S7l, F9-1); Retry and Delete stay on it.
+pub(crate) fn key_did_not_arrive_text() -> String {
+    format!("Not sent: {}", rekindle_outbox::KEY_DID_NOT_ARRIVE)
+}
+
+/// Tell the windows of each post that waited past its deadline for its
+/// channel's key (the outbox engine fails it with
+/// [`rekindle_outbox::KEY_DID_NOT_ARRIVE`]), with the reason they show.
+/// Runs on the unlock scope.
+fn start_key_deadline(ctx: &DaemonContext, scope: &Arc<SessionScope>) -> Result<(), ScopeClosed> {
+    let Some(posts) = ctx.outbox.channel_posts() else {
+        return Ok(());
+    };
+    let channel = HostChannel::new(ctx);
+    let mut changes = posts.changes();
+    scope.spawn_with_token("channel post key deadline", |stop| async move {
+        loop {
+            let change = match stop.run_until_cancelled(changes.recv()).await {
+                None | Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return,
+                Some(Err(tokio::sync::broadcast::error::RecvError::Lagged(missed))) => {
+                    tracing::warn!(missed, "channel post states missed; the rows hold them");
+                    continue;
+                }
+                Some(Ok(change)) => change,
+            };
+            let expired = change.kind == rekindle_outbox::StreamKind::ChannelPost
+                && change.state == rekindle_types::message::SendState::Failed
+                && change.wedge_reason.as_deref() == Some(rekindle_outbox::KEY_DID_NOT_ARRIVE);
+            if !expired {
+                continue;
+            }
+            match posts.post(&change.client_id).await {
+                Ok(Some(post)) => channel.send_state_impl(
+                    &post.community,
+                    &post.channel,
+                    &post.message,
+                    rekindle_types::message::SendState::Failed,
+                    Some(key_did_not_arrive_text()),
+                ),
+                Ok(None) => {}
+                Err(error) => tracing::warn!(%error, "expired channel post not read"),
+            }
+        }
+    })
+}
+
+/// A key of `community_id` was installed (plan E3.2 S7l, F9-1): its posts
+/// waiting for it are released to their writes, on the unlock scope. The
+/// install is the trigger; nothing polls.
+pub(crate) fn release_waiting_posts(gov: &HostGovernance, community_id: &str) {
+    if gov.context().outbox.channel_posts().is_none() {
+        return;
+    }
+    let channel = HostChannel { gov: gov.clone() };
+    let community = community_id.to_owned();
+    rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(gov).spawn_or_drop(
+        "channel posts released",
+        async move {
+            rekindle_channel::awaiting_key::release_waiting_posts(&channel, &community).await;
+        },
+    );
+}
+
+/// We left `community_id`, or were removed from it: its posts still
+/// waiting for the key are discarded, never written (plan E3.2 S7l, as
+/// `mek_transfer`'s `DEPARTED`).
+pub(crate) fn discard_waiting_posts(gov: &HostGovernance, community_id: &str) {
+    let Some(posts) = gov.context().outbox.channel_posts() else {
+        return;
+    };
+    let community = community_id.to_owned();
+    rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(gov).spawn_or_drop(
+        "waiting channel posts discarded",
+        async move {
+            match posts.discard_community(&community).await {
+                Ok(discarded) if !discarded.is_empty() => {
+                    tracing::info!(community = %community, count = discarded.len(), "waiting channel posts discarded: departed");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::warn!(community = %community, %error, "waiting channel posts not discarded");
+                }
+            }
+        },
+    );
 }

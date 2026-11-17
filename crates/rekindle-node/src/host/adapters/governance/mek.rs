@@ -66,6 +66,7 @@ impl HostGovernance {
             &self.ctx.mek_cache,
         ));
         let mut restored = 0usize;
+        let mut keyed: Vec<String> = Vec::new();
         for (community, scope, mek) in stored {
             let (key_bytes, generation) = (*mek.as_bytes(), mek.generation());
             if !rekindle_mek_rotation::ChannelMekCache::insert(&cache, &community, scope, mek) {
@@ -75,8 +76,16 @@ impl HostGovernance {
             if let Some(shell) = &self.ctx.shell {
                 shell.on_mek_installed(&community, scope, key_bytes, generation);
             }
+            if !keyed.contains(&community) {
+                keyed.push(community);
+            }
         }
         tracing::info!(restored, "MEKs reloaded from the vault");
+        // A post kept across the lock whose key was installed before its
+        // release ran (plan E3.2 S7l).
+        for community in keyed {
+            crate::host::adapters::channel::release_waiting_posts(self, &community);
+        }
     }
 
     /// Cache the key and, when the cache takes it (the convergence rule may
@@ -98,13 +107,20 @@ impl HostGovernance {
         if let Some(shell) = &self.ctx.shell {
             shell.on_mek_installed(community_id, scope, mek.key_bytes, mek.generation);
         }
-        let guard = self.ctx.vault.lock();
-        let Some(vault) = guard.as_ref() else {
-            return;
-        };
-        if let Err(e) = rekindle_vault::typed::mek::persist_mek(vault, community_id, scope, &key) {
-            tracing::error!(community = %community_id, %scope, error = %e, "MEK not stored");
+        {
+            let guard = self.ctx.vault.lock();
+            let Some(vault) = guard.as_ref() else {
+                return;
+            };
+            if let Err(e) =
+                rekindle_vault::typed::mek::persist_mek(vault, community_id, scope, &key)
+            {
+                tracing::error!(community = %community_id, %scope, error = %e, "MEK not stored");
+            }
         }
+        // The posts composed before this key are released to their writes
+        // (plan E3.2 S7l, F9-1).
+        crate::host::adapters::channel::release_waiting_posts(self, community_id);
     }
 
     /// A key a rotator delivered (`MekTransfer`), installed as every other

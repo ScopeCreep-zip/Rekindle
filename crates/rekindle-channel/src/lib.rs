@@ -15,6 +15,7 @@
 #![forbid(unsafe_code)]
 
 pub mod automod;
+pub mod awaiting_key;
 pub mod deps;
 pub mod error;
 pub mod event;

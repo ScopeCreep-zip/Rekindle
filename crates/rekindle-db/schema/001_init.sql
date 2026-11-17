@@ -164,7 +164,7 @@ CREATE TABLE IF NOT EXISTS messages (
     -- (plan E2.5) moves it to `sent` when its record slot settles with it,
     -- or `failed`; a received message is `delivered`.
     send_state TEXT NOT NULL DEFAULT 'delivered'
-        CHECK(send_state IN ('queued', 'sent', 'delivered', 'read', 'failed')),
+        CHECK(send_state IN ('awaiting_key', 'queued', 'sent', 'delivered', 'read', 'failed')),
     -- A direct message's place in its DM stream (plan E2.5, r10): ours is
     -- our outbox seq to the peer, a received one the sender's; a
     -- `ReadUpTo` names it. NULL for a channel message.
@@ -898,7 +898,7 @@ CREATE TABLE IF NOT EXISTS outbox (
     kind TEXT NOT NULL
         CHECK(kind IN ('dm', 'group_dm', 'governance_op', 'friend_handshake', 'dht_write', 'channel_post', 'media_key', 'mek_transfer')),
     payload BLOB NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('queued', 'sent', 'delivered', 'read', 'failed')),
+    state TEXT NOT NULL CHECK(state IN ('awaiting_key', 'queued', 'sent', 'delivered', 'read', 'failed')),
     attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
     next_at INTEGER NOT NULL,
     deadline INTEGER NOT NULL,

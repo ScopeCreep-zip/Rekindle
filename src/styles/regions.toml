@@ -261,6 +261,9 @@
 '.message-status-sent' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-queued' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-status-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-status-awaiting_key' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-status-note' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-status-note-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.network-banner' = { on = ["--color-xfire-away 30% over --color-xfire-bg-dark"] }
 '.action-bar-icon-btn' = { on = ["--color-xfire-bg-dark"], on_hover = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
 '.chat-safety-btn' = { on = ["--color-xfire-bg-panel 80% over --color-xfire-bg-dark"], on_hover = ["--color-xfire-text-dim 15% over --color-xfire-bg-panel 80% over --color-xfire-bg-dark"] }

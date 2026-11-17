@@ -3,7 +3,14 @@ import { createStore } from "solid-js/store";
 
 import type { Message as IpcMessage } from "../ipc/commands/types";
 
-export type MessageStatus = "sending" | "queued" | "sent" | "delivered" | "read" | "failed";
+export type MessageStatus =
+  | "sending"
+  | "awaiting_key"
+  | "queued"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed";
 
 export interface ReactionGroup {
   emoji: string;
@@ -42,6 +49,9 @@ export interface Message extends Omit<IpcMessage, "sendState"> {
   /** Delivery state: from the backend's `sendState` when a message is
    *  loaded (our own only), then updated locally as a send resolves. */
   status?: MessageStatus;
+  /** Why our failed post was not sent, as the backend words it (a key that
+   *  never came); absent when the network superseded it. */
+  failureReason?: string;
   replyTo?: number;
   replyToId?: string;
   editedAt?: number;

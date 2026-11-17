@@ -336,13 +336,16 @@ export type ChannelMessageEvent =
       };
     }
   | { deleted: { community: string; channel: string; messageId: string } }
-  /** Our own post settled at consensus (`sent`) or was superseded (`failed`). */
+  /** Our own post settled at consensus (`sent`), was superseded or its key
+   *  never came (`failed`, with the `reason` to show), waits for the
+   *  community key (`awaiting_key`) or was released to its write (`queued`). */
   | {
       channelSendStatus: {
         community: string;
         channel: string;
         messageId: string;
-        state: "queued" | "sent" | "delivered" | "read" | "failed";
+        state: "awaiting_key" | "queued" | "sent" | "delivered" | "read" | "failed";
+        reason?: string;
       };
     }
   /** An attachment finished downloading to the place the user chose. */

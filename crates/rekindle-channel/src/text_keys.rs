@@ -20,6 +20,20 @@ fn text_scope<D: ChannelMessagingDeps + ?Sized>(
     Ok(deps.keys().scope_for_text(community_id, channel))
 }
 
+/// Whether we hold a text key of `channel_id` (the parent channel, for a
+/// thread) to seal a post under (plan E3.2 S7l).
+///
+/// # Errors
+/// `channel_id` is not a channel id.
+pub(crate) fn holds_text_key<D: ChannelMessagingDeps + ?Sized>(
+    deps: &D,
+    community_id: &str,
+    channel_id: &str,
+) -> Result<bool, ChannelError> {
+    let scope = text_scope(deps, community_id, channel_id)?;
+    Ok(channel_keys::current_key(&*deps.keys(), community_id, scope).is_some())
+}
+
 /// Seal `body` at `at` under the current text key of `channel_id` (the
 /// parent channel, for a thread). Returns the ciphertext and the
 /// generation that sealed it — the generation the message must carry.

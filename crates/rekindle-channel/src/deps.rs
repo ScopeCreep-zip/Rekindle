@@ -48,12 +48,17 @@ pub struct ChannelInfoSnapshot {
 pub struct ChannelSendOutcome {
     pub message_id: String,
     pub sender_pseudonym_hex: String,
+    /// Empty, with no generation, for a post waiting for its key (plan
+    /// E3.2 S7l): it is sealed at its release.
     pub ciphertext: Vec<u8>,
-    pub mek_generation: u64,
+    pub mek_generation: Option<u64>,
     pub lamport_ts: u64,
     pub timestamp_ms: i64,
     /// The message id of the message this one replies to, when it does.
     pub reply_to: Option<String>,
+    /// The row's first state: `Queued` before its write, `AwaitingKey`
+    /// before its channel's key.
+    pub send_state: rekindle_types::message::SendState,
 }
 
 /// Where a channel-record write targets: SMPL record key + slot info.
@@ -382,6 +387,28 @@ pub trait ChannelMessagingDeps: Send + Sync {
     /// `message`'s write could not be made: its row settles `failed`.
     async fn fail_post(&self, message: &str);
 
+    /// Store `post`'s outbox row waiting for its channel's key (the post is
+    /// persisted `awaiting_key`, plan E3.2 S7l, F9-1), failing at
+    /// `deadline_ms` unless the key comes first.
+    async fn queue_waiting_post(
+        &self,
+        post: &ChannelPost,
+        deadline_ms: i64,
+    ) -> Result<(), ChannelError>;
+
+    /// `community_id`'s posts waiting for their channel's key, each
+    /// channel's first-composed first.
+    async fn waiting_posts(&self, community_id: &str) -> Vec<ChannelPost>;
+
+    /// Release the waiting post `message` to its write (`queued`). `false`
+    /// when it was not waiting: another release took it.
+    async fn release_waiting_post(&self, message: &str) -> bool;
+
+    /// Park the post `message` (the user's Retry, its key still absent)
+    /// waiting for the key until `deadline_ms`. `false` when it is not a
+    /// queued or failed post.
+    async fn park_waiting_post(&self, message: &str, deadline_ms: i64) -> bool;
+
     // ---------- DB (channel messages) ----------
 
     async fn persist_sent_message(
@@ -493,4 +520,13 @@ pub trait ChannelMessagingDeps: Send + Sync {
     fn emit_chat_event_local(&self, echo: &SentChannelMessageEcho);
     fn emit_delivery_succeeded(&self, community_id: &str, channel_id: &str, message_id: &str);
     fn emit_delivery_failed(&self, community_id: &str, channel_id: &str, message_id: &str);
+    /// Our post `message_id` moved to `state` before its write: waiting
+    /// for its key, or released to its write (plan E3.2 S7l).
+    fn emit_send_state(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        message_id: &str,
+        state: rekindle_types::message::SendState,
+    );
 }

@@ -15,7 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use futures::future::join_all;
 use parking_lot::Mutex;
 
-use super::{Outbox, DEADLINE_REASON};
+use rekindle_types::message::SendState;
+
+use super::{Outbox, DEADLINE_REASON, KEY_DID_NOT_ARRIVE};
 use crate::deps::{AttemptOutcome, OutboxDeps, OutboxError, OutboxRow};
 use crate::stream::{OutboxRetry, StreamKind};
 
@@ -130,14 +132,20 @@ impl<D: OutboxDeps> Outbox<D> {
         Ok(())
     }
 
-    /// Fail the rows past their deadline at `now`, but a stream's whose
+    /// Fail the rows past their deadline at `now` (a post that waited for
+    /// its key with [`KEY_DID_NOT_ARRIVE`]), but a stream's whose
     /// attempt is running: its rows fail on the pass its end wakes, so an
     /// attempt never settles a row failed under it.
     pub(crate) async fn expire(&self, now: i64) -> Result<(), OutboxError> {
         let attempting = self.attempting.streams();
         for row in self.deps.expired(now).await? {
             if !attempting.contains(&row.stream) {
-                self.fail(&row, DEADLINE_REASON.to_owned()).await?;
+                let reason = if row.state == SendState::AwaitingKey {
+                    KEY_DID_NOT_ARRIVE
+                } else {
+                    DEADLINE_REASON
+                };
+                self.fail(&row, reason.to_owned()).await?;
             }
         }
         Ok(())

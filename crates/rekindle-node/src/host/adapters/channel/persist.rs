@@ -6,7 +6,6 @@ use rekindle_channel::deps::{ChannelMessageRow, ChannelPost, ChannelSendOutcome}
 use rekindle_channel::error::ChannelError;
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
 use rekindle_outbox::OutboxError;
-use rekindle_types::message::SendState;
 
 use super::HostChannel;
 use crate::host::adapters::outbox::ChannelPosts;
@@ -20,8 +19,9 @@ fn outbox(e: &OutboxError) -> ChannelError {
 }
 
 impl HostChannel {
-    /// Our own post's row, stored `Queued` before its record write: its
-    /// outbox `channel_post` row moves it from then on (plan E2.5).
+    /// Our own post's row, stored `Queued` before its record write (or
+    /// `AwaitingKey` before its channel's key, plan E3.2 S7l): its outbox
+    /// `channel_post` row moves it from then on (plan E2.5).
     pub(super) async fn persist_own_post(
         &self,
         channel_id: &str,
@@ -43,14 +43,16 @@ impl HostChannel {
                     body: &body,
                     timestamp: outcome.timestamp_ms,
                     is_read: true,
-                    mek_generation: Some(i64::try_from(outcome.mek_generation).unwrap_or(i64::MAX)),
+                    mek_generation: outcome
+                        .mek_generation
+                        .map(|g| i64::try_from(g).unwrap_or(i64::MAX)),
                     message_id: &outcome.message_id,
                     lamport_ts: outcome.lamport_ts,
                     automod_blurred: false,
                     forwarded_from_author: forwarded.as_deref(),
                     flags: 0,
                     attachment_json: None,
-                    send_state: SendState::Queued,
+                    send_state: outcome.send_state,
                     mentions_me: false,
                 },
             )
@@ -140,6 +142,52 @@ impl HostChannel {
         settled.unwrap_or_else(|error| {
             tracing::warn!(%error, "settling the channel posts failed");
             Vec::new()
+        })
+    }
+
+    pub(super) async fn queue_waiting_post_impl(
+        &self,
+        post: &ChannelPost,
+        deadline_ms: i64,
+    ) -> Result<(), ChannelError> {
+        self.channel_posts()?
+            .queue_waiting(post, deadline_ms)
+            .await
+            .map_err(|e| outbox(&e))
+    }
+
+    pub(super) async fn waiting_posts_impl(&self, community_id: &str) -> Vec<ChannelPost> {
+        let waiting = match self.channel_posts() {
+            Ok(posts) => posts
+                .waiting(Some(community_id))
+                .await
+                .map_err(|e| outbox(&e)),
+            Err(error) => Err(error),
+        };
+        waiting.unwrap_or_else(|error| {
+            tracing::warn!(%error, community = community_id, "waiting channel posts not read");
+            Vec::new()
+        })
+    }
+
+    /// Release (`release`) or park the post `message`; `false` when its
+    /// row was not in the state to move.
+    pub(super) async fn move_waiting_post_impl(
+        &self,
+        message: &str,
+        park_until: Option<i64>,
+    ) -> bool {
+        let moved = match self.channel_posts() {
+            Ok(posts) => match park_until {
+                None => posts.release(message).await,
+                Some(deadline) => posts.park(message, deadline).await,
+            }
+            .map_err(|e| outbox(&e)),
+            Err(error) => Err(error),
+        };
+        moved.unwrap_or_else(|error| {
+            tracing::warn!(%error, message, "waiting channel post not moved");
+            false
         })
     }
 

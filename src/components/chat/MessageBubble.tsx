@@ -70,6 +70,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       case "sent": return ICON_CHECK;
       case "delivered": return ICON_CHECK_ALL;
       case "read": return ICON_EYE;
+      case "awaiting_key":
       case "queued": return ICON_TIMEOUT;
       case "failed": return ICON_CLOSE_CIRCLE;
       default: return null;
@@ -176,6 +177,12 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         </Show>
         <Show when={statusIcon()}>
           <span class={`${statusClass()} nf-icon`}>{statusIcon()}</span>
+        </Show>
+        <Show when={props.message.isOwn && props.message.status === "awaiting_key"}>
+          <span class="message-status-note">Waiting for the community key</span>
+        </Show>
+        <Show when={props.message.isOwn && props.message.status === "failed" && props.message.failureReason}>
+          <span class="message-status-note message-status-note-failed">{props.message.failureReason}</span>
         </Show>
         <Show when={props.message.status === "failed"}>
           <button

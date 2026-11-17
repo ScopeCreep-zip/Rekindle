@@ -161,6 +161,7 @@ impl HostGovernance {
         }
         self.forget_keys(&id);
         self.discard_key_transfers(&id, None);
+        crate::host::adapters::channel::discard_waiting_posts(self, &id);
         self.ctx.communities.remove(&id);
         crate::host::session::forget_membership(
             &self.ctx.session,

@@ -193,3 +193,105 @@ async fn a_post_queued_offline_settles_from_the_pools_settle() {
     assert_eq!(post_state(&outbox, "m2").await, Some(SendState::Failed));
     assert_eq!(outbox.unsettled().await.unwrap(), 0);
 }
+
+/// A post of `community` composed before its key (plan E3.2 S7l, F9-1):
+/// its `messages` row `awaiting_key`, then its row waiting until
+/// `deadline`.
+async fn waiting_post(
+    outbox: &Arc<Outbox<HostOutbox>>,
+    community: &str,
+    id: &'static str,
+    deadline: i64,
+) -> rekindle_types::message::ChannelPost {
+    let db = outbox.deps().db.current().unwrap();
+    db.call(move |c| {
+        rekindle_db::test_support::waiting_channel_post(c, OWNER, "ch1", id);
+        Ok(())
+    })
+    .await
+    .unwrap();
+    let post = rekindle_types::message::ChannelPost {
+        community: community.into(),
+        channel: "ch1".into(),
+        message: id.into(),
+        record_key: "rk".into(),
+        subkey: 4,
+    };
+    let posts = super::ChannelPosts(Arc::clone(outbox));
+    posts.queue_waiting(&post, deadline).await.unwrap();
+    post
+}
+
+const LATER: i64 = i64::MAX / 2;
+
+/// A waiting post is not on our page: the slot's write settles only the
+/// posts that were written; the waiting ones are listed first-composed
+/// first and released once each.
+#[tokio::test]
+async fn a_waiting_post_is_not_settled_by_its_slots_write_and_is_released_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let outbox = Arc::new(Outbox::new(
+        host(dir.path(), Arc::new(Senders::default())).await,
+    ));
+    let posts = super::ChannelPosts(Arc::clone(&outbox));
+    let written = queued_post(&outbox, "m1").await;
+    posts.queue(&written).await.unwrap();
+    let first = waiting_post(&outbox, "c1", "m2", LATER).await;
+    let second = waiting_post(&outbox, "c1", "m3", LATER).await;
+    outbox.pump().await.unwrap();
+    assert_eq!(posts.settle("rk", 4, true).await.unwrap(), [written]);
+    assert_eq!(
+        post_state(&outbox, "m2").await,
+        Some(SendState::AwaitingKey)
+    );
+    assert_eq!(
+        posts.waiting(Some("c1")).await.unwrap(),
+        [first, second.clone()]
+    );
+    assert!(posts.waiting(Some("c2")).await.unwrap().is_empty());
+    assert!(posts.release("m2").await.unwrap());
+    assert!(!posts.release("m2").await.unwrap(), "released once");
+    assert_eq!(post_state(&outbox, "m2").await, Some(SendState::Queued));
+    assert_eq!(posts.waiting(None).await.unwrap(), [second]);
+}
+
+/// Past its deadline a waiting post fails with the reason the user reads.
+#[tokio::test]
+async fn a_post_waiting_past_its_deadline_fails_because_the_key_did_not_arrive() {
+    let dir = tempfile::tempdir().unwrap();
+    let outbox = Arc::new(Outbox::new(
+        host(dir.path(), Arc::new(Senders::default())).await,
+    ));
+    let mut changes = outbox.deps().subscribe();
+    waiting_post(&outbox, "c1", "m1", 1).await;
+    outbox.pump().await.unwrap();
+    let change = changes.recv().await.unwrap();
+    assert_eq!(change.state, SendState::Failed);
+    assert_eq!(
+        change.wedge_reason.as_deref(),
+        Some(rekindle_outbox::KEY_DID_NOT_ARRIVE)
+    );
+    assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Failed));
+    let posts = super::ChannelPosts(Arc::clone(&outbox));
+    assert_eq!(
+        posts.post("m1").await.unwrap().map(|p| p.community),
+        Some("c1".to_owned()),
+        "kept for Retry or Delete"
+    );
+}
+
+/// Our departure from a community discards its waiting posts, and only its.
+#[tokio::test]
+async fn our_departure_discards_the_communitys_waiting_posts() {
+    let dir = tempfile::tempdir().unwrap();
+    let outbox = Arc::new(Outbox::new(
+        host(dir.path(), Arc::new(Senders::default())).await,
+    ));
+    let posts = super::ChannelPosts(Arc::clone(&outbox));
+    let left = waiting_post(&outbox, "c1", "m1", LATER).await;
+    let kept = waiting_post(&outbox, "c2", "m2", LATER).await;
+    assert_eq!(posts.discard_community("c1").await.unwrap(), [left]);
+    assert_eq!(post_state(&outbox, "m1").await, Some(SendState::Failed));
+    assert!(!posts.release("m1").await.unwrap(), "never written");
+    assert_eq!(posts.waiting(None).await.unwrap(), [kept]);
+}

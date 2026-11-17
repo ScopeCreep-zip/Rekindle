@@ -24,6 +24,10 @@ const STORAGE_RETRY: Duration = Duration::from_secs(5);
 /// The reason a row past its deadline carries.
 pub const DEADLINE_REASON: &str = "deadline";
 
+/// The reason a channel post that waited for its channel's key past its
+/// deadline carries (plan E3.2 S7l, F9-1).
+pub const KEY_DID_NOT_ARRIVE: &str = "the community key did not arrive";
+
 /// How long a row may wait for its peer before it settles failed at its
 /// deadline: [`DELIVERY_HORIZON`] (D22, D24).
 pub const OUTBOX_DEADLINE: std::time::Duration = DELIVERY_HORIZON;

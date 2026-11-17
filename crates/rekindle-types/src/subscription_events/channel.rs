@@ -54,12 +54,19 @@ pub enum ChannelMessageEvent {
     /// its slot of the channel record settled at consensus, `failed` when
     /// the network superseded our page without it (a resend merges it
     /// back). Every window renders the state it names.
-    /// Triggered by: the record pool settling the post's write.
+    /// `awaiting_key` while the post waits for the channel's key (plan
+    /// E3.2 S7l, F9-1), `queued` when it is released to its write.
+    /// Triggered by: the record pool settling the post's write; a post
+    /// composed before the key, its release, or its key deadline.
     ChannelSendStatus {
         community: String,
         channel: String,
         message_id: String,
         state: crate::message::SendState,
+        /// Why a `failed` post was not sent, as the user reads it; `None`
+        /// when the network superseded its page.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
     },
     /// An attachment of a channel finished downloading to the place the
     /// user chose; the row now reads `downloaded`.

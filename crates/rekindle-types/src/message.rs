@@ -150,6 +150,11 @@ impl MessageClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SendState {
+    /// A community post composed before we held its channel's key (plan
+    /// E3.2 S7l, F9-1): stored with its outbox row, written once the key
+    /// is installed. Below `Queued`: nothing has gone to the network.
+    #[serde(rename = "awaiting_key")]
+    AwaitingKey,
     Queued,
     Sent,
     Delivered,
@@ -162,6 +167,7 @@ impl SendState {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::AwaitingKey => "awaiting_key",
             Self::Queued => "queued",
             Self::Sent => "sent",
             Self::Delivered => "delivered",
@@ -174,6 +180,7 @@ impl SendState {
     #[must_use]
     pub fn parse(stored: &str) -> Option<Self> {
         [
+            Self::AwaitingKey,
             Self::Queued,
             Self::Sent,
             Self::Delivered,

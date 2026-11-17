@@ -259,6 +259,21 @@
     font-weight: 700;
   }
 
+  /* A post composed before the community key arrived (plan E3.2 S7l). */
+  .message-status-awaiting_key {
+    color: var(--color-xfire-away-text);
+  }
+
+  .message-status-note {
+    font-size: 10px;
+    margin-left: 4px;
+    color: var(--color-xfire-away-text);
+  }
+
+  .message-status-note-failed {
+    color: var(--color-xfire-danger-text);
+  }
+
   /* Profile action buttons */
   /* Wraps at narrow widths: one unwrapped row is wider than the window
      and, centred in .profile-content, spills past both edges. */

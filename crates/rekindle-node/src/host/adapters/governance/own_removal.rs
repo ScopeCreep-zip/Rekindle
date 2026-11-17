@@ -42,6 +42,8 @@ impl HostGovernance {
         if first {
             tracing::info!(community = %community_id, banned = removal.banned, "removed from community");
         }
+        // A post still waiting for the key is never written (plan E3.2 S7l).
+        crate::host::adapters::channel::discard_waiting_posts(self, community_id);
         let this = self.clone();
         let community = community_id.to_owned();
         rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(self).spawn_or_drop(

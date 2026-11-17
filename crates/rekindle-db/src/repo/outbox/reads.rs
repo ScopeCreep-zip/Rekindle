@@ -144,7 +144,7 @@ pub fn stream_rows(conn: &Connection, owner_key: &str, stream: &str) -> rusqlite
 pub fn expired(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result<Vec<Row>> {
     query_rows(
         conn,
-        "o.owner_key = ?1 AND o.state IN ('queued', 'sent') AND o.deadline <= ?2 \
+        "o.owner_key = ?1 AND o.state IN ('awaiting_key', 'queued', 'sent') AND o.deadline <= ?2 \
          ORDER BY o.stream, o.stream_seq",
         params![owner_key, now],
     )
@@ -168,7 +168,7 @@ pub fn next_wake(conn: &Connection, owner_key: &str) -> rusqlite::Result<Option<
                  AND o.state IN ('queued', 'sent') AND {UNBLOCKED} \
                UNION ALL \
                SELECT o.deadline FROM outbox o WHERE o.owner_key = ?1 \
-                 AND o.state IN ('queued', 'sent'))"
+                 AND o.state IN ('awaiting_key', 'queued', 'sent'))"
         ),
         params![owner_key],
         |r| r.get(0),
@@ -207,4 +207,19 @@ pub fn get_by_seq(
         read_row,
     )
     .optional()
+}
+
+/// The channel posts waiting for their channel's key (`awaiting_key`, plan
+/// E3.2 S7l, F9-1), in stream and `stream_seq` order: each channel slot's
+/// posts first-composed first.
+///
+/// # Errors
+/// The query failed.
+pub fn waiting_for_key(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Row>> {
+    query_rows(
+        conn,
+        "o.owner_key = ?1 AND o.kind = 'channel_post' AND o.state = 'awaiting_key' \
+         ORDER BY o.stream, o.stream_seq",
+        params![owner_key],
+    )
 }

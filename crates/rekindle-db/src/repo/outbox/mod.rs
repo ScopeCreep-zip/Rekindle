@@ -242,7 +242,8 @@ fn project(
     conn.execute(
         "UPDATE messages SET send_state = ?3 WHERE owner_key = ?1 AND id = \
          (SELECT echo_id FROM outbox WHERE owner_key = ?1 AND client_id = ?2) \
-         AND (CASE ?3 WHEN 'queued' THEN 0 WHEN 'sent' THEN 1 WHEN 'failed' THEN 1 \
+         AND (CASE ?3 WHEN 'awaiting_key' THEN 0 WHEN 'queued' THEN 0 WHEN 'sent' THEN 1 \
+         WHEN 'failed' THEN 1 \
          WHEN 'delivered' THEN 2 ELSE 3 END) >= \
          (CASE send_state WHEN 'queued' THEN 0 WHEN 'sent' THEN 1 \
          WHEN 'delivered' THEN 2 WHEN 'read' THEN 3 ELSE -1 END)",
@@ -375,7 +376,12 @@ pub fn unsettled_count(conn: &Connection, owner_key: &str) -> rusqlite::Result<i
 
 mod reads;
 use reads::parse_state;
-pub use reads::{due, expired, get, get_by_seq, next_wake, prefix_rows, stream_rows};
+pub use reads::{
+    due, expired, get, get_by_seq, next_wake, prefix_rows, stream_rows, waiting_for_key,
+};
+
+mod waiting;
+pub use waiting::{enqueue_waiting_for_message, release_waiting, wait_for_key};
 
 mod ending;
 mod receipts;

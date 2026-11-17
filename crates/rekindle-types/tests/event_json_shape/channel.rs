@@ -95,6 +95,7 @@ pub fn samples() -> Vec<Sample> {
                 channel: channel(),
                 message_id: id("msg_", '1'),
                 state: rekindle_types::message::SendState::Sent,
+                reason: None,
             },
         ),
         ev(

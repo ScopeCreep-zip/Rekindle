@@ -96,7 +96,7 @@ fn build_forward_notification(
     })
 }
 
-fn random_message_id(prefix: &str) -> String {
+pub(crate) fn random_message_id(prefix: &str) -> String {
     format!(
         "{prefix}{}",
         hex::encode(rekindle_utils::random::id_bytes_16())
@@ -152,8 +152,21 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         .my_pseudonym_hex(community_id)
         .or_else(|| deps.owner_key())
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
-    let lamport_ts = deps.increment_lamport(community_id)?;
     let context = deps.channel_write_context(community_id, channel_id)?;
+    // No key for the channel yet, or an earlier post still waits for it:
+    // queued until the key comes, never refused (plan E3.2 S7l, F9-1).
+    if crate::awaiting_key::must_wait(deps, community_id, channel_id).await? {
+        let composed = crate::awaiting_key::Composed {
+            community_id,
+            channel_id,
+            body,
+            reply_to,
+            sender_key,
+            timestamp_ms,
+        };
+        return crate::awaiting_key::queue_awaiting_key(deps, &context, composed).await;
+    }
+    let lamport_ts = deps.increment_lamport(community_id)?;
     let (ciphertext, mek_generation) = crate::text_keys::seal_text(
         deps,
         community_id,
@@ -172,10 +185,11 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         message_id: message_id.clone(),
         sender_pseudonym_hex: sender_key.clone(),
         ciphertext: ciphertext.clone(),
-        mek_generation,
+        mek_generation: Some(mek_generation),
         lamport_ts,
         timestamp_ms,
         reply_to: reply_to.clone(),
+        send_state: SendState::Queued,
     };
     deps.persist_sent_message(community_id, channel_id, &outcome, body)
         .await?;
@@ -325,10 +339,11 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         message_id: new_message_id.clone(),
         sender_pseudonym_hex: forwarder_pseudonym.clone(),
         ciphertext: dest_ciphertext.clone(),
-        mek_generation: dest_mek_generation,
+        mek_generation: Some(dest_mek_generation),
         lamport_ts,
         timestamp_ms,
         reply_to: None,
+        send_state: SendState::Queued,
     };
     deps.persist_forwarded_message(
         dest_community_id,

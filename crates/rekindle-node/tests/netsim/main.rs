@@ -72,6 +72,7 @@ mod own_removal;
 mod own_removal_quiet;
 mod pair;
 mod pins;
+mod post_before_key;
 mod prekey_collision;
 mod prekeys;
 mod read_marker_only_advances;

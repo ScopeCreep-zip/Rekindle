@@ -26,18 +26,23 @@ pub enum StateInput {
 
 fn rank(state: SendState) -> Option<u8> {
     match state {
-        SendState::Queued => Some(0),
-        SendState::Sent => Some(1),
-        SendState::Delivered => Some(2),
-        SendState::Read => Some(3),
+        SendState::AwaitingKey => Some(0),
+        SendState::Queued => Some(1),
+        SendState::Sent => Some(2),
+        SendState::Delivered => Some(3),
+        SendState::Read => Some(4),
         SendState::Failed => None,
     }
 }
 
-/// Whether `state` still waits on this device or the peer.
+/// Whether `state` still waits on this device (a channel post waiting for
+/// its key, plan E3.2 S7l), or the peer.
 #[must_use]
 pub fn is_unsettled(state: SendState) -> bool {
-    matches!(state, SendState::Queued | SendState::Sent)
+    matches!(
+        state,
+        SendState::AwaitingKey | SendState::Queued | SendState::Sent
+    )
 }
 
 /// `current` after `input`.
