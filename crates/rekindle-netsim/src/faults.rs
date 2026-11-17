@@ -68,6 +68,17 @@ pub enum Fault {
     SendHangs { node: usize, hangs: bool },
     /// The node's clock runs this far from simulated true time.
     ClockSkew { node: usize, ms: i64 },
+    /// The node is a modified client: every set it makes of a subkey of
+    /// `key` passes `SetDHTValueOptions::min_seqnum`, raising the seq to at
+    /// least `min_seqnum` after the automatic increment (0.5.8
+    /// `storage_manager/set_value.rs:136-142, 384-386`), as a writer may
+    /// with the public API to skip seqs (plan E3.2 S9). `None` ends it; a
+    /// client choice, not a network fault, so [`Fault::Heal`] keeps it.
+    MinSeqnum {
+        node: usize,
+        key: String,
+        min_seqnum: Option<u32>,
+    },
     /// The node's watch on `key` dies: Veilid sends a last change with
     /// empty subkeys, `count == 0` and no value (0.5.8 `watch_value.rs:782-789`).
     WatchDeath { node: usize, key: String },
@@ -292,6 +303,17 @@ impl Netsim {
                 if let Some(slot) = self.net.inner.lock().nodes.get_mut(node) {
                     slot.skew_ms = ms;
                 }
+            }
+            Fault::MinSeqnum {
+                node,
+                key,
+                min_seqnum,
+            } => {
+                let min_seqnums = &mut self.net.inner.lock().faults.min_seqnums;
+                match min_seqnum {
+                    Some(seq) => min_seqnums.insert((node, key), seq),
+                    None => min_seqnums.remove(&(node, key)),
+                };
             }
             Fault::WatchDeath { node, key } => self.net.kill_watch(node, &key),
             Fault::RouteDeath { node } => self.kill_routes(node),

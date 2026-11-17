@@ -227,17 +227,18 @@ impl SimDht {
 
     /// The value a write sends: the same data and writer resend the local
     /// copy's bytes at its seq (0.5.8 `set_value.rs:353-366`), else a fresh
-    /// encryption at local seq + 1, or seq 0 with no local copy
-    /// ([`replicas::encrypt`]).
+    /// encryption at local seq + 1, or seq 0 with no local copy, raised to a
+    /// modified client's `min_seqnum` ([`crate::Fault::MinSeqnum`], [`replicas::encrypt`]).
     fn ours(&self, key: &str, subkey: u32, data: Vec<u8>, public: &[u8; 32]) -> replicas::Cipher {
         let writer = public_text(public);
         let mut inner = self.net.inner.lock();
+        let min = inner.faults.min_seqnum(self.node, key);
         match replicas::local(&inner, self.node, key, subkey) {
             Some(l) if l.value.data == data && l.value.writer == writer => l,
             local => replicas::encrypt(
                 &mut inner,
                 RecordValue {
-                    seq: local.map_or(0, |l| l.value.seq.saturating_add(1)),
+                    seq: (local.map_or(0, |l| l.value.seq.saturating_add(1))).max(min),
                     data,
                     writer,
                 },

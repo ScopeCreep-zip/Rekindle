@@ -261,3 +261,45 @@ async fn a_set_two_replicas_accept_is_below_consensus_yet_readable() {
         .count();
     assert!(held >= 5, "one value at one seq: {held}");
 }
+
+/// A modified client's `min_seqnum` (plan E3.2 S9): a set raises the seq to
+/// at least it after the automatic increment (0.5.8 `set_value.rs:384-386`,
+/// `tests_storage_manager/test_min_seqnum.rs:83-104`), skipping seqs; a
+/// minimum the increment already passes changes nothing, and other nodes'
+/// sets are unaffected.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_min_seqnum_set_skips_seqs() {
+    let (sim, nodes) = Netsim::nodes(4, 43);
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, key, _) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 1 }, None)
+        .await
+        .unwrap();
+    let seq_after = |data: &'static [u8]| {
+        let pool = pool.clone();
+        async move {
+            assert_eq!(
+                pool.set(lease, 0, data.to_vec(), None).await.unwrap(),
+                SetOutcome::Landed
+            );
+            let local = pool.inspect(lease, Some(&[0u32][..]), ReportScope::Local);
+            local.await.unwrap().local_seqs[0]
+        }
+    };
+    assert_eq!(seq_after(b"v0").await, Some(0));
+    sim.fault(Fault::MinSeqnum {
+        node: 0,
+        key: key.clone(),
+        min_seqnum: Some(5),
+    });
+    assert_eq!(seq_after(b"v5").await, Some(5));
+    assert_eq!(seq_after(b"v6").await, Some(6), "5 is already passed");
+    sim.fault(Fault::MinSeqnum {
+        node: 0,
+        key: key.clone(),
+        min_seqnum: None,
+    });
+    assert_eq!(seq_after(b"v7").await, Some(7));
+    let held = sim.replica_values(&key, 0).into_iter().flatten();
+    assert!(held.into_iter().any(|v| v.seq == 7 && v.data == b"v7"));
+}

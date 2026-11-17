@@ -103,6 +103,9 @@ pub(crate) struct Faults {
     pub send_hung: HashSet<usize>,
     /// Nodes whose next send fails at its own route's first hop.
     pub link_failure: HashSet<usize>,
+    /// A modified client's `min_seqnum` for its sets of a record
+    /// ([`crate::Fault::MinSeqnum`]), by (node, key).
+    pub min_seqnums: HashMap<(usize, String), u32>,
     /// Nodes on a network that blocks UDP ([`crate::Fault::UdpBlocked`]).
     pub udp_blocked: HashSet<usize>,
     /// Own routes failing their loopback tests, by route id
@@ -118,6 +121,14 @@ pub(crate) struct Faults {
     /// deferred, not counted, until a round trip proves the network again
     /// ([`crate::loopback`]).
     pub detector_offline: HashSet<usize>,
+}
+
+impl Faults {
+    /// The `min_seqnum` the node passes on its sets of `key` (0.5.8
+    /// `set_value.rs:384-386`), 0 when it passes none.
+    pub(crate) fn min_seqnum(&self, node: usize, key: &str) -> u32 {
+        (self.min_seqnums.get(&(node, key.to_string()))).map_or(0, |seq| *seq)
+    }
 }
 
 /// Each node's side of the network.
