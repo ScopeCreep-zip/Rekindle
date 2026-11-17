@@ -381,6 +381,45 @@ pub fn frame(sprites: &[(Sprite, RgbaImage)], suffix: &str, ground: [u8; 4]) -> 
     out
 }
 
+/// The GENEX button: its slot, its three unpressed pieces (left, centre,
+/// right) and their nine-slice insets (d1 §2.3: l4 r4 per the SDK, t/b 4).
+pub const BUTTON: &str = "button.secondary";
+pub const BUTTON_PARTS: [&str; 3] = [
+    "BUTTON_BACKGROUND_LEFT_UNPRESSED",
+    "BUTTON_BACKGROUND_CENTER_UNPRESSED",
+    "BUTTON_BACKGROUND_RIGHT_UNPRESSED",
+];
+pub const BUTTON_INSETS: Insets = Insets {
+    top: 4,
+    right: 4,
+    bottom: 4,
+    left: 4,
+};
+/// The token the button's `textBacking` names: GENEX's window background,
+/// the ground the walk already holds the label (`text.base`) at 4.5:1 on.
+/// An opaque backing covers the image inside the button's border, so the
+/// label is measured against it alone.
+pub const BUTTON_BACKING: &str = "bg.panel";
+
+/// The button's normal image: its left, centre and right pieces side by
+/// side (4 + 39 + 4 × 15), one nine-slice whose insets are the end caps.
+/// `None` when GENEX did not hold them.
+pub fn button(sprites: &[(Sprite, RgbaImage)]) -> Option<RgbaImage> {
+    let parts: Vec<&RgbaImage> = BUTTON_PARTS
+        .iter()
+        .map(|n| sprites.iter().find(|(s, _)| s.name == *n).map(|(_, i)| i))
+        .collect::<Option<_>>()?;
+    let width = parts.iter().map(|p| p.width()).sum();
+    let height = parts.iter().map(|p| p.height()).max().unwrap_or(0);
+    let mut out = RgbaImage::new(width, height);
+    let mut x0 = 0;
+    for part in parts {
+        blit(&mut out, part, 0, x0, 0, part.width());
+        x0 += part.width();
+    }
+    Some(out)
+}
+
 /// The titlebar's nine-slice insets: the two 25 px title caps.
 pub const TITLE_INSETS: Insets = Insets {
     top: 0,

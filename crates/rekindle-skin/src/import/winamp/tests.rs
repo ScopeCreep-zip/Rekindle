@@ -364,7 +364,9 @@ fn titlebar_and_genex_controls_fill_the_painted_slots() {
     let Outcome::Passed(p) = import(&skin([0xe7; 3]), "w").unwrap() else {
         panic!("passes")
     };
-    assert!(p.notice.contains("no registry region button.secondary yet"));
+    assert!(p
+        .notice
+        .contains("BUTTON_BACKGROUND_PRESSED -> region button.secondary (down)"));
     assert!(p
         .notice
         .contains("MAIN_CLOSE_BUTTON_DEPRESSED -> region titlebar.btn.close (down)"));
@@ -385,7 +387,14 @@ fn titlebar_and_genex_controls_fill_the_painted_slots() {
             .map(String::as_str),
         Some("assets/titlebar.btn.close--down.png")
     );
+    let button = &m.regions["button.secondary"];
+    assert_eq!(button.text_backing.as_deref(), Some("bg.panel"));
+    assert_eq!(
+        button.fit,
+        rekindle_types::dto::skin::RegionFit::NineSlice(sprites::BUTTON_INSETS)
+    );
     for id in [
+        "button.secondary",
         "titlebar.btn.minimize",
         "scrollbar.button-up",
         "scrollbar.button-down",
@@ -396,4 +405,51 @@ fn titlebar_and_genex_controls_fill_the_painted_slots() {
     ] {
         assert_eq!(m.regions[id].states.len(), 1, "{id}");
     }
+}
+
+#[test]
+fn genex_button_pieces_join_into_one_nine_slice() {
+    // Left red, centre green, right blue on the button rows; grey elsewhere.
+    let (red, green, blue) = ([0xff, 0, 0], [0, 0xff, 0], [0, 0, 0xff]);
+    let genex = bmp8(
+        112,
+        60,
+        &[[0x80; 3], red, green, blue],
+        |x, y| match (x, y) {
+            (0..=3, 0..=14) => 1,
+            (4..=42, 0..=14) => 2,
+            (43..=46, 0..=14) => 3,
+            _ => 0,
+        },
+        false,
+    );
+    let wsz = zip_of(&[("genex.bmp", genex, true, None)]);
+    let r = read(&wsz).unwrap();
+    let button = r
+        .controls
+        .iter()
+        .find(|c| c.region == "button.secondary")
+        .expect("the button is a painted slot");
+    assert_eq!(
+        button.fit,
+        rekindle_types::dto::skin::RegionFit::NineSlice(sprites::BUTTON_INSETS)
+    );
+    let normal = &button.images[&RegionState::Normal];
+    assert_eq!(normal.dimensions(), (47, 15));
+    for (x, rgb) in [
+        (0, red),
+        (3, red),
+        (4, green),
+        (42, green),
+        (43, blue),
+        (46, blue),
+    ] {
+        assert_eq!(
+            normal.get_pixel(x, 7).0,
+            [rgb[0], rgb[1], rgb[2], 255],
+            "x={x}"
+        );
+    }
+    // The pressed sprite is already whole (Webamp: 0,1 47x15).
+    assert_eq!(button.images[&RegionState::Down].dimensions(), (47, 15));
 }

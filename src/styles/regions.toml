@@ -588,3 +588,4 @@
 'scrollbar.button-left' = { elements = ["::-webkit-scrollbar-button:horizontal:start:decrement"] }
 'scrollbar.button-right' = { elements = ["::-webkit-scrollbar-button:horizontal:end:increment"] }
 'scrollbar.corner' = { elements = ["::-webkit-scrollbar-corner"] }
+'button.secondary' = { elements = [".form-btn-secondary"] }

@@ -200,6 +200,36 @@
   ::-webkit-scrollbar-corner:window-inactive {
     border-image: var(--skin-region-scrollbar-corner--windowinactive, var(--skin-region-scrollbar-corner));
   }
+  .form-btn-secondary {
+    border-image: var(--skin-region-button-secondary);
+    image-rendering: pixelated;
+    position: relative;
+    isolation: isolate;
+  }
+  .form-btn-secondary::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    background-color: var(--skin-region-button-secondary-backing);
+    pointer-events: none;
+  }
+  :where(:root[data-window-inactive]) .form-btn-secondary {
+    border-image: var(--skin-region-button-secondary--windowinactive, var(--skin-region-button-secondary));
+  }
+  .form-btn-secondary:hover {
+    border-image: var(--skin-region-button-secondary--hover, var(--skin-region-button-secondary));
+  }
+  .form-btn-secondary:focus-visible {
+    border-image: var(--skin-region-button-secondary--focused, var(--skin-region-button-secondary));
+  }
+  .form-btn-secondary:active {
+    border-image: var(--skin-region-button-secondary--down, var(--skin-region-button-secondary));
+  }
+  .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
+    border-image: var(--skin-region-button-secondary--disabled, var(--skin-region-button-secondary));
+  }
   @media (forced-colors: active) {
     .xfire-titlebar-btn-minimize {
       border-image: none;
@@ -380,6 +410,27 @@
     }
     ::-webkit-scrollbar-corner:window-inactive {
       border-image: none;
+    }
+    .form-btn-secondary {
+      border-image: none;
+    }
+    :where(:root[data-window-inactive]) .form-btn-secondary {
+      border-image: none;
+    }
+    .form-btn-secondary:hover {
+      border-image: none;
+    }
+    .form-btn-secondary:focus-visible {
+      border-image: none;
+    }
+    .form-btn-secondary:active {
+      border-image: none;
+    }
+    .form-btn-secondary:disabled, .form-btn-secondary[aria-disabled="true"] {
+      border-image: none;
+    }
+    .form-btn-secondary::before {
+      content: none;
     }
   }
 }

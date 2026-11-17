@@ -9,9 +9,10 @@
 //! * [`bmp`]: the bounded BMP decoder, RLE8 included (only here).
 //! * [`sprites`]: the 39 mapped sprites. GEN.BMP builds `window.frame`
 //!   and `titlebar`, active (`_SELECTED`) as `normal` and plain as
-//!   `windowInactive`; TITLEBAR's buttons and GENEX's buttons and
-//!   scrollbars are decoded and checked but their regions are not registry
-//!   slots yet, so the NOTICE names each as not mapped.
+//!   `windowInactive`; TITLEBAR's buttons and GENEX's scrollbar parts are
+//!   their painted slots; GENEX's left, centre and right button pieces are
+//!   joined into `button.secondary`'s one nine-slice (its pressed sprite is
+//!   `down`), its `textBacking` GENEX's window background (`bg.panel`).
 //! * [`pledit`]: PLEDIT.TXT owns the list tokens; GENEX's 22 colour pixels
 //!   the rest ([`sprites::GENEX_COLOURS`]).
 //!
@@ -68,7 +69,9 @@ pub struct ColourRow {
 fn controls(decoded: &[(Sprite, RgbaImage)]) -> Vec<Control> {
     let mut out: Vec<Control> = Vec::new();
     for (sprite, img) in decoded {
-        if !slot_of(sprite.region).is_some_and(|s| s.css) {
+        if !slot_of(sprite.region).is_some_and(|s| s.css)
+            || sprites::BUTTON_PARTS.contains(&sprite.name)
+        {
             continue;
         }
         let i = if let Some(i) = out.iter().position(|c| c.region == sprite.region) {
@@ -85,6 +88,23 @@ fn controls(decoded: &[(Sprite, RgbaImage)]) -> Vec<Control> {
             .images
             .entry(sprites::state(sprite))
             .or_insert_with(|| img.clone());
+    }
+    // The three pieces are one image; the pressed sprite is already whole.
+    if let Some(img) = sprites::button(decoded) {
+        if let Some(c) = out.iter_mut().find(|c| c.region == sprites::BUTTON) {
+            c.images.insert(RegionState::Normal, img);
+        } else {
+            out.push(Control {
+                region: sprites::BUTTON,
+                fit: RegionFit::Stretch,
+                images: BTreeMap::from([(RegionState::Normal, img)]),
+            });
+        }
+    }
+    for c in &mut out {
+        if c.region == sprites::BUTTON {
+            c.fit = RegionFit::NineSlice(sprites::BUTTON_INSETS);
+        }
     }
     out.retain(|c| c.images.contains_key(&RegionState::Normal));
     out
@@ -251,7 +271,11 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
         );
     }
     for c in &read.controls {
-        regions.insert(c.region.to_owned(), c.spec());
+        let mut spec = c.spec();
+        if c.region == sprites::BUTTON {
+            spec.text_backing = Some(sprites::BUTTON_BACKING.to_owned());
+        }
+        regions.insert(c.region.to_owned(), spec);
     }
     SkinManifest {
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),

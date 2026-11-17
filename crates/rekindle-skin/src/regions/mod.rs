@@ -23,6 +23,9 @@
 //!   under a translucent image pixel is the desktop: it is measured over
 //!   both black and white. The region's optional tint is drawn over the
 //!   image, `textBacking` over that, the text over all.
+//! * **A control's box** (`button.secondary`) is its own range, measured
+//!   at its smallest in each window's minimum size and at its largest in
+//!   each window's maximum, each side capped by the window's.
 //! * **Window sizes** are `src-tauri/src/windows/mod.rs:54-72` (minimum)
 //!   and `:107` (the buddy list's maximum). A window without a maximum is
 //!   measured at [`MAX_IMAGE_SIDE`]: once a box side reaches the image's
@@ -137,10 +140,13 @@ impl<'a> Tokens<'a> {
         Self { colours, dims }
     }
 
-    fn side(&self, extent: Extent, window: u32) -> u32 {
+    /// The box side at a window side `window`, the window's maximum size
+    /// when `at_max`.
+    fn side(&self, extent: Extent, window: u32, at_max: bool) -> u32 {
         match extent {
             Extent::Window => window,
             Extent::Token(id) => self.dims.get(id).copied().unwrap_or(0),
+            Extent::Range { min, max } => if at_max { max } else { min }.min(window),
         }
         .max(1)
     }
@@ -366,9 +372,9 @@ impl Measure<'_> {
     fn check(&self) -> Result<(), SkinRule> {
         let (w, h) = self.image.dimensions();
         for win in &WINDOWS {
-            for (side_w, side_h) in [win.min, win.max] {
-                let bw = self.tokens.side(self.slot.width, side_w);
-                let bh = self.tokens.side(self.slot.height, side_h);
+            for ((side_w, side_h), at_max) in [(win.min, false), (win.max, true)] {
+                let bw = self.tokens.side(self.slot.width, side_w, at_max);
+                let bh = self.tokens.side(self.slot.height, side_h, at_max);
                 let cols = sampled(self.axes.0, bw, w);
                 let rows = sampled(self.axes.1, bh, h);
                 for t in self.slot.text {

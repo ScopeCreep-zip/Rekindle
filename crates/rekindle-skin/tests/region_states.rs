@@ -170,6 +170,7 @@ fn full_map() -> BTreeMap<String, Vec<String>> {
             &["::-webkit-scrollbar-button:horizontal:increment"],
         ),
         ("scrollbar.corner", &["::-webkit-scrollbar-corner"]),
+        ("button.secondary", &[".btn2"]),
     ])
 }
 
@@ -258,4 +259,41 @@ fn the_skin_css_gives_a_scrollbar_button_its_image_length() {
     let (manifest, canonical) = check(&left, (14, 12), &[]).unwrap();
     let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
     assert!(css.contains("    --skin-region-scrollbar-button-left-length: 14px;\n"));
+}
+
+#[test]
+fn the_app_css_backs_a_text_slot_between_image_and_label() {
+    let css = app_css("h", &full_map()).unwrap();
+    // The element is the stacking context; its `::before` paints the backing
+    // at z-index -1: after the border-image, under the label (CSS 2.1 App. E).
+    assert!(css.contains("  .btn2 {\n    border-image: var(--skin-region-button-secondary);\n    image-rendering: pixelated;\n    position: relative;\n    isolation: isolate;\n  }\n"));
+    assert!(css.contains("  .btn2::before {\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    border-radius: inherit;\n    background-color: var(--skin-region-button-secondary-backing);\n    pointer-events: none;\n  }\n"));
+    assert_eq!(
+        css.matches("isolation: isolate;").count(),
+        1,
+        "text slots only"
+    );
+    // Under forced colors the backing is not generated.
+    let forced = &css[css.find("  @media (forced-colors: active) {\n").unwrap()..];
+    assert!(forced.contains("    .btn2::before {\n      content: none;\n    }\n"));
+    // A text slot on a pseudo-element cannot take a `::before`.
+    let mut pseudo = full_map();
+    pseudo.insert(
+        "button.secondary".to_owned(),
+        vec!["::-webkit-scrollbar".to_owned()],
+    );
+    assert!(app_css("h", &pseudo)
+        .unwrap_err()
+        .contains("pseudo-element"));
+}
+
+#[test]
+fn the_skin_css_writes_a_text_slot_backing_token() {
+    let mut m = manifest_with("button.secondary", &nine(), &[]);
+    m["regions"]["button.secondary"]["textBacking"] = json!("bg.panel");
+    let (manifest, canonical) = check(&m, (18, 16), &[]).unwrap();
+    let css = skin_css(&manifest, &canonical, "skin://localhost/abc").unwrap();
+    assert!(
+        css.contains("    --skin-region-button-secondary-backing: var(--color-xfire-bg-panel);\n")
+    );
 }

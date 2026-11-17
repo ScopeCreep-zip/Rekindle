@@ -19,9 +19,10 @@
 //! the same with `repeat` (tiles centred). `border-image` is the property
 //! the app's rules leave alone (`border: none` resets it, so the generated
 //! rules come last), and the app's own `background` stays beneath the
-//! image's transparent pixels. Painted slots are leaf controls, so their
-//! `image-rendering: pixelated` (the F83 sampling's assumption) reaches no
-//! other image.
+//! image's transparent pixels. Painted slots are leaf controls, or a text
+//! button whose children are its label and glyph-font icons (no
+//! `.form-btn-secondary` holds an `<img>`), so their `image-rendering:
+//! pixelated` (the F83 sampling's assumption) reaches no other image.
 //!
 //! * Under `forced-colors: active` every region rule's `border-image` is
 //!   `none` (plan E7.7.2): a forced palette replaces the app's colours, and
@@ -32,6 +33,14 @@
 //!   [`length_property`], which [`skin_css`] sets to the button image's
 //!   length on that axis, so the arrow shows at 1:1 and a scrollbar
 //!   without a skin keeps no buttons.
+//! * A painted slot that carries text (`button.secondary`) gets its
+//!   `textBacking` between the image and the label (plan E7.7.2b; CSS 2.1
+//!   Appendix E): the element is `position: relative; isolation: isolate`
+//!   and its `::before` (`position: absolute; inset: 0; z-index: -1`)
+//!   paints [`backing_property`], which [`skin_css`] sets to the backing
+//!   token's custom property, so it follows the active variant. Unset, the
+//!   background is transparent. Under `forced-colors: active` the `::before`
+//!   is not generated, so the user's `ButtonFace` is never covered.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -42,6 +51,7 @@ use rekindle_types::dto::skin::{RegionFit, RegionState, SkinManifest};
 use super::slots::{slot_of, SLOTS};
 use crate::images::extension;
 use crate::limits::MAX_IMAGE_ALLOC;
+use crate::registry::{TokenType, ENTRIES};
 
 /// The scrollbar button slots and the side along their scroll axis.
 const BUTTON_LENGTH: [(&str, &str); 4] = [
@@ -63,6 +73,28 @@ fn button_side(slot: &str) -> Option<&'static str> {
 #[must_use]
 pub fn length_property(slot: &str) -> String {
     format!("{}-length", property(slot, None))
+}
+
+/// The custom property holding a text slot's backing colour.
+#[must_use]
+pub fn backing_property(slot: &str) -> String {
+    format!("{}-backing", property(slot, None))
+}
+
+/// The `::before` of a text slot's `elements` that paints the backing
+/// under the label.
+fn backing_rule(id: &str, elements: &[String]) -> Result<String, String> {
+    if let Some(e) = elements.iter().find(|e| e.contains("::")) {
+        return Err(format!(
+            "`{id}`: `{e}` carries text, so it must be an element, not a pseudo-element"
+        ));
+    }
+    let before: Vec<String> = elements.iter().map(|e| format!("{e}::before")).collect();
+    Ok(format!(
+        "  {} {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    border-radius: inherit;\n    background-color: var({});\n    pointer-events: none;\n  }}\n",
+        before.join(",\n  "),
+        backing_property(id)
+    ))
 }
 
 /// The custom property of `slot`, or of its `state` image.
@@ -117,8 +149,10 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
             return Err(format!("[regions] `{id}`: not a painted region slot"));
         }
     }
-    // Every rule's selector list, for the forced-colors reset.
+    // Every rule's selector list, for the forced-colors reset, and every
+    // backing `::before`.
     let mut painted: Vec<String> = Vec::new();
+    let mut backed: Vec<String> = Vec::new();
     let mut out = format!(
         "/* {header}\n *\n * Region slots (`rekindle-skin::regions`) on the elements\n * `src/styles/regions.toml` `[regions]` names; a skin sets the custom\n * properties in `@layer skin`. */\n@layer components {{\n"
     );
@@ -131,12 +165,22 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
         let length = button_side(slot.id)
             .map(|side| format!("    {side}: var({}, 0);\n", length_property(slot.id)))
             .unwrap_or_default();
+        let text = !slot.text.is_empty();
+        let stack = if text {
+            "    position: relative;\n    isolation: isolate;\n"
+        } else {
+            ""
+        };
         let _ = write!(
             out,
-            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n{length}  }}\n",
+            "  {} {{\n    border-image: var({normal});\n    image-rendering: pixelated;\n{length}{stack}  }}\n",
             elements.join(",\n  ")
         );
         painted.push(elements.join(",\n    "));
+        if text {
+            out.push_str(&backing_rule(slot.id, elements)?);
+            backed.extend(elements.iter().map(|e| format!("{e}::before")));
+        }
         for state in ORDER.into_iter().filter(|s| slot.has(*s)) {
             let selectors = elements
                 .iter()
@@ -159,6 +203,13 @@ pub fn app_css(header: &str, map: &BTreeMap<String, Vec<String>>) -> Result<Stri
     out.push_str("  @media (forced-colors: active) {\n");
     for list in &painted {
         let _ = write!(out, "    {list} {{\n      border-image: none;\n    }}\n");
+    }
+    if !backed.is_empty() {
+        let _ = write!(
+            out,
+            "    {} {{\n      content: none;\n    }}\n",
+            backed.join(",\n    ")
+        );
     }
     out.push_str("  }\n}\n");
     Ok(out)
@@ -210,9 +261,12 @@ fn dimensions(path: &str, images: &BTreeMap<String, Vec<u8>>) -> Option<(u32, u3
 /// custom properties, the images addressed under `base` (the Host's
 /// serving origin and path). `images` are the canonical images.
 ///
+/// A text slot's backing is written as its token's custom property.
+///
 /// `None` for a `base` outside its alphabet, a region image `images`
-/// lacks, or a scrollbar button image whose header does not read (never
-/// for a validated package).
+/// lacks, a scrollbar button image whose header does not read, or a text
+/// slot whose `textBacking` is missing or no registry colour (never for a
+/// validated package).
 #[must_use]
 pub fn skin_css(
     manifest: &SkinManifest,
@@ -224,9 +278,9 @@ pub fn skin_css(
     }
     let mut decls = String::new();
     for (id, region) in &manifest.regions {
-        if !slot_of(id).is_some_and(|s| s.css) {
+        let Some(slot) = slot_of(id).filter(|s| s.css) else {
             continue;
-        }
+        };
         let normal = href(base, &region.image, images)?;
         let _ = writeln!(
             decls,
@@ -238,6 +292,13 @@ pub fn skin_css(
             let (width, height) = dimensions(&region.image, images)?;
             let px = if side == "height" { height } else { width };
             let _ = writeln!(decls, "    {}: {px}px;", length_property(id));
+        }
+        if !slot.text.is_empty() {
+            let token = region.text_backing.as_deref()?;
+            let entry = ENTRIES
+                .iter()
+                .find(|e| e.id == token && matches!(e.ty, TokenType::Color))?;
+            let _ = writeln!(decls, "    {}: var({});", backing_property(id), entry.css);
         }
         for (state, path) in &region.states {
             let h = href(base, path, images)?;

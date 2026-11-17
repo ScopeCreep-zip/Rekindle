@@ -24,12 +24,17 @@ fn speckled() -> Vec<u8> {
 }
 
 fn titlebar_manifest(backing: Option<&str>) -> Value {
+    region_manifest("titlebar", backing)
+}
+
+/// `region` painted with the speckled image, stretched.
+fn region_manifest(id: &str, backing: Option<&str>) -> Value {
     let mut m = common::manifest();
     let mut region = json!({ "image": "assets/title.png", "fit": { "type": "stretch" } });
     if let Some(b) = backing {
         region["textBacking"] = json!(b);
     }
-    m["regions"] = json!({ "titlebar": region });
+    m["regions"] = json!({ id: region });
     m
 }
 
@@ -78,6 +83,35 @@ fn f83_fails_a_weak_backing_at_the_worst_pixel() {
 fn f83_passes_an_opaque_backing() {
     let m = titlebar_manifest(Some("bg.panel"));
     run_f83(&m, [0, 0, 0, 0xff]).unwrap();
+}
+
+#[test]
+fn f83_samples_the_secondary_button_in_its_own_box() {
+    let m = region_manifest("button.secondary", Some("bg.panel"));
+    let err = run_f83(&m, [0, 0, 0, 0x40]).expect_err("the white pixel shows through");
+    let SkinRule::TextOverBitmap {
+        region,
+        token,
+        window,
+        width,
+        height,
+        ..
+    } = err.rule
+    else {
+        panic!("{err:?}");
+    };
+    assert_eq!(
+        (region.as_str(), token.as_str()),
+        ("button.secondary", "text.base")
+    );
+    // The button's smallest box in the first window, not the window's 340 x 440.
+    assert_eq!((window.as_str(), width, height), ("login", 20, 16));
+    run_f83(&m, [0, 0, 0, 0xff]).unwrap();
+    let err = run_f83(&region_manifest("button.secondary", None), [0, 0, 0, 0xff]).unwrap_err();
+    assert!(
+        matches!(err.rule, SkinRule::MissingTextBacking { .. }),
+        "{err:?}"
+    );
 }
 
 #[test]
