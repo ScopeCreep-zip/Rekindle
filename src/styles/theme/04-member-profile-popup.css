@@ -314,13 +314,15 @@
     flex: 1;
   }
 
+  /* The key is already shortened to its 8 + 6 character form
+   * (`UserIdentityBar.tsx` `truncatedKey`); cutting it again left "aa…".
+   * It keeps its width and the display name ellipsizes instead. */
   .identity-bar-key {
     font-size: 10px;
     font-family: monospace;
     color: var(--color-xfire-text-dim);
     cursor: pointer;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    flex-shrink: 0;
     white-space: nowrap;
   }
 

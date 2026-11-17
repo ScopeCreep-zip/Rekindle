@@ -13,6 +13,7 @@ import {
   assertTextNotClipped,
   assertTimestampsInline,
 } from "../fixtures/layout";
+import { assertComposerAligned, assertEllipsisLegible, assertTitlebarTitleBounded } from "../fixtures/layout-text";
 import { EMPTY, FULL, type Stress } from "../fixtures/stress";
 import { WINDOWS, open, panesOf, sizes, spacingOf } from "./windows";
 
@@ -43,6 +44,9 @@ for (const w of WINDOWS) {
         await assertTimestampsInline(page, root);
         await assertFieldsUsable(page, root);
         await assertSpacingOnScale(page, root, spacingOf(w, data !== EMPTY));
+        await assertEllipsisLegible(page, root);
+        await assertTitlebarTitleBounded(page, root);
+        await assertComposerAligned(page, root);
         await assertFocusVisibleNotClipped(page, root);
       });
     }

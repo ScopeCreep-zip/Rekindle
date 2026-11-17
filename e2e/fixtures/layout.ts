@@ -114,7 +114,7 @@ function geometryLib(): void {
   };
 }
 
-async function install(page: Page): Promise<void> {
+export async function install(page: Page): Promise<void> {
   await page.evaluate(`(${geometryLib.toString()})()`);
 }
 

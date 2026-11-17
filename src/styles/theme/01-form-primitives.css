@@ -515,10 +515,13 @@
     flex-shrink: 0;
   }
 
+  /* The field has a fixed height (`.message-input-field`), so every
+   * control centres on it; bottom alignment put the 34 px emoji button
+   * and the icon-high attach and mic buttons on three different lines. */
   .message-input-shell {
     position: relative;
     display: flex;
-    align-items: flex-end;
+    align-items: center;
     gap: 8px;
   }
 
