@@ -17,7 +17,7 @@ import type {
   NotificationEvent,
   NotificationSubscriptionEvent,
 } from "./notification_events";
-import type { IntentReview, LifecycleState } from "../commands/dto";
+import type { IntentReview, LifecycleState, SkinApplied } from "../commands/dto";
 import type { SettingsTab } from "../commands/types";
 
 /// Where this window is in the host's event stream
@@ -203,6 +203,16 @@ export function subscribeCommunityEvents(
 ): Promise<UnlistenFn> {
   return on<AnyCommunityEvent>("community-event", (payload) => {
     onEvent(payload);
+  });
+}
+
+/**
+ * Subscribe to skin changes (`SystemEvent::SkinChanged`, plan E7.7.2):
+ * every window, the login window included, receives them on `skin-event`.
+ */
+export function subscribeSkinEvents(onSkin: (skin: SkinApplied) => void): Promise<UnlistenFn> {
+  return on<{ system: { skinChanged: { skin: SkinApplied } } }>("skin-event", (payload) => {
+    onSkin(payload.system.skinChanged.skin);
   });
 }
 

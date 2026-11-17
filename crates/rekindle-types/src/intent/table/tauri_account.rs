@@ -8,6 +8,7 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("set_nickname", Some(IntentKind::SetNickname)),
     ("set_avatar", Some(IntentKind::SetAvatar)),
     ("get_avatar", None),
+    ("get_skin", None),
     ("set_status_message", Some(IntentKind::SetStatusMessage)),
     ("get_game_status", None),
     ("get_game_name", None),

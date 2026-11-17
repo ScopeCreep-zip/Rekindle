@@ -45,6 +45,12 @@ const SCANNED: &[&str] = &[
 /// `(file, function, why it outlives every session)`.
 const ALLOWED: &[(&str, &str, &str)] = &[
     (
+        "src-tauri/src/skin_scheme.rs",
+        "handle",
+        "one skin:// request's answer, before unlock too (the login skin); it holds no session \
+         state and ends when the Host answers, which refuses library bytes once locked",
+    ),
+    (
         "src-tauri/src/setup.rs",
         "*",
         "app-lifetime boot: node start, dispatch loop, deep links",

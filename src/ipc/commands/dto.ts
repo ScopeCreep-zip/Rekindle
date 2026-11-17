@@ -419,3 +419,16 @@ export interface AuditEntryView {
   kind: string;
   payload: unknown;
 }
+
+/// What a window applies (`rekindle_types::dto::skin_library::SkinApplied`,
+/// plan E7.7.2): `get_skin`'s answer and `SkinChanged`'s payload.
+export interface SkinApplied {
+  /// `builtin:<id>`, `pkg:<hash>` or `dev:<hash>`.
+  id: string;
+  /// The active variant's base, for `:root[data-skin-base]`.
+  base: "light" | "dark";
+  /// The `skin://` href of the `@layer skin` stylesheet.
+  tokensHref: string;
+  /// The region slots the skin paints.
+  regions: string[];
+}

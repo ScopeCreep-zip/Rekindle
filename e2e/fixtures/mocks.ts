@@ -14,7 +14,7 @@ const HOST_CALLS = [
   "create_identity", "login", "get_identity", "pqxdh_bundle_info", "logout", "list_identities",
   "delete_identity", "audit_verify", "audit_export", "lifecycle_current",
   "intent_commit", "intent_cancel", "undo", "set_status", "set_status_message",
-  "set_nickname", "set_avatar", "get_avatar", "get_game_status", "open_external_url",
+  "set_nickname", "set_avatar", "get_avatar", "get_skin", "get_game_status", "open_external_url",
   // Friends and the 1:1 paths (plan E2.1).
   "send_message", "outbox_retry", "outbox_discard", "send_typing", "get_message_history", "mark_read", "add_friend_from_code",
   "get_friend_code", "rotate_friend_token",

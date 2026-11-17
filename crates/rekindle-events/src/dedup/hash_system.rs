@@ -153,6 +153,12 @@ pub(super) fn hash_system(h: &mut blake3::Hasher, s: &SystemEvent, now_ms: u64) 
             h.update(b"audit_broken|");
             h.update(&cursor.to_le_bytes());
         }
+        SystemEvent::SkinChanged { skin } => {
+            h.update(b"skin_changed|");
+            h.update(skin.id.as_bytes());
+            h.update(b"|");
+            h.update(skin.tokens_href.as_bytes());
+        }
     }
 }
 

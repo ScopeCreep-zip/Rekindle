@@ -40,6 +40,9 @@ mod own_removal;
 #[cfg(unix)]
 #[path = "skin_tests.rs"]
 mod skin_requests;
+#[cfg(unix)]
+#[path = "skin_serve_tests.rs"]
+mod skin_serve;
 
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     offline_host_with(dir, None).await

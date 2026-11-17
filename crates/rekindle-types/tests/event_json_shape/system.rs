@@ -15,6 +15,7 @@ pub const NAMES: &[&str] = &[
     "syncRequested",
     "syncReceived",
     "auditChainBroken",
+    "skinChanged",
 ];
 
 pub fn variant_name(e: &SystemEvent) -> &'static str {
@@ -29,6 +30,7 @@ pub fn variant_name(e: &SystemEvent) -> &'static str {
         SystemEvent::SyncRequested { .. } => "syncRequested",
         SystemEvent::SyncReceived { .. } => "syncReceived",
         SystemEvent::AuditChainBroken { .. } => "auditChainBroken",
+        SystemEvent::SkinChanged { .. } => "skinChanged",
     }
 }
 
@@ -121,6 +123,17 @@ fn sync() -> Vec<Sample> {
         ev(
             "auditChainBroken",
             SystemEvent::AuditChainBroken { cursor: 99 },
+        ),
+        ev(
+            "skinChanged",
+            SystemEvent::SkinChanged {
+                skin: rekindle_types::dto::skin_library::SkinApplied {
+                    id: "builtin:symbiosis".into(),
+                    base: rekindle_types::dto::skin::SkinBase::Dark,
+                    tokens_href: "skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/tokens.css".into(),
+                    regions: vec!["frame".into()],
+                },
+            },
         ),
     ]
 }

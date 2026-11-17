@@ -6,6 +6,7 @@ import AnnounceRegion from "./components/common/AnnounceRegion";
 import IntentDialog from "./components/common/IntentDialog";
 import ToastContainer from "./components/common/Toast";
 import { useWindowInactive } from "./hooks/useWindowInactive";
+import { useSkin } from "./hooks/useSkin";
 
 // Lazy-load window components so each webview only compiles
 // the module tree it actually renders (login → 1 tree, not 6).
@@ -26,6 +27,8 @@ function App() {
   const [route, setRoute] = createSignal(window.location.pathname);
   // Every window's skin regions follow its focus (plan E7.7.2).
   useWindowInactive();
+  // Every window shows the device's skin and follows its changes.
+  useSkin();
 
   onMount(() => {
     setRoute(window.location.pathname);

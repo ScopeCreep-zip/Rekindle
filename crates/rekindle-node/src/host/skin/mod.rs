@@ -4,11 +4,12 @@
 //! `rekindle-skin-helper` returns; an id that names no built-in and no
 //! library row is refused.
 //!
-//! The webview serving protocol, `SkinGet` and `SystemEvent::SkinChanged`
-//! are the step's serving-and-apply half.
+//! `SkinGet`, `SkinFile` (the `skin://` scheme's bytes) and
+//! `SystemEvent::SkinChanged` are the serving-and-apply half ([`serve`]).
 
 pub(crate) mod ids;
 pub(crate) mod login;
+mod serve;
 
 use rekindle_db::repo::{preferences, skins};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
@@ -29,11 +30,17 @@ pub(crate) async fn route(
     state: DaemonState,
     request: IpcRequest,
 ) -> IpcResponse {
-    if !matches!(request, IpcRequest::SkinList) && !state.can_write() {
+    let reads = matches!(
+        request,
+        IpcRequest::SkinList | IpcRequest::SkinGet { .. } | IpcRequest::SkinFile { .. }
+    );
+    if !reads && !state.can_write() {
         return state_error(state, "write");
     }
     let answer = match request {
         IpcRequest::SkinList => list(ctx).await.map(|l| IpcResponse::ok(&l)),
+        IpcRequest::SkinGet { id } => serve::get(ctx, id).await.map(|a| IpcResponse::ok(&a)),
+        IpcRequest::SkinFile { path } => serve::file(ctx, &path).await.map(|f| IpcResponse::ok(&f)),
         IpcRequest::SkinImport { bytes } => import(ctx, bytes).await.map(|e| IpcResponse::ok(&e)),
         IpcRequest::SkinRemove { id } => remove(ctx, id).await,
         IpcRequest::SkinSelect { id } => select(ctx, id).await,
@@ -179,6 +186,7 @@ async fn select(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
     if !set {
         return Err(not_found(&id));
     }
+    serve::announce(ctx).await?;
     list(ctx).await.map(|l| IpcResponse::ok(&l))
 }
 
@@ -203,6 +211,7 @@ async fn set_login(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
             login::set_copy(&ctx.root, &copy).map_err(|e| failed("login skin", e))?;
         }
     }
+    serve::announce(ctx).await?;
     list(ctx).await.map(|l| IpcResponse::ok(&l))
 }
 

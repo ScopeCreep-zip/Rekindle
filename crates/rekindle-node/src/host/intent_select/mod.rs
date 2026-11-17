@@ -195,6 +195,8 @@ pub(crate) async fn select(
         | IpcRequest::PresenceGet
         | IpcRequest::AvatarGet { .. }
         | IpcRequest::SkinList
+        | IpcRequest::SkinGet { .. }
+        | IpcRequest::SkinFile { .. }
         | IpcRequest::AuditVerify
         | IpcRequest::FriendList
         | IpcRequest::FriendRequests

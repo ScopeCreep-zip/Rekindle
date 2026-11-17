@@ -1,3 +1,4 @@
+import type { SkinApplied } from "../commands/dto";
 /**
  * The daemon-vocabulary half of the `community-event` channel.
  *
@@ -91,7 +92,8 @@ export type SystemEvent =
   | { bootstrapReceived: Record<string, unknown> }
   | { syncRequested: Record<string, unknown> }
   | { syncReceived: { community: string; channel: string; messageCount: number } }
-  | { auditChainBroken: { cursor: number } };
+  | { auditChainBroken: { cursor: number } }
+  | { skinChanged: { skin: SkinApplied } };
 
 /** Cryptographic key events from the daemon vocabulary. */
 export type CryptoEvent =

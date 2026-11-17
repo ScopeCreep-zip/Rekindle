@@ -27,3 +27,29 @@ pub struct SkinLibrary {
     /// copy, which matches no library id by design).
     pub login: String,
 }
+
+/// What a window applies (`SkinGet`'s answer and `SkinChanged`'s payload):
+/// the skin, its active variant's base for `:root[data-skin-base]`, the
+/// `skin://` href of its `@layer skin` stylesheet and the region slots it
+/// paints.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinApplied {
+    /// `builtin:<id>`, `pkg:<hash>` or `dev:<hash>`.
+    pub id: String,
+    pub base: crate::dto::skin::SkinBase,
+    pub tokens_href: String,
+    pub regions: Vec<String>,
+}
+
+/// One file the `skin://` scheme serves (`SkinFile`'s answer): the shell
+/// copies it into the HTTP response unchanged.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkinServed {
+    pub content_type: String,
+    /// `immutable` for a built-in, `no-store` for everything else.
+    pub cache_control: String,
+    #[serde(with = "crate::base64_bytes")]
+    pub bytes: Vec<u8>,
+}

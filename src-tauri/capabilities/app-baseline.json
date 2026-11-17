@@ -13,6 +13,7 @@
   "permissions": [
     "allow-subscribe-events",
     "allow-get-avatar",
+    "allow-get-skin",
     "allow-get-community-avatar-data-url",
     "allow-get-community-details",
     "allow-get-community-members",

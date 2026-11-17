@@ -136,6 +136,10 @@ impl IpcRequest {
             Self::SkinRemove { .. } => ("SkinRemove", Write, Authenticated),
             Self::SkinSelect { .. } => ("SkinSelect", Write, Authenticated),
             Self::SkinSetLogin { .. } => ("SkinSetLogin", Write, Authenticated),
+            // The login window applies the device login skin before unlock
+            // (plaintext by design, threat model Z16).
+            Self::SkinGet { .. } => ("SkinGet", Query, Open),
+            Self::SkinFile { .. } => ("SkinFile", Query, Open),
             Self::GamePresenceSet { .. } => ("GamePresenceSet", Write, Authenticated),
             Self::GamePresenceClear => ("GamePresenceClear", Write, Authenticated),
 

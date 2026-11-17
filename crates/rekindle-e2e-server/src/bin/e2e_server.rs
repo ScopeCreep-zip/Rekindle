@@ -267,6 +267,13 @@ async fn host(server: &ServerState, cmd: &str, args: &Value) -> Result<Done<Valu
             };
             host_call::call(state, request).await
         }
+        // The skin the window applies (plan E7.7.2).
+        "get_skin" => {
+            let request = IpcRequest::SkinGet {
+                id: arg_str_opt(args, "id"),
+            };
+            host_call::call(state, request).await
+        }
         "get_game_status" => {
             let presence: Done<rekindle_types::dto::presence::OwnPresenceView> =
                 host_call::call(state, IpcRequest::PresenceGet).await?;

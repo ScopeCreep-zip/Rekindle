@@ -5,6 +5,7 @@ import type {
 import type { OnboardingConfig, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
 import type {
   AuditEntryView, AuditVerified, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
+  SkinApplied,
 } from "./dto";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
@@ -34,6 +35,10 @@ export const systemCommands = {
   // The audit log: Host calls.
   auditVerify: () => hostInvoke<AuditVerified>("audit_verify"),
   auditExport: (since: number) => hostInvoke<AuditEntryView[]>("audit_export", { since }),
+
+  // The skin this window shows (plan E7.7.2): a Host call; `null` asks
+  // for the skin this device shows now.
+  getSkin: (id: string | null = null) => hostInvoke<SkinApplied>("get_skin", { id }),
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),

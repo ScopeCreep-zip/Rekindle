@@ -99,8 +99,9 @@ fn frame_ancestors_is_none() {
 }
 
 /// No plaintext-HTTP origin may appear in `connect-src`. Tauri's own
-/// `ipc:`/`http://ipc.localhost` transport is the documented exception —
-/// it never leaves the machine.
+/// `ipc:`/`http://ipc.localhost` transport and the `skin://` scheme's
+/// Windows origin `http://skin.localhost` (plan E7.7.2) are the documented
+/// exceptions: both are served in-process and never leave the machine.
 #[test]
 fn connect_src_has_no_remote_plaintext_origin() {
     let policy = csp();
@@ -108,7 +109,7 @@ fn connect_src_has_no_remote_plaintext_origin() {
         .or_else(|| directive(&policy, "default-src"))
         .expect("connect-src (or a default-src fallback) must be declared");
 
-    const LOCAL_IPC_ALLOWED: &[&str] = &["http://ipc.localhost"];
+    const LOCAL_IPC_ALLOWED: &[&str] = &["http://ipc.localhost", "http://skin.localhost"];
 
     for token in connect_src.split_whitespace() {
         assert!(
@@ -118,15 +119,39 @@ fn connect_src_has_no_remote_plaintext_origin() {
     }
 }
 
-/// Images come from the bundle or from backend-built `data:` URLs
-/// (avatars, expressions). No `asset:` protocol (it is not enabled) and no
-/// remote origin: rendering a peer-chosen image URL would leak every
-/// reader's IP to its host.
+/// Images come from the bundle, from backend-built `data:` URLs (avatars,
+/// expressions) and from the `skin://` scheme (plan E7.7.2: `skin:` on
+/// macOS and Linux, `http://skin.localhost` on Windows). The scheme serves
+/// only the Host's validated skin store by content address, so both
+/// reasons this pin exists still hold: no remote origin (rendering a
+/// peer-chosen image URL would leak every reader's IP to its host) and no
+/// `asset:` protocol (it is not enabled; it would expose the filesystem).
 #[test]
 fn img_src_has_no_asset_or_remote() {
     let policy = csp();
     let img_src = directive(&policy, "img-src").expect("img-src must be declared");
-    assert_eq!(img_src, "'self' data:", "img-src widened: {policy}");
+    assert_eq!(
+        img_src, "'self' data: skin: http://skin.localhost",
+        "img-src widened: {policy}"
+    );
+}
+
+/// The skin stylesheet loads from the `skin://` scheme and nowhere else
+/// remote (plan E7.7.2); `connect-src` names the same two origins.
+#[test]
+fn style_and_connect_src_name_the_skin_scheme() {
+    let policy = csp();
+    let style_src = directive(&policy, "style-src").expect("style-src must be declared");
+    assert_eq!(
+        style_src, "'self' 'unsafe-inline' skin: http://skin.localhost",
+        "style-src changed: {policy}"
+    );
+    let connect_src = directive(&policy, "connect-src").expect("connect-src must be declared");
+    assert_eq!(
+        connect_src, "ipc: http://ipc.localhost skin: http://skin.localhost",
+        "connect-src changed: {policy}"
+    );
+    assert!(!policy.contains("asset:"), "no asset: protocol: {policy}");
 }
 
 /// Audio plays from the bundle, from voice-message `blob:` URLs and from

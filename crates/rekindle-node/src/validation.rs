@@ -344,6 +344,8 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::LinkOpen { .. } => own(request),
         IpcRequest::SkinList
+        | IpcRequest::SkinGet { .. }
+        | IpcRequest::SkinFile { .. }
         | IpcRequest::SkinImport { .. }
         | IpcRequest::SkinRemove { .. }
         | IpcRequest::SkinSelect { .. }

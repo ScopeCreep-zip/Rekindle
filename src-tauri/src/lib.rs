@@ -25,6 +25,7 @@ mod setup;
 mod shell_commands;
 mod shortcuts;
 mod shutdown;
+mod skin_scheme;
 pub mod state;
 pub mod state_helpers;
 #[cfg(test)]
@@ -111,6 +112,10 @@ pub fn run() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        // The skin package files, from the Host (plan E7.7.2).
+        .register_asynchronous_uri_scheme_protocol(skin_scheme::SCHEME, |ctx, request, responder| {
+            skin_scheme::handle(&ctx, &request, responder);
+        })
         .setup(move |app| setup::run(app, &state_for_setup))
         .manage(shared_state)
         .on_window_event(|window, event| {

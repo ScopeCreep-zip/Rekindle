@@ -21,10 +21,7 @@ pub(crate) enum SkinId<'a> {
     Package(&'a str),
 }
 
-/// 64 lowercase hex digits.
-pub(crate) fn is_hash(s: &str) -> bool {
-    s.len() == 64 && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-}
+pub(crate) use rekindle_skin::serve::is_hash;
 
 fn is_manifest_id(s: &str) -> bool {
     !s.is_empty()
@@ -53,7 +50,15 @@ fn refuse(what: &str) -> IpcResponse {
 /// A 400 naming the field.
 pub(crate) fn check(request: &IpcRequest) -> Result<(), IpcResponse> {
     match request {
-        IpcRequest::SkinList => Ok(()),
+        IpcRequest::SkinList | IpcRequest::SkinGet { id: None } => Ok(()),
+        IpcRequest::SkinGet { id: Some(id) } => parse(id)
+            .map(drop)
+            .ok_or_else(|| refuse("expected builtin:<id> or pkg:<64 hex>")),
+        // The scheme's path: one package address and one file, nothing
+        // else (`rekindle_skin::serve::parse_path`).
+        IpcRequest::SkinFile { path } => rekindle_skin::serve::parse_path(path)
+            .map(drop)
+            .ok_or_else(|| IpcResponse::error(404, "no such skin file")),
         IpcRequest::SkinImport { bytes } => {
             let max = rekindle_skin::limits::MAX_PACKAGE_BYTES;
             if bytes.is_empty() || bytes.len() as u64 > max {

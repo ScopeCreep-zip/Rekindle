@@ -18,7 +18,7 @@ const UNKNOWN: &str = "pkg:0123456789abcdef0123456789abcdef0123456789abcdef01234
 
 /// Run `request`, committing its review (if any) with the proof its
 /// class asks; the review's class and escalations come back with it.
-async fn run(
+pub(super) async fn run(
     host: &Host,
     request: IpcRequest,
 ) -> (IpcResponse, Option<(IntentClass, Vec<Escalation>)>) {
@@ -40,7 +40,7 @@ async fn run(
     }
 }
 
-fn data<T: serde::de::DeserializeOwned>(answer: IpcResponse) -> T {
+pub(super) fn data<T: serde::de::DeserializeOwned>(answer: IpcResponse) -> T {
     match answer {
         IpcResponse::Ok { data, .. } => serde_json::from_value(data).unwrap(),
         other => panic!("expected Ok, got {other:?}"),
@@ -50,7 +50,7 @@ fn data<T: serde::de::DeserializeOwned>(answer: IpcResponse) -> T {
 /// A stand-in helper that reads the package and answers `answer`'s frame.
 /// A child `sh` writes the script (see `rekindle-skin/tests/helper.rs`:
 /// a write fd held here would make a sibling's exec fail with ETXTBSY).
-fn stand_in(dir: &tempfile::TempDir, answer: &frame::HelperAnswer) -> HelperOpts {
+pub(super) fn stand_in(dir: &tempfile::TempDir, answer: &frame::HelperAnswer) -> HelperOpts {
     let frame_path = dir.path().join("answer.bin");
     std::fs::write(&frame_path, frame::encode(answer)).unwrap();
     let path = dir.path().join("rekindle-skin-helper");

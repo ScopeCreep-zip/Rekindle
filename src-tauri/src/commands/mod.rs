@@ -12,6 +12,7 @@ pub mod push_relay;
 pub mod relay;
 pub mod search;
 pub mod settings;
+pub mod skin;
 pub mod status;
 pub mod sync;
 #[cfg(debug_assertions)]

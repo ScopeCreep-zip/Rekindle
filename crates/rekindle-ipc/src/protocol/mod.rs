@@ -312,6 +312,14 @@ pub enum IpcRequest {
     /// The device login skin, visible before unlock: a built-in, or a
     /// stripped render-only copy of a library package.
     SkinSetLogin { id: String },
+    /// What a window applies (`SkinApplied`): `id`, or with `None` the
+    /// resolution (the identity's choice while unlocked, else the device
+    /// login skin). Answered before unlock for the login skin only.
+    SkinGet { id: Option<String> },
+    /// One file of the `skin://` scheme by its URL path
+    /// (`/{package}/{file}`, `rekindle_skin::serve`): a built-in, the
+    /// device login copy, or (unlocked) a library package.
+    SkinFile { path: String },
     /// Set game presence info.
     GamePresenceSet {
         game_name: String,

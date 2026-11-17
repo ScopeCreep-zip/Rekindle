@@ -155,6 +155,8 @@ async fn route(
 
         // ── Skins (plan E7.7.2) ──────────────────────────────────
         request @ (IpcRequest::SkinList
+        | IpcRequest::SkinGet { .. }
+        | IpcRequest::SkinFile { .. }
         | IpcRequest::SkinImport { .. }
         | IpcRequest::SkinRemove { .. }
         | IpcRequest::SkinSelect { .. }

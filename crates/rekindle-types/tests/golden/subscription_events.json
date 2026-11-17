@@ -1704,6 +1704,20 @@
       }
     }
   },
+  "system.skinChanged": {
+    "system": {
+      "skinChanged": {
+        "skin": {
+          "base": "dark",
+          "id": "builtin:symbiosis",
+          "regions": [
+            "frame"
+          ],
+          "tokensHref": "skin://localhost/0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef/tokens.css"
+        }
+      }
+    }
+  },
   "system.syncReceived": {
     "system": {
       "syncReceived": {

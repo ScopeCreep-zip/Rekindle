@@ -55,6 +55,7 @@ pub mod output;
 pub mod package;
 pub mod regions;
 pub mod registry;
+pub mod serve;
 pub mod sounds;
 pub mod tokens;
 pub mod validate;

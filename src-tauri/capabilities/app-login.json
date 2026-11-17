@@ -9,6 +9,7 @@
     "allow-create-identity",
     "allow-delete-identity",
     "allow-get-avatar",
+    "allow-get-skin",
     "allow-intent-cancel",
     "allow-intent-commit",
     "allow-lifecycle-current",

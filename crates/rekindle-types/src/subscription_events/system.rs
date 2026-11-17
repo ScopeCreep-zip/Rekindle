@@ -75,4 +75,11 @@ pub enum SystemEvent {
     /// `notification-event` toast so the user knows their device's
     /// integrity guarantees were violated.
     AuditChainBroken { cursor: u64 },
+    /// The skin this device shows changed (plan E7.7.2): the identity
+    /// chose one, or set the device login skin. Every window, the login
+    /// window included, swaps its stylesheet and `data-skin-base`.
+    /// Triggered by: `SkinSelect`, `SkinSetLogin`.
+    SkinChanged {
+        skin: crate::dto::skin_library::SkinApplied,
+    },
 }
