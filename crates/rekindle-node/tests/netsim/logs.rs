@@ -1,13 +1,27 @@
-//! A per-run log capture (plan E2.B S10): each scenario's thread gets its
-//! own subscriber (`tracing::subscriber::set_default`, no global one, so
-//! parallel tests never share counts), which prints as `RUST_LOG` asks and
-//! counts every WARN and ERROR event by the node whose [`NODE_SPAN`] it ran
-//! in, keeping the text of every INFO, WARN and ERROR event. The harness opens that span around a node's Host start and its
-//! requests; a task the Host spawns runs in its spawner's span
-//! (`SessionScope` and the transport's loops instrument it), so its events
-//! count under that node too. Only an event outside every node span (a
-//! bare `tokio::spawn` in a test) counts under `None`. Events on other
-//! threads (a database thread) are not counted.
+//! A per-run log capture (plan E2.B S10): each scenario's thread is armed
+//! with its own tally (parallel tests never share counts), and the one
+//! global subscriber prints as `RUST_LOG` asks and counts every WARN and
+//! ERROR event on an armed thread by the node whose [`NODE_SPAN`] it ran
+//! in, keeping the text of every INFO, WARN and ERROR event. The harness
+//! opens that span around a node's Host start and its requests; a task the
+//! Host spawns runs in its spawner's span (`SessionScope` and the
+//! transport's loops instrument it), so its events count under that node
+//! too. Only an event outside every node span (a bare `tokio::spawn` in a
+//! test) counts under `None`. Events on other threads (a database thread)
+//! are not counted.
+//!
+//! Not a thread-local `set_default` subscriber per run: tracing-core 0.1.36
+//! caches a callsite's interest at its first hit (`DefaultCallsite::
+//! register`, callsite.rs:308-321), and while one dispatcher is registered
+//! (`has_just_one`, callsite.rs:551-557) asks only the hitting thread's
+//! default (`Rebuilder::JustOne`, callsite.rs:544-549, 563-567). A thread
+//! with none (a database thread, a run's thread before its install)
+//! answers `Interest::never` (dispatcher.rs:379-397), and the line is then
+//! skipped on every thread, a run's too: its WARN went uncounted and a "no
+//! WARN" assertion passed falsely. So the global subscriber's capture
+//! answers `Interest::sometimes` for every INFO-or-above callsite
+//! (`DynFilterFn`, filter_fn.rs:577-622) and decides per event whether this
+//! thread is armed, as `14e19578` did for the node lib's capture.
 
 use std::cell::RefCell;
 use std::collections::BTreeMap;
@@ -18,7 +32,8 @@ use parking_lot::Mutex;
 
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id};
-use tracing::{Event, Level, Subscriber};
+use tracing::{Event, Level, Metadata, Subscriber};
+use tracing_subscriber::filter::{dynamic_filter_fn, FilterExt, LevelFilter};
 use tracing_subscriber::layer::{Context, SubscriberExt};
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{EnvFilter, Layer};
@@ -38,27 +53,46 @@ type Tally = Arc<Mutex<BTreeMap<Option<usize>, Counts>>>;
 /// fields), by node.
 type Lines = Arc<Mutex<Vec<(Option<usize>, Level, String)>>>;
 
+/// A run's capture: its counts and its lines.
+#[derive(Clone, Default)]
+struct Run(Tally, Lines);
+
 thread_local! {
-    static RUN: RefCell<Option<(tracing::subscriber::DefaultGuard, Tally, Lines)>> =
-        const { RefCell::new(None) };
+    /// The run this thread's events are captured into, once armed.
+    static RUN: RefCell<Option<Run>> = const { RefCell::new(None) };
 }
 
-/// Install this thread's capture (once per run's thread).
+/// Whether this thread is armed.
+fn armed() -> bool {
+    RUN.with(|run| run.borrow().is_some())
+}
+
+/// Install the global subscriber (once per test binary) and arm this
+/// thread (once per run's thread).
 pub fn install() {
+    static INSTALL: std::sync::Once = std::sync::Once::new();
+    INSTALL.call_once(|| {
+        let subscriber = tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .with_test_writer()
+                    .with_filter(
+                        EnvFilter::from_default_env().and(dynamic_filter_fn(|_, _| armed())),
+                    ),
+            )
+            .with(
+                Capture.with_filter(
+                    dynamic_filter_fn(|meta: &Metadata<'_>, _| {
+                        *meta.level() <= Level::INFO && (meta.is_span() || armed())
+                    })
+                    .with_max_level_hint(LevelFilter::INFO),
+                ),
+            );
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("no other subscriber in the netsim binary");
+    });
     RUN.with(|run| {
-        let mut run = run.borrow_mut();
-        if run.is_none() {
-            let tally = Tally::default();
-            let lines = Lines::default();
-            let subscriber = tracing_subscriber::registry()
-                .with(
-                    tracing_subscriber::fmt::layer()
-                        .with_test_writer()
-                        .with_filter(EnvFilter::from_default_env()),
-                )
-                .with(Capture(Arc::clone(&tally), Arc::clone(&lines)));
-            *run = Some((tracing::subscriber::set_default(subscriber), tally, lines));
-        }
+        run.borrow_mut().get_or_insert_with(Run::default);
     });
 }
 
@@ -67,7 +101,7 @@ pub fn counts() -> BTreeMap<Option<usize>, Counts> {
     RUN.with(|run| {
         run.borrow()
             .as_ref()
-            .map(|(_, t, _)| t.lock().clone())
+            .map(|Run(tally, _)| tally.lock().clone())
             .unwrap_or_default()
     })
 }
@@ -88,7 +122,7 @@ fn lines(keep: impl Fn(Option<usize>, Level, &str) -> bool) -> Vec<String> {
     RUN.with(|run| {
         run.borrow()
             .as_ref()
-            .map(|(_, _, lines)| {
+            .map(|Run(_, lines)| {
                 lines
                     .lock()
                     .iter()
@@ -136,7 +170,8 @@ impl Visit for Text {
     }
 }
 
-struct Capture(Tally, Lines);
+/// Counts and keeps the events of armed threads, into the armed run.
+struct Capture;
 
 impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
     fn on_new_span(&self, attrs: &Attributes<'_>, id: &Id, ctx: Context<'_, S>) {
@@ -161,13 +196,16 @@ impl<S: Subscriber + for<'a> LookupSpan<'a>> Layer<S> for Capture {
                 .filter_map(|s| s.extensions().get::<NodeIndex>().map(|n| n.0))
                 .last()
         });
+        let Some(Run(tally, lines)) = RUN.with(|run| run.borrow().clone()) else {
+            return;
+        };
         let mut text = Text::default();
         event.record(&mut text);
-        self.1.lock().push((node, level, text.0));
+        lines.lock().push((node, level, text.0));
         if level == Level::INFO {
             return;
         }
-        let mut tally = self.0.lock();
+        let mut tally = tally.lock();
         let counts = tally.entry(node).or_default();
         if level == Level::ERROR {
             counts.error += 1;
@@ -212,4 +250,27 @@ async fn the_capture_counts_by_node() {
     };
     assert_eq!(delta(Some(3)), (2, 0));
     assert_eq!(delta(None), (0, 1));
+}
+
+/// The probe's one callsite, hit from both threads below.
+fn warn_probe() {
+    tracing::warn!("netsim logs probe, first hit on another thread");
+}
+
+/// A WARN whose callsite is first hit on a thread that is not armed (a
+/// database thread, say) while this run captures still counts here: the
+/// interleaving that cached the callsite `never` under a per-thread
+/// `set_default` (see the module docs), when this run's was the only
+/// dispatcher. Fails with that capture when run alone (`cargo test
+/// --test netsim logs::a_line_first_hit`), the one-dispatcher case.
+#[test]
+fn a_line_first_hit_on_another_thread_still_counts() {
+    install();
+    std::thread::spawn(warn_probe).join().expect("probe thread");
+    warn_probe();
+    assert_eq!(
+        warned("netsim logs probe").len(),
+        1,
+        "the probe's WARN on this thread was captured"
+    );
 }
