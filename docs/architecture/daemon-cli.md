@@ -389,9 +389,12 @@ $ rekindle-tui                         # the terminal UI
 $ rekindled                            # or run the host directly
 ```
 
-`channel watch`, `dm watch` and `voice join --watch` subscribe on the bus
-and print each matching event until Ctrl-C. Peer-controlled text goes
-through `sanitize_for_display` before it reaches the terminal.
+`channel watch`, `community watch`, `dm watch` and `voice join --watch`
+subscribe on the bus and print each matching event until Ctrl-C.
+`community watch [-c X]` streams every `Membership` and `Governance` event
+of one community (or all), so a removed member sees the kick or ban arrive
+with the remover and the op's reason. Peer-controlled text goes through
+`sanitize_for_display` before it reaches the terminal.
 
 With `--format json|jsonl` each event is the `SubscriptionEvent` JSON the
 GUI receives: externally tagged and camelCase at every level, e.g.

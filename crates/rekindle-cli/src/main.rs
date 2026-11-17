@@ -20,6 +20,7 @@ mod watch;
 
 mod channel;
 mod community;
+mod community_watch;
 mod dm;
 mod friends;
 mod governance;

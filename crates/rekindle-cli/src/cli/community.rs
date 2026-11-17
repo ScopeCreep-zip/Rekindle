@@ -118,6 +118,14 @@ pub enum CommunityCmd {
     /// Invite management.
     #[command(subcommand)]
     Invite(InviteCmd),
+
+    /// Live-stream membership and governance events (joins, leaves,
+    /// kicks and bans with their reason, roles, channels) until Ctrl-C.
+    Watch {
+        /// Community name or governance key; every community when omitted.
+        #[arg(long, short = 'c')]
+        community: Option<String>,
+    },
 }
 
 /// Invite subcommands.

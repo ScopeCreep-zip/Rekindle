@@ -60,7 +60,8 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub quiet: bool,
 
-    /// Force JSONL output on streaming commands (watch, voice join).
+    /// Force JSONL output on streaming commands (`dm watch`, `channel
+    /// watch`, `community watch`, `voice join --watch`).
     /// Enables external accessibility wrappers and scripting pipelines
     /// to consume real-time events without entering the TUI.
     #[arg(long, global = true)]
@@ -540,6 +541,22 @@ mod tests {
         ])
         .unwrap();
         assert!(cli.script);
+    }
+
+    #[test]
+    fn parse_community_watch() {
+        let cli = Cli::try_parse_from(["rekindle", "--script", "community", "watch", "-c", "Dev"])
+            .unwrap();
+        assert!(cli.script);
+        assert!(matches!(
+            cli.command,
+            Some(Command::Community(CommunityCmd::Watch { community: Some(ref c) })) if c == "Dev"
+        ));
+        let all = Cli::try_parse_from(["rekindle", "community", "watch"]).unwrap();
+        assert!(matches!(
+            all.command,
+            Some(Command::Community(CommunityCmd::Watch { community: None }))
+        ));
     }
 
     // ── Error cases ────────────────────────────────────────────────

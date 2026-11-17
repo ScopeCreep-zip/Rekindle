@@ -282,6 +282,9 @@ pub async fn dispatch(
             format::print_text(&format!("Ownership transferred to {new_owner}"))
         }
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
+        CommunityCmd::Watch { community } => {
+            crate::community_watch::watch(client, community.as_deref(), mode).await
+        }
     }
 }
 

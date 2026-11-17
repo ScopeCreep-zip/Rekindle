@@ -37,9 +37,15 @@ pub fn print_json<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A value as one JSONL line, without the newline: what `print_jsonl`
+/// writes, and what a streaming command emits per event.
+pub fn jsonl_line<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<String> {
+    Ok(serde_json::to_string(value)?)
+}
+
 /// Print a value as a single-line JSON (JSONL).
 pub fn print_jsonl<T: Serialize + ?Sized>(value: &T) -> anyhow::Result<()> {
-    let json = serde_json::to_string(value)?;
+    let json = jsonl_line(value)?;
     let mut stdout = std::io::stdout().lock();
     writeln!(stdout, "{json}")?;
     Ok(())

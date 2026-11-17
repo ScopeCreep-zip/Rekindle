@@ -1,5 +1,6 @@
 //! Streaming commands: subscribe, print each matching event, stop on
-//! Ctrl-C (`channel watch`, `dm watch`, `voice join --watch`).
+//! Ctrl-C (`channel watch`, `community watch`, `dm watch`,
+//! `voice join --watch`).
 //!
 //! Text mode prints one line per event; `--format json|jsonl` and
 //! `--script` print each event as one JSON line, for pipelines.
