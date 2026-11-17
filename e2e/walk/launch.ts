@@ -10,6 +10,7 @@ import { createWriteStream, existsSync, mkdirSync, mkdtempSync, rmSync } from "n
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { remote, type Browser } from "webdriverio";
 
 export const REPO_ROOT = path.resolve(import.meta.dirname, "..", "..");
 export const OUT_DIR = path.join(REPO_ROOT, "e2e", "walk", "out");
@@ -167,4 +168,38 @@ export async function launch(name = "app"): Promise<App> {
     throw err;
   }
   return app;
+}
+
+/**
+ * A new WebDriver session on `app`, starting in window `windowLabel`. The
+ * server keeps sessions apart (vendor `webdriver/session.rs`
+ * `SessionManager`), so deleting one makes every later command from it fail
+ * with "invalid session id": that is how a row past its deadline is stopped.
+ */
+export function openSession(app: App, windowLabel: string): Promise<Browser> {
+  return remote({
+    hostname: "127.0.0.1",
+    port: app.port,
+    path: "/",
+    protocol: "http",
+    logLevel: "error",
+    connectionRetryCount: 1,
+    headers: { Authorization: `Bearer ${app.token}` },
+    capabilities: {
+      "wdio:enforceWebDriverClassic": true,
+      "wdio:tauriServiceOptions": { windowLabel },
+    } as WebdriverIO.Capabilities,
+  });
+}
+
+/**
+ * End `old` and open a fresh session on a live window (buddy list first,
+ * then login). Commands a cancelled row still has in flight land on the
+ * ended session and fail instead of driving the app.
+ */
+export async function renewSession(app: App, old: Browser): Promise<Browser> {
+  const handles = await old.getWindowHandles().catch(() => [] as string[]);
+  await old.deleteSession().catch(() => undefined);
+  const label = handles.find((h) => h === "buddy-list") ?? handles.find((h) => h === "login") ?? handles[0];
+  return openSession(app, label ?? "login");
 }

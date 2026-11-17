@@ -5,9 +5,9 @@
 // identity befriends it by friend code, then they exchange a DM.
 
 import { randomBytes } from "node:crypto";
-import { remote, type Browser } from "webdriverio";
+import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
-import { launch, type App } from "./launch.ts";
+import { launch, openSession, renewSession, type App } from "./launch.ts";
 import { BUDDY, inBuddy } from "./nav.ts";
 import { createIdentity, openAddFriend, type Row, type WalkState } from "./rows.ts";
 
@@ -25,6 +25,12 @@ export async function stopPeer(): Promise<void> {
   peer = null;
   if (p.app.alive()) await p.b.deleteSession().catch(() => undefined);
   await p.app.stop();
+}
+
+/** A new session on the peer app: a cancelled row's old `p.b` stops working. */
+export async function renewPeerSession(): Promise<void> {
+  if (!peer || !peer.app.alive()) return;
+  peer = { ...peer, b: await renewSession(peer.app, peer.b) };
 }
 
 function needPeer(): Peer {
@@ -64,19 +70,7 @@ export const PEER_ROWS: Row[] = [
     title: "Second app on its own data root and port, second identity",
     async run({ b, app, shot }) {
       const papp = await launch("peer");
-      const pb = await remote({
-        hostname: "127.0.0.1",
-        port: papp.port,
-        path: "/",
-        protocol: "http",
-        logLevel: "error",
-        connectionRetryCount: 1,
-        headers: { Authorization: `Bearer ${papp.token}` },
-        capabilities: {
-          "wdio:enforceWebDriverClassic": true,
-          "wdio:tauriServiceOptions": { windowLabel: "login" },
-        } as WebdriverIO.Capabilities,
-      });
+      const pb = await openSession(papp, "login");
       const ps: WalkState = {
         displayName: `peer-${randomBytes(3).toString("hex")}`,
         passphrase: randomBytes(18).toString("base64url"),

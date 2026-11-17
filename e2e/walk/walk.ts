@@ -9,13 +9,16 @@
 import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { remote, type Browser } from "webdriverio";
+import type { Browser } from "webdriverio";
 import { Skip } from "./helpers.ts";
-import { OUT_DIR, build, launch, type App } from "./launch.ts";
+import { OUT_DIR, build, launch, openSession, renewSession, type App } from "./launch.ts";
 import { allRows, type RowContext, type WalkState } from "./rows.ts";
-import { stopPeer } from "./rows-peer.ts";
+import { renewPeerSession, stopPeer } from "./rows-peer.ts";
 
 type Status = "pass" | "fail" | "skip";
+
+/** A row past `ROW_TIMEOUT_MS`; its sessions are renewed so it stops driving the app. */
+class RowTimeout extends Error {}
 
 interface Result {
   row: string;
@@ -42,19 +45,7 @@ async function screenshot(b: Browser, row: string): Promise<string | null> {
 }
 
 async function walk(app: App): Promise<Result[]> {
-  const b = await remote({
-    hostname: "127.0.0.1",
-    port: app.port,
-    path: "/",
-    protocol: "http",
-    logLevel: "error",
-    connectionRetryCount: 1,
-    headers: { Authorization: `Bearer ${app.token}` },
-    capabilities: {
-      "wdio:enforceWebDriverClassic": true,
-      "wdio:tauriServiceOptions": { windowLabel: "login" },
-    } as WebdriverIO.Capabilities,
-  });
+  let b = await openSession(app, "login");
 
   const s: WalkState = {
     displayName: `walk-${randomBytes(3).toString("hex")}`,
@@ -69,29 +60,37 @@ async function walk(app: App): Promise<Result[]> {
       const started = Date.now();
       let shotPath: string | null = null;
       let taken = false;
+      const rb = b;
       const ctx: RowContext = {
-        b,
+        b: rb,
         app,
         s,
         async shot() {
-          shotPath = await screenshot(b, row.id);
+          shotPath = await screenshot(rb, row.id);
           taken = true;
         },
       };
       let status: Status = "pass";
       let note = "";
       try {
-        note = (await withDeadline(row.run(ctx), ROW_TIMEOUT_MS, `row timed out after ${ROW_TIMEOUT_MS} ms`)) ?? "";
+        note = (await withDeadline(row.run(ctx), ROW_TIMEOUT_MS, new RowTimeout(`row timed out after ${ROW_TIMEOUT_MS} ms`))) ?? "";
       } catch (err) {
         status = err instanceof Skip ? "skip" : "fail";
         note = message(err);
+        // A row past its deadline is still running: end the sessions it
+        // holds so its next command fails instead of driving the app while
+        // the next row runs (B9's failure in walk 2).
+        if (err instanceof RowTimeout) {
+          if (app.alive()) b = await renewSession(app, b);
+          await renewPeerSession();
+        }
       }
       // A row that closed the window the session points at (B64's logout
       // closes the buddy list) leaves every later command failing with "No
       // window could be found": point the session at a live window first.
       if (app.alive()) await reattach(b);
       if (!taken && app.alive()) {
-        shotPath = await withDeadline(screenshot(b, row.id), SHOT_TIMEOUT_MS, "screenshot timed out").catch(() => null);
+        shotPath = await withDeadline(screenshot(b, row.id), SHOT_TIMEOUT_MS, new Error("screenshot timed out")).catch(() => null);
       }
       results.push({ row: row.id, title: row.title, status, note, screenshot: shotPath, ms: Date.now() - started });
       console.log(`[walk] ${row.id} ${status}${note ? `: ${note}` : ""}`);
@@ -139,11 +138,11 @@ main().then(
   },
 );
 
-/** `work`, or a rejection with `msg` after `ms`: a stuck row fails instead of hanging the walk. */
-function withDeadline<T>(work: Promise<T>, ms: number, msg: string): Promise<T> {
+/** `work`, or a rejection with `err` after `ms`: a stuck row fails instead of hanging the walk. */
+function withDeadline<T>(work: Promise<T>, ms: number, err: Error): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(msg)), ms);
+    timer = setTimeout(() => reject(err), ms);
   });
   return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
