@@ -49,6 +49,9 @@
 //!     cargo xtask import-skin --format teamspeak3 --from <style dir> --builtin <id>
 //!                                      Import a legacy skin as a built-in
 //!                                      pack and its NOTICE (plan E7.7.3).
+//!     cargo xtask check-icon-glyphs    Every ICON_* codepoint is the glyph
+//!                                      its comment names in the bundled
+//!                                      Nerd Font (plan E7.12).
 //!     cargo xtask import-xfire-data --from <legacy/unpacked>
 //!                                      Write the Xfire game icons, the game
 //!                                      id mapping and the built-in sound
@@ -94,6 +97,7 @@ mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
 mod gen_skin_registry;
+mod icon_glyphs;
 mod import_skin;
 mod import_xfire_data;
 mod intent_table;
@@ -113,6 +117,7 @@ mod theme_literals;
 mod veilid_boundary;
 mod veilid_dht_calls;
 mod wall_clock;
+mod woff2;
 
 #[derive(Parser)]
 #[command(
@@ -192,6 +197,8 @@ enum Command {
         #[arg(long)]
         from: PathBuf,
     },
+    /// Verify every `ICON_*` codepoint is in the bundled font and is the glyph its comment names.
+    CheckIconGlyphs,
     /// Verify every transition reads a motion token and motion honours reduced motion.
     CheckMotion,
     /// Verify the macOS, WebKitGTK and Vite floors agree with the plan's E7.10 floor.
@@ -323,6 +330,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 ),
                 ("motion", Box::new(|| motion::check_motion(&root))),
                 (
+                    "icon-glyphs",
+                    Box::new(|| icon_glyphs::check_icon_glyphs(&root)),
+                ),
+                (
                     "platform-floor",
                     Box::new(|| platform_floor::check_platform_floor(&root)),
                 ),
@@ -389,6 +400,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         } => import_skin::import_skin(&root, *format, from, builtin),
         Command::ImportXfireData { from } => import_xfire_data::import_xfire_data(&root, from),
         Command::CheckMotion => motion::check_motion(&root),
+        Command::CheckIconGlyphs => icon_glyphs::check_icon_glyphs(&root),
         Command::CheckPlatformFloor => platform_floor::check_platform_floor(&root),
         Command::CheckBuiltCss { css } => platform_floor::check_built_css(&root, css),
         Command::CheckDuplicateBodies => duplicate_bodies::check_duplicate_bodies(&root),

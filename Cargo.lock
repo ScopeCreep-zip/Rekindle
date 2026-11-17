@@ -11945,6 +11945,7 @@ version = "0.0.0"
 dependencies = [
  "anyhow",
  "blake3",
+ "brotli-decompressor 5.0.0",
  "clap 4.5.60",
  "crc32fast",
  "ignore",

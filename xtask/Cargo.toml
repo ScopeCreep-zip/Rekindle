@@ -50,3 +50,7 @@ crc32fast = "1.5"
 blake3 = "1"
 rekindle-image = { path = "../crates/rekindle-image" }
 rekindle-types = { path = "../crates/rekindle-types" }
+# `check-icon-glyphs` (plan E7.12) reads the bundled WOFF2 font's `cmap` and
+# `post` tables; its one Brotli stream is decoded with the decompressor
+# already in the lockfile through reqwest's `brotli` (BSD-3-Clause/MIT).
+brotli-decompressor = "5"
