@@ -134,6 +134,12 @@ labels! {
     GOV_OP = "rekindle-gov-op-v1";
     /// BLAKE3 `derive_key` context: a governance op's hash over its signed bytes.
     GOV_OP_HASH = "rekindle-gov-op-hash-v1";
+    /// BLAKE3 `derive_key` context: the hash of the checkpoint directory's
+    /// one RFC 9162 §2.1.1 Merkle tree, with CT's `0x00` leaf and `0x01`
+    /// node prefixes inside it (plan E3.2 S7c.2). A hash domain, not a
+    /// signature: a directory page is proven by its path to the endorsed
+    /// `dirRoot`, so nothing on it is signed.
+    GOV_DIRECTORY = "rekindle-gov-directory-v1";
     /// BLAKE3 `derive_key` context: a `Frontier`'s roster checksum over the
     /// canonical encoding of the merged roster and role tables (D15).
     GOV_ROSTER_CHECKSUM = "rekindle-gov-roster-checksum-v1";

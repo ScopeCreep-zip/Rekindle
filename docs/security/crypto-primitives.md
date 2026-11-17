@@ -334,6 +334,14 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   `rekindle_secrets::slot_head`). A reader keeps a departed member's
   backfilled posts only from a value with that seq and digest, so a leaver
   cannot fill a seq gap it reserved with posts written after it left.
+- **Checkpoint directory** (plan E3.2 S7c.2): one RFC 9162 §2.1.1 Merkle
+  tree over the `DirLeafV1` entries (member, record key and owner, join op,
+  join height), with `HASH` = `derive_key("rekindle-gov-directory-v1", ·)`
+  and CT's `0x00` leaf and `0x01` node prefixes, so a leaf can never pass
+  as an interior node. Pages of 128 leaves are complete subtrees; inclusion
+  and consistency proofs follow RFC 9162 §2.1.3–§2.1.4
+  (`rekindle_governance::checkpoint::directory`). A hash domain, not a
+  signature: a page is proven by its path to the endorsed `dirRoot`.
 - **File-cache names**: every directory under `state/{pk}.files/` is a
   keyed BLAKE3 hash (`FILE_CACHE_COMMUNITY`, `FILE_CACHE_DM`,
   `FILE_CACHE_ATTACHMENT` prefixes) under a key
