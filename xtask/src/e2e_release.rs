@@ -27,7 +27,7 @@ use anyhow::{anyhow, Context, Result};
 
 const CRATE: &str = "rekindle-e2e-server";
 
-fn has_release_guard(lib: &str) -> bool {
+pub(crate) fn has_release_guard(lib: &str) -> bool {
     let Ok(file) = syn::parse_file(lib) else {
         return false;
     };

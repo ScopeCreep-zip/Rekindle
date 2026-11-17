@@ -9,6 +9,12 @@ description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
 [lints]
 workspace = true
 
+[features]
+# The WebDriver walk's driver (plan E7.13): the vendored, patched
+# tauri-plugin-wdio-webdriver. Debug builds only (`lib.rs` compile_error!);
+# never a default (`cargo xtask check-webdriver-release`).
+webdriver-test = [ "dep:tauri-plugin-wdio-webdriver" ]
+
 [lib]
 name = "rekindle_lib"
 crate-type = [ "staticlib", "cdylib", "rlib" ]
@@ -83,6 +89,7 @@ tauri-plugin-dialog = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = { version = "2", features = [ "deep-link" ] }
+tauri-plugin-wdio-webdriver = { path = "../crates/vendor/tauri-plugin-wdio-webdriver", optional = true }
 
 parking_lot = { workspace = true }
 rusqlite = { version = "0.39", features = [ "bundled" ] }

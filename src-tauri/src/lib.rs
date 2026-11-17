@@ -32,8 +32,16 @@ pub mod state_helpers;
 pub mod test_support;
 mod tray;
 pub mod video_channels;
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+mod webdriver;
 pub mod window_labels;
 mod windows;
+
+// The WebDriver walk's driver serves a local remote control of every window
+// (plan E7.13): a release build never carries it
+// (`cargo xtask check-webdriver-release`).
+#[cfg(all(feature = "webdriver-test", not(debug_assertions)))]
+compile_error!("the webdriver-test feature is for debug builds only");
 
 pub use services::shell_session::ShellSession;
 
@@ -42,6 +50,26 @@ use std::sync::Arc;
 use tauri::{Manager, WindowEvent};
 
 use state::{AppState, SharedState};
+
+/// The single-instance plugin. It MUST be registered first: a second
+/// launch raises this app's window and exits.
+#[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
+fn single_instance<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        // Deep-link URLs in argv are handled by the single-instance
+        // `deep-link` feature, which forwards them into the deep-link
+        // plugin (firing `on_open_url`, see setup.rs) *before* this
+        // callback runs. We only raise the existing window here — parsing
+        // argv again would double-fire the deep link.
+        if let Some(w) = app.get_webview_window(window_labels::BUDDY_LIST) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        } else if let Some(w) = app.get_webview_window(window_labels::LOGIN) {
+            let _ = w.show();
+            let _ = w.set_focus();
+        }
+    })
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -74,22 +102,15 @@ pub fn run() {
     let shared_state: SharedState = Arc::new(AppState::default());
     let state_for_setup = Arc::clone(&shared_state);
 
-    tauri::Builder::default()
-        // MUST be first — prevents multiple instances
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Deep-link URLs in argv are handled by the single-instance
-            // `deep-link` feature, which forwards them into the deep-link
-            // plugin (firing `on_open_url`, see setup.rs) *before* this
-            // callback runs. We only raise the existing window here — parsing
-            // argv again would double-fire the deep link.
-            if let Some(w) = app.get_webview_window(window_labels::BUDDY_LIST) {
-                let _ = w.show();
-                let _ = w.set_focus();
-            } else if let Some(w) = app.get_webview_window(window_labels::LOGIN) {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
-        }))
+    let builder = tauri::Builder::default();
+    // The walk's build skips the single-instance plugin: it runs beside the
+    // user's own Rekindle on a separate data root, and must neither hand its
+    // launch to that app nor take the user's launches (`webdriver.rs`).
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    let builder = builder.plugin(webdriver::plugin());
+    #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
+    let builder = builder.plugin(single_instance());
+    builder
         // NOTE: tauri_plugin_window_state removed — causes infinite windowDidMove
         // event loop on macOS when combined with prevent_exit(). See tauri#11489.
         // NOTE: tauri-plugin-stronghold removed — the plugin was registered but

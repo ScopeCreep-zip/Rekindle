@@ -5,6 +5,7 @@ resolver = "2"
 exclude = ["contract/veilid"]
 members = [
     "src-tauri",
+    "crates/vendor/tauri-plugin-wdio-webdriver",
     "crates/rekindle-types",
     "crates/rekindle-db",
     "crates/rekindle-secrets",

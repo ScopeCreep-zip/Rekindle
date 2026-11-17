@@ -18,6 +18,8 @@
 //!                                      through rekindle_db::erase (I14).
 //!     cargo xtask check-e2e-server-release
 //!                                      The E2E bridge never builds in release.
+//!     cargo xtask check-webdriver-release
+//!                                      The WebDriver driver never builds in release.
 //!     cargo xtask check-role-ids       Role ids are written only by the
 //!                                      governance projection (RV7 M1).
 //!     cargo xtask check-veilid-dht-calls
@@ -117,6 +119,7 @@ mod theme_literals;
 mod veilid_boundary;
 mod veilid_dht_calls;
 mod wall_clock;
+mod webdriver_release;
 mod woff2;
 
 #[derive(Parser)]
@@ -155,6 +158,8 @@ enum Command {
     CheckKeyErasure,
     /// Verify the E2E bridge cannot be built into a release bundle.
     CheckE2eServerRelease,
+    /// Verify the WebDriver walk's driver cannot reach a release build.
+    CheckWebdriverRelease,
     /// Verify role ids are written only by the governance projection (no caches).
     CheckRoleIds,
     /// Verify every Veilid DHT and private-route call stays in its owner.
@@ -284,6 +289,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| e2e_release::check_e2e_server_release(&root)),
                 ),
                 (
+                    "webdriver-release",
+                    Box::new(|| webdriver_release::check_webdriver_release(&root)),
+                ),
+                (
                     "veilid-dht-calls",
                     Box::new(|| veilid_dht_calls::check_veilid_dht_calls(&root)),
                 ),
@@ -377,6 +386,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),
         Command::CheckE2eServerRelease => e2e_release::check_e2e_server_release(&root),
+        Command::CheckWebdriverRelease => webdriver_release::check_webdriver_release(&root),
         Command::CheckRoleIds => role_ids::check_role_ids(&root),
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
         Command::CheckSqlite => sqlite::check_sqlite(&root),

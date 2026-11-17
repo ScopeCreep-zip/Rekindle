@@ -30,6 +30,11 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // run one node twice on a root (F3), and the layout check runs under it
     // before anything opens a store (plan D1). The claim is held by the
     // host for the process's lifetime.
+    // The WebDriver walk's build runs on its own temporary root, never the
+    // user's (plan E7.13; `webdriver.rs`).
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    let root = crate::webdriver::data_root()?;
+    #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
     let root = rekindle_db::paths::DataRoot::resolve()?;
     let claimed = match rekindle_node::host::claim(root.clone()) {
         Ok(claimed) => claimed,

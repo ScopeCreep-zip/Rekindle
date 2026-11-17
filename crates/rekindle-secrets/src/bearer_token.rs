@@ -22,6 +22,18 @@ impl BearerToken {
         )
     }
 
+    /// A token minted by another process for this run (the WebDriver walk's
+    /// runner hands it to the app it launches): `None` unless `spelled` is
+    /// exactly what [`BearerToken::mint`] produces, 52 characters of
+    /// lowercase unpadded base32 that decode to 32 bytes.
+    #[must_use]
+    pub fn parse(spelled: &str) -> Option<Self> {
+        let upper = spelled.to_ascii_uppercase();
+        let lowercase = spelled.bytes().all(|b| !b.is_ascii_uppercase());
+        let decoded = data_encoding::BASE32_NOPAD.decode(upper.as_bytes()).ok()?;
+        (lowercase && decoded.len() == 32).then(|| Self(spelled.to_owned()))
+    }
+
     /// The token as it is handed to the client.
     #[must_use]
     pub fn as_str(&self) -> &str {
@@ -55,5 +67,17 @@ mod tests {
         assert!(!a.matches(b.as_str().as_bytes()));
         assert!(!a.matches(&a.as_str().as_bytes()[..51]));
         assert!(!format!("{a:?}").contains(a.as_str()));
+    }
+
+    #[test]
+    fn parse_accepts_only_a_minted_spelling() {
+        let a = BearerToken::mint();
+        let parsed = BearerToken::parse(a.as_str()).expect("a minted token parses");
+        assert!(parsed.matches(a.as_str().as_bytes()));
+        assert!(BearerToken::parse(&a.as_str()[..51]).is_none());
+        assert!(BearerToken::parse(&a.as_str().to_ascii_uppercase()).is_none());
+        assert!(BearerToken::parse(&format!("{}a", a.as_str())).is_none());
+        assert!(BearerToken::parse("").is_none());
+        assert!(BearerToken::parse(&"1".repeat(52)).is_none());
     }
 }

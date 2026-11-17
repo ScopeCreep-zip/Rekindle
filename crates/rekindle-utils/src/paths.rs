@@ -69,6 +69,21 @@ impl DataRoot {
         })
     }
 
+    /// The same layout under one base directory instead of the platform's:
+    /// `base/data`, `base/config`, `base/logs`, `base/data/state`. Nothing is
+    /// created. The WebDriver walk (plan E7.13) runs the desktop on such a
+    /// root so it never opens the user's.
+    #[must_use]
+    pub fn under(base: &std::path::Path) -> Self {
+        let data = base.join("data");
+        Self {
+            config: base.join("config"),
+            logs: base.join("logs"),
+            state: data.join("state"),
+            data,
+        }
+    }
+
     /// Veilid's storage directory, `state/veilid` (plan D1): it resets with
     /// the identities.
     #[must_use]
@@ -185,6 +200,17 @@ fn create_private_dir(dir: &std::path::Path) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn under_lays_every_directory_out_below_the_base() {
+        let base = std::path::Path::new("/tmp/walk-root");
+        let root = super::DataRoot::under(base);
+        for dir in [&root.data, &root.config, &root.logs, &root.state] {
+            assert!(dir.starts_with(base), "{}", dir.display());
+        }
+        assert_eq!(root.state, base.join("data/state"));
+        assert_ne!(root.data, root.config);
+    }
+
     use super::*;
 
     /// The desktop's directories are named after `tauri.conf.json`'s
