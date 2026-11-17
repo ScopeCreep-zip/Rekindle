@@ -93,67 +93,64 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
           onSetNotification={(channelId, level) => handleSetNotificationOverride(vm.selectedCommunityId(), channelId, level)}
         />
 
-        {/* Sidebar: Game Servers (collapsible) */}
-        <Show when={vm.gameServers().length > 0}>
-          <div class="sidebar-servers-section">
-            <CategoryHeader
-              name={`Servers (${vm.gameServers().length})`}
-              isExpanded={vm.sidebarServersExpanded()}
-              onToggle={() => vm.setSidebarServersExpanded(!vm.sidebarServersExpanded())}
-            />
-            <Show when={vm.sidebarServersExpanded()}>
-              {vm.sidebarServerList().map((server) => (
-                <div class="sidebar-server-row">
-                  <span class="sidebar-server-name">
-                    {vm.gameNameCache().get(server.gameId) ?? server.label}
-                  </span>
-                  <button
-                    class="sidebar-server-join-btn"
-                    onClick={() => {
-                      const id = parseInt(server.gameId, 10);
-                      if (!isNaN(id)) commands.launchGameToServer(id, server.address);
-                    }}
-                  >
-                    Join
-                  </button>
-                </div>
-              ))}
-              <Show when={vm.gameServers().length > 3}>
+        {/* Sidebar: Game Servers (collapsible). Shown with no servers too:
+            its "All servers" link is the only way to the list and its Add
+            form, so the first server must be reachable from here. */}
+        <div class="sidebar-servers-section">
+          <CategoryHeader
+            name={`Servers (${vm.gameServers().length})`}
+            isExpanded={vm.sidebarServersExpanded()}
+            onToggle={() => vm.setSidebarServersExpanded(!vm.sidebarServersExpanded())}
+          />
+          <Show when={vm.sidebarServersExpanded()}>
+            {vm.sidebarServerList().map((server) => (
+              <div class="sidebar-server-row">
+                <span class="sidebar-server-name">
+                  {vm.gameNameCache().get(server.gameId) ?? server.label}
+                </span>
                 <button
-                  class="sidebar-section-more"
-                  onClick={() => { vm.setShowServers(true); vm.setShowEvents(false); }}
+                  class="sidebar-server-join-btn"
+                  onClick={() => {
+                    const id = parseInt(server.gameId, 10);
+                    if (!isNaN(id)) commands.launchGameToServer(id, server.address);
+                  }}
                 >
-                  View all ({vm.gameServers().length})
+                  Join
                 </button>
-              </Show>
-            </Show>
-          </div>
-        </Show>
+              </div>
+            ))}
+            <button
+              class="sidebar-section-more"
+              onClick={() => { vm.setShowServers(true); vm.setShowEvents(false); }}
+            >
+              All servers
+            </button>
+          </Show>
+        </div>
 
-        {/* Sidebar: Upcoming Events (collapsible) */}
-        <Show when={vm.upcomingEvents().length > 0}>
-          <div class="sidebar-events-section">
-            <CategoryHeader
-              name="Upcoming"
-              isExpanded={vm.sidebarEventsExpanded()}
-              onToggle={() => vm.setSidebarEventsExpanded(!vm.sidebarEventsExpanded())}
-            />
-            <Show when={vm.sidebarEventsExpanded()}>
-              {vm.upcomingEvents().map((event) => (
-                <div class="sidebar-event-row">
-                  <span class="sidebar-event-title">{event.title}</span>
-                  <span class="sidebar-event-countdown">{vm.formatTimeUntilEvent(event.startTime)}</span>
-                </div>
-              ))}
-              <button
-                class="sidebar-section-more"
-                onClick={() => { vm.setShowEvents(true); vm.setShowServers(false); }}
-              >
-                All events
-              </button>
-            </Show>
-          </div>
-        </Show>
+        {/* Sidebar: Upcoming Events (collapsible). Shown with no upcoming
+            event too: "All events" opens the panel that creates the first. */}
+        <div class="sidebar-events-section">
+          <CategoryHeader
+            name="Upcoming"
+            isExpanded={vm.sidebarEventsExpanded()}
+            onToggle={() => vm.setSidebarEventsExpanded(!vm.sidebarEventsExpanded())}
+          />
+          <Show when={vm.sidebarEventsExpanded()}>
+            {vm.upcomingEvents().map((event) => (
+              <div class="sidebar-event-row">
+                <span class="sidebar-event-title">{event.title}</span>
+                <span class="sidebar-event-countdown">{vm.formatTimeUntilEvent(event.startTime)}</span>
+              </div>
+            ))}
+            <button
+              class="sidebar-section-more"
+              onClick={() => { vm.setShowEvents(true); vm.setShowServers(false); }}
+            >
+              All events
+            </button>
+          </Show>
+        </div>
       </Show>
       {/* Compact "connected" strip. Video, screen-share and the full control
           set now live in the main-pane CallStage (community voice channel). */}

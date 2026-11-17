@@ -9,7 +9,7 @@ export default defineConfig({
     // Frontend-only tests with mocked IPC (fast, no Rust backend needed)
     {
       name: "mock",
-      testMatch: ["login.spec.ts", "events.spec.ts", "chat-window.spec.ts", "group-dm.spec.ts", "community-removal.spec.ts", "window-focus.spec.ts", "skin-apply.spec.ts", "skin-appearance.spec.ts", "member-list.spec.ts", "profile-window.spec.ts", "channel-history.spec.ts", "channel-awaiting-key.spec.ts", "friend-groups.spec.ts", "status-picker.spec.ts"],
+      testMatch: ["login.spec.ts", "events.spec.ts", "chat-window.spec.ts", "group-dm.spec.ts", "community-removal.spec.ts", "window-focus.spec.ts", "skin-apply.spec.ts", "skin-appearance.spec.ts", "member-list.spec.ts", "profile-window.spec.ts", "channel-history.spec.ts", "channel-awaiting-key.spec.ts", "friend-groups.spec.ts", "status-picker.spec.ts", "community-sidebar.spec.ts"],
       use: { ...devices["Desktop Chrome"] },
     },
     // Geometry of every routed window (plan E7.12), mocked IPC like `mock`,
