@@ -12,7 +12,7 @@ use rekindle_governance::checkpoint::Replay;
 use rekindle_governance::merge;
 use rekindle_governance::op::{invite_proof_bytes, VerifiedOp};
 use rekindle_governance::state::GovernanceState;
-use rekindle_secrets::ed25519_dalek::Signer;
+use rekindle_secrets::invite::{hash_invite_code, sign_invite_join};
 use rekindle_secrets::member_record::sign_member_record_binding;
 use rekindle_types::governance::{
     AdmissionMode, GenesisCert, GovernanceEntry, InviteProof, OpHash,
@@ -24,20 +24,15 @@ pub(crate) const ANCHOR: &str = "VLD0:anchor";
 impl Member {
     pub(crate) fn joined(&self, code: &str) -> GovernanceEntry {
         let record = self.record();
-        let sig = self
-            .pseudonym
-            .sign(&invite_proof_bytes(ANCHOR, code, &record))
-            .to_bytes()
-            .to_vec();
+        let code_hash = hash_invite_code(code);
+        let proof = invite_proof_bytes(ANCHOR, &self.author(), &record, &code_hash);
+        let sig = sign_invite_join(code, &proof).to_vec();
         let owner_proof =
             sign_member_record_binding(&self.owner.to_bytes(), ANCHOR, &self.author().0, &record);
         GovernanceEntry::MemberJoined {
             member_record: record,
             member_record_owner: self.owner_text(),
-            invite_proof: Some(InviteProof {
-                code_hash: code.into(),
-                sig,
-            }),
+            invite_proof: Some(InviteProof { code_hash, sig }),
             owner_proof: owner_proof.to_vec(),
         }
     }
@@ -46,7 +41,7 @@ impl Member {
 pub(crate) fn invite(id: u8, code: &str) -> GovernanceEntry {
     GovernanceEntry::InviteCreated {
         invite_id: [id; 16],
-        code_hash: code.into(),
+        code_hash: hash_invite_code(code),
         max_uses: 100,
         expires_at: None,
         secrets_record_key: "VLD0:s".into(),

@@ -8,11 +8,13 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
+use ed25519_dalek::{Signer, SigningKey};
 use hkdf::Hkdf;
 use rand::RngCore;
 use rekindle_types::domains;
 use rekindle_types::error::CryptoError;
 use sha2::Sha256;
+use zeroize::Zeroizing;
 
 /// Derive an AES-256-GCM key from an invite code using HKDF-SHA256.
 fn derive_invite_key(invite_code: &[u8]) -> [u8; 32] {
@@ -23,18 +25,36 @@ fn derive_invite_key(invite_code: &[u8]) -> [u8; 32] {
     key
 }
 
-/// The lookup id of an invite code: `blake3::derive_key` under
-/// [`domains::INVITE_CODE_ID`] over the code's bytes, hex-encoded
-/// (crypto-primitives §7: identifier hashing is BLAKE3 with a context).
-///
-/// Invite entries are stored in the DHT under this id, so the raw code
-/// never is.
+/// The invite's join key: the Ed25519 key whose seed is `blake3::derive_key`
+/// under [`domains::INVITE_JOIN`] over the code's bytes (plan E3.2 S10).
+/// Only a holder of the code can make it.
+fn invite_join_key(invite_code: &str) -> SigningKey {
+    let seed = Zeroizing::new(blake3::derive_key(
+        domains::INVITE_JOIN,
+        invite_code.as_bytes(),
+    ));
+    SigningKey::from_bytes(&seed)
+}
+
+/// An invite's public id, `InviteCreated.code_hash`: the hex of the public
+/// half of [`invite_join_key`] (plan E3.2 S10). It is both the lookup id
+/// invite entries are stored under (the raw code never is) and the key
+/// every reader verifies a joiner's invite proof against without the code
+/// ([`sign_invite_join`]); readers never hold the code.
 #[must_use]
 pub fn hash_invite_code(invite_code: &str) -> String {
-    hex::encode(blake3::derive_key(
-        domains::INVITE_CODE_ID,
-        invite_code.as_bytes(),
-    ))
+    hex::encode(invite_join_key(invite_code).verifying_key().to_bytes())
+}
+
+/// A joiner's invite proof (plan E3.2 S10): Ed25519 by the invite's join
+/// key over `signed`, the proof bytes `rekindle_governance::op::
+/// invite_proof_bytes` lays out (community, joiner pseudonym, member record,
+/// [`hash_invite_code`]). It verifies under the public `code_hash`, so a
+/// reader of the op log checks it, but only a holder of the code makes it,
+/// and it names its joiner, so it cannot be replayed for another.
+#[must_use]
+pub fn sign_invite_join(invite_code: &str, signed: &[u8]) -> [u8; 64] {
+    invite_join_key(invite_code).sign(signed).to_bytes()
 }
 
 /// The tag a joiner puts on a pre-join checkpoint hint or snapshot request
@@ -56,6 +76,17 @@ pub fn pre_join_read_tag(invite_code: &str, signed: &[u8]) -> [u8; 32] {
 #[must_use]
 pub fn pre_join_read_tag_verifies(invite_code: &str, signed: &[u8], tag: &[u8; 32]) -> bool {
     blake3::Hash::from(pre_join_read_tag(invite_code, signed)) == blake3::Hash::from(*tag)
+}
+
+/// Whether `sig` is a [`sign_invite_join`] proof over `signed` by the join
+/// key whose public half is `code_hash` (64 hex digits): what every reader
+/// checks, without the code. A `code_hash` that is not such a key verifies
+/// nothing.
+#[must_use]
+pub fn invite_join_verifies(code_hash: &str, signed: &[u8], sig: &[u8; 64]) -> bool {
+    let mut key = [0u8; 32];
+    hex::decode_to_slice(code_hash, &mut key).is_ok()
+        && crate::sign::verify_signature(&key, signed, sig).is_ok()
 }
 
 /// Encrypt invite secrets with HKDF(invite_code) → AES-256-GCM.
@@ -132,20 +163,27 @@ mod tests {
         assert_ne!(hash_invite_code("code1"), hash_invite_code("code2"));
     }
 
-    /// The id is BLAKE3 `derive_key` under the invite-code context: not a
-    /// bare BLAKE3 or SHA-256 of the code, and 32 bytes of hex.
+    /// The id is the public half of the Ed25519 key seeded by BLAKE3
+    /// `derive_key` under the invite-join context: a proof by that key
+    /// verifies under the id, and neither the id nor a bare hash of the code
+    /// makes one.
     #[test]
-    fn hash_is_blake3_under_the_invite_code_context() {
-        use sha2::Digest;
+    fn the_id_is_the_join_key_and_only_the_code_signs_under_it() {
+        use crate::sign::verify_signature;
         let code = "a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8";
         let id = hash_invite_code(code);
-        assert_eq!(
-            id,
-            hex::encode(blake3::derive_key(domains::INVITE_CODE_ID, code.as_bytes()))
-        );
-        assert_eq!(id.len(), 64);
-        assert_ne!(id, blake3::hash(code.as_bytes()).to_hex().to_string());
-        assert_ne!(id, hex::encode(Sha256::digest(code.as_bytes())));
+        let seed = blake3::derive_key(domains::INVITE_JOIN, code.as_bytes());
+        let public = SigningKey::from_bytes(&seed).verifying_key().to_bytes();
+        assert_eq!(id, hex::encode(public));
+        let sig = sign_invite_join(code, b"proof");
+        assert!(verify_signature(&public, b"proof", &sig).is_ok());
+        assert!(invite_join_verifies(&id, b"proof", &sig));
+        assert!(!invite_join_verifies(&id, b"other", &sig));
+        assert!(!invite_join_verifies("not hex", b"proof", &sig));
+        assert!(verify_signature(&public, b"other", &sig).is_err());
+        let by_id = sign_invite_join(&id, b"proof");
+        assert!(verify_signature(&public, b"proof", &by_id).is_err());
+        assert_ne!(id, hex::encode(seed));
     }
 
     /// The tag is keyed by the code, not its public lookup id: the id

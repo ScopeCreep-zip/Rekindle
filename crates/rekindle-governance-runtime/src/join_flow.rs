@@ -22,7 +22,7 @@ use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance::state::GovernanceState;
 use rekindle_records::port::OpenIntent;
 use rekindle_records::schema;
-use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::dht_layout::member_record;
 use rekindle_types::governance::{Frontier, GenesisCert, GovernanceEntry, InviteProof};
 use rekindle_types::id::PseudonymKey;
@@ -191,8 +191,9 @@ async fn create_member_record<D: GovernanceRuntimeDeps>(
     ))
 }
 
-/// Our op #0: `MemberJoined` with the invite proof (the joiner pseudonym
-/// over `INVITE_PROOF ‖ anchor ‖ code hash ‖ memberRecord`) and the owner
+/// Our op #0: `MemberJoined` with the invite proof (the invite's join key,
+/// derived from the code we hold, over `INVITE_PROOF ‖ anchor ‖ our
+/// pseudonym ‖ memberRecord ‖ code hash`, plan E3.2 S10) and the owner
 /// proof (`K_M` over `MEMBER_RECORD_BINDING ‖ anchor ‖ pseudonym ‖
 /// memberRecord`, ADR 0011 "Binding"). Its deps are shallow (plan E3.2
 /// S7c.0, [`join_deps`](crate::join_deps::join_deps)): a `Checkpoint` op
@@ -206,16 +207,16 @@ fn joined_op(
     walked: &WalkedSet,
     key: &SigningKey,
     member: (&JoinerRecord, String),
-    invite: (String, &PseudonymKey),
+    invite: (&str, &PseudonymKey),
     now_secs: u64,
 ) -> Result<HeldOp, GovernanceRuntimeError> {
-    let (code_hash, inviter) = invite;
+    let (code, inviter) = invite;
     let (member, owner) = member;
     let record = member.record_key.as_str();
-    let sig = key
-        .sign(&invite_proof_bytes(anchor, &code_hash, record))
-        .to_bytes()
-        .to_vec();
+    let joiner = PseudonymKey(key.verifying_key().to_bytes());
+    let code_hash = rekindle_secrets::invite::hash_invite_code(code);
+    let proof = invite_proof_bytes(anchor, &joiner, record, &code_hash);
+    let sig = rekindle_secrets::invite::sign_invite_join(code, &proof).to_vec();
     let (_, owner_secret) = keypair_text::parse_keypair_text(&member.owner_keypair)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("member record owner: {e}")))?;
     let owner_secret = Zeroizing::new(owner_secret);
@@ -231,7 +232,6 @@ fn joined_op(
         invite_proof: Some(InviteProof { code_hash, sig }),
         owner_proof: owner_proof.to_vec(),
     };
-    let joiner = PseudonymKey(key.verifying_key().to_bytes());
     let (set, outcome) = (&walked.set, &walked.merged);
     let hint = walked.hint.as_ref();
     let deps = Deps::Join(join_deps(cert, set, outcome, hint, &joiner, inviter)?);
@@ -307,7 +307,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         &walked,
         &identity.pseudonym_signing,
         (&member, member_owner),
-        (code_hash, &inviter),
+        (link.invite_code.as_str(), &inviter),
         now,
     )?;
 

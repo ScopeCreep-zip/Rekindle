@@ -492,8 +492,9 @@ pub enum GovernanceEntry {
     /// the pointer so the entry stays within the SMPL per-subkey size cap.
     InviteCreated {
         invite_id: [u8; 16],
-        /// The invite code's lookup id (hex, BLAKE3 `derive_key` under
-        /// `domains::INVITE_CODE_ID`). The raw code is never stored.
+        /// The invite's public id and join-proof key (hex Ed25519 public key
+        /// seeded by BLAKE3 `derive_key` under `domains::INVITE_JOIN` over
+        /// the code, plan E3.2 S10). The raw code is never stored.
         code_hash: String,
         max_uses: u32,
         expires_at: Option<u64>,

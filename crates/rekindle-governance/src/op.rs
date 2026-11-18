@@ -90,15 +90,29 @@ pub fn op_signature_holds(
     verify_signature(&author.0, &op_signing_bytes(anchor, unsigned), sig).is_ok()
 }
 
-/// The bytes a joiner signs for its invite proof:
-/// `INVITE_PROOF ‖ anchor ‖ code_hash ‖ member_record`.
+/// The bytes of a joiner's invite proof (plan E3.2 S10): `INVITE_PROOF ‖
+/// lp(anchor) ‖ joiner pseudonym (32) ‖ lp(member_record) ‖ lp(code_hash)`,
+/// `lp` a `u32be` length prefix. The invite's join key signs them
+/// (`rekindle_secrets::invite::sign_invite_join`), so the proof names the
+/// community, its joiner and the record it binds and is not replayable for
+/// another pseudonym.
 #[must_use]
-pub fn invite_proof_bytes(anchor: &str, code_hash: &str, member_record: &str) -> Vec<u8> {
+pub fn invite_proof_bytes(
+    anchor: &str,
+    joiner: &PseudonymKey,
+    member_record: &str,
+    code_hash: &str,
+) -> Vec<u8> {
     let mut out = Vec::new();
     out.extend_from_slice(domains::INVITE_PROOF.as_bytes());
-    out.extend_from_slice(anchor.as_bytes());
-    out.extend_from_slice(code_hash.as_bytes());
-    out.extend_from_slice(member_record.as_bytes());
+    let mut field = |bytes: &[u8]| {
+        out.extend_from_slice(&u32::try_from(bytes.len()).unwrap_or(u32::MAX).to_be_bytes());
+        out.extend_from_slice(bytes);
+    };
+    field(anchor.as_bytes());
+    field(&joiner.0);
+    field(member_record.as_bytes());
+    field(code_hash.as_bytes());
     out
 }
 
@@ -239,9 +253,12 @@ fn check_chain<'a>(
     }
 }
 
-/// A `MemberJoined` invite proof must be signed by the joiner over the
-/// invite commitment and its own member record. Whether the commitment
-/// names a live invite under its cap is a merge-time, causal check.
+/// A `MemberJoined` invite proof must be signed by the invite's join key,
+/// whose public half is the commitment `code_hash` (plan E3.2 S10), over the
+/// joiner, its member record and the community: only a holder of the code
+/// makes it, and every reader checks it without the code. Whether the
+/// commitment names a live invite under its cap is a merge-time, causal
+/// check.
 fn check_invite_proof(anchor: &str, op: &GovernanceOp) -> Result<(), OpRejection> {
     let GovernanceEntry::MemberJoined {
         member_record,
@@ -256,8 +273,10 @@ fn check_invite_proof(anchor: &str, op: &GovernanceOp) -> Result<(), OpRejection
         .as_slice()
         .try_into()
         .map_err(|_| OpRejection::BadInviteProof)?;
-    let bytes = invite_proof_bytes(anchor, &proof.code_hash, member_record);
-    verify_signature(&op.author.0, &bytes, &sig).map_err(|_| OpRejection::BadInviteProof)
+    let bytes = invite_proof_bytes(anchor, &op.author, member_record, &proof.code_hash);
+    rekindle_secrets::invite::invite_join_verifies(&proof.code_hash, &bytes, &sig)
+        .then_some(())
+        .ok_or(OpRejection::BadInviteProof)
 }
 
 /// A `MemberJoined` or `MemberRecordMoved` binds a member record to its

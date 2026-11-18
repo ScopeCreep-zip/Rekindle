@@ -15,7 +15,7 @@ use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
-use rekindle_secrets::ed25519_dalek::{Signer, SigningKey};
+use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::member_record::{dflt_opaque_record_key, sign_member_record_binding};
 use rekindle_transport::operations::direct::NAK;
 use rekindle_types::config::SafetyProfile;
@@ -55,10 +55,10 @@ async fn an_unadmitted_joiner_with_an_invite_commitment_is_not_stored() {
         .await,
         "the member merged the invite"
     );
-    outsider_is_refused_and_not_stored(&community, Some(code_hash)).await;
+    outsider_is_refused_and_not_stored(&community, Some(link.invite_code.as_str())).await;
 }
 
-async fn outsider_is_refused_and_not_stored(community: &Community, code_hash: Option<String>) {
+async fn outsider_is_refused_and_not_stored(community: &Community, code: Option<&str>) {
     let anchor = community.anchor.clone();
     let outsider = community.sim.add_node();
     community.sim.set_ready(outsider.index, true);
@@ -76,12 +76,13 @@ async fn outsider_is_refused_and_not_stored(community: &Community, code_hash: Op
         .verifying_key()
         .to_bytes();
     let record = vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT));
-    let invite_proof = code_hash.map(|code_hash| InviteProof {
-        sig: joiner
-            .sign(&invite_proof_bytes(&anchor, &code_hash, &record))
-            .to_bytes()
-            .to_vec(),
-        code_hash,
+    let invite_proof = code.map(|code| {
+        let code_hash = rekindle_secrets::invite::hash_invite_code(code);
+        let proof = invite_proof_bytes(&anchor, &author, &record, &code_hash);
+        InviteProof {
+            sig: rekindle_secrets::invite::sign_invite_join(code, &proof).to_vec(),
+            code_hash,
+        }
     });
     let (op, hash) = signed(
         &anchor,

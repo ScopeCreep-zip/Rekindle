@@ -130,8 +130,9 @@ pub enum ModerationLevel {
 
 /// Invite entry stored in manifest subkey 7.
 ///
-/// The `code_hash` is the code's lookup id (BLAKE3 `derive_key` under
-/// `domains::INVITE_CODE_ID`, `rekindle_secrets::invite::hash_invite_code`)
+/// The `code_hash` is the invite's public id (the join key's public half,
+/// seeded by BLAKE3 `derive_key` under `domains::INVITE_JOIN`,
+/// `rekindle_secrets::invite::hash_invite_code`)
 /// so the raw invite code is never
 /// exposed in the publicly-readable DHT manifest. The `encrypted_secrets`
 /// blob can only be decrypted by someone who has the raw code.

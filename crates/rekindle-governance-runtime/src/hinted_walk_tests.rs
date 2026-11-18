@@ -281,6 +281,7 @@ fn an_op_outside_the_cut_is_merged_never_quarantined() {
 /// the cut stays live.
 #[test]
 fn post_cut_permission_and_invite_checks_run_on_the_snapshot() {
+    use rekindle_secrets::invite::hash_invite_code;
     let creator = Member::new(1);
     let mut world = World::new(&creator);
     let inviter = Member::new(10);
@@ -307,10 +308,13 @@ fn post_cut_permission_and_invite_checks_run_on_the_snapshot() {
     );
     let state = &resumed.outcome.state;
     assert!(
-        state.live_invite("code", 10).is_none(),
+        state.live_invite(&hash_invite_code("code"), 10).is_none(),
         "revoked in the cut"
     );
-    assert!(state.live_invite("code3", 10).is_some(), "created above it");
+    assert!(
+        state.live_invite(&hash_invite_code("code3"), 10).is_some(),
+        "created above it"
+    );
     assert_matches_full(&world, &resumed);
 }
 

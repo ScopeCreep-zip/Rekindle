@@ -324,9 +324,26 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   sender ‖ nonce)` (`rekindle-crypto::replay`).
 - **Base-key hash** a `PreKeyRejected` names: `derive_key` under
   `rekindle-prekey-rejected-base-key-v1`.
-- **Invite-code lookup id** (the `code_hash` an invite entry is stored
-  under): `derive_key` under `rekindle-invite-code-id-v1` over the code
-  (`rekindle_secrets::invite::hash_invite_code`).
+- **Invite join key and id** (plan E3.2 S10): the Ed25519 seed
+  `derive_key("rekindle-invite-join-v1", code)`; the hex of its public half
+  is the invite's `code_hash`, both the lookup id an invite entry is stored
+  under and the key a joiner's invite proof verifies under
+  (`rekindle_secrets::invite::{hash_invite_code, sign_invite_join,
+  invite_join_verifies}`). The proof in `MemberJoined.invite_proof` is that
+  key's Ed25519 signature over `rekindle-invite-proof-v2 ‖ lp(anchor) ‖
+  joiner pseudonym ‖ lp(member record) ‖ lp(code_hash)` (`lp` a `u32be`
+  length prefix; `rekindle_governance::op::invite_proof_bytes`), checked in
+  `check_invite_proof` before the merge. Readers hold only the op log, so
+  the proof must verify without the code (a keyed hash like the read tag
+  cannot) and only a holder of the code can make it (the former
+  `rekindle-invite-proof-v1`, the joiner's own signature over the public
+  `code_hash`, let any reader of the log join while the invite had uses
+  left). Naming the joiner and its record stops a seen proof being
+  replayed for another pseudonym; the use count (`live_invite`, the merge's
+  invite gate) is unchanged. Cost: one Ed25519 key derivation per invite
+  created or joined and one signature check per `MemberJoined`; the key is
+  never stored (re-derived from the code), and `code_hash` stays 64 hex
+  digits.
 - **Pre-join read tag** (plan E3.2 S7c.8 (2)): a joiner's checkpoint hint
   and snapshot requests carry BLAKE3-keyed under `derive_key(
   "rekindle-invite-read-tag-v1", code)` over the request's signed bytes

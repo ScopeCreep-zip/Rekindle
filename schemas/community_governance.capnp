@@ -200,6 +200,9 @@ struct MemberJoinedPayload {
     memberRecordOwner    @1 :Text;
     hasInviteProof       @2 :Bool;
     inviteCodeHash       @3 :Text;
+    # The invite's join key's proof (64 bytes; `INVITE_PROOF`, plan E3.2
+    # S10): Ed25519 under `inviteCodeHash`, the public half of the key
+    # seeded from the invite code, over anchor, joiner, record and the hash.
     inviteSig            @4 :Data;
     # K_M's binding proof (64 bytes; `MEMBER_RECORD_BINDING`).
     ownerProof           @5 :Data;

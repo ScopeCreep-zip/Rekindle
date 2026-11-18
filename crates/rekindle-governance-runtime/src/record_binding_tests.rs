@@ -9,6 +9,7 @@ use rekindle_codec::governance_op::encode_op;
 use rekindle_governance::fixture::meta;
 use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance::op::op_hash;
+use rekindle_secrets::invite::{hash_invite_code, sign_invite_join};
 use rekindle_secrets::member_record::sign_member_record_binding;
 use rekindle_types::governance::{AdmissionMode, InviteProof};
 
@@ -21,11 +22,12 @@ impl Member {
     /// `victim`; replayed by anyone else, a binding to someone else.
     fn join_naming(&self, victim: &Self) -> GovernanceEntry {
         let record = victim.record();
-        let invite = self
-            .pseudonym
-            .sign(&invite_proof_bytes(ANCHOR, CODE, &record))
-            .to_bytes()
-            .to_vec();
+        let code_hash = hash_invite_code(CODE);
+        let invite = sign_invite_join(
+            CODE,
+            &invite_proof_bytes(ANCHOR, &self.author(), &record, &code_hash),
+        )
+        .to_vec();
         let owner_proof = sign_member_record_binding(
             &victim.owner.to_bytes(),
             ANCHOR,
@@ -36,7 +38,7 @@ impl Member {
             member_record: record,
             member_record_owner: victim.owner_text(),
             invite_proof: Some(InviteProof {
-                code_hash: CODE.into(),
+                code_hash,
                 sig: invite,
             }),
             owner_proof: owner_proof.to_vec(),
@@ -105,7 +107,7 @@ fn signed(
 fn invite() -> GovernanceEntry {
     GovernanceEntry::InviteCreated {
         invite_id: [1; 16],
-        code_hash: CODE.into(),
+        code_hash: hash_invite_code(CODE),
         max_uses: 8,
         expires_at: None,
         secrets_record_key: "VLD0:s".into(),
@@ -202,5 +204,93 @@ fn a_member_re_joining_on_the_victims_record_cannot_take_it() {
         &[inv, own, m2, m3, rejoin.clone(), theirs],
         &victim,
         &rejoin,
+    );
+}
+
+/// Plan E3.2 S10 (found, security): a party that read the op log but never
+/// held the invite code (a kicked member, an I16 outsider) knows the
+/// invite's public `code_hash` and its own keys, and nothing else. Its
+/// `MemberJoined` citing the live invite, with the best proof it can make
+/// (its own pseudonym's signature over the proof bytes), must not verify,
+/// and it must not be a member after the merge.
+#[test]
+fn an_op_log_reader_without_the_invite_code_cannot_join() {
+    let (creator, outsider) = (Member::new(1), Member::new(5));
+    let cert = cert(&creator);
+    let inv = signed(&cert, &[], &creator.pseudonym, invite(), 10);
+    let record = outsider.record();
+    // All it knows of the invite is the public `code_hash` in the log.
+    let code_hash = hash_invite_code(CODE);
+    let proof = invite_proof_bytes(ANCHOR, &outsider.author(), &record, &code_hash);
+    let sig = outsider.pseudonym.sign(&proof).to_bytes().to_vec();
+    let owner_proof = sign_member_record_binding(
+        &outsider.owner.to_bytes(),
+        ANCHOR,
+        &outsider.author().0,
+        &record,
+    );
+    let forged = GovernanceEntry::MemberJoined {
+        member_record: record,
+        member_record_owner: outsider.owner_text(),
+        invite_proof: Some(InviteProof { code_hash, sig }),
+        owner_proof: owner_proof.to_vec(),
+    };
+    let join = signed(&cert, &[&inv], &outsider.pseudonym, forged, 11);
+    let set = verify_held(ANCHOR, &[inv, join.clone()]);
+    let state = merge::merge(&cert, &set.ops);
+    assert!(
+        !state.members.contains_key(&outsider.author()),
+        "a join without the invite code was admitted"
+    );
+    assert!(
+        set.quarantined.contains(&join.hash),
+        "the forged proof verified"
+    );
+}
+
+/// A real joiner's proof names its joiner: copied onto another pseudonym's
+/// `MemberJoined` (same invite, the copier's own record), it does not
+/// verify, so a reader of the op log cannot replay a proof it saw.
+#[test]
+fn a_seen_invite_proof_cannot_be_replayed_for_another_joiner() {
+    let (creator, joiner, copier) = (Member::new(1), Member::new(2), Member::new(6));
+    let cert = cert(&creator);
+    let inv = signed(&cert, &[], &creator.pseudonym, invite(), 10);
+    let theirs = signed(
+        &cert,
+        &[&inv],
+        &joiner.pseudonym,
+        joiner.join_naming(&joiner),
+        11,
+    );
+    let GovernanceEntry::MemberJoined { invite_proof, .. } = joiner.join_naming(&joiner) else {
+        unreachable!()
+    };
+    let GovernanceEntry::MemberJoined {
+        member_record,
+        member_record_owner,
+        owner_proof,
+        ..
+    } = copier.join_naming(&copier)
+    else {
+        unreachable!()
+    };
+    let replayed = GovernanceEntry::MemberJoined {
+        member_record,
+        member_record_owner,
+        invite_proof,
+        owner_proof,
+    };
+    let copy = signed(&cert, &[&inv, &theirs], &copier.pseudonym, replayed, 12);
+    let set = verify_held(ANCHOR, &[inv, theirs, copy.clone()]);
+    let state = merge::merge(&cert, &set.ops);
+    assert!(state.members.contains_key(&joiner.author()));
+    assert!(
+        !state.members.contains_key(&copier.author()),
+        "a replayed proof was admitted"
+    );
+    assert!(
+        set.quarantined.contains(&copy.hash),
+        "the replayed proof verified"
     );
 }

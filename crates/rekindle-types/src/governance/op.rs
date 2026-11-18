@@ -62,9 +62,11 @@ pub struct GovernanceOp {
     pub sig: [u8; 64],
 }
 
-/// A joiner's proof that it holds an invite: the invite code's commitment
-/// (`InviteCreated.code_hash`) and the joiner pseudonym's signature over
-/// `INVITE_PROOF ‖ anchor ‖ code_hash ‖ member_record`.
+/// A joiner's proof that it holds an invite code (plan E3.2 S10): the
+/// invite's commitment (`InviteCreated.code_hash`, the public half of the
+/// join key derived from the code) and that join key's signature over
+/// `INVITE_PROOF ‖ anchor ‖ joiner pseudonym ‖ member_record ‖ code_hash`
+/// (`rekindle_governance::op::invite_proof_bytes`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct InviteProof {
     pub code_hash: String,

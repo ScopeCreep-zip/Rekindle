@@ -52,6 +52,7 @@ mod hung_send;
 mod internet_flap;
 mod invisible_game;
 mod invite_expiry;
+mod invite_forgery;
 mod invite_join_leave;
 mod invite_route_refresh;
 mod invite_unpublished;

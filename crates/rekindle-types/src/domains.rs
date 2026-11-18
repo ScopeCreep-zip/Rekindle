@@ -129,10 +129,12 @@ labels! {
     MEMBER_ROUTES = "rekindle-member-routes-v1";
     /// HKDF info: invite-secrets record key.
     INVITE_SECRETS = "rekindle-invite-secrets-v1";
-    /// BLAKE3 derive-key context: a community invite code's lookup id, the
-    /// `code_hash` invite entries are stored under
-    /// (`rekindle_secrets::invite::hash_invite_code`).
-    INVITE_CODE_ID = "rekindle-invite-code-id-v1";
+    /// BLAKE3 derive-key context: the Ed25519 seed of a community invite's
+    /// join key, from the invite code (plan E3.2 S10). Its public half is the
+    /// invite's `code_hash` (lookup id and proof key,
+    /// `rekindle_secrets::invite::hash_invite_code`); only a holder of the
+    /// code signs a join proof (`sign_invite_join`).
+    INVITE_JOIN = "rekindle-invite-join-v1";
     /// BLAKE3 derive-key context: the key a joiner's pre-join checkpoint
     /// hint and snapshot requests are tagged under, from the invite code
     /// (plan E3.2 S7c.8 (2); `rekindle_secrets::invite::pre_join_read_tag`).
@@ -180,9 +182,11 @@ labels! {
     /// `rekindle_secrets::slot_head::slot_head_digest`). Not `rekindle-slot-…`:
     /// that is `SLOT_KEY_PREFIX`'s namespace.
     SLOT_HEAD = "rekindle-departed-slot-head-v1";
-    /// Ed25519 context: a joiner's invite proof over this label ‖ anchor ‖
-    /// invite code hash ‖ member record key (plan E3.2).
-    INVITE_PROOF = "rekindle-invite-proof-v1";
+    /// Ed25519 context: a joiner's invite proof, by the invite's join key
+    /// (`INVITE_JOIN`), over this label ‖ anchor ‖ joiner pseudonym ‖
+    /// member record key ‖ invite `code_hash`, each length-prefixed (plan
+    /// E3.2 S10; `rekindle_governance::op::invite_proof_bytes`).
+    INVITE_PROOF = "rekindle-invite-proof-v2";
     /// Ed25519 context: a member record owner `K_M`'s proof, in a
     /// `MemberJoined` or `MemberRecordMoved`, that it binds its record to
     /// the op's author: this label ‖ anchor ‖ author pseudonym ‖ member

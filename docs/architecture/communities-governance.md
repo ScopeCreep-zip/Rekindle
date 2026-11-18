@@ -173,7 +173,10 @@ op and the frontier are durable on the inviter's `M`.
    create the joiner's own `M` with a fresh owner key.
 4. Build `MemberJoined` (`join_flow.rs`): the record and its owner, an
    owner proof (only `K_M` can bind the record), an invite proof (the
-   pseudonym's signature over the invite code's commitment), and shallow
+   invite's join key, seeded by `derive_key("rekindle-invite-join-v1", code)`,
+   signs anchor ‖ joiner pseudonym ‖ record ‖ `code_hash`; `code_hash` is that
+   key's public half, so every reader verifies the proof without the code and
+   only a holder of the code makes it, plan E3.2 S10), and shallow
    deps (`join_deps.rs`: the creator's last genesis op, the inviter's
    latest op, and on a re-join the member's own previous op and every op
    removing it). Publish `M`/0 card, `M`/2, `M`/3, then `M`/1 beat.

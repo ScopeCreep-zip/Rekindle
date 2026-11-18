@@ -97,10 +97,11 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
             member_record_owner: vld0(&owner_public),
             invite_proof: Some(InviteProof {
                 code_hash: code_hash.clone(),
-                sig: forger
-                    .sign(&invite_proof_bytes(&anchor, &code_hash, &record))
-                    .to_bytes()
-                    .to_vec(),
+                sig: rekindle_secrets::invite::sign_invite_join(
+                    link.invite_code.as_str(),
+                    &invite_proof_bytes(&anchor, &author, &record, &code_hash),
+                )
+                .to_vec(),
             }),
             owner_proof: sign_member_record_binding(&[0xEF; 32], &anchor, &author.0, &record)
                 .to_vec(),
