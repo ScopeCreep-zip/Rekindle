@@ -45,5 +45,12 @@ check-webdriver-release` keeps it out of every release build.
    carries a `// SAFETY:` comment (`docs/contributor/style-guide.md`).
 6. **Release guard**: `src/lib.rs` refuses to compile without
    `debug_assertions`.
+7. **Linux number conversion** (`src/platform/linux.rs` `js_number`): a
+   JavaScript number converts by parsing JavaScriptCore's string form as an
+   `i64` (a JSON integer), else as a finite `f64` (a JSON float), else null.
+   Upstream compared and cast the `f64` (`n <= i64::MAX as f64`, `n as i64`),
+   which the workspace lints refuse (`float_cmp`, `cast_precision_loss`,
+   `cast_possible_truncation`) and which let 2^63 through to a saturating
+   cast. `js_value_to_json` returns `Value` (it never failed).
 
 Behaviour is otherwise upstream's; upstream's tests are kept.

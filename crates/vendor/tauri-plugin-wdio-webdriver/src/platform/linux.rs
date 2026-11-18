@@ -25,57 +25,87 @@ use crate::webdriver::Timeouts;
 /// 1. Try `to_json(0)` first (handles most primitives and objects)
 /// 2. Try type-specific conversions for special cases
 /// 3. Fall back to string representation or null
-fn js_value_to_json(js_value: &javascriptcore::Value) -> Result<Value, String> {
+fn js_value_to_json(js_value: &javascriptcore::Value) -> Value {
     // Strategy 1: Try standard JSON serialization
     if let Some(json_str) = js_value.to_json(0) {
-        match serde_json::from_str::<Value>(json_str.as_str()) {
-            Ok(value) => return Ok(value),
-            Err(_) => return Ok(Value::String(json_str.to_string())),
-        }
+        return serde_json::from_str::<Value>(json_str.as_str())
+            .unwrap_or_else(|_| Value::String(json_str.to_string()));
     }
 
     // Strategy 2: Handle null/undefined explicitly
     if js_value.is_null() || js_value.is_undefined() {
-        return Ok(Value::Null);
+        return Value::Null;
     }
 
     // Strategy 3: Handle booleans
     if js_value.is_boolean() {
-        return Ok(Value::Bool(js_value.to_boolean()));
+        return Value::Bool(js_value.to_boolean());
     }
 
-    // Strategy 4: Handle numbers - use to_string then parse
+    // Strategy 4: Handle numbers from their string form
     if js_value.is_number() {
-        let num_str = js_value.to_string();
-        if let Ok(n) = num_str.parse::<f64>() {
-            // Handle NaN and Infinity
-            if n.is_nan() || n.is_infinite() {
-                return Ok(Value::Null);
-            }
-            // Check if it's an integer
-            if n == n.trunc() && n >= i64::MIN as f64 && n <= i64::MAX as f64 {
-                return Ok(Value::Number(serde_json::Number::from(n as i64)));
-            }
-            // Handle as floating point
-            match serde_json::Number::from_f64(n) {
-                Some(num) => return Ok(Value::Number(num)),
-                None => return Ok(Value::Null),
-            }
-        }
-        return Ok(Value::Null);
+        return js_number(&js_value.to_string());
     }
 
     // Strategy 5: Handle strings - to_string() returns String directly
     if js_value.is_string() {
-        return Ok(Value::String(js_value.to_string()));
+        return Value::String(js_value.to_string());
     }
 
     // Strategy 6: For arrays, objects, functions, etc. - convert to string
     let string_repr = js_value.to_string();
     if string_repr.is_empty() {
-        return Ok(Value::Null);
+        return Value::Null;
     }
-    Ok(Value::String(string_repr))
+    Value::String(string_repr)
+}
+
+/// A JavaScript number, from JavaScriptCore's string form of it: an
+/// integral value that fits an `i64` as a JSON integer, any other finite
+/// value as a JSON float, and NaN or an infinity as null.
+///
+/// (Rekindle patch.) The integral case parses the string as an `i64`
+/// rather than comparing and casting the `f64`: the upstream check
+/// (`n <= i64::MAX as f64`) let 2^63 through, and `as i64` then saturated.
+fn js_number(num_str: &str) -> Value {
+    if let Ok(i) = num_str.parse::<i64>() {
+        return Value::Number(i.into());
+    }
+    num_str
+        .parse::<f64>()
+        .ok()
+        .and_then(serde_json::Number::from_f64)
+        .map_or(Value::Null, Value::Number)
+}
+
+#[cfg(test)]
+mod js_number_tests {
+    use super::js_number;
+    use serde_json::{json, Value};
+
+    #[test]
+    fn integral_numbers_are_json_integers() {
+        assert_eq!(js_number("42"), json!(42));
+        assert_eq!(js_number("-7"), json!(-7));
+        assert_eq!(js_number("9223372036854775807"), json!(i64::MAX));
+    }
+
+    #[test]
+    fn a_number_past_i64_stays_a_float_and_never_saturates() {
+        // 2^63: the upstream comparison let it through to a saturating cast.
+        let v = js_number("9223372036854775808");
+        assert!(v.is_f64(), "{v}");
+        assert_eq!(v, json!(9_223_372_036_854_775_808.0_f64));
+    }
+
+    #[test]
+    fn fractions_are_floats_and_non_finite_values_null() {
+        assert_eq!(js_number("1.5"), json!(1.5));
+        assert_eq!(js_number("1e21"), json!(1e21_f64));
+        assert_eq!(js_number("NaN"), Value::Null);
+        assert_eq!(js_number("Infinity"), Value::Null);
+        assert_eq!(js_number("-Infinity"), Value::Null);
+    }
 }
 
 /// Linux `WebKitGTK` executor
@@ -215,10 +245,8 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
                     .evaluate_javascript_future(&script_owned, None, None)
                     .await;
                 let response: Result<Value, String> = match result {
-                    Ok(js_value) => {
-                        // Try multiple serialization strategies for robustness
-                        js_value_to_json(&js_value)
-                    }
+                    // Try multiple serialization strategies for robustness
+                    Ok(js_value) => Ok(js_value_to_json(&js_value)),
                     Err(e) => Err(e.to_string()),
                 };
 
