@@ -18,7 +18,7 @@ use crate::error::GovernanceRuntimeError;
 use crate::member_card::OwnRecord;
 use crate::member_routes::write_routes;
 
-const ANCHOR: &str = "community";
+const BOOTSTRAP_COMMUNITY: &str = "community";
 const INVITER_ROUTE: &[u8] = b"route-inviter";
 
 fn encode(payload: ControlPayload) -> Vec<u8> {
@@ -28,7 +28,7 @@ fn encode(payload: ControlPayload) -> Vec<u8> {
 
 fn partial() -> Vec<u8> {
     encode(ControlPayload::BootstrapPartial {
-        anchor: ANCHOR.into(),
+        anchor: BOOTSTRAP_COMMUNITY.into(),
     })
 }
 
@@ -43,7 +43,7 @@ fn head() -> OpRef {
 
 fn frontier() -> Vec<u8> {
     encode(ControlPayload::BootstrapResponseV2 {
-        anchor: ANCHOR.into(),
+        anchor: BOOTSTRAP_COMMUNITY.into(),
         frontier: vec![head()],
     })
 }
@@ -57,7 +57,7 @@ async fn member(pool: &dyn RecordPort, seed: u8, route: &[u8]) -> (PseudonymKey,
     pool.release(lease).await;
     let pseudonym = SigningKey::from_bytes(&[seed; 32]);
     let own = OwnRecord {
-        community_id: ANCHOR,
+        community_id: BOOTSTRAP_COMMUNITY,
         record: &record,
         writer: &writer,
         pseudonym: &pseudonym,
@@ -98,14 +98,22 @@ async fn a_partial_inviters_joiner_bootstraps_from_another_member() {
         (b"route-whole", frontier()),
     ]);
     let asked = [gone, behind, also_partial, whole];
-    let found = find_frontier(&call, &*pool, ANCHOR, INVITER_ROUTE, &asked, b"request").await;
+    let found = find_frontier(
+        &call,
+        &*pool,
+        BOOTSTRAP_COMMUNITY,
+        INVITER_ROUTE,
+        &asked,
+        b"request",
+    )
+    .await;
     assert_eq!(found.unwrap(), vec![head()]);
 
     // Nobody whole among those asked: a typed error, not a refusal.
     let found = find_frontier(
         &call,
         &*pool,
-        ANCHOR,
+        BOOTSTRAP_COMMUNITY,
         INVITER_ROUTE,
         &asked[..3],
         b"request",
@@ -127,13 +135,29 @@ async fn only_a_partial_inviter_sends_the_joiner_elsewhere() {
         (INVITER_ROUTE, b"NAK".to_vec()),
         (b"route-whole", frontier()),
     ]);
-    let found = find_frontier(&refusing, &*pool, ANCHOR, INVITER_ROUTE, &whole, b"r").await;
+    let found = find_frontier(
+        &refusing,
+        &*pool,
+        BOOTSTRAP_COMMUNITY,
+        INVITER_ROUTE,
+        &whole,
+        b"r",
+    )
+    .await;
     assert!(
         matches!(found, Err(GovernanceRuntimeError::BootstrapRefused(_))),
         "{found:?}"
     );
     let silent = caller(vec![(b"route-whole", frontier())]);
-    let found = find_frontier(&silent, &*pool, ANCHOR, INVITER_ROUTE, &whole, b"r").await;
+    let found = find_frontier(
+        &silent,
+        &*pool,
+        BOOTSTRAP_COMMUNITY,
+        INVITER_ROUTE,
+        &whole,
+        b"r",
+    )
+    .await;
     assert!(
         matches!(found, Err(GovernanceRuntimeError::Adapter(_))),
         "{found:?}"
