@@ -108,3 +108,35 @@ fn merge_10k_entries_completes_within_budget() {
         "merge of {ENTRY_COUNT} governance entries took {elapsed:?}, over the {build} of {budget}ms"
     );
 }
+
+/// Veilid's callee answer window: an `app_call` the inviter answers later
+/// than this is dropped (`veilid-core/src/rpc_processor/rpc_app_call.rs:131-138`,
+/// `network.rpc.timeout_ms` 5,000 ms, `veilid_config.rs:944`).
+const APP_CALL_ANSWER_MS: u128 = 5_000;
+
+/// Plan E3.2 S7c.8 item (5): the inviter's uncached snapshot answer, the
+/// cut's merge (`merge_cut`) and its `stateRoot` preimage, at the 10,000
+/// entry community above (a 736,246 B snapshot), inside the `app_call`
+/// answer window. Measured debug 265 ms on the Mac (M-series); the kept
+/// snapshot (S7c.6) serves every later chunk from its row.
+#[test]
+fn an_uncached_snapshot_of_10k_entries_answers_inside_the_app_call_window() {
+    use rekindle_governance::checkpoint::{state_preimage, state_root_of};
+    use rekindle_governance::merge::merge_cut;
+    let creator = PseudonymKey([0x42u8; 32]);
+    let ops = ops_in_order(&gen_synthetic_entries(ENTRY_COUNT));
+    let cert = cert(&creator, AdmissionMode::default());
+    let started = std::time::Instant::now();
+    let (state, cut) = merge_cut(&cert, &ops);
+    let preimage = state_preimage(&state, &cut);
+    let _ = state_root_of(&preimage);
+    let elapsed = started.elapsed();
+    eprintln!(
+        "[perf] merge_cut + stateRoot ({ENTRY_COUNT} entries, {} B snapshot) = {elapsed:?}",
+        preimage.len()
+    );
+    assert!(
+        elapsed.as_millis() < APP_CALL_ANSWER_MS,
+        "the uncached snapshot took {elapsed:?}, over the {APP_CALL_ANSWER_MS} ms answer window"
+    );
+}
