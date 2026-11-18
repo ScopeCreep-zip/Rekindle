@@ -106,6 +106,17 @@ pub fn author_record(
     state.author_record(cert, author)
 }
 
+/// The member record `op` lives in: a `MemberJoined` names its own (op
+/// #0, or a re-join that binds a fresh record, owner-proved), any other op
+/// its author's ([`author_record`]).
+#[must_use]
+pub fn op_record(cert: &GenesisCert, state: &GovernanceState, op: &GovernanceOp) -> Option<String> {
+    match &op.body {
+        GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
+        _ => author_record(cert, state, &op.author),
+    }
+}
+
 /// The frontier: the verified ops no other verified op cites, newest
 /// first by `(lamport, hash)`, at most [`MAX_FRONTIER_REFS`], always
 /// holding `must` (our previous op, which the chain rule requires among
@@ -323,18 +334,19 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let mut held = deps.governance_ops(community_id).await?;
-    let mut tried: BTreeSet<OpHash> = BTreeSet::new();
+    let mut tried: BTreeSet<(OpHash, String)> = BTreeSet::new();
     let logs = WalkLogCache::default();
     loop {
         let set = verify_held_with(deps, community_id, &held);
-        let wanted: Vec<OpRef> = set
-            .missing
-            .iter()
-            .filter(|r| tried.insert(r.op_hash))
-            .cloned()
+        let wanted: Vec<OpRef> = crate::op_walk::locators(&set.missing, &held)
+            .into_iter()
+            .filter(|r| tried.insert((r.op_hash, r.author_record.clone())))
             .collect();
         let mut fetched = false;
         for op_ref in wanted {
+            if held.iter().any(|op| op.hash == op_ref.op_hash) {
+                continue;
+            }
             let Some(op) = fetch_held(deps, &op_ref, &logs).await? else {
                 continue;
             };
@@ -449,13 +461,7 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let state = deps.governance_state(community_id).unwrap_or_default();
-    let record = match &decoded.op.body {
-        // A `MemberJoined` names its own record (op #0, or a re-join that
-        // binds a fresh record, owner-proved).
-        GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
-        _ => author_record(&cert, &state, &decoded.op.author),
-    };
-    let Some(author_record) = record else {
+    let Some(author_record) = op_record(&cert, &state, &decoded.op) else {
         return Ok(false);
     };
     if !receive_bounded(&decoded.op, &state) {

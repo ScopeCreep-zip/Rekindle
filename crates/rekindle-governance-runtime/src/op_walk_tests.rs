@@ -100,3 +100,37 @@ async fn a_walk_level_holds_at_most_sixteen_fetches_in_flight() {
         "{elapsed:?} vs {bound:?}"
     );
 }
+
+/// An op of `author` held from `record`.
+fn held_at(author: u8, record: &str, hash: u8) -> HeldOp {
+    HeldOp {
+        hash: OpHash([hash; 32]),
+        author: rekindle_types::id::PseudonymKey([author; 32]),
+        author_record: record.into(),
+        seq: 1,
+        lamport: 0,
+        issued_at: 0,
+        encoded: Vec::new(),
+        fate: crate::op_log::OpFate::PendingDeps,
+    }
+}
+
+/// A re-joiner's seq 0 cited at its first record, which never held it,
+/// is also looked for at the fresh record its re-join's op was held from;
+/// another author's records are not tried.
+#[test]
+fn a_missing_op_is_looked_for_at_every_record_of_its_author() {
+    let wanted = OpRef {
+        op_hash: OpHash([9; 32]),
+        author: rekindle_types::id::PseudonymKey([1; 32]),
+        author_record: "first".into(),
+        author_seq: 0,
+    };
+    let held = [held_at(1, "fresh", 2), held_at(2, "other", 3)];
+    let records: Vec<String> = locators(std::slice::from_ref(&wanted), &held)
+        .into_iter()
+        .inspect(|r| assert_eq!((r.op_hash, r.author_seq), (wanted.op_hash, 0)))
+        .map(|r| r.author_record)
+        .collect();
+    assert_eq!(records, ["first", "fresh"]);
+}

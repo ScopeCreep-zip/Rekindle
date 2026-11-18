@@ -191,28 +191,65 @@ where
     F: Fn(OpRef) -> Fut,
     Fut: Future<Output = Result<Option<HeldOp>, GovernanceRuntimeError>>,
 {
-    let mut tried: BTreeSet<OpHash> = seed.iter().map(|op| op.hash).collect();
+    let mut have: BTreeSet<OpHash> = seed.iter().map(|op| op.hash).collect();
+    let mut tried: BTreeSet<(OpHash, String)> = BTreeSet::new();
     let mut wanted: Vec<OpRef> = start.to_vec();
     if !seed.is_empty() {
         wanted.extend(verify_held_cached(anchor, &seed, verdicts).missing);
     }
     let mut held = seed;
     loop {
-        let level: Vec<OpRef> = wanted
+        let level: Vec<OpRef> = locators(&wanted, &held)
             .into_iter()
-            .filter(|r| tried.insert(r.op_hash))
+            .filter(|r| {
+                !have.contains(&r.op_hash) && tried.insert((r.op_hash, r.author_record.clone()))
+            })
             .collect();
         let fetched: Vec<HeldOp> = stream::iter(level.into_iter().map(&fetch))
             .buffer_unordered(WALK_FETCHES_IN_FLIGHT)
             .try_filter_map(|op| async move { Ok(op) })
             .try_collect()
             .await?;
+        // Two locators of one op may both answer within a level.
+        let fetched: Vec<HeldOp> = fetched
+            .into_iter()
+            .filter(|op| have.insert(op.hash))
+            .collect();
         if fetched.is_empty() {
             return Ok(held);
         }
         held.extend(fetched);
         wanted = verify_held_cached(anchor, &held, verdicts).missing;
     }
+}
+
+/// Where the ops `wanted` names may be read: each ref as cited, then the
+/// same op at every other member record of its author that `held` shows.
+/// A re-joiner's earlier ops are cited at the record of its first join,
+/// which may never have held them (an op still queued there when it was
+/// removed); the re-join writes its whole chain onto its fresh record at
+/// the same chain seq (`mirror_own_chain` on the Host), and later ops cite
+/// that record. The op hash, checked on every fetch (`held_from_encoded`),
+/// names the op; a record only says where to look, as a Matrix server
+/// fetches a missing event from any server in the room
+/// (`/get_missing_events`), not only from its sender's.
+#[must_use]
+pub fn locators(wanted: &[OpRef], held: &[HeldOp]) -> Vec<OpRef> {
+    let mut records: BTreeMap<[u8; 32], BTreeSet<&str>> = BTreeMap::new();
+    for op in held {
+        (records.entry(op.author.0).or_default()).insert(op.author_record.as_str());
+    }
+    let mut out = Vec::with_capacity(wanted.len());
+    for r in wanted {
+        out.push(r.clone());
+        let others = (records.get(&r.author.0).into_iter().flatten())
+            .filter(|record| **record != r.author_record);
+        out.extend(others.map(|record| OpRef {
+            author_record: (*record).to_owned(),
+            ..r.clone()
+        }));
+    }
+    out
 }
 
 #[cfg(test)]

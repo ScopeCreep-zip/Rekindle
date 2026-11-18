@@ -39,10 +39,10 @@ async fn all_list(community: &Community, who: &str, nodes: &[usize]) -> bool {
     .await
 }
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_kicked_member_rejoins_and_posts() {
-    let mut community = Community::create(2, 331).await;
-
+/// Node 1 (bea) joins with its first `MemberJoined` never landing on its op
+/// log, is kicked by node 0, and re-joins through a fresh invite; returns
+/// bea's pseudonym. Bea's first member record stays refusing writes.
+async fn kick_and_rejoin(community: &mut Community) -> String {
     // Bea's first join: the inviter answers no call, so the bootstrap
     // exchange times out, and its op log refuses the `MemberJoined`.
     let link = community.invite().await;
@@ -121,6 +121,13 @@ async fn a_kicked_member_rejoins_and_posts() {
         all_list(&community, &bea, &[0, 1]).await,
         "the inviter and the re-joiner list bea again"
     );
+    bea
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_kicked_member_rejoins_and_posts() {
+    let mut community = Community::create(2, 331).await;
+    kick_and_rejoin(&mut community).await;
     community
         .post(1, "back after the kick")
         .await
@@ -128,5 +135,70 @@ async fn a_kicked_member_rejoins_and_posts() {
     assert!(
         community.reads(0, "back after the kick", LIMIT).await,
         "the inviter reads the re-joiner's post"
+    );
+}
+
+/// Node `i`'s merged members and removals, by pseudonym.
+fn roster(community: &Community, i: usize) -> (Vec<PseudonymKey>, Vec<PseudonymKey>) {
+    let state = (community.nodes[i].host.governance())
+        .governance_state(&community.governance_key)
+        .expect("a merged governance state");
+    let mut members: Vec<PseudonymKey> = state.members.keys().cloned().collect();
+    let mut removed: Vec<PseudonymKey> = state.removed.keys().cloned().collect();
+    members.sort_by_key(|k| k.0);
+    removed.sort_by_key(|k| k.0);
+    (members, removed)
+}
+
+/// A third member joins after the kick-and-rejoin, through a fresh invite
+/// from the owner: its walk reaches bea's chain, whose seq 0 the owner's
+/// ops cite by bea's first member record, which never held it. It merges
+/// the owner's roster (bea listed, not removed) and reads bea's next post,
+/// as a Matrix server joining later replays the leave and the re-join in
+/// order and ends with the member joined.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_member_joining_after_a_kick_and_rejoin_sees_the_rejoiner() {
+    let mut community = Community::create(3, 337).await;
+    let bea = kick_and_rejoin(&mut community).await;
+    let owner = community.pseudonym(0).await;
+
+    community.join(2).await;
+    assert!(
+        all_list(&community, &bea, &[0, 1, 2]).await,
+        "the third member lists bea"
+    );
+    assert!(
+        listed(&community, 2, &owner).await.is_some(),
+        "the third member lists the owner"
+    );
+    let bea_key = PseudonymKey::from_hex_lossy(&bea);
+    let merged = eventually(&community.sim, LIMIT, || async {
+        roster(&community, 2) == roster(&community, 0)
+    })
+    .await;
+    let (members, removed) = roster(&community, 2);
+    assert!(
+        merged,
+        "the third member merges the owner's roster: {:?} vs {:?}",
+        roster(&community, 2),
+        roster(&community, 0)
+    );
+    assert!(members.contains(&bea_key), "bea is a member");
+    assert!(
+        !removed.contains(&bea_key),
+        "bea is not removed: {removed:?}"
+    );
+
+    community
+        .post(1, "seen by the third member")
+        .await
+        .expect("the re-joiner posts");
+    assert!(
+        community.reads(2, "seen by the third member", LIMIT).await,
+        "the third member reads the re-joiner's post"
+    );
+    assert!(
+        community.reads(0, "seen by the third member", LIMIT).await,
+        "the owner reads the re-joiner's post"
     );
 }
