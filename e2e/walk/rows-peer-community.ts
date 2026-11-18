@@ -24,8 +24,11 @@ async function createInvite(b: Browser, passphrase: string): Promise<string> {
   await (await byText(b, ".modal-container .form-btn-primary", "Create")).click();
   await resolveIntent(b, { passphrase, appearMs: 3000 });
   await waitUntil(async () => (await b.$$(".invite-link-display")).length > before, NET_WAIT_MS, "no new invite link shown");
-  const links = await b.$$(".invite-link-display");
-  const link = (await links[links.length - 1].getText()).trim();
+  // The link is the read-only input's value; the box's text is only its
+  // buttons, "Copy Link" and "Dismiss" (InvitesTab.tsx:126-145).
+  const links = await b.$$(".invite-link-display input");
+  const link = (await links[links.length - 1].getValue()).trim();
+  if (!link.startsWith("rekindle://invite/")) throw new Error(`the new invite shows no link: "${link.slice(0, 40)}"`);
   await closeCommunityModal(b);
   return link;
 }
