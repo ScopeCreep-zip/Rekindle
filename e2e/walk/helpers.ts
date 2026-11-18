@@ -36,10 +36,29 @@ export async function present(b: Browser, selector: string): Promise<boolean> {
   return (await el.isExisting()) && (await el.isDisplayed());
 }
 
+/**
+ * Run every finite CSS animation in the page to its end state, as
+ * Playwright's `animations: "disabled"` does. The walk's windows sit behind
+ * other windows, where WebKit reports `visibilityState` "hidden" and its
+ * animation clock stands still: a new message's `fade-in`
+ * (animations.css:35-37, MessageBubble.tsx:136) stayed at currentTime 0 and
+ * opacity 0, so webdriverio's isDisplayed (opacity checked) said false for a
+ * message in the list (probe of M42, 2026-11-17). A window a user looks at
+ * runs the 0-to-1 fade itself.
+ */
+export async function settleAnimations(b: Browser): Promise<void> {
+  await b.execute(() => {
+    for (const a of document.getAnimations()) {
+      if (a.effect?.getComputedTiming().iterations !== Infinity) a.finish();
+    }
+  });
+}
+
 /** First displayed element under `selector` whose visible text contains `text`. */
 export async function byText(b: Browser, selector: string, text: string, timeout = WAIT_MS): Promise<El> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
+    await settleAnimations(b);
     for (const el of await b.$$(selector)) {
       if ((await el.isDisplayed()) && (await el.getText()).includes(text)) return el as unknown as El;
     }

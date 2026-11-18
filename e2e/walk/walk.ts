@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Browser } from "webdriverio";
-import { Skip } from "./helpers.ts";
+import { Skip, settleAnimations } from "./helpers.ts";
 import { OUT_DIR, build, launch, openSession, renewSession, type App } from "./launch.ts";
 import { allRows, type RowContext, type WalkState } from "./rows.ts";
 import { renewPeerSession, stopPeer } from "./rows-peer.ts";
@@ -37,6 +37,7 @@ function message(err: unknown): string {
 async function screenshot(b: Browser, row: string): Promise<string | null> {
   const file = path.join(OUT_DIR, `${row}.png`);
   try {
+    await settleAnimations(b);
     await b.saveScreenshot(file);
     return path.relative(OUT_DIR, file);
   } catch {
