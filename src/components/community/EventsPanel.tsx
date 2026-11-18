@@ -2,6 +2,7 @@ import { Component, For, Show, createSignal, createMemo, onMount } from "solid-j
 import { communityState } from "../../stores/community.store";
 import type { EventRsvp, ScheduledEvent } from "../../stores/community.store";
 import { formatEventCountdown } from "../../utils/time";
+import { hasPermission, servedPermissions, MANAGE_EVENTS } from "../../utils/permissions";
 import { handleRsvpEvent, handleDeleteEvent, handleCancelEvent, handleLoadEvents } from "../../actions/community.actions";
 
 interface EventsPanelProps {
@@ -55,7 +56,12 @@ const EventCard: Component<{
   const isInteractable = createMemo(() =>
     props.event.status === "scheduled" || props.event.status === "active"
   );
-  const isCreator = createMemo(() => props.event.creatorPseudonym === props.myPseudonymKey);
+  // Editing, cancelling and deleting an event need MANAGE_EVENTS on the
+  // Host, whoever created it (plan E3.2 S9): the backend's flags decide,
+  // not a creator check here.
+  const canManage = createMemo(() =>
+    hasPermission(servedPermissions(communityState.communities[props.communityId]), MANAGE_EVENTS),
+  );
 
   function handleRsvp(status: string): void {
     handleRsvpEvent(props.communityId, props.event.id, status);
@@ -123,7 +129,7 @@ const EventCard: Component<{
           </span>
         </div>
       </Show>
-      <Show when={isCreator()}>
+      <Show when={canManage()}>
         <div class="event-card-actions">
           <Show when={isInteractable() && props.onEditEvent}>
             <button class="form-btn-secondary" onClick={() => props.onEditEvent!(props.event)}>

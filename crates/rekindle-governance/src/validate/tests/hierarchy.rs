@@ -16,7 +16,7 @@ use super::*;
 /// - pseudo(6): mod (position 2)
 /// - pseudo(7): another admin (position 5)
 /// - pseudo(99): regular member (no roles → position 0)
-fn state_with_three_tier_hierarchy() -> GovernanceState {
+pub(super) fn state_with_three_tier_hierarchy() -> GovernanceState {
     let mut roles = HashMap::new();
     roles.insert(
         rid(0),

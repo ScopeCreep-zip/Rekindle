@@ -66,6 +66,7 @@ pub fn group_members<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dto::community::TargetModeration;
 
     fn member(name: &str, status: &str, role_ids: &[u32]) -> CommunityMemberView {
         CommunityMemberView {
@@ -84,6 +85,8 @@ mod tests {
             location: None,
             last_active: 0,
             group: MemberGroup::Offline,
+            can_moderate_target: TargetModeration::default(),
+            outranks: false,
         }
     }
 

@@ -155,28 +155,26 @@ test("a card for a member the list lacks re-reads the list", async ({ page }) =>
   await expect(page.locator(".member-list .member-name")).toHaveText(["AdminOnline", "Peer"]);
 });
 
-// The Owner role's position is `u32::MAX` end to end (plan E7.13, walk 19 c:
-// the Host cast it to −1, so the owner ranked below a member with any role,
-// or none, and its menu hid the moderation items). 4294967295 is exact in a
-// JS number.
+// The owner's menu offers every moderation item the Host allows (plan
+// E7.13, walk 19 c: the window once ranked the owner itself, casting the
+// Owner role's `u32::MAX` position to -1, and hid the items). The window
+// ranks no one now (plan E3.2 S9): our served flags hold ADMINISTRATOR and
+// AdminBusy's row carries the Host's verdicts, which the validator computes
+// (`rekindle-governance` `validate::target`, tested there and in the Host's
+// `views_tests`).
 const OWNER_HANDLER = HANDLER.replace(
-  /roles: \[[\s\S]*?myRoleIds: \[0, 1\]/,
-  `roles: [
-          { id: 0, name: "@everyone", color: 0, permissions: "65536", position: 0,
-            hoist: false, mentionable: false },
-          { id: 1, name: "Mods", color: 0, permissions: "65536", position: 5,
-            hoist: false, mentionable: false },
-          { id: 9, name: "Owner", color: 0, permissions: "1125899906842624",
-            position: 4294967295, hoist: true, mentionable: false },
-        ],
-        myPseudonymKey: "\${ME}", myRoleIds: [0, 9]`,
+  'myPermissions: "65536"',
+  'myPermissions: "1125899906842624"',
+).replace(
+  '"displayName":"AdminBusy","roleIds":[0,1],"displayRole":"Admins","status":"busy","timeoutUntil":null,"lastActive":0,"group":{"kind":"role","id":1,"name":"Admins"}',
+  '"displayName":"AdminBusy","roleIds":[0,1],"displayRole":"Admins","status":"busy","timeoutUntil":null,"lastActive":0,"group":{"kind":"role","id":1,"name":"Admins"},"canModerateTarget":{"kick":true,"ban":true,"timeout":true},"outranks":true',
 );
 
 test("the owner's menu on a member with a role offers every moderation item", async ({ page }) => {
-  expect(OWNER_HANDLER).toContain("4294967295");
+  expect(OWNER_HANDLER).toContain('"outranks":true');
+  expect(OWNER_HANDLER).toContain('myPermissions: "1125899906842624"');
   await preloadMocks(page, "community", OWNER_HANDLER);
   await page.goto(`/community?id=${COMMUNITY}`);
-  // AdminBusy holds roles [0, 1]: Mods, position 5.
   await page.locator(".member-list .member-name", { hasText: "AdminBusy" }).click({ button: "right" });
   const menu = page.getByRole("menu");
   for (const item of ["Manage Roles", "Timeout", "Kick Member", "Ban Member"]) {

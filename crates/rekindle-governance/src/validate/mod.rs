@@ -25,6 +25,7 @@ use crate::state::GovernanceState;
 mod automod;
 pub mod bounds;
 mod limits;
+pub mod target;
 mod threads;
 
 use automod::validate_automod_rule;
@@ -152,9 +153,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         // The durable kick: the same authority and hierarchy as a ban,
         // and the creator cannot be removed (MSC4289).
         GovernanceEntry::MemberRemoved { target, .. } => {
-            has(perms, KICK_MEMBERS)
-                && state.creator.as_ref() != Some(target)
-                && state.member_max_position(target) < state.member_max_position(writer)
+            target::acts_on_lower(perms, KICK_MEMBERS, writer, target, state)
         }
 
         // Admitting and removing a member are the same authority, so
@@ -221,16 +220,10 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
             state.member_max_position(target) < state.member_max_position(writer)
         }
 
+        // M10.2 — the creator cannot be banned by anyone; architecture
+        // §9.3 — rank-strict gating.
         GovernanceEntry::BanEntry { target, .. } => {
-            if !has(perms, BAN_MEMBERS) {
-                return false;
-            }
-            // M10.2 — creator cannot be banned by anyone.
-            if state.creator.as_ref() == Some(target) {
-                return false;
-            }
-            // Architecture §9.3 — rank-strict gating.
-            state.member_max_position(target) < state.member_max_position(writer)
+            target::acts_on_lower(perms, BAN_MEMBERS, writer, target, state)
         }
 
         // Unbans don't carry a hierarchy concern: banned members hold no
@@ -238,16 +231,10 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         // with BAN_MEMBERS can lift a ban.
         GovernanceEntry::UnbanEntry { .. } => has(perms, BAN_MEMBERS),
 
+        // M10.2 — the creator cannot be timed out by anyone; architecture
+        // §9.3 — rank-strict gating.
         GovernanceEntry::TimeoutEntry { target, .. } => {
-            if !has(perms, TIMEOUT_MEMBERS) {
-                return false;
-            }
-            // M10.2 — creator cannot be timed out by anyone.
-            if state.creator.as_ref() == Some(target) {
-                return false;
-            }
-            // Architecture §9.3 — rank-strict gating.
-            state.member_max_position(target) < state.member_max_position(writer)
+            target::acts_on_lower(perms, TIMEOUT_MEMBERS, writer, target, state)
         }
 
         GovernanceEntry::RemoveTimeoutEntry { .. } => has(perms, TIMEOUT_MEMBERS),

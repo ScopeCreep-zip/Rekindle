@@ -211,6 +211,28 @@ pub struct CommunityMemberView {
     /// The member-list group this row falls under, decided by the Host
     /// ([`super::member_groups::group_members`]); every frontend renders it.
     pub group: MemberGroup,
+    /// Which moderation actions we may take against this member, as the
+    /// governance validator decides them from the merged state (plan E3.2
+    /// S9); all false on our own row.
+    #[serde(default)]
+    pub can_moderate_target: TargetModeration,
+    /// Whether we outrank this member in the role hierarchy (the
+    /// validator's rank rule): role changes and voice moderation need it.
+    #[serde(default)]
+    pub outranks: bool,
+}
+
+/// The moderation actions we may take against one member, each the
+/// governance validator's verdict on the entry it writes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TargetModeration {
+    /// `MemberRemoved`.
+    pub kick: bool,
+    /// `BanEntry`.
+    pub ban: bool,
+    /// `TimeoutEntry`.
+    pub timeout: bool,
 }
 
 /// The member-list group a member falls under (Discord's member list): a

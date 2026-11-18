@@ -147,6 +147,11 @@
     "uses": 2
   },
   "community.memberView": {
+    "canModerateTarget": {
+      "ban": false,
+      "kick": true,
+      "timeout": true
+    },
     "displayName": "Bea",
     "displayRole": "Shooters",
     "group": {
@@ -155,6 +160,7 @@
       "name": "Shooters"
     },
     "lastActive": 0,
+    "outranks": true,
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "roleIds": [
       0,

@@ -27,6 +27,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
 
   const mentions = useMentionAutocomplete({
     communityId: () => props.communityId,
+    channelId: () => props.peerId,
     body,
     setBody,
     getTextarea: () => textareaRef,

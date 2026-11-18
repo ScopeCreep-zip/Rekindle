@@ -3,7 +3,7 @@ import Modal from "../common/Modal";
 import ConfirmDialog from "../common/ConfirmDialog";
 import type { Community } from "../../stores/community.store";
 import {
-  calculateBasePermissions,
+  servedPermissions,
   hasPermission,
   MANAGE_CHANNELS,
   MANAGE_COMMUNITY,
@@ -36,7 +36,6 @@ import type { ConfirmOptions } from "./settings/types";
 interface CommunitySettingsModalProps {
   isOpen: boolean;
   community: Community;
-  myRoleIds: number[];
   onClose: () => void;
 }
 
@@ -46,9 +45,8 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
   const [confirmAction, setConfirmAction] = createSignal<ConfirmOptions | null>(null);
 
-  const myPerms = createMemo(() =>
-    calculateBasePermissions(props.myRoleIds, props.community.roles),
-  );
+  // The backend's base flags (plan E3.2 S9).
+  const myPerms = createMemo(() => servedPermissions(props.community));
 
   const canManageCommunity = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
   const canManageChannels = createMemo(() => hasPermission(myPerms(), MANAGE_CHANNELS));
@@ -130,10 +128,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         <Show when={activeTab() === "members"}>
           <MembersTab
             community={props.community}
-            myRoleIds={props.myRoleIds}
             canManageRoles={canManageRoles()}
-            canKick={canKick()}
-            canBan={canBan()}
             canModerate={canModerate()}
             canManageCommunity={canManageCommunity()}
           />

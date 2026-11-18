@@ -29,7 +29,6 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
             <MemberList
               members={vm.activeCommunity()!.members}
               communityId={vm.selectedCommunityId()}
-              myRoleIds={vm.myRoleIds()}
               roles={vm.activeCommunity()!.roles}
               myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
             />

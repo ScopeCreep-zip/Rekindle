@@ -1,5 +1,3 @@
-import type { Role } from "../stores/community.store";
-
 export const VIEW_CHANNELS = 1n << 0n;
 export const MANAGE_CHANNELS = 1n << 1n;
 export const MANAGE_ROLES = 1n << 2n;
@@ -79,26 +77,17 @@ export function isAdministrator(permissions: string | bigint | null | undefined)
   return (permissionBits(permissions) & ADMINISTRATOR) !== 0n;
 }
 
-export function calculateBasePermissions(roleIds: number[], allRoles: Role[]): bigint {
-  let perms = 0n;
-  for (const id of roleIds) {
-    const role = allRoles.find((r) => r.id === id);
-    if (role) perms |= permissionBits(role.permissions);
-  }
-  return perms;
-}
-
-export function canManageRole(myHighestPosition: number, targetPosition: number): boolean {
-  return myHighestPosition > targetPosition;
-}
-
-export function highestPosition(roleIds: number[], allRoles: Role[]): number {
-  let max = -1;
-  for (const id of roleIds) {
-    const role = allRoles.find((r) => r.id === id);
-    if (role && role.position > max) max = role.position;
-  }
-  return max;
+/** What we may do in a community, as the backend computed it from the
+ *  merged governance (plan E3.2 S9): `channelId`'s effective permissions
+ *  (base plus its overwrites) when given and known, else the base. The
+ *  frontend computes no policy from roles. */
+export function servedPermissions(
+  community: { myPermissions: string; myChannelPermissions: Record<string, string> } | null | undefined,
+  channelId?: string | null,
+): bigint {
+  if (!community) return 0n;
+  const inChannel = channelId ? community.myChannelPermissions[channelId] : undefined;
+  return permissionBits(inChannel ?? community.myPermissions);
 }
 
 export function togglePermBit(current: bigint, bit: bigint): bigint {

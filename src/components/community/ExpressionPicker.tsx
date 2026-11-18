@@ -8,7 +8,7 @@ import {
   handleUploadSticker,
 } from "../../actions/community.actions";
 import {
-  calculateBasePermissions,
+  servedPermissions,
   CREATE_EXPRESSIONS,
   hasPermission,
   MANAGE_EXPRESSIONS,
@@ -76,11 +76,8 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
     return all.filter((expression) => expression.name.toLowerCase().includes(query));
   });
 
-  const myPerms = createMemo(() => {
-    const current = community();
-    if (!current) return 0n;
-    return calculateBasePermissions(current.myRoleIds, current.roles);
-  });
+  // The backend's base flags (plan E3.2 S9): expressions are community-wide.
+  const myPerms = createMemo(() => servedPermissions(community()));
 
   const canUpload = createMemo(() => {
     if (myPerms() === 0n) return false;

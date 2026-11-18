@@ -12,7 +12,6 @@ import {
   handleRemoveTimeout,
   handleExpandCommunitySegment,
 } from "../../../actions/community.actions";
-import { highestPosition } from "../../../ipc/permissions";
 import {
   ICON_SHIELD,
   ICON_TIMEOUT,
@@ -22,10 +21,7 @@ import {
 
 interface MembersTabProps {
   community: Community;
-  myRoleIds: number[];
   canManageRoles: boolean;
-  canKick: boolean;
-  canBan: boolean;
   canModerate: boolean;
   canManageCommunity: boolean;
 }
@@ -61,10 +57,11 @@ const MembersTab: Component<MembersTabProps> = (props) => {
       .map((r) => ({ name: r.name, color: r.color }));
   }
 
+  // What we may do to a member is the Host's per-member verdict (plan
+  // E3.2 S9): the validator's rank rule, never a rank compared here.
   function canManageMember(member: Member): boolean {
-    const myPos = highestPosition(props.myRoleIds, props.community.roles);
-    const memberPos = highestPosition(member.roleIds, props.community.roles);
-    return myPos > memberPos && member.pseudonymKey !== props.community.myPseudonymKey;
+    const may = member.canModerateTarget;
+    return member.outranks || may.kick || may.ban || may.timeout;
   }
 
   function kickMember(member: Member): void {
@@ -170,7 +167,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
             </div>
             <Show when={canManageMember(member)}>
               <div class="settings-member-actions">
-                <Show when={props.canManageRoles}>
+                <Show when={member.outranks && props.canManageRoles}>
                   <button
                     class="form-btn-secondary"
                     onClick={() => setRolePickerTarget(
@@ -180,7 +177,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     <span class="nf-icon">{ICON_SHIELD}</span> Roles
                   </button>
                 </Show>
-                <Show when={props.canModerate}>
+                <Show when={member.timeoutUntil ? props.canModerate : member.canModerateTarget.timeout}>
                   <Show when={!member.timeoutUntil} fallback={
                     <button
                       class="form-btn-secondary"
@@ -209,7 +206,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     </select>
                   </Show>
                 </Show>
-                <Show when={props.canKick}>
+                <Show when={member.canModerateTarget.kick}>
                   <button
                     class="form-btn-secondary"
                     onClick={() => kickMember(member)}
@@ -217,7 +214,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Kick
                   </button>
                 </Show>
-                <Show when={props.canBan}>
+                <Show when={member.canModerateTarget.ban}>
                   <button
                     class="form-btn-danger"
                     onClick={() => banMember(member)}

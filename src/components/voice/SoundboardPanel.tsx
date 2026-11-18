@@ -4,7 +4,7 @@ import { voiceState } from "../../stores/voice.store";
 import { handlePlaySoundboard } from "../../actions/community.actions";
 import {
   USE_SOUNDBOARD,
-  calculateBasePermissions,
+  servedPermissions,
   hasPermission,
 } from "../../utils/permissions";
 
@@ -28,12 +28,10 @@ const SoundboardPanel: Component = () => {
     return c.expressions.filter((e) => e.kind === "soundboard");
   });
 
-  const canUse = createMemo(() => {
-    const c = community();
-    if (!c) return false;
-    const perms = calculateBasePermissions(c.myRoleIds, c.roles);
-    return hasPermission(perms, USE_SOUNDBOARD);
-  });
+  // The backend's flags for the voice channel we are in (plan E3.2 S9).
+  const canUse = createMemo(() =>
+    hasPermission(servedPermissions(community(), voiceState.channelId), USE_SOUNDBOARD),
+  );
 
   function play(expressionId: string): void {
     const c = community();

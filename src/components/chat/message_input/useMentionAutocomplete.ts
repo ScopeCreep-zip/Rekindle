@@ -1,6 +1,6 @@
 import { createMemo, createSignal, type Accessor, type Setter } from "solid-js";
 import { communityState } from "../../../stores/community.store";
-import { calculateBasePermissions, hasPermission, MENTION_EVERYONE } from "../../../ipc/permissions";
+import { servedPermissions, hasPermission, MENTION_EVERYONE } from "../../../ipc/permissions";
 
 // Architecture §28.5 — mentions: `@user`, `@role`, `@everyone`,
 // `@here`. Backend resolves by display-name (members) or role-name
@@ -17,6 +17,9 @@ export interface MentionCandidate {
 
 interface MentionAutocompleteArgs {
   communityId: () => string | undefined;
+  /** The channel being written in: its overwrites can grant or deny
+   *  MENTION_EVERYONE. */
+  channelId: () => string | undefined;
   body: Accessor<string>;
   setBody: Setter<string>;
   getTextarea: () => HTMLTextAreaElement | undefined;
@@ -42,11 +45,10 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
 
     const candidates: MentionCandidate[] = [];
 
-    // Architecture §17.2 + §28.5 — @everyone / @here gate locally;
-    // sender's MENTION_EVERYONE bit determines whether the receiver
-    // actually escalates the notification, but we surface them in the
-    // picker for everyone (the literal text always renders).
-    const perms = calculateBasePermissions(community.myRoleIds, community.roles);
+    // Architecture §17.2 + §28.5 — @everyone / @here are offered when the
+    // backend's flags for this channel grant MENTION_EVERYONE (plan E3.2
+    // S9); the literal text always renders.
+    const perms = servedPermissions(community, args.channelId());
     const canMentionEveryone = hasPermission(perms, MENTION_EVERYONE);
     if (canMentionEveryone) {
       if (matches("everyone")) {

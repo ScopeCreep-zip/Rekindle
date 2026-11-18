@@ -41,7 +41,6 @@ const CommunityModals: Component<{ vm: CommunityVm }> = (props) => {
         <CommunitySettingsModal
           isOpen={vm.showSettings()}
           community={vm.activeCommunity()!}
-          myRoleIds={vm.myRoleIds()}
           onClose={() => vm.setShowSettings(false)}
         />
         <Show when={vm.showSearch()}>

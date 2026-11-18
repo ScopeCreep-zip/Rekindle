@@ -26,7 +26,30 @@ const SEND = "65536"; // VIEW_CHANNELS is bit 0, SEND_MESSAGES bit 16
 const VIEW_ONLY = "1";
 const DENIED = "You don't have permission to send messages";
 
-// The roles grant SEND_MESSAGES, so only the backend's flags can deny it.
+const ADMINISTRATOR = (1n << 50n).toString();
+const BOB = "b".repeat(64);
+const CAROL = "c".repeat(64);
+
+// A member row as the Host serves it, with its per-member verdicts.
+const member = (key: string, name: string, may: object, outranks: boolean) => ({
+  pseudonymKey: key, displayName: name, roleIds: [0], displayRole: "@everyone",
+  status: "online", timeoutUntil: null, lastActive: 0, group: { kind: "online" },
+  canModerateTarget: may, outranks,
+});
+
+// Bob's verdicts allow a ban only; Carol's nothing although we outrank her.
+const MEMBERS = [
+  member(BOB, "Bob", { kick: false, ban: true, timeout: false }, false),
+  member(CAROL, "Carol", { kick: false, ban: false, timeout: false }, true),
+];
+
+// One event we created, starting tomorrow.
+const EVENTS = `[{ id: "evt_${"1".repeat(32)}", title: "LAN night", description: "",
+  creatorPseudonym: "${ME}", startTime: Math.floor(Date.now() / 1000) + 86400,
+  createdAt: 0, status: "scheduled", rsvps: [] }]`;
+
+// The roles grant SEND_MESSAGES (and our own role ADMINISTRATOR at the top
+// rank), so only the backend's flags can deny anything.
 function handler(channelPerms: string): string {
   return `
   switch (cmd) {
@@ -40,11 +63,17 @@ function handler(channelPerms: string): string {
         id: "${COMMUNITY}", name: "Lan Party", description: null,
         channels: [{ id: "ch1", name: "general", channelType: "text" }],
         roles: [{ id: 0, name: "@everyone", color: 0, permissions: "${SEND}", position: 0,
+                  hoist: false, mentionable: false },
+                { id: 1, name: "Admins", color: 0, permissions: "${ADMINISTRATOR}", position: 9,
                   hoist: false, mentionable: false }],
-        myPseudonymKey: "${ME}", myRoleIds: [0],
+        myPseudonymKey: "${ME}", myRoleIds: [0, 1],
         myPermissions: window.__myPermissions ?? "${SEND}",
         myChannelPermissions: ${channelPerms}, removed: null,
       }];
+    case "get_community_members":
+      return ${JSON.stringify(MEMBERS)};
+    case "get_events":
+      return ${EVENTS};
     case "get_welcome_screen":
       return { description: "", channels: [] };
     case "get_onboarding_config":
@@ -87,4 +116,30 @@ test("our effectivePermissionsChanged re-reads the flags live", async ({ page })
   );
   await expect(page.getByText(DENIED)).toBeVisible();
   await expect(composer(page)).toHaveCount(0);
+});
+
+test("a member's menu shows exactly the Host's verdicts for that member", async ({ page }) => {
+  await open(page, "{}");
+  const list = page.locator(".member-list");
+  await list.getByText("Bob", { exact: true }).click({ button: "right" });
+  const menu = page.locator(".context-menu").first();
+  await expect(menu.getByText("Ban Member")).toBeVisible();
+  await expect(menu.getByText("Kick Member")).toHaveCount(0);
+  await expect(menu.getByText("Timeout")).toHaveCount(0);
+  await expect(menu.getByText("Manage Roles")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  // We outrank Carol, but our served flags lack MANAGE_ROLES and her
+  // verdicts are all false: only Block is offered.
+  await list.getByText("Carol", { exact: true }).click({ button: "right" });
+  const carol = page.getByRole("menu");
+  await expect(carol.getByRole("menuitem", { name: / Block$/ })).toBeVisible();
+  await expect(carol.getByText("Manage Roles")).toHaveCount(0);
+  await expect(carol.getByText("Ban Member")).toHaveCount(0);
+});
+
+test("an event's actions follow the served MANAGE_EVENTS, not who created it", async ({ page }) => {
+  await open(page, "{}");
+  await page.getByText("All events").click();
+  await expect(page.getByText("LAN night").last()).toBeVisible();
+  await expect(page.getByText("Delete Event")).toHaveCount(0);
 });

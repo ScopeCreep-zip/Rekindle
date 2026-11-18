@@ -26,12 +26,8 @@ import {
   loadCommunityBlocks,
 } from "../../actions/community.actions";
 import {
-  calculateBasePermissions,
-  highestPosition,
+  servedPermissions,
   hasPermission,
-  KICK_MEMBERS,
-  BAN_MEMBERS,
-  MODERATE_MEMBERS,
   MANAGE_ROLES,
   MUTE_MEMBERS,
   DEAFEN_MEMBERS,
@@ -40,7 +36,6 @@ import {
 interface MemberListProps {
   members: Member[];
   communityId: string;
-  myRoleIds: number[];
   roles: Role[];
   myPseudonymKey: string | null;
 }
@@ -85,17 +80,9 @@ const MemberList: Component<MemberListProps> = (props) => {
     setBlocked(set);
   }
 
+  /** The backend's base flags (plan E3.2 S9). */
   function myPerms(): bigint {
-    return calculateBasePermissions(props.myRoleIds, props.roles);
-  }
-
-  function myPosition(): number {
-    return highestPosition(props.myRoleIds, props.roles);
-  }
-
-  function canManage(member: Member): boolean {
-    const memberPos = highestPosition(member.roleIds, props.roles);
-    return myPosition() > memberPos;
+    return servedPermissions(communityState.communities[props.communityId]);
   }
 
   // Architecture §10 — server-mute / server-deafen apply only when the
@@ -163,8 +150,11 @@ const MemberList: Component<MemberListProps> = (props) => {
   });
 
   function memberMenu(member: Member): JSX.Element {
+    // Each action shows exactly when the Host would accept it: its
+    // per-member verdicts (plan E3.2 S9), never a rank compared here.
     const perms = myPerms();
-    const manage = canManage(member);
+    const manage = member.outranks;
+    const may = member.canModerateTarget;
     const voiceChannelId = memberVoiceChannelId(member);
     const assignableRoles = props.roles
       .filter((r) => r.id !== 0)
@@ -205,7 +195,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Sub>
           </Show>
 
-          <Show when={manage && hasPermission(perms, MODERATE_MEMBERS)}>
+          <Show when={may.timeout}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
                 <span class="nf-icon context-menu-icon">{ICON_TIMEOUT}</span>
@@ -268,7 +258,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={manage && hasPermission(perms, KICK_MEMBERS)}>
+          <Show when={may.kick}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
@@ -280,7 +270,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={manage && hasPermission(perms, BAN_MEMBERS)}>
+          <Show when={may.ban}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>

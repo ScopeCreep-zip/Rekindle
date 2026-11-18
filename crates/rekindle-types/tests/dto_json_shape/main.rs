@@ -13,7 +13,7 @@ use std::path::PathBuf;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
-    CommunityMemberView, MemberGroup,
+    CommunityMemberView, MemberGroup, TargetModeration,
 };
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{
@@ -328,6 +328,12 @@ fn onboarding_samples(add: &mut impl FnMut(&str, Value)) {
                 id: 5,
                 name: "Shooters".into(),
             },
+            can_moderate_target: TargetModeration {
+                kick: true,
+                ban: false,
+                timeout: true,
+            },
+            outranks: true,
         }),
     );
 }

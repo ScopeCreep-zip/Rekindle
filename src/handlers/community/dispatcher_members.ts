@@ -403,6 +403,8 @@ function applyGovernance(g: GovernanceEvent): void {
     // member list, which re-render on their own events.
     const { community, member } = g.effectivePermissionsChanged;
     if (communityState.communities[community]?.myPseudonymKey !== member) return;
+    // Our rank may have moved, so the per-member moderation verdicts too.
+    refreshCommunityMembers(community);
     commands
       .getCommunityDetails()
       .then((details) => {

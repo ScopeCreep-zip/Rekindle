@@ -6,7 +6,7 @@ import type { Friend } from "../stores/friends.store";
 import type { GameInfo } from "../ipc/commands/dto";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
-import type { MemberGroup } from "../ipc/commands/dto";
+import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
 import { truncateKey } from "./formatting";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
@@ -220,6 +220,8 @@ export function transformMember(m: {
   location?: MemberLocation | null;
   lastActive?: number;
   group: MemberGroup;
+  canModerateTarget: TargetModeration;
+  outranks: boolean;
 }): Member {
   return {
     // A member whose card is not read yet shows its short pseudonym, as
@@ -235,6 +237,8 @@ export function transformMember(m: {
     location: m.location ?? null,
     lastActive: m.lastActive ?? 0,
     group: m.group,
+    canModerateTarget: m.canModerateTarget,
+    outranks: m.outranks,
   };
 }
 

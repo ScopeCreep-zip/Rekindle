@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use rekindle_types::dto::community::{
     CommunityCategoryView, CommunityChannelView, CommunityMemberView, CommunityRoleView,
-    CommunityView, MemberGroup,
+    CommunityView, MemberGroup, TargetModeration,
 };
 use rekindle_types::dto::member_groups::{group_members, GroupRole};
 use rekindle_types::id::PseudonymKey;
@@ -224,7 +224,31 @@ fn profile_view(
         location: None,
         last_active: 0,
         group: MemberGroup::Offline,
+        can_moderate_target: TargetModeration::default(),
+        outranks: false,
     }
+}
+
+/// What we may do to `target` by the merged governance `gov` (plan E3.2
+/// S9): each moderation action's validator verdict, and whether we outrank
+/// them; nothing to ourselves, nothing before we hold a pseudonym.
+fn moderation_of(
+    gov: &rekindle_governance::state::GovernanceState,
+    me: Option<&PseudonymKey>,
+    target: &PseudonymKey,
+) -> (TargetModeration, bool) {
+    use rekindle_governance::validate::target::{may_moderate, outranks, TargetAction};
+    let Some(me) = me.filter(|me| *me != target) else {
+        return (TargetModeration::default(), false);
+    };
+    (
+        TargetModeration {
+            kick: may_moderate(me, target, TargetAction::Kick, gov),
+            ban: may_moderate(me, target, TargetAction::Ban, gov),
+            timeout: may_moderate(me, target, TargetAction::Timeout, gov),
+        },
+        outranks(me, target, gov),
+    )
 }
 
 impl HostGovernance {
@@ -286,6 +310,7 @@ impl HostGovernance {
         // as our own are (`projection::project_my_roles`), built once for
         // the list (review RV7 L4); no row caches them.
         let role_ids_of = super::projection::member_role_ids(&governance);
+        let me = overlay.me.as_deref().map(PseudonymKey::from_hex_lossy);
         let timeout_until = |pseudonym: &str| {
             governance
                 .timeouts
@@ -319,8 +344,10 @@ impl HostGovernance {
                     .unwrap_or_default();
                 // The verified card's name first (plan E3.2 F9-2), so a
                 // re-read never undoes a `MemberCardChanged`.
-                let card = (self.ctx.communities)
-                    .member_card_name(community, &PseudonymKey::from_hex_lossy(&row.pseudonym_key));
+                let target = PseudonymKey::from_hex_lossy(&row.pseudonym_key);
+                let card = (self.ctx.communities).member_card_name(community, &target);
+                let (can_moderate_target, outranks) =
+                    moderation_of(&governance, me.as_ref(), &target);
                 CommunityMemberView {
                     display_role: display_role_name(&role_ids, &overlay.roles),
                     display_name: card.or(row.display_name).unwrap_or_default(),
@@ -330,6 +357,8 @@ impl HostGovernance {
                     location,
                     last_active,
                     pseudonym_key: row.pseudonym_key,
+                    can_moderate_target,
+                    outranks,
                     ..profile
                 }
             })

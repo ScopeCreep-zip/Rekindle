@@ -463,3 +463,4 @@ fn onboarding_rejects_unknown_mode() {
 
 mod admin_delete;
 mod hierarchy;
+mod target;

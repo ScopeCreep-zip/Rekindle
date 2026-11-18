@@ -5,7 +5,7 @@ import { handleRotateMek } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import { commands, type CommunityPolicy } from "../../../ipc/commands";
 import {
-  calculateBasePermissions,
+  servedPermissions,
   hasPermission,
   MANAGE_COMMUNITY,
 } from "../../../ipc/permissions";
@@ -34,10 +34,9 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
   const [defaultNotifLevel, setDefaultNotifLevel] = createSignal<"all" | "mentions" | "nothing">("all");
   const [savingDefaultLevel, setSavingDefaultLevel] = createSignal(false);
 
-  const canManageCommunity = createMemo(() => {
-    const perms = calculateBasePermissions(props.community.myRoleIds, props.community.roles);
-    return hasPermission(perms, MANAGE_COMMUNITY);
-  });
+  const canManageCommunity = createMemo(() =>
+    hasPermission(servedPermissions(props.community), MANAGE_COMMUNITY),
+  );
 
   // Architecture §15 — Plate Gate scaling: when segment 0 (or the
   // highest segment) is full, an admin can write a SegmentAdded
