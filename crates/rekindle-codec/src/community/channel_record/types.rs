@@ -172,6 +172,41 @@ pub struct ChannelForward {
     pub message_id: Option<String>,
 }
 
+/// The author's edit of its own message `message_id` (plan E3.3, rule E1):
+/// valid only from the message's author, and the latest by the author's
+/// seq (`lamport_ts`, which only rises per author) wins. The body is sealed
+/// at the edit entry's own position, not the message's.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelEdit {
+    /// The edited message.
+    pub message_id: String,
+    /// The new body (sealed under the channel text key).
+    #[serde(with = "base64_bytes")]
+    pub ciphertext: Vec<u8>,
+    /// The text key generation `ciphertext` is sealed under.
+    pub mek_generation: u64,
+    /// When the author edited it, in seconds.
+    pub edited_at: u64,
+    /// The author's seq: the edit's place among the author's entries.
+    pub lamport_ts: u64,
+}
+
+/// The author's tombstone of its own message `message_id` (plan E3.3, rule
+/// E3): allowed at any time and final, it purges every revision and later
+/// edits are refused. The old ciphertext stays in the author's record and
+/// in peers' copies, so it is "deleted for members", never erased (E4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChannelDelete {
+    /// The deleted message.
+    pub message_id: String,
+    /// When the author deleted it, in seconds.
+    pub deleted_at: u64,
+    /// The author's seq.
+    pub lamport_ts: u64,
+}
+
 /// Any durable entry stored in a channel record page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
@@ -184,12 +219,17 @@ pub enum ChannelRecordEntry {
     PollVote(ChannelPollVote),
     PollClose(ChannelPollClose),
     HandRaise(ChannelHandRaise),
+    Edit(ChannelEdit),
+    Delete(ChannelDelete),
 }
 
 /// A decoded channel record entry together with the subkey it came from.
 #[derive(Debug, Clone)]
 pub struct ChannelRecordItem {
     pub subkey_index: u32,
+    /// The author whose signature the slot value carries: an edit or a
+    /// delete is applied only to that author's own message (plan E3.3 E1).
+    pub author: rekindle_types::id::PseudonymKey,
     /// The seq of the slot value it was read from.
     pub seq: u32,
     /// The digest of that slot value's decrypted page
@@ -211,6 +251,8 @@ impl ChannelRecordEntry {
             Self::PollVote(vote) => vote.lamport,
             Self::PollClose(close) => close.lamport,
             Self::HandRaise(hand_raise) => hand_raise.lamport,
+            Self::Edit(edit) => edit.lamport_ts,
+            Self::Delete(delete) => delete.lamport_ts,
         }
     }
 }

@@ -26,6 +26,7 @@ use crate::host::adapters::governance::HostGovernance;
 use crate::host::adapters::outbox::{post_of_row, Reissuer};
 
 mod blocks;
+pub(crate) mod changes;
 pub mod deps_impl;
 mod dht;
 mod events;

@@ -113,4 +113,8 @@ pub struct ChannelMessageView {
     /// E3.2 S9, F9-3; S7l's key deadline), kept across a reload.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
+    /// When its author last edited it, in seconds (plan E3.3), kept across
+    /// a reload; absent for an unedited message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_at: Option<i64>,
 }

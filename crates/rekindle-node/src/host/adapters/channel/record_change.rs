@@ -4,11 +4,12 @@
 //! read. Every post goes through [`HostChannel::ingest_as`], so the gate's
 //! author checks run before anything is opened, stored or published; a
 //! removed member's write to its still-writable slot is dropped like its
-//! gossip copy.
+//! gossip copy. The author's edits and deletes in a changed value are
+//! applied with its posts (plan E3.3).
 
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_codec::community::channel_record::{
-    decode_channel_entries, ChannelMessage, ChannelRecordEntry,
+    decode_channel_page, ChannelMessage, ChannelRecordEntry,
 };
 use rekindle_types::id::ChannelId;
 
@@ -77,16 +78,27 @@ impl HostChannel {
             }
         };
         for (subkey, value) in values {
-            let Ok(entries) = decode_channel_entries(&value.data) else {
+            let Ok((author, entries)) = decode_channel_page(&value.data) else {
                 continue;
             };
-            let posts = entries.into_iter().filter_map(|entry| match entry {
-                ChannelRecordEntry::Message(m) => Some((subkey, m)),
-                _ => None,
-            });
+            let posts: Vec<(u32, ChannelMessage)> = (entries.iter())
+                .filter_map(|entry| match entry {
+                    ChannelRecordEntry::Message(m) => Some((subkey, m.clone())),
+                    _ => None,
+                })
+                .collect();
             let seq = u64::from(value.seq);
             self.ingest_read(&community, &channel, record_key, posts, seq, false)
                 .await;
+            // The author's edits and deletes in the same value (plan E3.3).
+            let source = super::changes::ChangeSource {
+                community_id: &community,
+                channel_id: &channel,
+                record_key,
+                subkey_index: subkey,
+                author: &author,
+            };
+            self.apply_changes(source, &entries).await;
         }
         true
     }

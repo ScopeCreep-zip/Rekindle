@@ -40,6 +40,30 @@ impl HostChannel {
         self.require_channel_permission(community_id, Some(channel_id), permissions::READ_HISTORY)?;
         let (owner, db) = self.owner_and_db()?;
         let me = self.my_pseudonym_impl(community_id).unwrap_or_default();
+        let removed = self.ctx().communities.own_removal(community_id).is_some();
+        // A community we were removed from is read-only history (plan E3.2
+        // S9): our rows as they were when we opened them. The record is not
+        // read again, so its keys leaving memory never marks a kept row
+        // undecryptable (A/B R3-2), and nothing posted after the removal is
+        // opened, even under a key we still hold.
+        let incoming = if removed {
+            Vec::new()
+        } else {
+            let record =
+                history::read_channel_record(self, community_id, channel_id, before, limit).await?;
+            let incoming =
+                (self.store_record_messages(&owner, community_id, channel_id, record.messages))
+                    .await?;
+            // The authors' edits and deletes (plan E3.3), applied to our rows
+            // before they are read, so the history shows them.
+            self.apply_record_changes(community_id, channel_id, &record.changes)
+                .await;
+            let deleted = deleted_by_author(&record.changes);
+            (incoming.into_iter())
+                .map(|message| message.view)
+                .filter(|view| !deleted_view(&deleted, view))
+                .collect()
+        };
         let (key, channel) = (owner.clone(), channel_id.to_string());
         let before_row = before.map(|b| i64::try_from(b).unwrap_or(i64::MAX));
         let rows = db
@@ -50,24 +74,28 @@ impl HostChannel {
             .into_iter()
             .map(|row| stored_view(row, &owner, &me))
             .collect();
-        if self.ctx().communities.own_removal(community_id).is_some() {
-            // A community we were removed from is read-only history (plan
-            // E3.2 S9): our rows as they were when we opened them. The
-            // record is not read again, so its keys leaving memory never
-            // marks a kept row undecryptable (A/B R3-2), and nothing posted
-            // after the removal is opened, even under a key we still hold.
-            history::merge_message_lists(&mut messages, Vec::new(), limit);
-            return Ok(messages);
-        }
-        let record =
-            history::read_channel_record(self, community_id, channel_id, before, limit).await?;
-        let incoming = (self.store_record_messages(&owner, community_id, channel_id, record))
-            .await?
-            .into_iter()
-            .map(|message| message.view)
-            .collect();
         history::merge_message_lists(&mut messages, incoming, limit);
         Ok(messages)
+    }
+
+    /// Apply `changes`, grouped by the slot value each was read from.
+    async fn apply_record_changes(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+        changes: &[history::RecordChange],
+    ) {
+        for change in changes {
+            let source = super::changes::ChangeSource {
+                community_id,
+                channel_id,
+                record_key: &change.record_key,
+                subkey_index: change.subkey_index,
+                author: &change.author,
+            };
+            self.apply_changes(source, std::slice::from_ref(&change.entry))
+                .await;
+        }
     }
 
     /// Gate (D26) and store each record message we do not hold yet, and
@@ -98,7 +126,7 @@ impl HostChannel {
             .call(move |conn| {
                 (ids.iter())
                     .map(|id| match id {
-                        Some(id) => rows::held_blurred(conn, &key, &channel, id),
+                        Some(id) => rows::held(conn, &key, &channel, id),
                         None => Ok(None),
                     })
                     .collect::<Result<Vec<_>, _>>()
@@ -116,10 +144,15 @@ impl HostChannel {
         // so a later post of the page is judged against them here.
         let mut batch = BatchWindows::default();
         for (mut message, held) in record.into_iter().zip(held) {
-            if let Some(blurred) = held {
-                message.view.automod_blurred = blurred;
-                shown.push(message);
-                continue;
+            match held {
+                Some(rows::HeldMessage::Shown { blurred }) => {
+                    message.view.automod_blurred = blurred;
+                    shown.push(message);
+                    continue;
+                }
+                // Its author deleted it (plan E3.3 E3): never shown again.
+                Some(rows::HeldMessage::Deleted) => continue,
+                None => {}
             }
             let Some(inputs) = inputs.as_ref() else {
                 shown.push(message);
@@ -278,6 +311,27 @@ impl HostChannel {
     }
 }
 
+/// The messages the record's changes delete, each by its author
+/// (lowercased): `(author, message id)`.
+fn deleted_by_author(changes: &[history::RecordChange]) -> Vec<(String, String)> {
+    (changes.iter())
+        .filter_map(|change| match &change.entry {
+            rekindle_codec::community::channel_record::ChannelRecordEntry::Delete(d) => {
+                Some((hex::encode(change.author.0), d.message_id.clone()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Whether `view` is a message its own author deleted.
+fn deleted_view(deleted: &[(String, String)], view: &ChannelMessageView) -> bool {
+    (view.server_message_id.as_deref()).is_some_and(|id| {
+        (deleted.iter())
+            .any(|(author, message)| message == id && author.eq_ignore_ascii_case(&view.sender_id))
+    })
+}
+
 /// One stored row as a frontend renders it; `own_key` and `pseudonym` mark
 /// which senders are us.
 pub(crate) fn stored_view(
@@ -315,5 +369,6 @@ pub(crate) fn stored_view(
             .failure_reason
             .filter(|_| row.send_state == SendState::Failed),
         send_state: row.send_state,
+        edited_at: row.edited_at,
     }
 }

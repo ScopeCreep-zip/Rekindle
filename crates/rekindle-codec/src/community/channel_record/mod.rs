@@ -12,11 +12,14 @@ pub use rekindle_types::dht_layout::channel::{
 mod codec;
 mod types;
 
-pub use codec::{decode_channel_entries, decode_own_page, encode_page_entries, message_from_entry};
+pub use codec::{
+    decode_channel_entries, decode_channel_page, decode_own_page, encode_page_entries,
+    message_from_entry,
+};
 pub use types::{
-    ChannelAttachmentCached, ChannelForward, ChannelHandRaise, ChannelMessage, ChannelPollClose,
-    ChannelPollCreate, ChannelPollVote, ChannelReaction, ChannelRecordEntry, ChannelRecordItem,
-    ChannelSubkeyPayload,
+    ChannelAttachmentCached, ChannelDelete, ChannelEdit, ChannelForward, ChannelHandRaise,
+    ChannelMessage, ChannelPollClose, ChannelPollCreate, ChannelPollVote, ChannelReaction,
+    ChannelRecordEntry, ChannelRecordItem, ChannelSubkeyPayload,
 };
 
 #[cfg(test)]

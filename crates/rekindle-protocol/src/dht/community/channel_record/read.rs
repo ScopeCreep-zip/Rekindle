@@ -5,7 +5,7 @@ use rekindle_records::port::RecordPort;
 
 use crate::error::ProtocolError;
 use rekindle_codec::community::channel_record::{
-    decode_channel_entries, message_from_entry, ChannelMessage, ChannelRecordItem,
+    decode_channel_page, message_from_entry, ChannelMessage, ChannelRecordItem,
     CHANNEL_OWNER_SUBKEY_COUNT,
 };
 
@@ -34,7 +34,7 @@ pub async fn read_all_channel_entries(
 
     let mut items = Vec::new();
     for (subkey_index, value) in read? {
-        if let Ok(entries) = decode_channel_entries(&value.data) {
+        if let Ok((author, entries)) = decode_channel_page(&value.data) {
             let slot_digest = rekindle_secrets::slot_head::slot_head_digest(
                 channel_key,
                 subkey_index,
@@ -43,6 +43,7 @@ pub async fn read_all_channel_entries(
             );
             items.extend(entries.into_iter().map(|entry| ChannelRecordItem {
                 subkey_index,
+                author: author.clone(),
                 seq: value.seq,
                 slot_digest,
                 entry,

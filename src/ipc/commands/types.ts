@@ -34,6 +34,9 @@ export interface Message {
   /** Why our `failed` post was not delivered, as the backend words it
    *  (plan E3.2 S9, F9-3; S7l's key deadline); absent otherwise. */
   failureReason?: string;
+  /** When its author last edited it, in seconds (plan E3.3); absent when
+   *  unedited. Stored on every reader, so it survives a reload. */
+  editedAt?: number;
   attachment?: {
     attachmentId: string;
     filename: string;

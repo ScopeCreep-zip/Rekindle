@@ -60,6 +60,10 @@ pub enum ChannelError {
 
     #[error("adapter error: {0}")]
     Adapter(String),
+
+    /// An edit or a delete the rules refuse (plan E3.3 E1–E3).
+    #[error("message change refused: {0}")]
+    ChangeRefused(crate::changes::ChangeRefusal),
 }
 
 impl ChannelError {

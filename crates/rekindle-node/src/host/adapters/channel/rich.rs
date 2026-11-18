@@ -88,6 +88,7 @@ fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView
             SendState::Delivered
         },
         failure_reason: None,
+        edited_at: None,
     }
 }
 

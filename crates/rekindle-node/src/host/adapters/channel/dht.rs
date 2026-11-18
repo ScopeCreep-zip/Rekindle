@@ -96,6 +96,7 @@ impl HostChannel {
                 subkey_index: item.subkey_index,
                 seq: item.seq,
                 slot_digest: item.slot_digest,
+                author: item.author,
                 entry: item.entry,
             })
             .collect())

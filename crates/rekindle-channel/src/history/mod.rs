@@ -43,11 +43,30 @@ pub struct RecordMessage {
     pub slot_digest: [u8; 32],
 }
 
+/// An edit or a delete in the channel record (plan E3.3), with the author
+/// whose signed slot value carries it and where: the host applies it under
+/// `crate::changes` (E1–E3).
+#[derive(Debug, Clone)]
+pub struct RecordChange {
+    pub record_key: String,
+    pub subkey_index: u32,
+    pub author: rekindle_types::id::PseudonymKey,
+    pub entry: ChannelRecordEntry,
+}
+
+/// What a record read returns: its messages and the authors' changes.
+#[derive(Debug, Clone, Default)]
+pub struct ChannelRecordRead {
+    pub messages: Vec<RecordMessage>,
+    pub changes: Vec<RecordChange>,
+}
+
 /// The latest `limit` messages of `channel_id`'s record (only those older
 /// than `before` when given), in channel order: by Lamport time, ties by
 /// sender, as every peer orders a channel. A body that does not open under
 /// the generation it names is `decryption_failed`. A channel with no record
-/// yet has no messages.
+/// yet has no messages. Every edit and delete in the record comes with them,
+/// in the authors' seq order.
 ///
 /// # Errors
 /// The record read failed.
@@ -57,13 +76,27 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
     channel_id: &str,
     before: Option<u64>,
     limit: u32,
-) -> Result<Vec<RecordMessage>, ChannelError> {
+) -> Result<ChannelRecordRead, ChannelError> {
     let Some(record_key) = deps.channel_record_key(community_id, channel_id) else {
-        return Ok(Vec::new());
+        return Ok(ChannelRecordRead::default());
     };
     let entries = deps
         .read_all_channel_entries(community_id, &record_key)
         .await?;
+    let changes = (entries.iter())
+        .filter(|item| {
+            matches!(
+                item.entry,
+                ChannelRecordEntry::Edit(_) | ChannelRecordEntry::Delete(_)
+            )
+        })
+        .map(|item| RecordChange {
+            record_key: record_key.clone(),
+            subkey_index: item.subkey_index,
+            author: item.author.clone(),
+            entry: item.entry.clone(),
+        })
+        .collect();
     let pseudonyms = deps.stage_pseudonyms_by_subkey(community_id).await?;
     let me = deps.my_pseudonym_hex(community_id).unwrap_or_default();
     let reactions = build_reaction_groups(&entries, &pseudonyms);
@@ -84,7 +117,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
     });
     let keep = usize::try_from(limit).unwrap_or(usize::MAX);
     let skip = messages.len().saturating_sub(keep);
-    Ok(messages
+    let messages = messages
         .into_iter()
         .skip(skip)
         .map(|(subkey_index, (slot_seq, slot_digest), message)| {
@@ -134,6 +167,7 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                         SendState::Delivered
                     },
                     failure_reason: None,
+                    edited_at: None,
                 },
                 reply_to: message.reply_to.clone(),
                 mek_generation: message.mek_generation,
@@ -145,7 +179,8 @@ pub async fn read_channel_record<D: ChannelMessagingDeps>(
                 slot_digest,
             }
         })
-        .collect())
+        .collect();
+    Ok(ChannelRecordRead { messages, changes })
 }
 
 /// Merge `incoming` into `existing`, one message per message id (or, with
@@ -261,6 +296,7 @@ mod tests {
             flags: 0,
             send_state: SendState::Delivered,
             failure_reason: None,
+            edited_at: None,
         }
     }
 

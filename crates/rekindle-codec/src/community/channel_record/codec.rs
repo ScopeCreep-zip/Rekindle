@@ -37,6 +37,18 @@ pub fn decode_own_page(
     }
 }
 
+/// The author and entries of a slot value, verified as
+/// [`decode_channel_entries`]: an edit or a delete names no sender of its
+/// own, so a reader attributes it by this signed author (plan E3.3 E1).
+///
+/// # Errors
+/// As [`decode_channel_entries`].
+pub fn decode_channel_page(
+    data: &[u8],
+) -> Result<(rekindle_types::id::PseudonymKey, Vec<ChannelRecordEntry>), CodecError> {
+    decode_payload(data)
+}
+
 fn decode_payload(
     data: &[u8],
 ) -> Result<(rekindle_types::id::PseudonymKey, Vec<ChannelRecordEntry>), CodecError> {
@@ -82,7 +94,9 @@ fn decode_payload(
             | ChannelRecordEntry::HandRaise(_)
             | ChannelRecordEntry::PollCreate(_)
             | ChannelRecordEntry::PollVote(_)
-            | ChannelRecordEntry::PollClose(_) => {
+            | ChannelRecordEntry::PollClose(_)
+            | ChannelRecordEntry::Edit(_)
+            | ChannelRecordEntry::Delete(_) => {
                 // No sender field; attribution is by subkey ownership
                 // (the wrapper-level author), which is already verified.
             }
@@ -119,6 +133,8 @@ pub fn message_from_entry(entry: &ChannelRecordEntry) -> Option<&ChannelMessage>
         | ChannelRecordEntry::PollCreate(_)
         | ChannelRecordEntry::PollVote(_)
         | ChannelRecordEntry::PollClose(_)
-        | ChannelRecordEntry::HandRaise(_) => None,
+        | ChannelRecordEntry::HandRaise(_)
+        | ChannelRecordEntry::Edit(_)
+        | ChannelRecordEntry::Delete(_) => None,
     }
 }

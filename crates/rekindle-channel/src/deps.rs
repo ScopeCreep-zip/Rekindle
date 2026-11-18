@@ -101,6 +101,8 @@ pub struct ChannelEntryItem {
     pub seq: u32,
     /// The digest of that slot value's page (plan E3.2 S9).
     pub slot_digest: [u8; 32],
+    /// The author whose signature the slot value carries (plan E3.3 E1).
+    pub author: rekindle_types::id::PseudonymKey,
     pub entry: ChannelRecordEntry,
 }
 

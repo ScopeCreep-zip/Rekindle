@@ -54,6 +54,7 @@ fn record_message() -> RecordMessage {
             flags: 0,
             send_state: SendState::Delivered,
             failure_reason: None,
+            edited_at: None,
         },
         reply_to: None,
         mek_generation: 0,

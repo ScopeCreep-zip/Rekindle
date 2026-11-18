@@ -4,6 +4,7 @@
 
 pub mod attachments;
 pub mod channel;
+pub mod channel_changes;
 
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection};

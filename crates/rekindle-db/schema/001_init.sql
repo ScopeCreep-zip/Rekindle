@@ -181,7 +181,19 @@ CREATE TABLE IF NOT EXISTS messages (
         CHECK(history_gap_through IS NULL OR history_gap_through >= 1),
     -- The message mentions us (plan E3.1, D25): written by the receive
     -- pipeline from `rekindle_channel::mentions`; counts unread mentions.
-    mentions_me INTEGER NOT NULL DEFAULT 0 CHECK(mentions_me IN (0, 1))
+    mentions_me INTEGER NOT NULL DEFAULT 0 CHECK(mentions_me IN (0, 1)),
+    -- An edited channel message (plan E3.3, rules E1 and E2): when its
+    -- author last edited it (seconds), that edit's author seq (only a
+    -- later one replaces it), and how many edits we applied (a reader caps
+    -- a message at 10). NULL and 0 for an unedited message.
+    edited_at INTEGER,
+    edit_seq INTEGER NOT NULL DEFAULT 0 CHECK(edit_seq >= 0),
+    edit_count INTEGER NOT NULL DEFAULT 0 CHECK(edit_count BETWEEN 0 AND 10),
+    -- The author's tombstone (plan E3.3 E3): when it deleted the message.
+    -- The body and every revision are purged and later edits refused; the
+    -- row stays, so a re-read of the author's record never restores it.
+    deleted_at INTEGER,
+    CHECK(deleted_at IS NULL OR (body = '' AND edited_at IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);

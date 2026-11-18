@@ -10,10 +10,9 @@ use rekindle_channel::ingest::{self, BlockList, GateItem, GateReason, SlotPositi
 use std::sync::Arc;
 
 use rekindle_channel::{AutoModCompiledCache, ChannelMessagingDeps};
-use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
+use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
 use rekindle_governance::state::GovernanceState;
-use rekindle_records::port::RecordPort;
 use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
 use rekindle_types::id::ChannelId;
 use rekindle_types::message::SendState;
@@ -115,19 +114,18 @@ impl HostChannel {
         let pool = self.records()?;
         let mut missed = Vec::new();
         for record_key in records {
-            match find_post(&*pool, &record_key, subkey_index, message_id, author).await {
-                Ok(message) => {
-                    return self
-                        .ingest(ReceivedPost {
-                            community_id: community_id.to_owned(),
-                            channel_id: channel_id.to_owned(),
-                            record_key,
-                            subkey_index,
-                            sequence,
-                            message,
-                            forwarded_from_author: None,
-                        })
-                        .await;
+            match super::changes::find_page(&*pool, &record_key, subkey_index, message_id, author)
+                .await
+            {
+                Ok(page) => {
+                    let source = super::changes::ChangeSource {
+                        community_id,
+                        channel_id,
+                        record_key: &record_key,
+                        subkey_index,
+                        author: &page.author.clone(),
+                    };
+                    return self.ingest_page(source, sequence, message_id, page).await;
                 }
                 Err(e) => missed.push(e),
             }
@@ -536,31 +534,4 @@ impl HostChannel {
         .await
         .map_err(stored)
     }
-}
-
-/// The post `message_id` by `author` in `subkey_index` of `record_key`.
-async fn find_post(
-    pool: &dyn RecordPort,
-    record_key: &str,
-    subkey_index: u32,
-    message_id: &str,
-    author: &str,
-) -> Result<ChannelMessage, String> {
-    let value = (pool.read_once(record_key, subkey_index, true).await)
-        .map_err(|e| format!("{record_key}: {e}"))?
-        .ok_or_else(|| format!("{record_key}: slot is empty"))?;
-    let entries = rekindle_codec::community::channel_record::decode_channel_entries(&value.data)
-        .map_err(|e| format!("{record_key}: {e}"))?;
-    entries
-        .into_iter()
-        .find_map(|entry| match entry {
-            ChannelRecordEntry::Message(m)
-                if m.message_id.as_deref() == Some(message_id)
-                    && m.sender_pseudonym.eq_ignore_ascii_case(author) =>
-            {
-                Some(m)
-            }
-            _ => None,
-        })
-        .ok_or_else(|| format!("{record_key}: no message {message_id}"))
 }

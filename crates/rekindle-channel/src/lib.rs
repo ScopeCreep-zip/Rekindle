@@ -16,6 +16,7 @@
 
 pub mod automod;
 pub mod awaiting_key;
+pub mod changes;
 pub mod deps;
 pub mod error;
 pub mod event;

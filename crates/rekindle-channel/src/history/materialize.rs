@@ -266,6 +266,7 @@ mod tests {
                 subkey_index: 1,
                 seq: 0,
                 slot_digest: [0; 32],
+                author: rekindle_types::id::PseudonymKey([0; 32]),
                 entry: ChannelRecordEntry::PollCreate(ChannelPollCreate {
                     poll_id,
                     message_id: "msg-1".into(),
@@ -280,6 +281,7 @@ mod tests {
                 subkey_index: 2,
                 seq: 0,
                 slot_digest: [0; 32],
+                author: rekindle_types::id::PseudonymKey([0; 32]),
                 entry: ChannelRecordEntry::PollVote(ChannelPollVote {
                     poll_id,
                     selected_answers: vec![0],
@@ -290,6 +292,7 @@ mod tests {
                 subkey_index: 2,
                 seq: 0,
                 slot_digest: [0; 32],
+                author: rekindle_types::id::PseudonymKey([0; 32]),
                 entry: ChannelRecordEntry::PollVote(ChannelPollVote {
                     poll_id,
                     selected_answers: vec![1],
@@ -300,6 +303,7 @@ mod tests {
                 subkey_index: 1,
                 seq: 0,
                 slot_digest: [0; 32],
+                author: rekindle_types::id::PseudonymKey([0; 32]),
                 entry: ChannelRecordEntry::PollClose(ChannelPollClose {
                     poll_id,
                     lamport: 13,
@@ -309,6 +313,7 @@ mod tests {
                 subkey_index: 2,
                 seq: 0,
                 slot_digest: [0; 32],
+                author: rekindle_types::id::PseudonymKey([0; 32]),
                 entry: ChannelRecordEntry::PollVote(ChannelPollVote {
                     poll_id,
                     selected_answers: vec![0],

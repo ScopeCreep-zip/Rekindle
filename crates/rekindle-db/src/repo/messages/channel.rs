@@ -94,24 +94,40 @@ pub fn row_id_by_message_id(
     .optional()
 }
 
-/// Whether the gate hid our stored channel message `message_id`
-/// (`automod_blurred`), when we hold it.
+/// What we hold of a channel message a record read returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HeldMessage {
+    /// Stored and shown; `blurred` when the gate hid it.
+    Shown { blurred: bool },
+    /// Its author deleted it (plan E3.3 E3): the record's copy is not shown.
+    Deleted,
+}
+
+/// What we hold of the channel message `message_id`, when we hold it.
 ///
 /// # Errors
 /// The query failed.
-pub fn held_blurred(
+pub fn held(
     conn: &Connection,
     owner_key: &str,
     channel_id: &str,
     message_id: &str,
-) -> rusqlite::Result<Option<bool>> {
+) -> rusqlite::Result<Option<HeldMessage>> {
     use rusqlite::OptionalExtension as _;
     conn.query_row(
-        "SELECT automod_blurred FROM messages \
+        "SELECT automod_blurred, deleted_at IS NOT NULL FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
            AND message_id = ?3 LIMIT 1",
         params![owner_key, channel_id, message_id],
-        |row| row.get::<_, i64>(0).map(|blurred| blurred != 0),
+        |row| {
+            Ok(if row.get::<_, bool>(1)? {
+                HeldMessage::Deleted
+            } else {
+                HeldMessage::Shown {
+                    blurred: row.get::<_, i64>(0)? != 0,
+                }
+            })
+        },
     )
     .optional()
 }
@@ -223,10 +239,12 @@ pub struct StoredChannelMessage {
     pub send_state: SendState,
     /// Why our `failed` post was not delivered, as the user reads it.
     pub failure_reason: Option<String>,
+    /// When its author last edited it, in seconds (plan E3.3).
+    pub edited_at: Option<i64>,
 }
 
 /// Up to `limit` messages of `channel_id`, oldest first; with `before`, only
-/// those older than it. Ordered by the message lamport (the wall clock when
+/// those older than it. A message its author deleted is not one (plan E3.3). Ordered by the message lamport (the wall clock when
 /// a row has none), ties by sender, as every peer orders a channel.
 ///
 /// # Errors
@@ -240,10 +258,10 @@ pub fn page(
 ) -> rusqlite::Result<Vec<StoredChannelMessage>> {
     let mut stmt = conn.prepare(
         "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, \
-                attachment_json, flags, send_state, failure_reason \
+                attachment_json, flags, send_state, failure_reason, edited_at \
          FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
-           AND (?3 IS NULL OR timestamp < ?3) \
+           AND deleted_at IS NULL AND (?3 IS NULL OR timestamp < ?3) \
          ORDER BY COALESCE(NULLIF(lamport_ts, 0), timestamp) DESC, sender_key DESC LIMIT ?4",
     )?;
     let rows = stmt.query_map(params![owner_key, channel_id, before, limit], |row| {
@@ -267,6 +285,7 @@ pub fn page(
             flags: get(row, "flags")?,
             send_state,
             failure_reason: get(row, "failure_reason")?,
+            edited_at: get(row, "edited_at")?,
         })
     })?;
     let mut out = rows.collect::<rusqlite::Result<Vec<_>>>()?;

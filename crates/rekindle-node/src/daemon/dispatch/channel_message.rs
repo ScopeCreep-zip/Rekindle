@@ -5,7 +5,8 @@ use crate::daemon::DaemonState;
 use rekindle_ipc::protocol::ChannelMessageRequest;
 use rekindle_ipc::protocol::IpcResponse;
 
-use crate::host::adapters::governance::channel_messages::MessageChange;
+use crate::host::adapters::channel::changes::MessageChange;
+use crate::host::adapters::channel::HostChannel;
 
 use super::channel::resolve_channel;
 use super::{state_error, DaemonContext};
@@ -74,7 +75,8 @@ async fn post(
     }
 }
 
-/// Edit or delete our message `message_id` in `channel` (plan E3.1 E2).
+/// Edit or delete our message `message_id` in `channel` (plan E3.1 E2): an
+/// entry in our record (plan E3.3).
 pub(crate) async fn handle_change(
     ctx: &DaemonContext,
     state: DaemonState,
@@ -90,11 +92,14 @@ pub(crate) async fn handle_change(
     else {
         return IpcResponse::error(404, format!("channel '{channel}' not found"));
     };
-    match super::adapter(ctx)
-        .change_channel_message(&community_id, channel, message_id, change)
+    match HostChannel::new(ctx)
+        .change_own_message(&community_id, channel, message_id, change)
         .await
     {
         Ok(()) => IpcResponse::ok(&serde_json::Value::Null),
+        Err(e @ rekindle_channel::ChannelError::ChangeRefused(_)) => {
+            IpcResponse::error(409, e.to_string())
+        }
         Err(e) => IpcResponse::error(500, format!("channel message change failed: {e}")),
     }
 }
