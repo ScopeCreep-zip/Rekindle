@@ -97,7 +97,6 @@ mod sending_route;
 mod smoke;
 mod stale_route_call;
 mod stall;
-mod status_on_ready;
 mod udp_blocked;
 mod wake_trigger;
 mod walk_cost;
