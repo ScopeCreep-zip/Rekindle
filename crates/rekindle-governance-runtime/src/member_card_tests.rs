@@ -48,3 +48,48 @@ async fn member_record_writes_onto_contested_or_unchanged_subkeys_are_stored() {
         .expect("an identical rewrite (Unchanged) is stored");
     assert!(dht.value(&record, member_record::CARD).is_some());
 }
+
+/// One card read's simulated round trip.
+const RTT: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// Plan E3.2 S7c.9: a joiner's first rebuild reads every member's card;
+/// the reads run sixteen at a time, in the members' order, so 40 cards
+/// cost three round trips, where one read at a time cost forty.
+#[tokio::test(start_paused = true)]
+async fn card_reads_run_sixteen_in_flight_in_member_order() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use rekindle_types::id::PseudonymKey;
+
+    use super::read_each;
+    use crate::op_walk::WALK_FETCHES_IN_FLIGHT;
+
+    const MEMBERS: u8 = 40;
+    let pseudonyms: Vec<PseudonymKey> = (0..MEMBERS).map(|i| PseudonymKey([i; 32])).collect();
+    let (in_flight, most) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let (in_flight, most) = (&in_flight, &most);
+    let mut reads = Vec::new();
+    for pseudonym in &pseudonyms {
+        reads.push((pseudonym, async move {
+            let now = in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            most.fetch_max(now, Ordering::SeqCst);
+            tokio::time::sleep(RTT).await;
+            in_flight.fetch_sub(1, Ordering::SeqCst);
+            pseudonym.0[0]
+        }));
+    }
+    let started = tokio::time::Instant::now();
+    let read = read_each(reads).await;
+    let elapsed = started.elapsed();
+    assert_eq!(most.load(Ordering::SeqCst), WALK_FETCHES_IN_FLIGHT);
+    let order: Vec<u8> = read
+        .iter()
+        .map(|(p, seen)| {
+            assert_eq!(p.0[0], *seen);
+            *seen
+        })
+        .collect();
+    assert_eq!(order, (0..MEMBERS).collect::<Vec<_>>());
+    let rounds = usize::from(MEMBERS).div_ceil(WALK_FETCHES_IN_FLIGHT);
+    assert_eq!(elapsed, RTT * u32::try_from(rounds).unwrap());
+}

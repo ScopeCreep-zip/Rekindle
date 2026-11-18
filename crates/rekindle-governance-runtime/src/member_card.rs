@@ -256,6 +256,12 @@ pub async fn read_beat(
 /// did not hold, `GovernanceRuntimeDeps::note_member_card_name`). Pending
 /// members first, oldest first, then members by join stamp. A card that
 /// does not verify is not remembered.
+///
+/// The reads run [`read_each`]'s way, sixteen in flight (plan E3.2
+/// S7c.9): a joiner holds no card name yet, so its first rebuild reads a
+/// card per member, and one at a time that cost a forced read per member
+/// on every join (≈ 0.5 s of simulated time each, the join-cost run's
+/// growth per post-cut op).
 pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
@@ -275,17 +281,23 @@ pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
         .map(|(p, m)| (p, &m.member_record, &m.member_record_owner, m.joined))
         .collect();
     members.sort_by_key(|(_, _, _, stamp)| *stamp);
-    for (pseudonym, record, owner, _) in pending.into_iter().chain(members) {
-        if deps.member_card_name(community_id, pseudonym).is_some() {
-            continue;
-        }
-        let at = MemberRecordRef {
+    let unnamed: Vec<MemberRecordRef<'_>> = (pending.into_iter().chain(members))
+        .filter(|(pseudonym, ..)| deps.member_card_name(community_id, pseudonym).is_none())
+        .map(|(pseudonym, record, owner, _)| MemberRecordRef {
             community_id,
             pseudonym,
             record,
             owner,
-        };
-        match read_card(&*port, &at).await {
+        })
+        .collect();
+    let port = &*port;
+    let mut reads = Vec::with_capacity(unnamed.len());
+    for at in unnamed {
+        reads.push((at.pseudonym, async move { read_card(port, &at).await }));
+    }
+    let read = read_each(reads).await;
+    for (pseudonym, card) in read {
+        match card {
             Ok(Some(signed)) => {
                 if let Some(name) = signed.card.display_name {
                     deps.note_member_card_name(community_id, pseudonym, name);
@@ -297,6 +309,26 @@ pub async fn refresh_member_cards<D: crate::deps::GovernanceRuntimeDeps>(
             }
         }
     }
+}
+
+/// Each of `reads` (a member's pseudonym and its card read), at most
+/// [`crate::op_walk::WALK_FETCHES_IN_FLIGHT`] in flight (the walk's
+/// fan-out cap), answered in `reads`' order. The futures are built by the
+/// caller (no closure in the returned future's type, which the Host's
+/// `Send` bound cannot see through for every lifetime).
+async fn read_each<T, Fut>(reads: Vec<(&PseudonymKey, Fut)>) -> Vec<(&PseudonymKey, T)>
+where
+    Fut: Future<Output = T>,
+{
+    use futures::stream::{self, StreamExt};
+    let mut tagged = Vec::with_capacity(reads.len());
+    for (pseudonym, read) in reads {
+        tagged.push(async move { (pseudonym, read.await) });
+    }
+    stream::iter(tagged)
+        .buffered(crate::op_walk::WALK_FETCHES_IN_FLIGHT)
+        .collect()
+        .await
 }
 
 #[cfg(test)]
