@@ -13,6 +13,7 @@ use rekindle_types::domains;
 use rekindle_types::governance::OpRef;
 
 use crate::capnp_codec::{bounds, capnp_err, pack, text_to_string, unpack_bounded};
+use crate::checkpoint_state::bytes32;
 use crate::community_governance_capnp::{checkpoint_hint_request, checkpoint_hint_response};
 use crate::governance_op::{read_op_ref, write_op_ref};
 use crate::member_record::{check_len, check_size, put_lp, sign, verify};
@@ -104,12 +105,6 @@ impl CheckpointHintRequest {
         )?;
         Ok(out)
     }
-}
-
-fn bytes32(data: Result<&[u8], capnp::Error>, what: &str) -> Result<[u8; 32], CodecError> {
-    data.map_err(|e| capnp_err(&e))?
-        .try_into()
-        .map_err(|_| CodecError::Deserialization(format!("{what} is not 32 bytes")))
 }
 
 /// Decode a request and verify its signature by the requester it names.

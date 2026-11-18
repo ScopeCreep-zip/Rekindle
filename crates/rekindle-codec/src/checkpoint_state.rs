@@ -104,7 +104,10 @@ impl CheckpointStateRequest {
     }
 }
 
-fn bytes32(data: Result<&[u8], capnp::Error>, what: &str) -> Result<[u8; 32], CodecError> {
+pub(crate) fn bytes32(
+    data: Result<&[u8], capnp::Error>,
+    what: &str,
+) -> Result<[u8; 32], CodecError> {
     data.map_err(|e| capnp_err(&e))?
         .try_into()
         .map_err(|_| CodecError::Deserialization(format!("{what} is not 32 bytes")))

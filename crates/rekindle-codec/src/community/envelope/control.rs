@@ -395,9 +395,8 @@ pub enum ControlPayload {
         signature: Vec<u8>,
     },
     /// The gossip fast path for a signed governance op (plan E3.2,
-    /// `governanceOp @74`): the encoded op
-    /// (`rekindle_codec::governance_op::encode_op`) a member published to
-    /// its op log. A receiver verifies it as it would a fetched op.
+    /// `governanceOp @74`): the encoded op (`governance_op::encode_op`) a
+    /// member published to its op log, verified as a fetched op is.
     GovernanceOp { op: Vec<u8> },
     /// A ring watcher's `HeadAdvanced` hint, encoded (plan E3.2 S7).
     HeadAdvanced { hint: Vec<u8> },
