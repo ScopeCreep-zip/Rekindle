@@ -172,10 +172,6 @@ pub enum TransportError {
     #[error("community creation failed: {reason}")]
     CommunityCreationFailed { reason: String },
 
-    /// Join timed out waiting for acceptance from community peers.
-    #[error("join timed out after {timeout_secs}s — no response from community peers")]
-    JoinTimeout { timeout_secs: u64 },
-
     /// MEK not available for the requested channel and generation.
     #[error("MEK generation {generation} not cached for {community}/{channel}")]
     MekNotCached {
