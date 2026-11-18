@@ -41,6 +41,7 @@
 '.xfire-titlebar-text' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
 '.form-input' = { on = ["--color-xfire-bg-input"] }
 '.form-select' = { on = ["--color-xfire-bg-input"] }
+'option' = { on = ["--color-xfire-bg-input"] }
 '.analytics-sparkline-label' = { on = ["--color-xfire-bg-panel"] }
 '.profile-section-label' = { on = ["--color-xfire-bg-dark"] }
 '.profile-game-elapsed' = { on = ["--color-xfire-bg-dark"] }

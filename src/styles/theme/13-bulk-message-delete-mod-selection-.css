@@ -360,7 +360,7 @@
   }
 
   .forward-dialog-select {
-    background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
+    background-color: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
     color: var(--color-xfire-text);
     font-size: 11px;

@@ -11,7 +11,7 @@
   .timeout-select {
     width: auto;
     min-width: 80px;
-    background: var(--color-xfire-bg-input);
+    background-color: var(--color-xfire-bg-input);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
     border-radius: 3px;
     padding: 2px 6px;

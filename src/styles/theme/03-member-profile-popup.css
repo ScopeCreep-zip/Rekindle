@@ -475,7 +475,7 @@
   }
   .active-call-device-row select {
     flex: 1;
-    background: var(--color-xfire-bg-tertiary);
+    background-color: var(--color-xfire-bg-tertiary);
     color: var(--color-xfire-text-primary);
     border: 1px solid color-mix(in srgb, var(--color-xfire-text-secondary) 25%, transparent);
     border-radius: 3px;

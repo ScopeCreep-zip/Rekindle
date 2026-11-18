@@ -125,7 +125,7 @@
 
   .form-input,
   .form-select {
-    background: var(--color-xfire-bg-input);
+    background-color: var(--color-xfire-bg-input);
     border-radius: 0.25rem;
     border: 1px solid var(--color-xfire-control-border);
     color: var(--color-xfire-text);

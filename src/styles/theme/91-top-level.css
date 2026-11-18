@@ -305,6 +305,43 @@
     padding: 32px;
     text-align: center;
   }
+
+  /* Every <select> is drawn by the skin, never by the platform theme.
+   * WebKitGTK painted the native menulist as a light Adwaita box under a
+   * dark skin, its text unreadable (WCAG 1.4.3); `appearance: none` (CSS
+   * UI 4 §5.2) makes every engine paint the class's skin background, and
+   * the arrow is drawn here in the select's own text colour. `color-scheme`
+   * (CSS Color Adjustment 1 §2) follows the skin's base for whatever the
+   * platform still draws (the option popup). The background is longhand in
+   * each select's class rule so it does not reset this arrow. The
+   * `:not([multiple])` outranks those class rules' `padding`. */
+  select:not([multiple]) {
+    appearance: none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, currentColor 50%),
+      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position:
+      calc(100% - 13px) 50%,
+      calc(100% - 8px) 50%;
+    background-repeat: no-repeat;
+    background-size: 5px 5px;
+    padding-right: 24px;
+  }
+
+  select,
+  option {
+    color-scheme: dark;
+  }
+
+  :root[data-skin-base="light"] select,
+  :root[data-skin-base="light"] option {
+    color-scheme: light;
+  }
+
+  option {
+    background-color: var(--color-xfire-bg-input);
+    color: var(--color-xfire-text);
+  }
 }
 
 /* The user's accessibility settings beat any skin (wiring guide §14d): the
