@@ -121,9 +121,12 @@ fn masked(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<[u8; 32], Option<
 }
 
 /// Per code hash, the first applied `InviteCreated` carrying it (in stamp
-/// order, `gates::invite_gate`'s search order) and whether an applied
-/// `InviteRevoked` names it.
-fn invite_codes(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<String, ([u8; 16], bool)> {
+/// order, `gates::invite_gate`'s search order), whether an applied
+/// `InviteRevoked` names it, and its locator.
+fn invite_codes(
+    set: &resolve::OpSet<'_>,
+    round: &Round,
+) -> BTreeMap<String, ([u8; 16], bool, CutOp)> {
     let applied = || (0..set.ops.len()).filter(|&i| round.applied[i]);
     let mut out = BTreeMap::new();
     for c in applied() {
@@ -137,7 +140,7 @@ fn invite_codes(set: &resolve::OpSet<'_>, round: &Round) -> BTreeMap<String, ([u
                 matches!(set.ops[v].body(), GovernanceEntry::InviteRevoked { invite_id: id } if id == invite_id)
             });
             out.entry(code_hash.clone())
-                .or_insert((*invite_id, revoked));
+                .or_insert((*invite_id, revoked, CutOp::of(set.ops[c])));
         }
     }
     out

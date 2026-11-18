@@ -78,14 +78,21 @@ fn split(
 
 /// The cut's applied power ops `snap` lists, each taken from `all` by its
 /// locator alone (author, seq), as a reader holding only the snapshot
-/// fetches them. With `power_refs` `None` (an applied power op whose
-/// author the cut never admitted) a reader replays in full; they are then
-/// taken by hash so `merge_from` is still checked.
+/// fetches them, then its refused ones (those a post-cut op cites are
+/// fetched by its locator). With `power_refs` `None` a reader replays in
+/// full; they are then taken by hash so `merge_from` is still checked.
 fn located_power(cert: &GenesisCert, snap: &CutSnapshot, all: &[VerifiedOp]) -> Vec<VerifiedOp> {
+    let fate = |o: &&VerifiedOp, a: bool| {
+        (snap.cut.power.iter()).any(|(c, f)| *f == a && c.hash == o.hash())
+    };
+    let refused = all.iter().filter(|o| fate(o, false)).cloned();
     let Some(refs) = snap.power_refs(cert) else {
-        let applied =
-            |o: &&VerifiedOp| (snap.cut.power.iter()).any(|(c, a)| *a && c.hash == o.hash());
-        return all.iter().filter(applied).cloned().collect();
+        return all
+            .iter()
+            .filter(|o| fate(o, true))
+            .cloned()
+            .chain(refused)
+            .collect();
     };
     (refs.iter())
         .map(|r| {
@@ -93,13 +100,14 @@ fn located_power(cert: &GenesisCert, snap: &CutSnapshot, all: &[VerifiedOp]) -> 
             let op = all.iter().filter(at).find(|o| o.hash() == r.op_hash);
             op.cloned().expect("the op at the located author and seq")
         })
+        .chain(refused)
         .collect()
 }
 
 /// `merge_from` over the split at `heads`, checked against `merge_outcome`
 /// whenever it answers `Ok`: the state, the applied order, every post-cut
 /// fate and the cut's power fates.
-fn resume(
+pub(super) fn resume(
     cert: &GenesisCert,
     all: &[VerifiedOp],
     heads: &[&VerifiedOp],
@@ -357,51 +365,6 @@ proptest! {
 /// `community()` with its last op as the only head.
 fn base() -> (GenesisCert, Vec<VerifiedOp>) {
     (cert(&pk(1), AdmissionMode::Open), community())
-}
-
-#[test]
-fn merge_from_answers_not_on_top_for_a_concurrent_power_op() {
-    let (cert, mut ops) = base();
-    let m = op(&pk(4), 1, &[head(&ops), find(&ops, 4, 0)], 40, meta("x"));
-    ops.push(m);
-    // Manager 2 kicks 3 without having seen 4's latest op, the cut head.
-    let k = op(
-        &pk(2),
-        1,
-        &[&ops[ops.len() - 2], find(&ops, 2, 0)],
-        41,
-        kick(3, 1),
-    );
-    let hash = k.hash();
-    ops.push(k);
-    let heads = [&ops[ops.len() - 2]];
-    assert_eq!(
-        resume(&cert, &ops, &heads).err(),
-        Some(NotOnTop::BesideTheCut(hash))
-    );
-}
-
-#[test]
-fn merge_from_answers_not_on_top_when_a_kick_frontier_is_below_the_cut() {
-    let (cert, mut ops) = base();
-    let m = op(&pk(4), 1, &[head(&ops), find(&ops, 4, 0)], 40, meta("x"));
-    ops.push(m);
-    // 2 kicks 4 having seen only 4's seq 0: its frontier, 1, is below 4's
-    // last seq in the cut, 1.
-    let k = op(
-        &pk(2),
-        1,
-        &[&ops[ops.len() - 2], find(&ops, 2, 0)],
-        41,
-        kick(4, 1),
-    );
-    let hash = k.hash();
-    ops.push(k);
-    let heads = [&ops[ops.len() - 2]];
-    assert_eq!(
-        resume(&cert, &ops, &heads).err(),
-        Some(NotOnTop::BesideTheCut(hash))
-    );
 }
 
 /// S7c.4a's (b) is implied by (a′): a kick citing the whole cut but

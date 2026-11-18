@@ -6,8 +6,9 @@
 //! cut is fetched by locator, and nothing else:
 //!
 //! - the cut ops the post-cut ops cite, and the cut's applied power ops
-//!   (`CutSnapshot::power_refs`, which `merge_from` folds) with the cut ops
-//!   they cite (their deps, `prev` among them), each checked for its hash,
+//!   (`CutSnapshot::power_refs`, which `merge_from` folds) and the refused
+//!   ones the post-cut ops cite (a join is dated against them, S7c.8), with
+//!   the cut ops they cite (their deps, `prev` among them), each checked for its hash,
 //!   its author's signature, its locator's author and seq, and a seq inside
 //!   the cut ([`cut_fact`]). Their own in-cut deps are not fetched: the
 //!   strictly endorsed snapshot vouches for the cut (the step's
@@ -272,6 +273,12 @@ where
         return Ok(None);
     };
     let (rest_held, mut cited) = walk_above(snap, start, &fetch).await?;
+    let refused_cited = (cited.values())
+        .filter(|r| (snap.cut.power.iter()).any(|(c, applied)| !applied && c.hash == r.op_hash));
+    let power_refs = power_refs
+        .into_iter()
+        .chain(refused_cited.cloned())
+        .collect();
     let power_held = fetch_each(power_refs, &fetch).await?;
     for dep in power_held.iter().flat_map(deps_of) {
         if in_cut(snap, &dep) {

@@ -81,10 +81,12 @@ pub struct CutIndex {
     /// carrying a seq frontier, the quarantine cause (plan E3.2 S7c.4a).
     pub masked: BTreeMap<[u8; 32], Option<OpHash>>,
     /// Per invite code hash, the first applied `InviteCreated` in the cut
-    /// carrying it and whether an applied `InviteRevoked` in the cut names
-    /// it: `invite_gate` reads the first such invite in a join's past
-    /// (plan E3.2 S7c.4a).
-    pub invite_codes: BTreeMap<String, ([u8; 16], bool)>,
+    /// carrying it, whether an applied `InviteRevoked` in the cut names
+    /// it, and that `InviteCreated`'s locator: `invite_gate` reads the
+    /// first such invite in a join's past (plan E3.2 S7c.4a), and a join
+    /// beside the cut has it in its past only when its deps reach the
+    /// locator's author at or above its seq (S7c.8).
+    pub invite_codes: BTreeMap<String, ([u8; 16], bool, CutOp)>,
     /// The authors that signed two ops at one seq in the cut, each with the
     /// lowest such seq: every op of theirs at or above it is dropped on
     /// every reader (`resolve::prepare`), later ones included, and

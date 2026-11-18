@@ -125,6 +125,12 @@ impl<A: Decanon, B: Decanon> Decanon for (A, B) {
     }
 }
 
+impl<A: Decanon, B: Decanon, C: Decanon> Decanon for (A, B, C) {
+    fn take(r: &mut CanonReader<'_>) -> Option<Self> {
+        Some((A::take(r)?, B::take(r)?, C::take(r)?))
+    }
+}
+
 impl<T: Decanon + Eq + Hash> Decanon for HashSet<T> {
     fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Vec::<T>::take(r)?.into_iter().collect())

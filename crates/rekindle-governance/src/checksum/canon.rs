@@ -134,6 +134,14 @@ impl<A: Canon, B: Canon> Canon for (A, B) {
     }
 }
 
+impl<A: Canon, B: Canon, C: Canon> Canon for (A, B, C) {
+    fn put(&self, out: &mut Vec<u8>) {
+        self.0.put(out);
+        self.1.put(out);
+        self.2.put(out);
+    }
+}
+
 impl<T: Canon> Canon for HashSet<T> {
     fn put(&self, out: &mut Vec<u8>) {
         put_set(out, self);

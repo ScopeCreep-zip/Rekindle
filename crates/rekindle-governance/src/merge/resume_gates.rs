@@ -29,7 +29,7 @@ pub(super) fn invalidated(
     let masked_by = strong_removal(ctx, set, round, &mut invalid)?;
     approval_gate(ctx, set, round, &mut invalid);
     backdated_join_gate(ctx, set, &mut invalid)?;
-    record_gate(ctx, set, round, &mut invalid);
+    record_gate(ctx, set, round, &mut invalid)?;
     checkpoint_gate(ctx, set, round, &mut invalid)?;
     let uses = invite_gate(ctx, set, round, &mut invalid)?;
     Ok(Gated {
@@ -144,10 +144,14 @@ fn approval_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &
     }
 }
 
-/// `gates::backdated_join_gate`: a dep in `rest` or a cut power op has a
-/// known `issued_at`; any other cut dep is a non-power cut op, at or below
-/// the cut's greatest non-power `issued_at`, so it decides nothing when
-/// the join is not below that, and is undecidable when it is.
+/// `gates::backdated_join_gate`: a dep in `rest` or a supplied (applied)
+/// cut power op has a known `issued_at`; a refused cut power op's is not
+/// known (only applied ones are fetched), so a join citing one is
+/// undecidable (S7c.8: the property test found a join dated below a
+/// refused power head it cites, refused by the full merge, applied by the
+/// resume); any other cut dep is a non-power cut op, at or below the
+/// cut's greatest non-power `issued_at`, so it decides nothing when the
+/// join is not below that, and is undecidable when it is.
 fn backdated_join_gate(
     ctx: &Ctx<'_>,
     set: &RestSet<'_>,
@@ -164,6 +168,9 @@ fn backdated_join_gate(
                 Dep::Rest(i) => set.ops[*i].op().issued_at,
                 Dep::Cut => match ctx.cut_power.get(&dep.op_hash) {
                     Some(p) => p.op().issued_at,
+                    None if (ctx.snap.cut.power.iter()).any(|(c, _)| c.hash == dep.op_hash) => {
+                        return Err(NotOnTop::Undecidable(op.hash()));
+                    }
                     None if ctx.snap.cut.mainline_max.is_some_and(|(m, _)| m <= issued) => continue,
                     None => return Err(NotOnTop::Undecidable(op.hash())),
                 },
@@ -177,8 +184,16 @@ fn backdated_join_gate(
     Ok(())
 }
 
-/// `gates::record_gate`, continuing from the cut's holders.
-fn record_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &mut [bool]) {
+/// `gates::record_gate`, continuing from the cut's holders. A join beside
+/// the cut naming a record another member holds in the cut is not on top:
+/// the record goes to the first applied claim in stamp order, and the
+/// cut's claim may sort after it (plan E3.2 S7c.8).
+fn record_gate(
+    ctx: &Ctx<'_>,
+    set: &RestSet<'_>,
+    round: &RestRound,
+    invalid: &mut [bool],
+) -> Result<(), NotOnTop> {
     let mut holder = ctx.snap.cut.holders.clone();
     for (o, op) in set.ops.iter().enumerate() {
         let (GovernanceEntry::MemberJoined { member_record, .. }
@@ -186,6 +201,10 @@ fn record_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &mu
         else {
             continue;
         };
+        let in_cut = ctx.snap.cut.holders.get(member_record);
+        if set.reach[o].is_some() && in_cut.is_some_and(|held| *held != op.author().0) {
+            return Err(NotOnTop::BesideTheCut(op.hash()));
+        }
         match holder.get(member_record) {
             Some(held) => invalid[o] |= *held != op.author().0,
             None if round.applied[o] && !invalid[o] => {
@@ -194,6 +213,7 @@ fn record_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &mu
             None => {}
         }
     }
+    Ok(())
 }
 
 /// `gates::checkpoint_gate` for a `rest` `Checkpoint`. A cut head is in
@@ -287,7 +307,13 @@ fn covers(
 /// `gates::invite_gate`, continuing from the snapshot's `uses`: the first
 /// applied `InviteCreated` in a join's past with its code is the cut's
 /// (the cut index's `invite_codes`) when the cut holds one, else the first
-/// in `rest`.
+/// in `rest`. A join beside the cut on a cut invite is not on top when its
+/// deps do not reach the `InviteCreated` (the full merge may find none in
+/// its past), when the cut revokes the invite (the revocation may be
+/// concurrent with it), or when the invite has no use left for it (the
+/// full merge counts joins in stamp order, and a cut join may sort after
+/// it); with a use left for every such join, no count reaches `max_uses`
+/// in any order, so the cut's joins keep their verdicts (plan E3.2 S7c.8).
 fn invite_gate(
     ctx: &Ctx<'_>,
     set: &RestSet<'_>,
@@ -307,9 +333,16 @@ fn invite_gate(
             continue;
         };
         let applied_before = |c: usize| c < o && round.applied[c] && set.past.contains(o, c);
-        let invite = match ctx.snap.cut.invite_codes.get(&proof.code_hash) {
-            Some((id, true)) => Some((*id, 0, None, true)),
-            Some((id, false)) => {
+        let in_cut = ctx.snap.cut.invite_codes.get(&proof.code_hash);
+        let beside = set.reach[o].as_ref();
+        if let (Some(reach), Some((_, revoked, created))) = (beside, in_cut) {
+            if *revoked || !super::resume::reaches(reach, &created.author, created.seq) {
+                return Err(NotOnTop::BesideTheCut(op.hash()));
+            }
+        }
+        let invite = match in_cut {
+            Some((id, true, _)) => Some((*id, 0, None, true)),
+            Some((id, false, _)) => {
                 let live = state
                     .invites
                     .get(id)
@@ -342,6 +375,9 @@ fn invite_gate(
             });
         let expired = expires_at.is_some_and(|exp| op.op().issued_at > exp);
         let used = uses.entry(invite_id).or_insert(0);
+        if beside.is_some() && in_cut.is_some() && !revoked && !expired && *used >= max_uses {
+            return Err(NotOnTop::BesideTheCut(op.hash()));
+        }
         if revoked || expired || *used >= max_uses {
             invalid[o] = true;
         } else if !invalid[o] {

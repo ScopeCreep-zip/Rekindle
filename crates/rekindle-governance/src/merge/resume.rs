@@ -6,7 +6,8 @@
 //!
 //! `rest` is **on top** of the cut when (a′) every op in it has every cut
 //! head in its causal past (a mask over the at most 63 heads, computed
-//! from deps alone, since no cut op has a head in its past), (c) no op in
+//! from deps alone, since no cut op has a head in its past) or is beside
+//! the cut as below, (c) no op in
 //! it sits at or below its author's highest seq in the cut, and (d) every
 //! non-power op in it has a mainline key above every cut non-power op's.
 //! Under (a′) every cut op is in every `rest` op's causal past, so each
@@ -17,10 +18,26 @@
 //! masks, record holders, invite codes, `uses`). Under (a) a removal in
 //! `rest` that applies counts every cut op of its target in its frontier
 //! (`frontier_holds`), so it masks no cut op: S7c.4a's (b) holds.
+//!
+//! **Beside the cut** (plan E3.2 S7c.8 (3)). An op lacking a cut head (a
+//! join signed concurrently with the checkpoint cites the old base) is on
+//! top when it is non-power and not a `Checkpoint` op and every applied
+//! cut power op is in its causal past, proven from its deps' locators (the
+//! author chain: seq n cites n − 1, so an author's op at seq s has that
+//! author's ops at seq ≤ s in its past) and the fetched cut power ops'
+//! own deps. Then its anchor is the cut's last applied power op (no `rest`
+//! power op is in its past, as each has the whole cut in its own), so with
+//! (d) it sorts after every cut non-power op and is judged at the
+//! snapshot's state, as an op on top is: the snapshot answers for it as
+//! Matrix's partial-state join authorises an event against the state plus
+//! the event's own auth events (MSC3902). What the full merge would decide
+//! between it and a concurrent cut op is left to `resume_gates`, which
+//! answers `NotOnTop` where order or causality could matter (a spent or
+//! revoked invite, an invite not in its past, a cut member record).
 
 use std::collections::{BTreeMap, HashMap};
 
-use rekindle_types::governance::{GenesisCert, OpHash};
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use super::resolve::Ancestry;
@@ -36,7 +53,8 @@ use crate::state::GovernanceState;
 pub enum NotOnTop {
     /// A cut power op the snapshot lists as applied was not supplied.
     MissingCutPowerOp(OpHash),
-    /// (a′): this op lacks a cut head in its causal past.
+    /// (a′): this op lacks a cut head in its causal past, and the snapshot
+    /// cannot answer for it beside the cut (S7c.8).
     BesideTheCut(OpHash),
     /// (c): this op sits at or below its author's highest seq in the cut.
     IntoTheCut(OpHash),
@@ -67,6 +85,23 @@ pub(super) struct RestSet<'a> {
     pub index: HashMap<OpHash, usize>,
     pub pending: Vec<OpHash>,
     pub equivocators: Vec<PseudonymKey>,
+    /// Per op beside the cut, each author's highest cut seq its deps (and
+    /// its `rest` ancestors' deps) cite; `None` for an op with every cut
+    /// head in its past.
+    pub reach: Vec<Option<Reach>>,
+}
+
+/// An author's highest seq cited, keyed by pseudonym bytes.
+pub(super) type Reach = BTreeMap<[u8; 32], u64>;
+
+/// Whether `reach` has the cut op at `author`'s `seq` in its past.
+pub(super) fn reaches(reach: &Reach, author: &[u8; 32], seq: u64) -> bool {
+    reach.get(author).is_some_and(|s| *s >= seq)
+}
+
+fn cite(reach: &mut Reach, author: [u8; 32], seq: u64) {
+    let slot = reach.entry(author).or_insert(seq);
+    *slot = (*slot).max(seq);
 }
 
 /// What the resume reads besides `rest`.
@@ -96,8 +131,11 @@ pub(super) struct RestRound {
 
 /// The merge of the full op set, from `snapshot` (the state and cut index
 /// at a checkpoint's cut), `cut_power` (the cut's applied power ops,
-/// fetched by their locators, `CutSnapshot::power_refs`; a refused one
-/// is never folded, so only its fate, which the snapshot carries, is read)
+/// fetched by their locators, `CutSnapshot::power_refs`, and any refused
+/// one a `rest` op cites; a refused one is never folded, so only its fate,
+/// which the snapshot carries, and its `issued_at`, which a join citing it
+/// is dated against, are read: one not supplied makes that join
+/// `Undecidable`)
 /// and `rest` (every op held outside the cut): the cut's power
 /// fates followed by `rest`'s. Its `hints` are empty: the hint layer is a
 /// function of every `Checkpoint` op held (`checkpoint::hints`).
@@ -112,6 +150,7 @@ pub fn merge_from(
 ) -> Result<MergeOutcome, NotOnTop> {
     let ctx = context(cert, snapshot, cut_power)?;
     let set = prepare_rest(snapshot, rest)?;
+    beside_anchored(&ctx, &set)?;
     let n = set.ops.len();
     let mut invalid = vec![false; n];
     let mut round = rest_round(&ctx, &set, &invalid);
@@ -223,6 +262,7 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
         index: HashMap::new(),
         pending: Vec::new(),
         equivocators: fork_at.keys().map(|k| PseudonymKey(*k)).collect(),
+        reach: Vec::new(),
     };
     let mut masks: Vec<u64> = Vec::new();
     for op in sorted {
@@ -251,9 +291,9 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
             set.pending.push(op.hash());
             continue;
         }
-        if mask != whole {
-            return Err(NotOnTop::BesideTheCut(op.hash()));
-        }
+        let reach = (mask != whole)
+            .then(|| beside_reach(op, &deps, &set))
+            .transpose()?;
         let in_rest: Vec<usize> = (deps.iter())
             .filter_map(|d| match d {
                 Dep::Rest(i) => Some(*i),
@@ -264,9 +304,55 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
         set.ops.push(op);
         set.past.push(&in_rest);
         set.deps.push(deps);
+        set.reach.push(reach);
         masks.push(mask);
     }
     Ok(set)
+}
+
+/// The cut seqs `op` (beside the cut, its deps `deps`) reaches: a power or
+/// `Checkpoint` op beside the cut is not on top (a power op could reorder
+/// the cut's power phase; a `Checkpoint`'s gate reads its cut as a
+/// descendant of the whole cut).
+fn beside_reach(op: &VerifiedOp, deps: &[Dep], set: &RestSet<'_>) -> Result<Reach, NotOnTop> {
+    let checkpoint = matches!(op.body(), GovernanceEntry::Checkpoint(_));
+    if checkpoint || class_of(op.body()) == OpClass::Power {
+        return Err(NotOnTop::BesideTheCut(op.hash()));
+    }
+    let mut reach = Reach::new();
+    for (d, at) in op.op().deps.iter().zip(deps) {
+        match at {
+            Dep::Cut => cite(&mut reach, d.author.0, d.author_seq),
+            Dep::Rest(i) => {
+                for (author, seq) in set.reach[*i].iter().flatten() {
+                    cite(&mut reach, *author, *seq);
+                }
+            }
+        }
+    }
+    Ok(reach)
+}
+
+/// Every op beside the cut has every applied cut power op in its past: a
+/// cut power op it reaches adds its own deps (the power order is a stamp
+/// order, so a power op's past comes before it and the reverse walk sees
+/// each after every op that could cite it).
+fn beside_anchored(ctx: &Ctx<'_>, set: &RestSet<'_>) -> Result<(), NotOnTop> {
+    for (i, reach) in set.reach.iter().enumerate() {
+        let Some(reach) = reach else {
+            continue;
+        };
+        let mut reach = reach.clone();
+        for q in ctx.cut_applied.iter().rev() {
+            if !reaches(&reach, &q.author().0, q.op().seq) {
+                return Err(NotOnTop::BesideTheCut(set.ops[i].hash()));
+            }
+            for d in &q.op().deps {
+                cite(&mut reach, d.author.0, d.author_seq);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// One pass over `rest` with the ops in `invalid` left out: the power ops

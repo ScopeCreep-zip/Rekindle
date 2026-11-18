@@ -431,6 +431,8 @@ mod op_proptests;
 #[cfg(test)]
 mod proptests;
 #[cfg(test)]
+mod resume_beside_tests;
+#[cfg(test)]
 mod resume_hint_tests;
 #[cfg(test)]
 mod resume_tests;
