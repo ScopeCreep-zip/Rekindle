@@ -886,6 +886,28 @@ CREATE TABLE IF NOT EXISTS governance_heads (
     FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
 );
 
+-- Checkpoint hints (plan E3.2 S7c.6): every (height, round, digest) a held
+-- `Checkpoint` op carries, written after each rebuild. `op_hash` is the
+-- lowest `(lamport, op_hash)` op carrying it; `state` is `usable` once a
+-- strict majority of its electorate endorses it, `equivocated` when it is
+-- one of two majority digests for one cut and one `prevCheckpoint`, else
+-- `proposed`. Which hint is selected is computed, never stored. `snapshot`
+-- is the `stateRoot` preimage (`canonical_state ‖ canonical_cut`) of a
+-- usable hint, kept once verified and served from here.
+CREATE TABLE IF NOT EXISTS governance_checkpoints (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    community_id TEXT NOT NULL,
+    height INTEGER NOT NULL CHECK(height >= 1),
+    round INTEGER NOT NULL CHECK(round >= 0 AND round <= 4294967295),
+    digest BLOB NOT NULL CHECK(length(digest) = 32),
+    op_hash BLOB NOT NULL CHECK(length(op_hash) = 32),
+    dir_size INTEGER NOT NULL CHECK(dir_size >= 0),
+    state TEXT NOT NULL CHECK(state IN ('proposed','usable','equivocated')),
+    snapshot BLOB,
+    PRIMARY KEY (owner_key, community_id, height, round, digest),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+);
+
 -- The outbox (plan E2.5, D22; `rekindle_outbox`, `rekindle_db::repo::
 -- outbox`): one row per send intent not yet settled. `stream` names an
 -- ordered stream (`<kind>:<scope>`), `stream_seq` the row's place in it;

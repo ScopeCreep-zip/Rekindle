@@ -46,6 +46,9 @@ fn seeded() -> Connection {
          'applied')",
         "INSERT INTO governance_heads (owner_key, community_id, author, member_record, head_seq, \
          frontier_hash) VALUES (?1, 'c', 'a', 'm', 0, zeroblob(32))",
+        "INSERT INTO governance_checkpoints (owner_key, community_id, height, round, digest, \
+         op_hash, dir_size, state) VALUES (?1, 'c', 1, 0, zeroblob(32), zeroblob(32), 0, \
+         'usable')",
         "INSERT INTO signal_prekeys (owner_key, id, kind, secret, public, created_at, \
          published_subkey) VALUES (?1, 1, 'spk', x'00', x'00', 0, 0)",
         "INSERT INTO prekey_slots_used (owner_key, peer, device_id, opk_id, used_at) \
@@ -102,6 +105,13 @@ const OUT_OF_VOCABULARY: &[(&str, &str, &str)] = &[
     ("governance_ops", "issued_at", "-1"),
     ("governance_heads", "head_seq", "-1"),
     ("governance_heads", "frontier_hash", "zeroblob(31)"),
+    ("governance_checkpoints", "state", "'adopted'"),
+    ("governance_checkpoints", "height", "0"),
+    ("governance_checkpoints", "round", "-1"),
+    ("governance_checkpoints", "round", "4294967296"),
+    ("governance_checkpoints", "digest", "zeroblob(31)"),
+    ("governance_checkpoints", "op_hash", "x'00'"),
+    ("governance_checkpoints", "dir_size", "-1"),
     ("signal_prekeys", "kind", "'otpk'"),
     ("signal_prekeys", "id", "0"),
     ("signal_prekeys", "id", "2147483648"),

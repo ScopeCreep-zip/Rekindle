@@ -403,6 +403,7 @@ mod tests {
             "INSERT INTO read_markers (owner_key, scope_kind, community_id, channel_id, last_read_seq, updated_at) VALUES (?1, 'channel', ?2, 'ch', 0, 0)",
             "INSERT INTO governance_ops (owner_key, community_id, op_hash, author, author_seq, lamport, issued_at, op, state) VALUES (?1, ?2, zeroblob(32), 'a', 0, 1, 0, x'00', 'applied')",
             "INSERT INTO governance_heads (owner_key, community_id, author, member_record, head_seq, frontier_hash) VALUES (?1, ?2, 'a', 'm', 0, zeroblob(32))",
+            "INSERT INTO governance_checkpoints (owner_key, community_id, height, round, digest, op_hash, dir_size, state) VALUES (?1, ?2, 1, 0, zeroblob(32), zeroblob(32), 0, 'usable')",
             "INSERT INTO message_delivery (owner_key, message_id, community_id, recipient_pseudonym) VALUES (?1, ?2 || '-m', ?2, 'p')",
         ];
         for sql in per_community {
@@ -418,6 +419,7 @@ mod tests {
             "read_markers",
             "governance_ops",
             "governance_heads",
+            "governance_checkpoints",
             "message_delivery",
         ] {
             let left: Vec<String> = conn
