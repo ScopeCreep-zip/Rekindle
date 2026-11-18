@@ -9,8 +9,8 @@ import type { RouteAvailability } from "../ipc/channels/notification_events";
  * The node's network state, as the Host reports it (`get_network_status`
  * and the `network-status` push events). One store per window: the
  * buddy list's indicator reads it, and so does every action that needs
- * the network before it may start (plan E7.13: a community create is a
- * durable DHT write, so Create waits for "Connected").
+ * the network before it may start (plan E7.13: Create waits for
+ * `canCreateCommunity`).
  */
 export interface NetworkState {
   attachmentState: string;
@@ -18,6 +18,8 @@ export interface NetworkState {
   publicInternetReady: boolean;
   hasRoute: boolean;
   mediaRoute: RouteAvailability;
+  /** The Host accepts writes now (its lifecycle's `can_write`). */
+  canWrite: boolean;
 }
 
 const [networkState, setNetworkState] = createStore<NetworkState>({
@@ -26,6 +28,7 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
   publicInternetReady: false,
   hasRoute: false,
   mediaRoute: "idle",
+  canWrite: false,
 });
 
 export { networkState };
@@ -34,6 +37,22 @@ export { networkState };
 export function isNetworkConnected(): boolean {
   return networkState.publicInternetReady && networkState.hasRoute;
 }
+
+/**
+ * A community create can start (plan E7.13, audit 2026-11-18): the Host
+ * takes writes and the public internet is ready both ways, which is when
+ * Veilid's DHT is online (0.5.8 `storage_manager/mod.rs:1096-1104`); no
+ * private route is needed. Unlike a message, a create cannot be held and
+ * sent later: the community's first record is signed with a one-time key
+ * destroyed right after (ADR 0011), so a held write would have no writer.
+ */
+export function canCreateCommunity(): boolean {
+  return networkState.canWrite && networkState.publicInternetReady;
+}
+
+/** Why a create must wait, in plain words. */
+export const CREATE_WAIT_REASON =
+  "a new community's first record is signed with a one-time key that is destroyed right after, so it cannot be saved and sent later";
 
 export function isNetworkConnecting(): boolean {
   const state = networkState.attachmentState;
@@ -66,6 +85,7 @@ async function pollNetworkStatus(): Promise<void> {
       publicInternetReady: status.publicInternetReady,
       hasRoute: status.hasRoute,
       mediaRoute: status.mediaRoute,
+      canWrite: status.canWrite,
     });
   }
 }
@@ -81,6 +101,7 @@ function start(): void {
       publicInternetReady: event.publicInternetReady,
       hasRoute: event.hasRoute,
       mediaRoute: event.mediaRoute,
+      canWrite: event.canWrite,
     });
   }).then((fn) => {
     if (users > 0) unlisten = fn;

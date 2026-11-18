@@ -12,6 +12,7 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
             public_internet_ready,
             has_route,
             media_route,
+            can_write,
         } => {
             h.update(b"attach|");
             // The raw state string is included because it distinguishes
@@ -25,6 +26,7 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
                 u8::from(*public_internet_ready),
                 u8::from(*has_route),
                 *media_route as u8,
+                u8::from(*can_write),
             ]);
         }
         NetworkEvent::LocalRoutesDied { count } => {

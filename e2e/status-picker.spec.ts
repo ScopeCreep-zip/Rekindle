@@ -64,3 +64,20 @@ test("a keyboard choice sets the status and closes the picker", async ({ page })
   await expect(dropdown).toHaveCount(0);
   await expect.poll(() => statusCalls(page)).toHaveLength(1);
 });
+
+// A refused status change says why (plan E7.13); the label keeps the status
+// the Host still holds.
+test("a refused status change shows the Host's reason", async ({ page }) => {
+  await preloadMocks(page, "buddy-list", HANDLER.replace(
+    "return { status: args.status };",
+    `throw { type: "failed", data: { code: 409, message: "cannot perform query operation in state 'locking'", remediation: "wait for the daemon to reach operational state" } };`,
+  ));
+  await page.goto("/buddy-list");
+  await expect(page.locator(".status-picker")).toBeVisible({ timeout: 10_000 });
+  await page.locator(".status-picker").click();
+  await page.locator(".status-picker-dropdown .context-menu-item", { hasText: "Away" }).click();
+  await expect(page.locator(".toast-item.toast-error")).toContainText(
+    "Status not changed: cannot perform query operation in state 'locking'",
+  );
+  await expect(page.locator(".status-picker .buddy-name")).toHaveText("Online");
+});

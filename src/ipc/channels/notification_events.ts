@@ -70,6 +70,8 @@ export type NetworkEvent =
         publicInternetReady: boolean;
         hasRoute: boolean;
         mediaRoute: RouteAvailability;
+        /** The Host accepts writes now (its lifecycle's `can_write`). */
+        canWrite: boolean;
       };
     }
   | { localRoutesDied: { count: number } }
@@ -92,4 +94,5 @@ export interface NetworkStatusEvent {
   publicInternetReady: boolean;
   hasRoute: boolean;
   mediaRoute: RouteAvailability;
+  canWrite: boolean;
 }

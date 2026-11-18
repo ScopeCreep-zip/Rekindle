@@ -26,7 +26,7 @@ pub fn route_status(state: &AppState) -> (bool, RouteAvailability) {
 /// can fire transitions on every status update without churn or noise.
 pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
     let (has_route, media_route) = route_status(state);
-    let event = {
+    let mut event = {
         let node = state.node.read();
         match node.as_ref() {
             Some(nh) => NetworkEvent::AttachmentChanged {
@@ -35,6 +35,7 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
                 public_internet_ready: nh.public_internet_ready,
                 has_route,
                 media_route,
+                can_write: false,
             },
             None => NetworkEvent::AttachmentChanged {
                 attachment_state: "detached".to_string(),
@@ -42,6 +43,7 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
                 public_internet_ready: false,
                 has_route: false,
                 media_route: RouteAvailability::Idle,
+                can_write: false,
             },
         }
     };
@@ -64,6 +66,11 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
             let _ = state.lifecycle.transition(LifecycleState::Operational);
         }
         _ => {} // No transition needed for this (attach, state) combination.
+    }
+    // Read after the edges above: whether the Host takes a write now, which
+    // a community create waits for (plan E7.13).
+    if let NetworkEvent::AttachmentChanged { can_write, .. } = &mut event {
+        *can_write = state.lifecycle.state().can_write();
     }
 
     crate::event_dispatch::emit_subscription(app_handle, &SubscriptionEvent::Network(event));

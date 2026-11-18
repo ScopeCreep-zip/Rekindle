@@ -100,6 +100,15 @@ impl DaemonHandler {
         Some(crate::host::adapters::friends::HostFriends::of(&ctx))
     }
 
+    /// Whether the Host accepts writes now (its lifecycle's `can_write`),
+    /// for the network status a window gates writes on (plan E7.13).
+    fn can_write(&self) -> bool {
+        self.host
+            .get()
+            .and_then(std::sync::Weak::upgrade)
+            .is_some_and(|ctx| ctx.lifecycle.state().can_write())
+    }
+
     /// Whether we hold a personal route, and what the media route is doing
     /// (plan C7.9c): the route facts the network status carries. Route
     /// state lives on the transport's route owner, not the manager.
@@ -401,11 +410,14 @@ impl InboundHandler for DaemonHandler {
                 } => {
                     let (has_route, media_route) = self.route_status();
                     sub_mgr.on_attachment_change(
-                        state,
-                        is_attached,
-                        public_internet_ready,
-                        has_route,
-                        media_route,
+                        rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
+                            attachment_state: state,
+                            is_attached,
+                            public_internet_ready,
+                            has_route,
+                            media_route,
+                            can_write: self.can_write(),
+                        },
                     );
                 }
                 TransportEvent::RoutesChanged => {
@@ -420,11 +432,14 @@ impl InboundHandler for DaemonHandler {
                     let shared = transport.shared();
                     let (has_route, media_route) = self.route_status();
                     sub_mgr.on_attachment_change(
-                        shared.attachment_state().to_string(),
-                        shared.is_attached(),
-                        shared.public_internet_ready(),
-                        has_route,
-                        media_route,
+                        rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
+                            attachment_state: shared.attachment_state().to_string(),
+                            is_attached: shared.is_attached(),
+                            public_internet_ready: shared.public_internet_ready(),
+                            has_route,
+                            media_route,
+                            can_write: self.can_write(),
+                        },
                     );
                 }
                 TransportEvent::LocalRoutesDied { count } => {

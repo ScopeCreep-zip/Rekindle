@@ -232,6 +232,8 @@ export interface NetworkStatus {
   publicInternetReady: boolean;
   hasRoute: boolean;
   mediaRoute: RouteAvailability;
+  /** The Host accepts writes now (its lifecycle's `can_write`). */
+  canWrite: boolean;
   profileDhtKey: string | null;
   friendListDhtKey: string | null;
 }

@@ -29,7 +29,7 @@ source-compatible.
 | `Resuming` | Vault unlocked; warming caches, reopening DHT records | **yes** | no | no |
 | `Operational` | Everything ready — all commands available | **yes** | **yes** | no |
 | `Degraded` | Route died or MEK stale; auto-recovering | **yes** | **yes** | no |
-| `Detached` | Network lost; serving cached reads, queuing writes | **yes** | no | no |
+| `Detached` | Network lost; serving cached reads, refusing write commands (see below) | **yes** | no | no |
 | `Locking` | Zeroising secrets, closing vault | no | no | no |
 | `ShuttingDown` | Graceful shutdown in progress | no | no | no |
 
@@ -40,6 +40,22 @@ comes back). The
 distinction between `Degraded` and `Detached` is whether the network
 is *technically* attached — `Detached` means Veilid has lost public
 internet reachability, so writes have no peer to go to.
+
+`Detached` does not queue write commands: `can_write()` is false
+(`rekindle-lifecycle/src/state.rs:83`), so the Host refuses a send,
+create or join with "cannot perform write operation in state
+'detached'". What is held is narrower and lives below the command
+layer: an own-record write already accepted (profile fields, route
+blobs, a member slot with its own writer) that missed consensus is kept
+by the record pool as the latest value for its subkey and re-pushed when
+the network turns ready (`rekindle-record-pool/src/durable.rs`). Presence
+beats are never held, since a late beat would claim reachability we did
+not have; a status picked while detached is accepted (`PresenceSet`
+needs only `can_query()`), kept by `OwnPresence`, and published as a
+new beat when the network is ready. A community create is refused, not
+held: its anchor's owner key is destroyed after the GenesisCert
+(ADR 0011), so a held anchor write would have no writer
+(`durable.rs:24-31`).
 
 `Stopped` is the fail-closed default for the `LifecycleState::from_u8`
 deserializer: unknown atomic values resolve to `Stopped` rather than

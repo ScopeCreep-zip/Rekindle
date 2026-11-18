@@ -5,8 +5,8 @@ import { preloadMocks } from "./fixtures/mocks";
 // (409 "cannot perform write operation in state 'detached'"); the form
 // closed as if it had worked and the toast dropped the Host's reason.
 
-const CONNECTED = `{ attachmentState: "attached_good", isAttached: true, publicInternetReady: true, hasRoute: true, mediaRoute: "available", profileDhtKey: null, friendListDhtKey: null }`;
-const ATTACHING = `{ attachmentState: "attaching", isAttached: false, publicInternetReady: false, hasRoute: false, mediaRoute: "idle", profileDhtKey: null, friendListDhtKey: null }`;
+const CONNECTED = `{ attachmentState: "attached_good", isAttached: true, publicInternetReady: true, hasRoute: true, mediaRoute: "available", canWrite: true, profileDhtKey: null, friendListDhtKey: null }`;
+const ATTACHING = `{ attachmentState: "attaching", isAttached: false, publicInternetReady: false, hasRoute: false, mediaRoute: "idle", canWrite: false, profileDhtKey: null, friendListDhtKey: null }`;
 
 const handler = (network: string) => `
   switch (cmd) {
@@ -75,9 +75,10 @@ async function sendNetwork(page: Page, index: number, status: Record<string, unk
   }, { index, status });
 }
 
-// Decided after walk 15: a community create is a durable DHT write, so
-// Create waits for the indicator's "Connected" (like Element, which refuses
-// room creation offline), and says why while it waits.
+// Decided after walk 15, corrected by the 2026-11-18 audit: a create cannot
+// be held for later (its first record's one-time key is destroyed once
+// written, ADR 0011), so Create waits for the Host to take writes with the
+// public internet ready, and says why while it waits.
 test("Create waits for the network and says why", async ({ page }) => {
   await preloadMocks(page, "buddy-list", handler(ATTACHING));
   await page.goto("/buddy-list");
@@ -90,7 +91,7 @@ test("Create waits for the network and says why", async ({ page }) => {
 
   await sendNetwork(page, 0, {
     attachmentState: "attached_good", isAttached: true, publicInternetReady: true,
-    hasRoute: true, mediaRoute: "available",
+    hasRoute: true, mediaRoute: "available", canWrite: true,
   });
   await expect(page.locator(".network-indicator span")).toHaveText("Connected");
   await expect(create).toBeEnabled();
@@ -102,10 +103,33 @@ test("Create waits for the network and says why", async ({ page }) => {
   // The network drops while the form is open: the submit waits again.
   await sendNetwork(page, 1, {
     attachmentState: "attaching", isAttached: false, publicInternetReady: false,
-    hasRoute: false, mediaRoute: "idle",
+    hasRoute: false, mediaRoute: "idle", canWrite: false,
   });
   await expect(submit).toBeDisabled();
   await expect(page.locator(".modal-container .form-hint")).toHaveText(
-    "Waiting for the network (Connecting...): a community can be created once connected.",
+    "Waiting for the network (Connecting...): a new community's first record is signed with a one-time key that is destroyed right after, so it cannot be saved and sent later.",
   );
+});
+
+// Veilid's DHT is online once the public internet is ready both ways, with
+// no private route (0.5.8 `storage_manager/mod.rs:1096-1104`): "No Route"
+// still lets Create start; a Host that takes no writes does not.
+const NO_ROUTE = `{ attachmentState: "attached_good", isAttached: true, publicInternetReady: true, hasRoute: false, mediaRoute: "failed", canWrite: true, profileDhtKey: null, friendListDhtKey: null }`;
+
+test("Create needs the DHT and the Host's writes, not a route", async ({ page }) => {
+  await preloadMocks(page, "buddy-list", handler(NO_ROUTE));
+  await page.goto("/buddy-list");
+  await page.waitForFunction(() => typeof (window as any).__eventChannelId === "number");
+  await expect(page.locator(".network-indicator span")).toHaveText("No Route");
+  await page.locator('.buddy-tab[title^="Communities"]').click();
+  const create = page.locator('[aria-label="Create Community"]');
+  await expect(create).toBeEnabled();
+  await expect(create).toHaveAttribute("title", "Create Community");
+
+  // The Host stops taking writes (detached): Create waits again.
+  await sendNetwork(page, 0, {
+    attachmentState: "attached_good", isAttached: true, publicInternetReady: true,
+    hasRoute: false, mediaRoute: "failed", canWrite: false,
+  });
+  await expect(create).toBeDisabled();
 });

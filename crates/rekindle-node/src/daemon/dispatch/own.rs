@@ -58,14 +58,18 @@ pub(crate) async fn route(
     }
 }
 
-/// `PresenceSet`: the status the user picked.
+/// `PresenceSet`: the status the user picked. Taken while the identity is
+/// unlocked, attached or not (Discord and Signal apply your status at once):
+/// it is ours to show, and our presence publishes a new beat with it when
+/// the network turns ready (`OwnPresence::publish_on_ready`), never a held
+/// one (presence beats are never held, `rekindle-record-pool` `durable.rs`).
 async fn handle_status(
     ctx: &DaemonContext,
     state: DaemonState,
     status: SessionStatus,
 ) -> IpcResponse {
-    if !state.can_write() {
-        return state_error(state, "write");
+    if !state.can_query() {
+        return state_error(state, "query");
     }
     let was_invisible = ctx.own_presence.status() == SessionStatus::Invisible;
     ctx.own_presence.set_status(status).await;

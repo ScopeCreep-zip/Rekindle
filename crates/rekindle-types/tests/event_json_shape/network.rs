@@ -66,6 +66,9 @@ fn attachment(
             public_internet_ready: attached,
             has_route,
             media_route,
+            // Attached here means unlocked and not detached: the Host
+            // writes, with or without a route ("failed": no route, DHT up).
+            can_write: attached,
         },
     )
 }

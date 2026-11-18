@@ -121,6 +121,7 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     {
         let mut rx = state.lifecycle.subscribe();
         let app_for_lifecycle = app.handle().clone();
+        let state_for_lifecycle = Arc::clone(state);
         // Tauri's `setup` closure runs on the main thread with no ambient
         // Tokio reactor — spawn on Tauri's managed runtime (same as the
         // Veilid task below), not bare `tokio::spawn`.
@@ -134,6 +135,14 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
                                 state: next,
                                 at_ms: rekindle_utils::timestamp_ms_i64(),
                             },
+                        );
+                        // The network status carries the lifecycle's
+                        // `can_write` (plan E7.13: Create waits for it), so a
+                        // transition re-sends it; an unlock reaching
+                        // Operational changes no attachment.
+                        crate::services::veilid::emit_network_status(
+                            &app_for_lifecycle,
+                            &state_for_lifecycle,
                         );
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {

@@ -42,6 +42,12 @@ pub enum NetworkEvent {
         /// and the general route is never substituted (plan C7.9c), so a
         /// window must be able to say voice is unavailable.
         media_route: RouteAvailability,
+        /// Whether the Host accepts writes now (its lifecycle's
+        /// `can_write`: unlocked and not detached). A community create
+        /// waits for it and `public_internet_ready` (plan E7.13, audit
+        /// 2026-11-18): the anchor's owner key is destroyed after the
+        /// GenesisCert (ADR 0011), so a create cannot be held for later.
+        can_write: bool,
     },
     /// Our own allocated private routes died and need reallocation.
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_routes).

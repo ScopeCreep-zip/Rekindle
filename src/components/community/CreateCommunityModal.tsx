@@ -4,7 +4,7 @@ import Modal from "../common/Modal";
 import LoadingButton from "../common/LoadingButton";
 import { errorMessage } from "../../utils/error";
 import { handleCreateCommunity } from "../../actions/community.actions";
-import { isNetworkConnected, networkLabel, trackNetworkStatus } from "../../stores/network.store";
+import { CREATE_WAIT_REASON, canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stores/network.store";
 
 interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -15,8 +15,8 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
   const [name, setName] = createSignal("");
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal("");
-  // Create waits for the network (plan E7.13); the Host still refuses a
-  // create that races a drop, and that reason shows below.
+  // Create waits for the network (plan E7.13, `canCreateCommunity`); the
+  // Host still refuses a create that races a drop, and that reason shows.
   trackNetworkStatus();
 
   // Reset on every open so a previous error / name doesn't carry over.
@@ -35,7 +35,7 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
       setError("Community name is required");
       return;
     }
-    if (!isNetworkConnected()) return;
+    if (!canCreateCommunity()) return;
     setError("");
     setSubmitting(true);
     try {
@@ -59,9 +59,9 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
           onInput={(e) => setName(e.currentTarget.value)}
           autofocus
         />
-        <Show when={!isNetworkConnected()}>
+        <Show when={!canCreateCommunity()}>
           <div class="form-hint" role="status">
-            Waiting for the network ({networkLabel()}): a community can be created once connected.
+            Waiting for the network ({networkLabel()}): {CREATE_WAIT_REASON}.
           </div>
         </Show>
         <Show when={error()}>
@@ -79,7 +79,7 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
           <LoadingButton
             type="submit"
             loading={submitting()}
-            disabled={!name().trim() || !isNetworkConnected()}
+            disabled={!name().trim() || !canCreateCommunity()}
             loadingLabel="Creating"
           >
             Create

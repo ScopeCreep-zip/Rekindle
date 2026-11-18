@@ -1133,6 +1133,7 @@
     "network": {
       "attachmentChanged": {
         "attachmentState": "attaching",
+        "canWrite": false,
         "hasRoute": false,
         "isAttached": false,
         "mediaRoute": "allocating",
@@ -1144,6 +1145,7 @@
     "network": {
       "attachmentChanged": {
         "attachmentState": "attached_good",
+        "canWrite": true,
         "hasRoute": true,
         "isAttached": true,
         "mediaRoute": "available",
@@ -1155,6 +1157,7 @@
     "network": {
       "attachmentChanged": {
         "attachmentState": "attached_weak",
+        "canWrite": true,
         "hasRoute": false,
         "isAttached": true,
         "mediaRoute": "failed",
@@ -1166,6 +1169,7 @@
     "network": {
       "attachmentChanged": {
         "attachmentState": "detached",
+        "canWrite": false,
         "hasRoute": false,
         "isAttached": false,
         "mediaRoute": "idle",
@@ -1177,6 +1181,7 @@
     "network": {
       "attachmentChanged": {
         "attachmentState": "attached_weak",
+        "canWrite": true,
         "hasRoute": true,
         "isAttached": true,
         "mediaRoute": "unavailable",

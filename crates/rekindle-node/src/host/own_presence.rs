@@ -147,6 +147,17 @@ impl OwnPresence {
             scope.spawn_with_token_or_drop("presence details retry", move |stop| async move {
                 this.retry_details(stop).await;
             });
+            if let Some(ready) = self
+                .transport
+                .as_ref()
+                .and_then(std::sync::Weak::upgrade)
+                .map(|t| t.shared().subscribe_ready())
+            {
+                let this = self.clone();
+                scope.spawn_with_token_or_drop("presence on ready", move |stop| async move {
+                    this.publish_on_ready(ready, stop).await;
+                });
+            }
         }
         self.changed();
     }
@@ -232,6 +243,38 @@ impl OwnPresence {
             {
                 if let Err(e) = self.write_details(false).await {
                     tracing::debug!(error = %e, "presence details still not written; retrying");
+                }
+            }
+        }
+    }
+
+    /// Each time the network turns ready (the transport's public-internet
+    /// watch, fed on both hosts), publish a **new** beat with the status we
+    /// hold now, and the details a failed write left unwritten. A status
+    /// picked while detached is kept, never queued: a held beat landing late
+    /// would claim reachability we did not have (`rekindle-record-pool`
+    /// `durable.rs`), so the beat is built at the edge, with the edge's time.
+    async fn publish_on_ready(
+        &self,
+        mut ready: tokio::sync::watch::Receiver<bool>,
+        stop: tokio_util::sync::CancellationToken,
+    ) {
+        ready.borrow_and_update();
+        while stop
+            .run_until_cancelled(ready.changed())
+            .await
+            .is_some_and(|changed| changed.is_ok())
+        {
+            if !*ready.borrow_and_update() {
+                continue;
+            }
+            self.republish();
+            if self
+                .details_pending
+                .load(std::sync::atomic::Ordering::SeqCst)
+            {
+                if let Err(e) = self.write_details(false).await {
+                    tracing::debug!(error = %e, "presence details not written on ready; retrying");
                 }
             }
         }

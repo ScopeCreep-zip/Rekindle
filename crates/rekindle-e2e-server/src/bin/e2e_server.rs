@@ -339,6 +339,7 @@ fn local(cmd: &str) -> Option<Result<Value, CommandError>> {
             "publicInternetReady": false,
             "hasRoute": false,
             "mediaRoute": "idle",
+            "canWrite": false,
             "profileDhtKey": Value::Null,
             "friendListDhtKey": Value::Null,
         }),

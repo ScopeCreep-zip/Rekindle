@@ -505,3 +505,38 @@ async fn discovered_registry_members_are_persisted() {
 
 #[path = "runtime_projection_tests.rs"]
 mod projection;
+
+/// A status picked while the node is detached is taken and kept (plan E7.13,
+/// audit 2026-11-18): the identity is unlocked, so the status is ours to
+/// show; our presence publishes a new beat with it once the network is ready.
+#[tokio::test]
+async fn a_status_picked_while_detached_is_kept() {
+    use rekindle_types::presence::SessionStatus;
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    host.ctx
+        .lifecycle
+        .transition(DaemonState::Detached)
+        .unwrap();
+
+    let set = host
+        .call(
+            Caller::shell(),
+            IpcRequest::PresenceSet {
+                status: SessionStatus::Away,
+            },
+        )
+        .await;
+    assert!(
+        status_of(&set).is_none(),
+        "a detached status is taken: {set:?}"
+    );
+    let got = host.call(Caller::shell(), IpcRequest::PresenceGet).await;
+    let IpcResponse::Ok { data, .. } = got else {
+        panic!("{got:?}")
+    };
+    let view: rekindle_types::dto::presence::OwnPresenceView =
+        serde_json::from_value(data).unwrap();
+    assert_eq!(view.status, SessionStatus::Away);
+}

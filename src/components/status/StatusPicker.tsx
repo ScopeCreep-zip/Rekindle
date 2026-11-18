@@ -2,6 +2,8 @@ import { Component, For } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 import { commands } from "../../ipc/commands";
 import { setAuthState } from "../../stores/auth.store";
+import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 import type { UserStatus } from "../../stores/auth.store";
 import StatusDot from "./StatusDot";
 
@@ -24,11 +26,12 @@ interface StatusPickerProps {
 
 const StatusPicker: Component<StatusPickerProps> = (props) => {
   function handleSelect(value: string): void {
-    // The Host owns our status: show what it answers.
+    // The Host owns our status: show what it answers, and its refusal
+    // (the label keeps the status it still holds).
     void commands
       .setStatus(value as Exclude<UserStatus, "offline">)
       .then((view) => setAuthState("status", view.status))
-      .catch((e: unknown) => console.error("status change failed", e));
+      .catch((e: unknown) => addToast(`Status not changed: ${errorMessage(e)}`, "error"));
   }
 
   return (

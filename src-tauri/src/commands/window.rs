@@ -15,6 +15,9 @@ pub struct NetworkStatus {
     pub has_route: bool,
     /// What the media-class route is doing (plan C7.9c).
     pub media_route: rekindle_types::subscription_events::RouteAvailability,
+    /// Whether the Host accepts writes now (its lifecycle's `can_write`;
+    /// plan E7.13: a community create waits for it).
+    pub can_write: bool,
     pub profile_dht_key: Option<String>,
     pub friend_list_dht_key: Option<String>,
 }
