@@ -75,8 +75,57 @@ pub enum ReadOp {
 /// with more than [`GOVERNANCE_OP_MAX_DEPS`] deps.
 pub fn encode_op(op: &GovernanceOp) -> Result<Vec<u8>, CodecError> {
     check_len("governance op deps", op.deps.len(), GOVERNANCE_OP_MAX_DEPS)?;
-    let out = pack(&build(op, true));
+    seal_op(&op_unsigned_bytes(op), &op.sig)
+}
+
+/// Seal an op's canonical unsigned bytes (as [`op_unsigned_bytes`] or
+/// [`read_op`] give them) and its signature into the wire form, refusing
+/// one over [`GOVERNANCE_OP_MAX_BYTES`]. The bytes are read back through
+/// the op's bounded reader and copied as they are, fields beyond this
+/// writer's schema included, so the sealed op reads back with exactly
+/// those unsigned bytes and `sig`: the one sealing path [`encode_op`] uses.
+pub fn seal_op(unsigned: &[u8], sig: &[u8; 64]) -> Result<Vec<u8>, CodecError> {
+    let message = unpack_bounded(&packed_literal(unsigned)?, bounds::GOVERNANCE_OP_BOUND)?;
+    let r = message
+        .get_root::<governance_op::Reader<'_>>()
+        .map_err(|e| capnp_err(&e))?;
+    let mut builder = capnp::message::Builder::new_default();
+    builder.set_root(r).map_err(|e| capnp_err(&e))?;
+    let mut root = builder
+        .get_root::<governance_op::Builder<'_>>()
+        .map_err(|e| capnp_err(&e))?;
+    root.set_sig(sig);
+    let out = pack(&builder);
     check_len("governance op", out.len(), GOVERNANCE_OP_MAX_BYTES)?;
+    Ok(out)
+}
+
+/// A single-segment message (the canonical form's one segment) in packed
+/// framing, every word written literally: a `0xff` tag, the word, then a
+/// count of up to 255 further words copied raw (Cap'n Proto encoding spec,
+/// "Packing"). A valid packed stream that `unpack_bounded` reads.
+fn packed_literal(segment: &[u8]) -> Result<Vec<u8>, CodecError> {
+    if !segment.len().is_multiple_of(8) {
+        return Err(CodecError::Deserialization(format!(
+            "governance op segment is {} bytes, not whole words",
+            segment.len()
+        )));
+    }
+    let words = u32::try_from(segment.len() / 8).map_err(|_| {
+        CodecError::Deserialization("governance op segment is too large".to_owned())
+    })?;
+    let mut header = 0u32.to_le_bytes().to_vec();
+    header.extend_from_slice(&words.to_le_bytes());
+    let mut out = Vec::with_capacity(segment.len() + segment.len() / 1024 + 14);
+    // The reader takes the segment table apart from the segment, so no run
+    // crosses from one into the other.
+    for run in std::iter::once(header.as_slice()).chain(segment.chunks(256 * 8)) {
+        let (first, rest) = run.split_at(8);
+        out.push(0xff);
+        out.extend_from_slice(first);
+        out.push(u8::try_from(rest.len() / 8).unwrap_or(u8::MAX));
+        out.extend_from_slice(rest);
+    }
     Ok(out)
 }
 
@@ -84,7 +133,7 @@ pub fn encode_op(op: &GovernanceOp) -> Result<Vec<u8>, CodecError> {
 /// `GOV_OP ‖ anchor`) and the op hash covers (before the signature).
 #[must_use]
 pub fn op_unsigned_bytes(op: &GovernanceOp) -> Vec<u8> {
-    let builder = build(op, false);
+    let builder = build(op);
     let root = builder.get_root_as_reader::<governance_op::Reader<'_>>();
     // A builder's own root always reads back and canonicalizes.
     root.and_then(canonical).unwrap_or_default()
@@ -238,11 +287,8 @@ pub fn decode_frontier(data: &[u8]) -> Result<Frontier, CodecError> {
     })
 }
 
-/// One builder for both forms, so they differ only in `sig`.
-fn build(
-    op: &GovernanceOp,
-    signed: bool,
-) -> capnp::message::Builder<capnp::message::HeapAllocator> {
+/// The op without `sig`; [`seal_op`] adds it to the canonical form.
+fn build(op: &GovernanceOp) -> capnp::message::Builder<capnp::message::HeapAllocator> {
     let mut builder = capnp::message::Builder::new_default();
     let mut b = builder.init_root::<governance_op::Builder<'_>>();
     b.set_author(&op.author.0);
@@ -257,9 +303,6 @@ fn build(
     }
     b.set_issued_at(op.issued_at);
     write_governance_entry(b.reborrow().init_body(), &op.body);
-    if signed {
-        b.set_sig(&op.sig);
-    }
     builder
 }
 

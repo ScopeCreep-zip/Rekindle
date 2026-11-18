@@ -2,8 +2,7 @@
 //! quarantines the community with a reason; it is held (never dropped),
 //! never applied, and the state is the merge without it.
 
-use rekindle_codec::governance_op::{op_unsigned_bytes, Uninterpretable};
-use rekindle_codec::governance_op_capnp::governance_op;
+use rekindle_codec::governance_op::{op_unsigned_bytes, seal_op, Uninterpretable};
 use rekindle_governance::merge;
 use rekindle_governance::op::{op_hash, op_signing_bytes};
 use rekindle_secrets::ed25519_dalek::Signer;
@@ -18,7 +17,7 @@ use crate::test_world::{invite, World, ANCHOR};
 /// The signed wire op of canonical unsigned `unsigned` once its body's
 /// union discriminant (the first 16 bits of the body's data section; the
 /// body is the root's pointer 3) is `arm`: the patched bytes, signed by
-/// `signer`, plus that signature. Returns (patched unsigned, sig, wire).
+/// `signer`, sealed by the codec. Returns (patched unsigned, sig, wire).
 fn newer_kind_wire(unsigned: &[u8], arm: u16, signer: &Member) -> (Vec<u8>, [u8; 64], Vec<u8>) {
     let pointee = |at: usize| {
         let p = &unsigned[at * 8..at * 8 + 8];
@@ -33,19 +32,7 @@ fn newer_kind_wire(unsigned: &[u8], arm: u16, signer: &Member) -> (Vec<u8>, [u8;
     let sig = (signer.pseudonym)
         .sign(&op_signing_bytes(ANCHOR, &patched))
         .to_bytes();
-    let mut flat = 0u32.to_le_bytes().to_vec();
-    flat.extend_from_slice(&u32::try_from(patched.len() / 8).unwrap().to_le_bytes());
-    flat.extend_from_slice(&patched);
-    let read =
-        capnp::serialize::read_message(flat.as_slice(), capnp::message::ReaderOptions::new())
-            .unwrap();
-    let mut message = capnp::message::Builder::new_default();
-    message
-        .set_root(read.get_root::<governance_op::Reader<'_>>().unwrap())
-        .unwrap();
-    (message.get_root::<governance_op::Builder<'_>>().unwrap()).set_sig(&sig);
-    let mut wire = Vec::new();
-    capnp::serialize_packed::write_message(&mut wire, &message).unwrap();
+    let wire = seal_op(&patched, &sig).expect("the codec seals the patched op");
     (patched, sig, wire)
 }
 

@@ -501,7 +501,7 @@ fn max_deps_fit_the_subkey_and_one_more_is_refused() {
     over.deps.push(op_ref(0xFF));
     assert!(encode_op(&over).is_err());
     // A sender that skips the encoder's check is refused on decode.
-    let mut unchecked = crate::capnp_codec::pack(&super::build(&over, true));
+    let mut unchecked = super::seal_op(&super::op_unsigned_bytes(&over), &over.sig).unwrap();
     assert!(decode_op(&unchecked).is_err());
     unchecked.resize(GOVERNANCE_OP_MAX_BYTES + 1, 0);
     assert!(decode_op(&unchecked).is_err());

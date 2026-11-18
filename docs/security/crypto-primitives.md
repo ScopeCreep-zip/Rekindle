@@ -340,6 +340,17 @@ SHA256(concatenated)` will move to a true binary Merkle tree
   `rekindle_secrets::slot_head`). A reader keeps a departed member's
   backfilled posts only from a value with that seq and digest, so a leaver
   cannot fill a seq gap it reserved with posts written after it left.
+- **Governance op** (ADR 0011, plan E3.2; D15): the author signs
+  `rekindle-gov-op-v1 ‖ anchor ‖ unsigned` with Ed25519, and the op hash is
+  `derive_key("rekindle-gov-op-hash-v1", unsigned ‖ sig)`
+  (`rekindle_governance::op::{op_signing_bytes, op_hash}`). `unsigned` is the
+  op's Cap'n Proto canonical form (one segment, preorder, truncated) with
+  `sig` cleared (`rekindle_codec::governance_op::op_unsigned_bytes`). A reader
+  computes it from the received message itself (`read_op`: copied as it
+  came, `sig` cleared, canonicalized), so it checks the signature of an op
+  whose kind or fields it does not know without interpreting the body, and
+  holds such an op quarantined (D15). `seal_op` writes `unsigned` plus `sig`
+  as the wire form, the one sealing path.
 - **Checkpoint directory** (plan E3.2 S7c.2): one RFC 9162 §2.1.1 Merkle
   tree over the `DirLeafV1` entries (member, record key and owner, join op,
   join height), with `HASH` = `derive_key("rekindle-gov-directory-v1", ·)`

@@ -47,7 +47,8 @@ Every governance change is a `GovernanceOp`
 `prev`, causal `deps` (`OpRef`s naming the op hash, author, seq and the
 author's record), `issued_at` (a tie-break only), the body (a
 `GovernanceEntry`) and an Ed25519 signature over
-`GOV_OP ‖ anchor ‖ canonical unsigned bytes`. Ops are appended to the
+`GOV_OP ‖ anchor ‖ canonical unsigned bytes` (`rekindle-gov-op-v1`; layout in
+[`crypto-primitives.md`](../security/crypto-primitives.md)). Ops are appended to the
 author's own op log (`M`/2 head, sealed pages behind it) and the
 author's frontier (`M`/3: heads plus the roster checksum) is written
 after the head. A reader verifies each op

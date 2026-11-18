@@ -5,8 +5,7 @@
 use rekindle_types::governance::{GovernanceEntry, GovernanceOp};
 use rekindle_types::id::PseudonymKey;
 
-use super::{decode_op, op_unsigned_bytes, read_op, ReadOp, Uninterpretable};
-use crate::governance_op_capnp::governance_op;
+use super::{decode_op, op_unsigned_bytes, read_op, seal_op, ReadOp, Uninterpretable};
 use crate::CodecError;
 
 fn left_op() -> GovernanceOp {
@@ -41,27 +40,11 @@ fn with_arm(unsigned: &[u8], arm: u16) -> Vec<u8> {
     out
 }
 
-/// The signed message of canonical unsigned `unsigned`: it, plus `sig`.
-fn seal_unsigned(unsigned: &[u8], sig: &[u8; 64]) -> Vec<u8> {
-    let mut flat = vec![0, 0, 0, 0];
-    flat.extend_from_slice(&u32::try_from(unsigned.len() / 8).unwrap().to_le_bytes());
-    flat.extend_from_slice(unsigned);
-    let options = capnp::message::ReaderOptions::new();
-    let message = capnp::serialize::read_message(flat.as_slice(), options).unwrap();
-    let mut builder = capnp::message::Builder::new_default();
-    builder
-        .set_root(message.get_root::<governance_op::Reader<'_>>().unwrap())
-        .unwrap();
-    let mut root = builder.get_root::<governance_op::Builder<'_>>().unwrap();
-    root.set_sig(sig);
-    crate::capnp_codec::pack(&builder)
-}
-
 #[test]
 fn a_sealed_known_op_reads_back_with_its_signed_bytes() {
     let op = left_op();
     let unsigned = op_unsigned_bytes(&op);
-    let bytes = seal_unsigned(&unsigned, &op.sig);
+    let bytes = seal_op(&unsigned, &op.sig).unwrap();
     let ReadOp::Known(decoded) = read_op(&bytes).unwrap() else {
         panic!("a known op reads as known");
     };
@@ -73,7 +56,7 @@ fn a_sealed_known_op_reads_back_with_its_signed_bytes() {
 fn an_op_of_an_arm_beyond_the_schema_reads_with_the_bytes_its_author_signed() {
     let op = left_op();
     let unsigned = with_arm(&op_unsigned_bytes(&op), 0x7fff);
-    let bytes = seal_unsigned(&unsigned, &op.sig);
+    let bytes = seal_op(&unsigned, &op.sig).unwrap();
     let ReadOp::Unknown(unknown) = read_op(&bytes).unwrap() else {
         panic!("an arm beyond the schema is not interpretable");
     };

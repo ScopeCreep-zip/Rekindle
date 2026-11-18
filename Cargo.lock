@@ -7505,7 +7505,6 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "blake3",
- "capnp 0.20.6",
  "futures",
  "hex",
  "mockall",
