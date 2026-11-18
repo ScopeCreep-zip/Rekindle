@@ -405,6 +405,10 @@ pub enum ControlPayload {
     CheckpointStateRequest { request: Vec<u8> },
     /// An encoded `CheckpointStateResponse` (plan E3.2 S7c.3).
     CheckpointStateResponse { response: Vec<u8> },
+    /// An encoded, signed `CheckpointHintRequest` (plan E3.2 S7c.5).
+    CheckpointHintRequest { request: Vec<u8> },
+    /// An encoded `CheckpointHintResponse` (plan E3.2 S7c.5).
+    CheckpointHintResponse { response: Vec<u8> },
     /// Reply to a [`Self::VoiceMediaKey`] call: `recipient` opened and
     /// installed `sender`'s key at `key_index` (plan C7.22).
     VoiceMediaKeyAck {

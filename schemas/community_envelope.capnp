@@ -825,5 +825,10 @@ struct ControlPayload @0xeaffffff00000001 {
         # (community_governance.capnp).
         checkpointStateRequest   @77 :Data;
         checkpointStateResponse  @78 :Data;
+        # A checkpoint hint request (plan E3.2 S7c.5): an encoded, signed
+        # `CheckpointHintRequest`, and an encoded `CheckpointHintResponse`
+        # (community_governance.capnp).
+        checkpointHintRequest    @79 :Data;
+        checkpointHintResponse   @80 :Data;
     }
 }

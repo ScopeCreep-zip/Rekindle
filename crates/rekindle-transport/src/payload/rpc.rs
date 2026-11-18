@@ -146,6 +146,12 @@ pub enum InboundCall {
     /// rate-limits it, then answers `CallResponse::Ok` with the encoded
     /// `checkpointStateResponse` envelope; anything else is a NAK.
     CheckpointStateRequest { request: Vec<u8> },
+    /// A member's or a joiner's checkpoint hint request (plan E3.2 S7c.5),
+    /// bare: the encoded `CheckpointHintRequest` its pseudonym signs. The
+    /// handler admits and rate-limits the signer as for a snapshot, then
+    /// answers `CallResponse::Ok` with the encoded `checkpointHintResponse`
+    /// envelope; anything else is a NAK.
+    CheckpointHintRequest { request: Vec<u8> },
 }
 
 /// Response from the handler to an inbound RPC.

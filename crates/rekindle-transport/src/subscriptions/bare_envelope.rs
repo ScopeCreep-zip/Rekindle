@@ -110,6 +110,19 @@ pub(super) fn decode_bare_checkpoint_state_request(
     }
 }
 
+/// A bare `checkpointHintRequest` (plan E3.2 S7c.5), routed like the
+/// snapshot request.
+pub(super) fn decode_bare_checkpoint_hint_request(
+    raw: &[u8],
+) -> Option<crate::payload::rpc::InboundCall> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw) {
+        Ok(Some(CommunityEnvelope::Control(ControlPayload::CheckpointHintRequest { request }))) => {
+            Some(crate::payload::rpc::InboundCall::CheckpointHintRequest { request })
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{decode_bare_attachment_request, decode_bare_mek_transfer};

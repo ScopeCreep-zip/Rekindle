@@ -290,6 +290,25 @@ impl InboundHandler for DaemonHandler {
                         CallResponse::Ok,
                     )
             }
+            InboundCall::CheckpointHintRequest { request } => {
+                // A member's or a joiner's checkpoint hint request (plan
+                // E3.2 S7c.5): admitted and rate-limited like a snapshot
+                // request; a refusal is a NAK.
+                let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+                    return CallResponse::Rejected {
+                        reason: "no host".into(),
+                    };
+                };
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .answer_checkpoint_hint(&request)
+                    .await
+                    .map_or_else(
+                        || CallResponse::Rejected {
+                            reason: "checkpoint hint not served".into(),
+                        },
+                        CallResponse::Ok,
+                    )
+            }
         }
     }
 

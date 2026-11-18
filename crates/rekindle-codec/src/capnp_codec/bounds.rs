@@ -174,6 +174,18 @@ pub const CHECKPOINT_STATE_REQUEST_BOUND: Bound = Bound {
     max_words: 64,
 };
 
+/// `CheckpointHintRequest` (`community_governance.capnp`): its cap, and
+/// 64 words.
+pub const CHECKPOINT_HINT_REQUEST_BOUND: Bound = Bound {
+    max_bytes: crate::checkpoint_hint::CHECKPOINT_HINT_REQUEST_MAX_BYTES,
+    max_words: 64,
+};
+
+/// `CheckpointHintResponse` (`community_governance.capnp`): its cap, as
+/// packed bytes.
+pub const CHECKPOINT_HINT_RESPONSE_BOUND: Bound =
+    Bound::packed(crate::checkpoint_hint::CHECKPOINT_HINT_RESPONSE_MAX_BYTES);
+
 /// `CheckpointStateResponse` (`community_governance.capnp`): its cap, the
 /// chunk and its framing, as packed bytes.
 pub const CHECKPOINT_STATE_RESPONSE_BOUND: Bound =

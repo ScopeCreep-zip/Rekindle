@@ -4,6 +4,7 @@
 //! rate-limited per requester like the `headAdvanced` handler, in chunks of
 //! at most 30,000 B (`rekindle_governance_runtime::checkpoint_state`).
 
+use rekindle_codec::checkpoint_hint::decode_checkpoint_hint_request;
 use rekindle_codec::checkpoint_state::decode_checkpoint_state_request;
 use rekindle_types::id::PseudonymKey;
 
@@ -25,22 +26,8 @@ impl HostGovernance {
         };
         let community = request.community.as_str();
         let requester = PseudonymKey(request.requester);
-        let admitted = match request.invite_code_hash.as_deref() {
-            None => self.is_key_reader(community, &requester),
-            Some(code_hash) => self.holds_live_invite(community, &requester, code_hash),
-        };
-        if !admitted {
-            tracing::debug!(
-                community,
-                "checkpoint state request from a non-member without a live invite refused"
-            );
-            return None;
-        }
-        if !self.admit_snapshot_request(community, &requester) {
-            tracing::debug!(
-                community,
-                "checkpoint state request over the requester's rate"
-            );
+        let invite = request.invite_code_hash.as_deref();
+        if !self.admit_reader(community, &requester, invite) {
             return None;
         }
         match rekindle_governance_runtime::checkpoint_state::answer_state_request(self, &request)
@@ -52,6 +39,62 @@ impl HostGovernance {
                 None
             }
         }
+    }
+
+    /// Answer a `CheckpointHintRequest` (plan E3.2 S7c.5): the encoded
+    /// `checkpointHintResponse` envelope, or `None` (a NAK) when it does
+    /// not verify, its signer is neither a member nor a joiner holding a
+    /// live invite, or the signer is over its rate.
+    pub async fn answer_checkpoint_hint(&self, request: &[u8]) -> Option<Vec<u8>> {
+        let request = match decode_checkpoint_hint_request(request) {
+            Ok(request) => request,
+            Err(error) => {
+                tracing::debug!(%error, "checkpoint hint request did not verify");
+                return None;
+            }
+        };
+        let community = request.community.as_str();
+        let requester = PseudonymKey(request.requester);
+        let invite = request.invite_code_hash.as_deref();
+        if !self.admit_reader(community, &requester, invite) {
+            return None;
+        }
+        match rekindle_governance_runtime::checkpoint_hint::answer_hint_request(self, &request)
+            .await
+        {
+            Ok(reply) => Some(reply),
+            Err(error) => {
+                tracing::debug!(community, %error, "checkpoint hint not served");
+                None
+            }
+        }
+    }
+
+    /// Whether `requester` may read `community`'s checkpoint hint or
+    /// snapshot now: a member (no `invite`) or a joiner holding the live
+    /// invite `invite` names, within its rate.
+    fn admit_reader(
+        &self,
+        community: &str,
+        requester: &PseudonymKey,
+        invite: Option<&str>,
+    ) -> bool {
+        let admitted = match invite {
+            None => self.is_key_reader(community, requester),
+            Some(code_hash) => self.holds_live_invite(community, requester, code_hash),
+        };
+        if !admitted {
+            tracing::debug!(
+                community,
+                "checkpoint request from a non-member without a live invite refused"
+            );
+            return false;
+        }
+        if !self.admit_snapshot_request(community, requester) {
+            tracing::debug!(community, "checkpoint request over the requester's rate");
+            return false;
+        }
+        true
     }
 
     /// Whether `requester`, not banned, names a live invite of `community`

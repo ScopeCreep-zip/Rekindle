@@ -274,6 +274,33 @@ struct CheckpointStateRequest {
     inviteCodeHash       @6 :Text;
 }
 
+# A request for a usable checkpoint hint (plan E3.2 S7c.5), in ControlPayload
+# `checkpointHintRequest @79`: with `height` 0 the hint selected at the
+# greatest height, else the usable hint at `height` carrying `digest` (a
+# joiner checking the endorsement chain down to the GenesisCert). Signed by
+# `requester` over `rekindle-checkpoint-hint-request-v1 ‖ community ‖ height
+# ‖ digest ‖ requester ‖ invite`; `inviteCodeHash` as in
+# CheckpointStateRequest (empty: a member asks).
+struct CheckpointHintRequest {
+    community            @0 :Text;
+    height               @1 :UInt64;
+    digest               @2 :Data;          # 32 bytes; zeros with height 0
+    requester            @3 :Data;          # 32 bytes
+    inviteCodeHash       @4 :Text;
+    sig                  @5 :Data;          # 64 bytes
+}
+
+# The answer, in `checkpointHintResponse @80`: the hint's lowest
+# `(lamport, op_hash)` `Checkpoint` op (unset: no usable hint, or the
+# community holds a checkpoint equivocation) and the endorsements a strict
+# majority of its electorate needs, lowest first, each located by author
+# record and seq. Unsigned: the reader verifies every op it fetches.
+struct CheckpointHintResponse {
+    hasCheckpoint        @0 :Bool;
+    checkpointRef        @1 :Op.OpRef;
+    endorsements         @2 :List(Op.OpRef);
+}
+
 # The answer, in `checkpointStateResponse @78`: at most 30,000 of the
 # `total` snapshot bytes from the request's offset. Unsigned: the reader
 # checks the reassembled bytes against the checkpoint's `stateRoot`.

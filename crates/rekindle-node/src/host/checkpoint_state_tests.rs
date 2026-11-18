@@ -164,12 +164,33 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
     joiner(
         Some(rekindle_governance::state::InviteState {
             expires_at: Some(1),
-            ..live
+            ..live.clone()
         }),
         false,
     );
     assert!(served().await.is_none(), "an expired invite is refused");
     joiner(None, false);
     assert!(served().await.is_none(), "a revoked invite is refused");
+
+    // The hint request (S7c.5) is admitted the same way.
+    let hint = rekindle_codec::checkpoint_hint::CheckpointHintRequest {
+        community: "c1".into(),
+        height: 0,
+        digest: [0; 32],
+        requester: stranger.verifying_key().to_bytes(),
+        invite_code_hash: Some(code.clone()),
+    }
+    .encode(&stranger)
+    .unwrap();
+    let hinted = || async { host.governance().answer_checkpoint_hint(&hint).await };
+    assert!(
+        hinted().await.is_none(),
+        "a hint for a revoked invite is refused"
+    );
+    joiner(Some(live), false);
+    assert!(
+        hinted().await.is_some(),
+        "a joiner with a live invite is answered"
+    );
     host.shutdown().await.unwrap();
 }
