@@ -319,8 +319,13 @@
     position: relative;
   }
 
-  .action-bar-icon-btn:hover {
+  .action-bar-icon-btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, transparent);
+  }
+
+  .action-bar-icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
   }
 
   /* Voice call button in chat header */

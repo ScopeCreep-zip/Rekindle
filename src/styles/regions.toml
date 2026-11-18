@@ -85,6 +85,7 @@
 '.xfire-titlebar-btn-close:hover' = { on = ["--color-xfire-danger var(--tint-fill-strong) over --color-xfire-titlebar-start", "--color-xfire-danger var(--tint-fill-strong) over --color-xfire-titlebar-end"] }
 '.form-textarea' = { on = ["--color-xfire-bg-input"] }
 '.form-error' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.form-hint' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-btn-primary' = { on = ["--color-xfire-accent"], on_hover = ["--color-xfire-accent 80% over --color-xfire-fill-shade"] }
 '.form-btn-secondary' = { on = ["--color-xfire-overlay 8% over --color-xfire-accent 10% over --color-xfire-bg-panel", "--color-xfire-overlay 8% over --color-xfire-bg-dark", "--color-xfire-overlay 8% over --color-xfire-bg-panel", "--color-xfire-overlay 8% over --color-xfire-bg-secondary", "--color-xfire-overlay 8% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark", "--color-xfire-overlay 8% over --color-xfire-busy 30% over --color-xfire-bg-dark"], on_hover = ["--color-xfire-overlay 12% over --color-xfire-accent 10% over --color-xfire-bg-panel", "--color-xfire-overlay 12% over --color-xfire-bg-dark", "--color-xfire-overlay 12% over --color-xfire-bg-panel", "--color-xfire-overlay 12% over --color-xfire-bg-secondary", "--color-xfire-overlay 12% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark", "--color-xfire-overlay 12% over --color-xfire-busy 30% over --color-xfire-bg-dark"] }

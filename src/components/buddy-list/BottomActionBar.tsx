@@ -3,6 +3,7 @@ import { handleToggleAddFriend } from "../../actions/buddy.actions";
 import { handleLogout } from "../../actions/auth.actions";
 import { setFriendsState } from "../../stores/friends.store";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
+import { isNetworkConnected, networkLabel, trackNetworkStatus } from "../../stores/network.store";
 import { ICON_NEW_CHAT, ICON_ADD_FRIEND, ICON_PLUS, ICON_COMMUNITIES, ICON_LOGOUT } from "../../icons";
 
 function handleToggleNewChat(): void {
@@ -18,6 +19,12 @@ function handleToggleJoinCommunity(): void {
 }
 
 const BottomActionBar: Component = () => {
+  // A community create is a durable DHT write with nothing to show until
+  // it lands, so Create waits for the network (plan E7.13; Element refuses
+  // room creation offline rather than queueing it).
+  trackNetworkStatus();
+  const createTitle = (): string =>
+    isNetworkConnected() ? "Create Community" : `Create Community (waiting for the network: ${networkLabel()})`;
   // The backend refuses a second concurrent logout; the button reflects
   // the one in flight.
   const [loggingOut, setLoggingOut] = createSignal(false);
@@ -43,7 +50,13 @@ const BottomActionBar: Component = () => {
         </button>
       </Show>
       <Show when={buddyListUI.activeTab === "communities"}>
-        <button class="action-bar-icon-btn" onClick={handleToggleCreateCommunity} title="Create Community" aria-label="Create Community">
+        <button
+          class="action-bar-icon-btn"
+          onClick={handleToggleCreateCommunity}
+          disabled={!isNetworkConnected()}
+          title={createTitle()}
+          aria-label="Create Community"
+        >
           <span class="nf-icon" aria-hidden="true">{ICON_PLUS}</span>
         </button>
         <button class="action-bar-icon-btn" onClick={handleToggleJoinCommunity} title="Join Community" aria-label="Join Community">
