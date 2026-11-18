@@ -7,6 +7,7 @@
 import { randomBytes } from "node:crypto";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
+import { pageLog, recordPage } from "./probe.ts";
 import { launch, openSession, renewSession, type App } from "./launch.ts";
 import { BUDDY, inBuddy, openAddFriend } from "./nav.ts";
 import { createIdentity, type Row, type WalkState } from "./rows.ts";
@@ -160,8 +161,16 @@ export const PEER_ROWS: Row[] = [
     title: "Typing indicator while drafting (seen by the peer)",
     async run({ b, shot }) {
       const p = needPeer();
+      // On failure the note names the walk's send_typing calls and the
+      // typing events the peer's window was sent (probe.ts).
+      await recordPage(b, ["send_typing"], ["typing"]);
+      await recordPage(p.b, [], ["typing"]);
       await (await shown(b, ".message-input-field")).addValue("typing…");
-      await waitUntil(async () => /typing/i.test(await (await p.b.$("body")).getText()), WAIT_MS * 2, "peer saw no typing indicator");
+      try {
+        await waitUntil(async () => /typing/i.test(await (await p.b.$("body")).getText()), WAIT_MS * 2, "peer saw no typing indicator");
+      } catch (err) {
+        throw new Error(`${err instanceof Error ? err.message : String(err)}; walk: ${await pageLog(b)}; peer: ${await pageLog(p.b)}`);
+      }
       await p.b.saveScreenshot("e2e/walk/out/C7-peer.png");
       await shot();
       await (await b.$(".message-input-field")).clearValue();
