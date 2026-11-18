@@ -17,6 +17,7 @@ const CATEGORY = "walk-cat";
 const MSG = "hello from the walk";
 const EDITED = "edited by the walk";
 const THREAD = "walk-thread";
+const POLL_HOST = "the walk polls this";
 
 /** Switch to the open community window, or open it from the buddy list. */
 export async function inCommunity(b: Browser, name: string): Promise<void> {
@@ -269,21 +270,36 @@ export const COMMUNITY_ROWS: Row[] = [
   },
   {
     id: "M78",
-    title: "Thread: archive, M79 close",
+    title: "Thread: M79 close, reopen, archive",
     async run({ b, s, shot }) {
+      await (await shown(b, '[aria-label="Close thread"]')).click();
+      await gone(b, ".thread-panel");
+      await press(b, await (await lastMessage(b, EDITED)).$(".thread-starter-badge"));
+      await byText(b, ".thread-panel-title", THREAD, NET_WAIT_MS);
+      // Archiving from the panel closes it (useCommunityWindow.ts
+      // handleArchiveActiveThread); the archived thread leaves the channel's
+      // threads (dispatcher_content.ts threadArchiveChanged), so its starter
+      // badge goes too.
       await (await shown(b, '[aria-label="Archive thread"]')).click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
-      await shown(b, 'textarea[placeholder="Reply to reactivate thread..."], input[placeholder="Reply to reactivate thread..."]', NET_WAIT_MS);
-      await shot();
-      await (await b.$('[aria-label="Close thread"]')).click();
       await gone(b, ".thread-panel");
+      await waitUntil(
+        async () => !(await (await lastMessage(b, EDITED)).$(".thread-starter-badge").isExisting()),
+        NET_WAIT_MS,
+        "the archived thread's badge stayed on its starter message",
+      );
+      await shot();
     },
   },
   {
     id: "M53",
     title: "Create poll",
     async run({ b, s, shot }) {
-      await msgAction(b, EDITED, "Create poll");
+      // A message with a thread offers no poll (MessageList.tsx: onCreatePoll
+      // only when !thread()), and M51 threaded EDITED: poll a fresh message.
+      await typeAndSend(b, ".community-main .message-input-field", POLL_HOST);
+      await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
+      await msgAction(b, POLL_HOST, "Create poll");
       await typeInto(await shown(b, 'input[placeholder="Poll question..."]'), "walk poll?");
       await typeInto(await shown(b, 'input[placeholder="Answer 1"]'), "yes");
       await typeInto(await shown(b, 'input[placeholder="Answer 2"]'), "no");
