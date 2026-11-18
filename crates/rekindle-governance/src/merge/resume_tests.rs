@@ -78,10 +78,9 @@ fn split(
 
 /// The cut's applied power ops `snap` lists, each taken from `all` by its
 /// locator alone (author, seq), as a reader holding only the snapshot
-/// fetches them from the author's op log. When one has no record at the
-/// cut (`power_refs` is `None`: an applied power op whose author the cut
-/// never admitted), the reader replays in full; the ops are then taken by
-/// hash so `merge_from` is still checked against `merge_outcome`.
+/// fetches them. With `power_refs` `None` (an applied power op whose
+/// author the cut never admitted) a reader replays in full; they are then
+/// taken by hash so `merge_from` is still checked.
 fn located_power(cert: &GenesisCert, snap: &CutSnapshot, all: &[VerifiedOp]) -> Vec<VerifiedOp> {
     let Some(refs) = snap.power_refs(cert) else {
         let applied =
@@ -575,23 +574,18 @@ fn snapshot_size_is_linear_in_members_and_power_ops() {
 #[path = "resume_gate_tests.rs"]
 mod gate_tests;
 
-/// P3: every cut power op is named by author and seq, so a reader holding
-/// only the snapshot fetches exactly those ops by locator and resumes.
+/// P3: a reader holding only the snapshot fetches the cut power ops by locator.
 #[test]
 fn a_cut_power_op_is_located_through_the_directory() {
     let (cert, mut ops) = base();
     let m = op(&pk(4), 1, &[head(&ops), find(&ops, 4, 0)], 40, meta("x"));
     ops.push(m);
-    // Manager 2 kicks 4 with an honest frontier: an applied power op of a
-    // member, located through its record at the cut.
+    // Manager 2's kick of 4: a member's applied power op.
     let k = op(&pk(2), 1, &[head(&ops), find(&ops, 2, 0)], 41, kick(4, 2));
     ops.push(k);
     let heads = [head(&ops)];
     let (snap, power, rest) = split(&cert, &ops, &heads);
-    assert!(
-        snap.power_refs(&cert).is_some(),
-        "every applied power op located"
-    );
+    assert!(snap.power_refs(&cert).is_some(), "all located");
     let listed: Vec<OpHash> = (snap.cut.power.iter())
         .filter(|(_, applied)| *applied)
         .map(|(c, _)| c.hash)
