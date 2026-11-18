@@ -23,8 +23,6 @@ use super::HostGovernance;
 use crate::host::fixture::temp_root;
 use crate::host::{claim, Host, HostConfig, HostStores, TransportSource};
 
-const COMMUNITY: &str = "c1";
-
 async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
     Host::start(HostConfig {
         root: claim(temp_root(dir)).unwrap(),
@@ -86,20 +84,20 @@ async fn a_removed_member_cannot_open_a_history_ad_sealed_after_the_rotation() {
     host.ctx
         .mek_cache
         .write()
-        .insert(COMMUNITY, KeyScope::Community, replaced.clone());
+        .insert("c1", KeyScope::Community, replaced.clone());
     assert!(
-        governance.peer_ad(COMMUNITY, &sealed_after).is_none(),
+        governance.peer_ad("c1", &sealed_after).is_none(),
         "the removed member reads no ranges from an ad sealed after the rotation"
     );
     assert!(
-        governance.peer_ad(COMMUNITY, &relabelled).is_none(),
+        governance.peer_ad("c1", &relabelled).is_none(),
         "nor from the same ad labelled with the replaced generation"
     );
     // Its own pre-rotation reads still work: the opener is not refusing
     // everything.
     assert!(
         governance
-            .peer_ad(COMMUNITY, &row(&writer, &replaced, replaced.generation()))
+            .peer_ad("c1", &row(&writer, &replaced, replaced.generation()))
             .is_some(),
         "an ad sealed under the key it holds opens"
     );
@@ -108,9 +106,9 @@ async fn a_removed_member_cannot_open_a_history_ad_sealed_after_the_rotation() {
     host.ctx
         .mek_cache
         .write()
-        .insert(COMMUNITY, KeyScope::Community, rotated);
+        .insert("c1", KeyScope::Community, rotated);
     let (pseudonym, _, ads) = governance
-        .peer_ad(COMMUNITY, &sealed_after)
+        .peer_ad("c1", &sealed_after)
         .expect("a remaining member opens the ad");
     assert_eq!(pseudonym, hex::encode(writer.verifying_key().to_bytes()));
     assert_eq!(ads.len(), 1);
