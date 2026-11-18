@@ -488,6 +488,15 @@
       }
     }
   },
+  "governance.checkpointSnapshotMismatch": {
+    "governance": {
+      "checkpointSnapshotMismatch": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "digest": "8888888888888888888888888888888888888888888888888888888888888888",
+        "height": 2
+      }
+    }
+  },
   "governance.governanceOpQuarantined": {
     "governance": {
       "governanceOpQuarantined": {

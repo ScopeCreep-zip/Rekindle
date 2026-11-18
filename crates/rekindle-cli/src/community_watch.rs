@@ -356,6 +356,10 @@ fn governance(event: &GovernanceEvent) -> String {
             };
             format!("op {op} by {author} quarantined: {why}")
         }
+        GovernanceEvent::CheckpointSnapshotMismatch { height, digest, .. } => format!(
+            "checkpoint {} at height {height} endorsed a false state snapshot",
+            abbreviate_key(digest)
+        ),
     }
 }
 

@@ -150,6 +150,18 @@ pub enum GovernanceEvent {
         /// other `Checkpoint` op.
         cause: Option<String>,
     },
+
+    /// A community joined from a checkpoint hint finished its backfill and
+    /// the full op set's state at the hint's cut is not the hinted
+    /// snapshot: a strict majority endorsed a false checkpoint (plan E3.2
+    /// S7c.8 (1), threat T8). The community stays on the backfilled state.
+    CheckpointSnapshotMismatch {
+        community: String,
+        /// The hint's checkpoint height.
+        height: u64,
+        /// The hint's checkpoint digest, hex.
+        digest: String,
+    },
 }
 
 /// Why a governance op is quarantined
@@ -195,7 +207,8 @@ impl GovernanceEvent {
             | Self::ChannelPermissionsChanged { community, .. }
             | Self::GovernanceSubkeyUpdated { community, .. }
             | Self::GovernanceRebuilt { community }
-            | Self::GovernanceOpQuarantined { community, .. } => community,
+            | Self::GovernanceOpQuarantined { community, .. }
+            | Self::CheckpointSnapshotMismatch { community, .. } => community,
         }
     }
 }

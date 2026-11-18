@@ -127,6 +127,13 @@ pub enum GovernanceRuntimeError {
     /// past the snapshot (plan E3.2 S7c.3): no snapshot is served.
     #[error("no checkpoint state to serve: {0}")]
     NoCheckpointState(String),
+
+    /// The community was joined from a checkpoint hint and its backfill has
+    /// not ended (plan E3.2 S7c.8 (1), Synapse `is_partial_state_room`): it
+    /// answers no hint, snapshot or bootstrap request until it holds every
+    /// op.
+    #[error("community {0} is partial until its backfill ends")]
+    PartialState(String),
 }
 
 impl GovernanceRuntimeError {

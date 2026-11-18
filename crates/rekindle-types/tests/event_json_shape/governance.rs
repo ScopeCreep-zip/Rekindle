@@ -23,6 +23,7 @@ pub const NAMES: &[&str] = &[
     "governanceRebuilt",
     "opPublication",
     "governanceOpQuarantined",
+    "checkpointSnapshotMismatch",
 ];
 
 pub fn variant_name(e: &GovernanceEvent) -> &'static str {
@@ -41,6 +42,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::GovernanceRebuilt { .. } => "governanceRebuilt",
         GovernanceEvent::OpPublication { .. } => "opPublication",
         GovernanceEvent::GovernanceOpQuarantined { .. } => "governanceOpQuarantined",
+        GovernanceEvent::CheckpointSnapshotMismatch { .. } => "checkpointSnapshotMismatch",
     }
 }
 
@@ -63,6 +65,14 @@ pub fn samples() -> Vec<Sample> {
 
 fn structure() -> Vec<Sample> {
     vec![
+        ev(
+            "checkpointSnapshotMismatch",
+            GovernanceEvent::CheckpointSnapshotMismatch {
+                community: community(),
+                height: 2,
+                digest: "8".repeat(64),
+            },
+        ),
         ev(
             "governanceOpQuarantined",
             GovernanceEvent::GovernanceOpQuarantined {

@@ -161,6 +161,15 @@ impl HostGovernance {
                 author,
                 reason,
             } => governance(op_quarantined(community_id, op, author, reason)),
+            GovernanceRuntimeEvent::CheckpointSnapshotMismatch {
+                community_id,
+                height,
+                digest,
+            } => governance(GovernanceEvent::CheckpointSnapshotMismatch {
+                community: community_id.clone(),
+                height: *height,
+                digest: hex::encode(digest),
+            }),
             GovernanceRuntimeEvent::GovernanceRebuilt { .. }
             | GovernanceRuntimeEvent::BootstrapResponseBuilt { .. }
             | GovernanceRuntimeEvent::GovernanceEntryApplied { .. } => None,

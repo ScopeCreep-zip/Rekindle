@@ -109,11 +109,13 @@ pub fn chunk_at(
 /// `checkpointStateResponse` envelope.
 ///
 /// # Errors
-/// No snapshot is held at that checkpoint or offset, or encoding failed.
+/// The community is partial (S7c.8 (1)), no snapshot is held at that
+/// checkpoint or offset, or encoding failed.
 pub async fn answer_state_request<D: GovernanceRuntimeDeps>(
     deps: &D,
     request: &CheckpointStateRequest,
 ) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    crate::partial::refuse_while_partial(deps, &request.community).await?;
     let snapshot = snapshot_at(deps, &request.community, request.height, &request.digest).await?;
     let response = chunk_at(&snapshot, request.offset)?
         .encode()

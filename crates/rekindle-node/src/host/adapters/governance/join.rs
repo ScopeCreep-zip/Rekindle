@@ -82,6 +82,15 @@ impl HostGovernance {
             },
         )
         .map_err(|e| format!("community joined but not recorded: {e}"))?;
+        // Joined from a hint: partial until the backfill rebuild holds the
+        // cut (plan E3.2 S7c.8 (1)), marked before any op is stored so a
+        // restart mid-backfill stays partial.
+        if let Some(hint) = outcome.partial {
+            use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+            self.set_governance_partial(&id, Some(hint))
+                .await
+                .map_err(|e| format!("community joined, partial flag not stored: {e}"))?;
+        }
         self.open_gossip_mesh(&id);
         // `K_M(p)`, the card's HPKE secret and the row are durable: the
         // walked ops and our `MemberJoined` into the op store, the merge,

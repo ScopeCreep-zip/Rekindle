@@ -163,11 +163,22 @@ enum Peer {
 /// still pending; the rebuild entry point ([`crate::rebuild_governance`])
 /// is reached `rebuilds` times, seen through its first call (the
 /// joined-community check, which ends it here). Returns `deps` and the op
-/// set's hashes, our `known`.
+/// set's hashes, our `known`. The community is whole.
 fn converging(
     peer: &Peer,
     stale: bool,
     rebuilds: usize,
+) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>) {
+    converging_as(peer, stale, rebuilds, false)
+}
+
+/// [`converging`], partial (joined from a hint, backfill not ended) when
+/// `partial` is set.
+fn converging_as(
+    peer: &Peer,
+    stale: bool,
+    rebuilds: usize,
+    partial: bool,
 ) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>) {
     use rekindle_secrets::ed25519_dalek::SigningKey;
     let key = SigningKey::from_bytes(&[9; 32]);
@@ -229,6 +240,13 @@ fn converging(
         .returning(move |_| Some(state.clone()));
     deps.expect_governance_ops()
         .returning(move |_| Ok(vec![held.clone()]));
+    deps.expect_governance_partial().returning(move |_| {
+        Ok(partial.then_some(crate::partial::PartialJoin {
+            height: 1,
+            digest: [1; 32],
+            state_root: [2; 32],
+        }))
+    });
     let verdicts = std::sync::Arc::new(crate::verify_cache::OpVerifyCache::default());
     deps.expect_op_verify_cache()
         .returning(move |_| std::sync::Arc::clone(&verdicts));
@@ -244,6 +262,26 @@ fn converging(
 #[tokio::test]
 async fn equal_heads_with_another_checksum_rebuild_the_state() {
     let (deps, mut known) = converging(&Peer::Other, false, 1);
+    let mut seen = SeenFrontiers::new();
+    let stored = inspect_one(
+        &deps,
+        "A",
+        "VLD0:m",
+        &mut seen,
+        &mut known,
+        FrontierRead::Sweep,
+    )
+    .await
+    .expect("inspected");
+    assert_eq!(stored, 0);
+    assert_eq!(seen.get("VLD0:m"), Some(&5));
+}
+
+/// Plan E3.2 S7c.8 (1): a partial community compares no D15 roster
+/// checksum, so equal heads with another checksum do not rebuild it.
+#[tokio::test]
+async fn a_partial_community_compares_no_roster_checksum() {
+    let (deps, mut known) = converging_as(&Peer::Other, false, 0, true);
     let mut seen = SeenFrontiers::new();
     let stored = inspect_one(
         &deps,

@@ -62,6 +62,9 @@ pub struct JoinStagesOutcome {
     pub walked: Vec<HeldOp>,
     /// Our op #0, `MemberJoined`.
     pub joined: HeldOp,
+    /// The hint the walk resumed from: the caller marks the community
+    /// partial from it before storing `walked` (plan E3.2 S7c.8 (1)).
+    pub partial: Option<crate::partial::PartialJoin>,
     pub claimed: ClaimedSlot,
     pub initial_presence: InitialPresence,
 }
@@ -297,6 +300,7 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         member,
         walked: walked.held,
         joined,
+        partial: walked.partial,
         claimed,
         initial_presence,
     })

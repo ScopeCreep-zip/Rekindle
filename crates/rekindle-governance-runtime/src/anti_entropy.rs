@@ -243,6 +243,11 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
     record: &str,
     frontier: &Frontier,
 ) -> Result<(), GovernanceRuntimeError> {
+    // A partial community's checksum is of fewer ops than its peers' (S7c.8
+    // (1)): nothing to compare until the backfill ends.
+    if crate::partial::is_partial(deps, community_id).await {
+        return Ok(());
+    }
     let Some(cert) = deps.genesis_cert(community_id) else {
         return Ok(());
     };

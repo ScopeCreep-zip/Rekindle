@@ -458,6 +458,19 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         digest: [u8; 32],
         snapshot: Vec<u8>,
     ) -> Result<(), GovernanceRuntimeError>;
+    /// The hint `community_id` was joined from while its backfill has not
+    /// ended (`governance_partial`, plan E3.2 S7c.8 (1)); `None` once the
+    /// community is whole.
+    async fn governance_partial(
+        &self,
+        community_id: &str,
+    ) -> Result<Option<crate::partial::PartialJoin>, GovernanceRuntimeError>;
+    /// Mark `community_id` partial from `hint`, or whole with `None`.
+    async fn set_governance_partial(
+        &self,
+        community_id: &str,
+        hint: Option<crate::partial::PartialJoin>,
+    ) -> Result<(), GovernanceRuntimeError>;
     /// The encoded op `op_ref` names, read from its author's op log
     /// (`rekindle_records::chain::read_log_after` on
     /// `op_ref.author_record`/`GOV_HEAD`, chain seq `author_seq + 1`),

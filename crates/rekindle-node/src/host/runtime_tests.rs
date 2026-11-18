@@ -43,6 +43,8 @@ mod membership;
 mod onboarding_bounds;
 #[path = "own_removal_tests.rs"]
 mod own_removal;
+#[path = "partial_tests.rs"]
+mod partial;
 #[cfg(unix)]
 #[path = "skin_tests.rs"]
 mod skin_requests;

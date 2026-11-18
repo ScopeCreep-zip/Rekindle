@@ -439,6 +439,22 @@ impl GovernanceRuntimeDeps for HostGovernance {
             .await
     }
 
+    async fn governance_partial(
+        &self,
+        community_id: &str,
+    ) -> Result<Option<rekindle_governance_runtime::partial::PartialJoin>, GovernanceRuntimeError>
+    {
+        self.governance_partial_impl(community_id).await
+    }
+
+    async fn set_governance_partial(
+        &self,
+        community_id: &str,
+        hint: Option<rekindle_governance_runtime::partial::PartialJoin>,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.set_governance_partial_impl(community_id, hint).await
+    }
+
     async fn fetch_governance_op(
         &self,
         op_ref: &OpRef,

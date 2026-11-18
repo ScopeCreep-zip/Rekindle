@@ -23,6 +23,7 @@ use crate::error::GovernanceRuntimeError;
 use crate::hint_chain::{verified_hints, Asker};
 use crate::hinted_walk::{equivocates, gather, resume_newest};
 use crate::op_log::{self, fetch_held, HeldOp, VerifiedSet, WalkLogCache};
+use crate::partial::PartialJoin;
 
 /// What the joiner read and merged.
 pub struct WalkedSet {
@@ -38,6 +39,9 @@ pub struct WalkedSet {
     pub hint: Option<[u8; 32]>,
     /// The height resumed from; `None` after a full walk.
     pub resumed_at: Option<u64>,
+    /// The hint resumed from: the community is partial from it until its
+    /// backfill ends (plan E3.2 S7c.8 (1)); `None` after a full walk.
+    pub partial: Option<PartialJoin>,
 }
 
 /// Whether `joiner` has an op in `snap`'s cut, merged or not.
@@ -62,6 +66,7 @@ async fn full_walk<D: GovernanceRuntimeDeps>(
         merged,
         hint,
         resumed_at: None,
+        partial: None,
     })
 }
 
@@ -124,5 +129,10 @@ pub async fn walk_for_join<D: GovernanceRuntimeDeps>(
         merged: resumed.outcome,
         hint: Some(link.digest),
         resumed_at: Some(link.height),
+        partial: Some(PartialJoin {
+            height: link.height,
+            digest: link.digest,
+            state_root: link.body.state_root,
+        }),
     })
 }

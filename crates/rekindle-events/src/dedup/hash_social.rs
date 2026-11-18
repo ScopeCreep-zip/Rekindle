@@ -118,6 +118,12 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
             h.update(b"quarantined|");
             h.update(op.as_bytes());
         }
+        // One per backfill: the hint's checkpoint names it.
+        GovernanceEvent::CheckpointSnapshotMismatch { height, digest, .. } => {
+            h.update(b"false_snapshot|");
+            h.update(&height.to_le_bytes());
+            h.update(digest.as_bytes());
+        }
         GovernanceEvent::ChannelPermissionsChanged { community, channel } => {
             h.update(b"perms|");
             h.update(community.as_bytes());

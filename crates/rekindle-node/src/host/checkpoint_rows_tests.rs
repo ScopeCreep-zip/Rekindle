@@ -62,7 +62,7 @@ fn signed(key: &SigningKey, prev: &HeldOp, deps: &[&HeldOp], body: GovernanceEnt
 /// Ann's `c1` whose creator (the height-1 electorate alone) endorsed a
 /// height-1 checkpoint over its first op: the host, the creator's key, its
 /// ops, the checkpoint and the snapshot at its cut.
-async fn community(host: &Host) -> (SigningKey, Vec<HeldOp>, Checkpoint, Vec<u8>) {
+pub(super) async fn community(host: &Host) -> (SigningKey, Vec<HeldOp>, Checkpoint, Vec<u8>) {
     let ann = create_ann(host).await;
     seed_registry_community(host, &ann.public_key).await;
     let key = SigningKey::from_bytes(&[0xbb; 32]);

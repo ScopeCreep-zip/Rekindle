@@ -50,6 +50,10 @@ pub async fn tick<D: GovernanceRuntimeDeps>(
     community_id: &str,
     clock: &mut CheckpointClock,
 ) -> Result<CheckpointStep, GovernanceRuntimeError> {
+    // A partial community's op set is not the community's (S7c.8 (1)).
+    if crate::partial::is_partial(deps, community_id).await {
+        return Ok(CheckpointStep::Idle);
+    }
     let cert = deps
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;

@@ -101,12 +101,14 @@ pub fn hint_response(
 /// `checkpointHintResponse` envelope.
 ///
 /// # Errors
-/// No cert is pinned, the op store failed, or encoding failed.
+/// The community is partial (S7c.8 (1)), no cert is pinned, the op store
+/// failed, or encoding failed.
 pub async fn answer_hint_request<D: GovernanceRuntimeDeps>(
     deps: &D,
     request: &CheckpointHintRequest,
 ) -> Result<Vec<u8>, GovernanceRuntimeError> {
     let community = request.community.as_str();
+    crate::partial::refuse_while_partial(deps, community).await?;
     let cert = deps
         .genesis_cert(community)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community.to_owned()))?;

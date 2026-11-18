@@ -50,7 +50,8 @@ fn adapter(msg: impl Into<String>) -> GovernanceRuntimeError {
 /// `bootstrapResponseV2` with our frontier.
 ///
 /// # Errors
-/// We are not in the community, the op is not the joiner's `MemberJoined`
+/// We are not in the community or it is partial (S7c.8 (1): the joiner's
+/// call is left unanswered, never a refusal), the op is not the joiner's `MemberJoined`
 /// or does not match its `OpRef`, the merged state does not hold the joiner as a member,
 /// or the store or the encode failed. The caller NAKs.
 pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
@@ -58,6 +59,7 @@ pub async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     anchor: &str,
     joiner: &BootstrapJoiner,
 ) -> Result<Vec<u8>, GovernanceRuntimeError> {
+    crate::partial::refuse_while_partial(deps, anchor).await?;
     deps.community_membership(anchor)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(anchor.to_owned()))?;
     let author = &joiner.member_joined.author;

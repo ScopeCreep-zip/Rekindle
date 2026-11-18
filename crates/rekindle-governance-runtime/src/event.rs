@@ -57,6 +57,18 @@ pub enum GovernanceRuntimeEvent {
         reason: QuarantineReason,
     },
 
+    /// A community joined from a checkpoint hint finished its backfill and
+    /// the full op set's state at the hint's cut misses the hinted
+    /// snapshot's digest: a strictly endorsed checkpoint lied (plan E3.2
+    /// S7c.8 (1), threat T8). The community stays on the backfilled state;
+    /// the Host publishes `GovernanceEvent::CheckpointSnapshotMismatch`.
+    CheckpointSnapshotMismatch {
+        community_id: String,
+        /// The hint's checkpoint height and digest.
+        height: u64,
+        digest: [u8; 32],
+    },
+
     /// A bootstrap response has been built for a joiner. Adapter logs
     /// this for telemetry (no user-visible event today).
     BootstrapResponseBuilt {

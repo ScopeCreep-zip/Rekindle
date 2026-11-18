@@ -1,9 +1,13 @@
 //! The Host's `governance_checkpoints` rows (plan E3.2 S7c.6): each
 //! checkpoint digest's state after a rebuild, and a usable hint's kept
-//! snapshot, through `rekindle_db::repo::governance_checkpoints`.
+//! snapshot, through `rekindle_db::repo::governance_checkpoints`; and the
+//! partial flag of a community joined from a hint (S7c.8 (1)), through
+//! `rekindle_db::repo::governance_partial`.
 
 use rekindle_db::repo::governance_checkpoints::{self as repo, CheckpointRow, CheckpointState};
+use rekindle_db::repo::governance_partial::{self as partial_repo, PartialRow};
 use rekindle_governance_runtime::checkpoint_rows::{CheckpointFact, HintState};
+use rekindle_governance_runtime::partial::PartialJoin;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 
 use super::HostGovernance;
@@ -71,5 +75,46 @@ impl HostGovernance {
         })
         .await
         .map_err(|e| adapter("keep checkpoint snapshot", e))
+    }
+
+    pub(super) async fn governance_partial_impl(
+        &self,
+        community_id: &str,
+    ) -> Result<Option<PartialJoin>, GovernanceRuntimeError> {
+        let (owner, db) = self.op_store()?;
+        let community = community_id.to_owned();
+        let row = db
+            .call(move |conn| partial_repo::get(conn, &owner, &community))
+            .await
+            .map_err(|e| adapter("governance partial", e))?;
+        Ok(row.map(|r| PartialJoin {
+            height: r.height,
+            digest: r.digest,
+            state_root: r.state_root,
+        }))
+    }
+
+    pub(super) async fn set_governance_partial_impl(
+        &self,
+        community_id: &str,
+        hint: Option<PartialJoin>,
+    ) -> Result<(), GovernanceRuntimeError> {
+        let (owner, db) = self.op_store()?;
+        let community = community_id.to_owned();
+        db.call(move |conn| match hint {
+            Some(h) => partial_repo::set(
+                conn,
+                &owner,
+                &community,
+                &PartialRow {
+                    height: h.height,
+                    digest: h.digest,
+                    state_root: h.state_root,
+                },
+            ),
+            None => partial_repo::clear(conn, &owner, &community),
+        })
+        .await
+        .map_err(|e| adapter("set governance partial", e))
     }
 }
