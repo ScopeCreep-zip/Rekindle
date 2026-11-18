@@ -16,8 +16,10 @@ pub async fn resolve_member_route(
     peer_pseudonym: &str,
 ) -> Option<Vec<u8>> {
     // Slot location from the discovered-member rows. `subkey_index`
-    // is the RAW SMPL slot of the community's one slot registry: it is
-    // `DHTSchema::smpl(0, members)`, so there is NO owner-subkey offset.
+    // is the RAW SMPL slot — segment records are
+    // `DHTSchema::smpl(0, members)`, so there is NO owner-subkey
+    // offset — and `segment_index` selects the Plate Gate segment
+    // record the slot lives in.
     let owner_key = state_helpers::current_owner_key(state).ok()?;
     let cid = community_id.to_string();
     let pk = peer_pseudonym.to_string();
@@ -28,18 +30,18 @@ pub async fn resolve_member_route(
     .inspect_err(|e| tracing::warn!(community = %community_id, error = %e, "route resolve: member slot unreadable"))
     .ok()
     .flatten();
-    let Some((subkey_index, _)) = slot else {
+    let Some((subkey_index, segment_index)) = slot else {
         tracing::debug!(community = %community_id, peer = %peer_pseudonym, "route resolve: no known slot for the peer");
         return None;
     };
 
-    let Some(registry_key) = state
-        .communities
-        .read()
-        .get(community_id)
-        .and_then(|c| c.member_registry_key.clone())
+    let Some(registry_key) =
+        crate::services::community::segments::segment_descriptors(state, community_id)
+            .into_iter()
+            .find(|d| d.segment_index == segment_index)
+            .map(|d| d.registry_key)
     else {
-        tracing::debug!(community = %community_id, peer = %peer_pseudonym, "route resolve: the community has no registry");
+        tracing::debug!(community = %community_id, peer = %peer_pseudonym, segment_index, "route resolve: no registry for the peer's segment");
         return None;
     };
 

@@ -5,10 +5,11 @@
 //! every stamp LWW compares is encoded with its row.
 
 use crate::state::{
-    AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
-    EventState, ExpressionState, GovernanceState, InviteState, MemberState, MetadataState,
-    ModReportState, NotificationDefaultState, OnboardingState, OverwriteState, PendingMemberState,
-    RoleState, RsvpState, ThreadState, TimeoutState, WelcomeScreenState,
+    AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord, ChannelState,
+    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
+    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
+    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
+    WelcomeScreenState,
 };
 
 use super::canon::{Canon, Json};
@@ -53,6 +54,8 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
         onboarding,
         welcome_screen,
         ban_stamps,
+        segments,
+        channel_segment_records,
         invites,
         expression_remove_stamps,
         community_policy,
@@ -66,7 +69,7 @@ pub fn canonical_state(state: &GovernanceState) -> Vec<u8> {
     put!(out; timeouts, mek_generation, metadata, notification_default, categories);
     put!(out; overwrites, threads, events, event_rsvps, expressions, admin_deletes);
     put!(out; pinned_attachments, attachment_pin_stamps, creator, automod_rules);
-    put!(out; onboarding, welcome_screen, ban_stamps);
+    put!(out; onboarding, welcome_screen, ban_stamps, segments, channel_segment_records);
     put!(out; invites, expression_remove_stamps, community_policy, mod_reports);
     std::mem::take(out)
 }
@@ -296,6 +299,26 @@ impl Canon for WelcomeScreenState {
             stamp,
         } = self;
         put!(out; description, &Json(channels), stamp);
+    }
+}
+
+impl Canon for SegmentState {
+    fn put(&self, out: &mut Vec<u8>) {
+        let Self {
+            segment_index,
+            registry_key,
+            governance_key,
+            slot_range_start,
+            slot_range_end,
+        } = self;
+        put!(out; segment_index, registry_key, governance_key, slot_range_start, slot_range_end);
+    }
+}
+
+impl Canon for ChannelSegmentRecord {
+    fn put(&self, out: &mut Vec<u8>) {
+        let Self { record_key, linked } = self;
+        put!(out; record_key, linked);
     }
 }
 

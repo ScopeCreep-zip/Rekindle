@@ -175,8 +175,8 @@ async fn a_join_whose_member_joined_cannot_land_is_pending_and_idempotent() {
     assert_eq!(joined["pending"], true, "the join is pending: {joined}");
     let again = community.nodes[1].ok(join).await;
     assert_eq!(
-        (&again["slot"], &again["pending"]),
-        (&joined["slot"], &joined["pending"]),
+        (&again["slot"], &again["segment"], &again["pending"]),
+        (&joined["slot"], &joined["segment"], &joined["pending"]),
         "a repeated join answers the same membership: {joined} / {again}"
     );
     // Each run of the join stages mints one member record and its one

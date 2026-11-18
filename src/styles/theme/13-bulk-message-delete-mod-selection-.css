@@ -192,8 +192,8 @@
 
   /* Architecture §17.4 — raid alert overlay rendered at the top of
    * `CommunityWindow` while the backend's raid detector is firing.
-   * The threat surface (join floods) is time-sensitive, so it
-   * carries high visual weight. */
+   * Higher visual weight than the plate-gate banner because the
+   * threat surface (join floods) is more time-sensitive. */
   .raid-alert-banner {
     display: flex;
     align-items: center;
@@ -227,6 +227,59 @@
     overflow-wrap: anywhere;
   }
 
+  /* ─── Plate Gate (architecture §15) admin banner ─── */
+  .plate-gate-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    margin-bottom: 12px;
+    border-radius: 5px;
+  }
+
+  /* `warning` variant — proactive at ≤10 slots remaining. */
+  .plate-gate-banner-warning {
+    border: 1px solid color-mix(in srgb, var(--color-xfire-away) 55%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, var(--color-xfire-away) 20%);
+  }
+
+  /* `alert` variant — once segment is full. Higher visual weight so
+   * an admin lingering on this tab can't miss the call to expand. */
+  .plate-gate-banner-alert {
+    border: 1px solid color-mix(in srgb, var(--color-xfire-busy) 55%, transparent);
+    background: color-mix(in srgb, var(--color-xfire-bg) 80%, var(--color-xfire-busy) 20%);
+  }
+
+  .plate-gate-banner-text {
+    flex: 1;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    line-height: 1.4;
+  }
+
+  .plate-gate-banner-btn {
+    background: var(--color-xfire-accent);
+    border: none;
+    color: var(--color-xfire-accent-fg);
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 3px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .plate-gate-banner-btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .plate-gate-status {
+    font-size: 10px;
+    color: var(--color-xfire-text-dim);
+    margin-bottom: 8px;
+    padding: 4px 8px;
+    border-left: 2px solid color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
+  }
 
   /* ─── Forwarded message indicator ─── */
   .message-forwarded-header {

@@ -23,7 +23,9 @@ impl HostGovernance {
     ) {
         let rows: Vec<_> = members
             .iter()
-            .map(|m| rekindle_presence::discovered_member_row(&m.presence, m.slot_index))
+            .map(|m| {
+                rekindle_presence::discovered_member_row(&m.presence, m.segment_index, m.slot_index)
+            })
             .collect();
         let candidates = rows.iter().map(|r| r.pseudonym_key.clone()).collect();
         let new: HashSet<String> = self

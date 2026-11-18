@@ -140,6 +140,7 @@ pub enum IntentKind {
     CancelEvent,
     DeleteAutomodRule,
     DeleteChannelOverwrite,
+    ExpandCommunitySegment,
     RemoveCommunityMember,
     RemoveGameServer,
     RespondToSpeakRequest,
@@ -380,6 +381,7 @@ impl IntentKind {
             | Self::CancelEvent
             | Self::DeleteAutomodRule
             | Self::DeleteChannelOverwrite
+            | Self::ExpandCommunitySegment
             | Self::RemoveCommunityMember
             | Self::RemoveGameServer
             | Self::RespondToSpeakRequest

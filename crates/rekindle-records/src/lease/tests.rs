@@ -114,9 +114,10 @@ fn community_leases_list_every_lease() {
         governance: Some(LeaseId(1)),
         registry: Some(LeaseId(2)),
         channels: HashMap::from([(ChannelId([0; 16]), LeaseId(3))]),
-        threads: vec![LeaseId(4)],
+        segments: vec![LeaseId(4)],
+        overflow: vec![LeaseId(5)],
     };
-    assert_eq!(leases.all().count(), 4);
+    assert_eq!(leases.all().count(), 5);
 }
 
 #[derive(Debug, Clone)]
@@ -199,7 +200,7 @@ fn community_merge_keeps_one_lease_per_record() {
         CommunityLeases {
             governance: Some(LeaseId(1)),
             registry: Some(LeaseId(2)),
-            threads: vec![LeaseId(4), LeaseId(5)],
+            overflow: vec![LeaseId(4), LeaseId(5)],
             ..Default::default()
         },
         key_of,
@@ -211,7 +212,7 @@ fn community_merge_keeps_one_lease_per_record() {
         vec![
             (HeldKind::Governance, "gov".to_string()),
             (HeldKind::Registry, "reg".to_string()),
-            (HeldKind::Thread, "page".to_string()),
+            (HeldKind::Overflow, "page".to_string()),
         ]
     );
 
@@ -220,7 +221,7 @@ fn community_merge_keeps_one_lease_per_record() {
     let second = held.merge(
         CommunityLeases {
             governance: Some(LeaseId(3)),
-            threads: vec![LeaseId(99)],
+            segments: vec![LeaseId(99)],
             ..Default::default()
         },
         key_of,

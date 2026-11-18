@@ -17,6 +17,7 @@ use tauri::AppHandle;
 use crate::state::AppState;
 use rekindle_db::Db;
 
+mod auto_expand;
 pub mod community_deps;
 mod gossip_overlay;
 mod member_state;

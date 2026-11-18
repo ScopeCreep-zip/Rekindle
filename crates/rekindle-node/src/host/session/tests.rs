@@ -14,6 +14,7 @@ fn membership() -> CommunityMembership {
         community_name: "Team".into(),
         slot_seed: Some([9; 32]),
         channel_record_keys: std::collections::HashMap::new(),
+        segment_index: Some(1),
         lamport_counter: 12,
         mek_generation: 2,
     }
@@ -91,6 +92,7 @@ async fn writes_come_back_in_the_next_projection() {
         // membership brings none.
         assert!(stored.my_role_ids.is_empty());
         assert_eq!(stored.my_subkey_index, Some(3));
+        assert_eq!(stored.my_segment_index, Some(1));
         assert_eq!(stored.slot_seed.as_deref(), Some("09".repeat(32).as_str()));
         assert_eq!(stored.registry_owner_keypair.as_deref(), Some("reg-kp"));
     }
@@ -119,6 +121,7 @@ async fn writes_come_back_in_the_next_projection() {
     let m = crate::host::adapters::governance::loader::membership(&stored["gov-key"]);
     assert_eq!(m.slot_seed, Some([9; 32]));
     assert_eq!(m.slot_index, 3);
+    assert_eq!(m.segment_index, Some(1));
     assert_eq!(m.lamport_counter, 12);
     assert_eq!(m.community_name, "Team");
     let bob = &reloaded.friends["bob"];

@@ -166,7 +166,8 @@ async fn concurrent_joins_mint_one_member_joined() {
     let (first, second) = tokio::join!(joiner.call(join.clone()), joiner.call(join));
     let (first, second) = (first.expect("joined"), second.expect("joined"));
     assert_eq!(
-        &first["slot"], &second["slot"],
+        (&first["slot"], &first["segment"]),
+        (&second["slot"], &second["segment"]),
         "both answer one membership: {first} / {second}"
     );
     let pending = published(&events, &|s| *s == OpPublicationState::Pending);

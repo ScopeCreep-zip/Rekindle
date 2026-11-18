@@ -100,7 +100,7 @@ pub(super) async fn create_lazy_thread_record<D: ChannelMessagingDeps>(
     deps.community_records_ready(
         community_id,
         CommunityLeases {
-            threads: vec![lease],
+            segments: vec![lease],
             ..CommunityLeases::default()
         },
     )
@@ -248,6 +248,7 @@ pub(super) fn thread_write_context<D: ChannelMessagingDeps>(
         channel_key: thread_record_key.to_string(),
         slot_keypair_str: base.slot_keypair_str,
         slot_index: base.slot_index,
+        segment_index: base.segment_index,
     })
 }
 

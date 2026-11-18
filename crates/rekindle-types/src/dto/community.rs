@@ -56,7 +56,9 @@ pub struct CommunityCreated {
 pub struct CommunityJoined {
     pub governance_key: String,
     pub name: String,
-    /// Our slot in the registry.
+    /// The registry segment our claimed slot is in.
+    pub segment: u32,
+    /// Our slot in that segment.
     pub slot: u32,
     /// The members the join's registry scan found.
     pub known_members: u32,

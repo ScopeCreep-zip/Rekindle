@@ -55,14 +55,15 @@ pub use rekindle_types::dht_layout::manifest::{
     ROLES as MANIFEST_ROLES, SUBKEY_COUNT as MANIFEST_SUBKEY_COUNT, WELCOME as MANIFEST_WELCOME,
 };
 
-/// Member slots in the community slot registry.
+/// Maximum member slots per registry segment.
 ///
 /// Re-exported from the desktop track so both agree by construction.
 /// This was locally defined as 245 ("256 total - 11 owner subkeys"),
 /// the v1.0 derivation — under `o_cnt: 0` there are no owner subkeys
 /// and the value is 255, which is what every record is actually built
 /// with.
-pub use rekindle_types::dht_layout::REGISTRY_SLOTS;
+pub use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+pub use rekindle_types::dht_layout::SLOTS_PER_SEGMENT as REGISTRY_MAX_MEMBERS;
 
 // ── Community metadata ──────────────────────────────────────────────
 //

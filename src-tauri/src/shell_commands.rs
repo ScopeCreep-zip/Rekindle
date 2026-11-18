@@ -358,6 +358,7 @@ pub const PENDING_PORT: &[(&str, &str)] = &[
     ("rotate_mek", "E3.5"),
     // Search reads both histories: it moves with the last of them.
     // E3.2 — plate gates.
+    ("expand_community_segment", "E3.2"),
     // E4.1 — voice, calls, video.
     ("accept_dm_call", "E4.1"),
     ("accept_group_call", "E4.1"),

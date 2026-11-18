@@ -52,10 +52,11 @@ use media::{
 use membership::{
     read_channel_overwrite_changed, read_join_accepted, read_join_rejected,
     read_member_join_request, read_member_joined, read_member_leave, read_member_removed,
-    read_member_roles_changed, read_onboarding_complete, read_submit_onboarding_answers,
-    write_channel_overwrite_changed, write_join_accepted, write_join_rejected,
-    write_member_join_request, write_member_joined, write_member_leave, write_member_removed,
-    write_member_roles_changed, write_onboarding_complete, write_submit_onboarding_answers,
+    read_member_roles_changed, read_onboarding_complete, read_request_segment_expansion,
+    read_submit_onboarding_answers, write_channel_overwrite_changed, write_join_accepted,
+    write_join_rejected, write_member_join_request, write_member_joined, write_member_leave,
+    write_member_removed, write_member_roles_changed, write_onboarding_complete,
+    write_request_segment_expansion, write_submit_onboarding_answers,
 };
 use messaging::{
     read_link_preview, read_message_deleted, read_message_edited, read_message_pinned,
@@ -120,6 +121,9 @@ pub fn encode_control_payload(
         CP::MekTransfer { .. } => write_mek_transfer(b.reborrow().init_mek_transfer(), payload),
         CP::MekTransferAck { .. } => {
             write_mek_transfer_ack(b.reborrow().init_mek_transfer_ack(), payload);
+        }
+        CP::RequestSegmentExpansion { .. } => {
+            write_request_segment_expansion(b.reborrow().init_request_segment_expansion(), payload);
         }
         CP::OnboardingComplete { .. } => {
             write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload);
@@ -281,6 +285,9 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::RequestMek(p) => read_request_mek(p.map_err(|e| capnp_err(&e))?),
         Which::MekTransfer(p) => read_mek_transfer(p.map_err(|e| capnp_err(&e))?),
         Which::MekTransferAck(p) => read_mek_transfer_ack(p.map_err(|e| capnp_err(&e))?),
+        Which::RequestSegmentExpansion(p) => {
+            read_request_segment_expansion(p.map_err(|e| capnp_err(&e))?)
+        }
         Which::OnboardingComplete(p) => read_onboarding_complete(p.map_err(|e| capnp_err(&e))?),
         Which::MemberRolesChanged(p) => read_member_roles_changed(p.map_err(|e| capnp_err(&e))?),
         Which::ChannelOverwriteChanged(p) => {
@@ -366,8 +373,7 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         Which::Obsolete35(())
         | Which::Obsolete43(())
         | Which::Obsolete61(())
-        | Which::Obsolete63(())
-        | Which::Obsolete68(()) => Err(CodecError::UnknownVariant(
+        | Which::Obsolete63(()) => Err(CodecError::UnknownVariant(
             "obsolete control payload".to_string(),
         )),
         Which::MediaCapabilities(p) => read_media_capabilities(p.map_err(|e| capnp_err(&e))?),

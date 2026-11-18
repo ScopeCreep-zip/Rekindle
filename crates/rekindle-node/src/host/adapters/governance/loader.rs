@@ -153,6 +153,7 @@ pub(crate) fn membership(state: &CommunityState) -> CommunityMembership {
             .iter()
             .filter_map(|c| Some((c.id.clone(), c.message_record_key.clone()?)))
             .collect(),
+        segment_index: state.my_segment_index,
         lamport_counter: state.governance_clock,
         mek_generation: state.mek_generation,
     }
@@ -199,6 +200,7 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
         mek_generation: community.mek_generation,
         member_registry_key: community.member_registry_key.clone(),
         my_subkey_index: community.my_subkey_index,
+        my_segment_index: community.my_segment_index,
         gossip: Some(GossipOverlay::default()),
         channel_log_keys,
         channel_sequences,

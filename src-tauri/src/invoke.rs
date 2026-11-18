@@ -109,6 +109,7 @@ pub fn handler() -> impl Fn(tauri::ipc::Invoke<tauri::Wry>) -> bool + Send + Syn
         commands::community::reveal_downloaded_attachment,
         commands::community::pin_attachment,
         commands::community::send_voice_message,
+        commands::community::expand_community_segment,
         commands::community::leave_community,
         commands::community::delete_channel,
         commands::community::rename_channel,

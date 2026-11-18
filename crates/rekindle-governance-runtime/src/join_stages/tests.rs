@@ -2,6 +2,21 @@
 
 use super::*;
 
+#[test]
+fn governance_snapshot_struct_fields_accessible() {
+    // Smoke check: GovernanceSnapshot can be constructed + read.
+    let snap = GovernanceSnapshot {
+        all_entries: Vec::new(),
+        gov_state: GovernanceState::default(),
+        name: "t".into(),
+        description: None,
+        overflow_keys: Vec::new(),
+    };
+    assert_eq!(snap.name, "t");
+    assert!(snap.all_entries.is_empty());
+    assert!(snap.overflow_keys.is_empty());
+}
+
 /// The retry mechanism from architecture §6.2 step 9.
 ///
 /// Uses `mockall` expectations rather than a hand-written double:
@@ -134,6 +149,7 @@ async fn slot_claim_gives_up_after_the_attempt_cap() {
 fn claimed_slot_carries_keypair_string() {
     let slot = ClaimedSlot {
         registry_key: "rk".into(),
+        segment_index: 0,
         local_subkey: 5,
         slot_keypair_str: "kp".into(),
         occupied_subkeys: vec![],

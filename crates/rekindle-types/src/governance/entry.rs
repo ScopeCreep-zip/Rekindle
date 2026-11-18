@@ -422,6 +422,49 @@ pub enum GovernanceEntry {
         reason: Option<String>,
     },
 
+    /// Plate Gate (architecture §15.4 lazy channel records) — announces
+    /// that a channel has acquired a segment-N SMPL record for messages
+    /// from members in segment N. Written by the first segment-N member
+    /// to send a message in `channel_id` (architecture §15.4 + DS-aligned
+    /// v2 plan line 993). Other members merge this entry, then
+    /// `open_record` + watch the new key so messages from segment-N peers
+    /// are discoverable. CRDT: LWW per `(channel_id, segment_index)`.
+    ChannelSegmentLinked {
+        channel_id: ChannelId,
+        segment_index: u32,
+        /// SMPL record key for messages from segment-N members in this
+        /// channel. The schema mirrors the segment-0 record (255 slots).
+        record_key: String,
+    },
+
+    /// Plate Gate (architecture §15) — adds a new registry + governance
+    /// segment when the highest existing segment has its 255 slots filled.
+    /// Admin-only (`MANAGE_COMMUNITY`) per §15.2; merged as ORMap-of-CRDTs
+    /// per Shapiro 2011 / Almeida et al. 2016 (arXiv:1603.01529).
+    ///
+    /// Wire-format note: §4.6 of the architecture spec writes this with
+    /// `segment_index: u16, slot_range: (u16, u16), keys: TypedKey`. The
+    /// in-tree shape uses `u32` and `String` for forward compatibility
+    /// (Veilid `TypedKey` round-trips through `String` everywhere else in
+    /// the codebase; widening `u16→u32` costs nothing and avoids cascade
+    /// edits across merge.rs / validate.rs / audit.rs / proptests).
+    /// Functionally identical.
+    ///
+    /// Slot indices are GLOBAL across segments (architecture §15.2:2271
+    /// "slots 255–509"). A member's `subkey_index` in segment N's record
+    /// is the LOCAL index `0..255`; their global slot is
+    /// `slot_range_start + local_subkey`. Slot keypair derivation
+    /// (§8.3:1659-1676) takes the global index, so per-segment uniqueness
+    /// is automatic — no `segment_index` parameter is needed in the HKDF
+    /// input.
+    SegmentAdded {
+        segment_index: u32,
+        registry_key: String,
+        governance_key: String,
+        slot_range_start: u32,
+        slot_range_end: u32,
+    },
+
     /// AutoMod rule. CRDT: LWW per rule_id.
     AutoModRule {
         rule_id: [u8; 16],

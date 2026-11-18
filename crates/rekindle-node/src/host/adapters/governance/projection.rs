@@ -1,6 +1,6 @@
 //! The governance projection (plan E3.1 B2c): merged governance state laid
 //! onto a community's [`CommunityState`] — our role ids, the channels, roles,
-//! categories, metadata, MEK generation, and banned
+//! categories, metadata, MEK generation, the Plate Gate segments, and banned
 //! members pruned from the overlay — and its snapshot for SQLite. One body
 //! for both hosts: the store runs [`project`] under its write lock
 //! (`CommunityStore::project_governance`), and every merge, rebuild and
@@ -21,14 +21,29 @@ use crate::host::community::state::{
 /// What a projection changed that the shell acts on.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GovernanceProjected {
-    /// The merge named a record to watch (a channel log) that the previous
-    /// state did not.
+    /// The merge named a record to watch (a channel log, a Plate Gate
+    /// segment's records, a channel-segment record) that the previous state
+    /// did not.
     pub new_watch_targets: bool,
 }
 
-/// Every record the community's state names to watch: the channel logs.
+/// Every record the community's state names to watch: channel logs,
+/// segment governance and registry records, channel-segment records.
 fn watch_targets(cs: &CommunityState) -> HashSet<String> {
-    cs.channel_log_keys.values().cloned().collect()
+    cs.channel_log_keys
+        .values()
+        .cloned()
+        .chain(cs.governance_state.iter().flat_map(|g| {
+            g.segments
+                .iter()
+                .flat_map(|s| [s.governance_key.clone(), s.registry_key.clone()])
+                .chain(
+                    g.channel_segment_records
+                        .values()
+                        .map(|r| r.record_key.clone()),
+                )
+        }))
+        .collect()
 }
 
 fn channel_type(wire: &str) -> ChannelType {
@@ -196,6 +211,19 @@ pub fn project(cs: &mut CommunityState, gov: GovernanceState) -> GovernanceProje
     cs.mek_generation = gov.mek_generation;
     prune_departed(cs, &gov);
     super::event_rsvps::project(cs, &gov);
+    // Segment 0 stays implicit (`rekindle_governance_runtime::segments`).
+    cs.segments = gov
+        .segments
+        .iter()
+        .filter(|s| s.segment_index != 0)
+        .map(|s| rekindle_types::presence::SegmentDescriptor {
+            segment_index: s.segment_index,
+            registry_key: s.registry_key.clone(),
+            governance_key: s.governance_key.clone(),
+            slot_range_start: s.slot_range_start,
+            slot_range_end: s.slot_range_end,
+        })
+        .collect();
     cs.governance_state = Some(gov);
     let new_watch_targets = !watch_targets(cs).is_subset(&prior);
     GovernanceProjected { new_watch_targets }

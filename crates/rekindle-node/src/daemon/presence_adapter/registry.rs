@@ -1,6 +1,6 @@
 //! Registry I/O and the materialised roster.
 //!
-//! This is the half the daemon was missing. `scan_registry_raw` is the
+//! This is the half the daemon was missing. `scan_segment_raw` is the
 //! read the presence orchestrator runs each tick; the crate then
 //! W26-verifies and ban-filters every row via `parse_and_classify_row`
 //! and hands the survivors back to `persist_discovered_member_rows`,
@@ -18,7 +18,7 @@ use crate::host::community::MemberRecord;
 use super::DaemonPresenceAdapter;
 
 impl DaemonPresenceAdapter {
-    /// Read every occupied subkey of the registry.
+    /// Read every occupied subkey of one segment.
     ///
     /// One UpdateGet inspect says which subkeys hold a value and which are
     /// newer on the network than our local copy (`RecordPool::read_changed`);
@@ -33,7 +33,7 @@ impl DaemonPresenceAdapter {
     /// `skip_subkey` is our own slot: we already know what we wrote
     /// there, and re-reading it would let a stale network copy of our
     /// own presence overwrite the fresh local one.
-    pub(super) async fn scan_registry_impl(
+    pub(super) async fn scan_segment_impl(
         &self,
         registry_key: &str,
         max_subkey: u32,
@@ -49,12 +49,12 @@ impl DaemonPresenceAdapter {
                 return Vec::new();
             }
         };
-        // One borrow for the whole scan: a table hit while the
+        // One borrow per segment for the whole scan: a table hit while the
         // community holds the record (plan C7.7g).
         let lease = match pool.acquire(registry_key, None, OpenIntent::Check).await {
             Ok(lease) => lease,
             Err(error) => {
-                tracing::debug!(registry = %registry_key, %error, "presence scan: registry not open");
+                tracing::debug!(registry = %registry_key, %error, "presence scan: segment not open");
                 return Vec::new();
             }
         };
@@ -70,11 +70,11 @@ impl DaemonPresenceAdapter {
                 .map(|(subkey, value)| (subkey, value.data))
                 .collect(),
             Err(error) => {
-                // Not an empty registry: an unreadable one, skipped this tick.
+                // Not an empty segment: an unreadable one, skipped this tick.
                 tracing::debug!(
                     registry = %registry_key,
                     %error,
-                    "presence scan: inspect failed; skipping the registry for now"
+                    "presence scan: inspect failed; skipping this segment for now"
                 );
                 Vec::new()
             }

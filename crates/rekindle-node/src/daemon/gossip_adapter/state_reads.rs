@@ -91,7 +91,7 @@ impl DaemonGossipAdapter {
         let (registry_key, subkey) = {
             let members = self.ctx.communities.members(community_id);
             let record = members.get(peer_pseudonym)?;
-            let registry_key = self.registry_key(community_id)?;
+            let registry_key = self.segment_registry_key(community_id, record.segment_index)?;
             (registry_key, record.subkey_index)
         };
 
@@ -125,13 +125,24 @@ impl DaemonGossipAdapter {
         }
     }
 
-    /// The community's registry record key, from our membership.
-    fn registry_key(&self, community_id: &str) -> Option<String> {
+    /// The registry record key for one segment: segment 0 comes from
+    /// our membership, later segments from merged governance.
+    fn segment_registry_key(&self, community_id: &str, segment_index: u32) -> Option<String> {
+        if segment_index == 0 {
+            return self
+                .ctx
+                .session
+                .read()
+                .as_ref()
+                .and_then(|s| s.community(community_id))
+                .map(|m| m.registry_key.clone());
+        }
         self.ctx
-            .session
-            .read()
-            .as_ref()
-            .and_then(|s| s.community(community_id))
-            .map(|m| m.registry_key.clone())
+            .communities
+            .governance_state(community_id)?
+            .segments
+            .iter()
+            .find(|s| s.segment_index == segment_index)
+            .map(|s| s.registry_key.clone())
     }
 }

@@ -96,6 +96,10 @@ labels! {
     // ── Communities ──────────────────────────────────────────────────
     /// HKDF salt: per-community pseudonym from the identity secret.
     COMMUNITY_PSEUDONYM = "rekindle-community-pseudonym-v1";
+    /// HKDF salt: governance overflow-page owner keypair.
+    GOV_OVERFLOW = "rekindle-gov-overflow-v1";
+    /// Signature prefix: governance SMPL subkey payload.
+    GOV_SUBKEY = "rekindle-gov-subkey-v1";
     /// Signature prefix: channel message-record subkey payload.
     CHANNEL_SUBKEY = "rekindle-channel-subkey-v1";
     /// Signature prefix: member-registry presence row.

@@ -2,7 +2,7 @@
 //!
 //! Owns the W26 signature verification + ban filter + stale-heartbeat
 //! / empty-route-blob classification. The adapter exposes raw bytes
-//! per subkey via `CommunityPresenceDeps::scan_registry_raw`;
+//! per `(segment, subkey)` via `CommunityPresenceDeps::scan_segment_raw`;
 //! the orchestrator calls [`parse_and_classify_row`] for each raw
 //! payload to compute the discovered + online splits.
 
@@ -13,14 +13,15 @@ use rekindle_types::presence::MemberPresence;
 
 use crate::deps::OnlineMember;
 
-/// Subkeys of the registry record. Adapters pump 0..REGISTRY_SLOTS
-/// through `get_dht_value` when implementing `scan_registry_raw`.
+/// SMPL LOCAL subkeys per segment record (architecture §15.5).
+/// Adapters pump 0..SUBKEYS_PER_SEGMENT through `get_dht_value`
+/// when implementing `scan_segment_raw`.
 ///
 /// Re-exported rather than redeclared: this is the same number as the
 /// registry's slot count by construction — one subkey per member slot —
 /// and two names for it is how the two drift. The duplicate-constant
 /// gate is keyed on the name, so it could never have caught this pair.
-pub use rekindle_types::dht_layout::REGISTRY_SLOTS;
+pub use rekindle_types::dht_layout::SLOTS_PER_SEGMENT as SUBKEYS_PER_SEGMENT;
 
 /// Outcome of one row's classification — either accepted (with the
 /// MemberPresence body, hex-pseudonym, and whether it should be

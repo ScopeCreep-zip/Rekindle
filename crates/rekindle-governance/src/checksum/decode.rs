@@ -15,10 +15,11 @@ use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, T
 
 use crate::op::OpStamp;
 use crate::state::{
-    AdmissionDecision, AutoModRuleState, CategoryState, ChannelState, CommunityPolicyState,
-    EventState, ExpressionState, GovernanceState, InviteState, MemberState, MetadataState,
-    ModReportState, NotificationDefaultState, OnboardingState, OverwriteState, PendingMemberState,
-    RoleState, RsvpState, ThreadState, TimeoutState, WelcomeScreenState,
+    AdmissionDecision, AutoModRuleState, CategoryState, ChannelSegmentRecord, ChannelState,
+    CommunityPolicyState, EventState, ExpressionState, GovernanceState, InviteState, MemberState,
+    MetadataState, ModReportState, NotificationDefaultState, OnboardingState, OverwriteState,
+    PendingMemberState, RoleState, RsvpState, SegmentState, ThreadState, TimeoutState,
+    WelcomeScreenState,
 };
 
 /// A cursor over canonical bytes.
@@ -326,6 +327,14 @@ decanon_struct!(WelcomeScreenState {
     channels: json,
     stamp
 });
+decanon_struct!(SegmentState {
+    segment_index,
+    registry_key,
+    governance_key,
+    slot_range_start,
+    slot_range_end
+});
+decanon_struct!(ChannelSegmentRecord { record_key, linked });
 decanon_struct!(InviteState {
     code_hash,
     max_uses,
@@ -380,6 +389,8 @@ decanon_struct!(GovernanceState {
     onboarding,
     welcome_screen,
     ban_stamps,
+    segments,
+    channel_segment_records,
     invites,
     expression_remove_stamps,
     community_policy,

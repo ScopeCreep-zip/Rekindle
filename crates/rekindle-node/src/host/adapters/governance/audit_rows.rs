@@ -292,6 +292,20 @@ fn governance_tail_audit_row(
             details: reason,
             timestamp,
         },
+        GovernanceEntry::SegmentAdded {
+            segment_index,
+            registry_key,
+            governance_key,
+            ..
+        } => CommunityAuditEntry {
+            action: "segment_added".into(),
+            actor_pseudonym,
+            target: Some(segment_index.to_string()),
+            details: Some(format!(
+                "registry={registry_key}, governance={governance_key}"
+            )),
+            timestamp,
+        },
         GovernanceEntry::AutoModRule { rule_id, name, .. } => CommunityAuditEntry {
             action: "automod_rule_updated".into(),
             actor_pseudonym,

@@ -63,7 +63,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     fn channel_log_keys_for_community(&self, community_id: &str) -> Vec<(String, String)>;
 
     /// The community's writer index: the slot of every member the
-    /// presence scan placed in the registry, and our own. A channel
+    /// presence scan placed in our segment, and our own. A channel
     /// catch-up reads only these slots, never the whole range (plan
     /// C7.12); slots are where members joined, not `0..member count`.
     async fn member_slots_for_community(&self, community_id: &str) -> Vec<u32>;
@@ -252,18 +252,19 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// Snapshot the local user's per-community presence credentials:
     /// pseudonym key (hex) + assigned subkey index + resolved slot
     /// keypair (lazy derivation when `slot_keypair` is missing but
-    /// `slot_seed` + `subkey_index` are present).
+    /// `slot_seed` + `subkey_index` are present) + segment index.
     /// Returns `None` when the community isn't joined.
     fn presence_credentials(&self, community_id: &str) -> Option<PresenceCredentials>;
 
     /// Governance-mandated ban list as hex-encoded pseudonym keys.
     fn governance_bans(&self, community_id: &str) -> HashSet<String>;
 
-    /// The community's slot-registry record key; `None` when the
-    /// community isn't joined.
-    fn registry_key(&self, community_id: &str) -> Option<String>;
+    /// Plate Gate segment descriptors (architecture §15.5) — one
+    /// entry per allocated SMPL segment. Each descriptor carries
+    /// the segment index + its own registry-record key.
+    fn segment_descriptors(&self, community_id: &str) -> Vec<SegmentDescriptor>;
 
-    /// Fetch every populated subkey from the community's registry
+    /// Fetch every populated subkey from one segment's registry
     /// record as raw bytes. Pure transport: the adapter pumps the
     /// 0..`max_subkey` range through a semaphore-throttled
     /// `get_dht_value` (skipping `skip_subkey` if set) and returns
@@ -272,7 +273,7 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// [`crate::community::scan_row::parse_and_classify_row`] per
     /// result for the W26 signature verify + ban filter + heartbeat
     /// classification — keeps that business logic out of the adapter.
-    async fn scan_registry_raw(
+    async fn scan_segment_raw(
         &self,
         registry_key: &str,
         max_subkey: u32,
@@ -402,6 +403,12 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
 
     /// Drop pending-sync entries that have hit their attempt cap.
     fn prune_pending_syncs(&self, community_id: &str, max_attempts: u32);
+
+    /// Architecture §15 A5/P4.3 — admin-side trigger for Plate
+    /// Gate segment expansion. Spawns a background task; returns
+    /// immediately. No-op when caller lacks `MANAGE_COMMUNITY`
+    /// permission or when the highest segment isn't full.
+    fn maybe_auto_expand_segment(&self, community_id: &str);
 }
 
 // ---------- DTOs consumed by `CommunityPresenceDeps` ----------
@@ -413,7 +420,11 @@ pub struct PresenceCredentials {
     pub my_subkey_index: Option<u32>,
     pub slot_keypair_str: Option<String>,
     pub slot_seed_hex: Option<String>,
+    pub my_segment_index: u32,
 }
+
+/// Plate Gate segment descriptor (architecture §15.5).
+pub use rekindle_types::presence::SegmentDescriptor;
 
 /// How a presence-row write went (plan C7.16).
 #[derive(Debug, Clone, PartialEq, Eq)]

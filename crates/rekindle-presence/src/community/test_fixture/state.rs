@@ -8,7 +8,7 @@ use rekindle_codec::community::channel_record::ChannelMessage;
 use rekindle_codec::community::envelope::{CommunityEnvelope, SignedEnvelope};
 
 use crate::community::GossipOverlaySnapshot;
-use crate::deps::{OnlineMember, PresenceCredentials, RowWrite};
+use crate::deps::{OnlineMember, PresenceCredentials, RowWrite, SegmentDescriptor};
 
 #[derive(Default)]
 pub struct MockState {
@@ -25,8 +25,8 @@ pub struct MockState {
     pub registry_open_result: Option<String>,
     pub presence_credentials: Option<PresenceCredentials>,
     pub bans: HashSet<String>,
-    pub registry_key: Option<String>,
-    pub registry_raw: HashMap<String, Vec<(u32, Vec<u8>)>>,
+    pub segments: Vec<SegmentDescriptor>,
+    pub segment_raw: HashMap<String, Vec<(u32, Vec<u8>)>>,
     pub offline_diff: Vec<String>,
     pub gossip_snapshot: GossipOverlaySnapshot,
     pub stale_syncs: Vec<(String, u32)>,
@@ -62,8 +62,8 @@ pub struct MockState {
     pub calls_ensure_registry: Vec<String>,
     pub calls_presence_credentials: Vec<String>,
     pub calls_governance_bans: Vec<String>,
-    pub calls_registry_key: Vec<String>,
-    pub calls_scan_registry: Vec<(String, u32, String, Option<u32>)>,
+    pub calls_segment_descriptors: Vec<String>,
+    pub calls_scan_segment: Vec<(String, u32, String, Option<u32>)>,
     pub calls_apply_member_state: Vec<(String, usize)>,
     pub calls_read_profiles: Vec<String>,
     pub calls_apply_profiles: Vec<(String, usize, bool)>,
@@ -76,6 +76,7 @@ pub struct MockState {
     pub calls_stale_syncs: Vec<(String, u64, u64, u32)>,
     pub calls_update_pending: Vec<(String, String, u64, u32)>,
     pub calls_prune_pending: Vec<(String, u32)>,
+    pub calls_auto_expand: Vec<String>,
     pub active_voice_channel: Option<String>,
     pub calls_reconcile_voice_roster: Vec<(String, Vec<crate::deps::VoicePresenceRow>)>,
 }

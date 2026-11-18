@@ -190,6 +190,8 @@ export const communityCommands = {
   /// Host encodes it as Ogg Opus.
   sendVoiceMessage: (communityId: string, channelId: string, pcmB64: string) =>
     hostInvoke<string>("send_voice_message", { communityId, channelId, pcmB64 }),
+  expandCommunitySegment: (communityId: string) =>
+    invoke<number>("expand_community_segment", { communityId }),
   /**
    * Architecture §10.7 + §20.6 — read the community-wide policy
    * (rules text + raid-protection thresholds). Falls back to the §20.6

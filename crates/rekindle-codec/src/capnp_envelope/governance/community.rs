@@ -68,6 +68,27 @@ pub(super) fn write_mek_generation_bump(
     }
 }
 
+pub(super) fn write_segment_added(
+    mut p: schema_pkg::segment_added_entry::Builder<'_>,
+    e: &GovernanceEntry,
+) {
+    let GovernanceEntry::SegmentAdded {
+        segment_index,
+        registry_key,
+        governance_key,
+        slot_range_start,
+        slot_range_end,
+    } = e
+    else {
+        unreachable!("write_segment_added: variant mismatch")
+    };
+    p.set_segment_index(*segment_index);
+    p.set_registry_key(registry_key);
+    p.set_governance_key(governance_key);
+    p.set_slot_range_start(*slot_range_start);
+    p.set_slot_range_end(*slot_range_end);
+}
+
 pub(super) fn write_invite_created(
     mut p: schema_pkg::invite_created_entry::Builder<'_>,
     e: &GovernanceEntry,
@@ -169,6 +190,18 @@ pub(super) fn read_mek_generation_bump(
             p.get_trigger_departed().map_err(|e| capnp_err(&e))?,
         )?,
         cascade_skipped: cascade?,
+    })
+}
+
+pub(super) fn read_segment_added(
+    p: schema_pkg::segment_added_entry::Reader<'_>,
+) -> Result<GovernanceEntry, CodecError> {
+    Ok(GovernanceEntry::SegmentAdded {
+        segment_index: p.get_segment_index(),
+        registry_key: text_to_string(p.get_registry_key().map_err(|e| capnp_err(&e))?)?,
+        governance_key: text_to_string(p.get_governance_key().map_err(|e| capnp_err(&e))?)?,
+        slot_range_start: p.get_slot_range_start(),
+        slot_range_end: p.get_slot_range_end(),
     })
 }
 

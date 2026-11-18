@@ -93,13 +93,15 @@ pub enum Ingested {
 
 impl HostChannel {
     /// Fetch the post `message_id` by `author` from `subkey_index` of
-    /// `channel_id`'s record (a gossip notification names all three) and
-    /// ingest it. The read retries through the record pool's one retry
-    /// layer.
+    /// `channel_id`'s records (a gossip notification names all three) and
+    /// ingest it. The post is in the genesis channel record or in the
+    /// record of the author's segment (Plate Gates, architecture §15.4), so
+    /// every one is read, genesis first and then by segment index; each
+    /// read retries through the record pool's one retry layer.
     ///
     /// # Errors
-    /// No identity is unlocked, the channel has no record, or its slot does
-    /// not hold the message.
+    /// No identity is unlocked, the channel has no record, or no record's
+    /// slot holds the message.
     pub async fn ingest_notified(
         &self,
         community_id: &str,
@@ -109,27 +111,57 @@ impl HostChannel {
         author: &str,
         sequence: u64,
     ) -> Result<Ingested, ChannelError> {
-        let record_key = self
+        let records = self.channel_records(community_id, channel_id)?;
+        let pool = self.records()?;
+        let mut missed = Vec::new();
+        for record_key in records {
+            match find_post(&*pool, &record_key, subkey_index, message_id, author).await {
+                Ok(message) => {
+                    return self
+                        .ingest(ReceivedPost {
+                            community_id: community_id.to_owned(),
+                            channel_id: channel_id.to_owned(),
+                            record_key,
+                            subkey_index,
+                            sequence,
+                            message,
+                            forwarded_from_author: None,
+                        })
+                        .await;
+                }
+                Err(e) => missed.push(e),
+            }
+        }
+        Err(ChannelError::Adapter(format!(
+            "no record of channel {channel_id} holds message {message_id}: {}",
+            missed.join("; ")
+        )))
+    }
+
+    /// The genesis channel record, then each segment's, by segment index.
+    fn channel_records(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Result<Vec<String>, ChannelError> {
+        let genesis = self
             .channel_record_key(community_id, channel_id)
             .ok_or_else(|| ChannelError::Adapter(format!("channel {channel_id} has no record")))?;
-        let pool = self.records()?;
-        let message = find_post(&*pool, &record_key, subkey_index, message_id, author)
-            .await
-            .map_err(|e| {
-                ChannelError::Adapter(format!(
-                    "the record of channel {channel_id} does not hold message {message_id}: {e}"
-                ))
-            })?;
-        self.ingest(ReceivedPost {
-            community_id: community_id.to_owned(),
-            channel_id: channel_id.to_owned(),
-            record_key,
-            subkey_index,
-            sequence,
-            message,
-            forwarded_from_author: None,
-        })
-        .await
+        let mut segments: Vec<(u32, String)> = match (
+            ChannelId::from_hex(channel_id),
+            self.governance_state(community_id),
+        ) {
+            (Some(channel), Some(gov)) => (gov.channel_segment_records.iter())
+                .filter(|((id, _), _)| *id == channel)
+                .map(|((_, segment), record)| (*segment, record.record_key.clone()))
+                .collect(),
+            _ => Vec::new(),
+        };
+        segments.retain(|(_, key)| *key != genesis);
+        segments.sort_unstable_by_key(|(segment, _)| *segment);
+        Ok(std::iter::once(genesis)
+            .chain(segments.into_iter().map(|(_, key)| key))
+            .collect())
     }
 
     /// Ingest one received post: gate its author, open, gate, store,

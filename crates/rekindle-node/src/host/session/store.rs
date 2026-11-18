@@ -342,6 +342,13 @@ pub fn record_membership(
                 governance_key: Some(&row.governance_key),
             },
         )?;
+        repo::communities::set(
+            conn,
+            &owner,
+            &row.governance_key,
+            repo::communities::Column::MySegmentIndex,
+            row.segment_index.unwrap_or(0),
+        )?;
         if let Some(cert) = &genesis_cert {
             repo::communities::set(
                 conn,

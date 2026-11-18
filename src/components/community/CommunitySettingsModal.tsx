@@ -135,6 +135,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
             canKick={canKick()}
             canBan={canBan()}
             canModerate={canModerate()}
+            canManageCommunity={canManageCommunity()}
           />
         </Show>
         <Show when={activeTab() === "invites"}>

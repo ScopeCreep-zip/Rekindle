@@ -159,11 +159,12 @@ impl HostGovernance {
             governance_key: community.id.clone(),
             pseudonym_key: community.my_pseudonym_hex.clone(),
             registry_key: community.registry_key.clone(),
-            // Origin always takes slot 0.
+            // Origin always takes slot 0 of the genesis segment.
             slot_index: 0,
             community_name: community.name.clone(),
             slot_seed,
             channel_record_keys: std::collections::HashMap::new(),
+            segment_index: Some(0),
             lamport_counter: 0,
             mek_generation: community.mek.generation,
         };
@@ -203,6 +204,16 @@ impl HostGovernance {
         // The genesis channel's record key, from the genesis state.
         self.set_governance_state_impl(&community.id, community.governance_state);
         self.insert_community_mek_impl(&community.id, &community.mek);
+    }
+
+    pub(super) fn register_governance_overflow_keys_impl(
+        &self,
+        community_id: &str,
+        keys: &[String],
+    ) {
+        self.ctx
+            .communities
+            .register_overflow_keys(community_id, keys);
     }
 
     /// Apply state recovered from the registry for the logged-in user:

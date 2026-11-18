@@ -25,14 +25,15 @@ use crate::session::CommunityMembership;
 pub enum WatchKind {
     /// A channel's SMPL segment record.
     ///
-    /// PATH 3 of the three-path model. One record per channel with a
-    /// subkey per member, so the changed
+    /// PATH 3 of the three-path model. One record per
+    /// `(channel, segment)` with a subkey per member, so the changed
     /// subkey names the author's slot rather than identifying the
     /// record's single owner — which is why this no longer carries a
     /// `member_pseudonym` the way the per-member `DhtLog` version did.
     ChannelRecord {
         community: String,
         channel_id: String,
+        segment_index: u32,
     },
 }
 
@@ -233,7 +234,8 @@ pub async fn setup_community_watches(
     let slot_writer = membership.slot_seed.and_then(|seed| {
         rekindle_crypto::keypair_text::slot_keypair_text(&seed, membership.slot_index).ok()
     });
-    let channel_subkeys: Vec<u32> = (0..dht_types::REGISTRY_SLOTS).collect();
+    let segment_index = membership.segment_index.unwrap_or(0);
+    let channel_subkeys: Vec<u32> = (0..dht_types::SLOTS_PER_SEGMENT).collect();
     for (channel_id, record_key) in &membership.channel_record_keys {
         establish_watch_as(
             node,
@@ -243,6 +245,7 @@ pub async fn setup_community_watches(
             WatchKind::ChannelRecord {
                 community: community.clone(),
                 channel_id: channel_id.clone(),
+                segment_index,
             },
             slot_writer.as_deref(),
         )

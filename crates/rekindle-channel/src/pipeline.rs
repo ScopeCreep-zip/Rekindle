@@ -143,6 +143,8 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
             "forum channels accept posts only through thread creation".into(),
         ));
     }
+    deps.ensure_channel_segment_record(community_id, channel_id)
+        .await?;
     deps.require_channel_permission(community_id, Some(channel_id), SEND_MESSAGES)?;
     enforce_slowmode_with_bypass(deps, community_id, channel_id, timestamp_ms)?;
 

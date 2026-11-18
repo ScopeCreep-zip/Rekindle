@@ -1,7 +1,7 @@
 //! A community's session leases in the record pool (plan C7.5).
 //!
 //! The governance runtime hands every record a community keeps for its
-//! session — governance, registry, channels — to
+//! session — governance, registry, channels, segments, overflow pages — to
 //! [`records_ready`]. This is the one place that holds them, starts the
 //! community's loops, and releases them when the member leaves (logout's
 //! pool shutdown closes the rest).
@@ -80,7 +80,8 @@ fn merge(
         match kind {
             HeldKind::Governance => inventory.governance_key = Some(key),
             HeldKind::Registry => inventory.registry_key = Some(key),
-            HeldKind::Channel | HeldKind::Thread => inventory.add_channel(key),
+            HeldKind::Channel | HeldKind::Segment => inventory.add_channel(key),
+            HeldKind::Overflow => inventory.add_overflow(key),
         }
     }
     merged.surplus

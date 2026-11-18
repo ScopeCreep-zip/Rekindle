@@ -84,7 +84,7 @@ pub(super) async fn message_exists(
 /// or a forward (which carries an `original_author` for attribution).
 pub(super) struct FetchedChannelEntry {
     pub message: ChannelMessage,
-    /// The channel record the entry was read from — part of its AAD.
+    /// The segment record the entry was read from — part of its AAD.
     pub record_key: String,
     /// `Some(pseudonym_hex)` when the entry came from a `ChannelRecordEntry::Forward`.
     pub forwarded_from_author: Option<String>,
@@ -97,24 +97,40 @@ pub(super) async fn fetch_channel_message(
     subkey_index: u32,
     message_id: &str,
 ) -> Result<FetchedChannelEntry, String> {
-    // The channel's one record: its genesis message record.
-    let record_key = state
-        .communities
-        .read()
-        .get(community_id)
-        .and_then(|c| c.channel_log_keys.get(channel_id).cloned())
-        .ok_or_else(|| "channel record key not found".to_string())?;
+    // Plate Gate (architecture §15.4): a channel may have one SMPL record
+    // per segment that contains a writer. Scan each segment's record at
+    // the given subkey looking for the message_id. Genesis segment 0 is
+    // always present; segment-N records are populated lazily via
+    // `ChannelSegmentLinked` governance entries.
+    let segment_records = crate::services::community::segments::channel_record_keys_per_segment(
+        state,
+        community_id,
+        channel_id,
+    );
+    if segment_records.is_empty() {
+        return Err("channel record key not found".into());
+    }
     let pool = state_helpers::record_pool(state)?;
-    let value = pool
-        .read_once(&record_key, subkey_index, true)
-        .await
-        .map_err(|e| format!("get_dht_value failed: {e}"))?
-        .ok_or_else(|| "message id not found in the channel record".to_string())?;
-    let entries = decode_channel_entries(&value.data)
-        .map_err(|e| format!("invalid channel page payload: {e}"))?;
-    entries
-        .into_iter()
-        .find_map(|entry| match entry {
+    let mut last_error: Option<String> = None;
+    for (_segment_index, record_key) in segment_records {
+        let value = match pool.read_once(&record_key, subkey_index, true).await {
+            Ok(Some(v)) => v,
+            Ok(None) => {
+                continue;
+            }
+            Err(e) => {
+                last_error = Some(format!("get_dht_value failed: {e}"));
+                continue;
+            }
+        };
+        let entries = match decode_channel_entries(&value.data) {
+            Ok(entries) => entries,
+            Err(e) => {
+                last_error = Some(format!("invalid channel page payload: {e}"));
+                continue;
+            }
+        };
+        if let Some(found) = entries.into_iter().find_map(|entry| match entry {
             ChannelRecordEntry::Message(message)
                 if message.message_id.as_deref() == Some(message_id) =>
             {
@@ -154,8 +170,11 @@ pub(super) async fn fetch_channel_message(
                 })
             }
             _ => None,
-        })
-        .ok_or_else(|| "message id not found in the channel record".to_string())
+        }) {
+            return Ok(found);
+        }
+    }
+    Err(last_error.unwrap_or_else(|| "message id not found in any segment record".into()))
 }
 
 pub(super) fn update_peer_sequence(

@@ -13,6 +13,8 @@ use rekindle_transport::session::CommunityMembership as SessionMembership;
 
 use super::HostGovernance;
 
+use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+
 impl HostGovernance {
     /// Ed25519 identity secret, or `None` while the daemon is locked.
     pub(super) fn identity_secret_impl(&self) -> Option<[u8; 32]> {
@@ -53,13 +55,18 @@ impl HostGovernance {
         let membership = &self.store_membership(community_id)?;
 
         // The slot keypair is derived, not stored: the seed plus our
-        // slot index reproduce it, and the seed is what lives in the vault.
+        // global slot index reproduce it, and the seed is what lives in
+        // the vault. Global slot = segment * SLOTS_PER_SEGMENT + local
+        // index (architecture §15.2/§8.3); for the genesis segment the
+        // two are equal, which is what `None` falls back to.
         //
         // Goes through transport's string-typed helper rather than
         // rekindle-protocol directly: this crate must not name a
         // `veilid_core::KeyPair`, and does not depend on that crate.
+        let global_slot =
+            membership.segment_index.unwrap_or(0) * SLOTS_PER_SEGMENT + membership.slot_index;
         let slot_keypair = membership.slot_seed.as_ref().and_then(|seed| {
-            rekindle_crypto::keypair_text::slot_keypair_text(seed, membership.slot_index).ok()
+            rekindle_crypto::keypair_text::slot_keypair_text(seed, global_slot).ok()
         });
 
         Some(CommunityMembership {
@@ -67,6 +74,7 @@ impl HostGovernance {
             member_registry_key: Some(membership.registry_key.clone()),
             my_pseudonym_hex: Some(membership.pseudonym_key.clone()),
             my_subkey_index: Some(membership.slot_index),
+            my_segment_index: membership.segment_index,
             slot_keypair,
             slot_seed_hex: membership.slot_seed.as_ref().map(hex::encode),
             // The governance keypair is in the community's row
@@ -214,5 +222,9 @@ impl HostGovernance {
         self.channel_record_keys_impl(community_id, membership)
             .into_iter()
             .collect()
+    }
+
+    pub(super) fn governance_overflow_keys_impl(&self, community_id: &str) -> Vec<String> {
+        self.ctx.communities.overflow_keys(community_id)
     }
 }

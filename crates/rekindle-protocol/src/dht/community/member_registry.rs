@@ -29,7 +29,7 @@ mod layout_invariants {
     //! standing invariant — raw slot addressing, and a schema veilid
     //! itself agrees is legal.
 
-    use rekindle_types::dht_layout::REGISTRY_SLOTS;
+    use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
 
     #[test]
     fn member_slots_are_addressed_raw_with_no_owner_offset() {
@@ -38,9 +38,9 @@ mod layout_invariants {
         // Both tracks must agree, because a member writing presence to
         // the wrong subkey is invisible to every reader.
         for slot in [0u32, 1, 2, 127, 254] {
-            assert!(slot < REGISTRY_SLOTS, "slot {slot} is in range");
+            assert!(slot < SLOTS_PER_SEGMENT, "slot {slot} is in range");
         }
-        assert_eq!(REGISTRY_SLOTS, 255);
+        assert_eq!(SLOTS_PER_SEGMENT, 255);
     }
 
     #[test]
@@ -50,7 +50,7 @@ mod layout_invariants {
         // schema — the point is that the schema we actually create is
         // legal, so veilid's own MAX_MEMBER_COUNT / MAX_WRITER_COUNT /
         // MAX_SUBKEY_COUNT do the enforcing.
-        let keys: Vec<[u8; 32]> = (0..REGISTRY_SLOTS)
+        let keys: Vec<[u8; 32]> = (0..SLOTS_PER_SEGMENT)
             .map(|i| {
                 let mut key = [0u8; 32];
                 key[..4].copy_from_slice(&i.to_le_bytes());
@@ -64,7 +64,7 @@ mod layout_invariants {
         // 255 members × 1 subkey each, and the discarded creation
         // keypair contributes none — that is the whole point of o_cnt:0.
         // If the owner ever came back as a writer this count shifts.
-        assert_eq!(schema.subkey_count(), REGISTRY_SLOTS as usize);
-        assert_eq!(schema.max_subkey(), REGISTRY_SLOTS - 1);
+        assert_eq!(schema.subkey_count(), SLOTS_PER_SEGMENT as usize);
+        assert_eq!(schema.max_subkey(), SLOTS_PER_SEGMENT - 1);
     }
 }

@@ -75,6 +75,24 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         .clone()
         .ok_or_else(|| GovernanceRuntimeError::SlotSeedMissing(community_id.to_string()))?;
 
+    // Architecture §6.2 — an invite must bootstrap the joiner into the
+    // PRIMARY (segment-0) registry: the joiner treats the invite's
+    // registry as `slot_range_start 0` and derives its slot keypair from
+    // that. Segment 0 is implicit and never listed in
+    // `gov_state.segments`, so a match against a segment-≥1 registry
+    // means the value is corrupt and the invite would mis-route every
+    // joiner who used it. Refuse rather than ship the break.
+    if let Some(segment) = gov_state
+        .segments
+        .iter()
+        .find(|s| s.segment_index != 0 && s.registry_key == registry_key)
+    {
+        return Err(GovernanceRuntimeError::Adapter(format!(
+            "invite registry key is the segment-{} registry, not the primary",
+            segment.segment_index
+        )));
+    }
+
     // The joiner's walk of the op DAG starts at our frontier (`M`/3), on
     // our member record.
     let cert = deps

@@ -32,6 +32,7 @@ pub struct CommunityMembership {
     pub member_registry_key: Option<String>,
     pub my_pseudonym_hex: Option<String>,
     pub my_subkey_index: Option<u32>,
+    pub my_segment_index: Option<u32>,
     pub slot_keypair: Option<String>,
     pub slot_seed_hex: Option<String>,
     pub dht_owner_keypair: Option<String>,
@@ -101,6 +102,7 @@ pub struct CommunityDhtOpenSetup {
 /// Slot row discovered from a presence/registry scan during join.
 #[derive(Debug, Clone)]
 pub struct DiscoveredMember {
+    pub segment_index: u32,
     pub slot_index: u32,
     pub presence: rekindle_types::presence::MemberPresence,
 }

@@ -178,6 +178,15 @@ export interface CategoryDisplay {
   sortOrder: number;
 }
 
+/** Plate Gate (architecture §15) expansion segment, as Tier 1's `SegmentDescriptor`. */
+export interface SegmentDescriptor {
+  segmentIndex: number;
+  registryKey: string;
+  governanceKey: string;
+  slotRangeStart: number;
+  slotRangeEnd: number;
+}
+
 /**
  * Governance events from the daemon vocabulary.
  *
@@ -204,6 +213,7 @@ export type GovernanceEvent =
       };
     }
   | { rolesChanged: { community: string; roles: RoleDisplay[] } }
+  | { segmentsChanged: { community: string; segments: SegmentDescriptor[] } }
   | { bansChanged: { community: string } }
   | { opPublication: { community: string; op: string; state: OpPublicationState } }
   | {

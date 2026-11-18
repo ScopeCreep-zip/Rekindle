@@ -4,7 +4,7 @@ use crate::op::OpStamp;
 
 use super::{
     CommunityPolicyState, GovernanceEntry, GovernanceState, InviteState, MetadataState,
-    PseudonymKey,
+    PseudonymKey, SegmentState,
 };
 
 pub(super) fn apply_community(
@@ -50,6 +50,32 @@ pub(super) fn apply_community(
         GovernanceEntry::MEKGenerationBump { generation, .. } => {
             if *generation > state.mek_generation {
                 state.mek_generation = *generation;
+            }
+        }
+
+        // ── Categories: OR-Set ──
+        GovernanceEntry::SegmentAdded {
+            segment_index,
+            registry_key,
+            governance_key,
+            slot_range_start,
+            slot_range_end,
+            ..
+        } => {
+            // Avoid duplicates — segment_index is unique
+            if !state
+                .segments
+                .iter()
+                .any(|s| s.segment_index == *segment_index)
+            {
+                state.segments.push(SegmentState {
+                    segment_index: *segment_index,
+                    registry_key: registry_key.clone(),
+                    governance_key: governance_key.clone(),
+                    slot_range_start: *slot_range_start,
+                    slot_range_end: *slot_range_end,
+                });
+                state.segments.sort_by_key(|s| s.segment_index);
             }
         }
 

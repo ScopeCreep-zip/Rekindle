@@ -9,12 +9,12 @@ use rekindle_types::governance::GovernanceEntry;
 
 use super::channels::{
     write_category_archived, write_category_created, write_category_updated,
-    write_channel_archived, write_channel_created, write_channel_updated,
-    write_permission_overwrite,
+    write_channel_archived, write_channel_created, write_channel_segment_linked,
+    write_channel_updated, write_permission_overwrite,
 };
 use super::community::{
     write_community_meta, write_community_notification_default, write_community_policy,
-    write_invite_created, write_invite_revoked, write_mek_generation_bump,
+    write_invite_created, write_invite_revoked, write_mek_generation_bump, write_segment_added,
 };
 use super::events::{
     write_event_archived, write_event_created, write_event_rsvp, write_thread_archived,
@@ -99,6 +99,16 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::ChannelCreated { .. } => {
             write_channel_created(b.reborrow().init_channel_created(), e);
         }
+        GovernanceEntry::ChannelSegmentLinked {
+            channel_id,
+            segment_index,
+            record_key,
+        } => write_channel_segment_linked(
+            b.reborrow().init_channel_segment_linked(),
+            *channel_id,
+            *segment_index,
+            record_key,
+        ),
         GovernanceEntry::ChannelUpdated { .. } => {
             write_channel_updated(b.reborrow().init_channel_updated(), e);
         }
@@ -177,6 +187,9 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         }
         GovernanceEntry::RoleUnassignment { target, role_id } => {
             write_role_unassignment(b.reborrow().init_role_unassignment(), target, *role_id);
+        }
+        GovernanceEntry::SegmentAdded { .. } => {
+            write_segment_added(b.reborrow().init_segment_added(), e);
         }
         GovernanceEntry::ThreadArchived { thread_id } => {
             write_thread_archived(b.reborrow().init_thread_archived(), *thread_id);

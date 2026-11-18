@@ -26,6 +26,7 @@ mod presence;
 mod profile_blobs;
 mod reactions_pins;
 mod roles;
+mod segments;
 mod threads;
 pub(crate) mod types;
 mod unread;
@@ -233,6 +234,10 @@ pub use roles::{
 pub use roles::{
     assign_role, create_role, delete_role, edit_role, get_roles, self_assign_role,
     self_unassign_role, unassign_role,
+};
+pub use segments::{
+    __cmd__expand_community_segment, __tauri_command_name_expand_community_segment,
+    expand_community_segment,
 };
 pub use threads::{
     __cmd__archive_thread, __cmd__create_thread, __cmd__get_active_threads,

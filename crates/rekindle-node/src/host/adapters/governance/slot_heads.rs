@@ -77,10 +77,11 @@ impl HostGovernance {
         let slot_index = membership
             .my_subkey_index
             .ok_or_else(|| GovernanceRuntimeError::SlotIndexMissing(community_id.to_owned()))?;
+        let segment = membership.my_segment_index.unwrap_or(0);
         let slot = u32::from(OWNER_SUBKEY_COUNT) + slot_index;
         let pool = self.transport()?.require_records().map_err(adapter)?;
         let mut heads = Vec::new();
-        for record_key in Self::channel_records(membership) {
+        for record_key in self.channel_records(community_id, membership, Some(segment)) {
             let lease =
                 (pool.acquire(&record_key, None, OpenIntent::Check).await).map_err(adapter)?;
             // A local inspect, not a get: a get without refresh still asks
@@ -107,7 +108,7 @@ impl HostGovernance {
     ) -> Result<Vec<SlotHead>, GovernanceRuntimeError> {
         let pool = self.transport()?.require_records().map_err(adapter)?;
         let mut heads = Vec::new();
-        for record_key in Self::channel_records(membership) {
+        for record_key in self.channel_records(community_id, membership, None) {
             let lease = match pool.acquire(&record_key, None, OpenIntent::Check).await {
                 Ok(lease) => lease,
                 Err(e) => {
@@ -147,11 +148,30 @@ impl HostGovernance {
         Ok(heads)
     }
 
-    /// The channel records members write (from `ChannelCreated`), as
-    /// `channel_write_context` picks them.
-    fn channel_records(membership: CommunityMembership) -> Vec<String> {
-        let mut record_keys: Vec<String> = membership.channel_log_keys.into_values().collect();
+    /// The channel records `segment`'s members write (every segment's when
+    /// `None`): segment 0's from `ChannelCreated`, a later one's from
+    /// `ChannelSegmentLinked`, as `channel_write_context` picks them.
+    fn channel_records(
+        &self,
+        community_id: &str,
+        membership: CommunityMembership,
+        segment: Option<u32>,
+    ) -> Vec<String> {
+        let mut record_keys: Vec<String> = if segment.is_none_or(|s| s == 0) {
+            membership.channel_log_keys.into_values().collect()
+        } else {
+            Vec::new()
+        };
+        if segment != Some(0) {
+            record_keys.extend(
+                (self.governance_state_impl(community_id).into_iter())
+                    .flat_map(|gov| gov.channel_segment_records.into_iter())
+                    .filter(|((_, linked), _)| segment.is_none_or(|s| *linked == s))
+                    .map(|(_, record)| record.record_key),
+            );
+        }
         record_keys.sort_unstable();
+        record_keys.dedup();
         record_keys
     }
 }

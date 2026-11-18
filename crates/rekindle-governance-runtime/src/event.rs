@@ -89,6 +89,18 @@ pub enum GovernanceRuntimeEvent {
     /// `CommunityEvent::CommunityJoined`.
     CommunityJoined { community_id: String, name: String },
 
+    /// Plate Gate: a new segment has been added. Adapter logs.
+    SegmentAdded {
+        community_id: String,
+        segment_index: u32,
+    },
+
+    /// Plate Gate: auto-expansion is pending (waiting for an admin to
+    /// expand, or actively expanding). Adapter emits a
+    /// `NotificationEvent::SystemAlert` so the user sees the 30-second
+    /// wait isn't a hung join.
+    JoinPendingAlert { have_manage_community: bool },
+
     /// A governance entry was just applied via `apply::write_entry` —
     /// adapter can use this to fan out auxiliary updates (e.g. lift the
     /// applied entry into telemetry). `GovernanceEntry` is boxed

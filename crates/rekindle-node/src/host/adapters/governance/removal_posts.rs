@@ -27,10 +27,11 @@ use std::collections::BTreeSet;
 use rekindle_codec::community::channel_record::{
     decode_own_page, encode_page_entries, ChannelRecordEntry,
 };
+use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::CommunityMembership;
 use rekindle_records::port::OpenIntent;
 use rekindle_types::dht_layout::channel::OWNER_SUBKEY_COUNT;
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::id::{ChannelId, PseudonymKey};
 
 use super::HostGovernance;
 use crate::host::adapters::channel::not_delivered::{fail_not_delivered, OwnPost};
@@ -63,7 +64,7 @@ impl HostGovernance {
         let slot = u32::from(OWNER_SUBKEY_COUNT) + slot_index;
         let heads = gov.departed_heads.get(&me).cloned().unwrap_or_default();
         let mut posts = Vec::new();
-        for (channel, record_key) in own_channel_records(&membership) {
+        for (channel, record_key) in own_channel_records(&membership, &gov) {
             if let Some(outbox) = self.ctx.outbox.channel_posts() {
                 match outbox
                     .fail_slot(&record_key, slot, REMOVED_NOT_DELIVERED)
@@ -167,11 +168,24 @@ fn entry_message_id(entry: &ChannelRecordEntry) -> Option<String> {
     }
 }
 
-/// The channel records our slot writes, each with its channel, as
-/// `channel_write_context` picks them (from `ChannelCreated`).
-fn own_channel_records(membership: &CommunityMembership) -> Vec<(String, String)> {
-    (membership.channel_log_keys.iter())
-        .map(|(channel, record)| (channel.clone(), record.clone()))
+/// The channel records our slot writes, each with its channel: our
+/// segment's, as `channel_write_context` picks them (segment 0's from
+/// `ChannelCreated`, a later one's from `ChannelSegmentLinked`).
+fn own_channel_records(
+    membership: &CommunityMembership,
+    gov: &GovernanceState,
+) -> Vec<(String, String)> {
+    let segment = membership.my_segment_index.unwrap_or(0);
+    if segment == 0 {
+        return (membership.channel_log_keys.iter())
+            .map(|(channel, record)| (channel.clone(), record.clone()))
+            .collect();
+    }
+    (gov.channel_segment_records.iter())
+        .filter(|((_, linked), _)| *linked == segment)
+        .map(|((channel, _), record): (&(ChannelId, u32), _)| {
+            (hex::encode(channel.0), record.record_key.clone())
+        })
         .collect()
 }
 

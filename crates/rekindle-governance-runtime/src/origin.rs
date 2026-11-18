@@ -31,6 +31,8 @@ use crate::event::GovernanceRuntimeEvent;
 use crate::op_log;
 use rekindle_records::lease::CommunityLeases;
 
+use rekindle_types::dht_layout::SLOTS_PER_SEGMENT;
+
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
 /// stable across community installs (architecture §Failure 4).
@@ -123,7 +125,15 @@ pub async fn create_community<D: GovernanceRuntimeDeps>(
     admission: AdmissionMode,
 ) -> Result<String, GovernanceRuntimeError> {
     let slot_seed = SlotSeed::generate_with(deps.rng().as_ref());
-    let member_pubkeys = crate::channels::slot_pubkeys(&slot_seed.0)?;
+    let mut member_pubkeys = Vec::with_capacity(SLOTS_PER_SEGMENT as usize);
+    for i in 0..SLOTS_PER_SEGMENT {
+        let sk = derive::derive_slot_keypair(&slot_seed.0, i).map_err(|e| {
+            GovernanceRuntimeError::Crypto(format!(
+                "slot keypair derivation failed at index {i}: {e}"
+            ))
+        })?;
+        member_pubkeys.push(sk.verifying_key().to_bytes());
+    }
     // A, M(p), the registry, #general; a failure releases what exists.
     let mut created: Vec<DhtRecordInfo> = Vec::with_capacity(4);
     for which in 0..4 {
@@ -399,13 +409,14 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     deps.persist_discovered_registry_members(
         &anchor_key,
         vec![DiscoveredMember {
+            segment_index: 0,
             slot_index: CREATOR_SLOT,
             presence: presence.clone(),
         }],
     );
 
     // Nothing else writes the channel record until a first message.
-    crate::records::publish_created(deps, ch_record.lease, &slot_seed.0).await?;
+    crate::records::publish_created(deps, ch_record.lease, &slot_seed.0, 0).await?;
 
     deps.community_records_ready(
         &anchor_key,
@@ -438,7 +449,7 @@ mod tests {
 
     #[test]
     fn constants_match_architecture_section_4_6() {
-        assert_eq!(rekindle_types::dht_layout::REGISTRY_SLOTS, 255);
+        assert_eq!(SLOTS_PER_SEGMENT, 255);
         assert_eq!(CREATOR_SLOT, 0);
         assert_eq!(OWNER_ROLE_ID.0, [0xFFu8; 16]);
     }

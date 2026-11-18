@@ -41,6 +41,7 @@
     "allow-edit-channel-message",
     "allow-edit-event",
     "allow-edit-role",
+    "allow-expand-community-segment",
     "allow-fetch-link-preview",
     "allow-force-native-keyframes",
     "allow-forward-channel-message",

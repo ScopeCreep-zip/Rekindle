@@ -72,6 +72,7 @@ pub struct ChannelWriteContext {
     /// String-encoded Veilid KeyPair the adapter parses back.
     pub slot_keypair_str: String,
     pub slot_index: u32,
+    pub segment_index: u32,
 }
 
 /// Pseudonym + signing key for the local user in a community.
@@ -361,6 +362,17 @@ pub trait ChannelMessagingDeps: Send + Sync {
     /// which holds and watches them (the governance runtime's hook of the
     /// same name; plan C7.5).
     async fn community_records_ready(&self, community_id: &str, leases: CommunityLeases);
+
+    /// Plate Gate (architecture §15.4): ensure a per-segment channel
+    /// SMPL record exists for the local writer before a send. Returns
+    /// the record key the channel_write_context will target. No-op
+    /// (returns the genesis record key) for segment-0 senders.
+    /// Delegates to `rekindle_governance_runtime::ensure_channel_segment_record`.
+    async fn ensure_channel_segment_record(
+        &self,
+        community_id: &str,
+        channel_id: &str,
+    ) -> Result<String, ChannelError>;
 
     // ---------- The outbox's channel_post stream (plan E2.5) ----------
 

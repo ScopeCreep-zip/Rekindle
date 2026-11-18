@@ -52,6 +52,7 @@ impl HostFiles {
             channel_key: channel_log_key.to_string(),
             slot_keypair_str: slot_keypair.to_string(),
             slot_index,
+            segment_index: 0,
         }
     }
 }

@@ -1,6 +1,7 @@
 //! `GovernanceEvent` samples.
 
 use rekindle_types::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDisplay};
+use rekindle_types::presence::SegmentDescriptor;
 use rekindle_types::subscription_events::{
     GovernanceEvent, OpPublicationState, OpQuarantineReason, SubscriptionEvent,
 };
@@ -11,12 +12,14 @@ pub const NAMES: &[&str] = &[
     "metadataChanged",
     "channelsChanged",
     "rolesChanged",
+    "segmentsChanged",
     "bansChanged",
     "inviteCreated",
     "inviteUsed",
     "inviteRevoked",
     "inviteExpired",
     "channelPermissionsChanged",
+    "governanceSubkeyUpdated",
     "governanceRebuilt",
     "opPublication",
     "governanceOpQuarantined",
@@ -28,12 +31,14 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::MetadataChanged { .. } => "metadataChanged",
         GovernanceEvent::ChannelsChanged { .. } => "channelsChanged",
         GovernanceEvent::RolesChanged { .. } => "rolesChanged",
+        GovernanceEvent::SegmentsChanged { .. } => "segmentsChanged",
         GovernanceEvent::BansChanged { .. } => "bansChanged",
         GovernanceEvent::InviteCreated { .. } => "inviteCreated",
         GovernanceEvent::InviteUsed { .. } => "inviteUsed",
         GovernanceEvent::InviteRevoked { .. } => "inviteRevoked",
         GovernanceEvent::InviteExpired { .. } => "inviteExpired",
         GovernanceEvent::ChannelPermissionsChanged { .. } => "channelPermissionsChanged",
+        GovernanceEvent::GovernanceSubkeyUpdated { .. } => "governanceSubkeyUpdated",
         GovernanceEvent::GovernanceRebuilt { .. } => "governanceRebuilt",
         GovernanceEvent::OpPublication { .. } => "opPublication",
         GovernanceEvent::GovernanceOpQuarantined { .. } => "governanceOpQuarantined",
@@ -136,6 +141,19 @@ fn structure() -> Vec<Sample> {
             },
         ),
         ev(
+            "segmentsChanged",
+            GovernanceEvent::SegmentsChanged {
+                community: community(),
+                segments: vec![SegmentDescriptor {
+                    segment_index: 1,
+                    registry_key: rk('r'),
+                    governance_key: rk('s'),
+                    slot_range_start: 255,
+                    slot_range_end: 510,
+                }],
+            },
+        ),
+        ev(
             "bansChanged",
             GovernanceEvent::BansChanged {
                 community: community(),
@@ -186,6 +204,14 @@ fn invites_and_subkeys() -> Vec<Sample> {
             GovernanceEvent::ChannelPermissionsChanged {
                 community: community(),
                 channel: channel(),
+            },
+        ),
+        ev(
+            "governanceSubkeyUpdated",
+            GovernanceEvent::GovernanceSubkeyUpdated {
+                community: community(),
+                subkey_index: 4,
+                lamport_ts: 77,
             },
         ),
         ev(

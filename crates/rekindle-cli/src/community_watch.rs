@@ -311,6 +311,9 @@ fn governance(event: &GovernanceEvent) -> String {
         GovernanceEvent::RolesChanged { roles, .. } => {
             format!("roles changed ({} roles)", roles.len())
         }
+        GovernanceEvent::SegmentsChanged { segments, .. } => {
+            format!("segments changed ({} segments)", segments.len())
+        }
         GovernanceEvent::BansChanged { .. } => "ban list changed".into(),
         GovernanceEvent::InviteCreated {
             invite_id,
@@ -335,6 +338,11 @@ fn governance(event: &GovernanceEvent) -> String {
         GovernanceEvent::ChannelPermissionsChanged { channel, .. } => {
             format!("permissions changed on channel {}", abbreviate_key(channel))
         }
+        GovernanceEvent::GovernanceSubkeyUpdated {
+            subkey_index,
+            lamport_ts,
+            ..
+        } => format!("governance subkey {subkey_index} written (lamport {lamport_ts})"),
         GovernanceEvent::GovernanceRebuilt { .. } => "governance rebuilt".into(),
         GovernanceEvent::GovernanceOpQuarantined {
             op, author, reason, ..

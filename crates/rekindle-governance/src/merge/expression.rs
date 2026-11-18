@@ -91,6 +91,7 @@ pub(super) fn apply_expression(
             }
         }
 
+        // ── Segment expansion: tracked for join flow discovery ──
         _ => unreachable!("apply_expression: unexpected variant"),
     }
 }

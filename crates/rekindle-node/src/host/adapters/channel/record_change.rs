@@ -16,7 +16,7 @@ use super::ingest::{Ingested, ReceivedPost};
 use super::HostChannel;
 
 impl HostChannel {
-    /// The community and channel whose record is
+    /// The community and channel whose genesis or segment record is
     /// `record_key`, among the communities we hold.
     fn channel_of_record(&self, record_key: &str) -> Option<(String, String)> {
         let communities: Vec<String> = self
@@ -29,10 +29,15 @@ impl HostChannel {
             .collect();
         communities.into_iter().find_map(|community| {
             let gov = self.governance_state(&community)?;
-            let channel = (gov.channels.keys())
-                .map(|id| hex::encode(id.0))
-                .find(|id| {
-                    self.channel_record_key(&community, id).as_deref() == Some(record_key)
+            let channel = (gov.channel_segment_records.iter())
+                .find(|(_, record)| record.record_key == record_key)
+                .map(|((channel, _), _)| hex::encode(channel.0))
+                .or_else(|| {
+                    (gov.channels.keys())
+                        .map(|id| hex::encode(id.0))
+                        .find(|id| {
+                            self.channel_record_key(&community, id).as_deref() == Some(record_key)
+                        })
                 })?;
             Some((community, channel))
         })

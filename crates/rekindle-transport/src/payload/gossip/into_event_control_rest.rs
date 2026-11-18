@@ -4,7 +4,8 @@
 //! system payloads.
 
 use rekindle_types::subscription_events::{
-    CryptoEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent, VoiceScope,
+    CryptoEvent, GovernanceEvent, SocialEvent, SubscriptionEvent, SystemEvent, VoiceEvent,
+    VoiceScope,
 };
 
 /// Every voice signal on the gossip mesh is community-scoped — a DM
@@ -82,6 +83,17 @@ pub fn control_into_event_rest(
                 server_id,
             })
         }
+
+        // ── Governance ──────────────────────────────────────
+        ControlPayload::GovernanceUpdated {
+            subkey_index,
+            lamport_ts,
+            ..
+        } => SubscriptionEvent::Governance(GovernanceEvent::GovernanceSubkeyUpdated {
+            community: c(),
+            subkey_index,
+            lamport_ts,
+        }),
 
         // ── Voice signaling ─────────────────────────────────
         ControlPayload::VoiceJoin {

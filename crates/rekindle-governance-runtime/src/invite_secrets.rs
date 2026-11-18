@@ -48,27 +48,10 @@ pub async fn fetch_invite_secrets<D: GovernanceRuntimeDeps>(
     deps: &D,
     record_key: &str,
 ) -> Result<String, GovernanceRuntimeError> {
-    let bytes = read_subkey(deps, record_key, 0, true)
+    let bytes = crate::overflow::read_subkey(deps, record_key, 0, true)
         .await?
         .filter(|b| !b.is_empty())
         .ok_or_else(|| GovernanceRuntimeError::Adapter("invite-secrets record is empty".into()))?;
     String::from_utf8(bytes)
         .map_err(|e| GovernanceRuntimeError::Adapter(format!("invite-secrets not UTF-8: {e}")))
-}
-
-/// Read one subkey of `record_key` on a borrow of its own: acquire, get,
-/// release. While the community holds the record for its session the
-/// acquire is a table hit.
-async fn read_subkey<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    record_key: &str,
-    subkey: u32,
-    force_refresh: bool,
-) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-    let lease = deps
-        .acquire_record(record_key, None, rekindle_records::port::OpenIntent::Check)
-        .await?;
-    let value = deps.get_dht_value(lease, subkey, force_refresh).await;
-    deps.release_record(lease).await;
-    value
 }

@@ -4,7 +4,7 @@
 //! `src-tauri/services/community/presence/poll.rs` as a 330-LoC
 //! state-bound function. Here it's parameterised over
 //! [`CommunityPresenceDeps`] so the entire pipeline — registry
-//! open, presence write, registry scan, role/profile/
+//! open, presence write, per-segment Plate Gate scan, role/profile/
 //! RSVP merge, gossip overlay rebuild, initial sync, stale-sync
 //! retry, auto-expand — is observable + testable.
 //!
@@ -13,6 +13,7 @@
 //! - §13.4 presence cadence
 //! - §14.3 Shared Locker history advertisement
 //! - §14.5 mutual aid + peer reliability
+//! - §15 Plate Gate per-segment scan + auto-expand
 //! - §26 W26 — presence row signature verification
 
 use std::sync::Arc;
@@ -26,7 +27,7 @@ use crate::deps::CommunityPresenceDeps;
 
 /// 180-second heartbeat freshness window. Presence rows with a
 /// last_heartbeat older than `now - 180s` are treated as offline
-/// during the registry scan and as eviction candidates from the
+/// during the segment scan and as eviction candidates from the
 /// gossip overlay.
 pub const STALE_HEARTBEAT_SECS: u64 = 180;
 /// Stale-sync retry trigger. SyncRequests still in `pending_syncs`
@@ -90,13 +91,13 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     )
     .await;
 
-    // The registry scan: one SMPL record of ≤255 subkeys; we skip our
-    // own subkey.
+    // Per-segment Plate Gate scan (architecture §15.5). Each segment
+    // is its own SMPL record carrying ≤255 LOCAL subkeys; we skip
+    // our own subkey on our own segment.
     let banned = deps.governance_bans(community_id);
     let now_secs = deps.now_secs();
-    let Some(registry_key) = deps.registry_key(community_id) else {
-        return Ok(());
-    };
+    let descriptors = deps.segment_descriptors(community_id);
+    let my_subkey = creds.my_subkey_index.unwrap_or(u32::MAX);
 
     // Read-side reciprocity policy (local-only, default-deny): a signal
     // we don't share, we don't get to read off peers' rows. Read once
@@ -107,22 +108,24 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
     let mut online_members = std::collections::HashMap::new();
     let mut known_member_keys = std::collections::HashSet::new();
     let mut voice_rows: Vec<crate::deps::VoicePresenceRow> = Vec::new();
-    {
+    for descriptor in &descriptors {
         if deps.scope().is_closed() {
             return Ok(());
         }
+        let skip_subkey = (descriptor.segment_index == creds.my_segment_index).then_some(my_subkey);
         let raw_rows = deps
-            .scan_registry_raw(
-                &registry_key,
-                crate::community::scan_row::REGISTRY_SLOTS,
-                creds.my_subkey_index,
+            .scan_segment_raw(
+                &descriptor.registry_key,
+                crate::community::scan_row::SUBKEYS_PER_SEGMENT,
+                skip_subkey,
             )
             .await;
         tracing::debug!(
             community = %community_id,
-            registry_key = %registry_key,
+            segment = descriptor.segment_index,
+            registry_key = %descriptor.registry_key,
             rows = raw_rows.len(),
-            "presence scan: registry rows read",
+            "presence scan: segment rows read",
         );
         for (subkey, raw_bytes) in raw_rows {
             let classified = crate::community::scan_row::parse_and_classify_row(
@@ -131,7 +134,13 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                 STALE_HEARTBEAT_SECS,
                 now_secs,
             );
-            log_scanned_row(community_id, subkey, &classified, now_secs);
+            log_scanned_row(
+                community_id,
+                descriptor.segment_index,
+                subkey,
+                &classified,
+                now_secs,
+            );
             if let crate::community::scan_row::ClassifiedRow::Accepted(row) = classified {
                 let mut row = *row;
                 // Read-side MEK gate: the writer moved the identity-
@@ -170,7 +179,7 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
                     voice_channel_id: row_voice_channel,
                     fresh: row.online_member.is_some(),
                 });
-                discovered.push((subkey, row.presence));
+                discovered.push((descriptor.segment_index, subkey, row.presence));
                 if let Some(om) = row.online_member {
                     online_members.insert(row.pseudonym_hex, om);
                 }
@@ -295,6 +304,11 @@ pub async fn presence_poll_tick<D: CommunityPresenceDeps>(
         run_initial_sync(Arc::clone(&deps), community_id, degree).await;
     }
 
+    // A5/P4.3 — admin-side Plate Gate auto-expand trigger
+    // (architecture §15.1). Spawned by the adapter; the
+    // orchestrator just fires the trigger and continues.
+    deps.maybe_auto_expand_segment(community_id);
+
     Ok(())
 }
 
@@ -320,6 +334,7 @@ pub fn steady_poll_duration() -> Duration {
 /// member shows up and whether it can be reached.
 fn log_scanned_row(
     community_id: &str,
+    segment: u32,
     subkey: u32,
     classified: &crate::community::scan_row::ClassifiedRow,
     now_secs: u64,
@@ -327,6 +342,7 @@ fn log_scanned_row(
     match classified {
         crate::community::scan_row::ClassifiedRow::Accepted(row) => tracing::debug!(
             community = %community_id,
+            segment,
             subkey,
             member = %row.pseudonym_hex,
             status = %row.presence.status,
@@ -337,6 +353,7 @@ fn log_scanned_row(
         ),
         other => tracing::debug!(
             community = %community_id,
+            segment,
             subkey,
             outcome = other.label(),
             "presence scan: row not accepted",
@@ -352,14 +369,15 @@ mod tests {
     use super::*;
     use crate::community::test_fixture::{MockCommunityDeps, MockState};
     use crate::community::GossipOverlaySnapshot;
-    use crate::deps::{OnlineMember, PresenceCredentials};
+    use crate::deps::{OnlineMember, PresenceCredentials, SegmentDescriptor};
 
-    fn creds_with(my_subkey: u32) -> PresenceCredentials {
+    fn creds_with(my_subkey: u32, my_segment: u32) -> PresenceCredentials {
         PresenceCredentials {
             my_pseudonym_hex: "abc".to_string(),
             my_subkey_index: Some(my_subkey),
             slot_keypair_str: Some("kp".to_string()),
             slot_seed_hex: Some("seed".to_string()),
+            my_segment_index: my_segment,
         }
     }
 
@@ -374,8 +392,15 @@ mod tests {
 
     fn make_deps_with(mut state: MockState) -> Arc<MockCommunityDeps> {
         state.registry_open_result = Some("registry-key".to_string());
-        state.presence_credentials = Some(creds_with(7));
-        state.registry_key = Some("reg0".to_string());
+        state.presence_credentials = Some(creds_with(7, 0));
+        state.segments = vec![SegmentDescriptor {
+            // Scan-only fixture: presence never merges governance.
+            governance_key: String::new(),
+            segment_index: 0,
+            registry_key: "reg0".to_string(),
+            slot_range_start: 0,
+            slot_range_end: 0,
+        }];
         Arc::new(MockCommunityDeps::new(state))
     }
 
@@ -396,11 +421,11 @@ mod tests {
         let deps = Arc::new(MockCommunityDeps::new(MockState::default()));
         // ensure_registry_open returns Ok(Some("reg")) by default? No
         // — fixture returns Ok(None). Set the registry result via the
-        // fixture + override the credentials-missing path.
+        // fixture's segments + override the credentials-missing path.
         // To exercise the credentials-missing branch we need the
         // fixture to return Ok(Some("reg")) AND presence_credentials
-        // = None. We override by setting the registry key (which the
-        // fixture doesn't use for ensure_registry_open) and forcing the
+        // = None. We override by setting segments (which the fixture
+        // doesn't use for ensure_registry_open) and forcing the
         // ensure_registry to return Some via a different fixture
         // hook. For now we just check the early-exit on missing
         // registry: ensure_registry_open returns Ok(None) by default
@@ -429,8 +454,8 @@ mod tests {
         assert_eq!(st.calls_presence_credentials, vec!["c1".to_string()]);
         assert_eq!(st.calls_compute_history, vec!["c1".to_string()]);
         assert_eq!(st.calls_governance_bans, vec!["c1".to_string()]);
-        assert_eq!(st.calls_registry_key, vec!["c1".to_string()]);
-        assert_eq!(st.calls_scan_registry.len(), 1);
+        assert_eq!(st.calls_segment_descriptors, vec!["c1".to_string()]);
+        assert_eq!(st.calls_scan_segment.len(), 1);
         assert_eq!(st.calls_apply_member_state.len(), 1);
         assert_eq!(st.calls_read_profiles, vec!["c1".to_string()]);
         assert_eq!(st.calls_apply_profiles.len(), 1);
@@ -438,6 +463,7 @@ mod tests {
         assert_eq!(st.calls_offline_diff.len(), 1);
         assert_eq!(st.calls_read_gossip.len(), 1);
         assert_eq!(st.calls_apply_gossip.len(), 1);
+        assert_eq!(st.calls_auto_expand, vec!["c1".to_string()]);
     }
 
     #[tokio::test]
@@ -477,7 +503,7 @@ mod tests {
         // The orchestrator only fires the stale-sync retry block
         // when `online_members.len() > 0`. Inject one online peer
         // via the mock's `extend_online_with_recent_gossip` hook —
-        // that runs after the registry scan and before the
+        // that runs after the per-segment scan and before the
         // gossip-degree calculation, so the orchestrator sees
         // `online_count = 1`.
         let mut inject = HashMap::new();
@@ -512,5 +538,13 @@ mod tests {
             st.calls_prune_pending,
             vec![("c1".to_string(), MAX_SYNC_ATTEMPTS)]
         );
+    }
+
+    #[tokio::test]
+    async fn auto_expand_fires_at_end_of_tick() {
+        let deps = make_deps_with(MockState::default());
+        let _ = presence_poll_tick(Arc::clone(&deps), "c1").await;
+        let st = deps.state.lock();
+        assert_eq!(st.calls_auto_expand, vec!["c1".to_string()]);
     }
 }
