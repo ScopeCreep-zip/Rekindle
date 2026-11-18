@@ -262,8 +262,12 @@ impl HostGovernance {
     /// chain seq `op.seq + 1`, where an `OpRef` locates every op
     /// (`fetch_governance_op_impl`), the re-join's `MemberJoined` included.
     ///
+    /// Our ops' rows still queued for the record this re-join replaced are
+    /// then settled ([`GovernanceOps::settle_mirrored`](crate::host::adapters::outbox::GovernanceOps::settle_mirrored)).
+    ///
     /// # Errors
-    /// An earlier op of ours was not walked, or an append failed.
+    /// An earlier op of ours was not walked, an append failed, or the
+    /// outbox did not settle the rows.
     async fn mirror_own_chain(
         &self,
         community: &str,
@@ -303,6 +307,21 @@ impl HostGovernance {
             .await
             .map_err(|e| format!("community re-join failed, op log not written: {e}"))?;
         }
+        // Rows of these ops still queued were aimed at the record this
+        // re-join replaced, and can never land there: the ops are on the
+        // fresh record now, so their rows settle (D22).
+        let ops = (self.ctx.outbox.governance_ops())
+            .ok_or("community re-join failed: the outbox is not running")?;
+        let hashes: Vec<String> = own.iter().map(|op| hex::encode(op.hash.0)).collect();
+        let settled = ops
+            .settle_mirrored(community, &hashes)
+            .await
+            .map_err(|e| format!("community re-join failed, queued ops not settled: {e}"))?;
+        tracing::debug!(
+            community,
+            settled,
+            "re-join: queued ops on the replaced record settled"
+        );
         Ok(())
     }
 

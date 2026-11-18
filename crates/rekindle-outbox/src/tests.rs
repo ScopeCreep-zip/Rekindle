@@ -580,10 +580,10 @@ mod deadline;
 mod ack_order;
 
 mod fake_acks;
-
 mod independence;
 
 mod mek_transfer;
+mod settle_landed;
 
 /// Finding 70 refined: a request cancelled right after it was queued and
 /// attempted (its first send wedged it) leaves no handshake row.

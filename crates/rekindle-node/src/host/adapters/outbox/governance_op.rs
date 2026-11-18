@@ -329,6 +329,34 @@ impl GovernanceOps {
         Ok(row.is_some_and(|r| rekindle_outbox::state::is_unsettled(r.state)))
     }
 
+    /// Our ops `client_ids` (their hashes, hex) of `community` are on our
+    /// member record by a write other than their rows' sends: a re-join wrote
+    /// our whole chain onto its fresh record (`mirror_own_chain`, ADR 0011's
+    /// re-created `M`), and a row still aimed at the record it replaced can
+    /// never land there (Veilid takes a DFLT owner subkey only from the owner
+    /// key, and the vault's `MemberRecordOwner` is now the fresh record's).
+    /// Each such row settles `sent` and leaves the stream, so the ops queued
+    /// behind it, the re-join's `MemberJoined` first, go on (D22: the head
+    /// blocks the rest). Returns how many rows settled.
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn settle_mirrored(
+        &self,
+        community: &str,
+        client_ids: &[String],
+    ) -> Result<usize, String> {
+        let settled = self
+            .outbox
+            .settle_landed(client_ids)
+            .await
+            .map_err(|e| e.to_string())?;
+        for row in &settled {
+            self.waiters.landed(community, &row.client_id);
+        }
+        Ok(settled.len())
+    }
+
     async fn enqueue(&self, entry: Entry, community: &str, client_id: &str) -> Result<(), String> {
         match self.outbox.enqueue(entry, None).await {
             Ok(_) => Ok(()),

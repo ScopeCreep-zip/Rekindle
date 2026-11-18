@@ -276,12 +276,7 @@ impl HostGovernance {
         let cert = cert
             .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
         let mine = mine.ok_or_else(|| adapter("publish op", "no pseudonym"))?;
-        // Our re-join's `MemberJoined` goes on the fresh record it binds,
-        // where `mirror_own_chain` put our earlier ops; the merged state
-        // still names our first record until it merges that op.
-        let op = rekindle_codec::governance_op::decode_op(&encoded)
-            .map_err(|e| GovernanceRuntimeError::Encoding(format!("publish op: {e}")))?;
-        let record = op_log::op_record(&cert, &state, &op.op)
+        let record = op_log::author_record(&cert, &state, &mine)
             .ok_or_else(|| GovernanceRuntimeError::MemberRecordMissing(hex::encode(mine.0)))?;
         let ops = self
             .ctx

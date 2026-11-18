@@ -229,10 +229,11 @@ where
 /// which may never have held them (an op still queued there when it was
 /// removed); the re-join writes its whole chain onto its fresh record at
 /// the same chain seq (`mirror_own_chain` on the Host), and later ops cite
-/// that record. The op hash, checked on every fetch (`held_from_encoded`),
-/// names the op; a record only says where to look, as a Matrix server
-/// fetches a missing event from any server in the room
-/// (`/get_missing_events`), not only from its sender's.
+/// that record. ADR 0011: an `OpRef` is a locator, "so any op is fetchable
+/// without a directory"; the op hash, checked on every fetch
+/// (`held_from_encoded`), names the op, and a record only says where to
+/// look (as a Matrix server fetches a missing event from any server in the
+/// room, `/get_missing_events`, not only from its sender's).
 #[must_use]
 pub fn locators(wanted: &[OpRef], held: &[HeldOp]) -> Vec<OpRef> {
     let mut records: BTreeMap<[u8; 32], BTreeSet<&str>> = BTreeMap::new();

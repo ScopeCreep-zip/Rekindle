@@ -68,7 +68,7 @@ async fn kick_and_rejoin(community: &mut Community) -> String {
     });
     let bea = community.pseudonym(1).await;
     assert!(
-        all_list(&community, &bea, &[0, 1]).await,
+        all_list(community, &bea, &[0, 1]).await,
         "the inviter lists bea, merged from the mesh"
     );
     // That op log, only, stays refusing: the re-join's fresh member record
@@ -118,7 +118,7 @@ async fn kick_and_rejoin(community: &mut Community) -> String {
         community.info(1).await
     );
     assert!(
-        all_list(&community, &bea, &[0, 1]).await,
+        all_list(community, &bea, &[0, 1]).await,
         "the inviter and the re-joiner list bea again"
     );
     bea
@@ -153,9 +153,10 @@ fn roster(community: &Community, i: usize) -> (Vec<PseudonymKey>, Vec<PseudonymK
 /// A third member joins after the kick-and-rejoin, through a fresh invite
 /// from the owner: its walk reaches bea's chain, whose seq 0 the owner's
 /// ops cite by bea's first member record, which never held it. It merges
-/// the owner's roster (bea listed, not removed) and reads bea's next post,
-/// as a Matrix server joining later replays the leave and the re-join in
-/// order and ends with the member joined.
+/// the owner's roster (bea listed and not departed, the kick still
+/// recorded) and reads bea's next post, as a Matrix server joining later
+/// replays the leave and the re-join in order and ends with the member
+/// joined.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_member_joining_after_a_kick_and_rejoin_sees_the_rejoiner() {
     let mut community = Community::create(3, 337).await;
@@ -184,10 +185,13 @@ async fn a_member_joining_after_a_kick_and_rejoin_sees_the_rejoiner() {
         roster(&community, 0)
     );
     assert!(members.contains(&bea_key), "bea is a member");
-    assert!(
-        !removed.contains(&bea_key),
-        "bea is not removed: {removed:?}"
-    );
+    // `removed` keeps the kick's stamp, which a re-join must come after
+    // (`GovernanceState::removed`); a re-joined member is not departed.
+    assert!(removed.contains(&bea_key), "the kick stays recorded");
+    let departed = (community.nodes[2].host.governance())
+        .governance_state(&community.governance_key)
+        .is_some_and(|state| state.is_departed(&bea_key));
+    assert!(!departed, "bea is not departed for the third member");
 
     community
         .post(1, "seen by the third member")

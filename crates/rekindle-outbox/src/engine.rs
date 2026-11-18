@@ -17,6 +17,7 @@ use crate::stream::{OutboxRetry, StreamKind};
 
 mod attempts;
 mod discard;
+mod landed;
 
 /// The wait before the next pass after the storage failed.
 const STORAGE_RETRY: Duration = Duration::from_secs(5);
