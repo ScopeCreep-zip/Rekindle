@@ -76,6 +76,7 @@ mod registry;
 mod removal_posts;
 pub(crate) mod search;
 
+mod checkpoint_rows;
 mod checkpoint_state;
 mod head_advanced;
 pub mod moderation;

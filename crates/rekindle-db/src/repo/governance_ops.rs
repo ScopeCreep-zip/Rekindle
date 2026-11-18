@@ -75,11 +75,11 @@ pub struct AuthorHead {
     pub frontier_hash: [u8; 32],
 }
 
-fn int(value: u64) -> rusqlite::Result<i64> {
+pub(crate) fn int(value: u64) -> rusqlite::Result<i64> {
     i64::try_from(value).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
 }
 
-fn hash32(row: &Row<'_>, column: &str) -> rusqlite::Result<[u8; 32]> {
+pub(crate) fn hash32(row: &Row<'_>, column: &str) -> rusqlite::Result<[u8; 32]> {
     let bytes: Vec<u8> = get(row, column)?;
     bytes.try_into().map_err(|_| {
         rusqlite::Error::FromSqlConversionFailure(

@@ -409,6 +409,36 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.set_governance_op_fates_impl(community_id, fates).await
     }
 
+    async fn record_governance_checkpoints(
+        &self,
+        community_id: &str,
+        facts: Vec<rekindle_governance_runtime::checkpoint_rows::CheckpointFact>,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.record_governance_checkpoints_impl(community_id, facts)
+            .await
+    }
+
+    async fn usable_checkpoint_snapshot(
+        &self,
+        community_id: &str,
+        height: u64,
+        digest: [u8; 32],
+    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
+        self.usable_checkpoint_snapshot_impl(community_id, height, digest)
+            .await
+    }
+
+    async fn keep_checkpoint_snapshot(
+        &self,
+        community_id: &str,
+        height: u64,
+        digest: [u8; 32],
+        snapshot: Vec<u8>,
+    ) -> Result<(), GovernanceRuntimeError> {
+        self.keep_checkpoint_snapshot_impl(community_id, height, digest, snapshot)
+            .await
+    }
+
     async fn fetch_governance_op(
         &self,
         op_ref: &OpRef,

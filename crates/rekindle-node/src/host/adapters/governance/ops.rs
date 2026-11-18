@@ -101,7 +101,7 @@ pub(crate) fn held_ops(ops: Vec<StoredOp>, heads: &[AuthorHead]) -> Result<Vec<H
 }
 
 impl HostGovernance {
-    fn op_store(&self) -> Result<(String, rekindle_db::Db), GovernanceRuntimeError> {
+    pub(super) fn op_store(&self) -> Result<(String, rekindle_db::Db), GovernanceRuntimeError> {
         self.owner_and_db()
             .ok_or_else(|| GovernanceRuntimeError::Adapter("no identity is unlocked".into()))
     }

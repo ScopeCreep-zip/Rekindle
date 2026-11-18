@@ -34,7 +34,9 @@ fn no_state(why: impl Into<String>) -> GovernanceRuntimeError {
 /// The snapshot at the cut of the checkpoint with this `height` and
 /// `digest` among the ops we hold: the merge of its cut's causal closure
 /// (`merge_cut`), served only when it reproduces the checkpoint's
-/// `stateRoot`, since bytes that miss it are refused by every reader.
+/// `stateRoot`, since bytes that miss it are refused by every reader. A
+/// usable hint's snapshot is kept on its `governance_checkpoints` row and
+/// read from there while the row stays usable.
 ///
 /// # Errors
 /// No cert is pinned, the op store failed, or no snapshot is held
@@ -62,11 +64,21 @@ pub async fn snapshot_at<D: GovernanceRuntimeDeps>(
             _ => None,
         })
         .ok_or_else(|| no_state(format!("no checkpoint at height {height} with that digest")))?;
+    // A usable hint's snapshot is kept once computed (plan E3.2 S7c.6), so
+    // each chunk request reads it instead of re-merging the cut's history.
+    let kept = deps
+        .usable_checkpoint_snapshot(community_id, height, *digest)
+        .await?;
+    if let Some(kept) = kept.filter(|k| state_root_of(k) == checkpoint.state_root) {
+        return Ok(kept);
+    }
     let (state, cut) = merge_cut(&cert, &causal_past(&set.ops, &checkpoint.cut));
     let preimage = state_preimage(&state, &cut);
     if state_root_of(&preimage) != checkpoint.state_root {
         return Err(no_state("our merge of the cut misses its stateRoot"));
     }
+    deps.keep_checkpoint_snapshot(community_id, height, *digest, preimage.clone())
+        .await?;
     Ok(preimage)
 }
 

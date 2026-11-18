@@ -354,6 +354,9 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             let verdicts = fates(&set, &outcome);
             warn_newly_dropped(community_id, &held, &verdicts);
             deps.set_governance_op_fates(community_id, verdicts).await?;
+            let facts = crate::checkpoint_rows::checkpoint_facts(&set.ops, &outcome);
+            deps.record_governance_checkpoints(community_id, facts)
+                .await?;
             for event in crate::quarantine::newly_quarantined(community_id, &held, &outcome) {
                 deps.emit_event(event);
             }

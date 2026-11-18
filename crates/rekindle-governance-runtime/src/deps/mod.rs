@@ -434,6 +434,30 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         fates: Vec<crate::op_log::OpVerdict>,
     ) -> Result<(), GovernanceRuntimeError>;
+    /// Write each checkpoint digest's state after the last merge
+    /// (`governance_checkpoints`, plan E3.2 S7c.6); a kept snapshot stays.
+    async fn record_governance_checkpoints(
+        &self,
+        community_id: &str,
+        facts: Vec<crate::checkpoint_rows::CheckpointFact>,
+    ) -> Result<(), GovernanceRuntimeError>;
+    /// The snapshot kept for the checkpoint at `height` with `digest`, only
+    /// while its row is usable.
+    async fn usable_checkpoint_snapshot(
+        &self,
+        community_id: &str,
+        height: u64,
+        digest: [u8; 32],
+    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
+    /// Keep `snapshot`, verified against its checkpoint's `stateRoot`, on
+    /// that checkpoint's row when the row is usable.
+    async fn keep_checkpoint_snapshot(
+        &self,
+        community_id: &str,
+        height: u64,
+        digest: [u8; 32],
+        snapshot: Vec<u8>,
+    ) -> Result<(), GovernanceRuntimeError>;
     /// The encoded op `op_ref` names, read from its author's op log
     /// (`rekindle_records::chain::read_log_after` on
     /// `op_ref.author_record`/`GOV_HEAD`, chain seq `author_seq + 1`),

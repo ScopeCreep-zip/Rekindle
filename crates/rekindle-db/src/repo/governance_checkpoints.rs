@@ -11,6 +11,7 @@
 
 use rusqlite::{params, Connection, OptionalExtension, Row};
 
+use crate::repo::governance_ops::{hash32, int};
 use crate::row::{get, get_enum, get_u64};
 
 /// A checkpoint digest's state after the last rebuild.
@@ -58,21 +59,6 @@ pub struct CheckpointRow {
     pub op_hash: [u8; 32],
     pub dir_size: u64,
     pub state: CheckpointState,
-}
-
-fn int(value: u64) -> rusqlite::Result<i64> {
-    i64::try_from(value).map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))
-}
-
-fn hash32(row: &Row<'_>, column: &str) -> rusqlite::Result<[u8; 32]> {
-    let bytes: Vec<u8> = get(row, column)?;
-    bytes.try_into().map_err(|_| {
-        rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Blob,
-            format!("{column} is not 32 bytes").into(),
-        )
-    })
 }
 
 fn checkpoint_row(row: &Row<'_>) -> rusqlite::Result<CheckpointRow> {
