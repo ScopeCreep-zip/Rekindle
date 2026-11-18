@@ -105,8 +105,7 @@ pub struct CommunityState {
     /// Each member's checkpoint state requests, at the gossip floor (S7c.3).
     #[serde(skip)]
     pub snapshot_requests: rekindle_transport::gossip::RateLimiter,
-    /// The joiners admitted to a pre-join hint or snapshot read, per invite
-    /// code hash: at most that invite's `max_uses` (plan E3.2 S7c.8 (2)).
+    /// Joiners admitted to a pre-join read, per invite code hash (≤ `max_uses`, S7c.8).
     #[serde(skip)]
     pub pre_join_readers: std::collections::BTreeMap<String, std::collections::BTreeSet<[u8; 32]>>,
     // ── v2.0 flat governance fields ──
