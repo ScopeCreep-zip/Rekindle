@@ -248,6 +248,13 @@ export type GovernanceEvent =
         reason: OpQuarantineReason;
         cause: string | null;
       };
+    }
+  | {
+      /** A community joined from a checkpoint hint finished its backfill and
+       *  the full history's state at the hint's cut is not the hinted
+       *  snapshot (plan E3.2 S7c.8, threat T8); the community stays on the
+       *  full history. Height and digest are the hint's checkpoint. */
+      checkpointSnapshotMismatch: { community: string; height: number; digest: string };
     };
 
 /** Why the backend set a governance op aside, never applied

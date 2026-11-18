@@ -11,6 +11,7 @@ import { transformMessages } from "../../utils/transformers";
 import { setTypingUsers, typingTimers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
+import { withCommunity } from "./community_reread";
 
 /// Channel-message slice of the community event dispatcher (edits,
 /// deletes, reactions, pins, delivery receipts, typing, system msgs,
@@ -319,7 +320,9 @@ export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): voi
     // emits `active: false` (or the user clears it client-side via
     // `dismissRaidAlertLocal`).
     const { community, active } = s.raidAlert;
-    setCommunityState("communities", community, "raidAlertActive", active);
+    withCommunity(community, () =>
+      setCommunityState("communities", community, "raidAlertActive", active),
+    );
     return;
   }
 

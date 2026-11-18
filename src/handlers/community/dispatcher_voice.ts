@@ -9,6 +9,7 @@ import { settingsState } from "../../stores/settings.store";
 import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { setVideoSessionConfig } from "../../stores/video.store";
 import { refreshStageHandRaises } from "../../actions/community/shared";
+import { withCommunity } from "./community_reread";
 
 /// Mirror signaling membership into the call-UI roster
 /// (`voiceState.participants`), keyed by per-community pseudonym — the
@@ -274,15 +275,19 @@ if ("soundboardPlayed" in v) {
     const { scope, topic, speakers, moderatorPseudonym } = v.stageUpdated;
     if (!("community" in scope)) return;
     const { community, channel } = scope.community;
-    setCommunityState(
-      "communities", community, "channels",
-      (ch) => ch.id === channel,
-      (ch) => ({
-        ...ch,
-        topic: topic ?? ch.topic,
-        stageSpeakers: speakers,
-        stageModerator: moderatorPseudonym,
-      }),
+    // The channel row lives under the community's: re-read one the window
+    // does not hold yet rather than write under a missing row.
+    withCommunity(community, () =>
+      setCommunityState(
+        "communities", community, "channels",
+        (ch) => ch.id === channel,
+        (ch) => ({
+          ...ch,
+          topic: topic ?? ch.topic,
+          stageSpeakers: speakers,
+          stageModerator: moderatorPseudonym,
+        }),
+      ),
     );
     setCommunityState("voiceChannels", channel, (prev) => {
       const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };

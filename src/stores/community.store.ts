@@ -283,6 +283,9 @@ export interface CommunityState {
   /** Governance ops the backend set aside, per community then op hash
    *  (`governanceOpQuarantined` events): shown, never applied. */
   quarantinedOps: Record<string, Record<string, QuarantinedOp>>;
+  /** Communities whose inviter's snapshot did not match the full history
+   *  (`checkpointSnapshotMismatch` events): the window keeps the notice. */
+  snapshotMismatch: Record<string, true>;
 }
 
 /** One quarantined governance op, as the backend announced it. */
@@ -305,6 +308,7 @@ const [communityState, setCommunityState] = createStore<CommunityState>({
   voiceChannels: {},
   opPublications: {},
   quarantinedOps: {},
+  snapshotMismatch: {},
 });
 
 export { communityState, setCommunityState };

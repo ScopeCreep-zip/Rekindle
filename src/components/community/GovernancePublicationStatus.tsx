@@ -13,7 +13,9 @@ const QUARANTINE_TEXT: Record<OpQuarantineReason, string> = {
  * (`opPublication` events): how many are publishing, and each refused one
  * with the community's reason. No retry: a queued op lands by itself.
  * Below them, each governance op the backend set aside
- * (`governanceOpQuarantined`, plan E3.2 S7c.5) with its reason.
+ * (`governanceOpQuarantined`, plan E3.2 S7c.5) with its reason. First, when
+ * the inviter's snapshot did not match the full history
+ * (`checkpointSnapshotMismatch`, plan E3.2 S7c.8): the notice stays.
  */
 const GovernancePublicationStatus: Component<{ communityId: string }> = (props) => {
   const states = () => Object.values(communityState.opPublications[props.communityId] ?? {});
@@ -21,9 +23,17 @@ const GovernancePublicationStatus: Component<{ communityId: string }> = (props) 
   const failures = () =>
     states().flatMap((s) => (s.kind === "failed" ? [s.reason] : []));
   const quarantined = () => Object.values(communityState.quarantinedOps[props.communityId] ?? {});
+  const mismatch = () => communityState.snapshotMismatch[props.communityId] === true;
+  const name = () => communityState.communities[props.communityId]?.name ?? "This community";
   return (
-    <Show when={pending() > 0 || failures().length > 0 || quarantined().length > 0}>
+    <Show when={mismatch() || pending() > 0 || failures().length > 0 || quarantined().length > 0}>
       <div class="governance-publication" role="status" aria-live="polite">
+        <Show when={mismatch()}>
+          <div class="governance-publication-failed">
+            The snapshot of {name()} your inviter's app sent did not match its full history.
+            {" "}{name()} now uses the full history.
+          </div>
+        </Show>
         <Show when={pending() > 0}>
           <div class="governance-publication-pending">
             {pending() === 1

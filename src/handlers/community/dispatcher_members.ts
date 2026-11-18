@@ -13,6 +13,7 @@ import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
 import { transformChannel, transformMember } from "../../utils/transformers";
 import { refreshCommunityMembers, refreshForUnlistedMember } from "./members_refresh";
+import { withCommunity } from "./community_reread";
 import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
 import { handleLoadChannelThreads } from "../../actions/community/events_threads";
 
@@ -43,7 +44,36 @@ export function reduceSubscriptionMembership(
   }
   if (!("membership" in event)) return;
   const m = event.membership;
+  const community = membershipRowCommunity(m);
+  if (community !== null) {
+    // Each of these writes under the community's row: one the window does
+    // not hold yet is re-read first (walk 13: a write under a missing row threw).
+    withCommunity(community, () => applyMembershipRow(m));
+    return;
+  }
+  applyMembershipNotice(m);
+}
 
+type MembershipEvent = Extract<CommunitySubscriptionEvent, { membership: unknown }>["membership"];
+
+/** The community a row-writing membership event names, or null for the others. */
+function membershipRowCommunity(m: MembershipEvent): string | null {
+  if ("joined" in m) return m.joined.community;
+  if ("memberCardChanged" in m) return m.memberCardChanged.community;
+  if ("kicked" in m) return m.kicked.community;
+  if ("banned" in m) return m.banned.community;
+  if ("removed" in m) return m.removed.community;
+  if ("left" in m) return m.left.community;
+  if ("rolesChanged" in m) return m.rolesChanged.community;
+  if ("timeoutStatusChanged" in m) return m.timeoutStatusChanged.community;
+  if ("membersRefreshed" in m) return m.membersRefreshed.community;
+  if ("memberDiscovered" in m) return m.memberDiscovered.community;
+  if ("onboardingCompleted" in m) return m.onboardingCompleted.community;
+  return null;
+}
+
+/** A membership event against a row the window holds. */
+function applyMembershipRow(m: MembershipEvent): void {
   // A new member: the Host decides its group, so the list is re-read.
   if ("joined" in m) {
     refreshCommunityMembers(m.joined.community);
@@ -148,9 +178,11 @@ export function reduceSubscriptionMembership(
     if (c?.myPseudonymKey === pseudonym) {
       setCommunityState("communities", community, "onboardingComplete", true);
     }
-    return;
   }
+}
 
+/** Membership events that write no community row: join progress and outcome. */
+function applyMembershipNotice(m: MembershipEvent): void {
   if ("joinAccepted" in m) {
     // Architecture §7.4 — peer accepted our join request and the MEK
     // has landed. Refresh the community detail so the new generation,
@@ -188,6 +220,27 @@ export function reduceSubscriptionMembership(
 /// exception is `governanceRebuilt`, which changes channels, roles,
 /// members and permissions together and so still triggers a re-read.
 function applyGovernanceEvent(g: GovernanceEvent): void {
+  const community = governanceRowCommunity(g);
+  if (community !== null) {
+    withCommunity(community, () => applyGovernance(g));
+    return;
+  }
+  applyGovernance(g);
+}
+
+/** The community a governance event that writes under its row names, or null. */
+function governanceRowCommunity(g: GovernanceEvent): string | null {
+  if ("rolesChanged" in g) return g.rolesChanged.community;
+  if ("segmentsChanged" in g) return g.segmentsChanged.community;
+  if ("channelsChanged" in g) return g.channelsChanged.community;
+  if ("metadataChanged" in g) return g.metadataChanged.community;
+  if ("channelPermissionsChanged" in g) return g.channelPermissionsChanged.community;
+  if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
+  return null;
+}
+
+/** One governance event; a row-writing one only against a row the window holds. */
+function applyGovernance(g: GovernanceEvent): void {
   if ("rolesChanged" in g) {
     const { community, roles } = g.rolesChanged;
     if (communityState.communities[community]) {
@@ -261,11 +314,6 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
 
   if ("metadataChanged" in g) {
     const { community, name, description, iconHash, bannerHash } = g.metadataChanged;
-    // A community this window does not hold yet (one just created or joined:
-    // its metadata event can come before the window adds it) has no row to
-    // update; the window reads its current name when it adds it. Setting a
-    // field under the missing row threw (walk row M45).
-    if (!communityState.communities[community]) return;
     if (name !== null) {
       setCommunityState("communities", community, "name", name);
     }
@@ -320,6 +368,13 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
     return;
   }
 
+  if ("checkpointSnapshotMismatch" in g) {
+    // Keyed by community, not under its row: the backfill that finds it can
+    // finish before the window holds the community.
+    setCommunityState("snapshotMismatch", g.checkpointSnapshotMismatch.community, true);
+    return;
+  }
+
   if ("opPublication" in g) {
     const { community, op, state } = g.opPublication;
     // A landed op leaves the map; pending and failed ones stay shown.
@@ -350,7 +405,6 @@ function applyGovernanceEvent(g: GovernanceEvent): void {
 
   if ("channelPermissionsChanged" in g) {
     const { community } = g.channelPermissionsChanged;
-    if (!communityState.communities[community]) return;
     commands
       .getCommunityDetails()
       .then((details) => {
