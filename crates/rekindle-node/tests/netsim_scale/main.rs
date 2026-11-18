@@ -13,6 +13,8 @@ mod audit;
 mod auto_away;
 #[path = "../netsim/backfill_gate.rs"]
 mod backfill_gate;
+#[path = "../netsim/behind_key_repair.rs"]
+mod behind_key_repair;
 #[path = "../netsim/channel_delete_container_not_empty.rs"]
 mod channel_delete_container_not_empty;
 #[path = "../netsim/channel_post_both_ways.rs"]
@@ -37,6 +39,8 @@ mod dm_after_cancel;
 mod dm_append_deadline;
 #[path = "../netsim/dm_before_accept.rs"]
 mod dm_before_accept;
+#[path = "../netsim/dm_chain_watch.rs"]
+mod dm_chain_watch;
 #[path = "../netsim/dm_hint_loss.rs"]
 mod dm_hint_loss;
 #[path = "../netsim/dm_new_friendship.rs"]
@@ -101,16 +105,24 @@ mod invite_expiry;
 mod invite_join_leave;
 #[path = "../netsim/invite_unpublished.rs"]
 mod invite_unpublished;
+#[path = "../netsim/join_from_hint.rs"]
+mod join_from_hint;
 #[path = "../netsim/kick_rotates_once.rs"]
 mod kick_rotates_once;
 #[path = "../netsim/kicked_slot_write.rs"]
 mod kicked_slot_write;
+#[path = "../netsim/left_quiet.rs"]
+mod left_quiet;
+#[path = "../netsim/left_slot_write.rs"]
+mod left_slot_write;
 #[path = "../netsim/logout_unlock.rs"]
 mod logout_unlock;
 #[path = "../netsim/logs.rs"]
 mod logs;
 #[path = "../netsim/mek_transfer_retry.rs"]
 mod mek_transfer_retry;
+#[path = "../netsim/member_events.rs"]
+mod member_events;
 #[path = "../netsim/mod_report.rs"]
 mod mod_report;
 #[path = "../netsim/moderation.rs"]
@@ -135,6 +147,8 @@ mod own_removal_quiet;
 mod pair;
 #[path = "../netsim/pins.rs"]
 mod pins;
+#[path = "../netsim/post_before_key.rs"]
+mod post_before_key;
 #[path = "../netsim/prekey_collision.rs"]
 mod prekey_collision;
 #[path = "../netsim/prekeys.rs"]
@@ -145,6 +159,8 @@ mod read_marker_only_advances;
 mod refriend_after_removal;
 #[path = "../netsim/refused_request.rs"]
 mod refused_request;
+#[path = "../netsim/rejoin_after_leave.rs"]
+mod rejoin_after_leave;
 #[path = "../netsim/removal_ack.rs"]
 mod removal_ack;
 #[path = "../netsim/resume_after_restart.rs"]
@@ -177,6 +193,8 @@ mod stall;
 mod udp_blocked;
 #[path = "../netsim/wake_trigger.rs"]
 mod wake_trigger;
+#[path = "../netsim/walk_cost.rs"]
+mod walk_cost;
 #[path = "../netsim/watch_fallback.rs"]
 mod watch_fallback;
 #[path = "../netsim/watch_ring.rs"]
