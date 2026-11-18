@@ -1,6 +1,6 @@
 //! `community_invites` — the invites this identity created.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 /// Store an invite this identity created.
 ///
