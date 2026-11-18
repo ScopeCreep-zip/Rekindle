@@ -67,7 +67,7 @@ pub struct UnknownOp {
 /// A decoded op: interpreted, or not interpretable by this reader.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ReadOp {
-    Known(DecodedOp),
+    Known(Box<DecodedOp>),
     Unknown(UnknownOp),
 }
 
@@ -90,47 +90,12 @@ pub fn op_unsigned_bytes(op: &GovernanceOp) -> Vec<u8> {
     root.and_then(canonical).unwrap_or_default()
 }
 
-/// The signed op whose canonical unsigned form is `unsigned` (an
-/// [`op_unsigned_bytes`] value) and whose signature over it is `sig`: the
-/// author's message is exactly the bytes it signed plus `sig`.
-///
-/// # Errors
-/// `unsigned` is not one single-segment message within the op bounds, or
-/// the signed op is over [`GOVERNANCE_OP_MAX_BYTES`].
-pub fn seal_unsigned(unsigned: &[u8], sig: &[u8; 64]) -> Result<Vec<u8>, CodecError> {
-    check_size("governance op", unsigned, GOVERNANCE_OP_MAX_BYTES)?;
-    let words = u32::try_from(unsigned.len() / 8).unwrap_or(u32::MAX);
-    let mut flat = Vec::with_capacity(unsigned.len() + 8);
-    flat.extend_from_slice(&0u32.to_le_bytes());
-    flat.extend_from_slice(&words.to_le_bytes());
-    flat.extend_from_slice(unsigned);
-    let mut options = capnp::message::ReaderOptions::new();
-    options.traversal_limit_in_words(Some(bounds::GOVERNANCE_OP_BOUND.max_words));
-    let message =
-        capnp::serialize::read_message(flat.as_slice(), options).map_err(|e| capnp_err(&e))?;
-    let mut builder = capnp::message::Builder::new_default();
-    builder
-        .set_root(
-            message
-                .get_root::<governance_op::Reader<'_>>()
-                .map_err(|e| capnp_err(&e))?,
-        )
-        .map_err(|e| capnp_err(&e))?;
-    let mut root = builder
-        .get_root::<governance_op::Builder<'_>>()
-        .map_err(|e| capnp_err(&e))?;
-    root.set_sig(sig);
-    let out = pack(&builder);
-    check_len("governance op", out.len(), GOVERNANCE_OP_MAX_BYTES)?;
-    Ok(out)
-}
-
 /// Decode an op off the network, with its canonical unsigned bytes; an op
 /// this reader cannot interpret is [`CodecError::UnknownGovernanceArm`]
 /// (see [`read_op`] for the op itself).
 pub fn decode_op(data: &[u8]) -> Result<DecodedOp, CodecError> {
     match read_op(data)? {
-        ReadOp::Known(decoded) => Ok(decoded),
+        ReadOp::Known(decoded) => Ok(*decoded),
         ReadOp::Unknown(UnknownOp { what, .. }) => {
             Err(CodecError::UnknownGovernanceArm(match what {
                 Uninterpretable::Kind(arm) => format!("governance entry arm {arm}"),
@@ -198,7 +163,7 @@ pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
     if op_unsigned_bytes(&op) != unsigned {
         return unknown(Uninterpretable::Version);
     }
-    Ok(ReadOp::Known(DecodedOp { op, unsigned }))
+    Ok(ReadOp::Known(Box::new(DecodedOp { op, unsigned })))
 }
 
 /// The canonical unsigned form of a received op: the message copied as it

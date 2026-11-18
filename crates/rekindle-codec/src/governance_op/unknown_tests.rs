@@ -5,7 +5,8 @@
 use rekindle_types::governance::{GovernanceEntry, GovernanceOp};
 use rekindle_types::id::PseudonymKey;
 
-use super::{decode_op, op_unsigned_bytes, read_op, seal_unsigned, ReadOp, Uninterpretable};
+use super::{decode_op, op_unsigned_bytes, read_op, ReadOp, Uninterpretable};
+use crate::governance_op_capnp::governance_op;
 use crate::CodecError;
 
 fn left_op() -> GovernanceOp {
@@ -24,12 +25,14 @@ fn left_op() -> GovernanceOp {
 /// discriminant, the first 16 bits of the body's data section, set to
 /// `arm`. Root pointer at word 0; the body is pointer 3 of the root.
 fn with_arm(unsigned: &[u8], arm: u16) -> Vec<u8> {
-    let word = |i: usize| u64::from_le_bytes(unsigned[i * 8..i * 8 + 8].try_into().unwrap());
     let target = |at: usize| {
-        let ptr = word(at);
-        let offset = usize::try_from((ptr as u32 as i32) >> 2).unwrap();
-        let data_words = usize::from((ptr >> 32) as u16);
-        (at + 1 + offset, data_words)
+        let ptr = &unsigned[at * 8..at * 8 + 8];
+        let offset = i32::from_le_bytes(ptr[0..4].try_into().unwrap()) >> 2;
+        let data_words = u16::from_le_bytes(ptr[4..6].try_into().unwrap());
+        (
+            at + 1 + usize::try_from(offset).unwrap(),
+            usize::from(data_words),
+        )
     };
     let (root, root_data) = target(0);
     let (body, _) = target(root + root_data + 3);
@@ -38,11 +41,27 @@ fn with_arm(unsigned: &[u8], arm: u16) -> Vec<u8> {
     out
 }
 
+/// The signed message of canonical unsigned `unsigned`: it, plus `sig`.
+fn seal_unsigned(unsigned: &[u8], sig: &[u8; 64]) -> Vec<u8> {
+    let mut flat = vec![0, 0, 0, 0];
+    flat.extend_from_slice(&u32::try_from(unsigned.len() / 8).unwrap().to_le_bytes());
+    flat.extend_from_slice(unsigned);
+    let options = capnp::message::ReaderOptions::new();
+    let message = capnp::serialize::read_message(flat.as_slice(), options).unwrap();
+    let mut builder = capnp::message::Builder::new_default();
+    builder
+        .set_root(message.get_root::<governance_op::Reader<'_>>().unwrap())
+        .unwrap();
+    let mut root = builder.get_root::<governance_op::Builder<'_>>().unwrap();
+    root.set_sig(sig);
+    crate::capnp_codec::pack(&builder)
+}
+
 #[test]
 fn a_sealed_known_op_reads_back_with_its_signed_bytes() {
     let op = left_op();
     let unsigned = op_unsigned_bytes(&op);
-    let bytes = seal_unsigned(&unsigned, &op.sig).unwrap();
+    let bytes = seal_unsigned(&unsigned, &op.sig);
     let ReadOp::Known(decoded) = read_op(&bytes).unwrap() else {
         panic!("a known op reads as known");
     };
@@ -54,7 +73,7 @@ fn a_sealed_known_op_reads_back_with_its_signed_bytes() {
 fn an_op_of_an_arm_beyond_the_schema_reads_with_the_bytes_its_author_signed() {
     let op = left_op();
     let unsigned = with_arm(&op_unsigned_bytes(&op), 0x7fff);
-    let bytes = seal_unsigned(&unsigned, &op.sig).unwrap();
+    let bytes = seal_unsigned(&unsigned, &op.sig);
     let ReadOp::Unknown(unknown) = read_op(&bytes).unwrap() else {
         panic!("an arm beyond the schema is not interpretable");
     };

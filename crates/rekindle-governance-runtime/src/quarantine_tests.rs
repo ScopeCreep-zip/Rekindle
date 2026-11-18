@@ -2,7 +2,8 @@
 //! quarantines the community with a reason; it is held (never dropped),
 //! never applied, and the state is the merge without it.
 
-use rekindle_codec::governance_op::{op_unsigned_bytes, seal_unsigned, Uninterpretable};
+use rekindle_codec::governance_op::{op_unsigned_bytes, Uninterpretable};
+use rekindle_codec::governance_op_capnp::governance_op;
 use rekindle_governance::merge;
 use rekindle_governance::op::{op_hash, op_signing_bytes};
 use rekindle_secrets::ed25519_dalek::Signer;
@@ -14,20 +15,38 @@ use crate::quarantine::newly_uninterpretable;
 use crate::test_member::Member;
 use crate::test_world::{invite, World, ANCHOR};
 
-/// `unsigned` with its body's union discriminant (the first 16 bits of the
-/// body's data section; the body is the root's pointer 3) set to `arm`.
-fn with_arm(unsigned: &[u8], arm: u16) -> Vec<u8> {
-    let word = |i: usize| u64::from_le_bytes(unsigned[i * 8..i * 8 + 8].try_into().unwrap());
-    let target = |at: usize| {
-        let ptr = word(at);
-        let offset = usize::try_from((ptr as u32 as i32) >> 2).unwrap();
-        (at + 1 + offset, usize::from((ptr >> 32) as u16))
+/// The signed wire op of canonical unsigned `unsigned` once its body's
+/// union discriminant (the first 16 bits of the body's data section; the
+/// body is the root's pointer 3) is `arm`: the patched bytes, signed by
+/// `signer`, plus that signature. Returns (patched unsigned, sig, wire).
+fn newer_kind_wire(unsigned: &[u8], arm: u16, signer: &Member) -> (Vec<u8>, [u8; 64], Vec<u8>) {
+    let pointee = |at: usize| {
+        let p = &unsigned[at * 8..at * 8 + 8];
+        let words = i32::from_le_bytes(p[0..4].try_into().unwrap()) >> 2;
+        let data = u16::from_le_bytes(p[4..6].try_into().unwrap());
+        (at + 1 + usize::try_from(words).unwrap(), usize::from(data))
     };
-    let (root, root_data) = target(0);
-    let (body, _) = target(root + root_data + 3);
-    let mut out = unsigned.to_vec();
-    out[body * 8..body * 8 + 2].copy_from_slice(&arm.to_le_bytes());
-    out
+    let (root_at, root_data) = pointee(0);
+    let body_at = pointee(root_at + root_data + 3).0;
+    let mut patched = unsigned.to_vec();
+    patched[body_at * 8..body_at * 8 + 2].copy_from_slice(&arm.to_le_bytes());
+    let sig = (signer.pseudonym)
+        .sign(&op_signing_bytes(ANCHOR, &patched))
+        .to_bytes();
+    let mut flat = 0u32.to_le_bytes().to_vec();
+    flat.extend_from_slice(&u32::try_from(patched.len() / 8).unwrap().to_le_bytes());
+    flat.extend_from_slice(&patched);
+    let read =
+        capnp::serialize::read_message(flat.as_slice(), capnp::message::ReaderOptions::new())
+            .unwrap();
+    let mut message = capnp::message::Builder::new_default();
+    message
+        .set_root(read.get_root::<governance_op::Reader<'_>>().unwrap())
+        .unwrap();
+    (message.get_root::<governance_op::Builder<'_>>().unwrap()).set_sig(&sig);
+    let mut wire = Vec::new();
+    capnp::serialize_packed::write_message(&mut wire, &message).unwrap();
+    (patched, sig, wire)
 }
 
 /// `author`'s next op with its body arm replaced by one beyond the schema,
@@ -35,18 +54,14 @@ fn with_arm(unsigned: &[u8], arm: u16) -> Vec<u8> {
 /// fetched op.
 fn newer_kind_op(world: &mut World, author: &Member, signer: &Member) -> HeldOp {
     let (op, _) = world.build(author, invite(9, "newer"), Deps::Frontier);
-    let unsigned = with_arm(&op_unsigned_bytes(op.op()), 0x7fff);
-    let sig = (signer.pseudonym)
-        .sign(&op_signing_bytes(ANCHOR, &unsigned))
-        .to_bytes();
+    let (unsigned, sig, wire) = newer_kind_wire(&op_unsigned_bytes(op.op()), 0x7fff, signer);
     let op_ref = OpRef {
         op_hash: op_hash(&unsigned, &sig),
         author: author.author(),
         author_record: author.record(),
         author_seq: op.op().seq,
     };
-    held_from_encoded(&op_ref, seal_unsigned(&unsigned, &sig).unwrap())
-        .expect("an op of an unknown kind is held, not dropped")
+    held_from_encoded(&op_ref, wire).expect("an op of an unknown kind is held, not dropped")
 }
 
 #[test]

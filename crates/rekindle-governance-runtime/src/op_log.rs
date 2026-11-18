@@ -15,7 +15,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use rekindle_codec::governance_op::{op_unsigned_bytes, seal_unsigned, GOVERNANCE_OP_MAX_DEPS};
+use rekindle_codec::governance_op::{encode_op, op_unsigned_bytes};
 use rekindle_governance::checksum::roster_checksum;
 use rekindle_governance::merge::{self, MergeOutcome};
 use rekindle_governance::op::{op_signing_bytes, VerifiedOp};
@@ -207,17 +207,9 @@ pub fn build_op(
         body,
         sig: [0; 64],
     };
-    if op.deps.len() > GOVERNANCE_OP_MAX_DEPS {
-        return Err(GovernanceRuntimeError::Encoding(format!(
-            "governance op has {} deps, the bound is {GOVERNANCE_OP_MAX_DEPS}",
-            op.deps.len()
-        )));
-    }
     let unsigned = op_unsigned_bytes(&op);
     op.sig = key.sign(&op_signing_bytes(anchor, &unsigned)).to_bytes();
-    // The message is exactly the bytes signed plus the signature.
-    let encoded = seal_unsigned(&unsigned, &op.sig)
-        .map_err(|e| GovernanceRuntimeError::Encoding(e.to_string()))?;
+    let encoded = encode_op(&op).map_err(|e| GovernanceRuntimeError::Encoding(e.to_string()))?;
     let verified = VerifiedOp::verify(anchor, op, &unsigned, |h| known.get(h).copied())
         .map_err(|e| GovernanceRuntimeError::OpRefused(format!("{e:?}")))?;
     Ok((verified, encoded))

@@ -85,7 +85,7 @@ pub async fn receive_op<D: GovernanceRuntimeDeps>(
         return Ok(false);
     };
     let decoded = match read {
-        ReadOp::Known(decoded) => decoded,
+        ReadOp::Known(decoded) => *decoded,
         ReadOp::Unknown(_) => return receive_uninterpretable(deps, community_id, encoded).await,
     };
     let hash = op_hash(&decoded.unsigned, &decoded.op.sig);
