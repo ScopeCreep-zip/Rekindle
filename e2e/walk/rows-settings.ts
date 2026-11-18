@@ -268,6 +268,8 @@ export const SETTINGS_ROWS: Row[] = [
     async run({ b, s, shot }) {
       await openSettings(b, "Notifications");
       const box = await optionBox(b, "Enable quiet hours");
+      // Enabled once the stored hours have loaded (NotificationsTab.tsx).
+      await box.waitForEnabled({ timeout: WAIT_MS, timeoutMsg: "quiet-hours box stayed disabled" });
       if (!(await box.isSelected())) await box.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       const nums = 'input.form-input[type="number"]';

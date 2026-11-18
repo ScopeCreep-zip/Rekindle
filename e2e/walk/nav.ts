@@ -63,6 +63,8 @@ export async function optionBox(b: Browser, text: string): Promise<Awaited<Retur
 export async function flipPersisted(b: Browser, tab: string, text: string, passphrase: string): Promise<string> {
   const flip = async (): Promise<boolean> => {
     const box = await optionBox(b, text);
+    // A box stays disabled until its stored value loads (NotificationsTab.tsx).
+    await box.waitForEnabled({ timeout: WAIT_MS, timeoutMsg: `"${text}" stayed disabled` });
     const before = await box.isSelected();
     await box.click();
     await resolveIntent(b, { passphrase, appearMs: 1500 });

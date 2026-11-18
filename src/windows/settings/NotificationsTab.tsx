@@ -20,12 +20,23 @@ const NotificationsTab: Component = () => {
   );
   // Architecture §28.8 line 3220 — IP-privacy toggle for outgoing link previews.
   const [linkPreviewsEnabled, setLinkPreviewsEnabled] = createSignal<boolean>(true);
+  // Each group stays disabled until its stored value has loaded: an edit
+  // made before the answer arrived was overwritten by it (walk row ST22).
+  const [dndLoaded, setDndLoaded] = createSignal(false);
+  const [qhLoaded, setQhLoaded] = createSignal(false);
+  const [linkPreviewsLoaded, setLinkPreviewsLoaded] = createSignal(false);
 
   onMount(() => {
-    commands.getLinkPreviewsEnabled().then(setLinkPreviewsEnabled).catch((e) => {
+    commands.getLinkPreviewsEnabled().then((on) => {
+      setLinkPreviewsEnabled(on);
+      setLinkPreviewsLoaded(true);
+    }).catch((e) => {
       console.error("Failed to load link-previews setting:", e);
     });
-    commands.getDoNotDisturb().then(setDnd).catch((e) => {
+    commands.getDoNotDisturb().then((on) => {
+      setDnd(on);
+      setDndLoaded(true);
+    }).catch((e) => {
       console.error("Failed to load DND:", e);
     });
     commands.getQuietHours().then((qh) => {
@@ -33,6 +44,7 @@ const NotificationsTab: Component = () => {
       setQhStart(qh.startHour);
       setQhEnd(qh.endHour);
       setQhTimezone(qh.timezone);
+      setQhLoaded(true);
     }).catch((e) => {
       console.error("Failed to load quiet hours:", e);
     });
@@ -175,6 +187,7 @@ const NotificationsTab: Component = () => {
         <input
           type="checkbox"
           checked={dnd()}
+          disabled={!dndLoaded()}
           onChange={() => void handleToggleDnd()}
         />
         <span class="buddy-name">Suppress all notifications</span>
@@ -188,6 +201,7 @@ const NotificationsTab: Component = () => {
         <input
           type="checkbox"
           checked={linkPreviewsEnabled()}
+          disabled={!linkPreviewsLoaded()}
           onChange={() => void handleToggleLinkPreviews()}
         />
         <span class="buddy-name">
@@ -208,6 +222,7 @@ const NotificationsTab: Component = () => {
         <input
           type="checkbox"
           checked={qhEnabled()}
+          disabled={!qhLoaded()}
           onChange={(e) => {
             setQhEnabled(e.currentTarget.checked);
             void persistQuietHours();
@@ -222,7 +237,7 @@ const NotificationsTab: Component = () => {
           min={0}
           max={23}
           value={qhStart()}
-          disabled={!qhEnabled()}
+          disabled={!qhLoaded() || !qhEnabled()}
           onChange={(e) => {
             const value = Math.max(0, Math.min(23, parseInt(e.currentTarget.value, 10) || 0));
             setQhStart(value);
@@ -237,7 +252,7 @@ const NotificationsTab: Component = () => {
           min={0}
           max={23}
           value={qhEnd()}
-          disabled={!qhEnabled()}
+          disabled={!qhLoaded() || !qhEnabled()}
           onChange={(e) => {
             const value = Math.max(0, Math.min(23, parseInt(e.currentTarget.value, 10) || 0));
             setQhEnd(value);
@@ -249,7 +264,7 @@ const NotificationsTab: Component = () => {
         <select
           class="form-select"
           value={qhTimezone()}
-          disabled={!qhEnabled()}
+          disabled={!qhLoaded() || !qhEnabled()}
           onChange={(e) => {
             setQhTimezone(e.currentTarget.value);
             void persistQuietHours();
