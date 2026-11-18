@@ -78,14 +78,59 @@ function memberListed(b: Browser): Promise<boolean> {
 }
 
 /** Open the peer's member menu, a submenu (Kobalte SubTrigger) in it, and one of its items. */
-async function subItem(b: Browser, trigger: string, item: string): Promise<void> {
+async function subItem(b: Browser, trigger: string, item: string, community: string): Promise<void> {
   await b.execute((node: HTMLElement) => {
     const r = node.getBoundingClientRect();
     node.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2, clientX: r.x + 5, clientY: r.y + 5 }));
   }, (await peerMember(b)) as unknown as HTMLElement);
   await shown(b, ".context-menu");
-  await press(b, await byText(b, ".context-menu .context-menu-item", trigger));
+  const found = await byText(b, ".context-menu .context-menu-item", trigger).catch(async (e: Error) => {
+    const items = await b.execute(() =>
+      Array.from(document.querySelectorAll(".context-menu .context-menu-item")).map((x) => x.textContent?.trim()).join(" | "),
+    );
+    throw new Error(`${e.message} (menu: ${items}; ${await rolesProbe(b, community)})`);
+  });
+  await press(b, found);
   await press(b, await byText(b, ".context-menu .context-menu-item", item));
+}
+
+/**
+ * The roles the Host gives us and every member of `community` (by name),
+ * read in the page when the member menu lacks an item: the menu shows a
+ * moderation item only when our highest role outranks the member's and our
+ * roles grant the permission (`MemberList.tsx` `canManage`, `myPerms`).
+ */
+async function rolesProbe(b: Browser, community: string): Promise<string> {
+  await b.execute((name: string) => {
+    type W = { __walkRoles?: string; __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<unknown> } };
+    const w = window as unknown as W;
+    const unwrap = (v: unknown): unknown => (v && typeof v === "object" && "value" in v ? (v as { value: unknown }).value : v);
+    w.__walkRoles = "pending";
+    void w.__TAURI_INTERNALS__.invoke("get_community_details")
+      .then(async (d) => {
+        const list = unwrap(d) as { id: string; name: string; myRoleIds: number[]; roles: { id: number; name: string; position: number; permissions: string }[] }[];
+        const c = list.find((x) => x.name === name);
+        if (!c) return `no community named ${name}`;
+        const m = unwrap(await w.__TAURI_INTERNALS__.invoke("get_community_members", { communityId: c.id })) as {
+          displayName: string;
+          roleIds: number[];
+        }[];
+        const roles = c.roles.map((r) => `${r.id}:${r.name}@${r.position}/${r.permissions}`).join(", ");
+        const members = m.map((x) => `${x.displayName}=[${x.roleIds.join(",")}]`).join(", ");
+        return `myRoleIds=[${c.myRoleIds.join(",")}] roles={${roles}} members={${members}}`;
+      })
+      .then((r) => { w.__walkRoles = r; }, (e: unknown) => { w.__walkRoles = `roles probe failed: ${String(e)}`; });
+  }, community);
+  let got = "pending";
+  await waitUntil(
+    async () => {
+      got = await b.execute(() => (window as unknown as { __walkRoles?: string }).__walkRoles ?? "unset");
+      return got !== "pending";
+    },
+    10_000,
+    "roles probe never answered",
+  ).catch(() => {});
+  return got;
 }
 
 /**
@@ -144,7 +189,7 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
     id: "M82",
     title: "Member menu > Manage roles (assign walk-role)",
     async run({ b, s, shot }) {
-      await subItem(b, "Manage Roles", "walk-role");
+      await subItem(b, "Manage Roles", "walk-role", s.communityName);
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
       await b.keys("Escape");
       await waitUntil(async () => (await (await peerMember(b)).getText()).includes("walk-role"), NET_WAIT_MS, "the peer's member row shows no walk-role");
@@ -155,7 +200,7 @@ export const PEER_COMMUNITY_ROWS: Row[] = [
     id: "M83",
     title: "Member menu > Timeout 5 minutes",
     async run({ b, s, shot }) {
-      await subItem(b, "Timeout", "5 minutes");
+      await subItem(b, "Timeout", "5 minutes", s.communityName);
       const outcome = await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
       await shot();
       if (outcome !== "committed") throw new Error(`timeout intent ${outcome}`);
