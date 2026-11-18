@@ -8,8 +8,8 @@ import { randomBytes } from "node:crypto";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
 import { launch, openSession, renewSession, type App } from "./launch.ts";
-import { BUDDY, inBuddy } from "./nav.ts";
-import { createIdentity, openAddFriend, type Row, type WalkState } from "./rows.ts";
+import { BUDDY, inBuddy, openAddFriend } from "./nav.ts";
+import { createIdentity, type Row, type WalkState } from "./rows.ts";
 
 export interface Peer {
   app: App;

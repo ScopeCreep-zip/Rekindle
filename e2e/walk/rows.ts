@@ -27,7 +27,7 @@ import {
   waitUntil,
   within,
 } from "./helpers.ts";
-import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu } from "./nav.ts";
+import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu, openAddFriend } from "./nav.ts";
 
 export interface WalkState {
   displayName: string;
@@ -65,13 +65,6 @@ function settingsRow(id: string, item: string): Row {
       return `settings window opened on ${item} (tab not asserted: no stable tab selector read)`;
     },
   };
-}
-
-export async function openAddFriend(b: Browser): Promise<void> {
-  if (!(await present(b, ".form-tabs-equal"))) {
-    await (await b.$('[aria-label="Add Friend"]')).click();
-    await shown(b, ".form-tabs-equal");
-  }
 }
 
 /**

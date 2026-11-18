@@ -140,3 +140,15 @@ export async function waitStored(b: Browser, key: string, value: unknown): Promi
     `stored ${key} never read ${String(value)}`,
   );
 }
+
+/** Open the Add Friend modal from the buddy list (left open when already shown). */
+export async function openAddFriend(b: Browser): Promise<void> {
+  if (!(await present(b, ".form-tabs-equal"))) {
+    // The bar shows Add Friend on the Friends tab only (BottomActionBar.tsx:
+    // 34-44); the community rows leave the Communities tab active (B57's
+    // failure in walk 3).
+    await (await shown(b, '.buddy-tab[title^="Friends"]')).click();
+    await (await shown(b, '[aria-label="Add Friend"]')).click();
+    await shown(b, ".form-tabs-equal");
+  }
+}
