@@ -276,7 +276,29 @@ export const SETTINGS_ROWS: Row[] = [
       if (!(await box.isSelected())) await box.click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       const nums = 'input.form-input[type="number"]';
-      await waitUntil(async () => (await (await b.$(nums)).isEnabled()), WAIT_MS, "start hour stayed disabled");
+      // Read the page itself, not a driver element: `waitUntil` turns a
+      // thrown lookup into `false`, so the old wait said "stayed disabled"
+      // for any failure, while walk 8's ST22.png shows the box ticked and
+      // the field enabled. A timeout now names what the page held.
+      let seen = "not read";
+      await waitUntil(
+        async () => {
+          seen = await b.execute((sel: string) => {
+            const box = Array.from(document.querySelectorAll("label.settings-option"))
+              .find((l) => l.textContent?.includes("Enable quiet hours"))
+              ?.querySelector<HTMLInputElement>("input[type=checkbox]");
+            const field = document.querySelector<HTMLInputElement>(sel);
+            const boxState = box ? `${box.disabled ? "disabled," : ""}${box.checked ? "ticked" : "clear"}` : "missing";
+            const fieldState = field ? (field.disabled ? "disabled" : "enabled") : "missing";
+            return `box=${boxState} start=${fieldState}`;
+          }, nums);
+          return seen.endsWith("start=enabled");
+        },
+        WAIT_MS,
+        "start hour not enabled",
+      ).catch((e: Error) => {
+        throw new Error(`${e.message} (${seen})`);
+      });
       const [start, end] = await b.$$(nums);
       for (const [el, v] of [[start, "22"], [end, "7"]] as const) {
         await b.execute((n: HTMLInputElement, x: string) => {
