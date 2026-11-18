@@ -6,7 +6,7 @@
 // (theme/10-thread-list-panel.css:120-132), so they are pressed in the page.
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, typeAndSend, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
 import { inBuddy, setValue } from "./nav.ts";
 import type { Row } from "./rows.ts";
 
@@ -152,8 +152,7 @@ export const COMMUNITY_ROWS: Row[] = [
     id: "M42",
     title: "Send message",
     async run({ b, s, shot }) {
-      await typeInto(await shown(b, ".community-main .message-input-field"), MSG);
-      await b.keys("Enter");
+      await typeAndSend(b, ".community-main .message-input-field", MSG);
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await lastMessage(b, MSG);
       await shot();
@@ -338,7 +337,11 @@ export const COMMUNITY_ROWS: Row[] = [
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
       await closeCommunityModal(b);
       await openCommunitySettings(b, "Overview");
-      await byText(b, ".modal-container .settings-value", "walk description", NET_WAIT_MS);
+      // An admin edits the description in place: the reopened tab fills the
+      // textarea from the stored community (OverviewTab.tsx:19-22,68-75);
+      // `.settings-value` is the read-only fallback for non-admins.
+      const desc = 'textarea[placeholder="Community description..."]';
+      await waitUntil(async () => (await (await shown(b, desc)).getValue()) === "walk description", NET_WAIT_MS, "reopened Overview does not show the saved description");
       await shot();
     },
   },
@@ -375,7 +378,8 @@ export const COMMUNITY_ROWS: Row[] = [
       await openCommunitySettings(b, "AutoMod");
       await typeInto(await shown(b, 'input[placeholder="Blocked words"]'), "walk-rule");
       await typeInto(await shown(b, 'textarea[placeholder="One keyword per line"]'), "badword");
-      await (await byText(b, ".modal-container .form-btn-primary", "Save")).click();
+      // A new rule's button reads "Create Rule" ("Save Rule" only while editing; AutoModTab.tsx:140-141).
+      await (await byText(b, ".modal-container .form-btn-primary", "Create Rule")).click();
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 3000 });
       await byText(b, ".automod-rule-list", "walk-rule", NET_WAIT_MS);
       await shot();
@@ -392,8 +396,18 @@ export const COMMUNITY_ROWS: Row[] = [
       // An admin finds the log folded into Security (CommunitySettingsModal.tsx:89-90,166-172).
       await openCommunitySettings(b, "Security");
       await (await shown(b, ".settings-audit-collapsible summary")).click();
-      await shown(b, ".audit-log-entry", NET_WAIT_MS);
-      const n = (await b.$$(".audit-log-entry")).length;
+      // One row per entry (AuditLogTab.tsx:50): webdriverio's strict `$`
+      // refuses a selector with several matches, so the rows are counted.
+      let n = 0;
+      await waitUntil(
+        async () => {
+          const rows = await b.$$(".audit-log-entry");
+          n = rows.length;
+          return n > 0 && (await rows[0].isDisplayed());
+        },
+        NET_WAIT_MS,
+        "no audit log entry shown",
+      );
       await shot();
       await closeCommunityModal(b);
       if (n === 0) throw new Skip("no entries");

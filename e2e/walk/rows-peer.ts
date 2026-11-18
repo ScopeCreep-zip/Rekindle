@@ -6,7 +6,7 @@
 
 import { randomBytes } from "node:crypto";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
 import { launch, openSession, renewSession, type App } from "./launch.ts";
 import { BUDDY, inBuddy, openAddFriend } from "./nav.ts";
 import { createIdentity, type Row, type WalkState } from "./rows.ts";
@@ -145,8 +145,7 @@ export const PEER_ROWS: Row[] = [
     title: "Send with Enter; peer receives",
     async run({ b, s, shot }) {
       const p = needPeer();
-      await typeInto(await shown(b, ".message-input-field"), DM);
-      await b.keys("Enter");
+      await typeAndSend(b, ".message-input-field", DM);
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await byText(b, ".chat-message", DM, NET_WAIT_MS);
       await shot();

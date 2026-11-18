@@ -86,6 +86,20 @@ export async function typeInto(el: El, text: string): Promise<void> {
   await el.addValue(text);
 }
 
+/**
+ * Type `text` into a MessageInput textarea and send it with Enter, failing
+ * at the step that stops: the text missing from the field after typing, or
+ * the field still holding it after Enter (MessageInput.tsx onKeyDown clears
+ * it once the send handler took the text).
+ */
+export async function typeAndSend(b: Browser, selector: string, text: string): Promise<void> {
+  const field = await shown(b, selector);
+  await typeInto(field, text);
+  await waitUntil(async () => (await field.getValue()) === text, WAIT_MS, `${selector} does not hold the typed text`);
+  await b.keys("Enter");
+  await waitUntil(async () => (await field.getValue()) === "", WAIT_MS, `${selector} kept the text after Enter: the send handler did not take it`);
+}
+
 export async function waitUntil(cond: () => Promise<boolean>, timeout: number, msg: string): Promise<void> {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) {
