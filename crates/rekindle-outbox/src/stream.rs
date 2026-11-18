@@ -70,10 +70,20 @@ pub enum StreamKind {
     /// settles it `delivered`, retried until its deadline; the peer's
     /// departure, or ours, discards the stream's rows.
     MekTransfer,
+    /// Our `MemberJoined` handed to a member (`BootstrapRequest @42`,
+    /// plan E3.2 join step 5), on the stream of `<community>`: a joiner
+    /// whose members were all away when it joined is known to nobody but
+    /// itself, since every member's sweep and ring read only records the
+    /// member already knows (ADR 0011 "joining works with nobody online").
+    /// An `app_call` to the inviter's current route whose
+    /// `bootstrapResponseV2` (the inviter merged the op) settles it
+    /// `delivered`; once one member merged it, its frontier cites the op
+    /// and every other member's sweep finds it. Our leave discards it.
+    Bootstrap,
 }
 
 impl StreamKind {
-    const ALL: [Self; 8] = [
+    const ALL: [Self; 9] = [
         Self::Dm,
         Self::GroupDm,
         Self::GovernanceOp,
@@ -82,6 +92,7 @@ impl StreamKind {
         Self::ChannelPost,
         Self::MediaKey,
         Self::MekTransfer,
+        Self::Bootstrap,
     ];
 
     /// The stored form.
@@ -96,6 +107,7 @@ impl StreamKind {
             Self::GroupDm => "group_dm",
             Self::GovernanceOp => "governance_op",
             Self::MekTransfer => "mek_transfer",
+            Self::Bootstrap => "bootstrap",
         }
     }
 
@@ -172,6 +184,18 @@ impl StreamKind {
                 }
             }
             Self::DhtWrite => (1, 60),
+            // A receipted control call whose peer may be away for a day;
+            // capped at the anti-entropy sweep's 60 s period
+            // (`rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD`,
+            // the bound on how late a member learns any op), so a member
+            // back from a long absence learns the join within a sweep.
+            Self::Bootstrap => {
+                return OutboxRetry::Backoff {
+                    base: Duration::from_secs(2),
+                    cap: Duration::from_secs(60),
+                    floor: HANDSHAKE_RETRY_FLOOR,
+                }
+            }
             // C7.22's 1/2/4/8/15 s: a call key is useless late.
             Self::MediaKey => (1, 15),
         };

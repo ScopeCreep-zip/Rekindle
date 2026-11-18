@@ -115,12 +115,28 @@ impl HostGovernance {
         // invalid, as every member's merge will: the join is withdrawn (our
         // `MemberLeft`, the community forgotten) and fails, never a
         // membership with no key.
-        if let Err(refused) = self.bootstrap_from_inviter(&id, &outcome).await {
-            tracing::warn!(community = %id, error = %refused, "join refused by the inviter, withdrawn");
-            self.leave(&recorded).await.map_err(|e| {
-                format!("community join refused ({refused}), withdrawal failed: {e}")
-            })?;
-            return Err(format!("community join failed: {refused}"));
+        // An inviter that does not answer (away, no route) leaves the join
+        // standing from the DHT; the exchange is then a `bootstrap` outbox
+        // row, tried until a member answers, since no member learns of a
+        // joiner it has not merged (`join_bootstrap`).
+        let inviter_record = &outcome.invite.inviter_member_record;
+        match self
+            .bootstrap_exchange(&id, &outcome.inviter_route, inviter_record, &outcome.joined)
+            .await
+        {
+            super::join_bootstrap::Exchange::Merged => {}
+            super::join_bootstrap::Exchange::Refused(refused) => {
+                tracing::warn!(community = %id, error = %refused, "join refused by the inviter, withdrawn");
+                self.leave(&recorded).await.map_err(|e| {
+                    format!("community join refused ({refused}), withdrawal failed: {e}")
+                })?;
+                return Err(format!("community join failed: {refused}"));
+            }
+            super::join_bootstrap::Exchange::Unanswered(reason) => {
+                tracing::info!(community = %id, %reason, "bootstrap exchange not answered: queued");
+                self.queue_bootstrap(&id, inviter_record, &outcome.joined)
+                    .await;
+            }
         }
         self.audit_joined(&id, &outcome.invite.community_name);
         tracing::info!(community = %id, "joined community");
@@ -340,73 +356,6 @@ impl HostGovernance {
                 .await
                 .map_err(|e| format!("community joined, op not stored: {e}"))?;
         }
-        Ok(())
-    }
-
-    /// The bootstrap exchange (plan E3.2). The join already stands from
-    /// the DHT; an inviter that is not online leaves it as it is, and the
-    /// community key comes from the members that merge our `MemberJoined`
-    /// (`recover_behind_meks`, D16). A partial inviter answers
-    /// `bootstrapPartial` and the members our walk shows are asked instead
-    /// (S7c.8 (i), `rekindle_governance_runtime::bootstrap_peers`).
-    ///
-    /// # Errors
-    /// The inviter answered and refused our `MemberJoined`.
-    async fn bootstrap_from_inviter(
-        &self,
-        community: &str,
-        outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
-    ) -> Result<(), rekindle_governance_runtime::GovernanceRuntimeError> {
-        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
-        if outcome.inviter_route.is_empty() {
-            tracing::info!(community, "no inviter route: no bootstrap exchange");
-            return Ok(());
-        }
-        let joined = &outcome.joined;
-        let joiner = rekindle_governance_runtime::BootstrapJoiner {
-            pseudonym: outcome.identity.pseudo_hex.clone(),
-            member_joined: rekindle_types::governance::OpRef {
-                op_hash: joined.hash,
-                author: joined.author.clone(),
-                author_record: joined.author_record.clone(),
-                author_seq: joined.seq,
-            },
-            member_joined_op: joined.encoded.clone(),
-            route: self.our_route_blob_impl(),
-        };
-        let walked = match rekindle_governance_runtime::request_bootstrap(
-            self,
-            &outcome.inviter_route,
-            &outcome.invite.inviter_member_record,
-            community,
-            &joiner,
-        )
-        .await
-        {
-            Ok(walked) => walked,
-            Err(e @ rekindle_governance_runtime::GovernanceRuntimeError::BootstrapRefused(_)) => {
-                return Err(e)
-            }
-            // Partial inviter, no other member answered: the join stands
-            // from the DHT, as with an inviter that is offline (S7c.8 (i)).
-            Err(
-                e @ rekindle_governance_runtime::GovernanceRuntimeError::BootstrapUnavailable(_),
-            ) => {
-                tracing::warn!(community, error = %e, "no member answered the bootstrap exchange");
-                return Ok(());
-            }
-            Err(e) => {
-                tracing::info!(community, error = %e, "bootstrap exchange not completed");
-                return Ok(());
-            }
-        };
-        for op in &walked {
-            if let Err(e) = self.store_governance_op(community, op).await {
-                tracing::warn!(community, error = %e, "bootstrap op not stored");
-                return Ok(());
-            }
-        }
-        rekindle_governance_runtime::rebuild_governance(self, community).await;
         Ok(())
     }
 

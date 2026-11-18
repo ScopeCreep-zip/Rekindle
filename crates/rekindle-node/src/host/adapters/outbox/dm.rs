@@ -76,6 +76,7 @@ impl OutboxSlot {
         );
         self.install_governance_op_sender(governance.clone());
         self.install_mek_transfer_sender(governance.clone());
+        self.install_bootstrap_sender(governance.clone());
         *self.current.write() = Some(Arc::clone(&outbox));
         let friends = HostFriends::of(ctx);
         let states_outbox = Arc::clone(&outbox);
@@ -109,6 +110,7 @@ impl OutboxSlot {
         self.senders.remove(StreamKind::ChannelPost);
         self.senders.remove(StreamKind::GovernanceOp);
         self.senders.remove(StreamKind::MekTransfer);
+        self.senders.remove(StreamKind::Bootstrap);
         self.current.write().take();
         self.governance_waiters.clear();
     }

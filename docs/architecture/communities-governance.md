@@ -151,7 +151,7 @@ record watches and no polling of governance.
 ## 3. Self-Sovereign Join
 
 The join needs no coordinator and no member online
-(a netsim scenario for it is open, see the plan). The joiner holds an invite link whose code
+(netsim `join_alone.rs`: a 30 s and a 24 h absence). The joiner holds an invite link whose code
 opens the `InviteSecrets` (`rekindle-governance-runtime/src/invite_secrets.rs`):
 the anchor, the inviter's pseudonym and member record, the segment
 registry and slot seed (until E3.4), and no community key (D11). An
@@ -175,6 +175,15 @@ op and the frontier are durable on the inviter's `M`.
    merges it and answers `bootstrapResponseV2 @75`
    (`rekindle-governance-runtime/src/bootstrap.rs`, sized to the app_call
    cap), or a NAK. The answer is convenience: the DHT is authoritative.
+   The request is not: a member learns of a joiner only by merging its
+   `MemberJoined` (gossip, or this request), since the sweep and the ring
+   read only records the member already knows. An exchange nobody
+   answered (every member away) is a `bootstrap` outbox row
+   (`rekindle-node` `outbox/bootstrap.rs`), tried again with backoff
+   capped at the sweep's 60 s, reading the inviter's current route from
+   its `M`/6 each time, until a member answers; that member's frontier
+   then cites the op and every other member's sweep fetches it. A refusal
+   withdraws the join; our leave discards the row.
 6. The community key arrives from a member (`RequestMEK`, answered by the
    Host's `mek_request.rs` for members of the merged state); a post made
    before it returns `MekMissing`.

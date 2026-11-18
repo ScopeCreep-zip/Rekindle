@@ -4,6 +4,7 @@
 //! Host's clock and randomness, and each state change on a broadcast the
 //! Host's event mapping subscribes to.
 
+mod bootstrap;
 mod channel_post;
 pub(crate) mod dht_write;
 mod dm;
