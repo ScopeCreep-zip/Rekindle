@@ -8,8 +8,11 @@
 //! is durable on its member record. The request's authority is that
 //! signed op, carried with its `OpRef` (an inviter answers within the
 //! app_call reply window, too short for a DHT read): the inviter checks
-//! it against the `OpRef`, verifies it,
-//! stores and merges it, and only a joiner who is then a member of the
+//! it against the `OpRef`, verifies it and merges it in memory first: an
+//! op the merge does not admit (no member and no pending knock results) is
+//! never stored, since the request names no sender and its op lives in the
+//! joiner's own record, where any reader fetches it; an admitted op is
+//! stored and merged, and only a joiner who is then a member of the
 //! merged state is answered, with `bootstrapResponseV2{anchor, frontier}`:
 //! where the joiner's walk of the op DAG continues. It ships no keys (D11;
 //! the joiner asks for the community key by `RequestMEK`), no messages and
@@ -60,7 +63,8 @@ pub enum BootstrapAnswer {
 
 /// Answer a joiner's `BootstrapRequest`: while we are partial, with
 /// `bootstrapPartial`; otherwise check its `MemberJoined` against the
-/// `OpRef`, verify, store and merge it, then encode `bootstrapResponseV2`
+/// `OpRef`, verify it, merge it in memory, store it only when that merge
+/// admits it, then encode `bootstrapResponseV2`
 /// with our frontier.
 ///
 /// # Errors
@@ -102,6 +106,9 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
             "bootstrap: the op is not the joiner's MemberJoined (op #0, or a re-join after its departure)",
         ));
     }
+    for dep in admitted_deps(deps, anchor, &op).await? {
+        deps.store_governance_op(anchor, &dep).await?;
+    }
     op_log::receive_op(deps, anchor, op.encoded).await?;
     let state = deps
         .governance_state(anchor)
@@ -126,6 +133,61 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
         bytes: bytes.len(),
     });
     Ok(bytes)
+}
+
+/// The deps `op` cites that we do not hold, when the merge of our op set,
+/// those deps (fetched by their `OpRef` and checked against its hash, as a
+/// rebuild fetches them) and `op`, all in memory, applies `op` and holds
+/// its author as a member or a pending one (ADR 0011: an
+/// `ApprovalRequired` join is a knock readers keep). Nothing is stored
+/// before this answers.
+///
+/// # Errors
+/// The merge does not admit `op` (the caller NAKs and stores nothing), no
+/// cert is pinned, or the op store or a fetch failed.
+async fn admitted_deps<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    op: &HeldOp,
+) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
+    let cert = deps
+        .genesis_cert(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
+    let mut held = deps.governance_ops(anchor).await?;
+    held.push(op.clone());
+    let logs = op_log::WalkLogCache::default();
+    let mut tried = std::collections::BTreeSet::new();
+    let mut fetched = Vec::new();
+    loop {
+        let set = op_log::verify_held_with(deps, anchor, &held);
+        let wanted: Vec<OpRef> = (set.missing.iter())
+            .filter(|r| tried.insert(r.op_hash))
+            .cloned()
+            .collect();
+        let before = fetched.len();
+        for op_ref in wanted {
+            if let Some(dep) = op_log::fetch_held(deps, &op_ref, &logs).await? {
+                held.push(dep.clone());
+                fetched.push(dep);
+            }
+        }
+        if fetched.len() > before {
+            continue;
+        }
+        let outcome = rekindle_governance::merge::merge_outcome(&cert, &set.ops);
+        let state = &outcome.state;
+        let admitted = outcome.applied.contains(&op.hash)
+            && (state.members.contains_key(&op.author)
+                || state.pending_members.contains_key(&op.author))
+            && !state.bans.contains(&op.author);
+        return if admitted {
+            Ok(fetched)
+        } else {
+            Err(adapter(
+                "bootstrap: the merge does not admit the joiner's MemberJoined; not stored",
+            ))
+        };
+    }
 }
 
 /// Whether `op` is the joiner's `MemberJoined`: its op #0, or a re-join,
