@@ -27,10 +27,20 @@ Colour groups (10 defined)
 Regions
   window.frame: [Top] [Left] [Right] [Bottom], nine-slice 133/124/245/125, transparent middle
     Normal: 250x379 px
+  titlebar.btn.minimize: [MinimizeButton], 13x13 px, Stretch; states normal, down
+  scrollbar.button-up: [XglowScrollbar], 7x7 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: [XglowScrollbar], 7x7 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: [XglowScrollbar], 7x7 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: [XglowScrollbar], 7x7 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: [XglowScrollbar], 7x21 px, NineSlice(Insets { top: 7, right: 0, bottom: 7, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: [XglowScrollbar], 21x7 px, NineSlice(Insets { top: 0, right: 7, bottom: 0, left: 7 }); states normal, hover, down
+  scrollbar.track: [XglowScrollbar], 7x21 px, NineSlice(Insets { top: 7, right: 0, bottom: 7, left: 0 }); states normal
+  scrollbar.track-horizontal: [XglowScrollbar], 21x7 px, NineSlice(Insets { top: 0, right: 7, bottom: 0, left: 7 }); states normal
+  scrollbar.corner: [XglowScrollbar], 7x7 px, Stretch; states normal
 
 Dropped
-  images outside the window frame: 154
-  other keys (classes, sizes, cursors, sounds): 145
+  images with no region slot: 111
+  other keys (classes, sizes, cursors, sounds): 144
   other skin files (chat, group chat, in-game): 3
   text styles: 47
   triggers: 32
@@ -82,7 +92,7 @@ Dropped
     Xglow.ini: [BuddyView] Text.color_header (line 363)
     Xglow.ini: [ExecuteDownload] Action.click (line 654)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
-  files not read (172):
+  files not read (163):
     ChatSkin.ini
     InGameMainSkin.ini
     InGameSkin.ini
@@ -120,8 +130,6 @@ Dropped
     buttons/join-down.gif
     buttons/join-hover.gif
     buttons/join.gif
-    buttons/min-down.gif
-    buttons/min.gif
     buttons/noadd.gif
     buttons/nobrowse.gif
     buttons/nochat.gif
@@ -247,13 +255,6 @@ Dropped
     main/mm.gif
     main/rightarrow.gif
     scrollbar/Thumbs.db
-    scrollbar/bg.gif
-    scrollbar/down.gif
-    scrollbar/hor.gif
-    scrollbar/left.gif
-    scrollbar/right.gif
-    scrollbar/up.gif
-    scrollbar/ver.gif
     strings.ini
 
 Contrast changes (minimal Oklab-lightness walk) (0 made)

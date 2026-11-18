@@ -88,19 +88,27 @@ Colours (68 defined)
 
 Regions
   window.frame: the nine-piece frame of xfirecomponents.xml (ChatTitleBar, the outer edges' middles, ChatBaseBoard; transparent middle), 248x184 px, nine-slice 47/74/37/74
+  titlebar.btn.close: the title button CloseBox, 18x17 px, Stretch; states normal, hover, down
+  scrollbar.button-up: the scrollbar DefaultScrollbar, 11x15 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: the scrollbar DefaultScrollbar, 11x15 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: the scrollbar DefaultScrollbar, 15x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: the scrollbar DefaultScrollbar, 15x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: the scrollbar DefaultScrollbar, 11x110 px, NineSlice(Insets { top: 5, right: 0, bottom: 5, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: the scrollbar DefaultScrollbar, 110x11 px, NineSlice(Insets { top: 0, right: 5, bottom: 0, left: 5 }); states normal, hover, down
+  scrollbar.track: the scrollbar DefaultScrollbar, 11x106 px, NineSlice(Insets { top: 3, right: 0, bottom: 3, left: 0 }); states normal
+  scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 106x11 px, NineSlice(Insets { top: 0, right: 3, bottom: 0, left: 3 }); states normal
+  titlebar.btn.minimize: the title button MinimizeBox, 18x17 px, Stretch; states normal, hover, down
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 0 of 282 images
-  Disabled sets: kept 0 of 40
-  Down sets: kept 0 of 61
-  Hover sets: kept 0 of 67
+  kept 28 of 282 images
+  Disabled sets: kept 1 of 40
+  Down sets: kept 3 of 61
+  Hover sets: kept 3 of 67
   other sets: kept 0 of 44
   dropped MainTitleBar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped ChatTitleBar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TheXCover Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TheXCover Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped CloseBox Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped CloseBox Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped AddButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -147,9 +155,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped ToolsMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped HelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped DefaultScrollbar Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped DefaultScrollbar Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped DefaultScrollbar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabNormalButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped TabDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
@@ -174,9 +179,6 @@ State images (Hover -> hover, Down -> down, Disabled -> disabled)
   dropped CloseChatBox Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped CloseChatBox Down: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped CloseChatBox Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped MinimizeBox Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped MinimizeBox Down: no region slot: its bitmap carries a label, icon or Xfire-only control
-  dropped MinimizeBox Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped XIGAlertContainerOuter Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoInfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
   dropped InfoInfoViewButton other: no region slot: its bitmap carries a label, icon or Xfire-only control

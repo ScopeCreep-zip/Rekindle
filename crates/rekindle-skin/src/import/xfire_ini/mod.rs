@@ -34,24 +34,29 @@
 //!   [`super::conclude`] (a draft names every failing pair).
 
 pub mod colours;
+pub mod controls;
+pub mod frame;
 pub mod ini;
 mod notice;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rekindle_image::{encode_png, DynamicImage, RgbaImage};
+use rekindle_image::{encode_png, DynamicImage};
 use rekindle_types::dto::skin::{
-    Insets, RegionFit, RegionSpec, RegionState, SkinBase, SkinContrast, SkinLicense, SkinManifest,
+    RegionFit, RegionSpec, RegionState, SkinBase, SkinContrast, SkinLicense, SkinManifest,
     SkinSource, SkinVariant, TokenValue, SKIN_FORMAT_MAJOR, SKIN_FORMAT_PREFIX,
 };
 
 use super::credit::{Authorship, XfireCredit};
 use super::credits;
 use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
-use super::xfire_xml::{bitmap, ColourRow};
-use super::{base_of, conclude, tree_hash, walk, ImportError, Outcome, Tree};
+use super::xfire_xml::controls::StateTally;
+use super::xfire_xml::ColourRow;
+use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
+use frame::read_frame;
+pub use frame::{Frame, Shape, FRAME, MIDDLE_FRAME, OUTER_FRAME, SHAPES};
 use ini::{Ini, Section};
 
 /// The `source.format` of an imported package.
@@ -70,53 +75,6 @@ pub const STATES: [(&str, RegionState); 4] = [
     ("BtnDown", RegionState::Down),
 ];
 
-/// A frame shape: its pieces in [`bitmap::NINE`] order, (section, key);
-/// `None` is the transparent middle.
-pub type Shape = [Option<(&'static str, &'static str)>; 9];
-
-/// DoiDD's frame: four sections, each side's `middle` the side piece.
-pub const FRAME: Shape = [
-    Some(("Top", "topleft")),
-    Some(("Top", "top")),
-    Some(("Top", "topright")),
-    Some(("Left", "middle")),
-    None,
-    Some(("Right", "middle")),
-    Some(("Bottom", "bottomleft")),
-    Some(("Bottom", "bottom")),
-    Some(("Bottom", "bottomright")),
-];
-
-/// Combat's frame (Xfire's own INI skin): one `[OuterFrame]` section naming
-/// all eight pieces, the sides as `left`/`right`.
-pub const OUTER_FRAME: Shape = [
-    Some(("OuterFrame", "topleft")),
-    Some(("OuterFrame", "top")),
-    Some(("OuterFrame", "topright")),
-    Some(("OuterFrame", "left")),
-    None,
-    Some(("OuterFrame", "right")),
-    Some(("OuterFrame", "bottomleft")),
-    Some(("OuterFrame", "bottom")),
-    Some(("OuterFrame", "bottomright")),
-];
-
-/// The shapes tried, in order: the first whose normal state is complete.
-pub const SHAPES: [&Shape; 2] = [&FRAME, &OUTER_FRAME];
-
-/// The composed window frame: its insets and one image per complete state.
-#[derive(Debug)]
-pub struct Frame {
-    /// The shape its pieces were read from.
-    pub shape: &'static Shape,
-    pub insets: Insets,
-    pub images: BTreeMap<RegionState, RgbaImage>,
-    /// The image files decoded for it.
-    pub files: BTreeSet<String>,
-    /// A state that was not emitted, and why.
-    pub skipped: Vec<(RegionState, String)>,
-}
-
 /// What the importer read, before the package is built.
 #[derive(Debug)]
 pub struct Read {
@@ -131,6 +89,9 @@ pub struct Read {
     pub repeated: Vec<String>,
     /// The authors `version.ini`'s comments name ([`stated_authors`]).
     pub authors: Vec<String>,
+    /// The painted control slots ([`controls`]) and what they kept.
+    pub controls: Vec<Control>,
+    pub tally: StateTally,
 }
 
 /// The names `comments` credit: the text after the last ` by ` of each
@@ -233,135 +194,46 @@ fn read_theme(
     Ok((rows, tokens, aliases))
 }
 
-/// One state's pieces (decoded only when all eight are named), shifted and
-/// keyed, each decoded file added to `files`; or the keys it lacks.
-fn state_pieces(
-    tree: &Tree,
-    skin: &Ini,
-    shape: &Shape,
-    prefix: &str,
-    colours: &[ColourRow],
+/// An image value: a path (it holds a `.`), else a theme `Graphics.<NAME>`
+/// alias, read through [`lookup`].
+pub(crate) fn resolve<'t>(
+    tree: &'t Tree,
+    value: &str,
     aliases: &BTreeMap<String, String>,
-    files: &mut BTreeSet<String>,
-) -> Result<Result<[RgbaImage; 9], Vec<String>>, ImportError> {
-    let mut missing = Vec::new();
-    let mut named = Vec::with_capacity(8);
-    for (sec, key) in shape.iter().flatten() {
-        let s = skin.section(sec);
-        match s.and_then(|s| s.get(&format!("{prefix}.{key}"))) {
-            Some(value) => named.push((s, value)),
-            None => missing.push(format!("[{sec}] {prefix}.{key}")),
-        }
-    }
-    if !missing.is_empty() {
-        return Ok(Err(missing));
-    }
-    let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
-    for (s, value) in named {
-        let path = if value.contains('.') {
-            value
-        } else {
-            aliases
-                .get(&value.to_ascii_uppercase())
-                .map(String::as_str)
-                .ok_or_else(|| ImportError::MissingFile {
-                    file: format!("Graphics.{value}"),
-                })?
-        };
-        let (file, bytes) = lookup(tree, path)?;
-        files.insert(file.to_owned());
-        let mut img = bitmap::decode(file, bytes)?;
-        // An undefined group is the identity shift (d1 §3.1).
-        let by = s
-            .and_then(|s| s.get(&format!("{prefix}.ColorGroup")))
-            .and_then(|c| colours.iter().find(|r| r.name == c))
-            .map_or([0; 3], |r| r.value);
-        bitmap::shift(&mut img, by);
-        pieces.push(img);
-    }
-    // The transparent middle, between the left and right pieces.
-    pieces.insert(4, RgbaImage::new(1, 1));
-    Ok(Ok(pieces.try_into().map_err(|_| {
-        ImportError::MissingFile {
-            file: "frame pieces".to_owned(),
-        }
-    })?))
-}
-
-fn read_frame(
-    tree: &Tree,
-    skin: &Ini,
-    colours: &[ColourRow],
-    aliases: &BTreeMap<String, String>,
-) -> Result<Option<Frame>, ImportError> {
-    for shape in SHAPES {
-        if let Some(f) = read_shape(tree, skin, shape, colours, aliases)? {
-            return Ok(Some(f));
-        }
-    }
-    Ok(None)
-}
-
-fn read_shape(
-    tree: &Tree,
-    skin: &Ini,
-    shape: &'static Shape,
-    colours: &[ColourRow],
-    aliases: &BTreeMap<String, String>,
-) -> Result<Option<Frame>, ImportError> {
-    let mut frame: Option<Frame> = None;
-    for (prefix, state) in STATES {
-        let mut files = BTreeSet::new();
-        let pieces = match state_pieces(tree, skin, shape, prefix, colours, aliases, &mut files)? {
-            Ok(p) => p,
-            Err(missing) => {
-                if let Some(f) = frame.as_mut().filter(|_| missing.len() < 8) {
-                    f.skipped
-                        .push((state, format!("missing {}", missing.join(", "))));
-                }
-                continue;
-            }
-        };
-        let (img, insets) = bitmap::compose("window frame", &pieces)?;
-        match frame.as_mut() {
-            None if state == RegionState::Normal => {
-                frame = Some(Frame {
-                    shape,
-                    insets,
-                    images: BTreeMap::from([(state, img)]),
-                    files,
-                    skipped: Vec::new(),
-                });
-            }
-            None => {}
-            Some(f) if f.insets == insets => {
-                f.images.insert(state, img);
-                f.files.extend(files);
-            }
-            Some(f) => f.skipped.push((
-                state,
-                "its pieces differ in size from the normal state's".to_owned(),
-            )),
-        }
-    }
-    Ok(frame)
+) -> Result<(&'t str, &'t [u8]), ImportError> {
+    let path = if value.contains('.') {
+        value
+    } else {
+        aliases
+            .get(&value.to_ascii_uppercase())
+            .map(String::as_str)
+            .ok_or_else(|| ImportError::MissingFile {
+                file: format!("Graphics.{value}"),
+            })?
+    };
+    lookup(tree, path)
 }
 
 /// Every key of the skin file the importer does not use, by kind.
-fn count_dropped(skin: &Ini, frame: Option<&Frame>, dropped: &mut BTreeMap<&'static str, usize>) {
+fn count_dropped(
+    skin: &Ini,
+    (frame, control_sections): (Option<&Frame>, &BTreeSet<String>),
+    dropped: &mut BTreeMap<&'static str, usize>,
+) {
     let used = |sec: &str, key: &str| {
-        frame.is_some_and(|f| {
-            STATES
-                .iter()
-                .filter(|(_, s)| f.images.contains_key(s))
-                .any(|(p, _)| {
-                    f.shape.iter().flatten().any(|(fs, fk)| {
-                        sec.eq_ignore_ascii_case(fs)
-                            && (key.eq_ignore_ascii_case(&format!("{p}.{fk}"))
-                                || key.eq_ignore_ascii_case(&format!("{p}.ColorGroup")))
+        control_sections.contains(&sec.to_ascii_lowercase()) && controls::is_read(key)
+            || frame.is_some_and(|f| {
+                STATES
+                    .iter()
+                    .filter(|(_, s)| f.images.contains_key(s))
+                    .any(|(p, _)| {
+                        f.shape.iter().flatten().any(|(fs, fk)| {
+                            sec.eq_ignore_ascii_case(fs)
+                                && (key.eq_ignore_ascii_case(&format!("{p}.{fk}"))
+                                    || key.eq_ignore_ascii_case(&format!("{p}.ColorGroup")))
+                        })
                     })
-                })
-        })
+            })
     };
     for s in &skin.sections {
         for e in s.entries.iter().filter(|e| !used(&s.name, &e.key)) {
@@ -377,7 +249,7 @@ fn count_dropped(skin: &Ini, frame: Option<&Frame>, dropped: &mut BTreeMap<&'sta
                     .iter()
                     .any(|(p, _)| k.strip_prefix(p).is_some_and(|r| r.starts_with('.')))
                 {
-                    "images outside the window frame"
+                    "images with no region slot"
                 } else if s.name.eq_ignore_ascii_case("MainWindow") && k.ends_with("Skin") {
                     "other skin files (chat, group chat, in-game)"
                 } else {
@@ -416,7 +288,15 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let (colours, tokens, aliases) =
         read_theme(section(&theme, theme_key, "default")?, &mut dropped)?;
     let frame = read_frame(tree, &skin, &colours, &aliases)?;
-    count_dropped(&skin, frame.as_ref(), &mut dropped);
+    let images = controls::Images {
+        tree,
+        colours: &colours,
+        aliases: &aliases,
+        files: std::cell::RefCell::default(),
+    };
+    let (controls, tally, control_sections) = controls::read(&skin, &images)?;
+    let control_files = images.files.into_inner();
+    count_dropped(&skin, (frame.as_ref(), &control_sections), &mut dropped);
     let read_files = [version_key, skin_key, theme_key];
     let repeated = [
         (version_key, &version),
@@ -429,7 +309,11 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let decoded = frame.as_ref().map(|f| &f.files);
     let unread = tree
         .keys()
-        .filter(|k| !read_files.contains(&k.as_str()) && !decoded.is_some_and(|d| d.contains(*k)))
+        .filter(|k| {
+            !read_files.contains(&k.as_str())
+                && !decoded.is_some_and(|d| d.contains(*k))
+                && !control_files.contains(*k)
+        })
         .cloned()
         .collect();
     let info = BTreeMap::from([
@@ -447,6 +331,8 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         unread,
         repeated,
         authors: stated_authors(&version.comments),
+        controls,
+        tally,
     })
 }
 
@@ -489,6 +375,9 @@ fn manifest(
                 text_backing: None,
             },
         );
+    }
+    for c in &read.controls {
+        regions.insert(c.region.to_owned(), c.spec());
     }
     SkinManifest {
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
@@ -555,6 +444,9 @@ pub fn import(
             })?;
         files.insert(path, png);
     }
+    for c in &read.controls {
+        files.extend(c.files()?);
+    }
     let build = |tokens: &BTreeMap<String, TokenValue>| {
         let mut files = files.clone();
         files.insert(
@@ -568,5 +460,7 @@ pub fn import(
     })
 }
 
+#[cfg(test)]
+mod controls_tests;
 #[cfg(test)]
 mod tests;

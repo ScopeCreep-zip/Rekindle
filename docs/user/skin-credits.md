@@ -2,15 +2,18 @@
 
 Rekindle ships a few skins built in. Three are Xfire's own skins (Symbiosis,
 Classic v3, Combat). The others are fan skins made by the Xfire community:
-Onyx, SpaceCowboy, StealthX, Total Chaos, xSLIMFIRE, xBIOSHOCK, Guild Wars UI,
-Alloy, Simple X and XGlow.
+Onyx, SpaceCowboy, StealthX, Total Chaos, xSLIMFIRE, Alloy, Simple X and
+XGlow. Each carries its own art (window frame, title buttons, scrollbars)
+as well as its colours; parts with no place in Rekindle's window are left
+out and listed in the skin's `NOTICE`.
 
 ## Credits
 
 Each built-in fan skin is credited to the authors its own files name (the
 skin's `Info.xml` `<Author>` entries, or the comments in its `version.ini`).
 Rekindle ships no fan skin whose files name nobody, and none whose author
-restricted it ("All rights reserved", "do not change this skin"). To see who
+restricted it ("All rights reserved", "do not change this skin"), and none
+built on a game's art and names. To see who
 made a skin, open **Settings → Appearance** and press the **i** button
 beside it. The credits panel shows the authors and contributors, the site
 the skin names, and its licence text, or that it states none. Each skin's

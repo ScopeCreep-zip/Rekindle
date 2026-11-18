@@ -47,12 +47,7 @@ pub fn render(
         let _ = writeln!(
             s,
             "\nRegions\n  window.frame: the nine-piece frame of {}, {}x{} px, nine-slice {}/{}/{}/{}",
-            match read.layout {
-                super::Layout::Late => super::FRAME_SOURCE,
-                super::Layout::ClassicV3 =>
-                    "xfirecomponents.xml (ChatTitleBar, the outer edges' middles, ChatBaseBoard; \
-                     transparent middle)",
-            },
+            read.frame_source,
             img.width(),
             img.height(),
             i.top,
@@ -92,14 +87,14 @@ fn controls(s: &mut String, read: &Read) {
             .map_or((0, 0), rekindle_image::RgbaImage::dimensions);
         let _ = writeln!(
             s,
-            "  {}: {} from {}, {w}x{h} px, {:?}; states {}",
+            "  {}: {} {}, {w}x{h} px, {:?}; states {}",
             c.region,
             if c.region.starts_with("titlebar") {
                 "the title button"
             } else {
                 "the scrollbar"
             },
-            super::controls::SOURCE,
+            read.tally.sources.get(c.region).map_or("", String::as_str),
             c.fit,
             states.join(", ")
         );

@@ -39,9 +39,13 @@ pub struct Builtin {
 /// E7.7.3d, owner 2026-11-17) whose files import, whose authors stated no
 /// restriction, and whose own files name their authors (`Info.xml`
 /// `<Author>`, or `version.ini` comments for Alloy, Simple X and XGlow),
-/// each credited in its manifest and `NOTICE`. An author who asks has their
-/// skin removed in the next release (`docs/user/skin-credits.md`).
-pub const PACKS: [Builtin; 13] = [
+/// each credited in its manifest and `NOTICE`, and each carrying its art
+/// (frame, title buttons, scrollbar; plan E7.7.3e): a fan skin imported
+/// colour-only would misrepresent its author's work. Skins carrying game
+/// art and names (xBIOSHOCK, Guild Wars UI) are treated like the partner
+/// skins and not shipped. An author who asks has their skin removed in the
+/// next release (`docs/user/skin-credits.md`).
+pub const PACKS: [Builtin; 11] = [
     Builtin {
         id: "symbiosis",
         bytes: include_bytes!("../builtin/symbiosis.rkskin"),
@@ -73,14 +77,6 @@ pub const PACKS: [Builtin; 13] = [
     Builtin {
         id: "xslimfire",
         bytes: include_bytes!("../builtin/xslimfire.rkskin"),
-    },
-    Builtin {
-        id: "xbioshock",
-        bytes: include_bytes!("../builtin/xbioshock.rkskin"),
-    },
-    Builtin {
-        id: "guild-wars-ui",
-        bytes: include_bytes!("../builtin/guild-wars-ui.rkskin"),
     },
     Builtin {
         id: "alloy",
@@ -171,6 +167,16 @@ mod tests {
                     pack.id
                 );
             }
+        }
+    }
+
+    /// Plan E7.7.3e: a fan built-in carries its author's art, at least one
+    /// image region, never only a palette.
+    #[test]
+    fn every_fan_pack_carries_its_art() {
+        for pack in &PACKS[XFIRE_OWN..] {
+            let m = crate::manifest::parse(&crate::package::read(pack.bytes).unwrap()).unwrap();
+            assert!(!m.regions.is_empty(), "builtin:{} is colour-only", pack.id);
         }
     }
 }

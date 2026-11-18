@@ -72,14 +72,134 @@ Colours (57 defined)
   VentCG RGBA(0,0,0,0) -> dropped: not an Xfire colour name
   VoiceTalkingShift RGBA(0,0,0,0) -> dropped: not an Xfire colour name
 
+Regions
+  window.frame: the nine-piece frame of the chat window layout xSLIMFIREchatwindow.xml: the top and bottom rows' typed pieces and a vertically resizing tile's sides, 252x495 px, nine-slice 165/125/165/125
+  titlebar.btn.close: the title button CloseBox, 9x5 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: the title button MinimizeBox, 9x5 px, Stretch; states normal, hover, down
+  scrollbar.button-up: the scrollbar DefaultScrollbar, 4x4 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: the scrollbar DefaultScrollbar, 4x4 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: the scrollbar DefaultScrollbar, 4x4 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: the scrollbar DefaultScrollbar, 4x4 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: the scrollbar DefaultScrollbar, 4x12 px, NineSlice(Insets { top: 4, right: 0, bottom: 4, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: the scrollbar DefaultScrollbar, 12x4 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 4 }); states normal, hover, down
+  scrollbar.track: the scrollbar DefaultScrollbar, 4x12 px, NineSlice(Insets { top: 4, right: 0, bottom: 4, left: 0 }); states normal
+  scrollbar.track-horizontal: the scrollbar DefaultScrollbar, 12x4 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 4 }); states normal
+
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
-  kept 0 of 0 images
+  kept 28 of 155 images
+  Disabled sets: kept 1 of 25
+  Down sets: kept 3 of 42
+  Hover sets: kept 3 of 45
+  dropped MainTitleBar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped XfireLogo Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped XfireLogo Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped FileMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped FileMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ToolsMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ToolsMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped HelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped HelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped DownArrow Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped DownArrow Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped AddButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped AddButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped AddButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped AddServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped AddServerButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped AddServerButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped StartDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped StartDownloadButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped StartDownloadButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped RefreshButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped RefreshButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped RefreshButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped StopDownLoadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped StopDownLoadButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped StopDownLoadButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GameButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GameButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GameButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ExecuteDownloadButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ExecuteDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped DownloadInfoButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped DownloadInfoButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped DownloadInfoButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped TabNormalButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped TabServerButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped TabDownloadButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ScrollbarA Hover: its slot is filled by an earlier component
+  dropped ScrollbarA Down: its slot is filled by an earlier component
+  dropped ScrollbarA Disabled: its slot is filled by an earlier component
+  dropped ChatTitleBar Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped CloseChatBox Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped CloseChatBox Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped CloseChatBox Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatInfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped SystemMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped SystemMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ActionsMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ActionsMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatHelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatHelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped SendButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped SendButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped SendButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatGripperBottomRight Hover: no element: the OS resizes the window
+  dropped GCSystemMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GCSystemMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GCActionsMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GCActionsMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GCHelpMenu Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GCHelpMenu Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GroupSendButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GroupSendButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GroupSendButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GroupChatInfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoInfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped ChatInfoInfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped GroupChatInfoInfoViewButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinGameButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinGameButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinGameButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoHostChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoHostChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoHostChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoHostGroupChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoHostGroupChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoHostGroupChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinGroupChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinGroupChatButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoJoinGroupChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoLeaveChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoLeaveChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoLeaveGroupChatButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoLeaveGroupChatButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InfoTalkingStateButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameHostGameLobbyButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameHostGameLobbyButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameJoinGameLobbyButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameJoinGameLobbyButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameJoinGameLobbyButton Disabled: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameLeaveGameLobbyButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameLeaveGameLobbyButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameLaunchGameLobbyButton Hover: no region slot: its bitmap carries a label, icon or Xfire-only control
+  dropped InGameLaunchGameLobbyButton Down: no region slot: its bitmap carries a label, icon or Xfire-only control
 
 Dropped
   HTML templates: 0
-  layout components: 0
+  layout components: 128
   layout tiles: 0
-  triggers: 0
+  triggers: 123
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
 Contrast changes (minimal Oklab-lightness walk) (0 made)

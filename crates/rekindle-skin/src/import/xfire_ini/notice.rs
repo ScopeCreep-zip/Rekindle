@@ -63,6 +63,29 @@ pub fn render(
             let _ = writeln!(s, "    {state:?} not emitted: {why}");
         }
     }
+    if read.frame.is_none() && !read.controls.is_empty() {
+        let _ = writeln!(s, "\nRegions");
+    }
+    for c in &read.controls {
+        let states: Vec<&str> = c.images.keys().map(|k| k.key()).collect();
+        let (w, h) = c
+            .images
+            .values()
+            .next()
+            .map_or((0, 0), rekindle_image::RgbaImage::dimensions);
+        let _ = writeln!(
+            s,
+            "  {}: [{}], {w}x{h} px, {:?}; states {}",
+            c.region,
+            read.tally.sources.get(c.region).map_or("", String::as_str),
+            c.fit,
+            states.join(", ")
+        );
+    }
+    let t = &read.tally;
+    for (component, state, why) in &t.dropped {
+        let _ = writeln!(s, "  dropped [{component}] {state}: {why}");
+    }
     let _ = writeln!(s, "\nDropped");
     for (what, n) in &read.dropped {
         let _ = writeln!(s, "  {what}: {n}");

@@ -69,8 +69,25 @@ Colour groups (55 defined)
   FriendsFavoritesText RGBA(0,0,0,0) -> dropped: server browser
   AllServersText RGBA(0,0,0,0) -> dropped: server browser
 
+Regions
+  window.frame: [Top] [Middle] [Bottom], nine-slice 252/135/170/135, transparent middle
+    Normal: 350x450 px
+    WindowInactive not emitted: missing [Middle] Disabled.left, [Middle] Disabled.right, [Bottom] Disabled.bottomleft, [Bottom] Disabled.bottom, [Bottom] Disabled.bottomright
+  titlebar.btn.close: [CloseBox], 18x18 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: [MinimizeBox], 18x18 px, Stretch; states normal, hover, down
+  titlebar.btn.maximize: [MaximizeBox], 18x18 px, Stretch; states normal, hover, down
+  scrollbar.button-up: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: [DefaultScrollbar], 11x10 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: [DefaultScrollbar], 11x10 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: [DefaultScrollbar], 10x6 px, NineSlice(Insets { top: 2, right: 0, bottom: 2, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: [DefaultScrollbar], 6x10 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal, hover, down
+  scrollbar.track: [DefaultScrollbar], 10x3 px, NineSlice(Insets { top: 1, right: 0, bottom: 1, left: 0 }); states normal
+  scrollbar.track-horizontal: [DefaultScrollbar], 3x10 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  scrollbar.corner: [DefaultScrollbar], 10x10 px, Stretch; states normal
+
 Dropped
-  images outside the window frame: 252
+  images with no region slot: 180
   other keys (classes, sizes, cursors, sounds): 206
   other skin files (chat, group chat, in-game): 4
   text styles: 39
@@ -81,51 +98,10 @@ Dropped
     Alloy.ini: [MainWindow] Window6.IndentRight (line 58)
     Alloy.ini: [StatusEdit] Text.bold (line 304)
     Alloy.ini: [SearchFiles] Cursor (line 734)
-  files not read (213):
+  files not read (155):
     AlloyScroll/Thumbs.db
-    AlloyScroll/scroll-background-horz-left.gif
-    AlloyScroll/scroll-background-horz-middle.gif
-    AlloyScroll/scroll-background-horz-right.gif
-    AlloyScroll/scroll-background-vert-bottom.gif
-    AlloyScroll/scroll-background-vert-middle.gif
-    AlloyScroll/scroll-background-vert-top.gif
-    AlloyScroll/scroll-corner.gif
-    AlloyScroll/scroll-down-disabled.gif
-    AlloyScroll/scroll-down-down.gif
-    AlloyScroll/scroll-down-hover.gif
-    AlloyScroll/scroll-down-norm.gif
     AlloyScroll/scroll-gripper-grips-horz.gif
     AlloyScroll/scroll-gripper-grips-vert.gif
-    AlloyScroll/scroll-gripper-horz-left-down.gif
-    AlloyScroll/scroll-gripper-horz-left-hover.gif
-    AlloyScroll/scroll-gripper-horz-left.gif
-    AlloyScroll/scroll-gripper-horz-middle-down.gif
-    AlloyScroll/scroll-gripper-horz-middle-hover.gif
-    AlloyScroll/scroll-gripper-horz-middle.gif
-    AlloyScroll/scroll-gripper-horz-right-down.gif
-    AlloyScroll/scroll-gripper-horz-right-hover.gif
-    AlloyScroll/scroll-gripper-horz-right.gif
-    AlloyScroll/scroll-gripper-vert-bottom-down.gif
-    AlloyScroll/scroll-gripper-vert-bottom-hover.gif
-    AlloyScroll/scroll-gripper-vert-bottom.gif
-    AlloyScroll/scroll-gripper-vert-middle-down.gif
-    AlloyScroll/scroll-gripper-vert-middle-hover.gif
-    AlloyScroll/scroll-gripper-vert-middle.gif
-    AlloyScroll/scroll-gripper-vert-top-down.gif
-    AlloyScroll/scroll-gripper-vert-top-hover.gif
-    AlloyScroll/scroll-gripper-vert-top.gif
-    AlloyScroll/scroll-left-disabled.gif
-    AlloyScroll/scroll-left-down.gif
-    AlloyScroll/scroll-left-hover.gif
-    AlloyScroll/scroll-left-norm.gif
-    AlloyScroll/scroll-right-disabled.gif
-    AlloyScroll/scroll-right-down.gif
-    AlloyScroll/scroll-right-hover.gif
-    AlloyScroll/scroll-right-norm.gif
-    AlloyScroll/scroll-up-disabled.gif
-    AlloyScroll/scroll-up-down.gif
-    AlloyScroll/scroll-up-hover.gif
-    AlloyScroll/scroll-up-norm.gif
     Chatskin.ini
     GroupChatInfoskin.ini
     Groupchatskin.ini
@@ -149,9 +125,6 @@ Dropped
     buttons/button-chat-Send-disabled.gif
     buttons/button-chat-Send-hover.gif
     buttons/button-chat-Send-norm.gif
-    buttons/button-close-down.gif
-    buttons/button-close-hover.gif
-    buttons/button-close-norm.gif
     buttons/button-game-click.gif
     buttons/button-game-disabled.gif
     buttons/button-game-hover.gif
@@ -164,12 +137,6 @@ Dropped
     buttons/button-info-norm.gif
     buttons/button-info-retract-hover.gif
     buttons/button-info-retract.gif
-    buttons/button-maximize-down.gif
-    buttons/button-maximize-hover.gif
-    buttons/button-maximize-norm.gif
-    buttons/button-minimize-down.gif
-    buttons/button-minimize-hover.gif
-    buttons/button-minimize-norm.gif
     buttons/button-profile-click.gif
     buttons/button-profile-disabled.gif
     buttons/button-profile-hover.gif
@@ -275,15 +242,7 @@ Dropped
     mainskin/listview-header-left.gif
     mainskin/listview-header-middle.gif
     mainskin/listview-header-right.gif
-    mainskin/main-bottom-left.gif
-    mainskin/main-bottom-middle.gif
-    mainskin/main-bottom-right.gif
-    mainskin/main-middle-left.gif
     mainskin/main-middle-middle.gif
-    mainskin/main-middle-right.gif
-    mainskin/main-top-left.gif
-    mainskin/main-top-middle.gif
-    mainskin/main-top-right.gif
     mainskin/mainbg.gif
     mainskin/mainbg2.gif
     mainskin/rightdetail.gif

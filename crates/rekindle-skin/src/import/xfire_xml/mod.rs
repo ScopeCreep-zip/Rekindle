@@ -31,6 +31,7 @@ pub mod bitmap;
 pub mod colours;
 pub mod controls;
 mod notice;
+pub mod tiles;
 pub mod v3;
 
 use std::collections::BTreeMap;
@@ -83,6 +84,8 @@ pub struct Read {
     pub colours: Vec<ColourRow>,
     pub tokens: BTreeMap<String, TokenValue>,
     pub frame: Option<(RgbaImage, rekindle_types::dto::skin::Insets)>,
+    /// Where and by which rule the frame was read, for the `NOTICE`.
+    pub frame_source: String,
     pub dropped: BTreeMap<&'static str, usize>,
     /// The painted control slots ([`controls`]) and what they kept.
     pub controls: Vec<Control>,
@@ -148,7 +151,10 @@ fn bitmaps(theme: &Node) -> BTreeMap<&str, &str> {
 }
 
 /// The bitmap `name`, decoded and shifted by the colour `shift` (an
-/// undefined name is the identity, d1 §3.1).
+/// undefined name is the identity, d1 §3.1). `name` is a theme
+/// `<Bitmap Name=…>`, or else a file of the tree (Onyx, Space Cowboy and
+/// Total Chaos name their tiles' images by path, `chatskin/chat-topleft.gif`),
+/// read through [`lookup`]'s relative-path check like every other file.
 fn piece(
     tree: &Tree,
     bitmaps: &BTreeMap<&str, &str>,
@@ -156,9 +162,15 @@ fn piece(
     name: &str,
     shift: Option<&str>,
 ) -> Result<RgbaImage, ImportError> {
-    let path = bitmaps.get(name).ok_or_else(|| ImportError::MissingFile {
-        file: format!("Bitmap {name}"),
-    })?;
+    let path = match bitmaps.get(name) {
+        Some(path) => *path,
+        None if lookup(tree, name).is_ok() => name,
+        None => {
+            return Err(ImportError::MissingFile {
+                file: format!("Bitmap {name}"),
+            })
+        }
+    };
     let mut img = bitmap::decode(path, file(tree, path)?)?;
     let by = shift
         .and_then(|c| colours.iter().find(|r| r.name == c))
@@ -193,8 +205,15 @@ fn read_colours(
 /// The first complete nine-piece `Normal` set: (bitmap name, colour name)
 /// per piece in [`bitmap::NINE`] order.
 fn nine_piece(components: &Node) -> Option<[(String, Option<String>); 9]> {
+    nine_piece_in(descendants(components, "Images"))
+}
+
+/// [`nine_piece`] over the image sets `sets`, in order.
+fn nine_piece_in<'a>(
+    sets: impl IntoIterator<Item = &'a Node>,
+) -> Option<[(String, Option<String>); 9]> {
     let mut found: [Option<(String, Option<String>)>; 9] = Default::default();
-    for images in descendants(components, "Images") {
+    for images in sets {
         if images
             .attr_ci("State")
             .is_some_and(|s| !s.eq_ignore_ascii_case("Normal"))
@@ -219,22 +238,54 @@ fn nine_piece(components: &Node) -> Option<[(String, Option<String>); 9]> {
     None
 }
 
+/// The frame and where it was read.
+type ReadFrame = (
+    Option<(RgbaImage, rekindle_types::dto::skin::Insets)>,
+    String,
+);
+
+/// The file `Skin.xml`'s `<ChatSkin>` includes: the chat window's layout.
+fn chat_layout(skin: &Node) -> Option<&str> {
+    skin.children
+        .iter()
+        .find(|n| n.name.eq_ignore_ascii_case("ChatSkin"))
+        .and_then(|n| descendants(n, "Include").into_iter().next())
+        .and_then(|i| i.attr_ci("File"))
+}
+
 fn read_frame(
     tree: &Tree,
-    theme: &Node,
+    (skin, theme): (&Node, &Node),
     colours: &[ColourRow],
     layout: Layout,
-) -> Result<Option<(RgbaImage, rekindle_types::dto::skin::Insets)>, ImportError> {
+    components: &[Node],
+) -> Result<ReadFrame, ImportError> {
     let bitmaps = bitmaps(theme);
     let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, colours, name, shift);
     if layout == Layout::ClassicV3 {
-        return v3::frame(&xml(tree, v3::SOURCE)?, decode);
+        let source = "xfirecomponents.xml (ChatTitleBar, the outer edges' middles, \
+                      ChatBaseBoard; transparent middle)";
+        return Ok((
+            v3::frame(&xml(tree, v3::SOURCE)?, decode)?,
+            source.to_owned(),
+        ));
     }
-    if lookup(tree, FRAME_SOURCE).is_err() {
-        return Ok(None);
-    }
-    let Some(set) = nine_piece(&xml(tree, FRAME_SOURCE)?) else {
-        return Ok(None);
+    let set = if lookup(tree, FRAME_SOURCE).is_ok() {
+        nine_piece(&xml(tree, FRAME_SOURCE)?)
+    } else {
+        None
+    };
+    let Some(set) = set else {
+        let Some(file) = chat_layout(skin).filter(|f| lookup(tree, f).is_ok()) else {
+            return Ok((None, String::new()));
+        };
+        return Ok(match tiles::frame(&xml(tree, file)?, components, decode)? {
+            Some((img, insets, shape)) => (
+                Some((img, insets)),
+                format!("the chat window layout {file}: {}", shape.describe()),
+            ),
+            None => (None, String::new()),
+        });
     };
     let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
     for (name, colour) in &set {
@@ -243,7 +294,8 @@ fn read_frame(
     let pieces: [RgbaImage; 9] = pieces.try_into().map_err(|_| ImportError::MissingFile {
         file: FRAME_SOURCE.to_owned(),
     })?;
-    bitmap::compose(FRAME_SOURCE, &pieces).map(Some)
+    let frame = bitmap::compose(FRAME_SOURCE, &pieces)?;
+    Ok((Some(frame), FRAME_SOURCE.to_owned()))
 }
 
 fn count_dropped(tree: &Tree, components: &[Node]) -> BTreeMap<&'static str, usize> {
@@ -262,6 +314,30 @@ fn count_dropped(tree: &Tree, components: &[Node]) -> BTreeMap<&'static str, usi
         .count();
     d.insert("HTML templates", html);
     d
+}
+
+/// Every included component file: Symbiosis's `Components/*.xml`,
+/// Classic v3's [`v3::SOURCE`], and any other included file whose root is
+/// `<Components>` (Onyx, Space Cowboy, StealthX and Total Chaos keep one
+/// `components.xml` beside `skin.xml`; xSLIMFIRE `xSLIMFIREcomponents.xml`).
+fn component_files(tree: &Tree, included: &[String]) -> Result<Vec<Node>, ImportError> {
+    let mut components = Vec::new();
+    for f in included {
+        if lookup(tree, f).is_err() {
+            continue;
+        }
+        let named = f
+            .get(..11)
+            .is_some_and(|p| p.eq_ignore_ascii_case("Components/"))
+            || f.eq_ignore_ascii_case(v3::SOURCE);
+        if named || ends_with_ci(f, ".xml") {
+            let root = xml(tree, f)?;
+            if named || root.name.eq_ignore_ascii_case("Components") {
+                components.push(root);
+            }
+        }
+    }
+    Ok(components)
 }
 
 /// Reads `tree` (an unpacked Xfire XML-era skin).
@@ -290,18 +366,8 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
             detail: "no <Theme>".to_owned(),
         })?;
     let (colours, tokens) = read_colours(theme, layout)?;
-    let frame = read_frame(tree, theme, &colours, layout)?;
-    let mut components = Vec::new();
-    let component_file = |f: &&String| {
-        f.get(..11)
-            .is_some_and(|p| p.eq_ignore_ascii_case("Components/"))
-            || f.eq_ignore_ascii_case(v3::SOURCE)
-    };
-    for f in included.iter().filter(component_file) {
-        if lookup(tree, f).is_ok() {
-            components.push(xml(tree, f)?);
-        }
-    }
+    let components = component_files(tree, &included)?;
+    let (frame, frame_source) = read_frame(tree, (&skin, theme), &colours, layout, &components)?;
     let (controls, tally) = controls::read(tree, theme, &colours, &components)?;
     let info_xml = match lookup(tree, "Info.xml") {
         Ok((key, bytes)) => Some(tree::parse(key, bytes)?),
@@ -337,6 +403,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         colours,
         tokens,
         frame,
+        frame_source,
         dropped: count_dropped(tree, &components),
         controls,
         tally,
@@ -502,3 +569,6 @@ pub fn import(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod fan_tests;

@@ -69,8 +69,25 @@ Colour groups (55 defined)
   FriendsFavoritesText RGBA(255,255,255,0) -> dropped: server browser
   AllServersText RGBA(255,255,255,0) -> dropped: server browser
 
+Regions
+  window.frame: [Top] [Middle] [Bottom], nine-slice 126/92/126/90, transparent middle
+    Normal: 272x377 px
+    WindowInactive not emitted: missing [Middle] Disabled.left, [Middle] Disabled.right, [Bottom] Disabled.bottomleft, [Bottom] Disabled.bottom, [Bottom] Disabled.bottomright
+  titlebar.btn.close: [CloseBox], 16x16 px, Stretch; states normal, hover, down
+  titlebar.btn.minimize: [MinimizeBox], 16x16 px, Stretch; states normal, hover, down
+  titlebar.btn.maximize: [MaximizeBox], 16x16 px, Stretch; states normal, hover, down
+  scrollbar.button-up: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: [DefaultScrollbar], 10x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: [DefaultScrollbar], 11x10 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: [DefaultScrollbar], 11x10 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: [DefaultScrollbar], 10x6 px, NineSlice(Insets { top: 2, right: 0, bottom: 2, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: [DefaultScrollbar], 6x10 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal, hover, down
+  scrollbar.track: [DefaultScrollbar], 10x3 px, NineSlice(Insets { top: 1, right: 0, bottom: 1, left: 0 }); states normal
+  scrollbar.track-horizontal: [DefaultScrollbar], 3x10 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
+  scrollbar.corner: [DefaultScrollbar], 10x10 px, Stretch; states normal
+
 Dropped
-  images outside the window frame: 231
+  images with no region slot: 159
   other keys (classes, sizes, cursors, sounds): 203
   other skin files (chat, group chat, in-game): 4
   text styles: 77
@@ -89,51 +106,10 @@ Dropped
     SimpleX.ini: [TabHeader] Window2.X (line 593)
     SimpleX.ini: [TabHeader] Window3.X (line 599)
     SimpleX.ini: [SearchFiles] Cursor (line 825)
-  files not read (198):
+  files not read (140):
     CScroll/Thumbs.db
-    CScroll/scroll-background-horz-left.gif
-    CScroll/scroll-background-horz-middle.gif
-    CScroll/scroll-background-horz-right.gif
-    CScroll/scroll-background-vert-bottom.gif
-    CScroll/scroll-background-vert-middle.gif
-    CScroll/scroll-background-vert-top.gif
-    CScroll/scroll-corner.gif
-    CScroll/scroll-down-disabled.gif
-    CScroll/scroll-down-down.gif
-    CScroll/scroll-down-hover.gif
-    CScroll/scroll-down-norm.gif
     CScroll/scroll-gripper-grips-horz.gif
     CScroll/scroll-gripper-grips-vert.gif
-    CScroll/scroll-gripper-horz-left-down.gif
-    CScroll/scroll-gripper-horz-left-hover.gif
-    CScroll/scroll-gripper-horz-left.gif
-    CScroll/scroll-gripper-horz-middle-down.gif
-    CScroll/scroll-gripper-horz-middle-hover.gif
-    CScroll/scroll-gripper-horz-middle.gif
-    CScroll/scroll-gripper-horz-right-down.gif
-    CScroll/scroll-gripper-horz-right-hover.gif
-    CScroll/scroll-gripper-horz-right.gif
-    CScroll/scroll-gripper-vert-bottom-down.gif
-    CScroll/scroll-gripper-vert-bottom-hover.gif
-    CScroll/scroll-gripper-vert-bottom.gif
-    CScroll/scroll-gripper-vert-middle-down.gif
-    CScroll/scroll-gripper-vert-middle-hover.gif
-    CScroll/scroll-gripper-vert-middle.gif
-    CScroll/scroll-gripper-vert-top-down.gif
-    CScroll/scroll-gripper-vert-top-hover.gif
-    CScroll/scroll-gripper-vert-top.gif
-    CScroll/scroll-left-disabled.gif
-    CScroll/scroll-left-down.gif
-    CScroll/scroll-left-hover.gif
-    CScroll/scroll-left-norm.gif
-    CScroll/scroll-right-disabled.gif
-    CScroll/scroll-right-down.gif
-    CScroll/scroll-right-hover.gif
-    CScroll/scroll-right-norm.gif
-    CScroll/scroll-up-disabled.gif
-    CScroll/scroll-up-down.gif
-    CScroll/scroll-up-hover.gif
-    CScroll/scroll-up-norm.gif
     Chatskin.ini
     GroupChatInfoskin.ini
     Groupchatskin.ini
@@ -155,9 +131,6 @@ Dropped
     buttons/button-chat-Send-disabled.gif
     buttons/button-chat-Send-hover.gif
     buttons/button-chat-Send-norm.gif
-    buttons/button-close-down.gif
-    buttons/button-close-hover.gif
-    buttons/button-close-norm.gif
     buttons/button-game-click.gif
     buttons/button-game-disabled.gif
     buttons/button-game-hover.gif
@@ -170,12 +143,6 @@ Dropped
     buttons/button-info-norm.gif
     buttons/button-info-retract-hover.gif
     buttons/button-info-retract.gif
-    buttons/button-maximize-down.gif
-    buttons/button-maximize-hover.gif
-    buttons/button-maximize-norm.gif
-    buttons/button-minimize-down.gif
-    buttons/button-minimize-hover.gif
-    buttons/button-minimize-norm.gif
     buttons/button-profile-click.gif
     buttons/button-profile-disabled.gif
     buttons/button-profile-hover.gif
@@ -266,15 +233,7 @@ Dropped
     mainskin/listview-header-left.gif
     mainskin/listview-header-middle.gif
     mainskin/listview-header-right.gif
-    mainskin/main-bottom-left.gif
-    mainskin/main-bottom-middle.gif
-    mainskin/main-bottom-right.gif
-    mainskin/main-middle-left.gif
     mainskin/main-middle-middle.gif
-    mainskin/main-middle-right.gif
-    mainskin/main-top-left.gif
-    mainskin/main-top-middle.gif
-    mainskin/main-top-right.gif
     mainskin/mainbg.gif
     mainskin/menubar-middle-flash.gif
     mainskin/menubar-middle-off.gif

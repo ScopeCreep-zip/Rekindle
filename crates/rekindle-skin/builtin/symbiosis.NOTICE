@@ -83,18 +83,18 @@ Colours (63 defined)
 
 Regions
   window.frame: the nine-piece frame of Components/ChatWindow.xml, 126x126 px, nine-slice 13/13/13/13
-  scrollbar.button-up: the scrollbar from Components/Common.xml, 16x14 px, Stretch; states normal, hover, down, disabled
-  scrollbar.button-down: the scrollbar from Components/Common.xml, 16x14 px, Stretch; states normal, hover, down, disabled
-  scrollbar.button-left: the scrollbar from Components/Common.xml, 14x16 px, Stretch; states normal, hover, down, disabled
-  scrollbar.button-right: the scrollbar from Components/Common.xml, 14x16 px, Stretch; states normal, hover, down, disabled
-  scrollbar.thumb: the scrollbar from Components/Common.xml, 16x9 px, NineSlice(Insets { top: 3, right: 0, bottom: 3, left: 0 }); states normal, hover, down
-  scrollbar.thumb-horizontal: the scrollbar from Components/Common.xml, 9x16 px, NineSlice(Insets { top: 0, right: 3, bottom: 0, left: 3 }); states normal, hover, down
-  scrollbar.track: the scrollbar from Components/Common.xml, 16x5 px, NineSlice(Insets { top: 2, right: 0, bottom: 1, left: 0 }); states normal
-  scrollbar.track-horizontal: the scrollbar from Components/Common.xml, 5x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 2 }); states normal
-  scrollbar.corner: the scrollbar from Components/Common.xml, 16x16 px, Stretch; states normal
-  titlebar.btn.minimize: the title button from Components/Common.xml, 18x16 px, Stretch; states normal, hover, down, disabled
-  titlebar.btn.maximize: the title button from Components/Common.xml, 18x16 px, Stretch; states normal, hover, down, disabled
-  titlebar.btn.close: the title button from Components/Common.xml, 18x16 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-up: the scrollbar XfireScrollbar, 16x14 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: the scrollbar XfireScrollbar, 16x14 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: the scrollbar XfireScrollbar, 14x16 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: the scrollbar XfireScrollbar, 14x16 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: the scrollbar XfireScrollbar, 16x9 px, NineSlice(Insets { top: 3, right: 0, bottom: 3, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: the scrollbar XfireScrollbar, 9x16 px, NineSlice(Insets { top: 0, right: 3, bottom: 0, left: 3 }); states normal, hover, down
+  scrollbar.track: the scrollbar XfireScrollbar, 16x5 px, NineSlice(Insets { top: 2, right: 0, bottom: 1, left: 0 }); states normal
+  scrollbar.track-horizontal: the scrollbar XfireScrollbar, 5x16 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 2 }); states normal
+  scrollbar.corner: the scrollbar XfireScrollbar, 16x16 px, Stretch; states normal
+  titlebar.btn.minimize: the title button ButtonMinimize, 18x16 px, Stretch; states normal, hover, down, disabled
+  titlebar.btn.maximize: the title button ButtonMaximize, 18x16 px, Stretch; states normal, hover, down, disabled
+  titlebar.btn.close: the title button ButtonClose, 18x16 px, Stretch; states normal, hover, down, disabled
 
 State images (Hover -> hover, Down -> down, Disabled -> disabled)
   kept 33 of 367 images

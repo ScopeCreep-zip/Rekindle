@@ -37,15 +37,25 @@ Colour groups (15 defined)
 Regions
   window.frame: [OuterFrame], nine-slice 214/78/113/79, transparent middle
     Normal: 333x586 px
+  titlebar.btn.minimize: [Minimizebox], 12x12 px, Stretch; states normal, hover, down
+  scrollbar.button-up: [DefaultScrollbar], 11x29 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-down: [DefaultScrollbar], 11x9 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-left: [DefaultScrollbar], 9x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.button-right: [DefaultScrollbar], 9x11 px, Stretch; states normal, hover, down, disabled
+  scrollbar.thumb: [DefaultScrollbar], 10x105 px, NineSlice(Insets { top: 3, right: 0, bottom: 2, left: 0 }); states normal, hover, down
+  scrollbar.thumb-horizontal: [DefaultScrollbar], 104x11 px, NineSlice(Insets { top: 0, right: 2, bottom: 0, left: 2 }); states normal, hover, down
+  scrollbar.track: [DefaultScrollbar], 11x405 px, NineSlice(Insets { top: 135, right: 0, bottom: 135, left: 0 }); states normal
+  scrollbar.track-horizontal: [DefaultScrollbar], 405x11 px, NineSlice(Insets { top: 0, right: 135, bottom: 0, left: 135 }); states normal
+  scrollbar.corner: [DefaultScrollbar], 11x11 px, Stretch; states normal
 
 Dropped
-  images outside the window frame: 169
+  images with no region slot: 125
   other keys (classes, sizes, cursors, sounds): 202
   other skin files (chat, group chat, in-game): 4
   text styles: 42
   triggers: 40
   window layout: 197
-  repeated keys, the first occurrence read as on Windows (21):
+  lines Windows reads no value from (21):
     combat.ini: [MainWindow] Window4.X (line 34)
     combat.ini: [MainWindow] Window5.X (line 40)
     combat.ini: [MainWindow] Window14.Y (line 96)
@@ -67,7 +77,7 @@ Dropped
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (191):
+  files not read (159):
     CombatChatSkin.ini
     CombatGroupChatInfoSkin.ini
     CombatGroupChatSkin.ini
@@ -177,7 +187,6 @@ Dropped
     chat/c_chat_button_close_norm.gif
     chat/c_chat_button_minimize_down.gif
     chat/c_chat_button_minimize_hover.gif
-    chat/c_chat_button_minimize_norm.gif
     chat/c_chat_button_send_down.gif
     chat/c_chat_button_send_hover.gif
     chat/c_chat_button_send_norm.gif
@@ -227,37 +236,6 @@ Dropped
     ingame/c_ingame_topmiddle.gif
     ingame/c_ingame_topright.gif
     ingame/c_ingame_x.gif
-    scrollbar/c_grip_horz_left.gif
-    scrollbar/c_grip_horz_left_down.gif
-    scrollbar/c_grip_horz_mid.gif
-    scrollbar/c_grip_horz_mid_down.gif
-    scrollbar/c_grip_horz_right.gif
-    scrollbar/c_grip_horz_right_down.gif
-    scrollbar/c_grip_vert_bottom.gif
-    scrollbar/c_grip_vert_bottom_down.gif
-    scrollbar/c_grip_vert_middle.gif
-    scrollbar/c_grip_vert_middle_down.gif
-    scrollbar/c_grip_vert_top.gif
-    scrollbar/c_grip_vert_top_down.gif
-    scrollbar/c_scroll_arrow_down_dis.gif
-    scrollbar/c_scroll_arrow_down_down.gif
-    scrollbar/c_scroll_arrow_down_hover.gif
-    scrollbar/c_scroll_arrow_down_norm.gif
-    scrollbar/c_scroll_arrow_left_dis.gif
-    scrollbar/c_scroll_arrow_left_down.gif
-    scrollbar/c_scroll_arrow_left_hover.gif
-    scrollbar/c_scroll_arrow_left_norm.gif
-    scrollbar/c_scroll_arrow_right_dis.gif
-    scrollbar/c_scroll_arrow_right_down.gif
-    scrollbar/c_scroll_arrow_right_hover.gif
-    scrollbar/c_scroll_arrow_right_norm.gif
-    scrollbar/c_scroll_arrow_up_dis.gif
-    scrollbar/c_scroll_arrow_up_down.gif
-    scrollbar/c_scroll_arrow_up_hover.gif
-    scrollbar/c_scroll_arrow_up_norm.gif
-    scrollbar/c_scroll_base_horz.gif
-    scrollbar/c_scroll_base_vert.gif
-    scrollbar/c_scroll_corner.gif
     strings.ini
 
 Contrast changes (minimal Oklab-lightness walk) (5 made)
