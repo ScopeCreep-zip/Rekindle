@@ -464,3 +464,48 @@ fn onboarding_rejects_unknown_mode() {
 mod admin_delete;
 mod hierarchy;
 mod target;
+
+fn invite_with(code_hash: String) -> GovernanceEntry {
+    GovernanceEntry::InviteCreated {
+        invite_id: [7; 16],
+        code_hash,
+        max_uses: 1,
+        expires_at: None,
+        secrets_record_key: "VLD0:s".into(),
+    }
+}
+
+/// An invite's `code_hash` is its public join key (plan E3.2 S10): one no
+/// invite proof can verify under is refused, the creator's included; the
+/// key `hash_invite_code` writes passes.
+#[test]
+fn invite_with_a_malformed_join_key_is_refused_even_from_the_creator() {
+    let state = state_with_creator_and_roles();
+    let creator = pseudo(1);
+    let valid = crate::fixture::code_key("a1b2c3d4e5f6a7b8a1b2c3d4e5f6a7b8");
+    assert!(validate_write(
+        &creator,
+        &invite_with(valid.clone()),
+        &state
+    ));
+    let malformed = [
+        "code".to_owned(),
+        valid.to_uppercase(),
+        valid[..62].to_owned(),
+        format!("{valid}00"),
+        // Small order: y = 0 (order 4) and the identity.
+        "00".repeat(32),
+        format!("01{}", "00".repeat(31)),
+        // y = p, the non-canonical encoding of y = 0.
+        format!("ed{}7f", "ff".repeat(30)),
+    ];
+    for code_hash in malformed {
+        let entry = invite_with(code_hash.clone());
+        assert_eq!(
+            bounds::out_of_bounds_field(&entry),
+            Some("code_hash"),
+            "{code_hash}"
+        );
+        assert!(!validate_write(&creator, &entry, &state), "{code_hash}");
+    }
+}

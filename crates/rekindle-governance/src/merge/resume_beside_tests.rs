@@ -36,7 +36,7 @@ fn below(than: &VerifiedOp, from: u64, make: impl Fn(u64) -> VerifiedOp) -> Veri
 fn invite(id: u8, code: &str, max_uses: u32) -> GovernanceEntry {
     GovernanceEntry::InviteCreated {
         invite_id: [id; 16],
-        code_hash: code.into(),
+        code_hash: crate::fixture::code_key(code),
         max_uses,
         expires_at: None,
         secrets_record_key: "VLD0:s".into(),

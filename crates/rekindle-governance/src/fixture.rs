@@ -27,6 +27,13 @@ pub fn stamp(lamport: u64) -> OpStamp {
     }
 }
 
+/// The `code_hash` of the invite whose code is `code`: its public join key
+/// (plan E3.2 S10), the only form a reader admits.
+#[must_use]
+pub fn code_key(code: &str) -> String {
+    rekindle_secrets::invite::hash_invite_code(code)
+}
+
 /// A `CommunityMeta` entry naming the community `name`.
 #[must_use]
 pub fn meta(name: &str) -> GovernanceEntry {

@@ -44,7 +44,8 @@ pub fn description_ok(s: &str) -> bool {
 /// The field of `entry` that is out of bounds, or `None` when every bounded
 /// field is within its bound. `ChannelUpdated.slowmode_seconds`,
 /// `TimeoutEntry.duration_seconds`, `CommunityMeta.description`, the
-/// onboarding flow and the welcome screen are bounded; every other variant
+/// onboarding flow, the welcome screen and `InviteCreated.code_hash` (a
+/// public join key) are bounded; every other variant
 /// passes.
 pub fn out_of_bounds_field(entry: &GovernanceEntry) -> Option<&'static str> {
     match entry {
@@ -77,6 +78,13 @@ pub fn out_of_bounds_field(entry: &GovernanceEntry) -> Option<&'static str> {
             if !opt_text_ok(reason.as_deref(), key_format::MAX_NOTE_LEN) =>
         {
             Some("reason")
+        }
+        // An invite's id is its public join key (plan E3.2 S10): one no
+        // proof can verify under is not an invite, whoever wrote it.
+        GovernanceEntry::InviteCreated { code_hash, .. }
+            if !rekindle_secrets::invite::invite_join_key_valid(code_hash) =>
+        {
+            Some("code_hash")
         }
         _ => None,
     }

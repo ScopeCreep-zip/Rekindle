@@ -8,7 +8,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use ed25519_dalek::{Signer, SigningKey};
+use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
 use hkdf::Hkdf;
 use rand::RngCore;
 use rekindle_types::domains;
@@ -87,6 +87,22 @@ pub fn invite_join_verifies(code_hash: &str, signed: &[u8], sig: &[u8; 64]) -> b
     let mut key = [0u8; 32];
     hex::decode_to_slice(code_hash, &mut key).is_ok()
         && crate::sign::verify_signature(&key, signed, sig).is_ok()
+}
+
+/// Whether `code_hash` is a public join key a proof can verify under
+/// ([`invite_join_verifies`]): 64 lowercase hex digits (the form
+/// [`hash_invite_code`] writes, which the join's lookup compares bytewise),
+/// the canonical encoding of a curve point, not of small order (the strict
+/// verification every reader runs refuses those keys). Readers refuse an
+/// `InviteCreated` whose `code_hash` is not one (plan E3.2 S10).
+#[must_use]
+pub fn invite_join_key_valid(code_hash: &str) -> bool {
+    let mut bytes = [0u8; 32];
+    if hex::decode_to_slice(code_hash, &mut bytes).is_err() || hex::encode(bytes) != code_hash {
+        return false;
+    }
+    VerifyingKey::from_bytes(&bytes)
+        .is_ok_and(|key| !key.is_weak() && key.to_edwards().compress().to_bytes() == bytes)
 }
 
 /// Encrypt invite secrets with HKDF(invite_code) → AES-256-GCM.

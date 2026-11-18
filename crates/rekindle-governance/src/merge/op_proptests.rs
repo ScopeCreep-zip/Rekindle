@@ -8,7 +8,7 @@ use rekindle_types::id::{PseudonymKey, RoleId};
 use rekindle_types::permissions::{CREATE_INVITES, KICK_MEMBERS, MANAGE_COMMUNITY, VIEW_CHANNELS};
 
 use super::{merge, merge_outcome, MergeOutcome, QuarantineReason};
-use crate::fixture::{cert, meta, op, op_at};
+use crate::fixture::{cert, code_key, meta, op, op_at};
 use crate::invite_quota::MAX_USES_PER_INVITE;
 use crate::op::VerifiedOp;
 use crate::power::{class_of, OpClass};
@@ -22,7 +22,7 @@ pub(super) fn joined(by: u8, code: Option<&str>) -> GovernanceEntry {
         member_record: format!("VLD0:m{by}"),
         member_record_owner: "owner".into(),
         invite_proof: code.map(|c| InviteProof {
-            code_hash: c.into(),
+            code_hash: code_key(c),
             sig: vec![0; 64],
         }),
         owner_proof: vec![0; 64],
@@ -63,7 +63,7 @@ pub(super) fn kick(target: u8, frontier: u64) -> GovernanceEntry {
 pub(super) fn invite(max_uses: u32) -> GovernanceEntry {
     GovernanceEntry::InviteCreated {
         invite_id: [7; 16],
-        code_hash: "code".into(),
+        code_hash: code_key("code"),
         max_uses,
         expires_at: None,
         secrets_record_key: "VLD0:s".into(),
@@ -154,7 +154,7 @@ fn a_join_backdated_before_its_deps_is_refused() {
     let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let expiring = GovernanceEntry::InviteCreated {
         invite_id: [7; 16],
-        code_hash: "code".into(),
+        code_hash: code_key("code"),
         max_uses: MAX_USES_PER_INVITE,
         expires_at: Some(100),
         secrets_record_key: "VLD0:s".into(),
@@ -214,7 +214,7 @@ fn an_invite_creator_may_revoke_only_its_own_invite() {
     let c7 = op(&pk(1), 7, &[&c6], 10, assign(4, 8));
     let own = GovernanceEntry::InviteCreated {
         invite_id: [9; 16],
-        code_hash: "own".into(),
+        code_hash: code_key("own"),
         max_uses: MAX_USES_PER_INVITE,
         expires_at: None,
         secrets_record_key: "VLD0:o".into(),
@@ -415,7 +415,7 @@ fn two_joins_naming_one_member_record_admit_only_the_first() {
         member_record: record.into(),
         member_record_owner: format!("owner{by}"),
         invite_proof: Some(InviteProof {
-            code_hash: "code".into(),
+            code_hash: code_key("code"),
             sig: vec![0; 64],
         }),
         owner_proof: vec![0; 64],
@@ -463,7 +463,7 @@ fn a_move_onto_a_held_member_record_is_refused() {
         member_record: record.into(),
         member_record_owner: "owner".into(),
         invite_proof: Some(InviteProof {
-            code_hash: "code".into(),
+            code_hash: code_key("code"),
             sig: vec![0; 64],
         }),
         owner_proof: vec![0; 64],
