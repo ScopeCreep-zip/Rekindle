@@ -4,6 +4,9 @@
   "packageManager": "pnpm@10.28.1",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": "^22.18.0 || >=23.6.0"
+  },
   "scripts": {
     "dev": "lsof -ti:1430 | xargs kill -9 2>/dev/null; vite",
     "dev:mac": "./scripts/mac-dev-app.sh",
@@ -20,7 +23,7 @@
     "test:e2e:headed": "E2E=true playwright test --project=e2e --headed",
     "test:e2e:ui": "E2E=true playwright test --project=e2e --ui",
     "test:all": "playwright test --project=mock && E2E=true playwright test --project=e2e",
-    "walk": "node e2e/walk/walk.ts"
+    "walk": "node e2e/walk/node-check.mjs && node e2e/walk/walk.ts"
   },
   "dependencies": {
     "@kobalte/core": "^0.13.11",
