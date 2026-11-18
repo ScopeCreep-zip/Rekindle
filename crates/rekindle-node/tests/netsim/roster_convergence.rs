@@ -53,7 +53,10 @@ async fn members_holding_one_op_set_have_equal_roster_and_role_hashes() {
             },
         )))
         .await;
-    assert!(community.holds_role(1, &role_id).await, "bea holds the role");
+    assert!(
+        community.holds_role(1, &role_id).await,
+        "bea holds the role"
+    );
 
     let converged = eventually(&community.sim, Duration::from_secs(300), || async {
         let first = op_set(&community, 0).await;
