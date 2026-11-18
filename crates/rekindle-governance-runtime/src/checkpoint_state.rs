@@ -38,6 +38,16 @@ fn no_state(why: impl Into<String>) -> GovernanceRuntimeError {
 /// usable hint's snapshot is kept on its `governance_checkpoints` row and
 /// read from there while the row stays usable.
 ///
+/// The kept row is read first, before the op set is loaded or verified
+/// (S7c.8): a snapshot is written to it only below, after our merge of the
+/// verified cut reproduced the `stateRoot` the row's digest commits to,
+/// and the row is read only while the last rebuild, over the verified op
+/// set (`checkpoint_rows::checkpoint_facts`), holds it `usable`. So each of
+/// a snapshot's chunk requests after the first costs one row read, not a
+/// load and verification of every held op. Synapse serves `/state_ids`
+/// the same way: from the state group persisted when the event's state was
+/// resolved, never by re-running auth over the room's events per request.
+///
 /// # Errors
 /// No cert is pinned, the op store failed, or no snapshot is held
 /// ([`GovernanceRuntimeError::NoCheckpointState`]).
@@ -50,6 +60,12 @@ pub async fn snapshot_at<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
+    if let Some(kept) = deps
+        .usable_checkpoint_snapshot(community_id, height, *digest)
+        .await?
+    {
+        return Ok(kept);
+    }
     let held = deps.governance_ops(community_id).await?;
     let set = verify_held_with(deps, community_id, &held);
     let checkpoint = set
@@ -64,14 +80,6 @@ pub async fn snapshot_at<D: GovernanceRuntimeDeps>(
             _ => None,
         })
         .ok_or_else(|| no_state(format!("no checkpoint at height {height} with that digest")))?;
-    // A usable hint's snapshot is kept once computed (plan E3.2 S7c.6), so
-    // each chunk request reads it instead of re-merging the cut's history.
-    let kept = deps
-        .usable_checkpoint_snapshot(community_id, height, *digest)
-        .await?;
-    if let Some(kept) = kept.filter(|k| state_root_of(k) == checkpoint.state_root) {
-        return Ok(kept);
-    }
     let (state, cut) = merge_cut(&cert, &causal_past(&set.ops, &checkpoint.cut));
     let preimage = state_preimage(&state, &cut);
     if state_root_of(&preimage) != checkpoint.state_root {

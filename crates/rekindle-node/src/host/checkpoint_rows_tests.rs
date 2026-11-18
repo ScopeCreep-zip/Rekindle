@@ -13,7 +13,9 @@ use rekindle_governance_runtime::checkpoint_state::snapshot_at;
 use rekindle_governance_runtime::op_log::{rebuild_ops, verify_held, HeldOp, OpFate};
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::governance::{AdmissionMode, Checkpoint, GovernanceEntry, GovernanceOp, OpRef};
+use rekindle_types::governance::{
+    AdmissionMode, Checkpoint, GenesisCert, GovernanceEntry, GovernanceOp, OpRef,
+};
 use rekindle_types::id::PseudonymKey;
 
 use super::{
@@ -59,17 +61,10 @@ fn signed(key: &SigningKey, prev: &HeldOp, deps: &[&HeldOp], body: GovernanceEnt
     }
 }
 
-/// Ann's `c1` whose creator (the height-1 electorate alone) endorsed a
-/// height-1 checkpoint over its first op: the host, the creator's key, its
-/// ops, the checkpoint and the snapshot at its cut.
-pub(super) async fn community(host: &Host) -> (SigningKey, Vec<HeldOp>, Checkpoint, Vec<u8>) {
-    let ann = create_ann(host).await;
-    seed_registry_community(host, &ann.public_key).await;
-    let key = SigningKey::from_bytes(&[0xbb; 32]);
-    let creator = PseudonymKey(key.verifying_key().to_bytes());
-    let cert = rekindle_governance::fixture::cert(&creator, AdmissionMode::default());
-    let first = signed_chain("c1", &key, CREATOR_RECORD, vec![meta("C")]);
-    let (at_cut, cut) = merge_cut(&cert, &verify_held("c1", &first).ops);
+/// The height-1 checkpoint over `first`'s op (the creator, the height-1
+/// electorate alone) and the snapshot at its cut.
+pub(super) fn height_one(cert: &GenesisCert, first: &[HeldOp]) -> (Checkpoint, Vec<u8>) {
+    let (at_cut, cut) = merge_cut(cert, &verify_held("c1", first).ops);
     let preimage = state_preimage(&at_cut, &cut);
     let checkpoint = Checkpoint {
         height: 1,
@@ -82,15 +77,29 @@ pub(super) async fn community(host: &Host) -> (SigningKey, Vec<HeldOp>, Checkpoi
         state_root: state_root(&at_cut, &cut),
         state_size: u32::try_from(preimage.len()).expect("fits"),
         mek_generation: 0,
-        eligible_set_hash: eligible_set_hash(&eligible_set(&cert, None)),
+        eligible_set_hash: eligible_set_hash(&eligible_set(cert, None)),
         pages: Vec::new(),
     };
-    let ops = signed_chain(
-        "c1",
-        &key,
-        CREATOR_RECORD,
-        vec![meta("C"), GovernanceEntry::Checkpoint(checkpoint.clone())],
-    );
+    (checkpoint, preimage)
+}
+
+/// Ann's `c1` whose creator endorsed a height-1 checkpoint over its first
+/// op, followed by `later` more ops: the creator's key, its ops, the
+/// checkpoint and the snapshot at its cut.
+async fn community_with(
+    host: &Host,
+    later: usize,
+) -> (SigningKey, Vec<HeldOp>, Checkpoint, Vec<u8>) {
+    let ann = create_ann(host).await;
+    seed_registry_community(host, &ann.public_key).await;
+    let key = SigningKey::from_bytes(&[0xbb; 32]);
+    let creator = PseudonymKey(key.verifying_key().to_bytes());
+    let cert = rekindle_governance::fixture::cert(&creator, AdmissionMode::default());
+    let first = signed_chain("c1", &key, CREATOR_RECORD, vec![meta("C")]);
+    let (checkpoint, preimage) = height_one(&cert, &first);
+    let mut bodies = vec![meta("C"), GovernanceEntry::Checkpoint(checkpoint.clone())];
+    bodies.extend((0..later).map(|i| meta(&format!("C{i}"))));
+    let ops = signed_chain("c1", &key, CREATOR_RECORD, bodies);
     seed_governance(host, &ann.public_key, "c1", &key, &ops).await;
     host.ctx
         .communities
@@ -100,6 +109,43 @@ pub(super) async fn community(host: &Host) -> (SigningKey, Vec<HeldOp>, Checkpoi
         .unwrap()
         .genesis_cert = Some(cert);
     (key, ops, checkpoint, preimage)
+}
+
+/// Ann's `c1` with the height-1 checkpoint as its last op.
+pub(super) async fn community(host: &Host) -> (SigningKey, Vec<HeldOp>, Checkpoint, Vec<u8>) {
+    community_with(host, 0).await
+}
+
+/// Veilid's callee answer window (`veilid-core/src/rpc_processor/rpc_app_call.rs:131-138`,
+/// `network.rpc.timeout_ms` 5,000 ms).
+const APP_CALL_ANSWER: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Plan E3.2 S7c.8: every chunk request after the first is served from the
+/// kept row, not by loading and verifying the op set to find the
+/// checkpoint. Measured debug at 10,000 ops: that search took 58-60 s per
+/// chunk with every verdict cached (0 signature verifications: the
+/// dependency-order walk of `verify_held_cached`), against a 5 s answer
+/// window. At 3,000 ops it is several seconds; the kept row answers in a
+/// small share of the window.
+#[tokio::test]
+async fn a_kept_snapshot_answers_each_chunk_without_the_op_set() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let (_, _, checkpoint, preimage) = community_with(&host, 3_000).await;
+    let digest = checkpoint_digest(&checkpoint);
+    let gov = host.governance();
+    rebuild_ops(&gov, "c1").await.unwrap();
+    assert_eq!(snapshot_at(&gov, "c1", 1, &digest).await.unwrap(), preimage);
+    let started = std::time::Instant::now();
+    for _ in 0..3 {
+        assert_eq!(snapshot_at(&gov, "c1", 1, &digest).await.unwrap(), preimage);
+    }
+    let per_chunk = started.elapsed() / 3;
+    assert!(
+        per_chunk < APP_CALL_ANSWER / 10,
+        "a kept chunk took {per_chunk:?}, over a tenth of the {APP_CALL_ANSWER:?} window"
+    );
+    host.shutdown().await.unwrap();
 }
 
 /// Plan E3.2 S7c.6: the rebuild marks the checkpoint usable, serving it
