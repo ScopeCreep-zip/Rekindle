@@ -98,19 +98,41 @@ impl HostGovernance {
     }
 
     /// Whether `requester`, not banned, names a live invite of `community`
-    /// (`GovernanceState::live_invite`, the check the join itself passes):
-    /// anyone holding the invite may join and then read the same state, so
-    /// serving it before the join exposes nothing new (plan E3.2 S7c.5). A
-    /// revoked, expired or used-up invite is refused.
-    fn holds_live_invite(
+    /// (`GovernanceState::live_invite`, the check the join itself passes:
+    /// a revoked, expired or used-up invite is refused) and has a place in
+    /// that invite's pre-join budget (plan E3.2 S7c.8 (2)): at most
+    /// `max_uses` distinct requesters per code hash, a requester admitted
+    /// once keeping its place. Each honest joiner needs one place and an
+    /// invite admits `max_uses` joins, so an honest invite never runs out;
+    /// whoever saw its `InviteCreated` and asks without joining spends a
+    /// place (threat model I16), and a joiner refused here walks in full.
+    pub(crate) fn holds_live_invite(
         &self,
         community: &str,
         requester: &PseudonymKey,
         code_hash: &str,
     ) -> bool {
         let now = self.ctx.clock.now_secs();
-        (self.ctx.communities.governance_state(community)).is_some_and(|state| {
-            !state.bans.contains(requester) && state.live_invite(code_hash, now).is_some()
+        let Some(state) = self.ctx.communities.governance_state(community) else {
+            return false;
+        };
+        if state.bans.contains(requester) {
+            return false;
+        }
+        let Some(budget) = state.live_invite(code_hash, now).map(|i| i.max_uses) else {
+            return false;
+        };
+        let mut map = self.ctx.communities.map().write();
+        map.get_mut(community).is_some_and(|c| {
+            let readers = c.pre_join_readers.entry(code_hash.to_owned()).or_default();
+            if readers.contains(&requester.0) {
+                return true;
+            }
+            if readers.len() >= budget as usize {
+                return false;
+            }
+            readers.insert(requester.0);
+            true
         })
     }
 

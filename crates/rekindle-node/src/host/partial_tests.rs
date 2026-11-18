@@ -254,3 +254,61 @@ async fn a_rebuild_still_missing_the_cut_stays_partial() {
     assert_eq!(gov.governance_partial("c1").await.unwrap(), Some(hint));
     host.shutdown().await.unwrap();
 }
+
+/// Plan E3.2 S7c.8 (2): pre-join reads are served for a live invite only,
+/// to at most `max_uses` distinct requesters, a requester admitted once
+/// keeping its place; a revoked or expired invite admits nobody.
+#[tokio::test]
+async fn pre_join_reads_are_budgeted_per_invite() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let ann = create_ann(&host).await;
+    seed_registry_community(&host, &ann.public_key).await;
+    let invite = rekindle_governance::state::InviteState {
+        code_hash: "code".into(),
+        max_uses: 2,
+        expires_at: None,
+        secrets_record_key: "VLD0:s".into(),
+        created: rekindle_governance::op::OpStamp::MIN,
+        creator_pseudonym: PseudonymKey([2; 32]),
+        uses: 0,
+    };
+    let set_invite = |invite: Option<rekindle_governance::state::InviteState>| {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        let state = c.governance_state.get_or_insert_with(Default::default);
+        state.invites.clear();
+        state.invites.extend(invite.map(|i| ([1; 16], i)));
+    };
+    set_invite(Some(invite.clone()));
+    let gov = host.governance();
+    let reader = |n: u8| PseudonymKey([n; 32]);
+    assert!(gov.holds_live_invite("c1", &reader(10), "code"));
+    assert!(gov.holds_live_invite("c1", &reader(11), "code"));
+    assert!(
+        !gov.holds_live_invite("c1", &reader(12), "code"),
+        "budget spent"
+    );
+    assert!(
+        gov.holds_live_invite("c1", &reader(10), "code"),
+        "keeps its place"
+    );
+    assert!(
+        !gov.holds_live_invite("c1", &reader(10), "other"),
+        "unknown"
+    );
+
+    set_invite(None);
+    assert!(!gov.holds_live_invite("c1", &reader(10), "code"), "revoked");
+    set_invite(Some(rekindle_governance::state::InviteState {
+        expires_at: Some(1),
+        ..invite.clone()
+    }));
+    assert!(!gov.holds_live_invite("c1", &reader(10), "code"), "expired");
+    set_invite(Some(rekindle_governance::state::InviteState {
+        uses: 2,
+        ..invite
+    }));
+    assert!(!gov.holds_live_invite("c1", &reader(10), "code"), "used up");
+    host.shutdown().await.unwrap();
+}
